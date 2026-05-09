@@ -35,8 +35,10 @@ import {
   cmdExplore,
   cmdInstall,
   cmdList,
+  cmdPin,
   cmdSearch,
   cmdUninstall,
+  cmdUnpin,
   cmdUpdate,
 } from "./cli/commands/skills.js";
 import { cmdStarSkill } from "./cli/commands/star.js";
@@ -148,6 +150,7 @@ registerCommand(program, ["login"])
   .option("--token <token>", "API token")
   .option("--label <label>", "Token label (browser flow only)", "CLI token")
   .option("--no-browser", "Do not open browser (requires --token)")
+  .option("--device", "Use Device Flow (for headless/remote environments)")
   .action(async (options) => {
     const opts = await resolveGlobalOpts();
     await cmdLoginFlow(opts, options, isInputAllowed());
@@ -177,6 +180,7 @@ registerCommand(auth, ["auth", "login"])
   .option("--token <token>", "API token")
   .option("--label <label>", "Token label (browser flow only)", "CLI token")
   .option("--no-browser", "Do not open browser (requires --token)")
+  .option("--device", "Use Device Flow (for headless/remote environments)")
   .action(async (options) => {
     const opts = await resolveGlobalOpts();
     await cmdLoginFlow(opts, options, isInputAllowed());
@@ -243,6 +247,23 @@ registerCommand(program, ["list"])
     await cmdList(opts);
   });
 
+registerCommand(program, ["pin"])
+  .description("Pin an installed skill so update commands skip it")
+  .argument("<slug>", "Skill slug")
+  .option("--reason <text>", "Optional pin reason")
+  .action(async (slug, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdPin(opts, slug, options);
+  });
+
+registerCommand(program, ["unpin"])
+  .description("Remove a skill pin so updates can change it again")
+  .argument("<slug>", "Skill slug")
+  .action(async (slug) => {
+    const opts = await resolveGlobalOpts();
+    await cmdUnpin(opts, slug);
+  });
+
 registerCommand(program, ["explore"])
   .description("Browse latest updated skills from the registry")
   .option(
@@ -285,6 +306,7 @@ registerCommand(program, ["publish"])
   .option("--slug <slug>", "Skill slug")
   .option("--name <name>", "Display name")
   .option("--owner <handle>", "Publish under an org/user publisher handle")
+  .option("--migrate-owner", "Move an existing skill to the selected owner when republishing")
   .option("--version <version>", "Version (semver)")
   .option("--fork-of <slug[@version]>", "Mark as a fork of an existing skill")
   .option("--changelog <text>", "Changelog text")
@@ -345,6 +367,7 @@ registerCommand(skill, ["skill", "publish"])
   .option("--slug <slug>", "Skill slug")
   .option("--name <name>", "Display name")
   .option("--owner <handle>", "Publish under an org/user publisher handle")
+  .option("--migrate-owner", "Move an existing skill to the selected owner when republishing")
   .option("--version <version>", "Version (semver)")
   .option("--fork-of <slug[@version]>", "Mark as a fork of an existing skill")
   .option("--changelog <text>", "Changelog text")

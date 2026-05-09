@@ -73,7 +73,7 @@ describe("assertValidSkillSlug", () => {
     expect(() => assertValidSkillSlug(slug)).toThrow(new RegExp(hint, "i"));
   });
 
-  it.each(["admin", "settings", "api", "openclaw", "clawhub", "souls", "packages"])(
+  it.each(["admin", "settings", "api", "openclaw", "clawhub", "souls", "packages", "publishers"])(
     "rejects reserved slug %s",
     (slug) => {
       // Some short reserved entries (e.g. "u") are also blocked by the
@@ -82,13 +82,26 @@ describe("assertValidSkillSlug", () => {
     },
   );
 
-  it("emits the reserved-specific error for long reserved slugs", () => {
-    expect(() => assertValidSkillSlug("openclaw")).toThrow(/reserved/i);
-  });
+  it.each(["openclaw", "publishers"])(
+    "emits the reserved-specific error for long reserved slug %s",
+    (slug) => {
+      expect(() => assertValidSkillSlug(slug)).toThrow(/reserved/i);
+    },
+  );
 
-  it("allows reserved slugs when allowReserved is set", () => {
+  it.each(["openclaw-helper", "helper-openclaw", "official-git", "git-official"])(
+    "rejects protected namespace slug %s",
+    (slug) => {
+      expect(() => assertValidSkillSlug(slug)).toThrow(/protected/i);
+    },
+  );
+
+  it("allows reserved and protected slugs when allowReserved is set", () => {
     expect(() => assertValidSkillSlug("admin", { allowReserved: true })).not.toThrow();
     expect(assertValidSkillSlug("admin", { allowReserved: true })).toBe("admin");
+    expect(assertValidSkillSlug("openclaw-helper", { allowReserved: true })).toBe(
+      "openclaw-helper",
+    );
   });
 });
 
@@ -127,6 +140,9 @@ describe("isReservedSkillSlug", () => {
     expect(isReservedSkillSlug("admin")).toBe(true);
     expect(isReservedSkillSlug("  ADMIN  ")).toBe(true);
     expect(isReservedSkillSlug("openclaw")).toBe(true);
+    expect(isReservedSkillSlug("openclaw-helper")).toBe(true);
+    expect(isReservedSkillSlug("helper-official")).toBe(true);
+    expect(isReservedSkillSlug("publishers")).toBe(true);
   });
 
   it("returns false for non-reserved slugs", () => {

@@ -165,6 +165,7 @@ describe("cmdPublish", () => {
 
       await cmdPublish(makeOpts(workdir), "org-skill", {
         owner: "@openclaw",
+        migrateOwner: true,
         version: "1.0.1",
         changelog: "",
         tags: "latest",
@@ -180,6 +181,7 @@ describe("cmdPublish", () => {
       if (typeof payloadEntry !== "string") throw new Error("Missing publish payload");
       const payload = JSON.parse(payloadEntry);
       expect(payload.ownerHandle).toBe("openclaw");
+      expect(payload.migrateOwner).toBe(true);
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }

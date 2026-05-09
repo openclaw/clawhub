@@ -25,6 +25,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as UsersIndexRouteImport } from './routes/users/index'
 import { Route as SoulsIndexRouteImport } from './routes/souls/index'
 import { Route as SkillsIndexRouteImport } from './routes/skills/index'
+import { Route as PublishersIndexRouteImport } from './routes/publishers/index'
 import { Route as PluginsIndexRouteImport } from './routes/plugins/index'
 import { Route as PackagesIndexRouteImport } from './routes/packages/index'
 import { Route as UHandleRouteImport } from './routes/u/$handle'
@@ -35,8 +36,10 @@ import { Route as PluginsNewRouteImport } from './routes/plugins/new'
 import { Route as PluginsNameRouteImport } from './routes/plugins/$name'
 import { Route as PackagesNewRouteImport } from './routes/packages/new'
 import { Route as PackagesNameRouteImport } from './routes/packages/$name'
+import { Route as PHandleRouteImport } from './routes/p/$handle'
 import { Route as OrgsHandleRouteImport } from './routes/orgs/$handle'
 import { Route as DocsAuthRouteImport } from './routes/docs/auth'
+import { Route as CliDeviceRouteImport } from './routes/cli/device'
 import { Route as CliAuthRouteImport } from './routes/cli/auth'
 import { Route as OwnerSlugRouteImport } from './routes/$owner/$slug'
 import { Route as PluginsScopeNameRouteImport } from './routes/plugins/$scope/$name'
@@ -126,6 +129,11 @@ const SkillsIndexRoute = SkillsIndexRouteImport.update({
   path: '/skills/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PublishersIndexRoute = PublishersIndexRouteImport.update({
+  id: '/publishers/',
+  path: '/publishers/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PluginsIndexRoute = PluginsIndexRouteImport.update({
   id: '/plugins/',
   path: '/plugins/',
@@ -176,6 +184,11 @@ const PackagesNameRoute = PackagesNameRouteImport.update({
   path: '/packages/$name',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PHandleRoute = PHandleRouteImport.update({
+  id: '/p/$handle',
+  path: '/p/$handle',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const OrgsHandleRoute = OrgsHandleRouteImport.update({
   id: '/orgs/$handle',
   path: '/orgs/$handle',
@@ -184,6 +197,11 @@ const OrgsHandleRoute = OrgsHandleRouteImport.update({
 const DocsAuthRoute = DocsAuthRouteImport.update({
   id: '/docs/auth',
   path: '/docs/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CliDeviceRoute = CliDeviceRouteImport.update({
+  id: '/cli/device',
+  path: '/cli/device',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CliAuthRoute = CliAuthRouteImport.update({
@@ -246,8 +264,10 @@ export interface FileRoutesByFullPath {
   '/upload': typeof UploadRoute
   '/$owner/$slug': typeof OwnerSlugRouteWithChildren
   '/cli/auth': typeof CliAuthRoute
+  '/cli/device': typeof CliDeviceRoute
   '/docs/auth': typeof DocsAuthRoute
   '/orgs/$handle': typeof OrgsHandleRoute
+  '/p/$handle': typeof PHandleRoute
   '/packages/$name': typeof PackagesNameRoute
   '/packages/new': typeof PackagesNewRoute
   '/plugins/$name': typeof PluginsNameRouteWithChildren
@@ -258,6 +278,7 @@ export interface FileRoutesByFullPath {
   '/u/$handle': typeof UHandleRoute
   '/packages/': typeof PackagesIndexRoute
   '/plugins/': typeof PluginsIndexRoute
+  '/publishers/': typeof PublishersIndexRoute
   '/skills/': typeof SkillsIndexRoute
   '/souls/': typeof SoulsIndexRoute
   '/users/': typeof UsersIndexRoute
@@ -284,8 +305,10 @@ export interface FileRoutesByTo {
   '/upload': typeof UploadRoute
   '/$owner/$slug': typeof OwnerSlugRouteWithChildren
   '/cli/auth': typeof CliAuthRoute
+  '/cli/device': typeof CliDeviceRoute
   '/docs/auth': typeof DocsAuthRoute
   '/orgs/$handle': typeof OrgsHandleRoute
+  '/p/$handle': typeof PHandleRoute
   '/packages/$name': typeof PackagesNameRoute
   '/packages/new': typeof PackagesNewRoute
   '/plugins/$name': typeof PluginsNameRouteWithChildren
@@ -296,6 +319,7 @@ export interface FileRoutesByTo {
   '/u/$handle': typeof UHandleRoute
   '/packages': typeof PackagesIndexRoute
   '/plugins': typeof PluginsIndexRoute
+  '/publishers': typeof PublishersIndexRoute
   '/skills': typeof SkillsIndexRoute
   '/souls': typeof SoulsIndexRoute
   '/users': typeof UsersIndexRoute
@@ -323,8 +347,10 @@ export interface FileRoutesById {
   '/upload': typeof UploadRoute
   '/$owner/$slug': typeof OwnerSlugRouteWithChildren
   '/cli/auth': typeof CliAuthRoute
+  '/cli/device': typeof CliDeviceRoute
   '/docs/auth': typeof DocsAuthRoute
   '/orgs/$handle': typeof OrgsHandleRoute
+  '/p/$handle': typeof PHandleRoute
   '/packages/$name': typeof PackagesNameRoute
   '/packages/new': typeof PackagesNewRoute
   '/plugins/$name': typeof PluginsNameRouteWithChildren
@@ -335,6 +361,7 @@ export interface FileRoutesById {
   '/u/$handle': typeof UHandleRoute
   '/packages/': typeof PackagesIndexRoute
   '/plugins/': typeof PluginsIndexRoute
+  '/publishers/': typeof PublishersIndexRoute
   '/skills/': typeof SkillsIndexRoute
   '/souls/': typeof SoulsIndexRoute
   '/users/': typeof UsersIndexRoute
@@ -363,8 +390,10 @@ export interface FileRouteTypes {
     | '/upload'
     | '/$owner/$slug'
     | '/cli/auth'
+    | '/cli/device'
     | '/docs/auth'
     | '/orgs/$handle'
+    | '/p/$handle'
     | '/packages/$name'
     | '/packages/new'
     | '/plugins/$name'
@@ -375,6 +404,7 @@ export interface FileRouteTypes {
     | '/u/$handle'
     | '/packages/'
     | '/plugins/'
+    | '/publishers/'
     | '/skills/'
     | '/souls/'
     | '/users/'
@@ -401,8 +431,10 @@ export interface FileRouteTypes {
     | '/upload'
     | '/$owner/$slug'
     | '/cli/auth'
+    | '/cli/device'
     | '/docs/auth'
     | '/orgs/$handle'
+    | '/p/$handle'
     | '/packages/$name'
     | '/packages/new'
     | '/plugins/$name'
@@ -413,6 +445,7 @@ export interface FileRouteTypes {
     | '/u/$handle'
     | '/packages'
     | '/plugins'
+    | '/publishers'
     | '/skills'
     | '/souls'
     | '/users'
@@ -439,8 +472,10 @@ export interface FileRouteTypes {
     | '/upload'
     | '/$owner/$slug'
     | '/cli/auth'
+    | '/cli/device'
     | '/docs/auth'
     | '/orgs/$handle'
+    | '/p/$handle'
     | '/packages/$name'
     | '/packages/new'
     | '/plugins/$name'
@@ -451,6 +486,7 @@ export interface FileRouteTypes {
     | '/u/$handle'
     | '/packages/'
     | '/plugins/'
+    | '/publishers/'
     | '/skills/'
     | '/souls/'
     | '/users/'
@@ -478,8 +514,10 @@ export interface RootRouteChildren {
   UploadRoute: typeof UploadRoute
   OwnerSlugRoute: typeof OwnerSlugRouteWithChildren
   CliAuthRoute: typeof CliAuthRoute
+  CliDeviceRoute: typeof CliDeviceRoute
   DocsAuthRoute: typeof DocsAuthRoute
   OrgsHandleRoute: typeof OrgsHandleRoute
+  PHandleRoute: typeof PHandleRoute
   PackagesNameRoute: typeof PackagesNameRoute
   PackagesNewRoute: typeof PackagesNewRoute
   PluginsNameRoute: typeof PluginsNameRouteWithChildren
@@ -490,6 +528,7 @@ export interface RootRouteChildren {
   UHandleRoute: typeof UHandleRoute
   PackagesIndexRoute: typeof PackagesIndexRoute
   PluginsIndexRoute: typeof PluginsIndexRoute
+  PublishersIndexRoute: typeof PublishersIndexRoute
   SkillsIndexRoute: typeof SkillsIndexRoute
   SoulsIndexRoute: typeof SoulsIndexRoute
   UsersIndexRoute: typeof UsersIndexRoute
@@ -611,6 +650,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SkillsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/publishers/': {
+      id: '/publishers/'
+      path: '/publishers'
+      fullPath: '/publishers/'
+      preLoaderRoute: typeof PublishersIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/plugins/': {
       id: '/plugins/'
       path: '/plugins'
@@ -681,6 +727,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PackagesNameRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/p/$handle': {
+      id: '/p/$handle'
+      path: '/p/$handle'
+      fullPath: '/p/$handle'
+      preLoaderRoute: typeof PHandleRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/orgs/$handle': {
       id: '/orgs/$handle'
       path: '/orgs/$handle'
@@ -693,6 +746,13 @@ declare module '@tanstack/react-router' {
       path: '/docs/auth'
       fullPath: '/docs/auth'
       preLoaderRoute: typeof DocsAuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/cli/device': {
+      id: '/cli/device'
+      path: '/cli/device'
+      fullPath: '/cli/device'
+      preLoaderRoute: typeof CliDeviceRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/cli/auth': {
@@ -807,8 +867,10 @@ const rootRouteChildren: RootRouteChildren = {
   UploadRoute: UploadRoute,
   OwnerSlugRoute: OwnerSlugRouteWithChildren,
   CliAuthRoute: CliAuthRoute,
+  CliDeviceRoute: CliDeviceRoute,
   DocsAuthRoute: DocsAuthRoute,
   OrgsHandleRoute: OrgsHandleRoute,
+  PHandleRoute: PHandleRoute,
   PackagesNameRoute: PackagesNameRoute,
   PackagesNewRoute: PackagesNewRoute,
   PluginsNameRoute: PluginsNameRouteWithChildren,
@@ -819,6 +881,7 @@ const rootRouteChildren: RootRouteChildren = {
   UHandleRoute: UHandleRoute,
   PackagesIndexRoute: PackagesIndexRoute,
   PluginsIndexRoute: PluginsIndexRoute,
+  PublishersIndexRoute: PublishersIndexRoute,
   SkillsIndexRoute: SkillsIndexRoute,
   SoulsIndexRoute: SoulsIndexRoute,
   UsersIndexRoute: UsersIndexRoute,

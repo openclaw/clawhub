@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { AlertTriangle, Search } from "lucide-react";
+import { PackageSearch, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 import { BrowseSidebar } from "../../components/BrowseSidebar";
 import { PluginListItem } from "../../components/PluginListItem";
@@ -17,7 +17,17 @@ type PluginSearchState = {
   featured?: boolean;
   verified?: boolean;
   executesCode?: boolean;
+  view?: LegacyPluginView;
 };
+
+type PluginView = "list" | "grid";
+type LegacyPluginView = PluginView | "cards";
+
+function normalizePluginView(value: unknown): PluginView | undefined {
+  if (value === "list") return "list";
+  if (value === "grid" || value === "cards") return "grid";
+  return undefined;
+}
 
 type PluginsLoaderData = {
   items: PackageListItem[];
@@ -53,8 +63,16 @@ export const Route = createFileRoute("/plugins/")({
       search.executesCode === true || search.executesCode === "true" || search.executesCode === "1"
         ? true
         : undefined,
+    view: normalizePluginView(search.view),
   }),
-  loaderDeps: ({ search }) => search,
+  loaderDeps: ({ search }) => ({
+    q: search.q,
+    cursor: search.cursor,
+    family: search.family,
+    featured: search.featured,
+    verified: search.verified,
+    executesCode: search.executesCode,
+  }),
   loader: async ({ deps }): Promise<PluginsLoaderData> => {
     try {
       const data = await fetchPluginCatalog({
@@ -108,6 +126,7 @@ function PluginsIndex() {
   const rateLimited = loaderData?.rateLimited ?? false;
   const retryAfterSeconds = loaderData?.retryAfterSeconds ?? null;
   const apiError = loaderData?.apiError ?? !loaderData;
+  const view = normalizePluginView(search.view) ?? "list";
 
   const [query, setQuery] = useState(search.q ?? "");
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -119,7 +138,7 @@ function PluginsIndex() {
   const handleFilterToggle = (key: string) => {
     if (key === "verified") {
       void navigate({
-        search: (prev) => ({
+        search: (prev: PluginSearchState) => ({
           ...prev,
           cursor: undefined,
           verified: prev.verified ? undefined : true,
@@ -127,7 +146,7 @@ function PluginsIndex() {
       });
     } else if (key === "executesCode") {
       void navigate({
-        search: (prev) => ({
+        search: (prev: PluginSearchState) => ({
           ...prev,
           cursor: undefined,
           executesCode: prev.executesCode ? undefined : true,
@@ -139,7 +158,7 @@ function PluginsIndex() {
   const handleFamilySort = (value: string) => {
     if (value === "featured") {
       void navigate({
-        search: (prev) => ({
+        search: (prev: PluginSearchState) => ({
           ...prev,
           cursor: undefined,
           featured: true,
@@ -151,7 +170,7 @@ function PluginsIndex() {
 
     const family = value === "code-plugin" ? value : undefined;
     void navigate({
-      search: (prev) => ({
+      search: (prev: PluginSearchState) => ({
         ...prev,
         cursor: undefined,
         featured: undefined,
@@ -163,11 +182,21 @@ function PluginsIndex() {
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     void navigate({
-      search: (prev) => ({
+      search: (prev: PluginSearchState) => ({
         ...prev,
         cursor: undefined,
         q: query.trim() || undefined,
       }),
+    });
+  };
+
+  const handleToggleView = () => {
+    void navigate({
+      search: (prev: PluginSearchState) => ({
+        ...prev,
+        view: normalizePluginView(prev.view) === "grid" ? undefined : "grid",
+      }),
+      replace: true,
     });
   };
 
@@ -182,7 +211,9 @@ function PluginsIndex() {
         >
           Filters
         </button>
-        <h1 className="browse-title">Plugins</h1>
+        <h1 className="browse-title">
+          Plugins <span className="browse-count">{items.length}</span>
+        </h1>
         <div className="browse-page-actions">
           <Button asChild variant="primary">
             <Link
@@ -227,13 +258,29 @@ function PluginsIndex() {
         <div className="browse-results">
           <div className="browse-results-toolbar">
             <span className="browse-results-count">
-              {items.length} plugin{items.length !== 1 ? "s" : ""}
+              {items.length} result{items.length !== 1 ? "s" : ""}
             </span>
+            <div className="browse-view-toggle">
+              <button
+                className={`browse-view-btn${view === "list" ? " is-active" : ""}`}
+                type="button"
+                onClick={view === "grid" ? handleToggleView : undefined}
+              >
+                List
+              </button>
+              <button
+                className={`browse-view-btn${view === "grid" ? " is-active" : ""}`}
+                type="button"
+                onClick={view === "list" ? handleToggleView : undefined}
+              >
+                Grid
+              </button>
+            </div>
           </div>
 
           {apiError ? (
             <div className="empty-state">
-              <AlertTriangle size={20} aria-hidden="true" />
+              <PackageSearch size={22} className="empty-state-icon" aria-hidden="true" />
               <p className="empty-state-title">Unable to load plugins</p>
               <p className="empty-state-body">
                 The plugin catalog is temporarily unavailable. Please try again later.
@@ -241,7 +288,7 @@ function PluginsIndex() {
             </div>
           ) : rateLimited ? (
             <div className="empty-state">
-              <AlertTriangle size={20} aria-hidden="true" />
+              <PackageSearch size={22} className="empty-state-icon" aria-hidden="true" />
               <p className="empty-state-title">Plugin catalog is temporarily unavailable</p>
               <p className="empty-state-body">Try again {formatRetryDelay(retryAfterSeconds)}.</p>
             </div>
@@ -251,9 +298,13 @@ function PluginsIndex() {
               <p className="empty-state-body">Try a different search term or remove filters.</p>
             </div>
           ) : (
-            <div className="results-list">
+            <div className={view === "grid" ? "grid" : "results-list"}>
               {items.map((item) => (
-                <PluginListItem key={item.name} item={item} />
+                <PluginListItem
+                  key={item.name}
+                  item={item}
+                  variant={view === "grid" ? "card" : "list"}
+                />
               ))}
             </div>
           )}
@@ -265,7 +316,7 @@ function PluginsIndex() {
                   type="button"
                   onClick={() => {
                     void navigate({
-                      search: (prev) => ({ ...prev, cursor: undefined }),
+                      search: (prev: PluginSearchState) => ({ ...prev, cursor: undefined }),
                     });
                   }}
                 >
@@ -278,7 +329,7 @@ function PluginsIndex() {
                   type="button"
                   onClick={() => {
                     void navigate({
-                      search: (prev) => ({ ...prev, cursor: nextCursor }),
+                      search: (prev: PluginSearchState) => ({ ...prev, cursor: nextCursor }),
                     });
                   }}
                 >

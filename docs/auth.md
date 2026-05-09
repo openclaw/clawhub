@@ -49,6 +49,15 @@ clawhub login --token clh_...
 
 Use this flow for servers, CI jobs, or terminal-only environments.
 
+For remote shells where you can open a browser elsewhere, run:
+
+```bash
+clawhub login --device
+```
+
+The CLI prints a one-time code and waits while you authorize it at
+`https://clawhub.ai/cli/device`.
+
 ## Token storage
 
 Default config paths:

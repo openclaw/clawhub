@@ -4,9 +4,24 @@
 
 ### Changes
 
-### Fixes
-- Security: block owner delete/undelete paths from overriding moderator or scanner hides, and return explicit 403 authz responses for owner restore denials (#2078) (thanks @momothemage).
+- CLI: add per-skill pinning so installed skills can be frozen against direct updates, bulk updates, and force reinstalls (#1806) (thanks @deepujain).
+- CLI/Auth: add device-code login for remote or headless shells, backed by ClawHub device authorization endpoints (#1867) (thanks @LumenFromTheFuture).
+- Dev docs: refresh generated Convex AI guidance files (#2000).
+- Web: polish browse/listing surfaces across skills, plugins, and search, including plugin card view parity, clearer search controls, visible safety filtering, and more consistent card metadata treatment (#2084) (thanks @vyctorbrzezowski).
+- Web: rename the skills and plugins browse alternate view from Cards to Grid while keeping legacy `view=cards` URLs compatible (#2119) (thanks @vyctorbrzezowski).
+- Web: allow skill owners and publisher admins to edit a skill summary from the detail page (#1411) (thanks @SylvanXiao).
+- Web: replace the Users directory with a Publishers discovery surface covering builders and organizations, add `/publishers` as the canonical route, and keep `/users` compatibility (#2087) (thanks @vyctorbrzezowski).
 
+### Fixes
+
+- Security: add an admin-only moderation hold lift path for false-positive publisher holds, with audited skill restoration that preserves independently hidden skills (#1133) (thanks @Justincredible-tech).
+- Docs/dev: document the local Convex site proxy URL and make worktree setup reject misconfigured local site URLs that break HTTP routes (#2060) (thanks @vyctorbrzezowski).
+- Dev setup: make local seed reset deterministic by cleaning stale seed lookup and badge rows for repeated Convex dev runs (#2057) (thanks @vyctorbrzezowski).
+- Skills: repair publisher-owned skill merges, bound historical slug redirects, block protected slug namespaces, and expire owner-unpublished slug reservations after 30 days (#2115) (thanks @fuller-stack-dev).
+- Web: restore dashboard skill metrics for owned skills and use pointer cursors on dropdown menu items (#2113) (thanks @fuller-stack-dev).
+- Skills: allow confirmed owner migration when republishing an existing skill to another publisher, preserving versions, stats, aliases, and audit history (#1998, #2102) (thanks @momothemage).
+- Security: block owner delete/undelete paths from overriding moderator or scanner hides, and return explicit 403 authz responses for owner restore denials (#2078) (thanks @momothemage).
+- Search/Web: disclose when `/search` is hiding suspicious skills and add an explicit opt-out so unified search no longer silently differs from `/skills` for the same query (#2079) (thanks @momothemage).
 
 ## 0.12.3 - 2026-05-06
 

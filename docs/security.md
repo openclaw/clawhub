@@ -236,7 +236,28 @@ Report examples:
 - undeclared credential or permission requirements
 - suspicious install instructions
 - scam comments or impersonation
+- bad-faith registrations or trademark misuse
 - content that violates [Acceptable usage](./acceptable-usage.md)
+
+## Bad-faith or trademark reports
+
+ClawHub uses the same report and staff moderation pipeline for bad-faith
+registrations, impersonation, and trademark-related disputes. These reports need
+enough context for staff to identify the claimant, disputed listing, and
+requested action.
+
+Include:
+
+- the canonical ClawHub skill or package URL and owner handle
+- the trademark, project, company, or product name at issue
+- public evidence of the claimant's ownership or authority
+- why the current owner is not authorized to publish under that name
+- the requested action, such as hide pending review, transfer ownership, rename,
+  or remove
+
+Do not put private secrets or sensitive legal documents in public reports. Open
+a GitHub issue with non-sensitive evidence and ask maintainers for a private
+handoff path when needed.
 
 ## Appeals and rescans
 
@@ -251,6 +272,24 @@ clawhub package rescan <name>
 For moderated content, owners may be able to submit an appeal from the
 owner-visible ClawHub surfaces. Appeals should explain what changed or why the
 flag is incorrect.
+
+## Moderation Holds
+
+When the static scanner flags an uploaded skill as malicious, the publisher is
+automatically placed under a moderation hold (`requiresModerationAt` set on the
+user). This hides all of the publisher's skills, causes future publishes to
+start hidden, and creates a `user.moderation.auto` audit log entry.
+
+Admins can lift a false-positive hold:
+
+```bash
+npx convex run users:liftModerationHold '{"userId": "<user-id>", "reason": "False positive from security tool scanning"}'
+```
+
+This clears `requiresModerationAt` and `requiresModerationReason`, restores
+skills hidden by the user-level hold, and writes a `user.moderation.lift` audit
+log entry. Skills hidden for other reasons, or whose own static scan remains
+malicious, stay hidden.
 
 ## Bans and account standing
 

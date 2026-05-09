@@ -107,7 +107,7 @@ describe("home route", () => {
     expect(grid?.getAttribute("data-layout")).toBe("1-3");
     expect(screen.getByText("Skills")).toBeTruthy();
     expect(screen.getByText("Plugins")).toBeTruthy();
-    expect(screen.getByText("Builders")).toBeTruthy();
+    expect(screen.getByText("Publishers")).toBeTruthy();
   });
 
   it("keeps the featured skill carousel as a duplicated scrolling track", async () => {

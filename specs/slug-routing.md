@@ -102,6 +102,30 @@ Unknown top-level slugs still fall back to skill resolution. Unknown
 `@scope/name` owner routes return not found unless a dedicated package route
 handles them under `/plugins/...`.
 
+Skill write paths must reject platform and trust-signal namespace squatting.
+Exact route/brand/role words are reserved, and slugs that start or end with
+protected affixes such as `openclaw-`, `-openclaw`, `official-`, or
+`-official` are blocked unless an internal/admin path explicitly bypasses the
+reserved list for a controlled migration.
+
+Historical slug redirects are also bounded. Rename and merge may preserve old
+slugs as aliases, but a single skill can keep at most five historical slug
+redirects and an owner/publisher can keep at most 25. These limits prevent
+alias-hoarding while preserving ordinary rename and duplicate-merge redirects.
+
+Owner-initiated unpublishes must not reserve a slug forever. When an owner
+soft-deletes a skill, the slug remains reserved for 30 days so they can restore
+or republish accidental deletes. After that TTL, availability checks may show
+the slug as claimable and the next publish by another owner lazily moves the old
+hidden row to an internal `__unpublished_<skill-id>` slug before creating the new
+skill. That internal namespace must remain outside the public slug validator and
+the release path must collision-check both skill slugs and historical aliases
+before patching the hidden row. The audit actor for a lazy release is the caller
+who triggered the post-expiry claim; the previous owner is preserved in audit
+metadata. The release path may honor a stored reservation timestamp only while
+the current hide provenance is still owner-initiated (`hiddenBy === ownerUserId`).
+Moderator/security hides are not owner unpublishes and do not expire.
+
 ## Adding an official extension
 
 When OpenClaw ships a new extension:

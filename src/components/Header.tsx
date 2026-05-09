@@ -368,7 +368,7 @@ export default function Header() {
               <input
                 className="navbar-search-input"
                 type="search"
-                placeholder={isSoulMode ? "Search souls..." : "Search skills, plugins, users"}
+                placeholder={isSoulMode ? "Search souls..." : "Search skills and plugins"}
                 value={navSearchQuery}
                 onChange={(e) => {
                   setNavSearchQuery(e.target.value);
@@ -517,7 +517,7 @@ export default function Header() {
             <input
               className="navbar-search-input"
               type="text"
-              placeholder={isSoulMode ? "Search souls..." : "Search skills, plugins, users"}
+              placeholder={isSoulMode ? "Search souls..." : "Search skills and plugins"}
               value={navSearchQuery}
               onChange={(e) => setNavSearchQuery(e.target.value)}
               autoFocus

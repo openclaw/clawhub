@@ -18,6 +18,8 @@ type SkillDoc = {
   slug: string;
   ownerUserId: string;
   softDeletedAt?: number;
+  hiddenBy?: string;
+  unpublishedSlugReservedUntil?: number;
   moderationStatus?: "active" | "hidden" | "removed";
   moderationFlags?: string[];
 };
@@ -158,6 +160,115 @@ describe("skills.checkSlugAvailability", () => {
         callerProviderAccountId: "caller-gh",
       }) as never,
       { slug: "taken-skill" } as never,
+    )) as {
+      available: boolean;
+      reason: string;
+      message: string;
+      url: string | null;
+    };
+
+    expect(result).toEqual({
+      available: false,
+      reason: "taken",
+      message: "Slug is already taken. Choose a different slug.",
+      url: null,
+    });
+  });
+
+  it("returns reserved while an owner-unpublished slug reservation is active", async () => {
+    const now = 1_700_000_000_000;
+    vi.spyOn(Date, "now").mockReturnValue(now);
+    vi.mocked(getAuthUserId).mockResolvedValue("users:caller" as never);
+
+    const result = (await checkSlugAvailabilityHandler(
+      createCtx({
+        skill: {
+          _id: "skills:1",
+          slug: "unpublished-skill",
+          ownerUserId: "users:owner",
+          softDeletedAt: now - 1_000,
+          hiddenBy: "users:owner",
+          unpublishedSlugReservedUntil: now + 60_000,
+          moderationStatus: "hidden",
+          moderationFlags: undefined,
+        },
+      }) as never,
+      { slug: "unpublished-skill" } as never,
+    )) as {
+      available: boolean;
+      reason: string;
+      message: string;
+      url: string | null;
+    };
+
+    expect(result).toEqual({
+      available: false,
+      reason: "reserved",
+      message:
+        'Slug "unpublished-skill" is reserved by an unpublished skill until ' +
+        "2023-11-14T22:14:20.000Z. Publish or restore it before then to keep the slug; " +
+        "after that another publisher can claim it.",
+      url: null,
+    });
+  });
+
+  it("returns available when an owner-unpublished slug reservation has expired", async () => {
+    const now = 1_700_000_000_000;
+    vi.spyOn(Date, "now").mockReturnValue(now);
+    vi.mocked(getAuthUserId).mockResolvedValue("users:caller" as never);
+
+    const result = (await checkSlugAvailabilityHandler(
+      createCtx({
+        skill: {
+          _id: "skills:1",
+          slug: "unpublished-skill",
+          ownerUserId: "users:owner",
+          softDeletedAt: now - 120_000,
+          hiddenBy: "users:owner",
+          unpublishedSlugReservedUntil: now - 60_000,
+          moderationStatus: "hidden",
+          moderationFlags: undefined,
+        },
+      }) as never,
+      { slug: "unpublished-skill" } as never,
+    )) as {
+      available: boolean;
+      reason: string;
+      message: string | null;
+      url: string | null;
+    };
+
+    expect(result).toEqual({
+      available: true,
+      reason: "available",
+      message: null,
+      url: null,
+    });
+  });
+
+  it("returns taken when a stale owner reservation remains on a moderation hide", async () => {
+    const now = 1_700_000_000_000;
+    vi.spyOn(Date, "now").mockReturnValue(now);
+    vi.mocked(getAuthUserId).mockResolvedValue("users:caller" as never);
+
+    const result = (await checkSlugAvailabilityHandler(
+      createCtx({
+        skill: {
+          _id: "skills:1",
+          slug: "moderated-skill",
+          ownerUserId: "users:owner",
+          softDeletedAt: now - 120_000,
+          hiddenBy: undefined,
+          unpublishedSlugReservedUntil: now - 60_000,
+          moderationStatus: "hidden",
+          moderationFlags: ["blocked.malware"],
+        },
+        owner: {
+          _id: "users:owner",
+          handle: "owner",
+        },
+      }) as never,
+      { slug: "moderated-skill" } as never,
     )) as {
       available: boolean;
       reason: string;
@@ -339,6 +450,31 @@ describe("skills.checkSlugAvailability", () => {
       available: false,
       reason: "reserved",
       message: formatReservedSlugCooldownMessage("taken-skill", now + 60_000),
+      url: null,
+    });
+  });
+
+  it("returns reserved for protected namespace slugs", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:caller" as never);
+
+    const result = (await checkSlugAvailabilityHandler(
+      createCtx({
+        skill: null,
+      }) as never,
+      { slug: "openclaw-helper" } as never,
+    )) as {
+      available: boolean;
+      reason: string;
+      message: string;
+      url: string | null;
+    };
+
+    expect(result).toEqual({
+      available: false,
+      reason: "reserved",
+      message:
+        '"openclaw-helper" uses the protected "openclaw" slug namespace. ' +
+        'Choose a slug that does not start with "openclaw-" or end with "-openclaw".',
       url: null,
     });
   });

@@ -21,6 +21,7 @@ export async function cmdPublish(
     changelog?: string;
     tags?: string;
     forkOf?: string;
+    migrateOwner?: boolean;
   },
 ) {
   const folder = folderArg ? resolve(opts.workdir, folderArg) : null;
@@ -72,6 +73,7 @@ export async function cmdPublish(
         slug,
         displayName,
         ...(ownerHandle ? { ownerHandle } : {}),
+        ...(options.migrateOwner ? { migrateOwner: true } : {}),
         version,
         changelog,
         acceptLicenseTerms: true,

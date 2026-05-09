@@ -4,6 +4,8 @@ import { auth } from "./auth";
 import { downloadZip } from "./downloads";
 import {
   cliPublishHttp,
+  cliDeviceCodeHttp,
+  cliDeviceTokenHttp,
   cliSkillDeleteHttp,
   cliSkillUndeleteHttp,
   cliTelemetrySyncHttp,
@@ -187,6 +189,18 @@ http.route({
   path: ApiRoutes.whoami,
   method: "GET",
   handler: whoamiV1Http,
+});
+
+http.route({
+  path: "/api/cli/device/code",
+  method: "POST",
+  handler: cliDeviceCodeHttp,
+});
+
+http.route({
+  path: "/api/cli/device/token",
+  method: "POST",
+  handler: cliDeviceTokenHttp,
 });
 
 http.route({

@@ -89,6 +89,15 @@ function createPublishArgs(overrides?: Partial<Record<string, unknown>>) {
   };
 }
 
+function chainEq(constraints: Record<string, unknown>) {
+  return {
+    eq(field: string, value: unknown) {
+      constraints[field] = value;
+      return chainEq(constraints);
+    },
+  };
+}
+
 describe("skills anti-spam guards", () => {
   it("blocks low-trust users after hourly new-skill cap", async () => {
     const now = Date.now();
@@ -367,6 +376,464 @@ describe("skills anti-spam guards", () => {
       "This slug is locked to a deleted or banned account. " +
         "If you believe you are the rightful owner, please contact security@openclaw.ai to reclaim it.",
     );
+  });
+
+  it("releases expired owner-unpublished slugs without alias collisions before accepting a new publish", async () => {
+    const now = Date.now();
+    const storedSkills = new Map<string, Record<string, unknown>>([
+      [
+        "skills:expired",
+        {
+          _id: "skills:expired",
+          slug: "released-demo",
+          displayName: "Released Demo",
+          ownerUserId: "users:previous",
+          softDeletedAt: now - 31 * 24 * 60 * 60 * 1000,
+          hiddenBy: "users:previous",
+          unpublishedSlugReservedUntil: now - 1_000,
+          moderationStatus: "hidden",
+          tags: {},
+          stats: {
+            downloads: 0,
+            installsCurrent: 0,
+            installsAllTime: 0,
+            stars: 0,
+            versions: 1,
+            comments: 0,
+          },
+          createdAt: now - 40 * 24 * 60 * 60 * 1000,
+          updatedAt: now - 31 * 24 * 60 * 60 * 1000,
+        },
+      ],
+    ]);
+    const aliasSlugs = new Set(["__unpublished_skills_expired"]);
+    const patch = vi.fn(
+      async (
+        tableOrId: string,
+        idOrValue: string | Record<string, unknown>,
+        maybeValue?: Record<string, unknown>,
+      ) => {
+        const id = typeof idOrValue === "string" ? idOrValue : tableOrId;
+        const value = typeof idOrValue === "string" ? maybeValue : idOrValue;
+        if (!value) return;
+        if (storedSkills.has(id)) {
+          storedSkills.set(id, { ...storedSkills.get(id), ...value });
+        }
+      },
+    );
+    const insert = vi.fn(async (table: string, value: Record<string, unknown>) => {
+      if (table === "skills") {
+        storedSkills.set("skills:new", { _id: "skills:new", _creationTime: now, ...value });
+        return "skills:new";
+      }
+      if (table === "auditLogs") return "auditLogs:release";
+      if (table === "skillVersions") return "skillVersions:1";
+      if (table === "skillEmbeddings") return "skillEmbeddings:1";
+      if (table === "embeddingSkillMap") return "embeddingSkillMap:1";
+      if (table === "skillVersionFingerprints") return "skillVersionFingerprints:1";
+      if (table === "skillSearchDigest") return "skillSearchDigest:1";
+      throw new Error(`unexpected insert table ${table}`);
+    });
+    const db = {
+      get: vi.fn(async (tableOrId: string, maybeId?: string) => {
+        const id = maybeId ?? tableOrId;
+        if (storedSkills.has(id)) return storedSkills.get(id);
+        if (id === "users:caller") {
+          return {
+            _id: "users:caller",
+            _creationTime: now - 60 * 24 * 60 * 60 * 1000,
+            createdAt: now - 60 * 24 * 60 * 60 * 1000,
+            deletedAt: undefined,
+            deactivatedAt: undefined,
+            trustedPublisher: true,
+            role: "user",
+            handle: "caller",
+            personalPublisherId: "publishers:caller",
+          };
+        }
+        if (id === "publishers:caller") {
+          return {
+            _id: "publishers:caller",
+            kind: "user",
+            handle: "caller",
+            linkedUserId: "users:caller",
+            deletedAt: undefined,
+            deactivatedAt: undefined,
+            publishedSkills: 0,
+            publishedPackages: 0,
+            totalInstalls: 0,
+            totalDownloads: 0,
+            totalStars: 0,
+          };
+        }
+        return null;
+      }),
+      query: vi.fn((table: string) => {
+        const globalStatsQuery = buildGlobalStatsQuery(table);
+        if (globalStatsQuery) return globalStatsQuery;
+        const digestQuery = buildDigestQuery(table);
+        if (digestQuery) return digestQuery;
+        if (table === "skills") {
+          return {
+            withIndex: (name: string, build?: (q: ReturnType<typeof chainEq>) => unknown) => {
+              const constraints: Record<string, unknown> = {};
+              build?.(chainEq(constraints));
+              if (name === "by_slug") {
+                return {
+                  unique: async () =>
+                    Array.from(storedSkills.values()).find(
+                      (skill) => skill.slug === constraints.slug,
+                    ) ?? null,
+                  take: async (limit: number) =>
+                    Array.from(storedSkills.values())
+                      .filter((skill) => skill.slug === constraints.slug)
+                      .slice(0, limit),
+                };
+              }
+              if (name === "by_owner") {
+                return {
+                  order: () => ({
+                    take: async () => [],
+                  }),
+                };
+              }
+              throw new Error(`unexpected skills index ${name}`);
+            },
+          };
+        }
+        if (table === "reservedSlugs") {
+          return {
+            withIndex: (name: string) => {
+              if (name === "by_slug_active_deletedAt") {
+                return { order: () => ({ take: async () => [] }) };
+              }
+              throw new Error(`unexpected reservedSlugs index ${name}`);
+            },
+          };
+        }
+        if (table === "skillSlugAliases") {
+          return {
+            withIndex: (name: string, build?: (q: ReturnType<typeof chainEq>) => unknown) => {
+              if (name !== "by_slug") throw new Error(`unexpected skillSlugAliases index ${name}`);
+              const constraints: Record<string, unknown> = {};
+              build?.(chainEq(constraints));
+              const alias = aliasSlugs.has(String(constraints.slug))
+                ? {
+                    _id: "skillSlugAliases:collision",
+                    slug: constraints.slug,
+                    skillId: "skills:collision",
+                  }
+                : null;
+              return {
+                unique: async () => alias,
+                take: async (limit: number) => (alias && limit > 0 ? [alias] : []),
+              };
+            },
+          };
+        }
+        if (table === "skillVersionFingerprints") {
+          return {
+            withIndex: (name: string) => {
+              if (name !== "by_fingerprint") {
+                throw new Error(`unexpected skillVersionFingerprints index ${name}`);
+              }
+              return { take: async () => [] };
+            },
+          };
+        }
+        if (table === "skillVersions") {
+          return {
+            withIndex: (name: string) => {
+              if (name !== "by_skill_version") {
+                throw new Error(`unexpected skillVersions index ${name}`);
+              }
+              return { unique: async () => null };
+            },
+          };
+        }
+        if (table === "skillBadges") {
+          return {
+            withIndex: (name: string) => {
+              if (name !== "by_skill") throw new Error(`unexpected skillBadges index ${name}`);
+              return { take: async () => [] };
+            },
+          };
+        }
+        if (table === "skillEmbeddings") {
+          return {
+            withIndex: (name: string) => {
+              if (name !== "by_version") {
+                throw new Error(`unexpected skillEmbeddings index ${name}`);
+              }
+              return { unique: async () => null };
+            },
+          };
+        }
+        throw new Error(`unexpected table ${table}`);
+      }),
+      patch,
+      insert,
+      normalizeId: vi.fn((tableName: string, id: string) =>
+        id.startsWith(`${tableName}:`) ? id : null,
+      ),
+    };
+
+    const result = await insertVersionHandler(
+      { db, scheduler: { runAfter: vi.fn() } } as never,
+      createPublishArgs({
+        userId: "users:caller",
+        slug: "released-demo",
+        bypassNewSkillRateLimit: true,
+      }) as never,
+    );
+
+    expect(result).toEqual({
+      skillId: "skills:new",
+      versionId: "skillVersions:1",
+      embeddingId: "skillEmbeddings:1",
+    });
+    expect(patch).toHaveBeenCalledWith(
+      "skills",
+      "skills:expired",
+      expect.objectContaining({
+        slug: "__unpublished_skills_expired_1",
+        unpublishedOriginalSlug: "released-demo",
+        unpublishedSlugReservedUntil: undefined,
+        unpublishedSlugReleasedAt: expect.any(Number),
+      }),
+    );
+    expect(insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({
+        action: "skill.slug.unpublished_release",
+        actorUserId: "users:caller",
+        targetId: "skills:expired",
+        metadata: expect.objectContaining({
+          from: "released-demo",
+          to: "__unpublished_skills_expired_1",
+          previousOwnerUserId: "users:previous",
+        }),
+      }),
+    );
+    expect(insert).toHaveBeenCalledWith(
+      "skills",
+      expect.objectContaining({
+        slug: "released-demo",
+        ownerUserId: "users:caller",
+      }),
+    );
+  });
+
+  it("does not release a stale owner reservation after moderation owns the current hide", async () => {
+    const now = Date.now();
+    const storedSkills = new Map<string, Record<string, unknown>>([
+      [
+        "skills:stale",
+        {
+          _id: "skills:stale",
+          slug: "moderated-demo",
+          displayName: "Moderated Demo",
+          ownerUserId: "users:previous",
+          ownerPublisherId: "publishers:previous",
+          softDeletedAt: now - 31 * 24 * 60 * 60 * 1000,
+          hiddenBy: undefined,
+          unpublishedSlugReservedUntil: now - 1_000,
+          moderationStatus: "hidden",
+          moderationFlags: ["blocked.malware"],
+          moderationVerdict: "malicious",
+          tags: {},
+          stats: {
+            downloads: 0,
+            installsCurrent: 0,
+            installsAllTime: 0,
+            stars: 0,
+            versions: 1,
+            comments: 0,
+          },
+          createdAt: now - 40 * 24 * 60 * 60 * 1000,
+          updatedAt: now - 31 * 24 * 60 * 60 * 1000,
+        },
+      ],
+    ]);
+    const patch = vi.fn(async () => {});
+    const insert = vi.fn(async () => "unexpected");
+    const db = {
+      get: vi.fn(async (tableOrId: string, maybeId?: string) => {
+        const id = maybeId ?? tableOrId;
+        if (storedSkills.has(id)) return storedSkills.get(id);
+        if (id === "users:caller") {
+          return {
+            _id: "users:caller",
+            _creationTime: now - 60 * 24 * 60 * 60 * 1000,
+            createdAt: now - 60 * 24 * 60 * 60 * 1000,
+            deletedAt: undefined,
+            deactivatedAt: undefined,
+            trustedPublisher: true,
+            role: "user",
+            handle: "caller",
+            personalPublisherId: "publishers:caller",
+          };
+        }
+        if (id === "publishers:caller") {
+          return {
+            _id: "publishers:caller",
+            kind: "user",
+            handle: "caller",
+            linkedUserId: "users:caller",
+            deletedAt: undefined,
+            deactivatedAt: undefined,
+            publishedSkills: 0,
+            publishedPackages: 0,
+            totalInstalls: 0,
+            totalDownloads: 0,
+            totalStars: 0,
+          };
+        }
+        if (id === "publishers:previous") {
+          return {
+            _id: "publishers:previous",
+            kind: "user",
+            handle: "previous",
+            linkedUserId: "users:previous",
+            deletedAt: undefined,
+            deactivatedAt: undefined,
+          };
+        }
+        if (id === "users:previous") {
+          return {
+            _id: "users:previous",
+            deletedAt: undefined,
+            deactivatedAt: undefined,
+            handle: "previous",
+          };
+        }
+        return null;
+      }),
+      query: vi.fn((table: string) => {
+        const globalStatsQuery = buildGlobalStatsQuery(table);
+        if (globalStatsQuery) return globalStatsQuery;
+        const digestQuery = buildDigestQuery(table);
+        if (digestQuery) return digestQuery;
+        if (table === "skills") {
+          return {
+            withIndex: (name: string, build?: (q: ReturnType<typeof chainEq>) => unknown) => {
+              const constraints: Record<string, unknown> = {};
+              build?.(chainEq(constraints));
+              if (name === "by_slug") {
+                return {
+                  unique: async () =>
+                    Array.from(storedSkills.values()).find(
+                      (skill) => skill.slug === constraints.slug,
+                    ) ?? null,
+                };
+              }
+              if (name === "by_owner") {
+                return {
+                  order: () => ({
+                    take: async () => [],
+                  }),
+                };
+              }
+              throw new Error(`unexpected skills index ${name}`);
+            },
+          };
+        }
+        if (table === "reservedSlugs") {
+          return {
+            withIndex: (name: string) => {
+              if (name === "by_slug_active_deletedAt") {
+                return { order: () => ({ take: async () => [] }) };
+              }
+              throw new Error(`unexpected reservedSlugs index ${name}`);
+            },
+          };
+        }
+        if (table === "skillSlugAliases") {
+          return {
+            withIndex: (name: string) => {
+              if (name !== "by_slug") throw new Error(`unexpected skillSlugAliases index ${name}`);
+              return { unique: async () => null };
+            },
+          };
+        }
+        if (table === "authAccounts") {
+          return {
+            withIndex: (name: string) => {
+              if (name !== "userIdAndProvider") throw new Error(`unexpected auth index ${name}`);
+              return { unique: async () => null };
+            },
+          };
+        }
+        if (table === "publishers") {
+          return {
+            withIndex: (name: string, build?: (q: ReturnType<typeof chainEq>) => unknown) => {
+              const constraints: Record<string, unknown> = {};
+              build?.(chainEq(constraints));
+              if (name === "by_handle") return { unique: async () => null };
+              if (name === "by_linked_user") {
+                return {
+                  unique: async () =>
+                    constraints.linkedUserId === "users:caller"
+                      ? {
+                          _id: "publishers:caller",
+                          kind: "user",
+                          handle: "caller",
+                          linkedUserId: "users:caller",
+                          deletedAt: undefined,
+                          deactivatedAt: undefined,
+                        }
+                      : null,
+                };
+              }
+              throw new Error(`unexpected publishers index ${name}`);
+            },
+          };
+        }
+        if (table === "publisherMembers") {
+          return {
+            withIndex: (name: string) => {
+              if (name !== "by_publisher_user") {
+                throw new Error(`unexpected publisherMembers index ${name}`);
+              }
+              return {
+                unique: async () => ({
+                  _id: "publisherMembers:caller",
+                  publisherId: "publishers:caller",
+                  userId: "users:caller",
+                  role: "owner",
+                }),
+              };
+            },
+          };
+        }
+        throw new Error(`unexpected table ${table}`);
+      }),
+      patch,
+      insert,
+      normalizeId: vi.fn((tableName: string, id: string) =>
+        id.startsWith(`${tableName}:`) ? id : null,
+      ),
+    };
+
+    await expect(
+      insertVersionHandler(
+        { db, scheduler: { runAfter: vi.fn() } } as never,
+        createPublishArgs({
+          userId: "users:caller",
+          slug: "moderated-demo",
+          bypassNewSkillRateLimit: true,
+        }) as never,
+      ),
+    ).rejects.toThrow(/Slug is already taken/);
+
+    expect(patch).not.toHaveBeenCalledWith(
+      "skills",
+      "skills:stale",
+      expect.objectContaining({
+        slug: expect.stringMatching(/^__unpublished_/),
+      }),
+    );
+    expect(insert).not.toHaveBeenCalledWith("skills", expect.anything());
   });
 
   it("heals ownership when conflicting owner is deleted but GitHub identity matches", async () => {

@@ -80,12 +80,12 @@ describe("restored UI design contract", () => {
     expect(headerSource).toContain('className="github-sign-in-button"');
     expect(headerSource).toContain('className="sign-in-full-copy"');
     expect(headerSource).toContain('className="sign-in-compact-copy"');
-    expect(headerSource).toContain("Search skills, plugins, users");
+    expect(headerSource).toContain("Search skills and plugins");
     expect(headerSource).toContain('className="navbar-tabs-primary"');
     expect(headerSource).toContain('className="navbar-tabs-secondary"');
 
     expect(navSource).toContain("export const SECONDARY_NAV_ITEMS");
-    expect(navSource).toContain('label: "Users"');
+    expect(navSource).toContain('label: "Publishers"');
     expect(navSource).toContain('label: "About"');
     expect(navSource).toContain('label: "Docs"');
     expect(navSource).not.toContain('label: "Stars"');
@@ -99,6 +99,7 @@ describe("restored UI design contract", () => {
     expect(themeControl).toContain("min-width: 154px");
     expect(themeControl).toContain("min-height: 50px");
     expect(themeControl).toContain("border: 1px solid var(--line)");
+    expect(css).toContain("--r-btn: var(--r-sm)");
 
     const compact = cssMediaContaining(css, "(max-width: 760px)", [
       "grid-template-columns: 56px minmax(0, 1fr) 56px",

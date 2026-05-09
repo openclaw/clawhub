@@ -80,6 +80,36 @@ describe("SkillsIndex", () => {
     expect(screen.queryByText("No skills found")).toBeNull();
   });
 
+  it("uses grid as the canonical browse view URL value", async () => {
+    render(<SkillsIndex />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Grid" }));
+
+    const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
+      replace?: boolean;
+      search: (prev: Record<string, unknown>) => Record<string, unknown>;
+    };
+    expect(lastCall.replace).toBe(true);
+    expect(lastCall.search({})).toEqual({ view: "grid" });
+  });
+
+  it("keeps legacy cards URLs compatible with the grid view", async () => {
+    searchMock = { view: "cards" };
+    render(<SkillsIndex />);
+
+    const gridButton = screen.getByRole("button", { name: "Grid" });
+    expect(gridButton.className).toContain("is-active");
+
+    fireEvent.click(screen.getByRole("button", { name: "List" }));
+
+    const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
+      replace?: boolean;
+      search: (prev: Record<string, unknown>) => Record<string, unknown>;
+    };
+    expect(lastCall.replace).toBe(true);
+    expect(lastCall.search({ view: "cards" })).toEqual({ view: undefined });
+  });
+
   it("shows empty state immediately when search returns no results", async () => {
     searchMock = { q: "nonexistent-skill-xyz" };
     const actionFn = vi.fn().mockResolvedValue([]);
@@ -230,7 +260,7 @@ describe("SkillsIndex", () => {
       await vi.runAllTimersAsync();
     });
 
-    const links = screen.getAllByRole("link");
+    const links = screen.getAllByRole("link").filter((link) => link.textContent?.includes("Skill"));
     expect(links[0]?.textContent).toContain("Skill B");
     expect(links[1]?.textContent).toContain("Skill A");
     expect(links[2]?.textContent).toContain("Skill C");

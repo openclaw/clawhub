@@ -1,5 +1,6 @@
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
+import { readCanonicalStat } from "./skillStats";
 
 function getSkillContribution(skill: Doc<"skills">) {
   if (skill.softDeletedAt) {
@@ -8,8 +9,8 @@ function getSkillContribution(skill: Doc<"skills">) {
 
   return {
     publishedSkills: 1,
-    totalStars: skill.stats?.stars ?? 0,
-    totalDownloads: skill.stats?.downloads ?? 0,
+    totalStars: readCanonicalStat(skill, "stars"),
+    totalDownloads: readCanonicalStat(skill, "downloads"),
   };
 }
 

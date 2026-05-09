@@ -24,6 +24,8 @@ export const LockfileSchema = type({
     "[string]": {
       version: "string|null",
       installedAt: "number",
+      pinned: "boolean?",
+      pinReason: "string?",
     },
   },
 });
@@ -82,6 +84,7 @@ export const CliPublishRequestSchema = type({
   slug: "string",
   displayName: "string",
   ownerHandle: "string?",
+  migrateOwner: "boolean?",
   version: "string",
   changelog: "string",
   acceptLicenseTerms: "boolean?",
@@ -109,6 +112,7 @@ export type CliSkillDeleteRequest = (typeof CliSkillDeleteRequestSchema)[inferre
 
 export const ApiCliSkillDeleteResponseSchema = type({
   ok: "true",
+  slugReservedUntil: "number?",
 });
 
 export const ApiSkillResolveResponseSchema = type({
@@ -413,6 +417,7 @@ export const ApiV1PublishResponseSchema = type({
 
 export const ApiV1DeleteResponseSchema = type({
   ok: "true",
+  slugReservedUntil: "number?",
 });
 
 export const ApiV1RescanResponseSchema = type({

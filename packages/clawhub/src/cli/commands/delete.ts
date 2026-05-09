@@ -22,7 +22,7 @@ const deleteLabels: SkillActionLabels = {
   verb: "Delete",
   progress: "Deleting",
   past: "Deleted",
-  promptSuffix: "soft delete, owner/moderator/admin",
+  promptSuffix: "soft delete; owner slug reservation expires after 30 days",
 };
 
 const undeleteLabels: SkillActionLabels = {
@@ -78,8 +78,9 @@ export async function cmdDeleteSkill(
       },
       ApiV1DeleteResponseSchema,
     );
-    spinner.succeed(`OK. ${labels.past} ${slug}`);
-    return parseArk(ApiV1DeleteResponseSchema, result, "Delete response");
+    const parsed = parseArk(ApiV1DeleteResponseSchema, result, "Delete response");
+    spinner.succeed(`OK. ${labels.past} ${slug}${formatSlugReservation(parsed)}`);
+    return parsed;
   } catch (error) {
     spinner.fail(formatError(error));
     throw error;
@@ -158,4 +159,9 @@ function normalizeReason(options: SkillDeleteOptions) {
 function formatPrompt(labels: SkillActionLabels, slug: string) {
   const suffix = labels.promptSuffix ? ` (${labels.promptSuffix})` : "";
   return `${labels.verb} ${slug}?${suffix}`;
+}
+
+function formatSlugReservation(result: { slugReservedUntil?: number }) {
+  if (typeof result.slugReservedUntil !== "number") return "";
+  return `. Slug reserved until ${new Date(result.slugReservedUntil).toISOString()}`;
 }

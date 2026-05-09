@@ -101,6 +101,7 @@ describe("plugins route", () => {
       featured: undefined,
       verified: undefined,
       executesCode: undefined,
+      view: undefined,
     });
   });
 
@@ -117,7 +118,34 @@ describe("plugins route", () => {
       featured: undefined,
       verified: undefined,
       executesCode: undefined,
+      view: undefined,
     });
+  });
+
+  it("uses grid as the canonical browse view in search state", async () => {
+    const route = await loadRoute();
+    const validateSearch = route.__config.validateSearch as (
+      search: Record<string, unknown>,
+    ) => Record<string, unknown>;
+
+    expect(validateSearch({ view: "grid" })).toEqual(
+      expect.objectContaining({
+        view: "grid",
+      }),
+    );
+  });
+
+  it("keeps legacy cards URLs compatible with the grid view", async () => {
+    const route = await loadRoute();
+    const validateSearch = route.__config.validateSearch as (
+      search: Record<string, unknown>,
+    ) => Record<string, unknown>;
+
+    expect(validateSearch({ view: "cards" })).toEqual(
+      expect.objectContaining({
+        view: "grid",
+      }),
+    );
   });
 
   it("forwards opaque cursors through the loader", async () => {
@@ -176,6 +204,81 @@ describe("plugins route", () => {
       family: "code-plugin",
       cursor: "cursor:next",
     });
+  });
+
+  it("renders a title count and switches to grid view", async () => {
+    loaderDataMock = {
+      items: [
+        {
+          name: "demo-plugin",
+          displayName: "Demo Plugin",
+          family: "code-plugin",
+          channel: "community",
+          isOfficial: false,
+          executesCode: true,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      nextCursor: null,
+      rateLimited: false,
+      retryAfterSeconds: null,
+    };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(screen.getByRole("heading", { name: "Plugins 1" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Grid" }));
+
+    expect(navigateMock).toHaveBeenCalled();
+    const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
+      replace?: boolean;
+      search: (prev: Record<string, unknown>) => Record<string, unknown>;
+    };
+    expect(lastCall.replace).toBe(true);
+    expect(lastCall.search({})).toEqual({
+      view: "grid",
+    });
+  });
+
+  it("switches legacy cards URLs back to list view", async () => {
+    searchMock = { view: "cards" };
+    loaderDataMock = {
+      items: [
+        {
+          name: "demo-plugin",
+          displayName: "Demo Plugin",
+          family: "code-plugin",
+          channel: "community",
+          isOfficial: false,
+          executesCode: true,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      nextCursor: null,
+      rateLimited: false,
+      retryAfterSeconds: null,
+    };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    const gridButton = screen.getByRole("button", { name: "Grid" });
+    expect(gridButton.className).toContain("is-active");
+
+    fireEvent.click(screen.getByRole("button", { name: "List" }));
+
+    const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
+      replace?: boolean;
+      search: (prev: Record<string, unknown>) => Record<string, unknown>;
+    };
+    expect(lastCall.replace).toBe(true);
+    expect(lastCall.search({ view: "cards" })).toEqual({ view: undefined });
   });
 
   it("filters out skills from loader results", async () => {

@@ -137,6 +137,11 @@ const publishers = defineTable({
   image: v.optional(v.string()),
   linkedUserId: v.optional(v.id("users")),
   trustedPublisher: v.optional(v.boolean()),
+  publishedSkills: v.optional(v.number()),
+  publishedPackages: v.optional(v.number()),
+  totalInstalls: v.optional(v.number()),
+  totalDownloads: v.optional(v.number()),
+  totalStars: v.optional(v.number()),
   deactivatedAt: v.optional(v.number()),
   deletedAt: v.optional(v.number()),
   createdAt: v.number(),
@@ -144,7 +149,24 @@ const publishers = defineTable({
 })
   .index("by_handle", ["handle"])
   .index("by_linked_user", ["linkedUserId"])
-  .index("by_kind_handle", ["kind", "handle"]);
+  .index("by_kind_handle", ["kind", "handle"])
+  .index("by_active_kind_handle", ["deletedAt", "deactivatedAt", "kind", "handle"])
+  .index("by_active_total_downloads", ["deletedAt", "deactivatedAt", "totalDownloads", "updatedAt"])
+  .index("by_active_kind_total_downloads", [
+    "deletedAt",
+    "deactivatedAt",
+    "kind",
+    "totalDownloads",
+    "updatedAt",
+  ])
+  .index("by_active_total_installs", ["deletedAt", "deactivatedAt", "totalInstalls", "updatedAt"])
+  .index("by_active_kind_total_installs", [
+    "deletedAt",
+    "deactivatedAt",
+    "kind",
+    "totalInstalls",
+    "updatedAt",
+  ]);
 
 const publisherMembers = defineTable({
   publisherId: v.id("publishers"),
@@ -420,6 +442,9 @@ const skills = defineTable({
   scanCheckCount: v.optional(v.number()),
   hiddenAt: v.optional(v.number()),
   hiddenBy: v.optional(v.id("users")),
+  unpublishedSlugReservedUntil: v.optional(v.number()),
+  unpublishedSlugReleasedAt: v.optional(v.number()),
+  unpublishedOriginalSlug: v.optional(v.string()),
   reportCount: v.optional(v.number()),
   lastReportedAt: v.optional(v.number()),
   batch: v.optional(v.string()),
@@ -861,6 +886,7 @@ const packages = defineTable({
   .index("by_name", ["normalizedName"])
   .index("by_owner", ["ownerUserId"])
   .index("by_owner_publisher", ["ownerPublisherId"])
+  .index("by_owner_publisher_active_updated", ["ownerPublisherId", "softDeletedAt", "updatedAt"])
   .index("by_family_updated", ["family", "updatedAt"])
   .index("by_family_channel_updated", ["family", "channel", "updatedAt"])
   .index("by_family_official_updated", ["family", "isOfficial", "updatedAt"])
@@ -1558,6 +1584,30 @@ const apiTokens = defineTable({
   .index("by_user", ["userId"])
   .index("by_hash", ["tokenHash"]);
 
+const cliDeviceCodes = defineTable({
+  deviceCodeHash: v.string(),
+  userCodeHash: v.string(),
+  userCode: v.string(),
+  label: v.string(),
+  scope: v.string(),
+  status: v.union(
+    v.literal("pending"),
+    v.literal("approved"),
+    v.literal("denied"),
+    v.literal("consumed"),
+    v.literal("expired"),
+  ),
+  approvedByUserId: v.optional(v.id("users")),
+  createdAt: v.number(),
+  expiresAt: v.number(),
+  approvedAt: v.optional(v.number()),
+  consumedAt: v.optional(v.number()),
+  deniedAt: v.optional(v.number()),
+})
+  .index("by_device_code_hash", ["deviceCodeHash"])
+  .index("by_user_code_hash", ["userCodeHash"])
+  .index("by_status_expires", ["status", "expiresAt"]);
+
 const rateLimits = defineTable({
   key: v.string(),
   windowStart: v.number(),
@@ -1730,6 +1780,7 @@ export default defineSchema({
   vtScanLogs,
   rescanRequests,
   apiTokens,
+  cliDeviceCodes,
   rateLimits,
   rateLimitShards,
   downloadDedupes,

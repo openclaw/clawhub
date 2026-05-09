@@ -6,12 +6,14 @@ import { SkillStatsTripletLine } from "../../components/SkillStats";
 import { Button } from "../../components/ui/button";
 import { UserBadge } from "../../components/UserBadge";
 import { getSkillBadges } from "../../lib/badges";
+import { timeAgo } from "../../lib/timeAgo";
 import { buildSkillHref, type SkillListEntry } from "./-types";
+import type { SkillsView } from "./-useSkillsBrowseModel";
 
 type SkillsResultsProps = {
   isLoadingSkills: boolean;
   sorted: SkillListEntry[];
-  view: "cards" | "list";
+  view: SkillsView;
   listDoneLoading: boolean;
   hasQuery: boolean;
   canLoadMore: boolean;
@@ -57,7 +59,7 @@ export function SkillsResults({
               : "No skills have been published yet."}
           </p>
         </div>
-      ) : view === "cards" ? (
+      ) : view === "grid" ? (
         <div className="grid">
           {sorted.map((entry) => {
             const skill = entry.skill;
@@ -71,6 +73,7 @@ export function SkillsResults({
                 key={skill._id}
                 skill={skill}
                 href={skillHref}
+                className="skill-card-spaced-footer"
                 badge={getSkillBadges(skill)}
                 chip={isPlugin ? "Plugin bundle (nix)" : undefined}
                 platformLabels={platforms.length ? platforms : undefined}
@@ -84,7 +87,12 @@ export function SkillsResults({
                       link={false}
                     />
                     <div className="stat">
-                      <SkillStatsTripletLine stats={skill.stats} />
+                      <div className="skill-card-statline">
+                        <span className="skill-card-updated">
+                          Updated {timeAgo(skill.updatedAt)}
+                        </span>
+                        <SkillStatsTripletLine stats={skill.stats} />
+                      </div>
                     </div>
                   </div>
                 }

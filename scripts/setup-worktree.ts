@@ -12,7 +12,7 @@ type Options = {
 type Source = {
   path: string;
   env: Record<string, string>;
-  convexConfig: { deploymentName?: string; ports?: { cloud?: number } } | null;
+  convexConfig: { deploymentName?: string; ports?: { cloud?: number; site?: number } } | null;
 };
 
 const LOCAL_CONVEX_CONFIG = ".convex/local/default/config.json";
@@ -87,6 +87,38 @@ function readSource(path: string): Source | null {
   };
 }
 
+function isLocalHost(hostname: string) {
+  return (
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname === "0.0.0.0" ||
+    hostname === "[::1]"
+  );
+}
+
+function validateLocalSiteUrl(name: string, value: string | undefined, expectedPort: number) {
+  if (!value) {
+    return `${name} is required for local Convex HTTP routes; set it to http://127.0.0.1:${expectedPort}`;
+  }
+
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return `${name} is not a valid URL`;
+  }
+
+  if (!isLocalHost(url.hostname)) return null;
+
+  const port = Number(url.port);
+  if (!port) return `${name} must include local site proxy port ${expectedPort}`;
+  if (port !== expectedPort) {
+    return `${name} port ${port} does not match ${LOCAL_CONVEX_CONFIG} site port ${expectedPort}`;
+  }
+
+  return null;
+}
+
 function validateSource(source: Source) {
   const deployment = source.env.CONVEX_DEPLOYMENT;
   if (!deployment) return "missing CONVEX_DEPLOYMENT";
@@ -109,6 +141,23 @@ function validateSource(source: Source) {
       } catch {
         return "VITE_CONVEX_URL is not a valid URL";
       }
+    }
+
+    const sitePort = source.convexConfig.ports?.site ?? (configPort ? configPort + 1 : null);
+    if (sitePort) {
+      const invalidViteSiteUrl = validateLocalSiteUrl(
+        "VITE_CONVEX_SITE_URL",
+        source.env.VITE_CONVEX_SITE_URL,
+        sitePort,
+      );
+      if (invalidViteSiteUrl) return invalidViteSiteUrl;
+
+      const invalidServerSiteUrl = validateLocalSiteUrl(
+        "CONVEX_SITE_URL",
+        source.env.CONVEX_SITE_URL,
+        sitePort,
+      );
+      if (invalidServerSiteUrl) return invalidServerSiteUrl;
     }
   }
 

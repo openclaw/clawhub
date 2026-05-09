@@ -25,18 +25,23 @@ Edit `.env.local` with the following values for **local Convex**:
 ```bash
 # Frontend
 VITE_CONVEX_URL=http://127.0.0.1:3210
-VITE_CONVEX_SITE_URL=http://127.0.0.1:3210
+VITE_CONVEX_SITE_URL=http://127.0.0.1:3211
 SITE_URL=http://localhost:3000
+
+# Convex Auth / HTTP routes
+CONVEX_SITE_URL=http://127.0.0.1:3211
 
 # Deployment used by `bunx convex dev`
 CONVEX_DEPLOYMENT=anonymous:anonymous-clawhub
 ```
 
+Local Convex serves the function endpoint on port 3210 and HTTP routes (`/api/*` and auth callbacks) through the site proxy on port 3211.
+
 ### GitHub OAuth App (for login)
 
 1. Go to [github.com/settings/developers](https://github.com/settings/developers) and create a new OAuth App.
 2. Set **Homepage URL** to `http://localhost:3000`.
-3. Set **Authorization callback URL** to `http://127.0.0.1:3210/api/auth/callback/github`.
+3. Set **Authorization callback URL** to `http://127.0.0.1:3211/api/auth/callback/github`.
 4. Copy the Client ID and generate a Client Secret.
 
 ### Run the Convex backend
@@ -114,7 +119,7 @@ The CLI source lives in [`packages/clawhub/`](packages/clawhub/). Both `clawhub`
 To test the CLI against your local instance:
 
 ```bash
-CLAWHUB_REGISTRY=http://127.0.0.1:3210 CLAWHUB_SITE=http://localhost:3000 clawhub search "padel"
+CLAWHUB_REGISTRY=http://127.0.0.1:3211 CLAWHUB_SITE=http://localhost:3000 clawhub search "padel"
 ```
 
 Use the package-local verification contract when working on the CLI:

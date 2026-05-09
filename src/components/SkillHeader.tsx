@@ -1,7 +1,19 @@
 import { Link } from "@tanstack/react-router";
 import type { ClawdisSkillMetadata } from "clawhub-schema";
 import { PLATFORM_SKILL_LICENSE } from "clawhub-schema/licenseConstants";
-import { Calendar, Download, History, Package, Scale, Settings, Star, Upload } from "lucide-react";
+import {
+  Calendar,
+  Check,
+  Download,
+  History,
+  Package,
+  Pencil,
+  Scale,
+  Settings,
+  Star,
+  Upload,
+  X,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { getSkillBadges } from "../lib/badges";
@@ -71,6 +83,14 @@ type SkillHeaderProps = {
   priorityContent?: ReactNode;
   settingsHref?: string | null;
   children?: ReactNode;
+  canEditSummary: boolean;
+  summary: string;
+  onSummaryChange: (value: string) => void;
+  onSummarySubmit: () => void;
+  isSummaryEditing: boolean;
+  onSummaryEdit: () => void;
+  onSummaryCancel: () => void;
+  isSummarySubmitting: boolean;
 };
 
 export function SkillHeader({
@@ -105,6 +125,14 @@ export function SkillHeader({
   priorityContent,
   settingsHref,
   children,
+  canEditSummary,
+  summary,
+  onSummaryChange,
+  onSummarySubmit,
+  isSummaryEditing,
+  onSummaryEdit,
+  onSummaryCancel,
+  isSummarySubmitting,
 }: SkillHeaderProps) {
   const formattedStats = formatSkillStatsTriplet(skill.stats);
   const installOwnerId = owner?._id ?? skill.ownerPublisherId ?? skill.ownerUserId ?? null;
@@ -230,7 +258,57 @@ export function SkillHeader({
                   </div>
                 ) : null}
               </div>
-              <p className="section-subtitle">{skill.summary ?? "No summary provided."}</p>
+              <div className="skill-summary-block">
+                {isSummaryEditing ? (
+                  <form
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      onSummarySubmit();
+                    }}
+                    className="summary-edit-form"
+                  >
+                    <textarea
+                      className="search-input summary-textarea"
+                      value={summary}
+                      onChange={(event) => onSummaryChange(event.target.value)}
+                      placeholder="Enter a brief summary..."
+                      maxLength={500}
+                      rows={2}
+                    />
+                    <div className="summary-edit-actions">
+                      <Button type="submit" size="sm" disabled={isSummarySubmitting}>
+                        <Check size={14} aria-hidden="true" />
+                        {isSummarySubmitting ? "Saving..." : "Save"}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        type="button"
+                        onClick={onSummaryCancel}
+                        disabled={isSummarySubmitting}
+                      >
+                        <X size={14} aria-hidden="true" />
+                        Cancel
+                      </Button>
+                    </div>
+                  </form>
+                ) : (
+                  <p className="section-subtitle skill-summary-line">
+                    {skill.summary ?? "No summary provided."}
+                    {canEditSummary ? (
+                      <button
+                        className="edit-summary-btn"
+                        type="button"
+                        onClick={onSummaryEdit}
+                        aria-label="Edit summary"
+                        title="Edit summary"
+                      >
+                        <Pencil size={14} aria-hidden="true" />
+                      </button>
+                    ) : null}
+                  </p>
+                )}
+              </div>
 
               {isStaff && staffModerationNote ? (
                 <div className="skill-hero-note">{staffModerationNote}</div>

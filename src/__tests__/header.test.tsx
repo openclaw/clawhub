@@ -220,12 +220,12 @@ describe("Header", () => {
     expect(screen.getByRole("button", { name: "Dark theme" })).toBeTruthy();
     expect(screen.getAllByText("Skills")).toHaveLength(1);
     expect(screen.getAllByText("Plugins")).toHaveLength(1);
-    expect(screen.getAllByText("Users")).toHaveLength(1);
+    expect(screen.getAllByText("Publishers")).toHaveLength(1);
     expect(screen.getAllByText("About")).toHaveLength(1);
     expect(screen.getAllByText("Docs")).toHaveLength(1);
     expect(screen.queryByText("Dashboard")).toBeNull();
     expect(screen.queryByText("Manage")).toBeNull();
-    expect(screen.getByPlaceholderText("Search skills, plugins, users")).toBeTruthy();
+    expect(screen.getByPlaceholderText("Search skills and plugins")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: /Cycle theme mode/i }));
     expect(setModeMock).toHaveBeenCalledWith("light");
@@ -235,7 +235,7 @@ describe("Header", () => {
     expect(screen.getAllByText("Home")).toHaveLength(1);
     expect(screen.getAllByText("Skills")).toHaveLength(2);
     expect(screen.getAllByText("Plugins")).toHaveLength(2);
-    expect(screen.getAllByText("Users")).toHaveLength(2);
+    expect(screen.getAllByText("Publishers")).toHaveLength(2);
     expect(screen.getAllByText("About")).toHaveLength(2);
     expect(screen.getAllByText("Docs")).toHaveLength(2);
   });
@@ -287,7 +287,7 @@ describe("Header", () => {
 
     render(<Header />);
 
-    const input = screen.getByPlaceholderText("Search skills, plugins, users");
+    const input = screen.getByPlaceholderText("Search skills and plugins");
     fireEvent.focus(input);
     fireEvent.change(input, { target: { value: "weather" } });
 
@@ -296,7 +296,7 @@ describe("Header", () => {
     expect(screen.getByText("Weather Skill")).toBeTruthy();
     expect(within(typeahead).getByText("Plugins")).toBeTruthy();
     expect(screen.getByText("Weather Plugin")).toBeTruthy();
-    expect(within(typeahead).queryByText("Users")).toBeNull();
+    expect(within(typeahead).queryByText("Publishers")).toBeNull();
     expect(within(typeahead).queryByText('See user results for "weather"')).toBeNull();
 
     fireEvent.keyDown(input, { key: "ArrowDown" });
@@ -330,7 +330,7 @@ describe("Header", () => {
 
     render(<Header />);
 
-    const input = screen.getByPlaceholderText("Search skills, plugins, users");
+    const input = screen.getByPlaceholderText("Search skills and plugins");
     fireEvent.focus(input);
     fireEvent.change(input, { target: { value: "weather" } });
     fireEvent.click(screen.getByRole("option", { name: /Weather Skill/i }));
@@ -359,7 +359,7 @@ describe("Header", () => {
 
     render(<Header />);
 
-    const input = screen.getByPlaceholderText("Search skills, plugins, users");
+    const input = screen.getByPlaceholderText("Search skills and plugins");
     fireEvent.focus(input);
     fireEvent.change(input, { target: { value: "zzzz" } });
 
@@ -385,7 +385,7 @@ describe("Header", () => {
       .filter((label): label is string => Boolean(label));
 
     expect(labels.slice(0, 2)).toEqual(["Home", "Skills"]);
-    expect(labels.slice(3, 6)).toEqual(["Users", "About", "Docs"]);
+    expect(labels.slice(3, 6)).toEqual(["Publishers", "About", "Docs"]);
   });
 
   it("keeps Stars out of signed-in header navigation", () => {

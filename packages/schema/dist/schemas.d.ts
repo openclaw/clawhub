@@ -79,6 +79,7 @@ export declare const CliPublishRequestSchema: import("arktype/internal/variants/
         contentType?: string | undefined;
     }[];
     ownerHandle?: string | undefined;
+    migrateOwner?: boolean | undefined;
     acceptLicenseTerms?: boolean | undefined;
     tags?: string[] | undefined;
     source?: {

@@ -47,19 +47,19 @@ read_when:
   - `SKILL.md`
   - `notes.md`
 - Publish:
-  - `bun clawhub skill publish . --slug clawhub-manual-<ts> --name "Manual <ts>" --version 1.0.0 --tags latest`
+  - `bun clawhub skill publish . --slug manual-skill-<ts> --name "Manual <ts>" --version 1.0.0 --tags latest`
 - Publish update with empty changelog:
-  - `bun clawhub skill publish . --slug clawhub-manual-<ts> --name "Manual <ts>" --version 1.0.1 --tags latest`
+  - `bun clawhub skill publish . --slug manual-skill-<ts> --name "Manual <ts>" --version 1.0.1 --tags latest`
 
 ## Delete / undelete (owner/admin)
 
-- `bun clawhub delete clawhub-manual-<ts> --yes`
+- `bun clawhub delete manual-skill-<ts> --yes`
 - Verify hidden:
-- `curl -i "https://clawhub.ai/api/v1/skills/clawhub-manual-<ts>"`
+- `curl -i "https://clawhub.ai/api/v1/skills/manual-skill-<ts>"`
 - Restore:
-  - `bun clawhub undelete clawhub-manual-<ts> --yes`
+  - `bun clawhub undelete manual-skill-<ts> --yes`
 - Cleanup:
-  - `bun clawhub delete clawhub-manual-<ts> --yes`
+  - `bun clawhub delete manual-skill-<ts> --yes`
 
 ## Sync
 

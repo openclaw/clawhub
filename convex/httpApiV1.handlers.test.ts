@@ -2416,6 +2416,7 @@ describe("httpApiV1 handlers", () => {
       slug: "demo",
       displayName: "Demo",
       ownerHandle: "@openclaw",
+      migrateOwner: true,
       version: "1.0.0",
       changelog: "c",
       acceptLicenseTerms: true,
@@ -2450,7 +2451,7 @@ describe("httpApiV1 handlers", () => {
       expect.anything(),
       "users:1",
       expect.not.objectContaining({ ownerHandle: expect.anything() }),
-      { ownerPublisherId: "publishers:openclaw" },
+      { ownerPublisherId: "publishers:openclaw", migrateOwner: true },
     );
   });
 
@@ -2586,6 +2587,7 @@ describe("httpApiV1 handlers", () => {
         slug: "demo",
         displayName: "Demo",
         ownerHandle: "@openclaw",
+        migrateOwner: true,
         version: "1.0.0",
         changelog: "",
         acceptLicenseTerms: true,
@@ -2606,7 +2608,7 @@ describe("httpApiV1 handlers", () => {
       expect.anything(),
       "users:1",
       expect.not.objectContaining({ ownerHandle: expect.anything() }),
-      { ownerPublisherId: "publishers:openclaw" },
+      { ownerPublisherId: "publishers:openclaw", migrateOwner: true },
     );
   });
 
@@ -2776,7 +2778,7 @@ describe("httpApiV1 handlers", () => {
     } as never);
     const runMutation = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("key" in args) return okRate();
-      return { ok: true };
+      return args.deleted ? { ok: true, slugReservedUntil: 123 } : { ok: true };
     });
 
     const response = await __handlers.skillsDeleteRouterV1Handler(
@@ -2788,6 +2790,7 @@ describe("httpApiV1 handlers", () => {
       }),
     );
     expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, slugReservedUntil: 123 });
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
@@ -2807,6 +2810,7 @@ describe("httpApiV1 handlers", () => {
       }),
     );
     expect(response2.status).toBe(200);
+    expect(await response2.json()).toEqual({ ok: true });
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({

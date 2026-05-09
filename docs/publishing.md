@@ -37,6 +37,19 @@ The publish request includes the selected owner, slug, version, changelog, and
 files. The server verifies that the actor can publish as that owner before it
 creates the release.
 
+To move an existing skill to another owner while publishing a new version, choose
+the new owner and explicitly confirm the ownership move. In the CLI/API, pass the
+target owner plus the migration opt-in:
+
+```sh
+clawhub skill publish ./review-helper --owner openclaw --migrate-owner --version 1.2.0
+```
+
+Skill owner migration requires admin or owner access on both the current owner
+and the destination owner. It preserves the skill, version history, stats,
+comments, forks, aliases, and audit trail; old owner URLs continue through the
+alias/redirect path.
+
 ## Plugins
 
 Plugins use npm-style package names. Scoped package names include the owner in

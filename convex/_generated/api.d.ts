@@ -10,6 +10,7 @@
 
 import type * as appMeta from "../appMeta.js";
 import type * as auth from "../auth.js";
+import type * as cliDeviceAuth from "../cliDeviceAuth.js";
 import type * as commentModeration from "../commentModeration.js";
 import type * as comments from "../comments.js";
 import type * as crons from "../crons.js";
@@ -74,7 +75,9 @@ import type * as lib_packageRegistry from "../lib/packageRegistry.js";
 import type * as lib_packageSearchDigest from "../lib/packageSearchDigest.js";
 import type * as lib_packageSecurity from "../lib/packageSecurity.js";
 import type * as lib_public from "../lib/public.js";
+import type * as lib_publicRouteReservations from "../lib/publicRouteReservations.js";
 import type * as lib_publishLimits from "../lib/publishLimits.js";
+import type * as lib_publisherStats from "../lib/publisherStats.js";
 import type * as lib_publishers from "../lib/publishers.js";
 import type * as lib_reporting from "../lib/reporting.js";
 import type * as lib_reservedHandles from "../lib/reservedHandles.js";
@@ -87,6 +90,7 @@ import type * as lib_skillPublish from "../lib/skillPublish.js";
 import type * as lib_skillQuality from "../lib/skillQuality.js";
 import type * as lib_skillSafety from "../lib/skillSafety.js";
 import type * as lib_skillSearchDigest from "../lib/skillSearchDigest.js";
+import type * as lib_skillSlugValidator from "../lib/skillSlugValidator.js";
 import type * as lib_skillStats from "../lib/skillStats.js";
 import type * as lib_skillSummary from "../lib/skillSummary.js";
 import type * as lib_skillZip from "../lib/skillZip.js";
@@ -140,6 +144,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   appMeta: typeof appMeta;
   auth: typeof auth;
+  cliDeviceAuth: typeof cliDeviceAuth;
   commentModeration: typeof commentModeration;
   comments: typeof comments;
   crons: typeof crons;
@@ -204,7 +209,9 @@ declare const fullApi: ApiFromModules<{
   "lib/packageSearchDigest": typeof lib_packageSearchDigest;
   "lib/packageSecurity": typeof lib_packageSecurity;
   "lib/public": typeof lib_public;
+  "lib/publicRouteReservations": typeof lib_publicRouteReservations;
   "lib/publishLimits": typeof lib_publishLimits;
+  "lib/publisherStats": typeof lib_publisherStats;
   "lib/publishers": typeof lib_publishers;
   "lib/reporting": typeof lib_reporting;
   "lib/reservedHandles": typeof lib_reservedHandles;
@@ -217,6 +224,7 @@ declare const fullApi: ApiFromModules<{
   "lib/skillQuality": typeof lib_skillQuality;
   "lib/skillSafety": typeof lib_skillSafety;
   "lib/skillSearchDigest": typeof lib_skillSearchDigest;
+  "lib/skillSlugValidator": typeof lib_skillSlugValidator;
   "lib/skillStats": typeof lib_skillStats;
   "lib/skillSummary": typeof lib_skillSummary;
   "lib/skillZip": typeof lib_skillZip;
