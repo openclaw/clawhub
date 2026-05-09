@@ -122,7 +122,9 @@ skill. That internal namespace must remain outside the public slug validator and
 the release path must collision-check both skill slugs and historical aliases
 before patching the hidden row. The audit actor for a lazy release is the caller
 who triggered the post-expiry claim; the previous owner is preserved in audit
-metadata. Moderator/security hides are not owner unpublishes and do not expire.
+metadata. The release path may honor a stored reservation timestamp only while
+the current hide provenance is still owner-initiated (`hiddenBy === ownerUserId`).
+Moderator/security hides are not owner unpublishes and do not expire.
 
 ## Adding an official extension
 

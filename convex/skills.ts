@@ -606,13 +606,11 @@ function getUnpublishedSlugReservationExpiresAt(
   >,
 ) {
   if (!skill.softDeletedAt) return null;
+  if (skill.hiddenBy !== skill.ownerUserId) return null;
   if (typeof skill.unpublishedSlugReservedUntil === "number") {
     return skill.unpublishedSlugReservedUntil;
   }
-  if (skill.hiddenBy === skill.ownerUserId) {
-    return skill.softDeletedAt + UNPUBLISHED_SLUG_RESERVATION_MS;
-  }
-  return null;
+  return skill.softDeletedAt + UNPUBLISHED_SLUG_RESERVATION_MS;
 }
 
 function buildReleasedUnpublishedSkillSlug(skill: Pick<Doc<"skills">, "_id">, attempt = 0) {
@@ -2971,6 +2969,9 @@ export const report = mutation({
         }),
         hiddenAt: now,
         lastReviewedAt: now,
+        unpublishedSlugReservedUntil: undefined,
+        unpublishedSlugReleasedAt: undefined,
+        unpublishedOriginalSlug: undefined,
       });
     }
 
@@ -3279,6 +3280,9 @@ async function applySkillReportFinalAction(
     moderationNotes: trimManualOverrideNote(params.note),
     hiddenAt: params.now,
     hiddenBy: params.actorUserId,
+    unpublishedSlugReservedUntil: undefined,
+    unpublishedSlugReleasedAt: undefined,
+    unpublishedOriginalSlug: undefined,
     lastReviewedAt: params.now,
     updatedAt: params.now,
   };
@@ -5571,6 +5575,9 @@ export const escalateSkillByIdInternal = internalMutation({
       }),
       hiddenAt: moderationStatus === "hidden" ? now : undefined,
       hiddenBy: undefined,
+      unpublishedSlugReservedUntil: undefined,
+      unpublishedSlugReleasedAt: undefined,
+      unpublishedOriginalSlug: undefined,
       lastReviewedAt: moderationStatus === "hidden" ? now : undefined,
       updatedAt: now,
     };
@@ -6238,6 +6245,9 @@ export const approveSkillByHashInternal = internalMutation({
         }),
         hiddenAt: nextModerationStatus === "hidden" ? now : undefined,
         hiddenBy: undefined,
+        unpublishedSlugReservedUntil: undefined,
+        unpublishedSlugReleasedAt: undefined,
+        unpublishedOriginalSlug: undefined,
         lastReviewedAt: nextModerationStatus === "hidden" ? now : undefined,
         updatedAt: now,
       };
@@ -6356,6 +6366,9 @@ export const escalateByVtInternal = internalMutation({
       // "malicious", both of which the undelete gate also enforces.
       basePatch.hiddenAt = now;
       basePatch.hiddenBy = undefined;
+      basePatch.unpublishedSlugReservedUntil = undefined;
+      basePatch.unpublishedSlugReleasedAt = undefined;
+      basePatch.unpublishedOriginalSlug = undefined;
       basePatch.lastReviewedAt = now;
     } else if (nextVerdict === "clean" && !alreadyBlocked) {
       basePatch.moderationStatus = "active";
@@ -8833,6 +8846,9 @@ export const hideSkillForSecurityRedactionInternal = internalMutation({
       moderationNotes: note,
       hiddenAt: now,
       hiddenBy: actor._id,
+      unpublishedSlugReservedUntil: undefined,
+      unpublishedSlugReleasedAt: undefined,
+      unpublishedOriginalSlug: undefined,
       lastReviewedAt: now,
       updatedAt: now,
     };

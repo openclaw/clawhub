@@ -246,6 +246,44 @@ describe("skills.checkSlugAvailability", () => {
     });
   });
 
+  it("returns taken when a stale owner reservation remains on a moderation hide", async () => {
+    const now = 1_700_000_000_000;
+    vi.spyOn(Date, "now").mockReturnValue(now);
+    vi.mocked(getAuthUserId).mockResolvedValue("users:caller" as never);
+
+    const result = (await checkSlugAvailabilityHandler(
+      createCtx({
+        skill: {
+          _id: "skills:1",
+          slug: "moderated-skill",
+          ownerUserId: "users:owner",
+          softDeletedAt: now - 120_000,
+          hiddenBy: undefined,
+          unpublishedSlugReservedUntil: now - 60_000,
+          moderationStatus: "hidden",
+          moderationFlags: ["blocked.malware"],
+        },
+        owner: {
+          _id: "users:owner",
+          handle: "owner",
+        },
+      }) as never,
+      { slug: "moderated-skill" } as never,
+    )) as {
+      available: boolean;
+      reason: string;
+      message: string;
+      url: string | null;
+    };
+
+    expect(result).toEqual({
+      available: false,
+      reason: "taken",
+      message: "Slug is already taken. Choose a different slug.",
+      url: null,
+    });
+  });
+
   it("returns taken with URL for public collisions", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:caller" as never);
 
