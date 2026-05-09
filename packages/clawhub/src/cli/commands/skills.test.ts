@@ -632,48 +632,19 @@ describe("cmdInstall", () => {
     expect(zipArgs?.token).toBe("tkn");
   });
 
-  it("reports when reinstalling a pinned skill preserves pin state", async () => {
-    mockApiRequest.mockResolvedValue({
-      skill: {
-        slug: "demo",
-        displayName: "Demo",
-        summary: null,
-        tags: {},
-        stats: {},
-        createdAt: 0,
-        updatedAt: 0,
-      },
-      latestVersion: { version: "1.0.0" },
-      owner: null,
-      moderation: null,
-    });
-    mockDownloadZip.mockResolvedValue(new Uint8Array([1, 2, 3]));
+  it("blocks force reinstall when a skill is pinned", async () => {
     vi.mocked(readLockfile).mockResolvedValue({
       version: 1,
       skills: { demo: { version: "0.9.0", installedAt: 123, pinned: true, pinReason: "hold" } },
     });
-    vi.mocked(writeLockfile).mockResolvedValue();
-    vi.mocked(writeSkillOrigin).mockResolvedValue();
-    vi.mocked(extractZipToDir).mockResolvedValue();
     vi.mocked(stat).mockRejectedValue(new Error("missing"));
-    vi.mocked(rm).mockResolvedValue();
 
-    await cmdInstall(makeOpts(), "demo");
+    await expect(cmdInstall(makeOpts(), "demo", undefined, true)).rejects.toThrow(/is pinned/i);
 
-    expect(writeLockfile).toHaveBeenCalledWith("/work", {
-      version: 1,
-      skills: {
-        demo: {
-          version: "1.0.0",
-          installedAt: expect.any(Number),
-          pinned: true,
-          pinReason: "hold",
-        },
-      },
-    });
-    expect(mockLog).toHaveBeenCalledWith(
-      "demo is pinned; reinstall will not change pin state",
-    );
+    expect(mockApiRequest).not.toHaveBeenCalled();
+    expect(mockDownloadZip).not.toHaveBeenCalled();
+    expect(rm).not.toHaveBeenCalled();
+    expect(writeLockfile).not.toHaveBeenCalled();
   });
 
   it("does not rm local directory when skill is malware-blocked (--force)", async () => {

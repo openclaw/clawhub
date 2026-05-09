@@ -126,6 +126,7 @@ Stores your API token + cached registry URL.
 - Resolves latest version via `/api/v1/skills/<slug>`.
 - Downloads zip via `/api/v1/download`.
 - Extracts into `<workdir>/<dir>/<slug>`.
+- Refuses to overwrite pinned skills; run `clawhub unpin <slug>` first.
 - Writes:
   - `<workdir>/.clawhub/lock.json` (legacy `.clawdhub`)
   - `<skill>/.clawhub/origin.json` (legacy `.clawdhub`)
@@ -146,6 +147,7 @@ Stores your API token + cached registry URL.
 - Marks an installed skill as pinned in the lockfile.
 - `--reason <text>` records why the skill is frozen.
 - Pinned skills are skipped by `update --all` and rejected by direct `update <slug>`.
+- Pinned skills also reject `install --force` so the local bytes cannot be replaced accidentally.
 
 ### `unpin <slug>`
 

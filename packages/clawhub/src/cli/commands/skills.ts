@@ -169,6 +169,12 @@ export async function cmdInstall(
     if (exists) fail(`Already installed: ${target} (use --force)`);
   }
 
+  const lock = await readLockfile(opts.workdir);
+  const existingEntry = lock.skills[trimmed];
+  if (isPinnedSkillEntry(existingEntry)) {
+    fail(`skill "${trimmed}" is pinned; run \`clawhub unpin ${trimmed}\` first`);
+  }
+
   const spinner = createSpinner(`Resolving ${trimmed}`);
   try {
     // Fetch skill metadata including moderation status
@@ -233,13 +239,8 @@ export async function cmdInstall(
       installedAt: Date.now(),
     });
 
-    const lock = await readLockfile(opts.workdir);
-    const existingEntry = lock.skills[trimmed];
     lock.skills[trimmed] = withPinnedMetadata(resolvedVersion, Date.now(), existingEntry);
     await writeLockfile(opts.workdir, lock);
-    if (isPinnedSkillEntry(existingEntry)) {
-      console.log(`${trimmed} is pinned; reinstall will not change pin state`);
-    }
     spinner.succeed(`OK. Installed ${trimmed} -> ${target}`);
   } catch (error) {
     spinner.fail(formatError(error));
@@ -441,11 +442,7 @@ export async function cmdList(opts: GlobalOpts) {
   }
 }
 
-export async function cmdPin(
-  opts: GlobalOpts,
-  slug: string,
-  options: { reason?: string } = {},
-) {
+export async function cmdPin(opts: GlobalOpts, slug: string, options: { reason?: string } = {}) {
   const trimmed = normalizeSkillSlugOrFail(slug);
   const lock = await readLockfile(opts.workdir);
   const existing = lock.skills[trimmed];
