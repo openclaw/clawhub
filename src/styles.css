@@ -4934,7 +4934,7 @@ form.summary-edit-form .summary-textarea:focus {
     display: grid;
     grid-template-columns: 56px minmax(0, 1fr) 56px;
     align-items: center;
-    padding: 10px 16px;
+    padding: 10px 18px;
     gap: 12px;
     min-height: 0;
   }
@@ -5069,15 +5069,15 @@ form.summary-edit-form .summary-textarea:focus {
     width: 56px;
     min-width: 56px;
     height: 56px;
-    padding: 3px;
+    padding: 4px;
     justify-content: center;
     border-radius: var(--r-md);
   }
 
   .user-trigger img,
   .user-menu-fallback {
-    width: 48px;
-    height: 48px;
+    width: 44px;
+    height: 44px;
   }
 
   .user-trigger .mono,
