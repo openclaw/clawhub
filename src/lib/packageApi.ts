@@ -351,6 +351,7 @@ export async function fetchPluginCatalog(params: {
   isOfficial?: boolean;
   featured?: boolean;
   executesCode?: boolean;
+  sort?: "relevance" | "updated" | "newest" | "name";
   limit?: number;
   signal?: AbortSignal;
 }): Promise<PluginCatalogResult> {
@@ -382,6 +383,8 @@ export async function fetchPluginCatalog(params: {
   if (params.q?.trim()) {
     const url = await packageApiUrl(`${ApiRoutes.plugins}/search`);
     url.searchParams.set("q", params.q.trim());
+    if (params.cursor) url.searchParams.set("cursor", params.cursor);
+    if (params.sort && params.sort !== "relevance") url.searchParams.set("sort", params.sort);
     if (typeof params.limit === "number") url.searchParams.set("limit", String(params.limit));
     if (typeof params.isOfficial === "boolean") {
       url.searchParams.set("isOfficial", String(params.isOfficial));
@@ -392,12 +395,13 @@ export async function fetchPluginCatalog(params: {
     }
     const response = await fetchJson<{
       results?: Array<{ score: number; package: PackageListItem }>;
+      nextCursor?: string | null;
     }>(url, params.signal);
     return {
       items: (response?.results ?? [])
         .map((entry) => entry?.package)
         .filter(Boolean) as PackageListItem[],
-      nextCursor: null,
+      nextCursor: response?.nextCursor ?? null,
     };
   }
 

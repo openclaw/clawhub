@@ -3805,6 +3805,132 @@ describe("httpApiV1 handlers", () => {
     ]);
   });
 
+  it("plugins search supports API-backed name sort with per-family cursors", async () => {
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if (args.family === "code-plugin") {
+        expect(args).toEqual(
+          expect.objectContaining({
+            query: "plugin",
+            sort: "name",
+            cursor: null,
+            limit: 2,
+          }),
+        );
+        return {
+          page: [
+            {
+              score: 10,
+              package: makeCatalogItem("alpha-code", {
+                family: "code-plugin",
+                updatedAt: 100,
+              }),
+            },
+            {
+              score: 10,
+              package: makeCatalogItem("zulu-code", {
+                family: "code-plugin",
+                updatedAt: 90,
+              }),
+            },
+          ],
+          isDone: false,
+          continueCursor: "code-next",
+        };
+      }
+      if (args.family === "bundle-plugin") {
+        expect(args).toEqual(
+          expect.objectContaining({
+            query: "plugin",
+            sort: "name",
+            cursor: null,
+            limit: 2,
+          }),
+        );
+        return {
+          page: [
+            {
+              score: 10,
+              package: makeCatalogItem("bravo-bundle", {
+                family: "bundle-plugin",
+                updatedAt: 80,
+              }),
+            },
+          ],
+          isDone: true,
+          continueCursor: "",
+        };
+      }
+      throw new Error(`unexpected family ${String(args.family)}`);
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.pluginsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/plugins/search?q=plugin&sort=name&limit=2"),
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.results.map((entry: { package: { name: string } }) => entry.package.name)).toEqual([
+      "alpha-code",
+      "bravo-bundle",
+    ]);
+    expect(json.nextCursor).toMatch(/^pkgpluginsearch:/);
+  });
+
+  it("plugins search passes sorted search cursors back to package queries", async () => {
+    const firstCursorState = {
+      codePlugins: { cursor: "code-next", offset: 0, pageSize: 2, done: false },
+      bundlePlugins: { cursor: null, offset: 0, pageSize: 2, done: true },
+    };
+    const cursor = `pkgpluginsearch:${JSON.stringify(firstCursorState)}`;
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if (args.family === "code-plugin") {
+        expect(args).toEqual(
+          expect.objectContaining({
+            sort: "updated",
+            cursor: "code-next",
+          }),
+        );
+        return {
+          page: [
+            {
+              score: 10,
+              package: makeCatalogItem("next-code", {
+                family: "code-plugin",
+                updatedAt: 70,
+              }),
+            },
+          ],
+          isDone: true,
+          continueCursor: "",
+        };
+      }
+      if (args.family === "bundle-plugin") {
+        throw new Error("done bundle source should not be queried");
+      }
+      throw new Error(`unexpected family ${String(args.family)}`);
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const url = new URL("https://example.com/api/v1/plugins/search");
+    url.searchParams.set("q", "plugin");
+    url.searchParams.set("sort", "updated");
+    url.searchParams.set("limit", "2");
+    url.searchParams.set("cursor", cursor);
+
+    const response = await __handlers.pluginsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(url),
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.results.map((entry: { package: { name: string } }) => entry.package.name)).toEqual([
+      "next-code",
+    ]);
+    expect(json.nextCursor).toBeNull();
+  });
+
   it("packages list forwards viewerUserId for authenticated private package browsing", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
     const runQuery = vi.fn().mockResolvedValue({ page: [], isDone: true, continueCursor: "" });

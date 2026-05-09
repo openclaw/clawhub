@@ -87,6 +87,7 @@ import {
 const MAX_PUBLIC_LIST_PAGE_SIZE = 200;
 const MAX_SEARCH_PAGE_SIZE = 200;
 const MAX_DIRECT_PACKAGE_SEARCH_CANDIDATES = 20;
+const MAX_SORTED_SEARCH_SCAN_SIZE = 500;
 const MAX_APPEAL_MESSAGE_LENGTH = 2_000;
 const MAX_OFFICIAL_MIGRATION_BLOCKERS = 20;
 const MAX_OFFICIAL_MIGRATION_FIELD_LENGTH = 300;
@@ -465,6 +466,7 @@ type PackageDigestLike = Pick<
 > & {
   capabilityTag?: string;
 };
+type PackageSearchSort = "relevance" | "updated" | "newest" | "name";
 type PublicPageCursorState = {
   cursor: string | null;
   offset: number;
@@ -1151,6 +1153,85 @@ function buildPackageDigestQuery(
     .withIndex("by_active_updated", (q) => q.eq("softDeletedAt", undefined));
 }
 
+function buildSortedPackageDigestQuery(
+  ctx: DbReaderCtx,
+  args: {
+    family: PackageFamily;
+    isOfficial?: boolean;
+    executesCode?: boolean;
+  },
+  sort: Exclude<PackageSearchSort, "relevance">,
+) {
+  if (sort === "updated") {
+    return buildPackageDigestQuery(ctx, args);
+  }
+
+  const family = args.family;
+  const isOfficial = args.isOfficial;
+  const executesCode = args.executesCode;
+  const suffix = sort === "newest" ? "created" : "name";
+
+  if (typeof isOfficial === "boolean" && typeof executesCode === "boolean") {
+    return suffix === "created"
+      ? ctx.db
+          .query("packageSearchDigest")
+          .withIndex("by_active_family_official_executes_created", (q) =>
+            q
+              .eq("softDeletedAt", undefined)
+              .eq("family", family)
+              .eq("isOfficial", isOfficial)
+              .eq("executesCode", executesCode),
+          )
+      : ctx.db
+          .query("packageSearchDigest")
+          .withIndex("by_active_family_official_executes_name", (q) =>
+            q
+              .eq("softDeletedAt", undefined)
+              .eq("family", family)
+              .eq("isOfficial", isOfficial)
+              .eq("executesCode", executesCode),
+          );
+  }
+  if (typeof isOfficial === "boolean") {
+    return suffix === "created"
+      ? ctx.db
+          .query("packageSearchDigest")
+          .withIndex("by_active_family_official_created", (q) =>
+            q.eq("softDeletedAt", undefined).eq("family", family).eq("isOfficial", isOfficial),
+          )
+      : ctx.db
+          .query("packageSearchDigest")
+          .withIndex("by_active_family_official_name", (q) =>
+            q.eq("softDeletedAt", undefined).eq("family", family).eq("isOfficial", isOfficial),
+          );
+  }
+  if (typeof executesCode === "boolean") {
+    return suffix === "created"
+      ? ctx.db
+          .query("packageSearchDigest")
+          .withIndex("by_active_family_executes_created", (q) =>
+            q.eq("softDeletedAt", undefined).eq("family", family).eq("executesCode", executesCode),
+          )
+      : ctx.db
+          .query("packageSearchDigest")
+          .withIndex("by_active_family_executes_name", (q) =>
+            q.eq("softDeletedAt", undefined).eq("family", family).eq("executesCode", executesCode),
+          );
+  }
+
+  return suffix === "created"
+    ? ctx.db
+        .query("packageSearchDigest")
+        .withIndex("by_active_family_created", (q) =>
+          q.eq("softDeletedAt", undefined).eq("family", family),
+        )
+    : ctx.db
+        .query("packageSearchDigest")
+        .withIndex("by_active_family_name", (q) =>
+          q.eq("softDeletedAt", undefined).eq("family", family),
+        );
+}
+
 function buildPackageCapabilityDigestQuery(
   ctx: DbReaderCtx,
   args: {
@@ -1313,6 +1394,110 @@ function buildPackageCapabilityDigestQuery(
     .withIndex("by_active_tag_updated", (q) =>
       q.eq("softDeletedAt", undefined).eq("capabilityTag", args.capabilityTag),
     );
+}
+
+function buildSortedPackageCapabilityDigestQuery(
+  ctx: DbReaderCtx,
+  args: {
+    capabilityTag: string;
+    family: PackageFamily;
+    isOfficial?: boolean;
+    executesCode?: boolean;
+  },
+  sort: Exclude<PackageSearchSort, "relevance">,
+) {
+  if (sort === "updated") {
+    return buildPackageCapabilityDigestQuery(ctx, args);
+  }
+
+  const family = args.family;
+  const isOfficial = args.isOfficial;
+  const executesCode = args.executesCode;
+  const suffix = sort === "newest" ? "created" : "name";
+
+  if (typeof isOfficial === "boolean" && typeof executesCode === "boolean") {
+    return suffix === "created"
+      ? ctx.db
+          .query("packageCapabilitySearchDigest")
+          .withIndex("by_active_family_official_tag_executes_created", (q) =>
+            q
+              .eq("softDeletedAt", undefined)
+              .eq("family", family)
+              .eq("isOfficial", isOfficial)
+              .eq("capabilityTag", args.capabilityTag)
+              .eq("executesCode", executesCode),
+          )
+      : ctx.db
+          .query("packageCapabilitySearchDigest")
+          .withIndex("by_active_family_official_tag_executes_name", (q) =>
+            q
+              .eq("softDeletedAt", undefined)
+              .eq("family", family)
+              .eq("isOfficial", isOfficial)
+              .eq("capabilityTag", args.capabilityTag)
+              .eq("executesCode", executesCode),
+          );
+  }
+  if (typeof isOfficial === "boolean") {
+    return suffix === "created"
+      ? ctx.db
+          .query("packageCapabilitySearchDigest")
+          .withIndex("by_active_family_official_tag_created", (q) =>
+            q
+              .eq("softDeletedAt", undefined)
+              .eq("family", family)
+              .eq("isOfficial", isOfficial)
+              .eq("capabilityTag", args.capabilityTag),
+          )
+      : ctx.db
+          .query("packageCapabilitySearchDigest")
+          .withIndex("by_active_family_official_tag_name", (q) =>
+            q
+              .eq("softDeletedAt", undefined)
+              .eq("family", family)
+              .eq("isOfficial", isOfficial)
+              .eq("capabilityTag", args.capabilityTag),
+          );
+  }
+  if (typeof executesCode === "boolean") {
+    return suffix === "created"
+      ? ctx.db
+          .query("packageCapabilitySearchDigest")
+          .withIndex("by_active_family_tag_executes_created", (q) =>
+            q
+              .eq("softDeletedAt", undefined)
+              .eq("family", family)
+              .eq("capabilityTag", args.capabilityTag)
+              .eq("executesCode", executesCode),
+          )
+      : ctx.db
+          .query("packageCapabilitySearchDigest")
+          .withIndex("by_active_family_tag_executes_name", (q) =>
+            q
+              .eq("softDeletedAt", undefined)
+              .eq("family", family)
+              .eq("capabilityTag", args.capabilityTag)
+              .eq("executesCode", executesCode),
+          );
+  }
+
+  return suffix === "created"
+    ? ctx.db
+        .query("packageCapabilitySearchDigest")
+        .withIndex("by_active_family_tag_created", (q) =>
+          q
+            .eq("softDeletedAt", undefined)
+            .eq("family", family)
+            .eq("capabilityTag", args.capabilityTag),
+        )
+    : ctx.db
+        .query("packageCapabilitySearchDigest")
+        .withIndex("by_active_family_tag_name", (q) =>
+          q
+            .eq("softDeletedAt", undefined)
+            .eq("family", family)
+            .eq("capabilityTag", args.capabilityTag),
+        );
 }
 
 async function fetchHighlightedPackageDigests(
@@ -1812,6 +1997,197 @@ export const searchForViewerInternal = internalQuery({
     return await searchPackagesImpl(ctx, args);
   },
 });
+
+export const searchPageForViewerInternal = internalQuery({
+  args: {
+    query: v.string(),
+    limit: v.optional(v.number()),
+    cursor: v.optional(v.union(v.string(), v.null())),
+    sort: v.union(v.literal("updated"), v.literal("newest"), v.literal("name")),
+    family: v.union(v.literal("code-plugin"), v.literal("bundle-plugin")),
+    channel: v.optional(
+      v.union(v.literal("official"), v.literal("community"), v.literal("private")),
+    ),
+    isOfficial: v.optional(v.boolean()),
+    highlightedOnly: v.optional(v.boolean()),
+    executesCode: v.optional(v.boolean()),
+    capabilityTag: v.optional(v.string()),
+    viewerUserId: v.optional(v.id("users")),
+  },
+  handler: async (ctx, args) => {
+    return await searchPackagePageImpl(ctx, args);
+  },
+});
+
+function comparePublicPackagesForSort(
+  a: PublicPackageListItem,
+  b: PublicPackageListItem,
+  sort: Exclude<PackageSearchSort, "relevance">,
+) {
+  if (sort === "name") {
+    return (
+      a.displayName.localeCompare(b.displayName) ||
+      a.name.localeCompare(b.name) ||
+      a.family.localeCompare(b.family)
+    );
+  }
+  if (sort === "newest") {
+    return (
+      b.createdAt - a.createdAt ||
+      b.updatedAt - a.updatedAt ||
+      a.family.localeCompare(b.family) ||
+      a.name.localeCompare(b.name)
+    );
+  }
+  return (
+    b.updatedAt - a.updatedAt ||
+    b.createdAt - a.createdAt ||
+    a.family.localeCompare(b.family) ||
+    a.name.localeCompare(b.name)
+  );
+}
+
+async function searchPackagePageImpl(
+  ctx: DbReaderCtx,
+  args: {
+    query: string;
+    limit?: number;
+    cursor?: string | null;
+    sort: Exclude<PackageSearchSort, "relevance">;
+    family: Extract<PackageFamily, "code-plugin" | "bundle-plugin">;
+    channel?: PackageChannel;
+    isOfficial?: boolean;
+    highlightedOnly?: boolean;
+    executesCode?: boolean;
+    capabilityTag?: string;
+    viewerUserId?: Id<"users">;
+  },
+) {
+  const queryText = args.query.trim().toLowerCase();
+  const targetCount = Math.max(1, Math.min(args.limit ?? 20, 100));
+  if (!queryText) return { page: [], isDone: true, continueCursor: "" };
+  if (args.channel === "private" && !args.viewerUserId) {
+    return { page: [], isDone: true, continueCursor: "" };
+  }
+
+  const viewerUserId = args.viewerUserId;
+  const membershipCache = new Map<string, Promise<boolean>>();
+  const canViewPackage = async (digest: PackageDigestLike) =>
+    await canViewerReadPackage(ctx, digest, viewerUserId, membershipCache);
+
+  if (args.highlightedOnly) {
+    const decodedCursor = decodePublicPageCursor(args.cursor);
+    const digests = (await fetchHighlightedPackageDigests(ctx, args))
+      .map((digest) => ({
+        score: packageSearchScore(digest, queryText),
+        package: toPublicPackageListItem(digest),
+      }))
+      .filter((entry) => entry.score > 0)
+      .sort((a, b) => comparePublicPackagesForSort(a.package, b.package, args.sort));
+    const page = digests.slice(decodedCursor.offset, decodedCursor.offset + targetCount);
+    const nextOffset = decodedCursor.offset + page.length;
+    const isDone = nextOffset >= digests.length;
+    return {
+      page,
+      isDone,
+      continueCursor: isDone
+        ? ""
+        : encodePublicPageCursor({
+            cursor: null,
+            offset: nextOffset,
+            pageSize: targetCount,
+            done: false,
+          }),
+    };
+  }
+
+  const decodedCursor = decodePublicPageCursor(args.cursor);
+  if (decodedCursor.done && decodedCursor.offset === 0) {
+    return { page: [], isDone: true, continueCursor: "" };
+  }
+
+  let pageCursor = decodedCursor.cursor;
+  let offset = decodedCursor.offset;
+  const effectivePageSize = Math.min(
+    MAX_SEARCH_PAGE_SIZE,
+    Math.max(
+      targetCount,
+      decodedCursor.pageSize ?? 0,
+      offset > 0 ? offset + targetCount : targetCount,
+    ),
+  );
+  const collected: Array<{ score: number; package: PublicPackageListItem }> = [];
+  let scanned = 0;
+  let isDone = false;
+  let continueCursor = "";
+
+  while (collected.length < targetCount && scanned < MAX_SORTED_SEARCH_SCAN_SIZE) {
+    const builder = args.capabilityTag
+      ? buildSortedPackageCapabilityDigestQuery(
+          ctx,
+          {
+            capabilityTag: args.capabilityTag,
+            family: args.family,
+            isOfficial: args.isOfficial,
+            executesCode: args.executesCode,
+          },
+          args.sort,
+        )
+      : buildSortedPackageDigestQuery(ctx, args, args.sort);
+    const page = await builder
+      .order(args.sort === "name" ? "asc" : "desc")
+      .paginate({ cursor: pageCursor, numItems: effectivePageSize });
+
+    for (let index = offset; index < page.page.length; index += 1) {
+      scanned += 1;
+      const digest = page.page[index] as PackageDigestLike;
+      if (!(await canViewPackage(digest))) continue;
+      if (!digestMatchesSearchFilters(digest, args)) continue;
+      const score = packageSearchScore(digest, queryText);
+      if (score <= 0) continue;
+      collected.push({ score, package: toPublicPackageListItem(digest) });
+      if (collected.length >= targetCount) {
+        const nextOffset = index + 1;
+        const nextState =
+          nextOffset < page.page.length
+            ? {
+                cursor: pageCursor,
+                offset: nextOffset,
+                pageSize: effectivePageSize,
+                done: page.isDone,
+              }
+            : {
+                cursor: page.continueCursor,
+                offset: 0,
+                pageSize: effectivePageSize,
+                done: page.isDone,
+              };
+        return {
+          page: collected,
+          isDone: nextState.done && nextState.offset === 0,
+          continueCursor: encodePublicPageCursor(nextState),
+        };
+      }
+    }
+
+    isDone = page.isDone;
+    continueCursor = page.continueCursor;
+    if (page.isDone) break;
+    pageCursor = page.continueCursor;
+    offset = 0;
+  }
+
+  return {
+    page: collected,
+    isDone,
+    continueCursor: encodePublicPageCursor({
+      cursor: continueCursor,
+      offset: 0,
+      pageSize: effectivePageSize,
+      done: isDone,
+    }),
+  };
+}
 
 async function searchPackagesImpl(
   ctx: DbReaderCtx,

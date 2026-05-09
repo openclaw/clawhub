@@ -11,7 +11,7 @@ import {
   type PackageListItem,
 } from "../../lib/packageApi";
 
-type PluginSort = "relevance" | "updated";
+type PluginSort = "relevance" | "updated" | "newest" | "name";
 
 const PLUGINS_PAGE_SIZE = 100;
 
@@ -53,7 +53,7 @@ function formatRetryDelay(retryAfterSeconds: number | null) {
 }
 
 function parsePluginSort(value: unknown): PluginSort | undefined {
-  if (value === "relevance" || value === "updated") {
+  if (value === "relevance" || value === "updated" || value === "newest" || value === "name") {
     return value;
   }
   return undefined;
@@ -80,9 +80,7 @@ export const Route = createFileRoute("/plugins/")({
   }),
   beforeLoad: ({ search }) => {
     const hasQuery = Boolean(search.q?.trim());
-    const incompatibleSort =
-      (hasQuery && search.sort && search.sort !== "relevance") ||
-      (!hasQuery && search.sort && search.sort !== "updated");
+    const incompatibleSort = !hasQuery && search.sort && search.sort !== "updated";
     const browseOnlyFeatured = hasQuery && search.featured;
     if (incompatibleSort || browseOnlyFeatured) {
       throw redirect({
@@ -102,15 +100,18 @@ export const Route = createFileRoute("/plugins/")({
     featured: search.featured,
     verified: search.verified,
     executesCode: search.executesCode,
+    sort: search.sort,
   }),
   loader: async ({ deps }): Promise<PluginsLoaderData> => {
     try {
+      const searchSort = deps.q ? (deps.sort ?? "relevance") : undefined;
       const data = await fetchPluginCatalog({
         q: deps.q,
-        cursor: deps.q ? undefined : deps.cursor,
+        cursor: deps.q && searchSort === "relevance" ? undefined : deps.cursor,
         featured: deps.featured,
         isOfficial: deps.verified,
         executesCode: deps.executesCode,
+        sort: searchSort,
         limit: PLUGINS_PAGE_SIZE,
       });
 
@@ -172,11 +173,20 @@ function PluginsIndex() {
     return PLUGIN_CATEGORIES.find((c) => c.keywords.some((k) => k === trimmed))?.slug ?? undefined;
   }, [search.q]);
 
-  const activeSort = hasQuery ? "relevance" : search.featured ? "featured" : "updated";
+  const activeSort = hasQuery
+    ? (search.sort ?? "relevance")
+    : search.featured
+      ? "featured"
+      : "updated";
 
   const sortOptions = useMemo(() => {
     if (hasQuery) {
-      return [{ value: "relevance", label: "Relevance" }];
+      return [
+        { value: "relevance", label: "Relevance" },
+        { value: "updated", label: "Recently updated" },
+        { value: "newest", label: "Newest" },
+        { value: "name", label: "Name" },
+      ];
     }
     return [
       { value: "featured", label: "Featured" },
@@ -215,6 +225,20 @@ function PluginsIndex() {
           q: undefined,
           sort: undefined,
         }),
+      });
+      return;
+    }
+
+    if (hasQuery) {
+      void navigate({
+        search: (prev: PluginSearchState) => ({
+          ...prev,
+          cursor: undefined,
+          family: undefined,
+          featured: undefined,
+          sort: parsePluginSort(value) === "relevance" ? undefined : parsePluginSort(value),
+        }),
+        replace: true,
       });
       return;
     }
@@ -417,7 +441,7 @@ function PluginsIndex() {
             </div>
           )}
 
-          {!search.q && (search.cursor || nextCursor) ? (
+          {(!search.q || activeSort !== "relevance") && (search.cursor || nextCursor) ? (
             <div className="mt-5 flex justify-center gap-3">
               {search.cursor ? (
                 <Button

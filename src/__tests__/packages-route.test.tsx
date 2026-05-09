@@ -137,7 +137,7 @@ describe("plugins route", () => {
     ).toThrow();
   });
 
-  it("redirects browse-only sorts back to default when search is active", async () => {
+  it("keeps API-backed search sorts when search is active", async () => {
     const route = await loadRoute();
     const beforeLoad = (
       route.__config as never as {
@@ -149,7 +149,17 @@ describe("plugins route", () => {
       beforeLoad?.({
         search: { q: "security", sort: "updated" },
       }),
-    ).toThrow();
+    ).not.toThrow();
+    expect(() =>
+      beforeLoad?.({
+        search: { q: "security", sort: "newest" },
+      }),
+    ).not.toThrow();
+    expect(() =>
+      beforeLoad?.({
+        search: { q: "security", sort: "name" },
+      }),
+    ).not.toThrow();
   });
 
   it("redirects browse-only featured URLs when search is active", async () => {
@@ -213,6 +223,31 @@ describe("plugins route", () => {
       }),
     );
     expect(fetchPluginCatalogMock.mock.calls[0]?.[0]).not.toHaveProperty("family");
+  });
+
+  it("forwards sorted search cursors through the loader", async () => {
+    fetchPluginCatalogMock.mockResolvedValue({ items: [], nextCursor: "cursor:next" });
+    const route = await loadRoute();
+    const loader = route.__config.loader as (args: {
+      deps: Record<string, unknown>;
+    }) => Promise<unknown>;
+
+    await loader({
+      deps: {
+        q: "security",
+        sort: "name",
+        cursor: "cursor:search",
+      },
+    });
+
+    expect(fetchPluginCatalogMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        q: "security",
+        sort: "name",
+        cursor: "cursor:search",
+        limit: 100,
+      }),
+    );
   });
 
   it("renders next-page controls for browse mode", async () => {
@@ -480,7 +515,8 @@ describe("plugins route", () => {
     expect(validateSearch({ sort: "invalid" })).toEqual(
       expect.objectContaining({ sort: undefined }),
     );
-    expect(validateSearch({ sort: "name" })).toEqual(expect.objectContaining({ sort: undefined }));
+    expect(validateSearch({ sort: "newest" })).toEqual(expect.objectContaining({ sort: "newest" }));
+    expect(validateSearch({ sort: "name" })).toEqual(expect.objectContaining({ sort: "name" }));
     expect(validateSearch({})).toEqual(expect.objectContaining({ sort: undefined }));
   });
 
@@ -547,7 +583,7 @@ describe("plugins route", () => {
     });
   });
 
-  it("shows only relevance sort when a category query is active", async () => {
+  it("shows API-backed sort choices when a category query is active", async () => {
     searchMock = { q: "security" };
     loaderDataMock = {
       items: [
@@ -572,8 +608,30 @@ describe("plugins route", () => {
     render(<Component />);
 
     expect(screen.getByRole("radio", { name: "Relevance" })).toBeTruthy();
-    expect(screen.queryByRole("radio", { name: "Newest" })).toBeNull();
-    expect(screen.queryByRole("radio", { name: "Name" })).toBeNull();
+    expect(screen.getByRole("radio", { name: "Recently updated" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "Newest" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "Name" })).toBeTruthy();
+  });
+
+  it("selects API-backed search sort without changing the query", async () => {
+    searchMock = { q: "security" };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    fireEvent.click(screen.getByRole("radio", { name: "Name" }));
+
+    const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
+      search: (prev: Record<string, unknown>) => Record<string, unknown>;
+    };
+    expect(lastCall.search({ q: "security", cursor: "cursor:current" })).toEqual({
+      q: "security",
+      cursor: undefined,
+      family: undefined,
+      featured: undefined,
+      sort: "name",
+    });
   });
 
   it("keeps search sort visible even if a stale featured flag is present", async () => {
