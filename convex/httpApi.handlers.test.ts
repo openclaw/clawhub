@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("./lib/apiTokenAuth", () => ({
+  getOptionalApiTokenUser: vi.fn(),
   requireApiTokenUser: vi.fn(),
 }));
 
@@ -9,7 +10,7 @@ vi.mock("./skills", () => ({
   publishVersionForUser: vi.fn(),
 }));
 
-const { requireApiTokenUser } = await import("./lib/apiTokenAuth");
+const { getOptionalApiTokenUser, requireApiTokenUser } = await import("./lib/apiTokenAuth");
 const { publishVersionForUser } = await import("./skills");
 const { __handlers } = await import("./httpApi");
 const { hashSkillFiles } = await import("./lib/skills");
@@ -20,6 +21,7 @@ function makeCtx(partial: Record<string, unknown>) {
 
 describe("httpApi handlers", () => {
   afterEach(() => {
+    vi.mocked(getOptionalApiTokenUser).mockReset();
     vi.mocked(requireApiTokenUser).mockReset();
     vi.mocked(publishVersionForUser).mockReset();
   });
@@ -343,6 +345,102 @@ describe("httpApi handlers", () => {
       }),
     );
     expect(response.status).toBe(401);
+  });
+
+  it("cliDeviceCodeHttp rate limits and creates a device code", async () => {
+    vi.mocked(getOptionalApiTokenUser).mockResolvedValueOnce(null);
+    const result = {
+      device_code: "device",
+      user_code: "ABCD-2345",
+      verification_uri: "https://clawhub.ai/cli/device?code=ABCD-2345",
+      expires_in: 900,
+      interval: 5,
+    };
+    const runQuery = vi.fn().mockResolvedValue({
+      allowed: true,
+      remaining: 300,
+      limit: 300,
+      resetAt: Date.now() + 60_000,
+    });
+    const runMutation = vi
+      .fn()
+      .mockResolvedValueOnce({ allowed: true, remaining: 299 })
+      .mockResolvedValueOnce(result);
+
+    const response = await __handlers.cliDeviceCodeHandler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://x/api/cli/device/code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scope: "read write",
+          label: "ssh box",
+          site_url: "https://clawhub.ai",
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("RateLimit-Limit")).toBe("300");
+    expect(await response.json()).toEqual(result);
+    expect(runMutation).toHaveBeenLastCalledWith(expect.anything(), {
+      scope: "read write",
+      label: "ssh box",
+      siteUrl: "https://clawhub.ai",
+    });
+  });
+
+  it("cliDeviceTokenHttp requires the device grant type", async () => {
+    vi.mocked(getOptionalApiTokenUser).mockResolvedValueOnce(null);
+    const runQuery = vi.fn().mockResolvedValue({
+      allowed: true,
+      remaining: 300,
+      limit: 300,
+      resetAt: Date.now() + 60_000,
+    });
+    const runMutation = vi.fn().mockResolvedValueOnce({ allowed: true, remaining: 299 });
+
+    const response = await __handlers.cliDeviceTokenHandler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://x/api/cli/device/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ device_code: "device" }),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: "unsupported_grant_type" });
+    expect(runMutation).toHaveBeenCalledTimes(1);
+  });
+
+  it("cliDeviceTokenHttp returns pending as retryable", async () => {
+    vi.mocked(getOptionalApiTokenUser).mockResolvedValueOnce(null);
+    const runQuery = vi.fn().mockResolvedValue({
+      allowed: true,
+      remaining: 300,
+      limit: 300,
+      resetAt: Date.now() + 60_000,
+    });
+    const runMutation = vi
+      .fn()
+      .mockResolvedValueOnce({ allowed: true, remaining: 299 })
+      .mockResolvedValueOnce({ error: "authorization_pending" });
+
+    const response = await __handlers.cliDeviceTokenHandler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://x/api/cli/device/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          device_code: "device",
+          grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(428);
+    expect(await response.json()).toEqual({ error: "authorization_pending" });
   });
 
   it("cliUploadUrlHttp returns uploadUrl", async () => {

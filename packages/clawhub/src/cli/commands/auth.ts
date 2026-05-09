@@ -105,11 +105,12 @@ export async function cmdWhoami(opts: GlobalOpts) {
 export async function cmdDeviceLogin(opts: GlobalOpts) {
   const discovery = await discoverRegistryFromSite(opts.site).catch(() => null);
   const authBase = discovery?.authBase?.trim() || opts.site;
+  const registry = await getRegistry(opts, { cache: true });
 
   const spinner = createSpinner("Requesting device code");
   let deviceCode;
   try {
-    deviceCode = await requestDeviceCode({ siteUrl: authBase });
+    deviceCode = await requestDeviceCode({ apiUrl: registry, siteUrl: authBase });
     spinner.succeed("Device code received");
   } catch (error) {
     spinner.fail(formatError(error));
@@ -129,14 +130,14 @@ export async function cmdDeviceLogin(opts: GlobalOpts) {
   const pollSpinner = createSpinner("Waiting for authorization");
   try {
     const tokenResponse = await pollForDeviceToken(
-      { siteUrl: authBase },
+      { apiUrl: registry, siteUrl: authBase },
       deviceCode.device_code,
       { interval: deviceCode.interval, expiresIn: deviceCode.expires_in },
     );
     pollSpinner.succeed("Authorized");
 
     // Store the token
-    await cmdLogin(opts, tokenResponse.access_token, true);
+    await cmdLogin({ ...opts, registry, registrySource: "cli" }, tokenResponse.access_token, true);
   } catch (error) {
     pollSpinner.fail(formatError(error));
     throw error;

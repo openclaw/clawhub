@@ -3,7 +3,7 @@ import { pollForDeviceToken, requestDeviceCode } from "./deviceAuth.js";
 
 describe("deviceAuth", () => {
   describe("requestDeviceCode", () => {
-    it("should POST to /cli/device/code and return device code response", async () => {
+    it("should POST to /api/cli/device/code and return device code response", async () => {
       const mockResponse = {
         device_code: "abc123",
         user_code: "ABCD-1234",
@@ -17,11 +17,14 @@ describe("deviceAuth", () => {
         json: () => Promise.resolve(mockResponse),
       });
 
-      const result = await requestDeviceCode({ siteUrl: "https://clawhub.ai" });
+      const result = await requestDeviceCode({
+        apiUrl: "https://api.example",
+        siteUrl: "https://clawhub.ai",
+      });
 
       expect(result).toEqual(mockResponse);
       expect(global.fetch).toHaveBeenCalledWith(
-        "https://clawhub.ai/cli/device/code",
+        "https://api.example/api/cli/device/code",
         expect.objectContaining({
           method: "POST",
           headers: expect.objectContaining({
@@ -39,9 +42,9 @@ describe("deviceAuth", () => {
         text: () => Promise.resolve("endpoint not found"),
       });
 
-      await expect(requestDeviceCode({ siteUrl: "https://clawhub.ai" })).rejects.toThrow(
-        "Device code request failed (404)",
-      );
+      await expect(
+        requestDeviceCode({ apiUrl: "https://api.example", siteUrl: "https://clawhub.ai" }),
+      ).rejects.toThrow("Device code request failed (404)");
     });
 
     it("should throw on invalid response (missing fields)", async () => {
@@ -50,9 +53,9 @@ describe("deviceAuth", () => {
         json: () => Promise.resolve({ device_code: "abc" }),
       });
 
-      await expect(requestDeviceCode({ siteUrl: "https://clawhub.ai" })).rejects.toThrow(
-        "Invalid device code response",
-      );
+      await expect(
+        requestDeviceCode({ apiUrl: "https://api.example", siteUrl: "https://clawhub.ai" }),
+      ).rejects.toThrow("Invalid device code response");
     });
   });
 
@@ -70,7 +73,7 @@ describe("deviceAuth", () => {
       });
 
       const result = await pollForDeviceToken(
-        { siteUrl: "https://clawhub.ai" },
+        { apiUrl: "https://api.example", siteUrl: "https://clawhub.ai" },
         "device_code_123",
         { interval: 0.01, expiresIn: 10 },
       );
@@ -100,7 +103,7 @@ describe("deviceAuth", () => {
       });
 
       const result = await pollForDeviceToken(
-        { siteUrl: "https://clawhub.ai" },
+        { apiUrl: "https://api.example", siteUrl: "https://clawhub.ai" },
         "device_code_123",
         { interval: 0.01, expiresIn: 10 },
       );
@@ -116,10 +119,14 @@ describe("deviceAuth", () => {
       });
 
       await expect(
-        pollForDeviceToken({ siteUrl: "https://clawhub.ai" }, "device_code_123", {
-          interval: 0.01,
-          expiresIn: 10,
-        }),
+        pollForDeviceToken(
+          { apiUrl: "https://api.example", siteUrl: "https://clawhub.ai" },
+          "device_code_123",
+          {
+            interval: 0.01,
+            expiresIn: 10,
+          },
+        ),
       ).rejects.toThrow("Authorization denied");
     });
 
@@ -130,10 +137,14 @@ describe("deviceAuth", () => {
       });
 
       await expect(
-        pollForDeviceToken({ siteUrl: "https://clawhub.ai" }, "device_code_123", {
-          interval: 0.01,
-          expiresIn: 10,
-        }),
+        pollForDeviceToken(
+          { apiUrl: "https://api.example", siteUrl: "https://clawhub.ai" },
+          "device_code_123",
+          {
+            interval: 0.01,
+            expiresIn: 10,
+          },
+        ),
       ).rejects.toThrow("expired");
     });
   });

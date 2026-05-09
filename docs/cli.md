@@ -83,6 +83,7 @@ Stores your API token + cached registry URL.
 
 - Default: opens browser to `<site>/cli/auth` and completes via loopback callback.
 - Headless: `clawhub login --token clh_...`
+- Remote/headless interactive: `clawhub login --device` prints a code and waits while you authorize it at `<site>/cli/device`.
 
 ### `whoami`
 

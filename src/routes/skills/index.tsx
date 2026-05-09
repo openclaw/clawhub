@@ -99,7 +99,7 @@ export function SkillsIndex() {
       if (model.featuredOnly) {
         const nextSort = parseSort(value);
         void navigate({
-          search: (prev) => ({
+          search: (prev: SkillsSearchState) => ({
             ...prev,
             sort: nextSort,
             dir: parseDir(prev.dir, nextSort),
