@@ -5228,6 +5228,7 @@ form.summary-edit-form .summary-textarea:focus {
     min-width: 56px;
     height: 56px;
     min-height: 56px;
+    padding: 4px;
     border-radius: var(--r-md);
   }
 
