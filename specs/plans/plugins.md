@@ -753,6 +753,9 @@ API shape rule:
 - list/search endpoints should support filtering by `family`, `channel`, and
   `isOfficial`
 - list/search endpoints should support filtering by capability tags
+- plugin-only search sort controls must be backed by API/index behavior; do not
+  expose newest/name/updated sort controls by only reordering the current client
+  page
 - package lookup and routing should normalize names case-insensitively before
   querying storage
 

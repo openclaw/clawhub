@@ -505,6 +505,26 @@ Notes:
 - Artifact filters are backed by indexed capability tags:
   `artifact:legacy-zip`, `artifact:npm-pack`, and `npm-mirror:available`.
 
+### `GET /api/v1/plugins/search`
+
+Plugin-only search across code-plugin and bundle-plugin packages.
+
+Query params:
+
+- `q` (required): query string
+- `limit` (optional): integer (1-100)
+- `cursor` (optional): pagination cursor for sorted plugin search
+- `sort` (optional): `relevance` (default), `updated`, `newest`, or `name`
+- `isOfficial` (optional): `true` or `false`
+- `executesCode` (optional): `true` or `false`
+- `capabilityTag` (optional): capability filter for plugin packages
+
+Notes:
+
+- `relevance` returns the best scored matches and does not currently paginate.
+- `updated`, `newest`, and `name` are API-backed cursor sorts over plugin digest
+  indexes, then filtered by the query text.
+
 ### `GET /api/v1/packages/{name}`
 
 Returns package detail metadata.

@@ -4,7 +4,7 @@
 
 ### Changes
 
-- Web: add keyword-based plugin categories (Channels, MCP, Data, Security, Observability, Automation, Deployment, Dev Tools) and clarify plugin browse/search controls without adding unsupported global search sorting (#2118) (thanks @vyctorbrzezowski).
+- Web/API: add keyword-based plugin categories (Channels, MCP, Data, Security, Observability, Automation, Deployment, Dev Tools) plus API-backed plugin search sorting for recently updated, newest, and name (#2118) (thanks @vyctorbrzezowski).
 
 ### Fixes
 
