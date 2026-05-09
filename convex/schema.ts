@@ -1038,8 +1038,6 @@ const packageSearchDigest = defineTable({
   ])
   .index("by_active_executes_updated", ["softDeletedAt", "executesCode", "updatedAt"])
   .index("by_active_family_updated", ["softDeletedAt", "family", "updatedAt"])
-  .index("by_active_family_created", ["softDeletedAt", "family", "createdAt"])
-  .index("by_active_family_name", ["softDeletedAt", "family", "displayName"])
   .index("by_active_family_channel_updated", ["softDeletedAt", "family", "channel", "updatedAt"])
   .index("by_active_family_channel_executes_updated", [
     "softDeletedAt",
@@ -1054,51 +1052,18 @@ const packageSearchDigest = defineTable({
     "executesCode",
     "updatedAt",
   ])
-  .index("by_active_family_executes_created", [
-    "softDeletedAt",
-    "family",
-    "executesCode",
-    "createdAt",
-  ])
-  .index("by_active_family_executes_name", [
-    "softDeletedAt",
-    "family",
-    "executesCode",
-    "displayName",
-  ])
   .index("by_active_family_official_updated", [
     "softDeletedAt",
     "family",
     "isOfficial",
     "updatedAt",
   ])
-  .index("by_active_family_official_created", [
-    "softDeletedAt",
-    "family",
-    "isOfficial",
-    "createdAt",
-  ])
-  .index("by_active_family_official_name", ["softDeletedAt", "family", "isOfficial", "displayName"])
   .index("by_active_family_official_executes_updated", [
     "softDeletedAt",
     "family",
     "isOfficial",
     "executesCode",
     "updatedAt",
-  ])
-  .index("by_active_family_official_executes_created", [
-    "softDeletedAt",
-    "family",
-    "isOfficial",
-    "executesCode",
-    "createdAt",
-  ])
-  .index("by_active_family_official_executes_name", [
-    "softDeletedAt",
-    "family",
-    "isOfficial",
-    "executesCode",
-    "displayName",
   ])
   .index("by_active_channel_executes_updated", [
     "softDeletedAt",
@@ -1156,28 +1121,12 @@ const packageCapabilitySearchDigest = defineTable({
     "updatedAt",
   ])
   .index("by_active_family_tag_updated", ["softDeletedAt", "family", "capabilityTag", "updatedAt"])
-  .index("by_active_family_tag_created", ["softDeletedAt", "family", "capabilityTag", "createdAt"])
-  .index("by_active_family_tag_name", ["softDeletedAt", "family", "capabilityTag", "displayName"])
   .index("by_active_family_tag_executes_updated", [
     "softDeletedAt",
     "family",
     "capabilityTag",
     "executesCode",
     "updatedAt",
-  ])
-  .index("by_active_family_tag_executes_created", [
-    "softDeletedAt",
-    "family",
-    "capabilityTag",
-    "executesCode",
-    "createdAt",
-  ])
-  .index("by_active_family_tag_executes_name", [
-    "softDeletedAt",
-    "family",
-    "capabilityTag",
-    "executesCode",
-    "displayName",
   ])
   .index("by_active_channel_tag_updated", [
     "softDeletedAt",
@@ -1227,20 +1176,6 @@ const packageCapabilitySearchDigest = defineTable({
     "capabilityTag",
     "updatedAt",
   ])
-  .index("by_active_family_official_tag_created", [
-    "softDeletedAt",
-    "family",
-    "isOfficial",
-    "capabilityTag",
-    "createdAt",
-  ])
-  .index("by_active_family_official_tag_name", [
-    "softDeletedAt",
-    "family",
-    "isOfficial",
-    "capabilityTag",
-    "displayName",
-  ])
   .index("by_active_family_official_tag_executes_updated", [
     "softDeletedAt",
     "family",
@@ -1248,22 +1183,6 @@ const packageCapabilitySearchDigest = defineTable({
     "capabilityTag",
     "executesCode",
     "updatedAt",
-  ])
-  .index("by_active_family_official_tag_executes_created", [
-    "softDeletedAt",
-    "family",
-    "isOfficial",
-    "capabilityTag",
-    "executesCode",
-    "createdAt",
-  ])
-  .index("by_active_family_official_tag_executes_name", [
-    "softDeletedAt",
-    "family",
-    "isOfficial",
-    "capabilityTag",
-    "executesCode",
-    "displayName",
   ])
   .index("by_active_channel_official_tag_updated", [
     "softDeletedAt",

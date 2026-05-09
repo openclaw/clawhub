@@ -59,6 +59,38 @@ function parsePluginSort(value: unknown): PluginSort | undefined {
   return undefined;
 }
 
+function sortPluginSearchItems(items: PackageListItem[], sort: PluginSort) {
+  if (sort === "relevance") return items;
+  const sorted = [...items];
+  sorted.sort((a, b) => {
+    const tieBreak = () =>
+      b.updatedAt - a.updatedAt ||
+      b.createdAt - a.createdAt ||
+      a.family.localeCompare(b.family) ||
+      a.name.localeCompare(b.name);
+
+    if (sort === "name") {
+      return (
+        a.displayName.localeCompare(b.displayName) ||
+        a.name.localeCompare(b.name) ||
+        a.family.localeCompare(b.family)
+      );
+    }
+
+    if (sort === "newest") {
+      return (
+        b.createdAt - a.createdAt ||
+        b.updatedAt - a.updatedAt ||
+        a.family.localeCompare(b.family) ||
+        a.name.localeCompare(b.name)
+      );
+    }
+
+    return tieBreak();
+  });
+  return sorted;
+}
+
 export const Route = createFileRoute("/plugins/")({
   validateSearch: (search): PluginSearchState => ({
     q: typeof search.q === "string" && search.q.trim() ? search.q.trim() : undefined,
@@ -100,18 +132,15 @@ export const Route = createFileRoute("/plugins/")({
     featured: search.featured,
     verified: search.verified,
     executesCode: search.executesCode,
-    sort: search.sort,
   }),
   loader: async ({ deps }): Promise<PluginsLoaderData> => {
     try {
-      const searchSort = deps.q ? (deps.sort ?? "relevance") : undefined;
       const data = await fetchPluginCatalog({
         q: deps.q,
-        cursor: deps.q && searchSort === "relevance" ? undefined : deps.cursor,
+        cursor: deps.q ? undefined : deps.cursor,
         featured: deps.featured,
         isOfficial: deps.verified,
         executesCode: deps.executesCode,
-        sort: searchSort,
         limit: PLUGINS_PAGE_SIZE,
       });
 
@@ -178,6 +207,10 @@ function PluginsIndex() {
     : search.featured
       ? "featured"
       : "updated";
+  const visibleItems = useMemo(
+    () => (hasQuery ? sortPluginSearchItems(items, activeSort as PluginSort) : items),
+    [activeSort, hasQuery, items],
+  );
 
   const sortOptions = useMemo(() => {
     if (hasQuery) {
@@ -339,7 +372,7 @@ function PluginsIndex() {
           Filters
         </button>
         <h1 className="browse-title">
-          Plugins <span className="browse-count">{items.length}</span>
+          Plugins <span className="browse-count">{visibleItems.length}</span>
         </h1>
         <div className="browse-page-actions">
           <Button asChild variant="primary">
@@ -385,7 +418,7 @@ function PluginsIndex() {
         <div className="browse-results">
           <div className="browse-results-toolbar">
             <span className="browse-results-count">
-              {items.length} result{items.length !== 1 ? "s" : ""}
+              {visibleItems.length} result{visibleItems.length !== 1 ? "s" : ""}
               {hasQuery || search.verified || search.executesCode || search.featured ? (
                 <button className="browse-clear-btn" type="button" onClick={handleClear}>
                   Clear
@@ -424,14 +457,14 @@ function PluginsIndex() {
               <p className="empty-state-title">Plugin catalog is temporarily unavailable</p>
               <p className="empty-state-body">Try again {formatRetryDelay(retryAfterSeconds)}.</p>
             </div>
-          ) : items.length === 0 ? (
+          ) : visibleItems.length === 0 ? (
             <div className="empty-state">
               <p className="empty-state-title">No plugins found</p>
               <p className="empty-state-body">Try a different search term or remove filters.</p>
             </div>
           ) : (
             <div className={view === "grid" ? "grid" : "results-list"}>
-              {items.map((item) => (
+              {visibleItems.map((item) => (
                 <PluginListItem
                   key={item.name}
                   item={item}
@@ -441,7 +474,7 @@ function PluginsIndex() {
             </div>
           )}
 
-          {(!search.q || activeSort !== "relevance") && (search.cursor || nextCursor) ? (
+          {!hasQuery && (search.cursor || nextCursor) ? (
             <div className="mt-5 flex justify-center gap-3">
               {search.cursor ? (
                 <Button

@@ -3827,144 +3827,18 @@ describe("httpApiV1 handlers", () => {
     ]);
   });
 
-  it("plugins search supports API-backed name sort with per-family cursors", async () => {
+  it("plugins search ignores client-only sort and cursor params", async () => {
     const runQuery = vi.fn((_, args: Record<string, unknown>) => {
-      if (args.family === "code-plugin") {
-        expect(args).toEqual(
-          expect.objectContaining({
-            query: "plugin",
-            sort: "name",
-            cursor: null,
-            limit: 2,
-          }),
-        );
-        return {
-          page: [
-            {
-              score: 10,
-              package: makeCatalogItem("alpha-code", {
-                family: "code-plugin",
-                updatedAt: 100,
-              }),
-            },
-            {
-              score: 10,
-              package: makeCatalogItem("zulu-code", {
-                family: "code-plugin",
-                updatedAt: 90,
-              }),
-            },
-          ],
-          isDone: false,
-          continueCursor: "code-next",
-        };
-      }
-      if (args.family === "bundle-plugin") {
-        expect(args).toEqual(
-          expect.objectContaining({
-            query: "plugin",
-            sort: "name",
-            cursor: null,
-            limit: 2,
-          }),
-        );
-        return {
-          page: [
-            {
-              score: 10,
-              package: makeCatalogItem("bravo-bundle", {
-                family: "bundle-plugin",
-                updatedAt: 80,
-              }),
-            },
-          ],
-          isDone: true,
-          continueCursor: "",
-        };
-      }
-      throw new Error(`unexpected family ${String(args.family)}`);
+      expect(args).not.toHaveProperty("sort");
+      expect(args).not.toHaveProperty("cursor");
+      return [];
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
-
-    const response = await __handlers.pluginsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
-      new Request("https://example.com/api/v1/plugins/search?q=plugin&sort=name&limit=2"),
-    );
-
-    expect(response.status).toBe(200);
-    const json = await response.json();
-    expect(json.results.map((entry: { package: { name: string } }) => entry.package.name)).toEqual([
-      "alpha-code",
-      "bravo-bundle",
-    ]);
-    expect(json.nextCursor).toMatch(/^pkgpluginsearch:/);
-  });
-
-  it("plugins search passes sorted search cursors back to package queries", async () => {
-    const firstCursorState = {
-      codePlugins: { cursor: "code-next", offset: 0, pageSize: 2, done: false },
-      bundlePlugins: { cursor: null, offset: 0, pageSize: 2, done: true },
-    };
-    const cursor = `pkgpluginsearch:${JSON.stringify(firstCursorState)}`;
-    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
-      if (args.family === "code-plugin") {
-        expect(args).toEqual(
-          expect.objectContaining({
-            sort: "updated",
-            cursor: "code-next",
-          }),
-        );
-        return {
-          page: [
-            {
-              score: 10,
-              package: makeCatalogItem("next-code", {
-                family: "code-plugin",
-                updatedAt: 70,
-              }),
-            },
-          ],
-          isDone: true,
-          continueCursor: "",
-        };
-      }
-      if (args.family === "bundle-plugin") {
-        throw new Error("done bundle source should not be queried");
-      }
-      throw new Error(`unexpected family ${String(args.family)}`);
-    });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
-    const url = new URL("https://example.com/api/v1/plugins/search");
-    url.searchParams.set("q", "plugin");
-    url.searchParams.set("sort", "updated");
-    url.searchParams.set("limit", "2");
-    url.searchParams.set("cursor", cursor);
-
-    const response = await __handlers.pluginsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
-      new Request(url),
-    );
-
-    expect(response.status).toBe(200);
-    const json = await response.json();
-    expect(json.results.map((entry: { package: { name: string } }) => entry.package.name)).toEqual([
-      "next-code",
-    ]);
-    expect(json.nextCursor).toBeNull();
-  });
-
-  it("plugins search ignores stale plugin browse cursors", async () => {
-    const runQuery = vi.fn().mockResolvedValue({ page: [], isDone: true, continueCursor: "" });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
-    const staleBrowseCursor = `pkgplugins:${JSON.stringify({
-      codePlugins: { cursor: "code-browse", offset: 0, pageSize: 2, done: false },
-      bundlePlugins: { cursor: null, offset: 0, pageSize: 2, done: true },
-    })}`;
     const url = new URL("https://example.com/api/v1/plugins/search");
     url.searchParams.set("q", "plugin");
     url.searchParams.set("sort", "name");
     url.searchParams.set("limit", "2");
-    url.searchParams.set("cursor", staleBrowseCursor);
+    url.searchParams.set("cursor", "pkgplugins:stale");
 
     const response = await __handlers.pluginsGetRouterV1Handler(
       makeCtx({ runQuery, runMutation }),
@@ -3972,10 +3846,7 @@ describe("httpApiV1 handlers", () => {
     );
 
     expect(response.status).toBe(200);
-    const searchCalls = runQuery.mock.calls
-      .map(([, args]) => args as { family?: string; cursor?: string | null })
-      .filter((args) => args.family === "code-plugin" || args.family === "bundle-plugin");
-    expect(searchCalls.map((args) => args.cursor ?? null)).toEqual([null, null]);
+    expect((await response.json()).results).toEqual([]);
   });
 
   it("packages list forwards viewerUserId for authenticated private package browsing", async () => {

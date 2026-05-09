@@ -73,7 +73,6 @@ const internalRefs = internal as unknown as {
     getByNameForViewerInternal: unknown;
     listPageForViewerInternal: unknown;
     searchForViewerInternal: unknown;
-    searchPageForViewerInternal: unknown;
     listVersionsForViewerInternal: unknown;
     getPackageByNameInternal: unknown;
     getTrustedPublisherByPackageIdInternal: unknown;
@@ -595,7 +594,6 @@ type CatalogListItem = {
 };
 
 type CatalogSearchEntry = { score: number; package: CatalogListItem };
-type PackageSearchSort = "relevance" | "updated" | "newest" | "name";
 
 type CatalogSourceCursorState = {
   cursor: string | null;
@@ -629,11 +627,11 @@ type CatalogSourceState<T> = {
 
 const UNIFIED_CATALOG_CURSOR_PREFIX = "pkgcatalog:";
 const PLUGIN_CATALOG_CURSOR_PREFIX = "pkgplugins:";
-const PLUGIN_SEARCH_CURSOR_PREFIX = "pkgpluginsearch:";
+const LEGACY_PLUGIN_SEARCH_CURSOR_PREFIX = "pkgpluginsearch:";
 const CATALOG_CURSOR_PREFIXES = [
   UNIFIED_CATALOG_CURSOR_PREFIX,
   PLUGIN_CATALOG_CURSOR_PREFIX,
-  PLUGIN_SEARCH_CURSOR_PREFIX,
+  LEGACY_PLUGIN_SEARCH_CURSOR_PREFIX,
 ];
 
 function defaultCatalogSourceCursorState(): CatalogSourceCursorState {
@@ -726,14 +724,6 @@ function decodePluginCatalogCursor(raw: string | null | undefined): PluginCatalo
   return decodeMultiPluginCursor(raw, PLUGIN_CATALOG_CURSOR_PREFIX);
 }
 
-function encodePluginSearchCursor(state: PluginCatalogCursorState) {
-  return `${PLUGIN_SEARCH_CURSOR_PREFIX}${JSON.stringify(state)}`;
-}
-
-function decodePluginSearchCursor(raw: string | null | undefined): PluginCatalogCursorState {
-  return decodeMultiPluginCursor(raw, PLUGIN_SEARCH_CURSOR_PREFIX);
-}
-
 function initCatalogSource<T>(state: CatalogSourceCursorState): CatalogSourceState<T> {
   return {
     state: { ...state },
@@ -806,34 +796,6 @@ function compareCatalogSearchEntries(a: CatalogSearchEntry, b: CatalogSearchEntr
   );
 }
 
-function compareCatalogSearchEntriesForSort(
-  a: CatalogSearchEntry,
-  b: CatalogSearchEntry,
-  sort: Exclude<PackageSearchSort, "relevance">,
-) {
-  if (sort === "name") {
-    return (
-      a.package.displayName.localeCompare(b.package.displayName) ||
-      a.package.name.localeCompare(b.package.name) ||
-      a.package.family.localeCompare(b.package.family)
-    );
-  }
-  if (sort === "newest") {
-    return (
-      b.package.createdAt - a.package.createdAt ||
-      b.package.updatedAt - a.package.updatedAt ||
-      a.package.family.localeCompare(b.package.family) ||
-      a.package.name.localeCompare(b.package.name)
-    );
-  }
-  return compareCatalogItems(a.package, b.package);
-}
-
-function parsePackageSearchSort(value: string | null): PackageSearchSort {
-  if (value === "updated" || value === "newest" || value === "name") return value;
-  return "relevance";
-}
-
 async function searchPackageCatalog(
   ctx: ActionCtx,
   args: {
@@ -854,41 +816,6 @@ async function searchPackageCatalog(
     {
       query: args.query,
       limit: args.limit,
-      family: args.family,
-      channel: args.channel,
-      isOfficial: args.isOfficial,
-      highlightedOnly: args.highlightedOnly,
-      executesCode: args.executesCode,
-      capabilityTag: args.capabilityTag,
-      viewerUserId: args.viewerUserId,
-    },
-  );
-}
-
-async function searchPackageCatalogPage(
-  ctx: ActionCtx,
-  args: {
-    query: string;
-    limit: number;
-    cursor: string | null;
-    sort: Exclude<PackageSearchSort, "relevance">;
-    family: "code-plugin" | "bundle-plugin";
-    channel?: "official" | "community" | "private";
-    isOfficial?: boolean;
-    highlightedOnly?: boolean;
-    executesCode?: boolean;
-    capabilityTag?: string;
-    viewerUserId?: Id<"users">;
-  },
-): Promise<CatalogPageResult<CatalogSearchEntry>> {
-  return await runQueryRef<CatalogPageResult<CatalogSearchEntry>>(
-    ctx,
-    internalRefs.packages.searchPageForViewerInternal,
-    {
-      query: args.query,
-      limit: args.limit,
-      cursor: args.cursor,
-      sort: args.sort,
       family: args.family,
       channel: args.channel,
       isOfficial: args.isOfficial,
@@ -2102,8 +2029,6 @@ async function searchPackages(
   const viewerUserId = await getOptionalViewerUserIdForRequest(ctx, request);
   const queryText = url.searchParams.get("q")?.trim() ?? "";
   const limit = Math.max(1, Math.min(toOptionalNumber(url.searchParams.get("limit")) ?? 20, 100));
-  const cursor = url.searchParams.get("cursor");
-  const sort = parsePackageSearchSort(url.searchParams.get("sort"));
   const familyRaw = url.searchParams.get("family");
   const channelRaw = url.searchParams.get("channel");
   const isOfficialRaw = url.searchParams.get("isOfficial");
@@ -2130,9 +2055,6 @@ async function searchPackages(
 
   let results: CatalogSearchEntry[];
   if (family === "skill") {
-    if (sort !== "relevance") {
-      return text("Sort is not supported for skill search", 400, rate.headers);
-    }
     results = await runQueryRef<CatalogSearchEntry[]>(
       ctx,
       apiRefs.skills.searchPackageCatalogPublic,
@@ -2148,85 +2070,6 @@ async function searchPackages(
     );
   } else if (family || !includeSkills) {
     if (!family && options?.pluginFamilies?.length) {
-      if (sort !== "relevance") {
-        const decodedCursor = decodePluginSearchCursor(cursor);
-        const codePluginSource = initCatalogSource<CatalogSearchEntry>(decodedCursor.codePlugins);
-        const bundlePluginSource = initCatalogSource<CatalogSearchEntry>(
-          decodedCursor.bundlePlugins,
-        );
-        const pageSize = limit;
-        const sortedResults: CatalogSearchEntry[] = [];
-        const fetchPluginPage = async (
-          pluginFamily: "code-plugin" | "bundle-plugin",
-          pageCursor: string | null,
-          numItems: number,
-        ) => {
-          return await searchPackageCatalogPage(ctx, {
-            query: queryText,
-            limit: numItems,
-            cursor: pageCursor,
-            sort,
-            family: pluginFamily,
-            channel,
-            isOfficial,
-            highlightedOnly: highlightedOnly || undefined,
-            executesCode,
-            capabilityTag,
-            viewerUserId: viewerUserId ?? undefined,
-          });
-        };
-
-        while (sortedResults.length < limit) {
-          const [codePluginCandidate, bundlePluginCandidate] = await Promise.all([
-            options.pluginFamilies.includes("code-plugin")
-              ? ensureCatalogSourcePage(codePluginSource, pageSize, (pageCursor, numItems) =>
-                  fetchPluginPage("code-plugin", pageCursor, numItems),
-                )
-              : Promise.resolve(null),
-            options.pluginFamilies.includes("bundle-plugin")
-              ? ensureCatalogSourcePage(bundlePluginSource, pageSize, (pageCursor, numItems) =>
-                  fetchPluginPage("bundle-plugin", pageCursor, numItems),
-                )
-              : Promise.resolve(null),
-          ]);
-
-          if (!codePluginCandidate && !bundlePluginCandidate) break;
-          if (
-            !bundlePluginCandidate ||
-            (codePluginCandidate &&
-              compareCatalogSearchEntriesForSort(
-                codePluginCandidate,
-                bundlePluginCandidate,
-                sort,
-              ) <= 0)
-          ) {
-            sortedResults.push(codePluginCandidate!);
-            codePluginSource.index += 1;
-          } else {
-            sortedResults.push(bundlePluginCandidate);
-            bundlePluginSource.index += 1;
-          }
-        }
-
-        const nextState = {
-          codePlugins: finalizeCatalogSource(codePluginSource),
-          bundlePlugins: finalizeCatalogSource(bundlePluginSource),
-        };
-        const isDoneAll =
-          nextState.codePlugins.done &&
-          nextState.codePlugins.offset === 0 &&
-          nextState.bundlePlugins.done &&
-          nextState.bundlePlugins.offset === 0;
-        return json(
-          {
-            results: sortedResults,
-            nextCursor: isDoneAll ? null : encodePluginSearchCursor(nextState),
-          },
-          200,
-          rate.headers,
-        );
-      }
-
       const pluginResults = await Promise.all(
         options.pluginFamilies.map((pluginFamily) =>
           searchPackageCatalog(ctx, {
@@ -2254,30 +2097,6 @@ async function searchPackages(
         .sort(compareCatalogSearchEntries)
         .slice(0, limit);
     } else {
-      if (sort !== "relevance") {
-        if (family !== "code-plugin" && family !== "bundle-plugin") {
-          return text("Sort is only supported for plugin search", 400, rate.headers);
-        }
-        const page = await searchPackageCatalogPage(ctx, {
-          query: queryText,
-          limit,
-          cursor,
-          sort,
-          family,
-          channel,
-          isOfficial,
-          highlightedOnly: highlightedOnly || undefined,
-          executesCode,
-          capabilityTag,
-          viewerUserId: viewerUserId ?? undefined,
-        });
-        return json(
-          { results: page.page, nextCursor: page.isDone ? null : page.continueCursor },
-          200,
-          rate.headers,
-        );
-      }
-
       results = await searchPackageCatalog(ctx, {
         query: queryText,
         limit,
@@ -2291,9 +2110,6 @@ async function searchPackages(
       });
     }
   } else {
-    if (sort !== "relevance") {
-      return text("Sort is not supported for combined package and skill search", 400, rate.headers);
-    }
     const [packageResults, skillResults] = await Promise.all([
       searchPackageCatalog(ctx, {
         query: queryText,
@@ -2326,7 +2142,7 @@ async function searchPackages(
       .sort(compareCatalogSearchEntries)
       .slice(0, limit);
   }
-  return json({ results, nextCursor: null }, 200, rate.headers);
+  return json({ results }, 200, rate.headers);
 }
 
 export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Request) {

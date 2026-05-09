@@ -137,7 +137,7 @@ describe("plugins route", () => {
     ).toThrow();
   });
 
-  it("keeps API-backed search sorts when search is active", async () => {
+  it("keeps search-only sort choices when search is active", async () => {
     const route = await loadRoute();
     const beforeLoad = (
       route.__config as never as {
@@ -225,7 +225,7 @@ describe("plugins route", () => {
     expect(fetchPluginCatalogMock.mock.calls[0]?.[0]).not.toHaveProperty("family");
   });
 
-  it("forwards sorted search cursors through the loader", async () => {
+  it("uses relevance fetching for sorted search results", async () => {
     fetchPluginCatalogMock.mockResolvedValue({ items: [], nextCursor: "cursor:next" });
     const route = await loadRoute();
     const loader = route.__config.loader as (args: {
@@ -243,11 +243,11 @@ describe("plugins route", () => {
     expect(fetchPluginCatalogMock).toHaveBeenCalledWith(
       expect.objectContaining({
         q: "security",
-        sort: "name",
-        cursor: "cursor:search",
+        cursor: undefined,
         limit: 100,
       }),
     );
+    expect(fetchPluginCatalogMock.mock.calls[0]?.[0]).not.toHaveProperty("sort");
   });
 
   it("renders next-page controls for browse mode", async () => {
@@ -583,7 +583,7 @@ describe("plugins route", () => {
     });
   });
 
-  it("shows API-backed sort choices when a category query is active", async () => {
+  it("shows loaded-result sort choices when a category query is active", async () => {
     searchMock = { q: "security" };
     loaderDataMock = {
       items: [
@@ -613,7 +613,7 @@ describe("plugins route", () => {
     expect(screen.getByRole("radio", { name: "Name" })).toBeTruthy();
   });
 
-  it("selects API-backed search sort without changing the query", async () => {
+  it("selects loaded-result search sort without changing the query", async () => {
     searchMock = { q: "security" };
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
@@ -632,6 +632,45 @@ describe("plugins route", () => {
       featured: undefined,
       sort: "name",
     });
+  });
+
+  it("sorts loaded search results by the selected search sort", async () => {
+    searchMock = { q: "security", sort: "name" };
+    loaderDataMock = {
+      items: [
+        {
+          name: "zulu-plugin",
+          displayName: "Zulu Plugin",
+          family: "code-plugin",
+          channel: "community",
+          isOfficial: false,
+          executesCode: true,
+          createdAt: 2,
+          updatedAt: 20,
+        },
+        {
+          name: "alpha-plugin",
+          displayName: "Alpha Plugin",
+          family: "code-plugin",
+          channel: "community",
+          isOfficial: false,
+          executesCode: true,
+          createdAt: 1,
+          updatedAt: 10,
+        },
+      ],
+      nextCursor: null,
+      rateLimited: false,
+      retryAfterSeconds: null,
+    };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    const alpha = screen.getByText("Alpha Plugin");
+    const zulu = screen.getByText("Zulu Plugin");
+    expect(alpha.compareDocumentPosition(zulu) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("keeps search sort visible even if a stale featured flag is present", async () => {

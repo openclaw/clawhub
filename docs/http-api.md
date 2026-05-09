@@ -513,17 +513,15 @@ Query params:
 
 - `q` (required): query string
 - `limit` (optional): integer (1-100)
-- `cursor` (optional): pagination cursor for sorted plugin search
-- `sort` (optional): `relevance` (default), `updated`, `newest`, or `name`
 - `isOfficial` (optional): `true` or `false`
 - `executesCode` (optional): `true` or `false`
 - `capabilityTag` (optional): capability filter for plugin packages
 
 Notes:
 
-- `relevance` returns the best scored matches and does not currently paginate.
-- `updated`, `newest`, and `name` are API-backed cursor sorts over plugin digest
-  indexes, then filtered by the query text.
+- Results are returned in relevance order and do not currently paginate.
+- Browser UI sort controls for plugin search reorder the loaded relevance results,
+  matching the current `/skills` browse behavior.
 
 ### `GET /api/v1/packages/{name}`
 

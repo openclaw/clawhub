@@ -524,7 +524,6 @@ describe("fetchPluginCatalog", () => {
       q: "demo",
       cursor: "cursor:plugins",
       limit: 10,
-      sort: "name",
     });
 
     expect(result.nextCursor).toBeNull();
@@ -532,8 +531,8 @@ describe("fetchPluginCatalog", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const url = new URL(fetchMock.mock.calls[0]?.[0] as string);
     expect(url.pathname).toBe("/api/v1/plugins/search");
-    expect(url.searchParams.get("cursor")).toBe("cursor:plugins");
-    expect(url.searchParams.get("sort")).toBe("name");
+    expect(url.searchParams.has("cursor")).toBe(false);
+    expect(url.searchParams.has("sort")).toBe(false);
   });
 
   it("keeps relevance as the implicit plugins search sort", async () => {
@@ -550,11 +549,10 @@ describe("fetchPluginCatalog", () => {
 
     const result = await fetchPluginCatalog({
       q: "demo",
-      sort: "relevance",
       limit: 10,
     });
 
-    expect(result.nextCursor).toBe("ignored-for-relevance");
+    expect(result.nextCursor).toBeNull();
     const url = new URL(fetchMock.mock.calls[0]?.[0] as string);
     expect(url.pathname).toBe("/api/v1/plugins/search");
     expect(url.searchParams.has("sort")).toBe(false);
