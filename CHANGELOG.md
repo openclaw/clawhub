@@ -22,6 +22,7 @@
 - Skills: allow confirmed owner migration when republishing an existing skill to another publisher, preserving versions, stats, aliases, and audit history (#1998, #2102) (thanks @momothemage).
 - Security: block owner delete/undelete paths from overriding moderator or scanner hides, and return explicit 403 authz responses for owner restore denials (#2078) (thanks @momothemage).
 - Search/Web: disclose when `/search` is hiding suspicious skills and add an explicit opt-out so unified search no longer silently differs from `/skills` for the same query (#2079) (thanks @momothemage).
+- Web: constrain settings, profile content, skill detail, and plugin detail pages to the header content width while preserving profile hero bleed (thanks @vyctorbrzezowski).
 
 ## 0.12.3 - 2026-05-06
 

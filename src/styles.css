@@ -1203,9 +1203,9 @@ code {
 }
 
 .section.detail-page-section {
-  max-width: none;
-  padding-right: clamp(48px, 4vw, 88px);
-  padding-left: clamp(48px, 4vw, 88px);
+  max-width: var(--page-max);
+  padding-right: var(--space-5);
+  padding-left: var(--space-5);
 }
 
 .security-scanner-layout {
@@ -12080,7 +12080,7 @@ a[class*="rounded-full"] {
 
 @media (min-width: 761px) {
   .section.detail-page-section {
-    padding-right: clamp(48px, 4vw, 88px);
-    padding-left: clamp(48px, 4vw, 88px);
+    padding-right: var(--space-5);
+    padding-left: var(--space-5);
   }
 }

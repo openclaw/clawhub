@@ -127,14 +127,16 @@ export function Settings() {
 
   if (!me) {
     return (
-      <Container size="narrow" className="py-10">
-        <Card>
-          <CardContent className="flex flex-col items-start gap-3">
-            <span>Sign in to access settings.</span>
-            <SignInButton />
-          </CardContent>
-        </Card>
-      </Container>
+      <main className="py-10">
+        <Container>
+          <Card>
+            <CardContent className="flex flex-col items-start gap-3">
+              <span>Sign in to access settings.</span>
+              <SignInButton />
+            </CardContent>
+          </Card>
+        </Container>
+      </main>
     );
   }
 
@@ -184,433 +186,439 @@ export function Settings() {
   }
 
   return (
-    <Container size="narrow" className="py-10">
-      <main className="flex flex-col gap-6">
-        <h1 className="font-display text-2xl font-bold text-[color:var(--ink)]">Settings</h1>
+    <main className="py-10">
+      <Container>
+        <div className="flex flex-col gap-6">
+          <h1 className="font-display text-2xl font-bold text-[color:var(--ink)]">Settings</h1>
 
-        {/* Profile card */}
-        <Card>
-          <CardContent className="flex items-center gap-4">
-            <Avatar className="h-16 w-16">
-              {avatar ? <AvatarImage src={avatar} alt={identityName} /> : null}
-              <AvatarFallback className="text-lg">
-                {identityName[0]?.toUpperCase() ?? "U"}
-              </AvatarFallback>
-            </Avatar>
-            <div className="flex flex-col gap-0.5">
-              <div className="text-lg font-bold text-[color:var(--ink)]">{identityName}</div>
-              {handle ? (
-                <div className="text-sm text-[color:var(--ink-soft)]">@{handle}</div>
-              ) : null}
-              {me.email ? (
-                <div className="text-sm text-[color:var(--ink-soft)]">{me.email}</div>
-              ) : null}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Star size={18} />
-              Stars
-            </CardTitle>
-            <CardDescription>Review skills you&apos;ve starred for quick access.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button asChild variant="outline">
-              <Link to="/stars">View stars</Link>
-            </Button>
-          </CardContent>
-        </Card>
-
-        {/* Edit profile form */}
-        <Card>
-          <form className="flex flex-col gap-4" onSubmit={onSave}>
-            <CardContent>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="settings-display-name">Display name</Label>
-                <Input
-                  id="settings-display-name"
-                  value={displayName}
-                  onChange={(event) => setDisplayName(event.target.value)}
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="settings-bio">Bio</Label>
-                <Textarea
-                  id="settings-bio"
-                  rows={5}
-                  value={bio}
-                  onChange={(event) => setBio(event.target.value)}
-                  placeholder="Tell people what you're building."
-                />
+          {/* Profile card */}
+          <Card>
+            <CardContent className="flex items-center gap-4">
+              <Avatar className="h-16 w-16">
+                {avatar ? <AvatarImage src={avatar} alt={identityName} /> : null}
+                <AvatarFallback className="text-lg">
+                  {identityName[0]?.toUpperCase() ?? "U"}
+                </AvatarFallback>
+              </Avatar>
+              <div className="flex flex-col gap-0.5">
+                <div className="text-lg font-bold text-[color:var(--ink)]">{identityName}</div>
+                {handle ? (
+                  <div className="text-sm text-[color:var(--ink-soft)]">@{handle}</div>
+                ) : null}
+                {me.email ? (
+                  <div className="text-sm text-[color:var(--ink-soft)]">{me.email}</div>
+                ) : null}
               </div>
             </CardContent>
-            <div className="flex items-center gap-3 px-[22px] pb-[22px]">
-              <Button variant="primary" type="submit">
-                Save
-              </Button>
-            </div>
-          </form>
-        </Card>
+          </Card>
 
-        {/* Appearance */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Settings2 size={18} />
-              Appearance
-            </CardTitle>
-            <CardDescription>Choose how ClawHub follows your system theme.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              <Label id="theme" className="text-sm font-semibold text-[color:var(--ink)]">
-                Theme mode
-              </Label>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  variant={themeMode === "light" ? "primary" : "ghost"}
-                  size="sm"
-                  onClick={() => setThemeMode("light")}
-                  className="flex items-center gap-2"
-                >
-                  <Sun size={14} />
-                  Light
-                </Button>
-                <Button
-                  variant={themeMode === "dark" ? "primary" : "ghost"}
-                  size="sm"
-                  onClick={() => setThemeMode("dark")}
-                  className="flex items-center gap-2"
-                >
-                  <Moon size={14} />
-                  Dark
-                </Button>
-                <Button
-                  variant={themeMode === "system" ? "primary" : "ghost"}
-                  size="sm"
-                  onClick={() => setThemeMode("system")}
-                  className="flex items-center gap-2"
-                >
-                  <Monitor size={14} />
-                  System
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Star size={18} />
+                Stars
+              </CardTitle>
+              <CardDescription>Review skills you&apos;ve starred for quick access.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button asChild variant="outline">
+                <Link to="/stars">View stars</Link>
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* Edit profile form */}
+          <Card>
+            <form className="flex flex-col gap-4" onSubmit={onSave}>
+              <CardContent>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="settings-display-name">Display name</Label>
+                  <Input
+                    id="settings-display-name"
+                    value={displayName}
+                    onChange={(event) => setDisplayName(event.target.value)}
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="settings-bio">Bio</Label>
+                  <Textarea
+                    id="settings-bio"
+                    rows={5}
+                    value={bio}
+                    onChange={(event) => setBio(event.target.value)}
+                    placeholder="Tell people what you're building."
+                  />
+                </div>
+              </CardContent>
+              <div className="flex items-center gap-3 px-[22px] pb-[22px]">
+                <Button variant="primary" type="submit">
+                  Save
                 </Button>
               </div>
-            </div>
-          </CardContent>
-        </Card>
+            </form>
+          </Card>
 
-        {/* Organizations */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Organizations</CardTitle>
-            <CardDescription>
-              Create org publishers and manage who can publish under them.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="settings-org-handle">Org handle</Label>
-              <Input
-                id="settings-org-handle"
-                value={orgHandle}
-                onChange={(event) => setOrgHandle(event.target.value)}
-                placeholder="openclaw"
-              />
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="settings-org-display-name">Display name</Label>
-              <Input
-                id="settings-org-display-name"
-                value={orgDisplayName}
-                onChange={(event) => setOrgDisplayName(event.target.value)}
-                placeholder="OpenClaw"
-              />
-            </div>
-            <div className="flex items-center gap-3">
-              <Button
-                variant="primary"
-                type="button"
-                disabled={!orgHandle.trim()}
-                onClick={() => void onCreateOrg()}
-              >
-                Create org
-              </Button>
-            </div>
+          {/* Appearance */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Settings2 size={18} />
+                Appearance
+              </CardTitle>
+              <CardDescription>Choose how ClawHub follows your system theme.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                <Label id="theme" className="text-sm font-semibold text-[color:var(--ink)]">
+                  Theme mode
+                </Label>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant={themeMode === "light" ? "primary" : "ghost"}
+                    size="sm"
+                    onClick={() => setThemeMode("light")}
+                    className="flex items-center gap-2"
+                  >
+                    <Sun size={14} />
+                    Light
+                  </Button>
+                  <Button
+                    variant={themeMode === "dark" ? "primary" : "ghost"}
+                    size="sm"
+                    onClick={() => setThemeMode("dark")}
+                    className="flex items-center gap-2"
+                  >
+                    <Moon size={14} />
+                    Dark
+                  </Button>
+                  <Button
+                    variant={themeMode === "system" ? "primary" : "ghost"}
+                    size="sm"
+                    onClick={() => setThemeMode("system")}
+                    className="flex items-center gap-2"
+                  >
+                    <Monitor size={14} />
+                    System
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
 
-            {orgs.length > 0 ? (
-              <>
-                <Separator className="my-2" />
+          {/* Organizations */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Organizations</CardTitle>
+              <CardDescription>
+                Create org publishers and manage who can publish under them.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="settings-org-handle">Org handle</Label>
+                <Input
+                  id="settings-org-handle"
+                  value={orgHandle}
+                  onChange={(event) => setOrgHandle(event.target.value)}
+                  placeholder="openclaw"
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="settings-org-display-name">Display name</Label>
+                <Input
+                  id="settings-org-display-name"
+                  value={orgDisplayName}
+                  onChange={(event) => setOrgDisplayName(event.target.value)}
+                  placeholder="OpenClaw"
+                />
+              </div>
+              <div className="flex items-center gap-3">
+                <Button
+                  variant="primary"
+                  type="button"
+                  disabled={!orgHandle.trim()}
+                  onClick={() => void onCreateOrg()}
+                >
+                  Create org
+                </Button>
+              </div>
 
-                {selectedOrg ? (
-                  <div className="rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)] p-4">
-                    <div className="flex items-center gap-4">
-                      <Avatar className="h-16 w-16">
-                        <AvatarImage
-                          src={selectedOrgImage.trim() || undefined}
-                          alt={selectedOrgDisplayName || selectedOrg.publisher.handle}
-                        />
-                        <AvatarFallback className="text-lg">
-                          {(selectedOrgDisplayName || selectedOrg.publisher.handle)
-                            .charAt(0)
-                            .toUpperCase()}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="min-w-0">
-                        <div className="text-base font-semibold text-[color:var(--ink)]">
-                          {selectedOrgDisplayName || selectedOrg.publisher.handle}
-                        </div>
-                        <div className="text-sm text-[color:var(--ink-soft)]">
-                          @{selectedOrg.publisher.handle}
+              {orgs.length > 0 ? (
+                <>
+                  <Separator className="my-2" />
+
+                  {selectedOrg ? (
+                    <div className="rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)] p-4">
+                      <div className="flex items-center gap-4">
+                        <Avatar className="h-16 w-16">
+                          <AvatarImage
+                            src={selectedOrgImage.trim() || undefined}
+                            alt={selectedOrgDisplayName || selectedOrg.publisher.handle}
+                          />
+                          <AvatarFallback className="text-lg">
+                            {(selectedOrgDisplayName || selectedOrg.publisher.handle)
+                              .charAt(0)
+                              .toUpperCase()}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0">
+                          <div className="text-base font-semibold text-[color:var(--ink)]">
+                            {selectedOrgDisplayName || selectedOrg.publisher.handle}
+                          </div>
+                          <div className="text-sm text-[color:var(--ink-soft)]">
+                            @{selectedOrg.publisher.handle}
+                          </div>
                         </div>
                       </div>
                     </div>
+                  ) : null}
+
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="settings-manage-org">Manage org</Label>
+                    <select
+                      id="settings-manage-org"
+                      className="w-full min-h-[44px] rounded-[var(--radius-sm)] border border-[rgba(29,59,78,0.22)] bg-[rgba(255,255,255,0.94)] px-3.5 py-[13px] text-[color:var(--ink)] transition-all duration-[180ms] ease-out focus:outline-none focus:border-[color-mix(in_srgb,var(--accent)_70%,white)] focus:shadow-[0_0_0_3px_color-mix(in_srgb,var(--accent)_22%,transparent)] dark:border-[rgba(255,255,255,0.12)] dark:bg-[rgba(14,28,37,0.84)]"
+                      value={selectedOrg?.publisher.handle ?? ""}
+                      onChange={(event) => setSelectedOrgHandle(event.target.value)}
+                    >
+                      {orgs.map((entry) => (
+                        <option key={entry.publisher._id} value={entry.publisher.handle}>
+                          @{entry.publisher.handle} · {entry.role}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {selectedOrg && selectedOrg.role !== "publisher" ? (
+                    <>
+                      <div className="flex flex-col gap-2">
+                        <Label htmlFor="settings-selected-org-display-name">Org display name</Label>
+                        <Input
+                          id="settings-selected-org-display-name"
+                          value={selectedOrgDisplayName}
+                          onChange={(event) => setSelectedOrgDisplayName(event.target.value)}
+                          placeholder="OpenClaw"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <Label htmlFor="settings-selected-org-image">Profile image URL</Label>
+                        <Input
+                          id="settings-selected-org-image"
+                          value={selectedOrgImage}
+                          onChange={(event) => setSelectedOrgImage(event.target.value)}
+                          placeholder="https://example.com/logo.png"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <Label htmlFor="settings-selected-org-bio">Org bio</Label>
+                        <Textarea
+                          id="settings-selected-org-bio"
+                          rows={4}
+                          value={selectedOrgBio}
+                          onChange={(event) => setSelectedOrgBio(event.target.value)}
+                          placeholder="Tell people what this organization publishes."
+                        />
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <Button type="button" onClick={() => void onSaveOrgProfile()}>
+                          Save org profile
+                        </Button>
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <Label htmlFor="settings-add-member">Add member</Label>
+                        <Input
+                          id="settings-add-member"
+                          value={memberHandle}
+                          onChange={(event) => setMemberHandle(event.target.value)}
+                          placeholder="@username"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <Label htmlFor="settings-member-role">Role</Label>
+                        <select
+                          id="settings-member-role"
+                          className="w-full min-h-[44px] rounded-[var(--radius-sm)] border border-[rgba(29,59,78,0.22)] bg-[rgba(255,255,255,0.94)] px-3.5 py-[13px] text-[color:var(--ink)] transition-all duration-[180ms] ease-out focus:outline-none focus:border-[color-mix(in_srgb,var(--accent)_70%,white)] focus:shadow-[0_0_0_3px_color-mix(in_srgb,var(--accent)_22%,transparent)] dark:border-[rgba(255,255,255,0.12)] dark:bg-[rgba(14,28,37,0.84)]"
+                          value={memberRole}
+                          onChange={(event) =>
+                            setMemberRole(event.target.value as typeof memberRole)
+                          }
+                        >
+                          <option value="publisher">Publisher</option>
+                          <option value="admin">Admin</option>
+                          <option value="owner">Owner</option>
+                        </select>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <Button
+                          type="button"
+                          disabled={!memberHandle.trim()}
+                          onClick={() =>
+                            void addOrgMember({
+                              publisherId: selectedOrg.publisher._id,
+                              userHandle: memberHandle,
+                              role: memberRole,
+                            }).then(() => setMemberHandle(""))
+                          }
+                        >
+                          Add member
+                        </Button>
+                      </div>
+                    </>
+                  ) : null}
+
+                  {(orgMembers?.members ?? []).length ? (
+                    <div className="grid gap-2.5 mt-2">
+                      {orgMembers?.members.map((entry) => (
+                        <div
+                          key={`${entry.user._id}:${entry.role}`}
+                          className="flex items-center justify-between gap-3 rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)] px-4 py-3"
+                        >
+                          <div className="flex flex-col gap-0.5">
+                            <span className="font-semibold text-[color:var(--ink)]">
+                              {entry.user.displayName ?? entry.user.handle ?? entry.user._id}
+                            </span>
+                            <span className="text-sm text-[color:var(--ink-soft)]">
+                              @{entry.user.handle ?? "user"} · {entry.role}
+                            </span>
+                          </div>
+                          {selectedOrg && selectedOrg.role !== "publisher" ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              type="button"
+                              onClick={() =>
+                                void removeOrgMember({
+                                  publisherId: selectedOrg.publisher._id,
+                                  userId: entry.user._id,
+                                })
+                              }
+                            >
+                              Remove
+                            </Button>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </>
+              ) : null}
+            </CardContent>
+          </Card>
+
+          {/* API tokens */}
+          <Card>
+            <CardHeader>
+              <CardTitle>API tokens</CardTitle>
+              <CardDescription>
+                Use these tokens for the `clawhub` CLI. Tokens are shown once on creation.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="settings-token-label">Label</Label>
+                <Input
+                  id="settings-token-label"
+                  value={tokenLabel}
+                  onChange={(event) => setTokenLabel(event.target.value)}
+                  placeholder="CLI token"
+                />
+              </div>
+              <div className="flex flex-col items-start gap-3">
+                <Button variant="primary" type="button" onClick={() => void onCreateToken()}>
+                  Create token
+                </Button>
+                {newToken ? (
+                  <div className="w-full rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)] p-4">
+                    <div className="mb-2 text-sm font-semibold text-[color:var(--ink)]">
+                      Copy this token now:
+                    </div>
+                    <code className="block break-all text-sm text-[color:var(--ink-soft)]">
+                      {newToken}
+                    </code>
                   </div>
                 ) : null}
+              </div>
 
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="settings-manage-org">Manage org</Label>
-                  <select
-                    id="settings-manage-org"
-                    className="w-full min-h-[44px] rounded-[var(--radius-sm)] border border-[rgba(29,59,78,0.22)] bg-[rgba(255,255,255,0.94)] px-3.5 py-[13px] text-[color:var(--ink)] transition-all duration-[180ms] ease-out focus:outline-none focus:border-[color-mix(in_srgb,var(--accent)_70%,white)] focus:shadow-[0_0_0_3px_color-mix(in_srgb,var(--accent)_22%,transparent)] dark:border-[rgba(255,255,255,0.12)] dark:bg-[rgba(14,28,37,0.84)]"
-                    value={selectedOrg?.publisher.handle ?? ""}
-                    onChange={(event) => setSelectedOrgHandle(event.target.value)}
-                  >
-                    {orgs.map((entry) => (
-                      <option key={entry.publisher._id} value={entry.publisher.handle}>
-                        @{entry.publisher.handle} · {entry.role}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {selectedOrg && selectedOrg.role !== "publisher" ? (
-                  <>
-                    <div className="flex flex-col gap-2">
-                      <Label htmlFor="settings-selected-org-display-name">Org display name</Label>
-                      <Input
-                        id="settings-selected-org-display-name"
-                        value={selectedOrgDisplayName}
-                        onChange={(event) => setSelectedOrgDisplayName(event.target.value)}
-                        placeholder="OpenClaw"
-                      />
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <Label htmlFor="settings-selected-org-image">Profile image URL</Label>
-                      <Input
-                        id="settings-selected-org-image"
-                        value={selectedOrgImage}
-                        onChange={(event) => setSelectedOrgImage(event.target.value)}
-                        placeholder="https://example.com/logo.png"
-                      />
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <Label htmlFor="settings-selected-org-bio">Org bio</Label>
-                      <Textarea
-                        id="settings-selected-org-bio"
-                        rows={4}
-                        value={selectedOrgBio}
-                        onChange={(event) => setSelectedOrgBio(event.target.value)}
-                        placeholder="Tell people what this organization publishes."
-                      />
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <Button type="button" onClick={() => void onSaveOrgProfile()}>
-                        Save org profile
-                      </Button>
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <Label htmlFor="settings-add-member">Add member</Label>
-                      <Input
-                        id="settings-add-member"
-                        value={memberHandle}
-                        onChange={(event) => setMemberHandle(event.target.value)}
-                        placeholder="@username"
-                      />
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <Label htmlFor="settings-member-role">Role</Label>
-                      <select
-                        id="settings-member-role"
-                        className="w-full min-h-[44px] rounded-[var(--radius-sm)] border border-[rgba(29,59,78,0.22)] bg-[rgba(255,255,255,0.94)] px-3.5 py-[13px] text-[color:var(--ink)] transition-all duration-[180ms] ease-out focus:outline-none focus:border-[color-mix(in_srgb,var(--accent)_70%,white)] focus:shadow-[0_0_0_3px_color-mix(in_srgb,var(--accent)_22%,transparent)] dark:border-[rgba(255,255,255,0.12)] dark:bg-[rgba(14,28,37,0.84)]"
-                        value={memberRole}
-                        onChange={(event) => setMemberRole(event.target.value as typeof memberRole)}
-                      >
-                        <option value="publisher">Publisher</option>
-                        <option value="admin">Admin</option>
-                        <option value="owner">Owner</option>
-                      </select>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <Button
-                        type="button"
-                        disabled={!memberHandle.trim()}
-                        onClick={() =>
-                          void addOrgMember({
-                            publisherId: selectedOrg.publisher._id,
-                            userHandle: memberHandle,
-                            role: memberRole,
-                          }).then(() => setMemberHandle(""))
-                        }
-                      >
-                        Add member
-                      </Button>
-                    </div>
-                  </>
-                ) : null}
-
-                {(orgMembers?.members ?? []).length ? (
-                  <div className="grid gap-2.5 mt-2">
-                    {orgMembers?.members.map((entry) => (
-                      <div
-                        key={`${entry.user._id}:${entry.role}`}
-                        className="flex items-center justify-between gap-3 rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)] px-4 py-3"
-                      >
-                        <div className="flex flex-col gap-0.5">
+              {(tokens ?? []).length ? (
+                <div className="grid gap-2.5 mt-2">
+                  {(tokens ?? []).map((token) => (
+                    <div
+                      key={token._id}
+                      className="flex items-center justify-between gap-3 rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)] px-4 py-3"
+                    >
+                      <div className="flex flex-col gap-0.5">
+                        <div className="flex items-center gap-2">
                           <span className="font-semibold text-[color:var(--ink)]">
-                            {entry.user.displayName ?? entry.user.handle ?? entry.user._id}
+                            {token.label}
                           </span>
                           <span className="text-sm text-[color:var(--ink-soft)]">
-                            @{entry.user.handle ?? "user"} · {entry.role}
+                            ({token.prefix}...)
                           </span>
+                          {token.revokedAt ? <Badge variant="destructive">Revoked</Badge> : null}
                         </div>
-                        {selectedOrg && selectedOrg.role !== "publisher" ? (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            type="button"
-                            onClick={() =>
-                              void removeOrgMember({
-                                publisherId: selectedOrg.publisher._id,
-                                userId: entry.user._id,
-                              })
-                            }
-                          >
-                            Remove
-                          </Button>
-                        ) : null}
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-              </>
-            ) : null}
-          </CardContent>
-        </Card>
-
-        {/* API tokens */}
-        <Card>
-          <CardHeader>
-            <CardTitle>API tokens</CardTitle>
-            <CardDescription>
-              Use these tokens for the `clawhub` CLI. Tokens are shown once on creation.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="settings-token-label">Label</Label>
-              <Input
-                id="settings-token-label"
-                value={tokenLabel}
-                onChange={(event) => setTokenLabel(event.target.value)}
-                placeholder="CLI token"
-              />
-            </div>
-            <div className="flex flex-col items-start gap-3">
-              <Button variant="primary" type="button" onClick={() => void onCreateToken()}>
-                Create token
-              </Button>
-              {newToken ? (
-                <div className="w-full rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)] p-4">
-                  <div className="mb-2 text-sm font-semibold text-[color:var(--ink)]">
-                    Copy this token now:
-                  </div>
-                  <code className="block break-all text-sm text-[color:var(--ink-soft)]">
-                    {newToken}
-                  </code>
-                </div>
-              ) : null}
-            </div>
-
-            {(tokens ?? []).length ? (
-              <div className="grid gap-2.5 mt-2">
-                {(tokens ?? []).map((token) => (
-                  <div
-                    key={token._id}
-                    className="flex items-center justify-between gap-3 rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)] px-4 py-3"
-                  >
-                    <div className="flex flex-col gap-0.5">
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-[color:var(--ink)]">{token.label}</span>
                         <span className="text-sm text-[color:var(--ink-soft)]">
-                          ({token.prefix}...)
+                          Created {formatDate(token.createdAt)}
+                          {token.lastUsedAt ? ` · Used ${formatDate(token.lastUsedAt)}` : ""}
+                          {token.revokedAt ? ` · Revoked ${formatDate(token.revokedAt)}` : ""}
                         </span>
-                        {token.revokedAt ? <Badge variant="destructive">Revoked</Badge> : null}
                       </div>
-                      <span className="text-sm text-[color:var(--ink-soft)]">
-                        Created {formatDate(token.createdAt)}
-                        {token.lastUsedAt ? ` · Used ${formatDate(token.lastUsedAt)}` : ""}
-                        {token.revokedAt ? ` · Revoked ${formatDate(token.revokedAt)}` : ""}
-                      </span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        type="button"
+                        disabled={Boolean(token.revokedAt)}
+                        onClick={() => void revokeToken({ tokenId: token._id })}
+                      >
+                        {token.revokedAt ? "Revoked" : "Revoke"}
+                      </Button>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      type="button"
-                      disabled={Boolean(token.revokedAt)}
-                      onClick={() => void revokeToken({ tokenId: token._id })}
-                    >
-                      {token.revokedAt ? "Revoked" : "Revoke"}
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="mt-2 text-sm text-[color:var(--ink-soft)]">No tokens yet.</p>
-            )}
-          </CardContent>
-        </Card>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-2 text-sm text-[color:var(--ink-soft)]">No tokens yet.</p>
+              )}
+            </CardContent>
+          </Card>
 
-        {/* Danger zone */}
-        <Card className="border-red-300/40 dark:border-red-500/30">
-          <CardHeader>
-            <CardTitle className="text-red-700 dark:text-red-300">Danger zone</CardTitle>
-            <CardDescription>
-              Delete your account permanently. This cannot be undone. Published skills remain
-              public.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-              <DialogTrigger asChild>
-                <Button variant="destructive" type="button">
-                  Delete account
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Delete account</DialogTitle>
-                  <DialogDescription>
-                    Delete your account permanently? This cannot be undone. Published skills will
-                    remain public.
-                  </DialogDescription>
-                </DialogHeader>
-                <DialogFooter>
-                  <Button variant="ghost" onClick={() => setDeleteDialogOpen(false)}>
-                    Cancel
-                  </Button>
-                  <Button variant="destructive" onClick={() => void onDelete()}>
+          {/* Danger zone */}
+          <Card className="border-red-300/40 dark:border-red-500/30">
+            <CardHeader>
+              <CardTitle className="text-red-700 dark:text-red-300">Danger zone</CardTitle>
+              <CardDescription>
+                Delete your account permanently. This cannot be undone. Published skills remain
+                public.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="destructive" type="button">
                     Delete account
                   </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          </CardContent>
-        </Card>
-      </main>
-    </Container>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Delete account</DialogTitle>
+                    <DialogDescription>
+                      Delete your account permanently? This cannot be undone. Published skills will
+                      remain public.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <DialogFooter>
+                    <Button variant="ghost" onClick={() => setDeleteDialogOpen(false)}>
+                      Cancel
+                    </Button>
+                    <Button variant="destructive" onClick={() => void onDelete()}>
+                      Delete account
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </CardContent>
+          </Card>
+        </div>
+      </Container>
+    </main>
   );
 }
 

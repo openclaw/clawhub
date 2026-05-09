@@ -10,9 +10,9 @@ const Container = React.forwardRef<HTMLDivElement, ContainerProps>(
     <div
       ref={ref}
       className={cn(
-        "mx-auto w-full px-4 sm:px-6 lg:px-7",
-        size === "default" && "max-w-page-max",
-        size === "narrow" && "max-w-page-narrow",
+        "mx-auto w-full px-4 sm:px-6 lg:px-6",
+        size === "default" && "max-w-[var(--page-max)]",
+        size === "narrow" && "max-w-[var(--page-narrow)]",
         size === "wide" && "w-full",
         className,
       )}
