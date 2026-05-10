@@ -45,6 +45,7 @@ type SeedActionResult = {
 type SeedMutationResult = Record<string, unknown>;
 
 const LOCAL_SEED_HANDLE = "local";
+const LOCAL_SEED_GITHUB_CREATED_AT = Date.parse("2020-01-01T00:00:00.000Z");
 const FLAGGED_SKILL_SLUG = "local-flagged-wallet-sync";
 const SCANNED_SKILL_SLUG = "local-agentic-risk-demo";
 const FLAGGED_PLUGIN_NAME = "local-flagged-runtime-plugin";
@@ -824,20 +825,29 @@ async function ensureLocalSeedOwner(ctx: MutationCtx) {
     .withIndex("handle", (q) => q.eq("handle", LOCAL_SEED_HANDLE))
     .collect();
 
-  const userId =
-    existingUsers[0]?._id ??
+  const userId = existingUsers[0]?._id;
+  const ensuredUserId =
+    userId ??
     (await ctx.db.insert("users", {
       handle: LOCAL_SEED_HANDLE,
       displayName: "Local Dev",
       role: "admin",
+      githubCreatedAt: LOCAL_SEED_GITHUB_CREATED_AT,
       createdAt: now,
       updatedAt: now,
     }));
-  const user = await ctx.db.get(userId);
+  if (userId) {
+    await ctx.db.patch(userId, {
+      githubCreatedAt: LOCAL_SEED_GITHUB_CREATED_AT,
+      role: "admin",
+      updatedAt: now,
+    });
+  }
+  const user = await ctx.db.get(ensuredUserId);
   if (!user) throw new Error("Local seed user was not created");
   const publisher = await ensurePersonalPublisherForUser(ctx, user);
   if (!publisher) throw new Error("Local seed publisher was not created");
-  return { userId, publisherId: publisher._id };
+  return { userId: ensuredUserId, publisherId: publisher._id };
 }
 
 async function deleteRescanRequestsForSkillVersion(ctx: MutationCtx, versionId: unknown) {

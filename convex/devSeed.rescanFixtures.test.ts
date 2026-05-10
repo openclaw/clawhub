@@ -137,7 +137,13 @@ describe("devSeed rescan UX fixtures", () => {
     await seedRescanUxFixturesHandler({ db } as never, { ...args, reset: true } as never);
 
     expect(tables.users).toHaveLength(1);
-    expect(tables.users?.[0]).toEqual(expect.objectContaining({ handle: "local" }));
+    expect(tables.users?.[0]).toEqual(
+      expect.objectContaining({
+        handle: "local",
+        role: "admin",
+        githubCreatedAt: Date.parse("2020-01-01T00:00:00.000Z"),
+      }),
+    );
     expect(tables.publishers).toHaveLength(1);
     expect(tables.skills).toHaveLength(2);
     expect(tables.skills?.find((skill) => skill.slug === "local-flagged-wallet-sync")).toEqual(
