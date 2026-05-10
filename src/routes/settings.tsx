@@ -25,6 +25,7 @@ import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { EmptyState } from "../components/EmptyState";
+import { copyText } from "../components/InstallCopyButton";
 import { MarketplaceIcon } from "../components/MarketplaceIcon";
 import { SignInButton } from "../components/SignInButton";
 import { Avatar, AvatarFallback, AvatarImage } from "../components/ui/avatar";
@@ -50,7 +51,6 @@ import {
 } from "../components/ui/select";
 import { Textarea } from "../components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "../components/ui/toggle-group";
-import { copyText } from "../components/InstallCopyButton";
 import { useThemeMode } from "../lib/theme";
 
 const settingsViews = ["account", "organizations", "tokens", "danger"] as const;
@@ -503,7 +503,11 @@ export function Settings() {
                         value={selectedOrg?.publisher.handle ?? ""}
                         onValueChange={setSelectedOrgHandle}
                       >
-                        <SelectTrigger id="settings-manage-org" aria-label="Manage organization" className="h-12 sm:min-w-[280px]">
+                        <SelectTrigger
+                          id="settings-manage-org"
+                          aria-label="Manage organization"
+                          className="h-12 sm:min-w-[280px]"
+                        >
                           {selectedOrg ? (
                             <span className="flex min-w-0 items-center gap-2">
                               <OrgLogoSmall
