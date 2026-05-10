@@ -305,6 +305,16 @@ a.home-v2-trend-card:hover {
   text-decoration: none;
 }
 
+.settings-sidebar-link:hover {
+  text-decoration: none;
+}
+
+.settings-org-logo .marketplace-icon {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+}
+
 /* Global focus indicator for keyboard navigation */
 :focus-visible {
   outline: 2px solid var(--accent);

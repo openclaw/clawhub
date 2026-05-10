@@ -388,7 +388,7 @@ describe("Header", () => {
     expect(labels.slice(3, 6)).toEqual(["Publishers", "About", "Docs"]);
   });
 
-  it("keeps Stars out of signed-in header navigation", () => {
+  it("links starred skills from the signed-in avatar menu", () => {
     siteModeMock.mockReturnValue("skills");
     authStatusMock.mockReturnValue({
       isAuthenticated: true,
@@ -404,7 +404,7 @@ describe("Header", () => {
 
     render(<Header />);
 
-    expect(screen.queryByText("Stars")).toBeNull();
+    expect(screen.getByText("Stars").closest("a")?.getAttribute("href")).toBe("/stars");
     expect(screen.getAllByText("Dashboard").length).toBeGreaterThan(0);
     expect(screen.getByText("Settings")).toBeTruthy();
   });

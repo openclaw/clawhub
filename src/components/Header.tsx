@@ -4,11 +4,14 @@ import {
   ArrowRight,
   ChevronDown,
   Ghost,
+  LayoutDashboard,
   Menu,
   Monitor,
   Moon,
   Plug,
   Search,
+  Settings,
+  Star,
   Sun,
   Wrench,
 } from "lucide-react";
@@ -466,10 +469,22 @@ export default function Header() {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="user-dropdown-content">
                   <DropdownMenuItem asChild>
-                    <Link to="/dashboard">Dashboard</Link>
+                    <Link to="/dashboard" className="flex items-center gap-2">
+                      <LayoutDashboard size={14} aria-hidden="true" />
+                      Dashboard
+                    </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
-                    <Link to="/settings">Settings</Link>
+                    <Link to="/stars" className="flex items-center gap-2">
+                      <Star size={14} aria-hidden="true" />
+                      Stars
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link to="/settings" className="flex items-center gap-2">
+                      <Settings size={14} aria-hidden="true" />
+                      Settings
+                    </Link>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => void signOut()}>Sign out</DropdownMenuItem>
