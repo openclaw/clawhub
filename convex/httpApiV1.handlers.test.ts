@@ -3556,6 +3556,26 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("packages list supports category when scoped to a plugin family", async () => {
+    const runQuery = vi.fn().mockResolvedValue({ page: [], isDone: true, continueCursor: "" });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.listPackagesV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages?family=code-plugin&category=data&limit=7"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        family: "code-plugin",
+        category: "data",
+        paginationOpts: { cursor: null, numItems: 7 },
+      }),
+    );
+  });
+
   it("plugins list defaults to plugin package families", async () => {
     const codePlugin = {
       name: "code-plugin",
@@ -3744,6 +3764,28 @@ describe("httpApiV1 handlers", () => {
       expect.anything(),
       expect.objectContaining({
         query: "demo",
+      }),
+    );
+  });
+
+  it("packages search supports category when scoped to a plugin family", async () => {
+    const runQuery = vi.fn().mockResolvedValue([]);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        "https://example.com/api/v1/packages/search?q=api&family=code-plugin&category=data",
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        query: "api",
+        family: "code-plugin",
+        category: "data",
       }),
     );
   });

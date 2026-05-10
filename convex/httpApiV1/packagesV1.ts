@@ -1105,7 +1105,7 @@ async function listPackages(
   if (category && !isPluginCategorySlug(category)) {
     return text("Invalid plugin category", 400, rate.headers);
   }
-  if (category && (effectiveFamily === "skill" || includeSkills)) {
+  if (category && (effectiveFamily === "skill" || (!effectiveFamily && includeSkills))) {
     return text(
       "Plugin category is only supported for plugin package endpoints",
       400,
@@ -2074,7 +2074,7 @@ async function searchPackages(
   if (category && !isPluginCategorySlug(category)) {
     return text("Invalid plugin category", 400, rate.headers);
   }
-  if (category && (family === "skill" || includeSkills)) {
+  if (category && (family === "skill" || (!family && includeSkills))) {
     return text(
       "Plugin category is only supported for plugin package endpoints",
       400,
