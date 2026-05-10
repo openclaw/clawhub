@@ -50,6 +50,7 @@ import {
 } from "../components/ui/select";
 import { Textarea } from "../components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "../components/ui/toggle-group";
+import { copyText } from "../components/InstallCopyButton";
 import { useThemeMode } from "../lib/theme";
 
 const settingsViews = ["account", "organizations", "tokens", "danger"] as const;
@@ -502,7 +503,7 @@ export function Settings() {
                         value={selectedOrg?.publisher.handle ?? ""}
                         onValueChange={setSelectedOrgHandle}
                       >
-                        <SelectTrigger id="settings-manage-org" className="h-12 sm:min-w-[280px]">
+                        <SelectTrigger id="settings-manage-org" aria-label="Manage organization" className="h-12 sm:min-w-[280px]">
                           {selectedOrg ? (
                             <span className="flex min-w-0 items-center gap-2">
                               <OrgLogoSmall
@@ -969,8 +970,17 @@ export function Settings() {
                         size="sm"
                         className="shrink-0"
                         onClick={() => {
-                          void navigator.clipboard.writeText(newToken);
-                          toast.success("Token copied");
+                          void copyText(newToken)
+                            .then((didCopy) => {
+                              if (didCopy) {
+                                toast.success("Token copied");
+                              } else {
+                                toast.error("Failed to copy token");
+                              }
+                            })
+                            .catch(() => {
+                              toast.error("Failed to copy token");
+                            });
                         }}
                       >
                         <Copy size={15} />
