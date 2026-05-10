@@ -1,11 +1,9 @@
-import { Clock, ExternalLink, Fingerprint } from "lucide-react";
-import type { ReactNode } from "react";
+import { Clock, ExternalLink } from "lucide-react";
 import type { Id } from "../../convex/_generated/dataModel";
 import { PublisherClawScanNote } from "./PublisherClawScanNote";
 import { SidebarMetadata } from "./SidebarMetadata";
 import {
   ClawScanRiskReview,
-  getScanStatusInfo,
   hasClawScanRiskReview,
   ScanResultBadge,
   type LlmAnalysis,
@@ -13,7 +11,6 @@ import {
   type VtAnalysis,
 } from "./SkillSecurityScanResults";
 import { Badge } from "./ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 
 export type ScannerSlug = "virustotal" | "clawscan" | "static-analysis";
 
@@ -90,16 +87,6 @@ function formatBadgeValue(value: unknown, fallback: string) {
     .join(" ");
 }
 
-function DetailRow({ label, children }: { label: string; children: ReactNode }) {
-  if (children === null || children === undefined || children === "") return null;
-  return (
-    <div className="grid gap-1.5 border-b border-[color:var(--line)] pb-3 last:border-b-0 last:pb-0 sm:grid-cols-[180px_1fr] sm:gap-4">
-      <dt className="text-sm font-semibold text-[color:var(--ink-soft)]">{label}</dt>
-      <dd className="min-w-0 break-words text-sm text-[color:var(--ink)]">{children}</dd>
-    </div>
-  );
-}
-
 function getScannerStatus(props: SecurityScannerPageProps) {
   if (props.scanner === "virustotal")
     return props.vtAnalysis?.verdict ?? props.vtAnalysis?.status ?? "pending";
@@ -171,20 +158,56 @@ function SecurityScannerHero({ label, props }: { label: string; props: SecurityS
   );
 }
 
-function OpenClawSecurityReport(props: SecurityScannerPageProps) {
+function getVisibleFindingCount(props: SecurityScannerPageProps) {
+  if (props.scanner === "static-analysis") return props.staticScan?.findings?.length ?? 0;
+  if (props.scanner === "clawscan") {
+    return (
+      props.llmAnalysis?.agenticRiskFindings?.filter(
+        (finding) =>
+          (finding.status === "note" || finding.status === "concern") && finding.evidence,
+      ).length ?? 0
+    );
+  }
+  return 0;
+}
+
+function getOverviewCopy(props: SecurityScannerPageProps) {
+  if (props.scanner === "virustotal") {
+    return [
+      props.vtAnalysis?.analysis ??
+        "No VirusTotal analysis has been recorded yet. File reputation checks will appear here once the artifact hash has been scanned.",
+    ];
+  }
+
+  if (props.scanner === "static-analysis") {
+    return [
+      props.staticScan?.summary ??
+        "No static analysis result has been recorded yet. Pattern checks will appear here once the artifact has been analyzed.",
+    ];
+  }
+
+  return [
+    props.llmAnalysis?.summary ?? "No ClawScan analysis has been recorded yet.",
+    props.llmAnalysis?.guidance ?? null,
+  ];
+}
+
+function SecurityScannerReport(props: SecurityScannerPageProps) {
   const label = SCANNER_LABELS[props.scanner];
   const status = getScannerStatus(props);
   const checkedAt = getCheckedAt(props);
+  const vtUrl =
+    props.scanner === "virustotal" && props.sha256hash
+      ? `https://www.virustotal.com/gui/file/${props.sha256hash}`
+      : null;
   const sourceRepo = formatValue(
     props.source?.repository ?? props.source?.repo ?? props.source?.url,
   );
   const sourceCommit = formatValue(props.source?.commit ?? props.source?.sha);
   const riskAnalysis =
     props.llmAnalysis && hasClawScanRiskReview(props.llmAnalysis) ? props.llmAnalysis : null;
-  const visibleFindingCount =
-    props.llmAnalysis?.agenticRiskFindings?.filter(
-      (finding) => (finding.status === "note" || finding.status === "concern") && finding.evidence,
-    ).length ?? 0;
+  const visibleFindingCount = getVisibleFindingCount(props);
+  const overviewCopy = getOverviewCopy(props).filter(Boolean);
 
   return (
     <main className="section detail-page-section security-report-section">
@@ -200,12 +223,15 @@ function OpenClawSecurityReport(props: SecurityScannerPageProps) {
                 </h2>
               </div>
               <div className="security-report-overview-body">
-                <p>{props.llmAnalysis?.summary ?? "No ClawScan analysis has been recorded yet."}</p>
-                {props.llmAnalysis?.guidance ? <p>{props.llmAnalysis.guidance}</p> : null}
+                {overviewCopy.map((copy, index) => (
+                  <p key={`${props.scanner}-overview-${index}`}>{copy}</p>
+                ))}
               </div>
             </section>
 
-            <PublisherClawScanNote note={props.clawScanNote} />
+            {props.scanner === "clawscan" ? (
+              <PublisherClawScanNote note={props.clawScanNote} />
+            ) : null}
 
             {riskAnalysis ? (
               <section className="security-report-panel" aria-labelledby="agentic-findings-heading">
@@ -216,6 +242,51 @@ function OpenClawSecurityReport(props: SecurityScannerPageProps) {
                 </div>
                 <div className="security-report-panel-body">
                   <ClawScanRiskReview analysis={riskAnalysis} showTitle={false} />
+                </div>
+              </section>
+            ) : null}
+
+            {props.scanner === "static-analysis" && props.staticScan?.findings?.length ? (
+              <section className="security-report-panel" aria-labelledby="static-findings-heading">
+                <div className="security-report-panel-header">
+                  <h2 id="static-findings-heading" className="skill-install-panel-title">
+                    Findings ({visibleFindingCount})
+                  </h2>
+                </div>
+                <div className="security-report-panel-body">
+                  <div className="static-analysis-findings">
+                    {props.staticScan.findings.map((finding, index) => (
+                      <article
+                        key={`${finding.code}-${finding.file}-${finding.line}-${index}`}
+                        className="static-analysis-finding"
+                      >
+                        <div className="static-analysis-finding-header">
+                          <Badge variant="compact">{finding.severity}</Badge>
+                          <h3>{finding.code}</h3>
+                        </div>
+                        <dl className="static-analysis-finding-details">
+                          <div>
+                            <dt>Location</dt>
+                            <dd className="font-mono">
+                              {finding.file}:{finding.line}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>Finding</dt>
+                            <dd>{finding.message}</dd>
+                          </div>
+                          {finding.evidence ? (
+                            <div>
+                              <dt>Evidence</dt>
+                              <dd>
+                                <pre>{finding.evidence}</pre>
+                              </dd>
+                            </div>
+                          ) : null}
+                        </dl>
+                      </article>
+                    ))}
+                  </div>
                 </div>
               </section>
             ) : null}
@@ -231,17 +302,21 @@ function OpenClawSecurityReport(props: SecurityScannerPageProps) {
                   label: "Verdict",
                   value: <ScanResultBadge status={status} tone="review" />,
                 },
-                {
-                  label: "Confidence",
-                  value: (
-                    <Badge
-                      variant="compact"
-                      className="min-h-0 rounded-[4px] px-2.5 py-0.5 text-[0.78rem] leading-[1.3]"
-                    >
-                      {formatBadgeValue(props.llmAnalysis?.confidence, "Not reported")}
-                    </Badge>
-                  ),
-                },
+                ...(props.scanner === "clawscan"
+                  ? [
+                      {
+                        label: "Confidence",
+                        value: (
+                          <Badge
+                            variant="compact"
+                            className="min-h-0 rounded-[4px] px-2.5 py-0.5 text-[0.78rem] leading-[1.3]"
+                          >
+                            {formatBadgeValue(props.llmAnalysis?.confidence, "Not reported")}
+                          </Badge>
+                        ),
+                      },
+                    ]
+                  : []),
                 {
                   label: "Analyzed",
                   value: (
@@ -257,6 +332,72 @@ function OpenClawSecurityReport(props: SecurityScannerPageProps) {
                     { label: "Version", value: props.entity.version ?? "Latest" },
                   ],
                 },
+                ...(props.scanner === "static-analysis"
+                  ? [
+                      {
+                        label: "Reason codes",
+                        value: props.staticScan?.reasonCodes?.length ? (
+                          <div className="security-report-badge-list">
+                            {props.staticScan.reasonCodes.map((code) => (
+                              <Badge key={code} variant="compact">
+                                {code}
+                              </Badge>
+                            ))}
+                          </div>
+                        ) : (
+                          "None"
+                        ),
+                      },
+                      {
+                        label: "Engine",
+                        value: props.staticScan?.engineVersion ?? "Not reported",
+                      },
+                    ]
+                  : []),
+                ...(props.scanner === "virustotal"
+                  ? [
+                      {
+                        label: "Hash",
+                        value: props.sha256hash ? (
+                          <span className="break-all font-mono text-xs">{props.sha256hash}</span>
+                        ) : (
+                          "Not recorded"
+                        ),
+                      },
+                      {
+                        label: "Source",
+                        value: props.vtAnalysis?.source ?? "File reputation",
+                      },
+                      {
+                        label: "External report",
+                        value: vtUrl ? (
+                          <a
+                            href={vtUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 break-all text-[color:var(--accent)] hover:underline"
+                          >
+                            View on VirusTotal
+                            <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                          </a>
+                        ) : (
+                          "Unavailable until an artifact hash is recorded."
+                        ),
+                      },
+                    ]
+                  : []),
+                ...(props.scanner === "clawscan" && props.entity.kind === "plugin"
+                  ? [
+                      {
+                        label: "Hash",
+                        value: props.sha256hash ? (
+                          <span className="break-all font-mono text-xs">{props.sha256hash}</span>
+                        ) : (
+                          "Not recorded"
+                        ),
+                      },
+                    ]
+                  : []),
                 { label: "Source repository", value: sourceRepo },
                 {
                   label: "Source commit",
@@ -273,223 +414,6 @@ function OpenClawSecurityReport(props: SecurityScannerPageProps) {
   );
 }
 
-function LegacyOpenClawDetails({ analysis }: { analysis?: LlmAnalysis | null }) {
-  const verdict = analysis?.verdict ?? analysis?.status ?? "Pending";
-  const verdictInfo = getScanStatusInfo(verdict);
-
-  return (
-    <>
-      <DetailRow label="Verdict">{verdictInfo.label}</DetailRow>
-      <DetailRow label="Confidence">{analysis?.confidence ?? "Not reported"}</DetailRow>
-      <DetailRow label="Model">{analysis?.model ?? "Not reported"}</DetailRow>
-      <DetailRow label="Summary">
-        {analysis?.summary ?? "No ClawScan analysis has been recorded yet."}
-      </DetailRow>
-      <DetailRow label="Guidance">{analysis?.guidance ?? null}</DetailRow>
-      <DetailRow label="Findings">
-        {analysis?.findings ? (
-          <pre className="m-0 whitespace-pre-wrap break-words font-mono text-xs">
-            {analysis.findings}
-          </pre>
-        ) : null}
-      </DetailRow>
-    </>
-  );
-}
-
 export function SecurityScannerPage(props: SecurityScannerPageProps) {
-  const label = SCANNER_LABELS[props.scanner];
-  const status = getScannerStatus(props);
-  const checkedAt = getCheckedAt(props);
-  const vtUrl = props.sha256hash ? `https://www.virustotal.com/gui/file/${props.sha256hash}` : null;
-  const sourceRepo = formatValue(
-    props.source?.repository ?? props.source?.repo ?? props.source?.url,
-  );
-  const sourceCommit = formatValue(props.source?.commit ?? props.source?.sha);
-
-  if (props.scanner === "clawscan" && hasClawScanRiskReview(props.llmAnalysis)) {
-    return <OpenClawSecurityReport {...props} />;
-  }
-
-  return (
-    <main className="section detail-page-section">
-      <div className="flex min-w-0 flex-col gap-5">
-        <SecurityScannerHero label={label} props={props} />
-
-        <div className="security-scanner-layout">
-          <div className="flex min-w-0 flex-col gap-5">
-            <Card>
-              <CardHeader>
-                <CardTitle>
-                  {props.scanner === "static-analysis" ? "Scanner evidence" : "Scanner verdict"}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-wrap items-center gap-2">
-                  <ScanResultBadge
-                    status={status}
-                    tone={props.scanner === "clawscan" ? "review" : undefined}
-                  />
-                  <span className="inline-flex items-center gap-1 text-xs text-[color:var(--ink-soft)]">
-                    <Clock className="h-3.5 w-3.5" aria-hidden="true" />
-                    {formatTime(checkedAt)}
-                  </span>
-                </div>
-                <dl className="mt-2 flex flex-col gap-3">
-                  {props.scanner === "virustotal" ? (
-                    <>
-                      <DetailRow label="Hash">
-                        {props.sha256hash ? (
-                          <span className="inline-flex max-w-full items-center gap-2 break-all font-mono text-xs">
-                            <Fingerprint className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                            {props.sha256hash}
-                          </span>
-                        ) : (
-                          "No artifact hash recorded."
-                        )}
-                      </DetailRow>
-                      <DetailRow label="Source">
-                        {props.vtAnalysis?.source ?? "File reputation"}
-                      </DetailRow>
-                      <DetailRow label="Verdict">
-                        {props.vtAnalysis?.verdict ?? props.vtAnalysis?.status ?? "Pending"}
-                      </DetailRow>
-                      <DetailRow label="Code Insight">
-                        {props.vtAnalysis?.analysis ?? null}
-                      </DetailRow>
-                      <DetailRow label="External report">
-                        {vtUrl ? (
-                          <a
-                            href={vtUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 break-all text-[color:var(--accent)] hover:underline"
-                          >
-                            View on VirusTotal
-                            <ExternalLink className="h-3 w-3" aria-hidden="true" />
-                          </a>
-                        ) : (
-                          "Unavailable until an artifact hash is recorded."
-                        )}
-                      </DetailRow>
-                    </>
-                  ) : null}
-
-                  {props.scanner === "clawscan" ? (
-                    <LegacyOpenClawDetails analysis={props.llmAnalysis} />
-                  ) : null}
-
-                  {props.scanner === "static-analysis" ? (
-                    <>
-                      <DetailRow label="Summary">
-                        {props.staticScan?.summary ??
-                          "No static analysis result has been recorded yet."}
-                      </DetailRow>
-                      <DetailRow label="Reason codes">
-                        {props.staticScan?.reasonCodes?.length ? (
-                          <div className="flex flex-wrap gap-1.5">
-                            {props.staticScan.reasonCodes.map((code) => (
-                              <Badge key={code} variant="compact">
-                                {code}
-                              </Badge>
-                            ))}
-                          </div>
-                        ) : (
-                          "None"
-                        )}
-                      </DetailRow>
-                      <DetailRow label="Engine">
-                        {props.staticScan?.engineVersion ?? "Not reported"}
-                      </DetailRow>
-                    </>
-                  ) : null}
-
-                  <DetailRow label="Source repository">{sourceRepo}</DetailRow>
-                  <DetailRow label="Source commit">
-                    {sourceCommit ? (
-                      <span className="font-mono text-xs">{sourceCommit}</span>
-                    ) : null}
-                  </DetailRow>
-                </dl>
-              </CardContent>
-            </Card>
-
-            {props.scanner === "clawscan" && props.llmAnalysis?.dimensions?.length ? (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Review Dimensions</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <dl className="flex flex-col gap-3">
-                    {props.llmAnalysis.dimensions.map((dimension) => (
-                      <DetailRow key={dimension.name} label={dimension.label}>
-                        <div className="flex flex-col gap-1">
-                          <Badge variant="compact" className="w-fit">
-                            {dimension.rating}
-                          </Badge>
-                          <span>{dimension.detail}</span>
-                        </div>
-                      </DetailRow>
-                    ))}
-                  </dl>
-                </CardContent>
-              </Card>
-            ) : null}
-
-            {props.scanner === "static-analysis" && props.staticScan?.findings?.length ? (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Evidence</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex flex-col gap-3">
-                    {props.staticScan.findings.map((finding, index) => (
-                      <div
-                        key={`${finding.code}-${finding.file}-${finding.line}-${index}`}
-                        className="rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)] p-3"
-                      >
-                        <div className="mb-2 flex flex-wrap items-center gap-2">
-                          <Badge variant="compact">{finding.severity}</Badge>
-                          <span className="break-all font-mono text-xs text-[color:var(--ink-soft)]">
-                            {finding.file}:{finding.line}
-                          </span>
-                        </div>
-                        <div className="text-sm font-semibold text-[color:var(--ink)]">
-                          {finding.message}
-                        </div>
-                        <pre className="mt-2 whitespace-pre-wrap break-words rounded-[var(--radius-sm)] bg-[color:var(--surface)] p-2 font-mono text-xs text-[color:var(--ink-soft)]">
-                          {finding.evidence || finding.code}
-                        </pre>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            ) : null}
-          </div>
-
-          <aside className="flex min-w-0 flex-col gap-5">
-            <Card>
-              <CardHeader>
-                <CardTitle>Artifact</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <dl className="flex flex-col gap-3">
-                  <DetailRow label="Package">{props.entity.name}</DetailRow>
-                  <DetailRow label="Version">{props.entity.version ?? "Latest"}</DetailRow>
-                  <DetailRow label="Hash">
-                    {props.sha256hash ? (
-                      <span className="break-all font-mono text-xs">{props.sha256hash}</span>
-                    ) : (
-                      "Not recorded"
-                    )}
-                  </DetailRow>
-                </dl>
-              </CardContent>
-            </Card>
-          </aside>
-        </div>
-      </div>
-    </main>
-  );
+  return <SecurityScannerReport {...props} />;
 }

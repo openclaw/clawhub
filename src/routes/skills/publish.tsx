@@ -128,7 +128,6 @@ export function Upload() {
       node.setAttribute("directory", "");
     }
   };
-  const validationRef = useRef<HTMLDivElement | null>(null);
   const navigate = useNavigate();
   const totalBytes = useMemo(() => files.reduce((sum, file) => sum + file.size, 0), [files]);
   const stripRoot = useMemo(() => {
@@ -445,9 +444,9 @@ export function Upload() {
     event.preventDefault();
     setHasAttempted(true);
     if (!validation.ready) {
-      if (typeof validationRef.current?.scrollIntoView === "function") {
-        validationRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
-      }
+      const message = validation.issues[0] ?? "Fix validation issues to continue.";
+      setError(message);
+      toast.error(message);
       return;
     }
     if (effectiveSlugCollision) {
@@ -649,7 +648,59 @@ export function Upload() {
                 onChange={(event) => setTags(event.target.value)}
                 placeholder="latest, stable"
               />
-              <InlineValidationMessage id="tags-validation-error" message={tagsIssue} />
+
+              {!isSoulMode ? (
+                <>
+                  <Label htmlFor="clawScanNote">ClawScan note</Label>
+                  <Textarea
+                    id="clawScanNote"
+                    rows={4}
+                    value={clawScanNote}
+                    maxLength={MAX_CLAWSCAN_NOTE_CHARS + 1}
+                    onChange={(event) => {
+                      clawScanNoteTouchedRef.current = true;
+                      setClawScanNote(event.target.value);
+                    }}
+                    placeholder="Optional context for ClawScan, e.g. why this version needs network access."
+                  />
+                </>
+              ) : null}
+              {validation.issues.some(
+                (issue) =>
+                  issue.startsWith("Slug") ||
+                  issue.startsWith("Display name") ||
+                  issue.startsWith("Version") ||
+                  issue.startsWith("At least one tag") ||
+                  issue.startsWith("ClawScan note") ||
+                  issue.includes("already exists"),
+              ) ? (
+                <ul className="flex flex-col gap-1 list-disc pl-5 text-sm text-[color:var(--ink-soft)]">
+                  {validation.issues
+                    .filter(
+                      (issue) =>
+                        issue.startsWith("Slug") ||
+                        issue.startsWith("Display name") ||
+                        issue.startsWith("Version") ||
+                        issue.startsWith("At least one tag") ||
+                        issue.startsWith("ClawScan note") ||
+                        issue.includes("already exists"),
+                    )
+                    .map((issue) => (
+                      <li key={issue}>{issue}</li>
+                    ))}
+                </ul>
+              ) : null}
+              {effectiveSlugCollision?.url ? (
+                <div className="text-sm text-[color:var(--ink-soft)]">
+                  Existing skill:{" "}
+                  <a
+                    href={effectiveSlugCollision.url}
+                    className="text-[color:var(--accent)] hover:underline"
+                  >
+                    {effectiveSlugCollision.url}
+                  </a>
+                </div>
+              ) : null}
             </CardContent>
           </Card>
 
@@ -730,100 +781,72 @@ export function Upload() {
               {ignoredMacJunkNote ? (
                 <div className="text-sm text-[color:var(--ink-soft)]">{ignoredMacJunkNote}</div>
               ) : null}
-              <InlineValidationList
-                id="file-validation-errors"
-                title="Fix file selection"
-                issues={fileIssues}
-              />
-            </CardContent>
-          </Card>
-
-          {/* Validation panel */}
-          <Card ref={validationRef}>
-            <CardContent>
-              <CardTitle>Validation</CardTitle>
-              {validation.issues.length === 0 ? (
-                <div className="text-sm text-[color:var(--ink-soft)]">All checks passed.</div>
-              ) : (
+              {validation.issues.some(
+                (issue) =>
+                  issue.startsWith("Add at least one file") ||
+                  issue === `${requiredFileLabel} is required.` ||
+                  issue.startsWith("Remove non-text files") ||
+                  issue.startsWith("Each file") ||
+                  issue.startsWith("Total file size"),
+              ) ? (
                 <ul className="flex flex-col gap-1 list-disc pl-5 text-sm text-[color:var(--ink-soft)]">
-                  {validation.issues.map((issue) => (
-                    <li key={issue}>{issue}</li>
-                  ))}
+                  {validation.issues
+                    .filter(
+                      (issue) =>
+                        issue.startsWith("Add at least one file") ||
+                        issue === `${requiredFileLabel} is required.` ||
+                        issue.startsWith("Remove non-text files") ||
+                        issue.startsWith("Each file") ||
+                        issue.startsWith("Total file size"),
+                    )
+                    .map((issue) => (
+                      <li key={issue}>{issue}</li>
+                    ))}
                 </ul>
-              )}
-              {effectiveSlugCollision?.url ? (
-                <div className="text-sm text-[color:var(--ink-soft)]">
-                  Existing skill:{" "}
-                  <a
-                    href={effectiveSlugCollision.url}
-                    className="text-[color:var(--accent)] hover:underline"
-                  >
-                    {effectiveSlugCollision.url}
-                  </a>
-                </div>
               ) : null}
             </CardContent>
           </Card>
 
-          {/* License & changelog panel */}
+          {!isSoulMode ? (
+            <Card>
+              <CardContent>
+                <CardTitle>License</CardTitle>
+                <div className="flex flex-col gap-3">
+                  <Badge variant="accent">
+                    {PLATFORM_SKILL_LICENSE} · {PLATFORM_SKILL_LICENSE_NAME}
+                  </Badge>
+                  <p className="text-sm text-[color:var(--ink-soft)]">
+                    All skills published on ClawHub are licensed under {PLATFORM_SKILL_LICENSE}.{" "}
+                    {PLATFORM_SKILL_LICENSE_SUMMARY}
+                  </p>
+                  <p className="text-sm text-[color:var(--ink-soft)]">
+                    ClawHub does not support paid skills, per-skill pricing, or paywalled releases.
+                  </p>
+                  <label className="flex items-start gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5"
+                      checked={acceptedLicenseTerms}
+                      onChange={(event) => setAcceptedLicenseTerms(event.target.checked)}
+                    />
+                    <span>
+                      I have the rights to this skill and agree to publish it under{" "}
+                      {PLATFORM_SKILL_LICENSE}.
+                    </span>
+                  </label>
+                  {!acceptedLicenseTerms ? (
+                    <div className="text-sm text-[color:var(--ink-soft)]">
+                      Accept the MIT-0 license terms to publish this skill.
+                    </div>
+                  ) : null}
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
+
           <Card>
             <CardContent>
-              {!isSoulMode ? (
-                <>
-                  <CardTitle>License</CardTitle>
-                  <div className="flex flex-col gap-3">
-                    <Badge variant="accent">
-                      {PLATFORM_SKILL_LICENSE} · {PLATFORM_SKILL_LICENSE_NAME}
-                    </Badge>
-                    <p className="text-sm text-[color:var(--ink-soft)]">
-                      All skills published on ClawHub are licensed under {PLATFORM_SKILL_LICENSE}.{" "}
-                      {PLATFORM_SKILL_LICENSE_SUMMARY}
-                    </p>
-                    <p className="text-sm text-[color:var(--ink-soft)]">
-                      ClawHub does not support paid skills, per-skill pricing, or paywalled
-                      releases.
-                    </p>
-                    <label className="flex items-start gap-2 text-sm cursor-pointer">
-                      <input
-                        type="checkbox"
-                        className="mt-0.5"
-                        checked={acceptedLicenseTerms}
-                        onChange={(event) => setAcceptedLicenseTerms(event.target.checked)}
-                      />
-                      <span>
-                        I have the rights to this skill and agree to publish it under{" "}
-                        {PLATFORM_SKILL_LICENSE}.
-                      </span>
-                    </label>
-                    <InlineValidationMessage id="license-validation-error" message={licenseIssue} />
-                  </div>
-                </>
-              ) : null}
-              {!isSoulMode ? (
-                <div className="publish-field-group">
-                  <div className="publish-field-label-row">
-                    <Label htmlFor="clawScanNote">ClawScan note</Label>
-                    <span>
-                      {trimmedClawScanNote.length}/{MAX_CLAWSCAN_NOTE_CHARS}
-                    </span>
-                  </div>
-                  <Textarea
-                    id="clawScanNote"
-                    rows={4}
-                    value={clawScanNote}
-                    maxLength={MAX_CLAWSCAN_NOTE_CHARS + 1}
-                    onChange={(event) => {
-                      clawScanNoteTouchedRef.current = true;
-                      setClawScanNote(event.target.value);
-                    }}
-                    placeholder="Optional context for ClawScan, e.g. why this version needs network access."
-                  />
-                  <p className="publish-field-help">
-                    Publisher-provided context for this new version. When updating, this may be
-                    prefilled from the latest version, but it is stored only on the new version.
-                  </p>
-                </div>
-              ) : null}
+              <CardTitle>Changelog</CardTitle>
               <Label htmlFor="changelog">Changelog</Label>
               <Textarea
                 id="changelog"
@@ -855,6 +878,9 @@ export function Upload() {
           {/* Submit row */}
           <div className="flex items-center justify-between gap-4">
             <div className="flex flex-col gap-2">
+              {validation.ready ? (
+                <div className="text-sm text-[color:var(--ink-soft)]">All checks passed.</div>
+              ) : null}
               {error ? (
                 <div className="text-sm font-medium text-red-600 dark:text-red-400" role="alert">
                   {error}

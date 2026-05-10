@@ -258,7 +258,105 @@ describe("SecurityScanResults static guidance", () => {
     expect(screen.getByText("requires.env: TODOIST_API_TOKEN")).toBeTruthy();
   });
 
-  it("keeps plugins with legacy ClawScan analysis on the generic detail page", () => {
+  it("shows package hash metadata for plugin ClawScan reports", () => {
+    render(
+      <SecurityScannerPage
+        scanner="clawscan"
+        entity={{
+          kind: "plugin",
+          title: "Plugin Guard",
+          name: "plugin-guard",
+          version: "2.0.0",
+          detailPath: "/plugins/plugin-guard",
+        }}
+        sha256hash="seeded-plugin-hash"
+        llmAnalysis={clawScanAnalysis}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: "Plugin Guard" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Scan Metadata" })).toBeTruthy();
+    expect(screen.getByText("Hash")).toBeTruthy();
+    expect(screen.getByText("seeded-plugin-hash")).toBeTruthy();
+  });
+
+  it("shows VirusTotal reports in the shared scanner report shell", () => {
+    render(
+      <SecurityScannerPage
+        scanner="virustotal"
+        entity={{
+          kind: "skill",
+          title: "Hash Guard",
+          name: "hash-guard",
+          version: "1.2.3",
+          detailPath: "/local/hash-guard",
+        }}
+        sha256hash="abc123"
+        vtAnalysis={{
+          status: "clean",
+          verdict: "benign",
+          analysis: "No known malicious reputation signals were found.",
+          source: "VirusTotal",
+          checkedAt: Date.now(),
+        }}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: "Hash Guard" })).toBeTruthy();
+    expect(screen.getByText(/Audited by VirusTotal/i)).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Overview" })).toBeTruthy();
+    expect(screen.getByText("No known malicious reputation signals were found.")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Scan Metadata" })).toBeTruthy();
+    expect(screen.getByText("abc123")).toBeTruthy();
+    expect(screen.queryByText("Scanner verdict")).toBeNull();
+    expect(screen.queryByText("Artifact")).toBeNull();
+  });
+
+  it("shows static analysis reports in the shared scanner report shell", () => {
+    render(
+      <SecurityScannerPage
+        scanner="static-analysis"
+        entity={{
+          kind: "skill",
+          title: "Pattern Guard",
+          name: "pattern-guard",
+          version: "1.2.3",
+          detailPath: "/local/pattern-guard",
+        }}
+        staticScan={{
+          status: "suspicious",
+          reasonCodes: ["network_access"],
+          summary: "Pattern checks found a network request.",
+          engineVersion: "static-dev",
+          checkedAt: Date.now(),
+          findings: [
+            {
+              code: "suspicious.network_access",
+              severity: "warn",
+              file: "SKILL.md",
+              line: 12,
+              message: "Network access found in skill instructions.",
+              evidence: "curl https://example.test",
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: "Pattern Guard" })).toBeTruthy();
+    expect(screen.getByText(/Audited by Static analysis/i)).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Overview" })).toBeTruthy();
+    expect(screen.getByText("Pattern checks found a network request.")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Findings (1)" })).toBeTruthy();
+    expect(screen.getByText("suspicious.network_access")).toBeTruthy();
+    expect(screen.getByText("SKILL.md:12")).toBeTruthy();
+    expect(screen.getByText("curl https://example.test")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Scan Metadata" })).toBeTruthy();
+    expect(screen.queryByText("Scanner verdict")).toBeNull();
+    expect(screen.queryByText("Artifact")).toBeNull();
+  });
+
+  it("shows plugins with legacy ClawScan analysis in the new ClawScan report shell", () => {
     render(
       <SecurityScannerPage
         scanner="clawscan"
@@ -277,14 +375,14 @@ describe("SecurityScanResults static guidance", () => {
     expect(screen.getByText(/Audited by ClawScan/i)).toBeTruthy();
     expect(screen.getByText("Legacy plugin analysis summary.")).toBeTruthy();
     expect(screen.getByText("Legacy plugin guidance.")).toBeTruthy();
-    expect(screen.getByText("[legacy.rule] expected: Legacy finding text.")).toBeTruthy();
-    expect(screen.getByText("Review Dimensions")).toBeTruthy();
-    expect(screen.getByText("Purpose & Capability")).toBeTruthy();
-    expect(screen.getByText("Legacy dimension detail.")).toBeTruthy();
-    expect(screen.queryByRole("heading", { name: "Scan Metadata" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "Overview" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Scan Metadata" })).toBeTruthy();
+    expect(screen.queryByText("[legacy.rule] expected: Legacy finding text.")).toBeNull();
+    expect(screen.queryByText("Review Dimensions")).toBeNull();
+    expect(screen.queryByText("Purpose & Capability")).toBeNull();
   });
 
-  it("keeps skills with legacy-only ClawScan analysis on the generic detail page", () => {
+  it("shows skills with legacy-only ClawScan analysis in the new ClawScan report shell", () => {
     render(
       <SecurityScannerPage
         scanner="clawscan"
@@ -302,12 +400,13 @@ describe("SecurityScanResults static guidance", () => {
     expect(screen.getByRole("heading", { name: "Legacy Skill" })).toBeTruthy();
     expect(screen.getByText(/Audited by ClawScan/i)).toBeTruthy();
     expect(screen.getByText("Legacy plugin analysis summary.")).toBeTruthy();
-    expect(screen.getByText("Review Dimensions")).toBeTruthy();
-    expect(screen.getByText("Purpose & Capability")).toBeTruthy();
-    expect(screen.queryByRole("heading", { name: "Scan Metadata" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "Overview" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Scan Metadata" })).toBeTruthy();
+    expect(screen.queryByText("Review Dimensions")).toBeNull();
+    expect(screen.queryByText("Purpose & Capability")).toBeNull();
   });
 
-  it("shows the generic OpenClaw empty state when no analysis exists yet", () => {
+  it("shows the new ClawScan empty state when no analysis exists yet", () => {
     render(
       <SecurityScannerPage
         scanner="clawscan"
@@ -326,6 +425,7 @@ describe("SecurityScanResults static guidance", () => {
     expect(screen.getAllByText("Pending").length).toBeGreaterThan(0);
     expect(screen.getByText("No ClawScan analysis has been recorded yet.")).toBeTruthy();
     expect(screen.queryByText("Review Dimensions")).toBeNull();
-    expect(screen.queryByRole("heading", { name: "Scan Metadata" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "Overview" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Scan Metadata" })).toBeTruthy();
   });
 });

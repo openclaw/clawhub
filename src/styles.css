@@ -438,7 +438,7 @@ code {
   gap: 12px;
   background: color-mix(in srgb, var(--surface) 92%, transparent);
   border: 1px solid var(--line);
-  border-radius: var(--r-md);
+  border-radius: var(--r-btn);
   padding: 0 18px;
   height: 32px;
   transition:
@@ -484,6 +484,7 @@ code {
 
 .navbar-search-input::placeholder {
   color: var(--ink-soft);
+  font-size: 0.86rem;
   opacity: 0.7;
 }
 
@@ -958,10 +959,11 @@ code {
 }
 
 .theme-mode-toggle {
-  min-width: 154px;
+  min-width: 124px;
+  height: 32px;
   min-height: 32px;
-  padding: 0 10px;
-  gap: 14px;
+  padding: 0 8px;
+  gap: 8px;
   border: 1px solid var(--line);
   background: var(--surface);
   justify-content: center;
@@ -986,8 +988,8 @@ code {
 }
 
 .theme-mode-toggle button svg {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
 }
 
 .theme-mode-toggle button:focus-visible {
@@ -1431,34 +1433,100 @@ code {
   color: var(--ink);
 }
 
+.security-report-badge-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.static-analysis-findings {
+  display: grid;
+  gap: 48px;
+}
+
+.static-analysis-finding {
+  display: grid;
+  gap: 24px;
+}
+
+.static-analysis-finding:not(:last-child) {
+  padding-bottom: 48px;
+  border-bottom: 1px solid var(--line);
+}
+
+.static-analysis-finding-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 18px;
+}
+
+.static-analysis-finding-header h3 {
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  line-height: 1.25;
+}
+
+.static-analysis-finding-details {
+  display: grid;
+  gap: 0;
+  margin: 0;
+}
+
+.static-analysis-finding-details > div {
+  display: grid;
+  grid-template-columns: minmax(160px, 320px) minmax(0, 1fr);
+  gap: 24px;
+  padding: 22px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.static-analysis-finding-details > div:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.static-analysis-finding-details dt {
+  color: var(--ink);
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.static-analysis-finding-details dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+
+.static-analysis-finding-details pre {
+  margin: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  border-radius: 8px;
+  background: var(--surface-muted);
+  padding: 12px 14px;
+  color: var(--ink);
+  font-size: 0.85rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 @media (max-width: 1100px) {
   .security-report-layout {
     grid-template-columns: 1fr;
     gap: 60px;
   }
 
-  .security-report-main {
-    display: contents;
-  }
-
-  .security-report-header {
-    order: 1;
-  }
-
-  .security-report-analysis {
-    order: 2;
-  }
-
   .security-report-sidebar {
     position: static;
-    order: 3;
     padding: 24px 0;
     border-top: 1px solid var(--line);
-    border-bottom: 1px solid var(--line);
-  }
-
-  .security-report-panel {
-    order: 4;
   }
 
   .security-report-metadata {
@@ -1468,6 +1536,11 @@ code {
 
   .security-report-panel-body .clawscan-risk-buckets {
     grid-template-columns: 1fr;
+  }
+
+  .static-analysis-finding-details > div {
+    grid-template-columns: 1fr;
+    gap: 8px;
   }
 }
 
@@ -5800,7 +5873,6 @@ form.summary-edit-form .summary-textarea:focus {
     position: static;
     padding: 22px 0;
     border-top: 1px solid var(--line);
-    border-bottom: 1px solid var(--line);
   }
 
   .section-cta {
@@ -11306,10 +11378,11 @@ a.publisher-profile-detail:hover {
 
 @media (max-width: 1100px) and (min-width: 761px) {
   .theme-mode-toggle {
-    min-width: 130px;
-    min-height: 46px;
-    padding: 0 12px;
-    gap: 8px;
+    min-width: 112px;
+    height: 40px;
+    min-height: 40px;
+    padding: 0 8px;
+    gap: 6px;
   }
 
   .theme-cycle-group {
@@ -12981,7 +13054,7 @@ a.publisher-profile-detail:hover {
 
 /* Kill all leftover r-pill on interactive elements */
 .navbar-search {
-  border-radius: var(--r-md) !important;
+  border-radius: var(--r-btn) !important;
 }
 
 /* Tailwind inline button classes — catch rounded-xl, rounded-2xl, rounded-full on buttons */

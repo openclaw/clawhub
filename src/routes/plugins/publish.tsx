@@ -310,30 +310,19 @@ export function PublishPluginRoute() {
               disabled={metadataDisabled}
               onChange={(event) => setChangelog(event.target.value)}
             />
-            <div className="publish-field-group">
-              <div className="publish-field-label-row">
-                <Label htmlFor="pluginClawScanNote">ClawScan note</Label>
-                <span>
-                  {trimmedClawScanNote.length}/{MAX_CLAWSCAN_NOTE_CHARS}
-                </span>
-              </div>
-              <Textarea
-                id="pluginClawScanNote"
-                placeholder="Optional context for ClawScan, e.g. why this release needs native host access."
-                rows={4}
-                value={clawScanNote}
-                maxLength={MAX_CLAWSCAN_NOTE_CHARS + 1}
-                disabled={metadataDisabled}
-                onChange={(event) => {
-                  clawScanNoteTouchedRef.current = true;
-                  setClawScanNote(event.target.value);
-                }}
-              />
-              <p className="publish-field-help">
-                Publisher-provided context for this new release. When updating, this may be
-                prefilled from the latest release, but it is stored only on the new release.
-              </p>
-            </div>
+            <Label htmlFor="pluginClawScanNote">ClawScan note</Label>
+            <Textarea
+              id="pluginClawScanNote"
+              placeholder="Optional context for ClawScan, e.g. why this release needs native host access."
+              rows={4}
+              value={clawScanNote}
+              maxLength={MAX_CLAWSCAN_NOTE_CHARS + 1}
+              disabled={metadataDisabled}
+              onChange={(event) => {
+                clawScanNoteTouchedRef.current = true;
+                setClawScanNote(event.target.value);
+              }}
+            />
             <Input
               placeholder="Source repo (owner/repo)"
               value={sourceRepo}
@@ -374,102 +363,103 @@ export function PublishPluginRoute() {
                 />
               </>
             ) : null}
-            <Button
-              variant="primary"
-              disabled={
-                !isAuthenticated ||
-                isMetadataLocked ||
-                !name.trim() ||
-                !version.trim() ||
-                files.length === 0 ||
-                Boolean(validationError) ||
-                Boolean(ownerScopeError) ||
-                isSubmitting ||
-                (family === "code-plugin" &&
-                  (!sourceRepo.trim() || !sourceCommit.trim() || codePluginFieldIssues.length > 0))
-              }
-              onClick={() => {
-                startTransition(() => {
-                  void (async () => {
-                    try {
-                      if (validationError) {
-                        toast.error(validationError);
-                        return;
-                      }
-                      if (ownerScopeError) {
-                        toast.error(ownerScopeError);
-                        return;
-                      }
-                      if (family === "code-plugin" && codePluginFieldIssues.length > 0) {
-                        toast.error(
-                          `Missing required OpenClaw package metadata: ${codePluginFieldIssues.join(", ")}`,
-                        );
-                        return;
-                      }
-                      setStatus("Uploading files...");
-                      setError(null);
-                      const uploaded = await buildPackageUploadEntries(files, {
-                        generateUploadUrl,
-                        hashFile,
-                        uploadFile,
-                      });
-                      setStatus("Publishing release...");
-                      await publishRelease({
-                        payload: {
-                          name: name.trim(),
-                          displayName: displayName.trim() || undefined,
-                          ownerHandle: ownerHandle || undefined,
-                          family,
-                          version: version.trim(),
-                          changelog: changelog.trim(),
-                          ...(normalizedClawScanNote
-                            ? { clawScanNote: normalizedClawScanNote }
-                            : {}),
-                          ...(sourceRepo.trim() && sourceCommit.trim()
-                            ? {
-                                source: {
-                                  kind: "github" as const,
-                                  repo: sourceRepo.trim(),
-                                  url: sourceRepo.trim().startsWith("http")
-                                    ? sourceRepo.trim()
-                                    : `https://github.com/${sourceRepo.trim().replace(/^\/+|\/+$/g, "")}`,
-                                  ref: sourceRef.trim() || sourceCommit.trim(),
-                                  commit: sourceCommit.trim(),
-                                  path: sourcePath.trim() || ".",
-                                  importedAt: Date.now(),
-                                },
-                              }
-                            : {}),
-                          ...(family === "bundle-plugin"
-                            ? {
-                                bundle: {
-                                  format: bundleFormat.trim() || undefined,
-                                  hostTargets: hostTargets
-                                    .split(",")
-                                    .map((entry) => entry.trim())
-                                    .filter(Boolean),
-                                },
-                              }
-                            : {}),
-                          files: uploaded,
-                        },
-                      });
-                      setStatus(
-                        "Published. Pending security checks and verification before public listing.",
-                      );
-                    } catch (publishError) {
-                      toast.error(formatPublishError(publishError));
-                      setStatus(null);
-                    }
-                  })();
-                });
-              }}
-            >
-              {status ?? "Publish"}
-            </Button>
-            {error ? <Badge variant="accent">{error}</Badge> : null}
           </div>
         </Card>
+
+        <div className="flex flex-col gap-3">
+          <Button
+            variant="primary"
+            disabled={
+              !isAuthenticated ||
+              isMetadataLocked ||
+              !name.trim() ||
+              !version.trim() ||
+              files.length === 0 ||
+              Boolean(validationError) ||
+              Boolean(ownerScopeError) ||
+              isSubmitting ||
+              (family === "code-plugin" &&
+                (!sourceRepo.trim() || !sourceCommit.trim() || codePluginFieldIssues.length > 0))
+            }
+            onClick={() => {
+              startTransition(() => {
+                void (async () => {
+                  try {
+                    if (validationError) {
+                      toast.error(validationError);
+                      return;
+                    }
+                    if (ownerScopeError) {
+                      toast.error(ownerScopeError);
+                      return;
+                    }
+                    if (family === "code-plugin" && codePluginFieldIssues.length > 0) {
+                      toast.error(
+                        `Missing required OpenClaw package metadata: ${codePluginFieldIssues.join(", ")}`,
+                      );
+                      return;
+                    }
+                    setStatus("Uploading files...");
+                    setError(null);
+                    const uploaded = await buildPackageUploadEntries(files, {
+                      generateUploadUrl,
+                      hashFile,
+                      uploadFile,
+                    });
+                    setStatus("Publishing release...");
+                    await publishRelease({
+                      payload: {
+                        name: name.trim(),
+                        displayName: displayName.trim() || undefined,
+                        ownerHandle: ownerHandle || undefined,
+                        family,
+                        version: version.trim(),
+                        changelog: changelog.trim(),
+                        ...(normalizedClawScanNote ? { clawScanNote: normalizedClawScanNote } : {}),
+                        ...(sourceRepo.trim() && sourceCommit.trim()
+                          ? {
+                              source: {
+                                kind: "github" as const,
+                                repo: sourceRepo.trim(),
+                                url: sourceRepo.trim().startsWith("http")
+                                  ? sourceRepo.trim()
+                                  : `https://github.com/${sourceRepo.trim().replace(/^\/+|\/+$/g, "")}`,
+                                ref: sourceRef.trim() || sourceCommit.trim(),
+                                commit: sourceCommit.trim(),
+                                path: sourcePath.trim() || ".",
+                                importedAt: Date.now(),
+                              },
+                            }
+                          : {}),
+                        ...(family === "bundle-plugin"
+                          ? {
+                              bundle: {
+                                format: bundleFormat.trim() || undefined,
+                                hostTargets: hostTargets
+                                  .split(",")
+                                  .map((entry) => entry.trim())
+                                  .filter(Boolean),
+                              },
+                            }
+                          : {}),
+                        files: uploaded,
+                      },
+                    });
+                    setStatus(
+                      "Published. Pending security checks and verification before public listing.",
+                    );
+                  } catch (publishError) {
+                    toast.error(formatPublishError(publishError));
+                    setStatus(null);
+                  }
+                })();
+              });
+            }}
+          >
+            {status ?? "Publish"}
+          </Button>
+          {error ? <Badge variant="accent">{error}</Badge> : null}
+        </div>
       </Container>
     </main>
   );

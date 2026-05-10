@@ -23,7 +23,7 @@ export function PublisherClawScanNote({ note, compact = false }: PublisherClawSc
       <div className="security-report-panel-header publisher-clawscan-note-header">
         <div className="publisher-clawscan-note-title-row">
           <h2 id={headingId} className="skill-install-panel-title">
-            Publisher ClawScan note
+            Publisher note
           </h2>
           <Tooltip>
             <TooltipTrigger asChild>

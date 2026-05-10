@@ -25,8 +25,7 @@ const Badge = React.forwardRef<HTMLSpanElement, BadgeProps>(
         variant === "accent" && "bg-active-bg px-3 py-1 text-accent-deep border border-line",
         variant === "compact" &&
           "bg-hover-bg px-2.5 py-0.5 text-fs-xs text-ink-soft border border-line",
-        variant === "pending" &&
-          "bg-status-warning-bg px-3 py-1 text-status-warning-fg border border-line",
+        variant === "pending" && "bg-hover-bg px-3 py-1 text-ink-soft border border-line",
         variant === "success" &&
           "bg-status-success-bg px-3 py-1 text-status-success-fg border border-line",
         variant === "warning" &&
