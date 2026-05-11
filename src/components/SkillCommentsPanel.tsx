@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { isModerator } from "../lib/roles";
+import { SignInButton } from "./SignInButton";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { Skeleton } from "./ui/skeleton";
@@ -129,7 +130,10 @@ export function SkillCommentsPanel({ skillId, isAuthenticated, me }: SkillCommen
           </Button>
         </form>
       ) : (
-        <p className="text-sm text-[color:var(--ink-soft)]">Sign in to comment.</p>
+        <div className="flex items-center gap-2">
+          <p className="text-sm text-[color:var(--ink-soft)]">Sign in to comment.</p>
+          <SignInButton size="sm" />
+        </div>
       )}
       {reportNotice ? (
         <div className="text-sm text-[color:var(--ink-soft)]">{reportNotice}</div>

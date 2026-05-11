@@ -3,9 +3,8 @@ import { useAction, useQuery } from "convex/react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
-import { EmptyState } from "../components/EmptyState";
 import { Container } from "../components/layout/Container";
-import { SignInButton } from "../components/SignInButton";
+import { SignInPrompt } from "../components/SignInPrompt";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
@@ -218,18 +217,22 @@ export function ImportGitHub() {
     }
   };
 
+  if (isLoading) {
+    return (
+      <SignInPrompt
+        title="Loading..."
+        description="Checking your session before starting a GitHub import."
+        showAction={false}
+      />
+    );
+  }
+
   if (!isAuthenticated) {
     return (
-      <main className="py-10">
-        <Container size="narrow">
-          <EmptyState
-            title={isLoading ? "Loading..." : "Sign in to import and publish skills"}
-            description="You need to be signed in to import skills from GitHub."
-          >
-            {!isLoading ? <SignInButton /> : null}
-          </EmptyState>
-        </Container>
-      </main>
+      <SignInPrompt
+        title="Sign in to import and publish skills"
+        description="You need to be signed in to import skills from GitHub."
+      />
     );
   }
 

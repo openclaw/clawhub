@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef } from "react";
 import { Container } from "../../components/layout/Container";
 import { SignInButton } from "../../components/SignInButton";
+import { SignInPrompt } from "../../components/SignInPrompt";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { buildDocsAuthCallbackUrl, normalizeDocsReturnTo } from "../../lib/docsAuth";
@@ -59,30 +60,17 @@ export function DocsAuth({ autoSubmit = true }: DocsAuthProps = {}) {
 
   if (!isAuthenticated || !me) {
     return (
-      <AuthFrame title="Verify with GitHub">
-        <p className="text-sm text-[color:var(--ink-soft)]">
-          Sign in to ClawHub with GitHub to unlock Ask Molty on the OpenClaw docs.
-        </p>
-        {authError ? (
-          <p
-            className="rounded-[var(--radius-sm)] border border-red-300/40 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-950/50 dark:text-red-300"
-            role="alert"
-          >
-            {authError}{" "}
-            <button
-              type="button"
-              onClick={clearAuthError}
-              aria-label="Dismiss"
-              className="cursor-pointer border-none bg-transparent px-0.5 text-inherit"
-            >
-              &times;
-            </button>
-          </p>
-        ) : null}
-        <SignInButton redirectTo={signInRedirectTo} disabled={isLoading}>
-          Verify with GitHub
-        </SignInButton>
-      </AuthFrame>
+      <SignInPrompt
+        title="Verify with GitHub"
+        description="Sign in to ClawHub with GitHub to unlock Ask Molty on the OpenClaw docs."
+        error={authError}
+        onDismissError={clearAuthError}
+        action={
+          <SignInButton redirectTo={signInRedirectTo} disabled={isLoading}>
+            Verify with GitHub
+          </SignInButton>
+        }
+      />
     );
   }
 

@@ -9,6 +9,7 @@ import { useAuthStatus } from "../lib/useAuthStatus";
 import { EmptyState } from "./EmptyState";
 import { Container } from "./layout/Container";
 import { MarkdownPreview } from "./MarkdownPreview";
+import { SignInButton } from "./SignInButton";
 import { SkillCardSkeletonGrid } from "./skeletons/SkillCardSkeleton";
 import { stripFrontmatter } from "./skillDetailUtils";
 import { SoulStatsTripletLine } from "./SoulStats";
@@ -290,7 +291,10 @@ export function SoulDetailPage({ slug }: SoulDetailPageProps) {
                   </Button>
                 </form>
               ) : (
-                <p className="text-sm text-[color:var(--ink-soft)]">Sign in to comment.</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-sm text-[color:var(--ink-soft)]">Sign in to comment.</p>
+                  <SignInButton size="sm" />
+                </div>
               )}
               <div className="mt-4 flex flex-col gap-3">
                 {(comments ?? []).length === 0 ? (

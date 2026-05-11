@@ -5,6 +5,7 @@ import { flushSync } from "react-dom";
 import { api } from "../../../convex/_generated/api";
 import { Container } from "../../components/layout/Container";
 import { SignInButton } from "../../components/SignInButton";
+import { SignInPrompt } from "../../components/SignInPrompt";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { getClawHubSiteUrl, normalizeClawHubSiteOrigin } from "../../lib/site";
 import { useAuthError } from "../../lib/useAuthError";
@@ -135,37 +136,13 @@ export function CliAuth({
 
   if (!isAuthenticated || !me) {
     return (
-      <main className="py-10">
-        <Container size="narrow">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-2xl">CLI login</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-[color:var(--ink-soft)]">
-                Sign in to create an API token for the CLI.
-              </p>
-              {authError ? (
-                <p
-                  className="rounded-[var(--radius-sm)] border border-red-300/40 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-950/50 dark:text-red-300"
-                  role="alert"
-                >
-                  {authError}{" "}
-                  <button
-                    type="button"
-                    onClick={clearAuthError}
-                    aria-label="Dismiss"
-                    className="cursor-pointer border-none bg-transparent px-0.5 text-inherit"
-                  >
-                    &times;
-                  </button>
-                </p>
-              ) : null}
-              <SignInButton disabled={isLoading} />
-            </CardContent>
-          </Card>
-        </Container>
-      </main>
+      <SignInPrompt
+        title="CLI login"
+        description="Sign in to create an API token for the CLI."
+        error={authError}
+        onDismissError={clearAuthError}
+        action={<SignInButton disabled={isLoading} />}
+      />
     );
   }
 

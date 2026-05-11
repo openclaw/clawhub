@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 import { EmptyState } from "../components/EmptyState";
-import { SignInButton } from "../components/SignInButton";
+import { SignInPrompt } from "../components/SignInPrompt";
 import { Button } from "../components/ui/button";
 import { formatCompactStat } from "../lib/numberFormat";
 import type { PublicSkill } from "../lib/publicUser";
@@ -14,30 +14,62 @@ export const Route = createFileRoute("/stars")({
   component: Stars,
 });
 
-function Stars() {
+export function Stars() {
   const me = useQuery(api.users.me) as Doc<"users"> | null | undefined;
-  const skills =
-    (useQuery(api.stars.listByUser, me ? { userId: me._id, limit: 50 } : "skip") as
-      | PublicSkill[]
-      | undefined) ?? [];
-
+  const skillsQuery = useQuery(
+    api.stars.listByUser,
+    me ? { userId: me._id, limit: 50 } : "skip",
+  ) as PublicSkill[] | undefined;
   const toggleStar = useMutation(api.stars.toggle);
 
-  if (!me) {
+  if (me === undefined) {
     return (
       <main className="browse-page">
-        <div className="browse-page-narrow">
-          <EmptyState
-            icon={Star}
-            title="Sign in to see your highlights"
-            description="Star skills for quick access later."
-          >
-            <SignInButton />
-          </EmptyState>
+        <div className="skeleton-list">
+          {Array.from({ length: 4 }, (_, i) => (
+            <div key={i} className="skeleton-row">
+              <div className="skeleton-icon" />
+              <div className="skeleton-row-body">
+                <div className="skeleton-bar skeleton-bar-lg" />
+                <div className="skeleton-bar skeleton-bar-sm" />
+                <div className="skeleton-bar skeleton-bar-xs" />
+              </div>
+            </div>
+          ))}
         </div>
       </main>
     );
   }
+
+  if (me === null) {
+    return (
+      <SignInPrompt
+        title="Sign in to see your highlights"
+        description="Star skills for quick access later."
+      />
+    );
+  }
+
+  if (skillsQuery === undefined) {
+    return (
+      <main className="browse-page">
+        <div className="skeleton-list">
+          {Array.from({ length: 4 }, (_, i) => (
+            <div key={i} className="skeleton-row">
+              <div className="skeleton-icon" />
+              <div className="skeleton-row-body">
+                <div className="skeleton-bar skeleton-bar-lg" />
+                <div className="skeleton-bar skeleton-bar-sm" />
+                <div className="skeleton-bar skeleton-bar-xs" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </main>
+    );
+  }
+
+  const skills = skillsQuery;
 
   return (
     <main className="browse-page">
