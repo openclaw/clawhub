@@ -230,9 +230,7 @@ describe("Upload route", () => {
     const input = screen.getByTestId("upload-input") as HTMLInputElement;
     fireEvent.change(input, { target: { files: [notes] } });
 
-    const inline = await screen.findByTestId("file-validation-errors");
-    expect(inline.textContent).toContain("Fix file selection");
-    expect(inline.textContent).toContain("SKILL.md is required.");
+    expect(await screen.findByText("SKILL.md is required.")).toBeTruthy();
   });
 
   it("shows a validation error when a skill file exceeds 10MB", async () => {

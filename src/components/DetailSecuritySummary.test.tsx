@@ -46,7 +46,7 @@ describe("DetailSecuritySummary", () => {
     expect(screen.getByText(/reviewed by staff and cleared/i)).toBeTruthy();
     expect(screen.getByRole("link", { name: /VirusTotal.*Cleared/i })).toBeTruthy();
     expect(screen.getByRole("link", { name: /ClawScan.*Cleared/i })).toBeTruthy();
-    expect(screen.queryByRole("link", { name: /Static analysis/i })).toBeNull();
+    expect(screen.getByRole("link", { name: /Static analysis.*Cleared/i })).toBeTruthy();
     expect(screen.queryByText("Suspicious")).toBeNull();
   });
 });

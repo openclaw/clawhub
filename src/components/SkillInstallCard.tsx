@@ -9,7 +9,7 @@ type SkillInstallCardProps = {
 
 export type SkillInstallTabId = "runtime" | "dependencies" | "install" | "links";
 
-export type SkillInstallTab = {
+type SkillInstallTab = {
   id: SkillInstallTabId;
   label: string;
   panel: ReactNode;
@@ -235,25 +235,4 @@ export function buildSkillInstallTabs({
   }
 
   return tabs;
-}
-
-export function SkillInstallCard({ clawdis, osLabels }: SkillInstallCardProps) {
-  const tabs = buildSkillInstallTabs({ clawdis, osLabels });
-
-  if (tabs.length === 0) {
-    return null;
-  }
-
-  return (
-    <div className="skill-hero-content">
-      <div className="skill-hero-panels">
-        {tabs.map((tab) => (
-          <div key={tab.id} className="skill-panel">
-            <h3 className="section-title text-[1rem] m-0">{tab.label}</h3>
-            {tab.panel}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
 }
