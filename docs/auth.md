@@ -80,3 +80,39 @@ Revoked, invalid, or missing tokens return `401 Unauthorized`. Sign in again
 with `clawhub login` or provide a fresh token with `clawhub login --token`.
 
 Deleted, banned, or disabled accounts cannot continue using existing API tokens.
+
+## Local development impersonation
+
+For local development, you can browse authenticated pages without a real GitHub
+OAuth flow or production tokens.
+
+Requirements:
+
+1. Run the dev seed so the `local` user exists:
+   ```bash
+   bunx convex dev --once
+   bunx convex run devSeed:seedNixSkills
+   ```
+2. Set the impersonation env var on your Convex deployment:
+   ```bash
+   bunx convex env set CLAW_HUB_DEV_IMPERSONATE_USER_HANDLE local
+   ```
+3. Start the app normally:
+   ```bash
+   bun run dev
+   ```
+
+What happens:
+
+- The backend resolves `api.users.me` to the seeded `local` admin user.
+- The frontend treats this as an authenticated session for navigation and UI.
+- A small **dev** badge appears in the header so you know it is not real GitHub auth.
+- Sign-out is hidden because there is no real session to end.
+
+Guardrails:
+
+- This only works on dev/local Convex deployments (`anonymous:`, `dev:`, `local:`)
+  or when `CLAW_HUB_ENABLE_DEV_IMPERSONATION=1` is explicitly set.
+- It is blocked on any deployment name containing `prod` or `production`.
+- No JWT is minted, no production token is copied, and the real OAuth flow is
+  untouched.

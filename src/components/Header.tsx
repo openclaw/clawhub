@@ -87,7 +87,7 @@ type TypeaheadItem =
     };
 
 export default function Header() {
-  const { isAuthenticated, isLoading, me } = useAuthStatus();
+  const { isAuthenticated, isLoading, me, isDevImpersonated } = useAuthStatus();
   const { signIn, signOut } = useAuthActions();
   const { theme, mode, setMode } = useThemeMode();
   const siteMode = getSiteMode();
@@ -464,7 +464,13 @@ export default function Header() {
                       <span className="user-menu-fallback">{initial}</span>
                     )}
                     <span className="mono truncate">@{handle}</span>
-                    <ChevronDown className="user-menu-chevron" size={16} />
+                    {isDevImpersonated ? (
+                      <span className="ml-1 rounded bg-amber-100 px-1 text-[0.65rem] font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                        dev
+                      </span>
+                    ) : (
+                      <ChevronDown className="user-menu-chevron" size={16} />
+                    )}
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="user-dropdown-content">
@@ -486,8 +492,18 @@ export default function Header() {
                       Settings
                     </Link>
                   </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => void signOut()}>Sign out</DropdownMenuItem>
+                  {isDevImpersonated ? (
+                    <DropdownMenuItem disabled>
+                      <span className="text-xs text-[color:var(--ink-soft)]">
+                        Local dev impersonation
+                      </span>
+                    </DropdownMenuItem>
+                  ) : (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={() => void signOut()}>Sign out</DropdownMenuItem>
+                    </>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : (

@@ -18,9 +18,10 @@ export function CliDeviceAuth() {
   const search = Route.useSearch() as { code?: string };
   const [code, setCode] = useState(search.code ?? "");
   const [status, setStatus] = useState<string | null>(null);
-  const { isAuthenticated, isLoading, me } = useAuthStatus();
+  const { isAuthenticated, isLoading, me, isDevImpersonated } = useAuthStatus();
   const approve = useMutation(api.cliDeviceAuth.approve);
   const deny = useMutation(api.cliDeviceAuth.deny);
+  const isRealAuth = isAuthenticated && !isDevImpersonated;
 
   const submit = async () => {
     const trimmed = code.trim();
@@ -57,7 +58,7 @@ export function CliDeviceAuth() {
             <CardTitle className="text-2xl">CLI device login</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {!isAuthenticated || !me ? (
+            {!isRealAuth || !me ? (
               <>
                 <p className="text-sm text-[color:var(--ink-soft)]">
                   Sign in to authorize the CLI.

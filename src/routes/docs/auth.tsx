@@ -19,7 +19,7 @@ type DocsAuthProps = {
 };
 
 export function DocsAuth({ autoSubmit = true }: DocsAuthProps = {}) {
-  const { isAuthenticated, isLoading, me } = useAuthStatus();
+  const { isAuthenticated, isLoading, me, isDevImpersonated } = useAuthStatus();
   const authToken = useAuthToken();
   const { error: authError, clear: clearAuthError } = useAuthError();
   const formRef = useRef<HTMLFormElement>(null);
@@ -38,7 +38,8 @@ export function DocsAuth({ autoSubmit = true }: DocsAuthProps = {}) {
   }, []);
 
   const canReturn = Boolean(returnTo && callbackUrl);
-  const ready = canReturn && isAuthenticated && me && authToken;
+  const isRealAuth = isAuthenticated && !isDevImpersonated;
+  const ready = canReturn && isRealAuth && me && authToken;
 
   useEffect(() => {
     if (!autoSubmit || !ready || submittedRef.current) return;
@@ -57,7 +58,7 @@ export function DocsAuth({ autoSubmit = true }: DocsAuthProps = {}) {
     );
   }
 
-  if (!isAuthenticated || !me) {
+  if (!isRealAuth || !me) {
     return (
       <AuthFrame title="Verify with GitHub">
         <p className="text-sm text-[color:var(--ink-soft)]">

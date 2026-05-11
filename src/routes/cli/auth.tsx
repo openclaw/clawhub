@@ -21,7 +21,7 @@ type CliAuthProps = {
 export function CliAuth({
   navigate = (url: string) => window.location.assign(url),
 }: CliAuthProps = {}) {
-  const { isAuthenticated, isLoading, me } = useAuthStatus();
+  const { isAuthenticated, isLoading, me, isDevImpersonated } = useAuthStatus();
   const { error: authError, clear: clearAuthError } = useAuthError();
   const createToken = useMutation(api.tokens.create);
 
@@ -49,11 +49,13 @@ export function CliAuth({
     return getClawHubSiteUrl();
   }, []);
 
+  const isRealAuth = isAuthenticated && !isDevImpersonated;
+
   useEffect(() => {
     if (hasRun.current) return;
     if (!safeRedirect) return;
     if (!state) return;
-    if (!isAuthenticated || !me) return;
+    if (!isRealAuth || !me) return;
     hasRun.current = true;
 
     const run = async () => {
@@ -81,17 +83,7 @@ export function CliAuth({
       setStatus(message);
       setToken(null);
     });
-  }, [
-    createToken,
-    isAuthenticated,
-    label,
-    me,
-    navigate,
-    redirectUri,
-    registry,
-    safeRedirect,
-    state,
-  ]);
+  }, [createToken, isRealAuth, label, me, navigate, redirectUri, registry, safeRedirect, state]);
 
   if (!safeRedirect) {
     return (
@@ -133,7 +125,7 @@ export function CliAuth({
     );
   }
 
-  if (!isAuthenticated || !me) {
+  if (!isRealAuth || !me) {
     return (
       <main className="py-10">
         <Container size="narrow">
