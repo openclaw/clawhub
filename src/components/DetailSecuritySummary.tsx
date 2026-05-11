@@ -51,6 +51,13 @@ function aggregateAuditVerdict(statuses: string[]) {
     return "malicious";
   }
   if (normalized.includes("suspicious")) return "suspicious";
+  if (
+    normalized.some(
+      (status) => status === "pending" || status === "loading" || status === "not_found",
+    )
+  ) {
+    return "pending";
+  }
   return "benign";
 }
 
@@ -60,6 +67,8 @@ function auditVerdictBadgeVariant(status: string): BadgeProps["variant"] {
       return "destructive";
     case "suspicious":
       return "warning";
+    case "pending":
+      return "pending";
     default:
       return "success";
   }

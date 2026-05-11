@@ -609,6 +609,21 @@ async function viewerCanAccessPackageOwner(
   return ownerPublisher?.kind === "user" && ownerPublisher.linkedUserId === viewerUserId;
 }
 
+async function viewerCanManagePackageOwner(
+  ctx: DbReaderCtx,
+  digest: Pick<PackageDigestLike, "ownerUserId" | "ownerPublisherId">,
+  viewerUserId: Id<"users"> | undefined,
+) {
+  if (!viewerUserId) return false;
+  if (!digest.ownerPublisherId) return digest.ownerUserId === viewerUserId;
+
+  const ownerPublisher = await ctx.db.get(digest.ownerPublisherId);
+  if (ownerPublisher?.kind === "user" && ownerPublisher.linkedUserId === viewerUserId) return true;
+
+  const membership = await getPublisherMembership(ctx, digest.ownerPublisherId, viewerUserId);
+  return Boolean(membership && isPublisherRoleAllowed(membership.role, ["admin"]));
+}
+
 async function canViewerReadPackage(
   ctx: DbReaderCtx,
   digest: Pick<PackageDigestLike, "channel" | "scanStatus" | "ownerUserId" | "ownerPublisherId">,
@@ -1483,7 +1498,7 @@ export const getClawScanNoteSettings = query({
     const actor = await ctx.db.get(viewerUserId);
     if (!actor || actor.deletedAt || actor.deactivatedAt) return null;
     if (actor.role !== "admin") {
-      const canAccess = await viewerCanAccessPackageOwner(ctx, pkg, viewerUserId);
+      const canAccess = await viewerCanManagePackageOwner(ctx, pkg, viewerUserId);
       if (!canAccess) return null;
     }
 

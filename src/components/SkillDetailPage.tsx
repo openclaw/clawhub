@@ -222,13 +222,10 @@ export function SkillDetailPage({
   const canManage =
     canManageSkill(me, skill) ||
     Boolean(skill?.ownerPublisherId && myPublisherIds.has(skill.ownerPublisherId));
-  const canEditSummary =
-    canManageSkill(me, skill) ||
-    Boolean(skill?.ownerPublisherId && myManagePublisherIds.has(skill.ownerPublisherId));
-  const isOwner =
+  const canAccessSettings =
     Boolean(me && skill && me._id === skill.ownerUserId) ||
-    Boolean(skill?.ownerPublisherId && myPublisherIds.has(skill.ownerPublisherId));
-  const canAccessSettings = isOwner || isAdmin(me);
+    isAdmin(me) ||
+    Boolean(skill?.ownerPublisherId && myManagePublisherIds.has(skill.ownerPublisherId));
   const ownedSkills = useQuery(
     api.skills.list,
     canAccessSettings && skill
@@ -518,7 +515,7 @@ export function SkillDetailPage({
         ownerId={owner?._id ?? null}
         ownedSkills={(ownedSkills ?? []).filter((entry) => entry._id !== skill._id)}
         summary={skill.summary ?? ""}
-        onSaveSummary={canEditSummary ? submitSummary : null}
+        onSaveSummary={canAccessSettings ? submitSummary : null}
         clawScanNote={latestVersion?.clawScanNote ?? null}
         onSavePublisherNoteAndRescan={submitPublisherNoteAndRescan}
       />

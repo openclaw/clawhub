@@ -9,10 +9,11 @@ describe("DetailSecuritySummary", () => {
     render(<DetailSecuritySummary scannerBasePath="/steipete/weather/security" />);
 
     expect(screen.getByRole("heading", { name: "Audits" })).toBeTruthy();
-    expect(screen.getAllByText("Pending").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Pending")).toHaveLength(4);
     expect(screen.getByRole("link", { name: "VirusTotal: Pending" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "ClawScan: Pending" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Static analysis: Pending" })).toBeTruthy();
+    expect(screen.queryByText("Pass")).toBeNull();
   });
 
   it("shows staff-cleared public scan summaries as cleared", () => {

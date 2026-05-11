@@ -22,6 +22,10 @@ vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => navigateMock,
 }));
 
+vi.mock("@convex-dev/auth/react", () => ({
+  useAuthActions: () => ({ signIn: vi.fn() }),
+}));
+
 const useQueryMock = vi.fn();
 const getReadmeMock = vi.fn();
 
@@ -38,6 +42,13 @@ vi.mock("../lib/useAuthStatus", () => ({
 
 vi.mock("../components/SkillCommentsPanel", () => ({
   SkillCommentsPanel: () => <div data-testid="skill-comments-panel" />,
+}));
+
+vi.mock("../components/ui/tooltip", () => ({
+  Tooltip: ({ children }: { children: unknown }) => children,
+  TooltipContent: ({ children }: { children: unknown }) => <div>{children}</div>,
+  TooltipProvider: ({ children }: { children: unknown }) => children,
+  TooltipTrigger: ({ children }: { children: unknown }) => children,
 }));
 
 describe("SkillDetailPage", () => {
@@ -226,7 +237,7 @@ describe("SkillDetailPage", () => {
     const securityHeading = screen.getByRole("heading", { name: "Audits" });
 
     expect(screen.getAllByRole("heading", { name: "Install" }).length).toBeGreaterThan(0);
-    expect(screen.getByText("openclaw skills install weather")).toBeTruthy();
+    expect(screen.getAllByText("openclaw skills install weather").length).toBeGreaterThan(0);
     expect(screen.queryByText("npx clawhub@latest install weather")).toBeNull();
     expect(screen.queryByRole("tab", { name: "ClawHub" })).toBeNull();
     expect(screen.getByRole("tab", { name: "CLI" }).getAttribute("aria-selected")).toBe("true");
@@ -754,6 +765,52 @@ describe("SkillDetailPage", () => {
     expect(screen.getByText("Publish a new version")).toBeTruthy();
     expect(screen.getByText("Rename slug")).toBeTruthy();
     expect(screen.getByText("Merge listing")).toBeTruthy();
+  });
+
+  it("does not expose settings to publisher members without admin access", async () => {
+    useAuthStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: { _id: "users:publisher-member", role: "user" },
+    });
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (args === undefined) {
+        return [{ publisher: { _id: "publishers:steipete" }, role: "publisher" }];
+      }
+      if (args && typeof args === "object" && "skillId" in args) return false;
+      if (args && typeof args === "object" && "slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "weather",
+            displayName: "Weather",
+            summary: "Get current weather.",
+            ownerUserId: "users:1",
+            ownerPublisherId: "publishers:steipete",
+            tags: {},
+            stats: { stars: 0, downloads: 0 },
+          },
+          owner: {
+            _id: "publishers:steipete",
+            _creationTime: 0,
+            kind: "org",
+            handle: "steipete",
+            displayName: "Peter",
+          },
+          latestVersion: { _id: "skillVersions:1", version: "1.0.0", parsed: {}, files: [] },
+        };
+      }
+      return undefined;
+    });
+
+    const { unmount } = render(<SkillDetailPage slug="weather" />);
+    expect(await screen.findByText("Weather")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /settings/i })).toBeNull();
+    unmount();
+
+    render(<SkillDetailPage slug="weather" mode="settings" />);
+    expect(await screen.findByRole("heading", { name: /Settings unavailable/i })).toBeTruthy();
   });
 
   it("does not render version tag cards on the simplified public detail surface", async () => {
