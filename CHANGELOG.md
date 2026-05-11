@@ -14,6 +14,7 @@
 
 ### Fixes
 
+- Search: recall skill matches by non-first slug/display-name tokens while keeping multi-token queries on the direct recall path constrained to all query tokens (#2140) (thanks @momothemage).
 - Moderation: stop treating static suspicious-only findings as a verdict; keep file/line evidence for review while VT/LLM decide public suspicious status.
 - Moderation: stop treating VirusTotal Code Insight/Palm verdicts as a hide authority for skills; real AV-engine hits and ClawScan findings still contribute moderation verdicts.
 - ClawScan: lower false positives by treating purpose-aligned notes as benign unless structured LLM findings contain a material concern, and add targeted rescan batches for suspicious skills/plugins.
