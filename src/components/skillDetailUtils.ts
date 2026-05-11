@@ -244,7 +244,11 @@ export function formatOpenClawPrompt({
     return lines.join("\n");
   }
 
-  lines.push("After install, inspect the skill metadata and help me finish setup.");
+  lines.push("Before install, inspect the ClawHub skill metadata and setup requirements.");
+  lines.push(
+    "If the skill asks you to install a third-party package or CLI, verify its source, maintainer, and package contents before running the install command.",
+  );
+  lines.push("After install, help me finish setup from verified skill metadata.");
 
   if (requiredEnvVars.size > 0) {
     lines.push(`Required env vars: ${Array.from(requiredEnvVars).join(", ")}`);

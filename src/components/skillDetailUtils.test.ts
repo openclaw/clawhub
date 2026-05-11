@@ -59,6 +59,9 @@ describe("skill detail install helpers", () => {
     expect(prompt).toContain("WEATHER_API_KEY");
     expect(prompt).toContain("curl");
     expect(prompt).toContain("~/.weatherrc");
+    expect(prompt).toContain("Before install, inspect the ClawHub skill metadata");
+    expect(prompt).toContain("verify its source, maintainer, and package contents");
+    expect(prompt).toContain("After install, help me finish setup from verified skill metadata.");
     expect(prompt).not.toContain("unknown");
   });
 

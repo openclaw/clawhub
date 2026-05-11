@@ -52,7 +52,7 @@ describe("SkillInstallSurface", () => {
 
     expect(screen.getByRole("heading", { name: "Install with OpenClaw" })).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "CLI Commands" })).toBeNull();
-    expect(screen.getByText(/After install, inspect the skill metadata/i)).toBeTruthy();
+    expect(screen.getByText(/Before install, inspect the ClawHub skill metadata/i)).toBeTruthy();
     expect(screen.getAllByText("Install & Setup").length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole("button", { name: /Install Only/i }));
@@ -96,7 +96,7 @@ describe("SkillInstallSurface", () => {
 
     await waitFor(() => {
       expect(writeTextMock).toHaveBeenCalledWith(
-        expect.stringContaining("After install, inspect the skill metadata"),
+        expect.stringContaining("Before install, inspect the ClawHub skill metadata"),
       );
     });
   });
