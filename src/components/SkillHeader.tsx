@@ -15,6 +15,8 @@ import { buildSkillHref } from "./skillDetailUtils";
 import { SkillCommandLineCard } from "./SkillInstallSurface";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
+import { UserBadge } from "./UserBadge";
 import { VerifiedBadge } from "./VerifiedBadge";
 
 type SkillModerationInfo = {
@@ -51,7 +53,8 @@ type SkillHeaderProps = {
   isStaff: boolean;
   isStarred: boolean | undefined;
   onToggleStar: () => void;
-  onOpenReport?: (() => void) | null;
+  onOpenReport: () => void;
+  onRequireSignIn: () => void;
   forkOf: SkillFork | null;
   forkOfLabel: string;
   forkOfHref: string | null;
@@ -92,6 +95,7 @@ export function SkillHeader({
   isStarred,
   onToggleStar,
   onOpenReport,
+  onRequireSignIn,
   forkOf,
   forkOfLabel,
   forkOfHref,
@@ -128,8 +132,7 @@ export function SkillHeader({
       ? `${convexSiteUrl}/api/v1/download?slug=${encodeURIComponent(skill.slug)}`
       : null;
   const hasTitleActions = isStaff;
-  const hasSidebarActions =
-    Boolean(downloadHref) || Boolean(onOpenReport) || isAuthenticated || Boolean(settingsHref);
+  const hasSidebarActions = Boolean(downloadHref) || Boolean(onOpenReport) || Boolean(settingsHref);
   const badges = getSkillBadges(skill);
   const showHeroMeta = Boolean((forkOf && forkOfHref) || canonicalHref);
   const showTitleBadges = badges.length > 0;
@@ -180,25 +183,34 @@ export function SkillHeader({
           <div className="skill-hero-sidebar-stack">
             <SkillSidebarStats
               skill={skill}
+              owner={owner}
+              ownerHandle={ownerHandle}
               formattedStats={formattedStats}
               latestVersion={latestVersion}
             />
             {hasSidebarActions ? (
               <div className="skill-sidebar-actions">
-                {isAuthenticated ? (
+                <SignedInActionTooltip
+                  isAuthenticated={isAuthenticated}
+                  message="You must be signed in to star a skill"
+                >
                   <Button
                     variant="outline"
                     type="button"
                     className="skill-sidebar-action-button"
-                    onClick={onToggleStar}
-                    aria-pressed={Boolean(isStarred)}
+                    onClick={isAuthenticated ? onToggleStar : onRequireSignIn}
+                    aria-pressed={Boolean(isAuthenticated && isStarred)}
                     aria-label={isStarred ? "Unstar skill" : "Star skill"}
                   >
-                    <Star size={14} aria-hidden="true" fill={isStarred ? "currentColor" : "none"} />
-                    {isStarred ? "Unstar" : "Star"}
+                    <Star
+                      size={14}
+                      aria-hidden="true"
+                      fill={isAuthenticated && isStarred ? "currentColor" : "none"}
+                    />
+                    {isAuthenticated && isStarred ? "Unstar" : "Star"}
                     <span className="skill-action-count">{formattedStats.stars}</span>
                   </Button>
-                ) : null}
+                </SignedInActionTooltip>
                 {downloadHref ? (
                   <Button asChild variant="outline" className="skill-sidebar-action-button">
                     <a href={downloadHref}>
@@ -207,17 +219,20 @@ export function SkillHeader({
                     </a>
                   </Button>
                 ) : null}
-                {onOpenReport ? (
+                <SignedInActionTooltip
+                  isAuthenticated={isAuthenticated}
+                  message="You must be signed in to report a skill"
+                >
                   <Button
                     variant="outline"
                     type="button"
                     className="skill-sidebar-action-button"
-                    onClick={onOpenReport}
+                    onClick={isAuthenticated ? onOpenReport : onRequireSignIn}
                   >
                     <Flag size={14} aria-hidden="true" />
                     Report
                   </Button>
-                ) : null}
+                </SignedInActionTooltip>
                 {settingsHref ? (
                   <Button asChild variant="outline" className="skill-sidebar-action-button">
                     <a href={settingsHref}>
@@ -428,12 +443,37 @@ export function SkillHeader({
   );
 }
 
+function SignedInActionTooltip({
+  children,
+  isAuthenticated,
+  message,
+}: {
+  children: ReactNode;
+  isAuthenticated: boolean;
+  message: string;
+}) {
+  if (isAuthenticated) return children;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent side="top" align="center">
+        {message}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 function SkillSidebarStats({
   skill,
+  owner,
+  ownerHandle,
   formattedStats,
   latestVersion,
 }: {
   skill: Doc<"skills"> | PublicSkill;
+  owner: PublicPublisher | null;
+  ownerHandle: string | null;
   formattedStats: ReturnType<typeof formatSkillStatsTriplet>;
   latestVersion: Doc<"skillVersions"> | null;
 }) {
@@ -443,6 +483,19 @@ function SkillSidebarStats({
     <SidebarMetadata
       ariaLabel="Skill metadata"
       blocks={[
+        {
+          label: "Owner",
+          value: (
+            <UserBadge
+              user={owner}
+              fallbackHandle={ownerHandle}
+              prefix=""
+              size="md"
+              showName
+              disableTooltip
+            />
+          ),
+        },
         { label: "Installs", value: formattedStats.installsAllTime, large: true },
         {
           grid: [

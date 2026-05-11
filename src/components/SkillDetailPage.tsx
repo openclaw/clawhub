@@ -1,3 +1,4 @@
+import { useAuthActions } from "@convex-dev/auth/react";
 import { useNavigate } from "@tanstack/react-router";
 import type { ClawdisSkillMetadata } from "clawhub-schema";
 import { useAction, useMutation, useQuery } from "convex/react";
@@ -6,9 +7,11 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
+import { getUserFacingAuthError } from "../lib/authErrorMessage";
 import { getUserFacingConvexError } from "../lib/convexError";
 import { canManageSkill, isAdmin, isModerator } from "../lib/roles";
 import type { SkillBySlugResult, SkillPageInitialData } from "../lib/skillPage";
+import { clearAuthError, setAuthError } from "../lib/useAuthError";
 import { useAuthStatus } from "../lib/useAuthStatus";
 import { ClientOnly } from "./ClientOnly";
 import { DetailBody, DetailPageShell } from "./DetailPageShell";
@@ -92,6 +95,7 @@ export function SkillDetailPage({
 }: SkillDetailPageProps) {
   const navigate = useNavigate();
   const { isAuthenticated, me } = useAuthStatus();
+  const { signIn } = useAuthActions();
   const initialResult = initialData?.result ?? undefined;
 
   const isStaff = isModerator(me);
@@ -410,6 +414,17 @@ export function SkillDetailPage({
     }
   };
 
+  const requireSignIn = () => {
+    clearAuthError();
+    const redirectTo =
+      typeof window === "undefined"
+        ? "/"
+        : `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    void signIn("github", redirectTo ? { redirectTo } : undefined).catch((error) => {
+      setAuthError(getUserFacingAuthError(error, "Sign in failed. Please try again."));
+    });
+  };
+
   if (isLoadingSkill || wantsCanonicalRedirect) {
     return (
       <main className="section detail-page-section" aria-busy="true">
@@ -500,7 +515,8 @@ export function SkillDetailPage({
           isStaff={isStaff}
           isStarred={isStarred}
           onToggleStar={() => void toggleStar({ skillId: skill._id })}
-          onOpenReport={isAuthenticated ? openReportDialog : null}
+          onOpenReport={openReportDialog}
+          onRequireSignIn={requireSignIn}
           forkOf={forkOf}
           forkOfLabel={forkOfLabel}
           forkOfHref={forkOfHref}
