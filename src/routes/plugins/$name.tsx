@@ -8,6 +8,7 @@ import { InstallCopyButton } from "../../components/InstallCopyButton";
 import { Container } from "../../components/layout/Container";
 import { MarkdownPreview } from "../../components/MarkdownPreview";
 import { SidebarMetadata } from "../../components/SidebarMetadata";
+import { SkillDetailSkeleton } from "../../components/skeletons/SkillDetailSkeleton";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
@@ -142,6 +143,7 @@ export const Route = createFileRoute("/plugins/$name")({
   },
   loader: async ({ params }) => loadPluginDetail(params.name),
   head: ({ params, loaderData }) => pluginDetailHead(params.name, loaderData),
+  pendingComponent: PluginDetailPending,
   component: PluginDetailRoute,
 });
 
@@ -297,6 +299,16 @@ function PluginDetailRoute() {
       name={Route.useParams().name}
       loaderData={Route.useLoaderData() as PluginDetailLoaderData}
     />
+  );
+}
+
+export function PluginDetailPending() {
+  return (
+    <main className="section detail-page-section" aria-busy="true">
+      <div role="status" aria-label="Loading plugin details">
+        <SkillDetailSkeleton kind="plugin" />
+      </div>
+    </main>
   );
 }
 

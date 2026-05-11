@@ -2,6 +2,7 @@ import { createFileRoute, notFound } from "@tanstack/react-router";
 import {
   loadPluginDetail,
   PluginDetailPage,
+  PluginDetailPending,
   pluginDetailHead,
   type PluginDetailLoaderData,
 } from "../$name";
@@ -19,6 +20,7 @@ export const Route = createFileRoute("/plugins/$scope/$name")({
   },
   loader: async ({ params }) => loadPluginDetail(packageNameFromParams(params)),
   head: ({ params, loaderData }) => pluginDetailHead(packageNameFromParams(params), loaderData),
+  pendingComponent: PluginDetailPending,
   component: ScopedPluginDetailRoute,
 });
 
