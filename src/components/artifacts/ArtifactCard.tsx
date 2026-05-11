@@ -1,16 +1,10 @@
 import type { ReactNode } from "react";
-import { ArtifactScanResult, ArtifactScanStrip } from "./ArtifactScanStrip";
-import type { ArtifactDisplayStatus, ArtifactScanSignalStatus } from "./artifactStatus";
+import { ArtifactScanStatusValue } from "./ArtifactScanStrip";
+import type { ArtifactDisplayStatus } from "./artifactStatus";
 
 type ArtifactStat = {
   label: string;
-  value: string;
-};
-
-type ArtifactScanSignals = {
-  vtStatus: string | null;
-  llmStatus: string | null;
-  staticScanStatus: ArtifactScanSignalStatus;
+  value: ReactNode;
 };
 
 export function ArtifactCard({
@@ -18,10 +12,7 @@ export function ArtifactCard({
   title,
   titleId,
   icon,
-  meta,
-  summary,
   status,
-  scanSignals,
   stats,
   actions,
 }: {
@@ -29,34 +20,29 @@ export function ArtifactCard({
   title: string;
   titleId: string;
   icon: ReactNode;
-  meta: ReactNode;
-  summary?: string | null;
   status: ArtifactDisplayStatus;
-  scanSignals: ArtifactScanSignals;
   stats: ArtifactStat[];
   actions?: ReactNode;
 }) {
   return (
     <div className="dashboard-artifact-card">
-      <a href={href} className="dashboard-artifact-card-body" aria-labelledby={titleId}>
-        <div className="dashboard-artifact-main">
-          <div className="dashboard-artifact-icon" aria-hidden="true">
-            {icon}
-          </div>
-          <div className="dashboard-artifact-heading">
-            <div className="dashboard-artifact-title-row">
-              <span id={titleId} className="dashboard-skill-name">
-                {title}
-              </span>
-              <ArtifactScanResult status={status} />
-            </div>
-            <div className="dashboard-artifact-meta">{meta}</div>
+      <a href={href} className="dashboard-artifact-link" aria-label={title} />
+      <div className="dashboard-artifact-card-body">
+        <div className="dashboard-artifact-icon">{icon}</div>
+        <div className="dashboard-artifact-heading">
+          <div className="dashboard-artifact-title-row">
+            <span id={titleId} className="dashboard-skill-name">
+              {title}
+            </span>
           </div>
         </div>
-        <p className="dashboard-artifact-summary">{summary ?? "No summary provided."}</p>
-        <ArtifactScanStrip {...scanSignals} />
-        <ArtifactStats stats={stats} />
-      </a>
+      </div>
+      <ArtifactStats
+        stats={[
+          { label: "Security scan", value: <ArtifactScanStatusValue status={status} /> },
+          ...stats,
+        ]}
+      />
       {actions}
     </div>
   );

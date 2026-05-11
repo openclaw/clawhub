@@ -1,23 +1,16 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMutation, usePaginatedQuery, useQuery } from "convex/react";
-import { Box, Loader2, MoreVertical, Package, Plus, Settings, Trash2 } from "lucide-react";
+import { usePaginatedQuery, useQuery } from "convex/react";
+import { Box, Loader2, Package, Plus, Settings } from "lucide-react";
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 import { ArtifactCard } from "../components/artifacts/ArtifactCard";
 import { packageArtifactStatus, skillArtifactStatus } from "../components/artifacts/artifactStatus";
 import { DashboardSkeleton } from "../components/skeletons/DashboardSkeleton";
+import { buildSkillHref } from "../components/skillDetailUtils";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "../components/ui/dropdown-menu";
-import { getUserFacingConvexError } from "../lib/convexError";
+import { buildPluginDetailHref } from "../lib/pluginRoutes";
 
 const emptyPluginPublishSearch = {
   ownerHandle: undefined,
@@ -53,8 +46,8 @@ type DashboardSkill = Pick<
   | "updatedAt"
 > & {
   ownerPath: string;
-  detailHref: string;
-  settingsHref: string;
+  detailHref?: string;
+  settingsHref?: string;
   pendingReview?: boolean;
   qualityDecision?: "pass" | "quarantine" | "reject";
   latestVersion: {
@@ -241,7 +234,7 @@ export function Dashboard() {
           ) : (
             <div className="dashboard-list">
               {skills.map((skill) => (
-                <SkillRow key={skill._id} skill={skill} />
+                <SkillRow key={skill._id} skill={skill} ownerHandle={ownerHandle} />
               ))}
             </div>
           )}
@@ -288,46 +281,29 @@ export function Dashboard() {
   );
 }
 
-function SkillRow({ skill }: { skill: DashboardSkill }) {
+function SkillRow({ skill, ownerHandle }: { skill: DashboardSkill; ownerHandle: string }) {
   const status = skillArtifactStatus(skill);
   const titleId = `dashboard-skill-title-${skill._id}`;
+  const detailHref =
+    skill.detailHref ??
+    buildSkillHref(ownerHandle, skill.ownerPublisherId ?? skill.ownerUserId ?? null, skill.slug);
+  const settingsHref = skill.settingsHref ?? `${detailHref}/settings`;
   const stats = [
     { label: "Downloads", value: formatCompactNumber(skill.stats?.downloads ?? 0) },
-    { label: "Stars", value: formatCompactNumber(skill.stats?.stars ?? 0) },
-    { label: "Versions", value: formatCompactNumber(skill.stats?.versions ?? 0) },
-    { label: "Updated", value: formatShortDate(skill.updatedAt) },
+    { label: "Current version", value: formatVersion(skill.latestVersion?.version) },
+    { label: "Last updated", value: formatShortDate(skill.updatedAt) },
   ];
 
   return (
     <ArtifactCard
-      href={skill.detailHref}
+      href={detailHref}
       title={skill.displayName}
       titleId={titleId}
       icon={<Box className="h-5 w-5" />}
-      meta={
-        <>
-          <span>Skill</span>
-          <span>
-            /{skill.ownerPath}/{skill.slug}
-          </span>
-          {skill.latestVersion?.version ? <span>v{skill.latestVersion.version}</span> : null}
-        </>
-      }
-      summary={skill.summary}
       status={status}
-      scanSignals={{
-        vtStatus: skill.latestVersion?.vtStatus ?? null,
-        llmStatus: skill.latestVersion?.llmStatus ?? null,
-        staticScanStatus: skill.latestVersion?.staticScanStatus ?? null,
-      }}
       stats={stats}
       actions={
-        <RowMenu
-          kind="skill"
-          targetId={skill._id}
-          targetLabel={skill.displayName}
-          settingsHref={skill.settingsHref}
-        />
+        <SettingsLink href={settingsHref} label={`Open settings for ${skill.displayName}`} />
       }
     />
   );
@@ -335,18 +311,13 @@ function SkillRow({ skill }: { skill: DashboardSkill }) {
 
 function PackageRow({ pkg }: { pkg: DashboardPackage }) {
   const status = packageArtifactStatus(pkg);
-  const detailHref = `/plugins/${encodeURIComponent(pkg.name)}`;
+  const detailHref = buildPluginDetailHref(pkg.name);
+  const settingsHref = `${detailHref}/settings`;
   const titleId = `dashboard-package-title-${pkg._id}`;
-  const familyLabel =
-    pkg.family === "bundle-plugin"
-      ? "Bundle Plugin"
-      : pkg.family === "code-plugin"
-        ? "Code Plugin"
-        : "Skill Package";
   const stats = [
     { label: "Downloads", value: formatCompactNumber(pkg.stats.downloads ?? 0) },
-    { label: "Stars", value: formatCompactNumber(pkg.stats.stars ?? 0) },
-    { label: "Updated", value: formatShortDate(pkg.updatedAt) },
+    { label: "Current version", value: formatVersion(pkg.latestVersion) },
+    { label: "Last updated", value: formatShortDate(pkg.updatedAt) },
   ];
 
   return (
@@ -355,30 +326,9 @@ function PackageRow({ pkg }: { pkg: DashboardPackage }) {
       title={pkg.displayName}
       titleId={titleId}
       icon={<Package className="h-5 w-5" />}
-      meta={
-        <>
-          <span>{familyLabel}</span>
-          <span>{pkg.name}</span>
-          {pkg.latestVersion ? <span>v{pkg.latestVersion}</span> : null}
-          <span>{pkg.channel}</span>
-        </>
-      }
-      summary={pkg.summary}
       status={status}
-      scanSignals={{
-        vtStatus: pkg.latestRelease?.vtStatus ?? null,
-        llmStatus: pkg.latestRelease?.llmStatus ?? null,
-        staticScanStatus: pkg.latestRelease?.staticScanStatus ?? null,
-      }}
       stats={stats}
-      actions={
-        <RowMenu
-          kind="plugin"
-          targetId={pkg._id}
-          targetLabel={pkg.displayName}
-          settingsHref={detailHref}
-        />
-      }
+      actions={<SettingsLink href={settingsHref} label={`Open settings for ${pkg.displayName}`} />}
     />
   );
 }
@@ -396,73 +346,18 @@ function formatShortDate(timestamp: number | undefined) {
   );
 }
 
-function RowMenu({
-  kind,
-  targetId,
-  targetLabel,
-  settingsHref,
-}: {
-  kind: "skill" | "plugin";
-  targetId: string;
-  targetLabel: string;
-  settingsHref: string;
-}) {
-  const deletePackage = useMutation(api.packages.softDeletePackage);
-  const [isDeleting, setIsDeleting] = useState(false);
+function formatVersion(version: string | null | undefined) {
+  return version ? `v${version}` : "Unknown";
+}
 
-  async function deletePlugin() {
-    if (kind !== "plugin" || isDeleting) return;
-    const confirmed = window.confirm(
-      `Delete ${targetLabel}? This removes the plugin package and all releases from ClawHub.`,
-    );
-    if (!confirmed) return;
-
-    setIsDeleting(true);
-    try {
-      await deletePackage({ packageId: targetId as Doc<"packages">["_id"] });
-      toast.success(`Deleted ${targetLabel}.`);
-    } catch (error) {
-      toast.error(getUserFacingConvexError(error, "Could not delete this plugin."));
-    } finally {
-      setIsDeleting(false);
-    }
-  }
-
+function SettingsLink({ href, label }: { href: string; label: string }) {
   return (
-    <div className="dashboard-row-menu">
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            aria-label={`Open actions for ${targetLabel}`}
-          >
-            <MoreVertical className="h-4 w-4" aria-hidden="true" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="dashboard-row-menu-content">
-          <DropdownMenuItem asChild>
-            <a href={settingsHref}>
-              <Settings className="h-4 w-4" aria-hidden="true" />
-              Settings
-            </a>
-          </DropdownMenuItem>
-          {kind === "plugin" ? (
-            <>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                disabled={isDeleting}
-                variant="destructive"
-                onSelect={() => void deletePlugin()}
-              >
-                <Trash2 className="h-4 w-4" aria-hidden="true" />
-                {isDeleting ? "Deleting..." : "Delete plugin"}
-              </DropdownMenuItem>
-            </>
-          ) : null}
-        </DropdownMenuContent>
-      </DropdownMenu>
+    <div className="dashboard-row-action">
+      <Button asChild variant="ghost" size="icon-sm">
+        <a href={href} aria-label={label} title="Settings">
+          <Settings className="h-4 w-4" aria-hidden="true" />
+        </a>
+      </Button>
     </div>
   );
 }

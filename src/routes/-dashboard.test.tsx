@@ -1,5 +1,5 @@
 /* @vitest-environment jsdom */
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import type React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -242,7 +242,7 @@ describe("Dashboard rows", () => {
     mocks.toastError.mockReset();
   });
 
-  it("renders rich artifact cards with status, scan, and inventory context", () => {
+  it("renders compact clickable artifact cards with status and inventory context", () => {
     arrangeDashboard({
       skills: [createSkill()],
       packages: [createPackage({ stats: { downloads: 42, installs: 9, stars: 0, versions: 1 } })],
@@ -256,23 +256,25 @@ describe("Dashboard rows", () => {
     expect(
       screen.getByRole("link", { name: "Local Flagged Runtime Plugin" }).getAttribute("href"),
     ).toBe("/plugins/local-flagged-runtime-plugin");
-    expect(screen.getByText("Flagged skill fixture.")).toBeTruthy();
-    expect(screen.getByText("Flagged plugin fixture.")).toBeTruthy();
     expect(screen.getAllByText("Review").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Malicious").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Scan result").length).toBe(2);
-    expect(screen.getAllByText("VT").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("LLM").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Static").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Security scan").length).toBe(2);
+    expect(screen.queryByText("Flagged skill fixture.")).toBeNull();
+    expect(screen.queryByText("Flagged plugin fixture.")).toBeNull();
+    expect(screen.queryByText("VT")).toBeNull();
+    expect(screen.queryByText("LLM")).toBeNull();
+    expect(screen.queryByText("Static")).toBeNull();
     expect(screen.queryByText(/rescans/i)).toBeNull();
     expect(screen.queryByText("Limit reached (3/3)")).toBeNull();
     expect(screen.getAllByText("Downloads").length).toBeGreaterThan(0);
     expect(screen.queryByText("Installs")).toBeNull();
+    expect(screen.getAllByText("Current version").length).toBe(2);
+    expect(screen.getAllByText("Last updated").length).toBe(2);
     expect(
-      screen.getByRole("button", { name: "Open actions for Local Flagged Skill" }),
+      screen.getByRole("link", { name: "Open settings for Local Flagged Skill" }),
     ).toBeTruthy();
     expect(
-      screen.getByRole("button", { name: "Open actions for Local Flagged Runtime Plugin" }),
+      screen.getByRole("link", { name: "Open settings for Local Flagged Runtime Plugin" }),
     ).toBeTruthy();
   });
 
@@ -330,16 +332,18 @@ describe("Dashboard rows", () => {
     );
   });
 
-  it("exposes package delete from the plugin row action menu", () => {
+  it("links directly to plugin settings from the row action", () => {
     arrangeDashboard({ packages: [createPackage({ scanStatus: "clean" })] });
 
     renderDashboard();
 
-    fireEvent.pointerDown(
-      screen.getByRole("button", { name: "Open actions for Local Flagged Runtime Plugin" }),
-    );
-
-    expect(screen.getByRole("menuitem", { name: /delete plugin/i })).toBeTruthy();
+    expect(
+      screen
+        .getByRole("link", { name: "Open settings for Local Flagged Runtime Plugin" })
+        .getAttribute("href"),
+    ).toBe("/plugins/local-flagged-runtime-plugin/settings");
+    expect(screen.queryByRole("button", { name: /open actions/i })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: /delete plugin/i })).toBeNull();
   });
 
   it("does not render legacy table column titles or scanner prefixes", () => {

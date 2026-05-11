@@ -46,7 +46,7 @@
 
 - Commit messages: Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`…).
 - Keep changes scoped; avoid repo-wide search/replace.
-- Before commit/PR handoff, run `bun run format:check` and `bun run lint`; include commands run in the PR summary.
+- Before commit/PR handoff, run `bun run ci:static` so formatting, linting, audit/peer checks, and dead-code export checks match the CI `static` job. For faster inner loops, targeted `bun run format:check -- <files>` / `bun run lint` are fine, but do not treat them as the final pre-push gate.
 - PRs: include summary + test commands run. Add screenshots for UI changes.
 - Before merging any PR, verify TypeScript cleanly with `bunx tsc -p packages/schema/tsconfig.json --noEmit` and `bunx tsc -p packages/clawhub/tsconfig.json --noEmit`; if Convex code changed, also run the repo typecheck path used by deploy so `bunx convex deploy` will not fail on `tsc`.
 - GitHub comments: for multiline `gh` comments/close messages, use `--body-file`, `--input`, or stdin/heredoc with real newlines; never pass literal `\\n` in shell strings.

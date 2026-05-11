@@ -5,7 +5,7 @@ export type ArtifactDisplayStatus = {
   variant: "default" | "pending" | "warning" | "destructive" | "success";
 };
 
-export type ArtifactScanSignalStatus = "clean" | "suspicious" | "malicious" | null;
+type ArtifactScanSignalStatus = "clean" | "suspicious" | "malicious" | null;
 
 type SkillArtifactStatusInput = {
   moderationStatus?: string;
