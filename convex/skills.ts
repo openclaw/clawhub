@@ -72,6 +72,7 @@ import {
   toPublicUser,
 } from "./lib/public";
 import {
+  assertCanManageOwnedResource,
   ensurePersonalPublisherForUser,
   getOwnerPublisher,
   getPublisherByHandle,
@@ -5765,6 +5766,60 @@ export const backfillSkillStaticScans: ReturnType<typeof action> = action({
     return await ctx.runAction(internal.skills.backfillSkillStaticScansInternal, {
       batchSize: args.batchSize,
     });
+  },
+});
+
+export const updateLatestClawScanNoteAndRequestRescan = mutation({
+  args: {
+    skillId: v.id("skills"),
+    clawScanNote: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx);
+    const skill = await ctx.db.get(args.skillId);
+    if (!skill || skill.softDeletedAt || !skill.latestVersionId) {
+      throw new ConvexError("Skill not found");
+    }
+
+    const version = await ctx.db.get(skill.latestVersionId);
+    if (!version || version.softDeletedAt) throw new ConvexError("Skill version not found");
+
+    await assertCanManageOwnedResource(ctx, {
+      actor: user,
+      ownerUserId: skill.ownerUserId,
+      ownerPublisherId: skill.ownerPublisherId,
+      allowPlatformAdmin: true,
+    });
+
+    const now = Date.now();
+    const previousNote = version.clawScanNote?.trim() || undefined;
+    const nextNote = normalizeClawScanNoteForWrite(args.clawScanNote);
+    await ctx.db.patch(version._id, {
+      clawScanNote: nextNote ?? "",
+      clawScanNoteUpdatedAt: now,
+    });
+    await ctx.db.insert("auditLogs", {
+      actorUserId: user._id,
+      action: "skill.clawscan_note.update",
+      targetType: "skillVersion",
+      targetId: version._id,
+      metadata: {
+        skillId: skill._id,
+        slug: skill.slug,
+        version: version.version,
+        hadPreviousNote: Boolean(previousNote),
+        hasNextNote: Boolean(nextNote),
+        previousLength: previousNote?.length ?? 0,
+        nextLength: nextNote?.length ?? 0,
+      },
+      createdAt: now,
+    });
+
+    await ctx.scheduler.runAfter(0, internal.llmEval.evaluateWithLlm, {
+      versionId: version._id,
+    });
+
+    return { ok: true as const, skillVersionId: version._id };
   },
 });
 

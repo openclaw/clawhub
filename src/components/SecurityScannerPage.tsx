@@ -1,4 +1,5 @@
-import { Clock, ExternalLink } from "lucide-react";
+import { Clock, ExternalLink, Info, X } from "lucide-react";
+import { useEffect, useState } from "react";
 import type { Id } from "../../convex/_generated/dataModel";
 import { PublisherClawScanNote } from "./PublisherClawScanNote";
 import { SidebarMetadata } from "./SidebarMetadata";
@@ -10,6 +11,7 @@ import {
   type StaticFinding,
   type VtAnalysis,
 } from "./SkillSecurityScanResults";
+import { Alert, AlertDescription } from "./ui/alert";
 import { Badge } from "./ui/badge";
 
 export type ScannerSlug = "virustotal" | "clawscan" | "static-analysis";
@@ -46,6 +48,8 @@ type SecurityScannerPageProps = {
   } | null;
   source?: Record<string, unknown> | null;
   clawScanNote?: string | null;
+  canManageArtifact?: boolean;
+  settingsHref?: string | null;
 };
 
 const SCANNER_LABELS: Record<ScannerSlug, string> = {
@@ -192,6 +196,45 @@ function getOverviewCopy(props: SecurityScannerPageProps) {
   ];
 }
 
+function isReviewStatus(status: string) {
+  const normalized = status.trim().toLowerCase();
+  return normalized === "review" || normalized === "suspicious";
+}
+
+function PublisherNotePrompt({
+  storageKey,
+  settingsHref,
+}: {
+  storageKey: string;
+  settingsHref: string;
+}) {
+  const [dismissed, setDismissed] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setDismissed(window.localStorage.getItem(storageKey) === "1");
+  }, [storageKey]);
+
+  if (dismissed) return null;
+
+  function dismiss() {
+    setDismissed(true);
+    if (typeof window !== "undefined") window.localStorage.setItem(storageKey, "1");
+  }
+
+  return (
+    <Alert variant="info" className="publisher-note-prompt" role="status">
+      <Info size={18} aria-hidden="true" />
+      <AlertDescription>
+        <a href={settingsHref}>Add a publisher note</a> to give ClawScan context on these findings.
+      </AlertDescription>
+      <button type="button" onClick={dismiss} aria-label="Dismiss publisher note prompt">
+        <X size={16} aria-hidden="true" />
+      </button>
+    </Alert>
+  );
+}
+
 function SecurityScannerReport(props: SecurityScannerPageProps) {
   const label = SCANNER_LABELS[props.scanner];
   const status = getScannerStatus(props);
@@ -208,6 +251,15 @@ function SecurityScannerReport(props: SecurityScannerPageProps) {
     props.llmAnalysis && hasClawScanRiskReview(props.llmAnalysis) ? props.llmAnalysis : null;
   const visibleFindingCount = getVisibleFindingCount(props);
   const overviewCopy = getOverviewCopy(props).filter(Boolean);
+  const showPublisherNotePrompt =
+    props.scanner === "clawscan" &&
+    props.canManageArtifact &&
+    props.settingsHref &&
+    !props.clawScanNote?.trim() &&
+    isReviewStatus(status) &&
+    Boolean(riskAnalysis);
+  const publisherNotePromptHref = showPublisherNotePrompt ? props.settingsHref : null;
+  const publisherNotePromptStorageKey = `clawhub.publisher-note-prompt.${props.entity.kind}.${props.entity.name}.${props.entity.version ?? "latest"}`;
 
   return (
     <main className="section detail-page-section security-report-section">
@@ -241,6 +293,12 @@ function SecurityScannerReport(props: SecurityScannerPageProps) {
                   </h2>
                 </div>
                 <div className="security-report-panel-body">
+                  {publisherNotePromptHref ? (
+                    <PublisherNotePrompt
+                      storageKey={publisherNotePromptStorageKey}
+                      settingsHref={publisherNotePromptHref}
+                    />
+                  ) : null}
                   <ClawScanRiskReview analysis={riskAnalysis} showTitle={false} />
                 </div>
               </section>

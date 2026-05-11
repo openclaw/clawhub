@@ -1458,6 +1458,45 @@ export const getByName = query({
   },
 });
 
+export const getClawScanNoteSettings = query({
+  args: {
+    name: v.string(),
+    candidateNames: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, args) => {
+    const viewerUserId = await getOptionalViewerUserId(ctx);
+    if (!viewerUserId) return null;
+
+    const candidates = [args.name, ...(args.candidateNames ?? [])]
+      .map((name) => normalizePackageName(name))
+      .filter(Boolean);
+    const uniqueCandidates = Array.from(new Set(candidates));
+
+    let pkg: Doc<"packages"> | null = null;
+    for (const candidate of uniqueCandidates) {
+      pkg = await getPackageByNormalizedName(ctx, candidate);
+      if (pkg && !pkg.softDeletedAt && pkg.family !== "skill") break;
+      pkg = null;
+    }
+    if (!pkg || !pkg.latestReleaseId) return null;
+
+    const actor = await ctx.db.get(viewerUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) return null;
+    if (actor.role !== "admin") {
+      const canAccess = await viewerCanAccessPackageOwner(ctx, pkg, viewerUserId);
+      if (!canAccess) return null;
+    }
+
+    const latestRelease = await ctx.db.get(pkg.latestReleaseId);
+    if (!latestRelease || latestRelease.softDeletedAt) return null;
+
+    return {
+      package: pkg,
+      latestRelease,
+    };
+  },
+});
+
 export const getByNameForStaff = query({
   args: { name: v.string() },
   handler: async (ctx, args) => {
@@ -5435,6 +5474,60 @@ export const backfillPackageReleaseScans = action({
     return await runActionRef(ctx, internalRefs.packages.backfillPackageReleaseScansInternal, {
       batchSize: args.batchSize,
     });
+  },
+});
+
+export const updateLatestClawScanNoteAndRequestRescan = mutation({
+  args: {
+    packageId: v.id("packages"),
+    clawScanNote: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx);
+    const pkg = await ctx.db.get(args.packageId);
+    if (!pkg || pkg.softDeletedAt || pkg.family === "skill" || !pkg.latestReleaseId) {
+      throw new ConvexError("Plugin not found");
+    }
+
+    const release = await ctx.db.get(pkg.latestReleaseId);
+    if (!release || release.softDeletedAt) throw new ConvexError("Plugin release not found");
+
+    await assertCanManageOwnedResource(ctx, {
+      actor: user,
+      ownerUserId: pkg.ownerUserId,
+      ownerPublisherId: pkg.ownerPublisherId,
+      allowPlatformAdmin: true,
+    });
+
+    const now = Date.now();
+    const previousNote = release.clawScanNote?.trim() || undefined;
+    const nextNote = normalizeClawScanNoteForWrite(args.clawScanNote);
+    await ctx.db.patch(release._id, {
+      clawScanNote: nextNote ?? "",
+      clawScanNoteUpdatedAt: now,
+    });
+    await ctx.db.insert("auditLogs", {
+      actorUserId: user._id,
+      action: "package.clawscan_note.update",
+      targetType: "packageRelease",
+      targetId: release._id,
+      metadata: {
+        packageId: pkg._id,
+        name: pkg.name,
+        version: release.version,
+        hadPreviousNote: Boolean(previousNote),
+        hasNextNote: Boolean(nextNote),
+        previousLength: previousNote?.length ?? 0,
+        nextLength: nextNote?.length ?? 0,
+      },
+      createdAt: now,
+    });
+
+    await runAfterRef(ctx, 0, internalRefs.llmEval.evaluatePackageReleaseWithLlm, {
+      releaseId: release._id,
+    });
+
+    return { ok: true as const, packageReleaseId: release._id };
   },
 });
 

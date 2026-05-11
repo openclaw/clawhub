@@ -316,7 +316,7 @@ export function PluginDetailPage({
       ? hash
       : "readme";
   });
-  if (pathname.includes("/security/")) {
+  if (pathname.includes("/security/") || pathname.endsWith("/settings")) {
     return <Outlet />;
   }
 

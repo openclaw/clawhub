@@ -3,8 +3,10 @@ import type { ClawdisSkillMetadata } from "clawhub-schema";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { ArrowLeft } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
+import { getUserFacingConvexError } from "../lib/convexError";
 import { canManageSkill, isAdmin, isModerator } from "../lib/roles";
 import type { SkillBySlugResult, SkillPageInitialData } from "../lib/skillPage";
 import { useAuthStatus } from "../lib/useAuthStatus";
@@ -103,6 +105,9 @@ export function SkillDetailPage({
   const toggleStar = useMutation(api.stars.toggle);
   const reportSkill = useMutation(api.skills.report);
   const updateSummary = useMutation(api.skills.updateSummary);
+  const updatePublisherNoteAndRequestRescan = useMutation(
+    api.skills.updateLatestClawScanNoteAndRequestRescan,
+  );
   const getReadme = useAction(api.skills.getReadme);
   const myPublishers = useQuery(api.publishers.listMine) as
     | Array<{ publisher: { _id: Id<"publishers"> }; role: string }>
@@ -392,6 +397,20 @@ export function SkillDetailPage({
     }
   };
 
+  const submitPublisherNoteAndRescan = async (clawScanNote: string) => {
+    if (!skill) return;
+    try {
+      await updatePublisherNoteAndRequestRescan({
+        skillId: skill._id,
+        clawScanNote,
+      });
+      toast.success("Publisher note saved. Rescan started; this may take a few minutes.");
+    } catch (error) {
+      toast.error(getUserFacingConvexError(error, "Could not save publisher note."));
+      throw error;
+    }
+  };
+
   if (isLoadingSkill || wantsCanonicalRedirect) {
     return (
       <main className="section detail-page-section" aria-busy="true">
@@ -431,6 +450,8 @@ export function SkillDetailPage({
         ownerHandle={ownerHandle}
         ownerId={owner?._id ?? null}
         ownedSkills={(ownedSkills ?? []).filter((entry) => entry._id !== skill._id)}
+        clawScanNote={latestVersion?.clawScanNote ?? null}
+        onSavePublisherNoteAndRescan={submitPublisherNoteAndRescan}
       />
     ) : null;
 

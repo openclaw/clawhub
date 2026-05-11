@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { SecurityScannerPage } from "./SecurityScannerPage";
 import { SecurityScanResults, type LlmAnalysis } from "./SkillSecurityScanResults";
 
@@ -88,6 +88,10 @@ const legacyClawScanAnalysis: LlmAnalysis = {
     },
   ],
 };
+
+beforeEach(() => {
+  window.localStorage.clear();
+});
 
 describe("SecurityScanResults static guidance", () => {
   it("renders capability-only states without scanner verdicts", () => {
@@ -256,6 +260,53 @@ describe("SecurityScanResults static guidance", () => {
     expect(screen.queryByText("metadata")).toBeNull();
     expect(screen.getAllByText("Skill content").length).toBeGreaterThan(0);
     expect(screen.getByText("requires.env: TODOIST_API_TOKEN")).toBeTruthy();
+  });
+
+  it("prompts publishers to add a note on review ClawScan reports without one", () => {
+    render(
+      <SecurityScannerPage
+        scanner="clawscan"
+        entity={{
+          kind: "skill",
+          title: "Todo Guard",
+          name: "todo-guard",
+          version: "1.0.0",
+          detailPath: "/local/todo-guard",
+        }}
+        llmAnalysis={clawScanAnalysis}
+        canManageArtifact
+        settingsHref="/local/todo-guard/settings"
+      />,
+    );
+
+    const link = screen.getByRole("link", { name: "Add a publisher note" });
+    expect(link.getAttribute("href")).toBe("/local/todo-guard/settings");
+    expect(screen.getByText(/to give ClawScan context on these findings/i)).toBeTruthy();
+  });
+
+  it("hides the publisher note prompt for non-publishers and after dismissal", () => {
+    const props = {
+      scanner: "clawscan" as const,
+      entity: {
+        kind: "skill" as const,
+        title: "Todo Guard",
+        name: "todo-guard",
+        version: "1.0.0",
+        detailPath: "/local/todo-guard",
+      },
+      llmAnalysis: clawScanAnalysis,
+      settingsHref: "/local/todo-guard/settings",
+    };
+
+    const { rerender } = render(<SecurityScannerPage {...props} />);
+    expect(screen.queryByRole("link", { name: "Add a publisher note" })).toBeNull();
+
+    rerender(<SecurityScannerPage {...props} canManageArtifact />);
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss publisher note prompt" }));
+    expect(screen.queryByRole("link", { name: "Add a publisher note" })).toBeNull();
+
+    rerender(<SecurityScannerPage {...props} canManageArtifact />);
+    expect(screen.queryByRole("link", { name: "Add a publisher note" })).toBeNull();
   });
 
   it("shows package hash metadata for plugin ClawScan reports", () => {

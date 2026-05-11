@@ -1,4 +1,6 @@
 import { createFileRoute, notFound, redirect } from "@tanstack/react-router";
+import { useQuery } from "convex/react";
+import { api } from "../../../../../convex/_generated/api";
 import { SecurityScannerPage, type ScannerSlug } from "../../../../components/SecurityScannerPage";
 import { getOpenClawPackageCandidateNames } from "../../../../lib/openClawExtensionSlugs";
 import {
@@ -137,6 +139,10 @@ export function PluginSecurityScannerPage({
   const { detail, version, resolvedName, rateLimited } = loaderData;
   const pkg = detail.package;
   const release = version?.version ?? null;
+  const settings = useQuery(api.packages.getClawScanNoteSettings, {
+    name: resolvedName,
+    candidateNames: getOpenClawPackageCandidateNames(name),
+  });
 
   if (rateLimited) {
     return (
@@ -172,6 +178,8 @@ export function PluginSecurityScannerPage({
       llmAnalysis={release.llmAnalysis ?? null}
       staticScan={release.staticScan ?? null}
       clawScanNote={release.clawScanNote ?? null}
+      canManageArtifact={Boolean(settings)}
+      settingsHref={settings ? `${buildPluginDetailHref(resolvedName)}/settings` : null}
     />
   );
 }

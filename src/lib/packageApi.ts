@@ -118,6 +118,7 @@ export type PackageVersionDetail = {
       checkedAt: number;
     } | null;
     clawScanNote?: string | null;
+    clawScanNoteUpdatedAt?: number | null;
     staticScan?: {
       status: string;
       reasonCodes: string[];

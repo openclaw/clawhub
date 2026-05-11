@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { getUserFacingConvexError } from "../lib/convexError";
+import { PublisherNoteSettingsEditor } from "./PublisherNoteSettingsEditor";
 import { SettingsActionRow } from "./settings/SettingsActionRow";
 import { Button } from "./ui/button";
 import {
@@ -30,6 +31,8 @@ type SkillOwnershipPanelProps = {
   ownerHandle: string | null;
   ownerId: Id<"users"> | Id<"publishers"> | null;
   ownedSkills: OwnedSkillOption[];
+  clawScanNote?: string | null;
+  onSavePublisherNoteAndRescan?: ((note: string) => Promise<void>) | null;
 };
 
 function formatMutationError(error: unknown) {
@@ -42,6 +45,8 @@ export function SkillOwnershipPanel({
   ownerHandle,
   ownerId,
   ownedSkills,
+  clawScanNote,
+  onSavePublisherNoteAndRescan,
 }: SkillOwnershipPanelProps) {
   const navigate = useNavigate();
   const renameOwnedSkill = useMutation(api.skills.renameOwnedSkill);
@@ -112,6 +117,18 @@ export function SkillOwnershipPanel({
           <Button asChild variant="outline">
             <a href={`/publish-skill?updateSlug=${encodeURIComponent(slug)}`}>New Version</a>
           </Button>
+        </SettingsActionRow>
+
+        <SettingsActionRow
+          title="Publisher note"
+          description="Optional context ClawScan can use when reviewing the latest release."
+        >
+          {onSavePublisherNoteAndRescan ? (
+            <PublisherNoteSettingsEditor
+              note={clawScanNote}
+              onSaveAndRescan={onSavePublisherNoteAndRescan}
+            />
+          ) : null}
         </SettingsActionRow>
 
         <SettingsActionRow

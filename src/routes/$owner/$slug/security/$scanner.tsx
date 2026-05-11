@@ -3,7 +3,9 @@ import { useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
 import { SecurityScannerPage, type ScannerSlug } from "../../../../components/SecurityScannerPage";
 import { buildSkillMeta } from "../../../../lib/og";
+import { isAdmin } from "../../../../lib/roles";
 import { fetchSkillPageData } from "../../../../lib/skillPage";
+import { useAuthStatus } from "../../../../lib/useAuthStatus";
 
 const SCANNERS = new Set<ScannerSlug>(["virustotal", "clawscan", "static-analysis"]);
 
@@ -85,6 +87,10 @@ function SkillSecurityScannerRoute() {
   const { owner, slug, scanner } = Route.useParams();
   const { initialData } = Route.useLoaderData();
   const liveResult = useQuery(api.skills.getBySlug, { slug });
+  const { me } = useAuthStatus();
+  const myPublishers = useQuery(api.publishers.listMine, me ? {} : "skip") as
+    | Array<{ publisher: { _id: string }; role: string }>
+    | undefined;
   const result = liveResult === undefined ? initialData?.result : liveResult;
   const skill = result?.skill;
   const latestVersion = result?.latestVersion;
@@ -106,6 +112,14 @@ function SkillSecurityScannerRoute() {
   }
 
   const ownerSegment = result?.owner?.handle ?? result?.owner?._id ?? owner;
+  const canManageArtifact =
+    Boolean(me && skill && me._id === skill.ownerUserId) ||
+    Boolean(
+      skill?.ownerPublisherId &&
+      myPublishers?.some((entry) => entry.publisher._id === skill.ownerPublisherId),
+    ) ||
+    isAdmin(me);
+  const settingsHref = `/${encodeURIComponent(ownerSegment)}/${encodeURIComponent(slug)}/settings`;
 
   return (
     <SecurityScannerPage
@@ -125,6 +139,8 @@ function SkillSecurityScannerRoute() {
       llmAnalysis={latestVersion.llmAnalysis ?? null}
       staticScan={latestVersion.staticScan ?? null}
       clawScanNote={latestVersion.clawScanNote ?? null}
+      canManageArtifact={canManageArtifact}
+      settingsHref={canManageArtifact ? settingsHref : null}
     />
   );
 }
