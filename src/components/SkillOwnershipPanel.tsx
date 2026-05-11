@@ -183,8 +183,8 @@ export function SkillOwnershipPanel({
         </SettingsActionRow>
 
         <SettingsActionRow
-          title="Description"
-          description="Update the short description shown on the skill detail page."
+          title="Short summary"
+          description="Update the short summary used in cards, search, and previews."
         >
           {onSaveSummary ? (
             <SummarySettingsEditor summary={summary} onSaveSummary={onSaveSummary} />
