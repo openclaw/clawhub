@@ -63,6 +63,7 @@ const MIN_FALLBACK_SCAN_LIMIT = 100;
 const FALLBACK_RECALL_MULTIPLIER = 2;
 const MIN_STABLE_SEARCH_RECALL_LIMIT = 100;
 const MAX_DIRECT_SKILL_SEARCH_CANDIDATES = 100;
+const MAX_DIRECT_SKILL_FULL_TEXT_CANDIDATES = 40;
 const MIN_VECTOR_SEARCH_CANDIDATES = 50;
 const MAX_VECTOR_SEARCH_CANDIDATES = 128;
 const SKILL_CAPABILITY_TAG_SET = new Set<string>(SKILL_CAPABILITY_TAGS);
@@ -450,13 +451,13 @@ export const directPrefixSkillMatches = internalQuery({
                 .eq("softDeletedAt", undefined)
                 .eq("isSuspicious", false),
             )
-            .take(MAX_DIRECT_SKILL_SEARCH_CANDIDATES)
+            .take(MAX_DIRECT_SKILL_FULL_TEXT_CANDIDATES)
         : ctx.db
             .query("skillSearchDigest")
             .withSearchIndex("search_by_display_name", (q) =>
               q.search("displayName", args.query).eq("softDeletedAt", undefined),
             )
-            .take(MAX_DIRECT_SKILL_SEARCH_CANDIDATES),
+            .take(MAX_DIRECT_SKILL_FULL_TEXT_CANDIDATES),
       // Full-text search on slug — same rationale, covers slug middle/tail tokens
       // (e.g. "yijian" or "vision" inside "baidu-yijian-vision").
       args.nonSuspiciousOnly
@@ -465,13 +466,13 @@ export const directPrefixSkillMatches = internalQuery({
             .withSearchIndex("search_by_slug", (q) =>
               q.search("slug", args.query).eq("softDeletedAt", undefined).eq("isSuspicious", false),
             )
-            .take(MAX_DIRECT_SKILL_SEARCH_CANDIDATES)
+            .take(MAX_DIRECT_SKILL_FULL_TEXT_CANDIDATES)
         : ctx.db
             .query("skillSearchDigest")
             .withSearchIndex("search_by_slug", (q) =>
               q.search("slug", args.query).eq("softDeletedAt", undefined),
             )
-            .take(MAX_DIRECT_SKILL_SEARCH_CANDIDATES),
+            .take(MAX_DIRECT_SKILL_FULL_TEXT_CANDIDATES),
     ]);
     // Mirrors the `matchesExactTokens` filter the vector path applies on
     // hydrated results, so every recall path shares one literal-match

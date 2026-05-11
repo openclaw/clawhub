@@ -230,6 +230,28 @@ describe("search helpers", () => {
     expect(result.map((entry) => entry.skill.slug)).toEqual(["baidu-yijian-vision"]);
   });
 
+  it("does not return soft-deleted skills via full-text search", async () => {
+    const active = makeSkillDoc({
+      id: "skills:active",
+      slug: "baidu-yijian-vision",
+      displayName: "Baidu Yijian Vision",
+    });
+    const softDeleted = makeSkillDoc({
+      id: "skills:deleted",
+      slug: "deleted-yijian-tool",
+      displayName: "Deleted Yijian Tool",
+      softDeletedAt: 123,
+    });
+    const ctx = makeDirectPrefixCtx([active, softDeleted]);
+
+    const result = await directPrefixSkillMatchesHandler(ctx, {
+      query: "yijian",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["baidu-yijian-vision"]);
+  });
+
   it("dedupes skills matched by both legacy prefix indexes and the new full-text index", async () => {
     // First-token queries hit *all six* recall paths (4 prefix + 2 full-text).
     // The skillId-based filter inside `directPrefixSkillMatches` must prevent
