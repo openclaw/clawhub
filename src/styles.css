@@ -5426,18 +5426,18 @@ code {
 .tab-card {
   gap: 18px;
   max-width: 100%;
-  overflow-x: auto;
+  overflow: visible;
 }
 
 .tab-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 22px;
   padding: 0;
   border-bottom: 1px solid var(--line);
   background: transparent;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
+  overflow: visible;
   scrollbar-width: none;
   max-width: 100%;
 }
@@ -9857,12 +9857,12 @@ a.agentic-risk-finding-title:focus-visible {
   }
 
   .tab-card {
-    overflow-x: hidden;
+    overflow: visible;
   }
 
   .tab-header {
     gap: 18px;
-    overflow-x: auto;
+    overflow: visible;
   }
 
   .tab-button {
