@@ -1,5 +1,5 @@
 import { useAuthActions } from "@convex-dev/auth/react";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useRouter } from "@tanstack/react-router";
 import type { ClawdisSkillMetadata } from "clawhub-schema";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { ArrowLeft, TriangleAlert } from "lucide-react";
@@ -160,6 +160,7 @@ export function SkillDetailPage({
   mode = "detail",
 }: SkillDetailPageProps) {
   const navigate = useNavigate();
+  const router = useRouter();
   const { isAuthenticated, me } = useAuthStatus();
   const { signIn } = useAuthActions();
   const initialResult = initialData?.result ?? undefined;
@@ -195,6 +196,13 @@ export function SkillDetailPage({
   const [reportReason, setReportReason] = useState("");
   const [reportError, setReportError] = useState<string | null>(null);
   const [isSubmittingReport, setIsSubmittingReport] = useState(false);
+  const [optimisticStar, setOptimisticStar] = useState<{
+    skillId: Id<"skills">;
+    starred: boolean;
+    baselineStarred: boolean;
+    baselineStars: number;
+    delta: number;
+  } | null>(null);
 
   const isLoadingSkill = isStaff ? staffResult === undefined : result === undefined;
   const skill = result?.skill;
@@ -217,6 +225,21 @@ export function SkillDetailPage({
     api.stars.isStarred,
     isAuthenticated && skill ? { skillId: skill._id } : "skip",
   );
+  const activeOptimisticStar =
+    optimisticStar && skill && optimisticStar.skillId === skill._id ? optimisticStar : null;
+  const effectiveIsStarred = activeOptimisticStar?.starred ?? isStarred;
+  const displayedSkill = useMemo(() => {
+    if (!skill || !activeOptimisticStar) return skill;
+    const currentStars = skill.stats.stars ?? 0;
+    if (currentStars !== activeOptimisticStar.baselineStars) return skill;
+    return {
+      ...skill,
+      stats: {
+        ...skill.stats,
+        stars: Math.max(0, currentStars + activeOptimisticStar.delta),
+      },
+    };
+  }, [activeOptimisticStar, skill]);
 
   const myPublisherIds = useMemo(
     () =>
@@ -397,6 +420,13 @@ export function SkillDetailPage({
     };
   }, [getReadme, latestVersionId, loadedReadmeVersionId, readme, readmeError]);
 
+  useEffect(() => {
+    if (!skill || !activeOptimisticStar) return;
+    if (skill.stats.stars !== activeOptimisticStar.baselineStars) {
+      setOptimisticStar(null);
+    }
+  }, [activeOptimisticStar, skill]);
+
   const closeReportDialog = () => {
     setIsReportDialogOpen(false);
     setReportReason("");
@@ -469,6 +499,36 @@ export function SkillDetailPage({
     }
   };
 
+  const handleToggleStar = async () => {
+    if (!skill) return;
+    const activeStar = activeOptimisticStar;
+    const baselineStarred = activeStar?.baselineStarred ?? Boolean(effectiveIsStarred);
+    const previousIsStarred = Boolean(effectiveIsStarred);
+    const baselineStars = activeStar?.baselineStars ?? skill.stats.stars ?? 0;
+
+    try {
+      const starResult = (await toggleStar({ skillId: skill._id })) as { starred: boolean };
+      setOptimisticStar({
+        skillId: skill._id,
+        starred: starResult.starred,
+        baselineStarred,
+        baselineStars,
+        delta:
+          starResult.starred === previousIsStarred
+            ? (activeStar?.delta ?? 0)
+            : starResult.starred === baselineStarred
+              ? 0
+              : starResult.starred
+                ? 1
+                : -1,
+      });
+      void router.invalidate();
+    } catch (error) {
+      console.error("Failed to toggle star", error);
+      toast.error(getUserFacingConvexError(error, "Unable to update star. Please try again."));
+    }
+  };
+
   const requireSignIn = () => {
     clearAuthError();
     const redirectTo =
@@ -490,7 +550,7 @@ export function SkillDetailPage({
     );
   }
 
-  if (result === null || !skill) {
+  if (result === null || !skill || !displayedSkill) {
     return (
       <main className="section detail-page-section">
         <Card>Skill not found.</Card>
@@ -574,7 +634,7 @@ export function SkillDetailPage({
     <main className="section detail-page-section">
       <DetailPageShell>
         <SkillHeader
-          skill={skill}
+          skill={displayedSkill}
           owner={owner}
           ownerHandle={ownerHandle}
           latestVersion={latestVersion}
@@ -582,8 +642,8 @@ export function SkillDetailPage({
           canManage={canManage}
           isAuthenticated={isAuthenticated}
           isStaff={isStaff}
-          isStarred={isStarred}
-          onToggleStar={() => void toggleStar({ skillId: skill._id })}
+          isStarred={effectiveIsStarred}
+          onToggleStar={() => void handleToggleStar()}
           onOpenReport={openReportDialog}
           onRequireSignIn={requireSignIn}
           forkOf={forkOf}

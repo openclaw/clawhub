@@ -5,6 +5,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 import { SkillDetailPage } from "../components/SkillDetailPage";
 
 const navigateMock = vi.fn();
+const routerInvalidateMock = vi.fn();
 const useAuthStatusMock = vi.fn();
 
 process.env.VITE_CONVEX_URL = process.env.VITE_CONVEX_URL ?? "https://example.convex.cloud";
@@ -21,6 +22,7 @@ vi.mock("../convex/client", () => ({
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ children }: { children: ReactNode }) => children,
   useNavigate: () => navigateMock,
+  useRouter: () => ({ invalidate: routerInvalidateMock }),
 }));
 
 vi.mock("@convex-dev/auth/react", () => ({
@@ -28,12 +30,13 @@ vi.mock("@convex-dev/auth/react", () => ({
 }));
 
 const useQueryMock = vi.fn();
+const useMutationMock = vi.fn();
 const getReadmeMock = vi.fn();
 
 vi.mock("convex/react", () => ({
   ConvexReactClient: class {},
   useQuery: (...args: unknown[]) => useQueryMock(...args),
-  useMutation: () => vi.fn(),
+  useMutation: (...args: unknown[]) => useMutationMock(...args),
   useAction: () => getReadmeMock,
 }));
 
@@ -61,10 +64,13 @@ describe("SkillDetailPage", () => {
 
   beforeEach(() => {
     useQueryMock.mockReset();
+    useMutationMock.mockReset();
     getReadmeMock.mockReset();
     navigateMock.mockReset();
+    routerInvalidateMock.mockReset();
     useAuthStatusMock.mockReset();
     getReadmeMock.mockResolvedValue({ text: "" });
+    useMutationMock.mockReturnValue(vi.fn());
     useAuthStatusMock.mockReturnValue({
       isAuthenticated: false,
       isLoading: false,
@@ -659,6 +665,92 @@ describe("SkillDetailPage", () => {
     expect(screen.queryByText(/Loading skill/i)).toBeNull();
     expect(screen.getAllByText("Weather").length).toBeGreaterThan(0);
     expect(navigateMock).not.toHaveBeenCalled();
+  });
+
+  it("invalidates route data and updates the star button while the live skill query is stale", async () => {
+    const toggleStarMock = vi
+      .fn()
+      .mockResolvedValueOnce({ starred: true })
+      .mockResolvedValueOnce({ starred: false });
+    useMutationMock.mockReturnValue(toggleStarMock);
+    useAuthStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: { _id: "users:viewer", role: "user" },
+    });
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (args && typeof args === "object" && "skillId" in args && "limit" in args) return [];
+      if (args && typeof args === "object" && "skillId" in args) return false;
+      if (args && typeof args === "object" && "slug" in args) {
+        return {
+          skill: {
+            _id: skillId,
+            _creationTime: 0,
+            slug: "weather",
+            displayName: "Weather",
+            summary: "Get current weather.",
+            ownerUserId: ownerId,
+            ownerPublisherId,
+            tags: {},
+            badges: {},
+            stats: {
+              stars: 8,
+              downloads: 34,
+              installsCurrent: 5,
+              installsAllTime: 8,
+              versions: 1,
+              comments: 0,
+            },
+            createdAt: 0,
+            updatedAt: 0,
+          },
+          owner: {
+            _id: ownerPublisherId,
+            _creationTime: 0,
+            kind: "user",
+            handle: "steipete",
+            displayName: "Peter",
+            linkedUserId: ownerId,
+          },
+          latestVersion: {
+            _id: versionId,
+            _creationTime: 0,
+            skillId,
+            version: "1.0.0",
+            fingerprint: "abc",
+            changelog: "Initial release",
+            parsed: { license: "MIT-0", frontmatter: {} },
+            files: [],
+            createdBy: ownerId,
+            createdAt: 0,
+          },
+          forkOf: null,
+          canonical: null,
+        };
+      }
+      return undefined;
+    });
+
+    render(<SkillDetailPage slug="weather" />);
+
+    const starButton = await screen.findByRole("button", { name: "Star skill" });
+    expect(starButton.textContent).toContain("8");
+
+    fireEvent.click(starButton);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Unstar skill" }).textContent).toContain("9");
+    });
+    expect(toggleStarMock).toHaveBeenCalledWith({ skillId });
+
+    fireEvent.click(screen.getByRole("button", { name: "Unstar skill" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Star skill" }).textContent).toContain("8");
+    });
+    expect(toggleStarMock).toHaveBeenCalledTimes(2);
+    expect(routerInvalidateMock).toHaveBeenCalledTimes(2);
   });
 
   it("opens report dialog for authenticated users", async () => {
