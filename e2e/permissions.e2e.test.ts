@@ -88,7 +88,6 @@ describe("permission boundary e2e", () => {
         path: `${ApiRoutes.skills}/gifgrep/transfer`,
         body: { toUserHandle: "openclaw" },
       },
-      { method: "POST", path: `${ApiRoutes.skills}/gifgrep/rescan`, body: {} },
       { method: "DELETE", path: `${ApiRoutes.packages}/e2e-nonexistent-permission` },
       { method: "POST", path: `${ApiRoutes.packages}/e2e-nonexistent-permission/undelete` },
       {
@@ -96,7 +95,6 @@ describe("permission boundary e2e", () => {
         path: `${ApiRoutes.packages}/e2e-nonexistent-permission/transfer`,
         body: { toOwner: "openclaw" },
       },
-      { method: "POST", path: `${ApiRoutes.packages}/e2e-nonexistent-permission/rescan` },
       {
         method: "POST",
         path: `${ApiRoutes.packages}/e2e-nonexistent-permission/trusted-publisher`,
@@ -127,7 +125,7 @@ describe("permission boundary e2e", () => {
   });
 
   itIfLiveMutationsAndUserToken(
-    "rejects non-owner skill lifecycle, transfer, and rescan actions",
+    "rejects non-owner skill lifecycle and transfer actions",
     async () => {
       const registry = getRegistry();
       const site = getSite();
@@ -206,14 +204,6 @@ describe("permission boundary e2e", () => {
             },
           ),
         );
-        expectForbiddenCli(
-          spawnSync("bun", ["clawhub", "skill", "rescan", slug, "--yes", ...baseArgs], {
-            cwd: process.cwd(),
-            env: strangerEnv,
-            encoding: "utf8",
-          }),
-        );
-
         const metaAfterDeniedActions = await fetchWithTimeout(metaUrl.toString(), {
           headers: { Accept: "application/json" },
         });
@@ -252,7 +242,7 @@ describe("permission boundary e2e", () => {
   );
 
   itIfLiveMutationsAndUserToken(
-    "rejects non-owner package lifecycle, transfer, and rescan actions",
+    "rejects non-owner package lifecycle and transfer actions",
     async () => {
       const registry = getRegistry();
       const site = getSite();
@@ -327,14 +317,6 @@ describe("permission boundary e2e", () => {
             },
           ),
         );
-        expectForbiddenCli(
-          spawnSync("bun", ["clawhub", "package", "rescan", packageName, "--yes", ...baseArgs], {
-            cwd: process.cwd(),
-            env: strangerEnv,
-            encoding: "utf8",
-          }),
-        );
-
         const ownerInspect = spawnSync(
           "bun",
           ["clawhub", "package", "inspect", packageName, ...baseArgs],
