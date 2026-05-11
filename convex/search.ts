@@ -342,6 +342,7 @@ export const directPrefixSkillMatches = internalQuery({
     const normalizedQuery = normalizeSkillSearchText(args.query);
     if (!normalizedQuery) return [];
     const firstToken = getFirstSearchToken(args.query);
+    const queryTokens = tokenize(args.query);
 
     const upperBound = prefixUpperBound(normalizedQuery);
     const firstTokenUpperBound = firstToken ? prefixUpperBound(firstToken) : null;
@@ -472,6 +473,14 @@ export const directPrefixSkillMatches = internalQuery({
             )
             .take(MAX_DIRECT_SKILL_SEARCH_CANDIDATES),
     ]);
+    // Mirrors the `matchesExactTokens` filter the vector path applies on
+    // hydrated results, so every recall path shares one literal-match
+    // contract. For single-token queries this gate is a no-op against the
+    // existing prefix paths, since any prefix match also implies a token
+    // match.
+    const passesAllQueryTokens = (digest: Doc<"skillSearchDigest">) =>
+      queryTokens.length === 0 ||
+      matchesExactTokens(queryTokens, [digest.displayName, digest.slug, digest.summary]);
 
     const digests = [
       ...slugDigests,
@@ -480,10 +489,12 @@ export const directPrefixSkillMatches = internalQuery({
       ...displayNameFirstTokenDigests,
       ...ftDisplayNameDigests,
       ...ftSlugDigests,
-    ].filter(
-      (digest, index, all) =>
-        all.findIndex((candidate) => candidate.skillId === digest.skillId) === index,
-    );
+    ]
+      .filter(
+        (digest, index, all) =>
+          all.findIndex((candidate) => candidate.skillId === digest.skillId) === index,
+      )
+      .filter(passesAllQueryTokens);
     if (digests.length === 0) return [];
 
     const getOwnerInfo = makeOwnerInfoGetter(ctx);

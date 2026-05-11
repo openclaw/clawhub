@@ -254,6 +254,58 @@ describe("search helpers", () => {
     expect(ctx.usedSearchIndexes.length).toBeGreaterThanOrEqual(2);
   });
 
+  it("rejects multi-token full-text candidates when only some tokens match (AND semantics)", async () => {
+    // Convex `withSearchIndex(...).search(field, q)` is OR-disjunctive over
+    // tokens: a query like "yijian vision" can return rows that contain
+    // *either* token. Without an application-layer AND gate, a `vision`-only
+    // distractor would surface as a "direct prefix match" alongside the
+    // genuine all-tokens hit. The handler must filter the full-text path
+    // through `matchesExactTokens` so only skills whose text contains every
+    // query token survive.
+    const distractor = makeSkillDoc({
+      id: "skills:cv-expert",
+      slug: "computer-vision-expert",
+      displayName: "Computer Vision Expert",
+    });
+    const target = makeSkillDoc({
+      id: "skills:baidu-yijian-vision",
+      slug: "baidu-yijian-vision",
+      displayName: "Baidu Yijian Vision",
+    });
+    const ctx = makeDirectPrefixCtx([distractor, target]);
+
+    const result = await directPrefixSkillMatchesHandler(ctx, {
+      query: "yijian vision",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["baidu-yijian-vision"]);
+  });
+
+  it("returns nothing when no single skill contains all query tokens", async () => {
+    // Each skill matches exactly one token of the multi-token query. The
+    // disjunctive search index would yield both, but the AND gate must drop
+    // them — no skill in the corpus contains *both* `yijian` and `vision`.
+    const onlyVision = makeSkillDoc({
+      id: "skills:cv-expert",
+      slug: "computer-vision-expert",
+      displayName: "Computer Vision Expert",
+    });
+    const onlyYijian = makeSkillDoc({
+      id: "skills:yijian-misc",
+      slug: "yijian-misc-tool",
+      displayName: "Yijian Misc Tool",
+    });
+    const ctx = makeDirectPrefixCtx([onlyVision, onlyYijian]);
+
+    const result = await directPrefixSkillMatchesHandler(ctx, {
+      query: "yijian vision",
+      limit: 10,
+    });
+
+    expect(result).toEqual([]);
+  });
+
   it("applies highlightedOnly filtering in lexical fallback", async () => {
     const highlighted = {
       ...makeSkillDoc({
