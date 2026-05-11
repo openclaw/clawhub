@@ -59,8 +59,11 @@ describe("skill detail install helpers", () => {
     expect(prompt).toContain("WEATHER_API_KEY");
     expect(prompt).toContain("curl");
     expect(prompt).toContain("~/.weatherrc");
-    expect(prompt).toContain("Before install, inspect the ClawHub skill metadata");
+    expect(prompt.startsWith("Before installing anything")).toBe(true);
     expect(prompt).toContain("verify its source, maintainer, and package contents");
+    expect(prompt).toContain(
+      'Install the skill "Weather" (steipete/weather) from ClawHub only after those checks pass.',
+    );
     expect(prompt).toContain("After install, help me finish setup from verified skill metadata.");
     expect(prompt).not.toContain("unknown");
   });
@@ -76,7 +79,11 @@ describe("skill detail install helpers", () => {
       ownerId: null,
     });
 
-    expect(prompt).toContain('Install the skill "Weather" (weather) from ClawHub.');
+    expect(prompt.startsWith("Before installing anything")).toBe(true);
+    expect(prompt).toContain(
+      'Install the skill "Weather" (weather) from ClawHub only after those checks pass.',
+    );
+    expect(prompt).toContain("verify its source, maintainer, and package contents");
     expect(prompt).not.toContain("Skill page:");
     expect(prompt).not.toContain("unknown");
   });
