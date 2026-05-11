@@ -5,6 +5,7 @@ import type { GenericMutationCtx } from "convex/server";
 import { ConvexError } from "convex/values";
 import { internal } from "./_generated/api";
 import type { DataModel, Id } from "./_generated/dataModel";
+import { isLocalDevAuthEnabled } from "./lib/devAuth";
 import { shouldScheduleGitHubProfileSync } from "./lib/githubProfileSync";
 
 export const BANNED_REAUTH_MESSAGE =
@@ -14,12 +15,6 @@ export const DELETED_ACCOUNT_REAUTH_MESSAGE =
 
 const REAUTH_BLOCKING_BAN_ACTIONS = new Set(["user.ban", "user.autoban.malware"]);
 const DEV_PERSONAS = new Set(["owner", "user", "admin"]);
-
-function isDevAuthEnabled() {
-  if (process.env.DEV_AUTH_ENABLED !== "1") return false;
-  const deployment = process.env.CONVEX_DEPLOYMENT ?? "";
-  return !deployment.startsWith("prod:") && !deployment.includes("production");
-}
 
 function getBannedReauthMessage(reason: string | undefined) {
   const normalizedReason = reason?.trim();
@@ -95,7 +90,7 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
     ConvexCredentials({
       id: "dev-persona",
       authorize: async (credentials, ctx) => {
-        if (!isDevAuthEnabled()) throw new Error("Dev auth is disabled");
+        if (!isLocalDevAuthEnabled()) throw new Error("Dev auth is disabled");
         const persona = typeof credentials.persona === "string" ? credentials.persona : "";
         if (!DEV_PERSONAS.has(persona)) throw new Error("Unknown dev persona");
         const userId: Id<"users"> = await ctx.runMutation(internal.users.upsertDevPersonaInternal, {

@@ -9,6 +9,7 @@ import {
   getOptionalActiveAuthUserId,
   requireUser,
 } from "./lib/access";
+import { isLocalDevAuthEnabled } from "./lib/devAuth";
 import { syncGitHubProfile } from "./lib/githubAccount";
 import { toPublicUser } from "./lib/public";
 import { isReservedPublicOwnerHandle } from "./lib/publicRouteReservations";
@@ -53,12 +54,6 @@ const DEV_PERSONAS = {
 
 type DevPersona = keyof typeof DEV_PERSONAS;
 
-function isDevAuthEnabled() {
-  if (process.env.DEV_AUTH_ENABLED !== "1") return false;
-  const deployment = process.env.CONVEX_DEPLOYMENT ?? "";
-  return !deployment.startsWith("prod:") && !deployment.includes("production");
-}
-
 export const getById = query({
   args: { userId: v.id("users") },
   handler: async (ctx, args) => toPublicUser(await ctx.db.get(args.userId)),
@@ -72,7 +67,7 @@ export const getByIdInternal = internalQuery({
 export const upsertDevPersonaInternal = internalMutation({
   args: { persona: v.union(v.literal("owner"), v.literal("user"), v.literal("admin")) },
   handler: async (ctx, args): Promise<Id<"users">> => {
-    if (!isDevAuthEnabled()) throw new Error("Dev auth is disabled");
+    if (!isLocalDevAuthEnabled()) throw new Error("Dev auth is disabled");
 
     const persona = DEV_PERSONAS[args.persona as DevPersona];
     const now = Date.now();
