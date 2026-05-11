@@ -162,6 +162,98 @@ describe("search helpers", () => {
     );
   });
 
+  it("recalls non-first-token slug matches via the full-text search index (Bug 1)", async () => {
+    // Repro of the original bug: searching "yijian" against a skill whose
+    // slug is "baidu-yijian-vision" returned zero results because all four
+    // prefix indexes only match the *first* token. The new search index
+    // should match any token at any position.
+    const skill = makeSkillDoc({
+      id: "skills:baidu-yijian-vision",
+      slug: "baidu-yijian-vision",
+      displayName: "Baidu Yijian Vision",
+    });
+    const ctx = makeDirectPrefixCtx([skill]);
+
+    const result = await directPrefixSkillMatchesHandler(ctx, {
+      query: "yijian",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["baidu-yijian-vision"]);
+    expect(ctx.usedSearchIndexes).toEqual(
+      expect.arrayContaining(["search_by_display_name", "search_by_slug"]),
+    );
+  });
+
+  it("recalls non-first-token displayName matches via the full-text search index", async () => {
+    // Companion case to the slug repro above: a query that only matches
+    // the displayName (not the slug) at a non-first position must still
+    // surface the skill.
+    const skill = makeSkillDoc({
+      id: "skills:baidu-yijian-vision",
+      slug: "baidu-yijian-vision",
+      displayName: "Baidu Yijian Vision",
+    });
+    const ctx = makeDirectPrefixCtx([skill]);
+
+    const result = await directPrefixSkillMatchesHandler(ctx, {
+      query: "Vision",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["baidu-yijian-vision"]);
+  });
+
+  it("does not return suspicious skills via full-text search when nonSuspiciousOnly is set", async () => {
+    // Even though the full-text search would token-match the suspicious
+    // skill, the filterField `isSuspicious=false` plus the post-hydration
+    // `isSkillSuspicious` guard must keep it out of the results.
+    const clean = makeSkillDoc({
+      id: "skills:clean",
+      slug: "baidu-yijian-vision",
+      displayName: "Baidu Yijian Vision",
+    });
+    const flagged = makeSkillDoc({
+      id: "skills:flagged",
+      slug: "shady-yijian-trick",
+      displayName: "Shady Yijian Trick",
+      moderationFlags: ["flagged.suspicious"],
+    });
+    const ctx = makeDirectPrefixCtx([clean, flagged]);
+
+    const result = await directPrefixSkillMatchesHandler(ctx, {
+      query: "yijian",
+      nonSuspiciousOnly: true,
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["baidu-yijian-vision"]);
+  });
+
+  it("dedupes skills matched by both legacy prefix indexes and the new full-text index", async () => {
+    // First-token queries hit *all six* recall paths (4 prefix + 2 full-text).
+    // The skillId-based filter inside `directPrefixSkillMatches` must prevent
+    // the same skill from being emitted multiple times in the final list.
+    const skill = makeSkillDoc({
+      id: "skills:baidu-yijian-vision",
+      slug: "baidu-yijian-vision",
+      displayName: "Baidu Yijian Vision",
+    });
+    const ctx = makeDirectPrefixCtx([skill]);
+
+    const result = await directPrefixSkillMatchesHandler(ctx, {
+      query: "baidu",
+      limit: 10,
+    });
+
+    expect(result).toHaveLength(1);
+    expect(result[0].skill.slug).toBe("baidu-yijian-vision");
+    // Sanity: both legacy prefix indexes and the new full-text indexes were
+    // queried, so the dedup is doing real work, not just a no-op pass-through.
+    expect(ctx.usedIndexes.length).toBeGreaterThanOrEqual(4);
+    expect(ctx.usedSearchIndexes.length).toBeGreaterThanOrEqual(2);
+  });
+
   it("applies highlightedOnly filtering in lexical fallback", async () => {
     const highlighted = {
       ...makeSkillDoc({
@@ -1448,6 +1540,10 @@ function makeLexicalCtx(params: {
 
 function makeDirectPrefixCtx(skills: Array<ReturnType<typeof makeSkillDoc>>) {
   const firstToken = (value: string) => value.toLowerCase().match(/[a-z0-9]+/)?.[0];
+  // Token-level splitter that mirrors Convex full-text inverted index behavior:
+  // any alphanumeric run of length >= 1 becomes a token, regardless of position.
+  const tokensOf = (value: string): string[] =>
+    (value.toLowerCase().match(/[a-z0-9]+/g) ?? []).filter(Boolean);
   const digestRows = skills.map((skill) => ({
     ...skill,
     skillId: skill._id,
@@ -1455,14 +1551,17 @@ function makeDirectPrefixCtx(skills: Array<ReturnType<typeof makeSkillDoc>>) {
     normalizedSlugFirstToken: firstToken(skill.slug),
     normalizedDisplayName: skill.displayName.toLowerCase(),
     normalizedDisplayNameFirstToken: firstToken(skill.displayName),
+    isSuspicious: (skill.moderationFlags ?? []).includes("flagged.suspicious"),
     ownerHandle: "owner",
     ownerName: "Owner",
     ownerDisplayName: "Owner",
     ownerImage: undefined,
   }));
   const usedIndexes: string[] = [];
+  const usedSearchIndexes: string[] = [];
   return {
     usedIndexes,
+    usedSearchIndexes,
     db: {
       query: vi.fn((table: string) => {
         if (table !== "skillSearchDigest") throw new Error(`Unexpected table ${table}`);
@@ -1490,6 +1589,55 @@ function makeDirectPrefixCtx(skills: Array<ReturnType<typeof makeSkillDoc>>) {
                     : "normalizedDisplayName";
                 const prefix = range[field] ?? "";
                 return digestRows.filter((digest) => (digest[field] ?? "").startsWith(prefix));
+              }),
+            };
+          },
+          // Mock for the new `searchIndex`-backed full-text queries added to
+          // `directPrefixSkillMatches`. Mirrors Convex's documented semantics:
+          // tokenize on alphanumeric runs (case-insensitive) and match a row
+          // when *any* token in the search field equals *any* token of the
+          // user query — i.e. position-independent, unlike `withIndex` which
+          // only does string-prefix matches against a normalized field.
+          withSearchIndex: (
+            indexName: string,
+            builder: (q: {
+              search: (field: string, query: string) => unknown;
+              eq: (field: string, value: unknown) => unknown;
+            }) => unknown,
+          ) => {
+            usedSearchIndexes.push(indexName);
+            let searchField = "";
+            let searchQuery = "";
+            const filters: Array<{ field: string; value: unknown }> = [];
+            const q = {
+              search: (field: string, query: string) => {
+                searchField = field;
+                searchQuery = query;
+                return q;
+              },
+              eq: (field: string, value: unknown) => {
+                filters.push({ field, value });
+                return q;
+              },
+            };
+            builder(q);
+            return {
+              take: vi.fn(async () => {
+                const queryTokens = new Set(tokensOf(searchQuery));
+                if (queryTokens.size === 0) return [];
+                return digestRows.filter((digest) => {
+                  for (const filter of filters) {
+                    if ((digest as Record<string, unknown>)[filter.field] !== filter.value) {
+                      return false;
+                    }
+                  }
+                  const fieldValue = String((digest as Record<string, unknown>)[searchField] ?? "");
+                  const fieldTokens = new Set(tokensOf(fieldValue));
+                  for (const token of queryTokens) {
+                    if (fieldTokens.has(token)) return true;
+                  }
+                  return false;
+                });
               }),
             };
           },
