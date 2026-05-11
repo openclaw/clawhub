@@ -240,8 +240,6 @@ export function SkillHeader({
                   {ownerHandle ?? owner?.displayName ?? owner?._id ?? "unknown"}
                 </a>
                 <span aria-hidden="true">/</span>
-                <a href="/skills">skills</a>
-                <span aria-hidden="true">/</span>
                 <a href={buildSkillHref(ownerHandle, owner?._id ?? null, skill.slug)}>
                   {skill.slug}
                 </a>

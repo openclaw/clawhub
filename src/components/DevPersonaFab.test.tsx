@@ -121,7 +121,9 @@ describe("DevPersonaFab", () => {
     fireEvent.click(screen.getByRole("button", { name: /use user/i }));
 
     await waitFor(() => {
-      expect(signOutMock).toHaveBeenCalledBefore(signInMock);
+      expect(signOutMock.mock.invocationCallOrder[0]).toBeLessThan(
+        signInMock.mock.invocationCallOrder[0],
+      );
       expect(signInMock).toHaveBeenCalledWith("dev-persona", { persona: "user" });
     });
   });

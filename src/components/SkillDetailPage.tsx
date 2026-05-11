@@ -24,6 +24,7 @@ import {
   stripFrontmatter,
 } from "./skillDetailUtils";
 import { SkillHeader } from "./SkillHeader";
+import { buildSkillInstallTabs } from "./SkillInstallCard";
 import { SkillOwnershipPanel } from "./SkillOwnershipPanel";
 import { SkillReportDialog } from "./SkillReportDialog";
 import { Card } from "./ui/card";
@@ -273,6 +274,18 @@ export function SkillDetailPage({
       window.removeEventListener("hashchange", syncTabFromHash);
     };
   }, []);
+
+  // Set of tab IDs that are currently rendered — used to validate hash-driven
+  // navigation so stale bookmarks fall back to readme rather than leaving the
+  // content pane blank.
+  const validTabIds = useMemo<Set<DetailTab>>(() => {
+    const installTabs = buildSkillInstallTabs({ clawdis, osLabels });
+    return new Set(["readme", "files", ...installTabs.map((t) => t.id)]);
+  }, [clawdis, osLabels]);
+
+  useEffect(() => {
+    setActiveTab((prev) => (validTabIds.has(prev) ? prev : "readme"));
+  }, [validTabIds]);
 
   useEffect(() => {
     let cancelled = false;

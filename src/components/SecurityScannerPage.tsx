@@ -142,8 +142,6 @@ function SecurityScannerHero({ label, props }: { label: string; props: SecurityS
         <span aria-hidden="true">/</span>
         <a href={ownerHref}>{ownerLabel}</a>
         <span aria-hidden="true">/</span>
-        <a href={`/${listingLabel}`}>{listingLabel}</a>
-        <span aria-hidden="true">/</span>
         <a href={props.entity.detailPath}>{props.entity.name}</a>
         <span aria-hidden="true">/</span>
         <span>{scannerCrumbLabel(label)}</span>

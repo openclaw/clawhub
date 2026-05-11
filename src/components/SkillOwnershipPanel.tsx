@@ -1,6 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useMutation } from "convex/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -58,6 +58,15 @@ export function SkillOwnershipPanel({
   const [error, setError] = useState<string | null>(null);
   const [confirmRename, setConfirmRename] = useState(false);
   const [confirmMerge, setConfirmMerge] = useState(false);
+
+  // When ownedSkills first arrives from the server, default the merge target to
+  // the first available skill so the Select is never blank.
+  useEffect(() => {
+    setMergeTargetSlug((prev) =>
+      prev === "" && ownedSkills.length > 0 ? ownedSkills[0].slug : prev,
+    );
+  }, [ownedSkills]);
+
   const handleRename = async () => {
     const nextSlug = renameSlug.trim().toLowerCase();
     if (!nextSlug || nextSlug === slug) return;
