@@ -175,6 +175,45 @@ describe("plugin detail route", () => {
     expect(screen.queryByRole("link", { name: "Download zip" })).toBeNull();
   });
 
+  it("shows plugin settings when the viewer can manage the plugin", async () => {
+    useAuthStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: { _id: "users:1", role: "moderator" },
+    });
+    useQueryMock.mockReturnValue({
+      package: { _id: "packages:1", name: "demo-plugin", displayName: "Demo Plugin" },
+      latestRelease: { _id: "packageReleases:1" },
+    });
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(screen.getByRole("link", { name: /settings/i }).getAttribute("href")).toBe(
+      "/plugins/demo-plugin/settings",
+    );
+    expect(useQueryMock).toHaveBeenCalledWith(expect.anything(), {
+      name: "demo-plugin",
+      candidateNames: ["@openclaw/demo-plugin", "demo-plugin"],
+    });
+  });
+
+  it("hides plugin settings when the viewer cannot manage the plugin", async () => {
+    useAuthStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: { _id: "users:1", role: "user" },
+    });
+    useQueryMock.mockReturnValue(null);
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(screen.queryByRole("link", { name: /settings/i })).toBeNull();
+  });
+
   it("renders package security scan results when scan data is present", async () => {
     loaderDataMock = {
       detail: loaderDataMock.detail,

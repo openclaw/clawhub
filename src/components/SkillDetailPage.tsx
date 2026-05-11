@@ -9,7 +9,7 @@ import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { getUserFacingAuthError } from "../lib/authErrorMessage";
 import { getUserFacingConvexError } from "../lib/convexError";
-import { canManageSkill, isAdmin, isModerator } from "../lib/roles";
+import { canManageSkill, isModerator } from "../lib/roles";
 import type { SkillBySlugResult, SkillPageInitialData } from "../lib/skillPage";
 import { clearAuthError, setAuthError } from "../lib/useAuthError";
 import { useAuthStatus } from "../lib/useAuthStatus";
@@ -262,7 +262,7 @@ export function SkillDetailPage({
     Boolean(skill?.ownerPublisherId && myPublisherIds.has(skill.ownerPublisherId));
   const canAccessSettings =
     Boolean(me && skill && me._id === skill.ownerUserId) ||
-    isAdmin(me) ||
+    isStaff ||
     Boolean(skill?.ownerPublisherId && myManagePublisherIds.has(skill.ownerPublisherId));
   const ownedSkills = useQuery(
     api.skills.list,
@@ -620,7 +620,8 @@ export function SkillDetailPage({
               <Card>
                 <h2 className="section-title text-[1.2rem] m-0">Settings unavailable</h2>
                 <p className="section-subtitle mt-3 mb-0">
-                  Only the skill owner can manage these settings.
+                  Only the skill owner, an owner org admin, or platform staff can manage these
+                  settings.
                 </p>
               </Card>
             )}

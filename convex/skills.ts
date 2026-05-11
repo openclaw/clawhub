@@ -5793,7 +5793,7 @@ export const updateLatestClawScanNoteAndRequestRescan = mutation({
       actor: user,
       ownerUserId: skill.ownerUserId,
       ownerPublisherId: skill.ownerPublisherId,
-      allowPlatformAdmin: true,
+      allowPlatformModerator: true,
     });
 
     const now = Date.now();

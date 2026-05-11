@@ -1497,7 +1497,7 @@ export const getClawScanNoteSettings = query({
 
     const actor = await ctx.db.get(viewerUserId);
     if (!actor || actor.deletedAt || actor.deactivatedAt) return null;
-    if (actor.role !== "admin") {
+    if (actor.role !== "admin" && actor.role !== "moderator") {
       const canAccess = await viewerCanManagePackageOwner(ctx, pkg, viewerUserId);
       if (!canAccess) return null;
     }
@@ -5511,7 +5511,7 @@ export const updateLatestClawScanNoteAndRequestRescan = mutation({
       actor: user,
       ownerUserId: pkg.ownerUserId,
       ownerPublisherId: pkg.ownerPublisherId,
-      allowPlatformAdmin: true,
+      allowPlatformModerator: true,
     });
 
     const now = Date.now();
