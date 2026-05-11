@@ -415,6 +415,8 @@ function SkillSidebarStats({
               fallbackHandle={ownerHandle}
               prefix=""
               size="md"
+              showName
+              showHandle={false}
               disableTooltip
             />
           ),

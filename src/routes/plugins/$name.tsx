@@ -552,11 +552,11 @@ export function PluginDetailPage({
         )}
       </span>
       {owner.handle ? (
-        <a className="user-handle" href={`/p/${encodeURIComponent(owner.handle)}`}>
-          @{owner.handle}
+        <a className="user-name" href={`/p/${encodeURIComponent(owner.handle)}`}>
+          {owner.displayName ?? owner.handle}
         </a>
       ) : (
-        <span className="user-handle">{owner.displayName ?? "unknown"}</span>
+        <span className="user-name">{owner.displayName ?? "unknown"}</span>
       )}
     </span>
   ) : null;

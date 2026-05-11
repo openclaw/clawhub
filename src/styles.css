@@ -4439,6 +4439,7 @@ code {
 }
 
 .sidebar-metadata-value .user-badge,
+.sidebar-metadata-value .user-name,
 .sidebar-metadata-value .user-handle {
   font-size: inherit;
   font-weight: inherit;
