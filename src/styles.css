@@ -1008,9 +1008,10 @@ code {
 }
 
 .github-sign-in-button {
-  min-height: 50px !important;
-  padding: 0 24px !important;
-  gap: 16px !important;
+  height: 32px !important;
+  min-height: 32px !important;
+  padding: 0 12px !important;
+  gap: 8px !important;
   border-color: var(--border-ui) !important;
   background: transparent !important;
   color: var(--ink) !important;
@@ -1027,8 +1028,8 @@ code {
 }
 
 .github-sign-in-button .github-sign-in-logo {
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
 }
 
 .sign-in-full-copy {
