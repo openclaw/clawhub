@@ -173,6 +173,10 @@ export function SkillDetailPage({
   ) as Array<{ _id: Id<"skills">; slug: string; displayName: string }> | undefined;
   const ownerHandle = owner?.handle ?? null;
   const ownerParam = ownerHandle?.trim().toLowerCase() || (owner?._id ? String(owner._id) : null);
+  const settingsHref =
+    canAccessSettings && skill
+      ? `${buildSkillHref(ownerHandle, owner?._id ?? null, skill.slug)}/settings`
+      : null;
   const canonicalOwnerParam =
     typeof canonicalOwner === "string" ? canonicalOwner.trim().toLowerCase() : null;
   const wantsCanonicalRedirect = Boolean(
@@ -317,24 +321,6 @@ export function SkillDetailPage({
     setReportError(null);
     setIsSubmittingReport(false);
     setIsReportDialogOpen(true);
-  };
-
-  const submitTag = () => {
-    if (!skill) return;
-    if (!tagName.trim() || !tagVersionId) return;
-    void updateTags({
-      skillId: skill._id,
-      tags: [{ tag: tagName.trim(), versionId: tagVersionId }],
-    });
-  };
-
-  const deleteTag = (tag: string) => {
-    if (!skill) return;
-    if (!window.confirm(`Delete tag "${tag}"?`)) return;
-    void deleteTags({
-      skillId: skill._id,
-      tags: [tag],
-    });
   };
 
   const submitSummary = async () => {

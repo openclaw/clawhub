@@ -67,6 +67,7 @@ const {
   clampLimit,
   cmdExplore,
   cmdInstall,
+  cmdList,
   cmdListSkillReports,
   cmdPin,
   cmdReportSkill,

@@ -18,7 +18,6 @@ import {
   DropdownMenuTrigger,
 } from "../components/ui/dropdown-menu";
 import { getUserFacingConvexError } from "../lib/convexError";
-import { formatCompactStat } from "../lib/numberFormat";
 
 const emptyPluginPublishSearch = {
   ownerHandle: undefined,

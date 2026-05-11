@@ -230,7 +230,9 @@ describe("plugin detail route", () => {
     expect(screen.getByRole("link", { name: /VirusTotal.*Benign/i }).getAttribute("href")).toBe(
       "/plugins/demo-plugin/security/virustotal",
     );
-    expect(screen.queryByRole("link", { name: /Static analysis/i })).toBeNull();
+    expect(
+      screen.getByRole("link", { name: /Static analysis.*Benign/i }).getAttribute("href"),
+    ).toBe("/plugins/demo-plugin/security/static-analysis");
 
     const securityHeading = screen.getByRole("heading", { name: "Audits" });
     const installHeading = screen.getByRole("heading", { name: "Install" });

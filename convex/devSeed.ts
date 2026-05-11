@@ -849,6 +849,37 @@ async function ensureLocalSeedOwner(ctx: MutationCtx) {
   return { userId: ensuredUserId, publisherId: publisher._id };
 }
 
+async function deleteSkillEmbeddingsForSkill(ctx: MutationCtx, skillId: Id<"skills">) {
+  const embeddings = await ctx.db
+    .query("skillEmbeddings")
+    .withIndex("by_skill", (q) => q.eq("skillId", skillId))
+    .collect();
+  for (const embedding of embeddings) {
+    const maps = await ctx.db
+      .query("embeddingSkillMap")
+      .withIndex("by_embedding", (q) => q.eq("embeddingId", embedding._id))
+      .collect();
+    for (const map of maps) await ctx.db.delete(map._id);
+    await ctx.db.delete(embedding._id);
+  }
+}
+
+async function deleteSkillBadgesForSkill(ctx: MutationCtx, skillId: Id<"skills">) {
+  const badges = await ctx.db
+    .query("skillBadges")
+    .withIndex("by_skill", (q) => q.eq("skillId", skillId))
+    .collect();
+  for (const badge of badges) await ctx.db.delete(badge._id);
+}
+
+async function deletePackageBadgesForPackage(ctx: MutationCtx, packageId: Id<"packages">) {
+  const badges = await ctx.db
+    .query("packageBadges")
+    .withIndex("by_package", (q) => q.eq("packageId", packageId))
+    .collect();
+  for (const badge of badges) await ctx.db.delete(badge._id);
+}
+
 async function deleteSeedSkillFixture(ctx: MutationCtx) {
   const existing = await findSeedSkillFixture(ctx);
   if (!existing) return;

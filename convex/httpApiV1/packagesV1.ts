@@ -87,6 +87,7 @@ const internalRefs = internal as unknown as {
     getReleaseByIdInternal: unknown;
     insertAuditLogInternal: unknown;
     recordPackageDownloadInternal: unknown;
+    recordPackageInstallInternal: unknown;
     softDeletePackageInternal: unknown;
     restorePackageInternal: unknown;
     moderatePackageReleaseForUserInternal: unknown;
