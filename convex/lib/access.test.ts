@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
@@ -6,7 +6,7 @@ vi.mock("@convex-dev/auth/server", () => ({
 }));
 
 const { getAuthUserId } = await import("@convex-dev/auth/server");
-const { assertAdmin, assertModerator, assertRole, requireUser, requireUserFromAction } =
+const { assertAdmin, assertModerator, assertRole, requireUser, requireUserFromAction, isDevImpersonationAllowed } =
   await import("./access");
 
 describe("access.requireUser", () => {
@@ -127,5 +127,63 @@ describe("access role assertions", () => {
     expect(() => assertModerator({ role: "admin" } as never)).not.toThrow();
     expect(() => assertModerator({ role: "moderator" } as never)).not.toThrow();
     expect(() => assertModerator({ role: "user" } as never)).toThrow("Forbidden");
+  });
+});
+
+describe("access.isDevImpersonationAllowed", () => {
+  const originalEnv = process.env;
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+    delete process.env.CLAW_HUB_DEV_IMPERSONATE_USER_HANDLE;
+    delete process.env.CONVEX_DEPLOYMENT;
+    delete process.env.CLAW_HUB_ENABLE_DEV_IMPERSONATION;
+  });
+
+  afterAll(() => {
+    process.env = originalEnv;
+  });
+
+  it("returns false when CLAW_HUB_DEV_IMPERSONATE_USER_HANDLE is not 'local'", () => {
+    process.env.CLAW_HUB_DEV_IMPERSONATE_USER_HANDLE = "other";
+    process.env.CONVEX_DEPLOYMENT = "dev:my-deployment";
+    expect(isDevImpersonationAllowed()).toBe(false);
+  });
+
+  it("blocks deployments starting with prod:", () => {
+    process.env.CLAW_HUB_DEV_IMPERSONATE_USER_HANDLE = "local";
+    process.env.CONVEX_DEPLOYMENT = "prod:my-project";
+    expect(isDevImpersonationAllowed()).toBe(false);
+  });
+
+  it("blocks deployments containing production", () => {
+    process.env.CLAW_HUB_DEV_IMPERSONATE_USER_HANDLE = "local";
+    process.env.CONVEX_DEPLOYMENT = "my-production-env";
+    expect(isDevImpersonationAllowed()).toBe(false);
+  });
+
+  it("allows anonymous: deployments", () => {
+    process.env.CLAW_HUB_DEV_IMPERSONATE_USER_HANDLE = "local";
+    process.env.CONVEX_DEPLOYMENT = "anonymous:local-123";
+    expect(isDevImpersonationAllowed()).toBe(true);
+  });
+
+  it("allows dev: deployments", () => {
+    process.env.CLAW_HUB_DEV_IMPERSONATE_USER_HANDLE = "local";
+    process.env.CONVEX_DEPLOYMENT = "dev:my-project";
+    expect(isDevImpersonationAllowed()).toBe(true);
+  });
+
+  it("allows local: deployments", () => {
+    process.env.CLAW_HUB_DEV_IMPERSONATE_USER_HANDLE = "local";
+    process.env.CONVEX_DEPLOYMENT = "local:my-project";
+    expect(isDevImpersonationAllowed()).toBe(true);
+  });
+
+  it("allows non-standard deployments when CLAW_HUB_ENABLE_DEV_IMPERSONATION=1", () => {
+    process.env.CLAW_HUB_DEV_IMPERSONATE_USER_HANDLE = "local";
+    process.env.CONVEX_DEPLOYMENT = "custom-deployment";
+    process.env.CLAW_HUB_ENABLE_DEV_IMPERSONATION = "1";
+    expect(isDevImpersonationAllowed()).toBe(true);
   });
 });

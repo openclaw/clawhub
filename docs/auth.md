@@ -113,6 +113,6 @@ Guardrails:
 
 - This only works on dev/local Convex deployments (`anonymous:`, `dev:`, `local:`)
   or when `CLAW_HUB_ENABLE_DEV_IMPERSONATION=1` is explicitly set.
-- It is blocked on any deployment name containing `prod` or `production`.
+- It is blocked on deployment names starting with `prod:` or containing `production`.
 - No JWT is minted, no production token is copied, and the real OAuth flow is
   untouched.

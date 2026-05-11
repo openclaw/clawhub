@@ -12,7 +12,7 @@ function readEnv(name: string) {
   return value ? value : undefined;
 }
 
-function isDevImpersonationAllowed() {
+export function isDevImpersonationAllowed() {
   const requestedHandle = readEnv("CLAW_HUB_DEV_IMPERSONATE_USER_HANDLE");
   if (requestedHandle !== DEV_IMPERSONATE_LOCAL_HANDLE) return false;
 
