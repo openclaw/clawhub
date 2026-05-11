@@ -92,7 +92,7 @@ describe("SkillHeader", () => {
     const onOpenReport = vi.fn();
     const onRequireSignIn = vi.fn();
 
-    renderHeader({ onToggleStar, onOpenReport, onRequireSignIn });
+    const { container } = renderHeader({ onToggleStar, onOpenReport, onRequireSignIn });
 
     fireEvent.click(screen.getByRole("button", { name: "Star skill" }));
     fireEvent.click(screen.getByRole("button", { name: "Report" }));
@@ -101,6 +101,6 @@ describe("SkillHeader", () => {
     expect(onToggleStar).not.toHaveBeenCalled();
     expect(onOpenReport).not.toHaveBeenCalled();
     expect(screen.getByText("Owner")).toBeTruthy();
-    expect(screen.getByText("@local")).toBeTruthy();
+    expect(container.querySelector('a[href="/p/local"]')).toBeTruthy();
   });
 });

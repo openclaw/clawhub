@@ -227,11 +227,11 @@ describe("plugin detail route", () => {
     expect(screen.getByRole("heading", { name: "Audits" })).toBeTruthy();
     expect(screen.getAllByText("VirusTotal").length).toBeGreaterThan(0);
     expect(screen.getAllByText("ClawScan").length).toBeGreaterThan(0);
-    expect(screen.getByRole("link", { name: /VirusTotal.*Benign/i }).getAttribute("href")).toBe(
+    expect(screen.getByRole("link", { name: /VirusTotal.*Pass/i }).getAttribute("href")).toBe(
       "/plugins/demo-plugin/security/virustotal",
     );
     expect(
-      screen.getByRole("link", { name: /Static analysis.*Benign/i }).getAttribute("href"),
+      screen.getByRole("link", { name: /Static analysis.*Pass/i }).getAttribute("href"),
     ).toBe("/plugins/demo-plugin/security/static-analysis");
 
     const securityHeading = screen.getByRole("heading", { name: "Audits" });

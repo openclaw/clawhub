@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Id } from "../../convex/_generated/dataModel";
 import { SkillDetailPage } from "../components/SkillDetailPage";
@@ -18,7 +19,7 @@ vi.mock("../convex/client", () => ({
 }));
 
 vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children }: { children: unknown }) => children,
+  Link: ({ children }: { children: ReactNode }) => children,
   useNavigate: () => navigateMock,
 }));
 
@@ -45,10 +46,10 @@ vi.mock("../components/SkillCommentsPanel", () => ({
 }));
 
 vi.mock("../components/ui/tooltip", () => ({
-  Tooltip: ({ children }: { children: unknown }) => children,
-  TooltipContent: ({ children }: { children: unknown }) => <div>{children}</div>,
-  TooltipProvider: ({ children }: { children: unknown }) => children,
-  TooltipTrigger: ({ children }: { children: unknown }) => children,
+  Tooltip: ({ children }: { children: ReactNode }) => children,
+  TooltipContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  TooltipProvider: ({ children }: { children: ReactNode }) => children,
+  TooltipTrigger: ({ children }: { children: ReactNode }) => children,
 }));
 
 describe("SkillDetailPage", () => {
