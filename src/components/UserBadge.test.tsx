@@ -52,4 +52,21 @@ describe("UserBadge", () => {
       "/p/openclaw",
     );
   });
+
+  it("shows the display name when handles are hidden", () => {
+    const publisher: PublicPublisher = {
+      ...orgPublisher,
+      _id: "publisher-acme" as Id<"publishers">,
+      handle: "acme",
+      displayName: "Acme",
+    };
+
+    render(
+      <TooltipProvider>
+        <UserBadge user={publisher} prefix="" showName showHandle={false} disableTooltip />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByText("Acme")).toBeTruthy();
+  });
 });

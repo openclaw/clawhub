@@ -39,8 +39,7 @@ export function UserBadge({
   const hasUsefulName =
     showName &&
     Boolean(displayName) &&
-    Boolean(handle) &&
-    displayName!.toLowerCase() !== handle!.toLowerCase();
+    (!showHandle || !handle || displayName!.toLowerCase() !== handle.toLowerCase());
   const initial = (displayName ?? handle ?? "u").charAt(0).toUpperCase();
 
   // Resolve userId for stats query — PublicUser has _id directly,
