@@ -16,7 +16,7 @@ Canonical product and registry material now lives in `docs/clawhub.md`:
 - Native OpenClaw search/install/update examples for skills and plugins.
 - ClawHub CLI purpose and common authenticated workflows.
 - Skill and plugin publishing commands.
-- Security scan summaries, owner rescans, reporting, appeals, and moderation overview.
+- Security scan summaries, reporting, appeals, and moderation overview.
 - Versioning, lockfile, telemetry, and environment override guidance.
 
 ## Summarize or link from OpenClaw docs

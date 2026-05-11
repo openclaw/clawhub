@@ -88,14 +88,6 @@ type TestSkill = {
     llmStatus: string | null;
     staticScanStatus: "clean" | "suspicious" | "malicious" | null;
   };
-  rescanState: {
-    maxRequests: number;
-    requestCount: number;
-    remainingRequests: number;
-    canRequest: boolean;
-    inProgressRequest: null | { _id: string; status: "in_progress"; targetVersion: string };
-    latestRequest: null | { _id: string; status: "completed" | "failed"; targetVersion: string };
-  };
 };
 
 type TestPackage = {
@@ -125,7 +117,6 @@ type TestPackage = {
     llmStatus: string | null;
     staticScanStatus: "clean" | "suspicious" | "malicious" | null;
   };
-  rescanState: TestSkill["rescanState"];
 };
 
 const me = {
@@ -174,14 +165,6 @@ function createSkill(overrides?: Partial<TestSkill>): TestSkill {
       llmStatus: "suspicious",
       staticScanStatus: "suspicious",
     },
-    rescanState: {
-      maxRequests: 3,
-      requestCount: 1,
-      remainingRequests: 2,
-      canRequest: true,
-      inProgressRequest: null,
-      latestRequest: null,
-    },
     ...overrides,
   };
 }
@@ -208,14 +191,6 @@ function createPackage(overrides?: Partial<TestPackage>): TestPackage {
       vtStatus: "malicious",
       llmStatus: "malicious",
       staticScanStatus: "malicious",
-    },
-    rescanState: {
-      maxRequests: 3,
-      requestCount: 3,
-      remainingRequests: 0,
-      canRequest: false,
-      inProgressRequest: null,
-      latestRequest: null,
     },
     ...overrides,
   };
@@ -286,8 +261,8 @@ describe("Dashboard rows", () => {
     expect(screen.getAllByText("VT").length).toBeGreaterThan(0);
     expect(screen.getAllByText("LLM").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Static").length).toBeGreaterThan(0);
-    expect(screen.getByText("2/3 rescans left")).toBeTruthy();
-    expect(screen.getByText("Limit reached (3/3)")).toBeTruthy();
+    expect(screen.queryByText(/rescans/i)).toBeNull();
+    expect(screen.queryByText("Limit reached (3/3)")).toBeNull();
     expect(screen.getAllByText("Downloads").length).toBeGreaterThan(0);
     expect(
       screen.getByRole("button", { name: "Open actions for Local Flagged Skill" }),
@@ -307,13 +282,13 @@ describe("Dashboard rows", () => {
     expect(document.querySelectorAll(".animate-pulse").length).toBeGreaterThan(0);
   });
 
-  it("keeps destructive and rescan actions inside the overflow menu", () => {
+  it("keeps scanner rerun actions out of the dashboard", () => {
     arrangeDashboard({ skills: [createSkill()], packages: [createPackage()] });
 
     renderDashboard();
 
-    expect(screen.queryByRole("button", { name: /request rescan/i })).toBeNull();
-    expect(screen.queryByRole("menuitem", { name: /request rescan/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /rescan/i })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: /rescan/i })).toBeNull();
     expect(screen.queryByRole("link", { name: /new version/i })).toBeNull();
     expect(screen.queryByRole("link", { name: /new release/i })).toBeNull();
   });

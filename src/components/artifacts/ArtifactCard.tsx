@@ -1,9 +1,5 @@
 import type { ReactNode } from "react";
-import {
-  ArtifactScanResult,
-  ArtifactScanStrip,
-  type ArtifactRescanState,
-} from "./ArtifactScanStrip";
+import { ArtifactScanResult, ArtifactScanStrip } from "./ArtifactScanStrip";
 import type { ArtifactDisplayStatus, ArtifactScanSignalStatus } from "./artifactStatus";
 
 type ArtifactStat = {
@@ -15,7 +11,6 @@ type ArtifactScanSignals = {
   vtStatus: string | null;
   llmStatus: string | null;
   staticScanStatus: ArtifactScanSignalStatus;
-  rescanState: ArtifactRescanState | null;
 };
 
 export function ArtifactCard({

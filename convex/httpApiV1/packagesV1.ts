@@ -87,8 +87,6 @@ const internalRefs = internal as unknown as {
     getReleaseByIdInternal: unknown;
     insertAuditLogInternal: unknown;
     recordPackageDownloadInternal: unknown;
-    recordPackageInstallInternal: unknown;
-    requestRescanForApiTokenInternal: unknown;
     softDeletePackageInternal: unknown;
     restorePackageInternal: unknown;
     moderatePackageReleaseForUserInternal: unknown;
@@ -1720,27 +1718,6 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
         400,
         rate.headers,
       );
-    }
-  }
-
-  if (packageSegments[0] === "rescan" && packageSegments.length === 1) {
-    const rate = await applyRateLimit(ctx, request, "write");
-    if (!rate.ok) return rate.response;
-    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
-    if (!auth.ok) return auth.response;
-
-    try {
-      const result = await runMutationRef(
-        ctx,
-        internalRefs.packages.requestRescanForApiTokenInternal,
-        {
-          actorUserId: auth.userId,
-          name: packageName,
-        },
-      );
-      return json(result, 200, rate.headers);
-    } catch (error) {
-      return packageOperationErrorToResponse(error, rate.headers, "Rescan request failed");
     }
   }
 

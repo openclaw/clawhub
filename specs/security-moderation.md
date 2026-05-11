@@ -55,8 +55,8 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   intake data.
 - The legacy skill/package appeal tables and backend routes remain for
   compatibility, but the first-class CLI and docs surface is deprecated.
-  Publisher recovery should use rescans for false positives and out-of-band
-  support for account bans.
+  Publisher recovery for false positives should use reports or out-of-band
+  support, while account bans require out-of-band support.
 - Any scanner path that determines a skill is malicious must hide the skill and
   schedule the same account-level autoban/token-revocation workflow. Static
   scan malicious findings must not diverge into a softer moderation-only state.

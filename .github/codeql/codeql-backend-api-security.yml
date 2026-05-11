@@ -24,7 +24,6 @@ paths:
   - convex/packages.ts
   - convex/publishers.ts
   - convex/rateLimits.ts
-  - convex/rescanRequests.ts
   - convex/skills.ts
   - convex/skillTransfers.ts
   - convex/tokens.ts
@@ -53,9 +52,6 @@ paths:
   - convex/lib/staticPublishScan.ts
   - convex/lib/tokens.ts
   - convex/lib/webhooks.ts
-  - convex/model/packages/rescans.ts
-  - convex/model/rescans/policy.ts
-  - convex/model/skills/rescans.ts
 
 paths-ignore:
   - "**/node_modules"

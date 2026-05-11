@@ -1,15 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, usePaginatedQuery, useQuery } from "convex/react";
-import {
-  Box,
-  Loader2,
-  MoreVertical,
-  Package,
-  Plus,
-  RotateCw,
-  Settings,
-  Trash2,
-} from "lucide-react";
+import { Box, Loader2, MoreVertical, Package, Plus, Settings, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
@@ -74,7 +65,6 @@ type DashboardSkill = Pick<
     llmStatus: string | null;
     staticScanStatus: "clean" | "suspicious" | "malicious" | null;
   } | null;
-  rescanState?: DashboardRescanState | null;
 };
 
 type DashboardPackage = {
@@ -107,28 +97,6 @@ type DashboardPackage = {
     llmStatus: string | null;
     staticScanStatus: "clean" | "suspicious" | "malicious" | null;
   } | null;
-  rescanState?: DashboardRescanState | null;
-};
-
-type DashboardRescanState = {
-  maxRequests: number;
-  requestCount: number;
-  remainingRequests: number;
-  canRequest: boolean;
-  inProgressRequest: DashboardRescanRequest | null;
-  latestRequest: DashboardRescanRequest | null;
-};
-
-type DashboardRescanRequest = {
-  _id: string;
-  targetKind: "skill" | "plugin";
-  targetVersion: string;
-  requestedByUserId: string;
-  status: "in_progress" | "completed" | "failed";
-  error?: string;
-  createdAt: number;
-  updatedAt: number;
-  completedAt?: number;
 };
 
 export const Route = createFileRoute("/dashboard")({
@@ -352,7 +320,6 @@ function SkillRow({ skill }: { skill: DashboardSkill }) {
         vtStatus: skill.latestVersion?.vtStatus ?? null,
         llmStatus: skill.latestVersion?.llmStatus ?? null,
         staticScanStatus: skill.latestVersion?.staticScanStatus ?? null,
-        rescanState: skill.rescanState ?? null,
       }}
       stats={stats}
       actions={
@@ -361,8 +328,6 @@ function SkillRow({ skill }: { skill: DashboardSkill }) {
           targetId={skill._id}
           targetLabel={skill.displayName}
           settingsHref={skill.settingsHref}
-          statusLabel={status.label}
-          rescanState={skill.rescanState ?? null}
         />
       }
     />
@@ -406,7 +371,6 @@ function PackageRow({ pkg }: { pkg: DashboardPackage }) {
         vtStatus: pkg.latestRelease?.vtStatus ?? null,
         llmStatus: pkg.latestRelease?.llmStatus ?? null,
         staticScanStatus: pkg.latestRelease?.staticScanStatus ?? null,
-        rescanState: pkg.rescanState ?? null,
       }}
       stats={stats}
       actions={
@@ -415,8 +379,6 @@ function PackageRow({ pkg }: { pkg: DashboardPackage }) {
           targetId={pkg._id}
           targetLabel={pkg.displayName}
           settingsHref={detailHref}
-          statusLabel={status.label}
-          rescanState={pkg.rescanState ?? null}
         />
       }
     />
@@ -436,57 +398,19 @@ function formatShortDate(timestamp: number | undefined) {
   );
 }
 
-function canShowDashboardRescan(statusLabel: string, state: DashboardRescanState | null) {
-  if (statusLabel === "Visible") return false;
-  if (!state) return true;
-  return state.canRequest && !state.inProgressRequest && state.remainingRequests > 0;
-}
-
 function RowMenu({
   kind,
   targetId,
   targetLabel,
   settingsHref,
-  statusLabel,
-  rescanState,
 }: {
   kind: "skill" | "plugin";
   targetId: string;
   targetLabel: string;
   settingsHref: string;
-  statusLabel: string;
-  rescanState: DashboardRescanState | null;
 }) {
-  const requestSkillRescan = useMutation(api.skills.requestRescan);
-  const requestPluginRescan = useMutation(api.packages.requestRescan);
   const deletePackage = useMutation(api.packages.softDeletePackage);
-  const [isRequesting, setIsRequesting] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const isScanInProgress = Boolean(rescanState?.inProgressRequest);
-  const showRescan = canShowDashboardRescan(statusLabel, rescanState);
-  const showRescanItem = showRescan || isScanInProgress;
-  const rescanLabel = isScanInProgress
-    ? "Scan in progress"
-    : isRequesting
-      ? "Requesting..."
-      : "Request rescan";
-
-  async function requestRescan() {
-    if (!showRescan || isRequesting) return;
-    setIsRequesting(true);
-    try {
-      if (kind === "skill") {
-        await requestSkillRescan({ skillId: targetId as Doc<"skills">["_id"] });
-      } else {
-        await requestPluginRescan({ packageId: targetId as Doc<"packages">["_id"] });
-      }
-      toast.success(`Rescan requested for ${targetLabel}.`);
-    } catch (error) {
-      toast.error(getUserFacingConvexError(error, "Could not request a rescan."));
-    } finally {
-      setIsRequesting(false);
-    }
-  }
 
   async function deletePlugin() {
     if (kind !== "plugin" || isDeleting) return;
@@ -526,22 +450,6 @@ function RowMenu({
               Settings
             </a>
           </DropdownMenuItem>
-          {showRescanItem ? (
-            <DropdownMenuItem
-              disabled={isRequesting || isScanInProgress}
-              onSelect={() => void requestRescan()}
-            >
-              <RotateCw
-                className={
-                  isRequesting || isScanInProgress
-                    ? "h-4 w-4 animate-spin [animation-duration:2.4s]"
-                    : "h-4 w-4"
-                }
-                aria-hidden="true"
-              />
-              {rescanLabel}
-            </DropdownMenuItem>
-          ) : null}
           {kind === "plugin" ? (
             <>
               <DropdownMenuSeparator />

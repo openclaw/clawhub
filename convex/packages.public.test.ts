@@ -4616,15 +4616,6 @@ describe("packages public queries", () => {
                 })),
               };
             }
-            if (table === "rescanRequests") {
-              return {
-                withIndex: vi.fn(() => ({
-                  order: vi.fn(() => ({
-                    take: vi.fn().mockResolvedValue([]),
-                  })),
-                })),
-              };
-            }
             throw new Error(`Unexpected table ${table}`);
           }),
         },
@@ -6164,15 +6155,6 @@ describe("package scan backfill", () => {
             return null;
           }),
           query: vi.fn((table: string) => {
-            if (table === "rescanRequests") {
-              return {
-                withIndex: vi.fn(() => ({
-                  order: vi.fn(() => ({
-                    take: vi.fn(async () => []),
-                  })),
-                })),
-              };
-            }
             throw new Error(`Unexpected query table: ${table}`);
           }),
           insert: vi.fn(),

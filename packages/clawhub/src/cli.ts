@@ -30,7 +30,6 @@ import {
   cmdVerifyPackage,
 } from "./cli/commands/packages.js";
 import { cmdPublish } from "./cli/commands/publish.js";
-import { cmdRescanPackage, cmdRescanSkill } from "./cli/commands/rescan.js";
 import {
   cmdExplore,
   cmdInstall,
@@ -582,16 +581,6 @@ registerCommand(trustedPublisherCmd, ["package", "trusted-publisher", "get"])
     await cmdGetPackageTrustedPublisher(opts, name, options);
   });
 
-registerCommand(packageCmd, ["package", "rescan"])
-  .description("Request a security rescan for the latest published package release")
-  .argument("<name>", "Package name")
-  .option("--yes", "Skip confirmation")
-  .option("--json", "Output JSON")
-  .action(async (name, options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdRescanPackage(opts, name, options, isInputAllowed());
-  });
-
 registerCommand(skill, ["skill", "rename"])
   .description("Rename a published skill and keep the old slug as a redirect")
   .argument("<slug>", "Current skill slug")
@@ -610,16 +599,6 @@ registerCommand(skill, ["skill", "merge"])
   .action(async (sourceSlug, targetSlug, options) => {
     const opts = await resolveGlobalOpts();
     await cmdMergeSkill(opts, sourceSlug, targetSlug, options, isInputAllowed());
-  });
-
-registerCommand(skill, ["skill", "rescan"])
-  .description("Request a security rescan for the latest published skill version")
-  .argument("<slug>", "Skill slug")
-  .option("--yes", "Skip confirmation")
-  .option("--json", "Output JSON")
-  .action(async (slug, options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdRescanSkill(opts, slug, options, isInputAllowed());
   });
 
 const transfer = registerCommandGroup(program, ["transfer"]).description(

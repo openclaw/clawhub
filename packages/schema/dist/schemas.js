@@ -353,16 +353,6 @@ export const ApiV1DeleteResponseSchema = type({
     ok: "true",
     slugReservedUntil: "number?",
 });
-export const ApiV1RescanResponseSchema = type({
-    ok: "true",
-    targetKind: '"skill"|"package"',
-    name: "string",
-    version: "string",
-    status: '"in_progress"|"completed"|"failed"',
-    remainingRequests: "number",
-    maxRequests: "number",
-    pendingRequestId: "string?",
-});
 export const ApiV1SkillRenameResponseSchema = type({
     ok: "true",
     slug: "string",

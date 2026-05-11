@@ -30,28 +30,10 @@ type SkillOwnershipPanelProps = {
   ownerHandle: string | null;
   ownerId: Id<"users"> | Id<"publishers"> | null;
   ownedSkills: OwnedSkillOption[];
-  rescanState?: {
-    maxRequests: number;
-    requestCount: number;
-    remainingRequests: number;
-    canRequest: boolean;
-    inProgressRequest: { status: string } | null;
-  } | null;
-  onRequestRescan?: (() => Promise<void>) | null;
 };
 
 function formatMutationError(error: unknown) {
   return getUserFacingConvexError(error, "Request failed.");
-}
-
-function rescanDisabledReason(state: SkillOwnershipPanelProps["rescanState"]) {
-  if (!state) return null;
-  if (state.inProgressRequest) return "A rescan is already in progress.";
-  if (state.remainingRequests <= 0) {
-    return `Rescan limit reached (${state.requestCount}/${state.maxRequests}).`;
-  }
-  if (!state.canRequest) return "This release is not eligible for another rescan.";
-  return null;
 }
 
 export function SkillOwnershipPanel({
@@ -60,8 +42,6 @@ export function SkillOwnershipPanel({
   ownerHandle,
   ownerId,
   ownedSkills,
-  rescanState,
-  onRequestRescan,
 }: SkillOwnershipPanelProps) {
   const navigate = useNavigate();
   const renameOwnedSkill = useMutation(api.skills.renameOwnedSkill);
@@ -73,26 +53,6 @@ export function SkillOwnershipPanel({
   const [error, setError] = useState<string | null>(null);
   const [confirmRename, setConfirmRename] = useState(false);
   const [confirmMerge, setConfirmMerge] = useState(false);
-  const [isRequestingRescan, setIsRequestingRescan] = useState(false);
-
-  const rescanButtonDisabledReason = rescanDisabledReason(rescanState);
-  const isScanInProgress = Boolean(rescanState?.inProgressRequest);
-  const rescanButtonLabel = isScanInProgress
-    ? "Scanning"
-    : isRequestingRescan
-      ? "Requesting..."
-      : "Rescan";
-
-  async function handleRequestRescan() {
-    if (!onRequestRescan || rescanButtonDisabledReason || isRequestingRescan) return;
-    setIsRequestingRescan(true);
-    try {
-      await onRequestRescan();
-    } finally {
-      setIsRequestingRescan(false);
-    }
-  }
-
   const handleRename = async () => {
     const nextSlug = renameSlug.trim().toLowerCase();
     if (!nextSlug || nextSlug === slug) return;
@@ -152,24 +112,6 @@ export function SkillOwnershipPanel({
           <Button asChild variant="outline">
             <a href={`/publish-skill?updateSlug=${encodeURIComponent(slug)}`}>New Version</a>
           </Button>
-        </SettingsActionRow>
-
-        <SettingsActionRow
-          title="Request security rescan"
-          description="Ask ClawHub to re-run the scanners for the latest release."
-        >
-          {onRequestRescan ? (
-            <Button
-              type="button"
-              variant="outline"
-              loading={isRequestingRescan || isScanInProgress}
-              disabled={Boolean(rescanButtonDisabledReason)}
-              title={rescanButtonDisabledReason ?? undefined}
-              onClick={() => void handleRequestRescan()}
-            >
-              {rescanButtonLabel}
-            </Button>
-          ) : null}
         </SettingsActionRow>
 
         <SettingsActionRow

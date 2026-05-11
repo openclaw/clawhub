@@ -2822,24 +2822,12 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
-  it("skill rescan routes authenticated owners to the rescan mutation", async () => {
+  it("does not expose the removed skill rescan route", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:1",
       user: { handle: "p" },
     } as never);
-    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
-      if ("key" in args) return okRate();
-      return {
-        ok: true,
-        targetKind: "skill",
-        name: args.slug,
-        version: "1.2.3",
-        status: "in_progress",
-        remainingRequests: 2,
-        maxRequests: 3,
-        pendingRequestId: "rescanRequests:1",
-      };
-    });
+    const runMutation = vi.fn(async () => okRate());
 
     const response = await __handlers.skillsPostRouterV1Handler(
       makeCtx({ runMutation }),
@@ -2849,60 +2837,16 @@ describe("httpApiV1 handlers", () => {
       }),
     );
 
-    expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({
-      ok: true,
-      targetKind: "skill",
-      name: "demo",
-      remainingRequests: 2,
-      maxRequests: 3,
-    });
-    expect(runMutation).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ actorUserId: "users:1", slug: "demo" }),
-    );
+    expect(response.status).toBe(404);
+    expect(runMutation.mock.calls.length).toBe(1);
   });
 
-  it("skill rescan maps ownership denials to 403", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:stranger",
-      user: { handle: "stranger" },
-    } as never);
-    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
-      if ("key" in args) return okRate();
-      throw new Error("Forbidden: You do not own this skill.");
-    });
-
-    const response = await __handlers.skillsPostRouterV1Handler(
-      makeCtx({ runMutation }),
-      new Request("https://example.com/api/v1/skills/demo/rescan", {
-        method: "POST",
-        headers: { Authorization: "Bearer clh_test" },
-      }),
-    );
-
-    expect(response.status).toBe(403);
-    expect(await response.text()).toBe("Forbidden: You do not own this skill.");
-  });
-
-  it("package rescan routes authenticated owners to the rescan mutation", async () => {
+  it("does not expose the removed package rescan route", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:1",
       user: { handle: "p" },
     } as never);
-    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
-      if ("key" in args) return okRate();
-      return {
-        ok: true,
-        targetKind: "package",
-        name: args.name,
-        version: "1.2.3",
-        status: "in_progress",
-        remainingRequests: 2,
-        maxRequests: 3,
-        pendingRequestId: "rescanRequests:1",
-      };
-    });
+    const runMutation = vi.fn(async () => okRate());
 
     const response = await __handlers.packagesPostRouterV1Handler(
       makeCtx({ runMutation }),
@@ -2912,16 +2856,8 @@ describe("httpApiV1 handlers", () => {
       }),
     );
 
-    expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({
-      ok: true,
-      targetKind: "package",
-      name: "@scope/demo",
-    });
-    expect(runMutation).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ actorUserId: "users:1", name: "@scope/demo" }),
-    );
+    expect(response.status).toBe(404);
+    expect(runMutation.mock.calls.length).toBe(0);
   });
 
   it("package rescan maps ownership denials to 403", async () => {

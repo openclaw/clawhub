@@ -248,20 +248,13 @@ describe("plugin detail route", () => {
     ).toBeTruthy();
   });
 
-  it("does not render owner-only plugin rescan state in the detail security summary", async () => {
+  it("does not render owner-only plugin scanner rerun state in the detail security summary", async () => {
     useAuthStatusMock.mockReturnValue({
       isAuthenticated: true,
       isLoading: false,
       me: { _id: "users:1" },
     });
-    useQueryMock.mockReturnValue({
-      maxRequests: 3,
-      requestCount: 1,
-      remainingRequests: 2,
-      canRequest: true,
-      inProgressRequest: null,
-      latestRequest: null,
-    });
+    useQueryMock.mockReturnValue(null);
     loaderDataMock = {
       detail: loaderDataMock.detail,
       version: {
@@ -295,8 +288,7 @@ describe("plugin detail route", () => {
     render(<Component />);
 
     expect(screen.queryByRole("button", { name: "Rescan" })).toBeNull();
-    expect(screen.queryByText("Owner rescan")).toBeNull();
-    expect(screen.queryByText("2/3 rescans left")).toBeNull();
+    expect(screen.queryByText(/rescans/i)).toBeNull();
   });
 
   it("renders ClawPack artifact details and uses the artifact download route", async () => {

@@ -72,7 +72,6 @@ import {
   toPublicUser,
 } from "./lib/public";
 import {
-  assertCanManageOwnedResource,
   ensurePersonalPublisherForUser,
   getOwnerPublisher,
   getPublisherByHandle,
@@ -114,13 +113,6 @@ import { assertValidSkillSlug, normalizeSkillSlug } from "./lib/skillSlugValidat
 import { readCanonicalStat } from "./lib/skillStats";
 import { runStaticPublishScan } from "./lib/staticPublishScan";
 import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";
-import {
-  assertCanRequestRescan,
-  buildRescanState,
-  errorMessage,
-  finalizeInProgressRescanRequestsForTarget,
-} from "./model/rescans/policy";
-import { getLatestSkillRescanTarget, insertSkillRescanRequest } from "./model/skills/rescans";
 import schema from "./schema";
 
 const MAX_OWNER_SUMMARY_LENGTH = 500;
@@ -1501,7 +1493,6 @@ type DashboardSkillListItem = {
   isSuspicious?: boolean;
   pendingReview?: true;
   qualityDecision?: NonNullable<Doc<"skills">["quality"]>["decision"];
-  rescanState: Awaited<ReturnType<typeof buildRescanState>> | null;
   latestVersion: {
     version: string;
     createdAt: number;
@@ -1782,13 +1773,6 @@ async function toDashboardSkillListItem(
         ? true
         : undefined,
     qualityDecision: skill.quality?.decision,
-    rescanState:
-      latestVersion && !latestVersion.softDeletedAt
-        ? await buildRescanState(ctx, {
-            kind: "skill",
-            artifactId: latestVersion._id,
-          })
-        : null,
     latestVersion:
       latestVersion && !latestVersion.softDeletedAt
         ? {
@@ -5619,11 +5603,6 @@ export const updateSkillVersionStaticScanInternal = internalMutation({
       staticScan: args.staticScan,
     });
     const updatedVersion = { ...version, staticScan: args.staticScan };
-    await finalizeInProgressRescanRequestsForTarget(
-      ctx,
-      { kind: "skill", artifactId: version._id },
-      updatedVersion,
-    );
 
     const skill = await ctx.db.get(args.skillId);
     if (!skill) return { ok: true as const, skipped: "missing" as const };
@@ -5786,166 +5765,6 @@ export const backfillSkillStaticScans: ReturnType<typeof action> = action({
     return await ctx.runAction(internal.skills.backfillSkillStaticScansInternal, {
       batchSize: args.batchSize,
     });
-  },
-});
-
-async function markSkillRescanRequest(
-  ctx: { runMutation: (ref: never, args: never) => Promise<unknown> },
-  requestId: Id<"rescanRequests">,
-  status: "completed" | "failed",
-  error?: string,
-) {
-  await ctx.runMutation(
-    internal.rescanRequests.markStatusInternal as never,
-    {
-      requestId,
-      status,
-      error,
-    } as never,
-  );
-}
-
-export const getRescanState = query({
-  args: {
-    skillId: v.id("skills"),
-  },
-  handler: async (ctx, args) => {
-    const { user } = await requireUser(ctx);
-    const target = await getLatestSkillRescanTarget(ctx, args.skillId);
-    await assertCanManageOwnedResource(ctx, {
-      actor: user,
-      ownerUserId: target.skill.ownerUserId,
-      ownerPublisherId: target.skill.ownerPublisherId,
-      allowPlatformModerator: true,
-    });
-    return {
-      targetKind: "skill" as const,
-      targetVersion: target.version.version,
-      skillVersionId: target.version._id,
-      ...(await buildRescanState(ctx, {
-        kind: "skill",
-        artifactId: target.version._id,
-      })),
-    };
-  },
-});
-
-export const requestRescan = mutation({
-  args: {
-    skillId: v.id("skills"),
-  },
-  handler: async (ctx, args) => {
-    const { user } = await requireUser(ctx);
-    const target = await getLatestSkillRescanTarget(ctx, args.skillId);
-    const isPlatformStaff = user.role === "admin" || user.role === "moderator";
-    await assertCanManageOwnedResource(ctx, {
-      actor: user,
-      ownerUserId: target.skill.ownerUserId,
-      ownerPublisherId: target.skill.ownerPublisherId,
-      allowPlatformModerator: true,
-    });
-    await assertCanRequestRescan(
-      ctx,
-      {
-        kind: "skill",
-        artifactId: target.version._id,
-      },
-      { ignoreRequestLimit: isPlatformStaff },
-    );
-
-    const requestId = await insertSkillRescanRequest(ctx, user, target);
-    await ctx.scheduler.runAfter(0, internal.skills.dispatchSkillRescanInternal, {
-      requestId,
-      skillId: target.skill._id,
-      versionId: target.version._id,
-    });
-
-    return {
-      requestId,
-      ...(await buildRescanState(ctx, {
-        kind: "skill",
-        artifactId: target.version._id,
-      })),
-    };
-  },
-});
-
-export const requestRescanForApiTokenInternal = internalMutation({
-  args: {
-    actorUserId: v.id("users"),
-    slug: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
-
-    const resolved = await resolveSkillBySlugOrAlias(ctx, args.slug.trim().toLowerCase());
-    const skill = resolved.skill;
-    if (!skill) throw new ConvexError("Skill not found");
-
-    const target = await getLatestSkillRescanTarget(ctx, skill._id);
-    const isPlatformStaff = actor.role === "admin" || actor.role === "moderator";
-    await assertCanManageOwnedResource(ctx, {
-      actor,
-      ownerUserId: target.skill.ownerUserId,
-      ownerPublisherId: target.skill.ownerPublisherId,
-      allowPlatformModerator: true,
-    });
-    await assertCanRequestRescan(
-      ctx,
-      {
-        kind: "skill",
-        artifactId: target.version._id,
-      },
-      { ignoreRequestLimit: isPlatformStaff },
-    );
-
-    const requestId = await insertSkillRescanRequest(ctx, actor, target);
-    await ctx.scheduler.runAfter(0, internal.skills.dispatchSkillRescanInternal, {
-      requestId,
-      skillId: target.skill._id,
-      versionId: target.version._id,
-    });
-
-    const state = await buildRescanState(ctx, {
-      kind: "skill",
-      artifactId: target.version._id,
-    });
-    return {
-      ok: true,
-      targetKind: "skill" as const,
-      name: target.skill.slug,
-      version: target.version.version,
-      status: state.inProgressRequest?.status ?? state.latestRequest?.status ?? "in_progress",
-      remainingRequests: state.remainingRequests,
-      maxRequests: state.maxRequests,
-      pendingRequestId: requestId,
-    };
-  },
-});
-
-export const dispatchSkillRescanInternal: ReturnType<typeof internalAction> = internalAction({
-  args: {
-    requestId: v.id("rescanRequests"),
-    skillId: v.id("skills"),
-    versionId: v.id("skillVersions"),
-  },
-  handler: async (ctx, args) => {
-    try {
-      await ctx.runAction(internal.skills.scanSkillVersionStaticallyInternal, {
-        skillId: args.skillId,
-        versionId: args.versionId,
-      });
-      await ctx.runAction(internal.vt.scanWithVirusTotal, {
-        versionId: args.versionId,
-      });
-      await ctx.runAction(internal.llmEval.evaluateWithLlm, {
-        versionId: args.versionId,
-      });
-    } catch (error) {
-      await markSkillRescanRequest(ctx, args.requestId, "failed", errorMessage(error));
-      throw error;
-    }
   },
 });
 
@@ -6619,11 +6438,6 @@ export const updateVersionScanResultsInternal = internalMutation({
 
     if (Object.keys(patch).length > 0) {
       await ctx.db.patch(args.versionId, patch);
-      await finalizeInProgressRescanRequestsForTarget(
-        ctx,
-        { kind: "skill", artifactId: args.versionId },
-        { ...version, ...patch },
-      );
     }
   },
 });
@@ -6703,12 +6517,6 @@ export const updateVersionLlmAnalysisInternal = internalMutation({
     const nextVersion = { ...version, llmAnalysis: args.llmAnalysis };
     await ctx.db.patch(args.versionId, { llmAnalysis: args.llmAnalysis });
     if (args.moderationMode === "preserve") return;
-
-    await finalizeInProgressRescanRequestsForTarget(
-      ctx,
-      { kind: "skill", artifactId: version._id },
-      nextVersion,
-    );
 
     const skill = await ctx.db.get(version.skillId);
     if (!skill || skill.latestVersionId !== version._id) return;

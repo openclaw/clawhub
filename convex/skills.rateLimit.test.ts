@@ -1432,20 +1432,6 @@ describe("skills anti-spam guards", () => {
             },
           };
         }
-        if (table === "rescanRequests") {
-          return {
-            withIndex: (name: string) => {
-              if (name !== "by_skill_version_status") {
-                throw new Error(`unexpected rescanRequests index ${name}`);
-              }
-              return {
-                order: () => ({
-                  take: async () => [],
-                }),
-              };
-            },
-          };
-        }
         throw new Error(`unexpected table ${table}`);
       }),
       patch,

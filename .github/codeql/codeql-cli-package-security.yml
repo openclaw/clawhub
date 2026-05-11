@@ -26,7 +26,6 @@ paths:
   - packages/clawhub/src/cli/commands/ownership.ts
   - packages/clawhub/src/cli/commands/packages.ts
   - packages/clawhub/src/cli/commands/publish.ts
-  - packages/clawhub/src/cli/commands/rescan.ts
   - packages/clawhub/src/cli/commands/sync.ts
   - packages/clawhub/src/cli/commands/transfer.ts
   - packages/clawhub/src/cli/scanSkills.ts

@@ -351,7 +351,7 @@ describe("SkillDetailPage", () => {
     expect(screen.queryByRole("link", { name: /Suspicious/i })).toBeNull();
   });
 
-  it("shows an owner rescan action on the settings page for owned skills", async () => {
+  it("does not show a scanner rerun action on the settings page for owned skills", async () => {
     useAuthStatusMock.mockReturnValue({
       isAuthenticated: true,
       isLoading: false,
@@ -359,16 +359,6 @@ describe("SkillDetailPage", () => {
     });
     useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;
-      if (args && typeof args === "object" && "skillId" in args && !("limit" in args)) {
-        return {
-          maxRequests: 3,
-          requestCount: 1,
-          remainingRequests: 2,
-          canRequest: true,
-          inProgressRequest: null,
-          latestRequest: null,
-        };
-      }
       if (args && typeof args === "object" && "limit" in args) return [];
       return undefined;
     });
@@ -430,10 +420,10 @@ describe("SkillDetailPage", () => {
       />,
     );
 
-    expect(await screen.findByText("Request security rescan")).toBeTruthy();
-    expect(await screen.findByRole("button", { name: "Rescan" })).toBeTruthy();
-    expect(screen.queryByText("Owner rescan")).toBeNull();
-    expect(screen.queryByText("2/3 rescans left")).toBeNull();
+    expect(await screen.findByText("Publish a new version")).toBeTruthy();
+    expect(screen.queryByText(/request security/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Rescan" })).toBeNull();
+    expect(screen.queryByText(/rescans/i)).toBeNull();
   });
 
   it("does not refetch readme when SSR data already matches the latest version", async () => {

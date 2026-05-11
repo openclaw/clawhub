@@ -1,5 +1,5 @@
 ---
-summary: "ClawHub trust, scan, reporting, rescan, and moderation behavior."
+summary: "ClawHub trust, scan, reporting, and moderation behavior."
 read_when:
   - Understanding ClawHub scan and moderation outcomes
   - Reporting a skill or package
@@ -90,17 +90,6 @@ Report examples:
 - scam comments or impersonation
 - bad-faith registrations or trademark misuse
 - content that violates [Acceptable usage](./acceptable-usage.md)
-
-## Rescans
-
-Owners can request a rescan when they believe a skill or package was incorrectly
-held or flagged. Platform moderators and admins can request rescans for any
-skill or package while handling reports or support requests:
-
-```bash
-clawhub skill rescan <slug>
-clawhub package rescan <name>
-```
 
 ## Moderation Holds
 

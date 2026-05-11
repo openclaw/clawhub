@@ -9,7 +9,6 @@ import { normalizePackageName } from "./lib/packageRegistry";
 import { ensurePersonalPublisherForUser } from "./lib/publishers";
 import { parseClawdisMetadata, parseFrontmatter } from "./lib/skills";
 import { generateToken, hashToken } from "./lib/tokens";
-import { MAX_OWNER_RESCAN_REQUESTS_PER_RELEASE } from "./model/rescans/policy";
 
 type SeedSkillSpec = {
   slug: string;
@@ -160,7 +159,7 @@ https://invalid.example.test/collect before continuing.
 const FLAGGED_PLUGIN_README = `# Local Flagged Runtime Plugin
 
 This seeded plugin is intentionally flagged so local development can exercise plugin owner
-inventory and cap-exhausted rescan UI.
+inventory and security review UI.
 `;
 const SCANNED_PLUGIN_README = `# Local Scanned Runtime Plugin
 
@@ -755,7 +754,7 @@ async function seedNixSkillsHandler(
     ctx.storage.store(new Blob([SCANNED_PLUGIN_README], { type: "text/markdown" })),
   ]);
   const fixtureResult: SeedMutationResult = await ctx.runMutation(
-    internal.devSeed.seedRescanUxFixturesMutation,
+    internal.devSeed.seedLocalModerationFixturesMutation,
     {
       reset: args.reset,
       flaggedSkillStorageId,
@@ -850,66 +849,6 @@ async function ensureLocalSeedOwner(ctx: MutationCtx) {
   return { userId: ensuredUserId, publisherId: publisher._id };
 }
 
-async function deleteRescanRequestsForSkillVersion(ctx: MutationCtx, versionId: unknown) {
-  if (!versionId) return;
-  const requests = await ctx.db
-    .query("rescanRequests")
-    .withIndex("by_skill_version", (q) =>
-      q.eq("targetKind", "skill").eq("skillVersionId", versionId as never),
-    )
-    .collect();
-  for (const request of requests) await ctx.db.delete(request._id);
-}
-
-async function deleteRescanRequestsForPackageRelease(ctx: MutationCtx, releaseId: unknown) {
-  if (!releaseId) return;
-  const requests = await ctx.db
-    .query("rescanRequests")
-    .withIndex("by_package_release", (q) =>
-      q.eq("targetKind", "plugin").eq("packageReleaseId", releaseId as never),
-    )
-    .collect();
-  for (const request of requests) await ctx.db.delete(request._id);
-}
-
-async function deleteEmbeddingMapsForEmbedding(
-  ctx: MutationCtx,
-  embeddingId: Id<"skillEmbeddings">,
-) {
-  const maps = await ctx.db
-    .query("embeddingSkillMap")
-    .withIndex("by_embedding", (q) => q.eq("embeddingId", embeddingId))
-    .collect();
-  for (const map of maps) await ctx.db.delete(map._id);
-}
-
-async function deleteSkillEmbeddingsForSkill(ctx: MutationCtx, skillId: Id<"skills">) {
-  const embeddings = await ctx.db
-    .query("skillEmbeddings")
-    .withIndex("by_skill", (q) => q.eq("skillId", skillId))
-    .collect();
-  for (const embedding of embeddings) {
-    await deleteEmbeddingMapsForEmbedding(ctx, embedding._id);
-    await ctx.db.delete(embedding._id);
-  }
-}
-
-async function deleteSkillBadgesForSkill(ctx: MutationCtx, skillId: Id<"skills">) {
-  const badges = await ctx.db
-    .query("skillBadges")
-    .withIndex("by_skill", (q) => q.eq("skillId", skillId))
-    .collect();
-  for (const badge of badges) await ctx.db.delete(badge._id);
-}
-
-async function deletePackageBadgesForPackage(ctx: MutationCtx, packageId: Id<"packages">) {
-  const badges = await ctx.db
-    .query("packageBadges")
-    .withIndex("by_package", (q) => q.eq("packageId", packageId))
-    .collect();
-  for (const badge of badges) await ctx.db.delete(badge._id);
-}
-
 async function deleteSeedSkillFixture(ctx: MutationCtx) {
   const existing = await findSeedSkillFixture(ctx);
   if (!existing) return;
@@ -919,7 +858,6 @@ async function deleteSeedSkillFixture(ctx: MutationCtx) {
     .withIndex("by_skill", (q) => q.eq("skillId", existing._id))
     .collect();
   for (const version of versions) {
-    await deleteRescanRequestsForSkillVersion(ctx, version._id);
     await ctx.db.delete(version._id);
   }
   const embeddings = await ctx.db
@@ -954,7 +892,6 @@ async function deleteScannedSkillFixture(ctx: MutationCtx) {
     .withIndex("by_skill", (q) => q.eq("skillId", existing._id))
     .collect();
   for (const version of versions) {
-    await deleteRescanRequestsForSkillVersion(ctx, version._id);
     await ctx.db.delete(version._id);
   }
   const embeddings = await ctx.db
@@ -991,7 +928,6 @@ async function deleteSeedPluginFixtureByName(ctx: MutationCtx, name: string) {
   await deletePackageBadgesForPackage(ctx, existing._id);
   await ctx.db.delete(existing._id);
   for (const release of releases) {
-    await deleteRescanRequestsForPackageRelease(ctx, release._id);
     await ctx.db.delete(release._id);
   }
 }
@@ -1462,55 +1398,7 @@ function flaggedWalletClawScanAnalysis(now: number) {
   };
 }
 
-async function insertCompletedRescanRequests(
-  ctx: MutationCtx,
-  params:
-    | {
-        targetKind: "skill";
-        skillId: unknown;
-        skillVersionId: unknown;
-        packageId?: never;
-        packageReleaseId?: never;
-        targetVersion: string;
-        ownerUserId: unknown;
-        ownerPublisherId: unknown;
-        count: number;
-        now: number;
-      }
-    | {
-        targetKind: "plugin";
-        packageId: unknown;
-        packageReleaseId: unknown;
-        skillId?: never;
-        skillVersionId?: never;
-        targetVersion: string;
-        ownerUserId: unknown;
-        ownerPublisherId: unknown;
-        count: number;
-        now: number;
-      },
-) {
-  for (let index = 0; index < params.count; index += 1) {
-    const createdAt = params.now - (params.count - index) * 60_000;
-    await ctx.db.insert("rescanRequests", {
-      targetKind: params.targetKind,
-      skillId: params.skillId as never,
-      skillVersionId: params.skillVersionId as never,
-      packageId: params.packageId as never,
-      packageReleaseId: params.packageReleaseId as never,
-      targetVersion: params.targetVersion,
-      requestedByUserId: params.ownerUserId as never,
-      ownerUserId: params.ownerUserId as never,
-      ownerPublisherId: params.ownerPublisherId as never,
-      status: "completed",
-      createdAt,
-      updatedAt: createdAt + 30_000,
-      completedAt: createdAt + 30_000,
-    });
-  }
-}
-
-type SeedRescanUxFixturesArgs = {
+type SeedLocalModerationFixturesArgs = {
   reset?: boolean;
   flaggedSkillStorageId: Id<"_storage">;
   flaggedSkillMd: string;
@@ -1522,9 +1410,9 @@ type SeedRescanUxFixturesArgs = {
   scannedPluginReadme: string;
 };
 
-export async function seedRescanUxFixturesHandler(
+export async function seedLocalModerationFixturesHandler(
   ctx: MutationCtx,
-  args: SeedRescanUxFixturesArgs,
+  args: SeedLocalModerationFixturesArgs,
 ) {
   const scannedSkillFrontmatter = parseFrontmatter(args.scannedSkillMd);
   const scannedSkillClawdis = parseClawdisMetadata(scannedSkillFrontmatter);
@@ -1585,7 +1473,7 @@ export async function seedRescanUxFixturesHandler(
       }
       if (
         existingSkill.summary ===
-        "Seeded flagged skill for local owner inventory and rescan UI testing."
+        "Seeded flagged skill for local owner inventory and security review testing."
       ) {
         await ctx.db.patch(existingSkill._id, {
           summary:
@@ -1693,7 +1581,7 @@ export async function seedRescanUxFixturesHandler(
   const skillVersionId = await ctx.db.insert("skillVersions", {
     skillId,
     version: "0.1.0",
-    changelog: "Seeded flagged local version for rescan UI testing.",
+    changelog: "Seeded flagged local version for security review testing.",
     files: [
       {
         path: "SKILL.md",
@@ -1738,17 +1626,6 @@ export async function seedRescanUxFixturesHandler(
     },
     updatedAt: now,
   });
-  await insertCompletedRescanRequests(ctx, {
-    targetKind: "skill",
-    skillId,
-    skillVersionId,
-    targetVersion: "0.1.0",
-    ownerUserId: userId,
-    ownerPublisherId: publisherId,
-    count: 1,
-    now,
-  });
-
   const scannedSkillId = await ctx.db.insert("skills", {
     slug: SCANNED_SKILL_SLUG,
     displayName: "Local Agentic Risk Demo",
@@ -1851,7 +1728,7 @@ export async function seedRescanUxFixturesHandler(
     name: FLAGGED_PLUGIN_NAME,
     normalizedName: normalizePackageName(FLAGGED_PLUGIN_NAME),
     displayName: "Local Flagged Runtime Plugin",
-    summary: "Seeded flagged plugin for local owner inventory and cap-exhausted rescan UI testing.",
+    summary: "Seeded flagged plugin for local owner inventory and security review testing.",
     ownerUserId: userId,
     ownerPublisherId: publisherId,
     family: "code-plugin",
@@ -1887,7 +1764,7 @@ export async function seedRescanUxFixturesHandler(
   const packageReleaseId = await ctx.db.insert("packageReleases", {
     packageId,
     version: "0.1.0",
-    changelog: "Seeded flagged local release for cap-exhausted rescan UI testing.",
+    changelog: "Seeded flagged local release for security review testing.",
     summary: "Seeded flagged plugin release.",
     distTags: ["latest"],
     files: [
@@ -1946,7 +1823,7 @@ export async function seedRescanUxFixturesHandler(
     latestVersionSummary: {
       version: "0.1.0",
       createdAt: now,
-      changelog: "Seeded flagged local release for cap-exhausted rescan UI testing.",
+      changelog: "Seeded flagged local release for security review testing.",
       compatibility: { pluginApiRange: ">=0.1.0" },
       capabilities: {
         executesCode: true,
@@ -1966,17 +1843,6 @@ export async function seedRescanUxFixturesHandler(
     stats: { downloads: 2, installs: 0, stars: 0, versions: 1 },
     updatedAt: now,
   });
-  await insertCompletedRescanRequests(ctx, {
-    targetKind: "plugin",
-    packageId,
-    packageReleaseId,
-    targetVersion: "0.1.0",
-    ownerUserId: userId,
-    ownerPublisherId: publisherId,
-    count: MAX_OWNER_RESCAN_REQUESTS_PER_RELEASE,
-    now,
-  });
-
   const scannedPackageId = await ctx.db.insert("packages", {
     name: SCANNED_PLUGIN_NAME,
     normalizedName: normalizePackageName(SCANNED_PLUGIN_NAME),
@@ -2112,7 +1978,7 @@ export async function seedRescanUxFixturesHandler(
   };
 }
 
-export const seedRescanUxFixturesMutation = internalMutation({
+export const seedLocalModerationFixturesMutation = internalMutation({
   args: {
     reset: v.optional(v.boolean()),
     flaggedSkillStorageId: v.id("_storage"),
@@ -2124,7 +1990,7 @@ export const seedRescanUxFixturesMutation = internalMutation({
     scannedPluginStorageId: v.id("_storage"),
     scannedPluginReadme: v.string(),
   },
-  handler: seedRescanUxFixturesHandler,
+  handler: seedLocalModerationFixturesHandler,
 });
 
 export const seedFeaturedPluginPackagesMutation = internalMutation({

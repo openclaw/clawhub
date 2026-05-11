@@ -2,12 +2,9 @@ import { useNavigate } from "@tanstack/react-router";
 import type { ClawdisSkillMetadata } from "clawhub-schema";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { ArrowLeft } from "lucide-react";
-import type { ComponentProps } from "react";
 import { useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
-import { getUserFacingConvexError } from "../lib/convexError";
 import { canManageSkill, isAdmin, isModerator } from "../lib/roles";
 import type { SkillBySlugResult, SkillPageInitialData } from "../lib/skillPage";
 import { useAuthStatus } from "../lib/useAuthStatus";
@@ -105,7 +102,6 @@ export function SkillDetailPage({
 
   const toggleStar = useMutation(api.stars.toggle);
   const reportSkill = useMutation(api.skills.report);
-  const requestRescan = useMutation(api.skills.requestRescan);
   const updateSummary = useMutation(api.skills.updateSummary);
   const getReadme = useAction(api.skills.getReadme);
   const myPublishers = useQuery(api.publishers.listMine) as
@@ -170,12 +166,6 @@ export function SkillDetailPage({
         : { ownerUserId: skill.ownerUserId, limit: 100 }
       : "skip",
   ) as Array<{ _id: Id<"skills">; slug: string; displayName: string }> | undefined;
-  const canViewOwnerRescanState = canAccessSettings;
-  const rescanState = useQuery(
-    api.skills.getRescanState,
-    canViewOwnerRescanState && skill ? { skillId: skill._id } : "skip",
-  ) as ComponentProps<typeof SkillOwnershipPanel>["rescanState"] | undefined;
-
   const ownerHandle = owner?.handle ?? null;
   const ownerParam = ownerHandle?.trim().toLowerCase() || (owner?._id ? String(owner._id) : null);
   const canonicalOwnerParam =
@@ -402,23 +392,6 @@ export function SkillDetailPage({
     }
   };
 
-  const submitRescanRequest = async () => {
-    if (!skill) return;
-    try {
-      await requestRescan({ skillId: skill._id });
-      toast.success("Rescan requested.", {
-        action: {
-          label: "Dashboard",
-          onClick: () => {
-            window.location.href = "/dashboard";
-          },
-        },
-      });
-    } catch (error) {
-      toast.error(getUserFacingConvexError(error, "Could not request a rescan."));
-    }
-  };
-
   if (isLoadingSkill || wantsCanonicalRedirect) {
     return (
       <main className="section detail-page-section" aria-busy="true">
@@ -458,8 +431,6 @@ export function SkillDetailPage({
         ownerHandle={ownerHandle}
         ownerId={owner?._id ?? null}
         ownedSkills={(ownedSkills ?? []).filter((entry) => entry._id !== skill._id)}
-        rescanState={rescanState ?? null}
-        onRequestRescan={canViewOwnerRescanState ? submitRescanRequest : null}
       />
     ) : null;
 

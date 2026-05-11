@@ -77,13 +77,6 @@ import { MAX_ACTIVE_REPORTS_PER_USER, MAX_REPORT_REASON_LENGTH } from "./lib/rep
 import { tokenize } from "./lib/searchText";
 import { hashSkillFiles } from "./lib/skills";
 import { runStaticPublishScan } from "./lib/staticPublishScan";
-import { getLatestPackageRescanTarget, insertPackageRescanRequest } from "./model/packages/rescans";
-import {
-  assertCanRequestRescan,
-  buildRescanState,
-  errorMessage,
-  finalizeInProgressRescanRequestsForTarget,
-} from "./model/rescans/policy";
 
 const MAX_PUBLIC_LIST_PAGE_SIZE = 200;
 const MAX_SEARCH_PAGE_SIZE = 200;
@@ -182,9 +175,6 @@ const internalRefs = internal as unknown as {
     createInternal: unknown;
     getByIdInternal: unknown;
     revokeInternal: unknown;
-  };
-  rescanRequests: {
-    markStatusInternal: unknown;
   };
   skills: {
     getSkillBySlugInternal: unknown;
@@ -580,7 +570,6 @@ type DashboardPackageListItem = {
   createdAt: number;
   updatedAt: number;
   pendingReview?: true;
-  rescanState: Awaited<ReturnType<typeof buildRescanState>> | null;
   latestRelease: {
     version: string;
     createdAt: number;
@@ -862,13 +851,6 @@ async function toDashboardPackageListItem(
     createdAt: pkg.createdAt,
     updatedAt: pkg.updatedAt,
     pendingReview: pkg.scanStatus === "pending" ? true : undefined,
-    rescanState:
-      latestRelease && !latestRelease.softDeletedAt
-        ? await buildRescanState(ctx, {
-            kind: "plugin",
-            artifactId: latestRelease._id,
-          })
-        : null,
     latestRelease:
       latestRelease && !latestRelease.softDeletedAt
         ? {
@@ -5026,11 +5008,6 @@ export const updateReleaseScanResultsInternal = internalMutation({
         ...patch,
       } as Doc<"packageReleases">;
       await syncLatestPackageVerification(ctx, updatedRelease);
-      await finalizeInProgressRescanRequestsForTarget(
-        ctx,
-        { kind: "plugin", artifactId: args.releaseId },
-        updatedRelease,
-      );
     }
   },
 });
@@ -5070,14 +5047,12 @@ export const updateReleaseLlmAnalysisInternal = internalMutation({
   handler: async (ctx, args) => {
     const release = await ctx.db.get(args.releaseId);
     if (!isReleaseActive(release)) return;
-    const updatedRelease = { ...release, llmAnalysis: args.llmAnalysis };
     await ctx.db.patch(args.releaseId, { llmAnalysis: args.llmAnalysis });
+    const updatedRelease = {
+      ...release,
+      llmAnalysis: args.llmAnalysis,
+    } as Doc<"packageReleases">;
     await syncLatestPackageVerification(ctx, updatedRelease);
-    await finalizeInProgressRescanRequestsForTarget(
-      ctx,
-      { kind: "plugin", artifactId: args.releaseId },
-      updatedRelease,
-    );
   },
 });
 
@@ -5336,11 +5311,6 @@ export const updateReleaseStaticScanInternal = internalMutation({
       ...patch,
     } as Doc<"packageReleases">;
     await syncLatestPackageVerification(ctx, updatedRelease);
-    await finalizeInProgressRescanRequestsForTarget(
-      ctx,
-      { kind: "plugin", artifactId: args.releaseId },
-      updatedRelease,
-    );
   },
 });
 
@@ -5468,119 +5438,6 @@ export const backfillPackageReleaseScans = action({
   },
 });
 
-async function markPackageRescanRequest(
-  ctx: { runMutation: (ref: never, args: never) => Promise<unknown> },
-  requestId: Id<"rescanRequests">,
-  status: "completed" | "failed",
-  error?: string,
-) {
-  await ctx.runMutation(
-    internalRefs.rescanRequests.markStatusInternal as never,
-    {
-      requestId,
-      status,
-      error,
-    } as never,
-  );
-}
-
-export const getRescanState = query({
-  args: {
-    packageId: v.id("packages"),
-  },
-  handler: async (ctx, args) => {
-    const { user } = await requireUser(ctx);
-    const target = await getLatestPackageRescanTarget(ctx, args.packageId);
-    await assertCanManageOwnedResource(ctx, {
-      actor: user,
-      ownerUserId: target.pkg.ownerUserId,
-      ownerPublisherId: target.pkg.ownerPublisherId,
-      allowPlatformModerator: true,
-    });
-    return {
-      targetKind: "plugin" as const,
-      targetVersion: target.release.version,
-      packageReleaseId: target.release._id,
-      ...(await buildRescanState(ctx, {
-        kind: "plugin",
-        artifactId: target.release._id,
-      })),
-    };
-  },
-});
-
-export const getOwnerRescanStateByName = query({
-  args: {
-    name: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const viewerUserId = await getOptionalViewerUserId(ctx);
-    if (!viewerUserId) return null;
-
-    const pkg = await getPackageByNormalizedName(ctx, normalizePackageName(args.name));
-    if (!pkg || pkg.softDeletedAt || pkg.family === "skill" || !pkg.latestReleaseId) return null;
-
-    const release = await ctx.db.get(pkg.latestReleaseId);
-    if (!release || release.softDeletedAt) return null;
-
-    const actor = await ctx.db.get(viewerUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) return null;
-    if (actor.role !== "admin" && actor.role !== "moderator") {
-      const canAccess = await viewerCanAccessPackageOwner(ctx, pkg, viewerUserId);
-      if (!canAccess) return null;
-    }
-
-    return {
-      targetKind: "plugin" as const,
-      targetVersion: release.version,
-      packageReleaseId: release._id,
-      ...(await buildRescanState(ctx, {
-        kind: "plugin",
-        artifactId: release._id,
-      })),
-    };
-  },
-});
-
-export const requestRescan = mutation({
-  args: {
-    packageId: v.id("packages"),
-  },
-  handler: async (ctx, args) => {
-    const { user } = await requireUser(ctx);
-    const target = await getLatestPackageRescanTarget(ctx, args.packageId);
-    const isPlatformStaff = user.role === "admin" || user.role === "moderator";
-    await assertCanManageOwnedResource(ctx, {
-      actor: user,
-      ownerUserId: target.pkg.ownerUserId,
-      ownerPublisherId: target.pkg.ownerPublisherId,
-      allowPlatformModerator: true,
-    });
-    await assertCanRequestRescan(
-      ctx,
-      {
-        kind: "plugin",
-        artifactId: target.release._id,
-      },
-      { ignoreRequestLimit: isPlatformStaff },
-    );
-
-    const requestId = await insertPackageRescanRequest(ctx, user, target);
-    await ctx.scheduler.runAfter(0, internal.packages.dispatchPackageRescanInternal, {
-      requestId,
-      releaseId: target.release._id,
-    });
-
-    return {
-      requestId,
-      ...(await buildRescanState(ctx, {
-        kind: "plugin",
-        artifactId: target.release._id,
-      })),
-    };
-  },
-});
-
 export const setBatch = mutation({
   args: { packageId: v.id("packages"), batch: v.optional(v.string()) },
   handler: async (ctx, args) => {
@@ -5688,82 +5545,5 @@ export const removeBetaLatestPackageTagsInternal = internalMutation({
       results.push({ name: normalizedName, ok: true as const, changed: true });
     }
     return { ok: true as const, results };
-  },
-});
-
-export const requestRescanForApiTokenInternal = internalMutation({
-  args: {
-    actorUserId: v.id("users"),
-    name: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
-
-    const pkg = await getPackageByNormalizedName(ctx, normalizePackageName(args.name));
-    if (!pkg || pkg.softDeletedAt || pkg.family === "skill") {
-      throw new ConvexError("Plugin not found");
-    }
-
-    const target = await getLatestPackageRescanTarget(ctx, pkg._id);
-    const isPlatformStaff = actor.role === "admin" || actor.role === "moderator";
-    await assertCanManageOwnedResource(ctx, {
-      actor,
-      ownerUserId: target.pkg.ownerUserId,
-      ownerPublisherId: target.pkg.ownerPublisherId,
-      allowPlatformModerator: true,
-    });
-    await assertCanRequestRescan(
-      ctx,
-      {
-        kind: "plugin",
-        artifactId: target.release._id,
-      },
-      { ignoreRequestLimit: isPlatformStaff },
-    );
-
-    const requestId = await insertPackageRescanRequest(ctx, actor, target);
-    await ctx.scheduler.runAfter(0, internal.packages.dispatchPackageRescanInternal, {
-      requestId,
-      releaseId: target.release._id,
-    });
-
-    const state = await buildRescanState(ctx, {
-      kind: "plugin",
-      artifactId: target.release._id,
-    });
-    return {
-      ok: true,
-      targetKind: "package" as const,
-      name: target.pkg.normalizedName,
-      version: target.release.version,
-      status: state.inProgressRequest?.status ?? state.latestRequest?.status ?? "in_progress",
-      remainingRequests: state.remainingRequests,
-      maxRequests: state.maxRequests,
-      pendingRequestId: requestId,
-    };
-  },
-});
-
-export const dispatchPackageRescanInternal = internalAction({
-  args: {
-    requestId: v.id("rescanRequests"),
-    releaseId: v.id("packageReleases"),
-  },
-  handler: async (ctx, args) => {
-    try {
-      await runActionRef(ctx, internalRefs.packages.scanPackageReleaseStaticallyInternal, {
-        releaseId: args.releaseId,
-      });
-      await runActionRef(ctx, internalRefs.vt.scanPackageReleaseWithVirusTotal, {
-        releaseId: args.releaseId,
-      });
-      await runActionRef(ctx, internalRefs.llmEval.evaluatePackageReleaseWithLlm, {
-        releaseId: args.releaseId,
-      });
-    } catch (error) {
-      await markPackageRescanRequest(ctx, args.requestId, "failed", errorMessage(error));
-      throw error;
-    }
   },
 });
