@@ -1632,7 +1632,7 @@ function makeDirectPrefixCtx(skills: Array<ReturnType<typeof makeSkillDoc>>) {
                     }
                   }
                   const fieldValue =
-                    (digest as Record<string, string | undefined>)[searchField] ?? "";
+                    (digest as unknown as Record<string, string | undefined>)[searchField] ?? "";
                   const fieldTokens = new Set(tokensOf(fieldValue));
                   for (const token of queryTokens) {
                     if (fieldTokens.has(token)) return true;
