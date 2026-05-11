@@ -6,6 +6,16 @@
 
 ### Fixes
 
+## 0.14.0 - 2026-05-11
+
+### Changes
+
+- Web: add publisher notes and unify ClawScan review pages (#2111).
+- Dev: auto-start services for Codex worktrees and add a local dev persona FAB (#2146, #2147).
+- Dev: add a local ClawScan dry-run helper script (#2143).
+
+### Fixes
+
 - API: return deterministic 403 responses for skill/package rescan and package transfer permission denials, with CI e2e coverage for protected write endpoints.
 
 ## 0.13.0 - 2026-05-11
