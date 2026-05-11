@@ -105,4 +105,54 @@ describe("SkillHeader", () => {
     expect(screen.getByText("2")).toBeTruthy();
     expect(container.querySelector('a[href="/p/local"]')).toBeTruthy();
   });
+
+  it("shows the latest version description instead of the short catalog summary", () => {
+    renderHeader({
+      latestVersion: {
+        _id: "skillVersions:demo" as Id<"skillVersions">,
+        _creationTime: 1,
+        skillId: skill._id,
+        version: "1.0.0",
+        changelog: "Initial release",
+        files: [],
+        parsed: {
+          description:
+            "Full uploaded description with more operational context than the short summary.",
+          frontmatter: {},
+        },
+        createdBy: "users:owner" as Id<"users">,
+        createdAt: 1,
+      },
+    });
+
+    expect(
+      screen.getByText(
+        "Full uploaded description with more operational context than the short summary.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText("Demo summary")).toBeNull();
+  });
+
+  it("falls back to legacy parsed frontmatter description when present", () => {
+    renderHeader({
+      latestVersion: {
+        _id: "skillVersions:demo" as Id<"skillVersions">,
+        _creationTime: 1,
+        skillId: skill._id,
+        version: "1.0.0",
+        changelog: "Initial release",
+        files: [],
+        parsed: {
+          frontmatter: {
+            description: "Legacy full description from parsed frontmatter.",
+          },
+        },
+        createdBy: "users:owner" as Id<"users">,
+        createdAt: 1,
+      },
+    });
+
+    expect(screen.getByText("Legacy full description from parsed frontmatter.")).toBeTruthy();
+    expect(screen.queryByText("Demo summary")).toBeNull();
+  });
 });

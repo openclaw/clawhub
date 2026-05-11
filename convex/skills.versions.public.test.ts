@@ -72,7 +72,7 @@ function makeVersion() {
       },
     ],
     parsed: {
-      frontmatter: { secret: "value" },
+      frontmatter: { description: "Full uploaded description", secret: "value" },
       metadata: { hidden: true },
       clawdis: { os: ["macos"] },
       moltbot: { prompt: "hidden" },
@@ -196,6 +196,7 @@ describe("public skill version queries", () => {
     expect(result?.latestVersion?.files[0]).not.toHaveProperty("storageId");
     expect(result?.latestVersion?.parsed).toEqual({
       clawdis: { os: ["macos"] },
+      description: "Full uploaded description",
       license: "MIT-0",
     });
     expect(result?.latestVersion?.staticScan?.findings?.[0]?.evidence).toBe("");
@@ -249,6 +250,7 @@ describe("public skill version queries", () => {
       expect(result?.parsed).not.toHaveProperty("frontmatter");
       expect(result?.parsed).not.toHaveProperty("metadata");
       expect(result?.parsed).not.toHaveProperty("moltbot");
+      expect(result?.parsed?.description).toBe("Full uploaded description");
       expect(result?.staticScan?.findings?.[0]?.evidence).toBe("");
     }
   });

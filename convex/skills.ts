@@ -1417,6 +1417,7 @@ type PublicSkillListVersion = Pick<
 
 type PublicSkillVersionParsed = {
   license?: typeof PLATFORM_SKILL_LICENSE;
+  description?: string;
   clawdis?: {
     os?: string[];
     nix?: {
@@ -1633,6 +1634,9 @@ function toPublicSkillVersion(
   version: Doc<"skillVersions"> | null | undefined,
 ): PublicSkillVersion | null {
   if (!version) return null;
+  const description = version.parsed?.frontmatter
+    ? getFrontmatterValue(version.parsed.frontmatter, "description")?.trim()
+    : undefined;
   return {
     _id: version._id,
     _creationTime: version._creationTime,
@@ -1650,6 +1654,7 @@ function toPublicSkillVersion(
     parsed: version.parsed
       ? {
           license: version.parsed.license,
+          ...(description ? { description } : {}),
           clawdis: version.parsed.clawdis,
         }
       : undefined,

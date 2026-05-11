@@ -42,11 +42,28 @@ type SkillCanonical = {
   owner: { handle: string | null; userId: Id<"users"> | null };
 };
 
+type SkillHeaderLatestVersion =
+  | (Omit<Doc<"skillVersions">, "parsed"> & {
+      parsed?: (Partial<Doc<"skillVersions">["parsed"]> & { description?: string }) | null;
+    })
+  | null;
+
+function getLatestVersionDescription(latestVersion: SkillHeaderLatestVersion) {
+  const parsed = latestVersion?.parsed;
+  const description =
+    typeof parsed?.description === "string"
+      ? parsed.description
+      : typeof parsed?.frontmatter?.description === "string"
+        ? parsed.frontmatter.description
+        : null;
+  return description?.trim() || null;
+}
+
 type SkillHeaderProps = {
   skill: Doc<"skills"> | PublicSkill;
   owner: PublicPublisher | null;
   ownerHandle: string | null;
-  latestVersion: Doc<"skillVersions"> | null;
+  latestVersion: SkillHeaderLatestVersion;
   modInfo: SkillModerationInfo | null;
   canManage: boolean;
   isAuthenticated: boolean;
@@ -116,6 +133,8 @@ export function SkillHeader({
   const badges = getSkillBadges(skill);
   const showHeroMeta = Boolean((forkOf && forkOfHref) || canonicalHref);
   const showTitleBadges = badges.length > 0;
+  const headerDescription =
+    getLatestVersionDescription(latestVersion) ?? skill.summary ?? "No summary provided.";
 
   return (
     <>
@@ -268,9 +287,7 @@ export function SkillHeader({
                 {nixPlugin ? <Badge variant="accent">Plugin bundle (nix)</Badge> : null}
               </div>
               <div className="skill-summary-block">
-                <p className="section-subtitle skill-summary-line">
-                  {skill.summary ?? "No summary provided."}
-                </p>
+                <p className="section-subtitle skill-summary-line">{headerDescription}</p>
               </div>
 
               {nixPlugin ? (
@@ -398,7 +415,7 @@ function SkillSidebarStats({
   owner: PublicPublisher | null;
   ownerHandle: string | null;
   formattedStats: ReturnType<typeof formatSkillStatsTriplet>;
-  latestVersion: Doc<"skillVersions"> | null;
+  latestVersion: SkillHeaderLatestVersion;
 }) {
   const versionCount = skill.stats.versions ?? 0;
 
