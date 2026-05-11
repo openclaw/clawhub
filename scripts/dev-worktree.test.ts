@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildForegroundArgs,
   buildEnvFileCandidates,
   isConvexFunctionUnavailableOutput,
+  isRunningPid,
+  parseArgs,
   parseEnv,
   parseGitWorktreeList,
 } from "./dev-worktree";
@@ -80,5 +83,23 @@ branch refs/heads/feature
     ).toBe(true);
 
     expect(isConvexFunctionUnavailableOutput("AUTH_GITHUB_ID is required")).toBe(false);
+  });
+
+  it("parses detach mode for Codex setup startup", () => {
+    expect(parseArgs(["--detach", "--port", "3999"])).toMatchObject({
+      detach: true,
+      port: "3999",
+    });
+  });
+
+  it("does not pass detach mode to the foreground child process", () => {
+    expect(buildForegroundArgs(["--detach", "--port", "3999"])).toEqual(["--port", "3999"]);
+  });
+
+  it("treats invalid detached pid file values as not running", () => {
+    expect(isRunningPid(null)).toBe(false);
+    expect(isRunningPid(0)).toBe(false);
+    expect(isRunningPid(Number.NaN)).toBe(false);
+    expect(isRunningPid(process.pid)).toBe(true);
   });
 });

@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { existsSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 
@@ -9,25 +9,32 @@ type Options = {
   envFile: string | null;
   seed: boolean;
   seedOnly: boolean;
+  detach: boolean;
 };
 
 const DEFAULT_ENV_SOURCES = [".env.local"];
 const CONVEX_START_TIMEOUT_MS = 120_000;
 const CONVEX_FUNCTIONS_READY_TIMEOUT_MS = 120_000;
 const REACHABILITY_POLL_MS = 500;
+const RUNTIME_DIR = ".codex/runtime";
+const DETACHED_PID_FILE = `${RUNTIME_DIR}/dev-worktree.pid`;
+const DETACHED_LOG_FILE = `${RUNTIME_DIR}/dev-worktree.log`;
 const managedChildren = new Set<ChildProcess>();
 
-function parseArgs(argv: string[]): Options {
+export function parseArgs(argv: string[]): Options {
   const options: Options = {
     port: "3000",
     envFile: process.env.CLAWHUB_ENV_FILE ?? null,
     seed: false,
     seedOnly: false,
+    detach: false,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
-    if (arg === "--seed") {
+    if (arg === "--detach") {
+      options.detach = true;
+    } else if (arg === "--seed") {
       options.seed = true;
     } else if (arg === "--seed-only") {
       options.seed = true;
@@ -46,6 +53,28 @@ function parseArgs(argv: string[]): Options {
   }
 
   return options;
+}
+
+export function buildForegroundArgs(argv: string[]) {
+  return argv.filter((arg) => arg !== "--detach");
+}
+
+function readDetachedPid() {
+  if (!existsSync(DETACHED_PID_FILE)) return null;
+  const raw = readFileSync(DETACHED_PID_FILE, "utf8").trim();
+  if (!/^\d+$/.test(raw)) return null;
+  const pid = Number(raw);
+  return Number.isSafeInteger(pid) && pid > 0 ? pid : null;
+}
+
+export function isRunningPid(pid: number | null) {
+  if (!Number.isSafeInteger(pid) || (pid ?? 0) <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function parseGitWorktreeList(text: string) {
@@ -238,6 +267,34 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function startDetached(argv: string[]) {
+  mkdirSync(RUNTIME_DIR, { recursive: true });
+  const logPath = resolve(DETACHED_LOG_FILE);
+  const runningPid = readDetachedPid();
+  if (isRunningPid(runningPid)) {
+    console.log(`ClawHub worktree services are already running under pid ${runningPid}.`);
+    console.log(`Logs: ${logPath}`);
+    return;
+  }
+
+  const log = openSync(logPath, "a");
+  const child = spawn("bun", ["scripts/dev-worktree.ts", ...buildForegroundArgs(argv)], {
+    cwd: process.cwd(),
+    detached: true,
+    env: {
+      ...process.env,
+      DEV_AUTH_ENABLED: process.env.DEV_AUTH_ENABLED ?? "1",
+      VITE_ENABLE_DEV_AUTH: process.env.VITE_ENABLE_DEV_AUTH ?? "1",
+    },
+    stdio: ["ignore", log, log],
+  });
+  closeSync(log);
+  child.unref();
+  writeFileSync(DETACHED_PID_FILE, `${child.pid}\n`);
+  console.log(`Started ClawHub worktree services at http://127.0.0.1:${parseArgs(argv).port}/.`);
+  console.log(`Logs: ${logPath}`);
+}
+
 async function waitUntilReachable(url: string, timeoutMs: number) {
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeoutMs) {
@@ -270,7 +327,13 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 }
 
 async function main() {
-  const options = parseArgs(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  const options = parseArgs(argv);
+  if (options.detach) {
+    startDetached(argv);
+    return;
+  }
+
   const envFile = findEnvFile(options.envFile);
   if (!envFile) {
     console.error(

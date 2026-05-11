@@ -3,7 +3,7 @@ version = 1
 name = "ClawHub"
 
 [setup]
-script = "bun install"
+script = "bun run setup:worktree -- --quiet && bun scripts/dev-worktree.ts --detach"
 
 [[actions]]
 name = "Run"
