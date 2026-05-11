@@ -405,6 +405,7 @@ function SkillSidebarStats({
   return (
     <SidebarMetadata
       ariaLabel="Skill metadata"
+      density="compact"
       blocks={[
         { label: "Installs", value: formattedStats.installsAllTime, large: true },
         {

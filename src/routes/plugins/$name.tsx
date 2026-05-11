@@ -607,6 +607,7 @@ export function PluginDetailPage({
               {hasSourceMetadata ? (
                 <SidebarMetadata
                   ariaLabel="Plugin metadata"
+                  density="compact"
                   blocks={[
                     { label: "Repository", value: sourceRepoLink },
                     { label: "Owner", value: ownerMetadataValue },

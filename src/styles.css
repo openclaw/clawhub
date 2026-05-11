@@ -1265,7 +1265,7 @@ code {
   min-width: 0;
   margin: 0;
   color: var(--ink-soft);
-  font-size: 0.95rem;
+  font-size: var(--fs-md);
   line-height: 1.4;
 }
 
@@ -3093,9 +3093,10 @@ code {
   font-size: 0.9rem;
 }
 
-.skill-hero-title > .section-subtitle {
-  font-size: clamp(1.05rem, 1.1vw, 1.18rem);
-  line-height: 1.55;
+.skill-hero-title > .section-subtitle,
+.skill-summary-block > .section-subtitle {
+  font-size: var(--fs-md);
+  line-height: 1.4;
 }
 
 .hero-install {
@@ -4400,6 +4401,7 @@ code {
 }
 
 .sidebar-metadata > .sidebar-metadata-row:last-child,
+.sidebar-metadata > .sidebar-metadata-grid:last-child,
 .skill-sidebar-stats > .skill-sidebar-stat-row:last-child {
   border-bottom: 0;
 }

@@ -29,7 +29,7 @@ function statusFromStaticScan(staticScan: DetailSecuritySummaryProps["staticScan
   const status = staticScan?.status?.trim().toLowerCase();
   if (status === "malicious") return "malicious";
   if (status === "clean" || status === "benign") return "benign";
-  if (status === "suspicious") return "advisory";
+  if (status === "suspicious") return "review";
   if (status) return status;
   return "pending";
 }

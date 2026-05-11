@@ -141,6 +141,28 @@ describe("DetailSecuritySummary", () => {
     expect(screen.queryByText("Benign")).toBeNull();
   });
 
+  it("shows static suspicious as review without rolling it up to suspicious", () => {
+    render(
+      <DetailSecuritySummary
+        scannerBasePath="/steipete/weather/security"
+        vtAnalysis={{ status: "clean", checkedAt: 1 }}
+        llmAnalysis={{ status: "clean", checkedAt: 1 }}
+        staticScan={{
+          status: "suspicious",
+          reasonCodes: ["suspicious.network_access"],
+          findings: [],
+          summary: "Static advisory finding.",
+          engineVersion: "v1",
+          checkedAt: 1,
+        }}
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: "Static analysis: Review" })).toBeTruthy();
+    expect(screen.getAllByText("Pass")).toHaveLength(3);
+    expect(screen.queryByText("Suspicious")).toBeNull();
+  });
+
   it("does not aggregate scanner operational errors as malicious verdicts", () => {
     render(
       <DetailSecuritySummary
