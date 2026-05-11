@@ -5,6 +5,9 @@ import { PublisherClawScanNote } from "./PublisherClawScanNote";
 import { SidebarMetadata } from "./SidebarMetadata";
 import {
   ClawScanRiskReview,
+  ConfidenceMeter,
+  getClawScanDisplayStatus,
+  getVirusTotalDisplayStatus,
   hasClawScanRiskReview,
   ScanResultBadge,
   type LlmAnalysis,
@@ -82,20 +85,9 @@ function formatValue(value: unknown): string | null {
   return JSON.stringify(value);
 }
 
-function formatBadgeValue(value: unknown, fallback: string) {
-  const formatted = formatValue(value) ?? fallback;
-  return formatted
-    .split(/[-_\s]+/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
-    .join(" ");
-}
-
 function getScannerStatus(props: SecurityScannerPageProps) {
-  if (props.scanner === "virustotal")
-    return props.vtAnalysis?.verdict ?? props.vtAnalysis?.status ?? "pending";
-  if (props.scanner === "clawscan")
-    return props.llmAnalysis?.verdict ?? props.llmAnalysis?.status ?? "pending";
+  if (props.scanner === "virustotal") return getVirusTotalDisplayStatus(props.vtAnalysis);
+  if (props.scanner === "clawscan") return getClawScanDisplayStatus(props.llmAnalysis);
   if (props.staticScan?.status?.toLowerCase() === "malicious") return "malicious";
   return props.staticScan ? "advisory" : "pending";
 }
@@ -363,12 +355,10 @@ function SecurityScannerReport(props: SecurityScannerPageProps) {
                       {
                         label: "Confidence",
                         value: (
-                          <Badge
-                            variant="compact"
-                            className="min-h-0 rounded-[4px] px-2.5 py-0.5 text-[0.78rem] leading-[1.3]"
-                          >
-                            {formatBadgeValue(props.llmAnalysis?.confidence, "Not reported")}
-                          </Badge>
+                          <ConfidenceMeter
+                            value={props.llmAnalysis?.confidence}
+                            includeNoun={false}
+                          />
                         ),
                       },
                     ]

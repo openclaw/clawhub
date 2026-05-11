@@ -18,6 +18,7 @@ import {
 } from "./ui/dialog";
 import { Input } from "./ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
+import { Textarea } from "./ui/textarea";
 
 type OwnedSkillOption = {
   _id: Id<"skills">;
@@ -31,6 +32,8 @@ type SkillOwnershipPanelProps = {
   ownerHandle: string | null;
   ownerId: Id<"users"> | Id<"publishers"> | null;
   ownedSkills: OwnedSkillOption[];
+  summary?: string | null;
+  onSaveSummary?: ((summary: string) => Promise<void>) | null;
   clawScanNote?: string | null;
   onSavePublisherNoteAndRescan?: ((note: string) => Promise<void>) | null;
 };
@@ -39,12 +42,63 @@ function formatMutationError(error: unknown) {
   return getUserFacingConvexError(error, "Request failed.");
 }
 
+function SummarySettingsEditor({
+  summary,
+  onSaveSummary,
+}: {
+  summary?: string | null;
+  onSaveSummary: (summary: string) => Promise<void>;
+}) {
+  const [value, setValue] = useState(summary ?? "");
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isSaving) setValue(summary ?? "");
+  }, [isSaving, summary]);
+
+  async function handleSave() {
+    if (isSaving) return;
+    setIsSaving(true);
+    setError(null);
+    try {
+      await onSaveSummary(value);
+    } catch (saveError) {
+      setError(getUserFacingConvexError(saveError, "Could not save description."));
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <div className="publisher-note-settings-editor">
+      <Textarea
+        aria-label="Description"
+        rows={3}
+        value={value}
+        maxLength={500}
+        onChange={(event) => setValue(event.target.value)}
+        placeholder="Enter a brief description..."
+      />
+      <div className="publisher-note-settings-meta">
+        <span>{value.trim().length}/500</span>
+      </div>
+      <Button type="button" variant="outline" loading={isSaving} onClick={() => void handleSave()}>
+        {isSaving ? "Saving" : "Save"}
+      </Button>
+      {error ? <p className="publisher-note-settings-error">{error}</p> : null}
+    </div>
+  );
+}
+
 export function SkillOwnershipPanel({
   skillId,
   slug,
   ownerHandle,
   ownerId,
   ownedSkills,
+  summary,
+  onSaveSummary,
   clawScanNote,
   onSavePublisherNoteAndRescan,
 }: SkillOwnershipPanelProps) {
@@ -126,6 +180,15 @@ export function SkillOwnershipPanel({
           <Button asChild variant="outline">
             <a href={`/publish-skill?updateSlug=${encodeURIComponent(slug)}`}>New Version</a>
           </Button>
+        </SettingsActionRow>
+
+        <SettingsActionRow
+          title="Description"
+          description="Update the short description shown on the skill detail page."
+        >
+          {onSaveSummary ? (
+            <SummarySettingsEditor summary={summary} onSaveSummary={onSaveSummary} />
+          ) : null}
         </SettingsActionRow>
 
         <SettingsActionRow

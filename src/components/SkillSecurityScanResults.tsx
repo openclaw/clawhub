@@ -56,6 +56,21 @@ export type VtAnalysis = {
   verdict?: string;
   analysis?: string;
   source?: string;
+  scanner?: string;
+  engineStats?: {
+    malicious?: number;
+    suspicious?: number;
+    harmless?: number;
+    undetected?: number;
+  };
+  metadata?: {
+    stats?: {
+      malicious?: number;
+      suspicious?: number;
+      harmless?: number;
+      undetected?: number;
+    };
+  };
   checkedAt: number;
 };
 
@@ -120,7 +135,7 @@ export function getScanStatusInfo(status: string) {
   switch (status.toLowerCase()) {
     case "benign":
     case "clean":
-      return { label: "Benign", className: "scan-status-clean", badgeVariant: "success" };
+      return { label: "Pass", className: "scan-status-clean", badgeVariant: "success" };
     case "cleared":
       return { label: "Cleared", className: "scan-status-clean", badgeVariant: "success" };
     case "malicious":
@@ -129,8 +144,10 @@ export function getScanStatusInfo(status: string) {
         className: "scan-status-malicious",
         badgeVariant: "destructive",
       };
+    case "review":
+      return { label: "Review", className: "scan-status-review", badgeVariant: "review" };
     case "suspicious":
-      return { label: "Review", className: "scan-status-suspicious", badgeVariant: "warning" };
+      return { label: "Suspicious", className: "scan-status-suspicious", badgeVariant: "warning" };
     case "advisory":
       return { label: "Advisory", className: "scan-status-unknown", badgeVariant: "compact" };
     case "loading":
@@ -144,6 +161,65 @@ export function getScanStatusInfo(status: string) {
     default:
       return { label: status, className: "scan-status-unknown", badgeVariant: "default" };
   }
+}
+
+function severityRank(severity?: string) {
+  switch (severity?.trim().toLowerCase()) {
+    case "critical":
+      return 5;
+    case "high":
+      return 4;
+    case "medium":
+      return 3;
+    case "low":
+      return 2;
+    case "info":
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+function highestConcernSeverityRank(analysis?: LlmAnalysis | null) {
+  let highest = 0;
+  for (const finding of analysis?.agenticRiskFindings ?? []) {
+    if (finding.status === "concern") highest = Math.max(highest, severityRank(finding.severity));
+  }
+  for (const bucket of Object.values(analysis?.riskSummary ?? {})) {
+    if (bucket?.status === "concern") {
+      highest = Math.max(highest, severityRank(bucket.highestSeverity));
+    }
+  }
+  return highest;
+}
+
+export function getClawScanDisplayStatus(analysis?: LlmAnalysis | null) {
+  const status = (analysis?.verdict ?? analysis?.status)?.trim().toLowerCase();
+  if (!status) return "pending";
+  if (status !== "suspicious") return status;
+  return highestConcernSeverityRank(analysis) >= severityRank("high") ? "suspicious" : "review";
+}
+
+function getVtEngineStats(analysis?: VtAnalysis | null) {
+  return analysis?.engineStats ?? analysis?.metadata?.stats;
+}
+
+function isVtAiOnlyAnalysis(analysis?: VtAnalysis | null) {
+  const scanner = analysis?.scanner?.trim().toLowerCase();
+  const source = analysis?.source?.trim().toLowerCase();
+  return scanner === "code_insight" || source === "palm" || source?.includes("code insight");
+}
+
+export function getVirusTotalDisplayStatus(analysis?: VtAnalysis | null) {
+  const stats = getVtEngineStats(analysis);
+  if (stats) {
+    if ((stats.malicious ?? 0) > 0) return "malicious";
+    if ((stats.suspicious ?? 0) > 0) return "suspicious";
+    return "benign";
+  }
+
+  if (isVtAiOnlyAnalysis(analysis)) return "advisory";
+  return analysis?.verdict ?? analysis?.status ?? "pending";
 }
 
 export function ScanResultBadge({
@@ -198,14 +274,41 @@ function formatSecurityLabel(value?: string | null) {
     .join(" ");
 }
 
-function getRiskStatusVariant(status: AgenticRiskStatus, severity?: string): BadgeProps["variant"] {
+function normalizeConfidence(value: unknown, includeNoun = true) {
+  const label = formatSecurityLabel(typeof value === "string" ? value : null);
+  const normalized = label?.toLowerCase();
+  if (normalized === "high") return { label: includeNoun ? "High Confidence" : "High", level: 3 };
+  if (normalized === "medium")
+    return { label: includeNoun ? "Medium Confidence" : "Medium", level: 2 };
+  if (normalized === "low") return { label: includeNoun ? "Low Confidence" : "Low", level: 1 };
+  return { label: "Confidence not reported", level: 0 };
+}
+
+export function ConfidenceMeter({
+  value,
+  includeNoun = true,
+}: {
+  value: unknown;
+  includeNoun?: boolean;
+}) {
+  const confidence = normalizeConfidence(value, includeNoun);
+  return (
+    <Badge variant="compact" className="scan-confidence-meter" data-level={confidence.level}>
+      <span className="scan-confidence-bars" aria-hidden="true">
+        <span />
+        <span />
+        <span />
+      </span>
+      <span>{confidence.label}</span>
+    </Badge>
+  );
+}
+
+function getRiskStatusVariant(status: AgenticRiskStatus): BadgeProps["variant"] {
   if (status === "none") return "success";
-  if (status === "note") return "compact";
-  const normalizedSeverity = severity?.toLowerCase();
-  if (normalizedSeverity === "critical" || normalizedSeverity === "high") {
-    return "destructive";
-  }
-  return "review";
+  if (status === "note") return "review";
+  if (status === "concern") return "warning";
+  return "compact";
 }
 
 function getVisibleAgenticRiskFindings(analysis: LlmAnalysis) {
@@ -220,8 +323,6 @@ export function hasClawScanRiskReview(analysis?: LlmAnalysis | null) {
 }
 
 function getFindingBadgeLabel(finding: LlmAgenticRiskFinding) {
-  const severity = formatSecurityLabel(finding.severity);
-  if (finding.status === "concern" && severity) return severity;
   return AGENTIC_RISK_STATUS_LABELS[finding.status] ?? finding.status;
 }
 
@@ -248,9 +349,12 @@ function AgenticRiskFindingCard({
       className="agentic-risk-finding"
     >
       <div className="agentic-risk-finding-header">
-        <Badge variant={getRiskStatusVariant(finding.status, finding.severity)}>
-          {getFindingBadgeLabel(finding)}
-        </Badge>
+        <div className="agentic-risk-finding-badges">
+          <Badge variant={getRiskStatusVariant(finding.status)}>
+            {getFindingBadgeLabel(finding)}
+          </Badge>
+          <ConfidenceMeter value={finding.confidence} />
+        </div>
         {categoryHref ? (
           <a
             className="agentic-risk-finding-title"
@@ -535,13 +639,14 @@ export function SecurityScanResults({
     return null;
   }
 
-  const vtStatus = vtAnalysis?.status ?? "pending";
+  const vtStatus = getVirusTotalDisplayStatus(vtAnalysis);
   const vtUrl = sha256hash ? `https://www.virustotal.com/gui/file/${sha256hash}` : null;
   const isCodeInsight = vtAnalysis?.source === "code_insight";
   const aiAnalysis = vtAnalysis?.analysis;
 
   const llmVerdict = llmAnalysis?.verdict ?? llmAnalysis?.status;
-  const llmStatusInfo = llmVerdict ? getScanStatusInfo(llmVerdict) : null;
+  const llmDisplayStatus = getClawScanDisplayStatus(llmAnalysis);
+  const llmStatusInfo = llmVerdict ? getScanStatusInfo(llmDisplayStatus) : null;
 
   if (variant === "badge") {
     return (
@@ -575,7 +680,7 @@ export function SecurityScanResults({
         {llmStatusInfo ? (
           <div className="version-scan-badge">
             <ClawScanIcon className="version-scan-icon version-scan-icon-oc" />
-            <ScanResultBadge status={llmVerdict ?? "pending"} tone="review" />
+            <ScanResultBadge status={llmDisplayStatus} tone="review" />
             {scannerBasePath ? (
               <a
                 href={`${scannerBasePath}/clawscan`}
@@ -647,7 +752,7 @@ export function SecurityScanResults({
               <ClawScanIcon className="scan-result-icon scan-result-icon-oc" />
               <span className="scan-result-scanner-name">ClawScan</span>
             </div>
-            <ScanResultBadge status={llmVerdict ?? "pending"} tone="review" />
+            <ScanResultBadge status={llmDisplayStatus} tone="review" />
             {llmAnalysis.confidence ? (
               <span className="scan-result-confidence">{llmAnalysis.confidence} confidence</span>
             ) : null}

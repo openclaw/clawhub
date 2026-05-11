@@ -7,7 +7,21 @@ type PackageReleaseSecurityLike = Pick<
   "sha256hash" | "vtAnalysis" | "llmAnalysis" | "verification" | "staticScan" | "manualModeration"
 >;
 
-type PackageVirusTotalAnalysis = PackageReleaseSecurityLike["vtAnalysis"];
+type PackageVtEngineStats = {
+  malicious?: number;
+  suspicious?: number;
+  undetected?: number;
+  harmless?: number;
+};
+
+type PackageVirusTotalAnalysis =
+  | (NonNullable<PackageReleaseSecurityLike["vtAnalysis"]> & {
+      metadata?: {
+        stats?: PackageVtEngineStats;
+      };
+    })
+  | null
+  | undefined;
 
 export function normalizePackageScanStatus(status: string | null | undefined): PackageScanStatus {
   const normalized = status?.trim().toLowerCase();

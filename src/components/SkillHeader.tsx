@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import type { ClawdisSkillMetadata } from "clawhub-schema";
 import { PLATFORM_SKILL_LICENSE } from "clawhub-schema/licenseConstants";
-import { Check, Download, Flag, Pencil, Settings, Star, X } from "lucide-react";
+import { Download, Flag, Settings, ShieldCheck, Star } from "lucide-react";
 import type { ReactNode } from "react";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { getSkillBadges } from "../lib/badges";
@@ -62,7 +62,6 @@ type SkillHeaderProps = {
   canonical: SkillCanonical | null;
   canonicalHref: string | null;
   canonicalOwnerHandle: string | null;
-  staffModerationNote: string | null;
   staffVisibilityTag: string | null;
   isAutoHidden: boolean;
   isRemoved: boolean;
@@ -74,14 +73,6 @@ type SkillHeaderProps = {
   priorityContent?: ReactNode;
   settingsHref?: string | null;
   children?: ReactNode;
-  canEditSummary: boolean;
-  summary: string;
-  onSummaryChange: (value: string) => void;
-  onSummarySubmit: () => void;
-  isSummaryEditing: boolean;
-  onSummaryEdit: () => void;
-  onSummaryCancel: () => void;
-  isSummarySubmitting: boolean;
 };
 
 export function SkillHeader({
@@ -103,10 +94,6 @@ export function SkillHeader({
   canonical,
   canonicalHref,
   canonicalOwnerHandle,
-  staffModerationNote,
-  staffVisibilityTag,
-  isAutoHidden,
-  isRemoved,
   nixPlugin,
   hasPluginBundle,
   configRequirements,
@@ -115,14 +102,6 @@ export function SkillHeader({
   priorityContent,
   settingsHref,
   children,
-  canEditSummary,
-  summary,
-  onSummaryChange,
-  onSummarySubmit,
-  isSummaryEditing,
-  onSummaryEdit,
-  onSummaryCancel,
-  isSummarySubmitting,
 }: SkillHeaderProps) {
   const formattedStats = formatSkillStatsTriplet(skill.stats);
   const installOwnerId = owner?._id ?? skill.ownerPublisherId ?? skill.ownerUserId ?? null;
@@ -132,11 +111,11 @@ export function SkillHeader({
       ? `${convexSiteUrl}/api/v1/download?slug=${encodeURIComponent(skill.slug)}`
       : null;
   const hasTitleActions = isStaff;
-  const hasSidebarActions = Boolean(downloadHref) || Boolean(onOpenReport) || Boolean(settingsHref);
+  const hasSidebarActions =
+    Boolean(downloadHref) || Boolean(onOpenReport) || Boolean(settingsHref) || hasTitleActions;
   const badges = getSkillBadges(skill);
   const showHeroMeta = Boolean((forkOf && forkOfHref) || canonicalHref);
   const showTitleBadges = badges.length > 0;
-  const showStaffVisibilityBadge = Boolean(isStaff && staffVisibilityTag);
 
   return (
     <>
@@ -241,6 +220,18 @@ export function SkillHeader({
                     </a>
                   </Button>
                 ) : null}
+                {hasTitleActions ? (
+                  <>
+                    {isStaff ? (
+                      <Button asChild variant="outline" className="skill-sidebar-action-button">
+                        <Link to="/management" search={{ skill: skill.slug, plugin: undefined }}>
+                          <ShieldCheck size={14} aria-hidden="true" />
+                          Manage
+                        </Link>
+                      </Button>
+                    ) : null}
+                  </>
+                ) : null}
               </div>
             ) : null}
           </div>
@@ -275,81 +266,13 @@ export function SkillHeader({
                   </div>
                 ) : null}
                 {nixPlugin ? <Badge variant="accent">Plugin bundle (nix)</Badge> : null}
-                {hasTitleActions ? (
-                  <div className="skill-title-actions">
-                    {isStaff ? (
-                      <Button asChild variant="outline" size="sm">
-                        <Link to="/management" search={{ skill: skill.slug, plugin: undefined }}>
-                          Manage
-                        </Link>
-                      </Button>
-                    ) : null}
-                  </div>
-                ) : null}
               </div>
               <div className="skill-summary-block">
-                {isSummaryEditing ? (
-                  <form
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      onSummarySubmit();
-                    }}
-                    className="summary-edit-form"
-                  >
-                    <textarea
-                      className="search-input summary-textarea"
-                      value={summary}
-                      onChange={(event) => onSummaryChange(event.target.value)}
-                      placeholder="Enter a brief summary..."
-                      maxLength={500}
-                      rows={2}
-                    />
-                    <div className="summary-edit-actions">
-                      <Button type="submit" size="sm" disabled={isSummarySubmitting}>
-                        <Check size={14} aria-hidden="true" />
-                        {isSummarySubmitting ? "Saving..." : "Save"}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        type="button"
-                        onClick={onSummaryCancel}
-                        disabled={isSummarySubmitting}
-                      >
-                        <X size={14} aria-hidden="true" />
-                        Cancel
-                      </Button>
-                    </div>
-                  </form>
-                ) : (
-                  <p className="section-subtitle skill-summary-line">
-                    {skill.summary ?? "No summary provided."}
-                    {canEditSummary ? (
-                      <button
-                        className="edit-summary-btn"
-                        type="button"
-                        onClick={onSummaryEdit}
-                        aria-label="Edit summary"
-                        title="Edit summary"
-                      >
-                        <Pencil size={14} aria-hidden="true" />
-                      </button>
-                    ) : null}
-                  </p>
-                )}
+                <p className="section-subtitle skill-summary-line">
+                  {skill.summary ?? "No summary provided."}
+                </p>
               </div>
 
-              {showStaffVisibilityBadge ? (
-                <div className="skill-hero-badges">
-                  <Badge variant={isAutoHidden || isRemoved ? "accent" : "compact"}>
-                    {staffVisibilityTag}
-                  </Badge>
-                </div>
-              ) : null}
-
-              {isStaff && staffModerationNote ? (
-                <div className="skill-hero-note">{staffModerationNote}</div>
-              ) : null}
               {nixPlugin ? (
                 <div className="skill-hero-note">
                   Bundles the skill pack, CLI binary, and config requirements in one Nix install.

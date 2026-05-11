@@ -34,7 +34,7 @@ type PackageArtifactStatusInput = {
 
 export function artifactStatusToScanStatus(status: Pick<ArtifactDisplayStatus, "key" | "label">) {
   if (status.key === "blocked" || status.label === "Blocked") return "malicious";
-  if (status.key === "suspicious" || status.label === "Review") return "suspicious";
+  if (status.key === "suspicious" || status.label === "Review") return "review";
   if (status.key === "visible" || status.label === "Visible") return "clean";
   if (status.key === "pending" || status.label === "Pending checks") return "pending";
   return "unknown";

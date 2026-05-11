@@ -2,7 +2,7 @@ import { useAuthActions } from "@convex-dev/auth/react";
 import { useNavigate } from "@tanstack/react-router";
 import type { ClawdisSkillMetadata } from "clawhub-schema";
 import { useAction, useMutation, useQuery } from "convex/react";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, TriangleAlert } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
@@ -30,6 +30,7 @@ import { SkillHeader } from "./SkillHeader";
 import { buildSkillInstallTabs } from "./SkillInstallCard";
 import { SkillOwnershipPanel } from "./SkillOwnershipPanel";
 import { SkillReportDialog } from "./SkillReportDialog";
+import { Alert, AlertDescription } from "./ui/alert";
 import { Card } from "./ui/card";
 
 type SkillDetailPageProps = {
@@ -86,6 +87,69 @@ function formatReportError(error: unknown) {
   return "Unable to submit report. Please try again.";
 }
 
+function buildStaffVisibilityAlert({
+  artifactKind,
+  moderationReason,
+  moderationNote,
+  isAutoHidden,
+  isRemoved,
+  isSoftDeleted,
+  modInfo,
+}: {
+  artifactKind: "skill" | "plugin";
+  moderationReason?: string;
+  moderationNote?: string;
+  isAutoHidden: boolean;
+  isRemoved: boolean;
+  isSoftDeleted: boolean;
+  modInfo?: { isMalwareBlocked: boolean; isSuspicious: boolean } | null;
+}) {
+  if (isRemoved) {
+    return `This ${artifactKind} was removed from public view by moderation.`;
+  }
+
+  let reason = "by moderation.";
+  if (isAutoHidden) {
+    reason = "because it was automatically hidden after multiple reports.";
+  } else if (moderationReason === "manual.report") {
+    reason = "because staff reviewed a report.";
+  } else if (moderationReason === "pending.scan" || moderationReason === "pending.scan.stale") {
+    reason = "while security checks finish.";
+  } else if (moderationReason === "quality.low") {
+    reason = "because it is on quality hold.";
+  } else if (moderationReason === "user.banned") {
+    reason = "because the publisher account is banned.";
+  } else if (moderationReason === "user.moderation") {
+    reason = "because the publisher account is under moderation.";
+  } else if (moderationReason === "owner.merged") {
+    reason = "because it was merged into another skill.";
+  } else if (moderationReason === "security.redaction") {
+    reason = "because it was hidden for security redaction.";
+  } else if (moderationReason?.startsWith("scanner.") && moderationReason.endsWith(".malicious")) {
+    reason = "because automated security checks marked it suspicious or malicious.";
+  } else if (moderationReason?.startsWith("scanner.") && moderationReason.endsWith(".suspicious")) {
+    reason = "because automated security checks marked it suspicious or malicious.";
+  } else if (modInfo?.isMalwareBlocked) {
+    reason = "because automated security checks marked it suspicious or malicious.";
+  } else if (modInfo?.isSuspicious) {
+    reason = "because automated security checks marked it suspicious or malicious.";
+  } else if (isSoftDeleted && !moderationReason) {
+    reason = "because it was unpublished.";
+  }
+
+  const base = `This ${artifactKind} is hidden from public view ${reason}`;
+  if (!moderationNote) return base;
+
+  const normalizedNote = moderationNote.trim();
+  const generatedNotes = new Set([
+    "Auto-hidden after 4 unique reports.",
+    "Removed from public view.",
+    "Hidden from public view.",
+  ]);
+  if (!normalizedNote || generatedNotes.has(normalizedNote)) return base;
+  return `${base} Moderator note: ${normalizedNote}`;
+}
+
 export function SkillDetailPage({
   slug,
   canonicalOwner,
@@ -128,9 +192,6 @@ export function SkillDetailPage({
   const [reportReason, setReportReason] = useState("");
   const [reportError, setReportError] = useState<string | null>(null);
   const [isSubmittingReport, setIsSubmittingReport] = useState(false);
-  const [summary, setSummary] = useState("");
-  const [isSummaryEditing, setIsSummaryEditing] = useState(false);
-  const [isSummarySubmitting, setIsSummarySubmitting] = useState(false);
 
   const isLoadingSkill = isStaff ? staffResult === undefined : result === undefined;
   const skill = result?.skill;
@@ -228,15 +289,17 @@ export function SkillDetailPage({
       : isHidden
         ? "Hidden"
         : null;
-  const staffModerationNote =
-    staffSkill?.moderationNotes?.trim() ||
-    (staffVisibilityTag
-      ? isAutoHidden
-        ? "Auto-hidden after 4+ unique reports."
-        : isRemoved
-          ? "Removed from public view."
-          : "Hidden from public view."
-      : null);
+  const staffModerationNote = staffVisibilityTag
+    ? buildStaffVisibilityAlert({
+        artifactKind: "skill",
+        moderationReason: staffSkill?.moderationReason,
+        moderationNote: staffSkill?.moderationNotes?.trim(),
+        isAutoHidden,
+        isRemoved,
+        isSoftDeleted: Boolean(staffSkill?.softDeletedAt),
+        modInfo,
+      })
+    : null;
 
   const latestVersionId = latestVersion?._id ?? null;
 
@@ -320,12 +383,6 @@ export function SkillDetailPage({
     };
   }, [getReadme, latestVersionId, loadedReadmeVersionId, readme, readmeError]);
 
-  useEffect(() => {
-    if (skill && !isSummaryEditing) {
-      setSummary(skill.summary ?? "");
-    }
-  }, [skill, isSummaryEditing]);
-
   const closeReportDialog = () => {
     setIsReportDialogOpen(false);
     setReportReason("");
@@ -340,38 +397,22 @@ export function SkillDetailPage({
     setIsReportDialogOpen(true);
   };
 
-  const submitSummary = async () => {
+  const submitSummary = async (value: string) => {
     if (!skill) return;
-    const nextSummary = summary.trim();
+    const nextSummary = value.trim();
     if (nextSummary === (skill.summary ?? "").trim()) {
-      setIsSummaryEditing(false);
       return;
     }
-    setIsSummarySubmitting(true);
     try {
       await updateSummary({
         skillId: skill._id,
         summary: nextSummary,
       });
-      setSummary(nextSummary);
-      setIsSummaryEditing(false);
       toast.success("Summary updated.");
     } catch (error) {
       console.error("Failed to update summary", error);
       toast.error(getUserFacingConvexError(error, "Failed to update summary."));
-    } finally {
-      setIsSummarySubmitting(false);
     }
-  };
-
-  const startSummaryEdit = () => {
-    setSummary(skill?.summary ?? "");
-    setIsSummaryEditing(true);
-  };
-
-  const cancelSummaryEdit = () => {
-    setSummary(skill?.summary ?? "");
-    setIsSummaryEditing(false);
   };
 
   const submitReport = async () => {
@@ -456,6 +497,18 @@ export function SkillDetailPage({
       suppressedMessage={scanResultsSuppressedMessage}
     />
   ) : null;
+  const priorityContent =
+    staffModerationNote || securitySummary ? (
+      <>
+        {staffModerationNote ? (
+          <Alert variant="warn" className="skill-visibility-alert" role="status">
+            <TriangleAlert size={18} aria-hidden="true" />
+            <AlertDescription>{staffModerationNote}</AlertDescription>
+          </Alert>
+        ) : null}
+        {securitySummary}
+      </>
+    ) : null;
   const settingsPanel =
     canAccessSettings && skill ? (
       <SkillOwnershipPanel
@@ -464,6 +517,8 @@ export function SkillDetailPage({
         ownerHandle={ownerHandle}
         ownerId={owner?._id ?? null}
         ownedSkills={(ownedSkills ?? []).filter((entry) => entry._id !== skill._id)}
+        summary={skill.summary ?? ""}
+        onSaveSummary={canEditSummary ? submitSummary : null}
         clawScanNote={latestVersion?.clawScanNote ?? null}
         onSavePublisherNoteAndRescan={submitPublisherNoteAndRescan}
       />
@@ -524,7 +579,6 @@ export function SkillDetailPage({
           canonical={canonical}
           canonicalHref={canonicalHref}
           canonicalOwnerHandle={canonicalOwnerHandle}
-          staffModerationNote={staffModerationNote}
           staffVisibilityTag={staffVisibilityTag}
           isAutoHidden={isAutoHidden}
           isRemoved={isRemoved}
@@ -533,16 +587,8 @@ export function SkillDetailPage({
           configRequirements={configRequirements}
           cliHelp={cliHelp}
           clawdis={clawdis}
-          priorityContent={securitySummary}
+          priorityContent={priorityContent}
           settingsHref={settingsHref}
-          canEditSummary={canEditSummary}
-          summary={summary}
-          onSummaryChange={setSummary}
-          onSummarySubmit={submitSummary}
-          isSummaryEditing={isSummaryEditing}
-          onSummaryEdit={startSummaryEdit}
-          onSummaryCancel={cancelSummaryEdit}
-          isSummarySubmitting={isSummarySubmitting}
         >
           {nixSnippet ? (
             <Card>

@@ -49,4 +49,94 @@ describe("DetailSecuritySummary", () => {
     expect(screen.getByRole("link", { name: /Static analysis.*Cleared/i })).toBeTruthy();
     expect(screen.queryByText("Suspicious")).toBeNull();
   });
+
+  it("shows review and suspicious as separate audit states", () => {
+    const { rerender } = render(
+      <DetailSecuritySummary
+        scannerBasePath="/steipete/weather/security"
+        vtAnalysis={{ status: "clean", checkedAt: 1 }}
+        llmAnalysis={{
+          status: "suspicious",
+          verdict: "suspicious",
+          checkedAt: 1,
+          riskSummary: {
+            abnormal_behavior_control: {
+              status: "concern",
+              summary: "Needs context.",
+              highestSeverity: "medium",
+            },
+            permission_boundary: { status: "none", summary: "No issue." },
+            sensitive_data_protection: { status: "none", summary: "No issue." },
+          },
+        }}
+        staticScan={{
+          status: "clean",
+          reasonCodes: [],
+          findings: [],
+          summary: "Clean.",
+          engineVersion: "v1",
+          checkedAt: 1,
+        }}
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: "ClawScan: Review" })).toBeTruthy();
+    expect(screen.getAllByText("Review").length).toBeGreaterThan(0);
+
+    rerender(
+      <DetailSecuritySummary
+        scannerBasePath="/steipete/weather/security"
+        vtAnalysis={{ status: "clean", checkedAt: 1 }}
+        llmAnalysis={{
+          status: "suspicious",
+          verdict: "suspicious",
+          checkedAt: 1,
+          riskSummary: {
+            abnormal_behavior_control: {
+              status: "concern",
+              summary: "High concern.",
+              highestSeverity: "high",
+            },
+            permission_boundary: { status: "none", summary: "No issue." },
+            sensitive_data_protection: { status: "none", summary: "No issue." },
+          },
+        }}
+        staticScan={{
+          status: "clean",
+          reasonCodes: [],
+          findings: [],
+          summary: "Clean.",
+          engineVersion: "v1",
+          checkedAt: 1,
+        }}
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: "ClawScan: Suspicious" })).toBeTruthy();
+    expect(screen.getAllByText("Suspicious").length).toBeGreaterThan(0);
+  });
+
+  it("renders clean scanner outcomes as pass in the user-facing audit UI", () => {
+    render(
+      <DetailSecuritySummary
+        scannerBasePath="/steipete/weather/security"
+        vtAnalysis={{ status: "clean", checkedAt: 1 }}
+        llmAnalysis={{ status: "clean", checkedAt: 1 }}
+        staticScan={{
+          status: "clean",
+          reasonCodes: [],
+          findings: [],
+          summary: "Clean.",
+          engineVersion: "v1",
+          checkedAt: 1,
+        }}
+      />,
+    );
+
+    expect(screen.getAllByText("Pass")).toHaveLength(4);
+    expect(screen.getByRole("link", { name: "VirusTotal: Pass" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "ClawScan: Pass" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Static analysis: Pass" })).toBeTruthy();
+    expect(screen.queryByText("Benign")).toBeNull();
+  });
 });

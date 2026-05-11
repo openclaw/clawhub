@@ -84,6 +84,7 @@
     "h3": "2.0.1-rc.22",
     "ignore": "^7.0.5",
     "lucide-react": "1.14.0",
+    "mime": "^4.1.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "react-markdown": "^10.1.0",

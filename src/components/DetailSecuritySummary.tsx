@@ -1,9 +1,12 @@
 import {
+  getClawScanDisplayStatus,
   getScanStatusInfo,
+  getVirusTotalDisplayStatus,
   type LlmAnalysis,
   type StaticFinding,
   type VtAnalysis,
 } from "./SkillSecurityScanResults";
+import { Badge, type BadgeProps } from "./ui/badge";
 
 type DetailSecuritySummaryProps = {
   scannerBasePath: string;
@@ -23,16 +26,43 @@ type DetailSecuritySummaryProps = {
 };
 
 function statusFromStaticScan(staticScan: DetailSecuritySummaryProps["staticScan"]) {
-  if (staticScan?.status) return staticScan.status;
+  const status = staticScan?.status?.trim().toLowerCase();
+  if (status === "malicious") return "malicious";
+  if (status === "clean" || status === "benign") return "benign";
+  if (status === "suspicious") return "advisory";
+  if (status) return status;
   return "pending";
 }
 
 function severityLevelForStatus(status: string) {
   const normalized = status.toLowerCase();
-  if (normalized === "malicious" || normalized === "error" || normalized === "failed") return 3;
-  if (normalized === "suspicious") return 2;
+  if (normalized === "malicious" || normalized === "error" || normalized === "failed") return 4;
+  if (normalized === "suspicious") return 3;
+  if (normalized === "review") return 2;
   if (normalized === "clean" || normalized === "benign" || normalized === "cleared") return 1;
   return 0;
+}
+
+function aggregateAuditVerdict(statuses: string[]) {
+  const normalized = statuses.map((status) => status.toLowerCase());
+  if (
+    normalized.some((status) => status === "malicious" || status === "error" || status === "failed")
+  ) {
+    return "malicious";
+  }
+  if (normalized.includes("suspicious")) return "suspicious";
+  return "benign";
+}
+
+function auditVerdictBadgeVariant(status: string): BadgeProps["variant"] {
+  switch (status.toLowerCase()) {
+    case "malicious":
+      return "destructive";
+    case "suspicious":
+      return "warning";
+    default:
+      return "success";
+  }
 }
 
 function ScannerSignal({
@@ -64,6 +94,7 @@ function ScannerSignal({
         <span />
         <span />
         <span />
+        <span />
       </div>
       <p>{description}</p>
     </a>
@@ -78,19 +109,23 @@ export function DetailSecuritySummary({
   suppressScanResults = false,
   suppressedMessage,
 }: DetailSecuritySummaryProps) {
-  const vtStatus = suppressScanResults
-    ? "cleared"
-    : (vtAnalysis?.verdict ?? vtAnalysis?.status ?? "pending");
-  const llmStatus = suppressScanResults
-    ? "cleared"
-    : (llmAnalysis?.verdict ?? llmAnalysis?.status ?? "pending");
+  const vtStatus = suppressScanResults ? "cleared" : getVirusTotalDisplayStatus(vtAnalysis);
+  const llmStatus = suppressScanResults ? "cleared" : getClawScanDisplayStatus(llmAnalysis);
   const staticStatus = suppressScanResults ? "cleared" : statusFromStaticScan(staticScan);
+  const auditVerdict = aggregateAuditVerdict([vtStatus, llmStatus, staticStatus]);
+  const auditVerdictInfo = getScanStatusInfo(auditVerdict);
   return (
     <section className="security-audit-section" aria-labelledby="security-audit-heading">
       <div className="security-audit-title-row">
         <h3 id="security-audit-heading" className="skill-install-panel-title security-audit-title">
           Audits
         </h3>
+        <Badge
+          variant={auditVerdictBadgeVariant(auditVerdict)}
+          className="security-audit-verdict-badge min-h-0 rounded-[4px] px-2.5 py-0.5 text-[0.78rem] leading-[1.3]"
+        >
+          {auditVerdictInfo.label}
+        </Badge>
       </div>
       <div className="security-audit-row">
         {suppressScanResults && suppressedMessage ? (

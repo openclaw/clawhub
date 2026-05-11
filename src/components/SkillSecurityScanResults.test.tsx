@@ -243,7 +243,7 @@ describe("SecurityScanResults static guidance", () => {
     );
 
     expect(screen.getByRole("heading", { name: "Todo Guard" })).toBeTruthy();
-    expect(screen.getAllByText("Review").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Suspicious").length).toBeGreaterThan(0);
     expect(screen.getByText(/Audited by ClawScan/i)).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Overview" })).toBeTruthy();
     expect(screen.getByText(/Collects workspace secrets/i)).toBeTruthy();
