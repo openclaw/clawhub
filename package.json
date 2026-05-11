@@ -129,6 +129,7 @@
   },
   "overrides": {
     "dompurify": "3.4.1",
+    "next": "16.2.6",
     "postcss": "8.5.12"
   }
 }

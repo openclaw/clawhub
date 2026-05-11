@@ -68,7 +68,7 @@ function readDetachedPid() {
 }
 
 export function isRunningPid(pid: number | null) {
-  if (!Number.isSafeInteger(pid) || (pid ?? 0) <= 0) return false;
+  if (pid === null || !Number.isSafeInteger(pid) || pid <= 0) return false;
   try {
     process.kill(pid, 0);
     return true;
