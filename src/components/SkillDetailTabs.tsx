@@ -1,9 +1,11 @@
+import type { ClawdisSkillMetadata } from "clawhub-schema";
 import { lazy, Suspense } from "react";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { rehypeProxyImages } from "../lib/rehypeProxyImages";
 import { resolveSkillReadmeHref } from "../lib/skillReadmeLinks";
+import { buildSkillInstallTabs, type SkillInstallTabId } from "./SkillInstallCard";
 import { SkillVersionsPanel } from "./SkillVersionsPanel";
 
 const REHYPE_PLUGINS = [rehypeProxyImages];
@@ -18,7 +20,7 @@ const SkillFilesPanel = lazy(() =>
 
 type SkillFile = Doc<"skillVersions">["files"][number];
 
-export type DetailTab = "readme" | "files" | "compare" | "versions";
+export type DetailTab = "readme" | "files" | "compare" | "versions" | SkillInstallTabId;
 
 type SkillDetailTabsProps = {
   activeTab: DetailTab;
@@ -34,6 +36,8 @@ type SkillDetailTabsProps = {
   nixPlugin: boolean;
   suppressVersionScanResults: boolean;
   scanResultsSuppressedMessage: string | null;
+  clawdis: ClawdisSkillMetadata | undefined;
+  osLabels: string[];
 };
 
 export function SkillDetailTabs({
@@ -50,23 +54,41 @@ export function SkillDetailTabs({
   nixPlugin,
   suppressVersionScanResults,
   scanResultsSuppressedMessage,
+  clawdis,
+  osLabels,
 }: SkillDetailTabsProps) {
+  const installTabs = buildSkillInstallTabs({ clawdis, osLabels });
+  const activeInstallTab = installTabs.find((tab) => tab.id === activeTab);
   const compareEnabled = (versions?.length ?? 0) > 1;
+  const selectTab = (tab: DetailTab) => {
+    setActiveTab(tab);
+    if (typeof window === "undefined") return;
+    const hash = tab === "readme" ? "" : `#${tab}`;
+    window.history.replaceState(
+      null,
+      "",
+      `${window.location.pathname}${window.location.search}${hash}`,
+    );
+  };
 
   return (
-    <div className="card tab-card">
-      <div className="tab-header">
+    <div className="tab-card">
+      <div className="tab-header" role="tablist" aria-label="Skill detail tabs">
         <button
           className={`tab-button${activeTab === "readme" ? " is-active" : ""}`}
           type="button"
-          onClick={() => setActiveTab("readme")}
+          role="tab"
+          aria-selected={activeTab === "readme"}
+          onClick={() => selectTab("readme")}
         >
-          README
+          SKILL.md
         </button>
         <button
           className={`tab-button${activeTab === "files" ? " is-active" : ""}`}
           type="button"
-          onClick={() => setActiveTab("files")}
+          role="tab"
+          aria-selected={activeTab === "files"}
+          onClick={() => selectTab("files")}
         >
           Files
         </button>
@@ -74,7 +96,9 @@ export function SkillDetailTabs({
           <button
             className={`tab-button${activeTab === "compare" ? " is-active" : ""}`}
             type="button"
-            onClick={() => setActiveTab("compare")}
+            role="tab"
+            aria-selected={activeTab === "compare"}
+            onClick={() => selectTab("compare")}
             onMouseEnter={() => {
               onCompareIntent();
               void import("./SkillDiffCard");
@@ -90,10 +114,24 @@ export function SkillDetailTabs({
         <button
           className={`tab-button${activeTab === "versions" ? " is-active" : ""}`}
           type="button"
-          onClick={() => setActiveTab("versions")}
+          role="tab"
+          aria-selected={activeTab === "versions"}
+          onClick={() => selectTab("versions")}
         >
           Versions
         </button>
+        {installTabs.map((tab) => (
+          <button
+            key={tab.id}
+            className={`tab-button${activeTab === tab.id ? " is-active" : ""}`}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === tab.id}
+            onClick={() => selectTab(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
 
       {activeTab === "readme" ? (
@@ -145,6 +183,10 @@ export function SkillDetailTabs({
           suppressScanResults={suppressVersionScanResults}
           suppressedMessage={scanResultsSuppressedMessage}
         />
+      ) : null}
+
+      {activeInstallTab ? (
+        <div className="tab-body skill-install-tabs">{activeInstallTab.panel}</div>
       ) : null}
     </div>
   );

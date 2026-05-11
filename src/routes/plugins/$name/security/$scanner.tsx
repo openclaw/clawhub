@@ -1,4 +1,6 @@
 import { createFileRoute, notFound, redirect } from "@tanstack/react-router";
+import { useQuery } from "convex/react";
+import { api } from "../../../../../convex/_generated/api";
 import { SecurityScannerPage, type ScannerSlug } from "../../../../components/SecurityScannerPage";
 import { getOpenClawPackageCandidateNames } from "../../../../lib/openClawExtensionSlugs";
 import {
@@ -14,7 +16,7 @@ import {
   parseScopedPackageName,
 } from "../../../../lib/pluginRoutes";
 
-const SCANNERS = new Set<ScannerSlug>(["virustotal", "openclaw", "static-analysis"]);
+const SCANNERS = new Set<ScannerSlug>(["virustotal", "clawscan", "static-analysis"]);
 
 export type PluginSecurityLoaderData = {
   detail: PackageDetailResponse;
@@ -75,7 +77,7 @@ export function pluginSecurityHead(
   const scannerLabel =
     scanner === "virustotal"
       ? "VirusTotal"
-      : scanner === "openclaw"
+      : scanner === "clawscan"
         ? "ClawScan"
         : "Static analysis";
   return {
@@ -95,6 +97,12 @@ export function pluginSecurityHead(
 
 export const Route = createFileRoute("/plugins/$name/security/$scanner")({
   beforeLoad: ({ params }) => {
+    if (params.scanner === "openclaw") {
+      throw redirect({
+        href: buildPluginSecurityHref(params.name, "clawscan"),
+        statusCode: 308,
+      });
+    }
     parsePluginSecurityScanner(params.scanner);
     if (parseScopedPackageName(params.name)) {
       throw redirect({
@@ -131,6 +139,10 @@ export function PluginSecurityScannerPage({
   const { detail, version, resolvedName, rateLimited } = loaderData;
   const pkg = detail.package;
   const release = version?.version ?? null;
+  const settings = useQuery(api.packages.getClawScanNoteSettings, {
+    name: resolvedName,
+    candidateNames: getOpenClawPackageCandidateNames(name),
+  });
 
   if (rateLimited) {
     return (
@@ -165,6 +177,9 @@ export function PluginSecurityScannerPage({
       vtAnalysis={release.vtAnalysis ?? null}
       llmAnalysis={release.llmAnalysis ?? null}
       staticScan={release.staticScan ?? null}
+      clawScanNote={release.clawScanNote ?? null}
+      canManageArtifact={Boolean(settings)}
+      settingsHref={settings ? `${buildPluginDetailHref(resolvedName)}/settings` : null}
     />
   );
 }

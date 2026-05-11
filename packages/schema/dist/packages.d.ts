@@ -140,6 +140,8 @@ export declare const PackageLlmAnalysisSchema: import("arktype/internal/variants
     }[] | undefined;
     guidance?: string | undefined;
     findings?: string | undefined;
+    agenticRiskFindings?: unknown[] | undefined;
+    riskSummary?: unknown;
     model?: string | undefined;
 }, {}>;
 export type PackageLlmAnalysis = (typeof PackageLlmAnalysisSchema)[inferred];
@@ -198,6 +200,7 @@ export declare const PackagePublishRequestSchema: import("arktype/internal/varia
     }[];
     displayName?: string | undefined;
     ownerHandle?: string | undefined;
+    clawScanNote?: string | undefined;
     manualOverrideReason?: string | undefined;
     channel?: "official" | "community" | "private" | undefined;
     tags?: string[] | undefined;
@@ -464,8 +467,12 @@ export declare const ApiV1PackageVersionResponseSchema: import("arktype/internal
             }[] | undefined;
             guidance?: string | undefined;
             findings?: string | undefined;
+            agenticRiskFindings?: unknown[] | undefined;
+            riskSummary?: unknown;
             model?: string | undefined;
         } | null | undefined;
+        clawScanNote?: string | null | undefined;
+        clawScanNoteUpdatedAt?: number | null | undefined;
         staticScan?: {
             status: string;
             reasonCodes: string[];
@@ -671,7 +678,7 @@ export type ApiV1PackageArtifactBackfillResponse = (typeof ApiV1PackageArtifactB
 export declare const PackageReadinessCheckSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     id: string;
     label: string;
-    status: "warn" | "fail" | "pass";
+    status: "warn" | "pass" | "fail";
     message: string;
 }, {}>;
 export type PackageReadinessCheck = (typeof PackageReadinessCheckSchema)[inferred];
@@ -687,7 +694,7 @@ export declare const ApiV1PackageReadinessResponseSchema: import("arktype/intern
     checks: {
         id: string;
         label: string;
-        status: "warn" | "fail" | "pass";
+        status: "warn" | "pass" | "fail";
         message: string;
     }[];
     blockers: string[];

@@ -3,6 +3,7 @@ import type { PackageListItem } from "../lib/packageApi";
 import { familyLabel } from "../lib/packageLabels";
 import { MarketplaceIcon } from "./MarketplaceIcon";
 import { Badge } from "./ui/badge";
+import { VerifiedBadge } from "./VerifiedBadge";
 
 type PluginListItemProps = {
   item: PackageListItem;
@@ -62,7 +63,7 @@ export function PluginListItem({ item, variant = "list" }: PluginListItemProps) 
           ) : null}
           <span className="skill-list-item-name">{item.displayName}</span>
           <Badge variant="compact">{familyLabel(item.family)}</Badge>
-          {item.isOfficial ? <Badge variant="accent">Verified</Badge> : null}
+          {item.isOfficial ? <VerifiedBadge /> : null}
         </div>
         <p className="skill-list-item-summary">
           {item.summary ?? "Plugin package for agent workflows."}

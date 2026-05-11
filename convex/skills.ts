@@ -34,6 +34,7 @@ import {
 import { getSkillBadgeMap, getSkillBadgeMaps, isSkillHighlighted } from "./lib/badges";
 import { scheduleNextBatchIfNeeded } from "./lib/batching";
 import { generateChangelogPreview as buildChangelogPreview } from "./lib/changelog";
+import { normalizeClawScanNoteForWrite } from "./lib/clawScanNote";
 import { mergeDepRegistryFinding } from "./lib/depRegistryScan";
 import { embeddingVisibilityFor } from "./lib/embeddingVisibility";
 import {
@@ -113,13 +114,6 @@ import { assertValidSkillSlug, normalizeSkillSlug } from "./lib/skillSlugValidat
 import { readCanonicalStat } from "./lib/skillStats";
 import { runStaticPublishScan } from "./lib/staticPublishScan";
 import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";
-import {
-  assertCanRequestRescan,
-  buildRescanState,
-  errorMessage,
-  finalizeInProgressRescanRequestsForTarget,
-} from "./model/rescans/policy";
-import { getLatestSkillRescanTarget, insertSkillRescanRequest } from "./model/skills/rescans";
 import schema from "./schema";
 
 const MAX_OWNER_SUMMARY_LENGTH = 500;
@@ -1469,6 +1463,7 @@ type PublicSkillVersion = {
     engineVersion: NonNullable<Doc<"skillVersions">["staticScan"]>["engineVersion"];
     checkedAt: NonNullable<Doc<"skillVersions">["staticScan"]>["checkedAt"];
   };
+  clawScanNote?: string;
 };
 
 type ManagementSkillEntry = {
@@ -1499,7 +1494,6 @@ type DashboardSkillListItem = {
   isSuspicious?: boolean;
   pendingReview?: true;
   qualityDecision?: NonNullable<Doc<"skills">["quality"]>["decision"];
-  rescanState: Awaited<ReturnType<typeof buildRescanState>> | null;
   latestVersion: {
     version: string;
     createdAt: number;
@@ -1666,6 +1660,7 @@ function toPublicSkillVersion(
     sha256hash: version.sha256hash,
     vtAnalysis: version.vtAnalysis,
     llmAnalysis: version.llmAnalysis,
+    clawScanNote: version.clawScanNote,
     staticScan: version.staticScan
       ? {
           status: version.staticScan.status,
@@ -1779,13 +1774,6 @@ async function toDashboardSkillListItem(
         ? true
         : undefined,
     qualityDecision: skill.quality?.decision,
-    rescanState:
-      latestVersion && !latestVersion.softDeletedAt
-        ? await buildRescanState(ctx, {
-            kind: "skill",
-            artifactId: latestVersion._id,
-          })
-        : null,
     latestVersion:
       latestVersion && !latestVersion.softDeletedAt
         ? {
@@ -3479,6 +3467,8 @@ async function getActiveSkillVersionForAppeal(
   return skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null;
 }
 
+// Deprecated compatibility path. First-class appeal intake is no longer exposed
+// in the CLI/docs; keep this route backed until legacy clients age out.
 export const submitSkillAppealForUserInternal = internalMutation({
   args: {
     actorUserId: v.id("users"),
@@ -5614,11 +5604,6 @@ export const updateSkillVersionStaticScanInternal = internalMutation({
       staticScan: args.staticScan,
     });
     const updatedVersion = { ...version, staticScan: args.staticScan };
-    await finalizeInProgressRescanRequestsForTarget(
-      ctx,
-      { kind: "skill", artifactId: version._id },
-      updatedVersion,
-    );
 
     const skill = await ctx.db.get(args.skillId);
     if (!skill) return { ok: true as const, skipped: "missing" as const };
@@ -5646,12 +5631,14 @@ export const updateSkillVersionStaticScanInternal = internalMutation({
     await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
 
     if (patch.moderationVerdict === "malicious" && skill.ownerUserId) {
-      await ctx.scheduler.runAfter(0, internal.users.placeUserUnderModerationInternal, {
+      const trigger =
+        patch.moderationReasonCodes?.find((code) => code.startsWith("malicious.")) ??
+        "static.malicious";
+      await ctx.scheduler.runAfter(0, internal.users.autobanMalwareAuthorInternal, {
         ownerUserId: skill.ownerUserId,
         slug: skill.slug,
-        reason:
-          patch.moderationReasonCodes?.find((code) => code.startsWith("malicious.")) ??
-          "malicious.static_scan",
+        ...(updatedVersion.sha256hash ? { sha256hash: updatedVersion.sha256hash } : {}),
+        trigger,
       });
     }
 
@@ -5782,163 +5769,57 @@ export const backfillSkillStaticScans: ReturnType<typeof action> = action({
   },
 });
 
-async function markSkillRescanRequest(
-  ctx: { runMutation: (ref: never, args: never) => Promise<unknown> },
-  requestId: Id<"rescanRequests">,
-  status: "completed" | "failed",
-  error?: string,
-) {
-  await ctx.runMutation(
-    internal.rescanRequests.markStatusInternal as never,
-    {
-      requestId,
-      status,
-      error,
-    } as never,
-  );
-}
-
-export const getRescanState = query({
+export const updateLatestClawScanNoteAndRequestRescan = mutation({
   args: {
     skillId: v.id("skills"),
+    clawScanNote: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { user } = await requireUser(ctx);
-    const target = await getLatestSkillRescanTarget(ctx, args.skillId);
-    await assertCanManageOwnedResource(ctx, {
-      actor: user,
-      ownerUserId: target.skill.ownerUserId,
-      ownerPublisherId: target.skill.ownerPublisherId,
-      allowPlatformModerator: true,
-    });
-    return {
-      targetKind: "skill" as const,
-      targetVersion: target.version.version,
-      skillVersionId: target.version._id,
-      ...(await buildRescanState(ctx, {
-        kind: "skill",
-        artifactId: target.version._id,
-      })),
-    };
-  },
-});
-
-export const requestRescan = mutation({
-  args: {
-    skillId: v.id("skills"),
-  },
-  handler: async (ctx, args) => {
-    const { user } = await requireUser(ctx);
-    const target = await getLatestSkillRescanTarget(ctx, args.skillId);
-    const isPlatformStaff = user.role === "admin" || user.role === "moderator";
-    await assertCanManageOwnedResource(ctx, {
-      actor: user,
-      ownerUserId: target.skill.ownerUserId,
-      ownerPublisherId: target.skill.ownerPublisherId,
-      allowPlatformModerator: true,
-    });
-    await assertCanRequestRescan(
-      ctx,
-      {
-        kind: "skill",
-        artifactId: target.version._id,
-      },
-      { ignoreRequestLimit: isPlatformStaff },
-    );
-
-    const requestId = await insertSkillRescanRequest(ctx, user, target);
-    await ctx.scheduler.runAfter(0, internal.skills.dispatchSkillRescanInternal, {
-      requestId,
-      skillId: target.skill._id,
-      versionId: target.version._id,
-    });
-
-    return {
-      requestId,
-      ...(await buildRescanState(ctx, {
-        kind: "skill",
-        artifactId: target.version._id,
-      })),
-    };
-  },
-});
-
-export const requestRescanForApiTokenInternal = internalMutation({
-  args: {
-    actorUserId: v.id("users"),
-    slug: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
-
-    const resolved = await resolveSkillBySlugOrAlias(ctx, args.slug.trim().toLowerCase());
-    const skill = resolved.skill;
-    if (!skill) throw new ConvexError("Skill not found");
-
-    const target = await getLatestSkillRescanTarget(ctx, skill._id);
-    const isPlatformStaff = actor.role === "admin" || actor.role === "moderator";
-    await assertCanManageOwnedResource(ctx, {
-      actor,
-      ownerUserId: target.skill.ownerUserId,
-      ownerPublisherId: target.skill.ownerPublisherId,
-      allowPlatformModerator: true,
-    });
-    await assertCanRequestRescan(
-      ctx,
-      {
-        kind: "skill",
-        artifactId: target.version._id,
-      },
-      { ignoreRequestLimit: isPlatformStaff },
-    );
-
-    const requestId = await insertSkillRescanRequest(ctx, actor, target);
-    await ctx.scheduler.runAfter(0, internal.skills.dispatchSkillRescanInternal, {
-      requestId,
-      skillId: target.skill._id,
-      versionId: target.version._id,
-    });
-
-    const state = await buildRescanState(ctx, {
-      kind: "skill",
-      artifactId: target.version._id,
-    });
-    return {
-      ok: true,
-      targetKind: "skill" as const,
-      name: target.skill.slug,
-      version: target.version.version,
-      status: state.inProgressRequest?.status ?? state.latestRequest?.status ?? "in_progress",
-      remainingRequests: state.remainingRequests,
-      maxRequests: state.maxRequests,
-      pendingRequestId: requestId,
-    };
-  },
-});
-
-export const dispatchSkillRescanInternal: ReturnType<typeof internalAction> = internalAction({
-  args: {
-    requestId: v.id("rescanRequests"),
-    skillId: v.id("skills"),
-    versionId: v.id("skillVersions"),
-  },
-  handler: async (ctx, args) => {
-    try {
-      await ctx.runAction(internal.skills.scanSkillVersionStaticallyInternal, {
-        skillId: args.skillId,
-        versionId: args.versionId,
-      });
-      await ctx.runAction(internal.vt.scanWithVirusTotal, {
-        versionId: args.versionId,
-      });
-      await ctx.runAction(internal.llmEval.evaluateWithLlm, {
-        versionId: args.versionId,
-      });
-    } catch (error) {
-      await markSkillRescanRequest(ctx, args.requestId, "failed", errorMessage(error));
-      throw error;
+    const skill = await ctx.db.get(args.skillId);
+    if (!skill || skill.softDeletedAt || !skill.latestVersionId) {
+      throw new ConvexError("Skill not found");
     }
+
+    const version = await ctx.db.get(skill.latestVersionId);
+    if (!version || version.softDeletedAt) throw new ConvexError("Skill version not found");
+
+    await assertCanManageOwnedResource(ctx, {
+      actor: user,
+      ownerUserId: skill.ownerUserId,
+      ownerPublisherId: skill.ownerPublisherId,
+      allowPlatformAdmin: true,
+    });
+
+    const now = Date.now();
+    const previousNote = version.clawScanNote?.trim() || undefined;
+    const nextNote = normalizeClawScanNoteForWrite(args.clawScanNote);
+    await ctx.db.patch(version._id, {
+      clawScanNote: nextNote ?? "",
+      clawScanNoteUpdatedAt: now,
+    });
+    await ctx.db.insert("auditLogs", {
+      actorUserId: user._id,
+      action: "skill.clawscan_note.update",
+      targetType: "skillVersion",
+      targetId: version._id,
+      metadata: {
+        skillId: skill._id,
+        slug: skill.slug,
+        version: version.version,
+        hadPreviousNote: Boolean(previousNote),
+        hasNextNote: Boolean(nextNote),
+        previousLength: previousNote?.length ?? 0,
+        nextLength: nextNote?.length ?? 0,
+      },
+      createdAt: now,
+    });
+
+    await ctx.scheduler.runAfter(0, internal.llmEval.evaluateWithLlm, {
+      versionId: version._id,
+    });
+
+    return { ok: true as const, skillVersionId: version._id };
   },
 });
 
@@ -6612,11 +6493,6 @@ export const updateVersionScanResultsInternal = internalMutation({
 
     if (Object.keys(patch).length > 0) {
       await ctx.db.patch(args.versionId, patch);
-      await finalizeInProgressRescanRequestsForTarget(
-        ctx,
-        { kind: "skill", artifactId: args.versionId },
-        { ...version, ...patch },
-      );
     }
   },
 });
@@ -6696,12 +6572,6 @@ export const updateVersionLlmAnalysisInternal = internalMutation({
     const nextVersion = { ...version, llmAnalysis: args.llmAnalysis };
     await ctx.db.patch(args.versionId, { llmAnalysis: args.llmAnalysis });
     if (args.moderationMode === "preserve") return;
-
-    await finalizeInProgressRescanRequestsForTarget(
-      ctx,
-      { kind: "skill", artifactId: version._id },
-      nextVersion,
-    );
 
     const skill = await ctx.db.get(version.skillId);
     if (!skill || skill.latestVersionId !== version._id) return;
@@ -6841,6 +6711,7 @@ export const approveSkillByHashInternal = internalMutation({
           ownerUserId: skill.ownerUserId,
           sha256hash: args.sha256hash,
           slug: skill.slug,
+          trigger: "vt.malicious",
         });
       }
     }
@@ -6983,6 +6854,7 @@ export const escalateByVtInternal = internalMutation({
         ownerUserId: skill.ownerUserId,
         sha256hash: args.sha256hash,
         slug: skill.slug,
+        trigger: "vt.malicious",
       });
     }
   },
@@ -7051,6 +6923,7 @@ export const publishVersion: ReturnType<typeof action> = action({
     displayName: v.string(),
     version: v.string(),
     changelog: v.string(),
+    clawScanNote: v.optional(v.string()),
     acceptLicenseTerms: v.optional(v.boolean()),
     tags: v.optional(v.array(v.string())),
     forkOf: v.optional(
@@ -8697,6 +8570,7 @@ export const insertVersion = internalMutation({
     displayName: v.string(),
     version: v.string(),
     changelog: v.string(),
+    clawScanNote: v.optional(v.string()),
     changelogSource: v.optional(v.union(v.literal("auto"), v.literal("user"))),
     tags: v.optional(v.array(v.string())),
     fingerprint: v.string(),
@@ -9213,11 +9087,14 @@ export const insertVersion = internalMutation({
       throw new ConvexError("Version already exists");
     }
 
+    const clawScanNote = normalizeClawScanNoteForWrite(args.clawScanNote);
+
     const versionId = await ctx.db.insert("skillVersions", {
       skillId: skill._id,
       version: args.version,
       fingerprint: args.fingerprint,
       changelog: args.changelog,
+      ...(clawScanNote ? { clawScanNote } : {}),
       changelogSource: args.changelogSource,
       files: args.files,
       parsed: args.parsed,
@@ -9342,12 +9219,13 @@ export const insertVersion = internalMutation({
     await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
 
     if (moderationSnapshot.verdict === "malicious" && skill.ownerUserId) {
-      await ctx.scheduler.runAfter(0, internal.users.placeUserUnderModerationInternal, {
+      const trigger =
+        moderationSnapshot.reasonCodes.find((code) => code.startsWith("malicious.")) ??
+        "static.malicious";
+      await ctx.scheduler.runAfter(0, internal.users.autobanMalwareAuthorInternal, {
         ownerUserId: skill.ownerUserId,
         slug: skill.slug,
-        reason:
-          moderationSnapshot.reasonCodes.find((code) => code.startsWith("malicious.")) ??
-          "malicious.static_scan",
+        trigger,
       });
     }
 

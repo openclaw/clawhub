@@ -1141,14 +1141,15 @@ export const ensurePublisherHandleInternal = internalMutation({
 });
 
 /**
- * Auto-ban a user whose skill was flagged malicious by VT.
+ * Auto-ban a user whose skill was flagged malicious by a scanner.
  * Skips moderators/admins. No actor required — this is a system-level action.
  */
 export const autobanMalwareAuthorInternal = internalMutation({
   args: {
     ownerUserId: v.id("users"),
-    sha256hash: v.string(),
+    sha256hash: v.optional(v.string()),
     slug: v.string(),
+    trigger: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const target = await ctx.db.get(args.ownerUserId);
@@ -1203,20 +1204,24 @@ export const autobanMalwareAuthorInternal = internalMutation({
       userId: args.ownerUserId,
     });
 
+    const metadata: Record<string, unknown> = {
+      trigger: args.trigger?.trim() || "scanner.malicious",
+      slug: args.slug,
+      hiddenSkills: hiddenCount,
+      deletedSkillComments: deletedComments.skillComments,
+      deletedSoulComments: deletedComments.soulComments,
+    };
+    if (args.sha256hash?.trim()) {
+      metadata.sha256hash = args.sha256hash.trim();
+    }
+
     // Audit log -- use the target as actor since there's no human actor
     await ctx.db.insert("auditLogs", {
       actorUserId: args.ownerUserId,
       action: "user.autoban.malware",
       targetType: "user",
       targetId: args.ownerUserId,
-      metadata: {
-        trigger: "vt.malicious",
-        sha256hash: args.sha256hash,
-        slug: args.slug,
-        hiddenSkills: hiddenCount,
-        deletedSkillComments: deletedComments.skillComments,
-        deletedSoulComments: deletedComments.soulComments,
-      },
+      metadata,
       createdAt: now,
     });
 

@@ -283,7 +283,11 @@ export const evaluateWithLlm = internalAction({
     }
 
     // 5. Detect injection patterns across ALL content
-    const allContent = [skillMdContent, ...fileContents.map((f) => f.content)].join("\n");
+    const allContent = [
+      skillMdContent,
+      version.clawScanNote ?? "",
+      ...fileContents.map((f) => f.content),
+    ].join("\n");
     const injectionSignals = detectInjectionPatterns(allContent);
 
     // 6. Build eval context
@@ -308,6 +312,7 @@ export const evaluateWithLlm = internalAction({
       parsed,
       files: version.files.map((f) => ({ path: f.path, size: f.size })),
       skillMdContent,
+      clawScanNote: version.clawScanNote,
       fileContents,
       injectionSignals,
       staticScan: version.staticScan,
@@ -491,7 +496,11 @@ export const evaluatePackageReleaseWithLlm = internalAction({
         packageJsonText ?? `# ${pkg.displayName}\n\n${release.summary ?? pkg.summary ?? pkg.name}`;
     }
 
-    const allContent = [readmeContent, ...fileContents.map((f) => f.content)].join("\n");
+    const allContent = [
+      readmeContent,
+      release.clawScanNote ?? "",
+      ...fileContents.map((f) => f.content),
+    ].join("\n");
     const injectionSignals = detectInjectionPatterns(allContent);
     const packageOpenClawMetadata = packageOpenClawEnvironmentForPrompt(
       release.extractedPackageJson,
@@ -518,6 +527,7 @@ export const evaluatePackageReleaseWithLlm = internalAction({
       },
       files: release.files.map((f) => ({ path: f.path, size: f.size })),
       skillMdContent: readmeContent,
+      clawScanNote: release.clawScanNote,
       fileContents,
       injectionSignals,
       staticScan: release.staticScan,
@@ -602,6 +612,8 @@ export const evaluatePackageReleaseWithLlm = internalAction({
         dimensions: result.dimensions,
         guidance: result.guidance,
         findings: result.findings || undefined,
+        agenticRiskFindings: result.agenticRiskFindings,
+        riskSummary: result.riskSummary,
         model,
         checkedAt: Date.now(),
       },

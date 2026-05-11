@@ -14,7 +14,6 @@ import {
 import { cmdInspect } from "./cli/commands/inspect.js";
 import { cmdMergeSkill, cmdRenameSkill } from "./cli/commands/ownership.js";
 import {
-  cmdAppealPackage,
   cmdDeletePackage,
   cmdDownloadPackage,
   cmdExplorePackages,
@@ -31,7 +30,6 @@ import {
   cmdVerifyPackage,
 } from "./cli/commands/packages.js";
 import { cmdPublish } from "./cli/commands/publish.js";
-import { cmdRescanPackage, cmdRescanSkill } from "./cli/commands/rescan.js";
 import {
   cmdExplore,
   cmdInstall,
@@ -57,6 +55,9 @@ import { DEFAULT_REGISTRY, DEFAULT_SITE } from "./cli/registry.js";
 import type { GlobalOpts } from "./cli/types.js";
 import { fail } from "./cli/ui.js";
 import { readGlobalConfig } from "./config.js";
+
+const CLAWSCAN_NOTE_HELP =
+  "This note gives ClawScan context for behavior that may otherwise look unusual, such as network access, native host access, or provider-specific credentials.";
 
 const program = new Command()
   .name("clawhub")
@@ -311,6 +312,7 @@ registerCommand(program, ["publish"])
   .option("--version <version>", "Version (semver)")
   .option("--fork-of <slug[@version]>", "Mark as a fork of an existing skill")
   .option("--changelog <text>", "Changelog text")
+  .option("--clawscan-note <text>", CLAWSCAN_NOTE_HELP)
   .option("--tags <tags>", "Comma-separated tags", "latest")
   .action(async (folder, options) => {
     const opts = await resolveGlobalOpts();
@@ -372,6 +374,7 @@ registerCommand(skill, ["skill", "publish"])
   .option("--version <version>", "Version (semver)")
   .option("--fork-of <slug[@version]>", "Mark as a fork of an existing skill")
   .option("--changelog <text>", "Changelog text")
+  .option("--clawscan-note <text>", CLAWSCAN_NOTE_HELP)
   .option("--tags <tags>", "Comma-separated tags", "latest")
   .action(async (folder, options) => {
     const opts = await resolveGlobalOpts();
@@ -502,17 +505,6 @@ registerCommand(packageCmd, ["package", "report"])
     await cmdReportPackage(opts, name, options);
   });
 
-registerCommand(packageCmd, ["package", "appeal"])
-  .description("Appeal moderation for a package release")
-  .argument("<name>", "Package name")
-  .requiredOption("--version <version>", "Package version")
-  .requiredOption("--message <text>", "Appeal message")
-  .option("--json", "Output JSON")
-  .action(async (name, options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdAppealPackage(opts, name, options);
-  });
-
 registerCommand(packageCmd, ["package", "moderation-status"])
   .description("Show package moderation status")
   .argument("<name>", "Package name")
@@ -559,6 +551,7 @@ registerCommand(packageCmd, ["package", "publish"])
   .option("--owner <handle>", "Publish under this owner/publisher handle")
   .option("--version <version>", "Version")
   .option("--changelog <text>", "Changelog text")
+  .option("--clawscan-note <text>", CLAWSCAN_NOTE_HELP)
   .option(
     "--manual-override-reason <reason>",
     "Required for manual publish when trusted publisher config exists",
@@ -591,16 +584,6 @@ registerCommand(trustedPublisherCmd, ["package", "trusted-publisher", "get"])
     await cmdGetPackageTrustedPublisher(opts, name, options);
   });
 
-registerCommand(packageCmd, ["package", "rescan"])
-  .description("Request a security rescan for the latest published package release")
-  .argument("<name>", "Package name")
-  .option("--yes", "Skip confirmation")
-  .option("--json", "Output JSON")
-  .action(async (name, options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdRescanPackage(opts, name, options, isInputAllowed());
-  });
-
 registerCommand(skill, ["skill", "rename"])
   .description("Rename a published skill and keep the old slug as a redirect")
   .argument("<slug>", "Current skill slug")
@@ -619,16 +602,6 @@ registerCommand(skill, ["skill", "merge"])
   .action(async (sourceSlug, targetSlug, options) => {
     const opts = await resolveGlobalOpts();
     await cmdMergeSkill(opts, sourceSlug, targetSlug, options, isInputAllowed());
-  });
-
-registerCommand(skill, ["skill", "rescan"])
-  .description("Request a security rescan for the latest published skill version")
-  .argument("<slug>", "Skill slug")
-  .option("--yes", "Skip confirmation")
-  .option("--json", "Output JSON")
-  .action(async (slug, options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdRescanSkill(opts, slug, options, isInputAllowed());
   });
 
 const transfer = registerCommandGroup(program, ["transfer"]).description(

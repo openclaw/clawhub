@@ -1,32 +1,12 @@
-import { useState } from "react";
 import {
+  getClawScanDisplayStatus,
   getScanStatusInfo,
+  getVirusTotalDisplayStatus,
   type LlmAnalysis,
   type StaticFinding,
   type VtAnalysis,
 } from "./SkillSecurityScanResults";
 import { Badge, type BadgeProps } from "./ui/badge";
-import { Button } from "./ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
-
-type RescanRequest = {
-  _id: string;
-  targetKind: "skill" | "plugin";
-  targetVersion: string;
-  status: "in_progress" | "completed" | "failed";
-  createdAt: number;
-  updatedAt: number;
-  completedAt?: number;
-};
-
-type DetailRescanState = {
-  maxRequests: number;
-  requestCount: number;
-  remainingRequests: number;
-  canRequest: boolean;
-  inProgressRequest: RescanRequest | null;
-  latestRequest: RescanRequest | null;
-};
 
 type DetailSecuritySummaryProps = {
   scannerBasePath: string;
@@ -43,47 +23,92 @@ type DetailSecuritySummaryProps = {
   } | null;
   suppressScanResults?: boolean;
   suppressedMessage?: string | null;
-  rescanState?: DetailRescanState | null;
-  onRequestRescan?: (() => Promise<void>) | null;
 };
 
-function badgeVariantForScanStatus(status: string): BadgeProps["variant"] {
-  const normalized = status.toLowerCase();
-  if (normalized === "clean" || normalized === "benign") return "success";
-  if (normalized === "cleared") return "success";
-  if (normalized === "suspicious") return "default";
-  if (normalized === "malicious" || normalized === "error") return "destructive";
-  if (normalized === "pending" || normalized === "queued" || normalized === "loading") {
-    return "pending";
-  }
-  return "compact";
+function statusFromStaticScan(staticScan: DetailSecuritySummaryProps["staticScan"]) {
+  const status = staticScan?.status?.trim().toLowerCase();
+  if (status === "malicious") return "malicious";
+  if (status === "clean" || status === "benign") return "benign";
+  if (status === "suspicious") return "review";
+  if (status) return status;
+  return "pending";
 }
 
-function ScannerRow({ href, label, status }: { href: string; label: string; status: string }) {
+function severityLevelForStatus(status: string) {
+  const normalized = status.toLowerCase();
+  if (normalized === "malicious") return 4;
+  if (normalized === "suspicious") return 3;
+  if (normalized === "review") return 2;
+  if (normalized === "clean" || normalized === "benign" || normalized === "cleared") return 1;
+  return 0;
+}
+
+function aggregateAuditVerdict(statuses: string[]) {
+  const normalized = statuses.map((status) => status.toLowerCase());
+  if (normalized.some((status) => status === "malicious")) {
+    return "malicious";
+  }
+  if (normalized.includes("suspicious")) return "suspicious";
+  if (normalized.some((status) => status === "error" || status === "failed")) return "error";
+  if (
+    normalized.some(
+      (status) => status === "pending" || status === "loading" || status === "not_found",
+    )
+  ) {
+    return "pending";
+  }
+  return "benign";
+}
+
+function auditVerdictBadgeVariant(status: string): BadgeProps["variant"] {
+  switch (status.toLowerCase()) {
+    case "malicious":
+      return "destructive";
+    case "suspicious":
+      return "warning";
+    case "pending":
+    case "error":
+    case "failed":
+      return "pending";
+    default:
+      return "success";
+  }
+}
+
+function ScannerSignal({
+  href,
+  label,
+  description,
+  status,
+  tone,
+}: {
+  href: string;
+  label: string;
+  description: string;
+  status: string;
+  tone?: "review";
+}) {
   const info = getScanStatusInfo(status);
+  const level = severityLevelForStatus(status);
   return (
     <a
       href={href}
-      className="flex min-w-0 items-center justify-between gap-3 rounded-[var(--radius-sm)] px-1 py-2 text-sm !no-underline hover:bg-[color:var(--surface-muted)] hover:!no-underline"
+      className="security-audit-signal !no-underline hover:!no-underline"
+      aria-label={`${label}: ${info.label}`}
     >
-      <span className="flex min-w-0 items-center gap-2 font-semibold text-[color:var(--ink)]">
-        <span className="truncate">{label}</span>
-      </span>
-      <span className="flex shrink-0 items-center gap-2">
-        <Badge variant={badgeVariantForScanStatus(status)}>{info.label}</Badge>
-      </span>
+      <div className="security-audit-signal-head">
+        <span className="security-audit-signal-label">{label}</span>
+        <span className="security-audit-signal-status">{info.label}</span>
+      </div>
+      <div className="security-audit-meter" data-level={level} data-tone={tone} aria-hidden="true">
+        <span />
+        <span />
+        <span />
+        <span />
+      </div>
+      <p>{description}</p>
     </a>
   );
-}
-
-function rescanDisabledReason(state: DetailRescanState | null | undefined) {
-  if (!state) return null;
-  if (state.inProgressRequest) return "A rescan is already in progress.";
-  if (state.remainingRequests <= 0) {
-    return `Rescan limit reached (${state.requestCount}/${state.maxRequests}).`;
-  }
-  if (!state.canRequest) return "This release is not eligible for another rescan.";
-  return null;
 }
 
 export function DetailSecuritySummary({
@@ -93,72 +118,51 @@ export function DetailSecuritySummary({
   staticScan,
   suppressScanResults = false,
   suppressedMessage,
-  rescanState,
-  onRequestRescan,
 }: DetailSecuritySummaryProps) {
-  const [isRequestingRescan, setIsRequestingRescan] = useState(false);
-  const vtStatus = suppressScanResults
-    ? "cleared"
-    : (vtAnalysis?.verdict ?? vtAnalysis?.status ?? "pending");
-  const llmStatus = suppressScanResults
-    ? "cleared"
-    : (llmAnalysis?.verdict ?? llmAnalysis?.status ?? "pending");
-  const showStaticBlock = staticScan?.status?.toLowerCase() === "malicious";
-  const rescanButtonDisabledReason = rescanDisabledReason(rescanState);
-  const isScanInProgress = Boolean(rescanState?.inProgressRequest);
-  const rescanButtonLabel = isScanInProgress
-    ? "Scanning"
-    : isRequestingRescan
-      ? "Requesting..."
-      : "Rescan";
-
-  async function handleRequestRescan() {
-    if (!onRequestRescan || rescanButtonDisabledReason || isRequestingRescan) return;
-    setIsRequestingRescan(true);
-    try {
-      await onRequestRescan();
-    } finally {
-      setIsRequestingRescan(false);
-    }
-  }
-
+  const vtStatus = suppressScanResults ? "cleared" : getVirusTotalDisplayStatus(vtAnalysis);
+  const llmStatus = suppressScanResults ? "cleared" : getClawScanDisplayStatus(llmAnalysis);
+  const staticStatus = suppressScanResults ? "cleared" : statusFromStaticScan(staticScan);
+  const auditVerdict = aggregateAuditVerdict([vtStatus, llmStatus, staticStatus]);
+  const auditVerdictInfo = getScanStatusInfo(auditVerdict);
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
-          Security Scans
-          {rescanState && onRequestRescan ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="w-full justify-center sm:ml-auto sm:w-auto"
-              loading={isRequestingRescan || isScanInProgress}
-              disabled={Boolean(rescanButtonDisabledReason)}
-              title={rescanButtonDisabledReason ?? "Request a fresh scan"}
-              onClick={() => void handleRequestRescan()}
-            >
-              {rescanButtonLabel}
-            </Button>
-          ) : null}
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="flex flex-col gap-2">
-          {suppressScanResults && suppressedMessage ? (
-            <p className="m-0 text-sm text-[color:var(--ink-soft)]">{suppressedMessage}</p>
-          ) : null}
-          <ScannerRow href={`${scannerBasePath}/virustotal`} label="VirusTotal" status={vtStatus} />
-          <ScannerRow href={`${scannerBasePath}/openclaw`} label="ClawScan" status={llmStatus} />
-          {showStaticBlock ? (
-            <ScannerRow
-              href={`${scannerBasePath}/static-analysis`}
-              label="Static analysis"
-              status="malicious"
-            />
-          ) : null}
+    <section className="security-audit-section" aria-labelledby="security-audit-heading">
+      <div className="security-audit-title-row">
+        <h3 id="security-audit-heading" className="skill-install-panel-title security-audit-title">
+          Audits
+        </h3>
+        <Badge
+          variant={auditVerdictBadgeVariant(auditVerdict)}
+          className="security-audit-verdict-badge min-h-0 rounded-[4px] px-2.5 py-0.5 text-[0.78rem] leading-[1.3]"
+        >
+          {auditVerdictInfo.label}
+        </Badge>
+      </div>
+      <div className="security-audit-row">
+        {suppressScanResults && suppressedMessage ? (
+          <p className="security-audit-suppressed">{suppressedMessage}</p>
+        ) : null}
+        <div className="security-audit-signals">
+          <ScannerSignal
+            href={`${scannerBasePath}/clawscan`}
+            label="ClawScan"
+            description="Agentic behavior and permission review."
+            status={llmStatus}
+            tone="review"
+          />
+          <ScannerSignal
+            href={`${scannerBasePath}/static-analysis`}
+            label="Static analysis"
+            description="Pattern checks against bundled files."
+            status={staticStatus}
+          />
+          <ScannerSignal
+            href={`${scannerBasePath}/virustotal`}
+            label="VirusTotal"
+            description="Multi-engine malware detections and file reputation."
+            status={vtStatus}
+          />
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }

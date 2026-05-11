@@ -2,7 +2,11 @@ import { readFile, readdir, stat } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import semver from "semver";
 import { apiRequestForm } from "../../http.js";
-import { ApiRoutes, ApiV1PublishResponseSchema } from "../../schema/index.js";
+import {
+  ApiRoutes,
+  ApiV1PublishResponseSchema,
+  normalizeClawScanNote,
+} from "../../schema/index.js";
 import { listTextFiles } from "../../skills.js";
 import { requireAuthToken } from "../authToken.js";
 import { getRegistry } from "../registry.js";
@@ -21,6 +25,7 @@ export async function cmdPublish(
     changelog?: string;
     tags?: string;
     forkOf?: string;
+    clawscanNote?: string;
     migrateOwner?: boolean;
   },
 ) {
@@ -40,6 +45,12 @@ export async function cmdPublish(
   const ownerHandle = options.owner?.trim().replace(/^@+/, "");
   const version = options.version;
   const changelog = options.changelog ?? "";
+  let clawScanNote: string | undefined;
+  try {
+    clawScanNote = normalizeClawScanNote(options.clawscanNote);
+  } catch (error) {
+    fail(formatError(error));
+  }
   const tagsValue = options.tags ?? "latest";
   const tags = tagsValue
     .split(",")
@@ -76,6 +87,7 @@ export async function cmdPublish(
         ...(options.migrateOwner ? { migrateOwner: true } : {}),
         version,
         changelog,
+        ...(clawScanNote ? { clawScanNote } : {}),
         acceptLicenseTerms: true,
         tags,
         ...(forkOf ? { forkOf } : {}),

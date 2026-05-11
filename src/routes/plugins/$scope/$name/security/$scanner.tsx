@@ -1,4 +1,4 @@
-import { createFileRoute, notFound } from "@tanstack/react-router";
+import { createFileRoute, notFound, redirect } from "@tanstack/react-router";
 import {
   loadPluginSecurity,
   parsePluginSecurityScanner,
@@ -6,7 +6,10 @@ import {
   pluginSecurityHead,
   type PluginSecurityLoaderData,
 } from "../../../$name/security/$scanner";
-import { packageNameFromScopedRoute } from "../../../../../lib/pluginRoutes";
+import {
+  buildPluginSecurityHref,
+  packageNameFromScopedRoute,
+} from "../../../../../lib/pluginRoutes";
 
 function packageNameFromParams(params: { scope: string; name: string }) {
   const packageName = packageNameFromScopedRoute(params.scope, params.name);
@@ -16,7 +19,13 @@ function packageNameFromParams(params: { scope: string; name: string }) {
 
 export const Route = createFileRoute("/plugins/$scope/$name/security/$scanner")({
   beforeLoad: ({ params }) => {
-    packageNameFromParams(params);
+    const packageName = packageNameFromParams(params);
+    if (params.scanner === "openclaw") {
+      throw redirect({
+        href: buildPluginSecurityHref(packageName, "clawscan"),
+        statusCode: 308,
+      });
+    }
     parsePluginSecurityScanner(params.scanner);
   },
   loader: async ({ params }) => loadPluginSecurity(packageNameFromParams(params)),

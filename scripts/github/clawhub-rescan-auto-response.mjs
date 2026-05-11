@@ -72,13 +72,9 @@ const negativeContextRules = [
 
 export const rescanGuidanceComment = [
   RESCAN_GUIDANCE_COMMENT_MARKER,
-  'Thanks for the report. Please use the "Rescan" button on the skill/plugin page while signed in as the owner.',
+  "Thanks for the report. The dedicated owner-requested rescan flow has been removed.",
   "",
-  "You can also request a fresh scan from the CLI:",
-  "- Skill: `clawhub skill rescan <slug>`",
-  "- Plugin/package: `clawhub package rescan <name>`",
-  "",
-  "If the content or metadata changed, publish the fixed version first, then request the rescan for the latest release. This issue is staying open so you can reply with the ClawHub URL, version, and latest scan result if the flag remains or the rescan path is blocked.",
+  "If the content or metadata changed, publish a fixed version or release first. This issue is staying open so you can reply with the ClawHub URL, version, and latest scan result if the flag remains.",
 ].join("\n");
 
 function normalizeLabel(label) {

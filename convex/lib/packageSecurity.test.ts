@@ -26,13 +26,78 @@ describe("packageSecurity", () => {
     ).toBe("pending");
   });
 
-  it("still blocks malicious package releases", () => {
+  it("still blocks engine-backed malicious package releases", () => {
     expect(isPackageBlockedFromPublic("malicious")).toBe(true);
     expect(
       getPackageDownloadSecurityBlock({
-        vtAnalysis: { status: "malicious" },
+        vtAnalysis: {
+          status: "malicious",
+          source: "engines",
+          engineStats: { malicious: 1, suspicious: 0, harmless: 12, undetected: 54 },
+        },
       } as never),
     ).toEqual(
+      expect.objectContaining({
+        status: 403,
+      }),
+    );
+  });
+
+  it("keeps AI-only VT suspicious advisory when engines are clean", () => {
+    const release = {
+      sha256hash: "a".repeat(64),
+      vtAnalysis: {
+        status: "suspicious",
+        scanner: "code_insight",
+        source: "palm",
+        engineStats: { malicious: 0, suspicious: 0, harmless: 12, undetected: 54 },
+      },
+    } as never;
+
+    expect(resolvePackageReleaseScanStatus(release)).toBe("pending");
+    expect(getPackageDownloadSecurityBlock(release)).toBeNull();
+  });
+
+  it("keeps AI-only VT malicious advisory when engines are clean", () => {
+    const release = {
+      sha256hash: "a".repeat(64),
+      vtAnalysis: {
+        status: "malicious",
+        scanner: "code_insight",
+        source: "palm",
+        engineStats: { malicious: 0, suspicious: 0, harmless: 12, undetected: 54 },
+      },
+    } as never;
+
+    expect(resolvePackageReleaseScanStatus(release)).toBe("pending");
+    expect(getPackageDownloadSecurityBlock(release)).toBeNull();
+  });
+
+  it("enforces AI VT records when engine stats report suspicious", () => {
+    expect(
+      resolvePackageReleaseScanStatus({
+        vtAnalysis: {
+          status: "clean",
+          scanner: "code_insight",
+          source: "palm",
+          engineStats: { malicious: 0, suspicious: 1, harmless: 12, undetected: 54 },
+        },
+      } as never),
+    ).toBe("suspicious");
+  });
+
+  it("enforces AI VT records when engine stats report malicious", () => {
+    const release = {
+      vtAnalysis: {
+        status: "clean",
+        scanner: "code_insight",
+        source: "palm",
+        engineStats: { malicious: 1, suspicious: 0, harmless: 12, undetected: 54 },
+      },
+    } as never;
+
+    expect(resolvePackageReleaseScanStatus(release)).toBe("malicious");
+    expect(getPackageDownloadSecurityBlock(release)).toEqual(
       expect.objectContaining({
         status: 403,
       }),

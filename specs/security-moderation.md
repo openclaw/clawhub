@@ -47,22 +47,30 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Skill reports now follow the same formal lifecycle: `open`, `confirmed`, or
   `dismissed`, with a single recorded `triageNote` used as the official outcome
   note. Moderators can review a formal report with an explicit final action to
-  hide the affected skill. Skill report and appeal timelines are stored in
+  hide the affected skill. Skill report timelines are stored in
   `skillModerationEventLogs`.
 - Package owners and publisher members can read package moderation status via
   API/CLI, including open report count, latest release moderation state, and
   download-block reasons. Reporter identities and report bodies remain moderator
   intake data.
-- Package owners and publisher members can submit one open appeal per moderated
-  package release. Accepted appeals can explicitly approve the affected release
-  in the same auditable workflow.
-- Skill owners and publisher members can submit one open appeal for hidden,
-  removed, suspicious, malicious, or scanner-flagged skill outcomes. Skill
-  appeals use `open`, `accepted`, and `rejected` states with a single
-  `resolutionNote` as the official outcome note.
-- Moderators can accept, reject, or reopen appeals with a resolution note.
-  Accepted skill appeals can explicitly restore the skill, and accepted package
-  appeals can explicitly approve the release.
+- The legacy skill/package appeal tables and backend routes remain for
+  compatibility, but the first-class CLI and docs surface is deprecated.
+  Publisher recovery for false positives should use reports or out-of-band
+  support, while account bans require out-of-band support.
+- Any scanner path that determines a skill is malicious must hide the skill and
+  schedule the same account-level autoban/token-revocation workflow. Static
+  scan malicious findings must not diverge into a softer moderation-only state.
+- `clawScanNote` is optional publisher-authored context stored directly on a
+  `skillVersions` or `packageReleases` row. It is not an appeal, has no
+  accepted/rejected state, does not imply staff response, and must not drive
+  moderation state transitions by itself.
+- CLI publishes only include `clawScanNote` when the publisher explicitly passes
+  it. UI publish flows may prefill the previous version/release note for
+  convenience. Owners/admins can also update the latest version/release note
+  from artifact settings and request a fresh ClawScan review without publishing
+  a new version. ClawScan must treat the field as untrusted publisher-provided
+  context rather than scanner instructions, and note updates must write an
+  `auditLogs` entry.
 - `auditLogs` remains the global compliance/security ledger. Product-facing
   moderation timelines live in `skillModerationEventLogs` and
   `packageModerationEventLogs`.

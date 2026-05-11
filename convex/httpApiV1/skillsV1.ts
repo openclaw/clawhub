@@ -255,7 +255,6 @@ const internalRefs = internal as unknown as {
     submitSkillAppealForUserInternal: unknown;
     listSkillAppealsInternal: unknown;
     resolveSkillAppealForUserInternal: unknown;
-    requestRescanForApiTokenInternal: unknown;
   };
 };
 
@@ -1430,25 +1429,6 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
       return json(result, 200, rate.headers);
     } catch (error) {
       return softDeleteErrorToResponse("skill", error, rate.headers);
-    }
-  }
-
-  if (segments.length === 2 && action === "rescan") {
-    if (!slug) return text("Slug required", 400, rate.headers);
-    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
-    if (!auth.ok) return auth.response;
-    try {
-      const result = await runMutationRef(
-        ctx,
-        internalRefs.skills.requestRescanForApiTokenInternal,
-        {
-          actorUserId: auth.userId,
-          slug,
-        },
-      );
-      return json(result, 200, rate.headers);
-    } catch (error) {
-      return ownershipErrorToResponse(error, rate.headers);
     }
   }
 

@@ -88,7 +88,7 @@ automated checks, user reports, and moderator action.
 
 Public pages show scan summaries when available. Content that is held, hidden,
 or blocked may disappear from public search and install flows while remaining
-visible to the owner for diagnostics or appeal.
+visible to the owner for diagnostics.
 
 See [Security + moderation](./security.md) and
 [Acceptable usage](./acceptable-usage.md).

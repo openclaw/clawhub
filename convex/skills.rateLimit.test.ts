@@ -5,6 +5,7 @@ vi.mock("@convex-dev/auth/server", () => ({
   authTables: {},
 }));
 
+import { internal } from "./_generated/api";
 import {
   approveSkillByHashInternal,
   backfillLatestSkillModerationInternal,
@@ -12,6 +13,7 @@ import {
   escalateSkillByIdInternal,
   escalateByVtInternal,
   insertVersion,
+  updateSkillVersionStaticScanInternal,
 } from "./skills";
 
 type WrappedHandler<TArgs> = {
@@ -20,6 +22,9 @@ type WrappedHandler<TArgs> = {
 
 const insertVersionHandler = (insertVersion as unknown as WrappedHandler<Record<string, unknown>>)
   ._handler;
+const updateSkillVersionStaticScanHandler = (
+  updateSkillVersionStaticScanInternal as unknown as WrappedHandler<Record<string, unknown>>
+)._handler;
 const approveSkillByHashHandler = (
   approveSkillByHashInternal as unknown as WrappedHandler<Record<string, unknown>>
 )._handler;
@@ -1189,7 +1194,7 @@ describe("skills anti-spam guards", () => {
     expect(runAfter).not.toHaveBeenCalled();
   });
 
-  it("hides static-malicious publishes and places the owner under moderation", async () => {
+  it("hides static-malicious publishes and schedules owner autoban", async () => {
     const storedSkills = new Map<string, Record<string, unknown>>();
     const storedDigests = new Map<string, Record<string, unknown>>();
     const patch = vi.fn(async (id: string, value: Record<string, unknown>) => {
@@ -1368,11 +1373,104 @@ describe("skills anti-spam guards", () => {
     );
     expect(runAfter).toHaveBeenCalledWith(
       0,
-      expect.anything(),
+      internal.users.autobanMalwareAuthorInternal,
       expect.objectContaining({
         ownerUserId: "users:owner",
         slug: "spam-skill",
-        reason: "malicious.install_terminal_payload",
+        trigger: "malicious.install_terminal_payload",
+      }),
+    );
+  });
+
+  it("schedules owner autoban when a latest version static scan becomes malicious", async () => {
+    const version = {
+      _id: "skillVersions:1",
+      skillId: "skills:1",
+      version: "1.0.0",
+      staticScan: undefined,
+      sha256hash: "h".repeat(64),
+    };
+    const skill = {
+      _id: "skills:1",
+      slug: "spam-skill",
+      ownerUserId: "users:owner",
+      latestVersionId: "skillVersions:1",
+      moderationFlags: undefined,
+      moderationReason: undefined,
+    };
+    const owner = {
+      _id: "users:owner",
+      role: "user",
+      _creationTime: Date.now() - 60 * 24 * 60 * 60 * 1000,
+      createdAt: Date.now() - 60 * 24 * 60 * 60 * 1000,
+      deletedAt: undefined,
+      deactivatedAt: undefined,
+    };
+    const patch = vi.fn();
+    const runAfter = vi.fn();
+    const db = {
+      get: vi.fn(async (id: string) => {
+        if (id === "skillVersions:1") return version;
+        if (id === "skills:1") return skill;
+        if (id === "users:owner") return owner;
+        return null;
+      }),
+      query: vi.fn((table: string) => {
+        const globalStatsQuery = buildGlobalStatsQuery(table);
+        if (globalStatsQuery) return globalStatsQuery;
+        if (table === "skills") {
+          return {
+            withIndex: (name: string) => {
+              if (name === "by_owner") {
+                return {
+                  order: () => ({
+                    take: async () => [],
+                  }),
+                };
+              }
+              throw new Error(`unexpected skills index ${name}`);
+            },
+          };
+        }
+        throw new Error(`unexpected table ${table}`);
+      }),
+      patch,
+      insert: vi.fn(),
+      normalizeId: vi.fn(),
+    };
+
+    await updateSkillVersionStaticScanHandler(
+      { db, scheduler: { runAfter } } as never,
+      {
+        skillId: "skills:1",
+        versionId: "skillVersions:1",
+        staticScan: {
+          status: "malicious",
+          reasonCodes: ["malicious.install_terminal_payload"],
+          findings: [],
+          summary: "Detected: malicious.install_terminal_payload",
+          engineVersion: "v2.2.0",
+          checkedAt: Date.now(),
+        },
+      } as never,
+    );
+
+    expect(patch).toHaveBeenCalledWith(
+      "skills:1",
+      expect.objectContaining({
+        moderationStatus: "hidden",
+        moderationVerdict: "malicious",
+        moderationFlags: ["blocked.malware"],
+      }),
+    );
+    expect(runAfter).toHaveBeenCalledWith(
+      0,
+      internal.users.autobanMalwareAuthorInternal,
+      expect.objectContaining({
+        ownerUserId: "users:owner",
+        slug: "spam-skill",
+        sha256hash: "h".repeat(64),
+        trigger: "malicious.install_terminal_payload",
       }),
     );
   });

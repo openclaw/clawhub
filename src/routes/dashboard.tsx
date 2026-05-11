@@ -1,25 +1,13 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, usePaginatedQuery, useQuery } from "convex/react";
-import {
-  Clock,
-  Download,
-  History,
-  Info,
-  Loader2,
-  MoreVertical,
-  Package,
-  Plus,
-  RotateCw,
-  Settings,
-  Star,
-  Trash2,
-} from "lucide-react";
+import { Box, Loader2, MoreVertical, Package, Plus, Settings, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
+import { ArtifactCard } from "../components/artifacts/ArtifactCard";
+import { packageArtifactStatus, skillArtifactStatus } from "../components/artifacts/artifactStatus";
 import { DashboardSkeleton } from "../components/skeletons/DashboardSkeleton";
-import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import {
@@ -29,9 +17,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "../components/ui/dropdown-menu";
-import { Tooltip, TooltipContent, TooltipTrigger } from "../components/ui/tooltip";
 import { getUserFacingConvexError } from "../lib/convexError";
-import { formatCompactStat } from "../lib/numberFormat";
 
 const emptyPluginPublishSearch = {
   ownerHandle: undefined,
@@ -66,6 +52,9 @@ type DashboardSkill = Pick<
   | "createdAt"
   | "updatedAt"
 > & {
+  ownerPath: string;
+  detailHref: string;
+  settingsHref: string;
   pendingReview?: boolean;
   qualityDecision?: "pass" | "quarantine" | "reject";
   latestVersion: {
@@ -75,7 +64,6 @@ type DashboardSkill = Pick<
     llmStatus: string | null;
     staticScanStatus: "clean" | "suspicious" | "malicious" | null;
   } | null;
-  rescanState?: DashboardRescanState | null;
 };
 
 type DashboardPackage = {
@@ -89,6 +77,7 @@ type DashboardPackage = {
   sourceRepo?: string | null;
   summary?: string | null;
   latestVersion?: string | null;
+  updatedAt: number;
   stats: {
     downloads: number;
     installs: number;
@@ -107,28 +96,6 @@ type DashboardPackage = {
     llmStatus: string | null;
     staticScanStatus: "clean" | "suspicious" | "malicious" | null;
   } | null;
-  rescanState?: DashboardRescanState | null;
-};
-
-type DashboardRescanState = {
-  maxRequests: number;
-  requestCount: number;
-  remainingRequests: number;
-  canRequest: boolean;
-  inProgressRequest: DashboardRescanRequest | null;
-  latestRequest: DashboardRescanRequest | null;
-};
-
-type DashboardRescanRequest = {
-  _id: string;
-  targetKind: "skill" | "plugin";
-  targetVersion: string;
-  requestedByUserId: string;
-  status: "in_progress" | "completed" | "failed";
-  error?: string;
-  createdAt: number;
-  updatedAt: number;
-  completedAt?: number;
 };
 
 export const Route = createFileRoute("/dashboard")({
@@ -254,246 +221,180 @@ export function Dashboard() {
       </div>
 
       <div className="dashboard-owner-grid">
-        <Card className="dashboard-owner-panel">
-          <section className="dashboard-collection-block">
-            <div className="dashboard-section-header">
-              <h2 className="dashboard-collection-title">Skills</h2>
-              <Button asChild size="sm" className="dashboard-section-action">
-                <Link to="/skills/publish" search={{ updateSlug: undefined }}>
-                  <Plus className="h-4 w-4" aria-hidden="true" />
-                  New Skill
-                </Link>
-              </Button>
+        <section className="dashboard-collection-block">
+          <div className="dashboard-section-header">
+            <h2 className="dashboard-collection-title">Skills</h2>
+            <Button asChild size="sm" className="dashboard-section-action">
+              <Link to="/skills/publish" search={{ updateSlug: undefined }}>
+                <Plus className="h-4 w-4" aria-hidden="true" />
+                New Skill
+              </Link>
+            </Button>
+          </div>
+          {skills.length === 0 ? (
+            <div className="dashboard-inline-empty">
+              <div className="dashboard-inline-empty-copy">
+                <strong>No skills yet.</strong> Publish your first skill to share it with the
+                community.
+              </div>
             </div>
-            {skills.length === 0 ? (
-              <div className="dashboard-inline-empty">
-                <div className="dashboard-inline-empty-copy">
-                  <strong>No skills yet.</strong> Publish your first skill to share it with the
-                  community.
-                </div>
-              </div>
-            ) : (
-              <div className="dashboard-list">
-                {skills.map((skill) => (
-                  <SkillRow key={skill._id} skill={skill} ownerHandle={ownerHandle} />
-                ))}
-              </div>
-            )}
-            {skills.length > 0 && skillsStatus === "CanLoadMore" && (
-              <div className="mt-4 flex justify-center">
-                <Button onClick={() => loadMore(50)}>Load More</Button>
-              </div>
-            )}
-            {skillsStatus === "LoadingMore" && (
-              <div className="mt-4 flex items-center justify-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                <span>Loading more skills...</span>
-              </div>
-            )}
-          </section>
-        </Card>
+          ) : (
+            <div className="dashboard-list">
+              {skills.map((skill) => (
+                <SkillRow key={skill._id} skill={skill} />
+              ))}
+            </div>
+          )}
+          {skills.length > 0 && skillsStatus === "CanLoadMore" && (
+            <div className="mt-4 flex justify-center">
+              <Button onClick={() => loadMore(50)}>Load More</Button>
+            </div>
+          )}
+          {skillsStatus === "LoadingMore" && (
+            <div className="mt-4 flex items-center justify-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              <span>Loading more skills...</span>
+            </div>
+          )}
+        </section>
 
-        <Card className="dashboard-owner-panel">
-          <section className="dashboard-collection-block">
-            <div className="dashboard-section-header">
-              <h2 className="dashboard-collection-title">Plugins</h2>
-              <Button asChild size="sm" className="dashboard-section-action">
-                <Link to="/plugins/publish" search={{ ...emptyPluginPublishSearch, ownerHandle }}>
-                  <Plus className="h-4 w-4" aria-hidden="true" />
-                  New Plugin
-                </Link>
-              </Button>
+        <section className="dashboard-collection-block">
+          <div className="dashboard-section-header">
+            <h2 className="dashboard-collection-title">Plugins</h2>
+            <Button asChild size="sm" className="dashboard-section-action">
+              <Link to="/plugins/publish" search={{ ...emptyPluginPublishSearch, ownerHandle }}>
+                <Plus className="h-4 w-4" aria-hidden="true" />
+                New Plugin
+              </Link>
+            </Button>
+          </div>
+          {packages.length === 0 ? (
+            <div className="dashboard-inline-empty">
+              <div className="dashboard-inline-empty-copy">
+                <strong>No plugins yet.</strong> Publish your first plugin release to validate and
+                distribute it.
+              </div>
             </div>
-            {packages.length === 0 ? (
-              <div className="dashboard-inline-empty">
-                <div className="dashboard-inline-empty-copy">
-                  <strong>No plugins yet.</strong> Publish your first plugin release to validate and
-                  distribute it.
-                </div>
-              </div>
-            ) : (
-              <div className="dashboard-list">
-                {packages.map((pkg) => (
-                  <PackageRow key={pkg._id} pkg={pkg} ownerHandle={ownerHandle} />
-                ))}
-              </div>
-            )}
-          </section>
-        </Card>
+          ) : (
+            <div className="dashboard-list">
+              {packages.map((pkg) => (
+                <PackageRow key={pkg._id} pkg={pkg} />
+              ))}
+            </div>
+          )}
+        </section>
       </div>
     </main>
   );
 }
 
-function SkillRow({ skill, ownerHandle }: { skill: DashboardSkill; ownerHandle: string | null }) {
-  const status = skillDashboardStatus(skill);
-  const detailParams = { owner: ownerHandle ?? "unknown", slug: skill.slug };
-  const settingsHref = `/${encodeURIComponent(detailParams.owner)}/${encodeURIComponent(
-    skill.slug,
-  )}/settings`;
+function SkillRow({ skill }: { skill: DashboardSkill }) {
+  const status = skillArtifactStatus(skill);
+  const titleId = `dashboard-skill-title-${skill._id}`;
+  const stats = [
+    { label: "Downloads", value: formatCompactNumber(skill.stats?.downloads ?? 0) },
+    { label: "Stars", value: formatCompactNumber(skill.stats?.stars ?? 0) },
+    { label: "Versions", value: formatCompactNumber(skill.stats?.versions ?? 0) },
+    { label: "Updated", value: formatShortDate(skill.updatedAt) },
+  ];
 
   return (
-    <div className="dashboard-list-row">
-      <div className="dashboard-list-primary">
-        <div className="dashboard-list-title">
-          <Link to="/$owner/$slug" params={detailParams} className="dashboard-skill-name">
-            {skill.displayName}
-          </Link>
-        </div>
-        <SkillMetrics stats={skill.stats} label={skill.displayName} />
-      </div>
-      <div className="dashboard-list-summary">{skill.summary ?? "No summary provided."}</div>
-      <div className="dashboard-list-status">
-        <StatusChipWithTooltip status={status} />
-      </div>
-      <RowMenu
-        kind="skill"
-        targetId={skill._id}
-        targetLabel={skill.displayName}
-        settingsHref={settingsHref}
-        statusLabel={status.label}
-        rescanState={skill.rescanState ?? null}
-      />
-    </div>
+    <ArtifactCard
+      href={skill.detailHref}
+      title={skill.displayName}
+      titleId={titleId}
+      icon={<Box className="h-5 w-5" />}
+      meta={
+        <>
+          <span>Skill</span>
+          <span>
+            /{skill.ownerPath}/{skill.slug}
+          </span>
+          {skill.latestVersion?.version ? <span>v{skill.latestVersion.version}</span> : null}
+        </>
+      }
+      summary={skill.summary}
+      status={status}
+      scanSignals={{
+        vtStatus: skill.latestVersion?.vtStatus ?? null,
+        llmStatus: skill.latestVersion?.llmStatus ?? null,
+        staticScanStatus: skill.latestVersion?.staticScanStatus ?? null,
+      }}
+      stats={stats}
+      actions={
+        <RowMenu
+          kind="skill"
+          targetId={skill._id}
+          targetLabel={skill.displayName}
+          settingsHref={skill.settingsHref}
+        />
+      }
+    />
   );
 }
 
-function SkillMetrics({ stats, label }: { stats: DashboardSkill["stats"]; label: string }) {
+function PackageRow({ pkg }: { pkg: DashboardPackage }) {
+  const status = packageArtifactStatus(pkg);
+  const detailHref = `/plugins/${encodeURIComponent(pkg.name)}`;
+  const titleId = `dashboard-package-title-${pkg._id}`;
+  const familyLabel =
+    pkg.family === "bundle-plugin"
+      ? "Bundle Plugin"
+      : pkg.family === "code-plugin"
+        ? "Code Plugin"
+        : "Skill Package";
+  const stats = [
+    { label: "Downloads", value: formatCompactNumber(pkg.stats.downloads ?? 0) },
+    { label: "Installs", value: formatCompactNumber(pkg.stats.installs ?? 0) },
+    { label: "Stars", value: formatCompactNumber(pkg.stats.stars ?? 0) },
+    { label: "Updated", value: formatShortDate(pkg.updatedAt) },
+  ];
+
   return (
-    <div className="dashboard-skill-metrics" aria-label={`Metrics for ${label}`}>
-      <span className="dashboard-skill-metric" title="Downloads">
-        <Download className="h-3.5 w-3.5" aria-hidden="true" />
-        {formatCompactStat(stats.downloads)} downloads
-      </span>
-      <span className="dashboard-skill-metric" title="All-time installs">
-        <History className="h-3.5 w-3.5" aria-hidden="true" />
-        {formatCompactStat(stats.installsAllTime ?? 0)} installs
-      </span>
-      <span className="dashboard-skill-metric" title="Stars">
-        <Star className="h-3.5 w-3.5" aria-hidden="true" />
-        {formatCompactStat(stats.stars)} stars
-      </span>
-      <span className="dashboard-skill-metric" title="Versions">
-        <Package className="h-3.5 w-3.5" aria-hidden="true" />
-        {stats.versions ?? 0} versions
-      </span>
-    </div>
+    <ArtifactCard
+      href={detailHref}
+      title={pkg.displayName}
+      titleId={titleId}
+      icon={<Package className="h-5 w-5" />}
+      meta={
+        <>
+          <span>{familyLabel}</span>
+          <span>{pkg.name}</span>
+          {pkg.latestVersion ? <span>v{pkg.latestVersion}</span> : null}
+          <span>{pkg.channel}</span>
+        </>
+      }
+      summary={pkg.summary}
+      status={status}
+      scanSignals={{
+        vtStatus: pkg.latestRelease?.vtStatus ?? null,
+        llmStatus: pkg.latestRelease?.llmStatus ?? null,
+        staticScanStatus: pkg.latestRelease?.staticScanStatus ?? null,
+      }}
+      stats={stats}
+      actions={
+        <RowMenu
+          kind="plugin"
+          targetId={pkg._id}
+          targetLabel={pkg.displayName}
+          settingsHref={detailHref}
+        />
+      }
+    />
   );
 }
 
-function StatusChipWithTooltip({
-  status,
-}: {
-  status: {
-    key?: string;
-    label: string;
-    description: string;
-    variant: "default" | "pending" | "warning" | "destructive" | "success";
-  };
-}) {
-  const showInfo = status.label !== "Visible";
-
-  return (
-    <Badge variant={status.variant} className="dashboard-status-chip">
-      {status.key === "pending" ? <Clock className="h-3 w-3" aria-hidden="true" /> : null}
-      {status.label}
-      {showInfo ? (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              className="dashboard-status-info"
-              aria-label={`${status.label} status reason`}
-            >
-              <Info className="h-3.5 w-3.5" aria-hidden="true" />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="top" align="end">
-            {status.description}
-          </TooltipContent>
-        </Tooltip>
-      ) : null}
-    </Badge>
+function formatCompactNumber(value: number) {
+  return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(
+    value,
   );
 }
 
-function packageDashboardStatus(pkg: DashboardPackage): {
-  label: string;
-  description: string;
-  variant: "default" | "pending" | "warning" | "destructive" | "success";
-} {
-  const releaseStatuses = new Set([
-    pkg.latestRelease?.vtStatus,
-    pkg.latestRelease?.llmStatus,
-    pkg.latestRelease?.staticScanStatus === "malicious" ? "malicious" : null,
-  ]);
-  if (pkg.scanStatus === "malicious" || releaseStatuses.has("malicious")) {
-    return {
-      label: "Blocked",
-      description: "Security checks found malicious content.",
-      variant: "destructive",
-    };
-  }
-  if (pkg.scanStatus === "suspicious" || releaseStatuses.has("suspicious")) {
-    return {
-      label: "Suspicious",
-      description: "Security checks flagged this plugin for review.",
-      variant: "warning",
-    };
-  }
-  if (pkg.scanStatus === "pending" || pkg.pendingReview) {
-    return {
-      label: "Pending checks",
-      description: "Security verification is still running.",
-      variant: "pending",
-    };
-  }
-  if (pkg.scanStatus === "clean") {
-    return {
-      label: "Visible",
-      description: "Available on public catalog surfaces.",
-      variant: "success",
-    };
-  }
-  return {
-    label: "Unknown",
-    description: "Open the plugin for the latest release and security details.",
-    variant: "default",
-  };
-}
-
-function PackageRow({ pkg }: { pkg: DashboardPackage; ownerHandle: string }) {
-  const status = packageDashboardStatus(pkg);
-
-  return (
-    <div className="dashboard-list-row">
-      <div className="dashboard-list-primary">
-        <div className="dashboard-list-title">
-          <Link to="/plugins/$name" params={{ name: pkg.name }} className="dashboard-skill-name">
-            {pkg.displayName}
-          </Link>
-        </div>
-      </div>
-      <div className="dashboard-list-summary">{pkg.summary ?? "No summary provided."}</div>
-      <div className="dashboard-list-status">
-        <StatusChipWithTooltip status={status} />
-      </div>
-      <RowMenu
-        kind="plugin"
-        targetId={pkg._id}
-        targetLabel={pkg.displayName}
-        settingsHref={`/plugins/${encodeURIComponent(pkg.name)}`}
-        statusLabel={status.label}
-        rescanState={pkg.rescanState ?? null}
-      />
-    </div>
+function formatShortDate(timestamp: number | undefined) {
+  if (!timestamp) return "Unknown";
+  return new Intl.DateTimeFormat("en", { month: "short", day: "numeric" }).format(
+    new Date(timestamp),
   );
-}
-
-function canShowDashboardRescan(statusLabel: string, state: DashboardRescanState | null) {
-  if (statusLabel === "Visible") return false;
-  if (!state) return true;
-  return state.canRequest && !state.inProgressRequest && state.remainingRequests > 0;
 }
 
 function RowMenu({
@@ -501,46 +402,14 @@ function RowMenu({
   targetId,
   targetLabel,
   settingsHref,
-  statusLabel,
-  rescanState,
 }: {
   kind: "skill" | "plugin";
   targetId: string;
   targetLabel: string;
   settingsHref: string;
-  statusLabel: string;
-  rescanState: DashboardRescanState | null;
 }) {
-  const requestSkillRescan = useMutation(api.skills.requestRescan);
-  const requestPluginRescan = useMutation(api.packages.requestRescan);
   const deletePackage = useMutation(api.packages.softDeletePackage);
-  const [isRequesting, setIsRequesting] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const isScanInProgress = Boolean(rescanState?.inProgressRequest);
-  const showRescan = canShowDashboardRescan(statusLabel, rescanState);
-  const showRescanItem = showRescan || isScanInProgress;
-  const rescanLabel = isScanInProgress
-    ? "Scan in progress"
-    : isRequesting
-      ? "Requesting..."
-      : "Request rescan";
-
-  async function requestRescan() {
-    if (!showRescan || isRequesting) return;
-    setIsRequesting(true);
-    try {
-      if (kind === "skill") {
-        await requestSkillRescan({ skillId: targetId as Doc<"skills">["_id"] });
-      } else {
-        await requestPluginRescan({ packageId: targetId as Doc<"packages">["_id"] });
-      }
-      toast.success(`Rescan requested for ${targetLabel}.`);
-    } catch (error) {
-      toast.error(getUserFacingConvexError(error, "Could not request a rescan."));
-    } finally {
-      setIsRequesting(false);
-    }
-  }
 
   async function deletePlugin() {
     if (kind !== "plugin" || isDeleting) return;
@@ -580,22 +449,6 @@ function RowMenu({
               Settings
             </a>
           </DropdownMenuItem>
-          {showRescanItem ? (
-            <DropdownMenuItem
-              disabled={isRequesting || isScanInProgress}
-              onSelect={() => void requestRescan()}
-            >
-              <RotateCw
-                className={
-                  isRequesting || isScanInProgress
-                    ? "h-4 w-4 animate-spin [animation-duration:2.4s]"
-                    : "h-4 w-4"
-                }
-                aria-hidden="true"
-              />
-              {rescanLabel}
-            </DropdownMenuItem>
-          ) : null}
           {kind === "plugin" ? (
             <>
               <DropdownMenuSeparator />
@@ -613,88 +466,4 @@ function RowMenu({
       </DropdownMenu>
     </div>
   );
-}
-
-function skillDashboardStatus(skill: DashboardSkill): {
-  key: "visible" | "pending" | "suspicious" | "blocked" | "hidden" | "removed" | "quality";
-  label: string;
-  description: string;
-  variant: "default" | "pending" | "warning" | "destructive" | "success";
-} {
-  const flags = skill.moderationFlags ?? [];
-  const reason = skill.moderationReason ?? "";
-  const versionStatuses = new Set([
-    skill.latestVersion?.vtStatus,
-    skill.latestVersion?.llmStatus,
-    skill.latestVersion?.staticScanStatus === "malicious" ? "malicious" : null,
-  ]);
-  if (skill.moderationStatus === "removed") {
-    return {
-      key: "removed",
-      label: "Removed",
-      description: "Removed from public inventory by moderation.",
-      variant: "destructive",
-    };
-  }
-  if (
-    flags.includes("blocked.malware") ||
-    skill.moderationVerdict === "malicious" ||
-    versionStatuses.has("malicious")
-  ) {
-    return {
-      key: "blocked",
-      label: "Blocked",
-      description:
-        "Unavailable publicly because automated security checks found malicious content.",
-      variant: "destructive",
-    };
-  }
-  if (skill.pendingReview || reason === "pending.scan" || reason === "pending.scan.stale") {
-    return {
-      key: "pending",
-      label: "Pending checks",
-      description: "Hidden until security verification checks finish.",
-      variant: "pending",
-    };
-  }
-  if (
-    skill.qualityDecision === "quarantine" ||
-    skill.qualityDecision === "reject" ||
-    reason === "quality.low"
-  ) {
-    return {
-      key: "quality",
-      label: "Quality held",
-      description: "Unavailable while quality review is holding this release.",
-      variant: "warning",
-    };
-  }
-  if (
-    skill.isSuspicious ||
-    flags.includes("flagged.suspicious") ||
-    skill.moderationVerdict === "suspicious" ||
-    versionStatuses.has("suspicious")
-  ) {
-    return {
-      key: "suspicious",
-      label: "Suspicious",
-      description:
-        "Visible to you, but public surfaces warn or suppress it because it was flagged.",
-      variant: "warning",
-    };
-  }
-  if (skill.moderationStatus === "hidden") {
-    return {
-      key: "hidden",
-      label: "Hidden",
-      description: "Hidden from public catalog surfaces.",
-      variant: "warning",
-    };
-  }
-  return {
-    key: "visible",
-    label: "Visible",
-    description: "Available on public catalog surfaces.",
-    variant: "success",
-  };
 }

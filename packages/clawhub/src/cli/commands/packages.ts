@@ -12,7 +12,6 @@ import {
   ApiRoutes,
   ApiV1DeleteResponseSchema,
   ApiV1PackageArtifactResponseSchema,
-  ApiV1PackageAppealResponseSchema,
   ApiV1PackageListResponseSchema,
   ApiV1PackageModerationStatusResponseSchema,
   ApiV1PackagePublishResponseSchema,
@@ -25,6 +24,7 @@ import {
   ApiV1PackageVersionListResponseSchema,
   ApiV1PackageVersionResponseSchema,
   ApiV1PublishTokenMintResponseSchema,
+  normalizeClawScanNote,
   normalizeOpenClawExternalPluginCompatibility,
   type PackageArtifactSummary,
   type PackageCapabilitySummary,
@@ -91,6 +91,7 @@ type PackagePublishOptions = {
   owner?: string;
   version?: string;
   changelog?: string;
+  clawscanNote?: string;
   manualOverrideReason?: string;
   tags?: string;
   bundleFormat?: string;
@@ -129,12 +130,6 @@ type PackageVerifyOptions = {
 type PackageReportOptions = {
   version?: string;
   reason?: string;
-  json?: boolean;
-};
-
-type PackageAppealOptions = {
-  version?: string;
-  message?: string;
   json?: boolean;
 };
 
@@ -188,6 +183,7 @@ type PackagePublishPayload = {
   family: "code-plugin" | "bundle-plugin";
   version: string;
   changelog: string;
+  clawScanNote?: string;
   manualOverrideReason?: string;
   tags: string[];
   source?: NonNullable<PackagePublishSource>;
@@ -1010,49 +1006,6 @@ export async function cmdReportPackage(
   }
 }
 
-export async function cmdAppealPackage(
-  opts: GlobalOpts,
-  packageName: string,
-  options: PackageAppealOptions = {},
-) {
-  const trimmed = normalizePackageNameOrFail(packageName);
-  const version = options.version?.trim();
-  const message = options.message?.trim();
-  if (!version) fail("--version required");
-  if (!message) fail("--message required");
-
-  const token = await requireAuthToken();
-  const registry = await getRegistry(opts, { cache: true });
-  const spinner = options.json
-    ? null
-    : createSpinner(`Submitting appeal for ${trimmed}@${version}`);
-  try {
-    const result = await apiRequest(
-      registry,
-      {
-        method: "POST",
-        path: `${ApiRoutes.packages}/${encodeURIComponent(trimmed)}/appeal`,
-        token,
-        body: { version, message },
-      },
-      ApiV1PackageAppealResponseSchema,
-    );
-    spinner?.stop();
-    if (options.json) {
-      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-      return;
-    }
-    if (result.alreadyOpen) {
-      console.log(`Already has an open appeal: ${result.appealId}`);
-      return;
-    }
-    console.log(`OK. Appeal submitted: ${result.appealId}`);
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
-}
-
 export async function cmdPackageModerationStatus(
   opts: GlobalOpts,
   packageName: string,
@@ -1734,6 +1687,12 @@ async function preparePackagePublishPlan(
     parsedClawpack?.packageVersion ||
     packageJsonString(packageJson, "version");
   const changelog = options.changelog ?? "";
+  let clawScanNote: string | undefined;
+  try {
+    clawScanNote = normalizeClawScanNote(options.clawscanNote);
+  } catch (error) {
+    fail(formatError(error));
+  }
   const tags = parseTags(options.tags ?? "latest");
   const source = buildSource(options, inferredSource);
 
@@ -1793,6 +1752,7 @@ async function preparePackagePublishPlan(
     family,
     version,
     changelog,
+    ...(clawScanNote ? { clawScanNote } : {}),
     ...(options.manualOverrideReason?.trim()
       ? { manualOverrideReason: options.manualOverrideReason.trim() }
       : {}),

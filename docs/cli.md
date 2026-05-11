@@ -177,7 +177,15 @@ Stores your API token + cached registry URL.
 - Publishing a skill means it is released under `MIT-0` on ClawHub.
 - Published skills are free to use, modify, and redistribute without attribution.
 - ClawHub does not support paid skills or per-skill pricing.
+- `--clawscan-note <text>` adds a ClawScan note. This note gives ClawScan
+  context for behavior that may otherwise look unusual, such as network access,
+  native host access, or provider-specific credentials. The note is stored on
+  the published version.
 - Legacy alias: `publish <path>`.
+
+```bash
+clawhub skill publish ./my-skill --clawscan-note "Uses network access only to call the user-configured Weather API."
+```
 
 ### `delete <slug>`
 
@@ -218,24 +226,6 @@ Stores your API token + cached registry URL.
 - The source slug stops listing publicly and becomes a redirect alias to the target.
 - Calls `POST /api/v1/skills/{sourceSlug}/merge`.
 - `--yes` skips confirmation.
-
-### `skill rescan <slug>`
-
-- Request a security rescan for the latest published skill version.
-- Owners and publisher admins can rescan their own skills up to the per-version
-  recovery limit.
-- Platform moderators and admins can rescan any skill and are not blocked by the
-  owner recovery limit, though only one rescan can run at a time per version.
-- Calls `POST /api/v1/skills/{slug}/rescan`.
-- Flags:
-  - `--yes`: skip confirmation.
-  - `--json`: machine-readable output.
-
-Example:
-
-```bash
-clawhub skill rescan suspicious-skill --yes
-```
 
 ### `transfer`
 
@@ -390,24 +380,6 @@ Example:
 clawhub package transfer @openclaw/example-plugin --to openclaw
 ```
 
-### `package rescan <name>`
-
-- Request a security rescan for the latest published package release.
-- Owners and publisher admins can rescan their own packages up to the per-release
-  recovery limit.
-- Platform moderators and admins can rescan any package and are not blocked by
-  the owner recovery limit, though only one rescan can run at a time per release.
-- Calls `POST /api/v1/packages/{name}/rescan`.
-- Flags:
-  - `--yes`: skip confirmation.
-  - `--json`: machine-readable output.
-
-Example:
-
-```bash
-clawhub package rescan @openclaw/example-plugin --yes
-```
-
 ### `package report`
 
 - Authenticated command for reporting a package to moderators.
@@ -424,23 +396,6 @@ Example:
 
 ```bash
 clawhub package report @openclaw/example-plugin --version 1.2.3 --reason "suspicious native payload"
-```
-
-### `package appeal`
-
-- Owner/publisher command for appealing release moderation.
-- Calls `POST /api/v1/packages/{name}/appeal`.
-- Appeals are accepted for quarantined, revoked, suspicious, or malicious
-  releases.
-- Flags:
-  - `--version <version>`: required package version.
-  - `--message <text>`: required appeal message.
-  - `--json`: machine-readable output.
-
-Example:
-
-```bash
-clawhub package appeal @openclaw/example-plugin --version 1.2.3 --message "linked source release explains the native binary"
 ```
 
 ### `package moderation-status`
@@ -515,9 +470,17 @@ clawhub package migration-status @openclaw/example-plugin
 - `--dry-run` previews the resolved publish payload without uploading.
 - `--json` emits machine-readable output for CI.
 - `--owner <handle>` publishes under a user or org publisher handle when the actor has publisher access.
+- `--clawscan-note <text>` adds a ClawScan note. This note gives ClawScan
+  context for behavior that may otherwise look unusual, such as network access,
+  native host access, or provider-specific credentials. The note is stored on
+  the published release.
 - Scoped package names must match the selected owner. See `docs/publishing.md`.
 - Existing flags (`--family`, `--name`, `--version`, `--source-repo`, `--source-commit`, `--source-ref`, `--source-path`) still work as overrides.
 - Private GitHub repos require `GITHUB_TOKEN`.
+
+```bash
+clawhub package publish ./plugin.tgz --clawscan-note "Native host access is limited to the local OpenClaw bridge."
+```
 
 #### Recommended local flow
 

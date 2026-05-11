@@ -1,6 +1,6 @@
 /* @vitest-environment jsdom */
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import type { AnchorHTMLAttributes, ComponentType, ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -188,6 +188,7 @@ describe("plugin detail route", () => {
           version: "1.0.0",
           createdAt: 1,
           changelog: "Initial release",
+          clawScanNote: "Native host access is limited to the OpenClaw extension bridge.",
           distTags: ["latest"],
           files: [],
           compatibility: null,
@@ -223,41 +224,39 @@ describe("plugin detail route", () => {
 
     render(<Component />);
 
-    expect(screen.getByText("Security Scans")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Audits" })).toBeTruthy();
     expect(screen.getAllByText("VirusTotal").length).toBeGreaterThan(0);
     expect(screen.getAllByText("ClawScan").length).toBeGreaterThan(0);
-    expect(screen.getByRole("link", { name: /VirusTotal.*Benign/i }).getAttribute("href")).toBe(
+    expect(screen.getByRole("link", { name: /VirusTotal.*Pass/i }).getAttribute("href")).toBe(
       "/plugins/demo-plugin/security/virustotal",
     );
-    expect(screen.queryByRole("link", { name: /Static analysis/i })).toBeNull();
+    expect(screen.getByRole("link", { name: /Static analysis.*Pass/i }).getAttribute("href")).toBe(
+      "/plugins/demo-plugin/security/static-analysis",
+    );
 
-    const securityHeading = screen.getByText("Security Scans");
+    const securityHeading = screen.getByRole("heading", { name: "Audits" });
     const installHeading = screen.getByRole("heading", { name: "Install" });
-    const capabilitiesHeading = screen.getByRole("heading", { name: "Capabilities" });
+    const capabilitiesTab = screen.getByRole("tab", { name: "Capabilities" });
     expect(
-      securityHeading.compareDocumentPosition(capabilitiesHeading) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
+      securityHeading.compareDocumentPosition(capabilitiesTab) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(
-      installHeading.compareDocumentPosition(capabilitiesHeading) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
+      securityHeading.compareDocumentPosition(installHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    fireEvent.click(capabilitiesTab);
+    expect(screen.getByText("Tags")).toBeTruthy();
+    expect(
+      installHeading.compareDocumentPosition(capabilitiesTab) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   });
 
-  it("shows owner-only plugin rescan state in the security summary", async () => {
+  it("does not render owner-only plugin scanner rerun state in the detail security summary", async () => {
     useAuthStatusMock.mockReturnValue({
       isAuthenticated: true,
       isLoading: false,
       me: { _id: "users:1" },
     });
-    useQueryMock.mockReturnValue({
-      maxRequests: 3,
-      requestCount: 1,
-      remainingRequests: 2,
-      canRequest: true,
-      inProgressRequest: null,
-      latestRequest: null,
-    });
+    useQueryMock.mockReturnValue(null);
     loaderDataMock = {
       detail: loaderDataMock.detail,
       version: {
@@ -290,9 +289,8 @@ describe("plugin detail route", () => {
 
     render(<Component />);
 
-    expect(screen.getByRole("button", { name: "Rescan" })).toBeTruthy();
-    expect(screen.queryByText("Owner rescan")).toBeNull();
-    expect(screen.queryByText("2/3 rescans left")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Rescan" })).toBeNull();
+    expect(screen.queryByText(/rescans/i)).toBeNull();
   });
 
   it("renders ClawPack artifact details and uses the artifact download route", async () => {
@@ -353,6 +351,7 @@ describe("plugin detail route", () => {
 
     render(<Component />);
 
+    fireEvent.click(screen.getByRole("tab", { name: "Compatibility" }));
     expect(screen.getByText("ClawPack")).toBeTruthy();
     expect(screen.getByText("demo-plugin-1.0.0.tgz")).toBeTruthy();
     expect(screen.getByText("sha512-demo")).toBeTruthy();
@@ -410,6 +409,7 @@ describe("plugin detail route", () => {
 
     render(<Component />);
 
+    fireEvent.click(screen.getByRole("tab", { name: "Compatibility" }));
     expect(screen.getByText("Legacy ZIP")).toBeTruthy();
     expect(screen.getByText(/legacy ZIP path/i)).toBeTruthy();
     expect(screen.getByRole("link", { name: /Download/i }).getAttribute("href")).toBe(

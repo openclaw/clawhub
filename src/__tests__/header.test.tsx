@@ -180,9 +180,16 @@ function stylesCss() {
 
 function compactHeaderCss() {
   const css = stylesCss();
-  const start = css.indexOf("@media (max-width: 760px)");
-  const end = css.indexOf("@media (max-width: 520px)", start);
-  return css.slice(start, end);
+  let start = css.indexOf("@media (max-width: 760px)");
+  while (start >= 0) {
+    const nextMedia = css.indexOf("@media ", start + 1);
+    const block = css.slice(start, nextMedia === -1 ? undefined : nextMedia);
+    if (block.includes(".navbar-search-wrap") && block.includes(".nav-mobile")) {
+      return block;
+    }
+    start = css.indexOf("@media (max-width: 760px)", start + 1);
+  }
+  throw new Error("Missing compact header media query");
 }
 
 describe("Header", () => {
@@ -276,7 +283,7 @@ describe("Header", () => {
 
     expect(css).toContain(".navbar-inner {\n  width: 100%;\n  max-width: var(--page-max);");
     expect(css).toContain("margin: 0 auto;\n  padding: 0 var(--space-5);");
-    expect(compactCss).toContain("padding: 10px 16px;");
+    expect(compactCss).toContain("padding: 8px 10px;");
     expect(compactCss).toContain(".navbar-tabs {\n    display: none;");
     expect(css).not.toContain(".navbar-inner,\n  .section.detail-page-section");
   });

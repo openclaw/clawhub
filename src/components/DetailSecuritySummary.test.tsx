@@ -1,37 +1,25 @@
 /* @vitest-environment jsdom */
 
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { DetailSecuritySummary } from "./DetailSecuritySummary";
 
 describe("DetailSecuritySummary", () => {
-  it("shows a disabled spinner button while a rescan is in progress", () => {
-    render(
-      <DetailSecuritySummary
-        scannerBasePath="/steipete/weather/security"
-        rescanState={{
-          maxRequests: 3,
-          requestCount: 1,
-          remainingRequests: 2,
-          canRequest: false,
-          inProgressRequest: {
-            _id: "rescanRequests:1",
-            targetKind: "skill",
-            targetVersion: "1.0.0",
-            status: "in_progress",
-            createdAt: 1,
-            updatedAt: 1,
-          },
-          latestRequest: null,
-        }}
-        onRequestRescan={vi.fn()}
-      />,
-    );
+  it("shows scanner signals in the compact security audit row", () => {
+    render(<DetailSecuritySummary scannerBasePath="/steipete/weather/security" />);
 
-    const button = screen.getByRole("button", { name: "Scanning" });
-    expect((button as HTMLButtonElement).disabled).toBe(true);
-    expect(button.getAttribute("title")).toBe("A rescan is already in progress.");
-    expect(button.querySelector(".animate-spin")?.className).toContain("[animation-duration:2.4s]");
+    expect(screen.getByRole("heading", { name: "Audits" })).toBeTruthy();
+    expect(screen.getAllByText("Pending")).toHaveLength(4);
+    expect(screen.getByRole("link", { name: "VirusTotal: Pending" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "ClawScan: Pending" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Static analysis: Pending" })).toBeTruthy();
+    expect(screen.queryByText("Pass")).toBeNull();
+    expect(
+      screen
+        .getAllByRole("link")
+        .filter((link) => link.className.includes("security-audit-signal"))
+        .map((link) => link.getAttribute("aria-label")),
+    ).toEqual(["ClawScan: Pending", "Static analysis: Pending", "VirusTotal: Pending"]);
   });
 
   it("shows staff-cleared public scan summaries as cleared", () => {
@@ -65,7 +53,141 @@ describe("DetailSecuritySummary", () => {
     expect(screen.getByText(/reviewed by staff and cleared/i)).toBeTruthy();
     expect(screen.getByRole("link", { name: /VirusTotal.*Cleared/i })).toBeTruthy();
     expect(screen.getByRole("link", { name: /ClawScan.*Cleared/i })).toBeTruthy();
-    expect(screen.queryByRole("link", { name: /Static analysis/i })).toBeNull();
+    expect(screen.getByRole("link", { name: /Static analysis.*Cleared/i })).toBeTruthy();
     expect(screen.queryByText("Suspicious")).toBeNull();
+  });
+
+  it("shows review and suspicious as separate audit states", () => {
+    const { rerender } = render(
+      <DetailSecuritySummary
+        scannerBasePath="/steipete/weather/security"
+        vtAnalysis={{ status: "clean", checkedAt: 1 }}
+        llmAnalysis={{
+          status: "suspicious",
+          verdict: "suspicious",
+          checkedAt: 1,
+          riskSummary: {
+            abnormal_behavior_control: {
+              status: "concern",
+              summary: "Needs context.",
+              highestSeverity: "medium",
+            },
+            permission_boundary: { status: "none", summary: "No issue." },
+            sensitive_data_protection: { status: "none", summary: "No issue." },
+          },
+        }}
+        staticScan={{
+          status: "clean",
+          reasonCodes: [],
+          findings: [],
+          summary: "Clean.",
+          engineVersion: "v1",
+          checkedAt: 1,
+        }}
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: "ClawScan: Review" })).toBeTruthy();
+    expect(screen.getAllByText("Review").length).toBeGreaterThan(0);
+
+    rerender(
+      <DetailSecuritySummary
+        scannerBasePath="/steipete/weather/security"
+        vtAnalysis={{ status: "clean", checkedAt: 1 }}
+        llmAnalysis={{
+          status: "suspicious",
+          verdict: "suspicious",
+          checkedAt: 1,
+          riskSummary: {
+            abnormal_behavior_control: {
+              status: "concern",
+              summary: "High concern.",
+              highestSeverity: "high",
+            },
+            permission_boundary: { status: "none", summary: "No issue." },
+            sensitive_data_protection: { status: "none", summary: "No issue." },
+          },
+        }}
+        staticScan={{
+          status: "clean",
+          reasonCodes: [],
+          findings: [],
+          summary: "Clean.",
+          engineVersion: "v1",
+          checkedAt: 1,
+        }}
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: "ClawScan: Suspicious" })).toBeTruthy();
+    expect(screen.getAllByText("Suspicious").length).toBeGreaterThan(0);
+  });
+
+  it("renders clean scanner outcomes as pass in the user-facing audit UI", () => {
+    render(
+      <DetailSecuritySummary
+        scannerBasePath="/steipete/weather/security"
+        vtAnalysis={{ status: "clean", checkedAt: 1 }}
+        llmAnalysis={{ status: "clean", checkedAt: 1 }}
+        staticScan={{
+          status: "clean",
+          reasonCodes: [],
+          findings: [],
+          summary: "Clean.",
+          engineVersion: "v1",
+          checkedAt: 1,
+        }}
+      />,
+    );
+
+    expect(screen.getAllByText("Pass")).toHaveLength(4);
+    expect(screen.getByRole("link", { name: "VirusTotal: Pass" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "ClawScan: Pass" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Static analysis: Pass" })).toBeTruthy();
+    expect(screen.queryByText("Benign")).toBeNull();
+  });
+
+  it("shows static suspicious as review without rolling it up to suspicious", () => {
+    render(
+      <DetailSecuritySummary
+        scannerBasePath="/steipete/weather/security"
+        vtAnalysis={{ status: "clean", checkedAt: 1 }}
+        llmAnalysis={{ status: "clean", checkedAt: 1 }}
+        staticScan={{
+          status: "suspicious",
+          reasonCodes: ["suspicious.network_access"],
+          findings: [],
+          summary: "Static advisory finding.",
+          engineVersion: "v1",
+          checkedAt: 1,
+        }}
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: "Static analysis: Review" })).toBeTruthy();
+    expect(screen.getAllByText("Pass")).toHaveLength(3);
+    expect(screen.queryByText("Suspicious")).toBeNull();
+  });
+
+  it("does not aggregate scanner operational errors as malicious verdicts", () => {
+    render(
+      <DetailSecuritySummary
+        scannerBasePath="/steipete/weather/security"
+        vtAnalysis={{ status: "failed", checkedAt: 1 }}
+        llmAnalysis={{ status: "clean", checkedAt: 1 }}
+        staticScan={{
+          status: "clean",
+          reasonCodes: [],
+          findings: [],
+          summary: "Clean.",
+          engineVersion: "v1",
+          checkedAt: 1,
+        }}
+      />,
+    );
+
+    expect(screen.getAllByText("Error")).toHaveLength(2);
+    expect(screen.getByRole("link", { name: "VirusTotal: Error" })).toBeTruthy();
+    expect(screen.queryByText("Malicious")).toBeNull();
   });
 });

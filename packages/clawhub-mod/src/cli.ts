@@ -8,11 +8,8 @@ import {
   cmdGetPackageTrustedPublisher,
   cmdPackageModerationStatus,
 } from "../../clawhub/src/cli/commands/packages.js";
-import { cmdRescanPackage, cmdRescanSkill } from "../../clawhub/src/cli/commands/rescan.js";
 import {
-  cmdListSkillAppeals,
   cmdListSkillReports,
-  cmdResolveSkillAppeal,
   cmdTriageSkillReport,
 } from "../../clawhub/src/cli/commands/skills.js";
 import {
@@ -28,12 +25,10 @@ import { cmdBanUser, cmdSetRole, cmdUnbanUser } from "./commands/moderation.js";
 import {
   cmdBackfillPackageArtifacts,
   cmdDeletePackageTrustedPublisher,
-  cmdListPackageAppeals,
   cmdListPackageMigrations,
   cmdListPackageReports,
   cmdModeratePackageRelease,
   cmdPackageModerationQueue,
-  cmdResolvePackageAppeal,
   cmdSetPackageTrustedPublisher,
   cmdTriagePackageReport,
   cmdUpsertPackageMigration,
@@ -412,48 +407,9 @@ function registerPluginModerationCommands(command: Command) {
       const opts = await resolveGlobalOpts();
       await cmdTriagePackageReport(opts, reportId, options);
     });
-
-  command
-    .command("appeals")
-    .description("List plugin appeals for moderator review")
-    .option("--status <status>", "open|accepted|rejected|all", "open")
-    .option("--cursor <cursor>", "Resume cursor")
-    .option("--limit <n>", "Number of appeals to show (max 100)", (value) =>
-      Number.parseInt(value, 10),
-    )
-    .option("--json", "Output JSON")
-    .action(async (options) => {
-      const opts = await resolveGlobalOpts();
-      await cmdListPackageAppeals(opts, options);
-    });
-
-  command
-    .command("resolve-appeal")
-    .description("Resolve or reopen a plugin appeal")
-    .argument("<appeal-id>", "Plugin appeal id")
-    .requiredOption("--status <status>", "open|accepted|rejected")
-    .option("--note <text>", "Resolution note; required unless reopening")
-    .option("--action <action>", "Final action: none|approve")
-    .option("--yes", "Skip confirmation for artifact availability changes")
-    .option("--json", "Output JSON")
-    .action(async (appealId, options) => {
-      const opts = await resolveGlobalOpts();
-      await cmdResolvePackageAppeal(opts, appealId, options);
-    });
 }
 
 function registerPluginOperations(command: Command) {
-  command
-    .command("rescan")
-    .description("Request a security rescan for the latest plugin release")
-    .argument("<name>", "Plugin package name")
-    .option("--yes", "Skip confirmation")
-    .option("--json", "Output JSON")
-    .action(async (name, options) => {
-      const opts = await resolveGlobalOpts();
-      await cmdRescanPackage(opts, name, options, isInputAllowed());
-    });
-
   command
     .command("moderate")
     .description("Set plugin release moderation state")
@@ -496,17 +452,6 @@ function registerPluginOperations(command: Command) {
 
 function registerSkillModerationCommands(command: Command) {
   command
-    .command("rescan")
-    .description("Request a security rescan for the latest skill version")
-    .argument("<slug>", "Skill slug")
-    .option("--yes", "Skip confirmation")
-    .option("--json", "Output JSON")
-    .action(async (slug, options) => {
-      const opts = await resolveGlobalOpts();
-      await cmdRescanSkill(opts, slug, options, isInputAllowed());
-    });
-
-  command
     .command("reports")
     .description("List skill reports for moderator review")
     .option("--status <status>", "open|confirmed|dismissed|all", "open")
@@ -532,34 +477,6 @@ function registerSkillModerationCommands(command: Command) {
     .action(async (reportId, options) => {
       const opts = await resolveGlobalOpts();
       await cmdTriageSkillReport(opts, reportId, options);
-    });
-
-  command
-    .command("appeals")
-    .description("List skill appeals for moderator review")
-    .option("--status <status>", "open|accepted|rejected|all", "open")
-    .option("--cursor <cursor>", "Resume cursor")
-    .option("--limit <n>", "Number of appeals to show (max 200)", (value) =>
-      Number.parseInt(value, 10),
-    )
-    .option("--json", "Output JSON")
-    .action(async (options) => {
-      const opts = await resolveGlobalOpts();
-      await cmdListSkillAppeals(opts, options);
-    });
-
-  command
-    .command("resolve-appeal")
-    .description("Resolve or reopen a skill appeal")
-    .argument("<appeal-id>", "Skill appeal id")
-    .requiredOption("--status <status>", "open|accepted|rejected")
-    .option("--note <text>", "Resolution note; required unless reopening")
-    .option("--action <action>", "Final action: none|restore")
-    .option("--yes", "Skip confirmation for artifact availability changes")
-    .option("--json", "Output JSON")
-    .action(async (appealId, options) => {
-      const opts = await resolveGlobalOpts();
-      await cmdResolveSkillAppeal(opts, appealId, options);
     });
 }
 

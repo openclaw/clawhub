@@ -394,6 +394,38 @@ function buildCtx(skill: SkillDoc) {
 }
 
 describe("skills.insertVersion latest-tag protection", () => {
+  it("stores clawScanNote on the inserted immutable skill version", async () => {
+    const skill = buildExistingSkill();
+    const { ctx, captured } = buildCtx(skill);
+
+    await insertVersionHandler(
+      ctx as never,
+      buildPublishArgs({
+        clawScanNote: "The shell command is constrained to this skill folder.",
+      }) as never,
+    );
+
+    expect(captured.versionInserted).toMatchObject({
+      clawScanNote: "The shell command is constrained to this skill folder.",
+    });
+  });
+
+  it("rejects clawScanNote values beyond the write-path limit", async () => {
+    const skill = buildExistingSkill();
+    const { ctx, captured } = buildCtx(skill);
+
+    await expect(
+      insertVersionHandler(
+        ctx as never,
+        buildPublishArgs({
+          clawScanNote: "x".repeat(4001),
+        }) as never,
+      ),
+    ).rejects.toThrow("ClawScan note must be at most 4000 characters.");
+
+    expect(captured.versionInserted).toBeNull();
+  });
+
   it("promotes latest when publishing a strictly higher version", async () => {
     const skill = buildExistingSkill();
     const { ctx, captured } = buildCtx(skill);

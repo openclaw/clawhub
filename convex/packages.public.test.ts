@@ -129,6 +129,7 @@ const insertReleaseInternalHandler = (
       family: "skill" | "code-plugin" | "bundle-plugin";
       version: string;
       changelog: string;
+      clawScanNote?: string;
       tags: string[];
       summary: string;
       files: Array<{
@@ -3779,6 +3780,7 @@ describe("packages public queries", () => {
       family: "code-plugin",
       version: "1.0.0",
       changelog: "beta",
+      clawScanNote: "This release bundles a native helper but does not fetch remote code.",
       tags: ["beta"],
       summary: "demo",
       files: [],
@@ -3802,6 +3804,7 @@ describe("packages public queries", () => {
       "packageReleases",
       expect.objectContaining({
         distTags: ["beta"],
+        clawScanNote: "This release bundles a native helper but does not fetch remote code.",
         verification: expect.objectContaining({ scanStatus: "suspicious" }),
         staticScan: expect.objectContaining({ status: "suspicious" }),
       }),
@@ -3813,6 +3816,29 @@ describe("packages public queries", () => {
         tags: { beta: "packageReleases:new" },
       }),
     );
+  });
+
+  it("rejects package release clawScanNote values beyond the write-path limit", async () => {
+    const ctx = makeInsertReleaseCtx(makePackageDoc());
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:owner",
+        ownerUserId: "users:owner",
+        name: "demo-plugin",
+        displayName: "Demo Plugin",
+        family: "code-plugin",
+        version: "1.0.0",
+        changelog: "release",
+        clawScanNote: "x".repeat(4001),
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+      }),
+    ).rejects.toThrow("ClawScan note must be at most 4000 characters.");
+
+    expect(ctx.insert).not.toHaveBeenCalledWith("packageReleases", expect.anything());
   });
 
   it("validates package publish payloads inside the action path", async () => {
@@ -4587,15 +4613,6 @@ describe("packages public queries", () => {
               return {
                 withIndex: vi.fn(() => ({
                   unique: vi.fn().mockResolvedValue(null),
-                })),
-              };
-            }
-            if (table === "rescanRequests") {
-              return {
-                withIndex: vi.fn(() => ({
-                  order: vi.fn(() => ({
-                    take: vi.fn().mockResolvedValue([]),
-                  })),
                 })),
               };
             }
@@ -6138,15 +6155,6 @@ describe("package scan backfill", () => {
             return null;
           }),
           query: vi.fn((table: string) => {
-            if (table === "rescanRequests") {
-              return {
-                withIndex: vi.fn(() => ({
-                  order: vi.fn(() => ({
-                    take: vi.fn(async () => []),
-                  })),
-                })),
-              };
-            }
             throw new Error(`Unexpected query table: ${table}`);
           }),
           insert: vi.fn(),

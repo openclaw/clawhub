@@ -87,6 +87,7 @@ export const CliPublishRequestSchema = type({
   migrateOwner: "boolean?",
   version: "string",
   changelog: "string",
+  clawScanNote: "string?",
   acceptLicenseTerms: "boolean?",
   tags: "string[]?",
   source: PublishSourceSchema.optional(),
@@ -418,18 +419,6 @@ export const ApiV1DeleteResponseSchema = type({
   ok: "true",
   slugReservedUntil: "number?",
 });
-
-export const ApiV1RescanResponseSchema = type({
-  ok: "true",
-  targetKind: '"skill"|"package"',
-  name: "string",
-  version: "string",
-  status: '"in_progress"|"completed"|"failed"',
-  remainingRequests: "number",
-  maxRequests: "number",
-  pendingRequestId: "string?",
-});
-export type ApiV1RescanResponse = (typeof ApiV1RescanResponseSchema)[inferred];
 
 export const ApiV1SkillRenameResponseSchema = type({
   ok: "true",

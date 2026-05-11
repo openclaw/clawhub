@@ -41,6 +41,7 @@ import {
   readArtifactReportStatus,
   appendPackageModerationEventLog,
 } from "./lib/artifactModeration";
+import { normalizeClawScanNoteForWrite } from "./lib/clawScanNote";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
 import {
@@ -76,13 +77,6 @@ import { MAX_ACTIVE_REPORTS_PER_USER, MAX_REPORT_REASON_LENGTH } from "./lib/rep
 import { tokenize } from "./lib/searchText";
 import { hashSkillFiles } from "./lib/skills";
 import { runStaticPublishScan } from "./lib/staticPublishScan";
-import { getLatestPackageRescanTarget, insertPackageRescanRequest } from "./model/packages/rescans";
-import {
-  assertCanRequestRescan,
-  buildRescanState,
-  errorMessage,
-  finalizeInProgressRescanRequestsForTarget,
-} from "./model/rescans/policy";
 
 const MAX_PUBLIC_LIST_PAGE_SIZE = 200;
 const MAX_SEARCH_PAGE_SIZE = 200;
@@ -98,6 +92,34 @@ const REAL_BUNDLE_MANIFESTS = [
   { path: ".cursor-plugin/plugin.json", format: "cursor" },
 ] as const;
 const INITIAL_PACKAGE_VT_SCAN_DELAY_MS = 30_000;
+
+const llmAgenticRiskEvidenceValidator = v.object({
+  path: v.string(),
+  snippet: v.string(),
+  explanation: v.string(),
+});
+
+const llmAgenticRiskFindingValidator = v.object({
+  categoryId: v.string(),
+  categoryLabel: v.string(),
+  riskBucket: v.union(
+    v.literal("abnormal_behavior_control"),
+    v.literal("permission_boundary"),
+    v.literal("sensitive_data_protection"),
+  ),
+  status: v.union(v.literal("none"), v.literal("note"), v.literal("concern")),
+  severity: v.string(),
+  confidence: v.union(v.literal("high"), v.literal("medium"), v.literal("low")),
+  evidence: v.optional(llmAgenticRiskEvidenceValidator),
+  userImpact: v.string(),
+  recommendation: v.string(),
+});
+
+const llmRiskSummaryBucketValidator = v.object({
+  status: v.union(v.literal("none"), v.literal("note"), v.literal("concern")),
+  summary: v.string(),
+  highestSeverity: v.optional(v.string()),
+});
 const packageOfficialMigrationPhaseValidator = v.union(
   v.literal("planned"),
   v.literal("published"),
@@ -153,9 +175,6 @@ const internalRefs = internal as unknown as {
     createInternal: unknown;
     getByIdInternal: unknown;
     revokeInternal: unknown;
-  };
-  rescanRequests: {
-    markStatusInternal: unknown;
   };
   skills: {
     getSkillBySlugInternal: unknown;
@@ -551,7 +570,6 @@ type DashboardPackageListItem = {
   createdAt: number;
   updatedAt: number;
   pendingReview?: true;
-  rescanState: Awaited<ReturnType<typeof buildRescanState>> | null;
   latestRelease: {
     version: string;
     createdAt: number;
@@ -589,6 +607,21 @@ async function viewerCanAccessPackageOwner(
   if (digest.ownerUserId !== viewerUserId) return false;
   const ownerPublisher = await ctx.db.get(digest.ownerPublisherId);
   return ownerPublisher?.kind === "user" && ownerPublisher.linkedUserId === viewerUserId;
+}
+
+async function viewerCanManagePackageOwner(
+  ctx: DbReaderCtx,
+  digest: Pick<PackageDigestLike, "ownerUserId" | "ownerPublisherId">,
+  viewerUserId: Id<"users"> | undefined,
+) {
+  if (!viewerUserId) return false;
+  if (!digest.ownerPublisherId) return digest.ownerUserId === viewerUserId;
+
+  const ownerPublisher = await ctx.db.get(digest.ownerPublisherId);
+  if (ownerPublisher?.kind === "user" && ownerPublisher.linkedUserId === viewerUserId) return true;
+
+  const membership = await getPublisherMembership(ctx, digest.ownerPublisherId, viewerUserId);
+  return Boolean(membership && isPublisherRoleAllowed(membership.role, ["admin"]));
 }
 
 async function canViewerReadPackage(
@@ -833,13 +866,6 @@ async function toDashboardPackageListItem(
     createdAt: pkg.createdAt,
     updatedAt: pkg.updatedAt,
     pendingReview: pkg.scanStatus === "pending" ? true : undefined,
-    rescanState:
-      latestRelease && !latestRelease.softDeletedAt
-        ? await buildRescanState(ctx, {
-            kind: "plugin",
-            artifactId: latestRelease._id,
-          })
-        : null,
     latestRelease:
       latestRelease && !latestRelease.softDeletedAt
         ? {
@@ -1443,6 +1469,45 @@ export const getByName = query({
       package: publicPackage,
       latestRelease: latestRelease && !latestRelease.softDeletedAt ? latestRelease : null,
       owner,
+    };
+  },
+});
+
+export const getClawScanNoteSettings = query({
+  args: {
+    name: v.string(),
+    candidateNames: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, args) => {
+    const viewerUserId = await getOptionalViewerUserId(ctx);
+    if (!viewerUserId) return null;
+
+    const candidates = [args.name, ...(args.candidateNames ?? [])]
+      .map((name) => normalizePackageName(name))
+      .filter(Boolean);
+    const uniqueCandidates = Array.from(new Set(candidates));
+
+    let pkg: Doc<"packages"> | null = null;
+    for (const candidate of uniqueCandidates) {
+      pkg = await getPackageByNormalizedName(ctx, candidate);
+      if (pkg && !pkg.softDeletedAt && pkg.family !== "skill") break;
+      pkg = null;
+    }
+    if (!pkg || !pkg.latestReleaseId) return null;
+
+    const actor = await ctx.db.get(viewerUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) return null;
+    if (actor.role !== "admin") {
+      const canAccess = await viewerCanManagePackageOwner(ctx, pkg, viewerUserId);
+      if (!canAccess) return null;
+    }
+
+    const latestRelease = await ctx.db.get(pkg.latestReleaseId);
+    if (!latestRelease || latestRelease.softDeletedAt) return null;
+
+    return {
+      package: pkg,
+      latestRelease,
     };
   },
 });
@@ -3078,6 +3143,8 @@ export const getPackageModerationStatusForUserInternal = internalQuery({
   },
 });
 
+// Deprecated compatibility path. First-class appeal intake is no longer exposed
+// in the CLI/docs; keep this route backed until legacy clients age out.
 export const submitPackageAppealForUserInternal = internalMutation({
   args: {
     actorUserId: v.id("users"),
@@ -3847,6 +3914,7 @@ async function publishPackageImpl(
   const family = payload.family;
   const name = normalizePackageName(payload.name);
   const version = assertPackageVersion(family, payload.version);
+  const clawScanNote = normalizeClawScanNoteForWrite(payload.clawScanNote);
   const existingPackage = await runQueryRef<Doc<"packages"> | null>(
     ctx,
     internalRefs.packages.getPackageByNameInternal,
@@ -4092,6 +4160,7 @@ async function publishPackageImpl(
     family,
     version,
     changelog: payload.changelog.trim(),
+    clawScanNote,
     tags: payload.tags?.map((tag: string) => tag.trim()).filter(Boolean) ?? ["latest"],
     summary,
     sourceRepo: effectiveSource?.repo || effectiveSource?.url,
@@ -4655,6 +4724,7 @@ export const insertReleaseInternal = internalMutation({
     family: v.union(v.literal("skill"), v.literal("code-plugin"), v.literal("bundle-plugin")),
     version: v.string(),
     changelog: v.string(),
+    clawScanNote: v.optional(v.string()),
     tags: v.array(v.string()),
     summary: v.string(),
     sourceRepo: v.optional(v.string()),
@@ -4831,10 +4901,13 @@ export const insertReleaseInternal = internalMutation({
       ? Array.from(new Set([...args.tags, "latest"]))
       : args.tags;
 
+    const clawScanNote = normalizeClawScanNoteForWrite(args.clawScanNote);
+
     const releaseId = await ctx.db.insert("packageReleases", {
       packageId: pkgId,
       version: args.version,
       changelog: args.changelog,
+      ...(clawScanNote ? { clawScanNote } : {}),
       summary: args.summary,
       distTags: effectiveTags,
       files: args.files,
@@ -4989,11 +5062,6 @@ export const updateReleaseScanResultsInternal = internalMutation({
         ...patch,
       } as Doc<"packageReleases">;
       await syncLatestPackageVerification(ctx, updatedRelease);
-      await finalizeInProgressRescanRequestsForTarget(
-        ctx,
-        { kind: "plugin", artifactId: args.releaseId },
-        updatedRelease,
-      );
     }
   },
 });
@@ -5018,6 +5086,14 @@ export const updateReleaseLlmAnalysisInternal = internalMutation({
       ),
       guidance: v.optional(v.string()),
       findings: v.optional(v.string()),
+      agenticRiskFindings: v.optional(v.array(llmAgenticRiskFindingValidator)),
+      riskSummary: v.optional(
+        v.object({
+          abnormal_behavior_control: llmRiskSummaryBucketValidator,
+          permission_boundary: llmRiskSummaryBucketValidator,
+          sensitive_data_protection: llmRiskSummaryBucketValidator,
+        }),
+      ),
       model: v.optional(v.string()),
       checkedAt: v.number(),
     }),
@@ -5025,14 +5101,12 @@ export const updateReleaseLlmAnalysisInternal = internalMutation({
   handler: async (ctx, args) => {
     const release = await ctx.db.get(args.releaseId);
     if (!isReleaseActive(release)) return;
-    const updatedRelease = { ...release, llmAnalysis: args.llmAnalysis };
     await ctx.db.patch(args.releaseId, { llmAnalysis: args.llmAnalysis });
+    const updatedRelease = {
+      ...release,
+      llmAnalysis: args.llmAnalysis,
+    } as Doc<"packageReleases">;
     await syncLatestPackageVerification(ctx, updatedRelease);
-    await finalizeInProgressRescanRequestsForTarget(
-      ctx,
-      { kind: "plugin", artifactId: args.releaseId },
-      updatedRelease,
-    );
   },
 });
 
@@ -5291,11 +5365,6 @@ export const updateReleaseStaticScanInternal = internalMutation({
       ...patch,
     } as Doc<"packageReleases">;
     await syncLatestPackageVerification(ctx, updatedRelease);
-    await finalizeInProgressRescanRequestsForTarget(
-      ctx,
-      { kind: "plugin", artifactId: args.releaseId },
-      updatedRelease,
-    );
   },
 });
 
@@ -5423,116 +5492,57 @@ export const backfillPackageReleaseScans = action({
   },
 });
 
-async function markPackageRescanRequest(
-  ctx: { runMutation: (ref: never, args: never) => Promise<unknown> },
-  requestId: Id<"rescanRequests">,
-  status: "completed" | "failed",
-  error?: string,
-) {
-  await ctx.runMutation(
-    internalRefs.rescanRequests.markStatusInternal as never,
-    {
-      requestId,
-      status,
-      error,
-    } as never,
-  );
-}
-
-export const getRescanState = query({
+export const updateLatestClawScanNoteAndRequestRescan = mutation({
   args: {
     packageId: v.id("packages"),
+    clawScanNote: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { user } = await requireUser(ctx);
-    const target = await getLatestPackageRescanTarget(ctx, args.packageId);
-    await assertCanManageOwnedResource(ctx, {
-      actor: user,
-      ownerUserId: target.pkg.ownerUserId,
-      ownerPublisherId: target.pkg.ownerPublisherId,
-      allowPlatformModerator: true,
-    });
-    return {
-      targetKind: "plugin" as const,
-      targetVersion: target.release.version,
-      packageReleaseId: target.release._id,
-      ...(await buildRescanState(ctx, {
-        kind: "plugin",
-        artifactId: target.release._id,
-      })),
-    };
-  },
-});
-
-export const getOwnerRescanStateByName = query({
-  args: {
-    name: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const viewerUserId = await getOptionalViewerUserId(ctx);
-    if (!viewerUserId) return null;
-
-    const pkg = await getPackageByNormalizedName(ctx, normalizePackageName(args.name));
-    if (!pkg || pkg.softDeletedAt || pkg.family === "skill" || !pkg.latestReleaseId) return null;
-
-    const release = await ctx.db.get(pkg.latestReleaseId);
-    if (!release || release.softDeletedAt) return null;
-
-    const actor = await ctx.db.get(viewerUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) return null;
-    if (actor.role !== "admin" && actor.role !== "moderator") {
-      const canAccess = await viewerCanAccessPackageOwner(ctx, pkg, viewerUserId);
-      if (!canAccess) return null;
+    const pkg = await ctx.db.get(args.packageId);
+    if (!pkg || pkg.softDeletedAt || pkg.family === "skill" || !pkg.latestReleaseId) {
+      throw new ConvexError("Plugin not found");
     }
 
-    return {
-      targetKind: "plugin" as const,
-      targetVersion: release.version,
-      packageReleaseId: release._id,
-      ...(await buildRescanState(ctx, {
-        kind: "plugin",
-        artifactId: release._id,
-      })),
-    };
-  },
-});
+    const release = await ctx.db.get(pkg.latestReleaseId);
+    if (!release || release.softDeletedAt) throw new ConvexError("Plugin release not found");
 
-export const requestRescan = mutation({
-  args: {
-    packageId: v.id("packages"),
-  },
-  handler: async (ctx, args) => {
-    const { user } = await requireUser(ctx);
-    const target = await getLatestPackageRescanTarget(ctx, args.packageId);
-    const isPlatformStaff = user.role === "admin" || user.role === "moderator";
     await assertCanManageOwnedResource(ctx, {
       actor: user,
-      ownerUserId: target.pkg.ownerUserId,
-      ownerPublisherId: target.pkg.ownerPublisherId,
-      allowPlatformModerator: true,
+      ownerUserId: pkg.ownerUserId,
+      ownerPublisherId: pkg.ownerPublisherId,
+      allowPlatformAdmin: true,
     });
-    await assertCanRequestRescan(
-      ctx,
-      {
-        kind: "plugin",
-        artifactId: target.release._id,
+
+    const now = Date.now();
+    const previousNote = release.clawScanNote?.trim() || undefined;
+    const nextNote = normalizeClawScanNoteForWrite(args.clawScanNote);
+    await ctx.db.patch(release._id, {
+      clawScanNote: nextNote ?? "",
+      clawScanNoteUpdatedAt: now,
+    });
+    await ctx.db.insert("auditLogs", {
+      actorUserId: user._id,
+      action: "package.clawscan_note.update",
+      targetType: "packageRelease",
+      targetId: release._id,
+      metadata: {
+        packageId: pkg._id,
+        name: pkg.name,
+        version: release.version,
+        hadPreviousNote: Boolean(previousNote),
+        hasNextNote: Boolean(nextNote),
+        previousLength: previousNote?.length ?? 0,
+        nextLength: nextNote?.length ?? 0,
       },
-      { ignoreRequestLimit: isPlatformStaff },
-    );
-
-    const requestId = await insertPackageRescanRequest(ctx, user, target);
-    await ctx.scheduler.runAfter(0, internal.packages.dispatchPackageRescanInternal, {
-      requestId,
-      releaseId: target.release._id,
+      createdAt: now,
     });
 
-    return {
-      requestId,
-      ...(await buildRescanState(ctx, {
-        kind: "plugin",
-        artifactId: target.release._id,
-      })),
-    };
+    await runAfterRef(ctx, 0, internalRefs.llmEval.evaluatePackageReleaseWithLlm, {
+      releaseId: release._id,
+    });
+
+    return { ok: true as const, packageReleaseId: release._id };
   },
 });
 
@@ -5643,82 +5653,5 @@ export const removeBetaLatestPackageTagsInternal = internalMutation({
       results.push({ name: normalizedName, ok: true as const, changed: true });
     }
     return { ok: true as const, results };
-  },
-});
-
-export const requestRescanForApiTokenInternal = internalMutation({
-  args: {
-    actorUserId: v.id("users"),
-    name: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
-
-    const pkg = await getPackageByNormalizedName(ctx, normalizePackageName(args.name));
-    if (!pkg || pkg.softDeletedAt || pkg.family === "skill") {
-      throw new ConvexError("Plugin not found");
-    }
-
-    const target = await getLatestPackageRescanTarget(ctx, pkg._id);
-    const isPlatformStaff = actor.role === "admin" || actor.role === "moderator";
-    await assertCanManageOwnedResource(ctx, {
-      actor,
-      ownerUserId: target.pkg.ownerUserId,
-      ownerPublisherId: target.pkg.ownerPublisherId,
-      allowPlatformModerator: true,
-    });
-    await assertCanRequestRescan(
-      ctx,
-      {
-        kind: "plugin",
-        artifactId: target.release._id,
-      },
-      { ignoreRequestLimit: isPlatformStaff },
-    );
-
-    const requestId = await insertPackageRescanRequest(ctx, actor, target);
-    await ctx.scheduler.runAfter(0, internal.packages.dispatchPackageRescanInternal, {
-      requestId,
-      releaseId: target.release._id,
-    });
-
-    const state = await buildRescanState(ctx, {
-      kind: "plugin",
-      artifactId: target.release._id,
-    });
-    return {
-      ok: true,
-      targetKind: "package" as const,
-      name: target.pkg.normalizedName,
-      version: target.release.version,
-      status: state.inProgressRequest?.status ?? state.latestRequest?.status ?? "in_progress",
-      remainingRequests: state.remainingRequests,
-      maxRequests: state.maxRequests,
-      pendingRequestId: requestId,
-    };
-  },
-});
-
-export const dispatchPackageRescanInternal = internalAction({
-  args: {
-    requestId: v.id("rescanRequests"),
-    releaseId: v.id("packageReleases"),
-  },
-  handler: async (ctx, args) => {
-    try {
-      await runActionRef(ctx, internalRefs.packages.scanPackageReleaseStaticallyInternal, {
-        releaseId: args.releaseId,
-      });
-      await runActionRef(ctx, internalRefs.vt.scanPackageReleaseWithVirusTotal, {
-        releaseId: args.releaseId,
-      });
-      await runActionRef(ctx, internalRefs.llmEval.evaluatePackageReleaseWithLlm, {
-        releaseId: args.releaseId,
-      });
-    } catch (error) {
-      await markPackageRescanRequest(ctx, args.requestId, "failed", errorMessage(error));
-      throw error;
-    }
   },
 });

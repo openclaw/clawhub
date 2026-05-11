@@ -1,5 +1,5 @@
 ---
-summary: "ClawHub trust, scan, reporting, appeal, and moderation behavior."
+summary: "ClawHub trust, scan, reporting, and moderation behavior."
 read_when:
   - Understanding ClawHub scan and moderation outcomes
   - Reporting a skill or package
@@ -91,40 +91,12 @@ Report examples:
 - bad-faith registrations or trademark misuse
 - content that violates [Acceptable usage](./acceptable-usage.md)
 
-## Bad-faith or trademark reports
+## Publisher ClawScan notes
 
-ClawHub uses the same report and staff moderation pipeline for bad-faith
-registrations, impersonation, and trademark-related disputes. These reports need
-enough context for staff to identify the claimant, disputed listing, and
-requested action.
-
-Include:
-
-- the canonical ClawHub skill or package URL and owner handle
-- the trademark, project, company, or product name at issue
-- public evidence of the claimant's ownership or authority
-- why the current owner is not authorized to publish under that name
-- the requested action, such as hide pending review, transfer ownership, rename,
-  or remove
-
-Do not put private secrets or sensitive legal documents in public reports. Open
-a GitHub issue with non-sensitive evidence and ask maintainers for a private
-handoff path when needed.
-
-## Appeals and rescans
-
-Owners can request a rescan when they believe a skill or package was incorrectly
-held or flagged. Platform moderators and admins can request rescans for any
-skill or package while handling reports or support requests:
-
-```bash
-clawhub skill rescan <slug>
-clawhub package rescan <name>
-```
-
-For moderated content, owners may be able to submit an appeal from the
-owner-visible ClawHub surfaces. Appeals should explain what changed or why the
-flag is incorrect.
+Publishers can provide an optional ClawScan note when publishing a skill or
+plugin. This note gives ClawScan context for behavior that may otherwise look
+unusual, such as network access, native host access, or provider-specific
+credentials.
 
 ## Moderation Holds
 
@@ -162,7 +134,8 @@ listings.
 
 Deleted, banned, or disabled accounts cannot use ClawHub API tokens. If CLI auth
 starts failing after account action, sign in to the web UI to review account
-state or contact maintainers through the expected project support channel.
+state. If sign-in or normal CLI access is blocked, contact
+security@openclaw.ai for recovery review.
 
 ## Publisher guidance
 
@@ -170,6 +143,7 @@ To reduce false positives and improve user trust:
 
 - keep names, summaries, tags, and changelogs accurate
 - declare required environment variables and permissions
+- add a publisher ClawScan note when a release has unusual but intentional behavior
 - avoid obfuscated install commands
 - link to source when possible
 - use dry runs before publishing plugins

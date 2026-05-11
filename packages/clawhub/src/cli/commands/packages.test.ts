@@ -14,6 +14,7 @@ import {
   createUiModuleMocks,
   makeGlobalOpts,
 } from "../../../test/cliCommandTestKit.js";
+import { MAX_CLAWSCAN_NOTE_CHARS } from "../../schema/index.js";
 
 const authTokenMocks = createAuthTokenModuleMocks();
 const registryMocks = createRegistryModuleMocks();
@@ -29,7 +30,6 @@ vi.mock("../ui.js", () => uiMocks.moduleFactory());
 
 const {
   cmdDeletePackage,
-  cmdAppealPackage,
   cmdDownloadPackage,
   cmdExplorePackages,
   cmdGetPackageTrustedPublisher,
@@ -47,12 +47,10 @@ const {
 const {
   cmdBackfillPackageArtifacts,
   cmdDeletePackageTrustedPublisher,
-  cmdListPackageAppeals,
   cmdListPackageMigrations,
   cmdListPackageReports,
   cmdModeratePackageRelease,
   cmdPackageModerationQueue,
-  cmdResolvePackageAppeal,
   cmdSetPackageTrustedPublisher,
   cmdTriagePackageReport,
   cmdUpsertPackageMigration,
@@ -587,109 +585,6 @@ describe("package commands", () => {
     expect(mockLog).toHaveBeenCalledWith("OK. Reported @scope/demo@1.2.3 for moderator review.");
   });
 
-  it("submits package appeals", async () => {
-    httpMocks.apiRequest.mockResolvedValueOnce({
-      ok: true,
-      submitted: true,
-      alreadyOpen: false,
-      appealId: "packageAppeals:1",
-      packageId: "pkg_1",
-      releaseId: "rel_1",
-      status: "open",
-    });
-
-    await cmdAppealPackage(makeOpts(), "@scope/demo", {
-      version: "1.2.3",
-      message: "please review",
-    });
-
-    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
-      "https://clawhub.ai",
-      {
-        method: "POST",
-        path: "/api/v1/packages/%40scope%2Fdemo/appeal",
-        token: "tkn",
-        body: {
-          version: "1.2.3",
-          message: "please review",
-        },
-      },
-      expect.anything(),
-    );
-    expect(mockLog).toHaveBeenCalledWith("OK. Appeal submitted: packageAppeals:1");
-  });
-
-  it("lists package appeals", async () => {
-    httpMocks.apiRequest.mockResolvedValueOnce({
-      items: [
-        {
-          appealId: "packageAppeals:1",
-          packageId: "pkg_1",
-          releaseId: "rel_1",
-          name: "@scope/demo",
-          displayName: "Demo",
-          family: "code-plugin",
-          version: "1.2.3",
-          message: "please review",
-          status: "open",
-          createdAt: 1,
-          submitter: { userId: "users:owner", handle: "owner", displayName: "Owner" },
-          resolvedAt: null,
-          resolvedBy: null,
-          resolutionNote: null,
-        },
-      ],
-      nextCursor: null,
-      done: true,
-    });
-
-    await cmdListPackageAppeals(makeOpts(), { status: "open", limit: 10 });
-
-    const request = httpMocks.apiRequest.mock.calls[0]?.[1] as { url?: string } | undefined;
-    const url = new URL(String(request?.url));
-    expect(url.pathname).toBe("/api/v1/packages/appeals");
-    expect(url.searchParams.get("status")).toBe("open");
-    expect(url.searchParams.get("limit")).toBe("10");
-    expect(mockLog).toHaveBeenCalledWith("packageAppeals:1 open @scope/demo@1.2.3");
-  });
-
-  it("resolves package appeals", async () => {
-    httpMocks.apiRequest.mockResolvedValueOnce({
-      ok: true,
-      appealId: "packageAppeals:1",
-      packageId: "pkg_1",
-      releaseId: "rel_1",
-      status: "accepted",
-      actionTaken: "approve",
-    });
-
-    await cmdResolvePackageAppeal(makeOpts(), "packageAppeals:1", {
-      status: "accepted",
-      note: "scanner finding cleared",
-      action: "approve",
-      yes: true,
-    });
-
-    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
-      "https://clawhub.ai",
-      {
-        method: "POST",
-        path: "/api/v1/packages/appeals/packageAppeals%3A1/resolve",
-        token: "tkn",
-        body: {
-          status: "accepted",
-          note: "scanner finding cleared",
-          finalAction: "approve",
-        },
-      },
-      expect.anything(),
-    );
-    expect(mockLog).toHaveBeenCalledWith(
-      "OK. Appeal packageAppeals:1 set to accepted; action approve.",
-    );
-    expect(mockLog).toHaveBeenCalledWith("  - Approve the package release.");
-  });
-
   it("lists package reports", async () => {
     httpMocks.apiRequest.mockResolvedValueOnce({
       items: [
@@ -1116,6 +1011,7 @@ describe("package commands", () => {
         sourceRepo: "openclaw/demo-plugin",
         sourceCommit: "abc123",
         sourceRef: "refs/tags/v1.0.0",
+        clawscanNote: "This plugin shells out only to the bundled helper binary.",
       });
 
       expect(getPublishPayload()).toEqual({
@@ -1125,6 +1021,7 @@ describe("package commands", () => {
         family: "code-plugin",
         version: "1.0.0",
         changelog: "",
+        clawScanNote: "This plugin shells out only to the bundled helper binary.",
         tags: ["latest"],
         source: {
           kind: "github",
@@ -1153,6 +1050,33 @@ describe("package commands", () => {
       expect(mockLog).not.toHaveBeenCalled();
       expect(mockWrite).not.toHaveBeenCalled();
       dateSpy.mockRestore();
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects oversized clawscan notes before uploading package files", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "demo-plugin");
+      await mkdir(join(folder, "dist"), { recursive: true });
+      await writeFile(
+        join(folder, "package.json"),
+        makeCodePluginPackageJson({ name: "demo-plugin", version: "1.0.0" }),
+        "utf8",
+      );
+      await writeFile(
+        join(folder, "openclaw.plugin.json"),
+        JSON.stringify({ id: "demo.plugin" }),
+        "utf8",
+      );
+
+      await expect(
+        cmdPublishPackage(makeOpts(workdir), "demo-plugin", {
+          clawscanNote: "x".repeat(MAX_CLAWSCAN_NOTE_CHARS + 1),
+        }),
+      ).rejects.toThrow(`ClawScan note must be at most ${MAX_CLAWSCAN_NOTE_CHARS} characters.`);
+      expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }

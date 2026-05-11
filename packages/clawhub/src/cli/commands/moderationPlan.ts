@@ -46,37 +46,6 @@ export function reportModerationPlan(params: {
   };
 }
 
-export function appealModerationPlan(params: {
-  entityLabel: "skill" | "package";
-  appealId: string;
-  status: "open" | "accepted" | "rejected";
-  finalAction?: "none" | "restore" | "approve";
-}): ModerationPlan {
-  const impacts: string[] = [];
-  if (params.status === "open") {
-    impacts.push("Reopen the appeal for review.");
-  } else if (params.status === "accepted") {
-    impacts.push("Accept the appeal.");
-  } else {
-    impacts.push("Reject the appeal without changing artifact availability.");
-  }
-
-  if (params.finalAction === "restore") {
-    impacts.push("Restore the skill to public availability.");
-  } else if (params.finalAction === "approve") {
-    impacts.push("Approve the package release.");
-  }
-
-  const action = params.finalAction && params.finalAction !== "none" ? params.finalAction : "none";
-  return {
-    subject: `${params.entityLabel} appeal ${params.appealId}`,
-    outcome: `set status to ${params.status}; final action ${action}`,
-    impacts,
-    requiresConfirmation: action !== "none",
-    confirmPrompt: `Apply this ${params.entityLabel} appeal action?`,
-  };
-}
-
 export async function presentModerationPlan(plan: ModerationPlan, options: ModerationPlanOptions) {
   if (!options.json) {
     console.log("Moderation action summary");

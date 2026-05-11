@@ -88,7 +88,6 @@ const internalRefs = internal as unknown as {
     insertAuditLogInternal: unknown;
     recordPackageDownloadInternal: unknown;
     recordPackageInstallInternal: unknown;
-    requestRescanForApiTokenInternal: unknown;
     softDeletePackageInternal: unknown;
     restorePackageInternal: unknown;
     moderatePackageReleaseForUserInternal: unknown;
@@ -334,6 +333,8 @@ type ReleaseLike = {
   sha256hash?: string;
   vtAnalysis?: Doc<"packageReleases">["vtAnalysis"];
   llmAnalysis?: Doc<"packageReleases">["llmAnalysis"];
+  clawScanNote?: string;
+  clawScanNoteUpdatedAt?: number;
   staticScan?: Doc<"packageReleases">["staticScan"];
   integritySha256?: string;
   artifactKind?: Doc<"packageReleases">["artifactKind"];
@@ -867,6 +868,7 @@ function parsePackagePublishBody(body: unknown) {
     family: "skill" | "code-plugin" | "bundle-plugin";
     version: string;
     changelog: string;
+    clawScanNote?: string;
     manualOverrideReason?: string;
     channel?: "official" | "community" | "private";
     tags?: string[];
@@ -900,6 +902,7 @@ function parsePackagePublishBody(body: unknown) {
     family: parsed.family,
     version: parsed.version,
     changelog: parsed.changelog,
+    clawScanNote: parsed.clawScanNote?.trim() || undefined,
     manualOverrideReason: parsed.manualOverrideReason?.trim() || undefined,
     channel: parsed.channel ?? undefined,
     tags: parsed.tags?.filter(Boolean) ?? undefined,
@@ -1720,27 +1723,6 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
     }
   }
 
-  if (packageSegments[0] === "rescan" && packageSegments.length === 1) {
-    const rate = await applyRateLimit(ctx, request, "write");
-    if (!rate.ok) return rate.response;
-    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
-    if (!auth.ok) return auth.response;
-
-    try {
-      const result = await runMutationRef(
-        ctx,
-        internalRefs.packages.requestRescanForApiTokenInternal,
-        {
-          actorUserId: auth.userId,
-          name: packageName,
-        },
-      );
-      return json(result, 200, rate.headers);
-    } catch (error) {
-      return packageOperationErrorToResponse(error, rate.headers, "Rescan request failed");
-    }
-  }
-
   if (packageSegments[0] === "undelete" && packageSegments.length === 1) {
     const rate = await applyRateLimit(ctx, request, "write");
     if (!rate.ok) return rate.response;
@@ -2512,6 +2494,8 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
           sha256hash: result.version.sha256hash ?? null,
           vtAnalysis: result.version.vtAnalysis ?? null,
           llmAnalysis: result.version.llmAnalysis ?? null,
+          clawScanNote: result.version.clawScanNote ?? null,
+          clawScanNoteUpdatedAt: result.version.clawScanNoteUpdatedAt ?? null,
           staticScan: result.version.staticScan ?? null,
         },
       },

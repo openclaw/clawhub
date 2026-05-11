@@ -415,7 +415,7 @@ describe("plugins publish route", () => {
       expect(screen.getByDisplayValue("demo-bundle")).toBeTruthy();
       expect(screen.getByDisplayValue("Demo Bundle")).toBeTruthy();
       expect(screen.getByDisplayValue("0.4.0")).toBeTruthy();
-      expect((screen.getAllByRole("combobox")[0] as HTMLSelectElement).value).toBe("code-plugin");
+      expect(screen.getAllByRole("combobox")[0].textContent).toBe("Code plugin");
       expect(screen.queryByText("Bundle plugin")).toBeNull();
       expect(screen.getByText("Agent metadata")).toBeTruthy();
       expect(screen.queryByPlaceholderText("Bundle format")).toBeNull();
@@ -525,6 +525,9 @@ describe("plugins publish route", () => {
     fireEvent.change(screen.getByPlaceholderText("Changelog"), {
       target: { value: "Initial release" },
     });
+    fireEvent.change(screen.getByLabelText("ClawScan note"), {
+      target: { value: "Native host access is limited to the OpenClaw extension bridge." },
+    });
     fireEvent.change(screen.getByPlaceholderText("Source repo (owner/repo)"), {
       target: { value: "openclaw/demo-plugin" },
     });
@@ -541,6 +544,7 @@ describe("plugins publish route", () => {
     expect(generateUploadUrl).toHaveBeenCalledTimes(5);
     const payload = publishRelease.mock.calls[0]?.[0]?.payload as {
       files: Array<{ path: string }>;
+      clawScanNote?: string;
     };
     expect(payload.files.map((file) => file.path).sort()).toEqual([
       ".gitignore",
@@ -549,6 +553,9 @@ describe("plugins publish route", () => {
       "package.json",
       "src/index.js",
     ]);
+    expect(payload.clawScanNote).toBe(
+      "Native host access is limited to the OpenClaw extension bridge.",
+    );
   });
 
   it("blocks plugin publish when a file exceeds 10MB", async () => {

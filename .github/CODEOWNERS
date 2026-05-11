@@ -27,7 +27,6 @@
 /convex/packages.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /convex/publishers.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /convex/rateLimits.ts @openclaw/openclaw-secops @Patrick-Erichsen
-/convex/rescanRequests.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /convex/skills.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /convex/skillTransfers.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /convex/tokens.ts @openclaw/openclaw-secops @Patrick-Erichsen
@@ -56,9 +55,6 @@
 /convex/lib/staticPublishScan.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /convex/lib/tokens.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /convex/lib/webhooks.ts @openclaw/openclaw-secops @Patrick-Erichsen
-/convex/model/packages/rescans.ts @openclaw/openclaw-secops @Patrick-Erichsen
-/convex/model/rescans/policy.ts @openclaw/openclaw-secops @Patrick-Erichsen
-/convex/model/skills/rescans.ts @openclaw/openclaw-secops @Patrick-Erichsen
 
 # Frontend auth, admin, publish, upload, and security-review surfaces.
 /src/lib/packageApi.ts @openclaw/openclaw-secops @BunsDev
@@ -91,7 +87,6 @@
 /packages/clawhub/src/cli/commands/ownership.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /packages/clawhub/src/cli/commands/packages.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /packages/clawhub/src/cli/commands/publish.ts @openclaw/openclaw-secops @Patrick-Erichsen
-/packages/clawhub/src/cli/commands/rescan.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /packages/clawhub/src/cli/commands/transfer.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /packages/clawhub/src/cli/commands/sync.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /packages/clawhub/src/cli/scanSkills.ts @openclaw/openclaw-secops @Patrick-Erichsen
