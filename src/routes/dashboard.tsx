@@ -345,7 +345,6 @@ function PackageRow({ pkg }: { pkg: DashboardPackage }) {
         : "Skill Package";
   const stats = [
     { label: "Downloads", value: formatCompactNumber(pkg.stats.downloads ?? 0) },
-    { label: "Installs", value: formatCompactNumber(pkg.stats.installs ?? 0) },
     { label: "Stars", value: formatCompactNumber(pkg.stats.stars ?? 0) },
     { label: "Updated", value: formatShortDate(pkg.updatedAt) },
   ];

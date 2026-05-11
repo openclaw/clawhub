@@ -101,6 +101,8 @@ describe("SkillHeader", () => {
     expect(onToggleStar).not.toHaveBeenCalled();
     expect(onOpenReport).not.toHaveBeenCalled();
     expect(screen.getByText("Owner")).toBeTruthy();
+    expect(screen.getByText("Downloads")).toBeTruthy();
+    expect(screen.getByText("2")).toBeTruthy();
     expect(container.querySelector('a[href="/p/local"]')).toBeTruthy();
   });
 });

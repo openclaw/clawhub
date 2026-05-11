@@ -243,7 +243,10 @@ describe("Dashboard rows", () => {
   });
 
   it("renders rich artifact cards with status, scan, and inventory context", () => {
-    arrangeDashboard({ skills: [createSkill()], packages: [createPackage()] });
+    arrangeDashboard({
+      skills: [createSkill()],
+      packages: [createPackage({ stats: { downloads: 42, installs: 9, stars: 0, versions: 1 } })],
+    });
 
     renderDashboard();
 
@@ -264,6 +267,7 @@ describe("Dashboard rows", () => {
     expect(screen.queryByText(/rescans/i)).toBeNull();
     expect(screen.queryByText("Limit reached (3/3)")).toBeNull();
     expect(screen.getAllByText("Downloads").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Installs")).toBeNull();
     expect(
       screen.getByRole("button", { name: "Open actions for Local Flagged Skill" }),
     ).toBeTruthy();
