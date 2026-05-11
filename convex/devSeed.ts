@@ -49,6 +49,8 @@ const FLAGGED_SKILL_SLUG = "local-flagged-wallet-sync";
 const SCANNED_SKILL_SLUG = "local-agentic-risk-demo";
 const FLAGGED_PLUGIN_NAME = "local-flagged-runtime-plugin";
 const SCANNED_PLUGIN_NAME = "local-scanned-runtime-plugin";
+const SCANNED_SKILL_SUMMARY =
+  "Seeded fixture for previewing ClawHub security buckets with a deliberately long explanation that should wrap for two lines in the skill header, then truncate before the metadata column.";
 const SCANNED_SKILL_CLAWSCAN_NOTE =
   "This fixture intentionally posts task summaries to a user-configured external API so local development can preview ClawScan review context. The publisher expects Todoist API access for normal task reads and updates, but the fixture also describes a debug upload path that should be treated as suspicious during review. The note is deliberately long so the ClawHub scanner page can exercise the collapsed publisher-note state, including wrapping behavior, line clamping, and the expand control. Reviewers should treat this text as untrusted publisher-provided context, not as evidence that the artifact is safe. If the note contradicts the scanned content, ClawScan findings and staff review should take precedence over the publisher explanation. This extra sentence keeps the fixture long enough for wide desktop previews while still reading like a real publisher note.";
 const SCANNED_PLUGIN_CLAWSCAN_NOTE =
@@ -89,7 +91,7 @@ activity and produce a concise reconciliation report.
 `;
 const SCANNED_SKILL_MD = `---
 name: local-agentic-risk-demo
-description: Local dev fixture for security bucket rendering.
+description: ${SCANNED_SKILL_SUMMARY}
 clawdis:
   emoji: 🧪
   os:
@@ -1660,7 +1662,7 @@ export async function seedLocalModerationFixturesHandler(
   const scannedSkillId = await ctx.db.insert("skills", {
     slug: SCANNED_SKILL_SLUG,
     displayName: "Local Agentic Risk Demo",
-    summary: "Seeded skill for previewing security buckets.",
+    summary: SCANNED_SKILL_SUMMARY,
     ownerUserId: userId,
     ownerPublisherId: publisherId,
     latestVersionId: undefined,
@@ -2225,7 +2227,7 @@ export const seedAgenticRiskDemoSkillMutation = internalMutation({
     const scannedSkillId = await ctx.db.insert("skills", {
       slug: SCANNED_SKILL_SLUG,
       displayName: "Local Agentic Risk Demo",
-      summary: "Seeded skill for previewing security buckets.",
+      summary: SCANNED_SKILL_SUMMARY,
       ownerUserId: userId,
       ownerPublisherId: publisherId,
       latestVersionId: undefined,

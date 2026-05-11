@@ -2354,6 +2354,10 @@ code {
 
 .skill-summary-line {
   margin-bottom: 0;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 .grid {
@@ -3830,6 +3834,10 @@ code {
   display: grid;
   gap: 20px;
   min-width: 0;
+}
+
+.skill-hero-layout.has-sidebar .skill-summary-block {
+  max-width: calc(100% - min(360px, max(300px, 26.5vw)) - clamp(56px, 7vw, 96px));
 }
 
 .skill-hero-lower {
@@ -5955,6 +5963,10 @@ code {
 
   .skill-hero-main-extra {
     gap: 32px;
+  }
+
+  .skill-hero-layout.has-sidebar .skill-summary-block {
+    max-width: none;
   }
 
   .skill-hero-sidebar {
