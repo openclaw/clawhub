@@ -3107,6 +3107,8 @@ export const getPackageModerationStatusForUserInternal = internalQuery({
   },
 });
 
+// Deprecated compatibility path. First-class appeal intake is no longer exposed
+// in the CLI/docs; keep this route backed until legacy clients age out.
 export const submitPackageAppealForUserInternal = internalMutation({
   args: {
     actorUserId: v.id("users"),

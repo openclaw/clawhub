@@ -426,23 +426,6 @@ Example:
 clawhub package report @openclaw/example-plugin --version 1.2.3 --reason "suspicious native payload"
 ```
 
-### `package appeal`
-
-- Owner/publisher command for appealing release moderation.
-- Calls `POST /api/v1/packages/{name}/appeal`.
-- Appeals are accepted for quarantined, revoked, suspicious, or malicious
-  releases.
-- Flags:
-  - `--version <version>`: required package version.
-  - `--message <text>`: required appeal message.
-  - `--json`: machine-readable output.
-
-Example:
-
-```bash
-clawhub package appeal @openclaw/example-plugin --version 1.2.3 --message "linked source release explains the native binary"
-```
-
 ### `package moderation-status`
 
 - Owner command for checking package moderation visibility.

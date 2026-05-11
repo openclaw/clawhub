@@ -14,7 +14,6 @@ import {
 import { cmdInspect } from "./cli/commands/inspect.js";
 import { cmdMergeSkill, cmdRenameSkill } from "./cli/commands/ownership.js";
 import {
-  cmdAppealPackage,
   cmdDeletePackage,
   cmdDownloadPackage,
   cmdExplorePackages,
@@ -502,17 +501,6 @@ registerCommand(packageCmd, ["package", "report"])
   .action(async (name, options) => {
     const opts = await resolveGlobalOpts();
     await cmdReportPackage(opts, name, options);
-  });
-
-registerCommand(packageCmd, ["package", "appeal"])
-  .description("Appeal moderation for a package release")
-  .argument("<name>", "Package name")
-  .requiredOption("--version <version>", "Package version")
-  .requiredOption("--message <text>", "Appeal message")
-  .option("--json", "Output JSON")
-  .action(async (name, options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdAppealPackage(opts, name, options);
   });
 
 registerCommand(packageCmd, ["package", "moderation-status"])

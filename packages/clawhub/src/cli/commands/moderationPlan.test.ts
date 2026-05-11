@@ -1,7 +1,7 @@
 /* @vitest-environment node */
 
 import { describe, expect, it } from "vitest";
-import { appealModerationPlan, reportModerationPlan } from "./moderationPlan";
+import { reportModerationPlan } from "./moderationPlan";
 
 describe("moderation plan summaries", () => {
   it.each([
@@ -33,36 +33,6 @@ describe("moderation plan summaries", () => {
         outcome: "set status to dismissed; final action none",
         impacts: ["Dismiss the report without changing artifact availability."],
         requiresConfirmation: false,
-      },
-    },
-    {
-      name: "accepted skill appeal with restore",
-      plan: appealModerationPlan({
-        entityLabel: "skill",
-        appealId: "skillAppeals:1",
-        status: "accepted",
-        finalAction: "restore",
-      }),
-      expected: {
-        subject: "skill appeal skillAppeals:1",
-        outcome: "set status to accepted; final action restore",
-        impacts: ["Accept the appeal.", "Restore the skill to public availability."],
-        requiresConfirmation: true,
-      },
-    },
-    {
-      name: "accepted package appeal with approve",
-      plan: appealModerationPlan({
-        entityLabel: "package",
-        appealId: "packageAppeals:1",
-        status: "accepted",
-        finalAction: "approve",
-      }),
-      expected: {
-        subject: "package appeal packageAppeals:1",
-        outcome: "set status to accepted; final action approve",
-        impacts: ["Accept the appeal.", "Approve the package release."],
-        requiresConfirmation: true,
       },
     },
   ])("describes $name", ({ plan, expected }) => {

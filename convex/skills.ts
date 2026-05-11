@@ -3482,6 +3482,8 @@ async function getActiveSkillVersionForAppeal(
   return skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null;
 }
 
+// Deprecated compatibility path. First-class appeal intake is no longer exposed
+// in the CLI/docs; keep this route backed until legacy clients age out.
 export const submitSkillAppealForUserInternal = internalMutation({
   args: {
     actorUserId: v.id("users"),
@@ -5649,12 +5651,14 @@ export const updateSkillVersionStaticScanInternal = internalMutation({
     await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
 
     if (patch.moderationVerdict === "malicious" && skill.ownerUserId) {
-      await ctx.scheduler.runAfter(0, internal.users.placeUserUnderModerationInternal, {
+      const trigger =
+        patch.moderationReasonCodes?.find((code) => code.startsWith("malicious.")) ??
+        "static.malicious";
+      await ctx.scheduler.runAfter(0, internal.users.autobanMalwareAuthorInternal, {
         ownerUserId: skill.ownerUserId,
         slug: skill.slug,
-        reason:
-          patch.moderationReasonCodes?.find((code) => code.startsWith("malicious.")) ??
-          "malicious.static_scan",
+        ...(updatedVersion.sha256hash ? { sha256hash: updatedVersion.sha256hash } : {}),
+        trigger,
       });
     }
 
@@ -6844,6 +6848,7 @@ export const approveSkillByHashInternal = internalMutation({
           ownerUserId: skill.ownerUserId,
           sha256hash: args.sha256hash,
           slug: skill.slug,
+          trigger: "vt.malicious",
         });
       }
     }
@@ -6986,6 +6991,7 @@ export const escalateByVtInternal = internalMutation({
         ownerUserId: skill.ownerUserId,
         sha256hash: args.sha256hash,
         slug: skill.slug,
+        trigger: "vt.malicious",
       });
     }
   },
@@ -9350,12 +9356,13 @@ export const insertVersion = internalMutation({
     await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
 
     if (moderationSnapshot.verdict === "malicious" && skill.ownerUserId) {
-      await ctx.scheduler.runAfter(0, internal.users.placeUserUnderModerationInternal, {
+      const trigger =
+        moderationSnapshot.reasonCodes.find((code) => code.startsWith("malicious.")) ??
+        "static.malicious";
+      await ctx.scheduler.runAfter(0, internal.users.autobanMalwareAuthorInternal, {
         ownerUserId: skill.ownerUserId,
         slug: skill.slug,
-        reason:
-          moderationSnapshot.reasonCodes.find((code) => code.startsWith("malicious.")) ??
-          "malicious.static_scan",
+        trigger,
       });
     }
 
