@@ -788,7 +788,15 @@ const skillSearchDigest = defineTable({
     "isSuspicious",
     "statsInstallsAllTime",
     "updatedAt",
-  ]);
+  ])
+  .searchIndex("search_by_display_name", {
+    searchField: "displayName",
+    filterFields: ["softDeletedAt", "isSuspicious"],
+  })
+  .searchIndex("search_by_slug", {
+    searchField: "slug",
+    filterFields: ["softDeletedAt", "isSuspicious"],
+  });
 
 const packages = defineTable({
   name: v.string(),

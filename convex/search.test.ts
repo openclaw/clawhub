@@ -162,6 +162,101 @@ describe("search helpers", () => {
     );
   });
 
+  it("finds skill by non-first-token keyword via full-text search on displayName", async () => {
+    const skill = makeSkillDoc({
+      id: "skills:byv",
+      slug: "baidu-yijian-vision",
+      displayName: "Baidu Yijian Vision",
+    });
+    const ctx = makeDirectPrefixCtx([skill]);
+
+    const result = await directPrefixSkillMatchesHandler(ctx, { query: "yijian" });
+
+    expect(result.map((e) => e.skill.slug)).toContain("baidu-yijian-vision");
+    expect(ctx.usedIndexes).toContain("search_by_display_name");
+  });
+
+  it("finds skill by trailing token via full-text search on displayName", async () => {
+    const skill = makeSkillDoc({
+      id: "skills:byv",
+      slug: "baidu-yijian-vision",
+      displayName: "Baidu Yijian Vision",
+    });
+    const ctx = makeDirectPrefixCtx([skill]);
+
+    const result = await directPrefixSkillMatchesHandler(ctx, { query: "vision" });
+
+    expect(result.map((e) => e.skill.slug)).toContain("baidu-yijian-vision");
+    expect(ctx.usedIndexes).toContain("search_by_display_name");
+  });
+
+  it("finds skill by non-first-token keyword via full-text search on slug", async () => {
+    const skill = makeSkillDoc({
+      id: "skills:byv",
+      slug: "baidu-yijian-vision",
+      displayName: "Baidu Yijian Vision",
+    });
+    const ctx = makeDirectPrefixCtx([skill]);
+
+    const result = await directPrefixSkillMatchesHandler(ctx, { query: "yijian" });
+
+    expect(result.map((e) => e.skill.slug)).toContain("baidu-yijian-vision");
+    expect(ctx.usedIndexes).toContain("search_by_slug");
+  });
+
+  it("does not return unrelated skills for multi-token query via full-text search", async () => {
+    const target = makeSkillDoc({
+      id: "skills:byv",
+      slug: "baidu-yijian-vision",
+      displayName: "Baidu Yijian Vision",
+    });
+    const unrelated = makeSkillDoc({
+      id: "skills:bws",
+      slug: "baidu-web-search",
+      displayName: "Baidu Web Search",
+    });
+    const ctx = makeDirectPrefixCtx([target, unrelated]);
+
+    const result = await directPrefixSkillMatchesHandler(ctx, { query: "yijian vision" });
+    const slugs = result.map((e) => e.skill.slug);
+
+    expect(slugs).toContain("baidu-yijian-vision");
+    expect(slugs).not.toContain("baidu-web-search");
+  });
+
+  it("uses nonsuspicious full-text search indexes when nonSuspiciousOnly is set", async () => {
+    const skill = makeSkillDoc({
+      id: "skills:byv",
+      slug: "baidu-yijian-vision",
+      displayName: "Baidu Yijian Vision",
+    });
+    const ctx = makeDirectPrefixCtx([skill]);
+
+    await directPrefixSkillMatchesHandler(ctx, {
+      query: "yijian",
+      nonSuspiciousOnly: true,
+    });
+
+    // Full-text search indexes should be used
+    expect(ctx.usedIndexes).toContain("search_by_display_name");
+    expect(ctx.usedIndexes).toContain("search_by_slug");
+  });
+
+  it("deduplicates skills that appear in both prefix and full-text results", async () => {
+    // "baidu-yijian-vision" is hit by both firstToken prefix ("baidu") and full-text ("yijian")
+    const skill = makeSkillDoc({
+      id: "skills:byv",
+      slug: "baidu-yijian-vision",
+      displayName: "Baidu Yijian Vision",
+    });
+    const ctx = makeDirectPrefixCtx([skill]);
+
+    const result = await directPrefixSkillMatchesHandler(ctx, { query: "baidu yijian" });
+
+    const byvResults = result.filter((e) => e.skill.slug === "baidu-yijian-vision");
+    expect(byvResults).toHaveLength(1);
+  });
+
   it("applies highlightedOnly filtering in lexical fallback", async () => {
     const highlighted = {
       ...makeSkillDoc({
@@ -1490,6 +1585,32 @@ function makeDirectPrefixCtx(skills: Array<ReturnType<typeof makeSkillDoc>>) {
                     : "normalizedDisplayName";
                 const prefix = range[field] ?? "";
                 return digestRows.filter((digest) => (digest[field] ?? "").startsWith(prefix));
+              }),
+            };
+          },
+          withSearchIndex: (index: string, builder: (q: unknown) => unknown) => {
+            usedIndexes.push(index);
+            let searchField = "";
+            let searchQuery = "";
+            const q = {
+              search: (field: string, value: string) => {
+                searchField = field;
+                searchQuery = value.toLowerCase();
+                return q;
+              },
+              eq: () => q,
+            };
+            builder(q);
+            return {
+              take: vi.fn(async () => {
+                // Simulate full-text token matching: any token in the field matches any query token
+                const queryTokens = searchQuery.match(/[a-z0-9]+/g) ?? [];
+                return digestRows.filter((digest) => {
+                  const raw = (digest as Record<string, unknown>)[searchField];
+                  const fieldValue = (typeof raw === "string" ? raw : JSON.stringify(raw ?? "")).toLowerCase();
+                  const fieldTokens = fieldValue.match(/[a-z0-9]+/g) ?? [];
+                  return queryTokens.every((qt) => fieldTokens.some((ft) => ft.startsWith(qt)));
+                });
               }),
             };
           },
