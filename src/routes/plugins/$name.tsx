@@ -613,19 +613,9 @@ export function PluginDetailPage({
               </nav>
               <div className="skill-hero-title-row">
                 <h1 className="skill-page-title">{pkg.displayName}</h1>
-                {settingsHref || isDownloadBlocked ? (
+                {isDownloadBlocked ? (
                   <div className="skill-title-actions">
-                    {settingsHref ? (
-                      <Button asChild variant="outline" size="sm" className="skill-settings-link">
-                        <a href={settingsHref}>
-                          <Settings size={14} aria-hidden="true" />
-                          Settings
-                        </a>
-                      </Button>
-                    ) : null}
-                    {isDownloadBlocked ? (
-                      <Badge variant="destructive">Download blocked</Badge>
-                    ) : null}
+                    <Badge variant="destructive">Download blocked</Badge>
                   </div>
                 ) : null}
               </div>
@@ -662,14 +652,24 @@ export function PluginDetailPage({
                 />
               ) : null}
 
-              {pkg.latestVersion && !isDownloadBlocked ? (
+              {(pkg.latestVersion && !isDownloadBlocked) || settingsHref ? (
                 <div className="skill-sidebar-actions">
-                  <Button asChild variant="outline" className="skill-sidebar-action-button">
-                    <a href={downloadPath}>
-                      <Download size={14} aria-hidden="true" />
-                      Download
-                    </a>
-                  </Button>
+                  {pkg.latestVersion && !isDownloadBlocked ? (
+                    <Button asChild variant="outline" className="skill-sidebar-action-button">
+                      <a href={downloadPath}>
+                        <Download size={14} aria-hidden="true" />
+                        Download
+                      </a>
+                    </Button>
+                  ) : null}
+                  {settingsHref ? (
+                    <Button asChild variant="outline" className="skill-sidebar-action-button">
+                      <a href={settingsHref}>
+                        <Settings size={14} aria-hidden="true" />
+                        Settings
+                      </a>
+                    </Button>
+                  ) : null}
                 </div>
               ) : null}
             </div>
