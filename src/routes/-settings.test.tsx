@@ -1,5 +1,5 @@
 /* @vitest-environment jsdom */
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../../convex/_generated/api";
@@ -29,8 +29,65 @@ vi.mock("@tanstack/react-router", () => ({
   useSearch: () => searchMock(),
 }));
 
+const signedInUser = {
+  _id: "user_123",
+  displayName: "Patrick",
+  name: "Patrick",
+  handle: "patrick",
+  email: "patrick@example.com",
+  image: null,
+  bio: null,
+};
+
+const orgMembership = {
+  publisher: {
+    _id: "publisher_openclaw",
+    handle: "openclaw",
+    displayName: "OpenClaw Team",
+    kind: "org",
+    image: null,
+    bio: "OpenClaw publisher",
+  },
+  role: "owner",
+};
+
+const orgMembers = {
+  publisher: { _id: "publisher_openclaw", handle: "openclaw" },
+  members: [
+    {
+      role: "owner",
+      user: {
+        _id: "user_123",
+        handle: "patrick",
+        displayName: "Patrick",
+        image: null,
+      },
+    },
+  ],
+};
+
+function mockSignedInSettings({
+  search = {},
+  memberships = [orgMembership],
+  members = orgMembers,
+}: {
+  search?: Record<string, unknown>;
+  memberships?: Array<typeof orgMembership>;
+  members?: typeof orgMembers;
+} = {}) {
+  searchMock.mockReturnValue(search);
+  useQueryMock.mockImplementation((query, args) => {
+    if (query === api.users.me) return signedInUser;
+    if (args === "skip") return undefined;
+    if (args && typeof args === "object" && "publisherHandle" in args) return members;
+    if (args && typeof args === "object") return [];
+    return memberships;
+  });
+}
+
 describe("Settings", () => {
   beforeEach(() => {
+    window.history.replaceState(null, "", "/settings");
     useQueryMock.mockReset();
     useMutationMock.mockReset();
     useAuthActionsMock.mockReset();
@@ -54,24 +111,7 @@ describe("Settings", () => {
   });
 
   it("renders account and appearance inside signed-in account preferences", () => {
-    useQueryMock.mockImplementation((query, args) => {
-      if (query === api.users.me) {
-        return {
-          _id: "user_123",
-          displayName: "Patrick",
-          name: "Patrick",
-          handle: "patrick",
-          email: "patrick@example.com",
-          image: null,
-          bio: null,
-        };
-      }
-      if (args === "skip") return undefined;
-      if (args && typeof args === "object" && "publisherHandle" in args) {
-        return undefined;
-      }
-      return [];
-    });
+    mockSignedInSettings();
 
     render(<Settings />);
 
@@ -86,5 +126,50 @@ describe("Settings", () => {
     expect(screen.queryByText(/code font size/i)).toBeNull();
     expect(screen.queryByText(/high contrast/i)).toBeNull();
     expect(screen.queryByText(/experimental features/i)).toBeNull();
+  });
+
+  it("does not load organization members on the default account view", () => {
+    mockSignedInSettings();
+
+    render(<Settings />);
+
+    expect(useQueryMock).toHaveBeenCalledWith(api.publishers.listMembers, "skip");
+    expect(screen.queryByRole("heading", { name: "Members" })).toBeNull();
+  });
+
+  it("navigates to a focused settings view from the section navigation", () => {
+    mockSignedInSettings();
+
+    render(<Settings />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Organizations" }));
+
+    expect(navigateMock).toHaveBeenCalledWith({ search: { view: "organizations" } });
+  });
+
+  it("renders organization management and loads members only on the organizations view", async () => {
+    mockSignedInSettings({ search: { view: "organizations" } });
+
+    render(<Settings />);
+
+    expect(screen.getByRole("button", { name: "Organizations" }).getAttribute("aria-current")).toBe(
+      "true",
+    );
+    expect(await screen.findByText("OpenClaw Team")).toBeTruthy();
+    expect(screen.getByText("@openclaw · owner")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Members" })).toBeTruthy();
+    expect(screen.getByText("Patrick")).toBeTruthy();
+    expect(useQueryMock).toHaveBeenCalledWith(api.publishers.listMembers, {
+      publisherHandle: "openclaw",
+    });
+  });
+
+  it("migrates legacy hash settings URLs to focused query params", () => {
+    window.history.replaceState(null, "", "/settings#tokens");
+    mockSignedInSettings();
+
+    render(<Settings />);
+
+    expect(navigateMock).toHaveBeenCalledWith({ search: { view: "tokens" }, replace: true });
   });
 });

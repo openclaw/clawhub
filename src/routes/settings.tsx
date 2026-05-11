@@ -49,6 +49,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../components/ui/select";
+import { Separator } from "../components/ui/separator";
 import { Textarea } from "../components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "../components/ui/toggle-group";
 import { useThemeMode } from "../lib/theme";
@@ -185,7 +186,9 @@ export function Settings() {
   const revokedTokens = (tokens ?? []).filter((token) => token.revokedAt);
   const orgMembers = useQuery(
     api.publishers.listMembers,
-    selectedOrg ? { publisherHandle: selectedOrg.publisher.handle } : "skip",
+    activeView === "organizations" && selectedOrg
+      ? { publisherHandle: selectedOrg.publisher.handle }
+      : "skip",
   ) as OrgMembersResult | null | undefined;
 
   useEffect(() => {
@@ -325,7 +328,7 @@ export function Settings() {
             Account identity, publishing organizations, and API access for ClawHub.
           </p>
         </header>
-        <hr className="border-[color:var(--line)]" />
+        <Separator />
 
         <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
           <aside className="lg:sticky lg:top-[var(--settings-sticky-top)] lg:w-[272px] lg:shrink-0">
