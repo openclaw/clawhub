@@ -145,7 +145,7 @@ export function DetailSecuritySummary({
           <ScannerSignal
             href={`${scannerBasePath}/virustotal`}
             label="VirusTotal"
-            description="Reputation and file hash checks."
+            description="Multi-engine malware detections and file reputation."
             status={vtStatus}
           />
           <ScannerSignal
