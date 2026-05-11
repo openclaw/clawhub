@@ -126,6 +126,8 @@ export const PackageLlmAnalysisSchema = type({
     dimensions: PackageLlmAnalysisDimensionSchema.array().optional(),
     guidance: "string?",
     findings: "string?",
+    agenticRiskFindings: "unknown[]?",
+    riskSummary: "unknown?",
     model: "string?",
     checkedAt: "number",
 });
@@ -255,6 +257,8 @@ export const ApiV1PackageVersionResponseSchema = type({
         sha256hash: "string|null?",
         vtAnalysis: PackageVtAnalysisSchema.or("null").optional(),
         llmAnalysis: PackageLlmAnalysisSchema.or("null").optional(),
+        clawScanNote: "string|null?",
+        clawScanNoteUpdatedAt: "number|null?",
         staticScan: PackageStaticScanSchema.or("null").optional(),
     }).or("null"),
 });

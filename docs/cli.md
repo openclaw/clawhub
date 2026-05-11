@@ -219,24 +219,6 @@ Stores your API token + cached registry URL.
 - Calls `POST /api/v1/skills/{sourceSlug}/merge`.
 - `--yes` skips confirmation.
 
-### `skill rescan <slug>`
-
-- Request a security rescan for the latest published skill version.
-- Owners and publisher admins can rescan their own skills up to the per-version
-  recovery limit.
-- Platform moderators and admins can rescan any skill and are not blocked by the
-  owner recovery limit, though only one rescan can run at a time per version.
-- Calls `POST /api/v1/skills/{slug}/rescan`.
-- Flags:
-  - `--yes`: skip confirmation.
-  - `--json`: machine-readable output.
-
-Example:
-
-```bash
-clawhub skill rescan suspicious-skill --yes
-```
-
 ### `transfer`
 
 - Ownership transfer workflow.
@@ -388,24 +370,6 @@ Example:
 
 ```bash
 clawhub package transfer @openclaw/example-plugin --to openclaw
-```
-
-### `package rescan <name>`
-
-- Request a security rescan for the latest published package release.
-- Owners and publisher admins can rescan their own packages up to the per-release
-  recovery limit.
-- Platform moderators and admins can rescan any package and are not blocked by
-  the owner recovery limit, though only one rescan can run at a time per release.
-- Calls `POST /api/v1/packages/{name}/rescan`.
-- Flags:
-  - `--yes`: skip confirmation.
-  - `--json`: machine-readable output.
-
-Example:
-
-```bash
-clawhub package rescan @openclaw/example-plugin --yes
 ```
 
 ### `package report`

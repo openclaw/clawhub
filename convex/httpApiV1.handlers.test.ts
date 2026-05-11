@@ -2860,28 +2860,6 @@ describe("httpApiV1 handlers", () => {
     expect(runMutation.mock.calls.length).toBe(0);
   });
 
-  it("package rescan maps ownership denials to 403", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:stranger",
-      user: { handle: "stranger" },
-    } as never);
-    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
-      if ("key" in args) return okRate();
-      throw new Error("Forbidden: You do not own this package.");
-    });
-
-    const response = await __handlers.packagesPostRouterV1Handler(
-      makeCtx({ runMutation }),
-      new Request("https://example.com/api/v1/packages/%40scope%2Fdemo/rescan", {
-        method: "POST",
-        headers: { Authorization: "Bearer clh_test" },
-      }),
-    );
-
-    expect(response.status).toBe(403);
-    expect(await response.text()).toBe("Forbidden: You do not own this package.");
-  });
-
   it("transfer request requires auth", async () => {
     vi.mocked(requireApiTokenUser).mockRejectedValueOnce(new Error("Unauthorized"));
     const runMutation = vi.fn().mockResolvedValue(okRate());
