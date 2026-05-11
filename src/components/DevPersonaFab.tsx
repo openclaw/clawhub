@@ -15,6 +15,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 
 type DevPersona = "owner" | "user" | "admin";
 
+const DEV_PERSONA_AUTH_TIMEOUT_MS = 10_000;
+
 const PERSONAS: Array<{
   value: DevPersona;
   label: string;
@@ -48,6 +50,24 @@ function isLocalDevPersonaEnabled() {
   return hostname === "localhost" || hostname === "127.0.0.1";
 }
 
+async function withDevAuthTimeout<T>(operation: Promise<T>) {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(new Error("Dev persona auth timed out. Check the local Convex backend."));
+        }, DEV_PERSONA_AUTH_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId);
+    }
+  }
+}
+
 export function DevPersonaFab() {
   const [busyPersona, setBusyPersona] = useState<DevPersona | "sign-out" | null>(null);
   const [section, setSection] = useState("auth");
@@ -60,9 +80,9 @@ export function DevPersonaFab() {
     setBusyPersona(persona);
     try {
       if (isAuthenticated) {
-        await signOut();
+        await withDevAuthTimeout(signOut());
       }
-      const result = await signIn("dev-persona", { persona });
+      const result = await withDevAuthTimeout(signIn("dev-persona", { persona }));
       if (result.signingIn === false) {
         throw new Error("Dev persona sign-in did not create a session");
       }
@@ -77,7 +97,7 @@ export function DevPersonaFab() {
   async function endSession() {
     setBusyPersona("sign-out");
     try {
-      await signOut();
+      await withDevAuthTimeout(signOut());
       toast.success("Signed out of dev persona");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Sign out failed");

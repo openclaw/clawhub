@@ -1,7 +1,8 @@
 /* @vitest-environment jsdom */
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
+import { toast } from "sonner";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DevPersonaFab } from "./DevPersonaFab";
 
@@ -79,6 +80,7 @@ function setHostname(hostname: string) {
 
 describe("DevPersonaFab", () => {
   beforeEach(() => {
+    vi.useRealTimers();
     signInMock.mockReset();
     signOutMock.mockReset();
     signInMock.mockResolvedValue({ signingIn: true });
@@ -154,5 +156,24 @@ describe("DevPersonaFab", () => {
     await waitFor(() => {
       expect(signOutMock).toHaveBeenCalled();
     });
+  });
+
+  it("recovers when local dev auth does not respond", async () => {
+    vi.useFakeTimers();
+    signInMock.mockReturnValue(new Promise(() => {}));
+
+    render(<DevPersonaFab />);
+
+    fireEvent.click(screen.getByRole("button", { name: /use user/i }));
+    expect(screen.getByRole("button", { name: /switching/i }).hasAttribute("disabled")).toBe(true);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+
+    expect(toast.error).toHaveBeenCalledWith(
+      "Dev persona auth timed out. Check the local Convex backend.",
+    );
+    expect(screen.getByRole("button", { name: /use user/i }).hasAttribute("disabled")).toBe(false);
   });
 });
