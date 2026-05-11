@@ -653,15 +653,17 @@ export function PluginDetailPage({
             </CardHeader>
             <CardContent>
               <div className="skill-install-command-wrap">
-                <pre className="skill-install-command">
-                  <code>{installSnippet}</code>
-                </pre>
-                <InstallCopyButton
-                  text={installSnippet}
-                  ariaLabel="Copy plugin install command"
-                  showLabel={false}
-                  className="skill-install-command-inline-button"
-                />
+                <div className="skill-install-command-shell">
+                  <pre className="skill-install-command">
+                    <code>{installSnippet}</code>
+                  </pre>
+                  <InstallCopyButton
+                    text={installSnippet}
+                    ariaLabel="Copy plugin install command"
+                    showLabel={false}
+                    className="skill-install-command-inline-button"
+                  />
+                </div>
               </div>
             </CardContent>
           </Card>

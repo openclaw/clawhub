@@ -4800,9 +4800,14 @@ code {
   width: 100%;
   min-width: 0;
   border-radius: var(--radius-md);
-  border: 1px solid var(--line);
-  background: var(--surface-muted);
+  border: 1px solid color-mix(in srgb, var(--line) 72%, var(--ink) 28%);
+  background: color-mix(in srgb, var(--surface-muted) 78%, var(--ink) 10%);
   padding: 16px 62px 16px 18px;
+}
+
+[data-theme-resolved="light"] .skill-install-command-shell {
+  border-color: var(--line);
+  background: var(--surface-muted);
 }
 
 .skill-install-command-wrap .skill-install-command {
