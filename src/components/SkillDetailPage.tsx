@@ -48,6 +48,8 @@ const SHOW_SKILL_COMMENTS = false;
 function tabFromHash(hash: string): DetailTab {
   const normalized = hash.replace(/^#/, "").toLowerCase();
   if (normalized === "files") return "files";
+  if (normalized === "compare") return "compare";
+  if (normalized === "versions") return "versions";
   if (
     normalized === "runtime" ||
     normalized === "dependencies" ||
@@ -188,6 +190,7 @@ export function SkillDetailPage({
     initialResult?.latestVersion?._id ?? null,
   );
   const [activeTab, setActiveTab] = useState<DetailTab>("readme");
+  const [shouldPrefetchCompare, setShouldPrefetchCompare] = useState(false);
   const [isReportDialogOpen, setIsReportDialogOpen] = useState(false);
   const [reportReason, setReportReason] = useState("");
   const [reportError, setReportError] = useState<string | null>(null);
@@ -197,6 +200,18 @@ export function SkillDetailPage({
   const skill = result?.skill;
   const owner = result?.owner ?? null;
   const latestVersion = result?.latestVersion ?? null;
+
+  const versions = useQuery(
+    api.skills.listVersions,
+    skill ? { skillId: skill._id, limit: 50 } : "skip",
+  ) as Doc<"skillVersions">[] | undefined;
+  const shouldLoadDiffVersions = Boolean(
+    skill && (activeTab === "compare" || shouldPrefetchCompare),
+  );
+  const diffVersions = useQuery(
+    api.skills.listVersions,
+    shouldLoadDiffVersions && skill ? { skillId: skill._id, limit: 200 } : "skip",
+  ) as Doc<"skillVersions">[] | undefined;
 
   const isStarred = useQuery(
     api.stars.isStarred,
@@ -344,8 +359,10 @@ export function SkillDetailPage({
   // content pane blank.
   const validTabIds = useMemo<Set<DetailTab>>(() => {
     const installTabs = buildSkillInstallTabs({ clawdis, osLabels });
-    return new Set(["readme", "files", ...installTabs.map((t) => t.id)]);
-  }, [clawdis, osLabels]);
+    const baseTabs: DetailTab[] = ["readme", "files", "versions"];
+    if ((versions?.length ?? 0) > 1) baseTabs.push("compare");
+    return new Set([...baseTabs, ...installTabs.map((t) => t.id)]);
+  }, [clawdis, osLabels, versions]);
 
   useEffect(() => {
     setActiveTab((prev) => (validTabIds.has(prev) ? prev : "readme"));
@@ -604,11 +621,17 @@ export function SkillDetailPage({
           <SkillDetailTabs
             activeTab={activeTab}
             setActiveTab={setActiveTab}
+            onCompareIntent={() => setShouldPrefetchCompare(true)}
             readmeContent={readmeContent}
             readmeError={readmeError}
             latestFiles={latestFiles}
             latestVersionId={latestVersion?._id ?? null}
             skill={skill as Doc<"skills">}
+            diffVersions={diffVersions}
+            versions={versions}
+            nixPlugin={Boolean(nixPlugin)}
+            suppressVersionScanResults={suppressVersionScanResults}
+            scanResultsSuppressedMessage={scanResultsSuppressedMessage}
             clawdis={clawdis}
             osLabels={osLabels}
           />

@@ -17,6 +17,12 @@ function renderReadme(readmeContent: string) {
       latestFiles={[]}
       latestVersionId={null}
       skill={{ slug: "api-gateway" } as Doc<"skills">}
+      onCompareIntent={vi.fn()}
+      diffVersions={undefined}
+      versions={undefined}
+      nixPlugin={false}
+      suppressVersionScanResults={false}
+      scanResultsSuppressedMessage={null}
       clawdis={undefined}
       osLabels={[]}
     />,
@@ -24,13 +30,13 @@ function renderReadme(readmeContent: string) {
 }
 
 describe("SkillDetailTabs README links", () => {
-  it("uses the simplified detail tab order", () => {
+  it("renders files and version history tabs before install metadata tabs", () => {
     renderReadme("# API Gateway");
 
     expect(screen.getByRole("tab", { name: "SKILL.md" })).toBeTruthy();
     expect(screen.getByRole("tab", { name: "Files" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Versions" })).toBeTruthy();
     expect(screen.queryByRole("tab", { name: "Settings" })).toBeNull();
-    expect(screen.queryByRole("tab", { name: "Versions" })).toBeNull();
     expect(screen.queryByRole("tab", { name: "Compare" })).toBeNull();
   });
 
@@ -69,6 +75,12 @@ describe("SkillDetailTabs README links", () => {
           latestFiles={[]}
           latestVersionId={null}
           skill={{ slug: "api-gateway" } as Doc<"skills">}
+          onCompareIntent={vi.fn()}
+          diffVersions={undefined}
+          versions={undefined}
+          nixPlugin={false}
+          suppressVersionScanResults={false}
+          scanResultsSuppressedMessage={null}
           osLabels={["macOS"]}
           clawdis={
             {

@@ -215,6 +215,11 @@ function isDarkResolvedTheme(resolvedTheme: string | null | undefined): boolean 
   return resolvedTheme === "dark";
 }
 
+export function isDarkThemeResolved(): boolean {
+  if (typeof document === "undefined") return false;
+  return isDarkResolvedTheme(document.documentElement.dataset.themeResolved);
+}
+
 export function applyTheme(selectionOrMode: ThemeSelection | ThemeMode, theme: ThemeName = "claw") {
   const selection =
     typeof selectionOrMode === "string" ? { theme, mode: selectionOrMode } : selectionOrMode;
@@ -232,6 +237,12 @@ function applyThemeSelection(selection: ThemeSelection) {
   if (typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent(THEME_CHANGE_EVENT));
   }
+}
+
+export function onThemeChange(handler: () => void) {
+  if (typeof window === "undefined") return () => {};
+  window.addEventListener(THEME_CHANGE_EVENT, handler);
+  return () => window.removeEventListener(THEME_CHANGE_EVENT, handler);
 }
 
 export function useThemeMode() {
