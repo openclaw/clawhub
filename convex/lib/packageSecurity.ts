@@ -7,6 +7,8 @@ type PackageReleaseSecurityLike = Pick<
   "sha256hash" | "vtAnalysis" | "llmAnalysis" | "verification" | "staticScan" | "manualModeration"
 >;
 
+type PackageVirusTotalAnalysis = PackageReleaseSecurityLike["vtAnalysis"];
+
 export function normalizePackageScanStatus(status: string | null | undefined): PackageScanStatus {
   const normalized = status?.trim().toLowerCase();
   switch (normalized) {
@@ -23,6 +25,34 @@ export function normalizePackageScanStatus(status: string | null | undefined): P
   }
 }
 
+function getVtEngineStats(analysis: PackageVirusTotalAnalysis) {
+  return analysis?.engineStats ?? analysis?.metadata?.stats;
+}
+
+function isVtAiOnlyAnalysis(analysis: PackageVirusTotalAnalysis) {
+  const scanner = analysis?.scanner?.trim().toLowerCase();
+  const source = analysis?.source?.trim().toLowerCase();
+  return scanner === "code_insight" || source === "palm" || source?.includes("code insight");
+}
+
+function getAuthoritativePackageVtStatus(analysis: PackageVirusTotalAnalysis) {
+  const stats = getVtEngineStats(analysis);
+  if (stats) {
+    if ((stats.malicious ?? 0) > 0) return "malicious";
+    if ((stats.suspicious ?? 0) > 0) return "suspicious";
+    return undefined;
+  }
+
+  if (isVtAiOnlyAnalysis(analysis)) return undefined;
+
+  const source = analysis?.source?.trim().toLowerCase();
+  if (source === "engines" || source?.startsWith("engines-")) {
+    return normalizePackageScanStatus(analysis?.status);
+  }
+
+  return undefined;
+}
+
 export function resolvePackageReleaseScanStatus(
   release: PackageReleaseSecurityLike,
 ): Exclude<PackageScanStatus, undefined> {
@@ -37,7 +67,7 @@ export function resolvePackageReleaseScanStatus(
   const staticStatus = normalizePackageScanStatus(release.staticScan?.status);
   if (staticStatus === "malicious") return "malicious";
 
-  const vtStatus = normalizePackageScanStatus(release.vtAnalysis?.status);
+  const vtStatus = getAuthoritativePackageVtStatus(release.vtAnalysis);
   if (vtStatus === "malicious") return "malicious";
 
   const llmStatus = normalizePackageScanStatus(
