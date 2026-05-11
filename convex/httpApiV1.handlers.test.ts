@@ -3750,6 +3750,38 @@ describe("httpApiV1 handlers", () => {
     expect(packageCalls.map((args) => args.paginationOpts?.cursor ?? null)).toEqual([null, null]);
   });
 
+  it("package and plugin lists ignore stale skill cursors", async () => {
+    const runQuery = vi.fn().mockResolvedValue({ page: [], isDone: true, continueCursor: "" });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const staleSkillCursor = `skillcat:${JSON.stringify({
+      cursor: "skill-cursor",
+      offset: 0,
+      pageSize: 20,
+      done: false,
+    })}`;
+
+    const packagesResponse = await __handlers.listPackagesV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        `https://example.com/api/v1/packages?limit=7&cursor=${encodeURIComponent(staleSkillCursor)}`,
+      ),
+    );
+    const pluginsResponse = await __handlers.listPluginsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        `https://example.com/api/v1/plugins?limit=7&cursor=${encodeURIComponent(staleSkillCursor)}`,
+      ),
+    );
+
+    expect(packagesResponse.status).toBe(200);
+    expect(pluginsResponse.status).toBe(200);
+    const cursors = runQuery.mock.calls
+      .map(([, args]) => (args as { paginationOpts?: { cursor: string | null } }).paginationOpts)
+      .filter(Boolean)
+      .map((pagination) => pagination?.cursor ?? null);
+    expect(cursors).toEqual(cursors.map(() => null));
+  });
+
   it("packages search supports family=skill on the generic route", async () => {
     const runQuery = vi.fn().mockResolvedValue([]);
     const runMutation = vi.fn().mockResolvedValue(okRate());

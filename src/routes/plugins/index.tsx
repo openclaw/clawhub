@@ -128,7 +128,7 @@ export const Route = createFileRoute("/plugins/")({
           ...search,
           category: invalidCategory ? undefined : search.category,
           featured: browseOnlyFeatured ? undefined : search.featured,
-          sort: undefined,
+          sort: incompatibleSort ? undefined : search.sort,
         },
         replace: true,
       });

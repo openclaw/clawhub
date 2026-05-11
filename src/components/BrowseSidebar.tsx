@@ -10,6 +10,7 @@ import {
   Rocket,
   Shield,
   Wrench,
+  Zap,
 } from "lucide-react";
 import type { BrowseCategory } from "../lib/categories";
 
@@ -36,19 +37,23 @@ type BrowseSidebarProps = {
 };
 
 const CATEGORY_ICONS: Record<string, React.ReactNode> = {
-  "mcp-tools": <Plug size={15} />,
-  prompts: <MessageSquare size={15} />,
-  workflows: <GitBranch size={15} />,
-  "dev-tools": <Wrench size={15} />,
-  data: <Database size={15} />,
-  security: <Shield size={15} />,
-  automation: <RefreshCw size={15} />,
-  other: <Package size={15} />,
-  channels: <MessageCircle size={15} />,
-  "mcp-tooling": <Plug size={15} />,
-  observability: <Activity size={15} />,
-  deployment: <Rocket size={15} />,
+  activity: <Activity size={15} />,
+  database: <Database size={15} />,
+  "git-branch": <GitBranch size={15} />,
+  "message-circle": <MessageCircle size={15} />,
+  "message-square": <MessageSquare size={15} />,
+  package: <Package size={15} />,
+  plug: <Plug size={15} />,
+  "refresh-cw": <RefreshCw size={15} />,
+  rocket: <Rocket size={15} />,
+  shield: <Shield size={15} />,
+  wrench: <Wrench size={15} />,
+  zap: <Zap size={15} />,
 };
+
+function getCategoryIcon(icon: string) {
+  return CATEGORY_ICONS[icon] ?? CATEGORY_ICONS.package;
+}
 
 export function BrowseSidebar({
   categories,
@@ -118,7 +123,7 @@ export function BrowseSidebar({
               onClick={() => onCategoryChange(cat.slug)}
             >
               <span className="sidebar-option-icon" aria-hidden="true">
-                {CATEGORY_ICONS[cat.slug]}
+                {getCategoryIcon(cat.icon)}
               </span>
               {cat.label}
             </button>

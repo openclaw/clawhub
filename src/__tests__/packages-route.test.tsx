@@ -11,6 +11,11 @@ const isRateLimitedPackageApiErrorMock = vi.fn(
     typeof error === "object" && error !== null && (error as { status?: number }).status === 429,
 );
 const navigateMock = vi.fn();
+const redirectMock = vi.fn((args: unknown) => {
+  const error = new Error("redirect");
+  Object.assign(error, { args });
+  throw error;
+});
 let searchMock: Record<string, unknown> = {};
 let loaderDataMock: {
   items: Array<{
@@ -51,6 +56,7 @@ vi.mock("@tanstack/react-router", () => ({
       useLoaderData: () => loaderDataMock,
     }),
   Link: (props: { children: ReactNode }) => <a href="/">{props.children}</a>,
+  redirect: (args: unknown) => redirectMock(args),
 }));
 
 vi.mock("../lib/packageApi", () => ({
@@ -78,6 +84,7 @@ describe("plugins route", () => {
     fetchFeaturedPluginsMock.mockReset();
     isRateLimitedPackageApiErrorMock.mockClear();
     navigateMock.mockReset();
+    redirectMock.mockClear();
     searchMock = {};
     loaderDataMock = {
       items: [],
@@ -175,6 +182,29 @@ describe("plugins route", () => {
         search: { q: "security", featured: true },
       }),
     ).toThrow();
+  });
+
+  it("preserves valid search sort when clearing stale featured URLs", async () => {
+    const route = await loadRoute();
+    const beforeLoad = (
+      route.__config as never as {
+        beforeLoad?: (args: { search: Record<string, unknown> }) => void;
+      }
+    ).beforeLoad;
+
+    expect(() =>
+      beforeLoad?.({
+        search: { q: "security", sort: "name", featured: true },
+      }),
+    ).toThrow();
+    expect(redirectMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        search: expect.objectContaining({
+          featured: undefined,
+          sort: "name",
+        }),
+      }),
+    );
   });
 
   it("uses grid as the canonical browse view in search state", async () => {

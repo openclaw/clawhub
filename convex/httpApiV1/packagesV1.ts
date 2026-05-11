@@ -630,10 +630,14 @@ type CatalogSourceState<T> = {
 const UNIFIED_CATALOG_CURSOR_PREFIX = "pkgcatalog:";
 const PLUGIN_CATALOG_CURSOR_PREFIX = "pkgplugins:";
 const LEGACY_PLUGIN_SEARCH_CURSOR_PREFIX = "pkgpluginsearch:";
+const SKILL_CATALOG_CURSOR_PREFIX = "skillcat:";
+const PACKAGE_PAGE_CURSOR_PREFIX = "pkgpage:";
 const CATALOG_CURSOR_PREFIXES = [
   UNIFIED_CATALOG_CURSOR_PREFIX,
   PLUGIN_CATALOG_CURSOR_PREFIX,
   LEGACY_PLUGIN_SEARCH_CURSOR_PREFIX,
+  SKILL_CATALOG_CURSOR_PREFIX,
+  PACKAGE_PAGE_CURSOR_PREFIX,
 ];
 
 function defaultCatalogSourceCursorState(): CatalogSourceCursorState {
