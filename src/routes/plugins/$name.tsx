@@ -540,8 +540,32 @@ export function PluginDetailPage({
         ))}
       </span>
     ) : null;
+  const ownerMetadataValue = owner ? (
+    <span className="user-badge user-badge-md">
+      <span className="user-avatar" aria-hidden="true">
+        {owner.image ? (
+          <img className="user-avatar-img" src={owner.image} alt="" loading="lazy" />
+        ) : (
+          <span className="user-avatar-fallback">
+            {(owner.displayName ?? owner.handle ?? "p").charAt(0).toUpperCase()}
+          </span>
+        )}
+      </span>
+      {owner.handle ? (
+        <a className="user-handle" href={`/p/${encodeURIComponent(owner.handle)}`}>
+          @{owner.handle}
+        </a>
+      ) : (
+        <span className="user-handle">{owner.displayName ?? "unknown"}</span>
+      )}
+    </span>
+  ) : null;
   const hasSourceMetadata = Boolean(
-    sourceRepoLink || executesCodeValue || pkg.latestVersion || tagMetadataValue,
+    sourceRepoLink ||
+    ownerMetadataValue ||
+    executesCodeValue ||
+    pkg.latestVersion ||
+    tagMetadataValue,
   );
 
   return (
@@ -585,6 +609,7 @@ export function PluginDetailPage({
                   ariaLabel="Plugin metadata"
                   blocks={[
                     { label: "Repository", value: sourceRepoLink },
+                    { label: "Owner", value: ownerMetadataValue },
                     { label: "Executes code", value: executesCodeValue },
                     {
                       grid: [

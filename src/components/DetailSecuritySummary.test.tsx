@@ -140,4 +140,26 @@ describe("DetailSecuritySummary", () => {
     expect(screen.getByRole("link", { name: "Static analysis: Pass" })).toBeTruthy();
     expect(screen.queryByText("Benign")).toBeNull();
   });
+
+  it("does not aggregate scanner operational errors as malicious verdicts", () => {
+    render(
+      <DetailSecuritySummary
+        scannerBasePath="/steipete/weather/security"
+        vtAnalysis={{ status: "failed", checkedAt: 1 }}
+        llmAnalysis={{ status: "clean", checkedAt: 1 }}
+        staticScan={{
+          status: "clean",
+          reasonCodes: [],
+          findings: [],
+          summary: "Clean.",
+          engineVersion: "v1",
+          checkedAt: 1,
+        }}
+      />,
+    );
+
+    expect(screen.getAllByText("Error")).toHaveLength(2);
+    expect(screen.getByRole("link", { name: "VirusTotal: Error" })).toBeTruthy();
+    expect(screen.queryByText("Malicious")).toBeNull();
+  });
 });

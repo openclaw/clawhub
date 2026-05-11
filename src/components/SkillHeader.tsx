@@ -406,6 +406,7 @@ function SkillSidebarStats({
     <SidebarMetadata
       ariaLabel="Skill metadata"
       blocks={[
+        { label: "Installs", value: formattedStats.installsAllTime, large: true },
         {
           label: "Owner",
           value: (
@@ -414,12 +415,10 @@ function SkillSidebarStats({
               fallbackHandle={ownerHandle}
               prefix=""
               size="md"
-              showName
               disableTooltip
             />
           ),
         },
-        { label: "Installs", value: formattedStats.installsAllTime, large: true },
         {
           grid: [
             {

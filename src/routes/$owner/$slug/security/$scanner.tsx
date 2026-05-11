@@ -112,12 +112,14 @@ function SkillSecurityScannerRoute() {
   }
 
   const ownerSegment = result?.owner?.handle ?? result?.owner?._id ?? owner;
+  const myManagePublisherIds = new Set(
+    (Array.isArray(myPublishers) ? myPublishers : [])
+      .filter((entry) => entry.role === "owner" || entry.role === "admin")
+      .map((entry) => entry.publisher._id),
+  );
   const canManageArtifact =
     Boolean(me && skill && me._id === skill.ownerUserId) ||
-    Boolean(
-      skill?.ownerPublisherId &&
-      myPublishers?.some((entry) => entry.publisher._id === skill.ownerPublisherId),
-    ) ||
+    Boolean(skill?.ownerPublisherId && myManagePublisherIds.has(skill.ownerPublisherId)) ||
     isAdmin(me);
   const settingsHref = `/${encodeURIComponent(ownerSegment)}/${encodeURIComponent(slug)}/settings`;
 

@@ -4416,7 +4416,7 @@ code {
 
 .sidebar-metadata-row-large .sidebar-metadata-value,
 .skill-sidebar-stat-row-large strong {
-  font-size: 2rem;
+  font-size: 1.65rem;
 }
 
 .sidebar-metadata-label,
@@ -4432,10 +4432,16 @@ code {
   min-width: 0;
   margin: 0;
   color: var(--ink);
-  font-size: 1.25rem;
+  font-size: 1.08rem;
   font-weight: 700;
   line-height: 1.2;
   overflow-wrap: anywhere;
+}
+
+.sidebar-metadata-value .user-badge,
+.sidebar-metadata-value .user-handle {
+  font-size: inherit;
+  font-weight: inherit;
 }
 
 .sidebar-metadata-compact .sidebar-metadata-row {

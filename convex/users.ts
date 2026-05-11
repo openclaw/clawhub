@@ -9,6 +9,7 @@ import {
   getOptionalActiveAuthUserId,
   requireUser,
 } from "./lib/access";
+import { isLocalDevAuthEnabled } from "./lib/devAuth";
 import { syncGitHubProfile } from "./lib/githubAccount";
 import { toPublicUser } from "./lib/public";
 import { isReservedPublicOwnerHandle } from "./lib/publicRouteReservations";
@@ -33,6 +34,26 @@ const MAX_USER_LIST_LIMIT = 200;
 const MAX_USER_SEARCH_SCAN = 5_000;
 const MIN_USER_SEARCH_SCAN = 500;
 
+const DEV_PERSONAS = {
+  owner: {
+    handle: "local",
+    displayName: "Local Owner",
+    role: "user",
+  },
+  user: {
+    handle: "local-user",
+    displayName: "Local User",
+    role: "user",
+  },
+  admin: {
+    handle: "local-admin",
+    displayName: "Local Admin",
+    role: "admin",
+  },
+} as const;
+
+type DevPersona = keyof typeof DEV_PERSONAS;
+
 export const getById = query({
   args: { userId: v.id("users") },
   handler: async (ctx, args) => toPublicUser(await ctx.db.get(args.userId)),
@@ -41,6 +62,41 @@ export const getById = query({
 export const getByIdInternal = internalQuery({
   args: { userId: v.id("users") },
   handler: async (ctx, args) => ctx.db.get(args.userId),
+});
+
+export const upsertDevPersonaInternal = internalMutation({
+  args: { persona: v.union(v.literal("owner"), v.literal("user"), v.literal("admin")) },
+  handler: async (ctx, args): Promise<Id<"users">> => {
+    if (!isLocalDevAuthEnabled()) throw new Error("Dev auth is disabled");
+
+    const persona = DEV_PERSONAS[args.persona as DevPersona];
+    const now = Date.now();
+    const existing = await getUserByHandleOrPersonalPublisher(ctx, persona.handle);
+    const patch = {
+      handle: persona.handle,
+      displayName: persona.displayName,
+      name: persona.displayName,
+      role: persona.role,
+      deletedAt: undefined,
+      deactivatedAt: undefined,
+      purgedAt: undefined,
+      banReason: undefined,
+      updatedAt: now,
+    };
+    const userId =
+      existing?._id ??
+      (await ctx.db.insert("users", {
+        ...patch,
+        createdAt: now,
+      }));
+    if (existing) {
+      await ctx.db.patch(existing._id, patch);
+    }
+    const user = await ctx.db.get(userId);
+    if (!user) throw new Error("Dev persona was not created");
+    await ensurePersonalPublisherForUser(ctx, user);
+    return userId;
+  },
 });
 
 export const getByHandleInternal = internalQuery({
