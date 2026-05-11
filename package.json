@@ -31,6 +31,7 @@
     "dev": "bun --bun vite dev --port 3000",
     "dev:worktree": "bun run setup:worktree -- --quiet && bun scripts/dev-worktree.ts",
     "docs:list": "bun scripts/docs-list.ts",
+    "docs:run": "bun scripts/docs-run.ts",
     "eval:clawscan:security-signals": "bun scripts/eval/clawscan-security-signals.ts",
     "format": "oxfmt --write",
     "format:check": "oxfmt --check",

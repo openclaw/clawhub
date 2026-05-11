@@ -91,6 +91,13 @@ Report examples:
 - bad-faith registrations or trademark misuse
 - content that violates [Acceptable usage](./acceptable-usage.md)
 
+## Publisher ClawScan notes
+
+Publishers can provide an optional ClawScan note when publishing a skill or
+plugin. This note gives ClawScan context for behavior that may otherwise look
+unusual, such as network access, native host access, or provider-specific
+credentials.
+
 ## Moderation Holds
 
 When the static scanner flags an uploaded skill as malicious, the publisher is
@@ -127,7 +134,8 @@ listings.
 
 Deleted, banned, or disabled accounts cannot use ClawHub API tokens. If CLI auth
 starts failing after account action, sign in to the web UI to review account
-state or contact maintainers through the expected project support channel.
+state. If sign-in or normal CLI access is blocked, contact
+security@openclaw.ai for recovery review.
 
 ## Publisher guidance
 
@@ -135,6 +143,7 @@ To reduce false positives and improve user trust:
 
 - keep names, summaries, tags, and changelogs accurate
 - declare required environment variables and permissions
+- add a publisher ClawScan note when a release has unusual but intentional behavior
 - avoid obfuscated install commands
 - link to source when possible
 - use dry runs before publishing plugins

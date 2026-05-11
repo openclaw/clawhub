@@ -60,15 +60,17 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Any scanner path that determines a skill is malicious must hide the skill and
   schedule the same account-level autoban/token-revocation workflow. Static
   scan malicious findings must not diverge into a softer moderation-only state.
-- `clawScanNote` is optional publisher-authored context stored directly on an
-  immutable `skillVersions` or `packageReleases` row at publish time. It is not
-  an appeal, has no accepted/rejected state, does not imply staff response, and
-  must not drive moderation state transitions by itself.
+- `clawScanNote` is optional publisher-authored context stored directly on a
+  `skillVersions` or `packageReleases` row. It is not an appeal, has no
+  accepted/rejected state, does not imply staff response, and must not drive
+  moderation state transitions by itself.
 - CLI publishes only include `clawScanNote` when the publisher explicitly passes
   it. UI publish flows may prefill the previous version/release note for
-  convenience, but changing the note means publishing a new version or release.
-  ClawScan must treat the field as untrusted publisher-provided context rather
-  than scanner instructions.
+  convenience. Owners/admins can also update the latest version/release note
+  from artifact settings and request a fresh ClawScan review without publishing
+  a new version. ClawScan must treat the field as untrusted publisher-provided
+  context rather than scanner instructions, and note updates must write an
+  `auditLogs` entry.
 - `auditLogs` remains the global compliance/security ledger. Product-facing
   moderation timelines live in `skillModerationEventLogs` and
   `packageModerationEventLogs`.

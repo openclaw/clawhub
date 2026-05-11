@@ -230,9 +230,9 @@ describe("plugin detail route", () => {
     expect(screen.getByRole("link", { name: /VirusTotal.*Pass/i }).getAttribute("href")).toBe(
       "/plugins/demo-plugin/security/virustotal",
     );
-    expect(
-      screen.getByRole("link", { name: /Static analysis.*Pass/i }).getAttribute("href"),
-    ).toBe("/plugins/demo-plugin/security/static-analysis");
+    expect(screen.getByRole("link", { name: /Static analysis.*Pass/i }).getAttribute("href")).toBe(
+      "/plugins/demo-plugin/security/static-analysis",
+    );
 
     const securityHeading = screen.getByRole("heading", { name: "Audits" });
     const installHeading = screen.getByRole("heading", { name: "Install" });

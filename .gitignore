@@ -2,6 +2,7 @@ node_modules
 .DS_Store
 .bun-build
 *.bun-build
+.cache/
 .data/
 bin/docs-list
 dist

@@ -143,12 +143,6 @@ export function DetailSecuritySummary({
         ) : null}
         <div className="security-audit-signals">
           <ScannerSignal
-            href={`${scannerBasePath}/virustotal`}
-            label="VirusTotal"
-            description="Multi-engine malware detections and file reputation."
-            status={vtStatus}
-          />
-          <ScannerSignal
             href={`${scannerBasePath}/clawscan`}
             label="ClawScan"
             description="Agentic behavior and permission review."
@@ -160,6 +154,12 @@ export function DetailSecuritySummary({
             label="Static analysis"
             description="Pattern checks against bundled files."
             status={staticStatus}
+          />
+          <ScannerSignal
+            href={`${scannerBasePath}/virustotal`}
+            label="VirusTotal"
+            description="Multi-engine malware detections and file reputation."
+            status={vtStatus}
           />
         </div>
       </div>

@@ -14,6 +14,12 @@ describe("DetailSecuritySummary", () => {
     expect(screen.getByRole("link", { name: "ClawScan: Pending" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Static analysis: Pending" })).toBeTruthy();
     expect(screen.queryByText("Pass")).toBeNull();
+    expect(
+      screen
+        .getAllByRole("link")
+        .filter((link) => link.className.includes("security-audit-signal"))
+        .map((link) => link.getAttribute("aria-label")),
+    ).toEqual(["ClawScan: Pending", "Static analysis: Pending", "VirusTotal: Pending"]);
   });
 
   it("shows staff-cleared public scan summaries as cleared", () => {
