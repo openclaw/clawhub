@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { buildSkillMeta, buildSoulMeta, fetchSkillMeta, fetchSoulMeta } from "./og";
+import {
+  buildPluginMeta,
+  buildPublisherMeta,
+  buildSkillMeta,
+  buildSoulMeta,
+  fetchSkillMeta,
+  fetchSoulMeta,
+} from "./og";
 
 describe("og helpers", () => {
   afterEach(() => {
@@ -18,8 +25,8 @@ describe("og helpers", () => {
     expect(meta.description).toBe("Forecasts for your area.");
     expect(meta.url).toContain("/steipete/weather");
     expect(meta.owner).toBe("steipete");
-    expect(meta.image).toContain("/og/skill.png?");
-    expect(meta.image).toContain("v=5");
+    expect(meta.image).toContain("/og/skill?");
+    expect(meta.image).toContain("v=7");
     expect(meta.image).toContain("slug=weather");
     expect(meta.image).toContain("owner=steipete");
     expect(meta.image).toContain("version=1.2.3");
@@ -39,11 +46,42 @@ describe("og helpers", () => {
     expect(meta.description).toBe("Personal north star notes.");
     expect(meta.url).toContain("/souls/north-star");
     expect(meta.owner).toBe("someone");
-    expect(meta.image).toContain("/og/soul.png?");
+    expect(meta.image).toContain("/og/soul?");
     expect(meta.image).toContain("v=1");
     expect(meta.image).toContain("slug=north-star");
     expect(meta.image).toContain("owner=someone");
     expect(meta.image).toContain("version=0.1.0");
+  });
+
+  it("builds plugin metadata", () => {
+    const meta = buildPluginMeta({
+      name: "@openclaw/codex",
+      owner: "openclaw",
+      displayName: "Codex",
+      summary: "OpenClaw Codex harness.",
+      latestVersion: "1.0.0",
+    });
+    expect(meta.title).toBe("Codex — ClawHub Plugins");
+    expect(meta.description).toBe("OpenClaw Codex harness.");
+    expect(meta.url).toBe("https://clawhub.ai/plugins/@openclaw/codex");
+    expect(meta.image).toContain("/og/plugin?");
+    expect(meta.image).toContain("v=2");
+    expect(meta.image).toContain("name=%40openclaw%2Fcodex");
+    expect(meta.image).toContain("version=1.0.0");
+  });
+
+  it("builds publisher metadata", () => {
+    const meta = buildPublisherMeta({
+      handle: "@byungkyu",
+      displayName: "byungkyu",
+      bio: "maton.ai",
+    });
+    expect(meta.title).toBe("byungkyu — ClawHub");
+    expect(meta.description).toBe("maton.ai");
+    expect(meta.url).toBe("https://clawhub.ai/user/byungkyu");
+    expect(meta.image).toContain("/og/profile?");
+    expect(meta.image).toContain("v=2");
+    expect(meta.image).toContain("handle=byungkyu");
   });
 
   it("uses defaults when owner and summary are missing", () => {

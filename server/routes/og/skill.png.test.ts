@@ -7,6 +7,7 @@ const getRequestHostMock = vi.fn();
 const setHeaderMock = vi.fn();
 const fetchSkillOgMetaMock = vi.fn();
 const getMarkDataUrlMock = vi.fn();
+const getWatermarkDataUrlMock = vi.fn();
 const ensureResvgWasmMock = vi.fn();
 const getFontBuffersMock = vi.fn();
 const buildSkillOgSvgMock = vi.fn();
@@ -43,8 +44,13 @@ vi.mock("../../og/ogAssets", () => ({
   FONT_MONO: "IBM Plex Mono",
   FONT_SANS: "Bricolage Grotesque",
   getMarkDataUrl: (...args: unknown[]) => getMarkDataUrlMock(...args),
+  getWatermarkDataUrl: (...args: unknown[]) => getWatermarkDataUrlMock(...args),
   ensureResvgWasm: (...args: unknown[]) => ensureResvgWasmMock(...args),
   getFontBuffers: (...args: unknown[]) => getFontBuffersMock(...args),
+}));
+
+vi.mock("../../og/fetchImageDataUrl", () => ({
+  fetchImageDataUrl: vi.fn(async () => null),
 }));
 
 vi.mock("../../og/skillOgSvg", () => ({
@@ -61,6 +67,7 @@ beforeEach(() => {
   setHeaderMock.mockReset();
   fetchSkillOgMetaMock.mockReset();
   getMarkDataUrlMock.mockReset();
+  getWatermarkDataUrlMock.mockReset();
   ensureResvgWasmMock.mockReset();
   getFontBuffersMock.mockReset();
   buildSkillOgSvgMock.mockReset();
@@ -69,6 +76,7 @@ beforeEach(() => {
   resvgCtorMock.mockReset();
 
   getMarkDataUrlMock.mockResolvedValue("data:image/png;base64,AAA=");
+  getWatermarkDataUrlMock.mockResolvedValue("data:image/png;base64,WWW=");
   ensureResvgWasmMock.mockResolvedValue(undefined);
   getFontBuffersMock.mockResolvedValue([new Uint8Array([1, 2, 3])]);
   buildSkillOgSvgMock.mockReturnValue("<svg>skill</svg>");
@@ -103,22 +111,29 @@ describe("skill og route", () => {
     });
 
     const handler = (await import("./skill.png")).default;
-    await expect(handler({} as never)).resolves.toEqual(new Uint8Array([7, 8, 9]));
+    const response = (await handler({} as never)) as Response;
+    await expect(response.arrayBuffer()).resolves.toEqual(new Uint8Array([7, 8, 9]).buffer);
+    expect(response.headers.get("Cache-Control")).toBe("public, max-age=31536000, immutable");
+    expect(response.headers.get("Content-Type")).toBe("image/png");
 
     expect(fetchSkillOgMetaMock).not.toHaveBeenCalled();
-    expect(setHeaderMock).toHaveBeenCalledWith(
-      {},
-      "Cache-Control",
-      "public, max-age=31536000, immutable",
-    );
-    expect(setHeaderMock).toHaveBeenCalledWith({}, "Content-Type", "image/png");
     expect(buildSkillOgSvgMock).toHaveBeenCalledWith({
       markDataUrl: "data:image/png;base64,AAA=",
+      watermarkDataUrl: "data:image/png;base64,WWW=",
+      avatarDataUrl: null,
       title: "Gifgrep",
       description: "Search GIFs fast",
       ownerLabel: "@steipete",
       versionLabel: "v1.0.1",
-      footer: "clawhub.ai/steipete/gifgrep",
+      installCommand: {
+        subject: "skills",
+        action: "install",
+        target: "gifgrep",
+      },
+      stats: [
+        { value: "0", label: "Downloads" },
+        { value: "PASS", label: "Audit" },
+      ],
     });
     expect(resvgCtorMock).toHaveBeenCalledWith("<svg>skill</svg>", {
       fitTo: { mode: "width", value: 1200 },
@@ -140,19 +155,26 @@ describe("skill og route", () => {
       version: null,
       displayName: "Gifgrep",
       summary: "Search GIFs fast",
+      ownerImage: null,
+      stats: { downloads: 1200 },
+      moderation: { verdict: "clean", isSuspicious: false, isMalwareBlocked: false },
     });
 
     const handler = (await import("./skill.png")).default;
-    await handler({} as never);
+    const response = (await handler({} as never)) as Response;
 
     expect(fetchSkillOgMetaMock).toHaveBeenCalledWith("gifgrep", "https://preview.clawhub.ai");
-    expect(setHeaderMock).toHaveBeenCalledWith({}, "Cache-Control", "public, max-age=3600");
+    expect(response.headers.get("Cache-Control")).toBe("public, max-age=3600");
     expect(buildSkillOgSvgMock).toHaveBeenCalledWith(
       expect.objectContaining({
         title: "Gifgrep",
         description: "Search GIFs fast",
         ownerLabel: "@steipete",
         versionLabel: "latest",
+        stats: [
+          { value: "1.2k", label: "Downloads" },
+          { value: "PASS", label: "Audit" },
+        ],
       }),
     );
   });

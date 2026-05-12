@@ -9,27 +9,38 @@ describe("skill OG SVG", () => {
       description: "Quick diagnosis and repair for Discord bot.",
       ownerLabel: "@jhillock",
       versionLabel: "v1.2.3",
-      footer: "clawhub.ai/jhillock/discord-doctor",
+      installCommand: {
+        subject: "skills",
+        action: "install",
+        target: "discord-doctor",
+      },
+      stats: [
+        { value: "1.2k", label: "Downloads" },
+        { value: "PASS", label: "Audit" },
+      ],
     });
 
     expect(svg).toContain("Discord Doctor");
     expect(svg).toContain("Quick diagnosis and repair");
     expect(svg).toContain("@jhillock");
-    expect(svg).toContain("v1.2.3");
-    expect(svg).toContain("clawhub.ai/jhillock/discord-doctor");
+    expect(svg).toContain("PASS");
+    expect(svg).toContain("Audit");
+    expect(svg).toContain("openclaw");
+    expect(svg).toContain("skills");
+    expect(svg).toContain("install");
+    expect(svg).toContain("discord-doctor");
   });
 
   it("wraps long titles to avoid clipping", () => {
     const svg = buildSkillOgSvg({
       markDataUrl: "data:image/png;base64,AAA=",
-      title: "Excalidraw Flowchart",
+      title: "Excalidraw Flowchart Generator",
       description: "Create Excalidraw flowcharts from descriptions.",
       ownerLabel: "@swiftlysisngh",
       versionLabel: "v1.0.2",
-      footer: "clawhub.ai/swiftlysisngh/excalidraw-flowchart",
     });
 
-    const titleBlock = svg.match(/<text[^>]*font-weight="800"[\s\S]*?<\/text>/)?.[0] ?? "";
+    const titleBlock = svg.match(/<text x="72" y="(?:174|184)"[\s\S]*?<\/text>/)?.[0] ?? "";
     const titleTspans = titleBlock.match(/<tspan /g) ?? [];
     expect(titleTspans.length).toBe(2);
     expect(svg).toContain("Excalidraw");
@@ -44,16 +55,15 @@ describe("skill OG SVG", () => {
       description: `Prefix ${longWord} suffix`,
       ownerLabel: "@pasogott",
       versionLabel: "v0.1.0",
-      footer: "clawhub.ai/pasogott/gurkerlcli",
     });
 
-    expect(svg).toContain('<clipPath id="cardClip">');
-    expect(svg).toContain('clip-path="url(#cardClip)"');
+    expect(svg).toContain('<svg width="1200" height="630"');
+    expect(svg).toContain('fill="url(#bgBase)"');
     expect(svg).not.toContain(longWord);
     expect(svg).toContain("…");
 
-    const descBlock = svg.match(/<text[^>]*font-size="26"[\s\S]*?<\/text>/)?.[0] ?? "";
+    const descBlock = svg.match(/<text[^>]*font-size="28"[\s\S]*?<\/text>/)?.[0] ?? "";
     const descTspans = descBlock.match(/<tspan /g) ?? [];
-    expect(descTspans.length).toBeLessThanOrEqual(3);
+    expect(descTspans.length).toBeLessThanOrEqual(2);
   });
 });

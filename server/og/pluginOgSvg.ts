@@ -1,24 +1,25 @@
 import { buildRegistryOgSvg, type RegistryOgCommand, type RegistryOgStat } from "./registryOgSvg";
 
-export type SkillOgSvgParams = {
+export type PluginOgSvgParams = {
   markDataUrl: string;
   watermarkDataUrl?: string | null;
   avatarDataUrl?: string | null;
   title: string;
   description: string;
+  packageName: string;
   ownerLabel: string;
-  versionLabel: string;
   installCommand?: RegistryOgCommand | null;
   stats?: RegistryOgStat[];
 };
 
-export function buildSkillOgSvg(params: SkillOgSvgParams) {
+export function buildPluginOgSvg(params: PluginOgSvgParams) {
   return buildRegistryOgSvg({
     markDataUrl: params.markDataUrl,
     watermarkDataUrl: params.watermarkDataUrl,
     avatarDataUrl: params.avatarDataUrl,
-    avatarShape: "circle",
-    surfaceLabel: "Skill",
+    avatarShape: "rounded",
+    avatarFit: "contain",
+    surfaceLabel: "Plugin",
     eyebrow: params.ownerLabel,
     title: params.title,
     description: params.description,
@@ -27,8 +28,8 @@ export function buildSkillOgSvg(params: SkillOgSvgParams) {
       params.stats && params.stats.length > 0
         ? params.stats
         : [
+            { value: params.packageName, label: "Package" },
             { value: params.ownerLabel, label: "Publisher" },
-            { value: params.versionLabel, label: "Version" },
           ],
   });
 }

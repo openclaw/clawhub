@@ -1,7 +1,7 @@
 import { Resvg } from "@resvg/resvg-wasm";
 import { defineEventHandler, getQuery, getRequestHost, setHeader } from "h3";
 import { fetchImageDataUrl } from "../../og/fetchImageDataUrl";
-import { fetchSkillOgMeta } from "../../og/fetchSkillOgMeta";
+import { fetchPluginOgMeta } from "../../og/fetchPluginOgMeta";
 import { formatOgStat } from "../../og/formatOgStats";
 import {
   ensureResvgWasm,
@@ -11,13 +11,12 @@ import {
   getMarkDataUrl,
   getWatermarkDataUrl,
 } from "../../og/ogAssets";
+import { buildPluginOgSvg } from "../../og/pluginOgSvg";
 import { pngResponse } from "../../og/pngResponse";
-import { buildSkillOgSvg } from "../../og/skillOgSvg";
 
 type OgQuery = {
-  slug?: string;
+  name?: string;
   owner?: string;
-  version?: string;
   title?: string;
   description?: string;
   downloads?: string;
@@ -42,42 +41,43 @@ function getApiBase(eventHost: string | null) {
   return "https://clawhub.ai";
 }
 
+function getAuditLabel(status: string | null | undefined) {
+  const normalized = status?.trim().toLowerCase();
+  if (normalized === "malicious") return "Audit BLOCK";
+  if (normalized === "suspicious") return "Audit REVIEW";
+  if (normalized === "clean" || normalized === "benign" || normalized === "pass") {
+    return "Audit PASS";
+  }
+  if (normalized === "pending" || normalized === "not-run") return "Audit PENDING";
+  return "Audit UNKNOWN";
+}
+
 export default defineEventHandler(async (event) => {
   const query = getQuery(event) as OgQuery;
-  const slug = cleanString(query.slug);
-  if (!slug) {
+  const name = cleanString(query.name);
+  if (!name) {
     setHeader(event, "Content-Type", "text/plain; charset=utf-8");
-    return "Missing `slug` query param.";
+    return "Missing `name` query param.";
   }
 
   const ownerFromQuery = cleanString(query.owner);
-  const versionFromQuery = cleanString(query.version);
   const titleFromQuery = cleanString(query.title);
   const descriptionFromQuery = cleanString(query.description);
   const downloadsFromQuery = cleanString(query.downloads);
   const auditFromQuery = cleanString(query.audit);
   const avatarFromQuery = cleanString(query.avatar);
-
-  const needFetch =
-    !titleFromQuery || !descriptionFromQuery || !ownerFromQuery || !versionFromQuery;
-  const meta = needFetch ? await fetchSkillOgMeta(slug, getApiBase(getRequestHost(event))) : null;
-
+  const needFetch = !ownerFromQuery || !titleFromQuery || !descriptionFromQuery;
+  const meta = needFetch ? await fetchPluginOgMeta(name, getApiBase(getRequestHost(event))) : null;
+  const packageName = meta?.name || name;
   const owner = ownerFromQuery || meta?.owner || "";
-  const version = versionFromQuery || meta?.version || "";
-  const title = titleFromQuery || meta?.displayName || slug;
-  const description = descriptionFromQuery || meta?.summary || "";
-
   const ownerLabel = owner ? `@${owner}` : "clawhub";
-  const versionLabel = version ? `v${version}` : "latest";
-  const auditLabel =
-    auditFromQuery ||
-    (meta?.moderation?.isMalwareBlocked || meta?.moderation?.verdict === "malicious"
-      ? "Audit BLOCK"
-      : meta?.moderation?.isSuspicious || meta?.moderation?.verdict === "suspicious"
-        ? "Audit REVIEW"
-        : "Audit PASS");
+  const title = titleFromQuery || meta?.displayName || packageName;
+  const description =
+    descriptionFromQuery || meta?.summary || "OpenClaw plugin published on ClawHub.";
 
-  const cacheKey = version ? "public, max-age=31536000, immutable" : "public, max-age=3600";
+  const cacheKey = meta?.latestVersion
+    ? "public, max-age=31536000, immutable"
+    : "public, max-age=3600";
   const [markDataUrl, watermarkDataUrl, fontBuffers] = await Promise.all([
     getMarkDataUrl(),
     getWatermarkDataUrl(),
@@ -85,25 +85,31 @@ export default defineEventHandler(async (event) => {
   ]);
   const avatarDataUrl = await fetchImageDataUrl(avatarFromQuery || meta?.ownerImage);
 
-  const svg = buildSkillOgSvg({
+  const svg = buildPluginOgSvg({
     markDataUrl,
     watermarkDataUrl,
     avatarDataUrl,
     title,
     description,
+    packageName,
     ownerLabel,
-    versionLabel,
     installCommand: {
-      subject: "skills",
+      subject: "plugins",
       action: "install",
-      target: slug,
+      target: `clawhub:${packageName}`,
     },
     stats: [
       {
         value: downloadsFromQuery || formatOgStat(meta?.stats.downloads),
         label: "Downloads",
       },
-      { value: auditLabel.replace(/^Audit\s+/i, ""), label: "Audit" },
+      {
+        value: (auditFromQuery || getAuditLabel(meta?.verification?.scanStatus)).replace(
+          /^Audit\s+/i,
+          "",
+        ),
+        label: "Audit",
+      },
     ],
   });
 
