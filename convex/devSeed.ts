@@ -3,7 +3,8 @@ import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx } from "./_generated/server";
 import { internalMutation as rawInternalMutation } from "./_generated/server";
-import { internalAction, internalMutation } from "./functions";
+import { action, internalAction, internalMutation } from "./functions";
+import { requireUserFromAction } from "./lib/access";
 import { EMBEDDING_DIMENSIONS } from "./lib/embeddings";
 import { normalizePackageName } from "./lib/packageRegistry";
 import { ensurePersonalPublisherForUser } from "./lib/publishers";
@@ -34,6 +35,7 @@ type SeedPluginSpec = {
 
 type SeedActionArgs = {
   reset?: boolean;
+  ownerUserId?: Id<"users">;
 };
 
 type SeedActionResult = {
@@ -45,6 +47,7 @@ type SeedMutationResult = Record<string, unknown>;
 
 const LOCAL_SEED_HANDLE = "local";
 const LOCAL_SEED_GITHUB_CREATED_AT = Date.parse("2020-01-01T00:00:00.000Z");
+const CURRENT_USER_SEED_PREFIX = "dev";
 const FLAGGED_SKILL_SLUG = "local-flagged-wallet-sync";
 const SCANNED_SKILL_SLUG = "local-agentic-risk-demo";
 const FLAGGED_PLUGIN_NAME = "local-flagged-runtime-plugin";
@@ -168,6 +171,52 @@ const SCANNED_PLUGIN_README = `# Local Scanned Runtime Plugin
 This seeded plugin is public and intentionally has completed scan results so local development can
 preview plugin scanner detail pages without owner-only visibility.
 `;
+
+function isProductionDeployment() {
+  const deployment = process.env.CONVEX_DEPLOYMENT?.trim() ?? "";
+  return deployment.startsWith("prod:") || deployment.includes("production");
+}
+
+function assertDevSeedAllowed() {
+  if (isProductionDeployment()) {
+    throw new Error("Dev fixture seeding is disabled on production deployments.");
+  }
+}
+
+function normalizeSeedPart(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-{2,}/g, "-");
+}
+
+function currentUserSeedKey(userId: Id<"users">) {
+  const raw = String(userId).split(":").pop() ?? String(userId);
+  const normalized = normalizeSeedPart(raw).replace(/-/g, "");
+  return (normalized || "user").slice(-8);
+}
+
+export function currentUserSeedSkillSlug(userId: Id<"users">, baseSlug: string) {
+  return `${CURRENT_USER_SEED_PREFIX}-${currentUserSeedKey(userId)}-${baseSlug}`;
+}
+
+export function currentUserSeedPackageName(userId: Id<"users">, baseName: string) {
+  const normalized = normalizePackageName(baseName).replace(/^@/, "").replace("/", "-");
+  return `${CURRENT_USER_SEED_PREFIX}-${currentUserSeedKey(userId)}-${normalized}`;
+}
+
+function withFrontmatterName(rawSkillMd: string, name: string) {
+  const frontmatterEnd = rawSkillMd.indexOf("\n---", 3);
+  if (frontmatterEnd === -1) return rawSkillMd;
+  const frontmatter = rawSkillMd.slice(0, frontmatterEnd);
+  const body = rawSkillMd.slice(frontmatterEnd);
+  if (/^name:\s*.+$/m.test(frontmatter)) {
+    return `${frontmatter.replace(/^name:\s*.+$/m, `name: ${name}`)}${body}`;
+  }
+  return `${frontmatter}\nname: ${name}${body}`;
+}
 
 const FEATURED_PLUGIN_SEEDS: SeedPluginSpec[] = [
   {
@@ -700,6 +749,7 @@ async function seedPluginPackageBatch(
   );
   return (await ctx.runMutation(internal.devSeed.seedFeaturedPluginPackagesMutation, {
     reset: args.reset,
+    ownerUserId: args.ownerUserId,
     packages: specs.map((spec, index) => ({
       name: spec.name,
       displayName: spec.displayName,
@@ -786,6 +836,124 @@ export const seedNixSkills: ReturnType<typeof internalAction> = internalAction({
   handler: seedNixSkillsHandler,
 });
 
+export async function seedCurrentUserFixturesHandler(ctx: ActionCtx, args: { reset?: boolean }) {
+  assertDevSeedAllowed();
+  const { userId, user } = await requireUserFromAction(ctx);
+  const skillSlugs: string[] = [];
+  const packageNames: string[] = [];
+  const results: Array<Record<string, unknown> & { slug: string }> = [];
+
+  for (const spec of SEED_SKILLS) {
+    const slug = currentUserSeedSkillSlug(userId, spec.slug);
+    const skillMd = withFrontmatterName(injectMetadata(spec.rawSkillMd, spec.metadata), slug);
+    const frontmatter = parseFrontmatter(skillMd);
+    const clawdis = parseClawdisMetadata(frontmatter);
+    const storageId = await ctx.storage.store(new Blob([skillMd], { type: "text/markdown" }));
+
+    const result: SeedMutationResult = await ctx.runMutation(internal.devSeed.seedSkillMutation, {
+      reset: args.reset,
+      ownerUserId: userId,
+      storageId,
+      metadata: spec.metadata,
+      frontmatter,
+      clawdis,
+      skillMd,
+      slug,
+      displayName: spec.displayName,
+      summary: spec.summary,
+      version: spec.version,
+    });
+    skillSlugs.push(slug);
+    results.push({ slug, ...result });
+  }
+
+  const flaggedSkillSlug = currentUserSeedSkillSlug(userId, FLAGGED_SKILL_SLUG);
+  const scannedSkillSlug = currentUserSeedSkillSlug(userId, SCANNED_SKILL_SLUG);
+  const flaggedPluginName = currentUserSeedPackageName(userId, FLAGGED_PLUGIN_NAME);
+  const scannedPluginName = currentUserSeedPackageName(userId, SCANNED_PLUGIN_NAME);
+  const flaggedSkillMd = withFrontmatterName(FLAGGED_SKILL_MD, flaggedSkillSlug);
+  const scannedSkillMd = withFrontmatterName(SCANNED_SKILL_MD, scannedSkillSlug);
+  const flaggedPluginReadme = FLAGGED_PLUGIN_README.replace(
+    "# Local Flagged Runtime Plugin",
+    `# ${flaggedPluginName}`,
+  );
+  const scannedPluginReadme = SCANNED_PLUGIN_README.replace(
+    "# Local Scanned Runtime Plugin",
+    `# ${scannedPluginName}`,
+  );
+  const [
+    flaggedSkillStorageId,
+    scannedSkillStorageId,
+    flaggedPluginStorageId,
+    scannedPluginStorageId,
+  ] = await Promise.all([
+    ctx.storage.store(new Blob([flaggedSkillMd], { type: "text/markdown" })),
+    ctx.storage.store(new Blob([scannedSkillMd], { type: "text/markdown" })),
+    ctx.storage.store(new Blob([flaggedPluginReadme], { type: "text/markdown" })),
+    ctx.storage.store(new Blob([scannedPluginReadme], { type: "text/markdown" })),
+  ]);
+
+  const fixtureResult: SeedMutationResult = await ctx.runMutation(
+    internal.devSeed.seedLocalModerationFixturesMutation,
+    {
+      reset: args.reset,
+      ownerUserId: userId,
+      flaggedSkillSlug,
+      scannedSkillSlug,
+      flaggedPluginName,
+      scannedPluginName,
+      flaggedSkillStorageId,
+      flaggedSkillMd,
+      scannedSkillStorageId,
+      scannedSkillMd,
+      flaggedPluginStorageId,
+      flaggedPluginReadme,
+      scannedPluginStorageId,
+      scannedPluginReadme,
+    },
+  );
+  skillSlugs.push(flaggedSkillSlug, scannedSkillSlug);
+  packageNames.push(flaggedPluginName, scannedPluginName);
+  results.push({ slug: flaggedSkillSlug, ...fixtureResult });
+
+  const ownerPluginSpecs = LOCAL_OWNER_PLUGIN_SEEDS.map((spec) => ({
+    ...spec,
+    name: currentUserSeedPackageName(userId, spec.name),
+    runtimeId: `${CURRENT_USER_SEED_PREFIX}.${currentUserSeedKey(userId)}.${spec.runtimeId}`,
+  }));
+  const ownerPluginResult = await seedPluginPackageBatch(
+    ctx,
+    { reset: args.reset, ownerUserId: userId },
+    ownerPluginSpecs,
+  );
+  packageNames.push(...ownerPluginSpecs.map((spec) => spec.name));
+  results.push({ slug: "current-user-local-plugins", ...ownerPluginResult });
+
+  const statsResult = (await ctx.runAction(
+    internal.statsMaintenance.updateGlobalStatsAction,
+    {},
+  )) as { count: number } | null;
+
+  return {
+    ok: true,
+    ownerUserId: userId,
+    ownerHandle: user.handle ?? user.name ?? null,
+    skillCount: skillSlugs.length,
+    pluginCount: packageNames.length,
+    skillSlugs,
+    packageNames,
+    statsCount: statsResult?.count ?? null,
+    results,
+  };
+}
+
+export const seedCurrentUserFixtures: ReturnType<typeof action> = action({
+  args: {
+    reset: v.optional(v.boolean()),
+  },
+  handler: seedCurrentUserFixturesHandler,
+});
+
 async function seedPadelSkillHandler(
   ctx: ActionCtx,
   args: SeedActionArgs,
@@ -851,6 +1019,17 @@ async function ensureLocalSeedOwner(ctx: MutationCtx) {
   return { userId: ensuredUserId, publisherId: publisher._id };
 }
 
+async function ensureSeedOwner(ctx: MutationCtx, ownerUserId?: Id<"users">) {
+  if (!ownerUserId) return await ensureLocalSeedOwner(ctx);
+  const user = await ctx.db.get(ownerUserId);
+  if (!user || user.deletedAt || user.deactivatedAt) {
+    throw new Error("Seed owner user not found");
+  }
+  const publisher = await ensurePersonalPublisherForUser(ctx, user);
+  if (!publisher) throw new Error("Seed owner publisher was not created");
+  return { userId: user._id, publisherId: publisher._id };
+}
+
 async function deleteSkillEmbeddingsForSkill(ctx: MutationCtx, skillId: Id<"skills">) {
   const embeddings = await ctx.db
     .query("skillEmbeddings")
@@ -882,8 +1061,8 @@ async function deletePackageBadgesForPackage(ctx: MutationCtx, packageId: Id<"pa
   for (const badge of badges) await ctx.db.delete(badge._id);
 }
 
-async function deleteSeedSkillFixture(ctx: MutationCtx) {
-  const existing = await findSeedSkillFixture(ctx);
+async function deleteSeedSkillFixture(ctx: MutationCtx, slug = FLAGGED_SKILL_SLUG) {
+  const existing = await findSeedSkillFixture(ctx, slug);
   if (!existing) return;
 
   const versions = await ctx.db
@@ -909,15 +1088,15 @@ async function deleteSeedSkillFixture(ctx: MutationCtx) {
   await ctx.db.delete(existing._id);
 }
 
-async function findSeedSkillFixture(ctx: MutationCtx) {
+async function findSeedSkillFixture(ctx: MutationCtx, slug = FLAGGED_SKILL_SLUG) {
   return await ctx.db
     .query("skills")
-    .withIndex("by_slug", (q) => q.eq("slug", FLAGGED_SKILL_SLUG))
+    .withIndex("by_slug", (q) => q.eq("slug", slug))
     .unique();
 }
 
-async function deleteScannedSkillFixture(ctx: MutationCtx) {
-  const existing = await findScannedSkillFixture(ctx);
+async function deleteScannedSkillFixture(ctx: MutationCtx, slug = SCANNED_SKILL_SLUG) {
+  const existing = await findScannedSkillFixture(ctx, slug);
   if (!existing) return;
 
   const versions = await ctx.db
@@ -943,10 +1122,10 @@ async function deleteScannedSkillFixture(ctx: MutationCtx) {
   await ctx.db.delete(existing._id);
 }
 
-async function findScannedSkillFixture(ctx: MutationCtx) {
+async function findScannedSkillFixture(ctx: MutationCtx, slug = SCANNED_SKILL_SLUG) {
   return await ctx.db
     .query("skills")
-    .withIndex("by_slug", (q) => q.eq("slug", SCANNED_SKILL_SLUG))
+    .withIndex("by_slug", (q) => q.eq("slug", slug))
     .unique();
 }
 
@@ -965,12 +1144,12 @@ async function deleteSeedPluginFixtureByName(ctx: MutationCtx, name: string) {
   }
 }
 
-async function deleteSeedPluginFixture(ctx: MutationCtx) {
-  await deleteSeedPluginFixtureByName(ctx, FLAGGED_PLUGIN_NAME);
+async function deleteSeedPluginFixture(ctx: MutationCtx, name = FLAGGED_PLUGIN_NAME) {
+  await deleteSeedPluginFixtureByName(ctx, name);
 }
 
-async function deleteScannedPluginFixture(ctx: MutationCtx) {
-  await deleteSeedPluginFixtureByName(ctx, SCANNED_PLUGIN_NAME);
+async function deleteScannedPluginFixture(ctx: MutationCtx, name = SCANNED_PLUGIN_NAME) {
+  await deleteSeedPluginFixtureByName(ctx, name);
 }
 
 async function findSeedPluginFixtureByName(ctx: MutationCtx, name: string) {
@@ -980,12 +1159,12 @@ async function findSeedPluginFixtureByName(ctx: MutationCtx, name: string) {
     .unique();
 }
 
-async function findSeedPluginFixture(ctx: MutationCtx) {
-  return await findSeedPluginFixtureByName(ctx, FLAGGED_PLUGIN_NAME);
+async function findSeedPluginFixture(ctx: MutationCtx, name = FLAGGED_PLUGIN_NAME) {
+  return await findSeedPluginFixtureByName(ctx, name);
 }
 
-async function findScannedPluginFixture(ctx: MutationCtx) {
-  return await findSeedPluginFixtureByName(ctx, SCANNED_PLUGIN_NAME);
+async function findScannedPluginFixture(ctx: MutationCtx, name = SCANNED_PLUGIN_NAME) {
+  return await findSeedPluginFixtureByName(ctx, name);
 }
 
 async function ensureSkillBadge(
@@ -1433,6 +1612,11 @@ function flaggedWalletClawScanAnalysis(now: number) {
 
 type SeedLocalModerationFixturesArgs = {
   reset?: boolean;
+  ownerUserId?: Id<"users">;
+  flaggedSkillSlug?: string;
+  scannedSkillSlug?: string;
+  flaggedPluginName?: string;
+  scannedPluginName?: string;
   flaggedSkillStorageId: Id<"_storage">;
   flaggedSkillMd: string;
   scannedSkillStorageId: Id<"_storage">;
@@ -1449,10 +1633,14 @@ export async function seedLocalModerationFixturesHandler(
 ) {
   const scannedSkillFrontmatter = parseFrontmatter(args.scannedSkillMd);
   const scannedSkillClawdis = parseClawdisMetadata(scannedSkillFrontmatter);
-  const existingSkill = await findSeedSkillFixture(ctx);
-  const existingScannedSkill = await findScannedSkillFixture(ctx);
-  const existingPlugin = await findSeedPluginFixture(ctx);
-  const existingScannedPlugin = await findScannedPluginFixture(ctx);
+  const flaggedSkillSlug = args.flaggedSkillSlug ?? FLAGGED_SKILL_SLUG;
+  const scannedSkillSlug = args.scannedSkillSlug ?? SCANNED_SKILL_SLUG;
+  const flaggedPluginName = args.flaggedPluginName ?? FLAGGED_PLUGIN_NAME;
+  const scannedPluginName = args.scannedPluginName ?? SCANNED_PLUGIN_NAME;
+  const existingSkill = await findSeedSkillFixture(ctx, flaggedSkillSlug);
+  const existingScannedSkill = await findScannedSkillFixture(ctx, scannedSkillSlug);
+  const existingPlugin = await findSeedPluginFixture(ctx, flaggedPluginName);
+  const existingScannedPlugin = await findScannedPluginFixture(ctx, scannedPluginName);
   if (
     existingSkill &&
     existingScannedSkill &&
@@ -1461,7 +1649,7 @@ export async function seedLocalModerationFixturesHandler(
     !args.reset
   ) {
     const now = Date.now();
-    const { userId, publisherId } = await ensureLocalSeedOwner(ctx);
+    const { userId, publisherId } = await ensureSeedOwner(ctx, args.ownerUserId);
     const ownerPatch = { ownerUserId: userId, ownerPublisherId: publisherId, updatedAt: now };
     for (const skill of [existingSkill, existingScannedSkill]) {
       if (skill.ownerUserId !== userId || skill.ownerPublisherId !== publisherId) {
@@ -1497,7 +1685,7 @@ export async function seedLocalModerationFixturesHandler(
           ],
           parsed: {
             frontmatter: {
-              name: FLAGGED_SKILL_SLUG,
+              name: flaggedSkillSlug,
               description:
                 "Reconcile local wallet exports against exchange activity and flag mismatched transfers.",
             },
@@ -1561,19 +1749,19 @@ export async function seedLocalModerationFixturesHandler(
     };
   }
 
-  await deleteSeedSkillFixture(ctx);
-  await deleteScannedSkillFixture(ctx);
-  await deleteSeedPluginFixture(ctx);
-  await deleteScannedPluginFixture(ctx);
+  await deleteSeedSkillFixture(ctx, flaggedSkillSlug);
+  await deleteScannedSkillFixture(ctx, scannedSkillSlug);
+  await deleteSeedPluginFixture(ctx, flaggedPluginName);
+  await deleteScannedPluginFixture(ctx, scannedPluginName);
 
   const now = Date.now();
-  const { userId, publisherId } = await ensureLocalSeedOwner(ctx);
+  const { userId, publisherId } = await ensureSeedOwner(ctx, args.ownerUserId);
   const staticScan = staticMaliciousScan(now);
   const scannedSkillStaticScan = staticSuspiciousSkillScan(now);
   const scannedStaticScan = staticSuspiciousScan(now);
 
   const skillId = await ctx.db.insert("skills", {
-    slug: FLAGGED_SKILL_SLUG,
+    slug: flaggedSkillSlug,
     displayName: "Local Flagged Wallet Sync",
     summary:
       "Reconcile local wallet exports against exchange activity and flag mismatched transfers.",
@@ -1626,7 +1814,7 @@ export async function seedLocalModerationFixturesHandler(
     ],
     parsed: {
       frontmatter: {
-        name: FLAGGED_SKILL_SLUG,
+        name: flaggedSkillSlug,
         description:
           "Reconcile local wallet exports against exchange activity and flag mismatched transfers.",
       },
@@ -1660,7 +1848,7 @@ export async function seedLocalModerationFixturesHandler(
     updatedAt: now,
   });
   const scannedSkillId = await ctx.db.insert("skills", {
-    slug: SCANNED_SKILL_SLUG,
+    slug: scannedSkillSlug,
     displayName: "Local Agentic Risk Demo",
     summary: SCANNED_SKILL_SUMMARY,
     ownerUserId: userId,
@@ -1758,8 +1946,8 @@ export async function seedLocalModerationFixturesHandler(
   });
 
   const packageId = await ctx.db.insert("packages", {
-    name: FLAGGED_PLUGIN_NAME,
-    normalizedName: normalizePackageName(FLAGGED_PLUGIN_NAME),
+    name: flaggedPluginName,
+    normalizedName: normalizePackageName(flaggedPluginName),
     displayName: "Local Flagged Runtime Plugin",
     summary: "Seeded flagged plugin for local owner inventory and security review testing.",
     ownerUserId: userId,
@@ -1811,7 +1999,7 @@ export async function seedLocalModerationFixturesHandler(
     ],
     integritySha256: "seeded-flagged-plugin-integrity",
     extractedPackageJson: {
-      name: FLAGGED_PLUGIN_NAME,
+      name: flaggedPluginName,
       version: "0.1.0",
     },
     compatibility: { pluginApiRange: ">=0.1.0" },
@@ -1877,8 +2065,8 @@ export async function seedLocalModerationFixturesHandler(
     updatedAt: now,
   });
   const scannedPackageId = await ctx.db.insert("packages", {
-    name: SCANNED_PLUGIN_NAME,
-    normalizedName: normalizePackageName(SCANNED_PLUGIN_NAME),
+    name: scannedPluginName,
+    normalizedName: normalizePackageName(scannedPluginName),
     displayName: "Local Scanned Runtime Plugin",
     summary: "Seeded public plugin with completed security scans for scanner page previews.",
     ownerUserId: userId,
@@ -1930,7 +2118,7 @@ export async function seedLocalModerationFixturesHandler(
     ],
     integritySha256: "seeded-scanned-plugin-integrity",
     extractedPackageJson: {
-      name: SCANNED_PLUGIN_NAME,
+      name: scannedPluginName,
       version: "0.1.0",
     },
     compatibility: { pluginApiRange: ">=0.1.0" },
@@ -2014,6 +2202,11 @@ export async function seedLocalModerationFixturesHandler(
 export const seedLocalModerationFixturesMutation = internalMutation({
   args: {
     reset: v.optional(v.boolean()),
+    ownerUserId: v.optional(v.id("users")),
+    flaggedSkillSlug: v.optional(v.string()),
+    scannedSkillSlug: v.optional(v.string()),
+    flaggedPluginName: v.optional(v.string()),
+    scannedPluginName: v.optional(v.string()),
     flaggedSkillStorageId: v.id("_storage"),
     flaggedSkillMd: v.string(),
     scannedSkillStorageId: v.id("_storage"),
@@ -2029,6 +2222,7 @@ export const seedLocalModerationFixturesMutation = internalMutation({
 export const seedFeaturedPluginPackagesMutation = internalMutation({
   args: {
     reset: v.optional(v.boolean()),
+    ownerUserId: v.optional(v.id("users")),
     packages: v.array(
       v.object({
         name: v.string(),
@@ -2052,7 +2246,7 @@ export const seedFeaturedPluginPackagesMutation = internalMutation({
   },
   handler: async (ctx, args) => {
     const now = Date.now();
-    const { userId, publisherId } = await ensureLocalSeedOwner(ctx);
+    const { userId, publisherId } = await ensureSeedOwner(ctx, args.ownerUserId);
     const seeded: string[] = [];
     const skipped: string[] = [];
 
@@ -2412,6 +2606,7 @@ async function replaceRoleHelpFixtureToken(ctx: MutationCtx, userId: Id<"users">
 export const seedSkillMutation = internalMutation({
   args: {
     reset: v.optional(v.boolean()),
+    ownerUserId: v.optional(v.id("users")),
     storageId: v.id("_storage"),
     metadata: v.any(),
     frontmatter: v.any(),
@@ -2424,7 +2619,7 @@ export const seedSkillMutation = internalMutation({
   },
   handler: async (ctx, args) => {
     const now = Date.now();
-    const { userId, publisherId } = await ensureLocalSeedOwner(ctx);
+    const { userId, publisherId } = await ensureSeedOwner(ctx, args.ownerUserId);
     const existing = await ctx.db
       .query("skills")
       .withIndex("by_slug", (q) => q.eq("slug", args.slug))
