@@ -6,6 +6,7 @@
 
 ### Fixes
 
+- Web: rank publisher card preview items by downloads instead of recent publish order (thanks @vyctorbrzezowski).
 - Web: keep skill/plugin detail tabs at mobile-friendly touch target height.
 
 ## 0.15.0 - 2026-05-12

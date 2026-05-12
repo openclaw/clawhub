@@ -161,14 +161,14 @@ async function getPublisherPublishedPreviewRows(
   const [skills, packages] = await Promise.all([
     ctx.db
       .query("skills")
-      .withIndex("by_owner_publisher_active_updated", (q) =>
+      .withIndex("by_owner_publisher_active_downloads", (q) =>
         q.eq("ownerPublisherId", publisherId).eq("softDeletedAt", undefined),
       )
       .order("desc")
       .take(PUBLISHER_LIST_PREVIEW_LIMIT),
     ctx.db
       .query("packages")
-      .withIndex("by_owner_publisher_active_updated", (q) =>
+      .withIndex("by_owner_publisher_active_downloads", (q) =>
         q.eq("ownerPublisherId", publisherId).eq("softDeletedAt", undefined),
       )
       .order("desc")

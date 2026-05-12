@@ -77,7 +77,12 @@ const listPublicPageHandler = (
       paginationOpts: { cursor: string | null; numItems: number };
     },
     {
-      page: Array<{ handle: string; kind: "user" | "org"; stats: { downloads: number } }>;
+      page: Array<{
+        handle: string;
+        kind: "user" | "org";
+        stats: { downloads: number };
+        publishedItems: Array<{ displayName: string; downloads: number }>;
+      }>;
       counts: { all: number; individuals: number; organizations: number };
       globalCounts: { all: number; individuals: number; organizations: number };
       continueCursor: string;
@@ -292,7 +297,7 @@ describe("publishers membership controls", () => {
             }
             if (
               (table === "skills" || table === "packages") &&
-              indexName === "by_owner_publisher_active_updated"
+              indexName === "by_owner_publisher_active_downloads"
             ) {
               return indexedRows([]);
             }
@@ -398,7 +403,7 @@ describe("publishers membership controls", () => {
             }
             if (
               (table === "skills" || table === "packages") &&
-              indexName === "by_owner_publisher_active_updated"
+              indexName === "by_owner_publisher_active_downloads"
             ) {
               return indexedRows([]);
             }
@@ -417,6 +422,136 @@ describe("publishers membership controls", () => {
     expect(result.counts).toEqual({ all: 1, individuals: 1, organizations: 0 });
     expect(result.globalCounts).toEqual({ all: 3, individuals: 2, organizations: 1 });
     expect(result.page.map((item) => item.handle)).toEqual(["alice"]);
+  });
+
+  it("orders public publisher card previews by downloads", async () => {
+    const publisherRows = [
+      {
+        _id: "publishers:openclaw",
+        _creationTime: 1,
+        kind: "org",
+        handle: "openclaw",
+        displayName: "OpenClaw",
+        publishedSkills: 1,
+        publishedPackages: 4,
+        totalInstalls: 20,
+        totalDownloads: 364,
+        totalStars: 2,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+    const skillRows = [
+      {
+        _id: "skills:popular-skill",
+        ownerPublisherId: "publishers:openclaw",
+        softDeletedAt: undefined,
+        displayName: "Popular Skill",
+        statsDownloads: 98,
+        statsStars: 1,
+        statsInstallsAllTime: 1,
+        stats: { downloads: 98, stars: 1, installsCurrent: 1, installsAllTime: 1 },
+        updatedAt: 1,
+      },
+    ];
+    const packageRows = [
+      {
+        _id: "packages:popular-plugin",
+        ownerPublisherId: "publishers:openclaw",
+        softDeletedAt: undefined,
+        family: "code-plugin",
+        displayName: "Popular Plugin",
+        stats: { downloads: 128, stars: 1, installs: 1, versions: 1 },
+        updatedAt: 1,
+      },
+      {
+        _id: "packages:recent-plugin",
+        ownerPublisherId: "publishers:openclaw",
+        softDeletedAt: undefined,
+        family: "code-plugin",
+        displayName: "Recent Plugin",
+        stats: { downloads: 12, stars: 1, installs: 1, versions: 1 },
+        updatedAt: 5,
+      },
+      {
+        _id: "packages:recent-helper",
+        ownerPublisherId: "publishers:openclaw",
+        softDeletedAt: undefined,
+        family: "code-plugin",
+        displayName: "Recent Helper",
+        stats: { downloads: 11, stars: 1, installs: 1, versions: 1 },
+        updatedAt: 4,
+      },
+      {
+        _id: "packages:recent-tool",
+        ownerPublisherId: "publishers:openclaw",
+        softDeletedAt: undefined,
+        family: "code-plugin",
+        displayName: "Recent Tool",
+        stats: { downloads: 10, stars: 1, installs: 1, versions: 1 },
+        updatedAt: 3,
+      },
+    ];
+    const rowsByDownloads = <
+      T extends { updatedAt: number; stats?: { downloads: number }; statsDownloads?: number },
+    >(
+      rows: T[],
+    ) =>
+      [...rows].sort(
+        (a, b) =>
+          (b.statsDownloads ?? b.stats?.downloads ?? 0) -
+            (a.statsDownloads ?? a.stats?.downloads ?? 0) || b.updatedAt - a.updatedAt,
+      );
+    const ctx = {
+      db: {
+        get: vi.fn(),
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
+            const fields: Record<string, unknown> = {};
+            const q = {
+              eq: (field: string, value: unknown) => {
+                fields[field] = value;
+                return q;
+              },
+            };
+            buildQuery(q);
+            if (table === "publishers" && indexName === "by_active_total_downloads") {
+              return {
+                order: vi.fn(() => ({
+                  take: vi.fn(async () => publisherRows),
+                })),
+              };
+            }
+            if (table === "skills" && indexName === "by_owner_publisher_active_downloads") {
+              return indexedRows(
+                rowsByDownloads(
+                  skillRows.filter((skill) => skill.ownerPublisherId === fields.ownerPublisherId),
+                ),
+              );
+            }
+            if (table === "packages" && indexName === "by_owner_publisher_active_downloads") {
+              return indexedRows(
+                rowsByDownloads(
+                  packageRows.filter((pkg) => pkg.ownerPublisherId === fields.ownerPublisherId),
+                ),
+              );
+            }
+            throw new Error(`unexpected ${table} index ${indexName}`);
+          }),
+        })),
+      },
+    };
+
+    const result = await listPublicPageHandler(ctx as never, {
+      paginationOpts: { cursor: null, numItems: 25 },
+    });
+
+    expect(result.page[0]?.publishedItems.map((item) => item.displayName)).toEqual([
+      "Popular Plugin",
+      "Popular Skill",
+      "Recent Plugin",
+    ]);
+    expect(result.page[0]?.publishedItems.map((item) => item.downloads)).toEqual([128, 98, 12]);
   });
 
   it("does not hydrate every publisher before filtering public publisher pages", async () => {
@@ -459,7 +594,7 @@ describe("publishers membership controls", () => {
             }
             if (
               (table === "skills" || table === "packages") &&
-              indexName === "by_owner_publisher_active_updated"
+              indexName === "by_owner_publisher_active_downloads"
             ) {
               ownerPublisherQueries.push(String(fields.ownerPublisherId));
               return indexedRows([]);
