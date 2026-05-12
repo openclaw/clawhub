@@ -22,6 +22,12 @@ For local reproduction, run the matching `ci:*` package scripts. `bun run ci:pr`
 matches the non-browser PR gates. `bun run ci:playwright-smoke` assumes the
 chromium Playwright browser has already been installed.
 
+`ci:static` ignores `GHSA-rmmr-r34h-pfm5` while Bun reports it against all
+`@tanstack/history` versions. The locked `1.161.6` release predates the May 11,
+2026 TanStack supply-chain incident; the reported malicious history releases
+were `1.161.9` and `1.161.12`. Remove the ignore when Bun/GitHub narrows the
+advisory range or ClawHub can move to an unaffected replacement release.
+
 The full `bun run test:e2e` suite includes token-backed CLI flows. Keep that for
 local or secret-backed validation; PR CI should not require a developer auth
 token or a local global ClawHub config.
