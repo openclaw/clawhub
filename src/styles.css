@@ -11715,7 +11715,7 @@ a.publisher-profile-detail:hover {
   height: 1.15em;
   display: flex;
   align-items: center;
-  justify-content: left;
+  justify-content: center;
   flex-shrink: 0;
   white-space: nowrap;
 }
