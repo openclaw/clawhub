@@ -128,7 +128,7 @@ function SecurityScannerHero({ label, props }: { label: string; props: SecurityS
   const ownerLabel = getOwnerLabel(props.entity);
   const listingLabel = props.entity.kind === "skill" ? "skills" : "plugins";
   const ownerHref =
-    props.entity.kind === "skill" ? `/${encodeURIComponent(ownerLabel)}` : "/plugins";
+    props.entity.kind === "skill" ? `/user/${encodeURIComponent(ownerLabel)}` : "/plugins";
 
   return (
     <header className="security-scan-hero">

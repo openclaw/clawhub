@@ -28,6 +28,7 @@ import { Route as SkillsIndexRouteImport } from './routes/skills/index'
 import { Route as PublishersIndexRouteImport } from './routes/publishers/index'
 import { Route as PluginsIndexRouteImport } from './routes/plugins/index'
 import { Route as PackagesIndexRouteImport } from './routes/packages/index'
+import { Route as UserHandleRouteImport } from './routes/user/$handle'
 import { Route as UHandleRouteImport } from './routes/u/$handle'
 import { Route as SoulsSlugRouteImport } from './routes/souls/$slug'
 import { Route as SkillsPublishRouteImport } from './routes/skills/publish'
@@ -144,6 +145,11 @@ const PluginsIndexRoute = PluginsIndexRouteImport.update({
 const PackagesIndexRoute = PackagesIndexRouteImport.update({
   id: '/packages/',
   path: '/packages/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const UserHandleRoute = UserHandleRouteImport.update({
+  id: '/user/$handle',
+  path: '/user/$handle',
   getParentRoute: () => rootRouteImport,
 } as any)
 const UHandleRoute = UHandleRouteImport.update({
@@ -289,6 +295,7 @@ export interface FileRoutesByFullPath {
   '/skills/publish': typeof SkillsPublishRoute
   '/souls/$slug': typeof SoulsSlugRoute
   '/u/$handle': typeof UHandleRoute
+  '/user/$handle': typeof UserHandleRoute
   '/packages/': typeof PackagesIndexRoute
   '/plugins/': typeof PluginsIndexRoute
   '/publishers/': typeof PublishersIndexRoute
@@ -332,6 +339,7 @@ export interface FileRoutesByTo {
   '/skills/publish': typeof SkillsPublishRoute
   '/souls/$slug': typeof SoulsSlugRoute
   '/u/$handle': typeof UHandleRoute
+  '/user/$handle': typeof UserHandleRoute
   '/packages': typeof PackagesIndexRoute
   '/plugins': typeof PluginsIndexRoute
   '/publishers': typeof PublishersIndexRoute
@@ -376,6 +384,7 @@ export interface FileRoutesById {
   '/skills/publish': typeof SkillsPublishRoute
   '/souls/$slug': typeof SoulsSlugRoute
   '/u/$handle': typeof UHandleRoute
+  '/user/$handle': typeof UserHandleRoute
   '/packages/': typeof PackagesIndexRoute
   '/plugins/': typeof PluginsIndexRoute
   '/publishers/': typeof PublishersIndexRoute
@@ -421,6 +430,7 @@ export interface FileRouteTypes {
     | '/skills/publish'
     | '/souls/$slug'
     | '/u/$handle'
+    | '/user/$handle'
     | '/packages/'
     | '/plugins/'
     | '/publishers/'
@@ -464,6 +474,7 @@ export interface FileRouteTypes {
     | '/skills/publish'
     | '/souls/$slug'
     | '/u/$handle'
+    | '/user/$handle'
     | '/packages'
     | '/plugins'
     | '/publishers'
@@ -507,6 +518,7 @@ export interface FileRouteTypes {
     | '/skills/publish'
     | '/souls/$slug'
     | '/u/$handle'
+    | '/user/$handle'
     | '/packages/'
     | '/plugins/'
     | '/publishers/'
@@ -551,6 +563,7 @@ export interface RootRouteChildren {
   SkillsPublishRoute: typeof SkillsPublishRoute
   SoulsSlugRoute: typeof SoulsSlugRoute
   UHandleRoute: typeof UHandleRoute
+  UserHandleRoute: typeof UserHandleRoute
   PackagesIndexRoute: typeof PackagesIndexRoute
   PluginsIndexRoute: typeof PluginsIndexRoute
   PublishersIndexRoute: typeof PublishersIndexRoute
@@ -694,6 +707,13 @@ declare module '@tanstack/react-router' {
       path: '/packages'
       fullPath: '/packages/'
       preLoaderRoute: typeof PackagesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/user/$handle': {
+      id: '/user/$handle'
+      path: '/user/$handle'
+      fullPath: '/user/$handle'
+      preLoaderRoute: typeof UserHandleRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/u/$handle': {
@@ -922,6 +942,7 @@ const rootRouteChildren: RootRouteChildren = {
   SkillsPublishRoute: SkillsPublishRoute,
   SoulsSlugRoute: SoulsSlugRoute,
   UHandleRoute: UHandleRoute,
+  UserHandleRoute: UserHandleRoute,
   PackagesIndexRoute: PackagesIndexRoute,
   PluginsIndexRoute: PluginsIndexRoute,
   PublishersIndexRoute: PublishersIndexRoute,

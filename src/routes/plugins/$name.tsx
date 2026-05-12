@@ -585,7 +585,7 @@ export function PluginDetailPage({
         )}
       </span>
       {owner.handle ? (
-        <a className="user-name" href={`/p/${encodeURIComponent(owner.handle)}`}>
+        <a className="user-name" href={`/user/${encodeURIComponent(owner.handle)}`}>
           {owner.displayName ?? owner.handle}
         </a>
       ) : (
@@ -610,7 +610,7 @@ export function PluginDetailPage({
               <nav className="skill-hero-breadcrumbs" aria-label="Plugin breadcrumbs">
                 <a href="/plugins">plugins</a>
                 <span aria-hidden="true">/</span>
-                <a href={owner?.handle ? `/u/${encodeURIComponent(owner.handle)}` : "#"}>
+                <a href={owner?.handle ? `/user/${encodeURIComponent(owner.handle)}` : "#"}>
                   {owner?.handle ?? owner?.displayName ?? "unknown"}
                 </a>
                 <span aria-hidden="true">/</span>

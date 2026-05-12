@@ -1,6 +1,6 @@
 import { render } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { PublishedItemCard } from "../routes/p/$handle";
+import { PublishedItemCard } from "../routes/user/$handle";
 
 // PublishedItemCard uses <Link> from TanStack Router; stub it to a plain <a>.
 vi.mock("@tanstack/react-router", () => ({

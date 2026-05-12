@@ -32,6 +32,15 @@ Plugins:
 - Security page: `/plugins/@scope/name/security/<scanner>`
 - Encoded security compatibility page: `/plugins/%40scope%2Fname/security/<scanner>`
 
+Publisher profiles:
+
+- Canonical page: `/user/<handle>`
+- Legacy compatibility pages: `/p/<handle>`, `/u/<handle>`, and
+  `/orgs/<handle>` redirect to `/user/<handle>`
+
+Bare `/<handle>` routes are not profile routes. They remain reserved for static
+routes, official OpenClaw extension aliases, and skill slug resolution.
+
 Encoded compatibility routes are npm-style package-name routes. They redirect
 with `308` to the readable scoped route so the address bar shows
 `/plugins/@openclaw/codex`, not `/plugins/%40openclaw%2Fcodex`.

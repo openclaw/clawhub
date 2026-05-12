@@ -123,7 +123,10 @@ describe("SkillHeader", () => {
     expect(screen.getByText("Owner")).toBeTruthy();
     expect(screen.getByText("Downloads")).toBeTruthy();
     expect(screen.getByText("2")).toBeTruthy();
-    expect(container.querySelector('a[href="/p/local"]')).toBeTruthy();
+    expect(container.querySelector('a[href="/user/local"]')).toBeTruthy();
+    expect(
+      container.querySelector('nav[aria-label="Skill breadcrumbs"] a[href="/user/local"]'),
+    ).toBeTruthy();
   });
 
   it("shows a New version action for managers above Settings", () => {

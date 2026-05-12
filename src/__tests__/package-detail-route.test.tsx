@@ -175,6 +175,24 @@ describe("plugin detail route", () => {
     expect(screen.queryByRole("link", { name: "Download zip" })).toBeNull();
   });
 
+  it("links plugin breadcrumb owners to canonical publisher profiles", async () => {
+    loaderDataMock = {
+      ...loaderDataMock,
+      detail: {
+        package: loaderDataMock.detail.package,
+        owner: { handle: "openclaw", displayName: "OpenClaw", image: null },
+      },
+    };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    const { container } = render(<Component />);
+
+    expect(
+      container.querySelector('nav[aria-label="Plugin breadcrumbs"] a[href="/user/openclaw"]'),
+    ).toBeTruthy();
+  });
+
   it("shows plugin settings when the viewer can manage the plugin", async () => {
     useAuthStatusMock.mockReturnValue({
       isAuthenticated: true,
