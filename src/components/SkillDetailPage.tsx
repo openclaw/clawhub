@@ -286,6 +286,7 @@ export function SkillDetailPage({
       redirectToCanonical ||
       (canonicalOwnerParam && canonicalOwnerParam !== ownerParam)),
   );
+  const redirectSlug = result?.resolvedSlug ?? skill?.slug ?? slug;
 
   const forkOf = result?.forkOf ?? null;
   const canonical = result?.canonical ?? null;
@@ -357,13 +358,22 @@ export function SkillDetailPage({
   const latestFiles: SkillFile[] = latestVersion?.files ?? [];
 
   useEffect(() => {
-    if (!wantsCanonicalRedirect || !ownerParam) return;
+    if (!wantsCanonicalRedirect || !ownerParam || !redirectSlug) return;
+    const params = { owner: ownerParam, slug: redirectSlug };
+    if (mode === "settings") {
+      void navigate({
+        to: "/$owner/$slug/settings",
+        params,
+        replace: true,
+      });
+      return;
+    }
     void navigate({
       to: "/$owner/$slug",
-      params: { owner: ownerParam, slug },
+      params,
       replace: true,
     });
-  }, [navigate, ownerParam, slug, wantsCanonicalRedirect]);
+  }, [mode, navigate, ownerParam, redirectSlug, wantsCanonicalRedirect]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
