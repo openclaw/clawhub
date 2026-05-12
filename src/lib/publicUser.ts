@@ -52,6 +52,7 @@ export type PublicSkill = Pick<
   | "slug"
   | "displayName"
   | "summary"
+  | "icon"
   | "ownerUserId"
   | "ownerPublisherId"
   | "canonicalSkillId"

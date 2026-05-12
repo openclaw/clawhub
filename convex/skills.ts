@@ -98,6 +98,7 @@ import {
   upsertReservedSlugForRightfulOwner,
 } from "./lib/reservedSlugs";
 import { SKILL_CAPABILITY_TAGS } from "./lib/skillCapabilityTags";
+import { normalizeSkillIconValue } from "./lib/skillIcon";
 import {
   fetchText,
   type PublishResult,
@@ -7085,6 +7086,10 @@ export const publishVersion: ReturnType<typeof action> = action({
     migrateOwner: v.optional(v.boolean()),
     slug: v.string(),
     displayName: v.string(),
+    // Skill icon hint chosen by the publisher in the publish form. Stored as
+    // a protocol-prefixed string (e.g. `lucide:Plug`). Unknown values are
+    // silently dropped server-side; see lib/skillIcon.ts.
+    icon: v.optional(v.string()),
     version: v.string(),
     changelog: v.string(),
     clawScanNote: v.optional(v.string()),
@@ -8732,6 +8737,9 @@ export const insertVersion = internalMutation({
     migrateOwner: v.optional(v.boolean()),
     slug: v.string(),
     displayName: v.string(),
+    // Skill icon hint chosen by the publisher (e.g. `lucide:Plug`). Optional;
+    // omitted on backport publishes to preserve the existing skill icon.
+    icon: v.optional(v.string()),
     version: v.string(),
     changelog: v.string(),
     clawScanNote: v.optional(v.string()),
@@ -9186,6 +9194,7 @@ export const insertVersion = internalMutation({
         slug,
         displayName: args.displayName,
         summary: summaryValue,
+        icon: normalizeSkillIconValue(args.icon),
         ownerUserId: userId,
         ownerPublisherId,
         canonicalSkillId,
@@ -9317,6 +9326,12 @@ export const insertVersion = internalMutation({
     // the same values that will actually be persisted. Otherwise we would
     // persist flags derived from text the user can never see on the card.
     const nextDisplayName = isNewLatest ? args.displayName : skill.displayName;
+    // Skill icon follows the same "only update on new latest" rule as
+    // displayName / summary so backport publishes can't surprise the card.
+    // Only update when the publisher explicitly picked one this time —
+    // omitting `args.icon` keeps the previously stored value.
+    const nextIcon =
+      isNewLatest && args.icon !== undefined ? normalizeSkillIconValue(args.icon) : skill.icon;
     const derivedFlags = deriveModerationFlags({
       skill: {
         slug: skill.slug,
@@ -9336,6 +9351,7 @@ export const insertVersion = internalMutation({
     const basePatch: SkillModerationPatch = {
       displayName: nextDisplayName,
       summary: nextSummary ?? undefined,
+      icon: nextIcon,
       ownerPublisherId: skill.ownerPublisherId ?? ownerPublisherId,
       latestVersionId: isNewLatest ? versionId : skill.latestVersionId,
       latestVersionSummary: isNewLatest

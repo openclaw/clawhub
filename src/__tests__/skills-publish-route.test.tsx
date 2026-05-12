@@ -453,4 +453,104 @@ describe("Upload route", () => {
       });
     });
   });
+
+  it("renders the icon picker and forwards the selected lucide icon to publishVersion", async () => {
+    generateUploadUrl.mockResolvedValue("https://upload.local");
+    publishVersion.mockResolvedValue(undefined);
+    render(<Upload />);
+
+    // Picker is visible in skill mode and defaults to "No icon".
+    const noneTile = screen.getByRole("radio", { name: "No icon" });
+    expect(noneTile.getAttribute("aria-checked")).toBe("true");
+
+    fireEvent.change(screen.getByPlaceholderText("skill-name"), {
+      target: { value: "with-icon" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("My skill"), {
+      target: { value: "With Icon" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("1.0.0"), {
+      target: { value: "1.0.0" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("latest, stable"), {
+      target: { value: "latest" },
+    });
+    fireEvent.click(screen.getByRole("radio", { name: "Plug" }));
+    expect(screen.getByRole("radio", { name: "Plug" }).getAttribute("aria-checked")).toBe("true");
+
+    const file = new File(["hello"], "SKILL.md", { type: "text/markdown" });
+    const input = screen.getByTestId("upload-input") as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [file] } });
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: /i have the rights to this skill and agree to publish it under mit-0/i,
+      }),
+    );
+
+    await screen.findByText(/All checks passed/i);
+    fireEvent.click(screen.getByRole("button", { name: /publish skill/i }));
+
+    await waitFor(() => {
+      expect(
+        publishVersion.mock.calls.some((call) =>
+          Array.isArray((call[0] as { files?: unknown }).files),
+        ),
+      ).toBe(true);
+    });
+    const args = publishVersion.mock.calls
+      .map((call) => call[0] as { icon?: string; files?: unknown })
+      .find((call) => Array.isArray(call.files));
+    expect(args?.icon).toBe("lucide:Plug");
+  });
+
+  it("sends an empty icon string when the publisher explicitly picks 'No icon'", async () => {
+    generateUploadUrl.mockResolvedValue("https://upload.local");
+    publishVersion.mockResolvedValue(undefined);
+    render(<Upload />);
+
+    fireEvent.change(screen.getByPlaceholderText("skill-name"), {
+      target: { value: "no-icon-skill" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("My skill"), {
+      target: { value: "No Icon Skill" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("1.0.0"), {
+      target: { value: "1.0.0" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("latest, stable"), {
+      target: { value: "latest" },
+    });
+
+    // Pick then unpick so the publisher's intent is recorded as "clear".
+    fireEvent.click(screen.getByRole("radio", { name: "Plug" }));
+    fireEvent.click(screen.getByRole("radio", { name: "No icon" }));
+
+    const file = new File(["hello"], "SKILL.md", { type: "text/markdown" });
+    const input = screen.getByTestId("upload-input") as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [file] } });
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: /i have the rights to this skill and agree to publish it under mit-0/i,
+      }),
+    );
+
+    await screen.findByText(/All checks passed/i);
+    fireEvent.click(screen.getByRole("button", { name: /publish skill/i }));
+
+    await waitFor(() => {
+      expect(
+        publishVersion.mock.calls.some((call) =>
+          Array.isArray((call[0] as { files?: unknown }).files),
+        ),
+      ).toBe(true);
+    });
+    const args = publishVersion.mock.calls
+      .map((call) => call[0] as { icon?: string; files?: unknown })
+      .find((call) => Array.isArray(call.files));
+    // The publish form distinguishes "clear" (empty string) from "untouched"
+    // (key absent). Since the picker is always present in skill mode, even
+    // the default state forwards an explicit empty string.
+    expect(args).toHaveProperty("icon");
+    expect(args?.icon).toBe("");
+  });
 });

@@ -46,7 +46,7 @@ export function SkillCard({
         </div>
       ) : null}
       <div className="skill-card-header">
-        <MarketplaceIcon kind="skill" label={skill.displayName} size="md" />
+        <MarketplaceIcon kind="skill" label={skill.displayName} icon={skill.icon} size="md" />
         <h3 className="skill-card-title">{skill.displayName}</h3>
       </div>
       <p className="skill-card-summary">{skill.summary ?? summaryFallback}</p>

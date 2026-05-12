@@ -18,6 +18,7 @@ export type PublicSkill = Pick<
   | "slug"
   | "displayName"
   | "summary"
+  | "icon"
   | "ownerUserId"
   | "ownerPublisherId"
   | "canonicalSkillId"
@@ -45,6 +46,7 @@ export type HydratableSkill = Pick<
   | "slug"
   | "displayName"
   | "summary"
+  | "icon"
   | "ownerUserId"
   | "ownerPublisherId"
   | "canonicalSkillId"
@@ -139,6 +141,7 @@ export function toPublicSkill(skill: HydratableSkill | null | undefined): Public
     slug: skill.slug,
     displayName: skill.displayName,
     summary: skill.summary,
+    icon: skill.icon,
     ownerUserId: skill.ownerUserId,
     ownerPublisherId: skill.ownerPublisherId,
     canonicalSkillId: skill.canonicalSkillId,

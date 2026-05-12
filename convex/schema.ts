@@ -358,6 +358,7 @@ const skills = defineTable({
   slug: v.string(),
   displayName: v.string(),
   summary: v.optional(v.string()),
+  icon: v.optional(v.string()),
   resourceId: v.optional(v.string()),
   ownerUserId: v.id("users"),
   ownerPublisherId: v.optional(v.id("publishers")),
@@ -738,6 +739,9 @@ const skillSearchDigest = defineTable({
   normalizedDisplayName: v.optional(v.string()),
   normalizedDisplayNameFirstToken: v.optional(v.string()),
   summary: v.optional(v.string()),
+  // Mirrors `skills.icon`. Kept on the digest so card/list hydration paths
+  // can render the icon without reading the full skill row.
+  icon: v.optional(v.string()),
   ownerUserId: v.id("users"),
   ownerPublisherId: v.optional(v.id("publishers")),
   ownerHandle: v.optional(v.string()),

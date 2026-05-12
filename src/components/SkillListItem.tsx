@@ -21,7 +21,7 @@ export function SkillListItem({ skill, ownerHandle, owner }: SkillListItemProps)
 
   return (
     <Link to={href} className="skill-list-item">
-      <MarketplaceIcon kind="skill" label={skill.displayName} />
+      <MarketplaceIcon kind="skill" label={skill.displayName} icon={skill.icon} />
       <div className="skill-list-item-body">
         <div className="skill-list-item-main">
           {handle ? (
