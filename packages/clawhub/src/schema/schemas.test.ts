@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 import { parseArk } from "./ark";
-import { ClawdisSkillMetadataSchema } from "./schemas";
+import { ApiV1SearchResponseSchema, ClawdisSkillMetadataSchema } from "./schemas";
 
 describe("packages/clawhub skill metadata schema", () => {
   it("preserves optional env var declarations", () => {
@@ -22,5 +22,31 @@ describe("packages/clawhub skill metadata schema", () => {
       required: false,
       description: "Default project",
     });
+  });
+
+  it("parses v1 search owner metadata", () => {
+    const parsed = parseArk(
+      ApiV1SearchResponseSchema,
+      {
+        results: [
+          {
+            slug: "weather",
+            displayName: "Weather",
+            version: "1.0.0",
+            score: 4.553,
+            ownerHandle: "steipete",
+            owner: {
+              handle: "steipete",
+              displayName: "Peter Steinberger",
+              image: null,
+            },
+          },
+        ],
+      },
+      "V1 search",
+    );
+
+    expect(parsed.results[0]?.ownerHandle).toBe("steipete");
+    expect(parsed.results[0]?.owner?.handle).toBe("steipete");
   });
 });

@@ -100,6 +100,12 @@ Response:
       "displayName": "GifGrep",
       "summary": "…",
       "version": "1.2.3",
+      "ownerHandle": "openclaw",
+      "owner": {
+        "handle": "openclaw",
+        "displayName": "OpenClaw",
+        "image": "https://example.com/avatar.png"
+      },
       "updatedAt": 1730000000000
     }
   ]
@@ -108,6 +114,7 @@ Response:
 
 Notes:
 
+- `ownerHandle` and `owner` disambiguate same-named skills in search clients. Install commands still use the bare `slug`.
 - Results are returned in relevance order (embedding similarity + exact slug/name token boosts + popularity prior from downloads).
 - Relevance is stronger than popularity. A precise slug or display-name token match can outrank a looser match with many more downloads.
 - ASCII text is tokenized on word and punctuation boundaries. For example, `personal-map` contains a standalone `map` token, while `amap-jsapi-skill` contains `amap`, `jsapi`, and `skill`; searching for `map` therefore gives `personal-map` a stronger lexical match than `amap-jsapi-skill`.

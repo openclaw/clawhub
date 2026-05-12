@@ -6,6 +6,7 @@ import { MAX_CLAWSCAN_NOTE_CHARS, normalizeClawScanNote } from "./clawScanNote";
 import { DocsLinks, openClawDocsUrl } from "./docsLinks";
 import { getPackageScopeOwnerMismatch, inferPackageNameScope } from "./packages";
 import {
+  ApiV1SearchResponseSchema,
   ApiSearchResponseSchema,
   CliPublishRequestSchema,
   CliSkillDeleteRequestSchema,
@@ -186,6 +187,39 @@ describe("clawhub-schema", () => {
     );
     expect(parsed.results).toHaveLength(2);
     expect(parsed.results[0]?.slug).toBe("a");
+  });
+
+  it("parses v1 search owner metadata while accepting older result shapes", async () => {
+    const parsed = parseArk(
+      ApiV1SearchResponseSchema,
+      {
+        results: [
+          {
+            slug: "weather",
+            displayName: "Weather",
+            version: "1.0.0",
+            score: 4.553,
+            ownerHandle: "steipete",
+            owner: {
+              handle: "steipete",
+              displayName: "Peter Steinberger",
+              image: null,
+            },
+          },
+          {
+            slug: "weather-1-0-0",
+            displayName: "Weather 1.0.0",
+            version: null,
+            score: 3.125,
+          },
+        ],
+      },
+      "V1 search",
+    );
+
+    expect(parsed.results[0]?.ownerHandle).toBe("steipete");
+    expect(parsed.results[0]?.owner?.handle).toBe("steipete");
+    expect(parsed.results[1]?.ownerHandle).toBeUndefined();
   });
 
   it("parses delete request payload", () => {

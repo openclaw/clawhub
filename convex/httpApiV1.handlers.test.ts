@@ -437,6 +437,13 @@ describe("httpApiV1 handlers", () => {
     const runAction = vi.fn().mockResolvedValue([
       {
         score: 1,
+        ownerHandle: "openclaw",
+        owner: {
+          handle: "openclaw",
+          displayName: "OpenClaw",
+          image: "https://example.com/openclaw.png",
+          bio: "extra publisher fields stay private to search",
+        },
         skill: { slug: "a", displayName: "A", summary: null, updatedAt: 1 },
         version: { version: "1.0.0" },
       },
@@ -455,6 +462,19 @@ describe("httpApiV1 handlers", () => {
       highlightedOnly: true,
       nonSuspiciousOnly: undefined,
     });
+    const body = await response.json();
+    expect(body.results[0]).toMatchObject({
+      score: 1,
+      slug: "a",
+      displayName: "A",
+      ownerHandle: "openclaw",
+      owner: {
+        handle: "openclaw",
+        displayName: "OpenClaw",
+        image: "https://example.com/openclaw.png",
+      },
+    });
+    expect(body.results[0].owner.bio).toBeUndefined();
   });
 
   it("search forwards nonSuspiciousOnly", async () => {

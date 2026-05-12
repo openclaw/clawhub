@@ -254,6 +254,47 @@ describe("cmdSearch", () => {
     const url = new URL(String(requestArgs?.url));
     expect(url.searchParams.get("limit")).toBe("5");
   });
+
+  it("prints owner handles as a separate search column", async () => {
+    mockGetOptionalAuthToken.mockResolvedValue(undefined);
+    mockApiRequest.mockResolvedValue({
+      results: [
+        {
+          slug: "weather",
+          displayName: "Weather",
+          version: "1.0.0",
+          ownerHandle: "steipete",
+          owner: { handle: "steipete", displayName: "Peter Steinberger", image: null },
+          score: 4.553,
+        },
+      ],
+    });
+
+    await cmdSearch(makeOpts(), "weather", 1);
+
+    expect(mockLog).toHaveBeenCalledWith("weather v1.0.0  @steipete  Weather  (4.553)");
+    expect(mockLog).not.toHaveBeenCalledWith(expect.stringContaining("steipete/weather"));
+  });
+
+  it("falls back without crashing when search owner metadata is absent", async () => {
+    mockGetOptionalAuthToken.mockResolvedValue(undefined);
+    mockApiRequest.mockResolvedValue({
+      results: [
+        {
+          slug: "weather",
+          displayName: "Weather",
+          version: null,
+          ownerHandle: null,
+          owner: null,
+          score: 1,
+        },
+      ],
+    });
+
+    await cmdSearch(makeOpts(), "weather", 1);
+
+    expect(mockLog).toHaveBeenCalledWith("weather  unknown owner  Weather  (1.000)");
+  });
 });
 
 describe("skill moderation commands", () => {

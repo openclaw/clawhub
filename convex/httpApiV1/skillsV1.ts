@@ -37,6 +37,12 @@ import {
 
 type SearchSkillEntry = {
   score: number;
+  ownerHandle?: string | null;
+  owner?: {
+    handle?: string | null;
+    displayName?: string | null;
+    image?: string | null;
+  } | null;
   skill: {
     slug?: string;
     displayName?: string;
@@ -434,14 +440,25 @@ export async function searchSkillsV1Handler(ctx: ActionCtx, request: Request) {
 
   return json(
     {
-      results: results.map((result) => ({
-        score: result.score,
-        slug: result.skill?.slug,
-        displayName: result.skill?.displayName,
-        summary: result.skill?.summary ?? null,
-        version: result.version?.version ?? null,
-        updatedAt: result.skill?.updatedAt,
-      })),
+      results: results.map((result) => {
+        const ownerHandle = result.ownerHandle ?? result.owner?.handle ?? null;
+        return {
+          score: result.score,
+          slug: result.skill?.slug,
+          displayName: result.skill?.displayName,
+          summary: result.skill?.summary ?? null,
+          version: result.version?.version ?? null,
+          updatedAt: result.skill?.updatedAt,
+          ownerHandle,
+          owner: result.owner
+            ? {
+                handle: result.owner.handle ?? null,
+                displayName: result.owner.displayName ?? null,
+                image: result.owner.image ?? null,
+              }
+            : null,
+        };
+      }),
     },
     200,
     rate.headers,
