@@ -9,7 +9,7 @@
   investigations have a complete ledger.
 - CLI/API: include skill owner handles in search results so duplicate/common
   slugs are easier to disambiguate (thanks @vyctorbrzezowski).
-- Web: let skill publishers pick a curated lucide icon for cards and listings (#2174).
+- Web: let skill publishers pick a curated lucide icon for cards and listings (#2174) (thanks @momothemage).
 
 ### Fixes
 

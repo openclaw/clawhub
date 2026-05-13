@@ -737,6 +737,118 @@ describe("publishers membership controls", () => {
     ]);
   });
 
+  it("includes skill.icon on catalog items and surfaces null for plugins (F7)", async () => {
+    // Regression guard for F2: listPublishedPage must mirror `skills.icon`
+    // onto the catalog DTO so the publisher profile page (/p/<handle>) can
+    // render the same custom glyph that SkillCard / SkillListItem show on
+    // /skills and /search. Plugins always carry `icon: null` in Phase 1.
+    const publisher = {
+      _id: "publishers:openclaw",
+      _creationTime: 1,
+      kind: "org",
+      handle: "openclaw",
+      displayName: "OpenClaw",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => (id === "publishers:openclaw" ? publisher : null)),
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
+            const fields: Record<string, unknown> = {};
+            const q = {
+              eq: (field: string, value: unknown) => {
+                fields[field] = value;
+                return q;
+              },
+            };
+            buildQuery(q);
+            if (table === "publishers" && indexName === "by_handle") {
+              return {
+                unique: vi.fn(async () => (fields.handle === "openclaw" ? publisher : null)),
+              };
+            }
+            if (table === "skills" && indexName === "by_owner_publisher_active_updated") {
+              return indexedRows([
+                {
+                  _id: "skills:icon-skill",
+                  ownerPublisherId: "publishers:openclaw",
+                  softDeletedAt: undefined,
+                  slug: "icon-skill",
+                  displayName: "Icon Skill",
+                  summary: "Has a custom icon",
+                  icon: "lucide:Plug",
+                  stats: {
+                    downloads: 10,
+                    downloadsAllTime: 10,
+                    installs: 5,
+                    installsAllTime: 5,
+                    stars: 2,
+                  },
+                  updatedAt: 8,
+                },
+                {
+                  _id: "skills:plain-skill",
+                  ownerPublisherId: "publishers:openclaw",
+                  softDeletedAt: undefined,
+                  slug: "plain-skill",
+                  displayName: "Plain Skill",
+                  summary: "No icon set",
+                  // icon intentionally absent — must surface as null on the DTO
+                  stats: {
+                    downloads: 7,
+                    downloadsAllTime: 7,
+                    installs: 3,
+                    installsAllTime: 3,
+                    stars: 1,
+                  },
+                  updatedAt: 6,
+                },
+              ]);
+            }
+            if (table === "packages" && indexName === "by_owner_publisher_active_updated") {
+              return indexedRows([
+                {
+                  _id: "packages:plugin",
+                  ownerPublisherId: "publishers:openclaw",
+                  softDeletedAt: undefined,
+                  family: "code-plugin",
+                  name: "@openclaw/example-plugin",
+                  displayName: "Example Plugin",
+                  summary: "A plugin",
+                  stats: { downloads: 5, installs: 2, stars: 0, versions: 1 },
+                  updatedAt: 4,
+                },
+              ]);
+            }
+            throw new Error(`unexpected ${table} index ${indexName}`);
+          }),
+        })),
+      },
+    };
+
+    const result = (await listPublishedPageHandler(ctx as never, {
+      handle: "openclaw",
+      paginationOpts: { cursor: null, numItems: 12 },
+    })) as {
+      page: Array<{
+        displayName: string;
+        kind: "skill" | "plugin";
+        icon: string | null;
+      }>;
+    };
+
+    const byName = Object.fromEntries(result.page.map((item) => [item.displayName, item]));
+    // Skill with a stored icon must surface it on the DTO.
+    expect(byName["Icon Skill"]).toMatchObject({ kind: "skill", icon: "lucide:Plug" });
+    // Skill without an icon must surface null (not undefined) so the client
+    // type is uniform and MarketplaceIcon can safely pass it to parseSkillIcon.
+    expect(byName["Plain Skill"]).toMatchObject({ kind: "skill", icon: null });
+    // Plugins always carry null in Phase 1.
+    expect(byName["Example Plugin"]).toMatchObject({ kind: "plugin", icon: null });
+  });
+
   it("prevents admins from promoting members to owner", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:admin" as never);
     const ctx = {

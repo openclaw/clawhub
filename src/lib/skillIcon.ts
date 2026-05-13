@@ -95,5 +95,5 @@ export function parseSkillIcon(raw: string | null | undefined): SkillIconDescrip
 
 /** Pack a whitelisted icon name into a `lucide:<Name>` protocol string. */
 export function makeLucideIconValue(name: keyof typeof ALLOWED_LUCIDE_ICONS): string {
-  return `lucide:${String(name)}`;
+  return `lucide:${name}`;
 }
