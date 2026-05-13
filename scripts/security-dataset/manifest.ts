@@ -13,6 +13,7 @@ export type SnapshotManifestInput = {
     artifacts: number;
     scanResults: number;
     staticFindings: number;
+    clawScanFindings: number;
     labels: number;
     splits: number;
   };
@@ -43,6 +44,7 @@ export function buildSecurityDatasetManifest(input: SnapshotManifestInput) {
       artifacts: input.rowCounts.artifacts,
       scan_results: input.rowCounts.scanResults,
       static_findings: input.rowCounts.staticFindings,
+      clawscan_findings: input.rowCounts.clawScanFindings,
       labels: input.rowCounts.labels,
       splits: input.rowCounts.splits,
     },

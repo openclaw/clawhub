@@ -18,6 +18,7 @@ describe("security dataset manifest", () => {
         artifacts: 1,
         scanResults: 2,
         staticFindings: 3,
+        clawScanFindings: 5,
         labels: 4,
         splits: 1,
       },
@@ -36,6 +37,9 @@ describe("security dataset manifest", () => {
       created_time_window: {
         created_at_gte: 1777507200000,
         created_at_lt: 1780185600000,
+      },
+      row_counts: {
+        clawscan_findings: 5,
       },
     });
   });
