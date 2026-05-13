@@ -1,0 +1,77 @@
+{
+  "baseline": "origin/main",
+  "candidate": "worktree",
+  "generatedAt": "2026-05-13T00:12:37.148Z",
+  "lanes": [
+    {
+      "localOutputDir": "/Users/patrickerichsen/.codex/worktrees/68a3/clawhub/.artifacts/clawhub-ui-proof/2026-05-13T00-12-37-146Z/baseline",
+      "name": "baseline",
+      "ref": "origin/main",
+      "remoteOutputDir": "/work/crabbox/cbx_2ac97d8c7cd2/clawhub/.artifacts/clawhub-ui-proof/remote-2026-05-13T00-12-37-146Z/baseline",
+      "status": "pass",
+      "steps": [
+        {
+          "lane": "baseline",
+          "name": "baseline /skills",
+          "screenshot": "screenshots/baseline-skills.png",
+          "slug": "baseline-skills",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "baseline /plugins",
+          "screenshot": "screenshots/baseline-plugins.png",
+          "slug": "baseline-plugins",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "baseline /souls",
+          "screenshot": "screenshots/baseline-souls.png",
+          "slug": "baseline-souls",
+          "status": "pass"
+        }
+      ],
+      "videoPath": "/Users/patrickerichsen/.codex/worktrees/68a3/clawhub/.artifacts/clawhub-ui-proof/2026-05-13T00-12-37-146Z/baseline/full-run.mp4"
+    },
+    {
+      "localOutputDir": "/Users/patrickerichsen/.codex/worktrees/68a3/clawhub/.artifacts/clawhub-ui-proof/2026-05-13T00-12-37-146Z/candidate",
+      "name": "candidate",
+      "ref": "worktree",
+      "remoteOutputDir": "/work/crabbox/cbx_2ac97d8c7cd2/clawhub/.artifacts/clawhub-ui-proof/remote-2026-05-13T00-12-37-146Z/candidate",
+      "status": "pass",
+      "steps": [
+        {
+          "lane": "candidate",
+          "name": "candidate /skills",
+          "screenshot": "screenshots/candidate-skills.png",
+          "slug": "candidate-skills",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "candidate /plugins",
+          "screenshot": "screenshots/candidate-plugins.png",
+          "slug": "candidate-plugins",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "candidate /souls",
+          "screenshot": "screenshots/candidate-souls.png",
+          "slug": "candidate-souls",
+          "status": "pass"
+        }
+      ],
+      "videoPath": "/Users/patrickerichsen/.codex/worktrees/68a3/clawhub/.artifacts/clawhub-ui-proof/2026-05-13T00-12-37-146Z/candidate/full-run.mp4"
+    }
+  ],
+  "outputDir": "/Users/patrickerichsen/.codex/worktrees/68a3/clawhub/.artifacts/clawhub-ui-proof/2026-05-13T00-12-37-146Z",
+  "provider": "hetzner",
+  "scenario": "/Users/patrickerichsen/.codex/worktrees/68a3/clawhub/.artifacts/proof-scenarios/sample-text-before-after.pw.ts",
+  "status": "pass",
+  "crabbox": {
+    "createdLease": true,
+    "leaseId": "cbx_2ac97d8c7cd2"
+  }
+}
