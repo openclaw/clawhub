@@ -5640,6 +5640,25 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("does not route packages search subpaths to catalog search", async () => {
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runQuery = vi.fn().mockResolvedValue(null);
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages/search/extra?q=demo"),
+    );
+
+    expect(response.status).toBe(404);
+    await expect(response.text()).resolves.toBe("Package not found");
+    expect(runQuery).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        query: "demo",
+      }),
+    );
+  });
+
   it("package download uses download rate limiting", async () => {
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {

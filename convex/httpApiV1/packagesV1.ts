@@ -2106,7 +2106,7 @@ async function searchPackages(
 export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Request) {
   const segments = getPathSegments(request, "/api/v1/packages/");
   if (segments.length === 0) return text("Not found", 404);
-  if (segments[0] === "search") {
+  if (segments[0] === "search" && segments.length === 1) {
     return await searchPackages(ctx, request, { includeSkills: true });
   }
 
