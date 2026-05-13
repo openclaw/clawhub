@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { Command } from "commander";
 import { resolveClawdbotDefaultWorkspace } from "../../clawhub/src/cli/clawdbotConfig.js";
 import { cmdLoginFlow, cmdLogout, cmdWhoami } from "../../clawhub/src/cli/commands/auth.js";
+import { cmdUnhideSkill } from "../../clawhub/src/cli/commands/delete.js";
 import {
   cmdGetPackageTrustedPublisher,
   cmdPackageModerationStatus,
@@ -451,6 +452,28 @@ function registerPluginOperations(command: Command) {
 }
 
 function registerSkillModerationCommands(command: Command) {
+  command
+    .command("unhide")
+    .description("Manually restore a hidden skill after moderator review")
+    .argument("<slug>", "Skill slug")
+    .option("--reason <text>", "Audit reason")
+    .option("--note <text>", "Alias for --reason")
+    .option("--yes", "Skip confirmation")
+    .action(async (slug, options) => {
+      if (
+        options.reason?.trim() &&
+        options.note?.trim() &&
+        options.reason.trim() !== options.note.trim()
+      ) {
+        fail("Pass only one of --reason or --note");
+      }
+      if (!options.reason?.trim() && !options.note?.trim()) {
+        fail("--reason required");
+      }
+      const opts = await resolveGlobalOpts();
+      await cmdUnhideSkill(opts, slug, options, isInputAllowed());
+    });
+
   command
     .command("reports")
     .description("List skill reports for moderator review")
