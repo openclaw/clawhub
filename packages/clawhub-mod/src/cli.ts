@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { Command } from "commander";
+import { Command, InvalidArgumentError } from "commander";
 import { resolveClawdbotDefaultWorkspace } from "../../clawhub/src/cli/clawdbotConfig.js";
 import { cmdLoginFlow, cmdLogout, cmdWhoami } from "../../clawhub/src/cli/commands/auth.js";
 import {
@@ -28,15 +28,19 @@ import { cmdBanUser, cmdSetRole, cmdUnbanUser } from "./commands/moderation.js";
 import {
   cmdBackfillPackageArtifacts,
   cmdDeletePackageTrustedPublisher,
+  cmdExportPackageDryRunScanResults,
   cmdListPackageAppeals,
   cmdListPackageMigrations,
   cmdListPackageReports,
   cmdModeratePackageRelease,
+  cmdPackageDryRunScanStatus,
   cmdPackageModerationQueue,
   cmdResolvePackageAppeal,
   cmdSetPackageTrustedPublisher,
+  cmdStartPackageDryRunScan,
   cmdTriagePackageReport,
   cmdUpsertPackageMigration,
+  cmdWatchPackageDryRunScan,
 } from "./commands/packages.js";
 
 const program = new Command()
@@ -382,6 +386,76 @@ function registerPluginGovernanceCommands(command: Command) {
       const opts = await resolveGlobalOpts();
       await cmdDeletePackageTrustedPublisher(opts, name, options);
     });
+
+  const dryRunScan = command
+    .command("dry-run-scan")
+    .alias("dry-run-scans")
+    .description("Manage plugin dry-run scan jobs")
+    .showHelpAfterError()
+    .showSuggestionAfterError();
+
+  dryRunScan
+    .command("start")
+    .description("Start a plugin dry-run scan job")
+    .option("--release-id <id>", "Package release id to scan; repeatable", collectRepeated, [])
+    .option("--package <name>", "Package name to scan; repeatable", collectRepeated, [])
+    .option("--latest-active", "Scan latest active plugin releases")
+    .option("--all-active", "Scan active plugin releases")
+    .option("--seed <seed>", "Scan a deterministic sample using this seed")
+    .option("--limit <n>", "Latest active or sample release limit (max 200)", parseDryRunInteger)
+    .option(
+      "--max-candidates <n>",
+      "Seeded sample candidate pool size (max 1000)",
+      parseDryRunInteger,
+    )
+    .option("--json", "Output JSON")
+    .action(async (options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdStartPackageDryRunScan(opts, options);
+    });
+
+  dryRunScan
+    .command("status")
+    .description("Show a plugin dry-run scan job")
+    .argument("<job-id>", "Dry-run scan job id")
+    .option("--json", "Output JSON")
+    .action(async (jobId, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdPackageDryRunScanStatus(opts, jobId, options);
+    });
+
+  dryRunScan
+    .command("watch")
+    .description("Watch a plugin dry-run scan job until it completes or fails")
+    .argument("<job-id>", "Dry-run scan job id")
+    .option("--interval-ms <n>", "Polling interval in milliseconds", parseDryRunInteger)
+    .option("--max-attempts <n>", "Maximum status checks before timing out", parseDryRunInteger)
+    .option("--json", "Output final JSON")
+    .action(async (jobId, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdWatchPackageDryRunScan(opts, jobId, options);
+    });
+
+  dryRunScan
+    .command("export")
+    .description("Export plugin dry-run scan results")
+    .argument("<job-id>", "Dry-run scan job id")
+    .option("--cursor <cursor>", "Resume cursor")
+    .option("--limit <n>", "Page size (max 500)", parseDryRunInteger)
+    .option("--allow-partial", "Export incomplete results before the scan is terminal")
+    .option("--json", "Output one JSON result page")
+    .option("--jsonl", "Output all results as JSONL")
+    .action(async (jobId, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdExportPackageDryRunScanResults(opts, jobId, options);
+    });
+}
+
+function parseDryRunInteger(value: string) {
+  if (!/^-?\d+$/.test(value)) {
+    throw new InvalidArgumentError("must be an integer");
+  }
+  return Number(value);
 }
 
 function registerPluginModerationCommands(command: Command) {
@@ -561,6 +635,10 @@ function registerSkillModerationCommands(command: Command) {
       const opts = await resolveGlobalOpts();
       await cmdResolveSkillAppeal(opts, appealId, options);
     });
+}
+
+function collectRepeated(value: string, previous: string[]) {
+  return [...previous, value];
 }
 
 program.action(() => {

@@ -6,13 +6,21 @@ import {
 } from "../../../clawhub/src/cli/commands/moderationPlan.js";
 import { getRegistry } from "../../../clawhub/src/cli/registry.js";
 import type { GlobalOpts } from "../../../clawhub/src/cli/types.js";
-import { createSpinner, fail, formatError } from "../../../clawhub/src/cli/ui.js";
+import {
+  createSpinner,
+  escapeTerminalControlCharacters,
+  fail,
+  formatError,
+} from "../../../clawhub/src/cli/ui.js";
 import { apiRequest, registryUrl } from "../../../clawhub/src/http.js";
 import {
   ApiRoutes,
   ApiV1PackageArtifactBackfillResponseSchema,
   ApiV1PackageAppealListResponseSchema,
   ApiV1PackageAppealResolveResponseSchema,
+  ApiV1PackageDryRunScanJobResponseSchema,
+  ApiV1PackageDryRunScanResultsResponseSchema,
+  ApiV1PackageDryRunScanStartResponseSchema,
   ApiV1PackageModerationQueueResponseSchema,
   ApiV1PackageOfficialMigrationListResponseSchema,
   ApiV1PackageOfficialMigrationResponseSchema,
@@ -23,6 +31,9 @@ import {
   type PackageAppealFinalAction,
   type PackageAppealListStatus,
   type PackageAppealStatus,
+  type ApiV1PackageDryRunScanJobResponse,
+  type PackageDryRunScanSelector,
+  type PackageDryRunScanResultItem,
   type PackageModerationQueueStatus,
   type PackageOfficialMigrationListPhase,
   type PackageReportFinalAction,
@@ -97,6 +108,34 @@ type PackageBackfillArtifactsOptions = {
   json?: boolean;
 };
 
+type PackageDryRunScanStartOptions = {
+  releaseId?: string[];
+  package?: string[];
+  latestActive?: boolean;
+  allActive?: boolean;
+  seed?: string;
+  limit?: number;
+  maxCandidates?: number;
+  json?: boolean;
+};
+
+type PackageDryRunScanStatusOptions = {
+  json?: boolean;
+};
+
+type PackageDryRunScanWatchOptions = PackageDryRunScanStatusOptions & {
+  intervalMs?: number;
+  maxAttempts?: number;
+};
+
+type PackageDryRunScanExportOptions = {
+  cursor?: string;
+  limit?: number;
+  allowPartial?: boolean;
+  json?: boolean;
+  jsonl?: boolean;
+};
+
 type PackageMigrationListOptions = {
   phase?: PackageOfficialMigrationListPhase;
   cursor?: string;
@@ -119,6 +158,13 @@ type PackageMigrationUpsertOptions = {
   notes?: string;
   json?: boolean;
 };
+
+const DEFAULT_DRY_RUN_SCAN_WATCH_INTERVAL_MS = 2_000;
+const DEFAULT_DRY_RUN_SCAN_WATCH_MAX_ATTEMPTS = 150;
+const PACKAGE_DRY_RUN_SCAN_MAX_EXPLICIT_SELECTORS = 200;
+const PACKAGE_DRY_RUN_SCAN_MAX_LIMIT = 200;
+const PACKAGE_DRY_RUN_SCAN_MAX_CANDIDATES = 1_000;
+const PACKAGE_DRY_RUN_SCAN_MAX_SEED_CHARS = 128;
 
 export async function cmdSetPackageTrustedPublisher(
   opts: GlobalOpts,
@@ -570,6 +616,383 @@ export async function cmdBackfillPackageArtifacts(
   }
 }
 
+export async function cmdStartPackageDryRunScan(
+  opts: GlobalOpts,
+  options: PackageDryRunScanStartOptions = {},
+) {
+  const releaseIdValues = options.releaseId ?? [];
+  const packageValues = options.package ?? [];
+  const releaseIds = releaseIdValues.map((id) => id.trim());
+  const packageNames = packageValues.map((name) => name.trim());
+  const seed = options.seed?.trim();
+  if (releaseIds.some((id) => id.length === 0)) {
+    fail("--release-id cannot be blank");
+  }
+  if (packageNames.some((name) => name.length === 0)) {
+    fail("--package cannot be blank");
+  }
+  if (options.seed !== undefined && seed?.length === 0) {
+    fail("--seed cannot be blank");
+  }
+  const modeCount = [
+    releaseIds.length > 0,
+    packageNames.length > 0,
+    options.latestActive === true,
+    options.allActive === true,
+    Boolean(seed),
+  ].filter(Boolean).length;
+  if (modeCount !== 1) {
+    fail("Use exactly one of --release-id, --package, --latest-active, --all-active, or --seed");
+  }
+  rejectUnusedDryRunScanSizingOptions(options, seed);
+
+  let selector: PackageDryRunScanSelector;
+  if (releaseIds.length > 0) {
+    if (releaseIds.length > PACKAGE_DRY_RUN_SCAN_MAX_EXPLICIT_SELECTORS) {
+      fail(`--release-id is limited to ${PACKAGE_DRY_RUN_SCAN_MAX_EXPLICIT_SELECTORS} releases`);
+    }
+    selector = { kind: "releaseIds", releaseIds };
+  } else if (packageNames.length > 0) {
+    if (packageNames.length > PACKAGE_DRY_RUN_SCAN_MAX_EXPLICIT_SELECTORS) {
+      fail(`--package is limited to ${PACKAGE_DRY_RUN_SCAN_MAX_EXPLICIT_SELECTORS} packages`);
+    }
+    selector = { kind: "packageNames", packageNames };
+  } else if (seed) {
+    if (seed.length > PACKAGE_DRY_RUN_SCAN_MAX_SEED_CHARS) {
+      fail(`--seed is limited to ${PACKAGE_DRY_RUN_SCAN_MAX_SEED_CHARS} characters`);
+    }
+    const limit = requirePositiveBoundedInteger(
+      options.limit,
+      100,
+      PACKAGE_DRY_RUN_SCAN_MAX_LIMIT,
+      "--limit",
+    );
+    const maxCandidates = requirePositiveBoundedInteger(
+      options.maxCandidates,
+      1_000,
+      PACKAGE_DRY_RUN_SCAN_MAX_CANDIDATES,
+      "--max-candidates",
+    );
+    if (maxCandidates < limit) {
+      fail("--max-candidates must be greater than or equal to --limit");
+    }
+    selector = {
+      kind: "seededSample",
+      seed,
+      limit,
+      maxCandidates,
+    };
+  } else if (options.allActive) {
+    selector = { kind: "allActive" };
+  } else {
+    selector = {
+      kind: "latestActive",
+      limit: requirePositiveBoundedInteger(
+        options.limit,
+        100,
+        PACKAGE_DRY_RUN_SCAN_MAX_LIMIT,
+        "--limit",
+      ),
+    };
+  }
+
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const spinner = options.json ? null : createSpinner("Starting dry-run scan");
+  try {
+    const result = await apiRequest(
+      registry,
+      {
+        method: "POST",
+        path: `${ApiRoutes.packages}/-/dry-run-scans`,
+        token,
+        body: { selector },
+      },
+      ApiV1PackageDryRunScanStartResponseSchema,
+    );
+    spinner?.stop();
+    if (options.json) {
+      process.stdout.write(`${stringifyTerminalSafeJson(result, 2)}\n`);
+      return;
+    }
+    if (!result.targetSelectionDone) {
+      console.log(
+        `Started dry-run scan ${escapeTerminalControlCharacters(result.jobId)}: ${result.status}, target selection pending.`,
+      );
+      return;
+    }
+    console.log(
+      `Started dry-run scan ${escapeTerminalControlCharacters(result.jobId)}: ${result.status}, ${result.totalItems} items.`,
+    );
+    if (result.candidateLimitReached) {
+      console.log("Warning: maxCandidates was reached before the full candidate set.");
+    }
+  } catch (error) {
+    spinner?.fail(formatError(error));
+    throw error;
+  }
+}
+
+export async function cmdPackageDryRunScanStatus(
+  opts: GlobalOpts,
+  jobId: string,
+  options: PackageDryRunScanStatusOptions = {},
+) {
+  const trimmed = normalizeJobIdOrFail(jobId);
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const result = await fetchPackageDryRunScanJob(registry, token, trimmed);
+
+  if (options.json) {
+    process.stdout.write(`${stringifyTerminalSafeJson(result, 2)}\n`);
+    return;
+  }
+
+  printPackageDryRunScanJob(result);
+}
+
+export async function cmdWatchPackageDryRunScan(
+  opts: GlobalOpts,
+  jobId: string,
+  options: PackageDryRunScanWatchOptions = {},
+) {
+  const trimmed = normalizeJobIdOrFail(jobId);
+  const intervalMs = normalizePositiveInteger(
+    options.intervalMs,
+    DEFAULT_DRY_RUN_SCAN_WATCH_INTERVAL_MS,
+    "--interval-ms",
+  );
+  const maxAttempts = normalizePositiveInteger(
+    options.maxAttempts,
+    DEFAULT_DRY_RUN_SCAN_WATCH_MAX_ATTEMPTS,
+    "--max-attempts",
+  );
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const spinner = options.json
+    ? null
+    : createSpinner(`Watching dry-run scan ${escapeTerminalControlCharacters(trimmed)}`);
+
+  try {
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      const result = await fetchPackageDryRunScanJob(registry, token, trimmed);
+      if (spinner) spinner.text = formatPackageDryRunScanJobSummary(result);
+
+      if (isPackageDryRunScanTerminal(result)) {
+        spinner?.stop();
+        if (options.json) {
+          process.stdout.write(`${stringifyTerminalSafeJson(result, 2)}\n`);
+          return;
+        }
+        printPackageDryRunScanJob(result);
+        return;
+      }
+
+      if (attempt < maxAttempts) await sleep(intervalMs);
+    }
+  } catch (error) {
+    spinner?.fail(formatError(error));
+    throw error;
+  }
+
+  const message = `Dry-run scan watch timed out after ${maxAttempts} status checks`;
+  spinner?.fail(message);
+  fail(message);
+}
+
+export async function cmdExportPackageDryRunScanResults(
+  opts: GlobalOpts,
+  jobId: string,
+  options: PackageDryRunScanExportOptions = {},
+) {
+  if (options.json && options.jsonl) fail("Use only one of --json or --jsonl");
+
+  const trimmed = normalizeJobIdOrFail(jobId);
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const job = await fetchPackageDryRunScanJob(registry, token, trimmed);
+  const exportWouldBePartial = !isPackageDryRunScanTerminal(job) || !job.targetSelectionDone;
+  if (exportWouldBePartial && !options.allowPartial) {
+    fail(
+      `Dry-run scan ${escapeTerminalControlCharacters(trimmed)} is ${job.status}; use --allow-partial to export incomplete results`,
+    );
+  }
+  if (exportWouldBePartial && options.allowPartial && !options.json) {
+    fail("Partial dry-run scan exports require --json so job completion metadata is preserved");
+  }
+  const limit = requirePositiveBoundedInteger(options.limit, 100, 500, "--limit");
+  let cursor = options.cursor?.trim() || null;
+  let wroteAny = false;
+  let done = false;
+  let jobStatus = job.status;
+  let jobDone = isPackageDryRunScanTerminal(job);
+  let partial = !jobDone;
+  const jsonItems: PackageDryRunScanResultItem[] = [];
+
+  do {
+    const url = registryUrl(
+      `${ApiRoutes.packages}/-/dry-run-scans/${encodeURIComponent(trimmed)}/results`,
+      registry,
+    );
+    url.searchParams.set("limit", String(limit));
+    if (cursor) url.searchParams.set("cursor", cursor);
+
+    const result = await apiRequest(
+      registry,
+      {
+        method: "GET",
+        url: url.toString(),
+        token,
+      },
+      ApiV1PackageDryRunScanResultsResponseSchema,
+    );
+
+    if (options.jsonl) {
+      for (const item of result.items) {
+        wroteAny = true;
+        process.stdout.write(`${stringifyTerminalSafeJson(item)}\n`);
+      }
+    } else if (options.json) {
+      for (const item of result.items) {
+        wroteAny = true;
+        jsonItems.push(item);
+      }
+    } else {
+      for (const item of result.items) {
+        wroteAny = true;
+        printPackageDryRunScanResultItem(item);
+      }
+    }
+
+    cursor = result.nextCursor;
+    done = result.done;
+    jobStatus = result.jobStatus;
+    jobDone = result.jobDone;
+    partial = result.partial;
+    if (options.json || done) break;
+  } while (cursor);
+
+  if (options.jsonl) return;
+
+  if (options.json) {
+    process.stdout.write(
+      `${stringifyTerminalSafeJson({ jobStatus, jobDone, partial, items: jsonItems, nextCursor: cursor, done })}\n`,
+    );
+    return;
+  }
+
+  if (!wroteAny) {
+    console.log("No dry-run scan results found.");
+  }
+}
+
+function printPackageDryRunScanResultItem(item: PackageDryRunScanResultItem) {
+  const counts = `raw-fs:${item.rawFsUsageCount} fs-safe:${item.fsSafeUsageCount}`;
+  const findings = item.findings.length > 0 ? ` findings:${item.findings.length}` : "";
+  console.log(
+    `${escapeTerminalControlCharacters(item.packageName)}@${escapeTerminalControlCharacters(item.version)} ${item.status} ${counts}${findings}`,
+  );
+  for (const finding of item.findings) {
+    const truncated = finding.evidenceTruncated ? " (truncated)" : "";
+    console.log(
+      `  ${escapeTerminalControlCharacters(finding.severity)} ${escapeTerminalControlCharacters(finding.code)} ${escapeTerminalControlCharacters(finding.file)}:${finding.line}: ${escapeTerminalControlCharacters(finding.message)}`,
+    );
+    console.log(`    evidence: ${escapeTerminalControlCharacters(finding.evidence)}${truncated}`);
+  }
+  for (const error of item.errors)
+    console.log(`  error: ${escapeTerminalControlCharacters(error)}`);
+}
+
+function isBidiControlCode(code: number) {
+  return (
+    code === 0x061c ||
+    code === 0x200e ||
+    code === 0x200f ||
+    (code >= 0x202a && code <= 0x202e) ||
+    (code >= 0x2066 && code <= 0x2069)
+  );
+}
+
+function stringifyTerminalSafeJson(value: unknown, space?: number) {
+  return escapeJsonTerminalControls(JSON.stringify(value, null, space));
+}
+
+function escapeJsonTerminalControls(value: string) {
+  let escaped = "";
+  for (const character of value) {
+    const code = character.charCodeAt(0);
+    if ((code >= 127 && code <= 159) || isBidiControlCode(code)) {
+      escaped += `\\u${code.toString(16).padStart(4, "0")}`;
+    } else {
+      escaped += character;
+    }
+  }
+  return escaped;
+}
+
+async function fetchPackageDryRunScanJob(
+  registry: string,
+  token: string,
+  jobId: string,
+): Promise<ApiV1PackageDryRunScanJobResponse> {
+  return apiRequest(
+    registry,
+    {
+      method: "GET",
+      path: `${ApiRoutes.packages}/-/dry-run-scans/${encodeURIComponent(jobId)}`,
+      token,
+    },
+    ApiV1PackageDryRunScanJobResponseSchema,
+  );
+}
+
+function isPackageDryRunScanTerminal(result: ApiV1PackageDryRunScanJobResponse) {
+  return result.status === "completed" || result.status === "failed";
+}
+
+function printPackageDryRunScanJob(result: ApiV1PackageDryRunScanJobResponse) {
+  console.log(`Dry-run scan ${escapeTerminalControlCharacters(result.jobId)}: ${result.status}`);
+  console.log(
+    `  total:${result.totalItems} queued:${result.queuedItems} running:${result.runningItems} completed:${result.completedItems} failed:${result.failedItems} skipped:${result.skippedItems} matched:${result.matchedItems}`,
+  );
+  if (result.error) console.log(`  error: ${escapeTerminalControlCharacters(result.error)}`);
+  if (result.candidateLimitReached) {
+    console.log("  warning: maxCandidates was reached before the full candidate set.");
+  }
+  if (!result.targetSelectionDone) {
+    console.log("  target selection pending.");
+  }
+}
+
+function formatPackageDryRunScanJobSummary(result: ApiV1PackageDryRunScanJobResponse) {
+  const targetSelection = result.targetSelectionDone ? "" : ", target selection pending";
+  return `Dry-run scan ${escapeTerminalControlCharacters(result.jobId)}: ${result.status} (${result.completedItems}/${result.totalItems} completed, ${result.failedItems} failed, ${result.skippedItems} skipped${targetSelection})`;
+}
+
+function normalizePositiveInteger(value: number | undefined, fallback: number, flag: string) {
+  const candidate = value ?? fallback;
+  if (!Number.isInteger(candidate) || candidate <= 0) fail(`${flag} must be a positive integer`);
+  return candidate;
+}
+
+function rejectUnusedDryRunScanSizingOptions(
+  options: PackageDryRunScanStartOptions,
+  seed?: string,
+) {
+  const hasLimit = options.limit !== undefined;
+  const hasMaxCandidates = options.maxCandidates !== undefined;
+  if (seed) return;
+  if (hasMaxCandidates) fail("--max-candidates can only be used with --seed");
+  if (options.latestActive === true) return;
+  if (hasLimit) fail("--limit can only be used with --latest-active or --seed");
+}
+
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 export async function cmdListPackageMigrations(
   opts: GlobalOpts,
   options: PackageMigrationListOptions = {},
@@ -699,9 +1122,31 @@ function normalizePackageNameOrFail(packageName: string) {
   return trimmed;
 }
 
+function normalizeJobIdOrFail(jobId: string) {
+  const trimmed = jobId.trim();
+  if (!trimmed) fail("Job id required");
+  return trimmed;
+}
+
 function clampLimit(limit: number | undefined, max: number) {
   if (!Number.isFinite(limit)) return max;
   return Math.max(1, Math.min(Math.trunc(limit ?? max), max));
+}
+
+function requirePositiveBoundedInteger(
+  value: number | undefined,
+  fallback: number,
+  max: number,
+  flag: string,
+) {
+  const candidate = value ?? fallback;
+  if (!Number.isInteger(candidate) || candidate < 1) {
+    fail(`${flag} must be a positive integer`);
+  }
+  if (candidate > max) {
+    fail(`${flag} must be at most ${max}`);
+  }
+  return candidate;
 }
 
 function parseCsv(value: string | undefined) {

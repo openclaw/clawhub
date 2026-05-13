@@ -11,6 +11,8 @@ const RAW_TEXT_FILE_EXTENSIONS = [
     "cjs",
     "mjs",
     "ts",
+    "mts",
+    "cts",
     "tsx",
     "jsx",
     "py",

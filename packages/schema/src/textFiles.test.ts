@@ -16,6 +16,8 @@ describe("clawhub-schema textFiles", () => {
     expect(TEXT_FILE_EXTENSION_SET.has("ps1")).toBe(true);
     expect(TEXT_FILE_EXTENSION_SET.has("psm1")).toBe(true);
     expect(TEXT_FILE_EXTENSION_SET.has("psd1")).toBe(true);
+    expect(TEXT_FILE_EXTENSION_SET.has("mts")).toBe(true);
+    expect(TEXT_FILE_EXTENSION_SET.has("cts")).toBe(true);
     expect(TEXT_FILE_EXTENSION_SET.has("exe")).toBe(false);
   });
 
@@ -27,6 +29,8 @@ describe("clawhub-schema textFiles", () => {
 
   it("guesses canonical content types for text files", () => {
     expect(guessTextContentType("src/index.ts")).toBe("application/typescript");
+    expect(guessTextContentType("src/index.mts")).toBe("application/typescript");
+    expect(guessTextContentType("src/index.cts")).toBe("application/typescript");
     expect(guessTextContentType("README.md")).toBe("text/markdown");
     expect(guessTextContentType("analysis/model.R")).toBe("text/plain");
     expect(guessTextContentType("scripts/setup.ps1")).toBe("text/plain");

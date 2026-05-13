@@ -1458,6 +1458,97 @@ const officialPluginMigrations = defineTable({
   .index("by_phase_updatedAt", ["phase", "updatedAt"])
   .index("by_updatedAt", ["updatedAt"]);
 
+const packageDryRunScanJobs = defineTable({
+  scanner: v.string(),
+  selector: v.union(
+    v.object({
+      kind: v.literal("releaseIds"),
+      releaseIds: v.array(v.id("packageReleases")),
+    }),
+    v.object({
+      kind: v.literal("packageNames"),
+      packageNames: v.array(v.string()),
+    }),
+    v.object({
+      kind: v.literal("latestActive"),
+      limit: v.number(),
+    }),
+    v.object({
+      kind: v.literal("allActive"),
+    }),
+    v.object({
+      kind: v.literal("seededSample"),
+      seed: v.string(),
+      limit: v.number(),
+      maxCandidates: v.number(),
+    }),
+  ),
+  status: v.union(
+    v.literal("queued"),
+    v.literal("running"),
+    v.literal("completed"),
+    v.literal("failed"),
+  ),
+  requestedByUserId: v.id("users"),
+  totalItems: v.number(),
+  queuedItems: v.number(),
+  runningItems: v.number(),
+  completedItems: v.number(),
+  failedItems: v.number(),
+  skippedItems: v.number(),
+  matchedItems: v.number(),
+  cursor: v.optional(v.union(v.string(), v.null())),
+  targetSelectionDone: v.optional(v.boolean()),
+  candidateLimitReached: v.optional(v.boolean()),
+  error: v.optional(v.string()),
+  staleRecheckAt: v.optional(v.number()),
+  expiresAt: v.number(),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+  startedAt: v.optional(v.number()),
+  completedAt: v.optional(v.number()),
+}).index("by_status_expires", ["status", "expiresAt"]);
+
+const packageDryRunScanResults = defineTable({
+  jobId: v.id("packageDryRunScanJobs"),
+  releaseId: v.id("packageReleases"),
+  packageId: v.id("packages"),
+  packageName: v.string(),
+  packageDisplayName: v.string(),
+  version: v.string(),
+  status: v.union(
+    v.literal("queued"),
+    v.literal("running"),
+    v.literal("completed"),
+    v.literal("failed"),
+    v.literal("skipped"),
+  ),
+  rawFsUsageCount: v.number(),
+  fsSafeUsageCount: v.number(),
+  findings: v.array(
+    v.object({
+      code: v.string(),
+      severity: v.string(),
+      file: v.string(),
+      line: v.number(),
+      message: v.string(),
+      evidence: v.string(),
+      evidenceTruncated: v.boolean(),
+    }),
+  ),
+  errors: v.array(v.string()),
+  claimToken: v.optional(v.string()),
+  leaseExpiresAt: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+  startedAt: v.optional(v.number()),
+  completedAt: v.optional(v.number()),
+})
+  .index("by_job_created", ["jobId", "createdAt"])
+  .index("by_job_status_created", ["jobId", "status", "createdAt"])
+  .index("by_job_status_lease", ["jobId", "status", "leaseExpiresAt"])
+  .index("by_job_release", ["jobId", "releaseId"]);
+
 const soulComments = defineTable({
   soulId: v.id("souls"),
   userId: v.id("users"),
@@ -1740,6 +1831,8 @@ export default defineSchema({
   packageAppeals,
   packageModerationEventLogs,
   officialPluginMigrations,
+  packageDryRunScanJobs,
+  packageDryRunScanResults,
   soulComments,
   stars,
   soulStars,

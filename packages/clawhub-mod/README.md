@@ -130,6 +130,22 @@ clawhub-mod plugins backfill-artifacts [--all] [--apply]
 clawhub-mod plugins trusted-publisher get <name>
 clawhub-mod plugins trusted-publisher set <name> --repository <owner/repo> --workflow-filename <file>
 clawhub-mod plugins trusted-publisher delete <name>
+
+clawhub-mod plugins dry-run-scan start --release-id <id> [--release-id <id> ...]
+clawhub-mod plugins dry-run-scan start --package <name> [--package <name> ...]
+clawhub-mod plugins dry-run-scan start --latest-active [--limit <n>]
+clawhub-mod plugins dry-run-scan start --all-active
+clawhub-mod plugins dry-run-scan start --seed <seed> [--limit <n>] [--max-candidates <n>]
+clawhub-mod plugins dry-run-scan status <job-id>
+clawhub-mod plugins dry-run-scan watch <job-id>
+clawhub-mod plugins dry-run-scan export <job-id> [--cursor <cursor>] [--limit <n>] [--allow-partial] [--json | --jsonl]
 ```
+
+Dry-run scan `export` reads terminal complete jobs by default; pass
+`--allow-partial --json` to read incomplete results while a job is still running
+or target selection failed before completion. `export --json` prints one result
+page with `nextCursor`, plus `jobStatus`, `jobDone`, and `partial`; pass
+`--cursor` to continue. `done` is page completion, not job completion. `export
+--jsonl` streams all result pages for complete jobs.
 
 All skill and plugin commands accept `--json` where the underlying endpoint supports machine-readable output.

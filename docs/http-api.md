@@ -11,7 +11,9 @@ Base URL: `https://clawhub.ai` (default).
 
 All v1 paths are under `/api/v1/...`.
 Legacy `/api/...` and `/api/cli/...` remain for compatibility (see `DEPRECATIONS.md`).
-OpenAPI: `/api/v1/openapi.json`.
+OpenAPI: `/api/v1/openapi.json` for the public skill API surface. Admin and
+package-operator endpoints are documented here but are not included in that
+public OpenAPI contract.
 
 ## Public catalog reuse
 
@@ -693,6 +695,135 @@ Notes:
   migrations.
 - This tracks migration readiness only. It does not mutate OpenClaw or generate
   ClawPacks.
+
+### `POST /api/v1/packages/-/dry-run-scans`
+
+Admin endpoint for starting an isolated package dry-run scan job. Results are
+operational evidence only; they do not update package moderation state.
+
+Auth:
+
+- Requires an API token for an admin user.
+
+Request body:
+
+```json
+{
+  "selector": {
+    "kind": "seededSample",
+    "seed": "fs-safe-v1",
+    "limit": 25,
+    "maxCandidates": 1000
+  }
+}
+```
+
+Selectors:
+
+- `releaseIds`: `{ "kind": "releaseIds", "releaseIds": ["packageReleases:..."] }`
+- `packageNames`: `{ "kind": "packageNames", "packageNames": ["@scope/plugin"] }`
+- `latestActive`: `{ "kind": "latestActive", "limit": 100 }` selects active package
+  `latestReleaseId` releases by release creation time.
+- `allActive`: `{ "kind": "allActive" }`
+- `seededSample`: `{ "kind": "seededSample", "seed": "fs-safe-v1", "limit": 25, "maxCandidates": 1000 }`
+
+Limits:
+
+- `releaseIds` and `packageNames`: 1-200 entries; every explicit target must resolve.
+- `latestActive.limit` and `seededSample.limit`: integer 1-200.
+- `seededSample.maxCandidates`: integer 1-1000 and greater than or equal to `limit`.
+- `allActive` does not accept sizing fields.
+
+Response:
+
+```json
+{
+  "jobId": "packageDryRunScanJobs:...",
+  "status": "queued",
+  "totalItems": 25,
+  "targetSelectionDone": true,
+  "candidateLimitReached": true
+}
+```
+
+### `GET /api/v1/packages/-/dry-run-scans/{jobId}`
+
+Admin endpoint for reading dry-run scan job counters and selector metadata.
+
+Auth:
+
+- Requires an API token for an admin user.
+
+Response:
+
+```json
+{
+  "jobId": "packageDryRunScanJobs:...",
+  "scanner": "filesystem-safety-v1",
+  "selector": { "kind": "latestActive", "limit": 100 },
+  "status": "running",
+  "totalItems": 100,
+  "queuedItems": 10,
+  "runningItems": 5,
+  "completedItems": 85,
+  "failedItems": 0,
+  "skippedItems": 0,
+  "matchedItems": 12,
+  "targetSelectionDone": true,
+  "candidateLimitReached": false,
+  "createdAt": 1760000000000,
+  "updatedAt": 1760000005000
+}
+```
+
+### `GET /api/v1/packages/-/dry-run-scans/{jobId}/results`
+
+Admin endpoint for paginating dry-run scan result rows. Results can be paged
+while the job is still running.
+
+Auth:
+
+- Requires an API token for an admin user.
+
+Query params:
+
+- `limit` (optional): integer (1-500)
+- `cursor` (optional): pagination cursor
+
+Response:
+
+```json
+{
+  "jobStatus": "running",
+  "jobDone": false,
+  "partial": true,
+  "items": [
+    {
+      "itemId": "packageDryRunScanResults:...",
+      "jobId": "packageDryRunScanJobs:...",
+      "releaseId": "packageReleases:...",
+      "packageId": "packages:...",
+      "packageName": "@openclaw/example-plugin",
+      "packageDisplayName": "Example Plugin",
+      "version": "1.2.3",
+      "status": "completed",
+      "rawFsUsageCount": 2,
+      "fsSafeUsageCount": 1,
+      "findings": [],
+      "errors": [],
+      "createdAt": 1760000000000,
+      "updatedAt": 1760000005000
+    }
+  ],
+  "nextCursor": null,
+  "done": true
+}
+```
+
+`done` is pagination completion for the currently visible result set. Use
+`jobDone`/`partial` to distinguish complete exports from partial reads. `partial`
+is also `true` for failed broad-selection jobs whose target selection did not
+finish.
 
 ### `GET /api/v1/packages/moderation/queue`
 

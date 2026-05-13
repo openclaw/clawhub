@@ -38,6 +38,16 @@ const { __handlers } = await import("./httpApiV1");
 
 type ActionCtx = import("./_generated/server").ActionCtx;
 
+const packageDryRunScanInternalRefs = (
+  internal as unknown as {
+    packageDryRunScans: {
+      createPackageDryRunScanJobForUserInternal: unknown;
+      getPackageDryRunScanJobForUserInternal: unknown;
+      listPackageDryRunScanResultsForUserInternal: unknown;
+    };
+  }
+).packageDryRunScans;
+
 type RateLimitArgs = { key: string; limit: number; windowMs: number };
 
 function isRateLimitArgs(args: unknown): args is RateLimitArgs {
@@ -3844,6 +3854,48 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
+  it("packages detail can serve a package named dry-run-scans", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args) {
+        expect(args.name).toBe("dry-run-scans");
+        return {
+          package: {
+            _id: "packages:dry-run-scans",
+            name: "dry-run-scans",
+            displayName: "Dry Run Scans",
+            family: "code-plugin",
+            tags: {},
+            latestReleaseId: "packageReleases:1",
+            channel: "community",
+            isOfficial: false,
+            summary: "Plugin summary",
+            latestVersion: "1.2.3",
+            stats: { downloads: 7, installs: 3, stars: 2, versions: 4 },
+            createdAt: 1,
+            updatedAt: 2,
+          },
+          latestRelease: null,
+          owner: { _id: "users:owner", handle: "owner", displayName: "Owner" },
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages/dry-run-scans"),
+    );
+
+    if (response.status !== 200) throw new Error(await response.text());
+    await expect(response.json()).resolves.toMatchObject({
+      package: {
+        name: "dry-run-scans",
+        latestVersion: "1.2.3",
+      },
+    });
+  });
+
   it("packages detail accepts double-encoded scoped package names", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("name" in args) {
@@ -5141,6 +5193,797 @@ describe("httpApiV1 handlers", () => {
         dryRun: true,
       },
     );
+  });
+
+  it("package dry-run scan start creates an admin job", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        jobId: "packageDryRunScanJobs:1",
+        status: "queued",
+        totalItems: 1,
+        targetSelectionDone: true,
+      };
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/packages/-/dry-run-scans", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({
+          selector: { kind: "releaseIds", releaseIds: [" packageReleases:demo "] },
+        }),
+      }),
+    );
+
+    if (response.status !== 200) throw new Error(await response.text());
+    await expect(response.json()).resolves.toEqual({
+      jobId: "packageDryRunScanJobs:1",
+      status: "queued",
+      totalItems: 1,
+      targetSelectionDone: true,
+    });
+    expect(runMutation).toHaveBeenCalledWith(
+      packageDryRunScanInternalRefs.createPackageDryRunScanJobForUserInternal,
+      {
+        actorUserId: "users:admin",
+        selector: { kind: "releaseIds", releaseIds: ["packageReleases:demo"] },
+      },
+    );
+  });
+
+  it("package dry-run scan start accepts explicit package names", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        jobId: "packageDryRunScanJobs:1",
+        status: "queued",
+        totalItems: 1,
+        targetSelectionDone: true,
+      };
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/packages/-/dry-run-scans", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({
+          selector: { kind: "packageNames", packageNames: [" demo-plugin "] },
+        }),
+      }),
+    );
+
+    if (response.status !== 200) throw new Error(await response.text());
+    expect(runMutation).toHaveBeenCalledWith(
+      packageDryRunScanInternalRefs.createPackageDryRunScanJobForUserInternal,
+      {
+        actorUserId: "users:admin",
+        selector: { kind: "packageNames", packageNames: ["demo-plugin"] },
+      },
+    );
+  });
+
+  it("package dry-run scan start rejects seeded samples with fewer candidates than requested limit", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      throw new Error(`unexpected mutation ${JSON.stringify(args)}`);
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/packages/-/dry-run-scans", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({
+          selector: { kind: "seededSample", seed: "fs-safe-v1", limit: 20, maxCandidates: 10 },
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.text()).resolves.toContain(
+      "selector.maxCandidates must be greater than or equal to selector.limit",
+    );
+  });
+
+  it("package dry-run scan start rejects oversized seeded sample seeds", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      throw new Error(`unexpected mutation ${JSON.stringify(args)}`);
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/packages/-/dry-run-scans", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({
+          selector: { kind: "seededSample", seed: "x".repeat(129), limit: 1, maxCandidates: 1 },
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.text()).resolves.toContain("selector.seed is limited to 128 characters");
+  });
+
+  it("package dry-run scan start rejects invalid JSON", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      throw new Error(`unexpected mutation ${JSON.stringify(args)}`);
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/packages/-/dry-run-scans", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: "{",
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.text()).resolves.toBe("Invalid JSON");
+  });
+
+  it("package dry-run scan start rejects selector fields that do not apply to the selector kind", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      throw new Error(`unexpected mutation ${JSON.stringify(args)}`);
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/packages/-/dry-run-scans", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({
+          selector: { kind: "allActive", limit: 10 },
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.text()).resolves.toContain(
+      "selector.allActive has unexpected field limit",
+    );
+    const nonRateCalls = runMutation.mock.calls.filter(([, args]) => !isRateLimitArgs(args));
+    expect(nonRateCalls).toEqual([]);
+  });
+
+  it("package dry-run scan start rejects top-level fields that do not apply", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      throw new Error(`unexpected mutation ${JSON.stringify(args)}`);
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/packages/-/dry-run-scans", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({
+          selector: { kind: "allActive" },
+          limit: 10,
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.text()).resolves.toContain("unexpected field limit");
+    const nonRateCalls = runMutation.mock.calls.filter(([, args]) => !isRateLimitArgs(args));
+    expect(nonRateCalls).toEqual([]);
+  });
+
+  it("package dry-run scan start rejects empty selector arrays before backend mutation", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      throw new Error(`unexpected mutation ${JSON.stringify(args)}`);
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/packages/-/dry-run-scans", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({
+          selector: { kind: "releaseIds", releaseIds: [] },
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.text()).resolves.toContain(
+      "selector.releaseIds must be non-empty strings",
+    );
+    const nonRateCalls = runMutation.mock.calls.filter(([, args]) => !isRateLimitArgs(args));
+    expect(nonRateCalls).toEqual([]);
+  });
+
+  it("package dry-run scan start rejects oversized explicit selectors before backend mutation", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      throw new Error(`unexpected mutation ${JSON.stringify(args)}`);
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/packages/-/dry-run-scans", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({
+          selector: {
+            kind: "packageNames",
+            packageNames: Array.from({ length: 201 }, (_, index) => `plugin-${index}`),
+          },
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.text()).resolves.toContain(
+      "selector.packageNames is limited to 200 packages",
+    );
+    const nonRateCalls = runMutation.mock.calls.filter(([, args]) => !isRateLimitArgs(args));
+    expect(nonRateCalls).toEqual([]);
+  });
+
+  it("package dry-run scan start rejects over-max selector sizes before backend mutation", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      throw new Error(`unexpected mutation ${JSON.stringify(args)}`);
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/packages/-/dry-run-scans", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({
+          selector: { kind: "seededSample", seed: "fs-safe-v1", limit: 201, maxCandidates: 10 },
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.text()).resolves.toContain("selector.limit is limited to 200");
+    const nonRateCalls = runMutation.mock.calls.filter(([, args]) => !isRateLimitArgs(args));
+    expect(nonRateCalls).toEqual([]);
+  });
+
+  it("package dry-run scan start rejects fractional numeric selector fields", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      throw new Error(`unexpected mutation ${JSON.stringify(args)}`);
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/packages/-/dry-run-scans", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({
+          selector: { kind: "seededSample", seed: "fs-safe-v1", limit: 1.5, maxCandidates: 10 },
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.text()).resolves.toContain("selector.limit must be a positive integer");
+    const nonRateCalls = runMutation.mock.calls.filter(([, args]) => !isRateLimitArgs(args));
+    expect(nonRateCalls).toEqual([]);
+  });
+
+  it("package dry-run scan start returns 500 for backend failures", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      throw new Error("dry-run scan queue unavailable");
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/packages/-/dry-run-scans", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({
+          selector: { kind: "releaseIds", releaseIds: ["packageReleases:demo"] },
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(500);
+    await expect(response.text()).resolves.toBe("Package dry-run scan start failed");
+    expect(runMutation).toHaveBeenCalledWith(
+      packageDryRunScanInternalRefs.createPackageDryRunScanJobForUserInternal,
+      {
+        actorUserId: "users:admin",
+        selector: { kind: "releaseIds", releaseIds: ["packageReleases:demo"] },
+      },
+    );
+  });
+
+  it("package dry-run scan start returns 400 for backend argument validation failures", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      throw new Error("ArgumentValidationError: Value does not match validator");
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/packages/-/dry-run-scans", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({
+          selector: { kind: "releaseIds", releaseIds: ["not-a-release-id"] },
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.text()).resolves.toContain("ArgumentValidationError");
+  });
+
+  it("package dry-run scan start returns 400 for selector content failures", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      throw new Error("No active package releases matched the dry-run scan selector");
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/packages/-/dry-run-scans", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({
+          selector: { kind: "packageNames", packageNames: ["missing-plugin"] },
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.text()).resolves.toBe(
+      "No active package releases matched the dry-run scan selector",
+    );
+  });
+
+  it("package dry-run scan start returns 400 for unresolved explicit selectors", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      throw new Error("Dry-run scan selector could not resolve packageNames: missing-plugin");
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/packages/-/dry-run-scans", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({
+          selector: { kind: "packageNames", packageNames: ["missing-plugin"] },
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.text()).resolves.toBe(
+      "Dry-run scan selector could not resolve packageNames: missing-plugin",
+    );
+  });
+
+  it("package dry-run scan start returns 400 for selector scan-limit failures", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      throw new Error(
+        "Dry-run scan selector reached selection scan limit before collecting requested releases",
+      );
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/packages/-/dry-run-scans", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({
+          selector: { kind: "latestActive", limit: 100 },
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.text()).resolves.toBe(
+      "Dry-run scan selector reached selection scan limit before collecting requested releases",
+    );
+  });
+
+  it("package dry-run scan start returns 400 for reserved package names", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      throw new Error(
+        'Package name "publish" is reserved for ClawHub routes. Use a scoped name or choose a different package name.',
+      );
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/packages/-/dry-run-scans", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({
+          selector: { kind: "packageNames", packageNames: ["publish"] },
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.text()).resolves.toContain("reserved for ClawHub routes");
+  });
+
+  it("package dry-run scan start forbids non-admin api tokens", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    let nonRateMutationCalls = 0;
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      nonRateMutationCalls += 1;
+      return null;
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/packages/-/dry-run-scans", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({
+          selector: { kind: "releaseIds", releaseIds: ["packageReleases:demo"] },
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    expect(nonRateMutationCalls).toBe(0);
+  });
+
+  it("package dry-run scan reads forbid non-admin api tokens", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    let nonRateQueryCalls = 0;
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      nonRateQueryCalls += 1;
+      return null;
+    });
+
+    const statusResponse = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery }),
+      new Request("https://example.com/api/v1/packages/-/dry-run-scans/packageDryRunScanJobs%3A1", {
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+    const resultsResponse = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery }),
+      new Request(
+        "https://example.com/api/v1/packages/-/dry-run-scans/packageDryRunScanJobs%3A1/results",
+        {
+          headers: { Authorization: "Bearer clh_test" },
+        },
+      ),
+    );
+
+    expect(statusResponse.status).toBe(403);
+    expect(resultsResponse.status).toBe(403);
+    expect(nonRateQueryCalls).toBe(0);
+  });
+
+  it("package dry-run scan status reads an admin job", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        jobId: "packageDryRunScanJobs:1",
+        status: "running",
+        totalItems: 2,
+        queuedItems: 1,
+        runningItems: 1,
+        completedItems: 0,
+        failedItems: 0,
+        skippedItems: 0,
+        createdAt: 1_700_000_000_000,
+        updatedAt: 1_700_000_000_100,
+      };
+    });
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery }),
+      new Request("https://example.com/api/v1/packages/-/dry-run-scans/packageDryRunScanJobs%3A1", {
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+
+    if (response.status !== 200) throw new Error(await response.text());
+    await expect(response.json()).resolves.toMatchObject({
+      jobId: "packageDryRunScanJobs:1",
+      status: "running",
+      totalItems: 2,
+    });
+    expect(runQuery).toHaveBeenCalledWith(
+      packageDryRunScanInternalRefs.getPackageDryRunScanJobForUserInternal,
+      {
+        actorUserId: "users:admin",
+        jobId: "packageDryRunScanJobs:1",
+      },
+    );
+  });
+
+  it("package dry-run scan status returns 404 for missing jobs", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      throw new Error("Package dry-run scan job not found");
+    });
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery }),
+      new Request("https://example.com/api/v1/packages/-/dry-run-scans/packageDryRunScanJobs%3A1", {
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+
+    expect(response.status).toBe(404);
+    await expect(response.text()).resolves.toBe("Package dry-run scan job not found");
+  });
+
+  it("package dry-run scan status returns 500 for backend lookup failures", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      throw new Error("dry-run scan storage unavailable");
+    });
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery }),
+      new Request("https://example.com/api/v1/packages/-/dry-run-scans/packageDryRunScanJobs%3A1", {
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+
+    expect(response.status).toBe(500);
+    await expect(response.text()).resolves.toBe("Package dry-run scan lookup failed");
+  });
+
+  it("package dry-run scan status returns 400 for malformed job ids", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      throw new Error("ArgumentValidationError: Value does not match validator");
+    });
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery }),
+      new Request("https://example.com/api/v1/packages/-/dry-run-scans/not-a-job-id", {
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.text()).resolves.toBe("Package dry-run scan job id is invalid");
+  });
+
+  it("package dry-run scan results lists admin job results", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        jobStatus: "running",
+        jobDone: false,
+        partial: true,
+        items: [
+          {
+            itemId: "packageDryRunScanResults:1",
+            jobId: "packageDryRunScanJobs:1",
+            releaseId: "packageReleases:demo",
+            packageId: "packages:demo",
+            packageName: "demo-plugin",
+            packageDisplayName: "Demo Plugin",
+            version: "1.0.0",
+            status: "completed",
+            rawFsUsageCount: 0,
+            fsSafeUsageCount: 0,
+            findings: [],
+            errors: [],
+            createdAt: 1_700_000_000_000,
+            updatedAt: 1_700_000_000_100,
+          },
+        ],
+        nextCursor: "cursor-2",
+        done: false,
+      };
+    });
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery }),
+      new Request(
+        "https://example.com/api/v1/packages/-/dry-run-scans/packageDryRunScanJobs%3A1/results?cursor=cursor-1&limit=50",
+        {
+          headers: { Authorization: "Bearer clh_test" },
+        },
+      ),
+    );
+
+    if (response.status !== 200) throw new Error(await response.text());
+    await expect(response.json()).resolves.toMatchObject({
+      jobStatus: "running",
+      jobDone: false,
+      partial: true,
+      items: [{ itemId: "packageDryRunScanResults:1", status: "completed" }],
+      nextCursor: "cursor-2",
+      done: false,
+    });
+    expect(runQuery).toHaveBeenCalledWith(
+      packageDryRunScanInternalRefs.listPackageDryRunScanResultsForUserInternal,
+      {
+        actorUserId: "users:admin",
+        jobId: "packageDryRunScanJobs:1",
+        cursor: "cursor-1",
+        limit: 50,
+      },
+    );
+  });
+
+  it("package dry-run scan results rejects malformed limits", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      throw new Error(`unexpected query ${JSON.stringify(args)}`);
+    });
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery }),
+      new Request(
+        "https://example.com/api/v1/packages/-/dry-run-scans/packageDryRunScanJobs%3A1/results?limit=10abc",
+        {
+          headers: { Authorization: "Bearer clh_test" },
+        },
+      ),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.text()).resolves.toContain("limit must be a positive integer");
+  });
+
+  it("package dry-run scan results rejects malformed cursors", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      throw new Error("InvalidCursor: malformed pagination cursor");
+    });
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery }),
+      new Request(
+        "https://example.com/api/v1/packages/-/dry-run-scans/packageDryRunScanJobs%3A1/results?cursor=not-a-cursor",
+        {
+          headers: { Authorization: "Bearer clh_test" },
+        },
+      ),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.text()).resolves.toBe("Package dry-run scan results: cursor is invalid");
+  });
+
+  it("package dry-run scan results returns a static error for malformed job ids", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      throw new Error("ArgumentValidationError: Value does not match validator \u001b[31m");
+    });
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery }),
+      new Request("https://example.com/api/v1/packages/-/dry-run-scans/not-a-job-id/results", {
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.text()).resolves.toBe("Package dry-run scan job id is invalid");
   });
 
   it("npm mirror packument lists only ClawPack-backed releases", async () => {

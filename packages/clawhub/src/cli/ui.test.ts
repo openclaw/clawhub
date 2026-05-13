@@ -9,7 +9,7 @@ vi.mock("node:child_process", () => ({
   spawn: (...args: unknown[]) => mockSpawn(...args),
 }));
 
-const { openInBrowser } = await import("./ui");
+const { formatError, openInBrowser } = await import("./ui");
 
 type ErrorHandler = (error: NodeJS.ErrnoException) => void;
 
@@ -73,5 +73,11 @@ describe("openInBrowser", () => {
     expect(logSpy).not.toHaveBeenCalledWith("Could not open browser automatically.");
     expect(child.unref).toHaveBeenCalledOnce();
     logSpy.mockRestore();
+  });
+});
+
+describe("cli ui errors", () => {
+  it("escapes terminal controls in formatted errors", () => {
+    expect(formatError(new Error("bad\n\u001b[31mboom\u202e"))).toBe("bad\\n\\x1b[31mboom\\u202e");
   });
 });

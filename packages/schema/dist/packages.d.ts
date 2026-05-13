@@ -668,6 +668,165 @@ export declare const ApiV1PackageArtifactBackfillResponseSchema: import("arktype
     dryRun: boolean;
 }, {}>;
 export type ApiV1PackageArtifactBackfillResponse = (typeof ApiV1PackageArtifactBackfillResponseSchema)[inferred];
+export declare const PackageDryRunScanSelectorSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    kind: "releaseIds";
+    releaseIds: string[];
+} | {
+    kind: "packageNames";
+    packageNames: string[];
+} | {
+    kind: "latestActive";
+    limit: number;
+} | {
+    kind: "allActive";
+} | {
+    kind: "seededSample";
+    seed: string;
+    limit: number;
+    maxCandidates: number;
+}, {}>;
+export type PackageDryRunScanSelector = (typeof PackageDryRunScanSelectorSchema)[inferred];
+export declare const PackageDryRunScanStartRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    selector: {
+        kind: "releaseIds";
+        releaseIds: string[];
+    } | {
+        kind: "packageNames";
+        packageNames: string[];
+    } | {
+        kind: "latestActive";
+        limit: number;
+    } | {
+        kind: "allActive";
+    } | {
+        kind: "seededSample";
+        seed: string;
+        limit: number;
+        maxCandidates: number;
+    };
+}, {}>;
+export type PackageDryRunScanStartRequest = (typeof PackageDryRunScanStartRequestSchema)[inferred];
+export declare const PackageDryRunScanJobStatusSchema: import("arktype/internal/variants/string.ts").StringType<"completed" | "failed" | "queued" | "running", {}>;
+export type PackageDryRunScanJobStatus = (typeof PackageDryRunScanJobStatusSchema)[inferred];
+export declare const ApiV1PackageDryRunScanStartResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    jobId: string;
+    status: "completed" | "failed" | "queued" | "running";
+    totalItems: number;
+    targetSelectionDone: boolean;
+    candidateLimitReached?: boolean | undefined;
+}, {}>;
+export type ApiV1PackageDryRunScanStartResponse = (typeof ApiV1PackageDryRunScanStartResponseSchema)[inferred];
+export declare const ApiV1PackageDryRunScanJobResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    jobId: string;
+    scanner: string;
+    selector: {
+        kind: "releaseIds";
+        releaseIds: string[];
+    } | {
+        kind: "packageNames";
+        packageNames: string[];
+    } | {
+        kind: "latestActive";
+        limit: number;
+    } | {
+        kind: "allActive";
+    } | {
+        kind: "seededSample";
+        seed: string;
+        limit: number;
+        maxCandidates: number;
+    };
+    status: "completed" | "failed" | "queued" | "running";
+    totalItems: number;
+    queuedItems: number;
+    runningItems: number;
+    completedItems: number;
+    failedItems: number;
+    skippedItems: number;
+    matchedItems: number;
+    targetSelectionDone: boolean;
+    createdAt: number;
+    updatedAt: number;
+    candidateLimitReached?: boolean | undefined;
+    error?: string | undefined;
+    expiresAt?: number | undefined;
+    startedAt?: number | undefined;
+    completedAt?: number | undefined;
+}, {}>;
+export type ApiV1PackageDryRunScanJobResponse = (typeof ApiV1PackageDryRunScanJobResponseSchema)[inferred];
+export declare const PackageDryRunScanItemStatusSchema: import("arktype/internal/variants/string.ts").StringType<"completed" | "failed" | "queued" | "running" | "skipped", {}>;
+export type PackageDryRunScanItemStatus = (typeof PackageDryRunScanItemStatusSchema)[inferred];
+export declare const PackageDryRunScanFindingSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    code: string;
+    severity: string;
+    file: string;
+    line: number;
+    message: string;
+    evidence: string;
+    evidenceTruncated: boolean;
+}, {}>;
+export type PackageDryRunScanFinding = (typeof PackageDryRunScanFindingSchema)[inferred];
+export declare const PackageDryRunScanResultItemSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    itemId: string;
+    jobId: string;
+    releaseId: string;
+    packageId: string;
+    packageName: string;
+    packageDisplayName: string;
+    version: string;
+    status: "completed" | "failed" | "queued" | "running" | "skipped";
+    rawFsUsageCount: number;
+    fsSafeUsageCount: number;
+    findings: {
+        code: string;
+        severity: string;
+        file: string;
+        line: number;
+        message: string;
+        evidence: string;
+        evidenceTruncated: boolean;
+    }[];
+    errors: string[];
+    createdAt: number;
+    updatedAt: number;
+    startedAt?: number | undefined;
+    completedAt?: number | undefined;
+}, {}>;
+export type PackageDryRunScanResultItem = (typeof PackageDryRunScanResultItemSchema)[inferred];
+export declare const ApiV1PackageDryRunScanResultsResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    jobStatus: "completed" | "failed" | "queued" | "running";
+    jobDone: boolean;
+    partial: boolean;
+    items: {
+        itemId: string;
+        jobId: string;
+        releaseId: string;
+        packageId: string;
+        packageName: string;
+        packageDisplayName: string;
+        version: string;
+        status: "completed" | "failed" | "queued" | "running" | "skipped";
+        rawFsUsageCount: number;
+        fsSafeUsageCount: number;
+        findings: {
+            code: string;
+            severity: string;
+            file: string;
+            line: number;
+            message: string;
+            evidence: string;
+            evidenceTruncated: boolean;
+        }[];
+        errors: string[];
+        createdAt: number;
+        updatedAt: number;
+        startedAt?: number | undefined;
+        completedAt?: number | undefined;
+    }[];
+    nextCursor: string | null;
+    done: boolean;
+}, {}>;
+export type ApiV1PackageDryRunScanResultsResponse = (typeof ApiV1PackageDryRunScanResultsResponseSchema)[inferred];
 export declare const PackageReadinessCheckSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     id: string;
     label: string;

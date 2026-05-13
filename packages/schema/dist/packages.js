@@ -426,6 +426,97 @@ export const ApiV1PackageArtifactBackfillResponseSchema = type({
     done: "boolean",
     dryRun: "boolean",
 });
+export const PackageDryRunScanSelectorSchema = type({
+    kind: '"releaseIds"',
+    releaseIds: "string[]",
+})
+    .or({
+    kind: '"packageNames"',
+    packageNames: "string[]",
+})
+    .or({
+    kind: '"latestActive"',
+    limit: "number",
+})
+    .or({
+    kind: '"allActive"',
+})
+    .or({
+    kind: '"seededSample"',
+    seed: "string",
+    limit: "number",
+    maxCandidates: "number",
+});
+// Structural request shape only. HTTP and CLI entrypoints enforce selector-specific
+// limits, non-empty arrays, integer bounds, and cross-field constraints.
+export const PackageDryRunScanStartRequestSchema = type({
+    selector: PackageDryRunScanSelectorSchema,
+});
+export const PackageDryRunScanJobStatusSchema = type('"queued"|"running"|"completed"|"failed"');
+export const ApiV1PackageDryRunScanStartResponseSchema = type({
+    jobId: "string",
+    status: PackageDryRunScanJobStatusSchema,
+    totalItems: "number",
+    targetSelectionDone: "boolean",
+    candidateLimitReached: "boolean?",
+});
+export const ApiV1PackageDryRunScanJobResponseSchema = type({
+    jobId: "string",
+    scanner: "string",
+    selector: PackageDryRunScanSelectorSchema,
+    status: PackageDryRunScanJobStatusSchema,
+    totalItems: "number",
+    queuedItems: "number",
+    runningItems: "number",
+    completedItems: "number",
+    failedItems: "number",
+    skippedItems: "number",
+    matchedItems: "number",
+    targetSelectionDone: "boolean",
+    candidateLimitReached: "boolean?",
+    error: "string?",
+    expiresAt: "number?",
+    createdAt: "number",
+    updatedAt: "number",
+    startedAt: "number?",
+    completedAt: "number?",
+});
+export const PackageDryRunScanItemStatusSchema = type('"queued"|"running"|"completed"|"failed"|"skipped"');
+export const PackageDryRunScanFindingSchema = type({
+    code: "string",
+    severity: "string",
+    file: "string",
+    line: "number",
+    message: "string",
+    evidence: "string",
+    evidenceTruncated: "boolean",
+});
+export const PackageDryRunScanResultItemSchema = type({
+    itemId: "string",
+    jobId: "string",
+    releaseId: "string",
+    packageId: "string",
+    packageName: "string",
+    packageDisplayName: "string",
+    version: "string",
+    status: PackageDryRunScanItemStatusSchema,
+    rawFsUsageCount: "number",
+    fsSafeUsageCount: "number",
+    findings: PackageDryRunScanFindingSchema.array(),
+    errors: "string[]",
+    createdAt: "number",
+    updatedAt: "number",
+    startedAt: "number?",
+    completedAt: "number?",
+});
+export const ApiV1PackageDryRunScanResultsResponseSchema = type({
+    jobStatus: PackageDryRunScanJobStatusSchema,
+    jobDone: "boolean",
+    partial: "boolean",
+    items: PackageDryRunScanResultItemSchema.array(),
+    nextCursor: "string|null",
+    done: "boolean",
+});
 export const PackageReadinessCheckSchema = type({
     id: "string",
     label: "string",

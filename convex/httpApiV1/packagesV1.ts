@@ -46,7 +46,9 @@ import {
   MAX_RAW_FILE_BYTES,
   getPathSegments,
   json,
+  requireAdminOrResponse,
   resolveTagsBatch,
+  parseJsonPayload,
   requireApiTokenUserOrResponse,
   requirePackagePublishAuthOrResponse,
   safeTextFileResponse,
@@ -101,6 +103,11 @@ const internalRefs = internal as unknown as {
     upsertOfficialPluginMigrationForUserInternal: unknown;
     backfillPackageArtifactKindsInternal: unknown;
     listPackageModerationQueueInternal: unknown;
+  };
+  packageDryRunScans: {
+    createPackageDryRunScanJobForUserInternal: unknown;
+    getPackageDryRunScanJobForUserInternal: unknown;
+    listPackageDryRunScanResultsForUserInternal: unknown;
   };
   packagePublishTokens: {
     createInternal: unknown;
@@ -255,6 +262,224 @@ function parsePackageOfficialMigrationPhase(
     return normalized;
   }
   return null;
+}
+
+type PackageDryRunScanStartPayload = {
+  selector:
+    | { kind: "releaseIds"; releaseIds: string[] }
+    | { kind: "packageNames"; packageNames: string[] }
+    | { kind: "latestActive"; limit: number }
+    | { kind: "allActive" }
+    | { kind: "seededSample"; seed: string; limit: number; maxCandidates: number };
+};
+
+const PACKAGE_DRY_RUN_SCAN_MAX_EXPLICIT_SELECTORS = 200;
+const PACKAGE_DRY_RUN_SCAN_MAX_LIMIT = 200;
+const PACKAGE_DRY_RUN_SCAN_MAX_CANDIDATES = 1_000;
+const PACKAGE_DRY_RUN_SCAN_MAX_SEED_CHARS = 128;
+
+function parsePackageDryRunScanStartPayload(value: unknown): PackageDryRunScanStartPayload {
+  if (!isObjectRecord(value)) throw new Error("Package dry-run scan payload: expected object");
+  assertPackageDryRunScanPayloadKeys(value, ["selector"]);
+  const selector = value.selector;
+  if (!isObjectRecord(selector)) {
+    throw new Error("Package dry-run scan payload: selector must be an object");
+  }
+  if (selector.kind === "releaseIds") {
+    assertPackageDryRunScanSelectorKeys(selector, ["kind", "releaseIds"], "releaseIds");
+    if (
+      !Array.isArray(selector.releaseIds) ||
+      selector.releaseIds.length === 0 ||
+      !selector.releaseIds.every(isNonEmptyString)
+    ) {
+      throw new Error(
+        "Package dry-run scan payload: selector.releaseIds must be non-empty strings",
+      );
+    }
+    if (selector.releaseIds.length > PACKAGE_DRY_RUN_SCAN_MAX_EXPLICIT_SELECTORS) {
+      throw new Error(
+        `Package dry-run scan payload: selector.releaseIds is limited to ${PACKAGE_DRY_RUN_SCAN_MAX_EXPLICIT_SELECTORS} releases`,
+      );
+    }
+    return {
+      selector: { kind: "releaseIds", releaseIds: selector.releaseIds.map((id) => id.trim()) },
+    };
+  }
+  if (selector.kind === "packageNames") {
+    assertPackageDryRunScanSelectorKeys(selector, ["kind", "packageNames"], "packageNames");
+    if (
+      !Array.isArray(selector.packageNames) ||
+      selector.packageNames.length === 0 ||
+      !selector.packageNames.every(isNonEmptyString)
+    ) {
+      throw new Error(
+        "Package dry-run scan payload: selector.packageNames must be non-empty strings",
+      );
+    }
+    if (selector.packageNames.length > PACKAGE_DRY_RUN_SCAN_MAX_EXPLICIT_SELECTORS) {
+      throw new Error(
+        `Package dry-run scan payload: selector.packageNames is limited to ${PACKAGE_DRY_RUN_SCAN_MAX_EXPLICIT_SELECTORS} packages`,
+      );
+    }
+    return {
+      selector: {
+        kind: "packageNames",
+        packageNames: selector.packageNames.map((name) => name.trim()),
+      },
+    };
+  }
+  if (selector.kind === "latestActive") {
+    assertPackageDryRunScanSelectorKeys(selector, ["kind", "limit"], "latestActive");
+    return {
+      selector: {
+        kind: "latestActive",
+        limit: parsePackageDryRunPositiveInteger(
+          selector.limit,
+          "selector.limit",
+          PACKAGE_DRY_RUN_SCAN_MAX_LIMIT,
+        ),
+      },
+    };
+  }
+  if (selector.kind === "allActive") {
+    assertPackageDryRunScanSelectorKeys(selector, ["kind"], "allActive");
+    return { selector: { kind: "allActive" } };
+  }
+  if (selector.kind === "seededSample") {
+    assertPackageDryRunScanSelectorKeys(
+      selector,
+      ["kind", "seed", "limit", "maxCandidates"],
+      "seededSample",
+    );
+    if (!isNonEmptyString(selector.seed)) {
+      throw new Error("Package dry-run scan payload: selector.seed must be a string");
+    }
+    const seed = selector.seed.trim();
+    if (seed.length > PACKAGE_DRY_RUN_SCAN_MAX_SEED_CHARS) {
+      throw new Error(
+        `Package dry-run scan payload: selector.seed is limited to ${PACKAGE_DRY_RUN_SCAN_MAX_SEED_CHARS} characters`,
+      );
+    }
+    const limit = parsePackageDryRunPositiveInteger(
+      selector.limit,
+      "selector.limit",
+      PACKAGE_DRY_RUN_SCAN_MAX_LIMIT,
+    );
+    const maxCandidates = parsePackageDryRunPositiveInteger(
+      selector.maxCandidates,
+      "selector.maxCandidates",
+      PACKAGE_DRY_RUN_SCAN_MAX_CANDIDATES,
+    );
+    if (maxCandidates < limit) {
+      throw new Error(
+        "Package dry-run scan payload: selector.maxCandidates must be greater than or equal to selector.limit",
+      );
+    }
+    return {
+      selector: {
+        kind: "seededSample",
+        seed,
+        limit,
+        maxCandidates,
+      },
+    };
+  }
+  throw new Error("Package dry-run scan payload: selector.kind is invalid");
+}
+
+function assertPackageDryRunScanPayloadKeys(
+  payload: Record<string, unknown>,
+  allowedKeys: readonly string[],
+) {
+  const allowed = new Set(allowedKeys);
+  const unexpected = Object.keys(payload).filter((key) => !allowed.has(key));
+  if (unexpected.length > 0) {
+    throw new Error(`Package dry-run scan payload: unexpected field ${unexpected[0]}`);
+  }
+}
+
+function parsePackageDryRunPositiveInteger(value: unknown, label: string, max: number) {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
+    throw new Error(`Package dry-run scan payload: ${label} must be a positive integer`);
+  }
+  if (value > max) {
+    throw new Error(`Package dry-run scan payload: ${label} is limited to ${max}`);
+  }
+  return value;
+}
+
+function parsePackageDryRunResultsLimit(value: string | null) {
+  if (value === null || value === "") return 100;
+  if (!/^[1-9]\d*$/.test(value)) {
+    throw new Error("Package dry-run scan results: limit must be a positive integer");
+  }
+  const limit = Number(value);
+  if (limit > 500) {
+    throw new Error("Package dry-run scan results: limit must be at most 500");
+  }
+  return limit;
+}
+
+function isPackageDryRunClientInputError(message: string) {
+  return (
+    message.includes("ArgumentValidationError") ||
+    message.includes("Value does not match validator") ||
+    message.includes("Invalid id") ||
+    message.includes("invalid id") ||
+    message.includes("does not match the expected format") ||
+    message.includes("Package name required") ||
+    message.includes("Package name must be lowercase and npm-safe") ||
+    message.includes("reserved for ClawHub routes") ||
+    message.includes("Package dry-run scan payload:") ||
+    message.includes("Package dry-run scan results:") ||
+    message.includes("Dry-run scan selector reached selection scan limit") ||
+    message.includes("Dry-run scan selector could not resolve") ||
+    message.includes("limit must be at most") ||
+    message.includes("maxCandidates must be greater than or equal to limit") ||
+    message.includes("No active package releases matched the dry-run scan selector")
+  );
+}
+
+function isPackageDryRunJobIdError(message: string) {
+  return (
+    message.includes("ArgumentValidationError") ||
+    message.includes("Value does not match validator") ||
+    message.includes("Invalid id") ||
+    message.includes("invalid id") ||
+    message.includes("does not match the expected format")
+  );
+}
+
+function isPackageDryRunResultsCursorError(message: string) {
+  return (
+    message.includes("InvalidCursor") ||
+    message.includes("Invalid cursor") ||
+    message.includes("invalid cursor") ||
+    message.includes("Invalid pagination cursor") ||
+    message.includes("pagination cursor is invalid")
+  );
+}
+
+function assertPackageDryRunScanSelectorKeys(
+  selector: Record<string, unknown>,
+  allowedKeys: readonly string[],
+  kind: string,
+) {
+  const allowed = new Set(allowedKeys);
+  const unexpected = Object.keys(selector).filter((key) => !allowed.has(key));
+  if (unexpected.length > 0) {
+    throw new Error(
+      `Package dry-run scan payload: selector.${kind} has unexpected field ${unexpected[0]}`,
+    );
+  }
+}
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
 }
 
 type PackageListQueryArgs = {
@@ -1436,6 +1661,45 @@ export async function mintPublishTokenV1Handler(ctx: ActionCtx, request: Request
 
 export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Request) {
   const segments = getPathSegments(request, "/api/v1/packages/");
+  if (segments[0] === "-" && segments[1] === "dry-run-scans" && segments.length === 2) {
+    const rate = await applyRateLimit(ctx, request, "write");
+    if (!rate.ok) return rate.response;
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+    const admin = requireAdminOrResponse(auth.user, rate.headers);
+    if (!admin.ok) return admin.response;
+
+    const payload = await parseJsonPayload(request, rate.headers);
+    if (!payload.ok) return payload.response;
+
+    let body: PackageDryRunScanStartPayload;
+    try {
+      body = parsePackageDryRunScanStartPayload(payload.payload);
+    } catch (error) {
+      return text(
+        error instanceof Error ? error.message : "Package dry-run scan payload is invalid",
+        400,
+        rate.headers,
+      );
+    }
+
+    try {
+      const result = await runMutationRef(
+        ctx,
+        internalRefs.packageDryRunScans.createPackageDryRunScanJobForUserInternal,
+        {
+          actorUserId: auth.userId,
+          selector: body.selector,
+        },
+      );
+      return json(result, 200, rate.headers);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Package dry-run scan start failed";
+      if (isPackageDryRunClientInputError(message)) return text(message, 400, rate.headers);
+      return text("Package dry-run scan start failed", 500, rate.headers);
+    }
+  }
+
   if (segments[0] === "backfill" && segments[1] === "artifacts" && segments.length === 2) {
     const rate = await applyRateLimit(ctx, request, "write");
     if (!rate.ok) return rate.response;
@@ -2099,6 +2363,64 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
   if (segments.length === 0) return text("Not found", 404);
   if (segments[0] === "search" && new URL(request.url).searchParams.has("q")) {
     return await searchPackages(ctx, request, { includeSkills: true });
+  }
+
+  if (
+    segments[0] === "-" &&
+    segments[1] === "dry-run-scans" &&
+    segments[2] &&
+    segments.length <= 4
+  ) {
+    const rate = await applyRateLimit(ctx, request, "read");
+    if (!rate.ok) return rate.response;
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+    const admin = requireAdminOrResponse(auth.user, rate.headers);
+    if (!admin.ok) return admin.response;
+
+    try {
+      if (segments[3] === "results") {
+        const url = new URL(request.url);
+        const limit = parsePackageDryRunResultsLimit(url.searchParams.get("limit"));
+        const result = await runQueryRef(
+          ctx,
+          internalRefs.packageDryRunScans.listPackageDryRunScanResultsForUserInternal,
+          {
+            actorUserId: auth.userId,
+            jobId: segments[2],
+            cursor: url.searchParams.get("cursor") ?? null,
+            limit,
+          },
+        );
+        return json(result, 200, rate.headers);
+      }
+
+      if (segments.length === 3) {
+        const result = await runQueryRef(
+          ctx,
+          internalRefs.packageDryRunScans.getPackageDryRunScanJobForUserInternal,
+          {
+            actorUserId: auth.userId,
+            jobId: segments[2],
+          },
+        );
+        return json(result, 200, rate.headers);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Package dry-run scan lookup failed";
+      if (message.includes("Package dry-run scan job not found")) {
+        return text("Package dry-run scan job not found", 404, rate.headers);
+      }
+      if (isPackageDryRunJobIdError(message)) {
+        return text("Package dry-run scan job id is invalid", 400, rate.headers);
+      }
+      if (isPackageDryRunResultsCursorError(message)) {
+        return text("Package dry-run scan results: cursor is invalid", 400, rate.headers);
+      }
+      if (isPackageDryRunClientInputError(message)) return text(message, 400, rate.headers);
+      return text("Package dry-run scan lookup failed", 500, rate.headers);
+    }
+    return text("Not found", 404, rate.headers);
   }
 
   if (segments[0] === "moderation" && segments[1] === "queue" && segments.length === 2) {

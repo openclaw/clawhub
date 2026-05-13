@@ -11,6 +11,8 @@ describe("packages/clawhub schema textFiles", () => {
     expect(TEXT_FILE_EXTENSION_SET.has("ps1")).toBe(true);
     expect(TEXT_FILE_EXTENSION_SET.has("psm1")).toBe(true);
     expect(TEXT_FILE_EXTENSION_SET.has("psd1")).toBe(true);
+    expect(TEXT_FILE_EXTENSION_SET.has("mts")).toBe(true);
+    expect(TEXT_FILE_EXTENSION_SET.has("cts")).toBe(true);
     expect(TEXT_FILE_EXTENSION_SET.has("exe")).toBe(false);
   });
 

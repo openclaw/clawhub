@@ -77,12 +77,44 @@ export function createSpinner(text: string) {
   return ora({ text, spinner: "dots", isEnabled: isInteractive() }).start();
 }
 
+export function escapeTerminalControlCharacters(value: string) {
+  let escaped = "";
+  for (const character of value) {
+    const code = character.charCodeAt(0);
+    if ((code >= 0 && code <= 31) || (code >= 127 && code <= 159) || isBidiControlCode(code)) {
+      if (character === "\n") {
+        escaped += "\\n";
+      } else if (character === "\r") {
+        escaped += "\\r";
+      } else if (character === "\t") {
+        escaped += "\\t";
+      } else if (code > 255) {
+        escaped += `\\u${code.toString(16).padStart(4, "0")}`;
+      } else {
+        escaped += `\\x${code.toString(16).padStart(2, "0")}`;
+      }
+    } else {
+      escaped += character;
+    }
+  }
+  return escaped;
+}
+
 export function formatError(error: unknown) {
-  if (error instanceof Error) return error.message;
-  return String(error);
+  return escapeTerminalControlCharacters(error instanceof Error ? error.message : String(error));
 }
 
 export function fail(message: string): never {
-  console.error(`Error: ${message}`);
+  console.error(`Error: ${escapeTerminalControlCharacters(message)}`);
   process.exit(1);
+}
+
+function isBidiControlCode(code: number) {
+  return (
+    code === 0x061c ||
+    code === 0x200e ||
+    code === 0x200f ||
+    (code >= 0x202a && code <= 0x202e) ||
+    (code >= 0x2066 && code <= 0x2069)
+  );
 }

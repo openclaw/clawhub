@@ -511,6 +511,120 @@ export const ApiV1PackageArtifactBackfillResponseSchema = type({
 export type ApiV1PackageArtifactBackfillResponse =
   (typeof ApiV1PackageArtifactBackfillResponseSchema)[inferred];
 
+export const PackageDryRunScanSelectorSchema = type({
+  kind: '"releaseIds"',
+  releaseIds: "string[]",
+})
+  .or({
+    kind: '"packageNames"',
+    packageNames: "string[]",
+  })
+  .or({
+    kind: '"latestActive"',
+    limit: "number",
+  })
+  .or({
+    kind: '"allActive"',
+  })
+  .or({
+    kind: '"seededSample"',
+    seed: "string",
+    limit: "number",
+    maxCandidates: "number",
+  });
+export type PackageDryRunScanSelector = (typeof PackageDryRunScanSelectorSchema)[inferred];
+
+// Structural request shape only. HTTP and CLI entrypoints enforce selector-specific
+// limits, non-empty arrays, integer bounds, and cross-field constraints.
+export const PackageDryRunScanStartRequestSchema = type({
+  selector: PackageDryRunScanSelectorSchema,
+});
+export type PackageDryRunScanStartRequest = (typeof PackageDryRunScanStartRequestSchema)[inferred];
+
+export const PackageDryRunScanJobStatusSchema = type('"queued"|"running"|"completed"|"failed"');
+export type PackageDryRunScanJobStatus = (typeof PackageDryRunScanJobStatusSchema)[inferred];
+
+export const ApiV1PackageDryRunScanStartResponseSchema = type({
+  jobId: "string",
+  status: PackageDryRunScanJobStatusSchema,
+  totalItems: "number",
+  targetSelectionDone: "boolean",
+  candidateLimitReached: "boolean?",
+});
+export type ApiV1PackageDryRunScanStartResponse =
+  (typeof ApiV1PackageDryRunScanStartResponseSchema)[inferred];
+
+export const ApiV1PackageDryRunScanJobResponseSchema = type({
+  jobId: "string",
+  scanner: "string",
+  selector: PackageDryRunScanSelectorSchema,
+  status: PackageDryRunScanJobStatusSchema,
+  totalItems: "number",
+  queuedItems: "number",
+  runningItems: "number",
+  completedItems: "number",
+  failedItems: "number",
+  skippedItems: "number",
+  matchedItems: "number",
+  targetSelectionDone: "boolean",
+  candidateLimitReached: "boolean?",
+  error: "string?",
+  expiresAt: "number?",
+  createdAt: "number",
+  updatedAt: "number",
+  startedAt: "number?",
+  completedAt: "number?",
+});
+export type ApiV1PackageDryRunScanJobResponse =
+  (typeof ApiV1PackageDryRunScanJobResponseSchema)[inferred];
+
+export const PackageDryRunScanItemStatusSchema = type(
+  '"queued"|"running"|"completed"|"failed"|"skipped"',
+);
+export type PackageDryRunScanItemStatus = (typeof PackageDryRunScanItemStatusSchema)[inferred];
+
+export const PackageDryRunScanFindingSchema = type({
+  code: "string",
+  severity: "string",
+  file: "string",
+  line: "number",
+  message: "string",
+  evidence: "string",
+  evidenceTruncated: "boolean",
+});
+export type PackageDryRunScanFinding = (typeof PackageDryRunScanFindingSchema)[inferred];
+
+export const PackageDryRunScanResultItemSchema = type({
+  itemId: "string",
+  jobId: "string",
+  releaseId: "string",
+  packageId: "string",
+  packageName: "string",
+  packageDisplayName: "string",
+  version: "string",
+  status: PackageDryRunScanItemStatusSchema,
+  rawFsUsageCount: "number",
+  fsSafeUsageCount: "number",
+  findings: PackageDryRunScanFindingSchema.array(),
+  errors: "string[]",
+  createdAt: "number",
+  updatedAt: "number",
+  startedAt: "number?",
+  completedAt: "number?",
+});
+export type PackageDryRunScanResultItem = (typeof PackageDryRunScanResultItemSchema)[inferred];
+
+export const ApiV1PackageDryRunScanResultsResponseSchema = type({
+  jobStatus: PackageDryRunScanJobStatusSchema,
+  jobDone: "boolean",
+  partial: "boolean",
+  items: PackageDryRunScanResultItemSchema.array(),
+  nextCursor: "string|null",
+  done: "boolean",
+});
+export type ApiV1PackageDryRunScanResultsResponse =
+  (typeof ApiV1PackageDryRunScanResultsResponseSchema)[inferred];
+
 export const PackageReadinessCheckSchema = type({
   id: "string",
   label: "string",

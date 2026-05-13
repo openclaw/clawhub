@@ -72,6 +72,13 @@ crons.interval(
   { batchSize: 100 },
 );
 
+crons.interval(
+  "package-dry-run-scan-prune",
+  { hours: 1 },
+  internal.packageDryRunScans.prunePackageDryRunScansInternal,
+  {},
+);
+
 // Daily re-scan of all active skills at 3am UTC
 crons.daily("vt-daily-rescan", { hourUTC: 3, minuteUTC: 0 }, internal.vt.rescanActiveSkills, {});
 
