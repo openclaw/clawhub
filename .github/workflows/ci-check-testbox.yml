@@ -1,4 +1,4 @@
-name: Blacksmith Testbox
+name: Crabbox Testbox Backend
 
 on:
   workflow_dispatch:
