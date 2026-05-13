@@ -121,9 +121,8 @@ test("skill publishers can create a skill and publish a new version", async ({
   await expect(metadata.getByText("Current version", { exact: true })).toBeVisible();
   await expect(metadata.getByText("v1.0.0", { exact: true })).toBeVisible();
 
-  await page.getByRole("link", { name: "Settings" }).click();
-  await expect(page.getByRole("heading", { name: "Skill settings" })).toBeVisible();
-  await page.getByRole("link", { name: "New Version" }).click();
+  await expect(page.getByRole("link", { name: "Settings" })).toBeVisible();
+  await page.getByRole("link", { name: "New version" }).click();
 
   await expect(page).toHaveURL(/\/skills\/publish\?updateSlug=/);
   await expect(page.locator("#slug")).toHaveValue(slug);
