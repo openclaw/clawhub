@@ -1910,6 +1910,85 @@ export const listPublicPage = query({
   },
 });
 
+export const listAuditPage = query({
+  args: {
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    const numItems = Math.max(1, Math.min(args.paginationOpts.numItems, MAX_PUBLIC_LIST_PAGE_SIZE));
+    const result = await ctx.db
+      .query("packages")
+      .withIndex("by_active_downloads", (q) => q.eq("softDeletedAt", undefined))
+      .order("desc")
+      .paginate({ cursor: args.paginationOpts.cursor, numItems });
+
+    const page = [];
+    const membershipCache = new Map<string, Promise<boolean>>();
+    for (const pkg of result.page) {
+      if (pkg.family === "skill") continue;
+      if (!(await canViewerReadPackage(ctx, pkg, undefined, membershipCache))) continue;
+
+      const owner = toPublicPublisher(
+        await getOwnerPublisher(ctx, {
+          ownerPublisherId: pkg.ownerPublisherId,
+          ownerUserId: pkg.ownerUserId,
+        }),
+      );
+      const latestRelease = pkg.latestReleaseId ? await ctx.db.get(pkg.latestReleaseId) : null;
+      page.push({
+        kind: "plugin" as const,
+        package: {
+          name: pkg.name,
+          displayName: pkg.displayName,
+          family: pkg.family,
+          channel: pkg.channel,
+          isOfficial: pkg.isOfficial,
+          summary: pkg.summary ?? null,
+          ownerHandle: owner?.handle ?? null,
+          createdAt: pkg.createdAt,
+          updatedAt: pkg.updatedAt,
+          latestVersion: pkg.latestVersionSummary?.version ?? null,
+          stats: pkg.stats,
+          verificationTier: pkg.verification?.tier ?? null,
+        },
+        owner,
+        latestRelease:
+          latestRelease && !latestRelease.softDeletedAt
+            ? {
+                version: latestRelease.version,
+                createdAt: latestRelease.createdAt,
+                vtAnalysis: latestRelease.vtAnalysis,
+                llmAnalysis: latestRelease.llmAnalysis,
+                staticScan: latestRelease.staticScan
+                  ? {
+                      status: latestRelease.staticScan.status,
+                      reasonCodes: latestRelease.staticScan.reasonCodes,
+                      findings: (latestRelease.staticScan.findings ?? []).map((finding) => ({
+                        code: finding.code,
+                        severity: finding.severity,
+                        file: finding.file,
+                        line: finding.line,
+                        message: finding.message,
+                        evidence: "",
+                      })),
+                      summary: latestRelease.staticScan.summary,
+                      engineVersion: latestRelease.staticScan.engineVersion,
+                      checkedAt: latestRelease.staticScan.checkedAt,
+                    }
+                  : null,
+              }
+            : null,
+      });
+    }
+
+    return {
+      page,
+      isDone: result.isDone,
+      continueCursor: result.isDone ? "" : result.continueCursor,
+    };
+  },
+});
+
 export const listPageForViewerInternal = internalQuery({
   args: {
     family: v.optional(

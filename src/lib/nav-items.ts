@@ -127,14 +127,6 @@ export const SECONDARY_NAV_ITEMS: NavItem[] = [
     soulModeHide: true,
   },
   {
-    label: "About",
-    to: "/about",
-    authRequired: false,
-    staffOnly: false,
-    soulModeOnly: false,
-    soulModeHide: true,
-  },
-  {
     label: "Docs",
     href: "https://documentation.openclaw.ai/clawhub/",
     authRequired: false,
@@ -170,6 +162,7 @@ export const FOOTER_NAV_SECTIONS: FooterNavSection[] = [
     items: [
       { kind: "link", label: "Skills", to: "/skills", search: SKILLS_SEARCH },
       { kind: "link", label: "Plugins", to: "/plugins" },
+      { kind: "link", label: "Audits", to: "/audits", search: { type: undefined } },
       {
         kind: "link",
         label: "Souls",

@@ -18,8 +18,8 @@ import { Route as PublishPluginRouteImport } from './routes/publish-plugin'
 import { Route as ManagementRouteImport } from './routes/management'
 import { Route as ImportRouteImport } from './routes/import'
 import { Route as DashboardRouteImport } from './routes/dashboard'
+import { Route as AuditsRouteImport } from './routes/audits'
 import { Route as AdminRouteImport } from './routes/admin'
-import { Route as AboutRouteImport } from './routes/about'
 import { Route as SlugRouteImport } from './routes/$slug'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as UsersIndexRouteImport } from './routes/users/index'
@@ -96,14 +96,14 @@ const DashboardRoute = DashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuditsRoute = AuditsRouteImport.update({
+  id: '/audits',
+  path: '/audits',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminRoute = AdminRouteImport.update({
   id: '/admin',
   path: '/admin',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AboutRoute = AboutRouteImport.update({
-  id: '/about',
-  path: '/about',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SlugRoute = SlugRouteImport.update({
@@ -264,8 +264,8 @@ const PluginsScopeNameSecurityScannerRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/$slug': typeof SlugRoute
-  '/about': typeof AboutRoute
   '/admin': typeof AdminRoute
+  '/audits': typeof AuditsRoute
   '/dashboard': typeof DashboardRoute
   '/import': typeof ImportRoute
   '/management': typeof ManagementRoute
@@ -307,8 +307,8 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/$slug': typeof SlugRoute
-  '/about': typeof AboutRoute
   '/admin': typeof AdminRoute
+  '/audits': typeof AuditsRoute
   '/dashboard': typeof DashboardRoute
   '/import': typeof ImportRoute
   '/management': typeof ManagementRoute
@@ -351,8 +351,8 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/$slug': typeof SlugRoute
-  '/about': typeof AboutRoute
   '/admin': typeof AdminRoute
+  '/audits': typeof AuditsRoute
   '/dashboard': typeof DashboardRoute
   '/import': typeof ImportRoute
   '/management': typeof ManagementRoute
@@ -396,8 +396,8 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/$slug'
-    | '/about'
     | '/admin'
+    | '/audits'
     | '/dashboard'
     | '/import'
     | '/management'
@@ -439,8 +439,8 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/$slug'
-    | '/about'
     | '/admin'
+    | '/audits'
     | '/dashboard'
     | '/import'
     | '/management'
@@ -482,8 +482,8 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/$slug'
-    | '/about'
     | '/admin'
+    | '/audits'
     | '/dashboard'
     | '/import'
     | '/management'
@@ -526,8 +526,8 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   SlugRoute: typeof SlugRoute
-  AboutRoute: typeof AboutRoute
   AdminRoute: typeof AdminRoute
+  AuditsRoute: typeof AuditsRoute
   DashboardRoute: typeof DashboardRoute
   ImportRoute: typeof ImportRoute
   ManagementRoute: typeof ManagementRoute
@@ -626,18 +626,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/audits': {
+      id: '/audits'
+      path: '/audits'
+      fullPath: '/audits'
+      preLoaderRoute: typeof AuditsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin': {
       id: '/admin'
       path: '/admin'
       fullPath: '/admin'
       preLoaderRoute: typeof AdminRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/about': {
-      id: '/about'
-      path: '/about'
-      fullPath: '/about'
-      preLoaderRoute: typeof AboutRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/$slug': {
@@ -897,8 +897,8 @@ const PluginsScopeNameRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   SlugRoute: SlugRoute,
-  AboutRoute: AboutRoute,
   AdminRoute: AdminRoute,
+  AuditsRoute: AuditsRoute,
   DashboardRoute: DashboardRoute,
   ImportRoute: ImportRoute,
   ManagementRoute: ManagementRoute,

@@ -1,8 +1,8 @@
-import { Building2, FileText, Package, Plug, User } from "lucide-react";
+import { MARKETPLACE_KIND_ICONS, type MarketplaceIconKind } from "../lib/marketplaceIcons";
 import { parseSkillIcon } from "../lib/skillIcon";
 
 type MarketplaceIconProps = {
-  kind: "skill" | "plugin" | "soul" | "user" | "org";
+  kind: MarketplaceIconKind;
   label: string;
   imageUrl?: string | null;
   /**
@@ -28,21 +28,6 @@ function hashTone(label: string) {
   return TONES[sum % TONES.length] ?? TONES[0];
 }
 
-function getIcon(kind: MarketplaceIconProps["kind"]) {
-  switch (kind) {
-    case "plugin":
-      return Plug;
-    case "soul":
-      return FileText;
-    case "user":
-      return User;
-    case "org":
-      return Building2;
-    default:
-      return Package;
-  }
-}
-
 export function MarketplaceIcon({
   kind,
   label,
@@ -51,7 +36,7 @@ export function MarketplaceIcon({
   size = "sm",
 }: MarketplaceIconProps) {
   const customIcon = kind === "skill" ? parseSkillIcon(icon) : null;
-  const Icon = getIcon(kind);
+  const Icon = MARKETPLACE_KIND_ICONS[kind];
   const tone = hashTone(label);
 
   return (

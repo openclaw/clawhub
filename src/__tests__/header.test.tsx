@@ -231,8 +231,8 @@ describe("Header", () => {
     expect(screen.getAllByText("Skills")).toHaveLength(1);
     expect(screen.getAllByText("Plugins")).toHaveLength(1);
     expect(screen.getAllByText("Publishers")).toHaveLength(1);
-    expect(screen.getAllByText("About")).toHaveLength(1);
     expect(screen.getAllByText("Docs")).toHaveLength(1);
+    expect(screen.queryByText("About")).toBeNull();
     expect(screen.queryByText("Dashboard")).toBeNull();
     expect(screen.queryByText("Manage")).toBeNull();
     expect(screen.getByPlaceholderText("Search skills and plugins")).toBeTruthy();
@@ -246,8 +246,8 @@ describe("Header", () => {
     expect(screen.getAllByText("Skills")).toHaveLength(2);
     expect(screen.getAllByText("Plugins")).toHaveLength(2);
     expect(screen.getAllByText("Publishers")).toHaveLength(2);
-    expect(screen.getAllByText("About")).toHaveLength(2);
     expect(screen.getAllByText("Docs")).toHaveLength(2);
+    expect(screen.queryByText("About")).toBeNull();
   });
 
   it("renders the GitHub sign-in button with desktop and compact labels", () => {
@@ -410,7 +410,7 @@ describe("Header", () => {
       .filter((label): label is string => Boolean(label));
 
     expect(labels.slice(0, 2)).toEqual(["Home", "Skills"]);
-    expect(labels.slice(3, 6)).toEqual(["Publishers", "About", "Docs"]);
+    expect(labels.slice(3, 5)).toEqual(["Publishers", "Docs"]);
   });
 
   it("links starred skills from the signed-in avatar menu", () => {

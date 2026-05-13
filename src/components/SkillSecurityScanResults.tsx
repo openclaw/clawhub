@@ -207,8 +207,14 @@ function highestVisibleFindingSeverityRank(analysis?: LlmAnalysis | null) {
 export function getClawScanDisplayStatus(analysis?: LlmAnalysis | null) {
   const status = (analysis?.verdict ?? analysis?.status)?.trim().toLowerCase();
   if (!status) return "pending";
-  if (status !== "suspicious") return status;
-  return highestVisibleFindingSeverityRank(analysis) >= severityRank("high") ? "warn" : "review";
+  const highestSeverity = highestVisibleFindingSeverityRank(analysis);
+  if (status === "suspicious") {
+    return highestSeverity >= severityRank("high") ? "warn" : "review";
+  }
+  if ((status === "clean" || status === "benign") && highestSeverity >= severityRank("medium")) {
+    return "review";
+  }
+  return status;
 }
 
 export function getClawScanRiskLevel(analysis?: LlmAnalysis | null): ClawScanRiskLevel | null {
@@ -229,7 +235,7 @@ function getVtEngineStats(analysis?: VtAnalysis | null) {
   return analysis?.engineStats ?? analysis?.metadata?.stats;
 }
 
-function isVtAiOnlyAnalysis(analysis?: VtAnalysis | null) {
+export function isVirusTotalAiOnlyAnalysis(analysis?: VtAnalysis | null) {
   const scanner = analysis?.scanner?.trim().toLowerCase();
   const source = analysis?.source?.trim().toLowerCase();
   return scanner === "code_insight" || source === "palm" || source?.includes("code insight");
@@ -243,7 +249,7 @@ export function getVirusTotalDisplayStatus(analysis?: VtAnalysis | null) {
     return "benign";
   }
 
-  if (isVtAiOnlyAnalysis(analysis)) return "advisory";
+  if (isVirusTotalAiOnlyAnalysis(analysis)) return "benign";
   return analysis?.verdict ?? analysis?.status ?? "pending";
 }
 
@@ -284,12 +290,6 @@ function getDimensionIcon(rating: string) {
   }
 }
 
-const AGENTIC_RISK_STATUS_LABELS: Record<AgenticRiskStatus, string> = {
-  none: "No evidence",
-  note: "Note",
-  concern: "Concern",
-};
-
 const RISK_LEVEL_BADGE_META: Record<
   ClawScanRiskLevel,
   { label: string; level: number; variant: BadgeProps["variant"] }
@@ -313,13 +313,6 @@ export function RiskLevelBadge({ level }: { level: ClawScanRiskLevel }) {
   );
 }
 
-function getRiskStatusVariant(status: AgenticRiskStatus): BadgeProps["variant"] {
-  if (status === "none") return "success";
-  if (status === "note") return "review";
-  if (status === "concern") return "warning";
-  return "compact";
-}
-
 function getVisibleAgenticRiskFindings(analysis?: LlmAnalysis | null) {
   return (analysis?.agenticRiskFindings ?? []).filter(isVisibleAgenticRiskFinding);
 }
@@ -333,8 +326,24 @@ export function hasClawScanRiskReview(analysis?: LlmAnalysis | null) {
   return getVisibleClawScanFindingCount(analysis) > 0;
 }
 
-function getFindingBadgeLabel(finding: LlmAgenticRiskFinding) {
-  return AGENTIC_RISK_STATUS_LABELS[finding.status] ?? finding.status;
+function getFindingSeverityBadgeMeta(severity: string): {
+  label: string;
+  variant: BadgeProps["variant"];
+} {
+  switch (severity.trim().toLowerCase()) {
+    case "critical":
+      return { label: "Critical", variant: "destructive" };
+    case "high":
+      return { label: "High", variant: "destructive" };
+    case "medium":
+      return { label: "Medium", variant: "warning" };
+    case "low":
+      return { label: "Low", variant: "review" };
+    case "info":
+      return { label: "Info", variant: "compact" };
+    default:
+      return { label: severity || "Finding", variant: "compact" };
+  }
 }
 
 function getOwaspAgenticSkillsHref(categoryId: string) {
@@ -353,6 +362,7 @@ function AgenticRiskFindingCard({
   const evidence = finding.evidence;
   if (!evidence) return null;
   const categoryHref = getOwaspAgenticSkillsHref(finding.categoryId);
+  const severityBadge = getFindingSeverityBadgeMeta(finding.severity);
 
   return (
     <div
@@ -361,9 +371,7 @@ function AgenticRiskFindingCard({
     >
       <div className="agentic-risk-finding-header">
         <div className="agentic-risk-finding-badges">
-          <Badge variant={getRiskStatusVariant(finding.status)}>
-            {getFindingBadgeLabel(finding)}
-          </Badge>
+          <Badge variant={severityBadge.variant}>{severityBadge.label}</Badge>
         </div>
         {categoryHref ? (
           <a

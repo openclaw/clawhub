@@ -90,7 +90,8 @@ Public pages show scan summaries when available. Content that is held, hidden,
 or blocked may disappear from public search and install flows while remaining
 visible to the owner for diagnostics.
 
-See [Security + moderation](./security.md) and
+See [Security Audits](./security-audits.md),
+[Moderation and Account Safety](./moderation.md), and
 [Acceptable usage](./acceptable-usage.md).
 
 ## API access

@@ -892,7 +892,8 @@ const packages = defineTable({
   .index("by_family_channel_updated", ["family", "channel", "updatedAt"])
   .index("by_family_official_updated", ["family", "isOfficial", "updatedAt"])
   .index("by_runtime_id", ["runtimeId"])
-  .index("by_active_updated", ["softDeletedAt", "updatedAt"]);
+  .index("by_active_updated", ["softDeletedAt", "updatedAt"])
+  .index("by_active_downloads", ["softDeletedAt", "stats.downloads", "updatedAt"]);
 
 const packageReleases = defineTable({
   packageId: v.id("packages"),

@@ -4407,6 +4407,64 @@ export const listPublicTrendingPage = query({
   },
 });
 
+export const listAuditPage = query({
+  args: {
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    const { numItems, cursor } = normalizePublicListPagination(args.paginationOpts);
+    const result = await ctx.db
+      .query("skillSearchDigest")
+      .withIndex("by_active_stats_downloads", (q) => q.eq("softDeletedAt", undefined))
+      .order("desc")
+      .paginate({ cursor, numItems });
+
+    const page = [];
+    for (const digest of result.page) {
+      const entry = buildPublicSkillEntryFromDigest(digest);
+      if (!entry) continue;
+      const latestVersion = digest.latestVersionId
+        ? await ctx.db.get(digest.latestVersionId)
+        : null;
+      page.push({
+        kind: "skill" as const,
+        skill: entry.skill,
+        ownerHandle: entry.ownerHandle,
+        owner: entry.owner,
+        latestVersion: latestVersion
+          ? {
+              version: latestVersion.version,
+              createdAt: latestVersion.createdAt,
+              vtAnalysis: latestVersion.vtAnalysis,
+              llmAnalysis: latestVersion.llmAnalysis,
+              staticScan: latestVersion.staticScan
+                ? {
+                    status: latestVersion.staticScan.status,
+                    reasonCodes: latestVersion.staticScan.reasonCodes,
+                    findings: (latestVersion.staticScan.findings ?? []).map((finding) => ({
+                      code: finding.code,
+                      severity: finding.severity,
+                      file: finding.file,
+                      line: finding.line,
+                      message: finding.message,
+                      evidence: "",
+                    })),
+                    summary: latestVersion.staticScan.summary,
+                    engineVersion: latestVersion.staticScan.engineVersion,
+                    checkedAt: latestVersion.staticScan.checkedAt,
+                  }
+                : null,
+            }
+          : null,
+      });
+    }
+
+    return result.isDone
+      ? { page, hasMore: false, nextCursor: null }
+      : { page, hasMore: true, nextCursor: result.continueCursor };
+  },
+});
+
 function buildPublicSkillEntryFromDigest(
   digest: Doc<"skillSearchDigest">,
 ): PublicSkillEntry | null {

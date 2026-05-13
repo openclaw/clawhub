@@ -179,6 +179,21 @@ describe("SkillHeader", () => {
     expect(screen.getByRole("button", { name: "Report" })).toBeTruthy();
   });
 
+  it("does not render a separate warning banner for scanner warnings", () => {
+    renderHeader({
+      modInfo: {
+        isPendingScan: false,
+        isMalwareBlocked: false,
+        isSuspicious: true,
+        isHiddenByMod: false,
+        isRemoved: false,
+      },
+    });
+
+    expect(screen.queryByText("Security warning — review recommended")).toBeNull();
+    expect(screen.queryByText(/Review the scan results before using/i)).toBeNull();
+  });
+
   it("shows the latest version description instead of the short catalog summary", () => {
     renderHeader({
       latestVersion: {

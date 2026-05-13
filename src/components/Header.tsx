@@ -3,27 +3,20 @@ import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import {
   ArrowRight,
   ChevronDown,
-  Ghost,
   LayoutDashboard,
   Menu,
   Monitor,
   Moon,
-  Plug,
   Search,
   Settings,
   Star,
   Sun,
-  Wrench,
 } from "lucide-react";
-import { type ComponentType, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { getUserFacingAuthError } from "../lib/authErrorMessage";
 import { gravatarUrl } from "../lib/gravatar";
-import {
-  filterNavItems,
-  type NavIconName,
-  PRIMARY_NAV_ITEMS,
-  SECONDARY_NAV_ITEMS,
-} from "../lib/nav-items";
+import { NAV_ICONS } from "../lib/marketplaceIcons";
+import { filterNavItems, PRIMARY_NAV_ITEMS, SECONDARY_NAV_ITEMS } from "../lib/nav-items";
 import { isModerator } from "../lib/roles";
 import { getClawHubSiteUrl, getSiteMode, getSiteName } from "../lib/site";
 import { applyTheme, useThemeMode } from "../lib/theme";
@@ -51,12 +44,6 @@ import {
   SheetTitle,
 } from "./ui/sheet";
 import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
-
-const NAV_ICONS: Record<NavIconName, ComponentType<{ size?: number; className?: string }>> = {
-  wrench: Wrench,
-  plug: Plug,
-  ghost: Ghost,
-};
 
 const THEME_MODE_SEQUENCE: Array<"system" | "light" | "dark"> = ["system", "light", "dark"];
 

@@ -10,6 +10,7 @@ import {
   getVisibleClawScanFindingCount,
   getVirusTotalDisplayStatus,
   hasClawScanRiskReview,
+  isVirusTotalAiOnlyAnalysis,
   RiskLevelBadge,
   ScanResultBadge,
   type LlmAnalysis,
@@ -158,11 +159,24 @@ function SecurityScannerHero({ label, props }: { label: string; props: SecurityS
 function getVisibleFindingCount(props: SecurityScannerPageProps) {
   if (props.scanner === "static-analysis") return props.staticScan?.findings?.length ?? 0;
   if (props.scanner === "clawscan") return getVisibleClawScanFindingCount(props.llmAnalysis);
+  if (props.scanner === "virustotal" && getVirusTotalAdvisoryText(props.vtAnalysis)) return 1;
   return 0;
+}
+
+function getVirusTotalAdvisoryText(analysis?: VtAnalysis | null) {
+  if (!isVirusTotalAiOnlyAnalysis(analysis)) return null;
+  const text = analysis?.analysis?.trim();
+  if (!text) return null;
+  return text.replace(/^Type:\s*.+?\s+Name:\s*.+?\s+Version:\s*\S+\s+/i, "").trim();
 }
 
 function getOverviewCopy(props: SecurityScannerPageProps) {
   if (props.scanner === "virustotal") {
+    if (isVirusTotalAiOnlyAnalysis(props.vtAnalysis)) {
+      return [
+        "VirusTotal did not report multi-engine malware detections for this artifact. AI-only context from VirusTotal is treated as advisory and does not require user action.",
+      ];
+    }
     return [
       props.vtAnalysis?.analysis ??
         "No VirusTotal analysis has been recorded yet. File reputation checks will appear here once the artifact hash has been scanned.",
@@ -234,10 +248,14 @@ function SecurityScannerReport(props: SecurityScannerPageProps) {
   );
   const sourceCommit = formatValue(props.source?.commit ?? props.source?.sha);
   const riskAnalysis =
-    props.llmAnalysis && hasClawScanRiskReview(props.llmAnalysis) ? props.llmAnalysis : null;
+    props.scanner === "clawscan" && props.llmAnalysis && hasClawScanRiskReview(props.llmAnalysis)
+      ? props.llmAnalysis
+      : null;
   const riskLevel = props.scanner === "clawscan" ? getClawScanRiskLevel(props.llmAnalysis) : null;
+  const vtAdvisoryText = getVirusTotalAdvisoryText(props.vtAnalysis);
   const visibleFindingCount = getVisibleFindingCount(props);
   const overviewCopy = getOverviewCopy(props).filter(Boolean);
+  const showOverview = !(props.scanner === "virustotal" && vtAdvisoryText);
   const showPublisherNotePrompt =
     props.scanner === "clawscan" &&
     props.canManageArtifact &&
@@ -255,18 +273,20 @@ function SecurityScannerReport(props: SecurityScannerPageProps) {
 
         <div className="security-report-layout">
           <div className="security-report-main">
-            <section className="security-report-panel" aria-labelledby="overview-heading">
-              <div className="security-report-panel-header">
-                <h2 id="overview-heading" className="skill-install-panel-title">
-                  Overview
-                </h2>
-              </div>
-              <div className="security-report-overview-body">
-                {overviewCopy.map((copy, index) => (
-                  <p key={`${props.scanner}-overview-${index}`}>{copy}</p>
-                ))}
-              </div>
-            </section>
+            {showOverview ? (
+              <section className="security-report-panel" aria-labelledby="overview-heading">
+                <div className="security-report-panel-header">
+                  <h2 id="overview-heading" className="skill-install-panel-title">
+                    Overview
+                  </h2>
+                </div>
+                <div className="security-report-overview-body">
+                  {overviewCopy.map((copy, index) => (
+                    <p key={`${props.scanner}-overview-${index}`}>{copy}</p>
+                  ))}
+                </div>
+              </section>
+            ) : null}
 
             {props.scanner === "clawscan" ? (
               <PublisherClawScanNote note={props.clawScanNote} />
@@ -287,6 +307,21 @@ function SecurityScannerReport(props: SecurityScannerPageProps) {
                     />
                   ) : null}
                   <ClawScanRiskReview analysis={riskAnalysis} showTitle={false} />
+                </div>
+              </section>
+            ) : null}
+
+            {props.scanner === "virustotal" && vtAdvisoryText ? (
+              <section className="security-report-panel" aria-labelledby="vt-advisory-heading">
+                <div className="security-report-panel-header">
+                  <h2 id="vt-advisory-heading" className="skill-install-panel-title">
+                    Findings ({visibleFindingCount})
+                  </h2>
+                </div>
+                <div className="security-report-panel-body">
+                  <div className="vt-advisory-finding">
+                    <p>{vtAdvisoryText}</p>
+                  </div>
                 </div>
               </section>
             ) : null}

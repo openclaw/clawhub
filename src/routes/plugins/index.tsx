@@ -297,7 +297,7 @@ function PluginsIndex() {
   const handleCategoryChange = (slug: string | undefined) => {
     const category = slug && isPluginCategorySlug(slug) ? slug : undefined;
     void navigate({
-      search: (prev) => ({
+      search: (prev: PluginSearchState) => ({
         ...prev,
         cursor: undefined,
         family: undefined,
@@ -335,7 +335,7 @@ function PluginsIndex() {
 
   const handleClear = () => {
     void navigate({
-      search: (prev) => ({
+      search: (prev: PluginSearchState) => ({
         ...prev,
         cursor: undefined,
         family: undefined,

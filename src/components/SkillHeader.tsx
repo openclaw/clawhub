@@ -157,16 +157,6 @@ export function SkillHeader({
             </p>
           </div>
         </div>
-      ) : modInfo?.isSuspicious ? (
-        <div className="pending-banner pending-banner-warning">
-          <div className="pending-banner-content">
-            <strong>Security warning — review recommended</strong>
-            <p>
-              ClawHub Security found sensitive or high-impact capabilities. Review the scan results
-              before using.
-            </p>
-          </div>
-        </div>
       ) : modInfo?.isRemoved ? (
         <div className="pending-banner pending-banner-blocked">
           <div className="pending-banner-content">

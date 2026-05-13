@@ -257,6 +257,40 @@ describe("SecurityScanResults static guidance", () => {
     expect(screen.getByText("Low")).toBeTruthy();
   });
 
+  it("promotes clean ClawScan scans with medium-or-higher visible findings to review", () => {
+    render(
+      <SecurityScanResults
+        llmAnalysis={{
+          status: "clean",
+          verdict: "benign",
+          summary: "The skill is mostly safe, but one permission deserves review.",
+          checkedAt: Date.now(),
+          agenticRiskFindings: [
+            {
+              categoryId: "ASI03",
+              categoryLabel: "Identity and Privilege Abuse",
+              riskBucket: "permission_boundary",
+              status: "note",
+              severity: "medium",
+              confidence: "medium",
+              evidence: {
+                path: "metadata",
+                snippet: "requires.env: TODOIST_API_TOKEN",
+                explanation: "The token is expected, but broad account access is still material.",
+              },
+              userImpact: "Installing the skill gives it account-level Todoist access.",
+              recommendation: "Review whether this account access is expected before install.",
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Review")).toBeTruthy();
+    expect(screen.getAllByText("Medium").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Pass")).toBeNull();
+  });
+
   it("shows review and medium risk for medium-severity ClawScan findings", () => {
     render(
       <SecurityScanResults
@@ -287,7 +321,10 @@ describe("SecurityScanResults static guidance", () => {
     );
 
     expect(screen.getByText("Review")).toBeTruthy();
-    expect(screen.getByText("Medium")).toBeTruthy();
+    expect(screen.getAllByText("Medium").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: /The skill needs context/i }));
+    expect(screen.getAllByText("Medium").length).toBeGreaterThan(1);
+    expect(screen.queryByText("Concern")).toBeNull();
     expect(screen.queryByText("Warn")).toBeNull();
   });
 
@@ -297,7 +334,7 @@ describe("SecurityScanResults static guidance", () => {
     fireEvent.click(screen.getByRole("button", { name: /Potential concern/i }));
 
     expect(screen.getByText("Review")).toBeTruthy();
-    expect(screen.getByText("Low")).toBeTruthy();
+    expect(screen.getAllByText("Low").length).toBeGreaterThan(0);
     expect(screen.getByText("ASI03: Identity and Privilege Abuse")).toBeTruthy();
     expect(screen.queryByText("ASI02: Tool Misuse and Exploitation")).toBeNull();
     expect(screen.queryByText("delete everything")).toBeNull();
@@ -457,6 +494,7 @@ describe("SecurityScanResults static guidance", () => {
           source: "VirusTotal",
           checkedAt: Date.now(),
         }}
+        llmAnalysis={clawScanAnalysis}
       />,
     );
 
@@ -466,8 +504,41 @@ describe("SecurityScanResults static guidance", () => {
     expect(screen.getByText("No known malicious reputation signals were found.")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Scan Metadata" })).toBeTruthy();
     expect(screen.getByText("abc123")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: /Findings/i })).toBeNull();
+    expect(screen.queryByText("ASI03: Identity and Privilege Abuse")).toBeNull();
     expect(screen.queryByText("Scanner verdict")).toBeNull();
     expect(screen.queryByText("Artifact")).toBeNull();
+  });
+
+  it("shows neutral VirusTotal summary and advisory paragraph for AI-only context", () => {
+    render(
+      <SecurityScannerPage
+        scanner="virustotal"
+        entity={{
+          kind: "skill",
+          title: "SkillScan",
+          name: "skillscan",
+          version: "1.1.6",
+          detailPath: "/tokauthai/skillscan",
+        }}
+        sha256hash="abc123"
+        vtAnalysis={{
+          status: "suspicious",
+          analysis: "Type: OpenClaw Skill Name: skillscan Version: 1.1.6 raw AI context",
+          source: "palm",
+          checkedAt: Date.now(),
+        }}
+        llmAnalysis={clawScanAnalysis}
+      />,
+    );
+
+    expect(screen.getByText(/Audited by VirusTotal/i)).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Overview" })).toBeNull();
+    expect(screen.queryByText(/multi-engine malware detections/i)).toBeNull();
+    expect(screen.getByRole("heading", { name: "Findings (1)" })).toBeTruthy();
+    expect(screen.queryByText("Advisory")).toBeNull();
+    expect(screen.getByText(/raw AI context/i)).toBeTruthy();
+    expect(screen.queryByText(/Type: OpenClaw Skill Name/i)).toBeNull();
   });
 
   it("shows static analysis reports in the shared scanner report shell", () => {

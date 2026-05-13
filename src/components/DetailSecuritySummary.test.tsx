@@ -164,6 +164,33 @@ describe("DetailSecuritySummary", () => {
     expect(screen.queryByText("Benign")).toBeNull();
   });
 
+  it("renders VirusTotal AI-only advisory scans as pass", () => {
+    render(
+      <DetailSecuritySummary
+        scannerBasePath="/tokauthai/skillscan/security"
+        vtAnalysis={{
+          status: "suspicious",
+          source: "VirusTotal Code Insight",
+          scanner: "code_insight",
+          analysis: "AI-only advisory context.",
+          checkedAt: 1,
+        }}
+        llmAnalysis={{ status: "clean", checkedAt: 1 }}
+        staticScan={{
+          status: "clean",
+          reasonCodes: [],
+          findings: [],
+          summary: "Clean.",
+          engineVersion: "v1",
+          checkedAt: 1,
+        }}
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: "VirusTotal: Pass" })).toBeTruthy();
+    expect(screen.queryByText("Advisory")).toBeNull();
+  });
+
   it("shows static suspicious as review without rolling it up to suspicious", () => {
     render(
       <DetailSecuritySummary
