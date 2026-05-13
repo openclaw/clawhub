@@ -3,8 +3,7 @@ import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx } from "./_generated/server";
 import { internalMutation as rawInternalMutation } from "./_generated/server";
-import { action, internalAction, internalMutation } from "./functions";
-import { requireUserFromAction } from "./lib/access";
+import { internalAction, internalMutation } from "./functions";
 import { EMBEDDING_DIMENSIONS } from "./lib/embeddings";
 import { normalizePackageName } from "./lib/packageRegistry";
 import { ensurePersonalPublisherForUser } from "./lib/publishers";
@@ -836,9 +835,14 @@ export const seedNixSkills: ReturnType<typeof internalAction> = internalAction({
   handler: seedNixSkillsHandler,
 });
 
-export async function seedCurrentUserFixturesHandler(ctx: ActionCtx, args: { reset?: boolean }) {
+type SeedCurrentUserFixturesArgs = {
+  reset?: boolean;
+  ownerUserId: Id<"users">;
+};
+
+async function seedCurrentUserFixturesHandler(ctx: ActionCtx, args: SeedCurrentUserFixturesArgs) {
   assertDevSeedAllowed();
-  const { userId, user } = await requireUserFromAction(ctx);
+  const userId = args.ownerUserId;
   const skillSlugs: string[] = [];
   const packageNames: string[] = [];
   const results: Array<Record<string, unknown> & { slug: string }> = [];
@@ -937,7 +941,6 @@ export async function seedCurrentUserFixturesHandler(ctx: ActionCtx, args: { res
   return {
     ok: true,
     ownerUserId: userId,
-    ownerHandle: user.handle ?? user.name ?? null,
     skillCount: skillSlugs.length,
     pluginCount: packageNames.length,
     skillSlugs,
@@ -947,9 +950,10 @@ export async function seedCurrentUserFixturesHandler(ctx: ActionCtx, args: { res
   };
 }
 
-export const seedCurrentUserFixtures: ReturnType<typeof action> = action({
+export const seedCurrentUserFixtures: ReturnType<typeof internalAction> = internalAction({
   args: {
     reset: v.optional(v.boolean()),
+    ownerUserId: v.id("users"),
   },
   handler: seedCurrentUserFixturesHandler,
 });
