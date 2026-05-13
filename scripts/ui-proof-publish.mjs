@@ -195,6 +195,16 @@ export async function buildUiProofEvidence({ proofDir }) {
       required: false,
       targetPath: path.posix.join(lane.name, "full-run.mp4"),
     });
+    pushArtifact(artifacts, resolvedProofDir, {
+      alt: `${lane.name} full run preview`,
+      kind: "videoPreview",
+      label: `${lane.name} full run preview`,
+      lane: lane.name,
+      path: path.posix.join(lane.name, "full-run.gif"),
+      required: false,
+      targetPath: path.posix.join(lane.name, "full-run.gif"),
+      width: 720,
+    });
   }
 
   return {
@@ -261,6 +271,24 @@ function renderVideoLinks({ evidence, rawBase }) {
   return links.length ? ["Full videos:", ...links, ""].join("\n") : "";
 }
 
+function renderVideoPreviews({ evidence, rawBase }) {
+  const previews = evidence.artifacts.filter((artifact) => artifact.kind === "videoPreview");
+  if (!previews.length) return "";
+  return [
+    "Inline video previews:",
+    "",
+    ...previews.map((artifact) => {
+      const width = Math.min(Number(artifact.width ?? 720) || 720, 900);
+      return [
+        `**${artifact.label}**`,
+        "",
+        `<img src="${artifactUrl(rawBase, artifact)}" width="${width}" alt="${artifact.alt ?? artifact.label}">`,
+        "",
+      ].join("\n");
+    }),
+  ].join("\n");
+}
+
 export function renderUiProofComment({
   artifactRoot,
   artifactUrl: actionsArtifactUrl,
@@ -297,6 +325,8 @@ export function renderUiProofComment({
       ? renderFeatureScreenshots({ evidence, rawBase })
       : renderBeforeAfterScreenshots({ evidence, rawBase });
   if (screenshotSection) lines.push(screenshotSection);
+  const videoPreviews = renderVideoPreviews({ evidence, rawBase });
+  if (videoPreviews) lines.push(videoPreviews);
   const videoLinks = renderVideoLinks({ evidence, rawBase });
   if (videoLinks) lines.push(videoLinks);
   lines.push(

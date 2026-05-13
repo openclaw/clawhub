@@ -73,6 +73,7 @@ That comment includes:
 - the proof mode (`before-after` or `feature`)
 - the `report.md` result summary
 - the most relevant per-step screenshots
+- inline video previews when GIF previews are present
 - links to full-run MP4s
 - links to raw proof files on the artifact branch
 

@@ -69,7 +69,7 @@ instead of posting local paths:
 bun run proof:publish -- --proof-dir .artifacts/clawhub-ui-proof/<timestamp> --target-pr <number>
 ```
 
-`proof:publish` copies the selected screenshots, videos, `summary.json`, and
-`report.md` to the `qa-artifacts` branch, then upserts a marker-backed PR
-comment with inline screenshots and linked MP4s. Use `--dry-run` first when
-drafting or checking the comment body.
+`proof:publish` copies the selected screenshots, video preview GIFs when
+present, MP4s, `summary.json`, and `report.md` to the `qa-artifacts` branch,
+then upserts a marker-backed PR comment with inline screenshots/previews and
+linked MP4s. Use `--dry-run` first when drafting or checking the comment body.

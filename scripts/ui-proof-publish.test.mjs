@@ -26,6 +26,8 @@ async function fixtureProof({ mode = "before-after", status = "pass" } = {}) {
   await fsp.mkdir(path.join(dir, "candidate", "screenshots"), { recursive: true });
   await fsp.writeFile(path.join(dir, "baseline", "screenshots", "skills.png"), "baseline");
   await fsp.writeFile(path.join(dir, "candidate", "screenshots", "skills.png"), "candidate");
+  await fsp.writeFile(path.join(dir, "baseline", "full-run.gif"), "baseline gif");
+  await fsp.writeFile(path.join(dir, "candidate", "full-run.gif"), "candidate gif");
   await fsp.writeFile(path.join(dir, "candidate", "full-run.mp4"), "video");
   await fsp.writeFile(path.join(dir, "report.md"), "# ClawHub UI Proof\nStatus: pass\n");
   await fsp.writeFile(
@@ -128,6 +130,10 @@ describe("ui-proof-publish", () => {
     expect(body).toContain("| baseline skills page | candidate skills page |");
     expect(body).toContain(
       '<img src="https://raw.githubusercontent.com/openclaw/clawhub/qa-artifacts/clawhub-ui-proof/pr-123/run/baseline/skills.png"',
+    );
+    expect(body).toContain("Inline video previews:");
+    expect(body).toContain(
+      '<img src="https://raw.githubusercontent.com/openclaw/clawhub/qa-artifacts/clawhub-ui-proof/pr-123/run/baseline/full-run.gif"',
     );
     expect(body).toContain(
       "[candidate full run](https://raw.githubusercontent.com/openclaw/clawhub/qa-artifacts/clawhub-ui-proof/pr-123/run/candidate/full-run.mp4)",
