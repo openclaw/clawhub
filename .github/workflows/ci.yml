@@ -107,3 +107,27 @@ jobs:
           name: playwright-report
           path: playwright-report/
           if-no-files-found: ignore
+
+  playwright-publish-lifecycle:
+    name: playwright-publish-lifecycle
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Install Playwright browsers
+        run: bunx playwright install --with-deps chromium
+
+      - name: Skill publish lifecycle e2e
+        run: bun run test:pw:publish-lifecycle
+
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-publish-lifecycle-report
+          path: playwright-report/
+          if-no-files-found: ignore

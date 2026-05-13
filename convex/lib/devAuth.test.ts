@@ -24,11 +24,29 @@ describe("isLocalDevAuthEnabled", () => {
     ).toBe(true);
   });
 
+  it("allows local Convex site URLs when deployment name is not exposed to functions", () => {
+    expect(
+      isLocalDevAuthEnabled({
+        DEV_AUTH_ENABLED: "1",
+        CONVEX_SITE_URL: "http://127.0.0.1:3211",
+      }),
+    ).toBe(true);
+  });
+
   it("rejects cloud dev deployments even when the dev auth flag is set", () => {
     expect(
       isLocalDevAuthEnabled({
         DEV_AUTH_ENABLED: "1",
         CONVEX_DEPLOYMENT: "dev:clever-rabbit-123",
+      }),
+    ).toBe(false);
+  });
+
+  it("rejects non-local Convex site URLs even when the dev auth flag is set", () => {
+    expect(
+      isLocalDevAuthEnabled({
+        DEV_AUTH_ENABLED: "1",
+        CONVEX_SITE_URL: "https://clawhub.ai",
       }),
     ).toBe(false);
   });
