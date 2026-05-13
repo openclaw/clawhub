@@ -20,6 +20,7 @@ const DEFAULT_PORTS = {
 const DEFAULT_PUBLIC_ENV = {
   VITE_CONVEX_SITE_URL: "https://wry-manatee-359.convex.site",
   VITE_CONVEX_URL: "https://wry-manatee-359.convex.cloud",
+  VITE_ENABLE_DEV_AUTH: "1",
 };
 
 export function parseProofUiArgs(argv = []) {

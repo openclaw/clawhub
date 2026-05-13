@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import type { ClawdisSkillMetadata } from "clawhub-schema";
 import { PLATFORM_SKILL_LICENSE } from "clawhub-schema/licenseConstants";
-import { Download, Flag, Settings, ShieldCheck, Star } from "lucide-react";
+import { Download, Flag, Settings, ShieldCheck, Star, Upload } from "lucide-react";
 import type { ReactNode } from "react";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { getSkillBadges } from "../lib/badges";
@@ -88,6 +88,7 @@ type SkillHeaderProps = {
   cliHelp: string | undefined;
   clawdis: ClawdisSkillMetadata | undefined;
   priorityContent?: ReactNode;
+  newVersionHref?: string | null;
   settingsHref?: string | null;
   children?: ReactNode;
 };
@@ -98,6 +99,7 @@ export function SkillHeader({
   ownerHandle,
   latestVersion,
   modInfo,
+  canManage,
   isAuthenticated,
   isStaff,
   isStarred,
@@ -117,6 +119,7 @@ export function SkillHeader({
   cliHelp,
   clawdis,
   priorityContent,
+  newVersionHref,
   settingsHref,
   children,
 }: SkillHeaderProps) {
@@ -128,8 +131,13 @@ export function SkillHeader({
       ? `${convexSiteUrl}/api/v1/download?slug=${encodeURIComponent(skill.slug)}`
       : null;
   const hasTitleActions = isStaff;
+  const showReportAction = !canManage || isStaff;
   const hasSidebarActions =
-    Boolean(downloadHref) || Boolean(onOpenReport) || Boolean(settingsHref) || hasTitleActions;
+    Boolean(downloadHref) ||
+    showReportAction ||
+    Boolean(newVersionHref) ||
+    Boolean(settingsHref) ||
+    hasTitleActions;
   const badges = getSkillBadges(skill);
   const showHeroMeta = Boolean((forkOf && forkOfHref) || canonicalHref);
   const showTitleBadges = badges.length > 0;
@@ -217,20 +225,30 @@ export function SkillHeader({
                     </a>
                   </Button>
                 ) : null}
-                <SignedInActionTooltip
-                  isAuthenticated={isAuthenticated}
-                  message="You must be signed in to report a skill"
-                >
-                  <Button
-                    variant="outline"
-                    type="button"
-                    className="skill-sidebar-action-button"
-                    onClick={isAuthenticated ? onOpenReport : onRequireSignIn}
+                {showReportAction ? (
+                  <SignedInActionTooltip
+                    isAuthenticated={isAuthenticated}
+                    message="You must be signed in to report a skill"
                   >
-                    <Flag size={14} aria-hidden="true" />
-                    Report
+                    <Button
+                      variant="outline"
+                      type="button"
+                      className="skill-sidebar-action-button"
+                      onClick={isAuthenticated ? onOpenReport : onRequireSignIn}
+                    >
+                      <Flag size={14} aria-hidden="true" />
+                      Report
+                    </Button>
+                  </SignedInActionTooltip>
+                ) : null}
+                {newVersionHref ? (
+                  <Button asChild variant="outline" className="skill-sidebar-action-button">
+                    <a href={newVersionHref}>
+                      <Upload size={14} aria-hidden="true" />
+                      New version
+                    </a>
                   </Button>
-                </SignedInActionTooltip>
+                ) : null}
                 {settingsHref ? (
                   <Button asChild variant="outline" className="skill-sidebar-action-button">
                     <a href={settingsHref}>

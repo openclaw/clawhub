@@ -1,6 +1,6 @@
 import { createFileRoute, Link, Outlet, redirect, useRouterState } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
-import { AlertTriangle, Download, Settings } from "lucide-react";
+import { AlertTriangle, Download, Settings, Upload } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { api } from "../../../convex/_generated/api";
 import { DetailHero, DetailPageShell } from "../../components/DetailPageShell";
@@ -324,13 +324,13 @@ export function PluginDetailPage({
 }) {
   const { detail, version, readme, rateLimited } = loaderData;
   const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const { isAuthenticated } = useAuthStatus();
+  const { me } = useAuthStatus();
   const isNestedPluginRoute = pathname.includes("/security/") || pathname.endsWith("/settings");
   const settingsCandidateNames = getOpenClawPackageCandidateNames(name);
   const settingsLookupName = detail.package?.name ?? settingsCandidateNames[0] ?? name;
   const settings = useQuery(
     api.packages.getClawScanNoteSettings,
-    isAuthenticated && !isNestedPluginRoute && detail.package
+    me && !isNestedPluginRoute && detail.package
       ? { name: settingsLookupName, candidateNames: settingsCandidateNames }
       : "skip",
   );
@@ -402,6 +402,13 @@ export function PluginDetailPage({
       ? getPackageArtifactDownloadPath(pkg.name, latestRelease.version)
       : getPackageDownloadPath(pkg.name, pkg.latestVersion);
   const settingsHref = settings ? `${buildPluginDetailHref(pkg.name)}/settings` : null;
+  const newVersionHref = settings
+    ? `/plugins/publish?${new URLSearchParams({
+        ...(owner?.handle ? { ownerHandle: owner.handle } : {}),
+        name: pkg.name,
+        displayName: pkg.displayName,
+      }).toString()}`
+    : null;
   const capEntries = capabilities
     ? Object.entries(capabilities).filter(
         ([, v]) =>
@@ -652,13 +659,21 @@ export function PluginDetailPage({
                 />
               ) : null}
 
-              {(pkg.latestVersion && !isDownloadBlocked) || settingsHref ? (
+              {(pkg.latestVersion && !isDownloadBlocked) || newVersionHref || settingsHref ? (
                 <div className="skill-sidebar-actions">
                   {pkg.latestVersion && !isDownloadBlocked ? (
                     <Button asChild variant="outline" className="skill-sidebar-action-button">
                       <a href={downloadPath}>
                         <Download size={14} aria-hidden="true" />
                         Download
+                      </a>
+                    </Button>
+                  ) : null}
+                  {newVersionHref ? (
+                    <Button asChild variant="outline" className="skill-sidebar-action-button">
+                      <a href={newVersionHref}>
+                        <Upload size={14} aria-hidden="true" />
+                        New version
                       </a>
                     </Button>
                   ) : null}

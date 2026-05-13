@@ -278,6 +278,13 @@ export function SkillDetailPage({
     canAccessSettings && skill
       ? `${buildSkillHref(ownerHandle, owner?._id ?? null, skill.slug)}/settings`
       : null;
+  const newVersionHref =
+    canAccessSettings && skill
+      ? `/skills/publish?${new URLSearchParams({
+          updateSlug: skill.slug,
+          ...(ownerHandle ? { ownerHandle } : {}),
+        }).toString()}`
+      : null;
   const canonicalOwnerParam =
     typeof canonicalOwner === "string" ? canonicalOwner.trim().toLowerCase() : null;
   const wantsCanonicalRedirect = Boolean(
@@ -663,6 +670,7 @@ export function SkillDetailPage({
           cliHelp={cliHelp}
           clawdis={clawdis}
           priorityContent={priorityContent}
+          newVersionHref={newVersionHref}
           settingsHref={settingsHref}
         >
           {nixSnippet ? (
