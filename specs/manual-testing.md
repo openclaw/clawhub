@@ -102,23 +102,23 @@ Run against a local preview server:
 bun run test:e2e:local
 ```
 
-Run the PR-facing skill publish lifecycle e2e locally:
+Run the PR-facing authenticated local browser e2es locally:
 
 ```
 bunx playwright install chromium
+bun run test:pw:local-auth
+```
+
+To run only the skill publish lifecycle spec:
+
+```
 bun run test:pw:publish-lifecycle
 ```
 
-For other authenticated local browser specs, reuse the local-auth runner:
-
-```
-bun run test:pw:local-auth -- --project=chromium e2e/<spec>.pw.test.ts
-```
-
 The runner starts an isolated local Convex process, enables dev auth, and runs
-the requested Playwright spec against a local preview build. The lifecycle
-shortcut publishes a new skill as the local owner persona, publishes a second
-version from the skill settings flow, and checks that the latest version plus
-version history update in the UI. Stop any already-running local Convex process
-before running it; the command temporarily moves aside `.env.local` and
-`.convex/local/default`, then restores them afterward.
+the requested Playwright specs under `e2e/local-auth/` against a local preview
+build. The lifecycle spec publishes a new skill as the local owner persona,
+publishes a second version from the skill settings flow, and checks that the
+latest version plus version history update in the UI. Stop any already-running
+local Convex process before running it; the command temporarily moves aside
+`.env.local` and `.convex/local/default`, then restores them afterward.

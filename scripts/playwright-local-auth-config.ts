@@ -1,6 +1,6 @@
 const DEFAULT_CONVEX_URL = "http://127.0.0.1:3210";
 const DEFAULT_CONVEX_SITE_URL = "http://127.0.0.1:3211";
-const DEFAULT_PLAYWRIGHT_ARGS = ["--project=chromium"];
+const DEFAULT_PLAYWRIGHT_ARGS = ["--project=chromium", "e2e/local-auth"];
 
 type RunnerEnv = Record<string, string | undefined>;
 

@@ -108,8 +108,8 @@ jobs:
           path: playwright-report/
           if-no-files-found: ignore
 
-  playwright-publish-lifecycle:
-    name: playwright-publish-lifecycle
+  playwright-local-auth:
+    name: playwright-local-auth
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -121,13 +121,13 @@ jobs:
       - name: Install Playwright browsers
         run: bunx playwright install --with-deps chromium
 
-      - name: Skill publish lifecycle e2e
-        run: bun run test:pw:publish-lifecycle
+      - name: Local-auth browser e2e
+        run: bun run test:pw:local-auth
 
       - name: Upload Playwright report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-publish-lifecycle-report
+          name: playwright-local-auth-report
           path: playwright-report/
           if-no-files-found: ignore

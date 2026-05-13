@@ -26,10 +26,13 @@ describe("playwright local-auth runner config", () => {
     });
   });
 
-  it("passes explicit Playwright args and defaults to chromium", () => {
+  it("passes explicit Playwright args and defaults to the local-auth suite", () => {
     expect(resolveLocalAuthRunnerConfig({}, ["--", "e2e/example.pw.test.ts"])).toMatchObject({
       playwrightArgs: ["e2e/example.pw.test.ts"],
     });
-    expect(resolveLocalAuthRunnerConfig({}).playwrightArgs).toEqual(["--project=chromium"]);
+    expect(resolveLocalAuthRunnerConfig({}).playwrightArgs).toEqual([
+      "--project=chromium",
+      "e2e/local-auth",
+    ]);
   });
 });
