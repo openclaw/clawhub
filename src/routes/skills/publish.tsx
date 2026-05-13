@@ -16,6 +16,7 @@ import { MAX_PUBLISH_FILE_BYTES, MAX_PUBLISH_TOTAL_BYTES } from "../../../convex
 import { EmptyState } from "../../components/EmptyState";
 import { Container } from "../../components/layout/Container";
 import { SignInButton } from "../../components/SignInButton";
+import { SkillIconPicker } from "../../components/SkillIconPicker";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardTitle } from "../../components/ui/card";
@@ -23,6 +24,7 @@ import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { Textarea } from "../../components/ui/textarea";
 import { getSiteMode } from "../../lib/site";
+import { ALLOWED_LUCIDE_ICONS, makeLucideIconValue, parseSkillIcon } from "../../lib/skillIcon";
 import { getPublicSlugCollision } from "../../lib/slugCollision";
 import { expandDroppedItems, expandFilesWithReport } from "../../lib/uploadFiles";
 import { useAuthStatus } from "../../lib/useAuthStatus";
@@ -70,7 +72,7 @@ export function Upload() {
   );
   const existing = (isSoulMode ? existingSoul : existingSkill) as
     | {
-        skill?: { slug: string; displayName: string };
+        skill?: { slug: string; displayName: string; icon?: string | null };
         soul?: { slug: string; displayName: string };
         latestVersion?: { version: string; clawScanNote?: string | null };
         // Present on skills.getBySlug; absent on souls.getBySlug. Used to
@@ -86,6 +88,9 @@ export function Upload() {
   const [ignoredMacJunkPaths, setIgnoredMacJunkPaths] = useState<string[]>([]);
   const [slug, setSlug] = useState(updateSlug ?? "");
   const [displayName, setDisplayName] = useState("");
+  // Selected lucide icon name (e.g. `Plug`) or null when "no icon". Skills only;
+  // souls don't expose a custom icon yet.
+  const [iconName, setIconName] = useState<string | null>(null);
   const [version, setVersion] = useState("1.0.0");
   const [tags, setTags] = useState("latest");
   const [acceptedLicenseTerms, setAcceptedLicenseTerms] = useState(false);
@@ -97,6 +102,16 @@ export function Upload() {
   const [clawScanNote, setClawScanNote] = useState("");
   const changelogTouchedRef = useRef(false);
   const clawScanNoteTouchedRef = useRef(false);
+  // Tracks whether the publisher has interacted with the Skill icon picker
+  // during this session. Used by the submit handler to honour the "key
+  // omitted = leave existing alone" branch in skill mode: a routine New
+  // Version publish that never touches the picker must NOT forward an
+  // empty `icon: ""` (which the backend would treat as an explicit
+  // clear). This protects against silently wiping a custom icon when
+  // pre-population fails — for example after the client allow-list is
+  // pruned in a future deploy and the stored lucide name no longer
+  // resolves.
+  const iconTouchedRef = useRef(false);
   const changelogRequestRef = useRef(0);
   const changelogKeyRef = useRef<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -218,6 +233,12 @@ export function Upload() {
     const nextSlug = existing.skill?.slug ?? existing.soul?.slug;
     if (nextSlug) setSlug(nextSlug);
     if (name) setDisplayName(name);
+    // Pre-populate the icon picker from the existing skill so a New Version
+    // publish keeps the previously selected icon unless the user changes it.
+    if (!isSoulMode && existing.skill?.icon !== undefined) {
+      const parsed = parseSkillIcon(existing.skill.icon ?? null);
+      setIconName(parsed?.kind === "lucide" ? parsed.name : null);
+    }
     const nextVersion = semver.inc(existing.latestVersion.version, "patch");
     if (nextVersion) setVersion(nextVersion);
     if (!isSoulMode && !clawScanNoteTouchedRef.current) {
@@ -500,6 +521,25 @@ export function Upload() {
 
     setStatus("Publishing…");
     try {
+      // Skill mode forwards an `icon` field only when the picker has
+      // actually been touched in this session, so the form is the single
+      // source of truth for the tri-state contract:
+      //   * touched + whitelisted name → `lucide:<Name>` (set)
+      //   * touched + None / unparseable selection → `""` (clear)
+      //   * untouched (or soul mode) → field omitted (keep existing)
+      // The backend treats blank input as "clear the icon" and a missing
+      // key as "keep whatever is already stored", so the omit branch is
+      // what protects routine version bumps from silently wiping an
+      // existing custom icon when pre-population fails (e.g. the stored
+      // lucide name was pruned from `ALLOWED_LUCIDE_ICONS`).
+      let iconPayload: string | undefined;
+      if (isSoulMode || !iconTouchedRef.current) {
+        iconPayload = undefined;
+      } else if (iconName && Object.hasOwn(ALLOWED_LUCIDE_ICONS, iconName)) {
+        iconPayload = makeLucideIconValue(iconName as keyof typeof ALLOWED_LUCIDE_ICONS);
+      } else {
+        iconPayload = "";
+      }
       const result = await publishVersion({
         ownerHandle: isSoulMode ? undefined : ownerHandle || undefined,
         // Only propagate the migration opt-in when the user is actually
@@ -508,6 +548,7 @@ export function Upload() {
         migrateOwner: !isSoulMode && isOwnerMigration && confirmMigrateOwner ? true : undefined,
         slug: trimmedSlug,
         displayName: trimmedName,
+        ...(iconPayload !== undefined ? { icon: iconPayload } : {}),
         version: trimmedVersion,
         changelog: trimmedChangelog,
         ...(normalizedClawScanNote ? { clawScanNote: normalizedClawScanNote } : {}),
@@ -580,6 +621,26 @@ export function Upload() {
                 id="display-name-validation-error"
                 message={displayNameIssue}
               />
+
+              {!isSoulMode ? (
+                <>
+                  {/* The picker is a custom radiogroup; the visible "Icon"
+                      heading is decorative and does not need `htmlFor` —
+                      `SkillIconPicker` exposes its own `aria-label`. */}
+                  <Label>Icon</Label>
+                  <SkillIconPicker
+                    value={iconName}
+                    onChange={(next) => {
+                      // Mark the picker as user-touched so the submit
+                      // handler knows it can forward the resulting value
+                      // (including `null` → "") instead of falling back
+                      // to the omit-key branch.
+                      iconTouchedRef.current = true;
+                      setIconName(next);
+                    }}
+                  />
+                </>
+              ) : null}
 
               {!isSoulMode ? (
                 <>

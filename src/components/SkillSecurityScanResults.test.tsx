@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 import { SecurityScannerPage } from "./SecurityScannerPage";
 import { SecurityScanResults, type LlmAnalysis } from "./SkillSecurityScanResults";
 
@@ -89,8 +89,53 @@ const legacyClawScanAnalysis: LlmAnalysis = {
   ],
 };
 
+const lowConfidenceConcernAnalysis: LlmAnalysis = {
+  status: "suspicious",
+  verdict: "suspicious",
+  confidence: "high",
+  summary: "Potential concern needs review.",
+  checkedAt: Date.now(),
+  agenticRiskFindings: [
+    {
+      categoryId: "ASI02",
+      categoryLabel: "Tool Misuse and Exploitation",
+      riskBucket: "abnormal_behavior_control",
+      status: "concern",
+      severity: "critical",
+      confidence: "low",
+      evidence: {
+        path: "SKILL.md",
+        snippet: "delete everything",
+        explanation: "The text might describe destructive behavior.",
+      },
+      userImpact: "A low-confidence concern should not be displayed to users.",
+      recommendation: "Review manually.",
+    },
+    {
+      categoryId: "ASI03",
+      categoryLabel: "Identity and Privilege Abuse",
+      riskBucket: "permission_boundary",
+      status: "note",
+      severity: "low",
+      confidence: "medium",
+      evidence: {
+        path: "metadata",
+        snippet: "requires.env: SERVICE_TOKEN",
+        explanation: "The skill requires a service token for its declared integration.",
+      },
+      userImpact: "Users should know the skill needs a service token.",
+      recommendation: "Install only if token access is expected.",
+    },
+  ],
+};
+
+let scrollIntoViewMock: Mock<Element["scrollIntoView"]>;
+
 beforeEach(() => {
   window.localStorage.clear();
+  window.history.replaceState(null, "", "/");
+  scrollIntoViewMock = vi.fn<Element["scrollIntoView"]>();
+  Element.prototype.scrollIntoView = scrollIntoViewMock;
 });
 
 describe("SecurityScanResults static guidance", () => {
@@ -198,6 +243,106 @@ describe("SecurityScanResults static guidance", () => {
       screen.getByText("Sensitive workspace data could leave the user's machine."),
     ).toBeTruthy();
     expect(screen.queryByText("ASI01")).toBeNull();
+    expect(screen.queryByText(/Confidence/i)).toBeNull();
+  });
+
+  it("shows ClawScan risk level instead of confidence in the scan panel", () => {
+    render(<SecurityScanResults llmAnalysis={clawScanAnalysis} />);
+
+    expect(screen.getByText("Warn")).toBeTruthy();
+    expect(screen.getByText("High")).toBeTruthy();
+    expect(screen.queryByText(/high confidence/i)).toBeNull();
+    expect(screen.queryByText(/Suspicious/i)).toBeNull();
+  });
+
+  it("shows low risk for clean ClawScan scans", () => {
+    render(<SecurityScanResults llmAnalysis={{ status: "clean", checkedAt: Date.now() }} />);
+
+    expect(screen.getByText("Pass")).toBeTruthy();
+    expect(screen.getByText("Low")).toBeTruthy();
+  });
+
+  it("promotes clean ClawScan scans with medium-or-higher visible findings to review", () => {
+    render(
+      <SecurityScanResults
+        llmAnalysis={{
+          status: "clean",
+          verdict: "benign",
+          summary: "The skill is mostly safe, but one permission deserves review.",
+          checkedAt: Date.now(),
+          agenticRiskFindings: [
+            {
+              categoryId: "ASI03",
+              categoryLabel: "Identity and Privilege Abuse",
+              riskBucket: "permission_boundary",
+              status: "note",
+              severity: "medium",
+              confidence: "medium",
+              evidence: {
+                path: "metadata",
+                snippet: "requires.env: TODOIST_API_TOKEN",
+                explanation: "The token is expected, but broad account access is still material.",
+              },
+              userImpact: "Installing the skill gives it account-level Todoist access.",
+              recommendation: "Review whether this account access is expected before install.",
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Review")).toBeTruthy();
+    expect(screen.getAllByText("Medium").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Pass")).toBeNull();
+  });
+
+  it("shows review and medium risk for medium-severity ClawScan findings", () => {
+    render(
+      <SecurityScanResults
+        llmAnalysis={{
+          status: "suspicious",
+          verdict: "suspicious",
+          summary: "The skill needs context before install.",
+          checkedAt: Date.now(),
+          agenticRiskFindings: [
+            {
+              categoryId: "ASI04",
+              categoryLabel: "Resource Overreach",
+              riskBucket: "permission_boundary",
+              status: "concern",
+              severity: "medium",
+              confidence: "medium",
+              evidence: {
+                path: "SKILL.md",
+                snippet: "requests write access",
+                explanation: "The skill requests write access for a broad workspace path.",
+              },
+              userImpact: "The skill can modify a broader path than expected.",
+              recommendation: "Review the requested permission boundary before install.",
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Review")).toBeTruthy();
+    expect(screen.getAllByText("Medium").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: /The skill needs context/i }));
+    expect(screen.getAllByText("Medium").length).toBeGreaterThan(1);
+    expect(screen.queryByText("Concern")).toBeNull();
+    expect(screen.queryByText("Warn")).toBeNull();
+  });
+
+  it("ignores low-confidence findings for visible findings, status, and risk", () => {
+    render(<SecurityScanResults llmAnalysis={lowConfidenceConcernAnalysis} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Potential concern/i }));
+
+    expect(screen.getByText("Review")).toBeTruthy();
+    expect(screen.getAllByText("Low").length).toBeGreaterThan(0);
+    expect(screen.getByText("ASI03: Identity and Privilege Abuse")).toBeTruthy();
+    expect(screen.queryByText("ASI02: Tool Misuse and Exploitation")).toBeNull();
+    expect(screen.queryByText("delete everything")).toBeNull();
   });
 
   it("preserves legacy ClawScan dimensions when agentic fields are absent", () => {
@@ -243,7 +388,10 @@ describe("SecurityScanResults static guidance", () => {
     );
 
     expect(screen.getByRole("heading", { name: "Todo Guard" })).toBeTruthy();
-    expect(screen.getAllByText("Suspicious").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Warn").length).toBeGreaterThan(0);
+    expect(screen.getByText("Risk level")).toBeTruthy();
+    expect(screen.getByText("High")).toBeTruthy();
+    expect(screen.queryByText("Verdict")).toBeNull();
     expect(screen.getByText(/Audited by ClawScan/i)).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Overview" })).toBeTruthy();
     expect(screen.getByText(/Collects workspace secrets/i)).toBeTruthy();
@@ -260,6 +408,61 @@ describe("SecurityScanResults static guidance", () => {
     expect(screen.queryByText("metadata")).toBeNull();
     expect(screen.getAllByText("Skill content").length).toBeGreaterThan(0);
     expect(screen.getByText("requires.env: TODOIST_API_TOKEN")).toBeTruthy();
+    expect(screen.queryByText("Confidence")).toBeNull();
+  });
+
+  it("adds in-page permalinks to dedicated ClawScan findings", () => {
+    render(
+      <SecurityScannerPage
+        scanner="clawscan"
+        entity={{
+          kind: "skill",
+          title: "Todo Guard",
+          name: "todo-guard",
+          version: "1.0.0",
+          detailPath: "/local/todo-guard",
+        }}
+        llmAnalysis={clawScanAnalysis}
+      />,
+    );
+
+    const permalink = screen.getByRole("link", {
+      name: "Link to ASI03: Identity and Privilege Abuse",
+    });
+    expect(permalink.textContent).toBe("#");
+    expect(permalink.getAttribute("href")).toBe(
+      "#clawscan-finding-asi03-identity-and-privilege-abuse-1",
+    );
+    expect(
+      document.getElementById("clawscan-finding-asi03-identity-and-privilege-abuse-1"),
+    ).toBeTruthy();
+  });
+
+  it("scrolls to a ClawScan finding when the page loads with that anchor", () => {
+    window.history.replaceState(
+      null,
+      "",
+      "/local/todo-guard/security/clawscan#clawscan-finding-asi07-insecure-inter-agent-communication-2",
+    );
+
+    render(
+      <SecurityScannerPage
+        scanner="clawscan"
+        entity={{
+          kind: "skill",
+          title: "Todo Guard",
+          name: "todo-guard",
+          version: "1.0.0",
+          detailPath: "/local/todo-guard",
+        }}
+        llmAnalysis={clawScanAnalysis}
+      />,
+    );
+
+    expect(scrollIntoViewMock).toHaveBeenCalledWith({
+      block: "start",
+      behavior: "smooth",
+    });
   });
 
   it("prompts publishers to add a note on review ClawScan reports without one", () => {
@@ -350,6 +553,7 @@ describe("SecurityScanResults static guidance", () => {
           source: "VirusTotal",
           checkedAt: Date.now(),
         }}
+        llmAnalysis={clawScanAnalysis}
       />,
     );
 
@@ -359,8 +563,41 @@ describe("SecurityScanResults static guidance", () => {
     expect(screen.getByText("No known malicious reputation signals were found.")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Scan Metadata" })).toBeTruthy();
     expect(screen.getByText("abc123")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: /Findings/i })).toBeNull();
+    expect(screen.queryByText("ASI03: Identity and Privilege Abuse")).toBeNull();
     expect(screen.queryByText("Scanner verdict")).toBeNull();
     expect(screen.queryByText("Artifact")).toBeNull();
+  });
+
+  it("shows neutral VirusTotal summary and advisory paragraph for AI-only context", () => {
+    render(
+      <SecurityScannerPage
+        scanner="virustotal"
+        entity={{
+          kind: "skill",
+          title: "SkillScan",
+          name: "skillscan",
+          version: "1.1.6",
+          detailPath: "/tokauthai/skillscan",
+        }}
+        sha256hash="abc123"
+        vtAnalysis={{
+          status: "suspicious",
+          analysis: "Type: OpenClaw Skill Name: skillscan Version: 1.1.6 raw AI context",
+          source: "palm",
+          checkedAt: Date.now(),
+        }}
+        llmAnalysis={clawScanAnalysis}
+      />,
+    );
+
+    expect(screen.getByText(/Audited by VirusTotal/i)).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Overview" })).toBeNull();
+    expect(screen.queryByText(/multi-engine malware detections/i)).toBeNull();
+    expect(screen.getByRole("heading", { name: "Findings (1)" })).toBeTruthy();
+    expect(screen.queryByText("Advisory")).toBeNull();
+    expect(screen.getByText(/raw AI context/i)).toBeTruthy();
+    expect(screen.queryByText(/Type: OpenClaw Skill Name/i)).toBeNull();
   });
 
   it("shows static analysis reports in the shared scanner report shell", () => {
@@ -434,7 +671,7 @@ describe("SecurityScanResults static guidance", () => {
   });
 
   it("shows skills with legacy-only ClawScan analysis in the new ClawScan report shell", () => {
-    render(
+    const { container } = render(
       <SecurityScannerPage
         scanner="clawscan"
         entity={{
@@ -455,6 +692,9 @@ describe("SecurityScanResults static guidance", () => {
     expect(screen.getByRole("heading", { name: "Scan Metadata" })).toBeTruthy();
     expect(screen.queryByText("Review Dimensions")).toBeNull();
     expect(screen.queryByText("Purpose & Capability")).toBeNull();
+    expect(
+      container.querySelector('nav[aria-label="Breadcrumb"] a[href="/user/local"]'),
+    ).toBeTruthy();
   });
 
   it("shows the new ClawScan empty state when no analysis exists yet", () => {

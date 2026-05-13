@@ -44,6 +44,12 @@ type SearchSkillEntry = {
     updatedAt?: number;
   } | null;
   version: { version?: string; createdAt?: number } | null;
+  ownerHandle?: string | null;
+  owner?: {
+    handle?: string | null;
+    displayName?: string | null;
+    image?: string | null;
+  } | null;
 };
 
 type ListSkillsResult = {
@@ -434,14 +440,25 @@ export async function searchSkillsV1Handler(ctx: ActionCtx, request: Request) {
 
   return json(
     {
-      results: results.map((result) => ({
-        score: result.score,
-        slug: result.skill?.slug,
-        displayName: result.skill?.displayName,
-        summary: result.skill?.summary ?? null,
-        version: result.version?.version ?? null,
-        updatedAt: result.skill?.updatedAt,
-      })),
+      results: results.map((result) => {
+        const owner = result.owner
+          ? {
+              handle: result.owner.handle ?? null,
+              displayName: result.owner.displayName ?? null,
+              image: result.owner.image ?? null,
+            }
+          : null;
+        return {
+          score: result.score,
+          slug: result.skill?.slug,
+          displayName: result.skill?.displayName,
+          summary: result.skill?.summary ?? null,
+          version: result.version?.version ?? null,
+          updatedAt: result.skill?.updatedAt,
+          ownerHandle: result.ownerHandle ?? owner?.handle ?? null,
+          owner,
+        };
+      }),
     },
     200,
     rate.headers,
@@ -479,7 +496,8 @@ type SkillListSort =
 
 type PublicListSort = "newest" | "updated" | "downloads" | "stars" | "installs";
 
-function parseListSort(value: string | null): SkillListSort {
+function parseListSort(value: string | null): SkillListSort | null {
+  if (value === null) return "updated";
   const normalized = value?.trim().toLowerCase();
   if (normalized === "createdat" || normalized === "created-at" || normalized === "newest") {
     return "createdAt";
@@ -498,7 +516,8 @@ function parseListSort(value: string | null): SkillListSort {
     return "installsAllTime";
   }
   if (normalized === "trending") return "trending";
-  return "updated";
+  if (normalized === "updated") return "updated";
+  return null;
 }
 
 function toPublicListSort(sort: Exclude<SkillListSort, "trending">): PublicListSort {
@@ -516,6 +535,7 @@ export async function listSkillsV1Handler(ctx: ActionCtx, request: Request) {
   const limit = toOptionalNumber(url.searchParams.get("limit"));
   const rawCursor = url.searchParams.get("cursor")?.trim() || undefined;
   const sort = parseListSort(url.searchParams.get("sort"));
+  if (!sort) return text("Invalid sort query parameter", 400, rate.headers);
   const cursor = sort === "trending" ? undefined : rawCursor;
   const nonSuspiciousOnly = resolveBooleanQueryParam(
     url.searchParams.get("nonSuspiciousOnly"),

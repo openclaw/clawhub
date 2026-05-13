@@ -4,6 +4,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
 import { action, internalAction, internalMutation, internalQuery } from "./functions";
 import { assertRole, requireUserFromAction } from "./lib/access";
+import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
 import { buildSkillSummaryBackfillPatch, type ParsedSkillData } from "./lib/skillBackfill";
 import { deriveSkillCapabilityTags } from "./lib/skillCapabilityTags";
 import {
@@ -2053,6 +2054,42 @@ export const backfillSkillSearchDigestInternal = internalMutation({
     }
 
     return { inserted, isDone, scanned: page.length };
+  },
+});
+
+// Backfill plugin category digest rows for existing active packages.
+// Run once after deploying the schema change:
+//   npx convex run maintenance:backfillPackagePluginCategoryDigestsInternal --prod
+export const backfillPackagePluginCategoryDigestsInternal = internalMutation({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const batchSize = clampInt(args.batchSize ?? 200, 10, 500);
+    const { page, continueCursor, isDone } = await ctx.db
+      .query("packages")
+      .withIndex("by_active_updated", (q) => q.eq("softDeletedAt", undefined))
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+
+    let synced = 0;
+    for (const pkg of page) {
+      await upsertPackageSearchDigest(ctx, extractPackageDigestFields(pkg));
+      synced++;
+    }
+
+    if (!isDone) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.maintenance.backfillPackagePluginCategoryDigestsInternal,
+        {
+          cursor: continueCursor,
+          batchSize: args.batchSize,
+        },
+      );
+    }
+
+    return { synced, isDone, scanned: page.length };
   },
 });
 

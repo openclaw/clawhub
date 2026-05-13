@@ -2,6 +2,7 @@ node_modules
 .DS_Store
 .bun-build
 *.bun-build
+.artifacts/
 .cache/
 .data/
 bin/docs-list
@@ -40,8 +41,14 @@ skills-lock.json
 !.agents/skills/
 !.agents/skills/convex*/
 !.agents/skills/convex*/**
-!.agents/skills/blacksmith-testbox/
-!.agents/skills/blacksmith-testbox/**
+!.agents/skills/crabbox/
+!.agents/skills/crabbox/**
+!.agents/skills/clawhub-ui-proof/
+!.agents/skills/clawhub-ui-proof/**
+!.agents/skills/clawhub-pr-maintainer/
+!.agents/skills/clawhub-pr-maintainer/**
+!.agents/skills/clawhub-moderation/
+!.agents/skills/clawhub-moderation/**
 skills/*
 .codex/*
 !.codex/environments/

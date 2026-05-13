@@ -34,6 +34,7 @@
 - Indentation: 2 spaces, single quotes (Biome).
 - Lint/format: Biome + oxlint (type-aware).
 - Convex function names: verb-first (`getBySlug`, `publishVersion`).
+- Inline code comments: add brief comments for tricky, bug-prone, or previously buggy logic.
 
 ## Testing Guidelines
 

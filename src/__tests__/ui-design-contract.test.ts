@@ -86,8 +86,8 @@ describe("restored UI design contract", () => {
 
     expect(navSource).toContain("export const SECONDARY_NAV_ITEMS");
     expect(navSource).toContain('label: "Publishers"');
-    expect(navSource).toContain('label: "About"');
     expect(navSource).toContain('label: "Docs"');
+    expect(navSource).not.toContain('label: "About"');
     expect(navSource).not.toContain('label: "Stars"');
     expect(navSource).not.toContain('label: "Management"');
 

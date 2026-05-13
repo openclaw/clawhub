@@ -1,8 +1,16 @@
+import { PLUGIN_CATEGORY_DEFINITIONS } from "clawhub-schema";
+
 export type SkillCategory = {
   slug: string;
   label: string;
   icon: string;
   keywords: string[];
+};
+
+export type BrowseCategory = {
+  slug: string;
+  label: string;
+  icon: string;
 };
 
 export const SKILL_CATEGORIES: SkillCategory[] = [
@@ -45,5 +53,13 @@ export const SKILL_CATEGORIES: SkillCategory[] = [
   },
   { slug: "other", label: "Other", icon: "package", keywords: [] },
 ];
+
+export const PLUGIN_CATEGORIES: BrowseCategory[] = PLUGIN_CATEGORY_DEFINITIONS.map(
+  ({ slug, label, icon }) => ({
+    slug,
+    label,
+    icon,
+  }),
+);
 
 export const ALL_CATEGORY_KEYWORDS = SKILL_CATEGORIES.flatMap((c) => c.keywords);

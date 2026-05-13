@@ -438,7 +438,9 @@ describe("SkillDetailPage", () => {
       />,
     );
 
-    expect(await screen.findByText("Publish a new version")).toBeTruthy();
+    await screen.findByText("Short summary");
+    expect(screen.queryByText("Publish a new version")).toBeNull();
+    expect(screen.queryByRole("link", { name: "New Version" })).toBeNull();
     expect(screen.queryByText(/request security/i)).toBeNull();
     expect(screen.queryByRole("button", { name: "Rescan" })).toBeNull();
     expect(screen.queryByText(/rescans/i)).toBeNull();
@@ -817,7 +819,7 @@ describe("SkillDetailPage", () => {
     useAuthStatusMock.mockReturnValue({
       isAuthenticated: true,
       isLoading: false,
-      me: { _id: "users:1", role: "user" },
+      me: { _id: "users:reporter", role: "user" },
     });
     useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;
@@ -915,7 +917,8 @@ describe("SkillDetailPage", () => {
     render(<SkillDetailPage slug="weather" mode="settings" />);
 
     expect(await screen.findByRole("heading", { name: /Skill settings/i })).toBeTruthy();
-    expect(screen.getByText("Publish a new version")).toBeTruthy();
+    expect(screen.queryByText("Publish a new version")).toBeNull();
+    expect(screen.queryByRole("link", { name: "New Version" })).toBeNull();
     expect(screen.getByText("Rename slug")).toBeTruthy();
     expect(screen.getByText("Merge listing")).toBeTruthy();
   });

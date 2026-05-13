@@ -144,7 +144,7 @@ function PublishersIndex() {
       setQuery(next);
       const trimmed = next.trim();
       void navigate({
-        search: (prev) => ({
+        search: (prev: PublishersSearchState) => ({
           ...prev,
           q: trimmed ? next : undefined,
         }),
@@ -157,7 +157,7 @@ function PublishersIndex() {
   const handleClear = useCallback(() => {
     setQuery("");
     void navigate({
-      search: (prev) => ({
+      search: (prev: PublishersSearchState) => ({
         ...prev,
         q: undefined,
         kind: undefined,

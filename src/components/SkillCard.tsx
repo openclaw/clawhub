@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import type { PublicSkill } from "../lib/publicUser";
 import { MarketplaceIcon } from "./MarketplaceIcon";
 import { Badge } from "./ui/badge";
+import { VerifiedBadge } from "./VerifiedBadge";
 
 type SkillCardProps = {
   skill: PublicSkill;
@@ -34,9 +35,13 @@ export function SkillCard({
     <Link to={link} className={["card skill-card", className].filter(Boolean).join(" ")}>
       {hasTags ? (
         <div className="skill-card-tags">
-          {badges.map((label) => (
-            <Badge key={label}>{label}</Badge>
-          ))}
+          {badges.map((label) =>
+            label === "Verified" ? (
+              <VerifiedBadge key={label} />
+            ) : (
+              <Badge key={label}>{label}</Badge>
+            ),
+          )}
           {chip ? <Badge variant="accent">{chip}</Badge> : null}
           {platformLabels?.map((label) => (
             <Badge key={label} variant="compact">
@@ -46,7 +51,7 @@ export function SkillCard({
         </div>
       ) : null}
       <div className="skill-card-header">
-        <MarketplaceIcon kind="skill" label={skill.displayName} size="md" />
+        <MarketplaceIcon kind="skill" label={skill.displayName} icon={skill.icon} size="md" />
         <h3 className="skill-card-title">{skill.displayName}</h3>
       </div>
       <p className="skill-card-summary">{skill.summary ?? summaryFallback}</p>

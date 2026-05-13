@@ -98,6 +98,7 @@ import {
   upsertReservedSlugForRightfulOwner,
 } from "./lib/reservedSlugs";
 import { SKILL_CAPABILITY_TAGS } from "./lib/skillCapabilityTags";
+import { normalizeSkillIconValue } from "./lib/skillIcon";
 import {
   fetchText,
   type PublishResult,
@@ -781,8 +782,8 @@ async function getSkillBySlugForAvailabilityPublisher(
     .take(2);
   if (scopedSkills[0]) return scopedSkills[0];
 
-  if (publisher.kind !== "user" || !publisher.linkedUserId) return null;
   const linkedUserId = publisher.linkedUserId;
+  if (publisher.kind !== "user" || !linkedUserId) return null;
 
   const legacySkills = await ctx.db
     .query("skills")
@@ -4405,6 +4406,64 @@ export const listPublicTrendingPage = query({
   },
 });
 
+export const listAuditPage = query({
+  args: {
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    const { numItems, cursor } = normalizePublicListPagination(args.paginationOpts);
+    const result = await ctx.db
+      .query("skillSearchDigest")
+      .withIndex("by_active_stats_downloads", (q) => q.eq("softDeletedAt", undefined))
+      .order("desc")
+      .paginate({ cursor, numItems });
+
+    const page = [];
+    for (const digest of result.page) {
+      const entry = buildPublicSkillEntryFromDigest(digest);
+      if (!entry) continue;
+      const latestVersion = digest.latestVersionId
+        ? await ctx.db.get(digest.latestVersionId)
+        : null;
+      page.push({
+        kind: "skill" as const,
+        skill: entry.skill,
+        ownerHandle: entry.ownerHandle,
+        owner: entry.owner,
+        latestVersion: latestVersion
+          ? {
+              version: latestVersion.version,
+              createdAt: latestVersion.createdAt,
+              vtAnalysis: latestVersion.vtAnalysis,
+              llmAnalysis: latestVersion.llmAnalysis,
+              staticScan: latestVersion.staticScan
+                ? {
+                    status: latestVersion.staticScan.status,
+                    reasonCodes: latestVersion.staticScan.reasonCodes,
+                    findings: (latestVersion.staticScan.findings ?? []).map((finding) => ({
+                      code: finding.code,
+                      severity: finding.severity,
+                      file: finding.file,
+                      line: finding.line,
+                      message: finding.message,
+                      evidence: "",
+                    })),
+                    summary: latestVersion.staticScan.summary,
+                    engineVersion: latestVersion.staticScan.engineVersion,
+                    checkedAt: latestVersion.staticScan.checkedAt,
+                  }
+                : null,
+            }
+          : null,
+      });
+    }
+
+    return result.isDone
+      ? { page, hasMore: false, nextCursor: null }
+      : { page, hasMore: true, nextCursor: result.continueCursor };
+  },
+});
+
 function buildPublicSkillEntryFromDigest(
   digest: Doc<"skillSearchDigest">,
 ): PublicSkillEntry | null {
@@ -7084,6 +7143,10 @@ export const publishVersion: ReturnType<typeof action> = action({
     migrateOwner: v.optional(v.boolean()),
     slug: v.string(),
     displayName: v.string(),
+    // Skill icon hint chosen by the publisher in the publish form. Stored as
+    // a protocol-prefixed string (e.g. `lucide:Plug`). Unknown values are
+    // silently dropped server-side; see lib/skillIcon.ts.
+    icon: v.optional(v.string()),
     version: v.string(),
     changelog: v.string(),
     clawScanNote: v.optional(v.string()),
@@ -8731,6 +8794,9 @@ export const insertVersion = internalMutation({
     migrateOwner: v.optional(v.boolean()),
     slug: v.string(),
     displayName: v.string(),
+    // Skill icon hint chosen by the publisher (e.g. `lucide:Plug`). Optional;
+    // omitted on backport publishes to preserve the existing skill icon.
+    icon: v.optional(v.string()),
     version: v.string(),
     changelog: v.string(),
     clawScanNote: v.optional(v.string()),
@@ -8813,7 +8879,10 @@ export const insertVersion = internalMutation({
     if (!normalizedSlug) throw new ConvexError("Slug is required.");
     const user = await ctx.db.get(userId);
     if (!user || user.deletedAt || user.deactivatedAt) throw new Error("User not found");
-    const personalPublisher = await ensurePersonalPublisherForUser(ctx, user);
+    const personalPublisher = await ensurePersonalPublisherForUser(ctx, user, {
+      actorUserId: userId,
+      source: "skill.publish",
+    });
     if (!personalPublisher) throw new ConvexError("Personal publisher not found");
     // `callerExplicitlySpecifiedOwner` distinguishes the two semantically
     // different reasons we end up with `ownerPublisherId === personalPublisher._id`:
@@ -9182,6 +9251,7 @@ export const insertVersion = internalMutation({
         slug,
         displayName: args.displayName,
         summary: summaryValue,
+        icon: normalizeSkillIconValue(args.icon),
         ownerUserId: userId,
         ownerPublisherId,
         canonicalSkillId,
@@ -9313,6 +9383,12 @@ export const insertVersion = internalMutation({
     // the same values that will actually be persisted. Otherwise we would
     // persist flags derived from text the user can never see on the card.
     const nextDisplayName = isNewLatest ? args.displayName : skill.displayName;
+    // Skill icon follows the same "only update on new latest" rule as
+    // displayName / summary so backport publishes can't surprise the card.
+    // Only update when the publisher explicitly picked one this time —
+    // omitting `args.icon` keeps the previously stored value.
+    const nextIcon =
+      isNewLatest && args.icon !== undefined ? normalizeSkillIconValue(args.icon) : skill.icon;
     const derivedFlags = deriveModerationFlags({
       skill: {
         slug: skill.slug,
@@ -9332,6 +9408,7 @@ export const insertVersion = internalMutation({
     const basePatch: SkillModerationPatch = {
       displayName: nextDisplayName,
       summary: nextSummary ?? undefined,
+      icon: nextIcon,
       ownerPublisherId: skill.ownerPublisherId ?? ownerPublisherId,
       latestVersionId: isNewLatest ? versionId : skill.latestVersionId,
       latestVersionSummary: isNewLatest
@@ -9650,6 +9727,33 @@ export const setSkillSoftDeletedInternal = internalMutation({
       updatedAt: now,
     };
     if (note) patch.moderationNotes = note;
+    if (!args.deleted && isModeratorOrAdmin && note) {
+      const manualOverride = buildManualOverrideRecord({
+        note,
+        reviewerUserId: user._id,
+        updatedAt: now,
+      });
+      Object.assign(
+        patch,
+        applyManualOverrideToSkillPatch({
+          basePatch: {
+            ...patch,
+            moderationReasonCodes: undefined,
+            moderationEvidence: undefined,
+            moderationSummary: undefined,
+            moderationEngineVersion: undefined,
+            moderationEvaluatedAt: undefined,
+            moderationSourceVersionId: undefined,
+          },
+          override: manualOverride,
+          now,
+        }),
+        {
+          manualOverride,
+          moderationNotes: note,
+        },
+      );
+    }
     // Data hygiene: when the owner self-deletes (not a moderator/admin acting
     // via this internal entry point), reset any stale `moderationReason`
     // that may have survived from prior moderation metadata (e.g. an
@@ -9663,6 +9767,7 @@ export const setSkillSoftDeletedInternal = internalMutation({
     const nextSkill = { ...skill, ...patch };
     await ctx.db.patch(skill._id, patch);
     await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
+    await adjustUserSkillStatsForSkillChange(ctx, skill, nextSkill);
 
     await setSkillEmbeddingsSoftDeleted(ctx, skill._id, args.deleted, now);
 

@@ -53,6 +53,16 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   API/CLI, including open report count, latest release moderation state, and
   download-block reasons. Reporter identities and report bodies remain moderator
   intake data.
+- OpenClaw install clients can read the exact-release public trust endpoint at
+  `GET /api/v1/packages/{name}/versions/{version}/security` without owner or
+  moderator credentials. The endpoint returns only package identity, exact
+  release artifact identifiers, and the install-consumable trust summary.
+- `trust.blockedFromDownload` is the canonical install block signal for package
+  releases. OpenClaw must use it instead of re-deriving blocking behavior from
+  individual scan or moderation fields. `trust.reasons` is the compact user and
+  audit explanation list, for example `manual:quarantined`, `scan:malicious`,
+  `static:malicious`, `vt:suspicious`, or `package:malicious`; public trust
+  responses must not expose open report counts.
 - The legacy skill/package appeal tables and backend routes remain for
   compatibility, but the first-class CLI and docs surface is deprecated.
   Publisher recovery for false positives should use reports or out-of-band
@@ -74,6 +84,10 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - `auditLogs` remains the global compliance/security ledger. Product-facing
   moderation timelines live in `skillModerationEventLogs` and
   `packageModerationEventLogs`.
+- Ownership-adjacent identity changes must also write `auditLogs`: user profile
+  sync/update/ensure/delete, personal publisher create/sync, and org trusted
+  publisher set/unset. Personal publisher sync should log meaningful create,
+  change, link, or membership events, not routine login refreshes.
 - Public queries hide non-active moderation statuses; moderators can still access via
   moderator-only queries and unhide/restore/delete/ban.
 - Legacy report rows with `status: "triaged"` are read as `confirmed` for

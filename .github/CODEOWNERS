@@ -25,6 +25,7 @@
 /convex/httpApiV1/ @openclaw/openclaw-secops @Patrick-Erichsen
 /convex/packagePublishTokens.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /convex/packages.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/convex/maintenance.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /convex/publishers.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /convex/rateLimits.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /convex/skills.ts @openclaw/openclaw-secops @Patrick-Erichsen
@@ -44,6 +45,7 @@
 /convex/lib/moderationEngine.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /convex/lib/moderationReasonCodes.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /convex/lib/packageRegistry.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/convex/lib/packageSearchDigest.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /convex/lib/packageSecurity.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /convex/lib/publishers.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /convex/lib/publishLimits.ts @openclaw/openclaw-secops @Patrick-Erichsen
@@ -96,10 +98,18 @@
 /packages/clawhub/src/schema/schemas.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /packages/clawhub/src/schema/textFiles.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /packages/schema/src/openclawContract.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/packages/schema/src/index.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /packages/schema/src/packages.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/packages/schema/src/pluginCategories.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /packages/schema/src/routes.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /packages/schema/src/schemas.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /packages/schema/src/textFiles.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/packages/schema/dist/index.d.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/packages/schema/dist/index.js @openclaw/openclaw-secops @Patrick-Erichsen
+/packages/schema/dist/index.js.map @openclaw/openclaw-secops @Patrick-Erichsen
+/packages/schema/dist/pluginCategories.d.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/packages/schema/dist/pluginCategories.js @openclaw/openclaw-secops @Patrick-Erichsen
+/packages/schema/dist/pluginCategories.js.map @openclaw/openclaw-secops @Patrick-Erichsen
 
 # Security, auth, API, webhook, and deployment documentation.
 /docs/acceptable-usage.md @openclaw/openclaw-secops @Patrick-Erichsen

@@ -1,9 +1,16 @@
 import { createHash } from "node:crypto";
+import { AGENTIC_RISK_CATEGORIES } from "../../convex/lib/securityPrompt.ts";
 
 export type SourceKind = "skill" | "package";
 export type DatasetLabel = "clean" | "suspicious" | "malicious" | "unknown";
 export type DatasetSplit = "train" | "validation" | "test" | "eval_holdout";
 export type ScannerName = "static" | "virustotal" | "llm" | "moderation_consensus";
+export type ClawScanRiskBucket =
+  | "abnormal_behavior_control"
+  | "permission_boundary"
+  | "sensitive_data_protection";
+export type ClawScanFindingStatus = "none" | "note" | "concern";
+export type ClawScanSeverity = "none" | "info" | "low" | "medium" | "high" | "critical";
 
 export type ExportFileInput = {
   path: string;
@@ -56,6 +63,21 @@ export type LlmAnalysisInput = {
   }> | null;
   guidance: string | null;
   findings: string | null;
+  agenticRiskFindings: Array<{
+    categoryId: string;
+    categoryLabel: string;
+    riskBucket: ClawScanRiskBucket;
+    status: ClawScanFindingStatus;
+    severity: string;
+    confidence: "high" | "medium" | "low";
+    evidence: {
+      path: string;
+      snippet: string;
+      explanation: string;
+    } | null;
+    userImpact: string;
+    recommendation: string;
+  }>;
   model: string | null;
   checkedAt: number;
 };
@@ -146,6 +168,23 @@ export type StaticFindingRow = {
   evidence_redacted: string;
 };
 
+export type ClawScanFindingRow = {
+  artifact_id: string;
+  finding_id: string;
+  category_id: string;
+  category_label: string;
+  risk_bucket: ClawScanRiskBucket;
+  status: "note" | "concern";
+  severity: ClawScanSeverity;
+  confidence: "high" | "medium" | "low";
+  evidence_path_hash: string | null;
+  evidence_file_ext: string | null;
+  evidence_snippet_redacted: string | null;
+  evidence_explanation_redacted: string | null;
+  user_impact_redacted: string;
+  recommendation_redacted: string;
+};
+
 export type LabelRow = {
   artifact_id: string;
   label: DatasetLabel;
@@ -167,6 +206,7 @@ export type NormalizedDatasetRows = {
   artifacts: ArtifactRow[];
   scanResults: ScanResultRow[];
   staticFindings: StaticFindingRow[];
+  clawScanFindings: ClawScanFindingRow[];
   labels: LabelRow[];
   splits: SplitRow[];
 };
@@ -174,6 +214,17 @@ export type NormalizedDatasetRows = {
 const SPLIT_VERSION = "sha256-v1";
 const MAX_REDACTED_TEXT_LENGTH = 240;
 const MAX_REDACTED_SKILL_CONTENT_LENGTH = 120_000;
+const CLAWSCAN_SEVERITIES = new Set<ClawScanSeverity>([
+  "none",
+  "info",
+  "low",
+  "medium",
+  "high",
+  "critical",
+]);
+const AGENTIC_RISK_CATEGORY_LABEL_BY_ID: ReadonlyMap<string, string> = new Map(
+  AGENTIC_RISK_CATEGORIES.map((category) => [category.id, category.label] as const),
+);
 
 const SECRET_PATTERNS: RegExp[] = [
   /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi,
@@ -214,6 +265,7 @@ export function normalizeArtifactExport(inputs: ArtifactExportInput[]): Normaliz
   const artifacts: ArtifactRow[] = [];
   const scanResults: ScanResultRow[] = [];
   const staticFindings: StaticFindingRow[] = [];
+  const clawScanFindings: ClawScanFindingRow[] = [];
   const labels: LabelRow[] = [];
   const splits: SplitRow[] = [];
 
@@ -223,11 +275,12 @@ export function normalizeArtifactExport(inputs: ArtifactExportInput[]): Normaliz
     artifacts.push(artifact);
     scanResults.push(...buildScanResultRows(input, artifactId));
     staticFindings.push(...buildStaticFindingRows(input, artifactId));
+    clawScanFindings.push(...buildClawScanFindingRows(input, artifactId));
     labels.push(...buildLabelRows(input, artifactId));
     splits.push(buildSplitRow(input, artifactId));
   }
 
-  return { artifacts, scanResults, staticFindings, labels, splits };
+  return { artifacts, scanResults, staticFindings, clawScanFindings, labels, splits };
 }
 
 export function buildArtifactId(input: ArtifactExportInput) {
@@ -367,6 +420,45 @@ function buildStaticFindingRows(
   }));
 }
 
+function buildClawScanFindingRows(
+  input: ArtifactExportInput,
+  artifactId: string,
+): ClawScanFindingRow[] {
+  return (input.llmAnalysis?.agenticRiskFindings ?? [])
+    .filter(
+      (finding): finding is typeof finding & { status: "note" | "concern" } =>
+        finding.status === "note" || finding.status === "concern",
+    )
+    .flatMap((finding, index) => {
+      const evidence = finding.evidence;
+      const categoryLabel = AGENTIC_RISK_CATEGORY_LABEL_BY_ID.get(finding.categoryId);
+      if (!categoryLabel) return [];
+      const severity = normalizeClawScanSeverity(finding.severity);
+      return [
+        {
+          artifact_id: artifactId,
+          finding_id: `${artifactId}:clawscan:${index}:${hashString(
+            `${finding.categoryId}:${finding.riskBucket}:${finding.status}:${severity}:${
+              evidence?.path ?? ""
+            }:${evidence?.snippet ?? ""}:${finding.userImpact}`,
+          ).slice(0, 12)}`,
+          category_id: finding.categoryId,
+          category_label: categoryLabel,
+          risk_bucket: finding.riskBucket,
+          status: finding.status,
+          severity,
+          confidence: finding.confidence,
+          evidence_path_hash: evidence ? hashString(evidence.path) : null,
+          evidence_file_ext: evidence ? fileExtension(evidence.path) : null,
+          evidence_snippet_redacted: redactText(evidence?.snippet),
+          evidence_explanation_redacted: redactText(evidence?.explanation),
+          user_impact_redacted: redactText(finding.userImpact) ?? "",
+          recommendation_redacted: redactText(finding.recommendation) ?? "",
+        },
+      ];
+    });
+}
+
 function buildLabelRows(input: ArtifactExportInput, artifactId: string): LabelRow[] {
   const scannerLabels: DatasetLabel[] = [];
   const rows: LabelRow[] = [];
@@ -486,6 +578,13 @@ function labelFromText(value: string | null | undefined): DatasetLabel {
 function normalizeLabel(value: string): DatasetLabel {
   if (value === "clean" || value === "suspicious" || value === "malicious") return value;
   return labelFromText(value);
+}
+
+function normalizeClawScanSeverity(value: string): ClawScanSeverity {
+  const normalized = value.trim().toLowerCase();
+  return CLAWSCAN_SEVERITIES.has(normalized as ClawScanSeverity)
+    ? (normalized as ClawScanSeverity)
+    : "none";
 }
 
 function countFileExtensions(files: ExportFileInput[]) {

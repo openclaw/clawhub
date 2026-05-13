@@ -21,7 +21,7 @@ export function PluginListItem({ item, variant = "list" }: PluginListItemProps) 
       >
         <div className="skill-card-tags">
           <Badge variant="compact">{familyLabel(item.family)}</Badge>
-          {item.isOfficial ? <Badge variant="accent">Verified</Badge> : null}
+          {item.isOfficial ? <VerifiedBadge /> : null}
         </div>
         <div className="skill-card-header">
           <MarketplaceIcon kind="plugin" label={item.displayName} size="md" />

@@ -335,6 +335,7 @@ export async function fetchPackages(params: {
   featured?: boolean;
   executesCode?: boolean;
   capabilityTag?: string;
+  category?: string;
   limit?: number;
   signal?: AbortSignal;
 }) {
@@ -351,6 +352,7 @@ export async function fetchPackages(params: {
       url.searchParams.set("executesCode", String(params.executesCode));
     }
     if (params.capabilityTag) url.searchParams.set("capabilityTag", params.capabilityTag);
+    if (params.category) url.searchParams.set("category", params.category);
     return await fetchJson<{ results: Array<{ score: number; package: PackageListItem }> }>(
       url,
       params.signal,
@@ -375,6 +377,7 @@ export async function fetchPackages(params: {
     url.searchParams.set("executesCode", String(params.executesCode));
   }
   if (params.capabilityTag) url.searchParams.set("capabilityTag", params.capabilityTag);
+  if (params.category) url.searchParams.set("category", params.category);
   return await fetchJson<{ items: PackageListItem[]; nextCursor: string | null }>(
     url,
     params.signal,
@@ -388,6 +391,7 @@ export async function fetchPluginCatalog(params: {
   isOfficial?: boolean;
   featured?: boolean;
   executesCode?: boolean;
+  category?: string;
   limit?: number;
   signal?: AbortSignal;
 }): Promise<PluginCatalogResult> {
@@ -399,6 +403,7 @@ export async function fetchPluginCatalog(params: {
       isOfficial: params.isOfficial,
       featured: params.featured,
       executesCode: params.executesCode,
+      category: params.category,
       limit: params.limit,
       signal: params.signal,
     });
@@ -427,6 +432,7 @@ export async function fetchPluginCatalog(params: {
     if (typeof params.executesCode === "boolean") {
       url.searchParams.set("executesCode", String(params.executesCode));
     }
+    if (params.category) url.searchParams.set("category", params.category);
     const response = await fetchJson<{
       results?: Array<{ score: number; package: PackageListItem }>;
     }>(url, params.signal);
@@ -448,6 +454,7 @@ export async function fetchPluginCatalog(params: {
   if (typeof params.executesCode === "boolean") {
     url.searchParams.set("executesCode", String(params.executesCode));
   }
+  if (params.category) url.searchParams.set("category", params.category);
   const result = await fetchJson<PluginCatalogResult>(url, params.signal);
   return {
     items: result?.items ?? [],

@@ -192,57 +192,45 @@ describe("search route", () => {
     );
   });
 
-  it("shows the 'Hiding suspicious skills' chip by default and opts out on click", async () => {
+  it("does not render a warning filter chip while keeping the safe default", async () => {
     searchMock = { q: "hello" };
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
 
     render(<Component />);
 
-    const chip = screen.getByRole("button", { name: /Hiding suspicious skills/i });
-    expect(chip.getAttribute("aria-pressed")).toBe("true");
-    expect(chip.textContent).toContain("Show all");
-
-    fireEvent.click(chip);
-
-    expect(navigateMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        to: "/search",
-        replace: true,
-        search: expect.objectContaining({ nonSuspicious: false }),
-      }),
+    expect(screen.queryByRole("button", { name: /Hiding warnings/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Showing all skills/i })).toBeNull();
+    expect(useUnifiedSearchMock).toHaveBeenCalledWith(
+      "hello",
+      "all",
+      expect.objectContaining({ nonSuspiciousOnly: true }),
     );
   });
 
-  it("shows the 'Showing all skills' chip when opted out and clears the URL param on click", async () => {
+  it("does not render a warning filter chip when opted out", async () => {
     searchMock = { q: "hello", nonSuspicious: false };
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
 
     render(<Component />);
 
-    const chip = screen.getByRole("button", { name: /Showing all skills/i });
-    expect(chip.getAttribute("aria-pressed")).toBe("false");
-    expect(chip.textContent).toContain("Hide suspicious");
-
-    fireEvent.click(chip);
-
-    expect(navigateMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        to: "/search",
-        replace: true,
-        search: expect.objectContaining({ nonSuspicious: undefined }),
-      }),
+    expect(screen.queryByRole("button", { name: /Hiding warnings/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Showing all skills/i })).toBeNull();
+    expect(useUnifiedSearchMock).toHaveBeenCalledWith(
+      "hello",
+      "all",
+      expect.objectContaining({ nonSuspiciousOnly: false }),
     );
   });
 
-  it("hides the suspicious-filter chip on the plugins tab", async () => {
+  it("does not render a warning-filter chip on the plugins tab", async () => {
     searchMock = { q: "hello", type: "plugins" };
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
 
     render(<Component />);
 
-    expect(screen.queryByRole("button", { name: /suspicious/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /warnings/i })).toBeNull();
   });
 });

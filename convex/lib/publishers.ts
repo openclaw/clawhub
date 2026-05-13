@@ -6,6 +6,15 @@ export type PublisherRole = "owner" | "admin" | "publisher";
 
 type DbCtx = Pick<QueryCtx | MutationCtx, "db">;
 
+type PersonalPublisherAuditOptions = {
+  actorUserId?: Id<"users">;
+  source: string;
+};
+
+type EnsurePersonalPublisherOptions = {
+  handleConflict?: "throw" | "skip";
+};
+
 function isMissingPublisherTableError(error: unknown) {
   if (!(error instanceof Error)) return false;
   return (
@@ -14,11 +23,21 @@ function isMissingPublisherTableError(error: unknown) {
   );
 }
 
+function normalizeGeneratedPublisherHandle(handle: string | undefined | null) {
+  const normalized = normalizePublisherHandle(handle);
+  const sanitized = normalized
+    ?.replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^[-_]+|[-_]+$/g, "");
+  return sanitized || undefined;
+}
+
 function derivePersonalPublisherHandle(user: Doc<"users">) {
   const emailLocalPart = user.email?.split("@")[0];
   const userIdSuffix = String(user._id).split(":").pop();
   return (
-    normalizePublisherHandle(user.handle ?? user.name ?? emailLocalPart ?? userIdSuffix) ?? "user"
+    normalizeGeneratedPublisherHandle(user.handle ?? user.name ?? emailLocalPart ?? userIdSuffix) ??
+    "user"
   );
 }
 
@@ -183,6 +202,8 @@ export async function getPersonalPublisherForUser(ctx: DbCtx, userId: Id<"users"
 export async function ensurePersonalPublisherForUser(
   ctx: Pick<MutationCtx, "db">,
   user: Doc<"users">,
+  audit?: PersonalPublisherAuditOptions,
+  options?: EnsurePersonalPublisherOptions,
 ) {
   const handle = derivePersonalPublisherHandle(user);
   let existing: Doc<"publishers"> | null = null;
@@ -201,18 +222,24 @@ export async function ensurePersonalPublisherForUser(
     const bio = user.bio?.trim() || undefined;
     const conflict = await getPublisherByHandle(ctx, handle);
     if (conflict && conflict._id !== existingPublisher._id) {
+      if (options?.handleConflict === "skip") return existingPublisher;
       throw new ConvexError(`Publisher handle "@${handle}" is already claimed`);
     }
+    const nextPublisherFields = {
+      handle,
+      displayName,
+      bio,
+      image: user.image,
+      linkedUserId: user._id,
+      trustedPublisher: user.trustedPublisher,
+      deletedAt: undefined,
+      deactivatedAt: undefined,
+    };
+    const changedFields = getChangedPersonalPublisherFields(existingPublisher, nextPublisherFields);
+    const personalPublisherLinked = user.personalPublisherId !== existingPublisher._id;
     try {
       await ctx.db.patch(existingPublisher._id, {
-        handle,
-        displayName,
-        bio,
-        image: user.image,
-        linkedUserId: user._id,
-        trustedPublisher: user.trustedPublisher,
-        deletedAt: undefined,
-        deactivatedAt: undefined,
+        ...nextPublisherFields,
         updatedAt: now,
       });
       if (user.personalPublisherId !== existingPublisher._id) {
@@ -236,6 +263,19 @@ export async function ensurePersonalPublisherForUser(
           updatedAt: now,
         });
       }
+      await insertPersonalPublisherAuditLog(ctx, {
+        audit,
+        publisherId: existingPublisher._id,
+        user,
+        created: false,
+        source: audit?.source,
+        changedFields,
+        personalPublisherLinked,
+        memberCreated: !existingMember,
+        previous: existingPublisher,
+        next: { ...existingPublisher, ...nextPublisherFields, updatedAt: now },
+        now,
+      });
       return await ctx.db.get(existingPublisher._id);
     } catch (error) {
       if (isMissingPublisherTableError(error)) return synthesizePersonalPublisher(user);
@@ -245,6 +285,7 @@ export async function ensurePersonalPublisherForUser(
 
   const conflict = await getPublisherByHandle(ctx, handle);
   if (conflict && conflict.linkedUserId !== user._id) {
+    if (options?.handleConflict === "skip") return synthesizePersonalPublisher(user);
     throw new ConvexError(`Publisher handle "@${handle}" is already claimed`);
   }
 
@@ -252,27 +293,31 @@ export async function ensurePersonalPublisherForUser(
   const displayName = user.displayName?.trim() || user.name?.trim() || handle;
   const bio = user.bio?.trim() || undefined;
   try {
+    const nextPublisherFields = {
+      kind: "user" as const,
+      handle,
+      displayName,
+      bio,
+      image: user.image,
+      linkedUserId: user._id,
+      trustedPublisher: user.trustedPublisher,
+      deletedAt: undefined,
+      deactivatedAt: undefined,
+    };
     const publisherId =
       conflict?._id ??
       (await ctx.db.insert("publishers", {
-        kind: "user",
-        handle,
-        displayName,
-        bio,
-        image: user.image,
-        linkedUserId: user._id,
-        trustedPublisher: user.trustedPublisher,
+        ...nextPublisherFields,
         createdAt: now,
         updatedAt: now,
       }));
 
+    const changedFields = conflict
+      ? getChangedPersonalPublisherFields(conflict, nextPublisherFields)
+      : ["handle", "displayName", "linkedUserId"];
     if (conflict) {
       await ctx.db.patch(conflict._id, {
-        displayName,
-        bio,
-        image: user.image,
-        linkedUserId: user._id,
-        trustedPublisher: user.trustedPublisher,
+        ...nextPublisherFields,
         deletedAt: undefined,
         deactivatedAt: undefined,
         updatedAt: now,
@@ -300,11 +345,118 @@ export async function ensurePersonalPublisherForUser(
       updatedAt: now,
     });
 
+    await insertPersonalPublisherAuditLog(ctx, {
+      audit,
+      publisherId,
+      user,
+      created: !conflict,
+      source: audit?.source,
+      changedFields,
+      personalPublisherLinked: true,
+      memberCreated: !existingMember,
+      previous: conflict,
+      next: {
+        _id: publisherId,
+        ...nextPublisherFields,
+        createdAt: conflict?.createdAt ?? now,
+        updatedAt: now,
+      },
+      now,
+    });
+
     return await ctx.db.get(publisherId);
   } catch (error) {
     if (isMissingPublisherTableError(error)) return synthesizePersonalPublisher(user);
     throw error;
   }
+}
+
+function getChangedPersonalPublisherFields(
+  existing: Partial<Doc<"publishers">>,
+  next: {
+    handle: string;
+    displayName: string;
+    bio?: string;
+    image?: string;
+    linkedUserId: Id<"users">;
+    trustedPublisher?: boolean;
+    deletedAt?: number;
+    deactivatedAt?: number;
+  },
+) {
+  const changed: string[] = [];
+  if (existing.handle !== next.handle) changed.push("handle");
+  if (existing.displayName !== next.displayName) changed.push("displayName");
+  if ((existing.bio ?? undefined) !== (next.bio ?? undefined)) changed.push("bio");
+  if ((existing.image ?? undefined) !== (next.image ?? undefined)) changed.push("image");
+  if (existing.linkedUserId !== next.linkedUserId) changed.push("linkedUserId");
+  if ((existing.trustedPublisher ?? undefined) !== (next.trustedPublisher ?? undefined)) {
+    changed.push("trustedPublisher");
+  }
+  if ((existing.deletedAt ?? undefined) !== (next.deletedAt ?? undefined))
+    changed.push("deletedAt");
+  if ((existing.deactivatedAt ?? undefined) !== (next.deactivatedAt ?? undefined)) {
+    changed.push("deactivatedAt");
+  }
+  return changed;
+}
+
+function publisherAuditSnapshot(publisher: Partial<Doc<"publishers">> | null | undefined) {
+  if (!publisher) return null;
+  return {
+    handle: publisher.handle ?? null,
+    displayName: publisher.displayName ?? null,
+    bio: publisher.bio ?? null,
+    image: publisher.image ?? null,
+    linkedUserId: publisher.linkedUserId ?? null,
+    trustedPublisher: publisher.trustedPublisher ?? null,
+    deletedAt: publisher.deletedAt ?? null,
+    deactivatedAt: publisher.deactivatedAt ?? null,
+  };
+}
+
+async function insertPersonalPublisherAuditLog(
+  ctx: Pick<MutationCtx, "db">,
+  args: {
+    audit?: PersonalPublisherAuditOptions;
+    publisherId: Id<"publishers">;
+    user: Doc<"users">;
+    created: boolean;
+    source?: string;
+    changedFields: string[];
+    personalPublisherLinked: boolean;
+    memberCreated: boolean;
+    previous: Partial<Doc<"publishers">> | null | undefined;
+    next: Partial<Doc<"publishers">>;
+    now: number;
+  },
+) {
+  if (!args.audit?.actorUserId) return;
+  if (
+    !args.created &&
+    args.changedFields.length === 0 &&
+    !args.personalPublisherLinked &&
+    !args.memberCreated
+  ) {
+    return;
+  }
+  await ctx.db.insert("auditLogs", {
+    actorUserId: args.audit.actorUserId,
+    action: args.created ? "publisher.personal.create" : "publisher.personal.sync",
+    targetType: "publisher",
+    targetId: args.publisherId,
+    metadata: {
+      userId: args.user._id,
+      source: args.source ?? "unknown",
+      created: args.created,
+      changedFields: args.changedFields,
+      personalPublisherLinked: args.personalPublisherLinked,
+      memberCreated: args.memberCreated,
+      previous: publisherAuditSnapshot(args.previous),
+      next: publisherAuditSnapshot(args.next),
+    },
+    createdAt: args.now,
+  });
 }
 
 export async function getPublisherMembership(
@@ -348,7 +500,10 @@ export async function resolvePublisherForActor(
     allowed: PublisherRole[];
   },
 ) {
-  const personalPublisher = await ensurePersonalPublisherForUser(ctx, params.actor);
+  const personalPublisher = await ensurePersonalPublisherForUser(ctx, params.actor, {
+    actorUserId: params.actor._id,
+    source: "publisher.resolve_for_actor",
+  });
   const requestedHandle = normalizePublisherHandle(params.ownerHandle);
   if (!requestedHandle) {
     return personalPublisher;

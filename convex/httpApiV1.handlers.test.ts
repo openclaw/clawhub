@@ -457,6 +457,49 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
+  it("search includes public owner metadata without publisher bio", async () => {
+    const runAction = vi.fn().mockResolvedValue([
+      {
+        score: 1,
+        skill: { slug: "demo", displayName: "Demo", summary: "Summary", updatedAt: 1 },
+        version: { version: "1.0.0" },
+        ownerHandle: "openclaw",
+        owner: {
+          handle: "openclaw",
+          displayName: "OpenClaw",
+          image: "https://example.com/avatar.png",
+          bio: "private-ish profile text",
+        },
+      },
+    ]);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.searchSkillsV1Handler(
+      makeCtx({ runAction, runMutation }),
+      new Request("https://example.com/api/v1/search?q=demo"),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      results: [
+        {
+          score: 1,
+          slug: "demo",
+          displayName: "Demo",
+          summary: "Summary",
+          version: "1.0.0",
+          updatedAt: 1,
+          ownerHandle: "openclaw",
+          owner: {
+            handle: "openclaw",
+            displayName: "OpenClaw",
+            image: "https://example.com/avatar.png",
+          },
+        },
+      ],
+    });
+  });
+
   it("search forwards nonSuspiciousOnly", async () => {
     const runAction = vi.fn().mockResolvedValue([]);
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -875,7 +918,6 @@ describe("httpApiV1 handlers", () => {
       ["rating", "stars"],
       ["installs", "installs"],
       ["installs-all-time", "installs"],
-      ["unknown", "updated"],
       ["trending", null],
     ];
 
@@ -900,6 +942,18 @@ describe("httpApiV1 handlers", () => {
       );
       expect(response.status).toBe(200);
     }
+  });
+
+  it("lists skills rejects invalid sort", async () => {
+    const runQuery = vi.fn();
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.listSkillsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills?sort=unknown"),
+    );
+    expect(response.status).toBe(400);
+    expect(await response.text()).toBe("Invalid sort query parameter");
+    expect(runQuery).not.toHaveBeenCalled();
   });
 
   it("lists skills forwards nonSuspiciousOnly", async () => {
@@ -3452,6 +3506,30 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("packages search rejects invalid known filters", async () => {
+    const runQuery = vi.fn();
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    for (const [param, message] of [
+      ["family=bad", "Invalid family query parameter"],
+      ["channel=bad", "Invalid channel query parameter"],
+      ["isOfficial=maybe", "Invalid isOfficial query parameter"],
+      ["executesCode=maybe", "Invalid executesCode query parameter"],
+      ["featured=maybe", "Invalid featured query parameter"],
+      ["artifactKind=bad", "Invalid artifactKind query parameter"],
+      ["requiresBrowser=maybe", "Invalid requiresBrowser query parameter"],
+    ]) {
+      const response = await __handlers.packagesGetRouterV1Handler(
+        makeCtx({ runQuery, runMutation }),
+        new Request(`https://example.com/api/v1/packages/search?q=test&${param}`),
+      );
+      expect(response.status).toBe(400);
+      expect(await response.text()).toBe(message);
+    }
+
+    expect(runQuery).not.toHaveBeenCalled();
+  });
+
   it("packages list supports family=skill on the generic route", async () => {
     const runQuery = vi.fn().mockResolvedValue({ page: [], isDone: true, continueCursor: "" });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -3465,6 +3543,50 @@ describe("httpApiV1 handlers", () => {
     expect(runQuery).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
+        paginationOpts: { cursor: null, numItems: 7 },
+      }),
+    );
+  });
+
+  it("packages list rejects invalid known filters but ignores unknown params", async () => {
+    const runQuery = vi.fn().mockResolvedValue({ page: [], isDone: true, continueCursor: "" });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const invalid = await __handlers.listPackagesV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages?family=bad"),
+    );
+    expect(invalid.status).toBe(400);
+    expect(await invalid.text()).toBe("Invalid family query parameter");
+
+    const unknown = await __handlers.listPackagesV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages?unknown=bad&limit=7"),
+    );
+    expect(unknown.status).toBe(200);
+    expect(runQuery).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        paginationOpts: { cursor: null, numItems: 7 },
+      }),
+    );
+  });
+
+  it("packages list supports category when scoped to a plugin family", async () => {
+    const runQuery = vi.fn().mockResolvedValue({ page: [], isDone: true, continueCursor: "" });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.listPackagesV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages?family=code-plugin&category=data&limit=7"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        family: "code-plugin",
+        category: "data",
         paginationOpts: { cursor: null, numItems: 7 },
       }),
     );
@@ -3515,10 +3637,45 @@ describe("httpApiV1 handlers", () => {
     for (const [, args] of runQuery.mock.calls) {
       expect(args).toEqual(
         expect.objectContaining({
+          category: undefined,
           paginationOpts: { cursor: null, numItems: 7 },
         }),
       );
     }
+  });
+
+  it("plugins list forwards category to both plugin families", async () => {
+    const runQuery = vi.fn().mockResolvedValue({ page: [], isDone: true, continueCursor: "" });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.listPluginsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/plugins?category=data&limit=7"),
+    );
+
+    expect(response.status).toBe(200);
+    for (const [, args] of runQuery.mock.calls) {
+      expect(args).toEqual(
+        expect.objectContaining({
+          category: "data",
+          paginationOpts: { cursor: null, numItems: 7 },
+        }),
+      );
+    }
+  });
+
+  it("plugins list rejects invalid categories", async () => {
+    const runQuery = vi.fn();
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.listPluginsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/plugins?category=other"),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toBe("Invalid plugin category");
+    expect(runQuery).not.toHaveBeenCalled();
   });
 
   it("plugins list paginates with separate plugin family cursors", async () => {
@@ -3587,6 +3744,60 @@ describe("httpApiV1 handlers", () => {
     ]);
   });
 
+  it("plugins list ignores stale plugin search cursors", async () => {
+    const runQuery = vi.fn().mockResolvedValue({ page: [], isDone: true, continueCursor: "" });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const staleSearchCursor = `pkgpluginsearch:${JSON.stringify({
+      codePlugins: { cursor: "code-search", offset: 0, pageSize: 2, done: false },
+      bundlePlugins: { cursor: null, offset: 0, pageSize: 2, done: true },
+    })}`;
+
+    const response = await __handlers.listPluginsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        `https://example.com/api/v1/plugins?limit=7&cursor=${encodeURIComponent(staleSearchCursor)}`,
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    const packageCalls = runQuery.mock.calls
+      .map(([, args]) => args as { family?: string; paginationOpts?: { cursor: string | null } })
+      .filter((args) => args.family === "code-plugin" || args.family === "bundle-plugin");
+    expect(packageCalls.map((args) => args.paginationOpts?.cursor ?? null)).toEqual([null, null]);
+  });
+
+  it("package and plugin lists ignore stale skill cursors", async () => {
+    const runQuery = vi.fn().mockResolvedValue({ page: [], isDone: true, continueCursor: "" });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const staleSkillCursor = `skillcat:${JSON.stringify({
+      cursor: "skill-cursor",
+      offset: 0,
+      pageSize: 20,
+      done: false,
+    })}`;
+
+    const packagesResponse = await __handlers.listPackagesV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        `https://example.com/api/v1/packages?limit=7&cursor=${encodeURIComponent(staleSkillCursor)}`,
+      ),
+    );
+    const pluginsResponse = await __handlers.listPluginsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        `https://example.com/api/v1/plugins?limit=7&cursor=${encodeURIComponent(staleSkillCursor)}`,
+      ),
+    );
+
+    expect(packagesResponse.status).toBe(200);
+    expect(pluginsResponse.status).toBe(200);
+    const cursors = runQuery.mock.calls
+      .map(([, args]) => (args as { paginationOpts?: { cursor: string | null } }).paginationOpts)
+      .filter(Boolean)
+      .map((pagination) => pagination?.cursor ?? null);
+    expect(cursors).toEqual(cursors.map(() => null));
+  });
+
   it("packages search supports family=skill on the generic route", async () => {
     const runQuery = vi.fn().mockResolvedValue([]);
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -3601,6 +3812,28 @@ describe("httpApiV1 handlers", () => {
       expect.anything(),
       expect.objectContaining({
         query: "demo",
+      }),
+    );
+  });
+
+  it("packages search supports category when scoped to a plugin family", async () => {
+    const runQuery = vi.fn().mockResolvedValue([]);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        "https://example.com/api/v1/packages/search?q=api&family=code-plugin&category=data",
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        query: "api",
+        family: "code-plugin",
+        category: "data",
       }),
     );
   });
@@ -3645,7 +3878,7 @@ describe("httpApiV1 handlers", () => {
 
     const response = await __handlers.pluginsGetRouterV1Handler(
       makeCtx({ runQuery, runMutation }),
-      new Request("https://example.com/api/v1/plugins/search?q=weather&limit=7"),
+      new Request("https://example.com/api/v1/plugins/search?q=weather&category=data&limit=7"),
     );
 
     expect(response.status).toBe(200);
@@ -3660,6 +3893,7 @@ describe("httpApiV1 handlers", () => {
       expect(args).toEqual(
         expect.objectContaining({
           query: "weather",
+          category: "data",
           limit: 7,
         }),
       );
@@ -3717,6 +3951,42 @@ describe("httpApiV1 handlers", () => {
       { family: "code-plugin", name: "plugin-code" },
       { family: "code-plugin", name: "shared-plugin" },
     ]);
+  });
+
+  it("plugins search ignores client-only sort and cursor params", async () => {
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      expect(args).not.toHaveProperty("sort");
+      expect(args).not.toHaveProperty("cursor");
+      return [];
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const url = new URL("https://example.com/api/v1/plugins/search");
+    url.searchParams.set("q", "plugin");
+    url.searchParams.set("sort", "name");
+    url.searchParams.set("limit", "2");
+    url.searchParams.set("cursor", "pkgplugins:stale");
+
+    const response = await __handlers.pluginsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(url),
+    );
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).results).toEqual([]);
+  });
+
+  it("plugins search rejects invalid categories", async () => {
+    const runQuery = vi.fn();
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.pluginsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/plugins/search?q=plugin&category=other"),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toBe("Invalid plugin category");
+    expect(runQuery).not.toHaveBeenCalled();
   });
 
   it("packages list forwards viewerUserId for authenticated private package browsing", async () => {
@@ -4143,6 +4413,7 @@ describe("httpApiV1 handlers", () => {
             name: "demo-plugin",
             displayName: "Demo Plugin",
             family: "code-plugin",
+            reportCount: 7,
           },
           version: {
             _id: "packageReleases:1",
@@ -4281,7 +4552,9 @@ describe("httpApiV1 handlers", () => {
     );
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({
+    const json = await response.json();
+    expect(json.package).not.toHaveProperty("reportCount");
+    expect(json).toMatchObject({
       version: {
         artifact: {
           kind: "npm-pack",
@@ -4321,6 +4594,7 @@ describe("httpApiV1 handlers", () => {
             name: "demo-plugin",
             displayName: "Demo Plugin",
             family: "code-plugin",
+            reportCount: 7,
           },
           version: {
             _id: "packageReleases:1",
@@ -4351,7 +4625,9 @@ describe("httpApiV1 handlers", () => {
     );
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({
+    const json = await response.json();
+    expect(json.package).not.toHaveProperty("reportCount");
+    expect(json).toMatchObject({
       artifact: {
         kind: "npm-pack",
         tarballUrl: "https://example.com/api/npm/demo-plugin/-/demo-plugin-1.0.0.tgz",
@@ -4428,6 +4704,405 @@ describe("httpApiV1 handlers", () => {
         legacyDownloadUrl: "https://example.com/api/v1/packages/demo-plugin/download?version=1.0.0",
       },
     });
+  });
+
+  it("package security endpoint returns exact release trust and blocked reasons", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args && !("version" in args)) {
+        return {
+          package: {
+            _id: "packages:demo-plugin",
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            family: "code-plugin",
+            tags: { latest: "packageReleases:1" },
+            latestReleaseId: "packageReleases:1",
+            channel: "community",
+            isOfficial: false,
+            createdAt: 1,
+            updatedAt: 1,
+          },
+          latestRelease: null,
+          owner: { _id: "publishers:demo", handle: "demo" },
+        };
+      }
+      if ("name" in args && "version" in args) {
+        return {
+          package: {
+            _id: "packages:demo-plugin",
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            family: "code-plugin",
+            channel: "community",
+            isOfficial: false,
+          },
+          version: {
+            _id: "packageReleases:1",
+            packageId: "packages:demo-plugin",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "Initial release",
+            distTags: ["latest"],
+            files: [],
+            artifactKind: "npm-pack",
+            sha256hash: "c".repeat(64),
+            clawpackSha256: "e".repeat(64),
+            clawpackSize: 123,
+            clawpackFormat: "tgz",
+            npmIntegrity: "sha512-demo",
+            npmShasum: "d".repeat(40),
+            npmTarballName: "demo-plugin-1.0.0.tgz",
+            verification: { scanStatus: "malicious" },
+            manualModeration: { state: "quarantined", reason: "private reviewer note" },
+          },
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages/demo-plugin/versions/1.0.0/security"),
+    );
+
+    expect(response.status).toBe(200);
+    const packageLookupArgs = runQuery.mock.calls
+      .map(([, args]) => args)
+      .filter(hasPackageNameArgs);
+    expect(packageLookupArgs).toContainEqual(
+      expect.objectContaining({ name: "demo-plugin", version: "1.0.0" }),
+    );
+    expect(packageLookupArgs.some((args) => !("version" in args))).toBe(false);
+    const json = await response.json();
+    expect(json.trust).not.toHaveProperty("moderationReason");
+    expect(json).toEqual({
+      package: {
+        name: "demo-plugin",
+        displayName: "Demo Plugin",
+        family: "code-plugin",
+      },
+      release: {
+        releaseId: "packageReleases:1",
+        version: "1.0.0",
+        artifactKind: "npm-pack",
+        artifactSha256: "c".repeat(64),
+        npmIntegrity: "sha512-demo",
+        npmShasum: "d".repeat(40),
+        npmTarballName: "demo-plugin-1.0.0.tgz",
+        createdAt: 1,
+      },
+      trust: {
+        scanStatus: "malicious",
+        moderationState: "quarantined",
+        blockedFromDownload: true,
+        reasons: ["manual:quarantined", "scan:malicious"],
+        pending: false,
+        stale: false,
+      },
+    });
+  });
+
+  it("package security endpoint includes package-level public download blocks", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args && "version" in args) {
+        return {
+          package: {
+            _id: "packages:demo-plugin",
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            family: "code-plugin",
+            channel: "community",
+            isOfficial: false,
+            scanStatus: "malicious",
+            publicDownloadBlocked: true,
+          },
+          version: {
+            _id: "packageReleases:1",
+            packageId: "packages:demo-plugin",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "Initial release",
+            distTags: ["latest"],
+            files: [],
+            artifactKind: "npm-pack",
+            sha256hash: "c".repeat(64),
+            verification: { scanStatus: "clean" },
+          },
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages/demo-plugin/versions/1.0.0/security"),
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.trust).toMatchObject({
+      scanStatus: "clean",
+      blockedFromDownload: true,
+      reasons: ["package:malicious"],
+      pending: false,
+      stale: false,
+    });
+  });
+
+  it("package security endpoint does not use file-set integrity as npm artifact hash", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args && "version" in args) {
+        return {
+          package: {
+            _id: "packages:demo-plugin",
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            family: "code-plugin",
+            channel: "community",
+            isOfficial: false,
+          },
+          version: {
+            _id: "packageReleases:1",
+            packageId: "packages:demo-plugin",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "Initial release",
+            distTags: ["latest"],
+            files: [],
+            artifactKind: "npm-pack",
+            integritySha256: "a".repeat(64),
+            npmIntegrity: "sha512-demo",
+            npmShasum: "d".repeat(40),
+            npmTarballName: "demo-plugin-1.0.0.tgz",
+            verification: { scanStatus: "clean" },
+          },
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages/demo-plugin/versions/1.0.0/security"),
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.release).not.toHaveProperty("artifactSha256");
+    expect(json.release).toMatchObject({
+      artifactKind: "npm-pack",
+      npmIntegrity: "sha512-demo",
+      npmShasum: "d".repeat(40),
+      npmTarballName: "demo-plugin-1.0.0.tgz",
+    });
+  });
+
+  it("package security endpoint does not use file-set integrity as legacy artifact hash", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args && "version" in args) {
+        return {
+          package: {
+            _id: "packages:demo-plugin",
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            family: "code-plugin",
+            channel: "community",
+            isOfficial: false,
+          },
+          version: {
+            _id: "packageReleases:1",
+            packageId: "packages:demo-plugin",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "Initial release",
+            distTags: ["latest"],
+            files: [],
+            artifactKind: "legacy-zip",
+            integritySha256: "a".repeat(64),
+            verification: { scanStatus: "clean" },
+          },
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages/demo-plugin/versions/1.0.0/security"),
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.release).not.toHaveProperty("artifactSha256");
+    expect(json.release).toMatchObject({
+      artifactKind: "legacy-zip",
+      version: "1.0.0",
+    });
+  });
+
+  it.each([
+    {
+      name: "clean",
+      release: { verification: { scanStatus: "clean" } },
+      expected: { scanStatus: "clean", blockedFromDownload: false, reasons: [], pending: false },
+    },
+    {
+      name: "pending",
+      release: { sha256hash: "b".repeat(64) },
+      expected: {
+        scanStatus: "pending",
+        blockedFromDownload: false,
+        reasons: ["scan:pending"],
+        pending: true,
+      },
+    },
+    {
+      name: "stale",
+      release: { sha256hash: "b".repeat(64), vtAnalysis: { status: "stale", checkedAt: 123 } },
+      expected: {
+        scanStatus: "pending",
+        blockedFromDownload: false,
+        reasons: ["scan:pending"],
+        pending: true,
+        stale: true,
+      },
+    },
+    {
+      name: "suspicious",
+      release: {
+        vtAnalysis: {
+          status: "suspicious",
+          source: "engines",
+          engineStats: { suspicious: 1 },
+          checkedAt: 123,
+        },
+      },
+      expected: {
+        scanStatus: "suspicious",
+        blockedFromDownload: false,
+        reasons: ["scan:suspicious", "vt:suspicious"],
+        pending: false,
+      },
+    },
+    {
+      name: "malicious",
+      release: {
+        staticScan: {
+          status: "malicious",
+          reasonCodes: ["malicious.test"],
+          findings: [],
+          summary: "Detected: malicious.test",
+          engineVersion: "v1",
+          checkedAt: 123,
+        },
+      },
+      expected: {
+        scanStatus: "malicious",
+        blockedFromDownload: true,
+        reasons: ["scan:malicious", "static:malicious"],
+        pending: false,
+      },
+    },
+    {
+      name: "quarantined",
+      release: {
+        verification: { scanStatus: "clean" },
+        manualModeration: { state: "quarantined", reason: "private reviewer note" },
+      },
+      expected: {
+        scanStatus: "malicious",
+        moderationState: "quarantined",
+        blockedFromDownload: true,
+        reasons: ["manual:quarantined", "scan:malicious"],
+        pending: false,
+      },
+    },
+    {
+      name: "revoked",
+      release: {
+        verification: { scanStatus: "clean" },
+        manualModeration: { state: "revoked", reason: "unsafe artifact" },
+      },
+      expected: {
+        scanStatus: "malicious",
+        moderationState: "revoked",
+        blockedFromDownload: true,
+        reasons: ["manual:revoked", "scan:malicious"],
+        pending: false,
+      },
+    },
+  ])("package security endpoint reports $name trust state", async ({ release, expected }) => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args && !("version" in args)) {
+        return {
+          package: {
+            _id: "packages:demo-plugin",
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            family: "code-plugin",
+            tags: { latest: "packageReleases:1" },
+            latestReleaseId: "packageReleases:1",
+            channel: "community",
+            isOfficial: false,
+            createdAt: 1,
+            updatedAt: 1,
+          },
+          latestRelease: null,
+          owner: { _id: "publishers:demo", handle: "demo" },
+        };
+      }
+      if ("name" in args && "version" in args) {
+        return {
+          package: {
+            _id: "packages:demo-plugin",
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            family: "code-plugin",
+            channel: "community",
+            isOfficial: false,
+          },
+          version: {
+            _id: "packageReleases:1",
+            packageId: "packages:demo-plugin",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "Initial release",
+            distTags: ["latest"],
+            files: [],
+            artifactKind: "legacy-zip",
+            sha256hash: "b".repeat(64),
+            ...release,
+          },
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages/demo-plugin/versions/1.0.0/security"),
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.release).toMatchObject({
+      releaseId: "packageReleases:1",
+      version: "1.0.0",
+      artifactKind: "legacy-zip",
+      artifactSha256: "b".repeat(64),
+      createdAt: 1,
+    });
+    expect(json.trust).toMatchObject({
+      moderationState: null,
+      stale: false,
+      ...expected,
+    });
+    expect(json.trust).not.toHaveProperty("moderationReason");
   });
 
   it("package artifact endpoint omits legacy zip archive aliases when archive hash is missing", async () => {
@@ -5590,42 +6265,72 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
-  it("treats /packages/search without q as a package detail route", async () => {
+  it("returns 400 for /packages/search without q", async () => {
     const runMutation = vi.fn().mockResolvedValue(okRate());
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("name" in args) {
-        return {
-          package: {
-            _id: "packages:search",
-            name: "search",
-            displayName: "Search Package",
-            family: "code-plugin",
-            tags: {},
-            latestReleaseId: null,
-            channel: "community",
-            isOfficial: false,
-            createdAt: 1,
-            updatedAt: 1,
-          },
-          latestRelease: null,
-          owner: null,
-        };
-      }
-      return [];
-    });
+    const runQuery = vi.fn();
 
     const response = await __handlers.packagesGetRouterV1Handler(
       makeCtx({ runQuery, runMutation }),
       new Request("https://example.com/api/v1/packages/search"),
     );
 
+    expect(response.status).toBe(400);
+    await expect(response.text()).resolves.toBe("Missing q query parameter");
+    expect(runQuery).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 for /packages/search with blank q", async () => {
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runQuery = vi.fn();
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages/search?q=%20%20"),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.text()).resolves.toBe("Missing q query parameter");
+    expect(runQuery).not.toHaveBeenCalled();
+  });
+
+  it("routes /packages/search with q to catalog search only", async () => {
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runQuery = vi.fn(async () => []);
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages/search?q=demo"),
+    );
+
     expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ results: [] });
     expect(runQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        query: "demo",
+      }),
+    );
+    expect(runQuery).not.toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
         name: "search",
       }),
     );
+  });
+
+  it("does not treat nested /packages/search paths as catalog search", async () => {
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args) return null;
+      return [];
+    });
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages/search/extra?q=demo"),
+    );
+
+    expect(response.status).toBe(404);
     expect(runQuery).not.toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({

@@ -268,8 +268,6 @@ export function useSkillsBrowseModel({
   }, [baseItems, dir, hasQuery, isOtherCategory, sort]);
 
   const isLoadingSkills = hasQuery ? isSearching && searchResults.length === 0 : isLoadingList;
-  const hasSuspiciousResults = sorted.some((entry) => entry.skill.isSuspicious === true);
-  const showSuspiciousFilter = nonSuspiciousOnly || hasSuspiciousResults;
   const canLoadMore = hasQuery
     ? !isSearching && searchResults.length === searchLimit && searchResults.length > 0
     : canLoadMoreList;
@@ -402,7 +400,7 @@ export function useSkillsBrowseModel({
 
   const activeFilters: string[] = [];
   if (featuredOnly) activeFilters.push("featured");
-  if (nonSuspiciousOnly) activeFilters.push("non-suspicious");
+  if (nonSuspiciousOnly) activeFilters.push("warnings hidden");
   if (capabilityTag) activeFilters.push(SKILL_CAPABILITY_LABELS[capabilityTag] ?? capabilityTag);
 
   const onCapabilityTagChange = useCallback(
@@ -425,8 +423,6 @@ export function useSkillsBrowseModel({
     canLoadMore,
     dir,
     hasQuery,
-    hasSuspiciousResults,
-    showSuspiciousFilter,
     featuredOnly,
     isLoadingMore,
     isLoadingSkills,

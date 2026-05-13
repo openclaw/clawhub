@@ -39,6 +39,11 @@ export type PublicPublisherCatalogItem = {
   kind: "skill" | "plugin";
   displayName: string;
   summary: string | null;
+  /**
+   * Skill custom-icon protocol string (e.g. `lucide:Plug`) mirrored from
+   * `skills.icon`. Always `null` for `kind: "plugin"` items in Phase 1.
+   */
+  icon: string | null;
   href: string;
   downloads: number;
   stars: number;
@@ -52,6 +57,7 @@ export type PublicSkill = Pick<
   | "slug"
   | "displayName"
   | "summary"
+  | "icon"
   | "ownerUserId"
   | "ownerPublisherId"
   | "canonicalSkillId"

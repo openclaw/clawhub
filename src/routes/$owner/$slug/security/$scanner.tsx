@@ -1,7 +1,11 @@
 import { createFileRoute, notFound, redirect } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
-import { SecurityScannerPage, type ScannerSlug } from "../../../../components/SecurityScannerPage";
+import {
+  SecurityScannerPage,
+  SecurityScannerPageSkeleton,
+  type ScannerSlug,
+} from "../../../../components/SecurityScannerPage";
 import { buildSkillMeta } from "../../../../lib/og";
 import { isAdmin } from "../../../../lib/roles";
 import { fetchSkillPageData } from "../../../../lib/skillPage";
@@ -96,11 +100,7 @@ function SkillSecurityScannerRoute() {
   const latestVersion = result?.latestVersion;
 
   if (result === undefined) {
-    return (
-      <main className="section">
-        <div className="card">Loading security details...</div>
-      </main>
-    );
+    return <SecurityScannerPageSkeleton />;
   }
 
   if (!skill || !latestVersion) {

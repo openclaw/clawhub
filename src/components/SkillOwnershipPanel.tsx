@@ -174,15 +174,6 @@ export function SkillOwnershipPanel({
     <>
       <div className="skill-admin-panel" data-skill-id={skillId}>
         <SettingsActionRow
-          title="Publish a new version"
-          description="Upload a replacement release for this skill. New releases get a fresh scan."
-        >
-          <Button asChild variant="outline">
-            <a href={`/publish-skill?updateSlug=${encodeURIComponent(slug)}`}>New Version</a>
-          </Button>
-        </SettingsActionRow>
-
-        <SettingsActionRow
           title="Short summary"
           description="Update the short summary used in cards, search, and previews."
         >

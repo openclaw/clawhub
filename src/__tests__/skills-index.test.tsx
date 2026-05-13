@@ -70,6 +70,14 @@ describe("SkillsIndex", () => {
     expect(screen.getByText("No skills found")).toBeTruthy();
   });
 
+  it("does not render the publish CTA on the skills browse page", async () => {
+    render(<SkillsIndex />);
+    await act(async () => {});
+
+    expect(screen.queryByRole("link", { name: "Publish" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Publish" })).toBeNull();
+  });
+
   it("shows loading state before fetch completes", async () => {
     // Never resolve the query to keep the component in loading state
     convexHttpMock.query.mockReturnValue(new Promise(() => {}));
@@ -306,7 +314,7 @@ describe("SkillsIndex", () => {
     );
   });
 
-  it("hides the suspicious filter when loaded results are clean", async () => {
+  it("does not render the warning filter when loaded results are clean", async () => {
     convexHttpMock.query.mockResolvedValue({
       page: [makeListResult("clean-skill", "Clean Skill")],
       hasMore: false,
@@ -316,10 +324,10 @@ describe("SkillsIndex", () => {
     render(<SkillsIndex />);
     await act(async () => {});
 
-    expect(screen.queryByLabelText("Hide suspicious")).toBeNull();
+    expect(screen.queryByLabelText("Hide warnings")).toBeNull();
   });
 
-  it("shows the suspicious filter when loaded results include a suspicious skill", async () => {
+  it("does not render the warning filter when loaded results include a warning skill", async () => {
     convexHttpMock.query.mockResolvedValue({
       page: [makeListResult("suspicious-skill", "Suspicious Skill", { isSuspicious: true })],
       hasMore: false,
@@ -329,10 +337,10 @@ describe("SkillsIndex", () => {
     render(<SkillsIndex />);
     await act(async () => {});
 
-    expect(screen.getByLabelText("Hide suspicious")).toBeTruthy();
+    expect(screen.queryByLabelText("Hide warnings")).toBeNull();
   });
 
-  it("keeps the suspicious filter visible while active", async () => {
+  it("does not render the warning filter while the URL filter is active", async () => {
     searchMock = { nonSuspicious: true };
     convexHttpMock.query.mockResolvedValue({
       page: [makeListResult("clean-skill", "Clean Skill")],
@@ -343,7 +351,7 @@ describe("SkillsIndex", () => {
     render(<SkillsIndex />);
     await act(async () => {});
 
-    expect(screen.getByLabelText("Hide suspicious")).toBeTruthy();
+    expect(screen.queryByLabelText("Hide warnings")).toBeNull();
   });
 
   it("passes highlightedOnly to list query when filter is active", async () => {

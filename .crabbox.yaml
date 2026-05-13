@@ -1,0 +1,32 @@
+profile: clawhub-check
+provider: blacksmith-testbox
+blacksmith:
+  org: openclaw
+  workflow: .github/workflows/ci-check-testbox.yml
+  job: check
+  ref: main
+  idleTimeout: 90m
+  debug: false
+sync:
+  delete: true
+  checksum: false
+  gitSeed: true
+  fingerprint: true
+  baseRef: main
+  exclude:
+    - .artifacts
+    - .codex
+    - .DS_Store
+    - coverage
+    - dist
+    - dist-ssr
+    - node_modules
+    - playwright-report
+    - test-results
+env:
+  allow:
+    - CI
+    - NODE_OPTIONS
+    - CLAWHUB_*
+    - VITE_CONVEX_URL
+    - VITE_CONVEX_SITE_URL

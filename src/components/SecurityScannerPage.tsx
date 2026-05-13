@@ -5,10 +5,13 @@ import { PublisherClawScanNote } from "./PublisherClawScanNote";
 import { SidebarMetadata } from "./SidebarMetadata";
 import {
   ClawScanRiskReview,
-  ConfidenceMeter,
   getClawScanDisplayStatus,
+  getClawScanRiskLevel,
+  getVisibleClawScanFindingCount,
   getVirusTotalDisplayStatus,
   hasClawScanRiskReview,
+  isVirusTotalAiOnlyAnalysis,
+  RiskLevelBadge,
   ScanResultBadge,
   type LlmAnalysis,
   type StaticFinding,
@@ -16,6 +19,7 @@ import {
 } from "./SkillSecurityScanResults";
 import { Alert, AlertDescription } from "./ui/alert";
 import { Badge } from "./ui/badge";
+import { Skeleton } from "./ui/skeleton";
 
 export type ScannerSlug = "virustotal" | "clawscan" | "static-analysis";
 
@@ -125,7 +129,7 @@ function SecurityScannerHero({ label, props }: { label: string; props: SecurityS
   const ownerLabel = getOwnerLabel(props.entity);
   const listingLabel = props.entity.kind === "skill" ? "skills" : "plugins";
   const ownerHref =
-    props.entity.kind === "skill" ? `/${encodeURIComponent(ownerLabel)}` : "/plugins";
+    props.entity.kind === "skill" ? `/user/${encodeURIComponent(ownerLabel)}` : "/plugins";
 
   return (
     <header className="security-scan-hero">
@@ -154,19 +158,25 @@ function SecurityScannerHero({ label, props }: { label: string; props: SecurityS
 
 function getVisibleFindingCount(props: SecurityScannerPageProps) {
   if (props.scanner === "static-analysis") return props.staticScan?.findings?.length ?? 0;
-  if (props.scanner === "clawscan") {
-    return (
-      props.llmAnalysis?.agenticRiskFindings?.filter(
-        (finding) =>
-          (finding.status === "note" || finding.status === "concern") && finding.evidence,
-      ).length ?? 0
-    );
-  }
+  if (props.scanner === "clawscan") return getVisibleClawScanFindingCount(props.llmAnalysis);
+  if (props.scanner === "virustotal" && getVirusTotalAdvisoryText(props.vtAnalysis)) return 1;
   return 0;
+}
+
+function getVirusTotalAdvisoryText(analysis?: VtAnalysis | null) {
+  if (!isVirusTotalAiOnlyAnalysis(analysis)) return null;
+  const text = analysis?.analysis?.trim();
+  if (!text) return null;
+  return text.replace(/^Type:\s*.+?\s+Name:\s*.+?\s+Version:\s*\S+\s+/i, "").trim();
 }
 
 function getOverviewCopy(props: SecurityScannerPageProps) {
   if (props.scanner === "virustotal") {
+    if (isVirusTotalAiOnlyAnalysis(props.vtAnalysis)) {
+      return [
+        "VirusTotal did not report multi-engine malware detections for this artifact. AI-only context from VirusTotal is treated as advisory and does not require user action.",
+      ];
+    }
     return [
       props.vtAnalysis?.analysis ??
         "No VirusTotal analysis has been recorded yet. File reputation checks will appear here once the artifact hash has been scanned.",
@@ -188,7 +198,7 @@ function getOverviewCopy(props: SecurityScannerPageProps) {
 
 function isReviewStatus(status: string) {
   const normalized = status.trim().toLowerCase();
-  return normalized === "review" || normalized === "suspicious";
+  return normalized === "review" || normalized === "warn" || normalized === "suspicious";
 }
 
 function PublisherNotePrompt({
@@ -238,9 +248,14 @@ function SecurityScannerReport(props: SecurityScannerPageProps) {
   );
   const sourceCommit = formatValue(props.source?.commit ?? props.source?.sha);
   const riskAnalysis =
-    props.llmAnalysis && hasClawScanRiskReview(props.llmAnalysis) ? props.llmAnalysis : null;
+    props.scanner === "clawscan" && props.llmAnalysis && hasClawScanRiskReview(props.llmAnalysis)
+      ? props.llmAnalysis
+      : null;
+  const riskLevel = props.scanner === "clawscan" ? getClawScanRiskLevel(props.llmAnalysis) : null;
+  const vtAdvisoryText = getVirusTotalAdvisoryText(props.vtAnalysis);
   const visibleFindingCount = getVisibleFindingCount(props);
   const overviewCopy = getOverviewCopy(props).filter(Boolean);
+  const showOverview = !(props.scanner === "virustotal" && vtAdvisoryText);
   const showPublisherNotePrompt =
     props.scanner === "clawscan" &&
     props.canManageArtifact &&
@@ -258,18 +273,20 @@ function SecurityScannerReport(props: SecurityScannerPageProps) {
 
         <div className="security-report-layout">
           <div className="security-report-main">
-            <section className="security-report-panel" aria-labelledby="overview-heading">
-              <div className="security-report-panel-header">
-                <h2 id="overview-heading" className="skill-install-panel-title">
-                  Overview
-                </h2>
-              </div>
-              <div className="security-report-overview-body">
-                {overviewCopy.map((copy, index) => (
-                  <p key={`${props.scanner}-overview-${index}`}>{copy}</p>
-                ))}
-              </div>
-            </section>
+            {showOverview ? (
+              <section className="security-report-panel" aria-labelledby="overview-heading">
+                <div className="security-report-panel-header">
+                  <h2 id="overview-heading" className="skill-install-panel-title">
+                    Overview
+                  </h2>
+                </div>
+                <div className="security-report-overview-body">
+                  {overviewCopy.map((copy, index) => (
+                    <p key={`${props.scanner}-overview-${index}`}>{copy}</p>
+                  ))}
+                </div>
+              </section>
+            ) : null}
 
             {props.scanner === "clawscan" ? (
               <PublisherClawScanNote note={props.clawScanNote} />
@@ -290,6 +307,21 @@ function SecurityScannerReport(props: SecurityScannerPageProps) {
                     />
                   ) : null}
                   <ClawScanRiskReview analysis={riskAnalysis} showTitle={false} />
+                </div>
+              </section>
+            ) : null}
+
+            {props.scanner === "virustotal" && vtAdvisoryText ? (
+              <section className="security-report-panel" aria-labelledby="vt-advisory-heading">
+                <div className="security-report-panel-header">
+                  <h2 id="vt-advisory-heading" className="skill-install-panel-title">
+                    Findings ({visibleFindingCount})
+                  </h2>
+                </div>
+                <div className="security-report-panel-body">
+                  <div className="vt-advisory-finding">
+                    <p>{vtAdvisoryText}</p>
+                  </div>
                 </div>
               </section>
             ) : null}
@@ -346,20 +378,11 @@ function SecurityScannerReport(props: SecurityScannerPageProps) {
               ariaLabel="Scan metadata"
               density="compact"
               blocks={[
-                {
-                  label: "Verdict",
-                  value: <ScanResultBadge status={status} tone="review" />,
-                },
                 ...(props.scanner === "clawscan"
                   ? [
                       {
-                        label: "Confidence",
-                        value: (
-                          <ConfidenceMeter
-                            value={props.llmAnalysis?.confidence}
-                            includeNoun={false}
-                          />
-                        ),
+                        label: "Risk level",
+                        value: riskLevel ? <RiskLevelBadge level={riskLevel} /> : null,
                       },
                     ]
                   : []),
@@ -462,4 +485,108 @@ function SecurityScannerReport(props: SecurityScannerPageProps) {
 
 export function SecurityScannerPage(props: SecurityScannerPageProps) {
   return <SecurityScannerReport {...props} />;
+}
+
+export function SecurityScannerPageSkeleton() {
+  return (
+    <main className="section detail-page-section security-report-section">
+      <div
+        className="security-report-shell security-scanner-skeleton"
+        role="status"
+        aria-label="Loading security details"
+        aria-busy="true"
+      >
+        <header className="security-scan-hero">
+          <div className="skill-hero-breadcrumbs">
+            <Skeleton className="h-4 w-12" />
+            <Skeleton className="h-4 w-3" />
+            <Skeleton className="h-4 w-16" />
+            <Skeleton className="h-4 w-3" />
+            <Skeleton className="h-4 w-40 max-w-[42vw]" />
+            <Skeleton className="h-4 w-3" />
+            <Skeleton className="h-4 w-28" />
+          </div>
+          <div className="security-scan-hero-heading">
+            <Skeleton className="h-12 w-full max-w-[520px]" />
+            <div className="security-scan-hero-subtext">
+              <Skeleton className="h-8 w-24 rounded-[var(--r-pill)]" />
+              <Skeleton className="h-5 w-full max-w-[340px]" />
+            </div>
+          </div>
+        </header>
+
+        <div className="security-report-layout">
+          <div className="security-report-main">
+            <section className="security-report-panel">
+              <div className="security-report-panel-header">
+                <Skeleton className="h-6 w-28" />
+              </div>
+              <div className="security-report-overview-body">
+                <Skeleton className="h-5 w-full" />
+                <Skeleton className="h-5 w-11/12" />
+                <Skeleton className="h-5 w-3/4" />
+              </div>
+            </section>
+
+            <section className="security-report-panel">
+              <div className="security-report-panel-header">
+                <Skeleton className="h-6 w-32" />
+              </div>
+              <div className="security-report-panel-body">
+                <div className="static-analysis-findings">
+                  {Array.from({ length: 2 }).map((_, index) => (
+                    <article
+                      // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholder count
+                      key={index}
+                      className="static-analysis-finding"
+                    >
+                      <div className="static-analysis-finding-header">
+                        <Skeleton className="h-6 w-16 rounded-[var(--r-pill)]" />
+                        <Skeleton className="h-5 w-48 max-w-full" />
+                      </div>
+                      <div className="space-y-3">
+                        <Skeleton className="h-4 w-full" />
+                        <Skeleton className="h-4 w-5/6" />
+                        <Skeleton className="h-16 w-full rounded-[var(--r-sm)]" />
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <aside className="security-report-sidebar" aria-label="Scan metadata">
+            <div className="sidebar-metadata sidebar-metadata-compact">
+              <div className="sidebar-metadata-row">
+                <Skeleton className="h-3 w-16" />
+                <Skeleton className="h-5 w-40" />
+              </div>
+              <div className="sidebar-metadata-grid">
+                <div className="sidebar-metadata-row">
+                  <Skeleton className="h-3 w-16" />
+                  <Skeleton className="h-5 w-10" />
+                </div>
+                <div className="sidebar-metadata-row">
+                  <Skeleton className="h-3 w-14" />
+                  <Skeleton className="h-5 w-16" />
+                </div>
+              </div>
+              <div className="sidebar-metadata-row">
+                <Skeleton className="h-3 w-24" />
+                <div className="security-report-badge-list">
+                  <Skeleton className="h-6 w-16 rounded-[var(--r-pill)]" />
+                  <Skeleton className="h-6 w-20 rounded-[var(--r-pill)]" />
+                </div>
+              </div>
+              <div className="sidebar-metadata-row">
+                <Skeleton className="h-3 w-14" />
+                <Skeleton className="h-5 w-28" />
+              </div>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </main>
+  );
 }

@@ -18,6 +18,7 @@ const SHARED_KEYS = [
   "slug",
   "displayName",
   "summary",
+  "icon",
   "ownerUserId",
   "ownerPublisherId",
   "canonicalSkillId",

@@ -3,9 +3,13 @@
   "info": {
     "title": "ClawHub API",
     "version": "1.0.0",
-    "description": "Public REST API for skills. Rate limits: read 120/min per IP + 600/min per key; write 30/min per IP + 120/min per key."
+    "description": "Public REST API for ClawHub skills and package catalog endpoints. Rate limits: read 3000/min per IP + 12000/min per key; write 300/min per IP + 3000/min per key; download 1200/min per IP + 6000/min per key. Responses include RateLimit-* and legacy X-RateLimit-* headers; 429 responses include Retry-After."
   },
-  "servers": [{ "url": "https://clawhub.ai" }],
+  "servers": [
+    {
+      "url": "https://clawhub.ai"
+    }
+  ],
   "components": {
     "securitySchemes": {
       "bearerAuth": {
@@ -15,47 +19,1133 @@
       }
     },
     "schemas": {
-      "SearchResult": {
+      "DeleteResponse": {
         "type": "object",
         "properties": {
-          "score": { "type": "number" },
-          "slug": { "type": ["string", "null"] },
-          "displayName": { "type": ["string", "null"] },
-          "summary": { "type": ["string", "null"] },
-          "version": { "type": ["string", "null"] },
-          "updatedAt": { "type": ["number", "null"] }
+          "ok": {
+            "type": "boolean"
+          }
+        }
+      },
+      "Owner": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "handle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "displayName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "image": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "PackageArtifactResponse": {
+        "type": "object",
+        "properties": {
+          "package": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "displayName": {
+                "type": "string"
+              },
+              "family": {
+                "type": "string",
+                "enum": [
+                  "skill",
+                  "code-plugin",
+                  "bundle-plugin"
+                ]
+              }
+            }
+          },
+          "version": {
+            "type": "string"
+          },
+          "artifact": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PackageArtifactSummary"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "downloadUrl": {
+                    "type": "string"
+                  },
+                  "tarballUrl": {
+                    "type": "string"
+                  },
+                  "legacyDownloadUrl": {
+                    "type": "string"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "PackageArtifactSummary": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "legacy-zip",
+              "npm-pack"
+            ]
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "size": {
+            "type": "number"
+          },
+          "format": {
+            "type": "string"
+          },
+          "npmIntegrity": {
+            "type": "string"
+          },
+          "npmShasum": {
+            "type": "string"
+          },
+          "npmTarballName": {
+            "type": "string"
+          },
+          "npmUnpackedSize": {
+            "type": "number"
+          },
+          "npmFileCount": {
+            "type": "number"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "clawhub"
+            ]
+          },
+          "artifactKind": {
+            "type": "string",
+            "enum": [
+              "legacy-zip",
+              "npm-pack"
+            ]
+          },
+          "artifactSha256": {
+            "type": "string"
+          },
+          "packageName": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      },
+      "PackageCapabilities": {
+        "type": "object",
+        "properties": {
+          "executesCode": {
+            "type": "boolean"
+          },
+          "runtimeId": {
+            "type": "string"
+          },
+          "pluginKind": {
+            "type": "string"
+          },
+          "channels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "providers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "hooks": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "bundledSkills": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "setupEntry": {
+            "type": "boolean"
+          },
+          "configSchema": {
+            "type": "boolean"
+          },
+          "configUiHints": {
+            "type": "boolean"
+          },
+          "materializesDependencies": {
+            "type": "boolean"
+          },
+          "toolNames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "commandNames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "serviceNames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "capabilityTags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "httpRouteCount": {
+            "type": "number"
+          },
+          "bundleFormat": {
+            "type": "string"
+          },
+          "hostTargets": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "PackageCatalogItem": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "family": {
+            "type": "string",
+            "enum": [
+              "skill",
+              "code-plugin",
+              "bundle-plugin"
+            ]
+          },
+          "runtimeId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "official",
+              "community",
+              "private"
+            ]
+          },
+          "isOfficial": {
+            "type": "boolean"
+          },
+          "summary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ownerHandle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "updatedAt": {
+            "type": "number"
+          },
+          "latestVersion": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "capabilityTags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "executesCode": {
+            "type": "boolean"
+          },
+          "verificationTier": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "structural",
+              "source-linked",
+              "provenance-verified",
+              "rebuild-verified",
+              null
+            ]
+          }
+        }
+      },
+      "PackageCompatibility": {
+        "type": "object",
+        "properties": {
+          "pluginApiRange": {
+            "type": "string"
+          },
+          "builtWithOpenClawVersion": {
+            "type": "string"
+          },
+          "pluginSdkVersion": {
+            "type": "string"
+          },
+          "minGatewayVersion": {
+            "type": "string"
+          }
+        }
+      },
+      "PackageFileEntry": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "size": {
+            "type": "number"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "contentType": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "PackageListResponse": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PackageCatalogItem"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "PackageReadinessResponse": {
+        "type": "object",
+        "properties": {
+          "package": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "displayName": {
+                "type": "string"
+              },
+              "family": {
+                "type": "string",
+                "enum": [
+                  "skill",
+                  "code-plugin",
+                  "bundle-plugin"
+                ]
+              },
+              "isOfficial": {
+                "type": "boolean"
+              },
+              "latestVersion": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "pass",
+                    "warn",
+                    "fail"
+                  ]
+                },
+                "message": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "blockers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "PackageResponse": {
+        "type": "object",
+        "properties": {
+          "package": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "displayName": {
+                "type": "string"
+              },
+              "family": {
+                "type": "string",
+                "enum": [
+                  "skill",
+                  "code-plugin",
+                  "bundle-plugin"
+                ]
+              },
+              "runtimeId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "channel": {
+                "type": "string",
+                "enum": [
+                  "official",
+                  "community",
+                  "private"
+                ]
+              },
+              "isOfficial": {
+                "type": "boolean"
+              },
+              "summary": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "ownerHandle": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "updatedAt": {
+                "type": "number"
+              },
+              "latestVersion": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "tags": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "compatibility": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/PackageCompatibility"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "capabilities": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/PackageCapabilities"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "verification": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/PackageVerification"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "artifact": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/PackageArtifactSummary"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "stats": {
+                "$ref": "#/components/schemas/PackageStats"
+              }
+            }
+          },
+          "owner": {
+            "$ref": "#/components/schemas/Owner"
+          }
+        }
+      },
+      "PackageSearchResponse": {
+        "type": "object",
+        "properties": {
+          "results": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "score": {
+                  "type": "number"
+                },
+                "package": {
+                  "$ref": "#/components/schemas/PackageCatalogItem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "PackageSecurityResponse": {
+        "type": "object",
+        "properties": {
+          "package": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "displayName": {
+                "type": "string"
+              },
+              "family": {
+                "type": "string",
+                "enum": [
+                  "skill",
+                  "code-plugin",
+                  "bundle-plugin"
+                ]
+              }
+            }
+          },
+          "release": {
+            "type": "object",
+            "properties": {
+              "releaseId": {
+                "type": "string"
+              },
+              "version": {
+                "type": "string"
+              },
+              "artifactKind": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "legacy-zip",
+                  "npm-pack",
+                  null
+                ]
+              },
+              "artifactSha256": {
+                "type": "string"
+              },
+              "npmIntegrity": {
+                "type": "string"
+              },
+              "npmShasum": {
+                "type": "string"
+              },
+              "npmTarballName": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              }
+            }
+          },
+          "trust": {
+            "type": "object",
+            "properties": {
+              "scanStatus": {
+                "type": "string",
+                "enum": [
+                  "clean",
+                  "suspicious",
+                  "malicious",
+                  "pending",
+                  "not-run"
+                ]
+              },
+              "moderationState": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "approved",
+                  "quarantined",
+                  "revoked",
+                  null
+                ]
+              },
+              "blockedFromDownload": {
+                "type": "boolean"
+              },
+              "reasons": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "pending": {
+                "type": "boolean"
+              },
+              "stale": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      },
+      "PackageStats": {
+        "type": "object",
+        "properties": {
+          "downloads": {
+            "type": "number"
+          },
+          "installs": {
+            "type": "number"
+          },
+          "stars": {
+            "type": "number"
+          },
+          "versions": {
+            "type": "number"
+          }
+        }
+      },
+      "PackageVerification": {
+        "type": "object",
+        "properties": {
+          "tier": {
+            "type": "string",
+            "enum": [
+              "structural",
+              "source-linked",
+              "provenance-verified",
+              "rebuild-verified"
+            ]
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "artifact-only",
+              "dependency-graph-aware"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          },
+          "sourceRepo": {
+            "type": "string"
+          },
+          "sourceCommit": {
+            "type": "string"
+          },
+          "sourceTag": {
+            "type": "string"
+          },
+          "hasProvenance": {
+            "type": "boolean"
+          },
+          "scanStatus": {
+            "type": "string",
+            "enum": [
+              "clean",
+              "suspicious",
+              "malicious",
+              "pending",
+              "not-run"
+            ]
+          }
+        }
+      },
+      "PackageVersionListResponse": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "version": {
+                  "type": "string"
+                },
+                "createdAt": {
+                  "type": "number"
+                },
+                "changelog": {
+                  "type": "string"
+                },
+                "distTags": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "PackageVersionResponse": {
+        "type": "object",
+        "properties": {
+          "package": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "displayName": {
+                "type": "string"
+              },
+              "family": {
+                "type": "string",
+                "enum": [
+                  "skill",
+                  "code-plugin",
+                  "bundle-plugin"
+                ]
+              }
+            }
+          },
+          "version": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "version": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "changelog": {
+                "type": "string"
+              },
+              "distTags": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "files": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/PackageFileEntry"
+                }
+              },
+              "compatibility": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/PackageCompatibility"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "capabilities": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/PackageCapabilities"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "verification": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/PackageVerification"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "artifact": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/PackageArtifactSummary"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "sha256hash": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "vtAnalysis": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "additionalProperties": true
+              },
+              "llmAnalysis": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "additionalProperties": true
+              },
+              "clawScanNote": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "clawScanNoteUpdatedAt": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "staticScan": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      },
+      "PlainTextError": {
+        "type": "string",
+        "description": "Human-readable plain text error response."
+      },
+      "PublishResponse": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "skillId": {
+            "type": "string"
+          },
+          "versionId": {
+            "type": "string"
+          }
+        }
+      },
+      "ResolveResponse": {
+        "type": "object",
+        "properties": {
+          "match": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "version": {
+                "type": "string"
+              }
+            }
+          },
+          "latestVersion": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "version": {
+                "type": "string"
+              }
+            }
+          }
         }
       },
       "SearchResponse": {
         "type": "object",
         "properties": {
-          "results": { "type": "array", "items": { "$ref": "#/components/schemas/SearchResult" } }
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SearchResult"
+            }
+          }
         }
       },
-      "TagMap": {
+      "SearchResult": {
         "type": "object",
-        "additionalProperties": { "type": "string" }
+        "properties": {
+          "score": {
+            "type": "number"
+          },
+          "slug": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "displayName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "summary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updatedAt": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "ownerHandle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "owner": {
+            "$ref": "#/components/schemas/Owner"
+          }
+        }
       },
-      "Stats": {
+      "SecuritySnapshot": {
         "type": "object",
-        "additionalProperties": true
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "clean",
+              "suspicious",
+              "malicious",
+              "pending",
+              "error"
+            ]
+          },
+          "hasWarnings": {
+            "type": "boolean"
+          },
+          "checkedAt": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hasScanResult": {
+            "type": "boolean"
+          },
+          "sha256hash": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "virustotalUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scanners": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "Skill": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "slug": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "summary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tags": {
+            "$ref": "#/components/schemas/TagMap"
+          },
+          "stats": {
+            "$ref": "#/components/schemas/Stats"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        }
       },
       "SkillListItem": {
         "type": "object",
         "properties": {
-          "slug": { "type": "string" },
-          "displayName": { "type": "string" },
-          "summary": { "type": ["string", "null"] },
-          "tags": { "$ref": "#/components/schemas/TagMap" },
-          "stats": { "$ref": "#/components/schemas/Stats" },
-          "createdAt": { "type": "number" },
-          "updatedAt": { "type": "number" },
+          "slug": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "summary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tags": {
+            "$ref": "#/components/schemas/TagMap"
+          },
+          "stats": {
+            "$ref": "#/components/schemas/Stats"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "updatedAt": {
+            "type": "number"
+          },
           "latestVersion": {
-            "type": ["object", "null"],
+            "type": [
+              "object",
+              "null"
+            ],
             "properties": {
-              "version": { "type": "string" },
-              "createdAt": { "type": "number" },
-              "changelog": { "type": "string" }
+              "version": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "changelog": {
+                "type": "string"
+              }
             }
           }
         }
@@ -63,116 +1153,90 @@
       "SkillListResponse": {
         "type": "object",
         "properties": {
-          "items": { "type": "array", "items": { "$ref": "#/components/schemas/SkillListItem" } },
-          "nextCursor": { "type": ["string", "null"] }
-        }
-      },
-      "Owner": {
-        "type": ["object", "null"],
-        "properties": {
-          "handle": { "type": ["string", "null"] },
-          "displayName": { "type": ["string", "null"] },
-          "image": { "type": ["string", "null"] }
-        }
-      },
-      "Skill": {
-        "type": ["object", "null"],
-        "properties": {
-          "slug": { "type": "string" },
-          "displayName": { "type": "string" },
-          "summary": { "type": ["string", "null"] },
-          "tags": { "$ref": "#/components/schemas/TagMap" },
-          "stats": { "$ref": "#/components/schemas/Stats" },
-          "createdAt": { "type": "number" },
-          "updatedAt": { "type": "number" }
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SkillListItem"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
         }
       },
       "SkillResponse": {
         "type": "object",
         "properties": {
-          "skill": { "$ref": "#/components/schemas/Skill" },
-          "latestVersion": {
-            "type": ["object", "null"],
-            "properties": {
-              "version": { "type": "string" },
-              "createdAt": { "type": "number" },
-              "changelog": { "type": "string" }
-            }
-          },
-          "owner": { "$ref": "#/components/schemas/Owner" },
-          "moderation": {
-            "type": ["object", "null"],
-            "properties": {
-              "isSuspicious": { "type": "boolean" },
-              "isMalwareBlocked": { "type": "boolean" },
-              "verdict": { "type": "string", "enum": ["clean", "suspicious", "malicious"] },
-              "reasonCodes": { "type": "array", "items": { "type": "string" } },
-              "summary": { "type": ["string", "null"] },
-              "engineVersion": { "type": ["string", "null"] },
-              "updatedAt": { "type": ["number", "null"] }
-            }
-          }
-        }
-      },
-      "SkillVersion": {
-        "type": "object",
-        "properties": {
-          "version": { "type": "string" },
-          "createdAt": { "type": "number" },
-          "changelog": { "type": "string" },
-          "changelogSource": { "type": ["string", "null"], "enum": ["auto", "user", null] }
-        }
-      },
-      "SkillVersionListResponse": {
-        "type": "object",
-        "properties": {
-          "items": { "type": "array", "items": { "$ref": "#/components/schemas/SkillVersion" } },
-          "nextCursor": { "type": ["string", "null"] }
-        }
-      },
-      "SecuritySnapshot": {
-        "type": "object",
-        "properties": {
-          "status": { "type": "string", "enum": ["clean", "suspicious", "malicious", "pending", "error"] },
-          "hasWarnings": { "type": "boolean" },
-          "checkedAt": { "type": ["number", "null"] },
-          "model": { "type": ["string", "null"] },
-          "hasScanResult": { "type": "boolean" },
-          "sha256hash": { "type": ["string", "null"] },
-          "virustotalUrl": { "type": ["string", "null"] },
-          "scanners": { "type": "object", "additionalProperties": true }
-        }
-      },
-      "SkillVersionResponse": {
-        "type": "object",
-        "properties": {
           "skill": {
-            "type": ["object", "null"],
+            "$ref": "#/components/schemas/Skill"
+          },
+          "latestVersion": {
+            "type": [
+              "object",
+              "null"
+            ],
             "properties": {
-              "slug": { "type": "string" },
-              "displayName": { "type": "string" }
+              "version": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "changelog": {
+                "type": "string"
+              }
             }
           },
-          "version": {
-            "type": ["object", "null"],
+          "owner": {
+            "$ref": "#/components/schemas/Owner"
+          },
+          "moderation": {
+            "type": [
+              "object",
+              "null"
+            ],
             "properties": {
-              "version": { "type": "string" },
-              "createdAt": { "type": "number" },
-              "changelog": { "type": "string" },
-              "changelogSource": { "type": ["string", "null"], "enum": ["auto", "user", null] },
-              "files": {
+              "isSuspicious": {
+                "type": "boolean"
+              },
+              "isMalwareBlocked": {
+                "type": "boolean"
+              },
+              "verdict": {
+                "type": "string",
+                "enum": [
+                  "clean",
+                  "suspicious",
+                  "malicious"
+                ]
+              },
+              "reasonCodes": {
                 "type": "array",
                 "items": {
-                  "type": "object",
-                  "properties": {
-                    "path": { "type": "string" },
-                    "size": { "type": "number" },
-                    "sha256": { "type": "string" },
-                    "contentType": { "type": ["string", "null"] }
-                  }
+                  "type": "string"
                 }
               },
-              "security": { "$ref": "#/components/schemas/SecuritySnapshot" }
+              "summary": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "engineVersion": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "updatedAt": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              }
             }
           }
         }
@@ -183,60 +1247,218 @@
           "skill": {
             "type": "object",
             "properties": {
-              "slug": { "type": "string" },
-              "displayName": { "type": "string" }
+              "slug": {
+                "type": "string"
+              },
+              "displayName": {
+                "type": "string"
+              }
             }
           },
           "version": {
             "type": "object",
             "properties": {
-              "version": { "type": "string" },
-              "createdAt": { "type": "number" },
-              "changelogSource": { "type": ["string", "null"], "enum": ["auto", "user", null] }
+              "version": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "changelogSource": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "auto",
+                  "user",
+                  null
+                ]
+              }
             }
           },
           "moderation": {
-            "type": ["object", "null"],
+            "type": [
+              "object",
+              "null"
+            ],
             "properties": {
-              "scope": { "type": "string", "enum": ["skill"] },
+              "scope": {
+                "type": "string",
+                "enum": [
+                  "skill"
+                ]
+              },
               "sourceVersion": {
-                "type": ["object", "null"],
+                "type": [
+                  "object",
+                  "null"
+                ],
                 "properties": {
-                  "version": { "type": "string" },
-                  "createdAt": { "type": "number" }
+                  "version": {
+                    "type": "string"
+                  },
+                  "createdAt": {
+                    "type": "number"
+                  }
                 }
               },
-              "matchesRequestedVersion": { "type": "boolean" },
-              "isPendingScan": { "type": "boolean" },
-              "isMalwareBlocked": { "type": "boolean" },
-              "isSuspicious": { "type": "boolean" },
-              "isHiddenByMod": { "type": "boolean" },
-              "isRemoved": { "type": "boolean" }
+              "matchesRequestedVersion": {
+                "type": "boolean"
+              },
+              "isPendingScan": {
+                "type": "boolean"
+              },
+              "isMalwareBlocked": {
+                "type": "boolean"
+              },
+              "isSuspicious": {
+                "type": "boolean"
+              },
+              "isHiddenByMod": {
+                "type": "boolean"
+              },
+              "isRemoved": {
+                "type": "boolean"
+              }
             }
           },
           "security": {
-            "anyOf": [{ "$ref": "#/components/schemas/SecuritySnapshot" }, { "type": "null" }]
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SecuritySnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
-      "ResolveResponse": {
+      "SkillVersion": {
         "type": "object",
         "properties": {
-          "match": { "type": ["object", "null"], "properties": { "version": { "type": "string" } } },
-          "latestVersion": { "type": ["object", "null"], "properties": { "version": { "type": "string" } } }
+          "version": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "changelog": {
+            "type": "string"
+          },
+          "changelogSource": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "auto",
+              "user",
+              null
+            ]
+          }
         }
       },
-      "PublishResponse": {
+      "SkillVersionListResponse": {
         "type": "object",
         "properties": {
-          "ok": { "type": "boolean" },
-          "skillId": { "type": "string" },
-          "versionId": { "type": "string" }
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SkillVersion"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
         }
       },
-      "DeleteResponse": {
+      "SkillVersionResponse": {
         "type": "object",
-        "properties": { "ok": { "type": "boolean" } }
+        "properties": {
+          "skill": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "slug": {
+                "type": "string"
+              },
+              "displayName": {
+                "type": "string"
+              }
+            }
+          },
+          "version": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "version": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "changelog": {
+                "type": "string"
+              },
+              "changelogSource": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "auto",
+                  "user",
+                  null
+                ]
+              },
+              "files": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "size": {
+                      "type": "number"
+                    },
+                    "sha256": {
+                      "type": "string"
+                    },
+                    "contentType": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  }
+                }
+              },
+              "security": {
+                "$ref": "#/components/schemas/SecuritySnapshot"
+              }
+            }
+          }
+        }
+      },
+      "Stats": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "TagMap": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string"
+        }
       },
       "WhoamiResponse": {
         "type": "object",
@@ -244,9 +1466,24 @@
           "user": {
             "type": "object",
             "properties": {
-              "handle": { "type": ["string", "null"] },
-              "displayName": { "type": ["string", "null"] },
-              "image": { "type": ["string", "null"] }
+              "handle": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "displayName": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "image": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
             }
           }
         }
@@ -254,20 +1491,1444 @@
     }
   },
   "paths": {
-    "/api/v1/search": {
+    "/api/v1/bundle-plugins": {
       "get": {
-        "summary": "Search skills",
+        "summary": "List bundle plugin catalog packages",
+        "security": [
+          {},
+          {
+            "bearerAuth": []
+          }
+        ],
         "parameters": [
-          { "name": "q", "in": "query", "required": true, "schema": { "type": "string" } },
-          { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer" } },
-          { "name": "highlightedOnly", "in": "query", "required": false, "schema": { "type": "boolean" } },
-          { "name": "nonSuspiciousOnly", "in": "query", "required": false, "schema": { "type": "boolean" } },
-          { "name": "nonSuspicious", "in": "query", "required": false, "schema": { "type": "boolean" }, "description": "Legacy alias for nonSuspiciousOnly." }
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "channel",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "official",
+                "community",
+                "private"
+              ]
+            }
+          },
+          {
+            "name": "isOfficial",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "executesCode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "capabilityTag",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
         ],
         "responses": {
           "200": {
-            "description": "Search results",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SearchResponse" } } }
+            "description": "Bundle plugin catalog page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PackageListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/code-plugins": {
+      "get": {
+        "summary": "List code plugin catalog packages",
+        "security": [
+          {},
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "channel",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "official",
+                "community",
+                "private"
+              ]
+            }
+          },
+          {
+            "name": "isOfficial",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "executesCode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "capabilityTag",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Code plugin catalog page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PackageListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/download": {
+      "get": {
+        "summary": "Download zip",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "tag",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Zip",
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/packages": {
+      "get": {
+        "summary": "List unified catalog packages",
+        "description": "Lists skills, code plugins, and bundle plugins. Anonymous callers see public package channels; authenticated callers can also see readable private packages.",
+        "security": [
+          {},
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "family",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "skill",
+                "code-plugin",
+                "bundle-plugin"
+              ]
+            }
+          },
+          {
+            "name": "channel",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "official",
+                "community",
+                "private"
+              ]
+            }
+          },
+          {
+            "name": "isOfficial",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "executesCode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "capabilityTag",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "target",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Shorthand for a host capability tag."
+          },
+          {
+            "name": "hostTarget",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Shorthand for a host capability tag."
+          },
+          {
+            "name": "os",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Shorthand for a host OS capability tag."
+          },
+          {
+            "name": "arch",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Shorthand for a host architecture capability tag."
+          },
+          {
+            "name": "libc",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Shorthand for a host libc capability tag."
+          },
+          {
+            "name": "requiresBrowser",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "requiresDesktop",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "requiresNativeDeps",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "requiresExternalService",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "requiresBinary",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "requiresOsPermission",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "externalService",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "binary",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "osPermission",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "artifactKind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "legacy-zip",
+                "npm-pack"
+              ]
+            }
+          },
+          {
+            "name": "npmMirror",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "true/1 filters for ClawPack-backed versions available through the npm mirror."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Catalog page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PackageListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/packages/{name}": {
+      "get": {
+        "summary": "Get package detail",
+        "description": "Returns package detail metadata. Skills can also resolve through this unified catalog route.",
+        "security": [
+          {},
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Package name. Scoped package names must be URL path encoded."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Package detail",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PackageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/packages/{name}/download": {
+      "get": {
+        "summary": "Download package ZIP archive",
+        "description": "Downloads the legacy deterministic ZIP archive for a package release. This route stays ZIP-only and uses the download rate bucket.",
+        "security": [
+          {},
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Package name. Scoped package names must be URL path encoded."
+          },
+          {
+            "name": "version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "tag",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "ZIP archive",
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "307": {
+            "description": "Skill compatibility redirect to /api/v1/download"
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Blocked by package moderation",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/packages/{name}/file": {
+      "get": {
+        "summary": "Fetch raw package file",
+        "description": "Returns raw text content for a package file. Uses the read rate bucket.",
+        "security": [
+          {},
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Package name. Scoped package names must be URL path encoded."
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "tag",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "File contents",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "File too large"
+          },
+          "415": {
+            "description": "Binary files are not served inline"
+          }
+        }
+      }
+    },
+    "/api/v1/packages/{name}/readiness": {
+      "get": {
+        "summary": "Get package OpenClaw readiness",
+        "description": "Returns computed readiness checks for OpenClaw consumption.",
+        "security": [
+          {},
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Package name. Scoped package names must be URL path encoded."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Readiness",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PackageReadinessResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/packages/{name}/versions": {
+      "get": {
+        "summary": "List package versions",
+        "security": [
+          {},
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Package name. Scoped package names must be URL path encoded."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Package versions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PackageVersionListResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/packages/{name}/versions/{version}": {
+      "get": {
+        "summary": "Get package version",
+        "description": "Returns file metadata, compatibility, capabilities, verification, artifact metadata, and scan data for one package version.",
+        "security": [
+          {},
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Package name. Scoped package names must be URL path encoded."
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Package version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PackageVersionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/packages/{name}/versions/{version}/artifact": {
+      "get": {
+        "summary": "Get package artifact resolver metadata",
+        "description": "Returns explicit artifact resolver metadata for a package version, including format-specific download URLs.",
+        "security": [
+          {},
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Package name. Scoped package names must be URL path encoded."
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Artifact metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PackageArtifactResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/packages/{name}/versions/{version}/artifact/download": {
+      "get": {
+        "summary": "Download package version artifact",
+        "description": "Streams npm-pack ClawPack bytes or redirects legacy ZIP versions to the package download endpoint. Uses the download rate bucket.",
+        "security": [
+          {},
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Package name. Scoped package names must be URL path encoded."
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Artifact bytes",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "307": {
+            "description": "Redirect to legacy ZIP download"
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Blocked by package moderation",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/packages/{name}/versions/{version}/security": {
+      "get": {
+        "summary": "Get exact package release trust summary",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Package release trust summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PackageSecurityResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Package security not found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/packages/search": {
+      "get": {
+        "summary": "Search unified package catalog",
+        "description": "Searches skills and plugin packages.",
+        "security": [
+          {},
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "family",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "skill",
+                "code-plugin",
+                "bundle-plugin"
+              ]
+            }
+          },
+          {
+            "name": "channel",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "official",
+                "community",
+                "private"
+              ]
+            }
+          },
+          {
+            "name": "isOfficial",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "executesCode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "capabilityTag",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "artifactKind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "legacy-zip",
+                "npm-pack"
+              ]
+            }
+          },
+          {
+            "name": "npmMirror",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Catalog search results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PackageSearchResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/plugins": {
+      "get": {
+        "summary": "List plugin catalog packages",
+        "description": "Lists code-plugin and bundle-plugin catalog entries.",
+        "security": [
+          {},
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "channel",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "official",
+                "community",
+                "private"
+              ]
+            }
+          },
+          {
+            "name": "isOfficial",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "executesCode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "capabilityTag",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "artifactKind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "legacy-zip",
+                "npm-pack"
+              ]
+            }
+          },
+          {
+            "name": "npmMirror",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Plugin catalog page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PackageListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/plugins/search": {
+      "get": {
+        "summary": "Search plugin catalog packages",
+        "description": "Searches code-plugin and bundle-plugin catalog entries.",
+        "security": [
+          {},
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "channel",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "official",
+                "community",
+                "private"
+              ]
+            }
+          },
+          {
+            "name": "isOfficial",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "executesCode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "capabilityTag",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "artifactKind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "legacy-zip",
+                "npm-pack"
+              ]
+            }
+          },
+          {
+            "name": "npmMirror",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Plugin catalog search results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PackageSearchResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
+                }
+              }
+            }
           }
         }
       }
@@ -276,12 +2937,114 @@
       "get": {
         "summary": "Resolve version by hash",
         "parameters": [
-          { "name": "slug", "in": "query", "required": true, "schema": { "type": "string" } },
-          { "name": "hash", "in": "query", "required": true, "schema": { "type": "string" } }
+          {
+            "name": "slug",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "hash",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
         ],
         "responses": {
-          "200": { "description": "Resolved", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ResolveResponse" } } } },
-          "404": { "description": "Not found" }
+          "200": {
+            "description": "Resolved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResolveResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/search": {
+      "get": {
+        "summary": "Search skills",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "highlightedOnly",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "nonSuspiciousOnly",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "nonSuspicious",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "Legacy alias for nonSuspiciousOnly."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Search results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponse"
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -289,18 +3052,92 @@
       "get": {
         "summary": "List skills",
         "parameters": [
-          { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer" } },
-          { "name": "cursor", "in": "query", "required": false, "schema": { "type": "string" }, "description": "Pagination cursor for any non-trending sort." },
-          { "name": "nonSuspiciousOnly", "in": "query", "required": false, "schema": { "type": "boolean" }, "description": "Hide suspicious skills. For cursor-based sorts, pages may contain fewer than limit items because filtering happens after page retrieval." },
-          { "name": "nonSuspicious", "in": "query", "required": false, "schema": { "type": "boolean" }, "description": "Legacy alias for nonSuspiciousOnly." }
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Pagination cursor for any non-trending sort."
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "updated",
+                "createdAt",
+                "newest",
+                "downloads",
+                "stars",
+                "rating",
+                "installsCurrent",
+                "installs",
+                "installsAllTime",
+                "trending"
+              ]
+            }
+          },
+          {
+            "name": "nonSuspiciousOnly",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "Hide suspicious skills. For cursor-based sorts, pages may contain fewer than limit items because filtering happens after page retrieval."
+          },
+          {
+            "name": "nonSuspicious",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "Legacy alias for nonSuspiciousOnly."
+          }
         ],
         "responses": {
-          "200": { "description": "Skills", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SkillListResponse" } } } }
+          "200": {
+            "description": "Skills",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
+                }
+              }
+            }
+          }
         }
       },
       "post": {
         "summary": "Publish a skill version",
-        "security": [{ "bearerAuth": [] }],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -308,46 +3145,102 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "payload": { "type": "string" },
-                  "files": { "type": "array", "items": { "type": "string", "format": "binary" } }
+                  "payload": {
+                    "type": "string"
+                  },
+                  "files": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "binary"
+                    }
+                  }
                 },
-                "required": ["payload", "files"]
+                "required": [
+                  "payload",
+                  "files"
+                ]
               }
             },
             "application/json": {
               "schema": {
                 "type": "object",
                 "properties": {
-                  "slug": { "type": "string" },
-                  "displayName": { "type": "string" },
-                  "version": { "type": "string" },
-                  "changelog": { "type": "string" },
-                  "tags": { "type": "array", "items": { "type": "string" } },
+                  "slug": {
+                    "type": "string"
+                  },
+                  "displayName": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "string"
+                  },
+                  "changelog": {
+                    "type": "string"
+                  },
+                  "tags": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
                   "forkOf": {
                     "type": "object",
-                    "properties": { "slug": { "type": "string" }, "version": { "type": "string" } }
+                    "properties": {
+                      "slug": {
+                        "type": "string"
+                      },
+                      "version": {
+                        "type": "string"
+                      }
+                    }
                   },
                   "files": {
                     "type": "array",
                     "items": {
                       "type": "object",
                       "properties": {
-                        "path": { "type": "string" },
-                        "size": { "type": "number" },
-                        "storageId": { "type": "string" },
-                        "sha256": { "type": "string" },
-                        "contentType": { "type": "string" }
+                        "path": {
+                          "type": "string"
+                        },
+                        "size": {
+                          "type": "number"
+                        },
+                        "storageId": {
+                          "type": "string"
+                        },
+                        "sha256": {
+                          "type": "string"
+                        },
+                        "contentType": {
+                          "type": "string"
+                        }
                       }
                     }
                   }
                 },
-                "required": ["slug", "displayName", "version", "changelog", "files"]
+                "required": [
+                  "slug",
+                  "displayName",
+                  "version",
+                  "changelog",
+                  "files"
+                ]
               }
             }
           }
         },
         "responses": {
-          "200": { "description": "Published", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PublishResponse" } } } }
+          "200": {
+            "description": "Published",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishResponse"
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -355,21 +3248,127 @@
       "get": {
         "summary": "Get skill",
         "parameters": [
-          { "name": "slug", "in": "path", "required": true, "schema": { "type": "string" } }
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
         ],
         "responses": {
-          "200": { "description": "Skill", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SkillResponse" } } } },
-          "404": { "description": "Not found" }
+          "200": {
+            "description": "Skill",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
+                }
+              }
+            }
+          }
         }
       },
       "delete": {
         "summary": "Soft delete skill",
-        "security": [{ "bearerAuth": [] }],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "parameters": [
-          { "name": "slug", "in": "path", "required": true, "schema": { "type": "string" } }
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
         ],
         "responses": {
-          "200": { "description": "Deleted", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DeleteResponse" } } } }
+          "200": {
+            "description": "Deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/skills/{slug}/file": {
+      "get": {
+        "summary": "Fetch raw file",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "tag",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "File contents",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -377,7 +3376,14 @@
       "get": {
         "summary": "Get moderation details",
         "parameters": [
-          { "name": "slug", "in": "path", "required": true, "schema": { "type": "string" } }
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
         ],
         "responses": {
           "200": {
@@ -388,17 +3394,62 @@
                   "type": "object",
                   "properties": {
                     "moderation": {
-                      "type": ["object", "null"],
+                      "type": [
+                        "object",
+                        "null"
+                      ],
                       "properties": {
-                        "isSuspicious": { "type": "boolean" },
-                        "isMalwareBlocked": { "type": "boolean" },
-                        "verdict": { "type": "string", "enum": ["clean", "suspicious", "malicious"] },
-                        "reasonCodes": { "type": "array", "items": { "type": "string" } },
-                        "summary": { "type": ["string", "null"] },
-                        "engineVersion": { "type": ["string", "null"] },
-                        "updatedAt": { "type": ["number", "null"] },
-                        "legacyReason": { "type": ["string", "null"] },
-                        "evidence": { "type": "array", "items": { "type": "object", "additionalProperties": true } }
+                        "isSuspicious": {
+                          "type": "boolean"
+                        },
+                        "isMalwareBlocked": {
+                          "type": "boolean"
+                        },
+                        "verdict": {
+                          "type": "string",
+                          "enum": [
+                            "clean",
+                            "suspicious",
+                            "malicious"
+                          ]
+                        },
+                        "reasonCodes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "summary": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "engineVersion": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "updatedAt": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "legacyReason": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "evidence": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": true
+                          }
+                        }
                       }
                     }
                   }
@@ -406,44 +3457,16 @@
               }
             }
           },
-          "404": { "description": "Moderation details unavailable" }
-        }
-      }
-    },
-    "/api/v1/skills/{slug}/undelete": {
-      "post": {
-        "summary": "Undelete skill",
-        "security": [{ "bearerAuth": [] }],
-        "parameters": [
-          { "name": "slug", "in": "path", "required": true, "schema": { "type": "string" } }
-        ],
-        "responses": {
-          "200": { "description": "Undeleted", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DeleteResponse" } } } }
-        }
-      }
-    },
-    "/api/v1/skills/{slug}/versions": {
-      "get": {
-        "summary": "List versions",
-        "parameters": [
-          { "name": "slug", "in": "path", "required": true, "schema": { "type": "string" } },
-          { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer" } },
-          { "name": "cursor", "in": "query", "required": false, "schema": { "type": "string" } }
-        ],
-        "responses": {
-          "200": { "description": "Versions", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SkillVersionListResponse" } } } }
-        }
-      }
-    },
-    "/api/v1/skills/{slug}/versions/{version}": {
-      "get": {
-        "summary": "Get version",
-        "parameters": [
-          { "name": "slug", "in": "path", "required": true, "schema": { "type": "string" } },
-          { "name": "version", "in": "path", "required": true, "schema": { "type": "string" } }
-        ],
-        "responses": {
-          "200": { "description": "Version", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SkillVersionResponse" } } } }
+          "404": {
+            "description": "Moderation details unavailable",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -451,50 +3474,184 @@
       "get": {
         "summary": "Get security scan details",
         "parameters": [
-          { "name": "slug", "in": "path", "required": true, "schema": { "type": "string" } },
-          { "name": "version", "in": "query", "required": false, "schema": { "type": "string" } },
-          { "name": "tag", "in": "query", "required": false, "schema": { "type": "string" } }
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "tag",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
         ],
         "responses": {
-          "200": { "description": "Scan results", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SkillScanResponse" } } } },
-          "404": { "description": "Not found" }
+          "200": {
+            "description": "Scan results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillScanResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
+                }
+              }
+            }
+          }
         }
       }
     },
-    "/api/v1/skills/{slug}/file": {
-      "get": {
-        "summary": "Fetch raw file",
+    "/api/v1/skills/{slug}/undelete": {
+      "post": {
+        "summary": "Undelete skill",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "parameters": [
-          { "name": "slug", "in": "path", "required": true, "schema": { "type": "string" } },
-          { "name": "path", "in": "query", "required": true, "schema": { "type": "string" } },
-          { "name": "version", "in": "query", "required": false, "schema": { "type": "string" } },
-          { "name": "tag", "in": "query", "required": false, "schema": { "type": "string" } }
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
         ],
         "responses": {
-          "200": { "description": "File contents", "content": { "text/plain": { "schema": { "type": "string" } } } },
-          "404": { "description": "Not found" }
+          "200": {
+            "description": "Undeleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteResponse"
+                }
+              }
+            }
+          }
         }
       }
     },
-    "/api/v1/download": {
+    "/api/v1/skills/{slug}/versions": {
       "get": {
-        "summary": "Download zip",
+        "summary": "List versions",
         "parameters": [
-          { "name": "slug", "in": "query", "required": true, "schema": { "type": "string" } },
-          { "name": "version", "in": "query", "required": false, "schema": { "type": "string" } },
-          { "name": "tag", "in": "query", "required": false, "schema": { "type": "string" } }
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
         ],
         "responses": {
-          "200": { "description": "Zip", "content": { "application/zip": { "schema": { "type": "string", "format": "binary" } } } }
+          "200": {
+            "description": "Versions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillVersionListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/skills/{slug}/versions/{version}": {
+      "get": {
+        "summary": "Get version",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillVersionResponse"
+                }
+              }
+            }
+          }
         }
       }
     },
     "/api/v1/whoami": {
       "get": {
         "summary": "Current user",
-        "security": [{ "bearerAuth": [] }],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "responses": {
-          "200": { "description": "User", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/WhoamiResponse" } } } }
+          "200": {
+            "description": "User",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WhoamiResponse"
+                }
+              }
+            }
+          }
         }
       }
     }

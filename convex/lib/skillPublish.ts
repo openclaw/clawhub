@@ -54,6 +54,8 @@ export type PublishResult = {
 export type PublishVersionArgs = {
   slug: string;
   displayName: string;
+  /** Optional icon hint (e.g. `lucide:Plug`). Server validates the format. */
+  icon?: string;
   version: string;
   changelog: string;
   clawScanNote?: string;
@@ -310,6 +312,7 @@ export async function publishVersionForUser(
     migrateOwner: options.migrateOwner,
     slug,
     displayName,
+    icon: args.icon,
     version,
     changelog: changelogText,
     clawScanNote: clawScanNote || undefined,

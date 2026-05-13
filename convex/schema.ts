@@ -358,6 +358,7 @@ const skills = defineTable({
   slug: v.string(),
   displayName: v.string(),
   summary: v.optional(v.string()),
+  icon: v.optional(v.string()),
   resourceId: v.optional(v.string()),
   ownerUserId: v.id("users"),
   ownerPublisherId: v.optional(v.id("publishers")),
@@ -450,6 +451,12 @@ const skills = defineTable({
   .index("by_owner_publisher_slug", ["ownerPublisherId", "slug"])
   .index("by_owner_active_updated", ["ownerUserId", "softDeletedAt", "updatedAt"])
   .index("by_owner_publisher_active_updated", ["ownerPublisherId", "softDeletedAt", "updatedAt"])
+  .index("by_owner_publisher_active_downloads", [
+    "ownerPublisherId",
+    "softDeletedAt",
+    "statsDownloads",
+    "updatedAt",
+  ])
   .index("by_updated", ["updatedAt"])
   .index("by_stats_downloads", ["statsDownloads", "updatedAt"])
   .index("by_stats_stars", ["statsStars", "updatedAt"])
@@ -732,6 +739,9 @@ const skillSearchDigest = defineTable({
   normalizedDisplayName: v.optional(v.string()),
   normalizedDisplayNameFirstToken: v.optional(v.string()),
   summary: v.optional(v.string()),
+  // Mirrors `skills.icon`. Kept on the digest so card/list hydration paths
+  // can render the icon without reading the full skill row.
+  icon: v.optional(v.string()),
   ownerUserId: v.id("users"),
   ownerPublisherId: v.optional(v.id("publishers")),
   ownerHandle: v.optional(v.string()),
@@ -872,11 +882,18 @@ const packages = defineTable({
   .index("by_owner", ["ownerUserId"])
   .index("by_owner_publisher", ["ownerPublisherId"])
   .index("by_owner_publisher_active_updated", ["ownerPublisherId", "softDeletedAt", "updatedAt"])
+  .index("by_owner_publisher_active_downloads", [
+    "ownerPublisherId",
+    "softDeletedAt",
+    "stats.downloads",
+    "updatedAt",
+  ])
   .index("by_family_updated", ["family", "updatedAt"])
   .index("by_family_channel_updated", ["family", "channel", "updatedAt"])
   .index("by_family_official_updated", ["family", "isOfficial", "updatedAt"])
   .index("by_runtime_id", ["runtimeId"])
-  .index("by_active_updated", ["softDeletedAt", "updatedAt"]);
+  .index("by_active_updated", ["softDeletedAt", "updatedAt"])
+  .index("by_active_downloads", ["softDeletedAt", "stats.downloads", "updatedAt"]);
 
 const packageReleases = defineTable({
   packageId: v.id("packages"),
@@ -1035,6 +1052,7 @@ const packageSearchDigest = defineTable({
   latestVersion: v.optional(v.string()),
   runtimeId: v.optional(v.string()),
   capabilityTags: v.optional(v.array(v.string())),
+  pluginCategoryTags: v.optional(v.array(v.string())),
   executesCode: v.optional(v.boolean()),
   verificationTier: v.optional(packageVerificationTierValidator),
   scanStatus: packageScanStatusValidator,
@@ -1212,6 +1230,124 @@ const packageCapabilitySearchDigest = defineTable({
     "channel",
     "isOfficial",
     "capabilityTag",
+    "executesCode",
+    "updatedAt",
+  ]);
+
+const packagePluginCategorySearchDigest = defineTable({
+  packageId: v.id("packages"),
+  name: v.string(),
+  normalizedName: v.string(),
+  displayName: v.string(),
+  family: packageFamilyValidator,
+  channel: packageChannelValidator,
+  isOfficial: v.boolean(),
+  ownerUserId: v.id("users"),
+  ownerPublisherId: v.optional(v.id("publishers")),
+  ownerHandle: v.optional(v.string()),
+  ownerKind: v.optional(v.union(v.literal("user"), v.literal("org"))),
+  summary: v.optional(v.string()),
+  latestVersion: v.optional(v.string()),
+  runtimeId: v.optional(v.string()),
+  capabilityTags: v.optional(v.array(v.string())),
+  pluginCategoryTags: v.optional(v.array(v.string())),
+  pluginCategory: v.string(),
+  executesCode: v.optional(v.boolean()),
+  verificationTier: v.optional(packageVerificationTierValidator),
+  scanStatus: packageScanStatusValidator,
+  softDeletedAt: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_package", ["packageId", "pluginCategory"])
+  .index("by_active_category_updated", ["softDeletedAt", "pluginCategory", "updatedAt"])
+  .index("by_active_category_executes_updated", [
+    "softDeletedAt",
+    "pluginCategory",
+    "executesCode",
+    "updatedAt",
+  ])
+  .index("by_active_family_category_updated", [
+    "softDeletedAt",
+    "family",
+    "pluginCategory",
+    "updatedAt",
+  ])
+  .index("by_active_family_category_executes_updated", [
+    "softDeletedAt",
+    "family",
+    "pluginCategory",
+    "executesCode",
+    "updatedAt",
+  ])
+  .index("by_active_channel_category_updated", [
+    "softDeletedAt",
+    "channel",
+    "pluginCategory",
+    "updatedAt",
+  ])
+  .index("by_active_channel_category_executes_updated", [
+    "softDeletedAt",
+    "channel",
+    "pluginCategory",
+    "executesCode",
+    "updatedAt",
+  ])
+  .index("by_active_official_category_updated", [
+    "softDeletedAt",
+    "isOfficial",
+    "pluginCategory",
+    "updatedAt",
+  ])
+  .index("by_active_official_category_executes_updated", [
+    "softDeletedAt",
+    "isOfficial",
+    "pluginCategory",
+    "executesCode",
+    "updatedAt",
+  ])
+  .index("by_active_family_channel_category_updated", [
+    "softDeletedAt",
+    "family",
+    "channel",
+    "pluginCategory",
+    "updatedAt",
+  ])
+  .index("by_active_family_channel_category_executes_updated", [
+    "softDeletedAt",
+    "family",
+    "channel",
+    "pluginCategory",
+    "executesCode",
+    "updatedAt",
+  ])
+  .index("by_active_family_official_category_updated", [
+    "softDeletedAt",
+    "family",
+    "isOfficial",
+    "pluginCategory",
+    "updatedAt",
+  ])
+  .index("by_active_family_official_category_executes_updated", [
+    "softDeletedAt",
+    "family",
+    "isOfficial",
+    "pluginCategory",
+    "executesCode",
+    "updatedAt",
+  ])
+  .index("by_active_channel_official_category_updated", [
+    "softDeletedAt",
+    "channel",
+    "isOfficial",
+    "pluginCategory",
+    "updatedAt",
+  ])
+  .index("by_active_channel_official_category_executes_updated", [
+    "softDeletedAt",
+    "channel",
+    "isOfficial",
+    "pluginCategory",
     "executesCode",
     "updatedAt",
   ]);
@@ -1720,6 +1856,7 @@ export default defineSchema({
   packageBadges,
   packageSearchDigest,
   packageCapabilitySearchDigest,
+  packagePluginCategorySearchDigest,
   souls,
   skillVersions,
   depRegistryCache,

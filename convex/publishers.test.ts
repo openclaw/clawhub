@@ -9,6 +9,7 @@ import {
   listPublishedPage,
   migrateLegacyPublisherHandleToOrgInternal,
   removeMember,
+  setTrustedPublisherInternal,
   updateProfile,
 } from "./publishers";
 
@@ -77,7 +78,12 @@ const listPublicPageHandler = (
       paginationOpts: { cursor: string | null; numItems: number };
     },
     {
-      page: Array<{ handle: string; kind: "user" | "org"; stats: { downloads: number } }>;
+      page: Array<{
+        handle: string;
+        kind: "user" | "org";
+        stats: { downloads: number };
+        publishedItems: Array<{ displayName: string; downloads: number }>;
+      }>;
       counts: { all: number; individuals: number; organizations: number };
       globalCounts: { all: number; individuals: number; organizations: number };
       continueCursor: string;
@@ -106,6 +112,14 @@ const updateProfileHandler = (
     displayName: string;
     bio?: string;
     image?: string;
+  }>
+)._handler;
+
+const setTrustedPublisherInternalHandler = (
+  setTrustedPublisherInternal as unknown as WrappedHandler<{
+    actorUserId: string;
+    publisherId: string;
+    trustedPublisher: boolean;
   }>
 )._handler;
 
@@ -292,7 +306,7 @@ describe("publishers membership controls", () => {
             }
             if (
               (table === "skills" || table === "packages") &&
-              indexName === "by_owner_publisher_active_updated"
+              indexName === "by_owner_publisher_active_downloads"
             ) {
               return indexedRows([]);
             }
@@ -398,7 +412,7 @@ describe("publishers membership controls", () => {
             }
             if (
               (table === "skills" || table === "packages") &&
-              indexName === "by_owner_publisher_active_updated"
+              indexName === "by_owner_publisher_active_downloads"
             ) {
               return indexedRows([]);
             }
@@ -417,6 +431,136 @@ describe("publishers membership controls", () => {
     expect(result.counts).toEqual({ all: 1, individuals: 1, organizations: 0 });
     expect(result.globalCounts).toEqual({ all: 3, individuals: 2, organizations: 1 });
     expect(result.page.map((item) => item.handle)).toEqual(["alice"]);
+  });
+
+  it("orders public publisher card previews by downloads", async () => {
+    const publisherRows = [
+      {
+        _id: "publishers:openclaw",
+        _creationTime: 1,
+        kind: "org",
+        handle: "openclaw",
+        displayName: "OpenClaw",
+        publishedSkills: 1,
+        publishedPackages: 4,
+        totalInstalls: 20,
+        totalDownloads: 364,
+        totalStars: 2,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+    const skillRows = [
+      {
+        _id: "skills:popular-skill",
+        ownerPublisherId: "publishers:openclaw",
+        softDeletedAt: undefined,
+        displayName: "Popular Skill",
+        statsDownloads: 98,
+        statsStars: 1,
+        statsInstallsAllTime: 1,
+        stats: { downloads: 98, stars: 1, installsCurrent: 1, installsAllTime: 1 },
+        updatedAt: 1,
+      },
+    ];
+    const packageRows = [
+      {
+        _id: "packages:popular-plugin",
+        ownerPublisherId: "publishers:openclaw",
+        softDeletedAt: undefined,
+        family: "code-plugin",
+        displayName: "Popular Plugin",
+        stats: { downloads: 128, stars: 1, installs: 1, versions: 1 },
+        updatedAt: 1,
+      },
+      {
+        _id: "packages:recent-plugin",
+        ownerPublisherId: "publishers:openclaw",
+        softDeletedAt: undefined,
+        family: "code-plugin",
+        displayName: "Recent Plugin",
+        stats: { downloads: 12, stars: 1, installs: 1, versions: 1 },
+        updatedAt: 5,
+      },
+      {
+        _id: "packages:recent-helper",
+        ownerPublisherId: "publishers:openclaw",
+        softDeletedAt: undefined,
+        family: "code-plugin",
+        displayName: "Recent Helper",
+        stats: { downloads: 11, stars: 1, installs: 1, versions: 1 },
+        updatedAt: 4,
+      },
+      {
+        _id: "packages:recent-tool",
+        ownerPublisherId: "publishers:openclaw",
+        softDeletedAt: undefined,
+        family: "code-plugin",
+        displayName: "Recent Tool",
+        stats: { downloads: 10, stars: 1, installs: 1, versions: 1 },
+        updatedAt: 3,
+      },
+    ];
+    const rowsByDownloads = <
+      T extends { updatedAt: number; stats?: { downloads: number }; statsDownloads?: number },
+    >(
+      rows: T[],
+    ) =>
+      [...rows].sort(
+        (a, b) =>
+          (b.statsDownloads ?? b.stats?.downloads ?? 0) -
+            (a.statsDownloads ?? a.stats?.downloads ?? 0) || b.updatedAt - a.updatedAt,
+      );
+    const ctx = {
+      db: {
+        get: vi.fn(),
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
+            const fields: Record<string, unknown> = {};
+            const q = {
+              eq: (field: string, value: unknown) => {
+                fields[field] = value;
+                return q;
+              },
+            };
+            buildQuery(q);
+            if (table === "publishers" && indexName === "by_active_total_downloads") {
+              return {
+                order: vi.fn(() => ({
+                  take: vi.fn(async () => publisherRows),
+                })),
+              };
+            }
+            if (table === "skills" && indexName === "by_owner_publisher_active_downloads") {
+              return indexedRows(
+                rowsByDownloads(
+                  skillRows.filter((skill) => skill.ownerPublisherId === fields.ownerPublisherId),
+                ),
+              );
+            }
+            if (table === "packages" && indexName === "by_owner_publisher_active_downloads") {
+              return indexedRows(
+                rowsByDownloads(
+                  packageRows.filter((pkg) => pkg.ownerPublisherId === fields.ownerPublisherId),
+                ),
+              );
+            }
+            throw new Error(`unexpected ${table} index ${indexName}`);
+          }),
+        })),
+      },
+    };
+
+    const result = await listPublicPageHandler(ctx as never, {
+      paginationOpts: { cursor: null, numItems: 25 },
+    });
+
+    expect(result.page[0]?.publishedItems.map((item) => item.displayName)).toEqual([
+      "Popular Plugin",
+      "Popular Skill",
+      "Recent Plugin",
+    ]);
+    expect(result.page[0]?.publishedItems.map((item) => item.downloads)).toEqual([128, 98, 12]);
   });
 
   it("does not hydrate every publisher before filtering public publisher pages", async () => {
@@ -459,7 +603,7 @@ describe("publishers membership controls", () => {
             }
             if (
               (table === "skills" || table === "packages") &&
-              indexName === "by_owner_publisher_active_updated"
+              indexName === "by_owner_publisher_active_downloads"
             ) {
               ownerPublisherQueries.push(String(fields.ownerPublisherId));
               return indexedRows([]);
@@ -591,6 +735,118 @@ describe("publishers membership controls", () => {
     expect(result.page).toMatchObject([
       { displayName: "Example Plugin", href: "/plugins/@openclaw/example-plugin" },
     ]);
+  });
+
+  it("includes skill.icon on catalog items and surfaces null for plugins (F7)", async () => {
+    // Regression guard for F2: listPublishedPage must mirror `skills.icon`
+    // onto the catalog DTO so the publisher profile page (/p/<handle>) can
+    // render the same custom glyph that SkillCard / SkillListItem show on
+    // /skills and /search. Plugins always carry `icon: null` in Phase 1.
+    const publisher = {
+      _id: "publishers:openclaw",
+      _creationTime: 1,
+      kind: "org",
+      handle: "openclaw",
+      displayName: "OpenClaw",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => (id === "publishers:openclaw" ? publisher : null)),
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
+            const fields: Record<string, unknown> = {};
+            const q = {
+              eq: (field: string, value: unknown) => {
+                fields[field] = value;
+                return q;
+              },
+            };
+            buildQuery(q);
+            if (table === "publishers" && indexName === "by_handle") {
+              return {
+                unique: vi.fn(async () => (fields.handle === "openclaw" ? publisher : null)),
+              };
+            }
+            if (table === "skills" && indexName === "by_owner_publisher_active_updated") {
+              return indexedRows([
+                {
+                  _id: "skills:icon-skill",
+                  ownerPublisherId: "publishers:openclaw",
+                  softDeletedAt: undefined,
+                  slug: "icon-skill",
+                  displayName: "Icon Skill",
+                  summary: "Has a custom icon",
+                  icon: "lucide:Plug",
+                  stats: {
+                    downloads: 10,
+                    downloadsAllTime: 10,
+                    installs: 5,
+                    installsAllTime: 5,
+                    stars: 2,
+                  },
+                  updatedAt: 8,
+                },
+                {
+                  _id: "skills:plain-skill",
+                  ownerPublisherId: "publishers:openclaw",
+                  softDeletedAt: undefined,
+                  slug: "plain-skill",
+                  displayName: "Plain Skill",
+                  summary: "No icon set",
+                  // icon intentionally absent — must surface as null on the DTO
+                  stats: {
+                    downloads: 7,
+                    downloadsAllTime: 7,
+                    installs: 3,
+                    installsAllTime: 3,
+                    stars: 1,
+                  },
+                  updatedAt: 6,
+                },
+              ]);
+            }
+            if (table === "packages" && indexName === "by_owner_publisher_active_updated") {
+              return indexedRows([
+                {
+                  _id: "packages:plugin",
+                  ownerPublisherId: "publishers:openclaw",
+                  softDeletedAt: undefined,
+                  family: "code-plugin",
+                  name: "@openclaw/example-plugin",
+                  displayName: "Example Plugin",
+                  summary: "A plugin",
+                  stats: { downloads: 5, installs: 2, stars: 0, versions: 1 },
+                  updatedAt: 4,
+                },
+              ]);
+            }
+            throw new Error(`unexpected ${table} index ${indexName}`);
+          }),
+        })),
+      },
+    };
+
+    const result = (await listPublishedPageHandler(ctx as never, {
+      handle: "openclaw",
+      paginationOpts: { cursor: null, numItems: 12 },
+    })) as unknown as {
+      page: Array<{
+        displayName: string;
+        kind: "skill" | "plugin";
+        icon: string | null;
+      }>;
+    };
+
+    const byName = Object.fromEntries(result.page.map((item) => [item.displayName, item]));
+    // Skill with a stored icon must surface it on the DTO.
+    expect(byName["Icon Skill"]).toMatchObject({ kind: "skill", icon: "lucide:Plug" });
+    // Skill without an icon must surface null (not undefined) so the client
+    // type is uniform and MarketplaceIcon can safely pass it to parseSkillIcon.
+    expect(byName["Plain Skill"]).toMatchObject({ kind: "skill", icon: null });
+    // Plugins always carry null in Phase 1.
+    expect(byName["Example Plugin"]).toMatchObject({ kind: "plugin", icon: null });
   });
 
   it("prevents admins from promoting members to owner", async () => {
@@ -1042,6 +1298,60 @@ describe("publishers membership controls", () => {
   });
 });
 
+describe("publisher audit logs", () => {
+  it("audits org trusted-publisher changes", async () => {
+    const patch = vi.fn();
+    const insert = vi.fn(async () => "auditLogs:1");
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:admin") return { _id: id, role: "admin" };
+          if (id === "publishers:openclaw") {
+            return {
+              _id: id,
+              kind: "org",
+              handle: "openclaw",
+              trustedPublisher: false,
+            };
+          }
+          return null;
+        }),
+        patch,
+        insert,
+        query: vi.fn(),
+        delete: vi.fn(),
+        replace: vi.fn(),
+        normalizeId: vi.fn(),
+      },
+    };
+
+    await setTrustedPublisherInternalHandler(ctx, {
+      actorUserId: "users:admin",
+      publisherId: "publishers:openclaw",
+      trustedPublisher: true,
+    });
+
+    expect(patch).toHaveBeenCalledWith("publishers:openclaw", {
+      trustedPublisher: true,
+      updatedAt: expect.any(Number),
+    });
+    expect(insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({
+        action: "publisher.trusted.set",
+        actorUserId: "users:admin",
+        targetType: "publisher",
+        targetId: "publishers:openclaw",
+        metadata: {
+          handle: "openclaw",
+          previousTrustedPublisher: false,
+          trustedPublisher: true,
+        },
+      }),
+    );
+  });
+});
+
 describe("publisher-owned resource authorization", () => {
   function makeOwnerResourceCtx(options: {
     publisher: Record<string, unknown> | null;
@@ -1108,6 +1418,38 @@ describe("publisher-owned resource authorization", () => {
 });
 
 describe("publisher bootstrap", () => {
+  function makeSynthesizedPublisherCtx(userId: string, user: Record<string, unknown>) {
+    return {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === userId) return { _id: id, ...user };
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table === "publisherMembers") {
+            return {
+              withIndex: vi.fn((indexName: string) => {
+                if (indexName !== "by_user") throw new Error(`unexpected index ${indexName}`);
+                return { collect: vi.fn().mockResolvedValue([]) };
+              }),
+            };
+          }
+          if (table === "publishers") {
+            return {
+              withIndex: vi.fn((indexName: string) => {
+                if (indexName !== "by_linked_user") {
+                  throw new Error(`unexpected index ${indexName}`);
+                }
+                return { unique: vi.fn().mockResolvedValue(null) };
+              }),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+  }
+
   it("lists a synthesized personal publisher when membership rows are missing", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:alice" as never);
     const ctx = {
@@ -1157,6 +1499,85 @@ describe("publisher bootstrap", () => {
           handle: "alice",
           kind: "user",
           linkedUserId: "users:alice",
+        }),
+      }),
+    ]);
+  });
+
+  it("derives route-safe handles for synthesized personal publishers", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:local" as never);
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:local") {
+            return {
+              _id: id,
+              _creationTime: 1,
+              name: "Local Owner",
+              displayName: "Local Owner",
+              trustedPublisher: false,
+              createdAt: 1,
+              updatedAt: 1,
+            };
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table === "publisherMembers") {
+            return {
+              withIndex: vi.fn((indexName: string) => {
+                if (indexName !== "by_user") throw new Error(`unexpected index ${indexName}`);
+                return { collect: vi.fn().mockResolvedValue([]) };
+              }),
+            };
+          }
+          if (table === "publishers") {
+            return {
+              withIndex: vi.fn((indexName: string) => {
+                if (indexName !== "by_linked_user") {
+                  throw new Error(`unexpected index ${indexName}`);
+                }
+                return { unique: vi.fn().mockResolvedValue(null) };
+              }),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await expect(listMineHandler(ctx as never, {} as never)).resolves.toEqual([
+      expect.objectContaining({
+        role: "owner",
+        publisher: expect.objectContaining({
+          displayName: "Local Owner",
+          handle: "local-owner",
+          kind: "user",
+          linkedUserId: "users:local",
+        }),
+      }),
+    ]);
+  });
+
+  it("falls back when synthesized personal publisher handles sanitize to empty", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:symbols" as never);
+    const ctx = makeSynthesizedPublisherCtx("users:symbols", {
+      _creationTime: 1,
+      name: "!!!",
+      displayName: "!!!",
+      trustedPublisher: false,
+      createdAt: 1,
+      updatedAt: 1,
+    });
+
+    await expect(listMineHandler(ctx as never, {} as never)).resolves.toEqual([
+      expect.objectContaining({
+        role: "owner",
+        publisher: expect.objectContaining({
+          displayName: "!!!",
+          handle: "user",
+          kind: "user",
+          linkedUserId: "users:symbols",
         }),
       }),
     ]);

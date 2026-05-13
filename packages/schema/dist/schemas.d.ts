@@ -162,6 +162,12 @@ export declare const ApiV1SearchResponseSchema: import("arktype/internal/variant
         summary?: string | null | undefined;
         version?: string | null | undefined;
         updatedAt?: number | undefined;
+        ownerHandle?: string | null | undefined;
+        owner?: {
+            handle?: string | null | undefined;
+            displayName?: string | null | undefined;
+            image?: string | null | undefined;
+        } | null | undefined;
     }[];
 }, {}>;
 export declare const ApiV1SkillListResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{

@@ -254,6 +254,33 @@ describe("cmdSearch", () => {
     const url = new URL(String(requestArgs?.url));
     expect(url.searchParams.get("limit")).toBe("5");
   });
+
+  it("prints skill owners in search results", async () => {
+    mockGetOptionalAuthToken.mockResolvedValue(undefined);
+    mockApiRequest.mockResolvedValue({
+      results: [
+        {
+          slug: "demo",
+          displayName: "Demo Skill",
+          version: "1.2.3",
+          ownerHandle: "openclaw",
+          score: 0.9876,
+        },
+        {
+          slug: "legacy",
+          displayName: "Legacy Skill",
+          version: null,
+          owner: { displayName: "Legacy Owner" },
+          score: 0.5,
+        },
+      ],
+    });
+
+    await cmdSearch(makeOpts(), "demo");
+
+    expect(mockLog).toHaveBeenCalledWith("demo v1.2.3  @openclaw  Demo Skill  (0.988)");
+    expect(mockLog).toHaveBeenCalledWith("legacy  Legacy Owner  Legacy Skill  (0.500)");
+  });
 });
 
 describe("skill moderation commands", () => {

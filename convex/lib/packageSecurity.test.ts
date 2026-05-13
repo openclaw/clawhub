@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   getPackageDownloadSecurityBlock,
+  getPackageTrustReasons,
   isPackageBlockedFromPublic,
   resolvePackageReleaseScanStatus,
 } from "./packageSecurity";
@@ -152,5 +153,53 @@ describe("packageSecurity", () => {
         message: expect.stringContaining("quarantined"),
       }),
     );
+  });
+
+  it("explains blocked trust decisions with compact reason codes", () => {
+    expect(
+      getPackageTrustReasons(
+        {
+          manualModeration: { state: "quarantined" },
+          vtAnalysis: {
+            status: "malicious",
+            engineStats: { malicious: 1, suspicious: 0, harmless: 12, undetected: 54 },
+          },
+        } as never,
+        "malicious",
+        2,
+      ),
+    ).toEqual(["manual:quarantined", "scan:malicious", "vt:malicious", "reports:2"]);
+  });
+
+  it("does not expose AI-only VT advisory statuses as public trust reasons", () => {
+    expect(
+      getPackageTrustReasons(
+        {
+          vtAnalysis: {
+            status: "malicious",
+            scanner: "code_insight",
+            source: "palm",
+            engineStats: { malicious: 0, suspicious: 0, harmless: 12, undetected: 54 },
+          },
+        } as never,
+        "pending",
+      ),
+    ).toEqual(["scan:pending"]);
+  });
+
+  it("deduplicates overlapping scanner reason codes", () => {
+    expect(
+      getPackageTrustReasons(
+        {
+          staticScan: { status: "malicious" },
+        } as never,
+        "malicious",
+      ),
+    ).toEqual(["scan:malicious", "static:malicious"]);
+  });
+
+  it("keeps clean and not-run releases free of scan reason noise", () => {
+    expect(getPackageTrustReasons({} as never, "clean")).toEqual([]);
+    expect(getPackageTrustReasons({} as never, "not-run")).toEqual([]);
   });
 });

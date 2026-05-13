@@ -200,7 +200,10 @@ export const acceptTransferInternal = internalMutation({
       }
     }
 
-    const newPublisher = await ensurePersonalPublisherForUser(ctx, newOwner);
+    const newPublisher = await ensurePersonalPublisherForUser(ctx, newOwner, {
+      actorUserId: args.actorUserId,
+      source: "skill.transfer.accept",
+    });
     if (!newPublisher) throw new Error("Failed to resolve publisher for new owner");
 
     await ctx.db.patch(skill._id, {

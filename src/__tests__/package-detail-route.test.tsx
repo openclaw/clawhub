@@ -175,6 +175,24 @@ describe("plugin detail route", () => {
     expect(screen.queryByRole("link", { name: "Download zip" })).toBeNull();
   });
 
+  it("links plugin breadcrumb owners to canonical publisher profiles", async () => {
+    loaderDataMock = {
+      ...loaderDataMock,
+      detail: {
+        package: loaderDataMock.detail.package,
+        owner: { handle: "openclaw", displayName: "OpenClaw", image: null },
+      },
+    };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    const { container } = render(<Component />);
+
+    expect(
+      container.querySelector('nav[aria-label="Plugin breadcrumbs"] a[href="/user/openclaw"]'),
+    ).toBeTruthy();
+  });
+
   it("shows plugin settings when the viewer can manage the plugin", async () => {
     useAuthStatusMock.mockReturnValue({
       isAuthenticated: true,
@@ -191,7 +209,7 @@ describe("plugin detail route", () => {
           ...loaderDataMock.detail.package!,
           latestVersion: "1.0.0",
         },
-        owner: null,
+        owner: { handle: "demo-owner", displayName: "Demo Owner", image: null },
       },
       version: {
         package: {
@@ -223,8 +241,18 @@ describe("plugin detail route", () => {
     render(<Component />);
 
     const downloadLink = screen.getByRole("link", { name: /download/i });
+    const newVersionLink = screen.getByRole("link", { name: "New version" });
     const settingsLink = screen.getByRole("link", { name: /settings/i });
+    expect(newVersionLink.getAttribute("href")).toBe(
+      "/plugins/publish?ownerHandle=demo-owner&name=demo-plugin&displayName=Demo+Plugin",
+    );
     expect(settingsLink.getAttribute("href")).toBe("/plugins/demo-plugin/settings");
+    expect(
+      downloadLink.compareDocumentPosition(newVersionLink) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      newVersionLink.compareDocumentPosition(settingsLink) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     expect(
       downloadLink.compareDocumentPosition(settingsLink) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
@@ -246,7 +274,43 @@ describe("plugin detail route", () => {
 
     render(<Component />);
 
+    expect(screen.queryByRole("link", { name: "New version" })).toBeNull();
     expect(screen.queryByRole("link", { name: /settings/i })).toBeNull();
+  });
+
+  it("checks plugin management when a dev viewer exists without a Convex auth session", async () => {
+    useAuthStatusMock.mockReturnValue({
+      isAuthenticated: false,
+      isLoading: false,
+      me: { _id: "users:1", role: "user" },
+    });
+    useQueryMock.mockReturnValue({
+      package: { _id: "packages:1", name: "demo-plugin", displayName: "Demo Plugin" },
+      latestRelease: { _id: "packageReleases:1" },
+    });
+    loaderDataMock = {
+      detail: {
+        package: {
+          ...loaderDataMock.detail.package!,
+          latestVersion: "1.0.0",
+        },
+        owner: { handle: "demo-owner", displayName: "Demo Owner", image: null },
+      },
+      version: null,
+      readme: null,
+      rateLimited: null,
+    };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(useQueryMock).toHaveBeenCalledWith(expect.anything(), {
+      name: "demo-plugin",
+      candidateNames: ["@openclaw/demo-plugin", "demo-plugin"],
+    });
+    expect(screen.getByRole("link", { name: "New version" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /settings/i })).toBeTruthy();
   });
 
   it("renders package security scan results when scan data is present", async () => {

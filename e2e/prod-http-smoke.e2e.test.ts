@@ -6,6 +6,8 @@ import { describe, expect, it } from "vitest";
 const REQUEST_TIMEOUT_MS = 15_000;
 const MAX_RATE_LIMIT_RETRIES = 3;
 const MAX_RATE_LIMIT_WAIT_MS = 15_000;
+const TRANSIENT_RETRY_DELAY_MS = 1_000;
+const OG_IMAGE_TIMEOUT_MS = 45_000;
 
 try {
   setGlobalDispatcher(
@@ -31,9 +33,13 @@ function getSkillOwner() {
   return process.env.CLAWHUB_E2E_SKILL_OWNER?.trim() || "steipete";
 }
 
-async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit) {
+async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+  timeoutMs = REQUEST_TIMEOUT_MS,
+) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(new Error("Timeout")), REQUEST_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(new Error("Timeout")), timeoutMs);
   try {
     return await fetch(input, { ...init, signal: controller.signal });
   } finally {
@@ -65,12 +71,34 @@ function getRetryDelayMs(response: Response) {
   return 1000;
 }
 
-async function fetchWithRetry(input: RequestInfo | URL, init?: RequestInit) {
+async function fetchWithRetry(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+  options: { maxAttempts?: number; timeoutMs?: number } = {},
+) {
+  const maxAttempts = options.maxAttempts ?? MAX_RATE_LIMIT_RETRIES;
+  let lastError: unknown;
   for (let attempt = 1; ; attempt += 1) {
-    const response = await fetchWithTimeout(input, init);
-    if (response.status !== 429 || attempt >= MAX_RATE_LIMIT_RETRIES) return response;
-    await new Promise((resolve) => setTimeout(resolve, getRetryDelayMs(response)));
+    try {
+      const response = await fetchWithTimeout(input, init, options.timeoutMs);
+      if (attempt >= maxAttempts) return response;
+      if (response.status === 429) {
+        await new Promise((resolve) => setTimeout(resolve, getRetryDelayMs(response)));
+        continue;
+      }
+      if (response.status >= 500) {
+        await new Promise((resolve) => setTimeout(resolve, TRANSIENT_RETRY_DELAY_MS * attempt));
+        continue;
+      }
+      return response;
+    } catch (error) {
+      lastError = error;
+      if (attempt >= maxAttempts) throw error;
+      await new Promise((resolve) => setTimeout(resolve, TRANSIENT_RETRY_DELAY_MS * attempt));
+    }
   }
+
+  throw lastError;
 }
 
 async function fetchHtml(pathname: string) {
@@ -145,6 +173,8 @@ describe("prod http smoke", () => {
 
     const response = await fetchWithRetry(
       new URL(`/og/skill.png?${params.toString()}`, getSiteBase()),
+      undefined,
+      { timeoutMs: OG_IMAGE_TIMEOUT_MS },
     );
 
     expect(response.ok).toBe(true);

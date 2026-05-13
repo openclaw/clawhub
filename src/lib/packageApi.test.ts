@@ -286,6 +286,7 @@ describe("fetchPackages", () => {
       limit: 12,
       cursor: "pkgpage:test",
       isOfficial: true,
+      category: "data",
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -298,6 +299,7 @@ describe("fetchPackages", () => {
     expect(url.searchParams.get("limit")).toBe("12");
     expect(url.searchParams.get("cursor")).toBe("pkgpage:test");
     expect(url.searchParams.get("isOfficial")).toBe("true");
+    expect(url.searchParams.get("category")).toBe("data");
   });
 
   it("uses the dedicated plugins search endpoint for mixed plugin search", async () => {
@@ -310,6 +312,7 @@ describe("fetchPackages", () => {
       q: "demo",
       limit: 8,
       executesCode: false,
+      category: "dev-tools",
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -322,6 +325,7 @@ describe("fetchPackages", () => {
     expect(url.searchParams.get("q")).toBe("demo");
     expect(url.searchParams.get("limit")).toBe("8");
     expect(url.searchParams.get("executesCode")).toBe("false");
+    expect(url.searchParams.get("category")).toBe("dev-tools");
   });
 
   it("throws package detail errors for non-404 failures", async () => {
@@ -522,6 +526,7 @@ describe("fetchPluginCatalog", () => {
 
     const result = await fetchPluginCatalog({
       q: "demo",
+      cursor: "cursor:plugins",
       limit: 10,
     });
 
@@ -530,5 +535,30 @@ describe("fetchPluginCatalog", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const url = new URL(fetchMock.mock.calls[0]?.[0] as string);
     expect(url.pathname).toBe("/api/v1/plugins/search");
+    expect(url.searchParams.has("cursor")).toBe(false);
+    expect(url.searchParams.has("sort")).toBe(false);
+  });
+
+  it("keeps relevance as the implicit plugins search sort", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          results: [],
+          nextCursor: "ignored-for-relevance",
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await fetchPluginCatalog({
+      q: "demo",
+      limit: 10,
+    });
+
+    expect(result.nextCursor).toBeNull();
+    const url = new URL(fetchMock.mock.calls[0]?.[0] as string);
+    expect(url.pathname).toBe("/api/v1/plugins/search");
+    expect(url.searchParams.has("sort")).toBe(false);
   });
 });

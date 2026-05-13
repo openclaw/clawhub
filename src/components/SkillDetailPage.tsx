@@ -128,13 +128,13 @@ function buildStaffVisibilityAlert({
   } else if (moderationReason === "security.redaction") {
     reason = "because it was hidden for security redaction.";
   } else if (moderationReason?.startsWith("scanner.") && moderationReason.endsWith(".malicious")) {
-    reason = "because automated security checks marked it suspicious or malicious.";
+    reason = "because automated security checks found security warnings or malicious content.";
   } else if (moderationReason?.startsWith("scanner.") && moderationReason.endsWith(".suspicious")) {
-    reason = "because automated security checks marked it suspicious or malicious.";
+    reason = "because automated security checks found security warnings or malicious content.";
   } else if (modInfo?.isMalwareBlocked) {
-    reason = "because automated security checks marked it suspicious or malicious.";
+    reason = "because automated security checks found security warnings or malicious content.";
   } else if (modInfo?.isSuspicious) {
-    reason = "because automated security checks marked it suspicious or malicious.";
+    reason = "because automated security checks found security warnings or malicious content.";
   } else if (isSoftDeleted && !moderationReason) {
     reason = "because it was unpublished.";
   }
@@ -277,6 +277,13 @@ export function SkillDetailPage({
   const settingsHref =
     canAccessSettings && skill
       ? `${buildSkillHref(ownerHandle, owner?._id ?? null, skill.slug)}/settings`
+      : null;
+  const newVersionHref =
+    canAccessSettings && skill
+      ? `/skills/publish?${new URLSearchParams({
+          updateSlug: skill.slug,
+          ...(ownerHandle ? { ownerHandle } : {}),
+        }).toString()}`
       : null;
   const canonicalOwnerParam =
     typeof canonicalOwner === "string" ? canonicalOwner.trim().toLowerCase() : null;
@@ -673,6 +680,7 @@ export function SkillDetailPage({
           cliHelp={cliHelp}
           clawdis={clawdis}
           priorityContent={priorityContent}
+          newVersionHref={newVersionHref}
           settingsHref={settingsHref}
         >
           {nixSnippet ? (

@@ -114,6 +114,29 @@ export function isPackageBlockedFromPublic(scanStatus: PackageScanStatus) {
   return scanStatus === "malicious";
 }
 
+export function isPackageReleaseTrustStale(release: Pick<Doc<"packageReleases">, "vtAnalysis">) {
+  return release.vtAnalysis?.status?.trim().toLowerCase() === "stale";
+}
+
+export function getPackageTrustReasons(
+  release: Pick<Doc<"packageReleases">, "manualModeration" | "staticScan" | "vtAnalysis">,
+  scanStatus: Exclude<PackageScanStatus, undefined>,
+  reportCount = 0,
+) {
+  const reasons: string[] = [];
+  if (release.manualModeration?.state) reasons.push(`manual:${release.manualModeration.state}`);
+  if (scanStatus !== "clean" && scanStatus !== "not-run") reasons.push(`scan:${scanStatus}`);
+  if (release.staticScan?.status === "malicious") {
+    reasons.push(`static:${release.staticScan.status}`);
+  }
+  const vtStatus = getAuthoritativePackageVtStatus(release.vtAnalysis);
+  if ((vtStatus === "suspicious" || vtStatus === "malicious") && vtStatus === scanStatus) {
+    reasons.push(`vt:${vtStatus}`);
+  }
+  if (reportCount > 0) reasons.push(`reports:${reportCount}`);
+  return [...new Set(reasons)];
+}
+
 export function getPackageDownloadSecurityBlock(release: PackageReleaseSecurityLike) {
   if (release.manualModeration?.state === "quarantined") {
     return {

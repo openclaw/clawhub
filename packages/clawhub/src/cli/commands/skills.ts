@@ -89,6 +89,15 @@ function formatPinnedDetails(entry?: { pinReason?: string }) {
   return entry?.pinReason ? ` (${entry.pinReason})` : "";
 }
 
+function formatSearchOwner(entry: {
+  ownerHandle?: string | null;
+  owner?: { handle?: string | null; displayName?: string | null } | null;
+}) {
+  const handle = entry.ownerHandle ?? entry.owner?.handle;
+  if (handle) return `@${handle}`;
+  return entry.owner?.displayName ?? "unknown owner";
+}
+
 export async function cmdSearch(opts: GlobalOpts, query: string, limit?: number) {
   if (!query) fail("Query required");
 
@@ -111,7 +120,9 @@ export async function cmdSearch(opts: GlobalOpts, query: string, limit?: number)
       const slug = entry.slug ?? "unknown";
       const name = entry.displayName ?? slug;
       const version = entry.version ? ` v${entry.version}` : "";
-      console.log(`${slug}${version}  ${name}  (${entry.score.toFixed(3)})`);
+      console.log(
+        `${slug}${version}  ${formatSearchOwner(entry)}  ${name}  (${entry.score.toFixed(3)})`,
+      );
     }
   } catch (error) {
     spinner.fail(formatError(error));
