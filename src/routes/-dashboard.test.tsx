@@ -9,25 +9,11 @@ import { Dashboard } from "./dashboard";
 const mocks = vi.hoisted(() => ({
   useQuery: vi.fn(),
   usePaginatedQuery: vi.fn(),
-  useMutation: vi.fn(),
-  useAction: vi.fn(),
-  seedFixtures: vi.fn(),
-  toastSuccess: vi.fn(),
-  toastError: vi.fn(),
 }));
 
 vi.mock("convex/react", () => ({
   useQuery: (...args: unknown[]) => mocks.useQuery(...args),
   usePaginatedQuery: (...args: unknown[]) => mocks.usePaginatedQuery(...args),
-  useMutation: (...args: unknown[]) => mocks.useMutation(...args),
-  useAction: (...args: unknown[]) => mocks.useAction(...args),
-}));
-
-vi.mock("sonner", () => ({
-  toast: {
-    success: (...args: unknown[]) => mocks.toastSuccess(...args),
-    error: (...args: unknown[]) => mocks.toastError(...args),
-  },
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -275,14 +261,6 @@ describe("Dashboard rows", () => {
       status: "LoadingFirstPage",
       loadMore: vi.fn(),
     });
-    mocks.useMutation.mockReset();
-    mocks.useMutation.mockReturnValue(vi.fn().mockResolvedValue({}));
-    mocks.seedFixtures.mockReset();
-    mocks.seedFixtures.mockResolvedValue({ skillCount: 7, pluginCount: 7 });
-    mocks.useAction.mockReset();
-    mocks.useAction.mockReturnValue(mocks.seedFixtures);
-    mocks.toastSuccess.mockReset();
-    mocks.toastError.mockReset();
   });
 
   it("renders compact clickable artifact cards with status and inventory context", () => {
@@ -433,19 +411,6 @@ describe("Dashboard rows", () => {
     expect(screen.queryByText("Sign in to access your dashboard.")).toBeNull();
     expect(screen.queryByText("Dashboard")).toBeNull();
     expect(document.querySelectorAll(".animate-pulse").length).toBeGreaterThan(0);
-  });
-
-  it("seeds current-user sample data from the empty dashboard", async () => {
-    arrangeDashboard({});
-
-    renderDashboard();
-
-    fireEvent.click(screen.getByRole("button", { name: /seed sample data/i }));
-
-    expect(mocks.seedFixtures).toHaveBeenCalledWith({});
-    await waitFor(() => {
-      expect(mocks.toastSuccess).toHaveBeenCalledWith("Sample data ready: 7 skills and 7 plugins.");
-    });
   });
 
   it("keeps scanner rerun actions out of the dashboard", () => {

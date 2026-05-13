@@ -1,8 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useAction, usePaginatedQuery, useQuery } from "convex/react";
-import { Box, Database, Loader2, Package, Plus, Settings } from "lucide-react";
+import { usePaginatedQuery, useQuery } from "convex/react";
+import { Box, Loader2, Package, Plus, Settings } from "lucide-react";
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 import { ArtifactCard } from "../components/artifacts/ArtifactCard";
@@ -18,9 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../components/ui/select";
-import { getUserFacingConvexError } from "../lib/convexError";
 import { buildPluginDetailHref } from "../lib/pluginRoutes";
-import { isDevRuntime } from "../lib/runtimeEnv";
 
 const emptyPluginPublishSearch = {
   ownerHandle: undefined,
@@ -119,8 +116,6 @@ export function Dashboard() {
       }>
     | undefined;
   const [selectedPublisherId, setSelectedPublisherId] = useState<string>("");
-  const [isSeedingFixtures, setIsSeedingFixtures] = useState(false);
-  const seedCurrentUserFixtures = useAction(api.devSeed.seedCurrentUserFixtures);
   const selectedPublisher =
     publishers?.find((entry) => entry.publisher._id === selectedPublisherId) ?? null;
 
@@ -175,35 +170,8 @@ export function Dashboard() {
   const isLoading = skillsStatus === "LoadingFirstPage";
   const ownerHandle =
     selectedPublisher?.publisher.handle ?? me.handle ?? me.name ?? me.displayName ?? me._id;
-  const canSeedDevFixtures = isDevRuntime();
   const isDashboardEmpty = !isLoading && skills.length === 0 && packages.length === 0;
 
-  const handleSeedFixtures = async () => {
-    setIsSeedingFixtures(true);
-    try {
-      const result = (await seedCurrentUserFixtures({})) as {
-        skillCount?: number;
-        pluginCount?: number;
-      };
-      const skillCount = result.skillCount ?? 0;
-      const pluginCount = result.pluginCount ?? 0;
-      toast.success(`Sample data ready: ${skillCount} skills and ${pluginCount} plugins.`);
-    } catch (error) {
-      toast.error(getUserFacingConvexError(error, "Could not seed sample data."));
-    } finally {
-      setIsSeedingFixtures(false);
-    }
-  };
-  const seedFixturesButton = canSeedDevFixtures ? (
-    <Button type="button" onClick={handleSeedFixtures} disabled={isSeedingFixtures}>
-      {isSeedingFixtures ? (
-        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-      ) : (
-        <Database className="h-4 w-4" aria-hidden="true" />
-      )}
-      Seed sample data
-    </Button>
-  ) : null;
   const publisherSelector =
     publishers && publishers.length > 1 ? (
       <div className="dashboard-publisher-select">
@@ -245,7 +213,6 @@ export function Dashboard() {
                 Publish a Skill
               </Link>
             </Button>
-            {seedFixturesButton}
             <Button asChild>
               <Link
                 to="/skills"
