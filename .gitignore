@@ -46,3 +46,5 @@ skills/*
 .codex/*
 !.codex/environments/
 !.codex/environments/environment.toml
+/.comux-hooks
+/.comux

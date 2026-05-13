@@ -11,6 +11,13 @@ import { DashboardSkeleton } from "../components/skeletons/DashboardSkeleton";
 import { buildSkillHref } from "../components/skillDetailUtils";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../components/ui/select";
 import { getUserFacingConvexError } from "../lib/convexError";
 import { buildPluginDetailHref } from "../lib/pluginRoutes";
 import { isDevRuntime } from "../lib/runtimeEnv";
@@ -197,6 +204,27 @@ export function Dashboard() {
       Seed sample data
     </Button>
   ) : null;
+  const publisherSelector =
+    publishers && publishers.length > 1 ? (
+      <div className="dashboard-publisher-select">
+        <span className="text-sm font-medium text-muted-foreground">Viewing as</span>
+        <Select value={selectedPublisherId} onValueChange={setSelectedPublisherId}>
+          <SelectTrigger
+            aria-label="Dashboard publisher"
+            className="min-w-[220px] rounded-[var(--radius-sm)]"
+          >
+            <SelectValue placeholder="Select publisher" />
+          </SelectTrigger>
+          <SelectContent>
+            {publishers.map((entry) => (
+              <SelectItem key={entry.publisher._id} value={entry.publisher._id}>
+                @{entry.publisher.handle} · {entry.publisher.kind === "org" ? "Org" : "Personal"}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    ) : null;
 
   // Welcome state for new users with no content
   if (isDashboardEmpty) {
@@ -210,9 +238,10 @@ export function Dashboard() {
             You're signed in as @{ownerHandle}. Get started by publishing your first skill or
             plugin.
           </p>
+          {publisherSelector}
           <div className="flex gap-3 justify-center">
             <Button asChild variant="primary">
-              <Link to="/skills/publish" search={{ updateSlug: undefined }}>
+              <Link to="/skills/publish" search={{ updateSlug: undefined, ownerHandle }}>
                 Publish a Skill
               </Link>
             </Button>
@@ -246,7 +275,7 @@ export function Dashboard() {
           <h1 className="section-title m-0">Dashboard</h1>
           <p className="section-subtitle m-0">View your published skills and plugins.</p>
         </div>
-        {isDashboardEmpty ? seedFixturesButton : null}
+        {publisherSelector}
       </div>
 
       <div className="dashboard-owner-grid">
@@ -254,7 +283,7 @@ export function Dashboard() {
           <div className="dashboard-section-header">
             <h2 className="dashboard-collection-title">Skills</h2>
             <Button asChild size="sm" className="dashboard-section-action">
-              <Link to="/skills/publish" search={{ updateSlug: undefined }}>
+              <Link to="/skills/publish" search={{ updateSlug: undefined, ownerHandle }}>
                 <Plus className="h-4 w-4" aria-hidden="true" />
                 New Skill
               </Link>

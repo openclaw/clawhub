@@ -198,6 +198,9 @@ export async function cmdInstall(
     spinner.text = `Downloading ${trimmed}@${resolvedVersion}`;
     const zip = await downloadZip(registry, { slug: trimmed, version: resolvedVersion, token });
     await extractZipToDir(zip, target);
+    const installedFiles = await listTextFiles(target);
+    const installedFingerprint =
+      installedFiles.length > 0 ? hashSkillFiles(installedFiles).fingerprint : undefined;
 
     await writeSkillOrigin(target, {
       version: 1,
@@ -205,6 +208,7 @@ export async function cmdInstall(
       slug: trimmed,
       installedVersion: resolvedVersion,
       installedAt: Date.now(),
+      fingerprint: installedFingerprint,
     });
 
     lock.skills[trimmed] = withPinnedMetadata(resolvedVersion, Date.now(), existingEntry);
@@ -261,6 +265,7 @@ export async function cmdUpdate(
     try {
       const target = join(opts.dir, entry);
       const exists = await fileExists(target);
+      const existingOrigin = exists ? await readSkillOrigin(target) : null;
 
       // Always fetch skill metadata to check moderation status
       const skillMeta = await apiRequest(
@@ -312,7 +317,13 @@ export async function cmdUpdate(
       }
 
       const latest = resolveResult.latestVersion?.version ?? null;
-      const matched = resolveResult.match?.version ?? null;
+      const matched =
+        resolveResult.match?.version ??
+        (localFingerprint &&
+        existingOrigin?.fingerprint === localFingerprint &&
+        existingOrigin.slug === entry
+          ? existingOrigin.installedVersion
+          : null);
 
       if (matched && lock.skills[entry]?.version !== matched) {
         lock.skills[entry] = withPinnedMetadata(
@@ -362,14 +373,17 @@ export async function cmdUpdate(
       await rm(target, { recursive: true, force: true });
       const zip = await downloadZip(registry, { slug: entry, version: targetVersion, token });
       await extractZipToDir(zip, target);
+      const installedFiles = await listTextFiles(target);
+      const installedFingerprint =
+        installedFiles.length > 0 ? hashSkillFiles(installedFiles).fingerprint : undefined;
 
-      const existingOrigin = await readSkillOrigin(target);
       await writeSkillOrigin(target, {
         version: 1,
         registry: existingOrigin?.registry ?? registry,
         slug: existingOrigin?.slug ?? entry,
         installedVersion: targetVersion,
         installedAt: existingOrigin?.installedAt ?? Date.now(),
+        fingerprint: installedFingerprint,
       });
 
       lock.skills[entry] = withPinnedMetadata(targetVersion, Date.now(), lock.skills[entry]);

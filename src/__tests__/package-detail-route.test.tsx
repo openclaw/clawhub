@@ -175,6 +175,80 @@ describe("plugin detail route", () => {
     expect(screen.queryByRole("link", { name: "Download zip" })).toBeNull();
   });
 
+  it("shows plugin settings when the viewer can manage the plugin", async () => {
+    useAuthStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: { _id: "users:1", role: "moderator" },
+    });
+    useQueryMock.mockReturnValue({
+      package: { _id: "packages:1", name: "demo-plugin", displayName: "Demo Plugin" },
+      latestRelease: { _id: "packageReleases:1" },
+    });
+    loaderDataMock = {
+      detail: {
+        package: {
+          ...loaderDataMock.detail.package!,
+          latestVersion: "1.0.0",
+        },
+        owner: null,
+      },
+      version: {
+        package: {
+          name: "demo-plugin",
+          displayName: "Demo Plugin",
+          family: "code-plugin",
+        },
+        version: {
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "Initial release",
+          distTags: ["latest"],
+          files: [],
+          compatibility: null,
+          capabilities: null,
+          verification: null,
+          sha256hash: null,
+          vtAnalysis: null,
+          llmAnalysis: null,
+          staticScan: null,
+        },
+      },
+      readme: null,
+      rateLimited: null,
+    };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    const downloadLink = screen.getByRole("link", { name: /download/i });
+    const settingsLink = screen.getByRole("link", { name: /settings/i });
+    expect(settingsLink.getAttribute("href")).toBe("/plugins/demo-plugin/settings");
+    expect(
+      downloadLink.compareDocumentPosition(settingsLink) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(useQueryMock).toHaveBeenCalledWith(expect.anything(), {
+      name: "demo-plugin",
+      candidateNames: ["@openclaw/demo-plugin", "demo-plugin"],
+    });
+  });
+
+  it("hides plugin settings when the viewer cannot manage the plugin", async () => {
+    useAuthStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: { _id: "users:1", role: "user" },
+    });
+    useQueryMock.mockReturnValue(null);
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(screen.queryByRole("link", { name: /settings/i })).toBeNull();
+  });
+
   it("renders package security scan results when scan data is present", async () => {
     loaderDataMock = {
       detail: loaderDataMock.detail,

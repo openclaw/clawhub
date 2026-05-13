@@ -187,4 +187,42 @@ describe("publisher ClawScan note updates", () => {
       }),
     );
   });
+
+  it("allows platform moderators to update latest skill publisher notes", async () => {
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const { db, version } = createDb();
+    const scheduler = { runAfter: vi.fn(async () => undefined) };
+
+    await updateSkillClawScanNoteAndRequestRescanHandler({ db, scheduler } as never, {
+      skillId: "skills:1",
+      clawScanNote: "Moderator context.",
+    });
+
+    expect(version).toMatchObject({
+      clawScanNote: "Moderator context.",
+      clawScanNoteUpdatedAt: expect.any(Number),
+    });
+  });
+
+  it("allows platform moderators to update latest plugin publisher notes", async () => {
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const { db, release } = createDb();
+    const scheduler = { runAfter: vi.fn(async () => undefined) };
+
+    await updatePackageClawScanNoteAndRequestRescanHandler({ db, scheduler } as never, {
+      packageId: "packages:1",
+      clawScanNote: "Moderator plugin context.",
+    });
+
+    expect(release).toMatchObject({
+      clawScanNote: "Moderator plugin context.",
+      clawScanNoteUpdatedAt: expect.any(Number),
+    });
+  });
 });

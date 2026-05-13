@@ -6,6 +6,28 @@
 
 ### Fixes
 
+- Web: keep skill/plugin detail tabs at mobile-friendly touch target height.
+
+## 0.15.0 - 2026-05-12
+
+### Changes
+
+- Web: polish dashboard artifact cards, loading skeletons, skill summary/detail layout, and adoption metrics after the 0.14 release (#2150, #2153, #2156, #2157, #2158, #2160).
+- Docs/dev: clarify pre-PR validation gates for local contributors (#2161).
+
+### Fixes
+
+- Web: show plugin settings actions to package managers and preserve manager access in dashboard rows (#2163, #2168).
+- Web: refresh skill star state after mutations and keep skill tabs from causing horizontal scroll (#2154, #2155).
+- Web: show owner names when handles are hidden, and clarify editable skill summary settings copy (#2151, #2162).
+- Dashboard: add a publisher switcher so org-owned skills and plugins are visible to org admins after transfer or publish (#2132).
+- Web: let org publishers/admins republish transferred org-owned skills without the publish form treating the existing slug as taken, including legacy users with synthesized personal publishers (#2171).
+- CLI: send skill ownership command payloads as JSON objects so rename/merge operations reach the API correctly (#1300).
+- CLI: keep an install fingerprint in skill origin metadata so `clawhub update <skill>` does not report fresh installs as local changes when the server cannot resolve the current hash (#169).
+- CLI: migrate cached `registry.clawhub.ai` registries back to `clawhub.ai` so `clawhub explore` no longer talks to the retired Vercel deployment (#1098).
+- CLI: publish `.tsv`, `.conf`, `.properties`, `.dat`, and safe extensionless text files while excluding dotfiles and sampling extensionless files before full reads (#874).
+- Tests: remove obsolete rescan e2e probes that no longer match current moderation behavior (#2152).
+
 ## 0.14.0 - 2026-05-11
 
 ### Changes

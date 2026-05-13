@@ -69,7 +69,8 @@ export function PluginSettingsPage({ name }: { name: string }) {
             <Card>
               <h2 className="section-title text-[1.2rem] m-0">Settings unavailable</h2>
               <p className="section-subtitle mt-3 mb-0">
-                Only the plugin publisher can manage these settings.
+                Only the plugin publisher, an owner org admin, or platform staff can manage these
+                settings.
               </p>
             </Card>
           </DetailBody>

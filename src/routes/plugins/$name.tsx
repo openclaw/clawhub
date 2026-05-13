@@ -1,6 +1,8 @@
 import { createFileRoute, Link, Outlet, redirect, useRouterState } from "@tanstack/react-router";
-import { AlertTriangle, Download } from "lucide-react";
+import { useQuery } from "convex/react";
+import { AlertTriangle, Download, Settings } from "lucide-react";
 import { useState, type ReactNode } from "react";
+import { api } from "../../../convex/_generated/api";
 import { DetailHero, DetailPageShell } from "../../components/DetailPageShell";
 import { DetailSecuritySummary } from "../../components/DetailSecuritySummary";
 import { EmptyState } from "../../components/EmptyState";
@@ -30,6 +32,7 @@ import {
   buildPluginSecurityBaseHref,
   parseScopedPackageName,
 } from "../../lib/pluginRoutes";
+import { useAuthStatus } from "../../lib/useAuthStatus";
 
 type PluginDetailRateLimitState = {
   scope: "detail" | "metadata";
@@ -321,6 +324,16 @@ export function PluginDetailPage({
 }) {
   const { detail, version, readme, rateLimited } = loaderData;
   const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const { isAuthenticated } = useAuthStatus();
+  const isNestedPluginRoute = pathname.includes("/security/") || pathname.endsWith("/settings");
+  const settingsCandidateNames = getOpenClawPackageCandidateNames(name);
+  const settingsLookupName = detail.package?.name ?? settingsCandidateNames[0] ?? name;
+  const settings = useQuery(
+    api.packages.getClawScanNoteSettings,
+    isAuthenticated && !isNestedPluginRoute && detail.package
+      ? { name: settingsLookupName, candidateNames: settingsCandidateNames }
+      : "skip",
+  );
   const [activeTab, setActiveTab] = useState<PluginDetailTab>(() => {
     if (typeof window === "undefined") return "readme";
     const hash = window.location.hash.replace("#", "");
@@ -328,7 +341,7 @@ export function PluginDetailPage({
       ? hash
       : "readme";
   });
-  if (pathname.includes("/security/") || pathname.endsWith("/settings")) {
+  if (isNestedPluginRoute) {
     return <Outlet />;
   }
 
@@ -388,6 +401,7 @@ export function PluginDetailPage({
     pkg.latestVersion && latestRelease?.version && artifact?.kind === "npm-pack"
       ? getPackageArtifactDownloadPath(pkg.name, latestRelease.version)
       : getPackageDownloadPath(pkg.name, pkg.latestVersion);
+  const settingsHref = settings ? `${buildPluginDetailHref(pkg.name)}/settings` : null;
   const capEntries = capabilities
     ? Object.entries(capabilities).filter(
         ([, v]) =>
@@ -638,14 +652,24 @@ export function PluginDetailPage({
                 />
               ) : null}
 
-              {pkg.latestVersion && !isDownloadBlocked ? (
+              {(pkg.latestVersion && !isDownloadBlocked) || settingsHref ? (
                 <div className="skill-sidebar-actions">
-                  <Button asChild variant="outline" className="skill-sidebar-action-button">
-                    <a href={downloadPath}>
-                      <Download size={14} aria-hidden="true" />
-                      Download
-                    </a>
-                  </Button>
+                  {pkg.latestVersion && !isDownloadBlocked ? (
+                    <Button asChild variant="outline" className="skill-sidebar-action-button">
+                      <a href={downloadPath}>
+                        <Download size={14} aria-hidden="true" />
+                        Download
+                      </a>
+                    </Button>
+                  ) : null}
+                  {settingsHref ? (
+                    <Button asChild variant="outline" className="skill-sidebar-action-button">
+                      <a href={settingsHref}>
+                        <Settings size={14} aria-hidden="true" />
+                        Settings
+                      </a>
+                    </Button>
+                  ) : null}
                 </div>
               ) : null}
             </div>

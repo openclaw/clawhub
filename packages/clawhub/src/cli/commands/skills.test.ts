@@ -425,6 +425,58 @@ describe("cmdUpdate", () => {
     expect(args?.path).toBe(`${ApiRoutes.skills}/${encodeURIComponent("demo")}`);
     expect(args?.url).toBeUndefined();
   });
+
+  it("trusts the stored install fingerprint when the resolve endpoint cannot match", async () => {
+    mockApiRequest
+      .mockResolvedValueOnce({
+        latestVersion: { version: "2.0.0" },
+        moderation: null,
+      })
+      .mockResolvedValueOnce({
+        match: null,
+        latestVersion: { version: "2.0.0" },
+      });
+    mockDownloadZip.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    vi.mocked(readLockfile).mockResolvedValue({
+      version: 1,
+      skills: { demo: { version: "1.0.0", installedAt: 123 } },
+    });
+    vi.mocked(readSkillOrigin).mockResolvedValue({
+      version: 1,
+      registry: "https://clawhub.ai",
+      slug: "demo",
+      installedVersion: "1.0.0",
+      installedAt: 123,
+      fingerprint: "hash",
+    });
+    vi.mocked(writeLockfile).mockResolvedValue();
+    vi.mocked(writeSkillOrigin).mockResolvedValue();
+    vi.mocked(extractZipToDir).mockResolvedValue();
+    vi.mocked(listTextFiles).mockResolvedValue([
+      { relPath: "SKILL.md", bytes: new Uint8Array([1]) },
+    ]);
+    vi.mocked(hashSkillFiles).mockReturnValue({ fingerprint: "hash", files: [] });
+    vi.mocked(stat).mockResolvedValue({} as unknown as Awaited<ReturnType<typeof stat>>);
+    vi.mocked(rm).mockResolvedValue();
+
+    await cmdUpdate(makeOpts(), "demo", {}, false);
+
+    expect(mockLog).not.toHaveBeenCalledWith(
+      "demo: local changes (no match). Use --force to overwrite.",
+    );
+    expect(mockDownloadZip).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({ slug: "demo", version: "2.0.0" }),
+    );
+    expect(writeSkillOrigin).toHaveBeenCalledWith("/work/skills/demo", {
+      version: 1,
+      registry: "https://clawhub.ai",
+      slug: "demo",
+      installedVersion: "2.0.0",
+      installedAt: 123,
+      fingerprint: "hash",
+    });
+  });
 });
 
 describe("pin commands", () => {

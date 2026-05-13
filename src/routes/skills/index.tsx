@@ -167,7 +167,7 @@ export function SkillsIndex() {
         </h1>
         <div className="browse-page-actions">
           <Button asChild variant="primary">
-            <Link to="/publish-skill" search={{ updateSlug: undefined }}>
+            <Link to="/publish-skill" search={{ updateSlug: undefined, ownerHandle: undefined }}>
               Publish
             </Link>
           </Button>

@@ -40,13 +40,14 @@ const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const Route = createFileRoute("/skills/publish")({
   validateSearch: (search) => ({
     updateSlug: typeof search.updateSlug === "string" ? search.updateSlug : undefined,
+    ownerHandle: typeof search.ownerHandle === "string" ? search.ownerHandle : undefined,
   }),
   component: Upload,
 });
 
 export function Upload() {
   const { isAuthenticated, me } = useAuthStatus();
-  const { updateSlug } = useSearch({ from: "/skills/publish" });
+  const { updateSlug, ownerHandle: searchOwnerHandle } = useSearch({ from: "/skills/publish" });
   const siteMode = getSiteMode();
   const isSoulMode = siteMode === "souls";
   const requiredFileLabel = isSoulMode ? "SOUL.md" : "SKILL.md";
@@ -112,7 +113,7 @@ export function Upload() {
         role: "owner" | "admin" | "publisher";
       }>
     | undefined;
-  const [ownerHandle, setOwnerHandle] = useState("");
+  const [ownerHandle, setOwnerHandle] = useState(searchOwnerHandle ?? "");
   // Owner migration opt-in: when updating an existing skill under a different
   // publisher than its current owner, the backend requires an explicit
   // `migrateOwner: true` signal. We only send it when the user ticks this box,
@@ -189,8 +190,8 @@ export function Upload() {
   const trimmedVersion = version.trim();
   const slugAvailability = useQuery(
     api.skills.checkSlugAvailability,
-    !isSoulMode && isAuthenticated && trimmedSlug && SLUG_PATTERN.test(trimmedSlug)
-      ? { slug: trimmedSlug.toLowerCase() }
+    !isSoulMode && isAuthenticated && ownerHandle && trimmedSlug && SLUG_PATTERN.test(trimmedSlug)
+      ? { slug: trimmedSlug.toLowerCase(), ownerHandle }
       : "skip",
   ) as
     | {

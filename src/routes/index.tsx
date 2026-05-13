@@ -906,7 +906,11 @@ function OnlyCrabsHome() {
               public place.
             </p>
             <div style={{ display: "flex", gap: 12, marginTop: 20 }}>
-              <Link to="/upload" search={{ updateSlug: undefined }} className="btn btn-primary">
+              <Link
+                to="/upload"
+                search={{ updateSlug: undefined, ownerHandle: undefined }}
+                className="btn btn-primary"
+              >
                 Publish a soul
               </Link>
               <Link

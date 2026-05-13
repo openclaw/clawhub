@@ -36,7 +36,7 @@ vi.mock("@tanstack/react-router", () => ({
     children,
     to,
     params,
-    search: _search,
+    search,
     ...props
   }: React.AnchorHTMLAttributes<HTMLAnchorElement> & {
     children: React.ReactNode;
@@ -49,13 +49,49 @@ vi.mock("@tanstack/react-router", () => ({
         to === "/$owner/$slug" && params
           ? `/${params.owner}/${params.slug}`
           : typeof to === "string"
-            ? to
+            ? `${to}${formatSearch(search)}`
             : "/test"
       }
       {...props}
     >
       {children}
     </a>
+  ),
+}));
+
+function formatSearch(search: unknown) {
+  if (!search || typeof search !== "object") return "";
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(search)) {
+    if (typeof value === "string" && value.length > 0) params.set(key, value);
+  }
+  const value = params.toString();
+  return value ? `?${value}` : "";
+}
+
+vi.mock("../components/ui/select", () => ({
+  Select: ({
+    children,
+    value,
+    onValueChange,
+  }: {
+    children: React.ReactNode;
+    value: string;
+    onValueChange: (value: string) => void;
+  }) => (
+    <select
+      aria-label="Dashboard publisher"
+      value={value}
+      onChange={(event) => onValueChange(event.target.value)}
+    >
+      {children}
+    </select>
+  ),
+  SelectTrigger: ({ children }: { children: React.ReactNode }) => children,
+  SelectValue: () => null,
+  SelectContent: ({ children }: { children: React.ReactNode }) => children,
+  SelectItem: ({ children, value }: { children: React.ReactNode; value: string }) => (
+    <option value={value}>{children}</option>
   ),
 }));
 
@@ -283,6 +319,110 @@ describe("Dashboard rows", () => {
     expect(
       screen.getByRole("link", { name: "Open settings for Local Flagged Runtime Plugin" }),
     ).toBeTruthy();
+  });
+
+  it("shows a publisher selector and loads org packages when switching publishers", async () => {
+    const orgPublishers = [
+      publishers[0],
+      {
+        publisher: {
+          _id: "publishers:clawkit" as Id<"publishers">,
+          handle: "clawkit",
+          displayName: "ClawKit",
+          kind: "org" as const,
+        },
+        role: "admin" as const,
+      },
+    ];
+    const orgPackage = createPackage({
+      _id: "packages:clawkit" as Id<"packages">,
+      name: "@clawkit/clawkit-for-lovable",
+      displayName: "ClawKit for Lovable",
+      scanStatus: "clean",
+    });
+
+    mocks.usePaginatedQuery.mockReturnValue({
+      results: [],
+      status: "Exhausted",
+      loadMore: vi.fn(),
+    });
+    let unscopedQueryCount = 0;
+    mocks.useQuery.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (args === undefined) {
+        unscopedQueryCount += 1;
+        return unscopedQueryCount % 2 === 1 ? me : orgPublishers;
+      }
+      if (
+        typeof args === "object" &&
+        args !== null &&
+        "ownerPublisherId" in args &&
+        (args as { ownerPublisherId?: string }).ownerPublisherId === "publishers:clawkit"
+      ) {
+        return [orgPackage];
+      }
+      return [];
+    });
+
+    renderDashboard();
+
+    const selector = await screen.findByLabelText("Dashboard publisher");
+    await waitFor(() =>
+      expect(mocks.useQuery).toHaveBeenCalledWith(expect.anything(), {
+        ownerPublisherId: "publishers:local",
+        limit: 100,
+      }),
+    );
+    expect(screen.getByText("@clawkit · Org")).toBeTruthy();
+
+    fireEvent.change(selector, { target: { value: "publishers:clawkit" } });
+
+    await waitFor(() =>
+      expect(mocks.useQuery).toHaveBeenCalledWith(expect.anything(), {
+        ownerPublisherId: "publishers:clawkit",
+        limit: 100,
+      }),
+    );
+    expect(screen.getByText("ClawKit for Lovable")).toBeTruthy();
+  });
+
+  it("passes the selected publisher into skill publishing links", async () => {
+    const orgPublishers = [
+      publishers[0],
+      {
+        publisher: {
+          _id: "publishers:clawkit" as Id<"publishers">,
+          handle: "clawkit",
+          displayName: "ClawKit",
+          kind: "org" as const,
+        },
+        role: "admin" as const,
+      },
+    ];
+    mocks.usePaginatedQuery.mockReturnValue({
+      results: [],
+      status: "Exhausted",
+      loadMore: vi.fn(),
+    });
+    let unscopedQueryCount = 0;
+    mocks.useQuery.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (args === undefined) {
+        unscopedQueryCount += 1;
+        return unscopedQueryCount % 2 === 1 ? me : orgPublishers;
+      }
+      return [];
+    });
+
+    renderDashboard();
+
+    fireEvent.change(await screen.findByLabelText("Dashboard publisher"), {
+      target: { value: "publishers:clawkit" },
+    });
+
+    expect(
+      (await screen.findByRole("link", { name: "Publish a Skill" })).getAttribute("href"),
+    ).toBe("/skills/publish?ownerHandle=clawkit");
   });
 
   it("renders a skeleton while auth state is loading", () => {

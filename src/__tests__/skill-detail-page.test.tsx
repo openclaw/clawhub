@@ -721,6 +721,9 @@ describe("SkillDetailPage", () => {
 
     expect(screen.queryByText(/Loading skill/i)).toBeNull();
     expect(screen.getAllByText("Weather").length).toBeGreaterThan(0);
+    expect(screen.getByRole("link", { name: /settings/i }).getAttribute("href")).toBe(
+      "/SteiPete/weather/settings",
+    );
     expect(navigateMock).not.toHaveBeenCalled();
   });
 

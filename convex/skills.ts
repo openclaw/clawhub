@@ -74,7 +74,9 @@ import {
 import {
   assertCanManageOwnedResource,
   ensurePersonalPublisherForUser,
+  getActiveUserByHandleOrPersonalPublisher,
   getOwnerPublisher,
+  getPersonalPublisherForUserOrFallback,
   getPublisherByHandle,
   getPublisherMembership,
   isPublisherActive,
@@ -741,6 +743,108 @@ async function getSkillSlugAliasBySlug(ctx: Pick<QueryCtx | MutationCtx, "db">, 
     .query("skillSlugAliases")
     .withIndex("by_slug", (q) => q.eq("slug", normalizedSlug))
     .unique();
+}
+
+async function resolveRequestedAvailabilityPublisher(
+  ctx: Pick<QueryCtx, "db">,
+  ownerHandle: string | undefined,
+) {
+  const requestedHandle = normalizePublisherHandle(ownerHandle);
+  if (!requestedHandle) {
+    return { requestedHandle, requestedPublisher: null };
+  }
+
+  const materializedPublisher = await getPublisherByHandle(ctx, requestedHandle);
+  if (materializedPublisher) {
+    return { requestedHandle, requestedPublisher: materializedPublisher };
+  }
+
+  const user = await getActiveUserByHandleOrPersonalPublisher(ctx, requestedHandle);
+  const fallbackPublisher = user ? await getPersonalPublisherForUserOrFallback(ctx, user) : null;
+  return {
+    requestedHandle,
+    requestedPublisher:
+      fallbackPublisher?.handle === requestedHandle ? fallbackPublisher : materializedPublisher,
+  };
+}
+
+async function getSkillBySlugForAvailabilityPublisher(
+  ctx: Pick<QueryCtx, "db">,
+  slug: string,
+  publisher: Doc<"publishers">,
+) {
+  const scopedSkills = await ctx.db
+    .query("skills")
+    .withIndex("by_owner_publisher_slug", (q) =>
+      q.eq("ownerPublisherId", publisher._id).eq("slug", slug),
+    )
+    .take(2);
+  if (scopedSkills[0]) return scopedSkills[0];
+
+  if (publisher.kind !== "user" || !publisher.linkedUserId) return null;
+  const linkedUserId = publisher.linkedUserId;
+
+  const legacySkills = await ctx.db
+    .query("skills")
+    .withIndex("by_owner_slug", (q) => q.eq("ownerUserId", linkedUserId).eq("slug", slug))
+    .take(2);
+  return (
+    legacySkills.find(
+      (skill) => !skill.ownerPublisherId || skill.ownerPublisherId === publisher._id,
+    ) ?? null
+  );
+}
+
+async function getUnscopedSkillBySlugForAvailability(ctx: Pick<QueryCtx, "db">, slug: string) {
+  const skills = await ctx.db
+    .query("skills")
+    .withIndex("by_slug", (q) => q.eq("slug", slug))
+    .take(2);
+  return {
+    skill: skills.length === 1 ? skills[0] : null,
+    ambiguous: skills.length > 1,
+  };
+}
+
+async function getUnscopedSkillSlugAliasBySlugForAvailability(
+  ctx: Pick<QueryCtx, "db">,
+  slug: string,
+) {
+  const aliases = await ctx.db
+    .query("skillSlugAliases")
+    .withIndex("by_slug", (q) => q.eq("slug", slug))
+    .take(2);
+  return {
+    alias: aliases.length === 1 ? aliases[0] : null,
+    ambiguous: aliases.length > 1,
+  };
+}
+
+async function getSkillSlugAliasBySlugForAvailabilityPublisher(
+  ctx: Pick<QueryCtx, "db">,
+  slug: string,
+  publisher: Doc<"publishers">,
+) {
+  const scopedAliases = await ctx.db
+    .query("skillSlugAliases")
+    .withIndex("by_owner_publisher_slug", (q) =>
+      q.eq("ownerPublisherId", publisher._id).eq("slug", slug),
+    )
+    .take(2);
+  if (scopedAliases[0]) return scopedAliases[0];
+
+  if (publisher.kind !== "user" || !publisher.linkedUserId) return null;
+  const linkedUserId = publisher.linkedUserId;
+
+  const legacyAliases = await ctx.db
+    .query("skillSlugAliases")
+    .withIndex("by_owner_slug", (q) => q.eq("ownerUserId", linkedUserId).eq("slug", slug))
+    .take(2);
+  return (
+    legacyAliases.find(
+      (alias) => !alias.ownerPublisherId || alias.ownerPublisherId === publisher._id,
+    ) ?? null
+  );
 }
 
 async function listSkillSlugAliasesForSkill(
@@ -1998,7 +2102,7 @@ export const getBySlug = query({
 });
 
 export const checkSlugAvailability = query({
-  args: { slug: v.string() },
+  args: { slug: v.string(), ownerHandle: v.optional(v.string()) },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
     const slug = normalizeSkillSlugKey(args.slug);
@@ -2011,16 +2115,49 @@ export const checkSlugAvailability = query({
       };
     }
 
-    const skill = await ctx.db
-      .query("skills")
-      .withIndex("by_slug", (q) => q.eq("slug", slug))
-      .unique();
+    const { requestedHandle, requestedPublisher } = await resolveRequestedAvailabilityPublisher(
+      ctx,
+      args.ownerHandle,
+    );
+    const unscopedSkillResult = await getUnscopedSkillBySlugForAvailability(ctx, slug);
+    const scopedSkill = requestedPublisher
+      ? await getSkillBySlugForAvailabilityPublisher(ctx, slug, requestedPublisher)
+      : null;
+    const skill = scopedSkill ?? unscopedSkillResult.skill;
+
+    if (!scopedSkill && unscopedSkillResult.ambiguous) {
+      return {
+        available: false,
+        reason: "taken" as const,
+        message: "Slug is already used by multiple publishers. Choose a specific owner.",
+        url: null,
+      };
+    }
 
     if (!skill) {
-      const alias = await getSkillSlugAliasBySlug(ctx, slug);
+      const scopedAlias = requestedPublisher
+        ? await getSkillSlugAliasBySlugForAvailabilityPublisher(ctx, slug, requestedPublisher)
+        : null;
+      const unscopedAliasResult = scopedAlias
+        ? null
+        : await getUnscopedSkillSlugAliasBySlugForAvailability(ctx, slug);
+      if (!scopedAlias && unscopedAliasResult?.ambiguous) {
+        return {
+          available: false,
+          reason: "taken" as const,
+          message: "Slug redirects to skills under multiple publishers. Choose a specific owner.",
+          url: null,
+        };
+      }
+      const alias = scopedAlias ?? unscopedAliasResult?.alias;
       if (alias) {
         const aliasedSkill = await ctx.db.get(alias.skillId);
-        const owner = aliasedSkill ? await ctx.db.get(aliasedSkill.ownerUserId) : null;
+        const owner = aliasedSkill
+          ? await getOwnerPublisher(ctx, {
+              ownerPublisherId: aliasedSkill.ownerPublisherId,
+              ownerUserId: aliasedSkill.ownerUserId,
+            })
+          : null;
         return {
           available: false,
           reason: "taken" as const,
@@ -2084,7 +2221,14 @@ export const checkSlugAvailability = query({
       };
     }
 
-    if (userId && skill.ownerUserId === userId) {
+    const requestedPublisherMatchesSkill = requestedPublisher
+      ? skill.ownerPublisherId
+        ? requestedPublisher._id === skill.ownerPublisherId
+        : requestedPublisher.kind === "user" &&
+          requestedPublisher.linkedUserId === skill.ownerUserId
+      : !requestedHandle;
+
+    if (userId && skill.ownerUserId === userId && requestedPublisherMatchesSkill) {
       return {
         available: true,
         reason: "available" as const,
@@ -2092,8 +2236,22 @@ export const checkSlugAvailability = query({
         url: null,
       };
     }
+    if (userId && skill.ownerPublisherId && requestedPublisherMatchesSkill) {
+      const membership = await getPublisherMembership(ctx, skill.ownerPublisherId, userId);
+      if (membership && isPublisherRoleAllowed(membership.role, ["publisher"])) {
+        return {
+          available: true,
+          reason: "available" as const,
+          message: null,
+          url: null,
+        };
+      }
+    }
 
-    const owner = await ctx.db.get(skill.ownerUserId);
+    const owner = await getOwnerPublisher(ctx, {
+      ownerPublisherId: skill.ownerPublisherId,
+      ownerUserId: skill.ownerUserId,
+    });
     const url = buildConflictingSkillUrl(skill, owner);
     const slugTakenMessage = buildSlugTakenErrorMessage(skill, owner);
 
@@ -5793,7 +5951,7 @@ export const updateLatestClawScanNoteAndRequestRescan = mutation({
       actor: user,
       ownerUserId: skill.ownerUserId,
       ownerPublisherId: skill.ownerPublisherId,
-      allowPlatformAdmin: true,
+      allowPlatformModerator: true,
     });
 
     const now = Date.now();

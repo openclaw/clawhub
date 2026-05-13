@@ -3,10 +3,15 @@ import { strToU8, zipSync } from "fflate";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Upload } from "../routes/skills/publish";
 
+let routeSearch: { updateSlug?: string; ownerHandle?: string } = {
+  updateSlug: undefined,
+  ownerHandle: undefined,
+};
+
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (config: { component: unknown }) => config,
   useNavigate: () => vi.fn(),
-  useSearch: () => ({ updateSlug: undefined }),
+  useSearch: () => routeSearch,
 }));
 
 vi.mock("@convex-dev/auth/react", () => ({
@@ -43,6 +48,7 @@ describe("Upload route", () => {
     fetchMock.mockReset();
     useQueryMock.mockReset();
     useAuthStatusMock.mockReset();
+    routeSearch = { updateSlug: undefined, ownerHandle: undefined };
     useActionCallCount = 0;
     useAuthStatusMock.mockReturnValue({
       isAuthenticated: true,
@@ -51,6 +57,19 @@ describe("Upload route", () => {
     });
     useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;
+      if (args === undefined) {
+        return [
+          {
+            publisher: {
+              _id: "publishers:local",
+              handle: "local",
+              displayName: "Local",
+              kind: "user",
+            },
+            role: "owner",
+          },
+        ];
+      }
       return null;
     });
     fetchMock.mockResolvedValue({
@@ -333,6 +352,19 @@ describe("Upload route", () => {
   it("blocks publish in preflight when slug availability reports a collision", async () => {
     useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;
+      if (args === undefined) {
+        return [
+          {
+            publisher: {
+              _id: "publishers:local",
+              handle: "local",
+              displayName: "Local",
+              kind: "user",
+            },
+            role: "owner",
+          },
+        ];
+      }
       if (
         args &&
         typeof args === "object" &&
@@ -376,5 +408,49 @@ describe("Upload route", () => {
     expect(
       screen.getByRole("button", { name: /publish skill/i }).getAttribute("disabled"),
     ).not.toBeNull();
+  });
+
+  it("uses the ownerHandle search param for the owner selector and slug availability", async () => {
+    routeSearch = { updateSlug: undefined, ownerHandle: "clawkit" };
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (
+        args &&
+        typeof args === "object" &&
+        "slug" in (args as Record<string, unknown>) &&
+        (args as Record<string, unknown>).slug === "org-skill"
+      ) {
+        return {
+          available: true,
+          reason: "available",
+          message: null,
+          url: null,
+        };
+      }
+      return [
+        {
+          publisher: {
+            _id: "publishers:clawkit",
+            handle: "clawkit",
+            displayName: "ClawKit",
+            kind: "org",
+          },
+          role: "admin",
+        },
+      ];
+    });
+
+    render(<Upload />);
+    fireEvent.change(screen.getByPlaceholderText("skill-name"), {
+      target: { value: "org-skill" },
+    });
+
+    expect((screen.getByLabelText("Owner") as HTMLSelectElement).value).toBe("clawkit");
+    await waitFor(() => {
+      expect(useQueryMock).toHaveBeenCalledWith(expect.anything(), {
+        slug: "org-skill",
+        ownerHandle: "clawkit",
+      });
+    });
   });
 });

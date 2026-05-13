@@ -446,6 +446,8 @@ const skills = defineTable({
   .index("by_slug", ["slug"])
   .index("by_owner", ["ownerUserId"])
   .index("by_owner_publisher", ["ownerPublisherId"])
+  .index("by_owner_slug", ["ownerUserId", "slug"])
+  .index("by_owner_publisher_slug", ["ownerPublisherId", "slug"])
   .index("by_owner_active_updated", ["ownerUserId", "softDeletedAt", "updatedAt"])
   .index("by_owner_publisher_active_updated", ["ownerPublisherId", "softDeletedAt", "updatedAt"])
   .index("by_updated", ["updatedAt"])
@@ -495,7 +497,9 @@ const skillSlugAliases = defineTable({
   .index("by_slug", ["slug"])
   .index("by_skill", ["skillId"])
   .index("by_owner", ["ownerUserId"])
-  .index("by_owner_publisher", ["ownerPublisherId"]);
+  .index("by_owner_publisher", ["ownerPublisherId"])
+  .index("by_owner_slug", ["ownerUserId", "slug"])
+  .index("by_owner_publisher_slug", ["ownerPublisherId", "slug"]);
 
 const souls = defineTable({
   slug: v.string(),

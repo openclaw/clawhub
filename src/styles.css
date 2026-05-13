@@ -5470,7 +5470,7 @@ code {
   font-weight: 600;
   color: var(--ink-soft);
   cursor: pointer;
-  min-height: 36px;
+  min-height: 44px;
   white-space: nowrap;
   flex-shrink: 0;
   transform: translateY(1px);
@@ -11715,7 +11715,7 @@ a.publisher-profile-detail:hover {
   height: 1.15em;
   display: flex;
   align-items: center;
-  justify-content: left;
+  justify-content: center;
   flex-shrink: 0;
   white-space: nowrap;
 }
