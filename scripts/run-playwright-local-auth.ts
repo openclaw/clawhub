@@ -313,6 +313,7 @@ async function main() {
     CONVEX_AGENT_MODE: process.env.CONVEX_AGENT_MODE ?? "anonymous",
     CONVEX_DEPLOYMENT: deployment,
     CONVEX_SITE_URL: convexSiteUrl,
+    DEV_AUTH_CONVEX_DEPLOYMENT: deployment,
     DEV_AUTH_ENABLED: "1",
     JWKS: authKeys.JWKS,
     JWT_PRIVATE_KEY: authKeys.JWT_PRIVATE_KEY,
@@ -330,6 +331,7 @@ async function main() {
       `AUTH_GITHUB_SECRET=${e2eEnv.AUTH_GITHUB_SECRET}`,
       `CONVEX_DEPLOYMENT=${deployment}`,
       `CONVEX_SITE_URL=${convexSiteUrl}`,
+      `DEV_AUTH_CONVEX_DEPLOYMENT=${deployment}`,
       "DEV_AUTH_ENABLED=1",
       `JWKS=${authKeys.JWKS}`,
       `JWT_PRIVATE_KEY=${authKeys.JWT_PRIVATE_KEY}`,
@@ -361,9 +363,11 @@ async function main() {
   await waitUntilReachable(convexUrl, "Local Convex");
 
   console.log("Configuring local Convex environment for local-auth Playwright e2e.");
+  const localAuthDeployment = readLocalDeployment() ?? deployment;
   await setLocalConvexEnv(convexUrl, [
     { name: "AUTH_GITHUB_ID", value: e2eEnv.AUTH_GITHUB_ID ?? "local-dev" },
     { name: "AUTH_GITHUB_SECRET", value: e2eEnv.AUTH_GITHUB_SECRET ?? "local-dev" },
+    { name: "DEV_AUTH_CONVEX_DEPLOYMENT", value: localAuthDeployment },
     { name: "DEV_AUTH_ENABLED", value: "1" },
     { name: "JWKS", value: authKeys.JWKS },
     { name: "JWT_PRIVATE_KEY", value: authKeys.JWT_PRIVATE_KEY },
