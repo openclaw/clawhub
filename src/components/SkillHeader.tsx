@@ -160,7 +160,7 @@ export function SkillHeader({
       ) : modInfo?.isSuspicious ? (
         <div className="pending-banner pending-banner-warning">
           <div className="pending-banner-content">
-            <strong>Skill flagged — review recommended</strong>
+            <strong>Security warning — review recommended</strong>
             <p>
               ClawHub Security found sensitive or high-impact capabilities. Review the scan results
               before using.

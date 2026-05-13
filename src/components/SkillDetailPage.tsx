@@ -128,13 +128,13 @@ function buildStaffVisibilityAlert({
   } else if (moderationReason === "security.redaction") {
     reason = "because it was hidden for security redaction.";
   } else if (moderationReason?.startsWith("scanner.") && moderationReason.endsWith(".malicious")) {
-    reason = "because automated security checks marked it suspicious or malicious.";
+    reason = "because automated security checks found security warnings or malicious content.";
   } else if (moderationReason?.startsWith("scanner.") && moderationReason.endsWith(".suspicious")) {
-    reason = "because automated security checks marked it suspicious or malicious.";
+    reason = "because automated security checks found security warnings or malicious content.";
   } else if (modInfo?.isMalwareBlocked) {
-    reason = "because automated security checks marked it suspicious or malicious.";
+    reason = "because automated security checks found security warnings or malicious content.";
   } else if (modInfo?.isSuspicious) {
-    reason = "because automated security checks marked it suspicious or malicious.";
+    reason = "because automated security checks found security warnings or malicious content.";
   } else if (isSoftDeleted && !moderationReason) {
     reason = "because it was unpublished.";
   }

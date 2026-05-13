@@ -4628,6 +4628,11 @@ code {
   color: #6aa9ff;
 }
 
+.skill-list-item-main .verified-badge {
+  padding-block: 0;
+  line-height: 1.35;
+}
+
 .skill-hero-scan-row {
   display: grid;
   gap: 6px;
@@ -7596,9 +7601,10 @@ code {
   color: #dc2626;
 }
 
+.scan-status-warn,
 .scan-status-suspicious {
-  background: var(--hover-bg);
-  color: var(--ink-soft);
+  background: var(--status-warning-bg);
+  color: var(--status-warning-fg);
 }
 
 .scan-status-pending {
@@ -7733,14 +7739,7 @@ code {
   font-style: italic;
 }
 
-/* OpenClaw confidence label */
-.scan-result-confidence {
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: var(--ink-soft);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  opacity: 0.7;
+.scan-result-risk {
   justify-self: end;
 }
 
@@ -8186,7 +8185,7 @@ a.agentic-risk-finding-title:focus-visible {
   }
 }
 
-.scan-confidence-meter {
+.scan-risk-level-badge {
   width: fit-content;
   max-width: 100%;
   gap: 8px;
@@ -8198,7 +8197,7 @@ a.agentic-risk-finding-title:focus-visible {
   overflow-wrap: normal;
 }
 
-.scan-confidence-bars {
+.scan-risk-level-bars {
   display: inline-grid;
   grid-template-columns: repeat(3, 3px);
   gap: 3px;
@@ -8206,7 +8205,7 @@ a.agentic-risk-finding-title:focus-visible {
   height: 10px;
 }
 
-.scan-confidence-bars span {
+.scan-risk-level-bars span {
   display: block;
   width: 3px;
   height: 10px;
@@ -8214,9 +8213,9 @@ a.agentic-risk-finding-title:focus-visible {
   background: color-mix(in srgb, currentColor 22%, transparent);
 }
 
-.scan-confidence-meter[data-level="1"] .scan-confidence-bars span:nth-child(-n + 1),
-.scan-confidence-meter[data-level="2"] .scan-confidence-bars span:nth-child(-n + 2),
-.scan-confidence-meter[data-level="3"] .scan-confidence-bars span:nth-child(-n + 3) {
+.scan-risk-level-badge[data-level="1"] .scan-risk-level-bars span:nth-child(-n + 1),
+.scan-risk-level-badge[data-level="2"] .scan-risk-level-bars span:nth-child(-n + 2),
+.scan-risk-level-badge[data-level="3"] .scan-risk-level-bars span:nth-child(-n + 3) {
   background: currentColor;
 }
 
@@ -8261,7 +8260,7 @@ a.agentic-risk-finding-title:focus-visible {
   border-color: rgba(239, 68, 68, 0.4);
 }
 
-/* Suspicious/warning banner variant */
+/* Warning banner variant */
 .pending-banner-warning {
   background: rgba(245, 158, 11, 0.12);
   border-color: rgba(245, 158, 11, 0.4);
@@ -8419,7 +8418,7 @@ a.agentic-risk-finding-title:focus-visible {
   }
 
   .scan-result-link,
-  .scan-result-confidence {
+  .scan-result-risk {
     grid-column: 1 / -1;
     justify-self: start;
   }

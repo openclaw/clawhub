@@ -37,7 +37,7 @@ function statusFromStaticScan(staticScan: DetailSecuritySummaryProps["staticScan
 function severityLevelForStatus(status: string) {
   const normalized = status.toLowerCase();
   if (normalized === "malicious") return 4;
-  if (normalized === "suspicious") return 3;
+  if (normalized === "warn" || normalized === "warning" || normalized === "suspicious") return 3;
   if (normalized === "review") return 2;
   if (normalized === "clean" || normalized === "benign" || normalized === "cleared") return 1;
   return 0;
@@ -48,7 +48,13 @@ function aggregateAuditVerdict(statuses: string[]) {
   if (normalized.some((status) => status === "malicious")) {
     return "malicious";
   }
-  if (normalized.includes("suspicious")) return "suspicious";
+  if (
+    normalized.some(
+      (status) => status === "warn" || status === "warning" || status === "suspicious",
+    )
+  ) {
+    return "warn";
+  }
   if (normalized.some((status) => status === "error" || status === "failed")) return "error";
   if (
     normalized.some(
@@ -64,6 +70,8 @@ function auditVerdictBadgeVariant(status: string): BadgeProps["variant"] {
   switch (status.toLowerCase()) {
     case "malicious":
       return "destructive";
+    case "warn":
+    case "warning":
     case "suspicious":
       return "warning";
     case "pending":

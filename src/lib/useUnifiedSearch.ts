@@ -37,7 +37,7 @@ type UnifiedSearchOptions = {
     plugins?: number;
   };
   /**
-   * When true, suspicious skills are excluded from results at recall time.
+   * When true, skills with warning-level moderation signals are excluded at recall time.
    * Defaults to true to preserve the moderation-safe default for top-level
    * entry points (homepage / unified search). Callers that provide their own
    * UI for toggling this filter (e.g. the /skills browse page) should pass

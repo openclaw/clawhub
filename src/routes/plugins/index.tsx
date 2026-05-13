@@ -1,4 +1,4 @@
-import { createFileRoute, Link, redirect } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { isPluginCategorySlug } from "clawhub-schema";
 import { PackageSearch, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -365,23 +365,6 @@ function PluginsIndex() {
         <h1 className="browse-title">
           Plugins <span className="browse-count">{visibleItems.length}</span>
         </h1>
-        <div className="browse-page-actions">
-          <Button asChild variant="primary">
-            <Link
-              to="/plugins/publish"
-              search={{
-                ownerHandle: undefined,
-                name: undefined,
-                displayName: undefined,
-                family: undefined,
-                nextVersion: undefined,
-                sourceRepo: undefined,
-              }}
-            >
-              Publish
-            </Link>
-          </Button>
-        </div>
       </div>
       <form className="browse-page-search" onSubmit={handleSearch}>
         <Search size={15} className="navbar-search-icon" aria-hidden="true" />

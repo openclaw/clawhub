@@ -54,10 +54,10 @@ describe("DetailSecuritySummary", () => {
     expect(screen.getByRole("link", { name: /VirusTotal.*Cleared/i })).toBeTruthy();
     expect(screen.getByRole("link", { name: /ClawScan.*Cleared/i })).toBeTruthy();
     expect(screen.getByRole("link", { name: /Static analysis.*Cleared/i })).toBeTruthy();
-    expect(screen.queryByText("Suspicious")).toBeNull();
+    expect(screen.queryByText("Warn")).toBeNull();
   });
 
-  it("shows review and suspicious as separate audit states", () => {
+  it("shows review and warn as separate audit states", () => {
     const { rerender } = render(
       <DetailSecuritySummary
         scannerBasePath="/steipete/weather/security"
@@ -66,15 +66,23 @@ describe("DetailSecuritySummary", () => {
           status: "suspicious",
           verdict: "suspicious",
           checkedAt: 1,
-          riskSummary: {
-            abnormal_behavior_control: {
+          agenticRiskFindings: [
+            {
+              categoryId: "ASI02",
+              categoryLabel: "Tool Misuse and Exploitation",
+              riskBucket: "abnormal_behavior_control",
               status: "concern",
-              summary: "Needs context.",
-              highestSeverity: "medium",
+              severity: "medium",
+              confidence: "medium",
+              evidence: {
+                path: "SKILL.md",
+                snippet: "uses privileged tool",
+                explanation: "The skill uses a privileged tool.",
+              },
+              userImpact: "Needs context.",
+              recommendation: "Review before install.",
             },
-            permission_boundary: { status: "none", summary: "No issue." },
-            sensitive_data_protection: { status: "none", summary: "No issue." },
-          },
+          ],
         }}
         staticScan={{
           status: "clean",
@@ -98,15 +106,23 @@ describe("DetailSecuritySummary", () => {
           status: "suspicious",
           verdict: "suspicious",
           checkedAt: 1,
-          riskSummary: {
-            abnormal_behavior_control: {
+          agenticRiskFindings: [
+            {
+              categoryId: "ASI02",
+              categoryLabel: "Tool Misuse and Exploitation",
+              riskBucket: "abnormal_behavior_control",
               status: "concern",
-              summary: "High concern.",
-              highestSeverity: "high",
+              severity: "high",
+              confidence: "high",
+              evidence: {
+                path: "SKILL.md",
+                snippet: "terminates cloud instances",
+                explanation: "The skill can terminate cloud instances.",
+              },
+              userImpact: "High concern.",
+              recommendation: "Require confirmation.",
             },
-            permission_boundary: { status: "none", summary: "No issue." },
-            sensitive_data_protection: { status: "none", summary: "No issue." },
-          },
+          ],
         }}
         staticScan={{
           status: "clean",
@@ -119,8 +135,9 @@ describe("DetailSecuritySummary", () => {
       />,
     );
 
-    expect(screen.getByRole("link", { name: "ClawScan: Suspicious" })).toBeTruthy();
-    expect(screen.getAllByText("Suspicious").length).toBeGreaterThan(0);
+    expect(screen.getByRole("link", { name: "ClawScan: Warn" })).toBeTruthy();
+    expect(screen.getAllByText("Warn").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Suspicious")).toBeNull();
   });
 
   it("renders clean scanner outcomes as pass in the user-facing audit UI", () => {
@@ -166,7 +183,7 @@ describe("DetailSecuritySummary", () => {
 
     expect(screen.getByRole("link", { name: "Static analysis: Review" })).toBeTruthy();
     expect(screen.getAllByText("Pass")).toHaveLength(3);
-    expect(screen.queryByText("Suspicious")).toBeNull();
+    expect(screen.queryByText("Warn")).toBeNull();
   });
 
   it("does not aggregate scanner operational errors as malicious verdicts", () => {

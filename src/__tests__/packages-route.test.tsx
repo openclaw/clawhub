@@ -376,6 +376,16 @@ describe("plugins route", () => {
     });
   });
 
+  it("does not render the publish CTA on the plugins browse page", async () => {
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(screen.queryByRole("link", { name: "Publish" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Publish" })).toBeNull();
+  });
+
   it("switches legacy cards URLs back to list view", async () => {
     searchMock = { view: "cards" };
     loaderDataMock = {

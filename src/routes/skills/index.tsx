@@ -1,10 +1,9 @@
-import { createFileRoute, Link, redirect } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
 import { Search } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import { BrowseSidebar } from "../../components/BrowseSidebar";
-import { Button } from "../../components/ui/button";
 import { SKILL_CATEGORIES } from "../../lib/categories";
 import { formatCompactStat } from "../../lib/numberFormat";
 import { parseDir, parseSort } from "./-params";
@@ -165,13 +164,6 @@ export function SkillsIndex() {
           Skills
           {totalSkillsText ? <span className="browse-count">{totalSkillsText}</span> : null}
         </h1>
-        <div className="browse-page-actions">
-          <Button asChild variant="primary">
-            <Link to="/publish-skill" search={{ updateSlug: undefined, ownerHandle: undefined }}>
-              Publish
-            </Link>
-          </Button>
-        </div>
       </div>
       <div className="browse-page-search">
         <Search size={15} className="navbar-search-icon" aria-hidden="true" />
@@ -203,16 +195,6 @@ export function SkillsIndex() {
               ) : null}
             </span>
             <div className="browse-results-actions">
-              {model.showSuspiciousFilter ? (
-                <label className="browse-toolbar-checkbox">
-                  <input
-                    type="checkbox"
-                    checked={model.nonSuspiciousOnly}
-                    onChange={model.onToggleNonSuspicious}
-                  />
-                  <span>Hide suspicious</span>
-                </label>
-              ) : null}
               <div className="browse-view-toggle">
                 <button
                   className={`browse-view-btn${model.view === "list" ? " is-active" : ""}`}

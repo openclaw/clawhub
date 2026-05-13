@@ -6,6 +6,7 @@ import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
 import { timeAgo } from "../lib/timeAgo";
 import { MarketplaceIcon } from "./MarketplaceIcon";
 import { Badge } from "./ui/badge";
+import { VerifiedBadge } from "./VerifiedBadge";
 
 type SkillListItemProps = {
   skill: PublicSkill;
@@ -31,11 +32,15 @@ export function SkillListItem({ skill, ownerHandle, owner }: SkillListItemProps)
             </>
           ) : null}
           <span className="skill-list-item-name">{skill.displayName}</span>
-          {badges.map((b) => (
-            <Badge key={b} variant="compact">
-              {b}
-            </Badge>
-          ))}
+          {badges.map((b) =>
+            b === "Verified" ? (
+              <VerifiedBadge key={b} />
+            ) : (
+              <Badge key={b} variant="compact">
+                {b}
+              </Badge>
+            ),
+          )}
         </div>
         {skill.summary ? <p className="skill-list-item-summary">{skill.summary}</p> : null}
         <div className="skill-list-item-meta">
