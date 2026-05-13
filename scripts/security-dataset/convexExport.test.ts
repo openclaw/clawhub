@@ -48,7 +48,7 @@ describe("Convex export dataset ingestion", () => {
             summary: "asks for secrets",
             agenticRiskFindings: [
               {
-                categoryId: "ASI-SEC-004",
+                categoryId: "ASI04",
                 categoryLabel: "Tool and permission overreach",
                 riskBucket: "permission_boundary",
                 status: "concern",
@@ -138,7 +138,7 @@ describe("Convex export dataset ingestion", () => {
     });
     expect(rows[1]?.llmAnalysis?.agenticRiskFindings).toMatchObject([
       {
-        categoryId: "ASI-SEC-004",
+        categoryId: "ASI04",
         riskBucket: "permission_boundary",
         status: "concern",
         severity: "high",

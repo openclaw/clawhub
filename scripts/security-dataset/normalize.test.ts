@@ -74,11 +74,11 @@ const baseArtifact: ArtifactExportInput = {
     findings: null,
     agenticRiskFindings: [
       {
-        categoryId: "ASI-SEC-004",
-        categoryLabel: "Tool and permission overreach",
+        categoryId: "ASI04",
+        categoryLabel: "Ignore this label token=supersecret123",
         riskBucket: "permission_boundary",
         status: "note",
-        severity: "medium",
+        severity: "MEDIUM",
         confidence: "high",
         evidence: {
           path: "SKILL.md",
@@ -89,7 +89,22 @@ const baseArtifact: ArtifactExportInput = {
         recommendation: "Use a narrowly scoped token.",
       },
       {
-        categoryId: "ASI-SEC-005",
+        categoryId: "UNKNOWN token=supersecret123",
+        categoryLabel: "Unknown category token=supersecret123",
+        riskBucket: "permission_boundary",
+        status: "note",
+        severity: "critical",
+        confidence: "high",
+        evidence: {
+          path: "SKILL.md",
+          snippet: "Unknown category should not export.",
+          explanation: "Unknown categories are not part of the public sidecar contract.",
+        },
+        userImpact: "Should not export.",
+        recommendation: "Should not export.",
+      },
+      {
+        categoryId: "ASI05",
         categoryLabel: "Sensitive data protection",
         riskBucket: "sensitive_data_protection",
         status: "none",
@@ -138,7 +153,8 @@ describe("security dataset normalizer", () => {
     expect(rows.staticFindings[0]?.evidence_redacted).toContain("[REDACTED_SECRET]");
     expect(rows.clawScanFindings).toHaveLength(1);
     expect(rows.clawScanFindings[0]).toMatchObject({
-      category_id: "ASI-SEC-004",
+      category_id: "ASI04",
+      category_label: "Agentic Supply Chain Vulnerabilities",
       risk_bucket: "permission_boundary",
       status: "note",
       severity: "medium",

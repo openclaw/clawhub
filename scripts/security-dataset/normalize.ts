@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { AGENTIC_RISK_CATEGORIES } from "../../convex/lib/securityPrompt.ts";
 
 export type SourceKind = "skill" | "package";
 export type DatasetLabel = "clean" | "suspicious" | "malicious" | "unknown";
@@ -9,6 +10,7 @@ export type ClawScanRiskBucket =
   | "permission_boundary"
   | "sensitive_data_protection";
 export type ClawScanFindingStatus = "none" | "note" | "concern";
+export type ClawScanSeverity = "none" | "info" | "low" | "medium" | "high" | "critical";
 
 export type ExportFileInput = {
   path: string;
@@ -173,7 +175,7 @@ export type ClawScanFindingRow = {
   category_label: string;
   risk_bucket: ClawScanRiskBucket;
   status: "note" | "concern";
-  severity: string;
+  severity: ClawScanSeverity;
   confidence: "high" | "medium" | "low";
   evidence_path_hash: string | null;
   evidence_file_ext: string | null;
@@ -212,6 +214,17 @@ export type NormalizedDatasetRows = {
 const SPLIT_VERSION = "sha256-v1";
 const MAX_REDACTED_TEXT_LENGTH = 240;
 const MAX_REDACTED_SKILL_CONTENT_LENGTH = 120_000;
+const CLAWSCAN_SEVERITIES = new Set<ClawScanSeverity>([
+  "none",
+  "info",
+  "low",
+  "medium",
+  "high",
+  "critical",
+]);
+const AGENTIC_RISK_CATEGORY_LABEL_BY_ID: ReadonlyMap<string, string> = new Map(
+  AGENTIC_RISK_CATEGORIES.map((category) => [category.id, category.label] as const),
+);
 
 const SECRET_PATTERNS: RegExp[] = [
   /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi,
@@ -416,28 +429,33 @@ function buildClawScanFindingRows(
       (finding): finding is typeof finding & { status: "note" | "concern" } =>
         finding.status === "note" || finding.status === "concern",
     )
-    .map((finding, index) => {
+    .flatMap((finding, index) => {
       const evidence = finding.evidence;
-      return {
-        artifact_id: artifactId,
-        finding_id: `${artifactId}:clawscan:${index}:${hashString(
-          `${finding.categoryId}:${finding.riskBucket}:${finding.status}:${finding.severity}:${
-            evidence?.path ?? ""
-          }:${evidence?.snippet ?? ""}:${finding.userImpact}`,
-        ).slice(0, 12)}`,
-        category_id: finding.categoryId,
-        category_label: finding.categoryLabel,
-        risk_bucket: finding.riskBucket,
-        status: finding.status,
-        severity: finding.severity,
-        confidence: finding.confidence,
-        evidence_path_hash: evidence ? hashString(evidence.path) : null,
-        evidence_file_ext: evidence ? fileExtension(evidence.path) : null,
-        evidence_snippet_redacted: redactText(evidence?.snippet),
-        evidence_explanation_redacted: redactText(evidence?.explanation),
-        user_impact_redacted: redactText(finding.userImpact) ?? "",
-        recommendation_redacted: redactText(finding.recommendation) ?? "",
-      };
+      const categoryLabel = AGENTIC_RISK_CATEGORY_LABEL_BY_ID.get(finding.categoryId);
+      if (!categoryLabel) return [];
+      const severity = normalizeClawScanSeverity(finding.severity);
+      return [
+        {
+          artifact_id: artifactId,
+          finding_id: `${artifactId}:clawscan:${index}:${hashString(
+            `${finding.categoryId}:${finding.riskBucket}:${finding.status}:${severity}:${
+              evidence?.path ?? ""
+            }:${evidence?.snippet ?? ""}:${finding.userImpact}`,
+          ).slice(0, 12)}`,
+          category_id: finding.categoryId,
+          category_label: categoryLabel,
+          risk_bucket: finding.riskBucket,
+          status: finding.status,
+          severity,
+          confidence: finding.confidence,
+          evidence_path_hash: evidence ? hashString(evidence.path) : null,
+          evidence_file_ext: evidence ? fileExtension(evidence.path) : null,
+          evidence_snippet_redacted: redactText(evidence?.snippet),
+          evidence_explanation_redacted: redactText(evidence?.explanation),
+          user_impact_redacted: redactText(finding.userImpact) ?? "",
+          recommendation_redacted: redactText(finding.recommendation) ?? "",
+        },
+      ];
     });
 }
 
@@ -560,6 +578,13 @@ function labelFromText(value: string | null | undefined): DatasetLabel {
 function normalizeLabel(value: string): DatasetLabel {
   if (value === "clean" || value === "suspicious" || value === "malicious") return value;
   return labelFromText(value);
+}
+
+function normalizeClawScanSeverity(value: string): ClawScanSeverity {
+  const normalized = value.trim().toLowerCase();
+  return CLAWSCAN_SEVERITIES.has(normalized as ClawScanSeverity)
+    ? (normalized as ClawScanSeverity)
+    : "none";
 }
 
 function countFileExtensions(files: ExportFileInput[]) {
