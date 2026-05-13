@@ -6,6 +6,7 @@ import {
   pluginSecurityHead,
   type PluginSecurityLoaderData,
 } from "../../../$name/security/$scanner";
+import { getClawScanHashScrollScripts } from "../../../../../lib/clawScanHashScroll";
 import {
   buildPluginSecurityHref,
   packageNameFromScopedRoute,
@@ -29,6 +30,7 @@ export const Route = createFileRoute("/plugins/$scope/$name/security/$scanner")(
     parsePluginSecurityScanner(params.scanner);
   },
   loader: async ({ params }) => loadPluginSecurity(packageNameFromParams(params)),
+  scripts: ({ params }) => getClawScanHashScrollScripts(params.scanner),
   head: ({ params, loaderData }) =>
     pluginSecurityHead(packageNameFromParams(params), params.scanner, loaderData),
   component: ScopedPluginSecurityScannerRoute,

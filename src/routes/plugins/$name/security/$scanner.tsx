@@ -2,6 +2,7 @@ import { createFileRoute, notFound, redirect } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
 import { SecurityScannerPage, type ScannerSlug } from "../../../../components/SecurityScannerPage";
+import { getClawScanHashScrollScripts } from "../../../../lib/clawScanHashScroll";
 import { getOpenClawPackageCandidateNames } from "../../../../lib/openClawExtensionSlugs";
 import {
   fetchPackageDetail,
@@ -112,6 +113,7 @@ export const Route = createFileRoute("/plugins/$name/security/$scanner")({
     }
   },
   loader: async ({ params }) => loadPluginSecurity(params.name),
+  scripts: ({ params }) => getClawScanHashScrollScripts(params.scanner),
   head: ({ params, loaderData }) => pluginSecurityHead(params.name, params.scanner, loaderData),
   component: PluginSecurityScannerRoute,
 });

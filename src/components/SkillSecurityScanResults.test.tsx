@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, type Mock, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { SecurityScannerPage } from "./SecurityScannerPage";
 import { SecurityScanResults, type LlmAnalysis } from "./SkillSecurityScanResults";
 
@@ -129,13 +129,9 @@ const lowConfidenceConcernAnalysis: LlmAnalysis = {
   ],
 };
 
-let scrollIntoViewMock: Mock<Element["scrollIntoView"]>;
-
 beforeEach(() => {
   window.localStorage.clear();
   window.history.replaceState(null, "", "/");
-  scrollIntoViewMock = vi.fn<Element["scrollIntoView"]>();
-  Element.prototype.scrollIntoView = scrollIntoViewMock;
 });
 
 describe("SecurityScanResults static guidance", () => {
@@ -436,33 +432,6 @@ describe("SecurityScanResults static guidance", () => {
     expect(
       document.getElementById("clawscan-finding-asi03-identity-and-privilege-abuse-1"),
     ).toBeTruthy();
-  });
-
-  it("scrolls to a ClawScan finding when the page loads with that anchor", () => {
-    window.history.replaceState(
-      null,
-      "",
-      "/local/todo-guard/security/clawscan#clawscan-finding-asi07-insecure-inter-agent-communication-2",
-    );
-
-    render(
-      <SecurityScannerPage
-        scanner="clawscan"
-        entity={{
-          kind: "skill",
-          title: "Todo Guard",
-          name: "todo-guard",
-          version: "1.0.0",
-          detailPath: "/local/todo-guard",
-        }}
-        llmAnalysis={clawScanAnalysis}
-      />,
-    );
-
-    expect(scrollIntoViewMock).toHaveBeenCalledWith({
-      block: "start",
-      behavior: "smooth",
-    });
   });
 
   it("prompts publishers to add a note on review ClawScan reports without one", () => {
