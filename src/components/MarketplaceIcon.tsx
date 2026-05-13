@@ -6,8 +6,10 @@ type MarketplaceIconProps = {
   label: string;
   imageUrl?: string | null;
   /**
-   * Skill 自定义图标协议字符串（如 `lucide:Plug`）。当前仅 `skill` kind 支持，
-   * 其他 kind 传入会被忽略，仍走默认图标。无法解析或未在白名单时也回退。
+   * Skill custom-icon protocol string (e.g. `lucide:Plug`). Only honoured
+   * when `kind === "skill"`; for other kinds the prop is ignored. Falls
+   * back to the default kind icon when the value cannot be parsed or is
+   * not in the client allow-list.
    */
   icon?: string | null;
   size?: "xs" | "sm" | "md";

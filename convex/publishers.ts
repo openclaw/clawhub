@@ -44,6 +44,11 @@ type PublisherCatalogItem = {
   kind: "skill" | "plugin";
   displayName: string;
   summary: string | null;
+  // Mirrors `skills.icon` for `kind: "skill"` items so the publisher
+  // profile catalog (`/p/<handle>`) can render the same custom glyph that
+  // `SkillCard` and `SkillListItem` show on `/skills` and `/search`.
+  // Always `null` for plugins in Phase 1.
+  icon: string | null;
   href: string;
   downloads: number;
   stars: number;
@@ -258,6 +263,7 @@ function getPublisherCatalogItems(
       kind: "skill" as const,
       displayName: skill.displayName,
       summary: skill.summary ?? null,
+      icon: skill.icon ?? null,
       href: `/${encodeURIComponent(publisher.handle)}/${encodeURIComponent(skill.slug)}`,
       downloads: readCanonicalStat(skill, "downloads"),
       stars: readCanonicalStat(skill, "stars"),
@@ -268,6 +274,7 @@ function getPublisherCatalogItems(
       kind: "plugin" as const,
       displayName: pkg.displayName,
       summary: pkg.summary ?? null,
+      icon: null,
       href: buildPluginDetailHref(pkg.name),
       downloads: pkg.stats.downloads,
       stars: pkg.stats.stars,
@@ -932,6 +939,7 @@ export const listStarredPage = query({
             kind: "skill" as const,
             displayName: skill.displayName,
             summary: skill.summary ?? null,
+            icon: skill.icon ?? null,
             href: `/${encodeURIComponent(ownerHandle)}/${encodeURIComponent(skill.slug)}`,
             downloads: readCanonicalStat(skill, "downloads"),
             stars: readCanonicalStat(skill, "stars"),

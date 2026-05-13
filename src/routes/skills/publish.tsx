@@ -102,6 +102,16 @@ export function Upload() {
   const [clawScanNote, setClawScanNote] = useState("");
   const changelogTouchedRef = useRef(false);
   const clawScanNoteTouchedRef = useRef(false);
+  // Tracks whether the publisher has interacted with the Skill icon picker
+  // during this session. Used by the submit handler to honour the "key
+  // omitted = leave existing alone" branch in skill mode: a routine New
+  // Version publish that never touches the picker must NOT forward an
+  // empty `icon: ""` (which the backend would treat as an explicit
+  // clear). This protects against silently wiping a custom icon when
+  // pre-population fails — for example after the client allow-list is
+  // pruned in a future deploy and the stored lucide name no longer
+  // resolves.
+  const iconTouchedRef = useRef(false);
   const changelogRequestRef = useRef(0);
   const changelogKeyRef = useRef<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -511,14 +521,19 @@ export function Upload() {
 
     setStatus("Publishing…");
     try {
-      // Skill mode always forwards an `icon` field so the form is the
-      // single source of truth: a whitelisted name becomes `lucide:<Name>`,
-      // while the "None" tile (or no selection) becomes `""`. The backend
-      // treats blank input as "clear the icon" and a missing key as "keep
-      // whatever is already stored" — soul mode therefore omits the field
-      // entirely so the existing soul row is left alone.
+      // Skill mode forwards an `icon` field only when the picker has
+      // actually been touched in this session, so the form is the single
+      // source of truth for the tri-state contract:
+      //   * touched + whitelisted name → `lucide:<Name>` (set)
+      //   * touched + None / unparseable selection → `""` (clear)
+      //   * untouched (or soul mode) → field omitted (keep existing)
+      // The backend treats blank input as "clear the icon" and a missing
+      // key as "keep whatever is already stored", so the omit branch is
+      // what protects routine version bumps from silently wiping an
+      // existing custom icon when pre-population fails (e.g. the stored
+      // lucide name was pruned from `ALLOWED_LUCIDE_ICONS`).
       let iconPayload: string | undefined;
-      if (isSoulMode) {
+      if (isSoulMode || !iconTouchedRef.current) {
         iconPayload = undefined;
       } else if (iconName && Object.hasOwn(ALLOWED_LUCIDE_ICONS, iconName)) {
         iconPayload = makeLucideIconValue(iconName as keyof typeof ALLOWED_LUCIDE_ICONS);
@@ -613,7 +628,17 @@ export function Upload() {
                       heading is decorative and does not need `htmlFor` —
                       `SkillIconPicker` exposes its own `aria-label`. */}
                   <Label>Icon</Label>
-                  <SkillIconPicker value={iconName} onChange={setIconName} />
+                  <SkillIconPicker
+                    value={iconName}
+                    onChange={(next) => {
+                      // Mark the picker as user-touched so the submit
+                      // handler knows it can forward the resulting value
+                      // (including `null` → "") instead of falling back
+                      // to the omit-key branch.
+                      iconTouchedRef.current = true;
+                      setIconName(next);
+                    }}
+                  />
                 </>
               ) : null}
 

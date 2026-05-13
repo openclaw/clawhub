@@ -502,7 +502,10 @@ function ProfileDetail({
   );
 }
 
-function PublishedItemCard({
+// Exported for unit testing. The publisher profile route is the only
+// production consumer; tests assert that custom skill icons forwarded via
+// `item.icon` reach `MarketplaceIcon`.
+export function PublishedItemCard({
   item,
   view,
 }: {
@@ -513,7 +516,16 @@ function PublishedItemCard({
     return (
       <Link to={item.href} className="card skill-card">
         <div className="skill-card-header">
-          <MarketplaceIcon kind={item.kind} label={item.displayName} size="md" />
+          {/* Forward the custom icon for skill items so the publisher's
+              profile (`/p/<handle>`) renders the same lucide glyph that
+              `SkillCard` and `SkillListItem` use on `/skills` and `/search`.
+              Plugins always pass `null` per the Phase 1 contract. */}
+          <MarketplaceIcon
+            kind={item.kind}
+            label={item.displayName}
+            icon={item.kind === "skill" ? item.icon : null}
+            size="md"
+          />
           <h3 className="skill-card-title">{item.displayName}</h3>
         </div>
         <p className="skill-card-summary">
@@ -537,7 +549,11 @@ function PublishedItemCard({
 
   return (
     <Link to={item.href} className="skill-list-item publisher-published-row">
-      <MarketplaceIcon kind={item.kind} label={item.displayName} />
+      <MarketplaceIcon
+        kind={item.kind}
+        label={item.displayName}
+        icon={item.kind === "skill" ? item.icon : null}
+      />
       <div className="skill-list-item-body">
         <span className="skill-list-item-main">
           <span className="skill-list-item-owner">@{item.kind}</span>
