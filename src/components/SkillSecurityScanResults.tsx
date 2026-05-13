@@ -1,5 +1,5 @@
 import { ShieldCheck } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import { Badge, type BadgeProps } from "./ui/badge";
 
 type LlmAnalysisDimension = {
@@ -365,15 +365,6 @@ function getClawScanFindingAnchorId(finding: LlmAgenticRiskFinding, index: numbe
   return `clawscan-finding-${slug || "finding"}-${index + 1}`;
 }
 
-function getCurrentLocationAnchorId() {
-  if (typeof window === "undefined" || !window.location.hash) return "";
-  try {
-    return decodeURIComponent(window.location.hash.slice(1));
-  } catch {
-    return "";
-  }
-}
-
 function AgenticRiskFindingCard({
   finding,
   index,
@@ -456,18 +447,6 @@ export function ClawScanRiskReview({
   findingsTitle?: string;
 }) {
   const visibleFindings = getVisibleAgenticRiskFindings(analysis);
-  const findingAnchorIds = useMemo(
-    () => visibleFindings.map((finding, index) => getClawScanFindingAnchorId(finding, index)),
-    [visibleFindings],
-  );
-
-  useEffect(() => {
-    const anchor = getCurrentLocationAnchorId();
-    if (!anchor) return;
-    if (!findingAnchorIds.includes(anchor)) return;
-    document.getElementById(anchor)?.scrollIntoView({ block: "start", behavior: "smooth" });
-  }, [findingAnchorIds]);
-
   if (visibleFindings.length === 0) return null;
 
   return (

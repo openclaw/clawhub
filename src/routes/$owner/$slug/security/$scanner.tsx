@@ -6,6 +6,7 @@ import {
   SecurityScannerPageSkeleton,
   type ScannerSlug,
 } from "../../../../components/SecurityScannerPage";
+import { getClawScanHashScrollScripts } from "../../../../lib/clawScanHashScroll";
 import { buildSkillMeta } from "../../../../lib/og";
 import { isAdmin } from "../../../../lib/roles";
 import { fetchSkillPageData } from "../../../../lib/skillPage";
@@ -59,6 +60,7 @@ export const Route = createFileRoute("/$owner/$slug/security/$scanner")({
       initialData: data.initialData,
     };
   },
+  scripts: ({ params }) => getClawScanHashScrollScripts(params.scanner),
   head: ({ params, loaderData }) => {
     const scanner = parseScanner(params.scanner);
     const scannerLabel =
