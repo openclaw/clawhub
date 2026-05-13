@@ -8027,6 +8027,43 @@ code {
   color: var(--ink);
 }
 
+.agentic-risk-finding-title-row {
+  position: relative;
+  display: inline-flex;
+  align-items: baseline;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.agentic-risk-finding-anchor {
+  position: absolute;
+  right: calc(100% + 8px);
+  top: 0.15em;
+  color: color-mix(in srgb, var(--ink-soft) 58%, transparent);
+  font-size: 0.95rem;
+  font-weight: 750;
+  line-height: 1;
+  opacity: 0;
+  text-decoration: none;
+  transition:
+    color 0.15s ease,
+    opacity 0.15s ease;
+}
+
+.agentic-risk-finding-title-row:hover .agentic-risk-finding-anchor,
+.agentic-risk-finding-title-row:focus-within .agentic-risk-finding-anchor {
+  opacity: 1;
+}
+
+.agentic-risk-finding-anchor:hover,
+.agentic-risk-finding-anchor:focus-visible {
+  color: var(--accent);
+}
+
+.agentic-risk-finding {
+  scroll-margin-top: 132px;
+}
+
 a.agentic-risk-finding-title {
   color: inherit;
   text-decoration: underline;

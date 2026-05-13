@@ -1,5 +1,5 @@
 import { ShieldCheck } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Badge, type BadgeProps } from "./ui/badge";
 
 type LlmAnalysisDimension = {
@@ -352,6 +352,28 @@ function getOwaspAgenticSkillsHref(categoryId: string) {
   return `https://owasp.org/www-project-agentic-skills-top-10/ast${match[1]}`;
 }
 
+function slugifyFindingAnchorPart(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function getClawScanFindingAnchorId(finding: LlmAgenticRiskFinding, index: number) {
+  const slug = slugifyFindingAnchorPart(`${finding.categoryId}-${finding.categoryLabel}`);
+  return `clawscan-finding-${slug || "finding"}-${index + 1}`;
+}
+
+function getCurrentLocationAnchorId() {
+  if (typeof window === "undefined" || !window.location.hash) return "";
+  try {
+    return decodeURIComponent(window.location.hash.slice(1));
+  } catch {
+    return "";
+  }
+}
+
 function AgenticRiskFindingCard({
   finding,
   index,
@@ -363,30 +385,40 @@ function AgenticRiskFindingCard({
   if (!evidence) return null;
   const categoryHref = getOwaspAgenticSkillsHref(finding.categoryId);
   const severityBadge = getFindingSeverityBadgeMeta(finding.severity);
+  const title = `${finding.categoryId}: ${finding.categoryLabel}`;
+  const anchorId = getClawScanFindingAnchorId(finding, index);
 
   return (
     <div
       key={`${finding.categoryId}-${finding.riskBucket}-${index}`}
       className="agentic-risk-finding"
+      id={anchorId}
     >
       <div className="agentic-risk-finding-header">
         <div className="agentic-risk-finding-badges">
           <Badge variant={severityBadge.variant}>{severityBadge.label}</Badge>
         </div>
-        {categoryHref ? (
+        <div className="agentic-risk-finding-title-row">
           <a
-            className="agentic-risk-finding-title"
-            href={categoryHref}
-            target="_blank"
-            rel="noopener noreferrer"
+            className="agentic-risk-finding-anchor"
+            href={`#${anchorId}`}
+            aria-label={`Link to ${title}`}
           >
-            {finding.categoryId}: {finding.categoryLabel}
+            #
           </a>
-        ) : (
-          <div className="agentic-risk-finding-title">
-            {finding.categoryId}: {finding.categoryLabel}
-          </div>
-        )}
+          {categoryHref ? (
+            <a
+              className="agentic-risk-finding-title"
+              href={categoryHref}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {title}
+            </a>
+          ) : (
+            <div className="agentic-risk-finding-title">{title}</div>
+          )}
+        </div>
       </div>
       <div className="agentic-risk-report-rows">
         <div className="agentic-risk-report-row">
@@ -424,6 +456,18 @@ export function ClawScanRiskReview({
   findingsTitle?: string;
 }) {
   const visibleFindings = getVisibleAgenticRiskFindings(analysis);
+  const findingAnchorIds = useMemo(
+    () => visibleFindings.map((finding, index) => getClawScanFindingAnchorId(finding, index)),
+    [visibleFindings],
+  );
+
+  useEffect(() => {
+    const anchor = getCurrentLocationAnchorId();
+    if (!anchor) return;
+    if (!findingAnchorIds.includes(anchor)) return;
+    document.getElementById(anchor)?.scrollIntoView({ block: "start", behavior: "smooth" });
+  }, [findingAnchorIds]);
+
   if (visibleFindings.length === 0) return null;
 
   return (
