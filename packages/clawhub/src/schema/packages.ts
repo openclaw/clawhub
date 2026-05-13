@@ -338,6 +338,33 @@ export const ApiV1PackageArtifactResponseSchema = type({
 });
 export type ApiV1PackageArtifactResponse = (typeof ApiV1PackageArtifactResponseSchema)[inferred];
 
+export const ApiV1PackageSecurityResponseSchema = type({
+  package: type({
+    name: "string",
+    displayName: "string",
+    family: PackageFamilySchema,
+  }),
+  release: type({
+    releaseId: "string",
+    version: "string",
+    artifactKind: PackageArtifactKindSchema.or("null").optional(),
+    artifactSha256: "string?",
+    npmIntegrity: "string?",
+    npmShasum: "string?",
+    npmTarballName: "string?",
+    createdAt: "number",
+  }),
+  trust: type({
+    scanStatus: '"clean"|"suspicious"|"malicious"|"pending"|"not-run"',
+    moderationState: PackageReleaseModerationStateSchema.or("null").optional(),
+    blockedFromDownload: "boolean",
+    reasons: "string[]",
+    pending: "boolean",
+    stale: "boolean",
+  }),
+});
+export type ApiV1PackageSecurityResponse = (typeof ApiV1PackageSecurityResponseSchema)[inferred];
+
 export const PackageReleaseModerationRequestSchema = type({
   state: PackageReleaseModerationStateSchema,
   reason: "string",

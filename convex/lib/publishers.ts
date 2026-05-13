@@ -14,11 +14,21 @@ function isMissingPublisherTableError(error: unknown) {
   );
 }
 
+function normalizeGeneratedPublisherHandle(handle: string | undefined | null) {
+  const normalized = normalizePublisherHandle(handle);
+  const sanitized = normalized
+    ?.replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^[-_]+|[-_]+$/g, "");
+  return sanitized || undefined;
+}
+
 function derivePersonalPublisherHandle(user: Doc<"users">) {
   const emailLocalPart = user.email?.split("@")[0];
   const userIdSuffix = String(user._id).split(":").pop();
   return (
-    normalizePublisherHandle(user.handle ?? user.name ?? emailLocalPart ?? userIdSuffix) ?? "user"
+    normalizeGeneratedPublisherHandle(user.handle ?? user.name ?? emailLocalPart ?? userIdSuffix) ??
+    "user"
   );
 }
 

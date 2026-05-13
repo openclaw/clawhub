@@ -476,6 +476,81 @@ Notes:
 - `version.sha256hash`, `version.vtAnalysis`, `version.llmAnalysis`, and `version.staticScan` are included when scan data exists.
 - Private packages return `404` unless the caller can read the owning publisher.
 
+### `GET /api/v1/packages/{name}/versions/{version}/security`
+
+Returns the exact package release security and trust summary for install
+clients. This is the public OpenClaw consumption surface for deciding whether a
+resolved release can be installed.
+
+Auth:
+
+- Public read endpoint. No owner, publisher, moderator, or admin token is
+  required.
+
+Response:
+
+```json
+{
+  "package": {
+    "name": "@openclaw/example-plugin",
+    "displayName": "Example Plugin",
+    "family": "code-plugin"
+  },
+  "release": {
+    "releaseId": "packageReleases:...",
+    "version": "1.2.3",
+    "artifactKind": "npm-pack",
+    "artifactSha256": "0123456789abcdef...",
+    "npmIntegrity": "sha512-...",
+    "npmShasum": "0123456789abcdef0123456789abcdef01234567",
+    "npmTarballName": "example-plugin-1.2.3.tgz",
+    "createdAt": 1730000000000
+  },
+  "trust": {
+    "scanStatus": "malicious",
+    "moderationState": "quarantined",
+    "blockedFromDownload": true,
+    "reasons": ["manual:quarantined", "scan:malicious"],
+    "pending": false,
+    "stale": false
+  }
+}
+```
+
+Response fields:
+
+- `package.name`, `package.displayName`, and `package.family` identify the
+  resolved registry package.
+- `release.releaseId`, `release.version`, and `release.createdAt` identify the
+  exact release that was evaluated.
+- `release.artifactKind`, `release.artifactSha256`, `release.npmIntegrity`,
+  `release.npmShasum`, and `release.npmTarballName` are present when known for
+  the release artifact.
+- `trust.scanStatus` is the effective trust status derived from scanner inputs
+  and manual release moderation.
+- `trust.moderationState` is nullable. It is `null` when no manual release
+  moderation exists.
+- `trust.blockedFromDownload` is the install block signal. OpenClaw and other
+  install clients should block installation when this value is `true` instead of
+  re-deriving blocking rules from scanner or moderation fields.
+- `trust.reasons` is the user-facing and audit explanation list. Reason codes
+  are stable, compact strings such as `manual:quarantined`, `scan:malicious`,
+  `static:malicious`, `vt:suspicious`, and `package:malicious`.
+- `trust.pending` means one or more trust inputs are still awaiting completion.
+- `trust.stale` means the trust summary was computed from outdated inputs and
+  should be treated as requiring refresh before a high-confidence allow decision.
+
+Notes:
+
+- This endpoint is version-exact. Clients should call it after resolving the
+  package version they intend to install, not just after reading the latest
+  package metadata.
+- Private packages return `404` unless the caller can read the owning publisher.
+- This endpoint is intentionally narrower than owner/moderator moderation
+  endpoints. It exposes the install decision and public explanation, not
+  reporter identities, report bodies, private evidence, or internal review
+  timelines.
+
 ### `GET /api/v1/packages/{name}/versions/{version}/artifact`
 
 Returns the explicit artifact resolver metadata for a package version.

@@ -3,6 +3,7 @@ import {
   ApiV1PackageOfficialMigrationListResponseSchema,
   ApiV1PackageOfficialMigrationResponseSchema,
   ApiV1PackageModerationStatusResponseSchema,
+  ApiV1PackageSecurityResponseSchema,
   PackageAppealResolveRequestSchema,
   PackageAppealRequestSchema,
   PackageOfficialMigrationUpsertRequestSchema,
@@ -32,7 +33,12 @@ import {
 import { corsHeaders, mergeHeaders } from "../lib/httpHeaders";
 import { applyRateLimit } from "../lib/httpRateLimit";
 import { tryNormalizePackageName } from "../lib/packageRegistry";
-import { getPackageDownloadSecurityBlock } from "../lib/packageSecurity";
+import {
+  getPackageDownloadSecurityBlock,
+  isPackageReleaseTrustStale,
+  getPackageTrustReasons,
+  resolvePackageReleaseScanStatus,
+} from "../lib/packageSecurity";
 import {
   getClawPackSizeError,
   getPublishFileSizeError,
@@ -77,6 +83,7 @@ const internalRefs = internal as unknown as {
     getPackageByNameInternal: unknown;
     getTrustedPublisherByPackageIdInternal: unknown;
     getVersionByNameForViewerInternal: unknown;
+    getVersionSecurityByNameForViewerInternal: unknown;
     publishPackageForUserInternal: unknown;
     publishPackageForTrustedPublisherInternal: unknown;
     setTrustedPublisherForUserInternal: unknown;
@@ -336,6 +343,7 @@ type ReleaseLike = {
   clawScanNote?: string;
   clawScanNoteUpdatedAt?: number;
   staticScan?: Doc<"packageReleases">["staticScan"];
+  manualModeration?: Doc<"packageReleases">["manualModeration"];
   integritySha256?: string;
   artifactKind?: Doc<"packageReleases">["artifactKind"];
   clawpackStorageId?: Doc<"packageReleases">["clawpackStorageId"];
@@ -410,6 +418,50 @@ function toReleaseArtifact(release: ReleaseLike, packageName?: string) {
     ...(sha256 ? { artifactSha256: sha256 } : {}),
     packageName,
     version: release.version,
+  };
+}
+
+function packageReleaseArtifactSha256(release: ReleaseLike) {
+  if (release.artifactKind === "npm-pack") {
+    return release.sha256hash ?? release.clawpackSha256 ?? null;
+  }
+  return release.sha256hash ?? null;
+}
+
+function toPackageReleaseSecurityResponse(params: {
+  pkg: PublicPackageDocLike;
+  release: ReleaseLike;
+}) {
+  const scanStatus = resolvePackageReleaseScanStatus(params.release);
+  const artifactSha256 = packageReleaseArtifactSha256(params.release);
+  const packageBlockedFromDownload = params.pkg.publicDownloadBlocked === true;
+  const reasons = getPackageTrustReasons(params.release, scanStatus);
+  if (packageBlockedFromDownload) reasons.push("package:malicious");
+  return {
+    package: {
+      name: params.pkg.name,
+      displayName: params.pkg.displayName,
+      family: params.pkg.family,
+    },
+    release: {
+      releaseId: params.release._id,
+      version: params.release.version,
+      artifactKind: params.release.artifactKind ?? null,
+      ...(artifactSha256 ? { artifactSha256 } : {}),
+      ...(params.release.npmIntegrity ? { npmIntegrity: params.release.npmIntegrity } : {}),
+      ...(params.release.npmShasum ? { npmShasum: params.release.npmShasum } : {}),
+      ...(params.release.npmTarballName ? { npmTarballName: params.release.npmTarballName } : {}),
+      createdAt: params.release.createdAt,
+    },
+    trust: {
+      scanStatus,
+      moderationState: params.release.manualModeration?.state ?? null,
+      blockedFromDownload:
+        packageBlockedFromDownload || getPackageDownloadSecurityBlock(params.release) !== null,
+      reasons,
+      pending: scanStatus === "pending" || scanStatus === "not-run",
+      stale: isPackageReleaseTrustStale(params.release),
+    },
   };
 }
 
@@ -2249,6 +2301,30 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
   if (!normalizedPackageName) return text("Package not found", 404, rate.headers);
 
   const viewerUserId = await getOptionalViewerUserIdForRequest(ctx, request);
+  if (
+    packageSegments[0] === "versions" &&
+    packageSegments[1] &&
+    packageSegments[2] === "security" &&
+    packageSegments.length === 3
+  ) {
+    const result = (await runQueryRef(
+      ctx,
+      internalRefs.packages.getVersionSecurityByNameForViewerInternal,
+      {
+        name: normalizedPackageName,
+        version: packageSegments[1],
+        viewerUserId: viewerUserId ?? undefined,
+      },
+    )) as { package: PublicPackageDocLike; version: ReleaseLike } | null;
+    if (!result) return text("Package security not found", 404, rate.headers);
+    const parsed = parseArk(
+      ApiV1PackageSecurityResponseSchema,
+      toPackageReleaseSecurityResponse({ pkg: result.package, release: result.version }),
+      "Package security response",
+    );
+    return json(parsed, 200, rate.headers);
+  }
+
   const detail = (await runQueryRef(ctx, internalRefs.packages.getByNameForViewerInternal, {
     name: normalizedPackageName,
     viewerUserId: viewerUserId ?? undefined,
@@ -2788,6 +2864,8 @@ type PublicPackageDocLike = {
   latestReleaseId?: Id<"packageReleases">;
   channel: "official" | "community" | "private";
   isOfficial: boolean;
+  scanStatus?: Doc<"packages">["scanStatus"];
+  publicDownloadBlocked?: boolean;
   runtimeId?: string;
   summary?: string;
   latestVersion?: string | null;

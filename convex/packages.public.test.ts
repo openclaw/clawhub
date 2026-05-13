@@ -21,6 +21,7 @@ import {
   resolvePackageAppealForUserInternal,
   upsertOfficialPluginMigrationForUserInternal,
   getVersionByName,
+  getVersionSecurityByNameForViewerInternal,
   insertReleaseInternal,
   listPackageModerationQueueInternal,
   reservePackageNameInternal,
@@ -75,6 +76,12 @@ const listHandler = (
 const getVersionByNameHandler = (
   getVersionByName as unknown as WrappedHandler<
     { name: string; version: string },
+    { package: { name: string }; version: { version: string } } | null
+  >
+)._handler;
+const getVersionSecurityByNameForViewerInternalHandler = (
+  getVersionSecurityByNameForViewerInternal as unknown as WrappedHandler<
+    { name: string; version: string; viewerUserId?: string },
     { package: { name: string }; version: { version: string } } | null
   >
 )._handler;
@@ -2247,6 +2254,54 @@ describe("packages public queries", () => {
         viewerUserId: "users:owner",
       } as never),
     ).resolves.toBeNull();
+    await expect(
+      getVersionSecurityByNameForViewerInternalHandler(ctx, {
+        name: "demo-plugin",
+        version: "1.0.0",
+      }),
+    ).resolves.toBeNull();
+  });
+
+  it("allows anonymous exact security reads for blocked public packages", async () => {
+    const { ctx } = makePackageCtx({
+      pkg: makePackageDoc({ channel: "community", scanStatus: "malicious" }),
+    });
+
+    await expect(
+      getByNameHandler(ctx, {
+        name: "demo-plugin",
+      }),
+    ).resolves.toBeNull();
+    await expect(
+      getVersionSecurityByNameForViewerInternalHandler(ctx, {
+        name: "demo-plugin",
+        version: "1.0.0",
+      }),
+    ).resolves.toMatchObject({
+      package: { name: "demo-plugin", publicDownloadBlocked: true },
+      version: { version: "1.0.0" },
+    });
+  });
+
+  it("does not mark owner-readable blocked public packages as public download blocked", async () => {
+    const { ctx } = makePackageCtx({
+      pkg: makePackageDoc({
+        channel: "community",
+        scanStatus: "malicious",
+        ownerUserId: "users:owner",
+      }),
+    });
+
+    await expect(
+      getVersionSecurityByNameForViewerInternalHandler(ctx, {
+        name: "demo-plugin",
+        version: "1.0.0",
+        viewerUserId: "users:owner",
+      }),
+    ).resolves.toMatchObject({
+      package: { name: "demo-plugin", publicDownloadBlocked: false },
+      version: { version: "1.0.0" },
+    });
   });
 
   it("allows owners to read their private packages", async () => {

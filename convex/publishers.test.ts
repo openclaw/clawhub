@@ -1108,6 +1108,38 @@ describe("publisher-owned resource authorization", () => {
 });
 
 describe("publisher bootstrap", () => {
+  function makeSynthesizedPublisherCtx(userId: string, user: Record<string, unknown>) {
+    return {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === userId) return { _id: id, ...user };
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table === "publisherMembers") {
+            return {
+              withIndex: vi.fn((indexName: string) => {
+                if (indexName !== "by_user") throw new Error(`unexpected index ${indexName}`);
+                return { collect: vi.fn().mockResolvedValue([]) };
+              }),
+            };
+          }
+          if (table === "publishers") {
+            return {
+              withIndex: vi.fn((indexName: string) => {
+                if (indexName !== "by_linked_user") {
+                  throw new Error(`unexpected index ${indexName}`);
+                }
+                return { unique: vi.fn().mockResolvedValue(null) };
+              }),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+  }
+
   it("lists a synthesized personal publisher when membership rows are missing", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:alice" as never);
     const ctx = {
@@ -1157,6 +1189,85 @@ describe("publisher bootstrap", () => {
           handle: "alice",
           kind: "user",
           linkedUserId: "users:alice",
+        }),
+      }),
+    ]);
+  });
+
+  it("derives route-safe handles for synthesized personal publishers", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:local" as never);
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:local") {
+            return {
+              _id: id,
+              _creationTime: 1,
+              name: "Local Owner",
+              displayName: "Local Owner",
+              trustedPublisher: false,
+              createdAt: 1,
+              updatedAt: 1,
+            };
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table === "publisherMembers") {
+            return {
+              withIndex: vi.fn((indexName: string) => {
+                if (indexName !== "by_user") throw new Error(`unexpected index ${indexName}`);
+                return { collect: vi.fn().mockResolvedValue([]) };
+              }),
+            };
+          }
+          if (table === "publishers") {
+            return {
+              withIndex: vi.fn((indexName: string) => {
+                if (indexName !== "by_linked_user") {
+                  throw new Error(`unexpected index ${indexName}`);
+                }
+                return { unique: vi.fn().mockResolvedValue(null) };
+              }),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await expect(listMineHandler(ctx as never, {} as never)).resolves.toEqual([
+      expect.objectContaining({
+        role: "owner",
+        publisher: expect.objectContaining({
+          displayName: "Local Owner",
+          handle: "local-owner",
+          kind: "user",
+          linkedUserId: "users:local",
+        }),
+      }),
+    ]);
+  });
+
+  it("falls back when synthesized personal publisher handles sanitize to empty", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:symbols" as never);
+    const ctx = makeSynthesizedPublisherCtx("users:symbols", {
+      _creationTime: 1,
+      name: "!!!",
+      displayName: "!!!",
+      trustedPublisher: false,
+      createdAt: 1,
+      updatedAt: 1,
+    });
+
+    await expect(listMineHandler(ctx as never, {} as never)).resolves.toEqual([
+      expect.objectContaining({
+        role: "owner",
+        publisher: expect.objectContaining({
+          displayName: "!!!",
+          handle: "user",
+          kind: "user",
+          linkedUserId: "users:symbols",
         }),
       }),
     ]);

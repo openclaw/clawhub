@@ -57,7 +57,11 @@ import {
   toConvexSafeJsonValue,
 } from "./lib/packageRegistry";
 import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
-import { isPackageBlockedFromPublic, resolvePackageReleaseScanStatus } from "./lib/packageSecurity";
+import {
+  getPackageTrustReasons,
+  isPackageBlockedFromPublic,
+  resolvePackageReleaseScanStatus,
+} from "./lib/packageSecurity";
 import { toPublicPublisher } from "./lib/public";
 import {
   assertCanManageOwnedResource,
@@ -375,24 +379,6 @@ function isReservedPackagePlaceholder(pkg: PackageDoc | null | undefined) {
   return Boolean(pkg && !pkg.latestReleaseId && !pkg.latestVersionSummary);
 }
 
-function getPackageModerationQueueReasons(
-  release: Pick<Doc<"packageReleases">, "manualModeration" | "staticScan" | "vtAnalysis">,
-  scanStatus: PackageReleaseScanStatus,
-  reportCount = 0,
-) {
-  const reasons: string[] = [];
-  if (release.manualModeration?.state) reasons.push(`manual:${release.manualModeration.state}`);
-  if (scanStatus !== "clean" && scanStatus !== "not-run") reasons.push(`scan:${scanStatus}`);
-  if (release.staticScan?.status === "malicious") {
-    reasons.push(`static:${release.staticScan.status}`);
-  }
-  if (release.vtAnalysis?.status === "suspicious" || release.vtAnalysis?.status === "malicious") {
-    reasons.push(`vt:${release.vtAnalysis.status}`);
-  }
-  if (reportCount > 0) reasons.push(`reports:${reportCount}`);
-  return [...new Set(reasons)];
-}
-
 function shouldIncludePackageReportsInModerationQueue(
   reportCount: number,
   status: PackageModerationQueueStatus,
@@ -453,7 +439,7 @@ function toPackageModerationQueueItem(
     sourceCommit: typeof source.commit === "string" ? source.commit : null,
     reportCount,
     lastReportedAt: pkg.lastReportedAt ?? null,
-    reasons: getPackageModerationQueueReasons(release, scanStatus, reportCount),
+    reasons: getPackageTrustReasons(release, scanStatus, reportCount),
   };
 }
 
@@ -1416,6 +1402,19 @@ async function getReadablePackageByName(
   return pkg;
 }
 
+async function getPackageReadableForPublicTrust(
+  ctx: DbReaderCtx,
+  name: string,
+  viewerUserId?: Id<"users">,
+) {
+  const pkg = await getPackageByNormalizedName(ctx, normalizePackageName(name));
+  if (!pkg || pkg.softDeletedAt) return null;
+  if (pkg.channel === "private" && !(await viewerCanAccessPackageOwner(ctx, pkg, viewerUserId))) {
+    return null;
+  }
+  return pkg;
+}
+
 async function getPackageTrustedPublisherByPackageId(ctx: DbReaderCtx, packageId: Id<"packages">) {
   return await ctx.db
     .query("packageTrustedPublishers")
@@ -1655,6 +1654,37 @@ export const getVersionByNameForViewerInternal = internalQuery({
     if (!release || release.softDeletedAt) return null;
     return {
       package: publicPackage,
+      version: release,
+    };
+  },
+});
+
+export const getVersionSecurityByNameForViewerInternal = internalQuery({
+  args: {
+    name: v.string(),
+    version: v.string(),
+    viewerUserId: v.optional(v.id("users")),
+  },
+  handler: async (ctx, args) => {
+    const pkg = await getPackageReadableForPublicTrust(ctx, args.name, args.viewerUserId);
+    if (!pkg) return null;
+    const publicPackage = toPublicPackage(pkg);
+    if (!publicPackage) return null;
+    const publicDownloadBlocked =
+      isPackageBlockedFromPublic(pkg.scanStatus) &&
+      !(await viewerCanAccessPackageOwner(ctx, pkg, args.viewerUserId));
+    const release = await ctx.db
+      .query("packageReleases")
+      .withIndex("by_package_version", (q) =>
+        q.eq("packageId", pkg._id).eq("version", args.version),
+      )
+      .unique();
+    if (!release || release.softDeletedAt) return null;
+    return {
+      package: {
+        ...publicPackage,
+        publicDownloadBlocked,
+      },
       version: release,
     };
   },
@@ -3116,7 +3146,7 @@ export const getPackageModerationStatusForUserInternal = internalQuery({
             moderationState: activeLatestRelease.manualModeration?.state ?? null,
             moderationReason: activeLatestRelease.manualModeration?.reason ?? null,
             blockedFromDownload: releaseScanStatus === "malicious",
-            reasons: getPackageModerationQueueReasons(
+            reasons: getPackageTrustReasons(
               activeLatestRelease,
               releaseScanStatus,
               pkg.reportCount ?? 0,

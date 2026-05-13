@@ -4143,6 +4143,7 @@ describe("httpApiV1 handlers", () => {
             name: "demo-plugin",
             displayName: "Demo Plugin",
             family: "code-plugin",
+            reportCount: 7,
           },
           version: {
             _id: "packageReleases:1",
@@ -4281,7 +4282,9 @@ describe("httpApiV1 handlers", () => {
     );
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({
+    const json = await response.json();
+    expect(json.package).not.toHaveProperty("reportCount");
+    expect(json).toMatchObject({
       version: {
         artifact: {
           kind: "npm-pack",
@@ -4321,6 +4324,7 @@ describe("httpApiV1 handlers", () => {
             name: "demo-plugin",
             displayName: "Demo Plugin",
             family: "code-plugin",
+            reportCount: 7,
           },
           version: {
             _id: "packageReleases:1",
@@ -4351,7 +4355,9 @@ describe("httpApiV1 handlers", () => {
     );
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({
+    const json = await response.json();
+    expect(json.package).not.toHaveProperty("reportCount");
+    expect(json).toMatchObject({
       artifact: {
         kind: "npm-pack",
         tarballUrl: "https://example.com/api/npm/demo-plugin/-/demo-plugin-1.0.0.tgz",
@@ -4428,6 +4434,405 @@ describe("httpApiV1 handlers", () => {
         legacyDownloadUrl: "https://example.com/api/v1/packages/demo-plugin/download?version=1.0.0",
       },
     });
+  });
+
+  it("package security endpoint returns exact release trust and blocked reasons", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args && !("version" in args)) {
+        return {
+          package: {
+            _id: "packages:demo-plugin",
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            family: "code-plugin",
+            tags: { latest: "packageReleases:1" },
+            latestReleaseId: "packageReleases:1",
+            channel: "community",
+            isOfficial: false,
+            createdAt: 1,
+            updatedAt: 1,
+          },
+          latestRelease: null,
+          owner: { _id: "publishers:demo", handle: "demo" },
+        };
+      }
+      if ("name" in args && "version" in args) {
+        return {
+          package: {
+            _id: "packages:demo-plugin",
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            family: "code-plugin",
+            channel: "community",
+            isOfficial: false,
+          },
+          version: {
+            _id: "packageReleases:1",
+            packageId: "packages:demo-plugin",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "Initial release",
+            distTags: ["latest"],
+            files: [],
+            artifactKind: "npm-pack",
+            sha256hash: "c".repeat(64),
+            clawpackSha256: "e".repeat(64),
+            clawpackSize: 123,
+            clawpackFormat: "tgz",
+            npmIntegrity: "sha512-demo",
+            npmShasum: "d".repeat(40),
+            npmTarballName: "demo-plugin-1.0.0.tgz",
+            verification: { scanStatus: "malicious" },
+            manualModeration: { state: "quarantined", reason: "private reviewer note" },
+          },
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages/demo-plugin/versions/1.0.0/security"),
+    );
+
+    expect(response.status).toBe(200);
+    const packageLookupArgs = runQuery.mock.calls
+      .map(([, args]) => args)
+      .filter(hasPackageNameArgs);
+    expect(packageLookupArgs).toContainEqual(
+      expect.objectContaining({ name: "demo-plugin", version: "1.0.0" }),
+    );
+    expect(packageLookupArgs.some((args) => !("version" in args))).toBe(false);
+    const json = await response.json();
+    expect(json.trust).not.toHaveProperty("moderationReason");
+    expect(json).toEqual({
+      package: {
+        name: "demo-plugin",
+        displayName: "Demo Plugin",
+        family: "code-plugin",
+      },
+      release: {
+        releaseId: "packageReleases:1",
+        version: "1.0.0",
+        artifactKind: "npm-pack",
+        artifactSha256: "c".repeat(64),
+        npmIntegrity: "sha512-demo",
+        npmShasum: "d".repeat(40),
+        npmTarballName: "demo-plugin-1.0.0.tgz",
+        createdAt: 1,
+      },
+      trust: {
+        scanStatus: "malicious",
+        moderationState: "quarantined",
+        blockedFromDownload: true,
+        reasons: ["manual:quarantined", "scan:malicious"],
+        pending: false,
+        stale: false,
+      },
+    });
+  });
+
+  it("package security endpoint includes package-level public download blocks", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args && "version" in args) {
+        return {
+          package: {
+            _id: "packages:demo-plugin",
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            family: "code-plugin",
+            channel: "community",
+            isOfficial: false,
+            scanStatus: "malicious",
+            publicDownloadBlocked: true,
+          },
+          version: {
+            _id: "packageReleases:1",
+            packageId: "packages:demo-plugin",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "Initial release",
+            distTags: ["latest"],
+            files: [],
+            artifactKind: "npm-pack",
+            sha256hash: "c".repeat(64),
+            verification: { scanStatus: "clean" },
+          },
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages/demo-plugin/versions/1.0.0/security"),
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.trust).toMatchObject({
+      scanStatus: "clean",
+      blockedFromDownload: true,
+      reasons: ["package:malicious"],
+      pending: false,
+      stale: false,
+    });
+  });
+
+  it("package security endpoint does not use file-set integrity as npm artifact hash", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args && "version" in args) {
+        return {
+          package: {
+            _id: "packages:demo-plugin",
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            family: "code-plugin",
+            channel: "community",
+            isOfficial: false,
+          },
+          version: {
+            _id: "packageReleases:1",
+            packageId: "packages:demo-plugin",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "Initial release",
+            distTags: ["latest"],
+            files: [],
+            artifactKind: "npm-pack",
+            integritySha256: "a".repeat(64),
+            npmIntegrity: "sha512-demo",
+            npmShasum: "d".repeat(40),
+            npmTarballName: "demo-plugin-1.0.0.tgz",
+            verification: { scanStatus: "clean" },
+          },
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages/demo-plugin/versions/1.0.0/security"),
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.release).not.toHaveProperty("artifactSha256");
+    expect(json.release).toMatchObject({
+      artifactKind: "npm-pack",
+      npmIntegrity: "sha512-demo",
+      npmShasum: "d".repeat(40),
+      npmTarballName: "demo-plugin-1.0.0.tgz",
+    });
+  });
+
+  it("package security endpoint does not use file-set integrity as legacy artifact hash", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args && "version" in args) {
+        return {
+          package: {
+            _id: "packages:demo-plugin",
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            family: "code-plugin",
+            channel: "community",
+            isOfficial: false,
+          },
+          version: {
+            _id: "packageReleases:1",
+            packageId: "packages:demo-plugin",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "Initial release",
+            distTags: ["latest"],
+            files: [],
+            artifactKind: "legacy-zip",
+            integritySha256: "a".repeat(64),
+            verification: { scanStatus: "clean" },
+          },
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages/demo-plugin/versions/1.0.0/security"),
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.release).not.toHaveProperty("artifactSha256");
+    expect(json.release).toMatchObject({
+      artifactKind: "legacy-zip",
+      version: "1.0.0",
+    });
+  });
+
+  it.each([
+    {
+      name: "clean",
+      release: { verification: { scanStatus: "clean" } },
+      expected: { scanStatus: "clean", blockedFromDownload: false, reasons: [], pending: false },
+    },
+    {
+      name: "pending",
+      release: { sha256hash: "b".repeat(64) },
+      expected: {
+        scanStatus: "pending",
+        blockedFromDownload: false,
+        reasons: ["scan:pending"],
+        pending: true,
+      },
+    },
+    {
+      name: "stale",
+      release: { sha256hash: "b".repeat(64), vtAnalysis: { status: "stale", checkedAt: 123 } },
+      expected: {
+        scanStatus: "pending",
+        blockedFromDownload: false,
+        reasons: ["scan:pending"],
+        pending: true,
+        stale: true,
+      },
+    },
+    {
+      name: "suspicious",
+      release: {
+        vtAnalysis: {
+          status: "suspicious",
+          source: "engines",
+          engineStats: { suspicious: 1 },
+          checkedAt: 123,
+        },
+      },
+      expected: {
+        scanStatus: "suspicious",
+        blockedFromDownload: false,
+        reasons: ["scan:suspicious", "vt:suspicious"],
+        pending: false,
+      },
+    },
+    {
+      name: "malicious",
+      release: {
+        staticScan: {
+          status: "malicious",
+          reasonCodes: ["malicious.test"],
+          findings: [],
+          summary: "Detected: malicious.test",
+          engineVersion: "v1",
+          checkedAt: 123,
+        },
+      },
+      expected: {
+        scanStatus: "malicious",
+        blockedFromDownload: true,
+        reasons: ["scan:malicious", "static:malicious"],
+        pending: false,
+      },
+    },
+    {
+      name: "quarantined",
+      release: {
+        verification: { scanStatus: "clean" },
+        manualModeration: { state: "quarantined", reason: "private reviewer note" },
+      },
+      expected: {
+        scanStatus: "malicious",
+        moderationState: "quarantined",
+        blockedFromDownload: true,
+        reasons: ["manual:quarantined", "scan:malicious"],
+        pending: false,
+      },
+    },
+    {
+      name: "revoked",
+      release: {
+        verification: { scanStatus: "clean" },
+        manualModeration: { state: "revoked", reason: "unsafe artifact" },
+      },
+      expected: {
+        scanStatus: "malicious",
+        moderationState: "revoked",
+        blockedFromDownload: true,
+        reasons: ["manual:revoked", "scan:malicious"],
+        pending: false,
+      },
+    },
+  ])("package security endpoint reports $name trust state", async ({ release, expected }) => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args && !("version" in args)) {
+        return {
+          package: {
+            _id: "packages:demo-plugin",
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            family: "code-plugin",
+            tags: { latest: "packageReleases:1" },
+            latestReleaseId: "packageReleases:1",
+            channel: "community",
+            isOfficial: false,
+            createdAt: 1,
+            updatedAt: 1,
+          },
+          latestRelease: null,
+          owner: { _id: "publishers:demo", handle: "demo" },
+        };
+      }
+      if ("name" in args && "version" in args) {
+        return {
+          package: {
+            _id: "packages:demo-plugin",
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            family: "code-plugin",
+            channel: "community",
+            isOfficial: false,
+          },
+          version: {
+            _id: "packageReleases:1",
+            packageId: "packages:demo-plugin",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "Initial release",
+            distTags: ["latest"],
+            files: [],
+            artifactKind: "legacy-zip",
+            sha256hash: "b".repeat(64),
+            ...release,
+          },
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages/demo-plugin/versions/1.0.0/security"),
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.release).toMatchObject({
+      releaseId: "packageReleases:1",
+      version: "1.0.0",
+      artifactKind: "legacy-zip",
+      artifactSha256: "b".repeat(64),
+      createdAt: 1,
+    });
+    expect(json.trust).toMatchObject({
+      moderationState: null,
+      stale: false,
+      ...expected,
+    });
+    expect(json.trust).not.toHaveProperty("moderationReason");
   });
 
   it("package artifact endpoint omits legacy zip archive aliases when archive hash is missing", async () => {

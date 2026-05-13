@@ -33,6 +33,7 @@ const ADMIN_HANDLE = "steipete";
 const MAX_USER_LIST_LIMIT = 200;
 const MAX_USER_SEARCH_SCAN = 5_000;
 const MIN_USER_SEARCH_SCAN = 500;
+const DEV_PERSONA_GITHUB_CREATED_AT = Date.UTC(2020, 0, 1);
 
 const DEV_PERSONAS = {
   owner: {
@@ -77,6 +78,7 @@ export const upsertDevPersonaInternal = internalMutation({
       displayName: persona.displayName,
       name: persona.displayName,
       role: persona.role,
+      githubCreatedAt: DEV_PERSONA_GITHUB_CREATED_AT,
       deletedAt: undefined,
       deactivatedAt: undefined,
       purgedAt: undefined,

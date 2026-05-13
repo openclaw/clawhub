@@ -17,10 +17,33 @@ status checks are precise:
 - `e2e-http` runs the secretless HTTP and CLI end-to-end subset.
 - `playwright-smoke` builds the app and runs a chromium browser smoke against the
   public read backend.
+- `playwright-local-auth` uses `test:pw:local-auth` to start a local anonymous
+  Convex backend with dev auth, then runs the chromium specs under
+  `e2e/local-auth/`.
 
 For local reproduction, run the matching `ci:*` package scripts. `bun run ci:pr`
 matches the non-browser PR gates. `bun run ci:playwright-smoke` assumes the
 chromium Playwright browser has already been installed.
+
+To reproduce the local-auth browser gate locally, install the chromium
+Playwright browser once and run:
+
+```bash
+bunx playwright install chromium
+bun run test:pw:local-auth
+```
+
+To run one authenticated local browser spec through the same infra:
+
+```bash
+bun run test:pw:local-auth -- --project=chromium e2e/local-auth/<spec>.pw.test.ts
+```
+
+The local-auth runner uses dev auth and a local Convex deployment; it does not
+need production credentials or a ClawHub auth token. It starts its own isolated
+local Convex process and temporarily moves aside `.env.local` plus
+`.convex/local/default`, then restores them afterward. Stop any already-running
+local Convex process before running it.
 
 The full `bun run test:e2e` suite includes token-backed CLI flows. Keep that for
 local or secret-backed validation; PR CI should not require a developer auth
@@ -36,6 +59,7 @@ GitHub rulesets should require these status checks on `main`:
 - `CI / types-build`
 - `CI / e2e-http`
 - `CI / playwright-smoke`
+- `CI / playwright-local-auth`
 - `Security Gate: Secret Scanning / Scan for Verified Secrets`
 
 `CodeQL Light` is path-filtered and skipped for draft pull requests, so it should

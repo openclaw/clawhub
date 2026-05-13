@@ -781,8 +781,8 @@ async function getSkillBySlugForAvailabilityPublisher(
     .take(2);
   if (scopedSkills[0]) return scopedSkills[0];
 
-  if (publisher.kind !== "user" || !publisher.linkedUserId) return null;
   const linkedUserId = publisher.linkedUserId;
+  if (publisher.kind !== "user" || !linkedUserId) return null;
 
   const legacySkills = await ctx.db
     .query("skills")
