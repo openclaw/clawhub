@@ -47,6 +47,8 @@ skills-lock.json
 !.agents/skills/clawhub-ui-proof/**
 !.agents/skills/clawhub-pr-maintainer/
 !.agents/skills/clawhub-pr-maintainer/**
+!.agents/skills/clawhub-moderation/
+!.agents/skills/clawhub-moderation/**
 skills/*
 .codex/*
 !.codex/environments/
