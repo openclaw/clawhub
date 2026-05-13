@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import type { ComponentType, SVGProps } from "react";
 
-export type LucideIconComponent = ComponentType<SVGProps<SVGSVGElement>>;
+type LucideIconComponent = ComponentType<SVGProps<SVGSVGElement>>;
 
 /**
  * Phase 1 lets users pick from this curated lucide icon set. Future phases
@@ -56,7 +56,7 @@ export const ALLOWED_LUCIDE_ICON_NAMES = Object.keys(ALLOWED_LUCIDE_ICONS) as Re
   keyof typeof ALLOWED_LUCIDE_ICONS
 >;
 
-export type SkillIconDescriptor =
+type SkillIconDescriptor =
   | { kind: "lucide"; name: string; component: LucideIconComponent }
   | { kind: "url"; url: string }
   | { kind: "storage"; storageId: string };

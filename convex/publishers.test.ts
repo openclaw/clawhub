@@ -831,7 +831,7 @@ describe("publishers membership controls", () => {
     const result = (await listPublishedPageHandler(ctx as never, {
       handle: "openclaw",
       paginationOpts: { cursor: null, numItems: 12 },
-    })) as {
+    })) as unknown as {
       page: Array<{
         displayName: string;
         kind: "skill" | "plugin";
