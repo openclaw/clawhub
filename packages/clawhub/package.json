@@ -50,7 +50,7 @@
     "undici": "7.25.0"
   },
   "devDependencies": {
-    "@types/node": "^25.6.2",
+    "@types/node": "^25.7.0",
     "typescript": "6.0.3"
   },
   "engines": {
