@@ -781,11 +781,12 @@ async function getSkillBySlugForAvailabilityPublisher(
     .take(2);
   if (scopedSkills[0]) return scopedSkills[0];
 
-  if (publisher.kind !== "user" || !publisher.linkedUserId) return null;
+  const linkedUserId = publisher.linkedUserId;
+  if (publisher.kind !== "user" || !linkedUserId) return null;
 
   const legacySkills = await ctx.db
     .query("skills")
-    .withIndex("by_owner_slug", (q) => q.eq("ownerUserId", publisher.linkedUserId).eq("slug", slug))
+    .withIndex("by_owner_slug", (q) => q.eq("ownerUserId", linkedUserId).eq("slug", slug))
     .take(2);
   return (
     legacySkills.find(

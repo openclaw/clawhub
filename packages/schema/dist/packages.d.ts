@@ -519,6 +519,32 @@ export declare const ApiV1PackageArtifactResponseSchema: import("arktype/interna
     };
 }, {}>;
 export type ApiV1PackageArtifactResponse = (typeof ApiV1PackageArtifactResponseSchema)[inferred];
+export declare const ApiV1PackageSecurityResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    package: {
+        name: string;
+        displayName: string;
+        family: "skill" | "code-plugin" | "bundle-plugin";
+    };
+    release: {
+        releaseId: string;
+        version: string;
+        createdAt: number;
+        artifactKind?: "legacy-zip" | "npm-pack" | null | undefined;
+        artifactSha256?: string | undefined;
+        npmIntegrity?: string | undefined;
+        npmShasum?: string | undefined;
+        npmTarballName?: string | undefined;
+    };
+    trust: {
+        scanStatus: "clean" | "suspicious" | "malicious" | "pending" | "not-run";
+        blockedFromDownload: boolean;
+        reasons: string[];
+        pending: boolean;
+        stale: boolean;
+        moderationState?: "approved" | "quarantined" | "revoked" | null | undefined;
+    };
+}, {}>;
+export type ApiV1PackageSecurityResponse = (typeof ApiV1PackageSecurityResponseSchema)[inferred];
 export declare const PackageReleaseModerationRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     state: "approved" | "quarantined" | "revoked";
     reason: string;

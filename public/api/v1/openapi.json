@@ -219,6 +219,49 @@
           }
         }
       },
+      "PackageSecurityResponse": {
+        "type": "object",
+        "properties": {
+          "package": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "displayName": { "type": "string" },
+              "family": { "type": "string", "enum": ["skill", "code-plugin", "bundle-plugin"] }
+            }
+          },
+          "release": {
+            "type": "object",
+            "properties": {
+              "releaseId": { "type": "string" },
+              "version": { "type": "string" },
+              "artifactKind": { "type": ["string", "null"], "enum": ["legacy-zip", "npm-pack", null] },
+              "artifactSha256": { "type": "string" },
+              "npmIntegrity": { "type": "string" },
+              "npmShasum": { "type": "string" },
+              "npmTarballName": { "type": "string" },
+              "createdAt": { "type": "number" }
+            }
+          },
+          "trust": {
+            "type": "object",
+            "properties": {
+              "scanStatus": {
+                "type": "string",
+                "enum": ["clean", "suspicious", "malicious", "pending", "not-run"]
+              },
+              "moderationState": {
+                "type": ["string", "null"],
+                "enum": ["approved", "quarantined", "revoked", null]
+              },
+              "blockedFromDownload": { "type": "boolean" },
+              "reasons": { "type": "array", "items": { "type": "string" } },
+              "pending": { "type": "boolean" },
+              "stale": { "type": "boolean" }
+            }
+          }
+        }
+      },
       "ResolveResponse": {
         "type": "object",
         "properties": {
@@ -486,6 +529,26 @@
         ],
         "responses": {
           "200": { "description": "Zip", "content": { "application/zip": { "schema": { "type": "string", "format": "binary" } } } }
+        }
+      }
+    },
+    "/api/v1/packages/{name}/versions/{version}/security": {
+      "get": {
+        "summary": "Get exact package release trust summary",
+        "parameters": [
+          { "name": "name", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "version", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Package release trust summary",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/PackageSecurityResponse" }
+              }
+            }
+          },
+          "404": { "description": "Package security not found" }
         }
       }
     },
