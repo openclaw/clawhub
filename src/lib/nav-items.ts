@@ -6,7 +6,7 @@ import { FEATURE_SOULS } from "./features";
  */
 
 /** Lucide icon name used as a key to look up the component at render time. */
-export type NavIconName = "wrench" | "plug" | "ghost";
+type NavIconName = "wrench" | "plug" | "ghost";
 
 interface NavItemBase {
   /** Visible link text */
