@@ -294,9 +294,9 @@ const RISK_LEVEL_BADGE_META: Record<
   ClawScanRiskLevel,
   { label: string; level: number; variant: BadgeProps["variant"] }
 > = {
-  low: { label: "Low Risk", level: 1, variant: "success" },
-  medium: { label: "Medium Risk", level: 2, variant: "warning" },
-  high: { label: "High Risk", level: 3, variant: "destructive" },
+  low: { label: "Low", level: 1, variant: "success" },
+  medium: { label: "Medium", level: 2, variant: "warning" },
+  high: { label: "High", level: 3, variant: "destructive" },
 };
 
 export function RiskLevelBadge({ level }: { level: ClawScanRiskLevel }) {

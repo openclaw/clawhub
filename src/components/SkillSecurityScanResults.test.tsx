@@ -245,7 +245,7 @@ describe("SecurityScanResults static guidance", () => {
     render(<SecurityScanResults llmAnalysis={clawScanAnalysis} />);
 
     expect(screen.getByText("Warn")).toBeTruthy();
-    expect(screen.getByText("High Risk")).toBeTruthy();
+    expect(screen.getByText("High")).toBeTruthy();
     expect(screen.queryByText(/high confidence/i)).toBeNull();
     expect(screen.queryByText(/Suspicious/i)).toBeNull();
   });
@@ -254,7 +254,7 @@ describe("SecurityScanResults static guidance", () => {
     render(<SecurityScanResults llmAnalysis={{ status: "clean", checkedAt: Date.now() }} />);
 
     expect(screen.getByText("Pass")).toBeTruthy();
-    expect(screen.getByText("Low Risk")).toBeTruthy();
+    expect(screen.getByText("Low")).toBeTruthy();
   });
 
   it("shows review and medium risk for medium-severity ClawScan findings", () => {
@@ -287,7 +287,7 @@ describe("SecurityScanResults static guidance", () => {
     );
 
     expect(screen.getByText("Review")).toBeTruthy();
-    expect(screen.getByText("Medium Risk")).toBeTruthy();
+    expect(screen.getByText("Medium")).toBeTruthy();
     expect(screen.queryByText("Warn")).toBeNull();
   });
 
@@ -297,7 +297,7 @@ describe("SecurityScanResults static guidance", () => {
     fireEvent.click(screen.getByRole("button", { name: /Potential concern/i }));
 
     expect(screen.getByText("Review")).toBeTruthy();
-    expect(screen.getByText("Low Risk")).toBeTruthy();
+    expect(screen.getByText("Low")).toBeTruthy();
     expect(screen.getByText("ASI03: Identity and Privilege Abuse")).toBeTruthy();
     expect(screen.queryByText("ASI02: Tool Misuse and Exploitation")).toBeNull();
     expect(screen.queryByText("delete everything")).toBeNull();
@@ -348,7 +348,7 @@ describe("SecurityScanResults static guidance", () => {
     expect(screen.getByRole("heading", { name: "Todo Guard" })).toBeTruthy();
     expect(screen.getAllByText("Warn").length).toBeGreaterThan(0);
     expect(screen.getByText("Risk level")).toBeTruthy();
-    expect(screen.getByText("High Risk")).toBeTruthy();
+    expect(screen.getByText("High")).toBeTruthy();
     expect(screen.queryByText("Verdict")).toBeNull();
     expect(screen.getByText(/Audited by ClawScan/i)).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Overview" })).toBeTruthy();
