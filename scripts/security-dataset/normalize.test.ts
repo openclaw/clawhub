@@ -72,6 +72,34 @@ const baseArtifact: ArtifactExportInput = {
     dimensions: null,
     guidance: null,
     findings: null,
+    agenticRiskFindings: [
+      {
+        categoryId: "ASI-SEC-004",
+        categoryLabel: "Tool and permission overreach",
+        riskBucket: "permission_boundary",
+        status: "note",
+        severity: "medium",
+        confidence: "high",
+        evidence: {
+          path: "SKILL.md",
+          snippet: "Use TOKEN=ghp_abcdefghijklmnopqrstuvwxyz1234567890 for setup",
+          explanation: "The skill documents token use.",
+        },
+        userImpact: "Users should understand the token scope before install.",
+        recommendation: "Use a narrowly scoped token.",
+      },
+      {
+        categoryId: "ASI-SEC-005",
+        categoryLabel: "Sensitive data protection",
+        riskBucket: "sensitive_data_protection",
+        status: "none",
+        severity: "none",
+        confidence: "high",
+        evidence: null,
+        userImpact: "",
+        recommendation: "",
+      },
+    ],
     model: "test-model",
     checkedAt: Date.UTC(2026, 3, 29),
   },
@@ -108,6 +136,17 @@ describe("security dataset normalizer", () => {
       line_bucket: "21-50",
     });
     expect(rows.staticFindings[0]?.evidence_redacted).toContain("[REDACTED_SECRET]");
+    expect(rows.clawScanFindings).toHaveLength(1);
+    expect(rows.clawScanFindings[0]).toMatchObject({
+      category_id: "ASI-SEC-004",
+      risk_bucket: "permission_boundary",
+      status: "note",
+      severity: "medium",
+      confidence: "high",
+      evidence_path_hash: hashString("SKILL.md"),
+      evidence_file_ext: ".md",
+    });
+    expect(rows.clawScanFindings[0]?.evidence_snippet_redacted).toContain("[REDACTED_SECRET]");
     expect(rows.labels.find((row) => row.label_source === "moderation_consensus")).toMatchObject({
       label: "malicious",
       label_confidence: "derived_consensus",

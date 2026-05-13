@@ -73,6 +73,7 @@ type SnapshotState = {
     artifacts: number;
     scanResults: number;
     staticFindings: number;
+    clawScanFindings: number;
     labels: number;
     splits: number;
   };
@@ -84,6 +85,7 @@ type SnapshotWriters = {
   artifacts: WriteStream;
   scanResults: WriteStream;
   staticFindings: WriteStream;
+  clawScanFindings: WriteStream;
   labels: WriteStream;
   splits: WriteStream;
 };
@@ -368,12 +370,13 @@ function buildManifest(input: {
       artifacts: state.rowCounts.artifacts,
       scanResults: state.rowCounts.scanResults,
       staticFindings: state.rowCounts.staticFindings,
+      clawScanFindings: state.rowCounts.clawScanFindings,
       labels: state.rowCounts.labels,
       splits: state.rowCounts.splits,
     },
     scannerVersions: Array.from(state.scannerVersions).sort(),
     modelNames: Array.from(state.modelNames).sort(),
-    redactionPolicyVersion: "public-signals-v1",
+    redactionPolicyVersion: "public-signals-v2",
     sourceTables: ["skillVersions", "packageReleases"],
     timeWindow: options.timeWindow,
   });
@@ -396,6 +399,7 @@ function createSnapshotState(): SnapshotState {
       artifacts: 0,
       scanResults: 0,
       staticFindings: 0,
+      clawScanFindings: 0,
       labels: 0,
       splits: 0,
     },
@@ -414,6 +418,7 @@ async function processArtifactInputs(input: {
   state.rowCounts.artifacts += rows.artifacts.length;
   state.rowCounts.scanResults += rows.scanResults.length;
   state.rowCounts.staticFindings += rows.staticFindings.length;
+  state.rowCounts.clawScanFindings += rows.clawScanFindings.length;
   state.rowCounts.labels += rows.labels.length;
   state.rowCounts.splits += rows.splits.length;
   for (const row of rows.scanResults) {
@@ -431,6 +436,9 @@ async function openSnapshotWriters(snapshotDir: string): Promise<SnapshotWriters
     artifacts: createWriteStream(join(snapshotDir, "artifacts.jsonl"), { encoding: "utf8" }),
     scanResults: createWriteStream(join(snapshotDir, "scan_results.jsonl"), { encoding: "utf8" }),
     staticFindings: createWriteStream(join(snapshotDir, "static_findings.jsonl"), {
+      encoding: "utf8",
+    }),
+    clawScanFindings: createWriteStream(join(snapshotDir, "clawscan_findings.jsonl"), {
       encoding: "utf8",
     }),
     labels: createWriteStream(join(snapshotDir, "labels.jsonl"), { encoding: "utf8" }),
@@ -451,6 +459,7 @@ async function writeNormalizedRows(writers: SnapshotWriters, rows: NormalizedDat
   await writeJsonlRows(writers.artifacts, rows.artifacts);
   await writeJsonlRows(writers.scanResults, rows.scanResults);
   await writeJsonlRows(writers.staticFindings, rows.staticFindings);
+  await writeJsonlRows(writers.clawScanFindings, rows.clawScanFindings);
   await writeJsonlRows(writers.labels, rows.labels);
   await writeJsonlRows(writers.splits, rows.splits);
 }

@@ -345,6 +345,7 @@ function normalizeLlmAnalysis(analysis: StoredLlmAnalysis) {
     dimensions: analysis.dimensions ?? null,
     guidance: analysis.guidance ?? null,
     findings: analysis.findings ?? null,
+    agenticRiskFindings: analysis.agenticRiskFindings ?? [],
     model: analysis.model ?? null,
     checkedAt: analysis.checkedAt,
   };
