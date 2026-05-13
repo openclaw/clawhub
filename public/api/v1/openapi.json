@@ -3,7 +3,7 @@
   "info": {
     "title": "ClawHub API",
     "version": "1.0.0",
-    "description": "Public REST API for ClawHub skills and package catalog endpoints. Rate limits: read 600/min per IP + 2400/min per key; write 45/min per IP + 180/min per key; download 30/min per IP + 180/min per key. Responses include RateLimit-* and legacy X-RateLimit-* headers; 429 responses include Retry-After."
+    "description": "Public REST API for ClawHub skills and package catalog endpoints. Rate limits: read 3000/min per IP + 12000/min per key; write 300/min per IP + 3000/min per key; download 1200/min per IP + 6000/min per key. Responses include RateLimit-* and legacy X-RateLimit-* headers; 429 responses include Retry-After."
   },
   "servers": [{ "url": "https://clawhub.ai" }],
   "components": {

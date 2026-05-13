@@ -33,9 +33,9 @@ Enforcement model:
   deleted/banned/disabled accounts should each get actionable text so CLI
   clients can tell users what blocked them.
 
-- Read: 600/min per IP, 2400/min per key
-- Write: 45/min per IP, 180/min per key
-- Download: 30/min per IP, 180/min per key (`/api/v1/download`)
+- Read: 3000/min per IP, 12000/min per key
+- Write: 300/min per IP, 3000/min per key
+- Download: 1200/min per IP, 6000/min per key (download endpoints)
 
 Headers:
 
