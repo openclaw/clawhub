@@ -5691,6 +5691,7 @@ code {
   background: var(--surface);
   display: grid;
   padding: 16px;
+  overflow: hidden;
 }
 
 .file-viewer-header {
@@ -5706,14 +5707,13 @@ code {
   max-height: 420px;
   overflow: auto;
   padding: 12px 0 0;
+  scrollbar-color: var(--ink-soft) transparent;
+  scrollbar-width: thin;
 }
 
 .file-viewer-code {
   margin: 0;
   padding: 0;
-  overflow: scroll;
-  scrollbar-color: var(--ink-soft) transparent;
-  scrollbar-width: thin;
   white-space: pre;
   word-break: normal;
   font-family: var(--font-mono);
@@ -5723,19 +5723,19 @@ code {
   tab-size: 2;
 }
 
-.file-viewer-code::-webkit-scrollbar {
+.file-viewer-body::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
 
-.file-viewer-code::-webkit-scrollbar-thumb {
+.file-viewer-body::-webkit-scrollbar-thumb {
   border: 2px solid transparent;
   border-radius: var(--r-btn);
   background: var(--ink-soft);
   background-clip: padding-box;
 }
 
-.file-viewer-code::-webkit-scrollbar-track {
+.file-viewer-body::-webkit-scrollbar-track {
   background: transparent;
 }
 
