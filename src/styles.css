@@ -5628,10 +5628,11 @@ code {
 .file-list-body {
   display: grid;
   gap: 8px;
-  max-height: 260px;
   max-width: 100%;
-  overflow: auto;
-  padding-right: 4px;
+}
+
+.file-list-see-all {
+  justify-self: start;
 }
 
 .file-browser {
@@ -8446,6 +8447,14 @@ a.agentic-risk-finding-title:focus-visible {
 
   .file-list-body {
     max-height: 200px;
+    overflow: auto;
+    padding-right: 4px;
+  }
+
+  .file-list-body.is-expanded {
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
   }
 
   .comment-entry {

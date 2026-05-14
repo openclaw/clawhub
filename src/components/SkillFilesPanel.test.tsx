@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { SkillFilesPanel } from "./SkillFilesPanel";
 
@@ -18,6 +18,10 @@ function makeFile(path: string, size: number): SkillFile {
 describe("SkillFilesPanel", () => {
   beforeEach(() => {
     getFileTextMock.mockReset();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it("caches loaded files and avoids duplicate fetches", async () => {
@@ -74,5 +78,28 @@ describe("SkillFilesPanel", () => {
 
     await screen.findByText("beta");
     expect(screen.queryByText("alpha")).toBeNull();
+  });
+
+  it("shows a mobile preview list with see-all CTA", () => {
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: query.includes("max-width: 900px"),
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
+
+    const files = Array.from({ length: 10 }, (_, index) =>
+      makeFile(`folder/file-${index + 1}.md`, index + 1),
+    );
+    render(
+      <SkillFilesPanel versionId={"skillVersions:1" as Id<"skillVersions">} latestFiles={files} />,
+    );
+
+    expect(screen.queryByRole("button", { name: /folder\/file-10\.md/i })).toBeNull();
+    expect(screen.getByRole("button", { name: "See all" })).toBeTruthy();
   });
 });

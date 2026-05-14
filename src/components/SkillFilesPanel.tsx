@@ -1,5 +1,5 @@
 import { useAction } from "convex/react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { formatBytes } from "./skillDetailUtils";
@@ -11,6 +11,9 @@ type SkillFilesPanelProps = {
   latestFiles: SkillFile[];
 };
 
+const MOBILE_FILE_LIST_BREAKPOINT = 900;
+const MOBILE_FILE_LIST_PREVIEW_COUNT = 8;
+
 export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps) {
   const getFileText = useAction(api.skills.getFileText);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
@@ -18,6 +21,8 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
   const [fileMeta, setFileMeta] = useState<{ size: number; sha256: string } | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const [showAllMobileFiles, setShowAllMobileFiles] = useState(false);
   const isMounted = useRef(true);
   const requestId = useRef(0);
   const fileCache = useRef(new Map<string, { text: string; size: number; sha256: string }>());
@@ -29,6 +34,36 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
       requestId.current += 1;
     };
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+      return () => {};
+    }
+    const mediaQuery = window.matchMedia(`(max-width: ${MOBILE_FILE_LIST_BREAKPOINT}px)`);
+    const syncMobileState = () => {
+      const nextIsMobile = mediaQuery.matches;
+      setIsMobile(nextIsMobile);
+      if (!nextIsMobile) {
+        setShowAllMobileFiles(false);
+      }
+    };
+    syncMobileState();
+    mediaQuery.addEventListener("change", syncMobileState);
+    return () => {
+      mediaQuery.removeEventListener("change", syncMobileState);
+    };
+  }, []);
+
+  useEffect(() => {
+    setShowAllMobileFiles(false);
+  }, [versionId]);
+
+  const visibleFiles = useMemo(() => {
+    if (!isMobile || showAllMobileFiles) return latestFiles;
+    return latestFiles.slice(0, MOBILE_FILE_LIST_PREVIEW_COUNT);
+  }, [isMobile, latestFiles, showAllMobileFiles]);
+
+  const hiddenFilesCount = latestFiles.length - visibleFiles.length;
 
   useEffect(() => {
     requestId.current += 1;
@@ -89,11 +124,11 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
             <h3 className="section-title text-[1.05rem] m-0">Files</h3>
             <span className="section-subtitle m-0">{latestFiles.length} total</span>
           </div>
-          <div className="file-list-body">
+          <div className={`file-list-body${showAllMobileFiles ? " is-expanded" : ""}`}>
             {latestFiles.length === 0 ? (
               <div className="stat">No files available.</div>
             ) : (
-              latestFiles.map((file) => (
+              visibleFiles.map((file) => (
                 <button
                   key={file.path}
                   className={`file-row file-row-button${
@@ -109,6 +144,15 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
               ))
             )}
           </div>
+          {isMobile && hiddenFilesCount > 0 ? (
+            <button
+              className="file-list-see-all"
+              type="button"
+              onClick={() => setShowAllMobileFiles(true)}
+            >
+              See all
+            </button>
+          ) : null}
         </div>
         <div className="file-viewer">
           <div className="file-viewer-header">
