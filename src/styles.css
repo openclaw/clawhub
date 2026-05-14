@@ -5716,6 +5716,29 @@ code {
   color: var(--ink);
 }
 
+.file-viewer-empty {
+  min-height: 178px;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  background: var(--surface-muted);
+  display: grid;
+  place-content: center;
+  gap: 10px;
+  text-align: center;
+  padding: 20px;
+}
+
+.file-viewer-empty-icon {
+  color: var(--ink-soft);
+  justify-self: center;
+}
+
+.file-viewer-empty-text {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.96rem;
+}
+
 .version-scroll {
   max-height: 320px;
   overflow: auto;

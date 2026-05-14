@@ -1,5 +1,5 @@
 import { useAction } from "convex/react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, FileCode2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
@@ -176,7 +176,10 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
             ) : fileContent ? (
               <pre className="file-viewer-code">{fileContent}</pre>
             ) : (
-              <div className="stat">Select a file to preview.</div>
+              <div className="file-viewer-empty">
+                <FileCode2 size={22} className="file-viewer-empty-icon" aria-hidden="true" />
+                <p className="file-viewer-empty-text">Select a file to preview.</p>
+              </div>
             )}
           </div>
         </div>
