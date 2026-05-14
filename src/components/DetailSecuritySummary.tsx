@@ -7,6 +7,7 @@ import {
   type VtAnalysis,
 } from "./SkillSecurityScanResults";
 import { Badge, type BadgeProps } from "./ui/badge";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 
 type DetailSecuritySummaryProps = {
   scannerBasePath: string;
@@ -25,6 +26,8 @@ type DetailSecuritySummaryProps = {
   suppressedMessage?: string | null;
 };
 
+const MAX_AUDIT_OVERVIEW_CHARS = 150;
+
 function statusFromStaticScan(staticScan: DetailSecuritySummaryProps["staticScan"]) {
   const status = staticScan?.status?.trim().toLowerCase();
   if (status === "malicious") return "malicious";
@@ -41,6 +44,16 @@ function severityLevelForStatus(status: string) {
   if (normalized === "review") return 2;
   if (normalized === "clean" || normalized === "benign" || normalized === "cleared") return 1;
   return 0;
+}
+
+function normalizeAuditOverviewText(value: string) {
+  return value.replace(/\r\n?/g, "\n").trim();
+}
+
+function formatAuditOverview(value: string) {
+  const normalized = normalizeAuditOverviewText(value);
+  if (normalized.length <= MAX_AUDIT_OVERVIEW_CHARS) return normalized;
+  return `${normalized.slice(0, MAX_AUDIT_OVERVIEW_CHARS - 1).trimEnd()}…`;
 }
 
 function aggregateAuditVerdict(statuses: string[]) {
@@ -87,35 +100,62 @@ function ScannerSignal({
   href,
   label,
   description,
+  overview,
   status,
   tone,
 }: {
   href: string;
   label: string;
   description: string;
+  overview: string;
   status: string;
   tone?: "review";
 }) {
   const info = getScanStatusInfo(status);
   const level = severityLevelForStatus(status);
+  const overviewText = formatAuditOverview(overview);
   return (
-    <a
-      href={href}
-      className="security-audit-signal !no-underline hover:!no-underline"
-      aria-label={`${label}: ${info.label}`}
-    >
-      <div className="security-audit-signal-head">
-        <span className="security-audit-signal-label">{label}</span>
-        <span className="security-audit-signal-status">{info.label}</span>
-      </div>
-      <div className="security-audit-meter" data-level={level} data-tone={tone} aria-hidden="true">
-        <span />
-        <span />
-        <span />
-        <span />
-      </div>
-      <p>{description}</p>
-    </a>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <a
+          href={href}
+          className="security-audit-signal !no-underline hover:!no-underline"
+          aria-label={`${label}: ${info.label}`}
+        >
+          <div className="security-audit-signal-head">
+            <span className="security-audit-signal-label">{label}</span>
+            <span className="security-audit-signal-status">{info.label}</span>
+          </div>
+          <div
+            className="security-audit-meter"
+            data-level={level}
+            data-tone={tone}
+            aria-hidden="true"
+          >
+            <span />
+            <span />
+            <span />
+            <span />
+          </div>
+          <p>{description}</p>
+        </a>
+      </TooltipTrigger>
+      <TooltipContent
+        side="top"
+        align="start"
+        sideOffset={10}
+        className="security-audit-tooltip px-4 py-3"
+      >
+        <div className="security-audit-tooltip-header">
+          <span className="security-audit-tooltip-name">{label}</span>
+          <span className="security-audit-tooltip-status">{info.label}</span>
+        </div>
+        <p className="security-audit-tooltip-overview">{overviewText}</p>
+        <a href={href} className="security-audit-tooltip-action">
+          Read full audit
+        </a>
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -132,6 +172,15 @@ export function DetailSecuritySummary({
   const staticStatus = suppressScanResults ? "cleared" : statusFromStaticScan(staticScan);
   const auditVerdict = aggregateAuditVerdict([vtStatus, llmStatus, staticStatus]);
   const auditVerdictInfo = getScanStatusInfo(auditVerdict);
+  const clawScanOverview =
+    llmAnalysis?.summary ??
+    "No ClawScan summary is available yet. Open the full report for detailed findings.";
+  const staticOverview =
+    staticScan?.summary ??
+    "No static analysis summary is available yet. Open the full report for detailed findings.";
+  const virusTotalOverview =
+    vtAnalysis?.analysis ??
+    "No VirusTotal summary is available yet. Open the full report for detection details.";
   return (
     <section className="security-audit-section" aria-labelledby="security-audit-heading">
       <div className="security-audit-title-row">
@@ -149,27 +198,32 @@ export function DetailSecuritySummary({
         {suppressScanResults && suppressedMessage ? (
           <p className="security-audit-suppressed">{suppressedMessage}</p>
         ) : null}
-        <div className="security-audit-signals">
-          <ScannerSignal
-            href={`${scannerBasePath}/clawscan`}
-            label="ClawScan"
-            description="Agentic behavior and permission review."
-            status={llmStatus}
-            tone="review"
-          />
-          <ScannerSignal
-            href={`${scannerBasePath}/static-analysis`}
-            label="Static analysis"
-            description="Pattern checks against bundled files."
-            status={staticStatus}
-          />
-          <ScannerSignal
-            href={`${scannerBasePath}/virustotal`}
-            label="VirusTotal"
-            description="Multi-engine malware detections and file reputation."
-            status={vtStatus}
-          />
-        </div>
+        <TooltipProvider delayDuration={320}>
+          <div className="security-audit-signals">
+            <ScannerSignal
+              href={`${scannerBasePath}/clawscan`}
+              label="ClawScan"
+              description="Agentic behavior and permission review."
+              overview={clawScanOverview}
+              status={llmStatus}
+              tone="review"
+            />
+            <ScannerSignal
+              href={`${scannerBasePath}/static-analysis`}
+              label="Static analysis"
+              description="Pattern checks against bundled files."
+              overview={staticOverview}
+              status={staticStatus}
+            />
+            <ScannerSignal
+              href={`${scannerBasePath}/virustotal`}
+              label="VirusTotal"
+              description="Multi-engine malware detections and file reputation."
+              overview={virusTotalOverview}
+              status={vtStatus}
+            />
+          </div>
+        </TooltipProvider>
       </div>
     </section>
   );

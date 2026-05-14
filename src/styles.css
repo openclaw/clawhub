@@ -4271,6 +4271,77 @@ code {
   line-height: 1.35;
 }
 
+.security-audit-tooltip {
+  width: min(360px, calc(100vw - 20px));
+  display: grid;
+  gap: 10px;
+  border-radius: var(--radius-md);
+  border-color: color-mix(in srgb, var(--line) 86%, transparent);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.26);
+  transform-origin: var(--radix-tooltip-content-transform-origin);
+  animation-duration: 160ms;
+  animation-timing-function: cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.security-audit-tooltip-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.security-audit-tooltip-name {
+  font-size: 0.78rem;
+  font-weight: 780;
+  color: var(--ink);
+}
+
+.security-audit-tooltip-status {
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+  font-weight: 720;
+  color: var(--ink-soft);
+}
+
+.security-audit-tooltip-overview {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+}
+
+.security-audit-tooltip-action {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 0 12px;
+  border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
+  border-radius: var(--r-pill);
+  color: var(--ink);
+  font-size: 0.74rem;
+  font-weight: 730;
+  line-height: 1;
+  text-decoration: none;
+  transition:
+    background-color 0.16s ease-out,
+    border-color 0.16s ease-out,
+    transform 0.12s ease-out;
+}
+
+.security-audit-tooltip-action:hover,
+.security-audit-tooltip-action:focus-visible {
+  background: color-mix(in srgb, var(--surface-muted) 74%, transparent);
+  border-color: var(--line);
+  text-decoration: none;
+}
+
+.security-audit-tooltip-action:active {
+  transform: scale(0.98);
+}
+
 .security-audit-suppressed {
   margin: 0;
   color: var(--ink-soft);
