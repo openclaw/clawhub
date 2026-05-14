@@ -5690,7 +5690,6 @@ code {
   border: 1px solid var(--line);
   background: var(--surface);
   display: grid;
-  gap: 12px;
   padding: 16px;
 }
 
@@ -5706,14 +5705,12 @@ code {
 .file-viewer-body {
   max-height: 420px;
   overflow: auto;
+  padding: 12px 0 0;
 }
 
 .file-viewer-code {
   margin: 0;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--surface-muted);
-  padding: 16px;
+  padding: 0;
   overflow: scroll;
   scrollbar-color: var(--ink-soft) transparent;
   scrollbar-width: thin;
@@ -5771,6 +5768,7 @@ code {
   justify-content: space-between;
   gap: 12px;
   border-top: 1px solid var(--line);
+  margin-top: 0;
   padding-top: 12px;
 }
 
