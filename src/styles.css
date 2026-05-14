@@ -5696,7 +5696,7 @@ code {
 
 .file-viewer-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
   border-bottom: 1px solid var(--line);
@@ -5706,16 +5706,22 @@ code {
 .file-viewer-body {
   max-height: 320px;
   overflow: auto;
-  padding-right: 4px;
 }
 
 .file-viewer-code {
   margin: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-muted);
+  padding: 16px;
+  overflow: auto;
+  white-space: pre;
+  word-break: normal;
   font-family: var(--font-mono);
-  font-size: 0.9rem;
+  font-size: 0.84rem;
+  line-height: 1.65;
   color: var(--ink);
+  tab-size: 2;
 }
 
 .file-viewer-empty {
@@ -5770,6 +5776,14 @@ code {
   font-size: 0.8rem;
   color: var(--ink-soft);
   white-space: nowrap;
+}
+
+.file-viewer-header .file-meta {
+  border: 1px solid var(--line);
+  border-radius: var(--r-btn);
+  background: var(--surface-muted);
+  padding: 4px 8px;
+  line-height: 1;
 }
 
 .comment-form {
@@ -8488,6 +8502,11 @@ a.agentic-risk-finding-title:focus-visible {
 
   .file-viewer-body {
     max-height: 260px;
+  }
+
+  .file-viewer-code {
+    white-space: pre-wrap;
+    word-break: break-word;
   }
 
   .file-list-body {
