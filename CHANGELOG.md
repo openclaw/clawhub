@@ -40,6 +40,8 @@
   `q` instead of treating `search` as a package name (thanks @vyctorbrzezowski).
 - Web: rank publisher card preview items by downloads instead of recent publish order (thanks @vyctorbrzezowski).
 - Web: keep skill/plugin detail tabs at mobile-friendly touch target height.
+- API/CLI: fix package delete returning 500 for packages with capability tags
+  when no capability search digest row existed yet (#2212) (thanks @momothemage).
 
 ## 0.15.0 - 2026-05-12
 
