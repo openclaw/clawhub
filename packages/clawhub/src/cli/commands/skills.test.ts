@@ -231,6 +231,8 @@ describe("cmdSearch", () => {
 
     const [, requestArgs] = mockApiRequest.mock.calls[0] ?? [];
     expect(requestArgs?.token).toBe("tkn");
+    const url = new URL(String(requestArgs?.url));
+    expect(url.searchParams.get("nonSuspiciousOnly")).toBe("true");
   });
 
   it("defaults limit to 25 when not specified", async () => {
@@ -241,6 +243,7 @@ describe("cmdSearch", () => {
 
     const [, requestArgs] = mockApiRequest.mock.calls[0] ?? [];
     const url = new URL(String(requestArgs?.url));
+    expect(url.searchParams.get("nonSuspiciousOnly")).toBe("true");
     expect(url.searchParams.get("limit")).toBe("25");
   });
 
@@ -252,7 +255,20 @@ describe("cmdSearch", () => {
 
     const [, requestArgs] = mockApiRequest.mock.calls[0] ?? [];
     const url = new URL(String(requestArgs?.url));
+    expect(url.searchParams.get("nonSuspiciousOnly")).toBe("true");
     expect(url.searchParams.get("limit")).toBe("5");
+  });
+
+  it("allows including suspicious skills via --include-suspicious", async () => {
+    mockGetOptionalAuthToken.mockResolvedValue(undefined);
+    mockApiRequest.mockResolvedValue({ results: [] });
+
+    await cmdSearch(makeOpts(), "stock price", 25, true);
+
+    const [, requestArgs] = mockApiRequest.mock.calls[0] ?? [];
+    const url = new URL(String(requestArgs?.url));
+    expect(url.searchParams.get("nonSuspiciousOnly")).toBeNull();
+    expect(url.searchParams.get("limit")).toBe("25");
   });
 
   it("prints skill owners in search results", async () => {

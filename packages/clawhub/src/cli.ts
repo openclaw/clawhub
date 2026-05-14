@@ -206,10 +206,11 @@ registerCommand(program, ["search"])
   .description("Vector search skills")
   .argument("<query...>", "Query string")
   .option("--limit <n>", "Max results", (value) => Number.parseInt(value, 10))
+  .option("--include-suspicious", "Include suspicious skills in results")
   .action(async (queryParts, options) => {
     const opts = await resolveGlobalOpts();
     const query = queryParts.join(" ").trim();
-    await cmdSearch(opts, query, options.limit);
+    await cmdSearch(opts, query, options.limit, options.includeSuspicious);
   });
 
 registerCommand(program, ["install"])

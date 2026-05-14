@@ -98,7 +98,7 @@ function formatSearchOwner(entry: {
   return entry.owner?.displayName ?? "unknown owner";
 }
 
-export async function cmdSearch(opts: GlobalOpts, query: string, limit?: number) {
+export async function cmdSearch(opts: GlobalOpts, query: string, limit?: number, includeSuspicious?: boolean) {
   if (!query) fail("Query required");
 
   const token = await getOptionalAuthToken();
@@ -107,6 +107,7 @@ export async function cmdSearch(opts: GlobalOpts, query: string, limit?: number)
   try {
     const url = registryUrl(ApiRoutes.search, registry);
     url.searchParams.set("q", query);
+    if (!includeSuspicious) url.searchParams.set("nonSuspiciousOnly", "true");
     const effectiveLimit = typeof limit === "number" && Number.isFinite(limit) ? limit : 25;
     url.searchParams.set("limit", String(effectiveLimit));
     const result = await apiRequest(
