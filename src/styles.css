@@ -5728,6 +5728,7 @@ code {
 
 .file-viewer-body {
   max-height: 420px;
+  background: color-mix(in srgb, var(--surface) 82%, var(--bg) 18%);
   overflow: auto;
   padding: 12px 16px 16px;
   scrollbar-color: var(--ink-soft) transparent;
