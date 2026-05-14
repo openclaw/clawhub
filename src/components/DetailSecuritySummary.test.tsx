@@ -4,10 +4,9 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { describe, expect, it } from "vitest";
 import { DetailSecuritySummary } from "./DetailSecuritySummary";
-import { TooltipProvider } from "./ui/tooltip";
 
 function renderSummary(element: ReactElement) {
-  return render(<TooltipProvider delayDuration={0}>{element}</TooltipProvider>);
+  return render(element);
 }
 
 describe("DetailSecuritySummary", () => {
@@ -15,7 +14,6 @@ describe("DetailSecuritySummary", () => {
     renderSummary(<DetailSecuritySummary scannerBasePath="/steipete/weather/security" />);
 
     expect(screen.getByRole("heading", { name: "Audits" })).toBeTruthy();
-    expect(screen.getAllByText("Pending")).toHaveLength(4);
     expect(screen.getByRole("link", { name: "VirusTotal: Pending" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "ClawScan: Pending" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Static analysis: Pending" })).toBeTruthy();
@@ -105,42 +103,40 @@ describe("DetailSecuritySummary", () => {
     expect(screen.getAllByText("Review").length).toBeGreaterThan(0);
 
     rerender(
-      <TooltipProvider delayDuration={0}>
-        <DetailSecuritySummary
-          scannerBasePath="/steipete/weather/security"
-          vtAnalysis={{ status: "clean", checkedAt: 1 }}
-          llmAnalysis={{
-            status: "suspicious",
-            verdict: "suspicious",
-            checkedAt: 1,
-            agenticRiskFindings: [
-              {
-                categoryId: "ASI02",
-                categoryLabel: "Tool Misuse and Exploitation",
-                riskBucket: "abnormal_behavior_control",
-                status: "concern",
-                severity: "high",
-                confidence: "high",
-                evidence: {
-                  path: "SKILL.md",
-                  snippet: "terminates cloud instances",
-                  explanation: "The skill can terminate cloud instances.",
-                },
-                userImpact: "High concern.",
-                recommendation: "Require confirmation.",
+      <DetailSecuritySummary
+        scannerBasePath="/steipete/weather/security"
+        vtAnalysis={{ status: "clean", checkedAt: 1 }}
+        llmAnalysis={{
+          status: "suspicious",
+          verdict: "suspicious",
+          checkedAt: 1,
+          agenticRiskFindings: [
+            {
+              categoryId: "ASI02",
+              categoryLabel: "Tool Misuse and Exploitation",
+              riskBucket: "abnormal_behavior_control",
+              status: "concern",
+              severity: "high",
+              confidence: "high",
+              evidence: {
+                path: "SKILL.md",
+                snippet: "terminates cloud instances",
+                explanation: "The skill can terminate cloud instances.",
               },
-            ],
-          }}
-          staticScan={{
-            status: "clean",
-            reasonCodes: [],
-            findings: [],
-            summary: "Clean.",
-            engineVersion: "v1",
-            checkedAt: 1,
-          }}
-        />
-      </TooltipProvider>,
+              userImpact: "High concern.",
+              recommendation: "Require confirmation.",
+            },
+          ],
+        }}
+        staticScan={{
+          status: "clean",
+          reasonCodes: [],
+          findings: [],
+          summary: "Clean.",
+          engineVersion: "v1",
+          checkedAt: 1,
+        }}
+      />,
     );
 
     expect(screen.getByRole("link", { name: "ClawScan: Warn" })).toBeTruthy();
@@ -165,7 +161,6 @@ describe("DetailSecuritySummary", () => {
       />,
     );
 
-    expect(screen.getAllByText("Pass")).toHaveLength(4);
     expect(screen.getByRole("link", { name: "VirusTotal: Pass" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "ClawScan: Pass" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Static analysis: Pass" })).toBeTruthy();
@@ -216,8 +211,8 @@ describe("DetailSecuritySummary", () => {
 
     fireEvent.focus(screen.getByRole("link", { name: "VirusTotal: Pass" }));
 
-    const tooltip = await screen.findByRole("tooltip");
-    const overview = tooltip.querySelector(".security-audit-tooltip-overview");
+    const preview = screen.getByRole("group", { name: "VirusTotal audit preview" });
+    const overview = preview.querySelector(".security-audit-tooltip-overview");
     expect(overview?.textContent).toBe(
       "The skill bundle implements a structured self-improvement framework for OpenClaw agents.",
     );
@@ -240,15 +235,38 @@ describe("DetailSecuritySummary", () => {
 
     fireEvent.focus(screen.getByRole("link", { name: "ClawScan: Pass" }));
 
-    const tooltip = await screen.findByRole("tooltip");
-    const overview = tooltip.querySelector(".security-audit-tooltip-overview");
+    const preview = screen.getByRole("group", { name: "ClawScan audit preview" });
+    const overview = preview.querySelector(".security-audit-tooltip-overview");
     expect(overview).toBeTruthy();
     expect(overview?.textContent?.length ?? 0).toBeLessThanOrEqual(150);
     expect(overview?.textContent?.includes("\n")).toBe(true);
-    const ctaLinks = screen.getAllByRole("link", { name: "Read full audit" });
-    expect(
-      ctaLinks.every((link) => link.getAttribute("href") === "/steipete/weather/security/clawscan"),
-    ).toBe(true);
+    const ctaLink = preview.querySelector(".security-audit-tooltip-action");
+    expect(ctaLink?.getAttribute("href")).toBe("/steipete/weather/security/clawscan");
+  });
+
+  it("keeps the full-audit CTA keyboard-reachable from the preview trigger", () => {
+    renderSummary(
+      <DetailSecuritySummary
+        scannerBasePath="/steipete/weather/security"
+        llmAnalysis={{
+          status: "clean",
+          checkedAt: 1,
+          summary: "Clean ClawScan preview.",
+        }}
+      />,
+    );
+
+    const trigger = screen.getByRole("link", { name: "ClawScan: Pass" });
+    trigger.focus();
+
+    const preview = screen.getByRole("group", { name: "ClawScan audit preview" });
+    const ctaLink = preview.querySelector<HTMLAnchorElement>(".security-audit-tooltip-action");
+    expect(ctaLink).toBeTruthy();
+
+    ctaLink?.focus();
+    expect(document.activeElement).toBe(ctaLink);
+    expect(preview.contains(document.activeElement)).toBe(true);
+    expect(ctaLink?.getAttribute("href")).toBe("/steipete/weather/security/clawscan");
   });
 
   it("shows static suspicious as review without rolling it up to suspicious", () => {
@@ -269,7 +287,8 @@ describe("DetailSecuritySummary", () => {
     );
 
     expect(screen.getByRole("link", { name: "Static analysis: Review" })).toBeTruthy();
-    expect(screen.getAllByText("Pass")).toHaveLength(3);
+    expect(screen.getByRole("link", { name: "ClawScan: Pass" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "VirusTotal: Pass" })).toBeTruthy();
     expect(screen.queryByText("Warn")).toBeNull();
   });
 
@@ -290,8 +309,8 @@ describe("DetailSecuritySummary", () => {
       />,
     );
 
-    expect(screen.getAllByText("Error")).toHaveLength(2);
     expect(screen.getByRole("link", { name: "VirusTotal: Error" })).toBeTruthy();
+    expect(screen.getAllByText("Error").length).toBeGreaterThanOrEqual(2);
     expect(screen.queryByText("Malicious")).toBeNull();
   });
 });

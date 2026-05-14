@@ -1,4 +1,5 @@
 import { ChevronRight } from "lucide-react";
+import { useId } from "react";
 import {
   getClawScanDisplayStatus,
   getScanStatusInfo,
@@ -8,7 +9,6 @@ import {
   type VtAnalysis,
 } from "./SkillSecurityScanResults";
 import { Badge, type BadgeProps } from "./ui/badge";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 
 type DetailSecuritySummaryProps = {
   scannerBasePath: string;
@@ -122,37 +122,37 @@ function ScannerSignal({
   const info = getScanStatusInfo(status);
   const level = severityLevelForStatus(status);
   const overviewText = formatAuditOverview(overview);
+  const previewId = useId();
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <a
-          href={href}
-          className="security-audit-signal !no-underline hover:!no-underline"
-          aria-label={`${label}: ${info.label}`}
+    <div className="security-audit-preview">
+      <a
+        href={href}
+        className="security-audit-signal !no-underline hover:!no-underline"
+        aria-controls={previewId}
+        aria-label={`${label}: ${info.label}`}
+      >
+        <div className="security-audit-signal-head">
+          <span className="security-audit-signal-label">{label}</span>
+          <span className="security-audit-signal-status">{info.label}</span>
+        </div>
+        <div
+          className="security-audit-meter"
+          data-level={level}
+          data-tone={tone}
+          aria-hidden="true"
         >
-          <div className="security-audit-signal-head">
-            <span className="security-audit-signal-label">{label}</span>
-            <span className="security-audit-signal-status">{info.label}</span>
-          </div>
-          <div
-            className="security-audit-meter"
-            data-level={level}
-            data-tone={tone}
-            aria-hidden="true"
-          >
-            <span />
-            <span />
-            <span />
-            <span />
-          </div>
-          <p>{description}</p>
-        </a>
-      </TooltipTrigger>
-      <TooltipContent
-        side="top"
-        align="start"
-        sideOffset={10}
-        className="security-audit-tooltip px-4 py-3"
+          <span />
+          <span />
+          <span />
+          <span />
+        </div>
+        <p>{description}</p>
+      </a>
+      <div
+        id={previewId}
+        role="group"
+        aria-label={`${label} audit preview`}
+        className="security-audit-tooltip"
       >
         <div className="security-audit-tooltip-header">
           <span className="security-audit-tooltip-name">{label}</span>
@@ -163,8 +163,8 @@ function ScannerSignal({
           <span>Read full audit</span>
           <ChevronRight aria-hidden="true" size={14} strokeWidth={2.4} />
         </a>
-      </TooltipContent>
-    </Tooltip>
+      </div>
+    </div>
   );
 }
 
@@ -207,32 +207,30 @@ export function DetailSecuritySummary({
         {suppressScanResults && suppressedMessage ? (
           <p className="security-audit-suppressed">{suppressedMessage}</p>
         ) : null}
-        <TooltipProvider delayDuration={320}>
-          <div className="security-audit-signals">
-            <ScannerSignal
-              href={`${scannerBasePath}/clawscan`}
-              label="ClawScan"
-              description="Agentic behavior and permission review."
-              overview={clawScanOverview}
-              status={llmStatus}
-              tone="review"
-            />
-            <ScannerSignal
-              href={`${scannerBasePath}/static-analysis`}
-              label="Static analysis"
-              description="Pattern checks against bundled files."
-              overview={staticOverview}
-              status={staticStatus}
-            />
-            <ScannerSignal
-              href={`${scannerBasePath}/virustotal`}
-              label="VirusTotal"
-              description="Multi-engine malware detections and file reputation."
-              overview={virusTotalOverview}
-              status={vtStatus}
-            />
-          </div>
-        </TooltipProvider>
+        <div className="security-audit-signals">
+          <ScannerSignal
+            href={`${scannerBasePath}/clawscan`}
+            label="ClawScan"
+            description="Agentic behavior and permission review."
+            overview={clawScanOverview}
+            status={llmStatus}
+            tone="review"
+          />
+          <ScannerSignal
+            href={`${scannerBasePath}/static-analysis`}
+            label="Static analysis"
+            description="Pattern checks against bundled files."
+            overview={staticOverview}
+            status={staticStatus}
+          />
+          <ScannerSignal
+            href={`${scannerBasePath}/virustotal`}
+            label="VirusTotal"
+            description="Multi-engine malware detections and file reputation."
+            overview={virusTotalOverview}
+            status={vtStatus}
+          />
+        </div>
       </div>
     </section>
   );

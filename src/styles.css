@@ -328,7 +328,7 @@ a.home-v2-trend-card:hover {
   height: 1px;
   padding: 0;
   margin: -1px;
-  overflow: hidden;
+  overflow: visible;
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border-width: 0;
@@ -4272,15 +4272,56 @@ code {
 }
 
 .security-audit-tooltip {
+  position: absolute;
+  z-index: 50;
+  bottom: calc(100% + 10px);
+  left: 0;
   width: min(380px, calc(100vw - 20px));
   display: grid;
   gap: 12px;
+  padding: 12px 16px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--line) 86%, transparent);
   border-radius: var(--radius-md);
-  border-color: color-mix(in srgb, var(--line) 86%, transparent);
+  background: var(--surface);
+  color: var(--ink);
   box-shadow: 0 18px 42px rgba(0, 0, 0, 0.26);
-  transform-origin: var(--radix-tooltip-content-transform-origin);
-  animation-duration: 160ms;
-  animation-timing-function: cubic-bezier(0.23, 1, 0.32, 1);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(4px) scale(0.98);
+  transform-origin: bottom left;
+  transition:
+    opacity 0.16s cubic-bezier(0.23, 1, 0.32, 1),
+    transform 0.16s cubic-bezier(0.23, 1, 0.32, 1),
+    visibility 0.16s step-end;
+  visibility: hidden;
+}
+
+.security-audit-tooltip::before {
+  position: absolute;
+  right: 0;
+  bottom: -10px;
+  left: 0;
+  height: 10px;
+  content: "";
+}
+
+.security-audit-preview:nth-child(3) .security-audit-tooltip {
+  right: 0;
+  left: auto;
+  transform-origin: bottom right;
+}
+
+.security-audit-preview:hover .security-audit-tooltip,
+.security-audit-preview:focus-within .security-audit-tooltip {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+  transition:
+    opacity 0.16s cubic-bezier(0.23, 1, 0.32, 1),
+    transform 0.16s cubic-bezier(0.23, 1, 0.32, 1),
+    visibility 0s;
+  visibility: visible;
 }
 
 .security-audit-tooltip-header {
@@ -4455,6 +4496,11 @@ code {
   min-width: 0;
 }
 
+.security-audit-preview {
+  position: relative;
+  min-width: 0;
+}
+
 .security-audit-signal {
   display: grid;
   align-content: center;
@@ -4537,6 +4583,12 @@ code {
 @media (max-width: 760px) {
   .security-audit-signals {
     grid-template-columns: 1fr;
+  }
+
+  .security-audit-preview:nth-child(3) .security-audit-tooltip {
+    right: auto;
+    left: 0;
+    transform-origin: bottom left;
   }
 }
 
