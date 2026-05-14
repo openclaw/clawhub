@@ -5623,7 +5623,7 @@ code {
   gap: 10px;
   border-bottom: 1px solid var(--line);
   min-height: 42px;
-  padding-bottom: 13px;
+  padding: 16px 0 13px;
 }
 
 .file-list-count {
@@ -5712,13 +5712,13 @@ code {
   gap: 12px;
   border-bottom: 1px solid var(--line);
   min-height: 42px;
-  padding: 0 16px 13px;
+  padding: 16px 16px 13px;
 }
 
 .file-viewer-body {
   max-height: 420px;
   overflow: auto;
-  padding: 12px 16px 0;
+  padding: 12px 16px 16px;
   scrollbar-color: var(--ink-soft) transparent;
   scrollbar-width: thin;
 }
@@ -5781,7 +5781,7 @@ code {
   gap: 12px;
   border-top: 1px solid var(--line);
   margin-top: 0;
-  padding: 12px 16px 0;
+  padding: 12px 16px 16px;
 }
 
 .version-scroll {
