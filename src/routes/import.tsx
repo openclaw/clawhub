@@ -72,10 +72,11 @@ export function ImportGitHub() {
   const [error, setError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const trimmedSlug = slug.trim();
+  const ownerHandleForCheck = me?.handle;
   const slugAvailability = useQuery(
     api.skills.checkSlugAvailability,
-    isAuthenticated && trimmedSlug && SLUG_PATTERN.test(trimmedSlug)
-      ? { slug: trimmedSlug.toLowerCase() }
+    isAuthenticated && ownerHandleForCheck && trimmedSlug && SLUG_PATTERN.test(trimmedSlug)
+      ? { slug: trimmedSlug.toLowerCase(), ownerHandle: ownerHandleForCheck }
       : "skip",
   ) as
     | {
