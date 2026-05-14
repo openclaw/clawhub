@@ -2556,7 +2556,15 @@ async function softDeletePackageDoc(
   };
   const nextPackage: Doc<"packages"> = { ...pkg, ...packagePatch };
   await ctx.db.patch(pkg._id, packagePatch);
-  await upsertPackageSearchDigest(ctx, extractPackageDigestFields(nextPackage));
+  const deleteOwner = await getOwnerPublisher(ctx, {
+    ownerPublisherId: pkg.ownerPublisherId,
+    ownerUserId: pkg.ownerUserId,
+  });
+  await upsertPackageSearchDigest(ctx, {
+    ...extractPackageDigestFields(nextPackage),
+    ownerHandle: deleteOwner?.handle ?? "",
+    ownerKind: deleteOwner?.kind,
+  });
   await ctx.db.insert("auditLogs", {
     actorUserId: params.actorUserId,
     action: "package.delete",
@@ -2726,7 +2734,15 @@ async function restorePackageDoc(
   };
   const nextPackage: Doc<"packages"> = { ...pkg, ...packagePatch };
   await ctx.db.patch(pkg._id, packagePatch);
-  await upsertPackageSearchDigest(ctx, extractPackageDigestFields(nextPackage));
+  const restoreOwner = await getOwnerPublisher(ctx, {
+    ownerPublisherId: pkg.ownerPublisherId,
+    ownerUserId: pkg.ownerUserId,
+  });
+  await upsertPackageSearchDigest(ctx, {
+    ...extractPackageDigestFields(nextPackage),
+    ownerHandle: restoreOwner?.handle ?? "",
+    ownerKind: restoreOwner?.kind,
+  });
   await ctx.db.insert("auditLogs", {
     actorUserId: params.actorUserId,
     action: "package.undelete",
