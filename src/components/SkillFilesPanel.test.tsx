@@ -82,7 +82,7 @@ describe("SkillFilesPanel", () => {
 
   it("shows a mobile preview list with see-all CTA", () => {
     vi.stubGlobal("matchMedia", (query: string) => ({
-      matches: query.includes("max-width: 900px"),
+      matches: query.includes("max-width: 899px"),
       media: query,
       onchange: null,
       addEventListener: vi.fn(),

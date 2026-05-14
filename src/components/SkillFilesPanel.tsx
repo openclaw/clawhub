@@ -12,7 +12,7 @@ type SkillFilesPanelProps = {
   latestFiles: SkillFile[];
 };
 
-const MOBILE_FILE_LIST_BREAKPOINT = 900;
+const MOBILE_FILE_LIST_MAX_WIDTH = 899;
 const MOBILE_FILE_LIST_PREVIEW_COUNT = 8;
 
 function splitFilePath(path: string) {
@@ -49,7 +49,7 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
     if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
       return () => {};
     }
-    const mediaQuery = window.matchMedia(`(max-width: ${MOBILE_FILE_LIST_BREAKPOINT}px)`);
+    const mediaQuery = window.matchMedia(`(max-width: ${MOBILE_FILE_LIST_MAX_WIDTH}px)`);
     const syncMobileState = () => {
       const nextIsMobile = mediaQuery.matches;
       setIsMobile(nextIsMobile);
