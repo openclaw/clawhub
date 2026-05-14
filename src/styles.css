@@ -5699,6 +5699,8 @@ code {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 12px;
 }
 
 .file-viewer-body {
