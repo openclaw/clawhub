@@ -3488,7 +3488,6 @@ code {
   display: grid;
   gap: 16px;
   max-width: 100%;
-  overflow-x: hidden;
 }
 
 .skill-settings-page {
