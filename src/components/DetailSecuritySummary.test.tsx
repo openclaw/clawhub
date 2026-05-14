@@ -199,6 +199,32 @@ describe("DetailSecuritySummary", () => {
     expect(screen.queryByText("Advisory")).toBeNull();
   });
 
+  it("keeps VirusTotal tooltip previews aligned with the plain full-audit copy", async () => {
+    renderSummary(
+      <DetailSecuritySummary
+        scannerBasePath="/pskoett/self-improving-agent/security"
+        vtAnalysis={{
+          status: "suspicious",
+          source: "VirusTotal Code Insight",
+          scanner: "code_insight",
+          analysis:
+            "Type: OpenClaw Skill Name: self-improving-agent Version: 1.0.0 ### Summary\nThe skill bundle implements a structured self-improvement framework for OpenClaw agents.",
+          checkedAt: 1,
+        }}
+      />,
+    );
+
+    fireEvent.focus(screen.getByRole("link", { name: "VirusTotal: Pass" }));
+
+    const tooltip = await screen.findByRole("tooltip");
+    const overview = tooltip.querySelector(".security-audit-tooltip-overview");
+    expect(overview?.textContent).toBe(
+      "The skill bundle implements a structured self-improvement framework for OpenClaw agents.",
+    );
+    expect(overview?.textContent).not.toContain("Summary");
+    expect(overview?.textContent).not.toContain("Type:");
+  });
+
   it("shows a structured tooltip with truncated overview and full-audit CTA", async () => {
     renderSummary(
       <DetailSecuritySummary

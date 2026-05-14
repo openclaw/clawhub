@@ -48,7 +48,14 @@ function severityLevelForStatus(status: string) {
 }
 
 function normalizeAuditOverviewText(value: string) {
-  return value.replace(/\r\n?/g, "\n").trim();
+  return value
+    .replace(/^Type:\s*.+?\s+Name:\s*.+?\s+Version:\s*\S+\s+/i, "")
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !/^#{1,6}\s+/.test(line))
+    .join("\n")
+    .trim();
 }
 
 function formatAuditOverview(value: string) {
