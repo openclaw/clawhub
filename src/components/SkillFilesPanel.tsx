@@ -15,6 +15,15 @@ type SkillFilesPanelProps = {
 const MOBILE_FILE_LIST_BREAKPOINT = 900;
 const MOBILE_FILE_LIST_PREVIEW_COUNT = 8;
 
+function splitFilePath(path: string) {
+  const lastSlashIndex = path.lastIndexOf("/");
+  if (lastSlashIndex === -1) return { directory: "", filename: path };
+  return {
+    directory: path.slice(0, lastSlashIndex + 1),
+    filename: path.slice(lastSlashIndex + 1),
+  };
+}
+
 export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps) {
   const getFileText = useAction(api.skills.getFileText);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
@@ -129,20 +138,28 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
             {latestFiles.length === 0 ? (
               <div className="stat">No files available.</div>
             ) : (
-              visibleFiles.map((file) => (
-                <button
-                  key={file.path}
-                  className={`file-row file-row-button${
-                    selectedPath === file.path ? " is-active" : ""
-                  }`}
-                  type="button"
-                  onClick={() => handleSelect(file.path)}
-                  aria-current={selectedPath === file.path ? "true" : undefined}
-                >
-                  <span className="file-path">{file.path}</span>
-                  <span className="file-meta">{formatBytes(file.size)}</span>
-                </button>
-              ))
+              visibleFiles.map((file) => {
+                const { directory, filename } = splitFilePath(file.path);
+                const formattedSize = formatBytes(file.size);
+                return (
+                  <button
+                    key={file.path}
+                    className={`file-row file-row-button${
+                      selectedPath === file.path ? " is-active" : ""
+                    }`}
+                    type="button"
+                    onClick={() => handleSelect(file.path)}
+                    aria-current={selectedPath === file.path ? "true" : undefined}
+                    aria-label={`${file.path} ${formattedSize}`}
+                  >
+                    <span className="file-row-path">
+                      {directory ? <span className="file-path-dir">{directory}</span> : null}
+                      <span className="file-path-name">{filename}</span>
+                    </span>
+                    <span className="file-meta">{formattedSize}</span>
+                  </button>
+                );
+              })
             )}
           </div>
           {isMobile && hiddenFilesCount > 0 ? (

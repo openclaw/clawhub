@@ -5813,6 +5813,29 @@ code {
   background: var(--surface-muted);
 }
 
+.file-row-path {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+}
+
+.file-path-dir {
+  color: var(--ink);
+  font-size: 0.82rem;
+  opacity: 0.56;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-path-name {
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
 .file-path {
   font-family: var(--font-mono);
   font-size: 0.9rem;
@@ -5821,6 +5844,7 @@ code {
 }
 
 .file-meta {
+  flex-shrink: 0;
   font-size: 0.8rem;
   color: var(--ink-soft);
   white-space: nowrap;
