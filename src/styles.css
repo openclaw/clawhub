@@ -5614,15 +5614,27 @@ code {
   display: grid;
   gap: 12px;
   max-width: 100%;
-  padding-top: 8px;
-  border-top: 1px solid var(--line);
 }
 
 .file-list-header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 10px;
+  border-bottom: 1px solid var(--line);
+  min-height: 42px;
+  padding-bottom: 13px;
+}
+
+.file-list-count {
+  border: 1px solid var(--line);
+  border-radius: var(--r-btn);
+  background: var(--surface-muted);
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+  line-height: 1;
+  padding: 5px 8px;
+  white-space: nowrap;
 }
 
 .file-list-body {
@@ -5696,10 +5708,11 @@ code {
 
 .file-viewer-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
   border-bottom: 1px solid var(--line);
+  min-height: 42px;
   padding-bottom: 12px;
 }
 

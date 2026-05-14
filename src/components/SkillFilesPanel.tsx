@@ -123,7 +123,7 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
         <div className="file-list">
           <div className="file-list-header">
             <h3 className="section-title text-[1.05rem] m-0">Files</h3>
-            <span className="section-subtitle m-0">{latestFiles.length} total</span>
+            <span className="file-list-count">{latestFiles.length} total</span>
           </div>
           <div className={`file-list-body${showAllMobileFiles ? " is-expanded" : ""}`}>
             {latestFiles.length === 0 ? (
