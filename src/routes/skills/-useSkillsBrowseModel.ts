@@ -73,7 +73,7 @@ export function useSkillsBrowseModel({
 
   const view: SkillsView = normalizeSkillsView(search.view) ?? "list";
   const featuredOnly = search.featured ?? search.highlighted ?? false;
-  const nonSuspiciousOnly = search.nonSuspicious ?? false;
+  const nonSuspiciousOnly = search.nonSuspicious ?? true;
   const capabilityTag = search.tag;
   const searchSkills = useAction(api.search.searchSkills);
 

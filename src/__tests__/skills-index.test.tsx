@@ -57,7 +57,7 @@ describe("SkillsIndex", () => {
         sort: "downloads",
         dir: "desc",
         highlightedOnly: false,
-        nonSuspiciousOnly: false,
+        nonSuspiciousOnly: true,
         cursor: undefined,
         numItems: 25,
       }),
@@ -155,7 +155,7 @@ describe("SkillsIndex", () => {
     expect(actionFn).toHaveBeenCalledWith({
       query: "remind",
       highlightedOnly: false,
-      nonSuspiciousOnly: false,
+      nonSuspiciousOnly: true,
       limit: 25,
     });
     await act(async () => {
@@ -164,7 +164,7 @@ describe("SkillsIndex", () => {
     expect(actionFn).toHaveBeenCalledWith({
       query: "remind",
       highlightedOnly: false,
-      nonSuspiciousOnly: false,
+      nonSuspiciousOnly: true,
       limit: 25,
     });
   });
@@ -243,7 +243,7 @@ describe("SkillsIndex", () => {
     expect(actionFn).toHaveBeenLastCalledWith({
       query: "remind",
       highlightedOnly: false,
-      nonSuspiciousOnly: false,
+      nonSuspiciousOnly: true,
       limit: 50,
     });
   });
@@ -365,7 +365,7 @@ describe("SkillsIndex", () => {
         sort: "downloads",
         dir: "desc",
         highlightedOnly: true,
-        nonSuspiciousOnly: false,
+        nonSuspiciousOnly: true,
       }),
     );
   });

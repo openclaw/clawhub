@@ -118,13 +118,13 @@ export function SkillsIndex() {
   const handleClear = useCallback(() => {
     model.onQueryChange("");
     if (model.featuredOnly) model.onToggleFeatured();
-    if (model.nonSuspiciousOnly) model.onToggleNonSuspicious();
+    if (search.nonSuspicious) model.onToggleNonSuspicious();
   }, [
     model.featuredOnly,
     model.onQueryChange,
     model.onToggleFeatured,
     model.onToggleNonSuspicious,
-    model.nonSuspiciousOnly,
+    search.nonSuspicious,
   ]);
 
   const handleCategoryChange = useCallback(
@@ -188,7 +188,7 @@ export function SkillsIndex() {
           <div className="browse-results-toolbar">
             <span className="browse-results-count">
               {model.isLoadingSkills ? "\u2014" : `${model.sorted.length} results`}
-              {model.hasQuery || model.featuredOnly || model.nonSuspiciousOnly ? (
+              {model.hasQuery || model.featuredOnly || search.nonSuspicious ? (
                 <button className="browse-clear-btn" type="button" onClick={handleClear}>
                   Clear
                 </button>
