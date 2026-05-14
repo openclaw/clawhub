@@ -129,7 +129,7 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
   return (
     <div className="tab-body">
       <div className="file-browser">
-        <div className="file-list">
+        <div className={`file-list${isMobile && hiddenFilesCount > 0 ? " has-hidden-files" : ""}`}>
           <div className="file-list-header">
             <h3 className="section-title text-[1.05rem] m-0">Files</h3>
             <span className="file-list-count">{latestFiles.length} total</span>

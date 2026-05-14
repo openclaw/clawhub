@@ -5611,6 +5611,7 @@ code {
 }
 
 .file-list {
+  position: relative;
   display: grid;
   gap: 12px;
   max-width: 100%;
@@ -5649,17 +5650,26 @@ code {
 }
 
 .file-list-see-all-wrap {
-  position: relative;
-  display: grid;
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 2;
+  display: none;
   place-items: center;
-  min-height: 56px;
-  margin-top: -4px;
+  height: 92px;
+  pointer-events: none;
 }
 
 .file-list-see-all-gradient {
   position: absolute;
   inset: 0;
-  background: linear-gradient(to bottom, rgba(255, 255, 255, 0), var(--surface) 65%);
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--bg) 0%, transparent) 0%,
+    color-mix(in srgb, var(--bg) 82%, transparent) 48%,
+    var(--bg) 100%
+  );
   pointer-events: none;
 }
 
@@ -5670,6 +5680,14 @@ code {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  margin-top: 24px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-btn);
+  background: var(--surface);
+  color: var(--ink);
+  padding: 8px 14px;
+  box-shadow: 0 12px 28px rgba(29, 26, 23, 0.14);
+  pointer-events: auto;
 }
 
 .file-browser {
@@ -8578,16 +8596,18 @@ a.agentic-risk-finding-title:focus-visible {
     word-break: break-word;
   }
 
-  .file-list-body {
-    max-height: 200px;
-    overflow: auto;
-    padding-right: 4px;
+  .file-list.has-hidden-files .file-list-body {
+    max-height: 360px;
+    overflow: hidden;
+  }
+
+  .file-list.has-hidden-files .file-list-see-all-wrap {
+    display: grid;
   }
 
   .file-list-body.is-expanded {
     max-height: none;
     overflow: visible;
-    padding-right: 0;
   }
 
   .comment-entry {
