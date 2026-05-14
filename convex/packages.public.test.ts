@@ -157,6 +157,16 @@ const insertReleaseInternalHandler = (
       verification?: unknown;
       staticScan?: unknown;
       artifactKind?: "legacy-zip" | "npm-pack";
+      publishActor?:
+        | { kind: "user"; userId: string }
+        | {
+            kind: "github-actions";
+            repository: string;
+            workflow: string;
+            runId: string;
+            runAttempt: string;
+            sha: string;
+          };
       clawpackStorageId?: string;
       clawpackSha256?: string;
       clawpackSize?: number;
@@ -3365,6 +3375,122 @@ describe("packages public queries", () => {
         files: [],
         integritySha256: "abc123",
         runtimeId: "other.plugin",
+      }),
+    ).rejects.toThrow("runtime id changes are not allowed");
+  });
+
+  it("allows latest publishes to correct placeholder code plugin runtime ids", async () => {
+    const ctx = makeInsertReleaseCtx(
+      makePackageDoc({
+        name: "@openviking/openclaw-plugin",
+        normalizedName: "@openviking/openclaw-plugin",
+        runtimeId: "openviking-openclaw-plugin-placeholder",
+        stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
+      }),
+    );
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:owner",
+        ownerUserId: "users:owner",
+        name: "@openviking/openclaw-plugin",
+        displayName: "OpenViking OpenClaw Plugin",
+        family: "code-plugin",
+        version: "1.0.1",
+        changelog: "correct runtime id",
+        tags: ["latest"],
+        summary: "OpenViking memory integration",
+        files: [],
+        integritySha256: "abc123",
+        runtimeId: "openviking",
+        publishActor: {
+          kind: "github-actions",
+          repository: "openviking/openviking",
+          workflow: "publish-openclaw-plugin.yml",
+          runId: "123",
+          runAttempt: "1",
+          sha: "abc123",
+        },
+        capabilities: {
+          runtimeId: "openviking",
+          capabilityTags: ["tools"],
+          executesCode: true,
+        },
+      }),
+    ).resolves.toMatchObject({ ok: true, packageId: "packages:demo" });
+
+    expect(ctx.patch).toHaveBeenCalledWith(
+      "packages:demo",
+      expect.objectContaining({
+        runtimeId: "openviking",
+        capabilities: expect.objectContaining({ runtimeId: "openviking" }),
+      }),
+    );
+    expect(ctx.insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({
+        action: "package.runtime_id.placeholder_repair",
+        targetType: "package",
+        targetId: "packages:demo",
+        metadata: expect.objectContaining({
+          previousRuntimeId: "openviking-openclaw-plugin-placeholder",
+          nextRuntimeId: "openviking",
+          source: "publish",
+        }),
+      }),
+    );
+  });
+
+  it("rejects owner user-publish attempts to correct placeholder runtime ids", async () => {
+    const ctx = makeInsertReleaseCtx(
+      makePackageDoc({
+        name: "@openviking/openclaw-plugin",
+        normalizedName: "@openviking/openclaw-plugin",
+        runtimeId: "openviking-openclaw-plugin-placeholder",
+      }),
+    );
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:owner",
+        ownerUserId: "users:owner",
+        name: "@openviking/openclaw-plugin",
+        displayName: "OpenViking OpenClaw Plugin",
+        family: "code-plugin",
+        version: "1.0.1",
+        changelog: "retarget runtime id",
+        tags: ["latest"],
+        summary: "OpenViking memory integration",
+        files: [],
+        integritySha256: "abc123",
+        runtimeId: "openviking",
+      }),
+    ).rejects.toThrow("runtime id changes are not allowed");
+  });
+
+  it("rejects placeholder-like runtime id changes that do not match the package name", async () => {
+    const ctx = makeInsertReleaseCtx(
+      makePackageDoc({
+        name: "@openviking/openclaw-plugin",
+        normalizedName: "@openviking/openclaw-plugin",
+        runtimeId: "some-other-placeholder",
+      }),
+    );
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:owner",
+        ownerUserId: "users:owner",
+        name: "@openviking/openclaw-plugin",
+        displayName: "OpenViking OpenClaw Plugin",
+        family: "code-plugin",
+        version: "1.0.1",
+        changelog: "retarget runtime id",
+        tags: ["latest"],
+        summary: "OpenViking memory integration",
+        files: [],
+        integritySha256: "abc123",
+        runtimeId: "openviking",
       }),
     ).rejects.toThrow("runtime id changes are not allowed");
   });

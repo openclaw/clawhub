@@ -156,6 +156,19 @@ function inferOwnerHandleFromScopedPackageName(name: string) {
   return match?.[1] || undefined;
 }
 
+function expectedPlaceholderRuntimeIdForPackageName(normalizedName: string) {
+  return `${normalizedName.replace(/^@/, "").replace(/\//g, "-")}-placeholder`;
+}
+
+function isPlaceholderPackageRuntimeId(
+  runtimeId: string | null | undefined,
+  normalizedName: string,
+) {
+  const value = runtimeId?.trim().toLowerCase();
+  if (!value) return false;
+  return value === expectedPlaceholderRuntimeIdForPackageName(normalizedName);
+}
+
 const internalRefs = internal as unknown as {
   llmEval: {
     evaluatePackageReleaseWithLlm: unknown;
@@ -5144,13 +5157,19 @@ export const insertReleaseInternal = internalMutation({
         `Package "${nextNameLabel}" already exists as a ${existing.family}; family changes are not allowed`,
       );
     }
-    if (
+    const runtimeIdWillChange =
       existing &&
       existing.family === "code-plugin" &&
+      args.family === "code-plugin" &&
       existing.runtimeId &&
       args.runtimeId &&
-      existing.runtimeId !== args.runtimeId
-    ) {
+      existing.runtimeId !== args.runtimeId;
+    const correctingPlaceholderRuntimeId =
+      Boolean(runtimeIdWillChange) &&
+      args.tags.includes("latest") &&
+      isPlaceholderPackageRuntimeId(existing?.runtimeId, normalizedName) &&
+      (args.publishActor?.kind === "github-actions" || actor.role === "admin");
+    if (runtimeIdWillChange && !correctingPlaceholderRuntimeId) {
       throw new ConvexError(
         `Package "${nextNameLabel}" already exists with plugin id "${existing.runtimeId}"; runtime id changes are not allowed`,
       );
@@ -5277,7 +5296,7 @@ export const insertReleaseInternal = internalMutation({
       await ctx.db.patch(priorRelease._id, { distTags: nextDistTags });
     }
 
-    await ctx.db.patch(pkgId, {
+    const packagePatch: Partial<Doc<"packages">> = {
       displayName: args.displayName,
       ownerUserId: args.ownerUserId,
       ownerPublisherId: args.ownerPublisherId ?? pkg.ownerPublisherId,
@@ -5312,7 +5331,25 @@ export const insertReleaseInternal = internalMutation({
       scanStatus: shouldPromoteLatest ? args.verification?.scanStatus : pkg.scanStatus,
       stats: { ...pkg.stats, versions: (pkg.stats?.versions ?? 0) + 1 },
       updatedAt: now,
-    });
+    };
+    await ctx.db.patch(pkgId, packagePatch);
+
+    if (correctingPlaceholderRuntimeId && existing?.runtimeId && args.runtimeId) {
+      await ctx.db.insert("auditLogs", {
+        actorUserId: args.actorUserId,
+        action: "package.runtime_id.placeholder_repair",
+        targetType: "package",
+        targetId: pkgId,
+        metadata: {
+          name: normalizedName,
+          version: args.version,
+          previousRuntimeId: existing.runtimeId,
+          nextRuntimeId: args.runtimeId,
+          source: "publish",
+        },
+        createdAt: now,
+      });
+    }
 
     return {
       ok: true as const,
