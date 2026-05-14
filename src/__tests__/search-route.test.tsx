@@ -8,7 +8,6 @@ const navigateMock = vi.fn();
 let searchMock: {
   q?: string;
   type?: "all" | "skills" | "plugins";
-  nonSuspicious?: boolean;
 } = {};
 const useUnifiedSearchMock = vi.fn();
 
@@ -153,75 +152,25 @@ describe("search route", () => {
 
     expect(useUnifiedSearchMock).toHaveBeenLastCalledWith("weather", "all", {
       limits: { skills: 25, plugins: 25 },
-      nonSuspiciousOnly: true,
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Load more" }));
 
     expect(useUnifiedSearchMock).toHaveBeenLastCalledWith("weather", "all", {
       limits: { skills: 50, plugins: 50 },
-      nonSuspiciousOnly: true,
     });
   });
 
-  it("defaults nonSuspiciousOnly to true when URL param is absent", async () => {
+  it("passes only result limits to unified search", async () => {
     searchMock = { q: "hello" };
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
 
     render(<Component />);
 
-    expect(useUnifiedSearchMock).toHaveBeenLastCalledWith(
-      "hello",
-      "all",
-      expect.objectContaining({ nonSuspiciousOnly: true }),
-    );
-  });
-
-  it("passes nonSuspiciousOnly=false to the hook when URL opts out", async () => {
-    searchMock = { q: "hello", nonSuspicious: false };
-    const route = await loadRoute();
-    const Component = route.__config.component as ComponentType;
-
-    render(<Component />);
-
-    expect(useUnifiedSearchMock).toHaveBeenLastCalledWith(
-      "hello",
-      "all",
-      expect.objectContaining({ nonSuspiciousOnly: false }),
-    );
-  });
-
-  it("does not render a warning filter chip while keeping the safe default", async () => {
-    searchMock = { q: "hello" };
-    const route = await loadRoute();
-    const Component = route.__config.component as ComponentType;
-
-    render(<Component />);
-
-    expect(screen.queryByRole("button", { name: /Hiding warnings/i })).toBeNull();
-    expect(screen.queryByRole("button", { name: /Showing all skills/i })).toBeNull();
-    expect(useUnifiedSearchMock).toHaveBeenCalledWith(
-      "hello",
-      "all",
-      expect.objectContaining({ nonSuspiciousOnly: true }),
-    );
-  });
-
-  it("does not render a warning filter chip when opted out", async () => {
-    searchMock = { q: "hello", nonSuspicious: false };
-    const route = await loadRoute();
-    const Component = route.__config.component as ComponentType;
-
-    render(<Component />);
-
-    expect(screen.queryByRole("button", { name: /Hiding warnings/i })).toBeNull();
-    expect(screen.queryByRole("button", { name: /Showing all skills/i })).toBeNull();
-    expect(useUnifiedSearchMock).toHaveBeenCalledWith(
-      "hello",
-      "all",
-      expect.objectContaining({ nonSuspiciousOnly: false }),
-    );
+    expect(useUnifiedSearchMock).toHaveBeenLastCalledWith("hello", "all", {
+      limits: { skills: 25, plugins: 25 },
+    });
   });
 
   it("does not render a warning-filter chip on the plugins tab", async () => {

@@ -76,7 +76,6 @@ function SkillsHome() {
         numItems: 6,
         sort: "downloads",
         dir: "desc",
-        nonSuspiciousOnly: true,
       })
       .then((r) => {
         if (cancelled) return;
@@ -549,7 +548,6 @@ function SkillsHome() {
                         dir: undefined,
                         featured: true,
                         highlighted: undefined,
-                        nonSuspicious: undefined,
                         view: undefined,
                         focus: undefined,
                       }
@@ -559,7 +557,6 @@ function SkillsHome() {
                         dir: "desc",
                         featured: undefined,
                         highlighted: undefined,
-                        nonSuspicious: true,
                         view: undefined,
                         focus: undefined,
                       }
@@ -679,7 +676,6 @@ function SkillsHome() {
               sort: undefined,
               dir: undefined,
               highlighted: undefined,
-              nonSuspicious: true,
               view: undefined,
               focus: undefined,
             }}
@@ -783,7 +779,6 @@ function SkillsHome() {
                 dir: "desc",
                 featured: undefined,
                 highlighted: undefined,
-                nonSuspicious: true,
                 view: undefined,
                 focus: undefined,
               }}

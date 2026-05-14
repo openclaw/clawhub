@@ -37,19 +37,13 @@ export const Route = createFileRoute("/skills/")({
         search.featured === "1" || search.featured === "true" || search.featured === true
           ? true
           : undefined,
-      nonSuspicious:
-        search.nonSuspicious === "1" ||
-        search.nonSuspicious === "true" ||
-        search.nonSuspicious === true
-          ? true
-          : undefined,
       view: normalizeSkillsView(search.view),
       focus: search.focus === "search" ? "search" : undefined,
     };
   },
   beforeLoad: ({ search }) => {
     const hasQuery = Boolean(search.q?.trim());
-    if (hasQuery || search.sort || search.featured || search.highlighted || search.nonSuspicious) {
+    if (hasQuery || search.sort || search.featured || search.highlighted) {
       return;
     }
     throw redirect({
@@ -60,7 +54,6 @@ export const Route = createFileRoute("/skills/")({
         dir: search.dir || undefined,
         highlighted: search.highlighted || undefined,
         featured: search.featured || undefined,
-        nonSuspicious: search.nonSuspicious || undefined,
         view: search.view || undefined,
         focus: search.focus || undefined,
       },
@@ -118,14 +111,7 @@ export function SkillsIndex() {
   const handleClear = useCallback(() => {
     model.onQueryChange("");
     if (model.featuredOnly) model.onToggleFeatured();
-    if (model.nonSuspiciousOnly) model.onToggleNonSuspicious();
-  }, [
-    model.featuredOnly,
-    model.onQueryChange,
-    model.onToggleFeatured,
-    model.onToggleNonSuspicious,
-    model.nonSuspiciousOnly,
-  ]);
+  }, [model.featuredOnly, model.onQueryChange, model.onToggleFeatured]);
 
   const handleCategoryChange = useCallback(
     (slug: string | undefined) => {
@@ -188,7 +174,7 @@ export function SkillsIndex() {
           <div className="browse-results-toolbar">
             <span className="browse-results-count">
               {model.isLoadingSkills ? "\u2014" : `${model.sorted.length} results`}
-              {model.hasQuery || model.featuredOnly || model.nonSuspiciousOnly ? (
+              {model.hasQuery || model.featuredOnly ? (
                 <button className="browse-clear-btn" type="button" onClick={handleClear}>
                   Clear
                 </button>

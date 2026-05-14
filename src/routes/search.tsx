@@ -17,15 +17,12 @@ const SEARCH_PAGE_SIZE = 25;
 type SearchState = {
   q?: string;
   type?: UnifiedSearchType;
-  nonSuspicious?: boolean;
 };
 
 export const Route = createFileRoute("/search")({
   validateSearch: (search: Record<string, unknown>): SearchState => ({
     q: typeof search.q === "string" && search.q.trim() ? search.q : undefined,
     type: search.type === "skills" || search.type === "plugins" ? search.type : undefined,
-    nonSuspicious:
-      search.nonSuspicious === false || search.nonSuspicious === "false" ? false : undefined,
   }),
   component: UnifiedSearchPage,
 });
@@ -34,10 +31,6 @@ function UnifiedSearchPage() {
   const search = Route.useSearch();
   const navigate = useNavigate();
   const activeType = search.type ?? "all";
-  // Unified search defaults to moderation-safe (skills with warnings hidden).
-  // Keep the URL flag for compatibility even though the search UI no longer
-  // exposes a warning filter control.
-  const nonSuspiciousOnly = search.nonSuspicious ?? true;
   const [query, setQuery] = useState(search.q ?? "");
   const [resultLimit, setResultLimit] = useState(SEARCH_PAGE_SIZE);
 
@@ -47,7 +40,7 @@ function UnifiedSearchPage() {
 
   useEffect(() => {
     setResultLimit(SEARCH_PAGE_SIZE);
-  }, [search.q, activeType, nonSuspiciousOnly]);
+  }, [search.q, activeType]);
 
   const {
     results: allResults,
@@ -59,7 +52,6 @@ function UnifiedSearchPage() {
       skills: resultLimit,
       plugins: resultLimit,
     },
-    nonSuspiciousOnly,
   });
   const results =
     activeType === "all"
@@ -81,7 +73,6 @@ function UnifiedSearchPage() {
       search: {
         q: query.trim() || undefined,
         type: search.type,
-        nonSuspicious: search.nonSuspicious,
       },
     });
   };
@@ -92,7 +83,6 @@ function UnifiedSearchPage() {
       search: {
         q: search.q,
         type: type === "all" ? undefined : type,
-        nonSuspicious: search.nonSuspicious,
       },
       replace: true,
     });

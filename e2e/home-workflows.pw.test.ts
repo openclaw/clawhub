@@ -27,7 +27,7 @@ test("home search and browse entry points work", async ({ page }) => {
 test("search route preserves query in unified search", async ({ page }) => {
   const errors = trackRuntimeErrors(page);
 
-  await page.goto("/search?q=gifgrep&nonSuspicious=1", { waitUntil: "domcontentloaded" });
+  await page.goto("/search?q=gifgrep", { waitUntil: "domcontentloaded" });
   await expect(page).toHaveURL(/\/search\?/);
   await expect(page).toHaveURL(/q=gifgrep/);
   await expect(page.locator('input[placeholder="Search skills and plugins..."]')).toHaveValue(

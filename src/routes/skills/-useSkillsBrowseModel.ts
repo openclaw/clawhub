@@ -30,7 +30,6 @@ export type SkillsSearchState = {
   dir?: SortDir;
   highlighted?: boolean;
   featured?: boolean;
-  nonSuspicious?: boolean;
   tag?: string;
   view?: LegacySkillsView;
   focus?: "search";
@@ -73,7 +72,6 @@ export function useSkillsBrowseModel({
 
   const view: SkillsView = normalizeSkillsView(search.view) ?? "list";
   const featuredOnly = search.featured ?? search.highlighted ?? false;
-  const nonSuspiciousOnly = search.nonSuspicious ?? false;
   const capabilityTag = search.tag;
   const searchSkills = useAction(api.search.searchSkills);
 
@@ -87,7 +85,7 @@ export function useSkillsBrowseModel({
   const listSort = toListSort(sort);
   const dir = parseDir(search.dir, sort);
   const searchKey = trimmedQuery
-    ? `${trimmedQuery}::${featuredOnly ? "1" : "0"}::${nonSuspiciousOnly ? "1" : "0"}::${capabilityTag ?? ""}`
+    ? `${trimmedQuery}::${featuredOnly ? "1" : "0"}::${capabilityTag ?? ""}`
     : "";
 
   // One-shot paginated fetches (no reactive subscription)
@@ -105,7 +103,6 @@ export function useSkillsBrowseModel({
           sort: listSort,
           dir,
           highlightedOnly: featuredOnly,
-          nonSuspiciousOnly,
           capabilityTag,
         });
         if (generation !== fetchGeneration.current) return;
@@ -122,7 +119,7 @@ export function useSkillsBrowseModel({
         setListStatus(cursor ? "idle" : "done");
       }
     },
-    [capabilityTag, dir, featuredOnly, listSort, nonSuspiciousOnly],
+    [capabilityTag, dir, featuredOnly, listSort],
   );
 
   // Reset and fetch first page when sort/dir/filters change
@@ -178,7 +175,6 @@ export function useSkillsBrowseModel({
           const data = (await searchSkills({
             query: trimmedQuery,
             highlightedOnly: featuredOnly,
-            nonSuspiciousOnly,
             capabilityTag,
             limit: searchLimit,
           })) as Array<SkillSearchEntry>;
@@ -193,15 +189,7 @@ export function useSkillsBrowseModel({
       })();
     }, 220);
     return () => window.clearTimeout(handle);
-  }, [
-    capabilityTag,
-    hasQuery,
-    featuredOnly,
-    nonSuspiciousOnly,
-    searchLimit,
-    searchSkills,
-    trimmedQuery,
-  ]);
+  }, [capabilityTag, hasQuery, featuredOnly, searchLimit, searchSkills, trimmedQuery]);
 
   const baseItems = useMemo(() => {
     if (hasQuery) {
@@ -353,16 +341,6 @@ export function useSkillsBrowseModel({
     });
   }, [navigate]);
 
-  const onToggleNonSuspicious = useCallback(() => {
-    void navigate({
-      search: (prev) => ({
-        ...prev,
-        nonSuspicious: prev.nonSuspicious ? undefined : true,
-      }),
-      replace: true,
-    });
-  }, [navigate]);
-
   const onSortChange = useCallback(
     (value: string) => {
       const nextSort = parseSort(value);
@@ -400,7 +378,6 @@ export function useSkillsBrowseModel({
 
   const activeFilters: string[] = [];
   if (featuredOnly) activeFilters.push("featured");
-  if (nonSuspiciousOnly) activeFilters.push("warnings hidden");
   if (capabilityTag) activeFilters.push(SKILL_CAPABILITY_LABELS[capabilityTag] ?? capabilityTag);
 
   const onCapabilityTagChange = useCallback(
@@ -428,13 +405,11 @@ export function useSkillsBrowseModel({
     isLoadingSkills,
     loadMore,
     loadMoreRef,
-    nonSuspiciousOnly,
     onCapabilityTagChange,
     onQueryChange,
     onSortChange,
     onToggleDir,
     onToggleFeatured,
-    onToggleNonSuspicious,
     onToggleView,
     query,
     sort,
