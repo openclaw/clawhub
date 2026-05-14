@@ -5714,7 +5714,9 @@ code {
   border-radius: 12px;
   background: var(--surface-muted);
   padding: 16px;
-  overflow: auto;
+  overflow: scroll;
+  scrollbar-color: var(--ink-soft) transparent;
+  scrollbar-width: thin;
   white-space: pre;
   word-break: normal;
   font-family: var(--font-mono);
@@ -5722,6 +5724,22 @@ code {
   line-height: 1.65;
   color: var(--ink);
   tab-size: 2;
+}
+
+.file-viewer-code::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.file-viewer-code::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: var(--r-btn);
+  background: var(--ink-soft);
+  background-clip: padding-box;
+}
+
+.file-viewer-code::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .file-viewer-empty {
