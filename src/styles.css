@@ -5622,8 +5622,13 @@ code {
   justify-content: space-between;
   gap: 10px;
   border-bottom: 1px solid var(--line);
-  min-height: 58px;
+  box-sizing: border-box;
+  height: 64px;
   padding: 16px 0 14px;
+}
+
+.file-list-header .section-title {
+  margin: 0;
 }
 
 .file-list-count {
@@ -5711,13 +5716,14 @@ code {
   justify-content: space-between;
   gap: 12px;
   border-bottom: 1px solid var(--line);
-  min-height: 57px;
+  box-sizing: border-box;
+  height: 63px;
   padding: 15px 16px 14px;
 }
 
 .file-viewer-header .file-path {
-  font-size: 1.05rem;
-  line-height: 1.2;
+  font-size: 0.95rem;
+  line-height: 1.25;
 }
 
 .file-viewer-body {
