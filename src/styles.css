@@ -4320,8 +4320,9 @@ code {
   gap: 10px;
   min-height: 34px;
   padding: 0 10px 0 12px;
-  border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
+  border: 1px solid var(--line);
   border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-muted) 74%, transparent);
   color: var(--ink);
   font-size: 0.76rem;
   font-weight: 760;
@@ -4340,8 +4341,8 @@ code {
 
 .security-audit-tooltip-action:hover,
 .security-audit-tooltip-action:focus-visible {
-  background: color-mix(in srgb, var(--surface-muted) 74%, transparent);
-  border-color: var(--line);
+  background: color-mix(in srgb, var(--surface-muted) 92%, var(--ink) 8%);
+  border-color: color-mix(in srgb, var(--line) 72%, var(--ink) 28%);
   text-decoration: none;
 }
 
