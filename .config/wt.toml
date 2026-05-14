@@ -6,7 +6,7 @@ setup = "bun run setup:worktree -- --quiet"
 dev = "bun scripts/dev-worktree.ts --detach --port {{ (repo ~ '-' ~ branch) | hash_port }}"
 
 [pre-remove]
-dev = "if test -f .codex/runtime/dev-worktree.pid; then kill $(cat .codex/runtime/dev-worktree.pid) 2>/dev/null || true; rm -f .codex/runtime/dev-worktree.pid; fi"
+dev = "if test -f .codex/runtime/dev-worktree.pid; then pid=$(cat .codex/runtime/dev-worktree.pid); kill -TERM -$pid 2>/dev/null || kill $pid 2>/dev/null || true; rm -f .codex/runtime/dev-worktree.pid; fi"
 
 [aliases]
 dev = "bun scripts/dev-worktree.ts --detach --port {{ (repo ~ '-' ~ branch) | hash_port }}"
