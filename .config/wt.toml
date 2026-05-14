@@ -1,0 +1,14 @@
+# Worktrunk runs pre-start once when it creates a new ClawHub worktree.
+[[pre-start]]
+setup = "bun run setup:worktree -- --quiet"
+
+[post-start]
+dev = "bun scripts/dev-worktree.ts --detach --port {{ (repo ~ '-' ~ branch) | hash_port }}"
+
+[pre-remove]
+dev = "if test -f .codex/runtime/dev-worktree.pid; then kill $(cat .codex/runtime/dev-worktree.pid) 2>/dev/null || true; rm -f .codex/runtime/dev-worktree.pid; fi"
+
+[aliases]
+dev = "bun scripts/dev-worktree.ts --detach --port {{ (repo ~ '-' ~ branch) | hash_port }}"
+setup = "bun run setup:worktree -- --quiet"
+url = "echo http://127.0.0.1:{{ (repo ~ '-' ~ branch) | hash_port }}"
