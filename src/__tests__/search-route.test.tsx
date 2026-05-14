@@ -89,6 +89,24 @@ describe("search route", () => {
     expect(screen.queryByRole("button", { name: /users/i })).toBeNull();
   });
 
+  it("uses result skeletons instead of a boxed searching message", async () => {
+    useUnifiedSearchMock.mockReturnValue({
+      results: [],
+      skillResults: [],
+      pluginResults: [],
+      skillCount: 0,
+      pluginCount: 0,
+      isSearching: true,
+    });
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(screen.getByRole("status", { name: "Loading results" })).toBeTruthy();
+    expect(screen.queryByText("Searching...")).toBeNull();
+  });
+
   it("shows zero counts consistently for active search tabs", async () => {
     useUnifiedSearchMock.mockReturnValue({
       results: [],

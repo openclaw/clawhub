@@ -73,6 +73,7 @@ async function loadRoute() {
     __config: {
       loader?: (args: { deps: Record<string, unknown> }) => Promise<unknown>;
       component?: ComponentType;
+      pendingComponent?: ComponentType;
       validateSearch?: (search: Record<string, unknown>) => Record<string, unknown>;
     };
   };
@@ -384,6 +385,16 @@ describe("plugins route", () => {
 
     expect(screen.queryByRole("link", { name: "Publish" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Publish" })).toBeNull();
+  });
+
+  it("renders browse skeletons while the plugins route is pending", async () => {
+    const route = await loadRoute();
+    const PendingComponent = route.__config.pendingComponent as ComponentType;
+
+    render(<PendingComponent />);
+
+    expect(screen.getByRole("status", { name: "Loading results" })).toBeTruthy();
+    expect(screen.queryByText("Unable to load plugins")).toBeNull();
   });
 
   it("switches legacy cards URLs back to list view", async () => {

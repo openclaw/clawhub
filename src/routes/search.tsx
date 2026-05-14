@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Search, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { PluginListItem } from "../components/PluginListItem";
+import { BrowseResultsSkeleton } from "../components/skeletons/BrowseResultsSkeleton";
 import { SkillListItem } from "../components/SkillListItem";
 import { Card } from "../components/ui/card";
 import type { PublicSkill } from "../lib/publicUser";
@@ -169,9 +170,7 @@ function UnifiedSearchPage() {
       </div>
 
       {isSearching ? (
-        <Card>
-          <div className="loading-indicator">Searching...</div>
-        </Card>
+        <BrowseResultsSkeleton count={activeType === "all" ? 8 : 6} />
       ) : !search.q ? (
         <Card className="text-center p-10">
           <p className="text-ink-soft">Enter a search term to find skills and plugins</p>

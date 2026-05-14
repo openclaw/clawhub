@@ -85,6 +85,7 @@ describe("SkillsIndex", () => {
     await act(async () => {});
     // Results area shows skeleton or dash while loading
     expect(screen.getByText("\u2014")).toBeTruthy();
+    expect(screen.getByRole("status", { name: "Loading results" })).toBeTruthy();
     expect(screen.queryByText("No skills found")).toBeNull();
   });
 
@@ -383,7 +384,7 @@ describe("SkillsIndex", () => {
     expect(screen.getByRole("button", { name: "Load more" })).toBeTruthy();
   });
 
-  it("shows loading indicator during load-more", async () => {
+  it("shows skeletons during load-more", async () => {
     vi.stubGlobal("IntersectionObserver", undefined);
     convexHttpMock.query
       .mockResolvedValueOnce({
@@ -402,7 +403,8 @@ describe("SkillsIndex", () => {
       fireEvent.click(loadMoreButton);
     });
 
-    expect(screen.getByText(/Loading/)).toBeTruthy();
+    expect(screen.getByRole("status", { name: "Loading results" })).toBeTruthy();
+    expect(screen.queryByText(/Loading/)).toBeNull();
   });
 });
 
