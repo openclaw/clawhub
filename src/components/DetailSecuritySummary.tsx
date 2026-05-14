@@ -1,3 +1,4 @@
+import { ChevronRight } from "lucide-react";
 import {
   getClawScanDisplayStatus,
   getScanStatusInfo,
@@ -152,7 +153,8 @@ function ScannerSignal({
         </div>
         <p className="security-audit-tooltip-overview">{overviewText}</p>
         <a href={href} className="security-audit-tooltip-action">
-          Read full audit
+          <span>Read full audit</span>
+          <ChevronRight aria-hidden="true" size={14} strokeWidth={2.4} />
         </a>
       </TooltipContent>
     </Tooltip>

@@ -4272,9 +4272,9 @@ code {
 }
 
 .security-audit-tooltip {
-  width: min(360px, calc(100vw - 20px));
+  width: min(380px, calc(100vw - 20px));
   display: grid;
-  gap: 10px;
+  gap: 12px;
   border-radius: var(--radius-md);
   border-color: color-mix(in srgb, var(--line) 86%, transparent);
   box-shadow: 0 18px 42px rgba(0, 0, 0, 0.26);
@@ -4300,35 +4300,42 @@ code {
   flex: 0 0 auto;
   font-size: 0.72rem;
   font-weight: 720;
-  color: var(--ink-soft);
+  color: color-mix(in srgb, var(--ink) 68%, var(--ink-soft));
 }
 
 .security-audit-tooltip-overview {
   margin: 0;
-  color: var(--ink-soft);
-  font-size: 0.78rem;
-  line-height: 1.4;
+  color: color-mix(in srgb, var(--ink) 82%, var(--ink-soft));
+  font-size: 0.86rem;
+  font-weight: 560;
+  line-height: 1.48;
   white-space: pre-wrap;
 }
 
 .security-audit-tooltip-action {
-  justify-self: start;
+  width: 100%;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  min-height: 30px;
-  padding: 0 12px;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 34px;
+  padding: 0 10px 0 12px;
   border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
-  border-radius: var(--r-pill);
+  border-radius: 8px;
   color: var(--ink);
-  font-size: 0.74rem;
-  font-weight: 730;
+  font-size: 0.76rem;
+  font-weight: 760;
   line-height: 1;
   text-decoration: none;
   transition:
     background-color 0.16s ease-out,
     border-color 0.16s ease-out,
     transform 0.12s ease-out;
+}
+
+.security-audit-tooltip-action svg {
+  flex: 0 0 auto;
+  opacity: 0.72;
 }
 
 .security-audit-tooltip-action:hover,
