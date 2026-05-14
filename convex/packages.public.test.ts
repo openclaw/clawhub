@@ -6514,10 +6514,7 @@ describe("softDeletePackageInternal", () => {
 
     expect(result).toMatchObject({ ok: true, alreadyDeleted: true, releaseCount: 0 });
     // No release patches should have been made.
-    expect(patch).not.toHaveBeenCalledWith(
-      "packageReleases:demo-1",
-      expect.anything(),
-    );
+    expect(patch).not.toHaveBeenCalledWith("packageReleases:demo-1", expect.anything());
   });
 });
 
