@@ -5622,8 +5622,8 @@ code {
   justify-content: space-between;
   gap: 10px;
   border-bottom: 1px solid var(--line);
-  min-height: 42px;
-  padding: 16px 0 13px;
+  min-height: 58px;
+  padding: 16px 0 14px;
 }
 
 .file-list-count {
@@ -5711,8 +5711,13 @@ code {
   justify-content: space-between;
   gap: 12px;
   border-bottom: 1px solid var(--line);
-  min-height: 42px;
-  padding: 16px 16px 13px;
+  min-height: 57px;
+  padding: 15px 16px 14px;
+}
+
+.file-viewer-header .file-path {
+  font-size: 1.05rem;
+  line-height: 1.2;
 }
 
 .file-viewer-body {
