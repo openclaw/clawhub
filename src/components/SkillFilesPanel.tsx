@@ -162,11 +162,6 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
         <div className="file-viewer">
           <div className="file-viewer-header">
             <div className="file-path">{selectedPath ?? "Select a file"}</div>
-            {fileMeta ? (
-              <span className="file-meta">
-                {formatBytes(fileMeta.size)} · {fileMeta.sha256.slice(0, 12)}…
-              </span>
-            ) : null}
           </div>
           <div className="file-viewer-body">
             {isLoading ? (
@@ -182,6 +177,12 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
               </div>
             )}
           </div>
+          {fileMeta ? (
+            <div className="file-viewer-meta">
+              <span className="file-meta">{formatBytes(fileMeta.size)}</span>
+              <span className="file-meta">{fileMeta.sha256.slice(0, 12)}...</span>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

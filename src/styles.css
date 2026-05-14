@@ -5704,7 +5704,7 @@ code {
 }
 
 .file-viewer-body {
-  max-height: 320px;
+  max-height: 420px;
   overflow: auto;
 }
 
@@ -5747,6 +5747,15 @@ code {
   font-size: 0.96rem;
 }
 
+.file-viewer-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
 .version-scroll {
   max-height: 320px;
   overflow: auto;
@@ -5778,7 +5787,7 @@ code {
   white-space: nowrap;
 }
 
-.file-viewer-header .file-meta {
+.file-viewer-meta .file-meta {
   border: 1px solid var(--line);
   border-radius: var(--r-btn);
   background: var(--surface-muted);
