@@ -1,4 +1,5 @@
 import { useAction } from "convex/react";
+import { ChevronDown } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
@@ -145,13 +146,17 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
             )}
           </div>
           {isMobile && hiddenFilesCount > 0 ? (
-            <button
-              className="file-list-see-all"
-              type="button"
-              onClick={() => setShowAllMobileFiles(true)}
-            >
-              See all
-            </button>
+            <div className="file-list-see-all-wrap">
+              <div className="file-list-see-all-gradient" aria-hidden="true" />
+              <button
+                className="file-list-see-all"
+                type="button"
+                onClick={() => setShowAllMobileFiles(true)}
+              >
+                <ChevronDown size={14} aria-hidden="true" />
+                <span>See all</span>
+              </button>
+            </div>
           ) : null}
         </div>
         <div className="file-viewer">

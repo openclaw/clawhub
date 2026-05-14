@@ -5631,8 +5631,28 @@ code {
   max-width: 100%;
 }
 
+.file-list-see-all-wrap {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 56px;
+  margin-top: -4px;
+}
+
+.file-list-see-all-gradient {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0), var(--surface) 65%);
+  pointer-events: none;
+}
+
 .file-list-see-all {
-  justify-self: start;
+  position: relative;
+  z-index: 1;
+  justify-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .file-browser {
