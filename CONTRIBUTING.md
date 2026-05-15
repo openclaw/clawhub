@@ -82,11 +82,14 @@ Change the port if 3000 is already in use, and update `SITE_URL` in both `.env.l
 
 ### Seed the database
 
-Populate sample data so the UI isn't empty:
+Populate local QA fixtures and the committed public corpus so the UI isn't empty:
 
 ```bash
-# 3 sample skills (padel, gohome, xuezh)
-bunx convex run --no-push devSeed:seedNixSkills
+# local moderation/security fixtures
+bunx convex run --no-push devSeed:seedLocalFixtures
+
+# real-ish public corpus rows under deterministic dummy accounts
+bun run seed:public-corpus
 
 # 50 extra skills for pagination testing (optional)
 bunx convex run --no-push devSeedExtra:seedExtraSkillsInternal
@@ -98,7 +101,8 @@ bunx convex run --no-push statsMaintenance:updateGlobalStatsAction
 To reset and re-seed:
 
 ```bash
-bunx convex run --no-push devSeed:seedNixSkills '{"reset": true}'
+bunx convex run --no-push devSeed:seedLocalFixtures '{"reset": true}'
+bun run seed:public-corpus -- --reset
 ```
 
 ### Optional environment variables

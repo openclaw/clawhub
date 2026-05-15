@@ -1,6 +1,9 @@
 # Local Moderation Fixtures
 
 This note records the intended local-only QA fixtures created by `bun run seed:dev`.
+The real-ish catalog density comes from the committed public corpus fixture; these
+hand-authored fixtures remain for security and moderation states that need stable
+local reproduction.
 
 The fixtures exist so developers can exercise ClawHub moderation, scan, publisher-note, and artifact UI states without hand-editing Convex data. They are not production behavior and should not introduce appeal-specific flows.
 

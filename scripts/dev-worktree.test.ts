@@ -76,8 +76,8 @@ branch refs/heads/feature
   it("recognizes Convex functions that are not queryable yet", () => {
     expect(
       isConvexFunctionUnavailableOutput(`
-        Failed to run function "devSeed:seedNixSkills":
-        Could not find function for 'devSeed:seedNixSkills'. Did you forget to run \`npx convex dev\`?
+        Failed to run function "devSeed:seedLocalFixtures":
+        Could not find function for 'devSeed:seedLocalFixtures'. Did you forget to run \`npx convex dev\`?
         No functions found.
       `),
     ).toBe(true);

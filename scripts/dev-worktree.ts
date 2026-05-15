@@ -359,14 +359,17 @@ async function main() {
   await ensureConvex(convexUrl);
 
   if (options.seed) {
-    console.log("Seeding sample skills...");
+    console.log("Seeding local fixtures and public corpus...");
     const seedStatus = await runConvexFunctionWhenReady([
       "convex",
       "run",
       "--no-push",
-      "devSeed:seedNixSkills",
+      "devSeed:seedLocalFixtures",
     ]);
     if (seedStatus !== 0) process.exit(seedStatus);
+
+    const publicCorpusStatus = runSync("bun", ["scripts/public-corpus/seed-public-corpus.ts"], {});
+    if (publicCorpusStatus !== 0) process.exit(publicCorpusStatus);
 
     const statsStatus = await runConvexFunctionWhenReady([
       "convex",

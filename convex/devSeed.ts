@@ -4,10 +4,10 @@ import type { Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx } from "./_generated/server";
 import { internalMutation as rawInternalMutation } from "./_generated/server";
 import { internalAction, internalMutation } from "./functions";
-import { EMBEDDING_DIMENSIONS } from "./lib/embeddings";
+import { EMBEDDING_DIMENSIONS, generateEmbedding } from "./lib/embeddings";
 import { normalizePackageName } from "./lib/packageRegistry";
 import { ensurePersonalPublisherForUser } from "./lib/publishers";
-import { parseClawdisMetadata, parseFrontmatter } from "./lib/skills";
+import { buildEmbeddingText, parseClawdisMetadata, parseFrontmatter } from "./lib/skills";
 import { generateToken, hashToken } from "./lib/tokens";
 
 type SeedSkillSpec = {
@@ -17,19 +17,6 @@ type SeedSkillSpec = {
   version: string;
   metadata: Record<string, unknown>;
   rawSkillMd: string;
-};
-
-type SeedPluginSpec = {
-  name: string;
-  displayName: string;
-  summary: string;
-  version: string;
-  runtimeId: string;
-  sourceRepo: string;
-  isOfficial: boolean;
-  capabilityTags: string[];
-  stats: { downloads: number; installs: number; stars: number; versions: number };
-  readme: string;
 };
 
 type SeedActionArgs = {
@@ -43,8 +30,94 @@ type SeedActionResult = {
 
 type SeedMutationResult = Record<string, unknown>;
 
+type PublicCorpusDummyOwner = {
+  handle: string;
+  displayName: string;
+  image: string;
+};
+
+const publicCorpusDummyOwnerValidator = v.object({
+  handle: v.string(),
+  displayName: v.string(),
+  image: v.string(),
+});
+
+const publicCorpusSkillRowValidator = v.object({
+  kind: v.literal("skill"),
+  slug: v.string(),
+  displayName: v.string(),
+  version: v.string(),
+  skillMd: v.string(),
+  summary: v.optional(v.string()),
+  capabilityTags: v.optional(v.array(v.string())),
+  createdAt: v.optional(v.number()),
+  dummyOwner: publicCorpusDummyOwnerValidator,
+});
+
+const publicCorpusPluginRowValidator = v.object({
+  kind: v.literal("plugin"),
+  name: v.string(),
+  displayName: v.string(),
+  version: v.string(),
+  readme: v.string(),
+  summary: v.optional(v.string()),
+  capabilityTags: v.optional(v.array(v.string())),
+  family: v.optional(
+    v.union(v.literal("skill"), v.literal("code-plugin"), v.literal("bundle-plugin")),
+  ),
+  channel: v.optional(v.union(v.literal("official"), v.literal("community"), v.literal("private"))),
+  executesCode: v.optional(v.boolean()),
+  sourceRepoHost: v.optional(v.union(v.string(), v.null())),
+  createdAt: v.optional(v.number()),
+  dummyOwner: publicCorpusDummyOwnerValidator,
+});
+
+const publicCorpusSeedRowValidator = v.union(
+  publicCorpusSkillRowValidator,
+  publicCorpusPluginRowValidator,
+);
+
+const publicCorpusPreparedSkillRowValidator = v.object({
+  kind: v.literal("skill"),
+  slug: v.string(),
+  displayName: v.string(),
+  version: v.string(),
+  skillMd: v.string(),
+  summary: v.optional(v.string()),
+  capabilityTags: v.optional(v.array(v.string())),
+  createdAt: v.optional(v.number()),
+  dummyOwner: publicCorpusDummyOwnerValidator,
+  storageId: v.id("_storage"),
+  embedding: v.array(v.number()),
+});
+
+const publicCorpusPreparedPluginRowValidator = v.object({
+  kind: v.literal("plugin"),
+  name: v.string(),
+  displayName: v.string(),
+  version: v.string(),
+  readme: v.string(),
+  summary: v.optional(v.string()),
+  capabilityTags: v.optional(v.array(v.string())),
+  family: v.optional(
+    v.union(v.literal("skill"), v.literal("code-plugin"), v.literal("bundle-plugin")),
+  ),
+  channel: v.optional(v.union(v.literal("official"), v.literal("community"), v.literal("private"))),
+  executesCode: v.optional(v.boolean()),
+  sourceRepoHost: v.optional(v.union(v.string(), v.null())),
+  createdAt: v.optional(v.number()),
+  dummyOwner: publicCorpusDummyOwnerValidator,
+  storageId: v.id("_storage"),
+});
+
+const publicCorpusPreparedRowValidator = v.union(
+  publicCorpusPreparedSkillRowValidator,
+  publicCorpusPreparedPluginRowValidator,
+);
+
 const LOCAL_SEED_HANDLE = "local";
 const LOCAL_SEED_GITHUB_CREATED_AT = Date.parse("2020-01-01T00:00:00.000Z");
+const PUBLIC_CORPUS_BATCH = "public-corpus-v1";
 const FLAGGED_SKILL_SLUG = "local-flagged-wallet-sync";
 const SCANNED_SKILL_SLUG = "local-agentic-risk-demo";
 const FLAGGED_PLUGIN_NAME = "local-flagged-runtime-plugin";
@@ -168,197 +241,6 @@ const SCANNED_PLUGIN_README = `# Local Scanned Runtime Plugin
 This seeded plugin is public and intentionally has completed scan results so local development can
 preview plugin scanner detail pages without owner-only visibility.
 `;
-
-const FEATURED_PLUGIN_SEEDS: SeedPluginSpec[] = [
-  {
-    name: "@apify/apify-openclaw-plugin",
-    displayName: "Apify",
-    summary:
-      "Scrape websites through Apify actors and make structured web data available to agents.",
-    version: "1.0.0",
-    runtimeId: "apify",
-    sourceRepo: "apify/apify-openclaw-plugin",
-    isOfficial: false,
-    capabilityTags: ["web", "scraping", "automation"],
-    stats: { downloads: 1200, installs: 320, stars: 45, versions: 1 },
-    readme: "# Apify\n\nScrape websites through Apify actors from OpenClaw.",
-  },
-  {
-    name: "openclaw-codex-app-server",
-    displayName: "Codex App Server Bridge",
-    summary: "Bind OpenClaw chats to Codex App Server conversations and control threads from chat.",
-    version: "1.0.0",
-    runtimeId: "codex-app-server",
-    sourceRepo: "pwrdrvr/openclaw-codex-app-server",
-    isOfficial: false,
-    capabilityTags: ["codex", "chat", "bridge"],
-    stats: { downloads: 980, installs: 280, stars: 37, versions: 1 },
-    readme: "# Codex App Server Bridge\n\nBridge OpenClaw chat sessions to Codex App Server.",
-  },
-  {
-    name: "@largezhou/ddingtalk",
-    displayName: "DingTalk",
-    summary: "Connect OpenClaw to DingTalk enterprise robots with text, image, and file messages.",
-    version: "1.0.0",
-    runtimeId: "dingtalk",
-    sourceRepo: "largezhou/openclaw-dingtalk",
-    isOfficial: false,
-    capabilityTags: ["channel", "dingtalk", "enterprise"],
-    stats: { downloads: 930, installs: 250, stars: 32, versions: 1 },
-    readme: "# DingTalk\n\nDingTalk enterprise robot plugin for OpenClaw.",
-  },
-  {
-    name: "kudosity-openclaw-sms",
-    displayName: "Kudosity SMS",
-    summary: "Send and receive SMS through Kudosity as an OpenClaw plugin.",
-    version: "1.0.0",
-    runtimeId: "kudosity-sms",
-    sourceRepo: "kudosity/openclaw-sms",
-    isOfficial: false,
-    capabilityTags: ["channel", "sms", "kudosity"],
-    stats: { downloads: 860, installs: 210, stars: 29, versions: 1 },
-    readme: "# Kudosity SMS\n\nKudosity SMS channel plugin for OpenClaw.",
-  },
-  {
-    name: "@martian-engineering/lossless-claw",
-    displayName: "Lossless Claw",
-    summary:
-      "Preserve conversation context with DAG-based summarization and incremental compaction.",
-    version: "1.0.0",
-    runtimeId: "lossless-claw",
-    sourceRepo: "Martian-Engineering/lossless-claw",
-    isOfficial: false,
-    capabilityTags: ["memory", "context", "summarization"],
-    stats: { downloads: 820, installs: 190, stars: 28, versions: 1 },
-    readme: "# Lossless Claw\n\nLossless context management plugin for OpenClaw.",
-  },
-  {
-    name: "@opik/opik-openclaw",
-    displayName: "Opik",
-    summary: "Export OpenClaw traces to Opik for monitoring, costs, token usage, and debugging.",
-    version: "1.0.0",
-    runtimeId: "opik",
-    sourceRepo: "comet-ml/opik-openclaw",
-    isOfficial: true,
-    capabilityTags: ["observability", "tracing", "monitoring"],
-    stats: { downloads: 760, installs: 180, stars: 25, versions: 1 },
-    readme: "# Opik\n\nTrace OpenClaw agents with Opik.",
-  },
-  {
-    name: "@prometheusavatar/openclaw-plugin",
-    displayName: "Prometheus Avatar",
-    summary: "Give OpenClaw agents a Live2D avatar with lip-sync, expressions, and speech.",
-    version: "1.0.0",
-    runtimeId: "prometheus-avatar",
-    sourceRepo: "myths-labs/prometheus-avatar",
-    isOfficial: false,
-    capabilityTags: ["avatar", "tts", "live2d"],
-    stats: { downloads: 690, installs: 150, stars: 22, versions: 1 },
-    readme: "# Prometheus Avatar\n\nLive2D avatar plugin for OpenClaw.",
-  },
-  {
-    name: "@tencent-connect/openclaw-qqbot",
-    displayName: "QQbot",
-    summary:
-      "Connect OpenClaw to QQ private chats, group mentions, channel messages, and rich media.",
-    version: "1.0.0",
-    runtimeId: "qqbot",
-    sourceRepo: "tencent-connect/openclaw-qqbot",
-    isOfficial: true,
-    capabilityTags: ["channel", "qq", "messaging"],
-    stats: { downloads: 640, installs: 140, stars: 20, versions: 1 },
-    readme: "# QQbot\n\nQQ Bot plugin for OpenClaw.",
-  },
-  {
-    name: "@wecom/wecom-openclaw-plugin",
-    displayName: "wecom",
-    summary:
-      "Use WeCom Bot WebSocket connections for direct messages, group chats, and proactive messaging.",
-    version: "1.0.0",
-    runtimeId: "wecom",
-    sourceRepo: "WecomTeam/wecom-openclaw-plugin",
-    isOfficial: true,
-    capabilityTags: ["channel", "wecom", "enterprise"],
-    stats: { downloads: 610, installs: 130, stars: 18, versions: 1 },
-    readme: "# wecom\n\nWeCom channel plugin for OpenClaw.",
-  },
-  {
-    name: "openclaw-plugin-yuanbao",
-    displayName: "Yuanbao",
-    summary:
-      "Connect OpenClaw to Yuanbao with direct messages, group chats, media, and slash commands.",
-    version: "1.0.0",
-    runtimeId: "yuanbao",
-    sourceRepo: "yb-claw/openclaw-plugin-yuanbao",
-    isOfficial: false,
-    capabilityTags: ["channel", "yuanbao", "messaging"],
-    stats: { downloads: 580, installs: 125, stars: 17, versions: 1 },
-    readme: "# Yuanbao\n\nYuanbao channel plugin for OpenClaw.",
-  },
-];
-
-const LOCAL_OWNER_PLUGIN_SEEDS: SeedPluginSpec[] = [
-  {
-    name: "local-merge-notes-plugin",
-    displayName: "Local Merge Notes",
-    summary: "Local owner fixture for validating plugin inventory and skill merge settings.",
-    version: "0.1.0",
-    runtimeId: "local.merge.notes",
-    sourceRepo: "openclaw/local-merge-notes-plugin",
-    isOfficial: false,
-    capabilityTags: ["notes", "local-dev", "merge-fixture"],
-    stats: { downloads: 18, installs: 6, stars: 2, versions: 1 },
-    readme: "# Local Merge Notes\n\nLocal dev plugin fixture for owner inventory screens.",
-  },
-  {
-    name: "local-merge-browser-plugin",
-    displayName: "Local Merge Browser",
-    summary: "Browser automation fixture owned by the local dev account.",
-    version: "0.1.0",
-    runtimeId: "local.merge.browser",
-    sourceRepo: "openclaw/local-merge-browser-plugin",
-    isOfficial: false,
-    capabilityTags: ["browser", "automation", "merge-fixture"],
-    stats: { downloads: 16, installs: 5, stars: 2, versions: 1 },
-    readme: "# Local Merge Browser\n\nLocal dev browser plugin fixture.",
-  },
-  {
-    name: "local-merge-terminal-plugin",
-    displayName: "Local Merge Terminal",
-    summary: "Terminal command fixture owned by the local dev account.",
-    version: "0.1.0",
-    runtimeId: "local.merge.terminal",
-    sourceRepo: "openclaw/local-merge-terminal-plugin",
-    isOfficial: false,
-    capabilityTags: ["terminal", "commands", "merge-fixture"],
-    stats: { downloads: 14, installs: 5, stars: 1, versions: 1 },
-    readme: "# Local Merge Terminal\n\nLocal dev terminal plugin fixture.",
-  },
-  {
-    name: "local-merge-calendar-plugin",
-    displayName: "Local Merge Calendar",
-    summary: "Calendar workflow fixture owned by the local dev account.",
-    version: "0.1.0",
-    runtimeId: "local.merge.calendar",
-    sourceRepo: "openclaw/local-merge-calendar-plugin",
-    isOfficial: false,
-    capabilityTags: ["calendar", "scheduling", "merge-fixture"],
-    stats: { downloads: 12, installs: 4, stars: 1, versions: 1 },
-    readme: "# Local Merge Calendar\n\nLocal dev calendar plugin fixture.",
-  },
-  {
-    name: "local-merge-git-plugin",
-    displayName: "Local Merge Git",
-    summary: "Git workflow fixture owned by the local dev account.",
-    version: "0.1.0",
-    runtimeId: "local.merge.git",
-    sourceRepo: "openclaw/local-merge-git-plugin",
-    isOfficial: false,
-    capabilityTags: ["git", "workflow", "merge-fixture"],
-    stats: { downloads: 10, installs: 3, stars: 1, versions: 1 },
-    readme: "# Local Merge Git\n\nLocal dev git workflow plugin fixture.",
-  },
-];
 
 type RoleHelpFixtureUser = {
   handle: string;
@@ -688,62 +570,10 @@ function injectMetadata(rawSkillMd: string, metadata: Record<string, unknown>) {
   )}${rawSkillMd.slice(frontmatterEnd)}`;
 }
 
-async function seedPluginPackageBatch(
-  ctx: ActionCtx,
-  args: SeedActionArgs,
-  specs: SeedPluginSpec[],
-): Promise<SeedMutationResult> {
-  const storageIds = await Promise.all(
-    specs.map(async (spec) =>
-      ctx.storage.store(new Blob([spec.readme], { type: "text/markdown" })),
-    ),
-  );
-  return (await ctx.runMutation(internal.devSeed.seedFeaturedPluginPackagesMutation, {
-    reset: args.reset,
-    packages: specs.map((spec, index) => ({
-      name: spec.name,
-      displayName: spec.displayName,
-      summary: spec.summary,
-      version: spec.version,
-      runtimeId: spec.runtimeId,
-      sourceRepo: spec.sourceRepo,
-      isOfficial: spec.isOfficial,
-      capabilityTags: spec.capabilityTags,
-      stats: spec.stats,
-      storageId: storageIds[index],
-      readmeSize: spec.readme.length,
-    })),
-  })) as SeedMutationResult;
-}
-
-async function seedNixSkillsHandler(
+async function seedLocalFixturesHandler(
   ctx: ActionCtx,
   args: SeedActionArgs,
 ): Promise<SeedActionResult> {
-  const results: Array<Record<string, unknown> & { slug: string }> = [];
-
-  for (const spec of SEED_SKILLS) {
-    const skillMd = injectMetadata(spec.rawSkillMd, spec.metadata);
-    const frontmatter = parseFrontmatter(skillMd);
-    const clawdis = parseClawdisMetadata(frontmatter);
-    const storageId = await ctx.storage.store(new Blob([skillMd], { type: "text/markdown" }));
-
-    const result: SeedMutationResult = await ctx.runMutation(internal.devSeed.seedSkillMutation, {
-      reset: args.reset,
-      storageId,
-      metadata: spec.metadata,
-      frontmatter,
-      clawdis,
-      skillMd,
-      slug: spec.slug,
-      displayName: spec.displayName,
-      summary: spec.summary,
-      version: spec.version,
-    });
-
-    results.push({ slug: spec.slug, ...result });
-  }
-
   const [
     flaggedSkillStorageId,
     scannedSkillStorageId,
@@ -755,6 +585,7 @@ async function seedNixSkillsHandler(
     ctx.storage.store(new Blob([FLAGGED_PLUGIN_README], { type: "text/markdown" })),
     ctx.storage.store(new Blob([SCANNED_PLUGIN_README], { type: "text/markdown" })),
   ]);
+
   const fixtureResult: SeedMutationResult = await ctx.runMutation(
     internal.devSeed.seedLocalModerationFixturesMutation,
     {
@@ -769,22 +600,320 @@ async function seedNixSkillsHandler(
       scannedPluginReadme: SCANNED_PLUGIN_README,
     },
   );
-  results.push({ slug: FLAGGED_SKILL_SLUG, ...fixtureResult });
 
-  const featuredResult = await seedPluginPackageBatch(ctx, args, FEATURED_PLUGIN_SEEDS);
-  results.push({ slug: "featured-plugins", ...featuredResult });
-  const ownerPluginResult = await seedPluginPackageBatch(ctx, args, LOCAL_OWNER_PLUGIN_SEEDS);
-  results.push({ slug: "local-owner-plugins", ...ownerPluginResult });
-
-  return { ok: true, results };
+  return { ok: true, results: [{ slug: "local-moderation-fixtures", ...fixtureResult }] };
 }
 
-export const seedNixSkills: ReturnType<typeof internalAction> = internalAction({
+export const seedLocalFixtures: ReturnType<typeof internalAction> = internalAction({
   args: {
     reset: v.optional(v.boolean()),
   },
-  handler: seedNixSkillsHandler,
+  handler: seedLocalFixturesHandler,
 });
+
+export const seedPublicCorpusBatch: ReturnType<typeof internalAction> = internalAction({
+  args: {
+    reset: v.optional(v.boolean()),
+    resetOwnerHandles: v.optional(v.array(v.string())),
+    rows: v.array(publicCorpusSeedRowValidator),
+  },
+  handler: async (ctx, args) => {
+    const preparedRows = await Promise.all(
+      args.rows.map(async (row) => {
+        if (row.kind === "skill") {
+          const storageId = await ctx.storage.store(
+            new Blob([row.skillMd], { type: "text/markdown" }),
+          );
+          const frontmatter = parseFrontmatter(row.skillMd);
+          const embeddingText = buildEmbeddingText({
+            frontmatter,
+            readme: row.skillMd,
+            otherFiles: [],
+          });
+          const embedding = await generateEmbedding(embeddingText);
+          return { ...row, storageId, embedding };
+        }
+        const storageId = await ctx.storage.store(
+          new Blob([row.readme], { type: "text/markdown" }),
+        );
+        return { ...row, storageId };
+      }),
+    );
+
+    return await ctx.runMutation(internal.devSeed.seedPublicCorpusBatchMutation, {
+      reset: args.reset,
+      resetOwnerHandles: args.resetOwnerHandles,
+      rows: preparedRows,
+    });
+  },
+});
+
+export const seedPublicCorpusBatchMutation = internalMutation({
+  args: {
+    reset: v.optional(v.boolean()),
+    resetOwnerHandles: v.optional(v.array(v.string())),
+    rows: v.array(publicCorpusPreparedRowValidator),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    if (args.reset) await resetPublicCorpusRows(ctx, args.resetOwnerHandles ?? []);
+
+    const seeded: string[] = [];
+    const skipped: string[] = [];
+
+    for (const row of args.rows) {
+      const { userId, publisherId } = await ensurePublicCorpusOwner(ctx, row.dummyOwner);
+      if (row.kind === "skill") {
+        const existing = await ctx.db
+          .query("skills")
+          .withIndex("by_slug", (q) => q.eq("slug", row.slug))
+          .unique();
+        if (existing) {
+          skipped.push(`skill:${row.slug}`);
+          continue;
+        }
+
+        const frontmatter = parseFrontmatter(row.skillMd);
+        const clawdis = parseClawdisMetadata(frontmatter);
+        const metadata =
+          frontmatter.metadata && typeof frontmatter.metadata === "object"
+            ? (frontmatter.metadata as Record<string, unknown>)
+            : {};
+        const summary = row.summary ?? publicCorpusSummaryFromFrontmatter(frontmatter);
+        const createdAt = row.createdAt ?? now;
+        const stats = publicCorpusSkillStats(row.slug);
+        const skillId = await ctx.db.insert("skills", {
+          slug: row.slug,
+          displayName: row.displayName,
+          summary,
+          ownerUserId: userId,
+          ownerPublisherId: publisherId,
+          latestVersionId: undefined,
+          latestVersionSummary: undefined,
+          tags: {},
+          capabilityTags: row.capabilityTags ?? [],
+          badges: { highlighted: undefined, redactionApproved: undefined },
+          batch: PUBLIC_CORPUS_BATCH,
+          statsDownloads: stats.downloads,
+          statsStars: stats.stars,
+          statsInstallsCurrent: stats.installsCurrent,
+          statsInstallsAllTime: stats.installsAllTime,
+          stats: {
+            downloads: stats.downloads,
+            installsCurrent: stats.installsCurrent,
+            installsAllTime: stats.installsAllTime,
+            stars: stats.stars,
+            versions: 0,
+            comments: 0,
+          },
+          createdAt,
+          updatedAt: now,
+        });
+        const versionId = await ctx.db.insert("skillVersions", {
+          skillId,
+          version: row.version,
+          changelog: "Seeded from the public corpus fixture.",
+          changelogSource: "user",
+          files: [
+            {
+              path: "SKILL.md",
+              size: row.skillMd.length,
+              storageId: row.storageId,
+              sha256: `public-corpus-${row.slug}`,
+              contentType: "text/markdown",
+            },
+          ],
+          parsed: {
+            frontmatter,
+            metadata,
+            clawdis,
+          },
+          createdBy: userId,
+          createdAt,
+          softDeletedAt: undefined,
+        });
+        const embeddingId = await ctx.db.insert("skillEmbeddings", {
+          skillId,
+          versionId,
+          ownerId: userId,
+          ownerPublisherId: publisherId,
+          embedding: row.embedding,
+          isLatest: true,
+          isApproved: true,
+          visibility: "latest-approved",
+          updatedAt: now,
+        });
+        await ctx.db.insert("embeddingSkillMap", { embeddingId, skillId });
+        await ctx.db.patch(skillId, {
+          latestVersionId: versionId,
+          latestVersionSummary: {
+            version: row.version,
+            createdAt,
+            changelog: "Seeded from the public corpus fixture.",
+            changelogSource: "user",
+            clawdis,
+          },
+          tags: { latest: versionId },
+          stats: {
+            downloads: stats.downloads,
+            installsCurrent: stats.installsCurrent,
+            installsAllTime: stats.installsAllTime,
+            stars: stats.stars,
+            versions: 1,
+            comments: 0,
+          },
+          updatedAt: now,
+        });
+        seeded.push(`skill:${row.slug}`);
+      } else {
+        const normalizedName = normalizePackageName(row.name);
+        const existing = await ctx.db
+          .query("packages")
+          .withIndex("by_name", (q) => q.eq("normalizedName", normalizedName))
+          .unique();
+        if (existing) {
+          skipped.push(`plugin:${row.name}`);
+          continue;
+        }
+
+        const createdAt = row.createdAt ?? now;
+        const stats = publicCorpusPackageStats(row.name);
+        const capabilityTags = row.capabilityTags ?? [];
+        const compatibility = { pluginApiRange: ">=0.1.0" };
+        const capabilities = {
+          executesCode: row.executesCode ?? true,
+          runtimeId: normalizedName,
+          pluginKind: "runtime",
+          capabilityTags,
+        };
+        const verification = {
+          tier: "structural" as const,
+          scope: "artifact-only" as const,
+          summary: "Seeded from the public corpus fixture.",
+          scanStatus: "clean" as const,
+        };
+        const packageId = await ctx.db.insert("packages", {
+          name: row.name,
+          normalizedName,
+          displayName: row.displayName,
+          summary: row.summary ?? `${row.displayName} public corpus plugin fixture.`,
+          ownerUserId: userId,
+          ownerPublisherId: publisherId,
+          family: row.family ?? "code-plugin",
+          channel: row.channel ?? "community",
+          isOfficial: row.channel === "official",
+          runtimeId: normalizedName,
+          latestReleaseId: undefined,
+          latestVersionSummary: undefined,
+          tags: {},
+          capabilityTags,
+          executesCode: row.executesCode ?? true,
+          compatibility,
+          capabilities,
+          verification,
+          scanStatus: "clean",
+          stats: { ...stats, versions: 0 },
+          softDeletedAt: undefined,
+          createdAt,
+          updatedAt: now,
+        });
+        const releaseId = await ctx.db.insert("packageReleases", {
+          packageId,
+          version: row.version,
+          changelog: "Seeded from the public corpus fixture.",
+          summary: row.summary ?? `${row.displayName} public corpus plugin fixture.`,
+          distTags: ["latest"],
+          files: [
+            {
+              path: "README.md",
+              size: row.readme.length,
+              storageId: row.storageId,
+              sha256: `public-corpus-${normalizedName}`,
+              contentType: "text/markdown",
+            },
+          ],
+          integritySha256: `public-corpus-integrity-${normalizedName}`,
+          extractedPackageJson: {
+            name: row.name,
+            version: row.version,
+            description: row.summary ?? `${row.displayName} public corpus plugin fixture.`,
+          },
+          compatibility,
+          capabilities,
+          verification,
+          sha256hash: `public-corpus-hash-${normalizedName}`,
+          source: row.sourceRepoHost
+            ? { kind: "github", repo: row.sourceRepoHost, path: "." }
+            : undefined,
+          createdBy: userId,
+          publishActor: { kind: "user", userId },
+          createdAt,
+          softDeletedAt: undefined,
+        });
+        await ctx.db.patch(packageId, {
+          latestReleaseId: releaseId,
+          latestVersionSummary: {
+            version: row.version,
+            createdAt,
+            changelog: "Seeded from the public corpus fixture.",
+            compatibility,
+            capabilities,
+            verification,
+          },
+          tags: { latest: releaseId },
+          stats: { ...stats, versions: 1 },
+          updatedAt: now,
+        });
+        seeded.push(`plugin:${row.name}`);
+      }
+    }
+
+    return { ok: true, seeded, skipped };
+  },
+});
+
+function publicCorpusSummaryFromFrontmatter(frontmatter: Record<string, unknown>) {
+  if (typeof frontmatter.description === "string" && frontmatter.description.trim()) {
+    return frontmatter.description.trim();
+  }
+  const metadata = frontmatter.metadata;
+  if (
+    metadata &&
+    typeof metadata === "object" &&
+    !Array.isArray(metadata) &&
+    typeof (metadata as Record<string, unknown>).description === "string"
+  ) {
+    return ((metadata as Record<string, unknown>).description as string).trim();
+  }
+  return undefined;
+}
+
+function publicCorpusSkillStats(slug: string) {
+  const score = publicCorpusStableNumber(slug);
+  return {
+    downloads: score % 400,
+    stars: score % 40,
+    installsCurrent: score % 25,
+    installsAllTime: score % 120,
+  };
+}
+
+function publicCorpusPackageStats(name: string) {
+  const score = publicCorpusStableNumber(name);
+  return {
+    downloads: score % 600,
+    installs: score % 80,
+    stars: score % 60,
+  };
+}
+
+function publicCorpusStableNumber(value: string) {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+  }
+  return hash;
+}
 
 async function seedPadelSkillHandler(
   ctx: ActionCtx,
@@ -851,6 +980,40 @@ async function ensureLocalSeedOwner(ctx: MutationCtx) {
   return { userId: ensuredUserId, publisherId: publisher._id };
 }
 
+async function ensurePublicCorpusOwner(ctx: MutationCtx, owner: PublicCorpusDummyOwner) {
+  const now = Date.now();
+  const existingUsers = await ctx.db
+    .query("users")
+    .withIndex("handle", (q) => q.eq("handle", owner.handle))
+    .collect();
+  const userId =
+    existingUsers[0]?._id ??
+    (await ctx.db.insert("users", {
+      handle: owner.handle,
+      displayName: owner.displayName,
+      name: owner.displayName,
+      image: owner.image,
+      role: "user",
+      githubCreatedAt: LOCAL_SEED_GITHUB_CREATED_AT,
+      createdAt: now,
+      updatedAt: now,
+    }));
+  if (existingUsers[0]) {
+    await ctx.db.patch(userId, {
+      displayName: owner.displayName,
+      name: owner.displayName,
+      image: owner.image,
+      githubCreatedAt: LOCAL_SEED_GITHUB_CREATED_AT,
+      updatedAt: now,
+    });
+  }
+  const user = await ctx.db.get(userId);
+  if (!user) throw new Error(`Public corpus owner was not created: ${owner.handle}`);
+  const publisher = await ensurePersonalPublisherForUser(ctx, user);
+  if (!publisher) throw new Error(`Public corpus publisher was not created: ${owner.handle}`);
+  return { userId, publisherId: publisher._id };
+}
+
 async function deleteSkillEmbeddingsForSkill(ctx: MutationCtx, skillId: Id<"skills">) {
   const embeddings = await ctx.db
     .query("skillEmbeddings")
@@ -863,6 +1026,51 @@ async function deleteSkillEmbeddingsForSkill(ctx: MutationCtx, skillId: Id<"skil
       .collect();
     for (const map of maps) await ctx.db.delete(map._id);
     await ctx.db.delete(embedding._id);
+  }
+}
+
+async function deleteSkillAndVersions(ctx: MutationCtx, skillId: Id<"skills">) {
+  const versions = await ctx.db
+    .query("skillVersions")
+    .withIndex("by_skill", (q) => q.eq("skillId", skillId))
+    .collect();
+  for (const version of versions) await ctx.db.delete(version._id);
+  await deleteSkillEmbeddingsForSkill(ctx, skillId);
+  await deleteSkillBadgesForSkill(ctx, skillId);
+  await ctx.db.delete(skillId);
+}
+
+async function deletePackageAndReleases(ctx: MutationCtx, packageId: Id<"packages">) {
+  const releases = await ctx.db
+    .query("packageReleases")
+    .withIndex("by_package", (q) => q.eq("packageId", packageId))
+    .collect();
+  await deletePackageBadgesForPackage(ctx, packageId);
+  await ctx.db.delete(packageId);
+  for (const release of releases) await ctx.db.delete(release._id);
+}
+
+async function resetPublicCorpusRows(ctx: MutationCtx, ownerHandles: string[]) {
+  for (const handle of ownerHandles) {
+    const owners = await ctx.db
+      .query("users")
+      .withIndex("handle", (q) => q.eq("handle", handle))
+      .collect();
+    for (const owner of owners) {
+      const skills = await ctx.db
+        .query("skills")
+        .withIndex("by_owner", (q) => q.eq("ownerUserId", owner._id))
+        .collect();
+      for (const skill of skills) {
+        if (skill.batch === PUBLIC_CORPUS_BATCH) await deleteSkillAndVersions(ctx, skill._id);
+      }
+
+      const packages = await ctx.db
+        .query("packages")
+        .withIndex("by_owner", (q) => q.eq("ownerUserId", owner._id))
+        .collect();
+      for (const pkg of packages) await deletePackageAndReleases(ctx, pkg._id);
+    }
   }
 }
 

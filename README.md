@@ -108,7 +108,7 @@ bun run dev
 # detached/Codex worktree preview
 bun run dev:worktree
 
-# seed sample data
+# seed local QA fixtures and the public corpus
 bun run seed:dev
 ```
 
