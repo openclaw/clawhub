@@ -2,7 +2,12 @@ import { useAction } from "convex/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { api } from "../../../convex/_generated/api";
 import { convexHttp } from "../../convex/client";
-import { ALL_CATEGORY_KEYWORDS } from "../../lib/categories";
+import {
+  ALL_CATEGORY_KEYWORDS,
+  getSkillCategoryByKeyword,
+  getSkillCategoryBySlug,
+  getSkillCategoryForSkill,
+} from "../../lib/categories";
 import { parseDir, parseSort, toListSort, type SortDir, type SortKey } from "./-params";
 import type { SkillListEntry, SkillSearchEntry } from "./-types";
 
@@ -30,6 +35,7 @@ export type SkillsSearchState = {
   dir?: SortDir;
   highlighted?: boolean;
   featured?: boolean;
+  category?: string;
   tag?: string;
   view?: LegacySkillsView;
   focus?: "search";
@@ -75,16 +81,25 @@ export function useSkillsBrowseModel({
   const capabilityTag = search.tag;
   const searchSkills = useAction(api.search.searchSkills);
 
-  const isOtherCategory = query === "__other__";
   const trimmedQuery = useMemo(() => query.trim(), [query]);
-  const hasQuery = !isOtherCategory && trimmedQuery.length > 0;
+  const legacyQueryCategory = useMemo(() => {
+    if (query === "__other__") return getSkillCategoryBySlug("other");
+    return getSkillCategoryByKeyword(trimmedQuery);
+  }, [query, trimmedQuery]);
+  const urlCategory = useMemo(() => getSkillCategoryBySlug(search.category), [search.category]);
+  const activeCategory = urlCategory ?? legacyQueryCategory;
+  const categoryKeywords =
+    activeCategory && activeCategory.slug !== "other" ? activeCategory.keywords : undefined;
+  const excludeCategoryKeywords =
+    activeCategory?.slug === "other" ? ALL_CATEGORY_KEYWORDS : undefined;
+  const hasQuery = trimmedQuery.length > 0 && (Boolean(urlCategory) || !legacyQueryCategory);
   const sort: SortKey =
     search.sort === "relevance" && !hasQuery
       ? "downloads"
       : (search.sort ?? (hasQuery ? "relevance" : "downloads"));
   const listSort = toListSort(sort);
   const dir = parseDir(search.dir, sort);
-  const searchKey = trimmedQuery
+  const searchKey = hasQuery
     ? `${trimmedQuery}::${featuredOnly ? "1" : "0"}::${capabilityTag ?? ""}`
     : "";
 
@@ -104,6 +119,9 @@ export function useSkillsBrowseModel({
           dir,
           highlightedOnly: featuredOnly,
           capabilityTag,
+          categorySlug: activeCategory?.slug,
+          categoryKeywords,
+          excludeCategoryKeywords,
         });
         if (generation !== fetchGeneration.current) return;
         setListResults((prev) => (cursor ? [...prev, ...result.page] : result.page));
@@ -119,7 +137,15 @@ export function useSkillsBrowseModel({
         setListStatus(cursor ? "idle" : "done");
       }
     },
-    [capabilityTag, dir, featuredOnly, listSort],
+    [
+      activeCategory?.slug,
+      capabilityTag,
+      categoryKeywords,
+      dir,
+      excludeCategoryKeywords,
+      featuredOnly,
+      listSort,
+    ],
   );
 
   // Reset and fetch first page when sort/dir/filters change
@@ -205,18 +231,16 @@ export function useSkillsBrowseModel({
   }, [hasQuery, listResults, searchResults]);
 
   const sorted = useMemo(() => {
-    if (isOtherCategory) {
-      return baseItems.filter((entry) => {
-        const text =
-          `${entry.skill.displayName} ${entry.skill.summary ?? ""} ${entry.skill.slug}`.toLowerCase();
-        return !ALL_CATEGORY_KEYWORDS.some((kw) => text.includes(kw));
-      });
-    }
+    const categoryItems = activeCategory
+      ? baseItems.filter(
+          (entry) => getSkillCategoryForSkill(entry.skill)?.slug === activeCategory.slug,
+        )
+      : baseItems;
     if (!hasQuery) {
-      return baseItems;
+      return categoryItems;
     }
     const multiplier = dir === "asc" ? 1 : -1;
-    const results = [...baseItems];
+    const results = [...categoryItems];
     results.sort((a, b) => {
       const tieBreak = () => {
         const updated = (a.skill.updatedAt - b.skill.updatedAt) * multiplier;
@@ -253,7 +277,7 @@ export function useSkillsBrowseModel({
       }
     });
     return results;
-  }, [baseItems, dir, hasQuery, isOtherCategory, sort]);
+  }, [activeCategory, baseItems, dir, hasQuery, sort]);
 
   const isLoadingSkills = hasQuery ? isSearching && searchResults.length === 0 : isLoadingList;
   const canLoadMore = hasQuery
@@ -341,6 +365,21 @@ export function useSkillsBrowseModel({
     });
   }, [navigate]);
 
+  const onClearFilters = useCallback(() => {
+    window.clearTimeout(navigateTimer.current);
+    setQuery("");
+    void navigate({
+      search: (prev) => ({
+        ...prev,
+        q: undefined,
+        category: undefined,
+        featured: undefined,
+        highlighted: undefined,
+      }),
+      replace: true,
+    });
+  }, [navigate]);
+
   const onSortChange = useCallback(
     (value: string) => {
       const nextSort = parseSort(value);
@@ -395,6 +434,7 @@ export function useSkillsBrowseModel({
 
   return {
     activeFilters,
+    activeCategory: activeCategory?.slug,
     capabilityTag,
     canAutoLoad,
     canLoadMore,
@@ -406,6 +446,7 @@ export function useSkillsBrowseModel({
     loadMore,
     loadMoreRef,
     onCapabilityTagChange,
+    onClearFilters,
     onQueryChange,
     onSortChange,
     onToggleDir,

@@ -295,6 +295,37 @@ describe("SkillsIndex", () => {
     expect(titles[1]).toBe("Newer Low Score");
   });
 
+  it("filters category browse results to the inferred skill category", async () => {
+    searchMock = { category: "dev-tools" };
+    convexHttpMock.query.mockResolvedValue({
+      page: [
+        makeListResult("web3-dev", "Blockscout for Web3 Dev", {
+          summary:
+            "Build web3 applications that need blockchain data via the Blockscout PRO API over HTTP.",
+        }),
+        makeListResult("developer-utils", "Developer Utils", {
+          summary: "Utilities for build and debug workflows.",
+        }),
+      ],
+      hasMore: false,
+      nextCursor: null,
+    });
+
+    render(<SkillsIndex />);
+    await act(async () => {});
+
+    expect(convexHttpMock.query).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        categorySlug: "dev-tools",
+        categoryKeywords: expect.arrayContaining(["dev"]),
+        excludeCategoryKeywords: undefined,
+      }),
+    );
+    expect(screen.queryByText("Blockscout for Web3 Dev")).toBeNull();
+    expect(screen.getByText("Developer Utils")).toBeTruthy();
+  });
+
   it("does not render the warning filter", async () => {
     convexHttpMock.query.mockResolvedValue({
       page: [makeListResult("clean-skill", "Clean Skill")],
@@ -363,14 +394,14 @@ describe("SkillsIndex", () => {
 function makeListResult(
   slug: string,
   displayName: string,
-  options: { isSuspicious?: boolean } = {},
+  options: { isSuspicious?: boolean; summary?: string } = {},
 ) {
   return {
     skill: {
       _id: `skill_${slug}`,
       slug,
       displayName,
-      summary: `${displayName} summary`,
+      summary: options.summary ?? `${displayName} summary`,
       tags: {},
       stats: {
         downloads: 0,

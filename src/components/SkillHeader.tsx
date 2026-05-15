@@ -5,6 +5,7 @@ import { Download, Flag, Settings, ShieldCheck, Star, Upload } from "lucide-reac
 import type { ReactNode } from "react";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { getSkillBadges } from "../lib/badges";
+import { buildSkillCategoryBrowseHref, type SkillCategory } from "../lib/categories";
 import { formatSkillStatsTriplet } from "../lib/numberFormat";
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
 import { getRuntimeEnv } from "../lib/runtimeEnv";
@@ -87,6 +88,7 @@ type SkillHeaderProps = {
   configRequirements: ClawdisSkillMetadata["config"] | undefined;
   cliHelp: string | undefined;
   clawdis: ClawdisSkillMetadata | undefined;
+  category?: SkillCategory | null;
   priorityContent?: ReactNode;
   newVersionHref?: string | null;
   settingsHref?: string | null;
@@ -118,6 +120,7 @@ export function SkillHeader({
   configRequirements,
   cliHelp,
   clawdis,
+  category,
   priorityContent,
   newVersionHref,
   settingsHref,
@@ -277,22 +280,33 @@ export function SkillHeader({
                   {skill.slug}
                 </a>
               </nav>
-              <div className="skill-hero-title-row">
-                <h1 className="skill-page-title">{skill.displayName}</h1>
-                {showTitleBadges ? (
-                  <div className="skill-title-badges">
-                    {badges.map((badge) =>
-                      badge === "Verified" ? (
-                        <VerifiedBadge key={badge} />
-                      ) : (
-                        <Badge key={badge} variant="compact">
-                          {badge}
-                        </Badge>
-                      ),
-                    )}
-                  </div>
+              <div className="skill-hero-heading-stack">
+                <div className="skill-hero-title-row">
+                  <h1 className="skill-page-title">{skill.displayName}</h1>
+                  {showTitleBadges ? (
+                    <div className="skill-title-badges">
+                      {badges.map((badge) =>
+                        badge === "Verified" ? (
+                          <VerifiedBadge key={badge} />
+                        ) : (
+                          <Badge key={badge} variant="compact">
+                            {badge}
+                          </Badge>
+                        ),
+                      )}
+                    </div>
+                  ) : null}
+                  {nixPlugin ? <Badge variant="accent">Plugin bundle (nix)</Badge> : null}
+                </div>
+                {category ? (
+                  <a
+                    className="skill-category-chip"
+                    href={buildSkillCategoryBrowseHref(category)}
+                    aria-label={`View ${category.label} skills`}
+                  >
+                    {category.label}
+                  </a>
                 ) : null}
-                {nixPlugin ? <Badge variant="accent">Plugin bundle (nix)</Badge> : null}
               </div>
               <div className="skill-summary-block">
                 <p className="section-subtitle skill-summary-line">{headerDescription}</p>
