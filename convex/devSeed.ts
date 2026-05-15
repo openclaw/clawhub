@@ -118,6 +118,7 @@ const publicCorpusPreparedRowValidator = v.union(
 
 const LOCAL_SEED_HANDLE = "local";
 const LOCAL_SEED_GITHUB_CREATED_AT = Date.parse("2020-01-01T00:00:00.000Z");
+const CURRENT_USER_SEED_PREFIX = "dev";
 const PUBLIC_CORPUS_BATCH = "public-corpus-v1";
 const FLAGGED_SKILL_SLUG = "local-flagged-wallet-sync";
 const SCANNED_SKILL_SLUG = "local-agentic-risk-demo";
@@ -563,6 +564,20 @@ redirect behavior.
   },
 ];
 
+function currentUserSeedKey(userId: Id<"users">) {
+  const normalized = String(userId).replace(/[^a-zA-Z0-9]/g, "");
+  return (normalized || "user").slice(-8);
+}
+
+export function currentUserSeedSkillSlug(userId: Id<"users">, baseSlug: string) {
+  return `${CURRENT_USER_SEED_PREFIX}-${currentUserSeedKey(userId)}-${baseSlug}`;
+}
+
+export function currentUserSeedPackageName(userId: Id<"users">, baseName: string) {
+  const normalized = normalizePackageName(baseName).replace(/^@/, "").replace("/", "-");
+  return `${CURRENT_USER_SEED_PREFIX}-${currentUserSeedKey(userId)}-${normalized}`;
+}
+
 function injectMetadata(rawSkillMd: string, metadata: Record<string, unknown>) {
   const frontmatterEnd = rawSkillMd.indexOf("\n---", 3);
   if (frontmatterEnd === -1) return rawSkillMd;
@@ -979,6 +994,17 @@ async function ensureLocalSeedOwner(ctx: MutationCtx) {
   const publisher = await ensurePersonalPublisherForUser(ctx, user);
   if (!publisher) throw new Error("Local seed publisher was not created");
   return { userId: ensuredUserId, publisherId: publisher._id };
+}
+
+async function ensureSeedOwner(ctx: MutationCtx, ownerUserId?: Id<"users">) {
+  if (!ownerUserId) return await ensureLocalSeedOwner(ctx);
+  const user = await ctx.db.get(ownerUserId);
+  if (!user || user.deletedAt || user.deactivatedAt) {
+    throw new Error("Seed owner user not found");
+  }
+  const publisher = await ensurePersonalPublisherForUser(ctx, user);
+  if (!publisher) throw new Error("Seed owner publisher was not created");
+  return { userId: user._id, publisherId: publisher._id };
 }
 
 async function ensurePublicCorpusOwner(ctx: MutationCtx, owner: PublicCorpusDummyOwner) {
