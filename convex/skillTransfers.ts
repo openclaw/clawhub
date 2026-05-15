@@ -186,12 +186,12 @@ export const acceptTransferInternal = internalMutation({
 
     const skill = await ctx.db.get(transfer.skillId);
     if (!skill || skill.softDeletedAt) throw new Error("Skill not found");
+    const requester = await ctx.db.get(transfer.fromUserId);
+    if (!requester || requester.deletedAt || requester.deactivatedAt) {
+      await ctx.db.patch(transfer._id, { status: "cancelled", respondedAt: now });
+      throw new Error("Transfer is no longer valid");
+    }
     if (skill.ownerUserId !== transfer.fromUserId) {
-      const requester = await ctx.db.get(transfer.fromUserId);
-      if (!requester || requester.deletedAt || requester.deactivatedAt) {
-        await ctx.db.patch(transfer._id, { status: "cancelled", respondedAt: now });
-        throw new Error("Transfer is no longer valid");
-      }
       try {
         await assertCanRequestSkillTransfer(ctx, requester, skill);
       } catch {

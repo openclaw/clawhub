@@ -310,6 +310,14 @@ describe("skillTransfers", () => {
         db: {
           normalizeId: vi.fn(),
           get: vi.fn(async (id: string) => {
+            if (id === "users:1") {
+              return {
+                _id: "users:1",
+                handle: "owner",
+                deletedAt: undefined,
+                deactivatedAt: undefined,
+              };
+            }
             if (id === "users:2") {
               return {
                 _id: "users:2",
