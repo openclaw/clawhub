@@ -54,7 +54,6 @@ const SKILLS_SEARCH = {
   sort: undefined,
   dir: undefined,
   highlighted: undefined,
-  nonSuspicious: undefined,
   view: undefined,
   focus: undefined,
 } as const;

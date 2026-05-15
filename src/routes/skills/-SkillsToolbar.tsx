@@ -37,11 +37,9 @@ type SkillsToolbarProps = {
   dir: SortDir;
   view: SkillsView;
   highlightedOnly: boolean;
-  nonSuspiciousOnly: boolean;
   capabilityTag?: string;
   onQueryChange: (next: string) => void;
   onToggleHighlighted: () => void;
-  onToggleNonSuspicious: () => void;
   onCapabilityTagChange: (value: string) => void;
   onSortChange: (value: string) => void;
   onToggleDir: () => void;
@@ -77,11 +75,9 @@ export function SkillsToolbar({
   dir,
   view,
   highlightedOnly,
-  nonSuspiciousOnly,
   capabilityTag,
   onQueryChange,
   onToggleHighlighted,
-  onToggleNonSuspicious,
   onCapabilityTagChange,
   onSortChange,
   onToggleDir,
@@ -137,9 +133,6 @@ export function SkillsToolbar({
         {/* Filter chips */}
         <FilterChip active={highlightedOnly} onClick={onToggleHighlighted}>
           Staff Picks
-        </FilterChip>
-        <FilterChip active={nonSuspiciousOnly} onClick={onToggleNonSuspicious}>
-          Clean only
         </FilterChip>
         {capabilityTag ? (
           <FilterChip

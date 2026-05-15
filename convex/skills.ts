@@ -97,6 +97,7 @@ import {
   reserveSlugForHardDeleteFinalize,
   upsertReservedSlugForRightfulOwner,
 } from "./lib/reservedSlugs";
+import { matchesAllTokens, matchesExploratoryTokenPrefixes, tokenize } from "./lib/searchText";
 import { SKILL_CAPABILITY_TAGS } from "./lib/skillCapabilityTags";
 import { normalizeSkillIconValue } from "./lib/skillIcon";
 import {
@@ -835,12 +836,11 @@ async function getSkillSlugAliasBySlugForAvailabilityPublisher(
   if (scopedAliases[0]) return scopedAliases[0];
 
   if (publisher.kind !== "user" || !publisher.linkedUserId) return null;
+  const linkedUserId = publisher.linkedUserId;
 
   const legacyAliases = await ctx.db
     .query("skillSlugAliases")
-    .withIndex("by_owner_slug", (q) =>
-      q.eq("ownerUserId", publisher.linkedUserId as Id<"users">).eq("slug", slug),
-    )
+    .withIndex("by_owner_slug", (q) => q.eq("ownerUserId", linkedUserId).eq("slug", slug))
     .take(2);
   return (
     legacyAliases.find(
@@ -4672,23 +4672,81 @@ function toPublicSkillCatalogItem(digest: Doc<"skillSearchDigest">): PublicSkill
   };
 }
 
-function scoreSkillCatalogResult(digest: Doc<"skillSearchDigest">, queryText: string) {
+const EXPLORATORY_SKILL_CATALOG_SEARCH_MIN_TOKEN_LENGTH = 3;
+
+type SkillCatalogSearchMatch = {
+  rankTier: number;
+  score: number;
+};
+
+function skillCatalogSearchMatch(
+  digest: Doc<"skillSearchDigest">,
+  queryText: string,
+): SkillCatalogSearchMatch | null {
   const needle = queryText.toLowerCase();
+  const queryTokens = tokenize(queryText);
+  if (queryTokens.length === 0) return null;
   const slug = digest.slug.toLowerCase();
   const display = digest.displayName.toLowerCase();
-  const summary = (digest.summary ?? "").toLowerCase();
+  const slugTokens = tokenize(slug);
+  const displayTokens = tokenize(display);
   let score = 0;
-  if (slug === needle) score += 200;
-  else if (slug.startsWith(needle)) score += 120;
-  else if (slug.includes(needle)) score += 80;
+  let rankTier = Number.POSITIVE_INFINITY;
 
-  if (display === needle) score += 150;
-  else if (display.startsWith(needle)) score += 70;
-  else if (display.includes(needle)) score += 40;
+  const setMatch = (tier: number, boost: number) => {
+    score += boost;
+    rankTier = Math.min(rankTier, tier);
+  };
 
-  if (summary.includes(needle)) score += 20;
-  if (isSkillCatalogOfficial(digest)) score += 5;
-  return score;
+  if (slug === needle) setMatch(0, 200);
+  else if (slug.startsWith(needle)) setMatch(1, 120);
+  else if (slug.includes(needle)) setMatch(1, 80);
+
+  if (display === needle) setMatch(0, 150);
+  else if (display.startsWith(needle)) setMatch(1, 70);
+  else if (display.includes(needle)) setMatch(1, 40);
+
+  if (matchesAllTokens(queryTokens, [...slugTokens, ...displayTokens], (a, b) => a === b)) {
+    setMatch(1, 65);
+  } else if (
+    matchesAllTokens(queryTokens, [...slugTokens, ...displayTokens], (a, b) => a.startsWith(b))
+  ) {
+    setMatch(1, 35);
+  }
+
+  if (
+    matchesExploratoryTokenPrefixes(
+      queryTokens,
+      digest.capabilityTags ?? [],
+      EXPLORATORY_SKILL_CATALOG_SEARCH_MIN_TOKEN_LENGTH,
+    )
+  ) {
+    setMatch(2, 12);
+  }
+  if (
+    matchesExploratoryTokenPrefixes(
+      queryTokens,
+      [digest.summary],
+      EXPLORATORY_SKILL_CATALOG_SEARCH_MIN_TOKEN_LENGTH,
+    )
+  ) {
+    setMatch(3, 20);
+  }
+  if (!Number.isFinite(rankTier)) return null;
+  return { rankTier, score };
+}
+
+function compareSkillCatalogSearchMatches<
+  T extends SkillCatalogSearchMatch & {
+    package: Pick<PublicSkillCatalogItem, "isOfficial" | "updatedAt">;
+  },
+>(a: T, b: T) {
+  return (
+    a.rankTier - b.rankTier ||
+    b.score - a.score ||
+    Number(b.package.isOfficial) - Number(a.package.isOfficial) ||
+    b.package.updatedAt - a.package.updatedAt
+  );
 }
 
 function isKnownSkillCapabilityTag(tag: string | undefined) {
@@ -4786,6 +4844,76 @@ export const listPackageCatalogPage = query({
   },
 });
 
+type SkillPackageCatalogSearchArgs = {
+  query: string;
+  limit?: number;
+  channel?: "official" | "community" | "private";
+  isOfficial?: boolean;
+  highlightedOnly?: boolean;
+  executesCode?: boolean;
+  capabilityTag?: string;
+};
+
+async function searchPackageCatalogImpl(ctx: QueryCtx, args: SkillPackageCatalogSearchArgs) {
+  const queryText = args.query.trim().toLowerCase();
+  if (!queryText) return [];
+  if (args.capabilityTag && !isKnownSkillCapabilityTag(args.capabilityTag)) return [];
+  if (args.channel === "private" || args.executesCode === true) return [];
+
+  const targetCount = Math.max(1, Math.min(args.limit ?? 20, 100));
+  const matches: Array<SkillCatalogSearchMatch & { package: PublicSkillCatalogItem }> = [];
+  const seen = new Set<string>();
+
+  const exactSkill = await resolveSkillBySlugOrAlias(ctx, queryText);
+  if (exactSkill.skill) {
+    const exactDigest = await ctx.db
+      .query("skillSearchDigest")
+      .withIndex("by_skill", (q) => q.eq("skillId", exactSkill.skill!._id))
+      .unique();
+    if (exactDigest && skillCatalogMatchesFilters(exactDigest, args)) {
+      const match = skillCatalogSearchMatch(exactDigest, queryText);
+      if (match) {
+        seen.add(exactDigest.skillId);
+        matches.push({
+          ...match,
+          package: toPublicSkillCatalogItem(exactDigest),
+        });
+      }
+    }
+  }
+
+  if (matches.length < targetCount) {
+    const pageSize = Math.min(MAX_SKILL_CATALOG_SEARCH_PAGE_SIZE, Math.max(targetCount * 5, 50));
+    const page = await ctx.db
+      .query("skillSearchDigest")
+      .withIndex("by_active_updated", (q) => q.eq("softDeletedAt", undefined))
+      .order("desc")
+      .paginate({ cursor: null, numItems: pageSize });
+
+    for (const digest of page.page) {
+      if (!skillCatalogMatchesFilters(digest, args)) continue;
+      const match = skillCatalogSearchMatch(digest, queryText);
+      if (!match || seen.has(digest.skillId)) continue;
+      seen.add(digest.skillId);
+      matches.push({
+        ...match,
+        package: toPublicSkillCatalogItem(digest),
+      });
+    }
+  }
+
+  return matches.sort(compareSkillCatalogSearchMatches).slice(0, targetCount);
+}
+
+function toPublicSkillCatalogSearchEntry(
+  entry: SkillCatalogSearchMatch & { package: PublicSkillCatalogItem },
+) {
+  return {
+    score: entry.score,
+    package: entry.package,
+  };
+}
+
 export const searchPackageCatalogPublic = query({
   args: {
     query: v.string(),
@@ -4799,61 +4927,24 @@ export const searchPackageCatalogPublic = query({
     capabilityTag: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const queryText = args.query.trim().toLowerCase();
-    if (!queryText) return [];
-    if (args.capabilityTag && !isKnownSkillCapabilityTag(args.capabilityTag)) return [];
-    if (args.channel === "private" || args.executesCode === true) return [];
+    return (await searchPackageCatalogImpl(ctx, args)).map(toPublicSkillCatalogSearchEntry);
+  },
+});
 
-    const targetCount = Math.max(1, Math.min(args.limit ?? 20, 100));
-    const matches: Array<{ score: number; package: PublicSkillCatalogItem }> = [];
-    const seen = new Set<string>();
-
-    const exactSkill = await resolveSkillBySlugOrAlias(ctx, queryText);
-    if (exactSkill.skill) {
-      const exactDigest = await ctx.db
-        .query("skillSearchDigest")
-        .withIndex("by_skill", (q) => q.eq("skillId", exactSkill.skill!._id))
-        .unique();
-      if (exactDigest && skillCatalogMatchesFilters(exactDigest, args)) {
-        const exactScore = scoreSkillCatalogResult(exactDigest, queryText);
-        if (exactScore > 0) {
-          seen.add(exactDigest.skillId);
-          matches.push({
-            score: exactScore,
-            package: toPublicSkillCatalogItem(exactDigest),
-          });
-        }
-      }
-    }
-
-    if (matches.length < targetCount) {
-      const pageSize = Math.min(MAX_SKILL_CATALOG_SEARCH_PAGE_SIZE, Math.max(targetCount * 5, 50));
-      const page = await ctx.db
-        .query("skillSearchDigest")
-        .withIndex("by_active_updated", (q) => q.eq("softDeletedAt", undefined))
-        .order("desc")
-        .paginate({ cursor: null, numItems: pageSize });
-
-      for (const digest of page.page) {
-        if (!skillCatalogMatchesFilters(digest, args)) continue;
-        const score = scoreSkillCatalogResult(digest, queryText);
-        if (score <= 0 || seen.has(digest.skillId)) continue;
-        seen.add(digest.skillId);
-        matches.push({
-          score,
-          package: toPublicSkillCatalogItem(digest),
-        });
-      }
-    }
-
-    return matches
-      .sort(
-        (a, b) =>
-          b.score - a.score ||
-          Number(b.package.isOfficial) - Number(a.package.isOfficial) ||
-          b.package.updatedAt - a.package.updatedAt,
-      )
-      .slice(0, targetCount);
+export const searchPackageCatalogForHttpInternal = internalQuery({
+  args: {
+    query: v.string(),
+    limit: v.optional(v.number()),
+    channel: v.optional(
+      v.union(v.literal("official"), v.literal("community"), v.literal("private")),
+    ),
+    isOfficial: v.optional(v.boolean()),
+    highlightedOnly: v.optional(v.boolean()),
+    executesCode: v.optional(v.boolean()),
+    capabilityTag: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    return await searchPackageCatalogImpl(ctx, args);
   },
 });
 

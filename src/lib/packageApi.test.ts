@@ -539,6 +539,36 @@ describe("fetchPluginCatalog", () => {
     expect(url.searchParams.has("sort")).toBe(false);
   });
 
+  it("ignores malformed plugin search entries defensively", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          results: [
+            null,
+            {
+              score: 4,
+              package: {
+                name: "bundle-demo",
+                displayName: "Bundle Demo",
+                family: "bundle-plugin",
+                channel: "community",
+                isOfficial: false,
+                createdAt: 1,
+                updatedAt: 1,
+              },
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await fetchPluginCatalog({ q: "demo" });
+
+    expect(result.items.map((item) => item.name)).toEqual(["bundle-demo"]);
+  });
+
   it("keeps relevance as the implicit plugins search sort", async () => {
     vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(

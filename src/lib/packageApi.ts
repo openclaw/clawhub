@@ -353,10 +353,12 @@ export async function fetchPackages(params: {
     }
     if (params.capabilityTag) url.searchParams.set("capabilityTag", params.capabilityTag);
     if (params.category) url.searchParams.set("category", params.category);
-    return await fetchJson<{ results: Array<{ score: number; package: PackageListItem }> }>(
-      url,
-      params.signal,
-    );
+    return await fetchJson<{
+      results: Array<{
+        score: number;
+        package: PackageListItem;
+      }>;
+    }>(url, params.signal);
   }
 
   const route =
@@ -409,7 +411,7 @@ export async function fetchPluginCatalog(params: {
     });
     if (hasOwnProperty(response, "results") && Array.isArray(response.results)) {
       return {
-        items: response.results.map((entry) => entry?.package).filter(Boolean) as PackageListItem[],
+        items: response.results.map((entry) => entry?.package).filter(Boolean),
         nextCursor: null,
       };
     }
@@ -434,12 +436,13 @@ export async function fetchPluginCatalog(params: {
     }
     if (params.category) url.searchParams.set("category", params.category);
     const response = await fetchJson<{
-      results?: Array<{ score: number; package: PackageListItem }>;
+      results?: Array<{
+        score: number;
+        package: PackageListItem;
+      }>;
     }>(url, params.signal);
     return {
-      items: (response?.results ?? [])
-        .map((entry) => entry?.package)
-        .filter(Boolean) as PackageListItem[],
+      items: (response?.results ?? []).map((entry) => entry?.package).filter(Boolean),
       nextCursor: null,
     };
   }

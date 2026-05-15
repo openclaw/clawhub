@@ -138,14 +138,45 @@ export function matchesExactTokens(
   queryTokens: string[],
   parts: Array<string | null | undefined>,
 ): boolean {
-  if (queryTokens.length === 0) return false;
+  return matchesTokenPrefixes(queryTokens, parts);
+}
+
+export function matchesTokenPrefixes(
+  queryTokens: string[],
+  parts: Array<string | null | undefined>,
+  options: { minQueryTokenLength?: number } = {},
+): boolean {
+  const minQueryTokenLength = options.minQueryTokenLength ?? 1;
+  const eligibleQueryTokens = queryTokens.filter((token) => token.length >= minQueryTokenLength);
+  if (eligibleQueryTokens.length === 0) return false;
   const text = parts.filter((part) => Boolean(part?.trim())).join(" ");
   if (!text) return false;
   const textTokens = tokenize(text);
   if (textTokens.length === 0) return false;
-  // Require every query token to prefix-match so partial matches do not crowd out better results.
-  return queryTokens.every((queryToken) =>
+  // Require every eligible query token to prefix-match so partial matches do not crowd out better results.
+  return eligibleQueryTokens.every((queryToken) =>
     textTokens.some((textToken) => textToken.startsWith(queryToken)),
+  );
+}
+
+export function matchesExploratoryTokenPrefixes(
+  queryTokens: string[],
+  parts: Array<string | null | undefined>,
+  minQueryTokenLength: number,
+): boolean {
+  if (queryTokens.length === 0) return false;
+  if (!queryTokens.every((token) => token.length >= minQueryTokenLength)) return false;
+  return matchesTokenPrefixes(queryTokens, parts, { minQueryTokenLength });
+}
+
+export function matchesAllTokens(
+  queryTokens: string[],
+  candidateTokens: string[],
+  matcher: (candidate: string, query: string) => boolean,
+) {
+  if (queryTokens.length === 0 || candidateTokens.length === 0) return false;
+  return queryTokens.every((queryToken) =>
+    candidateTokens.some((candidateToken) => matcher(candidateToken, queryToken)),
   );
 }
 

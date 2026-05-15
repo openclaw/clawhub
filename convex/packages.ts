@@ -80,7 +80,7 @@ import {
   MAX_PUBLISH_TOTAL_BYTES,
 } from "./lib/publishLimits";
 import { MAX_ACTIVE_REPORTS_PER_USER, MAX_REPORT_REASON_LENGTH } from "./lib/reporting";
-import { tokenize } from "./lib/searchText";
+import { matchesAllTokens, matchesExploratoryTokenPrefixes, tokenize } from "./lib/searchText";
 import { hashSkillFiles } from "./lib/skills";
 import { runStaticPublishScan } from "./lib/staticPublishScan";
 
@@ -975,31 +975,102 @@ async function getOptionalViewerUserId(ctx: QueryCtx | MutationCtx) {
   return await getOptionalActiveAuthUserId(ctx);
 }
 
-function packageSearchScore(digest: PackageDigestLike, queryText: string) {
+const EXPLORATORY_SEARCH_MIN_TOKEN_LENGTH = 3;
+
+type PackageSearchMatch = {
+  rankTier: number;
+  score: number;
+};
+
+function packageSearchMatch(
+  digest: PackageDigestLike,
+  queryText: string,
+): PackageSearchMatch | null {
   const needle = queryText.toLowerCase();
+  const queryTokens = tokenize(queryText);
+  if (queryTokens.length === 0) return null;
   const normalized = digest.normalizedName.toLowerCase();
   const display = digest.displayName.toLowerCase();
   const runtimeId = digest.runtimeId?.toLowerCase() ?? "";
-  const summary = (digest.summary ?? "").toLowerCase();
+  const nameTokens = tokenize(normalized);
+  const displayTokens = tokenize(display);
+  const runtimeTokens = tokenize(runtimeId);
   let score = 0;
-  if (normalized === needle) score += 200;
-  else if (normalized.startsWith(needle)) score += 120;
-  else if (normalized.includes(needle)) score += 80;
+  let rankTier = Number.POSITIVE_INFINITY;
 
-  if (display === needle) score += 150;
-  else if (display.startsWith(needle)) score += 70;
-  else if (display.includes(needle)) score += 40;
+  const setMatch = (tier: number, boost: number) => {
+    score += boost;
+    rankTier = Math.min(rankTier, tier);
+  };
 
-  if (runtimeId === needle) score += 180;
-  else if (runtimeId.startsWith(needle)) score += 90;
-  else if (runtimeId.includes(needle)) score += 45;
+  if (normalized === needle) setMatch(0, 200);
+  else if (normalized.startsWith(needle)) setMatch(1, 120);
+  else if (normalized.includes(needle)) setMatch(1, 80);
 
-  if (summary.includes(needle)) score += 20;
-  if ((digest.capabilityTags ?? []).some((entry) => entry.toLowerCase().includes(needle))) {
-    score += 12;
+  if (display === needle) setMatch(0, 150);
+  else if (display.startsWith(needle)) setMatch(1, 70);
+  else if (display.includes(needle)) setMatch(1, 40);
+
+  if (runtimeId === needle) setMatch(0, 180);
+  else if (runtimeId.startsWith(needle)) setMatch(1, 90);
+  else if (runtimeId.includes(needle)) setMatch(1, 45);
+
+  if (
+    matchesAllTokens(
+      queryTokens,
+      [...nameTokens, ...displayTokens, ...runtimeTokens],
+      (a, b) => a === b,
+    )
+  ) {
+    setMatch(1, 65);
+  } else if (
+    matchesAllTokens(queryTokens, [...nameTokens, ...displayTokens, ...runtimeTokens], (a, b) =>
+      a.startsWith(b),
+    )
+  ) {
+    setMatch(1, 35);
   }
-  if (digest.isOfficial) score += 5;
-  return score;
+
+  if (
+    matchesExploratoryTokenPrefixes(
+      queryTokens,
+      [digest.summary],
+      EXPLORATORY_SEARCH_MIN_TOKEN_LENGTH,
+    )
+  ) {
+    setMatch(3, 20);
+  }
+  if (
+    matchesExploratoryTokenPrefixes(
+      queryTokens,
+      digest.capabilityTags ?? [],
+      EXPLORATORY_SEARCH_MIN_TOKEN_LENGTH,
+    )
+  ) {
+    setMatch(2, 12);
+  }
+  if (!Number.isFinite(rankTier)) return null;
+  return { rankTier, score };
+}
+
+function comparePackageSearchMatches<
+  T extends PackageSearchMatch & { package: Pick<PackageDigestLike, "isOfficial" | "updatedAt"> },
+>(a: T, b: T) {
+  return (
+    a.rankTier - b.rankTier ||
+    b.score - a.score ||
+    Number(b.package.isOfficial) - Number(a.package.isOfficial) ||
+    b.package.updatedAt - a.package.updatedAt
+  );
+}
+
+function toPublicPackageSearchEntry(
+  entry: PackageSearchMatch & { package: PublicPackageListItem },
+) {
+  return {
+    score: entry.score,
+    package: entry.package,
+  };
 }
 
 function prefixUpperBound(value: string) {
@@ -2153,7 +2224,7 @@ export const searchPublic = query({
     category: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    return await searchPackagesImpl(ctx, args);
+    return (await searchPackagesImpl(ctx, args)).map(toPublicPackageSearchEntry);
   },
 });
 
@@ -2206,20 +2277,18 @@ async function searchPackagesImpl(
   if (args.highlightedOnly) {
     const digests = await fetchHighlightedPackageDigests(ctx, args);
     return digests
-      .map((digest) => ({
-        score: packageSearchScore(digest, queryText),
-        package: digest,
-      }))
-      .filter((entry) => entry.score > 0)
-      .sort(
-        (a, b) =>
-          b.score - a.score ||
-          Number(b.package.isOfficial) - Number(a.package.isOfficial) ||
-          b.package.updatedAt - a.package.updatedAt,
+      .map((digest) => {
+        const match = packageSearchMatch(digest, queryText);
+        return match ? { ...match, package: digest } : null;
+      })
+      .filter((entry): entry is PackageSearchMatch & { package: PackageDigestLike } =>
+        Boolean(entry),
       )
+      .sort(comparePackageSearchMatches)
       .slice(0, targetCount)
       .map((entry) => ({
         score: entry.score,
+        rankTier: entry.rankTier,
         package: toPublicPackageListItem(entry.package),
       }));
   }
@@ -2248,7 +2317,7 @@ async function searchPackagesImpl(
             isOfficial: args.isOfficial,
             executesCode: args.executesCode,
           });
-  const matches: Array<{ score: number; package: PublicPackageListItem }> = [];
+  const matches: Array<PackageSearchMatch & { package: PublicPackageListItem }> = [];
   const seen = new Set<string>();
   const directDigests =
     args.capabilityTag || args.category
@@ -2257,11 +2326,11 @@ async function searchPackagesImpl(
   for (const digest of directDigests) {
     if (!(await canViewPackage(digest))) continue;
     if (!digestMatchesSearchFilters(digest, args)) continue;
-    const score = packageSearchScore(digest, queryText);
-    if (score <= 0 || seen.has(digest.packageId)) continue;
+    const match = packageSearchMatch(digest, queryText);
+    if (!match || seen.has(digest.packageId)) continue;
     seen.add(digest.packageId);
     matches.push({
-      score,
+      ...match,
       package: toPublicPackageListItem(digest),
     });
   }
@@ -2275,25 +2344,18 @@ async function searchPackagesImpl(
     for (const digest of digests) {
       if (!(await canViewPackage(digest))) continue;
       if (!digestMatchesSearchFilters(digest, args)) continue;
-      const score = packageSearchScore(digest, queryText);
-      if (score <= 0 || seen.has(digest.packageId)) continue;
+      const match = packageSearchMatch(digest, queryText);
+      if (!match || seen.has(digest.packageId)) continue;
       seen.add(digest.packageId);
       matches.push({
-        score,
+        ...match,
         package: toPublicPackageListItem(digest),
       });
       if (matches.length >= targetCount) break;
     }
   }
 
-  return matches
-    .sort(
-      (a, b) =>
-        b.score - a.score ||
-        Number(b.package.isOfficial) - Number(a.package.isOfficial) ||
-        b.package.updatedAt - a.package.updatedAt,
-    )
-    .slice(0, targetCount);
+  return matches.sort(comparePackageSearchMatches).slice(0, targetCount);
 }
 
 export const getPackageByNameInternal = internalQuery({
@@ -2556,7 +2618,15 @@ async function softDeletePackageDoc(
   };
   const nextPackage: Doc<"packages"> = { ...pkg, ...packagePatch };
   await ctx.db.patch(pkg._id, packagePatch);
-  await upsertPackageSearchDigest(ctx, extractPackageDigestFields(nextPackage));
+  const deleteOwner = await getOwnerPublisher(ctx, {
+    ownerPublisherId: pkg.ownerPublisherId,
+    ownerUserId: pkg.ownerUserId,
+  });
+  await upsertPackageSearchDigest(ctx, {
+    ...extractPackageDigestFields(nextPackage),
+    ownerHandle: deleteOwner?.handle ?? "",
+    ownerKind: deleteOwner?.kind,
+  });
   await ctx.db.insert("auditLogs", {
     actorUserId: params.actorUserId,
     action: "package.delete",
@@ -2726,7 +2796,15 @@ async function restorePackageDoc(
   };
   const nextPackage: Doc<"packages"> = { ...pkg, ...packagePatch };
   await ctx.db.patch(pkg._id, packagePatch);
-  await upsertPackageSearchDigest(ctx, extractPackageDigestFields(nextPackage));
+  const restoreOwner = await getOwnerPublisher(ctx, {
+    ownerPublisherId: pkg.ownerPublisherId,
+    ownerUserId: pkg.ownerUserId,
+  });
+  await upsertPackageSearchDigest(ctx, {
+    ...extractPackageDigestFields(nextPackage),
+    ownerHandle: restoreOwner?.handle ?? "",
+    ownerKind: restoreOwner?.kind,
+  });
   await ctx.db.insert("auditLogs", {
     actorUserId: params.actorUserId,
     action: "package.undelete",

@@ -112,7 +112,10 @@ bun run dev:worktree
 bun run seed:dev
 ```
 
-For full setup instructions (env vars, GitHub OAuth, JWT keys, database seeding), see [CONTRIBUTING.md](CONTRIBUTING.md).
+`bun run seed:dev` waits for the local Convex deployment, runs the dev fixture seed, and refreshes
+global stats. The fixtures are owned by `@local` and are safe to rerun after fixture or schema
+changes. For reset/manual commands and full setup instructions (env vars, GitHub OAuth, JWT keys,
+database seeding), see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Environment
 

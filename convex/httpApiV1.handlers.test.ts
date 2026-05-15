@@ -3989,6 +3989,45 @@ describe("httpApiV1 handlers", () => {
     expect(runQuery).not.toHaveBeenCalled();
   });
 
+  it("plugins search sorts by rank tier before score without exposing rank metadata", async () => {
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if (args.family === "code-plugin") {
+        return [
+          {
+            score: 20,
+            rankTier: 3,
+            package: makeCatalogItem("summary-plugin", { family: "code-plugin", updatedAt: 100 }),
+          },
+        ];
+      }
+      if (args.family === "bundle-plugin") {
+        return [
+          {
+            score: 10,
+            rankTier: 1,
+            package: makeCatalogItem("name-plugin", { family: "bundle-plugin", updatedAt: 50 }),
+          },
+        ];
+      }
+      throw new Error(`unexpected family ${String(args.family)}`);
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.pluginsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/plugins/search?q=plugin&limit=2"),
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.results.map((entry: { package: { name: string } }) => entry.package.name)).toEqual([
+      "name-plugin",
+      "summary-plugin",
+    ]);
+    expect(body.results[0]).not.toHaveProperty("rankTier");
+    expect(body.results[0]).not.toHaveProperty("matchReason");
+  });
+
   it("packages list forwards viewerUserId for authenticated private package browsing", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
     const runQuery = vi.fn().mockResolvedValue({ page: [], isDone: true, continueCursor: "" });

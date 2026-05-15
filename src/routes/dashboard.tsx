@@ -170,6 +170,8 @@ export function Dashboard() {
   const isLoading = skillsStatus === "LoadingFirstPage";
   const ownerHandle =
     selectedPublisher?.publisher.handle ?? me.handle ?? me.name ?? me.displayName ?? me._id;
+  const isDashboardEmpty = !isLoading && skills.length === 0 && packages.length === 0;
+
   const publisherSelector =
     publishers && publishers.length > 1 ? (
       <div className="dashboard-publisher-select">
@@ -193,7 +195,7 @@ export function Dashboard() {
     ) : null;
 
   // Welcome state for new users with no content
-  if (!isLoading && skills.length === 0 && packages.length === 0) {
+  if (isDashboardEmpty) {
     return (
       <main className="section">
         <div className="empty-state">
@@ -219,7 +221,6 @@ export function Dashboard() {
                   sort: undefined,
                   dir: undefined,
                   highlighted: undefined,
-                  nonSuspicious: true,
                   view: undefined,
                   focus: undefined,
                 }}

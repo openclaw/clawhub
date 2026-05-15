@@ -69,7 +69,6 @@ const apiRefs = api as unknown as {
   };
   skills: {
     listPackageCatalogPage: unknown;
-    searchPackageCatalogPublic: unknown;
     getBySlug: unknown;
     listVersionsPage: unknown;
     getVersionBySkillAndVersion: unknown;
@@ -116,6 +115,7 @@ const internalRefs = internal as unknown as {
   };
   skills: {
     getSkillBySlugInternal: unknown;
+    searchPackageCatalogForHttpInternal: unknown;
     getVersionByIdInternal: unknown;
     getVersionBySkillAndVersionInternal: unknown;
   };
@@ -691,7 +691,11 @@ type CatalogListItem = {
   verificationTier?: string | null;
 };
 
-type CatalogSearchEntry = { score: number; package: CatalogListItem };
+type CatalogSearchEntry = {
+  score: number;
+  rankTier?: number;
+  package: CatalogListItem;
+};
 
 type CatalogSourceCursorState = {
   cursor: string | null;
@@ -892,10 +896,18 @@ function compareCatalogItems(a: CatalogListItem, b: CatalogListItem) {
 
 function compareCatalogSearchEntries(a: CatalogSearchEntry, b: CatalogSearchEntry) {
   return (
+    (a.rankTier ?? Number.POSITIVE_INFINITY) - (b.rankTier ?? Number.POSITIVE_INFINITY) ||
     b.score - a.score ||
     Number(b.package.isOfficial) - Number(a.package.isOfficial) ||
     compareCatalogItems(a.package, b.package)
   );
+}
+
+function toPublicCatalogSearchEntry(entry: CatalogSearchEntry) {
+  return {
+    score: entry.score,
+    package: entry.package,
+  };
 }
 
 async function searchPackageCatalog(
@@ -2155,7 +2167,7 @@ async function searchPackages(
   if (family === "skill") {
     results = await runQueryRef<CatalogSearchEntry[]>(
       ctx,
-      apiRefs.skills.searchPackageCatalogPublic,
+      internalRefs.skills.searchPackageCatalogForHttpInternal,
       {
         query: queryText,
         limit,
@@ -2222,15 +2234,19 @@ async function searchPackages(
         category,
         viewerUserId: viewerUserId ?? undefined,
       }),
-      runQueryRef<CatalogSearchEntry[]>(ctx, apiRefs.skills.searchPackageCatalogPublic, {
-        query: queryText,
-        limit,
-        channel: channelParam.value,
-        isOfficial: isOfficial.value,
-        highlightedOnly: highlightedOnly || undefined,
-        executesCode: executesCode.value,
-        capabilityTag,
-      }),
+      runQueryRef<CatalogSearchEntry[]>(
+        ctx,
+        internalRefs.skills.searchPackageCatalogForHttpInternal,
+        {
+          query: queryText,
+          limit,
+          channel: channelParam.value,
+          isOfficial: isOfficial.value,
+          highlightedOnly: highlightedOnly || undefined,
+          executesCode: executesCode.value,
+          capabilityTag,
+        },
+      ),
     ]);
     const seen = new Set<string>();
     results = [...packageResults, ...skillResults]
@@ -2243,7 +2259,7 @@ async function searchPackages(
       .sort(compareCatalogSearchEntries)
       .slice(0, limit);
   }
-  return json({ results }, 200, rate.headers);
+  return json({ results: results.map(toPublicCatalogSearchEntry) }, 200, rate.headers);
 }
 
 export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Request) {

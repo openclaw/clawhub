@@ -57,7 +57,6 @@ describe("SkillsIndex", () => {
         sort: "downloads",
         dir: "desc",
         highlightedOnly: false,
-        nonSuspiciousOnly: false,
         cursor: undefined,
         numItems: 25,
       }),
@@ -85,6 +84,7 @@ describe("SkillsIndex", () => {
     await act(async () => {});
     // Results area shows skeleton or dash while loading
     expect(screen.getByText("\u2014")).toBeTruthy();
+    expect(screen.getByRole("status", { name: "Loading results" })).toBeTruthy();
     expect(screen.queryByText("No skills found")).toBeNull();
   });
 
@@ -155,7 +155,6 @@ describe("SkillsIndex", () => {
     expect(actionFn).toHaveBeenCalledWith({
       query: "remind",
       highlightedOnly: false,
-      nonSuspiciousOnly: false,
       limit: 25,
     });
     await act(async () => {
@@ -164,7 +163,6 @@ describe("SkillsIndex", () => {
     expect(actionFn).toHaveBeenCalledWith({
       query: "remind",
       highlightedOnly: false,
-      nonSuspiciousOnly: false,
       limit: 25,
     });
   });
@@ -243,7 +241,6 @@ describe("SkillsIndex", () => {
     expect(actionFn).toHaveBeenLastCalledWith({
       query: "remind",
       highlightedOnly: false,
-      nonSuspiciousOnly: false,
       limit: 50,
     });
   });
@@ -298,50 +295,7 @@ describe("SkillsIndex", () => {
     expect(titles[1]).toBe("Newer Low Score");
   });
 
-  it("passes nonSuspiciousOnly to list query when filter is active", async () => {
-    searchMock = { nonSuspicious: true };
-    render(<SkillsIndex />);
-    await act(async () => {});
-
-    expect(convexHttpMock.query).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        sort: "downloads",
-        dir: "desc",
-        highlightedOnly: false,
-        nonSuspiciousOnly: true,
-      }),
-    );
-  });
-
-  it("does not render the warning filter when loaded results are clean", async () => {
-    convexHttpMock.query.mockResolvedValue({
-      page: [makeListResult("clean-skill", "Clean Skill")],
-      hasMore: false,
-      nextCursor: null,
-    });
-
-    render(<SkillsIndex />);
-    await act(async () => {});
-
-    expect(screen.queryByLabelText("Hide warnings")).toBeNull();
-  });
-
-  it("does not render the warning filter when loaded results include a warning skill", async () => {
-    convexHttpMock.query.mockResolvedValue({
-      page: [makeListResult("suspicious-skill", "Suspicious Skill", { isSuspicious: true })],
-      hasMore: false,
-      nextCursor: null,
-    });
-
-    render(<SkillsIndex />);
-    await act(async () => {});
-
-    expect(screen.queryByLabelText("Hide warnings")).toBeNull();
-  });
-
-  it("does not render the warning filter while the URL filter is active", async () => {
-    searchMock = { nonSuspicious: true };
+  it("does not render the warning filter", async () => {
     convexHttpMock.query.mockResolvedValue({
       page: [makeListResult("clean-skill", "Clean Skill")],
       hasMore: false,
@@ -365,7 +319,6 @@ describe("SkillsIndex", () => {
         sort: "downloads",
         dir: "desc",
         highlightedOnly: true,
-        nonSuspiciousOnly: false,
       }),
     );
   });
@@ -383,7 +336,7 @@ describe("SkillsIndex", () => {
     expect(screen.getByRole("button", { name: "Load more" })).toBeTruthy();
   });
 
-  it("shows loading indicator during load-more", async () => {
+  it("shows skeletons during load-more", async () => {
     vi.stubGlobal("IntersectionObserver", undefined);
     convexHttpMock.query
       .mockResolvedValueOnce({
@@ -402,7 +355,8 @@ describe("SkillsIndex", () => {
       fireEvent.click(loadMoreButton);
     });
 
-    expect(screen.getByText(/Loading/)).toBeTruthy();
+    expect(screen.getByRole("status", { name: "Loading results" })).toBeTruthy();
+    expect(screen.queryByText(/Loading/)).toBeNull();
   });
 });
 

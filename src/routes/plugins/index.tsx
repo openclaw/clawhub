@@ -4,6 +4,7 @@ import { PackageSearch, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { BrowseSidebar } from "../../components/BrowseSidebar";
 import { PluginListItem } from "../../components/PluginListItem";
+import { BrowseResultsSkeleton } from "../../components/skeletons/BrowseResultsSkeleton";
 import { Button } from "../../components/ui/button";
 import { PLUGIN_CATEGORIES } from "../../lib/categories";
 import {
@@ -94,6 +95,7 @@ function sortPluginSearchItems(items: PackageListItem[], sort: PluginSort) {
 }
 
 export const Route = createFileRoute("/plugins/")({
+  pendingComponent: PluginsIndexPending,
   validateSearch: (search): PluginSearchState => ({
     q: typeof search.q === "string" && search.q.trim() ? search.q.trim() : undefined,
     category:
@@ -183,6 +185,55 @@ export const Route = createFileRoute("/plugins/")({
   },
   component: PluginsIndex,
 });
+
+function PluginsIndexPending() {
+  return (
+    <main className="browse-page">
+      <div className="browse-page-header">
+        <button className="browse-sidebar-toggle" type="button" disabled>
+          Filters
+        </button>
+        <h1 className="browse-title">Plugins</h1>
+      </div>
+      <div className="browse-page-search">
+        <Search size={15} className="navbar-search-icon" aria-hidden="true" />
+        <input className="browse-search-input" placeholder="Search plugins..." disabled />
+      </div>
+      <div className="browse-layout">
+        <BrowseSidebar
+          categories={PLUGIN_CATEGORIES}
+          activeCategory={undefined}
+          onCategoryChange={() => {}}
+          sortOptions={[
+            { value: "featured", label: "Featured" },
+            { value: "updated", label: "Recently updated" },
+          ]}
+          activeSort="updated"
+          onSortChange={() => {}}
+          filters={[
+            { key: "verified", label: "Verified only", active: false },
+            { key: "executesCode", label: "Executes code", active: false },
+          ]}
+          onFilterToggle={() => {}}
+        />
+        <div className="browse-results">
+          <div className="browse-results-toolbar">
+            <span className="browse-results-count">Loading results</span>
+            <div className="browse-view-toggle">
+              <button className="browse-view-btn is-active" type="button" disabled>
+                List
+              </button>
+              <button className="browse-view-btn" type="button" disabled>
+                Grid
+              </button>
+            </div>
+          </div>
+          <BrowseResultsSkeleton />
+        </div>
+      </div>
+    </main>
+  );
+}
 
 function PluginsIndex() {
   const search = Route.useSearch();

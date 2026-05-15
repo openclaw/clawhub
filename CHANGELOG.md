@@ -23,6 +23,9 @@
 
 ### Fixes
 
+- Web/API: keep search results limited to items with match evidence, preserve
+  trust and popularity as tie-breakers, and show `N+` counts without exact
+  count queries (#2206) (thanks @vyctorbrzezowski).
 - API: return `400` for invalid known public package filters and invalid skill
   list sort values, while continuing to ignore unknown query parameters (#2184).
 - API/docs: document v1 plain-text error responses and expose owner metadata in
@@ -40,6 +43,8 @@
   `q` instead of treating `search` as a package name (thanks @vyctorbrzezowski).
 - Web: rank publisher card preview items by downloads instead of recent publish order (thanks @vyctorbrzezowski).
 - Web: keep skill/plugin detail tabs at mobile-friendly touch target height.
+- API/CLI: fix package delete returning 500 for packages with capability tags
+  when no capability search digest row existed yet (#2212) (thanks @momothemage).
 
 ## 0.15.0 - 2026-05-12
 

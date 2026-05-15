@@ -94,7 +94,7 @@ bun run seed:public-corpus
 # 50 extra skills for pagination testing (optional)
 bunx convex run --no-push devSeedExtra:seedExtraSkillsInternal
 
-# Refresh the cached skills count (required after seeding)
+# Refresh cached global stats after manual seeding
 bunx convex run --no-push statsMaintenance:updateGlobalStatsAction
 ```
 

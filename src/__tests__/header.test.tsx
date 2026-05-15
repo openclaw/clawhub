@@ -59,6 +59,8 @@ const defaultUnifiedSearchResult = {
   ],
   skillCount: 1,
   pluginCount: 1,
+  skillHasMore: false,
+  pluginHasMore: false,
   isSearching: false,
 };
 
@@ -319,8 +321,15 @@ describe("Header", () => {
     const typeahead = screen.getByRole("listbox");
     expect(within(typeahead).getByText("Skills")).toBeTruthy();
     expect(screen.getByText("Weather Skill")).toBeTruthy();
+    expect(screen.getByText("@local / weather")).toBeTruthy();
     expect(within(typeahead).getByText("Plugins")).toBeTruthy();
     expect(screen.getByText("Weather Plugin")).toBeTruthy();
+    expect(input.getAttribute("role")).toBe("combobox");
+    expect(input.getAttribute("aria-autocomplete")).toBe("list");
+    expect(input.getAttribute("aria-expanded")).toBe("true");
+    const activeDescendant = input.getAttribute("aria-activedescendant");
+    expect(activeDescendant).toBeTruthy();
+    expect(document.getElementById(activeDescendant ?? "")).toBeTruthy();
     expect(within(typeahead).queryByText("Publishers")).toBeNull();
     expect(within(typeahead).queryByText('See user results for "weather"')).toBeNull();
 
@@ -379,6 +388,8 @@ describe("Header", () => {
       pluginResults: [],
       skillCount: 0,
       pluginCount: 0,
+      skillHasMore: false,
+      pluginHasMore: false,
       isSearching: false,
     });
 

@@ -219,7 +219,6 @@ describe("home route", () => {
         numItems: 6,
         sort: "downloads",
         dir: "desc",
-        nonSuspiciousOnly: true,
       }),
     );
   });

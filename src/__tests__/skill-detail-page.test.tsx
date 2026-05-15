@@ -571,6 +571,63 @@ describe("SkillDetailPage", () => {
     });
   });
 
+  it("redirects merged source slugs to the resolved canonical slug", async () => {
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (args && typeof args === "object" && "skillId" in args) return [];
+      if (args && typeof args === "object" && "slug" in args) {
+        return {
+          requestedSlug: "old-weather",
+          resolvedSlug: "weather",
+          skill: {
+            _id: "skills:1",
+            slug: "weather",
+            displayName: "Weather",
+            summary: "Get current weather.",
+            ownerUserId: "users:1",
+            ownerPublisherId: "publishers:steipete",
+            tags: {},
+            badges: {},
+            stats: {
+              stars: 0,
+              downloads: 0,
+              installsCurrent: 0,
+              installsAllTime: 0,
+              versions: 1,
+              comments: 0,
+            },
+            createdAt: 0,
+            updatedAt: 0,
+          },
+          owner: {
+            _id: "publishers:steipete",
+            _creationTime: 0,
+            kind: "user",
+            handle: "steipete",
+            displayName: "Peter",
+            linkedUserId: "users:1",
+          },
+          latestVersion: { _id: "skillVersions:1", version: "1.0.0", parsed: {}, files: [] },
+          forkOf: null,
+          canonical: null,
+        };
+      }
+      return undefined;
+    });
+
+    render(<SkillDetailPage slug="old-weather" canonicalOwner="steipete" />);
+    expect(screen.getByRole("status", { name: /Loading skill details/i })).toBeTruthy();
+
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalled();
+    });
+    expect(navigateMock).toHaveBeenCalledWith({
+      to: "/$owner/$slug",
+      params: { owner: "steipete", slug: "weather" },
+      replace: true,
+    });
+  });
+
   it("does not redirect when a staff owner handle only differs by case", async () => {
     useAuthStatusMock.mockReturnValue({
       isAuthenticated: true,

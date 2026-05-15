@@ -9,22 +9,11 @@ import { Dashboard } from "./dashboard";
 const mocks = vi.hoisted(() => ({
   useQuery: vi.fn(),
   usePaginatedQuery: vi.fn(),
-  useMutation: vi.fn(),
-  toastSuccess: vi.fn(),
-  toastError: vi.fn(),
 }));
 
 vi.mock("convex/react", () => ({
   useQuery: (...args: unknown[]) => mocks.useQuery(...args),
   usePaginatedQuery: (...args: unknown[]) => mocks.usePaginatedQuery(...args),
-  useMutation: (...args: unknown[]) => mocks.useMutation(...args),
-}));
-
-vi.mock("sonner", () => ({
-  toast: {
-    success: (...args: unknown[]) => mocks.toastSuccess(...args),
-    error: (...args: unknown[]) => mocks.toastError(...args),
-  },
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -272,10 +261,6 @@ describe("Dashboard rows", () => {
       status: "LoadingFirstPage",
       loadMore: vi.fn(),
     });
-    mocks.useMutation.mockReset();
-    mocks.useMutation.mockReturnValue(vi.fn().mockResolvedValue({}));
-    mocks.toastSuccess.mockReset();
-    mocks.toastError.mockReset();
   });
 
   it("renders compact clickable artifact cards with status and inventory context", () => {
