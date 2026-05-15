@@ -1055,6 +1055,47 @@ describe("package commands", () => {
     }
   });
 
+  it("resolves package publish dot paths from the caller cwd before the OpenClaw workdir", async () => {
+    const workspace = await makeTmpWorkdir();
+    const pluginRoot = await makeTmpWorkdir();
+    const previousCwd = process.cwd();
+    try {
+      await mkdir(join(pluginRoot, "dist"), { recursive: true });
+      await writeFile(
+        join(pluginRoot, "package.json"),
+        makeCodePluginPackageJson({
+          name: "@scope/cwd-plugin",
+          displayName: "Cwd Plugin",
+          version: "1.0.0",
+          files: ["dist", "openclaw.plugin.json"],
+        }),
+        "utf8",
+      );
+      await writeFile(
+        join(pluginRoot, "openclaw.plugin.json"),
+        JSON.stringify({ id: "cwd.plugin", configSchema: { type: "object" } }),
+        "utf8",
+      );
+      await writeFile(join(pluginRoot, "dist", "index.js"), "export const demo = true;\n", "utf8");
+
+      process.chdir(pluginRoot);
+
+      await cmdPublishPackage(makeOpts(workspace), ".", {
+        dryRun: true,
+        sourceRepo: "openclaw/cwd-plugin",
+        sourceCommit: "abc123",
+      });
+
+      const output = mockLog.mock.calls.map((call) => String(call[0])).join("\n");
+      expect(output).toContain("Name:      @scope/cwd-plugin");
+      expect(output).toContain("Files:     3");
+    } finally {
+      process.chdir(previousCwd);
+      await rm(pluginRoot, { recursive: true, force: true });
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
   it("rejects oversized clawscan notes before uploading package files", async () => {
     const workdir = await makeTmpWorkdir();
     try {

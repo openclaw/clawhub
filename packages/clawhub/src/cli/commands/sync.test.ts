@@ -189,6 +189,35 @@ describe("cmdSync", () => {
     expect(mockCmdPublish).toHaveBeenCalledTimes(2);
   });
 
+  it("labels unmatched local content as proposed publish versions, not registry updates", async () => {
+    interactive = false;
+    mockApiRequest.mockImplementation(async (_registry: string, args: { path: string }) => {
+      if (args.path === "/api/v1/whoami") return { user: { handle: "steipete" } };
+      if (args.path === "/api/cli/telemetry/sync") return { ok: true };
+      if (args.path.startsWith("/api/v1/resolve?")) {
+        const u = new URL(`https://x.test${args.path}`);
+        const slug = u.searchParams.get("slug");
+        if (slug === "new-skill") {
+          throw new Error("Skill not found");
+        }
+        if (slug === "synced-skill") {
+          return { match: { version: "1.2.3" }, latestVersion: { version: "1.2.3" } };
+        }
+        if (slug === "update-skill") {
+          return { match: null, latestVersion: { version: "1.0.0" } };
+        }
+      }
+      throw new Error(`Unexpected apiRequest: ${args.path}`);
+    });
+
+    await cmdSync(makeOpts(), { root: ["/scan"], all: true, dryRun: true }, true);
+
+    const output = mockLog.mock.calls.map((call) => String(call[0])).join("\n");
+    expect(output).toMatch(/update-skill\s+LOCAL CHANGES latest 1\.0\.0; publish 1\.0\.1/);
+    expect(output).toMatch(/new-skill\s+NEW \(publish 1\.0\.0\)/);
+    expect(output).not.toMatch(/UPDATE 1\.0\.0/);
+  });
+
   it("shows condensed synced list when nothing to sync", async () => {
     interactive = false;
     mockApiRequest.mockImplementation(async (_registry: string, args: { path: string }) => {
