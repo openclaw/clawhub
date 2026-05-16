@@ -5155,8 +5155,9 @@ async function transferPackageOwnerForUser(
     const sourceMembership = await getPublisherMembership(ctx, pkg.ownerPublisherId, actor._id);
     const canManageSource =
       actor.role === "admin" ||
-      sourcePublisher?.linkedUserId === actor._id ||
-      Boolean(sourceMembership && isPublisherRoleAllowed(sourceMembership.role, ["admin"]));
+      (sourcePublisher?.kind === "user"
+        ? sourcePublisher.linkedUserId === actor._id
+        : Boolean(sourceMembership && isPublisherRoleAllowed(sourceMembership.role, ["admin"])));
     if (!canManageSource) {
       throw new ConvexError("Forbidden");
     }
@@ -5188,8 +5189,11 @@ async function transferPackageOwnerForUser(
   );
   const canManageDestination =
     actor.role === "admin" ||
-    destinationPublisher.linkedUserId === actor._id ||
-    Boolean(destinationMembership && isPublisherRoleAllowed(destinationMembership.role, ["admin"]));
+    (destinationPublisher.kind === "user"
+      ? destinationPublisher.linkedUserId === actor._id
+      : Boolean(
+          destinationMembership && isPublisherRoleAllowed(destinationMembership.role, ["admin"]),
+        ));
   if (!canManageDestination) {
     throw new ConvexError(
       `You do not have admin access for "@${destinationHandle}". Ask an owner or admin to add you before transferring this package.`,

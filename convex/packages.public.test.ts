@@ -1173,6 +1173,7 @@ function makeTransferPackageOwnerCtx(options?: {
 function makeUserTransferPackageOwnerCtx(options?: {
   pkg?: Record<string, unknown> | null;
   actor?: Record<string, unknown> | null;
+  sourcePublisher?: Record<string, unknown> | null;
   destinationPublisher?: Record<string, unknown> | null;
   sourceMembershipRole?: "owner" | "admin" | "publisher" | null;
   destinationMembershipRole?: "owner" | "admin" | "publisher" | null;
@@ -1211,6 +1212,7 @@ function makeUserTransferPackageOwnerCtx(options?: {
         get: vi.fn(async (id: string) => {
           if (id === "users:vincent") return actor;
           if (id === "publishers:vincent") {
+            if (options?.sourcePublisher !== undefined) return options.sourcePublisher;
             return {
               _id: id,
               kind: "user",
@@ -3195,6 +3197,33 @@ describe("packages public queries", () => {
       transferPackageOwnerForUserInternalHandler(ctx, {
         actorUserId: "users:vincent",
         name: "@opik/opik-openclaw",
+        toOwner: "opik",
+      }),
+    ).rejects.toThrow("Forbidden");
+  });
+
+  it("rejects user package transfers through stale personal-publisher memberships", async () => {
+    const { ctx } = makeUserTransferPackageOwnerCtx({
+      pkg: makePackageDoc({
+        name: "@owner/demo",
+        normalizedName: "@owner/demo",
+        ownerUserId: "users:owner",
+        ownerPublisherId: "publishers:vincent",
+      }),
+      sourcePublisher: {
+        _id: "publishers:vincent",
+        kind: "user",
+        handle: "owner",
+        linkedUserId: "users:owner",
+      },
+      sourceMembershipRole: "admin",
+      destinationMembershipRole: "owner",
+    });
+
+    await expect(
+      transferPackageOwnerForUserInternalHandler(ctx, {
+        actorUserId: "users:vincent",
+        name: "demo-plugin",
         toOwner: "opik",
       }),
     ).rejects.toThrow("Forbidden");
