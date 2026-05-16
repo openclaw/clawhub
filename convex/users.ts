@@ -520,6 +520,12 @@ export const deleteAccount = mutation({
       }
     }
 
+    await ctx.runMutation(internal.packages.applyAccountDeletionToOwnedPackagesBatchInternal, {
+      ownerUserId: userId,
+      deletedAt: now,
+      cursor: undefined,
+    });
+
     const user = await ctx.db.get(userId);
     await ctx.db.patch(userId, {
       deactivatedAt: now,
@@ -1600,12 +1606,24 @@ async function banUserWithActor(
     };
   }
   if (target.deletedAt) {
+    await ctx.runMutation(internal.packages.applyBanToOwnedPackagesBatchInternal, {
+      ownerUserId: targetUserId,
+      bannedAt: target.deletedAt,
+      deletedBy: actor._id,
+      deletedByRole: actor.role === "admin" ? "admin" : "moderator",
+      cursor: undefined,
+    });
     const deletedComments = await softDeleteUserCommentsForBan(ctx, {
       userId: targetUserId,
       deletedBy: actor._id,
       deletedAt: target.deletedAt,
     });
-    return { ok: true as const, alreadyBanned: true, deletedSkills: 0, deletedComments };
+    return {
+      ok: true as const,
+      alreadyBanned: true,
+      deletedSkills: 0,
+      deletedComments,
+    };
   }
 
   const banSkillsResult = (await ctx.runMutation(
@@ -1619,6 +1637,20 @@ async function banUserWithActor(
   )) as { hiddenCount?: number; scheduled?: boolean };
   const hiddenCount = banSkillsResult.hiddenCount ?? 0;
   const scheduledSkills = banSkillsResult.scheduled ?? false;
+
+  const banPackagesResult = ((await ctx.runMutation(
+    internal.packages.applyBanToOwnedPackagesBatchInternal,
+    {
+      ownerUserId: targetUserId,
+      bannedAt: now,
+      deletedBy: actor._id,
+      deletedByRole: actor.role === "admin" ? "admin" : "moderator",
+      cursor: undefined,
+    },
+  )) ?? {}) as { deletedCount?: number; revokedTokenCount?: number; scheduled?: boolean };
+  const deletedPackageCount = banPackagesResult.deletedCount ?? 0;
+  const revokedPackagePublishTokens = banPackagesResult.revokedTokenCount ?? 0;
+  const scheduledPackages = banPackagesResult.scheduled ?? false;
 
   const tokens = await ctx.db
     .query("apiTokens")
@@ -1652,6 +1684,9 @@ async function banUserWithActor(
     targetId: targetUserId,
     metadata: {
       hiddenSkills: hiddenCount,
+      deletedPackages: deletedPackageCount,
+      revokedPackagePublishTokens,
+      scheduledPackages,
       deletedSkillComments: deletedComments.skillComments,
       deletedSoulComments: deletedComments.soulComments,
       reason: reason || undefined,
@@ -1711,12 +1746,28 @@ async function unbanUserWithActor(
   const restoredCount = restoreSkillsResult.restoredCount ?? 0;
   const scheduledSkills = restoreSkillsResult.scheduled ?? false;
 
+  const restorePackagesResult = ((await ctx.runMutation(
+    internal.packages.restoreOwnedPackagesForUnbanBatchInternal,
+    {
+      ownerUserId: targetUserId,
+      bannedAt,
+      cursor: undefined,
+    },
+  )) ?? {}) as { restoredCount?: number; scheduled?: boolean };
+  const restoredPackageCount = restorePackagesResult.restoredCount ?? 0;
+  const scheduledPackages = restorePackagesResult.scheduled ?? false;
+
   await ctx.db.insert("auditLogs", {
     actorUserId: actor._id,
     action: "user.unban",
     targetType: "user",
     targetId: targetUserId,
-    metadata: { reason: reason || undefined, restoredSkills: restoredCount },
+    metadata: {
+      reason: reason || undefined,
+      restoredSkills: restoredCount,
+      restoredPackages: restoredPackageCount,
+      scheduledPackages,
+    },
     createdAt: now,
   });
 
@@ -2046,6 +2097,20 @@ export const autobanMalwareAuthorInternal = internalMutation({
     const hiddenCount = banSkillsResult.hiddenCount ?? 0;
     const scheduledSkills = banSkillsResult.scheduled ?? false;
 
+    const banPackagesResult = ((await ctx.runMutation(
+      internal.packages.applyBanToOwnedPackagesBatchInternal,
+      {
+        ownerUserId: args.ownerUserId,
+        bannedAt: now,
+        deletedBy: args.ownerUserId,
+        deletedByRole: "user",
+        cursor: undefined,
+      },
+    )) ?? {}) as { deletedCount?: number; revokedTokenCount?: number; scheduled?: boolean };
+    const deletedPackageCount = banPackagesResult.deletedCount ?? 0;
+    const revokedPackagePublishTokens = banPackagesResult.revokedTokenCount ?? 0;
+    const scheduledPackages = banPackagesResult.scheduled ?? false;
+
     // Revoke all API tokens
     const tokens = await ctx.db
       .query("apiTokens")
@@ -2079,6 +2144,9 @@ export const autobanMalwareAuthorInternal = internalMutation({
       trigger: args.trigger?.trim() || "scanner.malicious",
       slug: args.slug,
       hiddenSkills: hiddenCount,
+      deletedPackages: deletedPackageCount,
+      revokedPackagePublishTokens,
+      scheduledPackages,
       deletedSkillComments: deletedComments.skillComments,
       deletedSoulComments: deletedComments.soulComments,
     };

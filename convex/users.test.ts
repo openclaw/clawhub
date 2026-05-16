@@ -1933,7 +1933,15 @@ describe("users.banUserInternal", () => {
       deletedSkills: 0,
       deletedComments: { skillComments: 1, soulComments: 1 },
     });
-    expect(runMutation).not.toHaveBeenCalled();
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        ownerUserId: "users:target",
+        bannedAt: 1_600_000_000_000,
+        deletedBy: "users:actor",
+        deletedByRole: "moderator",
+      }),
+    );
     expect(patch).toHaveBeenCalledWith("comments:active", {
       softDeletedAt: 1_600_000_000_000,
       deletedBy: "users:actor",

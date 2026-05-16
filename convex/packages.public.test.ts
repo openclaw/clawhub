@@ -29,6 +29,9 @@ import {
   listPageForViewerInternal,
   listVersions,
   updateReleaseStaticScanInternal,
+  applyAccountDeletionToOwnedPackagesBatchInternal,
+  applyBanToOwnedPackagesBatchInternal,
+  restoreOwnedPackagesForUnbanBatchInternal,
   softDeletePackageInternal,
   restorePackageInternal,
   transferPackageOwnerForUserInternal,
@@ -523,6 +526,30 @@ const softDeletePackageInternalHandler = (
       releaseCount: number;
       alreadyDeleted: boolean;
     }
+  >
+)._handler;
+const applyBanToOwnedPackagesBatchInternalHandler = (
+  applyBanToOwnedPackagesBatchInternal as unknown as WrappedHandler<
+    {
+      ownerUserId: string;
+      bannedAt: number;
+      deletedBy: string;
+      deletedByRole: "admin" | "moderator" | "user";
+      cursor?: string;
+    },
+    { deletedCount: number; revokedTokenCount: number; scheduled: boolean }
+  >
+)._handler;
+const restoreOwnedPackagesForUnbanBatchInternalHandler = (
+  restoreOwnedPackagesForUnbanBatchInternal as unknown as WrappedHandler<
+    { ownerUserId: string; bannedAt: number; cursor?: string },
+    { restoredCount: number; scheduled: boolean; stale?: true }
+  >
+)._handler;
+const applyAccountDeletionToOwnedPackagesBatchInternalHandler = (
+  applyAccountDeletionToOwnedPackagesBatchInternal as unknown as WrappedHandler<
+    { ownerUserId: string; deletedAt: number; cursor?: string },
+    { deletedCount: number; revokedTokenCount: number; scheduled: boolean }
   >
 )._handler;
 const restorePackageInternalHandler = (
@@ -6802,6 +6829,321 @@ function makeSoftDeleteCtx(options?: {
   };
 }
 
+function makeOwnedPackageBatchCtx(options?: {
+  pkg?: Record<string, unknown>;
+  owner?: Record<string, unknown> | null;
+  packageTokens?: Array<Record<string, unknown>>;
+  releases?: Array<Record<string, unknown>>;
+  publishers?: Record<string, Record<string, unknown> | null>;
+  isDone?: boolean;
+  continueCursor?: string;
+}) {
+  const pkg = options?.pkg ?? makePackageDoc({ ownerUserId: "users:owner" });
+  const releases = options?.releases ?? [
+    makeReleaseDoc({ _id: "packageReleases:demo-1", packageId: pkg._id }),
+  ];
+  const packageTokens = options?.packageTokens ?? [
+    {
+      _id: "packagePublishTokens:demo",
+      packageId: pkg._id,
+      version: "1.0.1",
+      revokedAt: undefined,
+    },
+  ];
+  const patch = vi.fn();
+  const insert = vi.fn().mockResolvedValue("auditLogs:1");
+  const runAfter = vi.fn();
+
+  return {
+    patch,
+    insert,
+    runAfter,
+    ctx: {
+      scheduler: { runAfter },
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:owner") {
+            return options?.owner === undefined
+              ? { _id: "users:owner", deletedAt: undefined, deactivatedAt: undefined }
+              : options.owner;
+          }
+          if (options?.publishers && id in options.publishers) {
+            return options.publishers[id];
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table === "packages") {
+            return {
+              withIndex: vi.fn(() => ({
+                order: vi.fn(() => ({
+                  paginate: vi.fn().mockResolvedValue({
+                    page: [pkg],
+                    isDone: options?.isDone ?? true,
+                    continueCursor: options?.continueCursor ?? "",
+                  }),
+                })),
+              })),
+            };
+          }
+          if (table === "packagePublishTokens") {
+            return {
+              withIndex: vi.fn(() => ({
+                collect: vi.fn().mockResolvedValue(packageTokens),
+              })),
+            };
+          }
+          if (table === "packageReleases") {
+            return {
+              withIndex: vi.fn(() => ({
+                collect: vi.fn().mockResolvedValue(releases),
+              })),
+            };
+          }
+          if (table === "packageSearchDigest") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi
+                  .fn()
+                  .mockResolvedValue({ _id: "packageSearchDigest:demo", packageId: pkg._id }),
+              })),
+            };
+          }
+          if (table === "packageCapabilitySearchDigest") {
+            return {
+              withIndex: vi.fn(() => ({
+                collect: vi.fn().mockResolvedValue([]),
+              })),
+            };
+          }
+          if (table === "packagePluginCategorySearchDigest") {
+            return {
+              withIndex: vi.fn(() => ({
+                collect: vi.fn().mockResolvedValue([]),
+              })),
+            };
+          }
+          throw new Error(`Unexpected table: ${table}`);
+        }),
+        insert,
+        patch,
+        replace: vi.fn(),
+        delete: vi.fn(),
+        normalizeId: vi.fn(),
+      },
+    },
+  };
+}
+
+describe("owned package sanction batches", () => {
+  it("soft-deletes owned packages with a ban reason and revokes package publish tokens", async () => {
+    const { ctx, patch } = makeOwnedPackageBatchCtx();
+
+    const result = await applyBanToOwnedPackagesBatchInternalHandler(ctx as never, {
+      ownerUserId: "users:owner",
+      bannedAt: 1_000,
+      deletedBy: "users:moderator",
+      deletedByRole: "moderator",
+    });
+
+    expect(result).toMatchObject({ deletedCount: 1, revokedTokenCount: 1, scheduled: false });
+    expect(patch).toHaveBeenCalledWith(
+      "packages:demo",
+      expect.objectContaining({
+        softDeletedAt: 1_000,
+        softDeletedReason: "user.banned",
+        softDeletedBy: "users:moderator",
+        softDeletedByRole: "moderator",
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith("packagePublishTokens:demo", { revokedAt: 1_000 });
+  });
+
+  it("stops stale package ban pages when the owner has already been unbanned", async () => {
+    const { ctx, patch } = makeOwnedPackageBatchCtx();
+
+    const result = await applyBanToOwnedPackagesBatchInternalHandler(ctx as never, {
+      ownerUserId: "users:owner",
+      bannedAt: 1_000,
+      deletedBy: "users:moderator",
+      deletedByRole: "moderator",
+      cursor: "next-page",
+    });
+
+    expect(result).toMatchObject({
+      stale: true,
+      deletedCount: 0,
+      revokedTokenCount: 0,
+      scheduled: false,
+    });
+    expect(patch).not.toHaveBeenCalledWith("packages:demo", expect.anything());
+    expect(patch).not.toHaveBeenCalledWith("packagePublishTokens:demo", expect.anything());
+  });
+
+  it("retimestamps earlier ban-hidden packages during a later ban", async () => {
+    const { ctx, patch } = makeOwnedPackageBatchCtx({
+      owner: { _id: "users:owner", deletedAt: 2_000, deactivatedAt: undefined },
+      pkg: makePackageDoc({
+        softDeletedAt: 1_000,
+        softDeletedReason: "user.banned",
+        softDeletedBy: "users:first-moderator",
+        softDeletedByRole: "moderator",
+      }),
+    });
+
+    const result = await applyBanToOwnedPackagesBatchInternalHandler(ctx as never, {
+      ownerUserId: "users:owner",
+      bannedAt: 2_000,
+      deletedBy: "users:second-moderator",
+      deletedByRole: "admin",
+    });
+
+    expect(result).toMatchObject({ deletedCount: 0, revokedTokenCount: 1, scheduled: false });
+    expect(patch).toHaveBeenCalledWith(
+      "packages:demo",
+      expect.objectContaining({
+        softDeletedAt: 2_000,
+        softDeletedBy: "users:second-moderator",
+        softDeletedByRole: "admin",
+        updatedAt: 2_000,
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith("packagePublishTokens:demo", { revokedAt: 2_000 });
+  });
+
+  it("does not hide org-owned packages when banning a member in the legacy owner field", async () => {
+    const { ctx, patch } = makeOwnedPackageBatchCtx({
+      owner: {
+        _id: "users:owner",
+        deletedAt: 1_000,
+        deactivatedAt: undefined,
+        personalPublisherId: "publishers:personal",
+      },
+      pkg: makePackageDoc({
+        ownerUserId: "users:owner",
+        ownerPublisherId: "publishers:org",
+      }),
+      publishers: {
+        "publishers:org": { _id: "publishers:org", kind: "org" },
+      },
+    });
+
+    const result = await applyBanToOwnedPackagesBatchInternalHandler(ctx as never, {
+      ownerUserId: "users:owner",
+      bannedAt: 1_000,
+      deletedBy: "users:moderator",
+      deletedByRole: "moderator",
+    });
+
+    expect(result).toMatchObject({ deletedCount: 0, revokedTokenCount: 0, scheduled: false });
+    expect(patch).not.toHaveBeenCalledWith("packages:demo", expect.anything());
+    expect(patch).not.toHaveBeenCalledWith("packagePublishTokens:demo", expect.anything());
+  });
+
+  it("restores only packages that were hidden by the matching ban batch", async () => {
+    const { ctx, patch } = makeOwnedPackageBatchCtx({
+      pkg: makePackageDoc({
+        softDeletedAt: 1_000,
+        softDeletedReason: "user.banned",
+        softDeletedByRole: "moderator",
+      }),
+      releases: [
+        makeReleaseDoc({
+          _id: "packageReleases:demo-1",
+          softDeletedAt: 1_000,
+          distTags: ["latest"],
+          version: "1.0.0",
+          changelog: "",
+          compatibility: null,
+          capabilities: null,
+          verification: null,
+        }),
+      ],
+    });
+
+    const result = await restoreOwnedPackagesForUnbanBatchInternalHandler(ctx as never, {
+      ownerUserId: "users:owner",
+      bannedAt: 1_000,
+    });
+
+    expect(result).toMatchObject({ restoredCount: 1, scheduled: false });
+    expect(patch).toHaveBeenCalledWith(
+      "packages:demo",
+      expect.objectContaining({
+        softDeletedAt: undefined,
+        softDeletedReason: undefined,
+        softDeletedBy: undefined,
+        softDeletedByRole: undefined,
+      }),
+    );
+  });
+
+  it("stops stale package restore batches when the owner is banned again", async () => {
+    const { ctx, patch } = makeOwnedPackageBatchCtx({
+      owner: { _id: "users:owner", deletedAt: 2_000, deactivatedAt: undefined },
+      pkg: makePackageDoc({
+        softDeletedAt: 1_000,
+        softDeletedReason: "user.banned",
+      }),
+    });
+
+    const result = await restoreOwnedPackagesForUnbanBatchInternalHandler(ctx as never, {
+      ownerUserId: "users:owner",
+      bannedAt: 1_000,
+    });
+
+    expect(result).toMatchObject({ stale: true, restoredCount: 0, scheduled: false });
+    expect(patch).not.toHaveBeenCalledWith("packages:demo", expect.anything());
+  });
+
+  it("marks account-deleted packages separately from ban-restorable packages", async () => {
+    const { ctx, patch } = makeOwnedPackageBatchCtx();
+
+    const result = await applyAccountDeletionToOwnedPackagesBatchInternalHandler(ctx as never, {
+      ownerUserId: "users:owner",
+      deletedAt: 3_000,
+    });
+
+    expect(result).toMatchObject({ deletedCount: 1, revokedTokenCount: 1, scheduled: false });
+    expect(patch).toHaveBeenCalledWith(
+      "packages:demo",
+      expect.objectContaining({
+        softDeletedAt: 3_000,
+        softDeletedReason: "user.deactivated",
+        softDeletedBy: "users:owner",
+        softDeletedByRole: "user",
+      }),
+    );
+  });
+
+  it("does not delete org-owned packages when deleting a member account", async () => {
+    const { ctx, patch } = makeOwnedPackageBatchCtx({
+      owner: {
+        _id: "users:owner",
+        deletedAt: undefined,
+        deactivatedAt: 3_000,
+        personalPublisherId: "publishers:personal",
+      },
+      pkg: makePackageDoc({
+        ownerUserId: "users:owner",
+        ownerPublisherId: "publishers:org",
+      }),
+      publishers: {
+        "publishers:org": { _id: "publishers:org", kind: "org" },
+      },
+    });
+
+    const result = await applyAccountDeletionToOwnedPackagesBatchInternalHandler(ctx as never, {
+      ownerUserId: "users:owner",
+      deletedAt: 3_000,
+    });
+
+    expect(result).toMatchObject({ deletedCount: 0, revokedTokenCount: 0, scheduled: false });
+    expect(patch).not.toHaveBeenCalledWith("packages:demo", expect.anything());
+    expect(patch).not.toHaveBeenCalledWith("packagePublishTokens:demo", expect.anything());
+  });
+});
+
 describe("softDeletePackageInternal", () => {
   it("soft-deletes a package owned by a personal publisher and writes ownerHandle to the search digest", async () => {
     const { ctx, patch, insert } = makeSoftDeleteCtx();
@@ -6942,6 +7284,26 @@ describe("restorePackageInternal", () => {
     });
 
     expect(result).toMatchObject({ ok: true, alreadyRestored: true, releaseCount: 0 });
+    expect(patch).not.toHaveBeenCalledWith("packages:demo", expect.anything());
+  });
+
+  it("does not let package owners directly restore packages hidden by a user ban", async () => {
+    const { ctx, patch } = makeSoftDeleteCtx({
+      pkg: makePackageDoc({
+        ownerUserId: "users:owner",
+        ownerPublisherId: "publishers:owner-personal",
+        softDeletedAt: 1_000,
+        softDeletedReason: "user.banned",
+        softDeletedByRole: "moderator",
+      }),
+    });
+
+    await expect(
+      restorePackageInternalHandler(ctx as never, {
+        userId: "users:owner",
+        name: "demo-plugin",
+      }),
+    ).rejects.toThrow("Forbidden");
     expect(patch).not.toHaveBeenCalledWith("packages:demo", expect.anything());
   });
 });
