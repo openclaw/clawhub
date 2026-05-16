@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixes
+
+- API: fix `GET /api/v1/skills` pagination so `cursor` advances to the next page instead of repeating the first page for supported non-trending sorts (#2275) (thanks @vyctorbrzezowski, @enerj).
+
 ## 0.16.0 - 2026-05-18
 
 ### Fixes

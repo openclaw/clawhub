@@ -4136,6 +4136,7 @@ const NONSUSPICIOUS_SORT_INDEX_FIELD_COUNTS: Record<PublicListSort, number> = {
   stars: 4,
   installs: 4,
 };
+const GET_PAGE_TIEBREAKER_FIELD_COUNT = 2;
 
 function encodeIndexKeyValue(val: Value | undefined): Value {
   return val === undefined ? { __undef: 1 } : val;
@@ -4175,18 +4176,26 @@ function decodePublicListCursor({
   if (!cursor) return null;
   try {
     const parsed = JSON.parse(cursor) as unknown;
+    const isSelfDescribingCursor =
+      parsed !== null &&
+      typeof parsed === "object" &&
+      !Array.isArray(parsed) &&
+      (parsed as { v?: unknown }).v === 1 &&
+      (parsed as { index?: unknown }).index === indexName &&
+      Array.isArray((parsed as { key?: unknown }).key);
     const arr = Array.isArray(parsed)
       ? parsed
-      : parsed !== null &&
-          typeof parsed === "object" &&
-          (parsed as { v?: unknown }).v === 1 &&
-          (parsed as { index?: unknown }).index === indexName &&
-          Array.isArray((parsed as { key?: unknown }).key)
+      : isSelfDescribingCursor
         ? (parsed as { key: unknown[] }).key
         : null;
     if (!Array.isArray(arr)) return null;
     const key = arr.map(decodeIndexKeyValue);
-    if (key.length > maxIndexKeyLength) return null;
+    // Self-describing cursors include the index name, so they can safely carry
+    // getPage's full key with Convex's implicit _creationTime/_id tie-breakers.
+    const maxLength = isSelfDescribingCursor
+      ? maxIndexKeyLength + GET_PAGE_TIEBREAKER_FIELD_COUNT
+      : maxIndexKeyLength;
+    if (key.length > maxLength) return null;
     if (!indexKeyStartsWithPrefix(key, eqPrefix)) return null;
     return key;
   } catch {

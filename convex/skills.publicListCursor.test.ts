@@ -112,9 +112,14 @@ describe("public skill list deterministic cursors", () => {
     getPageMock.mockResolvedValueOnce({
       page: [],
       hasMore: true,
-      indexKeys: [[undefined, "delta"]],
+      indexKeys: [[undefined, "delta", 200, "skillSearchDigest:delta"]],
     });
-    const validCursor = cursorForIndex("by_active_name", [{ __undef: 1 }, "beta"]);
+    const validCursor = cursorForIndex("by_active_name", [
+      { __undef: 1 },
+      "beta",
+      100,
+      "skillSearchDigest:beta",
+    ]);
 
     const result = await listPublicPageV4Handler({} as never, {
       cursor: validCursor,
@@ -125,13 +130,13 @@ describe("public skill list deterministic cursors", () => {
 
     expect(getPageMock.mock.calls[0]?.[1]).toMatchObject({
       index: "by_active_name",
-      startIndexKey: [undefined, "beta"],
+      startIndexKey: [undefined, "beta", 100, "skillSearchDigest:beta"],
       startInclusive: false,
     });
     expect(JSON.parse(result.nextCursor ?? "")).toEqual({
       v: 1,
       index: "by_active_name",
-      key: [{ __undef: 1 }, "delta"],
+      key: [{ __undef: 1 }, "delta", 200, "skillSearchDigest:delta"],
     });
   });
 
@@ -150,6 +155,47 @@ describe("public skill list deterministic cursors", () => {
       index: "by_active_updated",
       startIndexKey: [undefined],
       startInclusive: true,
+    });
+  });
+
+  it("paginates the public API list from getPage's full self-describing cursor", async () => {
+    getPageMock
+      .mockResolvedValueOnce({
+        page: [],
+        hasMore: true,
+        indexKeys: [[undefined, 200, 201, "skillSearchDigest:alpha"]],
+      })
+      .mockResolvedValueOnce({
+        page: [],
+        hasMore: false,
+        indexKeys: [[undefined, 300, 301, "skillSearchDigest:beta"]],
+      });
+
+    const first = await listPublicApiPageV1Handler({} as never, {
+      sort: "updated",
+      nonSuspiciousOnly: false,
+      numItems: 1,
+    });
+
+    expect(first.nextCursor).not.toBeNull();
+    expect(getPageMock.mock.calls[0]?.[1]).toMatchObject({
+      index: "by_active_updated",
+      startIndexKey: [undefined],
+      startInclusive: true,
+    });
+
+    const second = await listPublicApiPageV1Handler({} as never, {
+      cursor: first.nextCursor!,
+      sort: "updated",
+      nonSuspiciousOnly: false,
+      numItems: 1,
+    });
+
+    expect(second.nextCursor).toBeNull();
+    expect(getPageMock.mock.calls[1]?.[1]).toMatchObject({
+      index: "by_active_updated",
+      startIndexKey: [undefined, 200, 201, "skillSearchDigest:alpha"],
+      startInclusive: false,
     });
   });
 });
