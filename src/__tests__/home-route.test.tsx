@@ -6,10 +6,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const siteModeMock = vi.fn(() => "skills");
 const navigateMock = vi.fn();
-const { convexQueryMock, fetchFeaturedPluginsMock } = vi.hoisted(() => ({
-  convexQueryMock: vi.fn(),
-  fetchFeaturedPluginsMock: vi.fn(),
-}));
+const { convexQueryMock, fetchFeaturedPluginsMock, recordSearchSubmissionMock, useQueryMock } =
+  vi.hoisted(() => ({
+    convexQueryMock: vi.fn(),
+    fetchFeaturedPluginsMock: vi.fn(),
+    recordSearchSubmissionMock: vi.fn(),
+    useQueryMock: vi.fn(),
+  }));
 
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (config: { component?: unknown }) => ({
@@ -25,7 +28,7 @@ vi.mock("@tanstack/react-router", () => ({
 
 vi.mock("convex/react", () => ({
   useAction: () => vi.fn(),
-  useQuery: () => undefined,
+  useQuery: (...args: unknown[]) => useQueryMock(...args),
 }));
 
 vi.mock("../../convex/_generated/api", () => ({
@@ -33,6 +36,9 @@ vi.mock("../../convex/_generated/api", () => ({
     skills: {
       listHighlightedPublic: "skills:listHighlightedPublic",
       listPublicPageV4: "skills:listPublicPageV4",
+    },
+    recommendationTopics: {
+      listHomepageTopics: "recommendationTopics:listHomepageTopics",
     },
   },
 }));
@@ -45,6 +51,10 @@ vi.mock("../convex/client", () => ({
 
 vi.mock("../lib/featuredCatalog", () => ({
   fetchFeaturedPlugins: fetchFeaturedPluginsMock,
+}));
+
+vi.mock("../lib/searchTelemetry", () => ({
+  recordSearchSubmission: recordSearchSubmissionMock,
 }));
 
 vi.mock("../lib/site", () => ({
@@ -64,6 +74,9 @@ describe("home route", () => {
     siteModeMock.mockReturnValue("skills");
     convexQueryMock.mockResolvedValue([]);
     fetchFeaturedPluginsMock.mockResolvedValue([]);
+    recordSearchSubmissionMock.mockResolvedValue(undefined);
+    useQueryMock.mockReset();
+    useQueryMock.mockReturnValue(undefined);
     navigateMock.mockReset();
   });
 
@@ -96,6 +109,42 @@ describe("home route", () => {
 
     expect(screen.getByText("BUILT BY THE COMMUNITY.")).toBeTruthy();
     expect(screen.getByText("Tools built by thousands, ready in one search.")).toBeTruthy();
+  });
+
+  it("uses recommendation topics for the hero suggestion chips", async () => {
+    useQueryMock.mockImplementation((queryName: string) =>
+      queryName === "recommendationTopics:listHomepageTopics"
+        ? [
+            { query: "github integration", kind: "plugin-topic", score: 70 },
+            { query: "security scanner", kind: "skill-topic", score: 40 },
+          ]
+        : undefined,
+    );
+
+    await renderHome();
+
+    expect(screen.getByText("What people are looking for")).toBeTruthy();
+    expect(
+      Array.from(document.querySelectorAll(".home-v2-suggestion")).map((node) => node.textContent),
+    ).toEqual(["github integration", "security scanner", "agent workflow", "dashboard builder"]);
+    expect(useQueryMock).toHaveBeenCalledWith("recommendationTopics:listHomepageTopics", {
+      limit: 4,
+    });
+  });
+
+  it("records submitted hero searches before navigating to the results page", async () => {
+    await renderHome();
+
+    fireEvent.change(screen.getByPlaceholderText("What are you looking for?"), {
+      target: { value: "security scanner" },
+    });
+    fireEvent.submit(document.querySelector(".home-v2-search-bar") as HTMLFormElement);
+
+    expect(recordSearchSubmissionMock).toHaveBeenCalledWith("security scanner");
+    expect(navigateMock).toHaveBeenCalledWith({
+      to: "/search",
+      search: { q: "security scanner" },
+    });
   });
 
   it("marks the three home category options for one-or-three-column breakpoints", async () => {

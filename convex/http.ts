@@ -31,6 +31,7 @@ import {
   publishPackageV1Http,
   publishSkillV1Http,
   publishSoulV1Http,
+  recordSearchTelemetryV1Http,
   resolveSkillVersionV1Http,
   searchSkillsV1Http,
   skillsDeleteRouterV1Http,
@@ -63,6 +64,12 @@ http.route({
   path: ApiRoutes.search,
   method: "GET",
   handler: searchSkillsV1Http,
+});
+
+http.route({
+  path: ApiRoutes.search,
+  method: "POST",
+  handler: recordSearchTelemetryV1Http,
 });
 
 http.route({

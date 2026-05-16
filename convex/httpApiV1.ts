@@ -13,6 +13,7 @@ import {
   pluginsGetRouterV1Handler,
   publishPackageV1Handler,
 } from "./httpApiV1/packagesV1";
+import { recordSearchTelemetryV1Handler } from "./httpApiV1/searchTelemetryV1";
 import {
   listSkillsV1Handler,
   publishSkillV1Handler,
@@ -48,6 +49,7 @@ export const listBundlePluginsV1Http = httpAction(listBundlePluginsV1Handler);
 export const verifyDocsSessionV1Http = httpAction(verifyDocsSessionV1Handler);
 
 export const searchSkillsV1Http = httpAction(searchSkillsV1Handler);
+export const recordSearchTelemetryV1Http = httpAction(recordSearchTelemetryV1Handler);
 export const resolveSkillVersionV1Http = httpAction(resolveSkillVersionV1Handler);
 export const listSkillsV1Http = httpAction(listSkillsV1Handler);
 export const skillsGetRouterV1Http = httpAction(skillsGetRouterV1Handler);
@@ -83,6 +85,7 @@ export const __handlers = {
   listBundlePluginsV1Handler,
   verifyDocsSessionV1Handler,
   searchSkillsV1Handler,
+  recordSearchTelemetryV1Handler,
   resolveSkillVersionV1Handler,
   listSkillsV1Handler,
   skillsGetRouterV1Handler,

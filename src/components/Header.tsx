@@ -18,6 +18,7 @@ import { gravatarUrl } from "../lib/gravatar";
 import { NAV_ICONS } from "../lib/marketplaceIcons";
 import { filterNavItems, PRIMARY_NAV_ITEMS, SECONDARY_NAV_ITEMS } from "../lib/nav-items";
 import { isModerator } from "../lib/roles";
+import { recordSearchSubmission } from "../lib/searchTelemetry";
 import { getClawHubSiteUrl, getSiteMode, getSiteName } from "../lib/site";
 import { applyTheme, useThemeMode } from "../lib/theme";
 import { setAuthError, useAuthError } from "../lib/useAuthError";
@@ -181,6 +182,7 @@ export default function Header() {
     e.preventDefault();
     const q = navSearchQuery.trim();
     if (!q) return;
+    if (!isSoulMode) void recordSearchSubmission(q);
     void navigate({
       to: isSoulMode ? "/souls" : "/search",
       search: isSoulMode

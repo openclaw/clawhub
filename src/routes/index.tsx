@@ -21,6 +21,7 @@ import { fetchFeaturedPlugins } from "../lib/featuredCatalog";
 import { FEATURE_SOULS } from "../lib/features";
 import type { PackageListItem } from "../lib/packageApi";
 import type { PublicSkill, PublicSoul, PublicUser } from "../lib/publicUser";
+import { recordSearchSubmission } from "../lib/searchTelemetry";
 import { getSiteMode } from "../lib/site";
 
 export const Route = createFileRoute("/")({
@@ -48,6 +49,13 @@ const SLOT_WORDS = [
   "Wield",
 ];
 const HACK_INDEX = SLOT_WORDS.indexOf("Hack");
+const SEARCH_SUGGESTION_LIMIT = 4;
+const FALLBACK_SEARCH_SUGGESTIONS = [
+  "agent workflow",
+  "github integration",
+  "security scanner",
+  "dashboard builder",
+];
 
 function SkillsHome() {
   type SkillPageEntry = {
@@ -62,6 +70,9 @@ function SkillsHome() {
   const [featuredPlugins, setFeaturedPlugins] = useState<PackageListItem[]>([]);
   const [query, setQuery] = useState("");
   const navigate = useNavigate();
+  const recommendationTopics = useQuery(api.recommendationTopics.listHomepageTopics, {
+    limit: SEARCH_SUGGESTION_LIMIT,
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -94,9 +105,26 @@ function SkillsHome() {
   }, []);
 
   const trimmedQuery = useMemo(() => query.trim(), [query]);
+  const suggestionTerms = useMemo(() => {
+    const terms = [
+      ...(recommendationTopics ?? []).map((entry) => entry.query),
+      ...FALLBACK_SEARCH_SUGGESTIONS,
+    ];
+    const uniqueTerms: string[] = [];
+    const seen = new Set<string>();
+    for (const term of terms) {
+      const normalized = term.trim().toLowerCase();
+      if (!normalized || seen.has(normalized)) continue;
+      seen.add(normalized);
+      uniqueTerms.push(term.trim());
+      if (uniqueTerms.length >= SEARCH_SUGGESTION_LIMIT) break;
+    }
+    return uniqueTerms;
+  }, [recommendationTopics]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
+    if (trimmedQuery) void recordSearchSubmission(trimmedQuery);
     void navigate({
       to: "/search",
       search: { q: trimmedQuery || undefined },
@@ -104,6 +132,7 @@ function SkillsHome() {
   };
 
   const handleSuggestion = (term: string) => {
+    void recordSearchSubmission(term);
     void navigate({
       to: "/search",
       search: { q: term },
@@ -497,35 +526,20 @@ function SkillsHome() {
           </form>
         </div>
 
-        <div className="home-v2-suggestions">
-          <button
-            type="button"
-            className="home-v2-suggestion"
-            onClick={() => handleSuggestion("self-improving agent")}
-          >
-            self-improving agent
-          </button>
-          <button
-            type="button"
-            className="home-v2-suggestion"
-            onClick={() => handleSuggestion("GitHub integration")}
-          >
-            GitHub integration
-          </button>
-          <button
-            type="button"
-            className="home-v2-suggestion"
-            onClick={() => handleSuggestion("security soul")}
-          >
-            security soul
-          </button>
-          <button
-            type="button"
-            className="home-v2-suggestion"
-            onClick={() => handleSuggestion("dashboard builder")}
-          >
-            dashboard builder
-          </button>
+        <div className="home-v2-suggestions-block">
+          <div className="home-v2-suggestions-label">What people are looking for</div>
+          <div className="home-v2-suggestions" aria-label="What people are looking for">
+            {suggestionTerms.map((term) => (
+              <button
+                key={term}
+                type="button"
+                className="home-v2-suggestion"
+                onClick={() => handleSuggestion(term)}
+              >
+                {term}
+              </button>
+            ))}
+          </div>
         </div>
       </section>
 

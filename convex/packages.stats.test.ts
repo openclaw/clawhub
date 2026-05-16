@@ -97,24 +97,38 @@ describe("package stat events", () => {
 
   it("aggregates queued downloads and installs before patching package stats", async () => {
     const events = [
-      { _id: "packageStatEvents:1", packageId: "packages:one", kind: "download" },
-      { _id: "packageStatEvents:2", packageId: "packages:one", kind: "install" },
-      { _id: "packageStatEvents:3", packageId: "packages:two", kind: "download" },
+      { _id: "packageStatEvents:1", packageId: "packages:one", kind: "download", occurredAt: 0 },
+      { _id: "packageStatEvents:2", packageId: "packages:one", kind: "install", occurredAt: 0 },
+      { _id: "packageStatEvents:3", packageId: "packages:two", kind: "download", occurredAt: 0 },
     ];
+    const insert = vi.fn();
     const patch = vi.fn();
     const ctx = {
       db: {
-        query: vi.fn(() => ({
-          withIndex: vi.fn(() => ({
-            take: vi.fn(async () => events),
-          })),
-        })),
+        query: vi.fn((table: string) => {
+          if (table === "packageStatEvents") {
+            return {
+              withIndex: vi.fn(() => ({
+                take: vi.fn(async () => events),
+              })),
+            };
+          }
+          if (table === "packageDailyStats") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn(async () => null),
+              })),
+            };
+          }
+          throw new Error(`Unexpected table: ${table}`);
+        }),
         get: vi.fn(async (id: string) => ({
           _id: id,
+          family: id === "packages:one" ? "code-plugin" : "bundle-plugin",
           stats: { downloads: 10, installs: 1, stars: 2, versions: 3 },
         })),
         normalizeId: vi.fn(),
-        insert: vi.fn(),
+        insert,
         patch,
         replace: vi.fn(),
         delete: vi.fn(),
@@ -152,6 +166,26 @@ describe("package stat events", () => {
     expect(patch).toHaveBeenCalledWith(
       "packageStatEvents:1",
       expect.objectContaining({ processedAt: expect.any(Number) }),
+    );
+    expect(insert).toHaveBeenCalledWith(
+      "packageDailyStats",
+      expect.objectContaining({
+        packageId: "packages:one",
+        family: "code-plugin",
+        day: 0,
+        downloads: 1,
+        installs: 1,
+      }),
+    );
+    expect(insert).toHaveBeenCalledWith(
+      "packageDailyStats",
+      expect.objectContaining({
+        packageId: "packages:two",
+        family: "bundle-plugin",
+        day: 0,
+        downloads: 1,
+        installs: 0,
+      }),
     );
   });
 });

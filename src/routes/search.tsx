@@ -6,6 +6,7 @@ import { BrowseResultsSkeleton } from "../components/skeletons/BrowseResultsSkel
 import { SkillListItem } from "../components/SkillListItem";
 import { Card } from "../components/ui/card";
 import type { PublicSkill } from "../lib/publicUser";
+import { recordSearchSubmission } from "../lib/searchTelemetry";
 import {
   useUnifiedSearch,
   type UnifiedSearchType,
@@ -73,10 +74,12 @@ function UnifiedSearchPage() {
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
+    const submittedQuery = query.trim();
+    if (submittedQuery) void recordSearchSubmission(submittedQuery);
     void navigate({
       to: "/search",
       search: {
-        q: query.trim() || undefined,
+        q: submittedQuery || undefined,
         type: search.type,
       },
     });

@@ -18,6 +18,13 @@ crons.interval(
 );
 
 crons.interval(
+  "recommendation-topics",
+  { minutes: 60 },
+  internal.recommendationTopics.rebuildHomepageRecommendationTopicsAction,
+  { limit: 20 },
+);
+
+crons.interval(
   "skill-stats-backfill",
   { hours: 6 },
   internal.statsMaintenance.runSkillStatBackfillInternal,
@@ -37,6 +44,13 @@ crons.interval(
   "package-stat-events",
   { minutes: 15 },
   internal.packages.processPackageStatEventsInternal,
+  { batchSize: 500 },
+);
+
+crons.interval(
+  "search-dedupe-prune",
+  { hours: 24 },
+  internal.searchTelemetry.pruneSearchQueryDailyDedupeInternal,
   { batchSize: 500 },
 );
 

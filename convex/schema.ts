@@ -992,6 +992,18 @@ const packageStatEvents = defineTable({
   processedAt: v.optional(v.number()),
 }).index("by_unprocessed", ["processedAt"]);
 
+const packageDailyStats = defineTable({
+  packageId: v.id("packages"),
+  family: packageFamilyValidator,
+  day: v.number(),
+  downloads: v.number(),
+  installs: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_package_day", ["packageId", "day"])
+  .index("by_day", ["day"])
+  .index("by_family_day", ["family", "day"]);
+
 const packageTrustedPublishers = defineTable({
   packageId: v.id("packages"),
   provider: v.literal("github-actions"),
@@ -1376,6 +1388,39 @@ const skillLeaderboards = defineTable({
     }),
   ),
 }).index("by_kind", ["kind", "generatedAt"]);
+
+const searchQueryDailyStats = defineTable({
+  normalizedQuery: v.string(),
+  displayQuery: v.string(),
+  day: v.number(),
+  count: v.number(),
+  lastSearchedAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_normalized_query_day", ["normalizedQuery", "day"])
+  .index("by_day_count", ["day", "count", "lastSearchedAt"]);
+
+const searchQueryDailyDedupe = defineTable({
+  normalizedQuery: v.string(),
+  day: v.number(),
+  bucketKey: v.string(),
+  createdAt: v.number(),
+})
+  .index("by_query_day_bucket", ["normalizedQuery", "day", "bucketKey"])
+  .index("by_day", ["day"]);
+
+const recommendationTopics = defineTable({
+  surface: v.string(),
+  kind: v.union(v.literal("search"), v.literal("skill-topic"), v.literal("plugin-topic")),
+  query: v.string(),
+  score: v.number(),
+  reason: v.string(),
+  generatedAt: v.number(),
+  rangeStartDay: v.number(),
+  rangeEndDay: v.number(),
+})
+  .index("by_surface_score", ["surface", "score"])
+  .index("by_surface_generatedAt", ["surface", "generatedAt"]);
 
 const skillStatBackfillState = defineTable({
   key: v.string(),
@@ -1851,6 +1896,7 @@ export default defineSchema({
   packages,
   packageReleases,
   packageStatEvents,
+  packageDailyStats,
   packageTrustedPublishers,
   packagePublishTokens,
   packageBadges,
@@ -1870,6 +1916,9 @@ export default defineSchema({
   soulEmbeddings,
   skillDailyStats,
   skillLeaderboards,
+  searchQueryDailyStats,
+  searchQueryDailyDedupe,
+  recommendationTopics,
   skillStatBackfillState,
   globalStats,
   skillStatEvents,

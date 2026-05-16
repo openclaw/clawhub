@@ -14,7 +14,8 @@ type HeaderAuthStatus = {
 
 const siteModeMock = vi.fn(() => "souls");
 const navigateMock = vi.fn();
-const { signInMock, useUnifiedSearchMock } = vi.hoisted(() => ({
+const { recordSearchSubmissionMock, signInMock, useUnifiedSearchMock } = vi.hoisted(() => ({
+  recordSearchSubmissionMock: vi.fn(),
   signInMock: vi.fn(),
   useUnifiedSearchMock: vi.fn(),
 }));
@@ -130,6 +131,10 @@ vi.mock("../lib/site", () => ({
   getSiteName: () => "OnlyCrabs",
 }));
 
+vi.mock("../lib/searchTelemetry", () => ({
+  recordSearchSubmission: recordSearchSubmissionMock,
+}));
+
 vi.mock("../lib/gravatar", () => ({
   gravatarUrl: vi.fn(),
 }));
@@ -204,6 +209,8 @@ describe("Header", () => {
     });
     siteModeMock.mockReturnValue("souls");
     useUnifiedSearchMock.mockReturnValue(defaultUnifiedSearchResult);
+    recordSearchSubmissionMock.mockReset();
+    recordSearchSubmissionMock.mockResolvedValue(undefined);
     signInMock.mockReset();
     signInMock.mockResolvedValue({ signingIn: true });
   });
@@ -465,6 +472,24 @@ describe("Header", () => {
         view: undefined,
         focus: undefined,
       },
+    });
+  });
+
+  it("records submitted ClawHub header searches", () => {
+    siteModeMock.mockReturnValue("skills");
+    navigateMock.mockReset();
+
+    render(<Header />);
+
+    fireEvent.change(screen.getByPlaceholderText("Search skills and plugins"), {
+      target: { value: "github integration" },
+    });
+    fireEvent.submit(screen.getByRole("search", { name: "Site search" }));
+
+    expect(recordSearchSubmissionMock).toHaveBeenCalledWith("github integration");
+    expect(navigateMock).toHaveBeenCalledWith({
+      to: "/search",
+      search: { q: "github integration", type: undefined },
     });
   });
 });

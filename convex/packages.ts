@@ -46,6 +46,7 @@ import {
 import { normalizeClawScanNoteForWrite } from "./lib/clawScanNote";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
+import { toDayKey } from "./lib/leaderboards";
 import {
   assertPackageVersion,
   ensurePluginNameMatchesPackage,
@@ -64,6 +65,7 @@ import {
   isPackageBlockedFromPublic,
   resolvePackageReleaseScanStatus,
 } from "./lib/packageSecurity";
+import { bumpDailyPackageStats } from "./lib/packageStats";
 import { toPublicPublisher } from "./lib/public";
 import {
   assertCanManageOwnedResource,
@@ -2402,20 +2404,36 @@ export const processPackageStatEventsInternal = internalMutation({
     if (events.length === 0) return { processed: 0, packagesUpdated: 0 };
 
     const statsByPackage = new Map<Id<"packages">, { downloads: number; installs: number }>();
+    const dailyStatsByPackage = new Map<
+      Id<"packages">,
+      Map<number, { occurredAt: number; downloads: number; installs: number }>
+    >();
     for (const event of events) {
       const stats = statsByPackage.get(event.packageId) ?? { downloads: 0, installs: 0 };
+      const day = toDayKey(event.occurredAt);
+      const dailyStatsForPackage = dailyStatsByPackage.get(event.packageId) ?? new Map();
+      const dailyStats = dailyStatsForPackage.get(day) ?? {
+        occurredAt: event.occurredAt,
+        downloads: 0,
+        installs: 0,
+      };
       if (event.kind === "install") {
         stats.installs += 1;
+        dailyStats.installs += 1;
       } else {
         stats.downloads += 1;
+        dailyStats.downloads += 1;
       }
       statsByPackage.set(event.packageId, stats);
+      dailyStatsForPackage.set(day, dailyStats);
+      dailyStatsByPackage.set(event.packageId, dailyStatsForPackage);
     }
 
     let packagesUpdated = 0;
     for (const [packageId, stats] of statsByPackage) {
       const pkg = await ctx.db.get(packageId);
       if (!pkg) continue;
+      const dailyStatsForPackage = dailyStatsByPackage.get(packageId);
       await ctx.db.patch(pkg._id, {
         stats: {
           downloads: (pkg.stats?.downloads ?? 0) + stats.downloads,
@@ -2424,6 +2442,18 @@ export const processPackageStatEventsInternal = internalMutation({
           versions: pkg.stats?.versions ?? 0,
         },
       });
+      if (dailyStatsForPackage) {
+        for (const dailyStats of dailyStatsForPackage.values()) {
+          await bumpDailyPackageStats(ctx, {
+            packageId,
+            family: pkg.family,
+            occurredAt: dailyStats.occurredAt,
+            downloads: dailyStats.downloads,
+            installs: dailyStats.installs,
+            now,
+          });
+        }
+      }
       packagesUpdated += 1;
     }
 

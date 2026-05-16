@@ -10,6 +10,9 @@ let searchMock: {
   type?: "all" | "skills" | "plugins";
 } = {};
 const useUnifiedSearchMock = vi.fn();
+const { recordSearchSubmissionMock } = vi.hoisted(() => ({
+  recordSearchSubmissionMock: vi.fn(),
+}));
 
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (config: { component?: unknown; validateSearch?: unknown }) => ({
@@ -21,6 +24,10 @@ vi.mock("@tanstack/react-router", () => ({
 
 vi.mock("../lib/useUnifiedSearch", () => ({
   useUnifiedSearch: (...args: unknown[]) => useUnifiedSearchMock(...args),
+}));
+
+vi.mock("../lib/searchTelemetry", () => ({
+  recordSearchSubmission: recordSearchSubmissionMock,
 }));
 
 vi.mock("../components/PluginListItem", () => ({
@@ -49,6 +56,8 @@ describe("search route", () => {
   beforeEach(() => {
     searchMock = { q: "first" };
     navigateMock.mockReset();
+    recordSearchSubmissionMock.mockReset();
+    recordSearchSubmissionMock.mockResolvedValue(undefined);
     useUnifiedSearchMock.mockReset();
     useUnifiedSearchMock.mockReturnValue({
       results: [],
@@ -141,6 +150,24 @@ describe("search route", () => {
       to: "/search",
       search: { q: undefined, type: undefined },
       replace: true,
+    });
+  });
+
+  it("records submitted search-page queries", async () => {
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    fireEvent.change(screen.getByPlaceholderText("Search skills and plugins..."), {
+      target: { value: "dashboard builder" },
+    });
+    fireEvent.submit(document.querySelector(".search-page-form") as HTMLFormElement);
+
+    expect(recordSearchSubmissionMock).toHaveBeenCalledWith("dashboard builder");
+    expect(navigateMock).toHaveBeenCalledWith({
+      to: "/search",
+      search: { q: "dashboard builder", type: undefined },
     });
   });
 

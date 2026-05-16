@@ -12478,12 +12478,25 @@ a.publisher-profile-detail:hover {
 }
 
 /* Suggestions */
+.home-v2-suggestions-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  margin-top: 16px;
+}
+.home-v2-suggestions-label {
+  margin-bottom: 8px;
+  color: var(--hv2-text-tertiary);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
 .home-v2-suggestions {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  margin-top: 16px;
   flex-wrap: wrap;
 }
 .home-v2-suggestion {
@@ -12516,9 +12529,17 @@ a.publisher-profile-detail:hover {
 }
 
 @media (max-width: 760px) {
+  .home-v2-suggestions-block {
+    margin-top: 12px;
+  }
+
+  .home-v2-suggestions-label {
+    margin-bottom: 6px;
+    font-size: 10px;
+  }
+
   .home-v2-suggestions {
     gap: 6px;
-    margin-top: 12px;
   }
 
   .home-v2-suggestion {
