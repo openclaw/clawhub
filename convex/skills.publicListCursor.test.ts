@@ -18,7 +18,12 @@ vi.mock("convex-helpers/server/pagination", async () => {
 });
 
 const pagination = await import("convex-helpers/server/pagination");
-const { listPublicApiPageV1, listPublicPageV4, listRelatedByCategory } = await import("./skills");
+const {
+  listPublicApiPageV1,
+  listPublicPageV4,
+  listPublicTrendingPage,
+  listRelatedByCategory,
+} = await import("./skills");
 
 type WrappedHandler<TArgs, TResult> = {
   _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
@@ -61,6 +66,57 @@ const listRelatedByCategoryHandler = (
     { items: Array<{ skill: { slug: string }; ownerHandle: string | null }> }
   >
 )._handler;
+const listPublicTrendingPageHandler = (
+  listPublicTrendingPage as unknown as WrappedHandler<
+    { limit?: number; nonSuspiciousOnly?: boolean },
+    PublicApiListResult
+  >
+)._handler;
+
+function makeSearchDigest(overrides: Record<string, unknown> = {}) {
+  return {
+    _id: "skillSearchDigest:demo",
+    skillId: "skills:demo",
+    slug: "demo",
+    displayName: "Demo",
+    summary: "Demo skill",
+    icon: undefined,
+    ownerUserId: "users:owner",
+    ownerPublisherId: undefined,
+    ownerHandle: "owner",
+    ownerKind: "user",
+    ownerName: "Owner",
+    ownerDisplayName: "Owner",
+    ownerImage: null,
+    canonicalSkillId: undefined,
+    forkOf: undefined,
+    latestVersionId: "skillVersions:1",
+    latestVersionSkillId: "skills:demo",
+    latestVersionSummary: {
+      version: "1.0.0",
+      createdAt: 9,
+      changelog: "initial",
+      changelogSource: "user",
+      clawdis: undefined,
+    },
+    tags: {},
+    capabilityTags: [],
+    badges: {},
+    stats: { downloads: 0, stars: 0, versions: 1, comments: 0 },
+    statsDownloads: 0,
+    statsStars: 0,
+    statsInstallsCurrent: 0,
+    statsInstallsAllTime: 0,
+    softDeletedAt: undefined,
+    moderationStatus: "active",
+    moderationFlags: undefined,
+    moderationReason: undefined,
+    isSuspicious: false,
+    createdAt: 1,
+    updatedAt: 2,
+    ...overrides,
+  };
+}
 
 function legacyCursor(key: unknown[]): string {
   return JSON.stringify(key);
@@ -284,6 +340,73 @@ describe("public skill list deterministic cursors", () => {
     expect(result.page).toEqual([]);
     expect(result.hasMore).toBe(true);
     expect(result.nextCursor).toBeTruthy();
+  });
+
+  it("drops stale API list latest versions that belong to another skill", async () => {
+    getPageMock.mockResolvedValueOnce({
+      page: [
+        makeSearchDigest({
+          latestVersionId: "skillVersions:other",
+          latestVersionSkillId: "skills:other",
+          latestVersionSummary: {
+            version: "9.9.9",
+            createdAt: 9,
+            changelog: "other",
+            changelogSource: "user",
+            clawdis: undefined,
+          },
+        }),
+      ],
+      hasMore: false,
+      indexKeys: [],
+    });
+
+    const result = await listPublicApiPageV1Handler({} as never, { numItems: 10 });
+
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({ latestVersion: null });
+  });
+
+  it("drops stale trending latest versions that belong to another skill", async () => {
+    const staleDigest = makeSearchDigest({
+      latestVersionId: "skillVersions:other",
+      latestVersionSkillId: "skills:other",
+      latestVersionSummary: {
+        version: "9.9.9",
+        createdAt: 9,
+        changelog: "other",
+        changelogSource: "user",
+        clawdis: undefined,
+      },
+    });
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => {
+          if (table === "skillLeaderboards") {
+            return {
+              withIndex: () => ({
+                order: () => ({
+                  first: async () => ({ items: [{ skillId: "skills:demo" }] }),
+                }),
+              }),
+            };
+          }
+          if (table === "skillSearchDigest") {
+            return {
+              withIndex: () => ({
+                unique: async () => staleDigest,
+              }),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    const result = await listPublicTrendingPageHandler(ctx as never, { limit: 10 });
+
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({ latestVersion: null });
   });
 });
 

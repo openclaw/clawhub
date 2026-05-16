@@ -115,7 +115,7 @@ import { computeIsSuspicious, isSkillReviewFlagged, isSkillSuspicious } from "./
 import {
   digestToHydratableSkill,
   digestToOwnerInfo,
-  extractDigestFields,
+  extractValidatedDigestFields,
   upsertSkillSearchDigest,
 } from "./lib/skillSearchDigest";
 import { assertValidSkillSlug, normalizeSkillSlug } from "./lib/skillSlugValidator";
@@ -4198,9 +4198,7 @@ export const listPublicPageV3 = query({
       if (!publicSkill) continue;
       const ownerInfo = digestToOwnerInfo(digest);
       if (!ownerInfo?.owner) continue;
-      const latestVersion = digest.latestVersionSummary
-        ? toPublicSkillListVersionFromSummary(digest.latestVersionSummary, digest.latestVersionId)
-        : null;
+      const latestVersion = toDigestLatestVersionForSkill(digest);
       items.push({
         skill: publicSkill,
         latestVersion,
@@ -4780,9 +4778,7 @@ function buildPublicSkillEntryFromDigest(
   if (!publicSkill) return null;
   const ownerInfo = digestToOwnerInfo(digest);
   if (!ownerInfo?.owner) return null;
-  const latestVersion = digest.latestVersionSummary
-    ? toPublicSkillListVersionFromSummary(digest.latestVersionSummary, digest.latestVersionId)
-    : null;
+  const latestVersion = toDigestLatestVersionForSkill(digest);
   return {
     skill: publicSkill,
     latestVersion,
@@ -4791,15 +4787,23 @@ function buildPublicSkillEntryFromDigest(
   };
 }
 
+function toDigestLatestVersionForSkill(digest: Doc<"skillSearchDigest">) {
+  if (
+    !digest.latestVersionSummary ||
+    !digest.latestVersionId ||
+    digest.latestVersionSkillId !== digest.skillId
+  ) {
+    return null;
+  }
+  return toPublicSkillListVersionFromSummary(digest.latestVersionSummary, digest.latestVersionId);
+}
+
 function buildPublicSkillApiListEntryFromDigest(digest: Doc<"skillSearchDigest">) {
   const publicSkill = toPublicSkill(digestToHydratableSkill(digest));
   if (!publicSkill) return null;
   const ownerInfo = digestToOwnerInfo(digest);
   if (!ownerInfo?.owner) return null;
-  const latestVersion =
-    digest.latestVersionSummary && digest.latestVersionId
-      ? toPublicSkillListVersionFromSummary(digest.latestVersionSummary, digest.latestVersionId)
-      : null;
+  const latestVersion = toDigestLatestVersionForSkill(digest);
 
   return {
     skill: {
@@ -4972,7 +4976,7 @@ function toPublicSkillCatalogItem(digest: Doc<"skillSearchDigest">): PublicSkill
     ownerHandle: ownerInfo?.ownerHandle ?? null,
     createdAt: digest.createdAt,
     updatedAt: digest.updatedAt,
-    latestVersion: digest.latestVersionSummary?.version ?? null,
+    latestVersion: toDigestLatestVersionForSkill(digest)?.version ?? null,
     capabilityTags: digest.capabilityTags ?? [],
     executesCode: false,
     verificationTier: null,
@@ -8695,7 +8699,7 @@ async function syncSkillSearchDigestForSkillDoc(ctx: MutationCtx, skill: Doc<"sk
     ownerUserId: skill.ownerUserId,
   });
   await upsertSkillSearchDigest(ctx, {
-    ...extractDigestFields(skill),
+    ...(await extractValidatedDigestFields(ctx, skill)),
     ownerHandle: owner?.handle ?? "",
     ownerKind: owner?.kind,
     ownerName: owner?.linkedUserId ? owner.handle : undefined,
@@ -9260,7 +9264,7 @@ export const setSkillCapabilityTags = mutation({
       ownerUserId: nextSkill.ownerUserId,
     });
     await upsertSkillSearchDigest(ctx, {
-      ...extractDigestFields(nextSkill),
+      ...(await extractValidatedDigestFields(ctx, nextSkill)),
       ownerHandle: owner?.handle ?? "",
       ownerKind: owner?.kind,
       ownerName: owner?.linkedUserId ? owner.handle : undefined,
