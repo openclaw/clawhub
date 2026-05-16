@@ -1081,6 +1081,15 @@ function hasAcceptedLegacyLicenseTerms(acceptLicenseTerms: boolean | undefined) 
 
 type TransferDecisionAction = "accept" | "reject" | "cancel";
 
+function isTransferDecisionFailure(result: unknown): result is { ok: false; error: string } {
+  return (
+    typeof result === "object" &&
+    result !== null &&
+    (result as { ok?: unknown }).ok === false &&
+    typeof (result as { error?: unknown }).error === "string"
+  );
+}
+
 function transferErrorToResponse(error: unknown, headers: HeadersInit) {
   const message = error instanceof Error ? error.message : "Transfer failed";
   const lower = message.toLowerCase();
@@ -1210,6 +1219,9 @@ async function handleTransferDecision(
       actorUserId: transferContext.userId,
       transferId: pendingTransfer._id,
     });
+    if (isTransferDecisionFailure(result)) {
+      return transferErrorToResponse(new Error(result.error), headers);
+    }
     return json(result, 200, headers);
   } catch (error) {
     return transferErrorToResponse(error, headers);

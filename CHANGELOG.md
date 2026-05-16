@@ -23,6 +23,7 @@
 
 ### Fixes
 
+- Security: cancel pending skill ownership transfers before rejecting accept attempts when the requester is inactive or the skill is hidden, removed, or malicious (#2276, #2277) (thanks @vyctorbrzezowski).
 - Web/API: keep search results limited to items with match evidence, preserve
   trust and popularity as tie-breakers, and show `N+` counts without exact
   count queries (#2206) (thanks @vyctorbrzezowski).

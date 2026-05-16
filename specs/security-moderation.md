@@ -70,6 +70,10 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Any scanner path that determines a skill is malicious must hide the skill and
   schedule the same account-level autoban/token-revocation workflow. Static
   scan malicious findings must not diverge into a softer moderation-only state.
+- Pending skill ownership transfers must not be accepted when the requesting
+  owner is deleted/deactivated or when the skill is malicious, hidden, or
+  removed. The accept path is the final shared gate before ownership changes,
+  so it must cancel the pending transfer before reporting the rejection.
 - `clawScanNote` is optional publisher-authored context stored directly on a
   `skillVersions` or `packageReleases` row. It is not an appeal, has no
   accepted/rejected state, does not imply staff response, and must not drive

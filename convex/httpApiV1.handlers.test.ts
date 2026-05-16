@@ -3119,6 +3119,41 @@ describe("httpApiV1 handlers", () => {
     expect(response.status).toBe(404);
   });
 
+  it("transfer accept maps committed cancellation failures to an error response", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:1",
+      user: { handle: "p" },
+    } as never);
+
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) return { _id: "skills:1", slug: "demo" };
+      if ("toUserId" in args) {
+        return {
+          _id: "skillOwnershipTransfers:1",
+          skillId: "skills:1",
+          toUserId: "users:1",
+          status: "pending",
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if ("key" in args) return okRate();
+      return { ok: false, error: "Skill is under moderation" };
+    });
+
+    const response = await __handlers.skillsPostRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/transfer/accept", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toBe("Skill is under moderation");
+  });
+
   it("rename endpoint forwards to renameOwnedSkillInternal", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:1",
