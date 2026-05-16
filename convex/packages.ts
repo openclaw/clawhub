@@ -5417,10 +5417,18 @@ export const insertReleaseInternal = internalMutation({
     const now = Date.now();
     const normalizedName = normalizePackageName(args.name);
     const actor = await ctx.db.get(args.actorUserId);
-    if (!actor) throw new ConvexError("Unauthorized");
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
     const owner = await ctx.db.get(args.ownerUserId);
-    if (!owner) throw new ConvexError("Unauthorized");
+    if (!owner || owner.deletedAt || owner.deactivatedAt) {
+      throw new ConvexError("Package owner is unavailable");
+    }
     const ownerPublisher = args.ownerPublisherId ? await ctx.db.get(args.ownerPublisherId) : null;
+    if (
+      args.ownerPublisherId &&
+      (!ownerPublisher || ownerPublisher.deletedAt || ownerPublisher.deactivatedAt)
+    ) {
+      throw new ConvexError("Package owner publisher is unavailable");
+    }
     if (args.ownerUserId !== args.actorUserId) {
       assertAdmin(actor);
     }

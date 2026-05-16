@@ -3419,6 +3419,93 @@ describe("packages public queries", () => {
     ).rejects.toThrow("Restore it before publishing another release");
   });
 
+  it("rejects final package publish inserts when the actor was banned mid-publish", async () => {
+    const ctx = makeInsertReleaseCtx(makePackageDoc(), [], {
+      "users:owner": {
+        _id: "users:owner",
+        role: "user",
+        trustedPublisher: false,
+        deletedAt: 123,
+      },
+    });
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:owner",
+        ownerUserId: "users:owner",
+        name: "demo-plugin",
+        displayName: "Demo Plugin",
+        family: "code-plugin",
+        version: "1.0.1",
+        changelog: "try banned owner",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+      }),
+    ).rejects.toThrow("Unauthorized");
+    expect(ctx.insert).not.toHaveBeenCalledWith("packageReleases", expect.anything());
+  });
+
+  it("rejects final package publish inserts when the requested owner was banned mid-publish", async () => {
+    const ctx = makeInsertReleaseCtx(makePackageDoc(), [], {
+      "users:admin": { _id: "users:admin", role: "admin", trustedPublisher: false },
+      "users:owner": {
+        _id: "users:owner",
+        role: "user",
+        trustedPublisher: false,
+        deletedAt: 123,
+      },
+    });
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:admin",
+        ownerUserId: "users:owner",
+        name: "demo-plugin",
+        displayName: "Demo Plugin",
+        family: "code-plugin",
+        version: "1.0.1",
+        changelog: "try banned owner",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+      }),
+    ).rejects.toThrow("Package owner is unavailable");
+    expect(ctx.insert).not.toHaveBeenCalledWith("packageReleases", expect.anything());
+  });
+
+  it("rejects final package publish inserts when the owner publisher was deleted mid-publish", async () => {
+    const ctx = makeInsertReleaseCtx(makePackageDoc(), [], {
+      "users:owner": { _id: "users:owner", role: "user", trustedPublisher: false },
+      "publishers:org": {
+        _id: "publishers:org",
+        kind: "org",
+        handle: "org",
+        deletedAt: 123,
+      },
+    });
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:owner",
+        ownerUserId: "users:owner",
+        ownerPublisherId: "publishers:org",
+        name: "demo-plugin",
+        displayName: "Demo Plugin",
+        family: "code-plugin",
+        version: "1.0.1",
+        changelog: "try deleted publisher",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+      }),
+    ).rejects.toThrow("Package owner publisher is unavailable");
+    expect(ctx.insert).not.toHaveBeenCalledWith("packageReleases", expect.anything());
+  });
+
   it("rejects package scopes that do not match the selected owner handle", async () => {
     const runMutation = vi.fn();
     const ctx = {

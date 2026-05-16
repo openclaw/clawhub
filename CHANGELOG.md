@@ -5,6 +5,7 @@
 ### Fixes
 
 - API: fix `GET /api/v1/skills` pagination so `cursor` advances to the next page instead of repeating the first page for supported non-trending sorts (#2275) (thanks @vyctorbrzezowski, @enerj).
+- Security/API: revalidate package publish actor, owner, and owner publisher active state in the final release insert (thanks @vyctorbrzezowski).
 
 ## 0.17.0 - 2026-05-19
 
