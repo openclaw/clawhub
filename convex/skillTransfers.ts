@@ -7,6 +7,7 @@ import {
   ensurePersonalPublisherForUser,
   getActiveUserByHandleOrPersonalPublisher,
 } from "./lib/publishers";
+import { isSkillSuspicious } from "./lib/skillSafety";
 const TRANSFER_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
 
 type TransferDoc = Doc<"skillOwnershipTransfers">;
@@ -39,6 +40,28 @@ async function assertCanRequestSkillTransfer(
     allowedPublisherRoles: ["admin"],
     allowPlatformAdmin: true,
   });
+}
+
+function assertSkillCanTransferOwnership(
+  skill: Pick<
+    Doc<"skills">,
+    | "moderationStatus"
+    | "moderationVerdict"
+    | "isSuspicious"
+    | "moderationFlags"
+    | "moderationReason"
+  >,
+) {
+  const moderationStatus = skill.moderationStatus ?? "active";
+  if (
+    moderationStatus !== "active" ||
+    skill.moderationVerdict === "suspicious" ||
+    skill.moderationVerdict === "malicious" ||
+    skill.isSuspicious ||
+    isSkillSuspicious(skill)
+  ) {
+    throw new Error("Skill is not eligible for ownership transfer while under moderation");
+  }
 }
 
 async function getActivePendingTransferForSkill(ctx: unknown, skillId: Id<"skills">, now: number) {
@@ -190,11 +213,9 @@ export const acceptTransferInternal = internalMutation({
 
     const skill = await ctx.db.get(transfer.skillId);
     if (!skill || skill.softDeletedAt) throw new Error("Skill not found");
-    if (
-      skill.moderationVerdict === "malicious" ||
-      skill.moderationStatus === "hidden" ||
-      skill.moderationStatus === "removed"
-    ) {
+    try {
+      assertSkillCanTransferOwnership(skill);
+    } catch {
       return await cancelTransfer("Skill is under moderation");
     }
     const requester = await ctx.db.get(transfer.fromUserId);
@@ -208,7 +229,6 @@ export const acceptTransferInternal = internalMutation({
         return await cancelTransfer("Transfer is no longer valid");
       }
     }
-
     const newPublisher = await ensurePersonalPublisherForUser(ctx, newOwner, {
       actorUserId: args.actorUserId,
       source: "skill.transfer.accept",

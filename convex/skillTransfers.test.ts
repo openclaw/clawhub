@@ -443,6 +443,60 @@ describe("skillTransfers", () => {
     );
   });
 
+  it("acceptTransferInternal rejects skills under moderation before ownership writes", async () => {
+    const patch = vi.fn(async () => {});
+    const skill = {
+      _id: "skills:1",
+      slug: "demo",
+      ownerUserId: "users:1",
+      ownerPublisherId: "publishers:owner",
+      softDeletedAt: undefined,
+      moderationStatus: "active",
+      isSuspicious: true,
+    };
+
+    await expect(
+      acceptTransferInternalHandler(
+        {
+          db: {
+            normalizeId: vi.fn(),
+            get: vi.fn(async (id: string) => {
+              if (id === "users:2") return { _id: "users:2", handle: "alice" };
+              if (id === "skillOwnershipTransfers:1") {
+                return {
+                  _id: "skillOwnershipTransfers:1",
+                  skillId: "skills:1",
+                  fromUserId: "users:1",
+                  toUserId: "users:2",
+                  status: "pending",
+                  requestedAt: Date.now() - 1_000,
+                  expiresAt: Date.now() + 10_000,
+                };
+              }
+              if (id === "skills:1") return skill;
+              return null;
+            }),
+            query: vi.fn(() => {
+              throw new Error("unexpected query after moderation guard");
+            }),
+            patch,
+            insert: vi.fn(async () => "auditLogs:1"),
+          },
+        } as never,
+        {
+          actorUserId: "users:2",
+          transferId: "skillOwnershipTransfers:1",
+        } as never,
+      ),
+    ).resolves.toEqual({ ok: false, error: "Skill is under moderation" });
+
+    expect(patch).toHaveBeenCalledWith(
+      "skillOwnershipTransfers:1",
+      expect.objectContaining({ status: "cancelled" }),
+    );
+    expect(patch).not.toHaveBeenCalledWith("skills:1", expect.anything());
+  });
+
   it("acceptTransferInternal honors publisher-admin source requests", async () => {
     const patch = vi.fn(async () => {});
     const insert = vi.fn(async () => "auditLogs:1");
