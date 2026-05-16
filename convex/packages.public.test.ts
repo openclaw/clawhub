@@ -542,7 +542,7 @@ const applyBanToOwnedPackagesBatchInternalHandler = (
 )._handler;
 const restoreOwnedPackagesForUnbanBatchInternalHandler = (
   restoreOwnedPackagesForUnbanBatchInternal as unknown as WrappedHandler<
-    { ownerUserId: string; bannedAt: number; cursor?: string },
+    { actorUserId: string; ownerUserId: string; bannedAt: number; cursor?: string },
     { restoredCount: number; scheduled: boolean; stale?: true }
   >
 )._handler;
@@ -6862,6 +6862,14 @@ function makeOwnedPackageBatchCtx(options?: {
       scheduler: { runAfter },
       db: {
         get: vi.fn(async (id: string) => {
+          if (id === "users:admin") {
+            return {
+              _id: "users:admin",
+              role: "admin",
+              deletedAt: undefined,
+              deactivatedAt: undefined,
+            };
+          }
           if (id === "users:owner") {
             return options?.owner === undefined
               ? { _id: "users:owner", deletedAt: undefined, deactivatedAt: undefined }
@@ -7041,7 +7049,7 @@ describe("owned package sanction batches", () => {
   });
 
   it("restores only packages that were hidden by the matching ban batch", async () => {
-    const { ctx, patch } = makeOwnedPackageBatchCtx({
+    const { ctx, patch, insert } = makeOwnedPackageBatchCtx({
       pkg: makePackageDoc({
         softDeletedAt: 1_000,
         softDeletedReason: "user.banned",
@@ -7062,6 +7070,7 @@ describe("owned package sanction batches", () => {
     });
 
     const result = await restoreOwnedPackagesForUnbanBatchInternalHandler(ctx as never, {
+      actorUserId: "users:admin",
       ownerUserId: "users:owner",
       bannedAt: 1_000,
     });
@@ -7076,6 +7085,13 @@ describe("owned package sanction batches", () => {
         softDeletedByRole: undefined,
       }),
     );
+    expect(insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({
+        actorUserId: "users:admin",
+        action: "package.undelete",
+      }),
+    );
   });
 
   it("stops stale package restore batches when the owner is banned again", async () => {
@@ -7088,6 +7104,7 @@ describe("owned package sanction batches", () => {
     });
 
     const result = await restoreOwnedPackagesForUnbanBatchInternalHandler(ctx as never, {
+      actorUserId: "users:admin",
       ownerUserId: "users:owner",
       bannedAt: 1_000,
     });

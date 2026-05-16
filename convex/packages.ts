@@ -3023,11 +3023,16 @@ export const applyBanToOwnedPackagesBatchInternal = internalMutation({
 
 export const restoreOwnedPackagesForUnbanBatchInternal = internalMutation({
   args: {
+    actorUserId: v.id("users"),
     ownerUserId: v.id("users"),
     bannedAt: v.number(),
     cursor: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) {
+      throw new ConvexError("Unauthorized");
+    }
     const owner = await ctx.db.get(args.ownerUserId);
     if (!owner || owner.deletedAt || owner.deactivatedAt) {
       return { ok: true as const, restoredCount: 0, scheduled: false, stale: true as const };
@@ -3054,8 +3059,8 @@ export const restoreOwnedPackagesForUnbanBatchInternal = internalMutation({
       }
 
       await restorePackageDoc(ctx, pkg, {
-        actorUserId: args.ownerUserId,
-        actorRole: "user",
+        actorUserId: actor._id,
+        actorRole: actor.role,
         allowBanRestore: true,
         source: "dashboard",
       });

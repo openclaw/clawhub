@@ -1749,6 +1749,7 @@ async function unbanUserWithActor(
   const restorePackagesResult = ((await ctx.runMutation(
     internal.packages.restoreOwnedPackagesForUnbanBatchInternal,
     {
+      actorUserId: actor._id,
       ownerUserId: targetUserId,
       bannedAt,
       cursor: undefined,
