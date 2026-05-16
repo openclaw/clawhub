@@ -5,6 +5,7 @@
 ### Fixes
 
 - API: fix `GET /api/v1/skills` pagination so `cursor` advances to the next page instead of repeating the first page for supported non-trending sorts (#2275) (thanks @vyctorbrzezowski, @enerj).
+- Web: block collaborative membership on personal publishers while allowing the linked owner to clean up stale extra membership rows (thanks @vyctorbrzezowski).
 
 ## 0.17.0 - 2026-05-19
 

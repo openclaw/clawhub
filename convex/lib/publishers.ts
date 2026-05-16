@@ -127,7 +127,10 @@ export async function assertCanManageOwnedResource(
   }
 
   const publisher = await ctx.db.get(params.ownerPublisherId);
-  if (publisher?.kind === "user" && publisher.linkedUserId === params.actor._id) return;
+  if (publisher?.kind === "user") {
+    if (publisher.linkedUserId === params.actor._id) return;
+    throw new ConvexError("Forbidden");
+  }
 
   const membership = await getPublisherMembership(ctx, params.ownerPublisherId, params.actor._id);
   if (
@@ -484,7 +487,14 @@ export async function requirePublisherRole(
   },
 ) {
   const publisher = await ctx.db.get(params.publisherId);
-  if (!isPublisherActive(publisher)) throw new ConvexError("Publisher not found");
+  if (!publisher || !isPublisherActive(publisher)) throw new ConvexError("Publisher not found");
+  if (publisher.kind === "user") {
+    if (publisher.linkedUserId !== params.userId) {
+      throw new ConvexError("Forbidden");
+    }
+    const membership = await getPublisherMembership(ctx, params.publisherId, params.userId);
+    return { publisher, membership };
+  }
   const membership = await getPublisherMembership(ctx, params.publisherId, params.userId);
   if (!membership || !isPublisherRoleAllowed(membership.role, params.allowed)) {
     throw new ConvexError("Forbidden");
@@ -513,6 +523,10 @@ export async function resolvePublisherForActor(
   const publisher = await getPublisherByHandle(ctx, requestedHandle);
   if (!publisher || !isPublisherActive(publisher)) {
     throw new ConvexError(`Publisher "@${requestedHandle}" not found`);
+  }
+  if (publisher.kind === "user") {
+    if (publisher.linkedUserId === params.actor._id) return publisher;
+    throw new ConvexError(`You do not have publish access for "@${requestedHandle}"`);
   }
   const membership = await getPublisherMembership(ctx, publisher._id, params.actor._id);
   if (!membership || !isPublisherRoleAllowed(membership.role, params.allowed)) {

@@ -250,6 +250,14 @@ Role semantics:
 
 Moderators/admins keep global override powers as they do today.
 
+Membership management is only valid for `kind: "org"` publishers. Personal
+publishers (`kind: "user"`) are identity aliases for one linked user; they keep
+a single owner membership row for compatibility with publisher-aware ownership
+checks, but authorization must key off `linkedUserId`, not extra membership
+rows. Public member add mutations must not treat personal publishers as
+organizations; remove mutations may only let the linked user clean up stale
+extra membership rows.
+
 Skill slug merges are content-management operations. They must authorize through
 publisher ownership, not only `ownerUserId`, so org owners/admins can merge two
 skills owned by the same manageable publisher. Merge aliases must keep both

@@ -92,6 +92,12 @@ function validateHandle(rawHandle: string) {
   return handle;
 }
 
+function assertOrgPublisherMembershipManagement(publisher: Doc<"publishers">) {
+  if (publisher.kind !== "org") {
+    throw new ConvexError("Personal publishers do not support member management");
+  }
+}
+
 async function getUserByHandle(ctx: Pick<MutationCtx, "db">, handle: string) {
   return await ctx.db
     .query("users")
@@ -1347,6 +1353,7 @@ export const addMember = mutation({
     if (!membership || !isPublisherRoleAllowed(membership.role, ["admin"])) {
       throw new ConvexError("Forbidden");
     }
+    assertOrgPublisherMembershipManagement(publisher);
     if (args.role === "owner" && membership.role !== "owner") {
       throw new ConvexError("Only org owners can promote members to owner");
     }
@@ -1400,10 +1407,29 @@ export const removeMember = mutation({
     if (!publisher || publisher.deletedAt || publisher.deactivatedAt) {
       throw new ConvexError("Publisher not found");
     }
+    if (publisher.kind === "user") {
+      if (publisher.linkedUserId !== userId) throw new ConvexError("Forbidden");
+      const targetMembership = await getPublisherMembership(ctx, publisher._id, args.userId);
+      if (!targetMembership) return { ok: true };
+      if (args.userId === publisher.linkedUserId) {
+        throw new ConvexError("Personal publisher owner membership cannot be removed");
+      }
+      await ctx.db.delete(targetMembership._id);
+      await ctx.db.insert("auditLogs", {
+        actorUserId: userId,
+        action: "publisher.member.remove",
+        targetType: "publisher",
+        targetId: publisher._id,
+        metadata: { memberUserId: args.userId },
+        createdAt: Date.now(),
+      });
+      return { ok: true };
+    }
     const actorMembership = await getPublisherMembership(ctx, publisher._id, userId);
     if (!actorMembership || !isPublisherRoleAllowed(actorMembership.role, ["admin"])) {
       throw new ConvexError("Forbidden");
     }
+    assertOrgPublisherMembershipManagement(publisher);
     const targetMembership = await getPublisherMembership(ctx, publisher._id, args.userId);
     if (!targetMembership) return { ok: true };
     if (targetMembership.role === "owner" && actorMembership.role !== "owner") {

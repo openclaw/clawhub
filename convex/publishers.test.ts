@@ -1,6 +1,6 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { describe, expect, it, vi } from "vitest";
-import { assertCanManageOwnedResource } from "./lib/publishers";
+import { assertCanManageOwnedResource, requirePublisherRole } from "./lib/publishers";
 import {
   addMember,
   listPublicPage,
@@ -929,6 +929,166 @@ describe("publishers membership controls", () => {
     ).rejects.toThrow("Only org owners can promote members to owner");
   });
 
+  it("prevents adding members to personal publishers", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:owner") return { _id: id };
+          if (id === "publishers:personal") {
+            return {
+              _id: id,
+              kind: "user",
+              handle: "owner",
+              displayName: "Owner",
+              linkedUserId: "users:owner",
+            };
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table === "publisherMembers") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue({
+                  _id: "publisherMembers:owner",
+                  publisherId: "publishers:personal",
+                  userId: "users:owner",
+                  role: "owner",
+                }),
+              })),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+        insert: vi.fn(),
+        patch: vi.fn(),
+        delete: vi.fn(),
+        replace: vi.fn(),
+        normalizeId: vi.fn(),
+      },
+    };
+
+    await expect(
+      addMemberHandler(
+        ctx as never,
+        { publisherId: "publishers:personal", userHandle: "friend", role: "admin" } as never,
+      ),
+    ).rejects.toThrow("Personal publishers do not support member management");
+
+    expect(ctx.db.insert).not.toHaveBeenCalled();
+    expect(ctx.db.patch).not.toHaveBeenCalled();
+  });
+
+  it("lets linked owners remove stale members from personal publishers", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:owner") return { _id: id };
+          if (id === "publishers:personal") {
+            return {
+              _id: id,
+              kind: "user",
+              handle: "owner",
+              displayName: "Owner",
+              linkedUserId: "users:owner",
+            };
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table === "publisherMembers") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue({
+                  _id: "publisherMembers:friend",
+                  publisherId: "publishers:personal",
+                  userId: "users:friend",
+                  role: "admin",
+                }),
+              })),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+        delete: vi.fn(),
+        insert: vi.fn(),
+        patch: vi.fn(),
+        replace: vi.fn(),
+        normalizeId: vi.fn(),
+      },
+    };
+
+    await expect(
+      removeMemberHandler(
+        ctx as never,
+        { publisherId: "publishers:personal", userId: "users:friend" } as never,
+      ),
+    ).resolves.toEqual({ ok: true });
+
+    expect(ctx.db.delete).toHaveBeenCalledWith("publisherMembers:friend");
+    expect(ctx.db.insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({
+        action: "publisher.member.remove",
+        targetId: "publishers:personal",
+        metadata: { memberUserId: "users:friend" },
+      }),
+    );
+  });
+
+  it("prevents removing the linked owner from personal publishers", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:owner") return { _id: id };
+          if (id === "publishers:personal") {
+            return {
+              _id: id,
+              kind: "user",
+              handle: "owner",
+              displayName: "Owner",
+              linkedUserId: "users:owner",
+            };
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table === "publisherMembers") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue({
+                  _id: "publisherMembers:owner",
+                  publisherId: "publishers:personal",
+                  userId: "users:owner",
+                  role: "owner",
+                }),
+              })),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+        delete: vi.fn(),
+        insert: vi.fn(),
+        patch: vi.fn(),
+        replace: vi.fn(),
+        normalizeId: vi.fn(),
+      },
+    };
+
+    await expect(
+      removeMemberHandler(
+        ctx as never,
+        { publisherId: "publishers:personal", userId: "users:owner" } as never,
+      ),
+    ).rejects.toThrow("Personal publisher owner membership cannot be removed");
+
+    expect(ctx.db.delete).not.toHaveBeenCalled();
+    expect(ctx.db.insert).not.toHaveBeenCalled();
+  });
+
   it("prevents removing the last remaining owner", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
     const ctx = {
@@ -1447,6 +1607,90 @@ describe("publisher-owned resource authorization", () => {
         } as never,
       ),
     ).resolves.toBeUndefined();
+  });
+
+  it("does not honor extra memberships on personal publishers", async () => {
+    const ctx = makeOwnerResourceCtx({
+      publisher: {
+        _id: "publishers:owner",
+        kind: "user",
+        handle: "vincentkoc",
+        linkedUserId: "users:vincent",
+      },
+      membership: {
+        _id: "publisherMembers:stale",
+        publisherId: "publishers:owner",
+        userId: "users:friend",
+        role: "owner",
+      },
+    });
+
+    await expect(
+      assertCanManageOwnedResource(
+        ctx as never,
+        {
+          actor: { _id: "users:friend" },
+          ownerUserId: "users:vincent",
+          ownerPublisherId: "publishers:owner",
+        } as never,
+      ),
+    ).rejects.toThrow("Forbidden");
+  });
+
+  it("does not authorize personal publisher roles for non-linked members", async () => {
+    const ctx = makeOwnerResourceCtx({
+      publisher: {
+        _id: "publishers:owner",
+        kind: "user",
+        handle: "vincentkoc",
+        linkedUserId: "users:vincent",
+      },
+      membership: {
+        _id: "publisherMembers:stale",
+        publisherId: "publishers:owner",
+        userId: "users:friend",
+        role: "owner",
+      },
+    });
+
+    await expect(
+      requirePublisherRole(
+        ctx as never,
+        {
+          publisherId: "publishers:owner",
+          userId: "users:friend",
+          allowed: ["owner"],
+        } as never,
+      ),
+    ).rejects.toThrow("Forbidden");
+  });
+
+  it("treats linked users as personal publisher owners even with stale membership roles", async () => {
+    const ctx = makeOwnerResourceCtx({
+      publisher: {
+        _id: "publishers:owner",
+        kind: "user",
+        handle: "vincentkoc",
+        linkedUserId: "users:vincent",
+      },
+      membership: {
+        _id: "publisherMembers:stale",
+        publisherId: "publishers:owner",
+        userId: "users:vincent",
+        role: "publisher",
+      },
+    });
+
+    await expect(
+      requirePublisherRole(
+        ctx as never,
+        {
+          publisherId: "publishers:owner",
+          userId: "users:vincent",
+          allowed: ["admin"],
+        } as never,
+      ),
+    ).resolves.toBeDefined();
   });
 });
 
