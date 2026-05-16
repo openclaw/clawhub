@@ -1,10 +1,10 @@
 /* @vitest-environment node */
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
+  mergeSearchStatRows,
   normalizePublicSearchQuery,
   pruneSearchQueryDailyDedupeInternal,
-  rankTrendingSearches,
   recordSearchInternal,
 } from "./searchTelemetry";
 
@@ -19,7 +19,10 @@ const recordSearchInternalHandler = (
 
 const pruneSearchQueryDailyDedupeInternalHandler = (
   pruneSearchQueryDailyDedupeInternal as unknown as {
-    _handler: (ctx: unknown, args: { batchSize?: number }) => Promise<{ deleted: number }>;
+    _handler: (
+      ctx: unknown,
+      args: { batchSize?: number },
+    ) => Promise<{ deleted: number; dedupeDeleted: number; statsDeleted: number }>;
   }
 )._handler;
 
@@ -41,68 +44,41 @@ describe("search telemetry", () => {
     expect(normalizePublicSearchQuery("one two three four five six seven eight nine")).toBeNull();
   });
 
-  it("requires enough aggregate volume before a search can trend publicly", () => {
-    const results = rankTrendingSearches(
-      [
-        [
-          {
-            normalizedQuery: "promote me",
-            displayQuery: "promote me",
-            count: 9,
-            lastSearchedAt: 100,
-          },
-          {
-            normalizedQuery: "real demand",
-            displayQuery: "real demand",
-            count: 10,
-            lastSearchedAt: 90,
-          },
-        ],
-      ],
-      { limit: 4 },
-    );
-
-    expect(results).toEqual([{ query: "real demand", count: 10 }]);
-  });
-
-  it("ranks terms across the recent search window by count and recency", () => {
-    const results = rankTrendingSearches(
-      [
-        [
-          {
-            normalizedQuery: "github integration",
-            displayQuery: "github integration",
-            count: 2,
-            lastSearchedAt: 100,
-          },
-          {
-            normalizedQuery: "dashboard builder",
-            displayQuery: "dashboard builder",
-            count: 3,
-            lastSearchedAt: 90,
-          },
-        ],
-        [
-          {
-            normalizedQuery: "github integration",
-            displayQuery: "github integration",
-            count: 3,
-            lastSearchedAt: 110,
-          },
-          {
-            normalizedQuery: "single search",
-            displayQuery: "single search",
-            count: 1,
-            lastSearchedAt: 120,
-          },
-        ],
-      ],
-      { limit: 3, minCount: 2 },
-    );
+  it("merges aggregate search rows by query and ranks them by count and recency", () => {
+    const results = mergeSearchStatRows([
+      {
+        normalizedQuery: "github integration",
+        displayQuery: "github integration",
+        count: 2,
+        lastSearchedAt: 100,
+      },
+      {
+        normalizedQuery: "dashboard builder",
+        displayQuery: "dashboard builder",
+        count: 3,
+        lastSearchedAt: 90,
+      },
+      {
+        normalizedQuery: "github integration",
+        displayQuery: "github integration",
+        count: 3,
+        lastSearchedAt: 110,
+      },
+    ]);
 
     expect(results).toEqual([
-      { query: "github integration", count: 5 },
-      { query: "dashboard builder", count: 3 },
+      {
+        normalizedQuery: "github integration",
+        displayQuery: "github integration",
+        count: 5,
+        lastSearchedAt: 110,
+      },
+      {
+        normalizedQuery: "dashboard builder",
+        displayQuery: "dashboard builder",
+        count: 3,
+        lastSearchedAt: 90,
+      },
     ]);
   });
 
@@ -140,7 +116,7 @@ describe("search telemetry", () => {
     expect(ctx.dedupe).toHaveLength(2);
   });
 
-  it("prunes expired search dedupe buckets with the day index", async () => {
+  it("prunes expired search telemetry rows with day indexes", async () => {
     const ctx = makeRecordSearchCtx();
     const currentDay = Math.floor(Date.now() / (24 * 60 * 60 * 1000));
     ctx.dedupe.push(
@@ -159,12 +135,61 @@ describe("search telemetry", () => {
         createdAt: Date.now(),
       },
     );
+    ctx.stats.push(
+      {
+        _id: "stats:old",
+        normalizedQuery: "old query",
+        displayQuery: "old query",
+        day: currentDay - 30,
+        count: 20,
+        lastSearchedAt: 0,
+        updatedAt: 0,
+      },
+      {
+        _id: "stats:recent",
+        normalizedQuery: "recent query",
+        displayQuery: "recent query",
+        day: currentDay,
+        count: 1,
+        lastSearchedAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    );
 
     await expect(
       pruneSearchQueryDailyDedupeInternalHandler(ctx, { batchSize: 10 }),
-    ).resolves.toEqual({ deleted: 1 });
+    ).resolves.toEqual({ deleted: 2, dedupeDeleted: 1, statsDeleted: 1 });
 
     expect(ctx.dedupe.map((row) => row._id)).toEqual(["dedupe:recent"]);
+    expect(ctx.stats.map((row) => row._id)).toEqual(["stats:recent"]);
+    expect(ctx.scheduler.runAfter).not.toHaveBeenCalled();
+  });
+
+  it("schedules a continuation when telemetry pruning fills a batch", async () => {
+    const ctx = makeRecordSearchCtx();
+    const currentDay = Math.floor(Date.now() / (24 * 60 * 60 * 1000));
+    ctx.dedupe.push(
+      {
+        _id: "dedupe:old-a",
+        normalizedQuery: "old query",
+        day: currentDay - 30,
+        bucketKey: "bucket-old-a",
+        createdAt: 0,
+      },
+      {
+        _id: "dedupe:old-b",
+        normalizedQuery: "old query",
+        day: currentDay - 30,
+        bucketKey: "bucket-old-b",
+        createdAt: 0,
+      },
+    );
+
+    await expect(
+      pruneSearchQueryDailyDedupeInternalHandler(ctx, { batchSize: 1 }),
+    ).resolves.toMatchObject({ deleted: 1, dedupeDeleted: 1 });
+
+    expect(ctx.scheduler.runAfter).toHaveBeenCalledWith(0, expect.anything(), { batchSize: 1 });
   });
 });
 
@@ -221,6 +246,10 @@ function makeRecordSearchCtx() {
                   const cutoffDay = Number(values[0]);
                   return dedupe.filter((row) => row.day < cutoffDay).slice(0, limit);
                 }
+                if (table === "searchQueryDailyStats") {
+                  const cutoffDay = Number(values[0]);
+                  return stats.filter((row) => row.day < cutoffDay).slice(0, limit);
+                }
                 throw new Error(`Unexpected take table: ${table}`);
               },
             };
@@ -261,14 +290,22 @@ function makeRecordSearchCtx() {
         throw new Error("replace should not be called");
       },
       delete: async (id: string) => {
-        const index = dedupe.findIndex((row) => row._id === id);
-        if (index >= 0) {
-          dedupe.splice(index, 1);
+        const dedupeIndex = dedupe.findIndex((row) => row._id === id);
+        if (dedupeIndex >= 0) {
+          dedupe.splice(dedupeIndex, 1);
+          return;
+        }
+        const statsIndex = stats.findIndex((row) => row._id === id);
+        if (statsIndex >= 0) {
+          stats.splice(statsIndex, 1);
           return;
         }
         throw new Error(`Missing row: ${id}`);
       },
       normalizeId: () => null,
+    },
+    scheduler: {
+      runAfter: vi.fn(),
     },
   };
 

@@ -1,15 +1,11 @@
 import { v } from "convex/values";
-import { query, internalMutation } from "./functions";
+import { internal } from "./_generated/api";
+import { internalMutation } from "./functions";
 import { toDayKey } from "./lib/leaderboards";
 
-const TRENDING_SEARCH_DAYS = 7;
-const TRENDING_SEARCH_DAY_SCAN_LIMIT = 50;
-const DEFAULT_TRENDING_SEARCH_LIMIT = 4;
-const MAX_TRENDING_SEARCH_LIMIT = 8;
-const MIN_PUBLIC_TRENDING_SEARCH_COUNT = 10;
-const SEARCH_DEDUPE_RETENTION_DAYS = 14;
-const DEFAULT_SEARCH_DEDUPE_PRUNE_BATCH_SIZE = 500;
-const MAX_SEARCH_DEDUPE_PRUNE_BATCH_SIZE = 1_000;
+const SEARCH_TELEMETRY_RETENTION_DAYS = 14;
+const DEFAULT_SEARCH_TELEMETRY_PRUNE_BATCH_SIZE = 500;
+const MAX_SEARCH_TELEMETRY_PRUNE_BATCH_SIZE = 1_000;
 const MIN_SEARCH_QUERY_LENGTH = 3;
 const MAX_SEARCH_QUERY_LENGTH = 80;
 const MAX_SEARCH_QUERY_TOKENS = 8;
@@ -19,11 +15,6 @@ type SearchStatRow = {
   displayQuery: string;
   count: number;
   lastSearchedAt: number;
-};
-
-type RankedSearch = {
-  query: string;
-  count: number;
 };
 
 export function normalizePublicSearchQuery(input: string) {
@@ -46,43 +37,28 @@ export function normalizePublicSearchQuery(input: string) {
   };
 }
 
-export function rankTrendingSearches(
-  perDayRows: SearchStatRow[][],
-  options?: { limit?: number; minCount?: number },
-): RankedSearch[] {
-  const limit = clampInt(
-    options?.limit ?? DEFAULT_TRENDING_SEARCH_LIMIT,
-    1,
-    MAX_TRENDING_SEARCH_LIMIT,
-  );
-  const minCount = Math.max(1, Math.floor(options?.minCount ?? MIN_PUBLIC_TRENDING_SEARCH_COUNT));
+export function mergeSearchStatRows(perDayRows: SearchStatRow[]) {
   const totals = new Map<string, SearchStatRow>();
 
-  for (const rows of perDayRows) {
-    for (const row of rows) {
-      const current = totals.get(row.normalizedQuery);
-      if (!current) {
-        totals.set(row.normalizedQuery, { ...row });
-        continue;
-      }
-      current.count += row.count;
-      if (row.lastSearchedAt >= current.lastSearchedAt) {
-        current.displayQuery = row.displayQuery;
-        current.lastSearchedAt = row.lastSearchedAt;
-      }
+  for (const row of perDayRows) {
+    const current = totals.get(row.normalizedQuery);
+    if (!current) {
+      totals.set(row.normalizedQuery, { ...row });
+      continue;
+    }
+    current.count += row.count;
+    if (row.lastSearchedAt >= current.lastSearchedAt) {
+      current.displayQuery = row.displayQuery;
+      current.lastSearchedAt = row.lastSearchedAt;
     }
   }
 
-  return [...totals.values()]
-    .filter((row) => row.count >= minCount)
-    .sort(
-      (a, b) =>
-        b.count - a.count ||
-        b.lastSearchedAt - a.lastSearchedAt ||
-        a.displayQuery.localeCompare(b.displayQuery),
-    )
-    .slice(0, limit)
-    .map((row) => ({ query: row.displayQuery, count: row.count }));
+  return [...totals.values()].sort(
+    (a, b) =>
+      b.count - a.count ||
+      b.lastSearchedAt - a.lastSearchedAt ||
+      a.displayQuery.localeCompare(b.displayQuery),
+  );
 }
 
 export const recordSearchInternal = internalMutation({
@@ -146,57 +122,48 @@ export const recordSearchInternal = internalMutation({
   },
 });
 
-export const listTrendingSearches = query({
-  args: {
-    limit: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const limit = clampInt(
-      args.limit ?? DEFAULT_TRENDING_SEARCH_LIMIT,
-      1,
-      MAX_TRENDING_SEARCH_LIMIT,
-    );
-    const endDay = toDayKey(Date.now());
-    const startDay = endDay - (TRENDING_SEARCH_DAYS - 1);
-    const perDayRows: SearchStatRow[][] = [];
-
-    for (let day = startDay; day <= endDay; day += 1) {
-      const rows = await ctx.db
-        .query("searchQueryDailyStats")
-        .withIndex("by_day_count", (q) => q.eq("day", day))
-        .order("desc")
-        .take(TRENDING_SEARCH_DAY_SCAN_LIMIT);
-      perDayRows.push(rows);
-    }
-
-    return rankTrendingSearches(perDayRows, {
-      limit,
-      minCount: MIN_PUBLIC_TRENDING_SEARCH_COUNT,
-    });
-  },
-});
-
 export const pruneSearchQueryDailyDedupeInternal = internalMutation({
   args: {
     batchSize: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const batchSize = clampInt(
-      args.batchSize ?? DEFAULT_SEARCH_DEDUPE_PRUNE_BATCH_SIZE,
+      args.batchSize ?? DEFAULT_SEARCH_TELEMETRY_PRUNE_BATCH_SIZE,
       1,
-      MAX_SEARCH_DEDUPE_PRUNE_BATCH_SIZE,
+      MAX_SEARCH_TELEMETRY_PRUNE_BATCH_SIZE,
     );
-    const cutoffDay = toDayKey(Date.now()) - SEARCH_DEDUPE_RETENTION_DAYS;
+    const cutoffDay = toDayKey(Date.now()) - SEARCH_TELEMETRY_RETENTION_DAYS;
     const expired = await ctx.db
       .query("searchQueryDailyDedupe")
       .withIndex("by_day", (q) => q.lt("day", cutoffDay))
+      .take(batchSize);
+    const expiredStats = await ctx.db
+      .query("searchQueryDailyStats")
+      .withIndex("by_day_count", (q) => q.lt("day", cutoffDay))
       .take(batchSize);
 
     for (const row of expired) {
       await ctx.db.delete(row._id);
     }
+    for (const row of expiredStats) {
+      await ctx.db.delete(row._id);
+    }
 
-    return { deleted: expired.length };
+    if (expired.length === batchSize || expiredStats.length === batchSize) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.searchTelemetry.pruneSearchQueryDailyDedupeInternal,
+        {
+          batchSize,
+        },
+      );
+    }
+
+    return {
+      deleted: expired.length + expiredStats.length,
+      dedupeDeleted: expired.length,
+      statsDeleted: expiredStats.length,
+    };
   },
 });
 

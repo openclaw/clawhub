@@ -97,12 +97,7 @@ export function buildRecommendationTopics(args: {
 
   for (const row of searchTotals.values()) {
     if (row.count < minSearchCount) continue;
-    addCandidate(candidates, {
-      query: row.query,
-      kind: "search",
-      score: row.count * SEARCH_SCORE_WEIGHT,
-      reason: "Trending search",
-    });
+    addSearchTopicCandidates(candidates, row);
   }
 
   for (const signal of args.skillSignals ?? []) {
@@ -362,6 +357,22 @@ export const rebuildHomepageRecommendationTopicsAction = internalAction({
     return { ok: true as const, count: topics.length };
   },
 });
+
+function addSearchTopicCandidates(
+  candidates: Map<string, CandidateTopic>,
+  row: { query: string; count: number },
+) {
+  const score = row.count * SEARCH_SCORE_WEIGHT;
+  for (const topic of TOPIC_PATTERNS) {
+    if (!topic.pattern.test(row.query)) continue;
+    addCandidate(candidates, {
+      query: topic.query,
+      kind: "search",
+      score,
+      reason: "Trending search",
+    });
+  }
+}
 
 function addSignalTopics(candidates: Map<string, CandidateTopic>, signal: RecommendationSignal) {
   const score = signal.installs * INSTALL_SCORE_WEIGHT + signal.downloads;

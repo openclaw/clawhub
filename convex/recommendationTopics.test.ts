@@ -50,11 +50,12 @@ describe("recommendation topics", () => {
     expect(topics[2]).toMatchObject({ kind: "skill-topic", reason: "Active skill demand" });
   });
 
-  it("does not publish private-looking or below-threshold search terms", () => {
+  it("does not publish private-looking, below-threshold, or uncurated search terms", () => {
     const topics = buildRecommendationTopics({
       searchRows: [
         { query: "jason@example.com", count: 99 },
         { query: "single user query", count: 1 },
+        { query: "cheap seo backlinks", count: 999 },
       ],
       limit: 4,
     });

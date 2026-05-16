@@ -67,7 +67,7 @@ http.route({
 });
 
 http.route({
-  path: ApiRoutes.search,
+  path: `${ApiRoutes.search}/telemetry`,
   method: "POST",
   handler: recordSearchTelemetryV1Http,
 });
