@@ -133,6 +133,37 @@ describe("skills ban/unban batches", () => {
     expect(patch).not.toHaveBeenCalledWith("skills:removed", expect.anything());
   });
 
+  it("does not roll newer ban markers back when stale ban pages run late", async () => {
+    const { ctx, patch } = makeCtx({
+      user: { _id: "users:owner", deletedAt: 1_000 },
+      skills: [
+        {
+          _id: "skills:hidden",
+          ownerUserId: "users:owner",
+          softDeletedAt: 2_000,
+          moderationStatus: "hidden",
+          moderationReason: "user.banned",
+          hiddenAt: 2_000,
+          hiddenBy: "users:second-moderator",
+        },
+      ],
+    });
+
+    await expect(
+      applyBanHandler(ctx, {
+        ownerUserId: "users:owner",
+        bannedAt: 1_000,
+        hiddenBy: "users:first-moderator",
+      }),
+    ).resolves.toEqual({
+      ok: true,
+      hiddenCount: 0,
+      scheduled: false,
+    });
+
+    expect(patch).not.toHaveBeenCalledWith("skills:hidden", expect.anything());
+  });
+
   it("aborts stale unban restore pages when the owner was banned again", async () => {
     const { ctx, patch, query, scheduler } = makeCtx({
       user: { _id: "users:owner", deletedAt: 2_000 },

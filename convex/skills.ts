@@ -6715,7 +6715,7 @@ export const applyBanToOwnedSkillsBatchInternal = internalMutation({
         if (
           skill.moderationStatus === "hidden" &&
           skill.moderationReason === "user.banned" &&
-          skill.softDeletedAt !== args.bannedAt
+          skill.softDeletedAt < args.bannedAt
         ) {
           await ctx.db.patch(skill._id, {
             softDeletedAt: args.bannedAt,
