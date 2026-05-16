@@ -8701,6 +8701,28 @@ async function canManagePublisherDestination(
   return Boolean(membership && isPublisherRoleAllowed(membership.role, ["admin"]));
 }
 
+function assertSkillCanTransferOwnership(
+  skill: Pick<
+    Doc<"skills">,
+    | "moderationStatus"
+    | "moderationVerdict"
+    | "isSuspicious"
+    | "moderationFlags"
+    | "moderationReason"
+  >,
+) {
+  const moderationStatus = skill.moderationStatus ?? "active";
+  if (
+    moderationStatus !== "active" ||
+    skill.moderationVerdict === "suspicious" ||
+    skill.moderationVerdict === "malicious" ||
+    skill.isSuspicious ||
+    isSkillSuspicious(skill)
+  ) {
+    throw new ConvexError("Skill is not eligible for ownership transfer while under moderation");
+  }
+}
+
 export const transferSkillOwnerForUserInternal = internalMutation({
   args: {
     actorUserId: v.id("users"),
@@ -8727,6 +8749,7 @@ export const transferSkillOwnerForUserInternal = internalMutation({
       allowedPublisherRoles: ["admin"],
       allowPlatformAdmin: true,
     });
+    assertSkillCanTransferOwnership(skill);
 
     const destinationHandle = normalizePublisherHandle(args.toOwner);
     if (!destinationHandle) throw new ConvexError("Destination owner is required");
