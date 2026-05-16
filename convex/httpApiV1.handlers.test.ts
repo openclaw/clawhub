@@ -720,7 +720,9 @@ describe("httpApiV1 handlers", () => {
       }
       // Batch query: versionIds (plural)
       if ("versionIds" in args) {
-        return [{ _id: "versions:1", version: "1.0.0", softDeletedAt: undefined }];
+        return [
+          { _id: "versions:1", skillId: "skills:1", version: "1.0.0", softDeletedAt: undefined },
+        ];
       }
       return null;
     });
@@ -777,9 +779,9 @@ describe("httpApiV1 handlers", () => {
         expect(ids).toContain("versions:2");
         expect(ids).toContain("versions:3");
         return [
-          { _id: "versions:1", version: "2.0.0", softDeletedAt: undefined },
-          { _id: "versions:2", version: "1.0.0", softDeletedAt: undefined },
-          { _id: "versions:3", version: "1.0.0", softDeletedAt: undefined },
+          { _id: "versions:1", skillId: "skills:1", version: "2.0.0", softDeletedAt: undefined },
+          { _id: "versions:2", skillId: "skills:1", version: "1.0.0", softDeletedAt: undefined },
+          { _id: "versions:3", skillId: "skills:2", version: "1.0.0", softDeletedAt: undefined },
         ];
       }
       return null;
@@ -2040,6 +2042,8 @@ describe("httpApiV1 handlers", () => {
             updatedAt: 2,
           },
           latestVersion: {
+            _id: "skillVersions:1",
+            skillId: "skills:1",
             version: "1.0.0",
             createdAt: 1,
             changelog: "c",
@@ -2110,6 +2114,8 @@ describe("httpApiV1 handlers", () => {
             updatedAt: 2,
           },
           latestVersion: {
+            _id: "skillVersions:1",
+            skillId: "skills:1",
             version: "1.0.0",
             createdAt: 1,
             changelog: "c",
@@ -2161,6 +2167,8 @@ describe("httpApiV1 handlers", () => {
             updatedAt: 2,
           },
           latestVersion: {
+            _id: "skillVersions:1",
+            skillId: "skills:1",
             version: "1.0.0",
             createdAt: 1,
             changelog: "c",
@@ -2207,6 +2215,7 @@ describe("httpApiV1 handlers", () => {
           },
           latestVersion: {
             _id: "skillVersions:2",
+            skillId: "skills:1",
             version: "2.0.0",
             createdAt: 2,
             changelog: "c",
@@ -2264,6 +2273,7 @@ describe("httpApiV1 handlers", () => {
           },
           latestVersion: {
             _id: "skillVersions:2",
+            skillId: "skills:1",
             version: "2.0.0",
             createdAt: 2,
             changelog: "c2",
@@ -2288,6 +2298,7 @@ describe("httpApiV1 handlers", () => {
       if ("skillId" in args && "version" in args) {
         return {
           _id: "skillVersions:1",
+          skillId: "skills:1",
           version: "1.0.0",
           createdAt: 1,
           changelog: "c1",
@@ -2337,6 +2348,7 @@ describe("httpApiV1 handlers", () => {
           },
           latestVersion: {
             _id: "skillVersions:2",
+            skillId: "skills:1",
             version: "2.0.0",
             createdAt: 2,
             changelog: "c2",
@@ -2361,6 +2373,7 @@ describe("httpApiV1 handlers", () => {
       if ("versionId" in args) {
         return {
           _id: "skillVersions:1",
+          skillId: "skills:1",
           version: "1.0.0",
           createdAt: 1,
           changelog: "c1",
@@ -2391,8 +2404,51 @@ describe("httpApiV1 handlers", () => {
     expect(json.moderation.matchesRequestedVersion).toBe(false);
   });
 
+  it("does not resolve scan tags to another skill's version", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "demo",
+            displayName: "Demo",
+            summary: "s",
+            tags: { old: "skillVersions:other" },
+            stats: {},
+            createdAt: 1,
+            updatedAt: 2,
+          },
+          latestVersion: null,
+          owner: null,
+          moderationInfo: null,
+        };
+      }
+      if ("versionId" in args) {
+        return {
+          _id: "skillVersions:other",
+          skillId: "skills:other",
+          version: "9.9.9",
+          createdAt: 9,
+          changelog: "other",
+          files: [],
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/scan?tag=old"),
+    );
+
+    expect(response.status).toBe(404);
+    expect(await response.text()).toBe("Version not found");
+  });
+
   it("returns raw file content", async () => {
     const internalVersion = {
+      skillId: "skills:1",
       version: "1.0.0",
       createdAt: 1,
       changelog: "c",
@@ -2443,8 +2499,96 @@ describe("httpApiV1 handlers", () => {
     expect(response.headers.get("X-Content-SHA256")).toBe("abcd");
   });
 
+  it("blocks raw file reads for malware-blocked skills", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "demo",
+            displayName: "Demo",
+            summary: "s",
+            tags: {},
+            stats: {},
+            createdAt: 1,
+            updatedAt: 2,
+            latestVersionId: "skillVersions:1",
+          },
+          latestVersion: null,
+          owner: null,
+          moderationInfo: {
+            isMalwareBlocked: true,
+            isPendingScan: false,
+            isHiddenByMod: false,
+            isRemoved: false,
+          },
+        };
+      }
+      throw new Error("unexpected version lookup");
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const storage = { get: vi.fn() };
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation, storage }),
+      new Request("https://example.com/api/v1/skills/demo/file?path=SKILL.md"),
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.text()).toContain("flagged as malicious");
+    expect(storage.get).not.toHaveBeenCalled();
+  });
+
+  it("does not serve raw files from another skill's tagged version", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "demo",
+            displayName: "Demo",
+            summary: "s",
+            tags: { old: "skillVersions:other" },
+            stats: {},
+            createdAt: 1,
+            updatedAt: 2,
+            latestVersionId: "skillVersions:1",
+          },
+          latestVersion: null,
+          owner: null,
+          moderationInfo: null,
+        };
+      }
+      if (args.versionId === "skillVersions:1") {
+        return { _id: "skillVersions:1", skillId: "skills:1", version: "1.0.0", files: [] };
+      }
+      if (args.versionId === "skillVersions:other") {
+        return {
+          _id: "skillVersions:other",
+          skillId: "skills:other",
+          version: "9.9.9",
+          files: [{ path: "SKILL.md", size: 5, storageId: "storage:other", sha256: "other" }],
+          softDeletedAt: undefined,
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const storage = { get: vi.fn() };
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation, storage }),
+      new Request("https://example.com/api/v1/skills/demo/file?path=SKILL.md&tag=old"),
+    );
+
+    expect(response.status).toBe(404);
+    expect(await response.text()).toBe("Version not found");
+    expect(storage.get).not.toHaveBeenCalled();
+  });
+
   it("returns 413 when raw file too large", async () => {
     const internalVersion = {
+      skillId: "skills:1",
       version: "1.0.0",
       createdAt: 1,
       changelog: "c",
@@ -4658,6 +4802,101 @@ describe("httpApiV1 handlers", () => {
     expect(response.status).toBe(200);
     await expect(response.text()).resolves.toBe("# Demo skill");
     expect(storage.get).toHaveBeenCalledWith("storage:skill");
+  });
+
+  it("packages file blocks skill compatibility files for malware-blocked skills", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args) return null;
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:demo",
+            slug: "demo",
+            displayName: "Demo Skill",
+            summary: "Skill summary",
+            latestVersionId: "skillVersions:demo-1",
+            tags: { latest: "skillVersions:demo-1" },
+            badges: {},
+            createdAt: 1,
+            updatedAt: 2,
+          },
+          latestVersion: null,
+          owner: { handle: "steipete" },
+          moderationInfo: {
+            isMalwareBlocked: true,
+            isPendingScan: false,
+            isHiddenByMod: false,
+            isRemoved: false,
+          },
+        };
+      }
+      throw new Error("unexpected version lookup");
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const storage = { get: vi.fn() };
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation, storage }),
+      new Request("https://example.com/api/v1/packages/demo/file?path=README.md"),
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.text()).toContain("flagged as malicious");
+    expect(storage.get).not.toHaveBeenCalled();
+  });
+
+  it("packages file does not serve skill tags pointing at another skill's version", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args) return null;
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:demo",
+            slug: "demo",
+            displayName: "Demo Skill",
+            summary: "Skill summary",
+            latestVersionId: "skillVersions:demo-1",
+            tags: { latest: "skillVersions:demo-1", old: "skillVersions:other" },
+            badges: {},
+            createdAt: 1,
+            updatedAt: 2,
+          },
+          latestVersion: null,
+          owner: { handle: "steipete" },
+          moderationInfo: null,
+        };
+      }
+      if (args.versionId === "skillVersions:other") {
+        return {
+          _id: "skillVersions:other",
+          skillId: "skills:other",
+          version: "9.9.9",
+          createdAt: 9,
+          changelog: "other",
+          files: [
+            {
+              path: "SKILL.md",
+              size: 11,
+              sha256: "abc",
+              storageId: "storage:other",
+              contentType: "text/markdown",
+            },
+          ],
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const storage = { get: vi.fn() };
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation, storage }),
+      new Request("https://example.com/api/v1/packages/demo/file?path=README.md&tag=old"),
+    );
+
+    expect(response.status).toBe(404);
+    expect(await response.text()).toBe("Version not found");
+    expect(storage.get).not.toHaveBeenCalled();
   });
 
   it("packages download redirects skills to the skill download endpoint", async () => {

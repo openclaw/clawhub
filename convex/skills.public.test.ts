@@ -503,6 +503,30 @@ describe("skills.getBySlug", () => {
       }),
     ]);
   });
+
+  it("does not expose a latest version that belongs to another skill", async () => {
+    const ctx = makeCtx({
+      skill: makeSkill({ latestVersionId: "skillVersions:other" }),
+      owner: makeOwner("users:1", "demo-owner"),
+      latestVersion: {
+        _id: "skillVersions:other",
+        _creationTime: 2,
+        skillId: "skills:other",
+        version: "9.9.9",
+        fingerprint: "abc",
+        changelog: "",
+        changelogSource: "user",
+        files: [],
+        createdBy: "users:2",
+        createdAt: 2,
+      },
+    });
+
+    const result = await getBySlugHandler(ctx, { slug: "demo" } as never);
+
+    expect(result?.skill).toMatchObject({ latestVersionId: "skillVersions:other" });
+    expect(result?.latestVersion).toBeNull();
+  });
 });
 
 describe("skill artifact moderation", () => {

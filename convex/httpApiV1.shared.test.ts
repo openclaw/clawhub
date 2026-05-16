@@ -39,4 +39,25 @@ describe("http API v1 shared helpers", () => {
     expect(ctx.runQuery).toHaveBeenCalledWith({}, { versionIds: [stableId] });
     expect(result).toEqual([{ latest: "2.0.0", stable: "1.5.0" }]);
   });
+
+  it("filters resolved skill tags by owning skill", async () => {
+    const ctx = makeCtx();
+    const otherId = "skillVersions:other" as Id<"skillVersions">;
+    const stableId = "skillVersions:stable" as Id<"skillVersions">;
+    const skillId = "skills:1" as Id<"skills">;
+    ctx.runQuery.mockResolvedValueOnce([
+      { _id: otherId, skillId: "skills:other", version: "9.9.9" },
+      { _id: stableId, skillId, version: "1.5.0" },
+    ]);
+
+    const result = await resolveVersionTagsBatch(
+      ctx,
+      [{ latest: otherId, stable: stableId }],
+      {} as never,
+      [{ _id: otherId, skillId: "skills:other" as Id<"skills">, version: "9.9.9" }],
+      [skillId],
+    );
+
+    expect(result).toEqual([{ stable: "1.5.0" }]);
+  });
 });

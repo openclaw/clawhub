@@ -161,12 +161,14 @@ export async function resolveTagsBatch(
   ctx: ActionCtx,
   tagsList: Array<Record<string, Id<"skillVersions">>>,
   latestVersions?: Array<LatestVersionTag<"skillVersions">>,
+  skillIds?: Array<Id<"skills"> | undefined>,
 ): Promise<Array<Record<string, string>>> {
   return resolveVersionTagsBatch(
     ctx,
     tagsList,
     internal.skills.getVersionsByIdsInternal,
     latestVersions,
+    skillIds,
   );
 }
 
@@ -175,9 +177,27 @@ type LatestVersionTag<TTable extends "skillVersions" | "soulVersions"> =
       _id: Id<TTable>;
       version?: string;
       softDeletedAt?: unknown;
+      skillId?: Id<"skills">;
+      soulId?: Id<"souls">;
     }
   | null
   | undefined;
+
+type TagResourceId = Id<"skills"> | Id<"souls">;
+
+function versionBelongsToResource(
+  version:
+    | {
+        skillId?: Id<"skills">;
+        soulId?: Id<"souls">;
+      }
+    | null
+    | undefined,
+  resourceId: TagResourceId | undefined,
+) {
+  if (!resourceId) return true;
+  return version?.skillId === resourceId || version?.soulId === resourceId;
+}
 
 /**
  * Batch resolve version tags to version strings.
@@ -192,13 +212,20 @@ export async function resolveVersionTagsBatch<TTable extends "skillVersions" | "
   tagsList: Array<Record<string, Id<TTable>>>,
   getVersionsByIdsQuery: unknown,
   latestVersions?: Array<LatestVersionTag<TTable>>,
+  resourceIds?: Array<TagResourceId | undefined>,
 ): Promise<Array<Record<string, string>>> {
   const allVersionIds = new Set<Id<TTable>>();
   const preResolvedTags = tagsList.map((tags, idx) => {
     const resolved: Record<string, string> = {};
     const latest = latestVersions?.[idx];
+    const resourceId = resourceIds?.[idx];
     for (const [tag, versionId] of Object.entries(tags)) {
-      if (latest?._id === versionId && latest.version && !latest.softDeletedAt) {
+      if (
+        latest?._id === versionId &&
+        latest.version &&
+        !latest.softDeletedAt &&
+        versionBelongsToResource(latest, resourceId)
+      ) {
         resolved[tag] = latest.version;
       } else {
         allVersionIds.add(versionId);
@@ -217,19 +244,30 @@ export async function resolveVersionTagsBatch<TTable extends "skillVersions" | "
       _id: Id<TTable>;
       version: string;
       softDeletedAt?: unknown;
+      skillId?: Id<"skills">;
+      soulId?: Id<"souls">;
     }> | null) ?? [];
 
-  const versionMap = new Map<Id<TTable>, string>();
+  const versionMap = new Map<
+    Id<TTable>,
+    {
+      version: string;
+      skillId?: Id<"skills">;
+      soulId?: Id<"souls">;
+    }
+  >();
   for (const v of versions) {
-    if (!v?.softDeletedAt) versionMap.set(v._id, v.version);
+    if (!v?.softDeletedAt)
+      versionMap.set(v._id, { version: v.version, skillId: v.skillId, soulId: v.soulId });
   }
 
   return tagsList.map((tags, idx) => {
     const resolved = { ...preResolvedTags[idx] };
+    const resourceId = resourceIds?.[idx];
     for (const [tag, versionId] of Object.entries(tags)) {
       if (resolved[tag]) continue;
       const version = versionMap.get(versionId);
-      if (version) resolved[tag] = version;
+      if (version && versionBelongsToResource(version, resourceId)) resolved[tag] = version.version;
     }
     return resolved;
   });

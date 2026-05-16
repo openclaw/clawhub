@@ -5,6 +5,7 @@
 ### Fixes
 
 - API: fix `GET /api/v1/skills` pagination so `cursor` advances to the next page instead of repeating the first page for supported non-trending sorts (#2275) (thanks @vyctorbrzezowski, @enerj).
+- API: block public raw skill files when moderation already blocks downloads and reject skill tags that point at another skill's version (thanks @vyctorbrzezowski).
 
 ## 0.17.0 - 2026-05-19
 

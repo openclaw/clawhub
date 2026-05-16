@@ -99,6 +99,10 @@ import {
 } from "./lib/reservedSlugs";
 import { matchesAllTokens, matchesExploratoryTokenPrefixes, tokenize } from "./lib/searchText";
 import { SKILL_CAPABILITY_TAGS } from "./lib/skillCapabilityTags";
+import {
+  isPublicSkillVersionAvailableForSkill,
+  isSkillVersionForSkill,
+} from "./lib/skillFileAccess";
 import { normalizeSkillIconValue } from "./lib/skillIcon";
 import {
   fetchText,
@@ -2083,8 +2087,9 @@ export const getBySlug = query({
         : null;
     const isOwner = Boolean(userId && (userId === skill.ownerUserId || membership));
 
+    const latestVersionDoc = skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null;
     const latestVersion = toPublicSkillVersion(
-      skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null,
+      isSkillVersionForSkill(latestVersionDoc, skill._id) ? latestVersionDoc : null,
     );
     const owner = toPublicPublisher(ownerPublisher);
     if (!owner) return null;
@@ -7744,8 +7749,7 @@ async function canReadSkillVersionFiles(ctx: ActionCtx, version: Doc<"skillVersi
 
   if (skill.softDeletedAt || version.softDeletedAt) return false;
 
-  const isMalwareBlocked = skill.moderationFlags?.includes("blocked.malware") ?? false;
-  return Boolean(toPublicSkill(skill) || isMalwareBlocked);
+  return Boolean(toPublicSkill(skill));
 }
 
 export const getReadme: ReturnType<typeof action> = action({
@@ -7870,6 +7874,18 @@ export const updateTags = mutation({
       assertModerator(user);
     }
 
+    const versionsById = new Map<Id<"skillVersions">, Doc<"skillVersions">>();
+    for (const entry of args.tags) {
+      let version = versionsById.get(entry.versionId) ?? null;
+      if (!version) {
+        version = await ctx.db.get(entry.versionId);
+        if (version) versionsById.set(entry.versionId, version);
+      }
+      if (!isPublicSkillVersionAvailableForSkill(version, skill._id)) {
+        throw new Error("Version not found");
+      }
+    }
+
     const nextTags = { ...skill.tags };
     for (const entry of args.tags) {
       nextTags[entry.tag] = entry.versionId;
@@ -7885,17 +7901,15 @@ export const updateTags = mutation({
 
     // Keep latestVersionSummary in sync when the latest tag is repointed
     if (latestEntry && latestEntry.versionId !== skill.latestVersionId) {
-      const version = await ctx.db.get(latestEntry.versionId);
-      if (version) {
-        patch.latestVersionSummary = {
-          version: version.version,
-          createdAt: version.createdAt,
-          changelog: version.changelog,
-          changelogSource: version.changelogSource,
-          clawdis: version.parsed?.clawdis,
-        };
-        patch.capabilityTags = version.capabilityTags;
-      }
+      const version = versionsById.get(latestEntry.versionId)!;
+      patch.latestVersionSummary = {
+        version: version.version,
+        createdAt: version.createdAt,
+        changelog: version.changelog,
+        changelogSource: version.changelogSource,
+        clawdis: version.parsed?.clawdis,
+      };
+      patch.capabilityTags = version.capabilityTags;
     }
 
     await ctx.db.patch(skill._id, patch);

@@ -18,6 +18,7 @@ import type {
   LlmEvalDimension,
   LlmRiskSummary,
 } from "../lib/securityPrompt";
+import { getPublicSkillFileAccessBlock, isSkillVersionForSkill } from "../lib/skillFileAccess";
 import { publishVersionForUser } from "../skills";
 import {
   MAX_RAW_FILE_BYTES,
@@ -98,6 +99,7 @@ type PublicSkillVersionStaticScan = Pick<
 
 type PublicSkillVersionResponse = {
   _id: Id<"skillVersions">;
+  skillId?: Id<"skills">;
   version: string;
   createdAt?: number;
   changelog?: string;
@@ -570,6 +572,7 @@ export async function listSkillsV1Handler(ctx: ActionCtx, request: Request) {
     ctx,
     result.items.map((item) => item.skill.tags),
     result.items.map((item) => item.latestVersion),
+    result.items.map((item) => item.skill._id),
   );
 
   const items = result.items.map((item, idx) => ({
@@ -702,7 +705,12 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
       return text("Skill not found", 404, rate.headers);
     }
 
-    const [tags] = await resolveTagsBatch(ctx, [result.skill.tags], [result.latestVersion]);
+    const [tags] = await resolveTagsBatch(
+      ctx,
+      [result.skill.tags],
+      [result.latestVersion],
+      [result.skill._id],
+    );
     return json(
       {
         skill: {
@@ -923,7 +931,9 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
       }
     }
 
-    if (!version) return text("Version not found", 404, rate.headers);
+    if (!version || !isSkillVersionForSkill(version, result.skill._id)) {
+      return text("Version not found", 404, rate.headers);
+    }
     if (version.softDeletedAt) return text("Version not available", 410, rate.headers);
 
     const security = buildSkillSecuritySnapshot(version);
@@ -975,6 +985,10 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
 
     const skillResult = (await ctx.runQuery(api.skills.getBySlug, { slug })) as GetBySlugResult;
     if (!skillResult?.skill) return text("Skill not found", 404, rate.headers);
+    const moderationBlock = getPublicSkillFileAccessBlock(skillResult.moderationInfo);
+    if (moderationBlock) {
+      return text(moderationBlock.message, moderationBlock.status, rate.headers);
+    }
 
     let version: Doc<"skillVersions"> | null = skillResult.skill.latestVersionId
       ? await ctx.runQuery(internal.skills.getVersionByIdInternal, {
@@ -993,7 +1007,9 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
       }
     }
 
-    if (!version) return text("Version not found", 404, rate.headers);
+    if (!version || !isSkillVersionForSkill(version, skillResult.skill._id)) {
+      return text("Version not found", 404, rate.headers);
+    }
     if (version.softDeletedAt) return text("Version not available", 410, rate.headers);
 
     const normalized = path.trim();

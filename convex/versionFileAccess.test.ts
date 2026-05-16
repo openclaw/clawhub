@@ -175,7 +175,7 @@ describe("version file access actions", () => {
     ).rejects.toThrow("Version not available");
   });
 
-  it("keeps malware-blocked skill files readable to public callers", async () => {
+  it("blocks public reads from malware-blocked skill files", async () => {
     const ctx = makeActionCtx({
       version: makeSkillVersion(),
       skill: {
@@ -193,7 +193,7 @@ describe("version file access actions", () => {
         versionId: "skillVersions:1",
         path: "SKILL.md",
       } as never),
-    ).resolves.toMatchObject({ path: "SKILL.md", text: "# skill" });
+    ).rejects.toThrow("Version not available");
   });
 
   it("still allows public access to visible skill files", async () => {
