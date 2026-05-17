@@ -45,6 +45,12 @@ local Convex process and temporarily moves aside `.env.local` plus
 `.convex/local/default`, then restores them afterward. Stop any already-running
 local Convex process before running it.
 
+The dev owner persona must keep `@local` as its canonical user and personal
+publisher handle throughout login bootstrap. Human-readable persona labels belong
+in display fields only; fields that `users.ensure` treats as login handles must
+stay handle-like so the publish flow does not drift to handles such as
+`@local-owner`.
+
 The full `bun run test:e2e` suite includes token-backed CLI flows. Keep that for
 local or secret-backed validation; PR CI should not require a developer auth
 token or a local global ClawHub config.

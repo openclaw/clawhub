@@ -27,6 +27,7 @@ const {
   liftModerationHoldInternal,
   reserveHandleInternal,
   syncGitHubProfileInternal,
+  upsertDevPersonaInternal,
   updateProfile,
   deleteAccount,
 } = await import("./users");
@@ -43,6 +44,12 @@ const updateProfileHandler = (
 )._handler;
 const deleteAccountHandler = (
   deleteAccount as unknown as WrappedHandler<Record<string, never>, void>
+)._handler;
+const upsertDevPersonaInternalHandler = (
+  upsertDevPersonaInternal as unknown as WrappedHandler<
+    { persona: "owner" | "user" | "admin" },
+    unknown
+  >
 )._handler;
 
 function makeCtx() {
@@ -742,6 +749,195 @@ describe("ensureHandler", () => {
       expect.objectContaining({ handle: expect.any(String) }),
     );
     expect(insert).not.toHaveBeenCalledWith("publishers", expect.anything());
+  });
+});
+
+describe("upsertDevPersonaInternal", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("keeps the owner persona name as the canonical handle", async () => {
+    vi.stubEnv("CONVEX_DEPLOYMENT", "local:anonymous-agent");
+    vi.stubEnv("CONVEX_SITE_URL", "http://127.0.0.1:3211");
+    vi.stubEnv("DEV_AUTH_ENABLED", "1");
+
+    const users = new Map<string, Record<string, unknown>>();
+    const publishers = new Map<string, Record<string, unknown>>();
+    const publisherMembers: Array<Record<string, unknown>> = [];
+    const auditLogs: Array<Record<string, unknown>> = [];
+
+    const get = vi.fn(async (first: string, second?: string) => {
+      const id = second ?? first;
+      if (id.startsWith("users:")) return users.get(id) ?? null;
+      if (id.startsWith("publishers:")) return publishers.get(id) ?? null;
+      return null;
+    });
+    const insert = vi.fn(async (table: string, value: Record<string, unknown>) => {
+      if (table === "users") {
+        const id = `users:${users.size + 1}`;
+        users.set(id, { _id: id, _creationTime: 1, ...value });
+        return id;
+      }
+      if (table === "publishers") {
+        const id = `publishers:${String(value.handle)}`;
+        publishers.set(id, { _id: id, _creationTime: 1, ...value });
+        return id;
+      }
+      if (table === "publisherMembers") {
+        const id = `publisherMembers:${publisherMembers.length + 1}`;
+        publisherMembers.push({ _id: id, ...value });
+        return id;
+      }
+      if (table === "auditLogs") {
+        const id = `auditLogs:${auditLogs.length + 1}`;
+        auditLogs.push({ _id: id, ...value });
+        return id;
+      }
+      throw new Error(`Unexpected insert table ${table}`);
+    });
+    const patch = vi.fn(
+      async (
+        first: string,
+        second: string | Record<string, unknown>,
+        third?: Record<string, unknown>,
+      ) => {
+        const id = typeof second === "string" ? second : first;
+        const value = typeof second === "string" ? (third ?? {}) : second;
+
+        if (id.startsWith("users:")) {
+          users.set(id, { ...(users.get(id) ?? { _id: id, _creationTime: 1 }), ...value });
+          return;
+        }
+        if (id.startsWith("publishers:")) {
+          publishers.set(id, {
+            ...(publishers.get(id) ?? { _id: id, _creationTime: 1 }),
+            ...value,
+          });
+          return;
+        }
+        throw new Error(`Unexpected patch id ${id}`);
+      },
+    );
+    const query = vi.fn((table: string) => {
+      if (table === "users") {
+        return {
+          withIndex: (
+            name: string,
+            cb?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+          ) => {
+            if (name !== "handle") throw new Error(`Unexpected users index ${name}`);
+            let handle = "";
+            const builder = {
+              eq: (field: string, value: string) => {
+                if (field === "handle") handle = value;
+                return builder;
+              },
+            };
+            cb?.(builder);
+            return {
+              unique: vi.fn(
+                async () => [...users.values()].find((user) => user.handle === handle) ?? null,
+              ),
+            };
+          },
+        };
+      }
+      if (table === "publishers") {
+        return {
+          withIndex: (
+            name: string,
+            cb?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+          ) => {
+            let handle = "";
+            let linkedUserId = "";
+            const builder = {
+              eq: (field: string, value: string) => {
+                if (field === "handle") handle = value;
+                if (field === "linkedUserId") linkedUserId = value;
+                return builder;
+              },
+            };
+            cb?.(builder);
+            if (name === "by_handle") {
+              return {
+                unique: vi.fn(
+                  async () =>
+                    [...publishers.values()].find((publisher) => publisher.handle === handle) ??
+                    null,
+                ),
+              };
+            }
+            if (name === "by_linked_user") {
+              return {
+                unique: vi.fn(
+                  async () =>
+                    [...publishers.values()].find(
+                      (publisher) => publisher.linkedUserId === linkedUserId,
+                    ) ?? null,
+                ),
+              };
+            }
+            throw new Error(`Unexpected publishers index ${name}`);
+          },
+        };
+      }
+      if (table === "publisherMembers") {
+        return {
+          withIndex: (
+            name: string,
+            cb?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+          ) => {
+            if (name !== "by_publisher_user") {
+              throw new Error(`Unexpected publisherMembers index ${name}`);
+            }
+            let publisherId = "";
+            let userId = "";
+            const builder = {
+              eq: (field: string, value: string) => {
+                if (field === "publisherId") publisherId = value;
+                if (field === "userId") userId = value;
+                return builder;
+              },
+            };
+            cb?.(builder);
+            return {
+              unique: vi.fn(
+                async () =>
+                  publisherMembers.find(
+                    (member) => member.publisherId === publisherId && member.userId === userId,
+                  ) ?? null,
+              ),
+            };
+          },
+        };
+      }
+      throw new Error(`Unexpected query table ${table}`);
+    });
+    const ctx = {
+      db: {
+        get,
+        insert,
+        patch,
+        query,
+        normalizeId: vi.fn((table: string, id: string) => (id.startsWith(`${table}:`) ? id : null)),
+      },
+    } as never;
+
+    const userId = await upsertDevPersonaInternalHandler(ctx, { persona: "owner" });
+
+    expect(users.get(String(userId))).toMatchObject({
+      handle: "local",
+      name: "local",
+      displayName: "Local Owner",
+    });
+    expect([...publishers.values()]).toEqual([
+      expect.objectContaining({
+        handle: "local",
+        displayName: "Local Owner",
+        linkedUserId: userId,
+      }),
+    ]);
   });
 });
 

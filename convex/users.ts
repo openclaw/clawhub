@@ -76,7 +76,7 @@ export const upsertDevPersonaInternal = internalMutation({
     const patch = {
       handle: persona.handle,
       displayName: persona.displayName,
-      name: persona.displayName,
+      name: persona.handle,
       role: persona.role,
       githubCreatedAt: DEV_PERSONA_GITHUB_CREATED_AT,
       deletedAt: undefined,
