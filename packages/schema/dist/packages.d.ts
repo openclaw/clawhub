@@ -741,6 +741,63 @@ export declare const ApiV1PackageTransferResponseSchema: import("arktype/interna
     ownerPublisherId?: string | undefined;
 }, {}>;
 export type ApiV1PackageTransferResponse = (typeof ApiV1PackageTransferResponseSchema)[inferred];
+export declare const PackageRepairNameRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    nextName: string;
+    reason: string;
+    retireTarget?: boolean | undefined;
+    owner?: string | undefined;
+    dryRun?: boolean | undefined;
+}, {}>;
+export type PackageRepairNameRequest = (typeof PackageRepairNameRequestSchema)[inferred];
+export declare const PackageRepairNamePackageSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    packageId: string;
+    name: string;
+    ownerUserId: string;
+    channel: "official" | "community" | "private";
+    runtimeId?: string | null | undefined;
+    ownerPublisherId?: string | null | undefined;
+    softDeletedAt?: number | null | undefined;
+}, {}>;
+export type PackageRepairNamePackage = (typeof PackageRepairNamePackageSchema)[inferred];
+export declare const PackageRepairNameOperationSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    action: "retire-target" | "rename-source" | "transfer-owner";
+    packageId?: string | undefined;
+    from?: string | undefined;
+    to?: string | undefined;
+    owner?: string | undefined;
+}, {}>;
+export type PackageRepairNameOperation = (typeof PackageRepairNameOperationSchema)[inferred];
+export declare const ApiV1PackageRepairNameResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    dryRun: boolean;
+    source: {
+        packageId: string;
+        name: string;
+        ownerUserId: string;
+        channel: "official" | "community" | "private";
+        runtimeId?: string | null | undefined;
+        ownerPublisherId?: string | null | undefined;
+        softDeletedAt?: number | null | undefined;
+    };
+    target: {
+        packageId: string;
+        name: string;
+        ownerUserId: string;
+        channel: "official" | "community" | "private";
+        runtimeId?: string | null | undefined;
+        ownerPublisherId?: string | null | undefined;
+        softDeletedAt?: number | null | undefined;
+    } | null;
+    operations: {
+        action: "retire-target" | "rename-source" | "transfer-owner";
+        packageId?: string | undefined;
+        from?: string | undefined;
+        to?: string | undefined;
+        owner?: string | undefined;
+    }[];
+    retiredName?: string | null | undefined;
+}, {}>;
+export type ApiV1PackageRepairNameResponse = (typeof ApiV1PackageRepairNameResponseSchema)[inferred];
 export declare const PackageOfficialMigrationUpsertRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     bundledPluginId: string;
     packageName: string;

@@ -7449,6 +7449,194 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("dry-runs package name repair without mutating packages", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-15T12:00:00Z"));
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin", handle: "patrick" },
+    } as never);
+    const sourcePackage = {
+      _id: "packages:source",
+      name: "@openclaw/openviking",
+      normalizedName: "@openclaw/openviking",
+      runtimeId: "openviking",
+      ownerUserId: "users:lin",
+      ownerPublisherId: "publishers:lin",
+      channel: "community",
+      softDeletedAt: undefined,
+    };
+    const targetPackage = {
+      _id: "packages:target",
+      name: "@openviking/openclaw-plugin",
+      normalizedName: "@openviking/openclaw-plugin",
+      runtimeId: "openviking-openclaw-plugin-placeholder",
+      ownerUserId: "users:openviking",
+      ownerPublisherId: "publishers:openviking",
+      channel: "private",
+      softDeletedAt: undefined,
+    };
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if ("key" in args) return okRate();
+      return { ok: true };
+    });
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("key" in args) return okRate();
+      if (args.name === "@openclaw/openviking") return sourcePackage;
+      if (args.name === "@openviking/openclaw-plugin") return targetPackage;
+      if (args.name === "@openviking/openclaw-plugin-retired-20260515") return null;
+      return null;
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages/%40openclaw%2Fopenviking/repair-name", {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer clh_test",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          nextName: "@openviking/openclaw-plugin",
+          retireTarget: true,
+          reason: "Admin repair for openclaw/clawhub#2133",
+          dryRun: true,
+        }),
+      }),
+    );
+
+    if (response.status !== 200) throw new Error(await response.text());
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      dryRun: true,
+      source: { packageId: "packages:source", name: "@openclaw/openviking" },
+      target: { packageId: "packages:target", name: "@openviking/openclaw-plugin" },
+      retiredName: "@openviking/openclaw-plugin-retired-20260515",
+      operations: [
+        {
+          action: "retire-target",
+          from: "@openviking/openclaw-plugin",
+          to: "@openviking/openclaw-plugin-retired-20260515",
+        },
+        {
+          action: "rename-source",
+          from: "@openclaw/openviking",
+          to: "@openviking/openclaw-plugin",
+        },
+      ],
+    });
+    expect(runMutation).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ name: "@openviking/openclaw-plugin" }),
+    );
+    vi.useRealTimers();
+  });
+
+  it("applies package name repair by retiring the occupied target first", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-15T12:00:00Z"));
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin", handle: "patrick" },
+    } as never);
+    const sourcePackage = {
+      _id: "packages:source",
+      name: "@openclaw/openviking",
+      normalizedName: "@openclaw/openviking",
+      runtimeId: "openviking",
+      ownerUserId: "users:lin",
+      ownerPublisherId: "publishers:lin",
+      channel: "community",
+      softDeletedAt: undefined,
+    };
+    const targetPackage = {
+      _id: "packages:target",
+      name: "@openviking/openclaw-plugin",
+      normalizedName: "@openviking/openclaw-plugin",
+      runtimeId: "openviking-openclaw-plugin-placeholder",
+      ownerUserId: "users:openviking",
+      ownerPublisherId: "publishers:openviking",
+      channel: "private",
+      softDeletedAt: undefined,
+    };
+    const ownerPublisher = {
+      _id: "publishers:openviking",
+      handle: "openviking",
+      kind: "org",
+      deletedAt: undefined,
+    };
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if ("key" in args) return okRate();
+      return { ok: true, packageId: "packages:source" };
+    });
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("key" in args) return okRate();
+      if (args.name === "@openclaw/openviking") return sourcePackage;
+      if (args.name === "@openviking/openclaw-plugin") return targetPackage;
+      if (args.name === "@openviking/openclaw-plugin-retired-20260515") return null;
+      if (args.handle === "openviking") return ownerPublisher;
+      return null;
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages/%40openclaw%2Fopenviking/repair-name", {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer clh_test",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          nextName: "@openviking/openclaw-plugin",
+          retireTarget: true,
+          owner: "openviking",
+          reason: "Admin repair for openclaw/clawhub#2133",
+          dryRun: false,
+        }),
+      }),
+    );
+
+    if (response.status !== 200) throw new Error(await response.text());
+    expect(runMutation).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      expect.objectContaining({
+        actorUserId: "users:admin",
+        name: "@openviking/openclaw-plugin",
+        nextName: "@openviking/openclaw-plugin-retired-20260515",
+      }),
+    );
+    expect(runMutation).toHaveBeenNthCalledWith(
+      3,
+      expect.anything(),
+      expect.objectContaining({
+        userId: "users:admin",
+        name: "@openviking/openclaw-plugin-retired-20260515",
+      }),
+    );
+    expect(runMutation).toHaveBeenNthCalledWith(
+      4,
+      expect.anything(),
+      expect.objectContaining({
+        actorUserId: "users:admin",
+        name: "@openclaw/openviking",
+        nextName: "@openviking/openclaw-plugin",
+      }),
+    );
+    expect(runMutation).toHaveBeenNthCalledWith(
+      5,
+      expect.anything(),
+      expect.objectContaining({
+        actorUserId: "users:admin",
+        name: "@openviking/openclaw-plugin",
+        ownerUserId: "users:lin",
+        ownerPublisherId: "publishers:openviking",
+        channel: "community",
+      }),
+    );
+    vi.useRealTimers();
+  });
+
   it("package transfer maps ownership denials to 403", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:stranger",

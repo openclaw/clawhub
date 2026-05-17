@@ -5009,6 +5009,10 @@ export const repairPackageIdentityInternal = internalMutation({
     }
 
     await ctx.db.patch(pkg._id, patch);
+    await upsertPackageSearchDigest(ctx, {
+      ...extractPackageDigestFields(pkg),
+      ...patch,
+    });
     await ctx.db.insert("auditLogs", {
       actorUserId: args.actorUserId,
       action: "package.identity.repair",

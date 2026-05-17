@@ -30,6 +30,7 @@ import {
   cmdListPackageReports,
   cmdModeratePackageRelease,
   cmdPackageModerationQueue,
+  cmdRepairPackageName,
   cmdSetPackageTrustedPublisher,
   cmdTriagePackageReport,
   cmdUpsertPackageMigration,
@@ -295,6 +296,21 @@ function registerPluginGovernanceCommands(command: Command) {
     .action(async (options) => {
       const opts = await resolveGlobalOpts();
       await cmdBackfillPackageArtifacts(opts, options);
+    });
+
+  command
+    .command("repair-name")
+    .description("Admin repair for plugin package names")
+    .argument("<name>", "Current plugin package name")
+    .requiredOption("--next-name <name>", "Target plugin package name")
+    .option("--retire-target", "Rename and soft-delete the current target package first")
+    .option("--owner <handle>", "Transfer repaired package to a publisher handle")
+    .requiredOption("--reason <reason>", "Audit reason")
+    .option("--apply", "Write changes; defaults to dry-run")
+    .option("--json", "Output JSON")
+    .action(async (name, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdRepairPackageName(opts, name, options);
     });
 
   command

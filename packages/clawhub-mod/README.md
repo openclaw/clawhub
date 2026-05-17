@@ -112,6 +112,7 @@ bun run mod -- plugins triage-report <report-id> --status open|confirmed|dismiss
 bun run mod -- plugins migrations [--phase <phase>]
 bun run mod -- plugins set-migration <bundled-plugin-id> --package <name>
 bun run mod -- plugins backfill-artifacts [--all] [--apply]
+bun run mod -- plugins repair-name <name> --next-name <name> --reason <text> [--retire-target] [--owner <handle>] [--apply]
 bun run mod -- plugins trusted-publisher get <name>
 bun run mod -- plugins trusted-publisher set <name> --repository <owner/repo> --workflow-filename <file>
 bun run mod -- plugins trusted-publisher delete <name>

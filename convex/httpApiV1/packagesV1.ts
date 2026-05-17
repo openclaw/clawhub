@@ -7,6 +7,7 @@ import {
   PackageAppealResolveRequestSchema,
   PackageAppealRequestSchema,
   PackageOfficialMigrationUpsertRequestSchema,
+  PackageRepairNameRequestSchema,
   PackageReportRequestSchema,
   PackageReportTriageRequestSchema,
   PackageReleaseModerationRequestSchema,
@@ -55,6 +56,7 @@ import {
   json,
   resolveTagsBatch,
   requireApiTokenUserOrResponse,
+  requireAdminOrResponse,
   requirePackagePublishAuthOrResponse,
   safeTextFileResponse,
   softDeleteErrorToResponse,
@@ -98,7 +100,9 @@ const internalRefs = internal as unknown as {
     recordPackageInstallInternal: unknown;
     softDeletePackageInternal: unknown;
     restorePackageInternal: unknown;
+    repairPackageIdentityInternal: unknown;
     moderatePackageReleaseForUserInternal: unknown;
+    transferPackageOwnerInternal: unknown;
     reportPackageForUserInternal: unknown;
     listPackageReportsInternal: unknown;
     triagePackageReportForUserInternal: unknown;
@@ -118,6 +122,9 @@ const internalRefs = internal as unknown as {
     getSkillBySlugInternal: unknown;
     getVersionByIdInternal: unknown;
     getVersionBySkillAndVersionInternal: unknown;
+  };
+  publishers: {
+    getByHandleInternal: unknown;
   };
 };
 
@@ -417,6 +424,20 @@ type PackageTrustedPublisherLike = {
   updatedAt: number;
 };
 
+type AdminRepairPackageLike = Pick<
+  Doc<"packages">,
+  | "_id"
+  | "name"
+  | "normalizedName"
+  | "runtimeId"
+  | "ownerUserId"
+  | "ownerPublisherId"
+  | "channel"
+  | "softDeletedAt"
+>;
+
+type RepairOwnerPublisherLike = Pick<Doc<"publishers">, "_id" | "handle" | "deletedAt">;
+
 function toVisibleRelease(release: ReleaseLike | null) {
   if (!release || ("softDeletedAt" in release && release.softDeletedAt !== undefined)) return null;
   return release;
@@ -433,6 +454,28 @@ function toPublicTrustedPublisher(trustedPublisher: PackageTrustedPublisherLike 
     workflowFilename: trustedPublisher.workflowFilename,
     ...(trustedPublisher.environment ? { environment: trustedPublisher.environment } : {}),
   };
+}
+
+function toRepairPackageSnapshot(pkg: AdminRepairPackageLike) {
+  return {
+    packageId: String(pkg._id),
+    name: pkg.normalizedName || pkg.name,
+    runtimeId: pkg.runtimeId ?? null,
+    ownerUserId: String(pkg.ownerUserId),
+    ownerPublisherId: pkg.ownerPublisherId ? String(pkg.ownerPublisherId) : null,
+    channel: pkg.channel,
+    softDeletedAt: pkg.softDeletedAt ?? null,
+  };
+}
+
+function defaultRetiredPackageName(name: string) {
+  const yyyymmdd = new Date(Date.now()).toISOString().slice(0, 10).replaceAll("-", "");
+  return `${name}-retired-${yyyymmdd}`;
+}
+
+function normalizePublisherHandleInput(value: string | undefined) {
+  const normalized = value?.trim().replace(/^@+/, "").toLowerCase();
+  return normalized || undefined;
 }
 
 function getReleaseSecurityBlock(release: ReleaseLike) {
@@ -1750,6 +1793,165 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
   if (!packageRoute) return text("Not found", 404);
   const packageName = packageRoute.packageName;
   const packageSegments = packageRoute.rest;
+
+  if (packageSegments[0] === "repair-name" && packageSegments.length === 1) {
+    const rate = await applyRateLimit(ctx, request, "write");
+    if (!rate.ok) return rate.response;
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+    const admin = requireAdminOrResponse(auth.user, rate.headers);
+    if (!admin.ok) return admin.response;
+
+    try {
+      const body = parseArk(
+        PackageRepairNameRequestSchema,
+        await request.json(),
+        "Package name repair payload",
+      ) as {
+        nextName: string;
+        retireTarget?: boolean;
+        owner?: string;
+        reason: string;
+        dryRun?: boolean;
+      };
+      const nextName = tryNormalizePackageName(body.nextName);
+      if (!nextName) {
+        return text(
+          "Target package name must be lowercase and npm-safe (example: @scope/name).",
+          400,
+          rate.headers,
+        );
+      }
+      const reason = body.reason.trim();
+      if (!reason) return text("Repair reason required", 400, rate.headers);
+      const dryRun = body.dryRun !== false;
+      const ownerHandle = normalizePublisherHandleInput(body.owner);
+
+      const source = await runQueryRef<AdminRepairPackageLike | null>(
+        ctx,
+        internalRefs.packages.getPackageByNameInternal,
+        { name: packageName },
+      );
+      if (!source || source.softDeletedAt) return text("Package not found", 404, rate.headers);
+
+      const target = await runQueryRef<AdminRepairPackageLike | null>(
+        ctx,
+        internalRefs.packages.getPackageByNameInternal,
+        { name: nextName },
+      );
+      const targetIsDifferentPackage = Boolean(target && target._id !== source._id);
+      if (targetIsDifferentPackage && target?.softDeletedAt) {
+        return text(
+          `Target package "${nextName}" is held by a soft-deleted package; restore or repair that row first.`,
+          409,
+          rate.headers,
+        );
+      }
+      if (targetIsDifferentPackage && !body.retireTarget) {
+        return text(
+          `Target package "${nextName}" already exists; pass retireTarget.`,
+          409,
+          rate.headers,
+        );
+      }
+
+      const retiredName = targetIsDifferentPackage ? defaultRetiredPackageName(nextName) : null;
+      if (retiredName) {
+        const existingRetiredName = await runQueryRef<AdminRepairPackageLike | null>(
+          ctx,
+          internalRefs.packages.getPackageByNameInternal,
+          { name: retiredName },
+        );
+        if (existingRetiredName && existingRetiredName._id !== target?._id) {
+          return text(`Retired package name "${retiredName}" already exists.`, 409, rate.headers);
+        }
+      }
+
+      const ownerPublisher = ownerHandle
+        ? await runQueryRef<RepairOwnerPublisherLike | null>(
+            ctx,
+            internalRefs.publishers.getByHandleInternal,
+            { handle: ownerHandle },
+          )
+        : null;
+      if (ownerHandle && (!ownerPublisher || ownerPublisher.deletedAt)) {
+        return text(`Publisher "@${ownerHandle}" not found.`, 404, rate.headers);
+      }
+
+      const operations: Array<Record<string, string>> = [];
+      if (targetIsDifferentPackage && target && retiredName) {
+        operations.push({
+          action: "retire-target",
+          packageId: String(target._id),
+          from: target.normalizedName || target.name,
+          to: retiredName,
+        });
+      }
+      if ((source.normalizedName || source.name) !== nextName) {
+        operations.push({
+          action: "rename-source",
+          packageId: String(source._id),
+          from: source.normalizedName || source.name,
+          to: nextName,
+        });
+      }
+      if (ownerHandle && ownerPublisher) {
+        operations.push({
+          action: "transfer-owner",
+          packageId: String(source._id),
+          owner: ownerHandle,
+        });
+      }
+
+      if (!dryRun) {
+        if (targetIsDifferentPackage && retiredName) {
+          await runMutationRef(ctx, internalRefs.packages.repairPackageIdentityInternal, {
+            actorUserId: auth.userId,
+            name: nextName,
+            nextName: retiredName,
+            reason,
+          });
+          await runMutationRef(ctx, internalRefs.packages.softDeletePackageInternal, {
+            userId: auth.userId,
+            name: retiredName,
+          });
+        }
+        if ((source.normalizedName || source.name) !== nextName) {
+          await runMutationRef(ctx, internalRefs.packages.repairPackageIdentityInternal, {
+            actorUserId: auth.userId,
+            name: packageName,
+            nextName,
+            reason,
+          });
+        }
+        if (ownerHandle && ownerPublisher) {
+          await runMutationRef(ctx, internalRefs.packages.transferPackageOwnerInternal, {
+            actorUserId: auth.userId,
+            name: nextName,
+            ownerUserId: source.ownerUserId,
+            ownerPublisherId: ownerPublisher._id,
+            channel: source.channel,
+            reason,
+          });
+        }
+      }
+
+      return json(
+        {
+          ok: true,
+          dryRun,
+          source: toRepairPackageSnapshot(source),
+          target: target ? toRepairPackageSnapshot(target) : null,
+          retiredName,
+          operations,
+        },
+        200,
+        rate.headers,
+      );
+    } catch (error) {
+      return packageOperationErrorToResponse(error, rate.headers, "Package name repair failed");
+    }
+  }
 
   if (
     packageSegments[0] === "versions" &&

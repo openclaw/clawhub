@@ -487,6 +487,37 @@ export const ApiV1PackageTransferResponseSchema = type({
     channel: PackageChannelSchema,
     isOfficial: "boolean",
 });
+export const PackageRepairNameRequestSchema = type({
+    nextName: "string",
+    retireTarget: "boolean?",
+    owner: "string?",
+    reason: "string",
+    dryRun: "boolean?",
+});
+export const PackageRepairNamePackageSchema = type({
+    packageId: "string",
+    name: "string",
+    runtimeId: "string|null?",
+    ownerUserId: "string",
+    ownerPublisherId: "string|null?",
+    channel: PackageChannelSchema,
+    softDeletedAt: "number|null?",
+});
+export const PackageRepairNameOperationSchema = type({
+    action: '"retire-target"|"rename-source"|"transfer-owner"',
+    packageId: "string?",
+    from: "string?",
+    to: "string?",
+    owner: "string?",
+});
+export const ApiV1PackageRepairNameResponseSchema = type({
+    ok: "true",
+    dryRun: "boolean",
+    source: PackageRepairNamePackageSchema,
+    target: PackageRepairNamePackageSchema.or("null"),
+    retiredName: "string|null?",
+    operations: PackageRepairNameOperationSchema.array(),
+});
 export const PackageOfficialMigrationUpsertRequestSchema = type({
     bundledPluginId: "string",
     packageName: "string",
