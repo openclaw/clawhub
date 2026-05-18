@@ -623,6 +623,52 @@ describe("search helpers", () => {
     expect(result.map((entry) => entry.skill.slug)).toEqual(["postgres", "database-tools"]);
     expect(result[0]).not.toHaveProperty("rankTier");
     expect(result[0]).not.toHaveProperty("matchReason");
+    expect(result[0]).not.toHaveProperty("scoreBreakdown");
+  });
+
+  it("includes scoreBreakdown when includeScoreBreakdown is true", async () => {
+    generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
+    const exactName = {
+      skill: makePublicSkill({
+        id: "skills:postgres",
+        slug: "postgres",
+        displayName: "Postgres",
+        downloads: 250,
+      }),
+      version: null,
+      ownerHandle: "owner",
+      owner: null,
+    };
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce(exactName) // getExactSkillSlugMatch
+      .mockResolvedValueOnce([]) // directPrefixSkillMatches
+      .mockResolvedValueOnce([]); // lexicalFallbackSkills
+
+    const result = (await searchSkillsHandler(
+      {
+        vectorSearch: vi.fn().mockResolvedValue([]),
+        runQuery,
+      },
+      { query: "postgres", limit: 2, includeScoreBreakdown: true },
+    )) as unknown as Array<{
+      skill: { slug: string };
+      score: number;
+      scoreBreakdown: {
+        vectorScore: number;
+        lexicalBoost: number;
+        popularityBoost: number;
+        rankTier: number;
+      };
+    }>;
+
+    expect(result[0].scoreBreakdown).toBeDefined();
+    expect(typeof result[0].scoreBreakdown.vectorScore).toBe("number");
+    expect(typeof result[0].scoreBreakdown.lexicalBoost).toBe("number");
+    expect(typeof result[0].scoreBreakdown.popularityBoost).toBe("number");
+    expect(typeof result[0].scoreBreakdown.rankTier).toBe("number");
+    const { vectorScore, lexicalBoost, popularityBoost } = result[0].scoreBreakdown;
+    expect(vectorScore + lexicalBoost + popularityBoost).toBeCloseTo(result[0].score, 10);
   });
 
   it("does not let vector recall make short summary-only skills eligible", async () => {
@@ -1144,7 +1190,7 @@ describe("search helpers", () => {
     const queryTokens = tokenize("notion");
     const exactScore = __test.scoreSkillResult(queryTokens, 0.4, "Notion Sync", "notion-sync", 5);
     const looseScore = __test.scoreSkillResult(queryTokens, 0.6, "Notes Sync", "notes-sync", 500);
-    expect(exactScore).toBeGreaterThan(looseScore);
+    expect(exactScore.score).toBeGreaterThan(looseScore.score);
   });
 
   it("boosts exact full slug over a longer slug containing all query tokens", () => {
@@ -1163,7 +1209,7 @@ describe("search helpers", () => {
       "xiucheng-self-improving-agent",
       100,
     );
-    expect(exactScore).toBeGreaterThan(containingScore);
+    expect(exactScore.score).toBeGreaterThan(containingScore.score);
   });
 
   it("adds a popularity prior for equally relevant matches", () => {
@@ -1182,7 +1228,19 @@ describe("search helpers", () => {
       "notion-helper",
       1000,
     );
-    expect(highDownloads).toBeGreaterThan(lowDownloads);
+    expect(highDownloads.score).toBeGreaterThan(lowDownloads.score);
+  });
+
+  it("returns per-component score breakdown that sums to the total", () => {
+    const queryTokens = tokenize("notion");
+    const result = __test.scoreSkillResult(queryTokens, 0.42, "Notion Sync", "notion-sync", 250);
+    expect(result.vectorScore).toBe(0.42);
+    expect(result.lexicalBoost).toBeGreaterThan(0);
+    expect(result.popularityBoost).toBeGreaterThan(0);
+    expect(result.vectorScore + result.lexicalBoost + result.popularityBoost).toBeCloseTo(
+      result.score,
+      10,
+    );
   });
 
   it("uses digest doc instead of full skill doc in hydrateResults but revalidates the owner", async () => {

@@ -59,12 +59,21 @@ type SearchMatch = {
   rankTier: number;
 };
 
+type ScoreBreakdown = {
+  vectorScore: number;
+  lexicalBoost: number;
+  popularityBoost: number;
+  rankTier: number;
+};
+
 type SearchResult = SkillSearchEntry &
   SearchMatch & {
     score: number;
+    scoreBreakdown: Omit<ScoreBreakdown, "rankTier">;
   };
 type PublicSearchResult = SkillSearchEntry & {
   score: number;
+  scoreBreakdown?: ScoreBreakdown;
 };
 
 const EXACT_SLUG_BOOST = 2.5;
@@ -125,7 +134,12 @@ function scoreSkillResult(
 ) {
   const lexicalBoost = getLexicalBoost(queryTokens, displayName, slug);
   const popularityBoost = Math.log1p(Math.max(downloads, 0)) * POPULARITY_WEIGHT;
-  return vectorScore + lexicalBoost + popularityBoost;
+  return {
+    score: vectorScore + lexicalBoost + popularityBoost,
+    vectorScore,
+    lexicalBoost,
+    popularityBoost,
+  };
 }
 
 function classifySkillMatch(
@@ -215,6 +229,7 @@ export const searchSkills: ReturnType<typeof action> = action({
     highlightedOnly: v.optional(v.boolean()),
     nonSuspiciousOnly: v.optional(v.boolean()),
     capabilityTag: v.optional(v.string()),
+    includeScoreBreakdown: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<PublicSearchResult[]> => {
     const query = args.query.trim();
@@ -342,16 +357,22 @@ export const searchSkills: ReturnType<typeof action> = action({
         const vectorScore = entry.embeddingId ? (scoreById.get(entry.embeddingId) ?? 0) : 0;
         const match = classifySkillMatch(query, queryTokens, entry.skill);
         if (!match) return null;
+        const scored = scoreSkillResult(
+          queryTokens,
+          vectorScore,
+          entry.skill.displayName,
+          entry.skill.slug,
+          entry.skill.stats.downloads,
+        );
         return {
           ...entry,
           ...match,
-          score: scoreSkillResult(
-            queryTokens,
-            vectorScore,
-            entry.skill.displayName,
-            entry.skill.slug,
-            entry.skill.stats.downloads,
-          ),
+          score: scored.score,
+          scoreBreakdown: {
+            vectorScore: scored.vectorScore,
+            lexicalBoost: scored.lexicalBoost,
+            popularityBoost: scored.popularityBoost,
+          },
         };
       })
       .filter((entry): entry is SearchResult => Boolean(entry?.skill))
@@ -362,7 +383,15 @@ export const searchSkills: ReturnType<typeof action> = action({
           b.skill.stats.downloads - a.skill.stats.downloads,
       )
       .slice(0, limit);
-    return rankedMatches.map(({ rankTier: _rankTier, ...entry }) => entry);
+    if (!args.includeScoreBreakdown) {
+      return rankedMatches.map(
+        ({ rankTier: _rankTier, scoreBreakdown: _scoreBreakdown, ...entry }) => entry,
+      );
+    }
+    return rankedMatches.map(({ rankTier, scoreBreakdown, ...entry }) => ({
+      ...entry,
+      scoreBreakdown: { ...scoreBreakdown, rankTier },
+    }));
   },
 });
 
@@ -871,7 +900,7 @@ export const searchSouls: ReturnType<typeof action> = action({
             entry.soul.displayName,
             entry.soul.slug,
             entry.soul.stats.downloads,
-          ),
+          ).score,
         };
       })
       .filter((entry) => entry.soul)

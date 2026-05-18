@@ -37,6 +37,12 @@ import {
 
 type SearchSkillEntry = {
   score: number;
+  scoreBreakdown?: {
+    vectorScore: number;
+    lexicalBoost: number;
+    popularityBoost: number;
+    rankTier: number;
+  };
   skill: {
     slug?: string;
     displayName?: string;
@@ -425,6 +431,9 @@ export async function searchSkillsV1Handler(ctx: ActionCtx, request: Request) {
     url.searchParams.get("nonSuspiciousOnly"),
     url.searchParams.get("nonSuspicious"),
   );
+  const includeScoreBreakdown = parseBooleanQueryParam(
+    url.searchParams.get("includeScoreBreakdown"),
+  );
 
   if (!query) return json({ results: [] }, 200, rate.headers);
 
@@ -433,6 +442,7 @@ export async function searchSkillsV1Handler(ctx: ActionCtx, request: Request) {
     limit,
     highlightedOnly: highlightedOnly || undefined,
     nonSuspiciousOnly: nonSuspiciousOnly || undefined,
+    includeScoreBreakdown: includeScoreBreakdown || undefined,
   })) as SearchSkillEntry[];
 
   return json(
@@ -447,6 +457,7 @@ export async function searchSkillsV1Handler(ctx: ActionCtx, request: Request) {
           : null;
         return {
           score: result.score,
+          ...(result.scoreBreakdown ? { scoreBreakdown: result.scoreBreakdown } : {}),
           slug: result.skill?.slug,
           displayName: result.skill?.displayName,
           summary: result.skill?.summary ?? null,
