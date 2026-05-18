@@ -1,0 +1,56 @@
+name: Security Scan Codex Worker
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Maximum Codex scans to claim"
+        required: true
+        default: "10"
+  schedule:
+    - cron: "*/10 * * * *"
+
+concurrency:
+  group: security-scan-codex-worker
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  codex-security-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: Production
+    env:
+      CONVEX_URL: ${{ vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud' }}
+      SECURITY_SCAN_WORKER_TOKEN: ${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      CODEX_SECURITY_SCAN_LIMIT: ${{ inputs.limit || '10' }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Check configuration
+        run: |
+          set -euo pipefail
+          if [[ -z "$SECURITY_SCAN_WORKER_TOKEN" ]]; then
+            echo "::error::SECURITY_SCAN_WORKER_TOKEN is required"
+            exit 1
+          fi
+          if [[ -z "$OPENAI_API_KEY" ]]; then
+            echo "::error::OPENAI_API_KEY is required"
+            exit 1
+          fi
+
+      - name: Install Codex CLI
+        run: |
+          set -euo pipefail
+          if ! command -v codex >/dev/null 2>&1; then
+            npm install -g @openai/codex@latest
+          fi
+          codex --version
+
+      - name: Run Codex security worker
+        run: bun scripts/security/run-codex-scan-worker.ts --limit "$CODEX_SECURITY_SCAN_LIMIT"

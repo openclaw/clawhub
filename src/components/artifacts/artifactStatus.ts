@@ -45,11 +45,7 @@ export function skillArtifactStatus(skill: SkillArtifactStatusInput): ArtifactDi
 } {
   const flags = skill.moderationFlags ?? [];
   const reason = skill.moderationReason ?? "";
-  const versionStatuses = new Set([
-    skill.latestVersion?.vtStatus,
-    skill.latestVersion?.llmStatus,
-    skill.latestVersion?.staticScanStatus,
-  ]);
+  const versionStatuses = new Set([skill.latestVersion?.llmStatus]);
 
   if (skill.moderationStatus === "removed") {
     return {
@@ -72,7 +68,11 @@ export function skillArtifactStatus(skill: SkillArtifactStatusInput): ArtifactDi
       variant: "destructive",
     };
   }
-  if (skill.pendingReview || reason === "pending.scan" || reason === "pending.scan.stale") {
+  if (
+    skill.pendingReview ||
+    (skill.moderationStatus === "hidden" &&
+      (reason === "pending.scan" || reason === "pending.scan.stale"))
+  ) {
     return {
       key: "pending",
       label: "Pending checks",
@@ -123,11 +123,7 @@ export function skillArtifactStatus(skill: SkillArtifactStatusInput): ArtifactDi
 }
 
 export function packageArtifactStatus(pkg: PackageArtifactStatusInput): ArtifactDisplayStatus {
-  const releaseStatuses = new Set([
-    pkg.latestRelease?.vtStatus,
-    pkg.latestRelease?.llmStatus,
-    pkg.latestRelease?.staticScanStatus,
-  ]);
+  const releaseStatuses = new Set([pkg.latestRelease?.llmStatus]);
 
   if (pkg.scanStatus === "malicious" || releaseStatuses.has("malicious")) {
     return {

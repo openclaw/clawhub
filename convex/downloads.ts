@@ -45,7 +45,7 @@ export async function downloadZipHandler(
   const mod = skillResult.moderationInfo;
   if (mod?.isMalwareBlocked) {
     return new Response(
-      "Blocked: this skill has been flagged as malicious by VirusTotal and cannot be downloaded.",
+      "Blocked: this skill has been flagged as malicious by ClawScan and cannot be downloaded.",
       {
         status: 403,
         headers: mergeHeaders(rate.headers, corsHeaders()),
@@ -54,7 +54,7 @@ export async function downloadZipHandler(
   }
   if (mod?.isPendingScan) {
     return new Response(
-      "This skill is pending a security scan by VirusTotal. Please try again in a few minutes.",
+      "This skill is pending a ClawScan security review. Please try again in a few minutes.",
       {
         status: 423,
         headers: mergeHeaders(rate.headers, corsHeaders()),

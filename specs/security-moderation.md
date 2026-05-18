@@ -102,19 +102,25 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 ## Skill moderation pipeline
 
 - New skill publishes now persist a deterministic static scan result on the version.
-- Static suspicious findings are advisory evidence only. They no longer produce
-  an aggregate suspicious verdict or public package scan status without VT/LLM
-  corroboration. Static malicious findings still block immediately.
-- ClawScan LLM verdicts treat purpose-aligned notes as user guidance, not a
+- Static suspicious findings are advisory evidence only. Static malicious findings
+  hold the artifact until Codex-backed ClawScan completes.
+- ClawScan verdicts come from a GitHub Actions Codex worker, not a single
+  hosted LLM call. Publishes enqueue a scan job that waits at most 10 minutes
+  for VirusTotal telemetry, then Codex reviews the materialized artifact
+  workspace with static and VT signals as context.
+- ClawScan verdicts treat purpose-aligned notes as user guidance, not a
   suspicious verdict. Medium-only material concerns are visible
   `flagged.review` guidance and must not set `isSuspicious`; high or critical
   concerns remain `flagged.suspicious` and are hidden by the suspicious filter.
-- VirusTotal is telemetry for skills, not the primary classifier. Real AV
-  engine malicious/suspicious hits can still contribute malicious/suspicious
-  reason codes, but Code Insight/Palm suspicious verdicts do not set
-  `isSuspicious` without corroborating engine detections or LLM/static
-  malicious evidence.
-- Operators can schedule targeted LLM rescans for suspicious skills by bucket
+- VirusTotal is telemetry only. It is included in the Codex workspace as signal,
+  but VT alone must never hide, block, or set malicious/suspicious public status.
+- Artifacts without non-VT malicious indications are visible immediately while
+  Codex runs. Artifacts with non-VT malicious indications stay hidden/blocked
+  until Codex returns; Codex malicious verdicts hide/block.
+- Plugins under `@openclaw/*` owned by the OpenClaw publisher are trusted by
+  default. They may still be audited, but scanner telemetry alone must not
+  downgrade them.
+- Operators can schedule targeted ClawScan rescans for suspicious skills by bucket
   (`all`, `llm-only`, `vt-only`, `both`) and for suspicious plugin releases.
 - Package/plugin scan backfills now also recompute deterministic static scan results for older releases,
   so legacy plugin versions can surface OpenClaw scan findings without republishing.

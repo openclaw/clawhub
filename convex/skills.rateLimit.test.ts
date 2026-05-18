@@ -1101,8 +1101,8 @@ describe("skills anti-spam guards", () => {
       "skills:1",
       expect.objectContaining({
         moderationStatus: "active",
-        moderationReason: "scanner.vt.suspicious",
-        moderationFlags: ["flagged.suspicious"],
+        moderationReason: "scanner.aggregate.clean",
+        moderationFlags: undefined,
       }),
     );
   });
@@ -1812,11 +1812,11 @@ describe("skills anti-spam guards", () => {
     expect(patch).toHaveBeenCalledWith(
       "skills:1",
       expect.objectContaining({
-        moderationVerdict: "suspicious",
-        moderationReason: "scanner.llm.suspicious",
-        moderationFlags: ["flagged.suspicious"],
-        moderationReasonCodes: ["review.llm_review", "suspicious.vt_suspicious"],
-        isSuspicious: true,
+        moderationVerdict: "clean",
+        moderationReason: "scanner.llm.review",
+        moderationFlags: ["flagged.review"],
+        moderationReasonCodes: ["review.llm_review"],
+        isSuspicious: false,
       }),
     );
   });
@@ -1906,18 +1906,12 @@ describe("skills anti-spam guards", () => {
       1,
       "skills:1",
       expect.objectContaining({
-        moderationStatus: "hidden",
-        moderationVerdict: "malicious",
-        moderationFlags: ["blocked.malware"],
+        moderationStatus: "active",
+        moderationVerdict: "clean",
+        moderationFlags: undefined,
       }),
     );
-    expect(patch).toHaveBeenNthCalledWith(
-      2,
-      "globalStats:1",
-      expect.objectContaining({
-        activeSkillsCount: 99,
-      }),
-    );
+    expect(patch).toHaveBeenCalledTimes(1);
   });
 
   it("ignores non-latest versions when approving by hash", async () => {
@@ -2333,21 +2327,15 @@ describe("skills anti-spam guards", () => {
       1,
       "skills:1",
       expect.objectContaining({
-        moderationStatus: "hidden",
-        moderationReason: "scanner.vt.malicious",
-        moderationFlags: ["blocked.malware"],
-        moderationVerdict: "malicious",
-        moderationReasonCodes: ["malicious.vt_malicious"],
+        moderationStatus: "active",
+        moderationReason: "scanner.aggregate.clean",
+        moderationFlags: undefined,
+        moderationVerdict: "clean",
+        moderationReasonCodes: undefined,
         moderationSourceVersionId: "skillVersions:1",
       }),
     );
-    expect(patch).toHaveBeenNthCalledWith(
-      2,
-      "globalStats:1",
-      expect.objectContaining({
-        activeSkillsCount: 99,
-      }),
-    );
+    expect(patch).toHaveBeenCalledTimes(1);
   });
 
   it("bulk-clears suspicious flags/reasons for privileged owner skills", async () => {

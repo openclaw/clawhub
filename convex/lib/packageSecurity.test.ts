@@ -27,7 +27,7 @@ describe("packageSecurity", () => {
     ).toBe("pending");
   });
 
-  it("still blocks engine-backed malicious package releases", () => {
+  it("does not block VT-only malicious package releases", () => {
     expect(isPackageBlockedFromPublic("malicious")).toBe(true);
     expect(
       getPackageDownloadSecurityBlock({
@@ -37,11 +37,7 @@ describe("packageSecurity", () => {
           engineStats: { malicious: 1, suspicious: 0, harmless: 12, undetected: 54 },
         },
       } as never),
-    ).toEqual(
-      expect.objectContaining({
-        status: 403,
-      }),
-    );
+    ).toBeNull();
   });
 
   it("keeps AI-only VT suspicious advisory when engines are clean", () => {
@@ -74,7 +70,7 @@ describe("packageSecurity", () => {
     expect(getPackageDownloadSecurityBlock(release)).toBeNull();
   });
 
-  it("enforces AI VT records when engine stats report suspicious", () => {
+  it("keeps engine-backed VT suspicious as telemetry", () => {
     expect(
       resolvePackageReleaseScanStatus({
         vtAnalysis: {
@@ -84,10 +80,10 @@ describe("packageSecurity", () => {
           engineStats: { malicious: 0, suspicious: 1, harmless: 12, undetected: 54 },
         },
       } as never),
-    ).toBe("suspicious");
+    ).toBe("not-run");
   });
 
-  it("enforces AI VT records when engine stats report malicious", () => {
+  it("keeps engine-backed VT malicious as telemetry", () => {
     const release = {
       vtAnalysis: {
         status: "clean",
@@ -97,12 +93,8 @@ describe("packageSecurity", () => {
       },
     } as never;
 
-    expect(resolvePackageReleaseScanStatus(release)).toBe("malicious");
-    expect(getPackageDownloadSecurityBlock(release)).toEqual(
-      expect.objectContaining({
-        status: 403,
-      }),
-    );
+    expect(resolvePackageReleaseScanStatus(release)).toBe("not-run");
+    expect(getPackageDownloadSecurityBlock(release)).toBeNull();
   });
 
   it("does not let suspicious static scans override clean verification", () => {
@@ -132,6 +124,25 @@ describe("packageSecurity", () => {
         verification: { scanStatus: "suspicious" },
       } as never),
     ).toBe("clean");
+  });
+
+  it("lets package ClawScan clear a static malicious hold", () => {
+    expect(
+      resolvePackageReleaseScanStatus({
+        staticScan: { status: "malicious" },
+        llmAnalysis: { status: "clean", verdict: "benign" },
+      } as never),
+    ).toBe("clean");
+  });
+
+  it("trusts verified OpenClaw plugins while Codex reviews static holds", () => {
+    const release = {
+      staticScan: { status: "malicious" },
+      verification: { scanStatus: "clean", trustedOpenClawPlugin: true },
+    } as never;
+
+    expect(resolvePackageReleaseScanStatus(release)).toBe("clean");
+    expect(getPackageDownloadSecurityBlock(release)).toBeNull();
   });
 
   it("lets manual package moderation approve or block releases", () => {
@@ -168,7 +179,7 @@ describe("packageSecurity", () => {
         "malicious",
         2,
       ),
-    ).toEqual(["manual:quarantined", "scan:malicious", "vt:malicious", "reports:2"]);
+    ).toEqual(["manual:quarantined", "scan:malicious", "reports:2"]);
   });
 
   it("does not expose AI-only VT advisory statuses as public trust reasons", () => {

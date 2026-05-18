@@ -15,6 +15,10 @@ const internalRefs = internal as unknown as {
     getPackageByIdInternal: unknown;
     updateReleaseScanResultsInternal: unknown;
   };
+  securityScan: {
+    enqueuePackageReleaseScanInternal: unknown;
+    enqueueSkillVersionScanInternal: unknown;
+  };
   vt: {
     scanPackageReleaseWithVirusTotal: unknown;
     pollPackageReleaseScanResults: unknown;
@@ -35,6 +39,28 @@ async function runMutationRef<T>(
   args: unknown,
 ): Promise<T> {
   return (await ctx.runMutation(ref as never, args as never)) as T;
+}
+
+async function enqueueSkillCodexForVtSignal(
+  ctx: { runMutation: (ref: never, args: never) => Promise<unknown> },
+  versionId: Id<"skillVersions">,
+) {
+  await runMutationRef(ctx, internalRefs.securityScan.enqueueSkillVersionScanInternal, {
+    versionId,
+    source: "vt-update",
+    waitForVtMs: 0,
+  });
+}
+
+async function enqueuePackageCodexForVtSignal(
+  ctx: { runMutation: (ref: never, args: never) => Promise<unknown> },
+  releaseId: Id<"packageReleases">,
+) {
+  await runMutationRef(ctx, internalRefs.securityScan.enqueuePackageReleaseScanInternal, {
+    releaseId,
+    source: "vt-update",
+    waitForVtMs: 0,
+  });
 }
 
 async function runAfterRef(
@@ -78,15 +104,9 @@ export const fixNullModerationReasons = internalAction({
         continue;
       }
 
-      // Version has vtAnalysis - update the skill's moderationReason
-      const status = version.vtAnalysis.status;
-      await ctx.runMutation(internal.skills.approveSkillByHashInternal, {
-        sha256hash: version.sha256hash,
-        scanner: "vt",
-        status,
-      });
+      await enqueueSkillCodexForVtSignal(ctx, versionId);
       fixed++;
-      console.log(`[vt:fixNull] Fixed ${slug} -> ${status}`);
+      console.log(`[vt:fixNull] Queued Codex scan for ${slug} from cached VT signal`);
     }
 
     const result: FixNullModerationReasonsResult = { total: skills.length, fixed, noVtAnalysis };
@@ -591,12 +611,7 @@ export const scanWithVirusTotal = internalAction({
             },
           });
 
-          // VT finalizes moderation visibility for newly published versions.
-          await ctx.runMutation(internal.skills.approveSkillByHashInternal, {
-            sha256hash,
-            scanner: "vt",
-            status,
-          });
+          await enqueueSkillCodexForVtSignal(ctx, args.versionId);
           return;
         }
 
@@ -764,6 +779,7 @@ export const scanPackageReleaseWithVirusTotal = internalAction({
           releaseId: args.releaseId,
           vtAnalysis,
         });
+        await enqueuePackageCodexForVtSignal(ctx, args.releaseId);
         return;
       }
     } catch (error) {
@@ -862,6 +878,7 @@ export const pollPackageReleaseScanResults = internalAction({
             releaseId: args.releaseId,
             vtAnalysis: { status: "stale", checkedAt: Date.now() },
           });
+          await enqueuePackageCodexForVtSignal(ctx, args.releaseId);
         }
         return;
       }
@@ -872,6 +889,7 @@ export const pollPackageReleaseScanResults = internalAction({
           releaseId: args.releaseId,
           vtAnalysis,
         });
+        await enqueuePackageCodexForVtSignal(ctx, args.releaseId);
         return;
       }
 
@@ -891,6 +909,7 @@ export const pollPackageReleaseScanResults = internalAction({
           releaseId: args.releaseId,
           vtAnalysis: { status: "stale", checkedAt: Date.now() },
         });
+        await enqueuePackageCodexForVtSignal(ctx, args.releaseId);
       }
     } catch (error) {
       console.error(`[vt:package] Error polling ${release.sha256hash}:`, error);
@@ -909,6 +928,7 @@ export const pollPackageReleaseScanResults = internalAction({
           releaseId: args.releaseId,
           vtAnalysis: { status: "error", checkedAt: Date.now() },
         });
+        await enqueuePackageCodexForVtSignal(ctx, args.releaseId);
       }
     }
   },
@@ -992,6 +1012,7 @@ export const pollPendingScans = internalAction({
               versionId,
               vtAnalysis: { status: "stale", checkedAt: Date.now() },
             });
+            await enqueueSkillCodexForVtSignal(ctx, versionId);
             staled++;
           }
           continue;
@@ -1024,12 +1045,7 @@ export const pollPendingScans = internalAction({
               },
             });
 
-            // VT finalizes moderation visibility for newly published versions.
-            await ctx.runMutation(internal.skills.approveSkillByHashInternal, {
-              sha256hash,
-              scanner: "vt",
-              status,
-            });
+            await enqueueSkillCodexForVtSignal(ctx, versionId);
             updated++;
             continue;
           }
@@ -1049,6 +1065,7 @@ export const pollPendingScans = internalAction({
               versionId,
               vtAnalysis: { status: "stale", checkedAt: Date.now() },
             });
+            await enqueueSkillCodexForVtSignal(ctx, versionId);
             staled++;
           }
           continue;
@@ -1077,12 +1094,7 @@ export const pollPendingScans = internalAction({
           },
         });
 
-        // VT finalizes moderation visibility for newly published versions.
-        await ctx.runMutation(internal.skills.approveSkillByHashInternal, {
-          sha256hash,
-          scanner: "vt",
-          status,
-        });
+        await enqueueSkillCodexForVtSignal(ctx, versionId);
         updated++;
       } catch (error) {
         console.error(`[vt:pollPendingScans] Error checking hash ${sha256hash}:`, error);
@@ -1196,8 +1208,8 @@ export const backfillPendingScans = internalAction({
     let notInVT = 0;
     let errors = 0;
 
-    for (const { sha256hash } of pendingSkills) {
-      if (!sha256hash) {
+    for (const { versionId, sha256hash } of pendingSkills) {
+      if (!versionId || !sha256hash) {
         noHash++;
         continue;
       }
@@ -1222,11 +1234,16 @@ export const backfillPendingScans = internalAction({
           if (status) {
             // We have a verdict from AV engines - update the skill
             console.log(`[vt:backfill] Hash ${sha256hash} verdict from AV engines: ${status}`);
-            await ctx.runMutation(internal.skills.approveSkillByHashInternal, {
-              sha256hash,
-              scanner: "vt",
-              status,
+            await ctx.runMutation(internal.skills.updateVersionScanResultsInternal, {
+              versionId,
+              vtAnalysis: {
+                status,
+                source: "engines",
+                engineStats: normalizeVtEngineStats(stats),
+                checkedAt: Date.now(),
+              },
             });
+            await enqueueSkillCodexForVtSignal(ctx, versionId);
             updated++;
             continue;
           }
@@ -1245,12 +1262,21 @@ export const backfillPendingScans = internalAction({
         // We have a verdict - update the skill
         const verdict = normalizeVerdict(aiResult.verdict);
         const status = verdictToStatus(verdict);
+        const stats = vtResult.data.attributes.last_analysis_stats;
 
-        await ctx.runMutation(internal.skills.approveSkillByHashInternal, {
-          sha256hash,
-          scanner: "vt",
-          status,
+        await ctx.runMutation(internal.skills.updateVersionScanResultsInternal, {
+          versionId,
+          vtAnalysis: {
+            status,
+            verdict: aiResult.verdict,
+            analysis: aiResult.analysis,
+            source: aiResult.source,
+            scanner: "code_insight",
+            engineStats: normalizeVtEngineStats(stats),
+            checkedAt: Date.now(),
+          },
         });
+        await enqueueSkillCodexForVtSignal(ctx, versionId);
         updated++;
       } catch (error) {
         console.error(`[vt:backfill] Error for ${sha256hash}:`, error);
@@ -1368,19 +1394,11 @@ export const rescanActiveSkills = internalAction({
           if (status === "malicious" || status === "suspicious") {
             console.warn(`[vt:rescan] ${slug}: verdict changed to ${status}!`);
             accFlaggedSkills.push({ slug, status });
-            await ctx.runMutation(internal.skills.escalateByVtInternal, {
-              sha256hash,
-              status,
-            });
+            await enqueueSkillCodexForVtSignal(ctx, versionId);
             accUpdated++;
           } else if (wasFlagged && status === "clean") {
-            // Verdict improved from suspicious → clean: clear the stale moderation flag
-            console.log(`[vt:rescan] ${slug}: verdict improved to clean, clearing suspicious flag`);
-            await ctx.runMutation(internal.skills.approveSkillByHashInternal, {
-              sha256hash,
-              scanner: "vt",
-              status,
-            });
+            console.log(`[vt:rescan] ${slug}: VT verdict improved to clean`);
+            await enqueueSkillCodexForVtSignal(ctx, versionId);
             accUpdated++;
           } else {
             accUnchanged++;
@@ -1408,19 +1426,11 @@ export const rescanActiveSkills = internalAction({
         if (status === "malicious" || status === "suspicious") {
           console.warn(`[vt:rescan] ${slug}: verdict changed to ${status}!`);
           accFlaggedSkills.push({ slug, status });
-          await ctx.runMutation(internal.skills.escalateByVtInternal, {
-            sha256hash,
-            status,
-          });
+          await enqueueSkillCodexForVtSignal(ctx, versionId);
           accUpdated++;
         } else if (wasFlagged && status === "clean") {
-          // Verdict improved from suspicious → clean: clear the stale moderation flag
-          console.log(`[vt:rescan] ${slug}: verdict improved to clean, clearing suspicious flag`);
-          await ctx.runMutation(internal.skills.approveSkillByHashInternal, {
-            sha256hash,
-            scanner: "vt",
-            status,
-          });
+          console.log(`[vt:rescan] ${slug}: VT verdict improved to clean`);
+          await enqueueSkillCodexForVtSignal(ctx, versionId);
           accUpdated++;
         } else {
           accUnchanged++;
@@ -1684,6 +1694,7 @@ export const backfillActiveSkillsVTCache = internalAction({
               checkedAt: Date.now(),
             },
           });
+          await enqueueSkillCodexForVtSignal(ctx, versionId);
           updated++;
           continue;
         }
@@ -1706,6 +1717,7 @@ export const backfillActiveSkillsVTCache = internalAction({
             checkedAt: Date.now(),
           },
         });
+        await enqueueSkillCodexForVtSignal(ctx, versionId);
 
         console.log(`[vt:backfillActive] ${slug}: updated with ${status}`);
         updated++;
@@ -1822,9 +1834,8 @@ export const fixNullModerationStatus = internalAction({
 });
 
 /**
- * Sync moderationReason for skills that have vtAnalysis cached but stale moderationReason.
- * Uses the canonical approveSkillByHashInternal to keep all moderation fields in sync
- * (moderationStatus, moderationFlags, moderationVerdict, moderationReasonCodes, isSuspicious).
+ * Queue Codex scans for skills with cached VT telemetry but stale scanner state.
+ * VT is telemetry only; Codex owns visibility changes.
  */
 export const syncModerationReasons = internalAction({
   args: { batchSize: v.optional(v.number()) },
@@ -1846,35 +1857,18 @@ export const syncModerationReasons = internalAction({
     let synced = 0;
     let noVtAnalysis = 0;
 
-    for (const { skillId, slug, currentReason, vtStatus, sha256hash } of skills) {
+    for (const { skillId, slug, currentReason, vtStatus } of skills) {
       if (!vtStatus) {
         noVtAnalysis++;
         continue;
       }
 
-      if (sha256hash) {
-        await ctx.runMutation(internal.skills.approveSkillByHashInternal, {
-          sha256hash,
-          scanner: "vt",
-          status: vtStatus,
-        });
-      } else if (vtStatus === "malicious") {
-        // Legacy no-hash + malicious: must hide immediately even without full reconciliation.
-        await ctx.runMutation(internal.skills.escalateSkillByIdInternal, {
-          skillId,
-          moderationReason: `scanner.vt.${vtStatus}`,
-          moderationFlags: ["blocked.malware"],
-          moderationStatus: "hidden",
-        });
-      } else {
-        // Legacy no-hash + clean/suspicious: partial reason update unblocks stale rows.
-        await ctx.runMutation(internal.skills.updateSkillModerationReasonInternal, {
-          skillId,
-          moderationReason: `scanner.vt.${vtStatus}`,
-        });
+      const skill = await ctx.runQuery(internal.skills.getSkillByIdInternal, { skillId });
+      if (skill?.latestVersionId) {
+        await enqueueSkillCodexForVtSignal(ctx, skill.latestVersionId);
       }
 
-      console.log(`[vt:syncModeration] ${slug}: ${currentReason} -> scanner.vt.${vtStatus}`);
+      console.log(`[vt:syncModeration] ${slug}: queued Codex for ${currentReason}/${vtStatus}`);
       synced++;
     }
 

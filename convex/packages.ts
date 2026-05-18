@@ -156,10 +156,18 @@ function inferOwnerHandleFromScopedPackageName(name: string) {
   return match?.[1] || undefined;
 }
 
+function isTrustedOpenClawPluginPackage(params: {
+  family: PackageFamily;
+  normalizedName: string;
+  ownerPublisher?: Pick<Doc<"publishers">, "handle" | "deletedAt"> | null;
+}) {
+  if (params.family !== "code-plugin" && params.family !== "bundle-plugin") return false;
+  if (!params.normalizedName.startsWith("@openclaw/")) return false;
+  const ownerHandle = params.ownerPublisher?.handle?.trim().toLowerCase();
+  return ownerHandle === "openclaw" && params.ownerPublisher?.deletedAt === undefined;
+}
+
 const internalRefs = internal as unknown as {
-  llmEval: {
-    evaluatePackageReleaseWithLlm: unknown;
-  };
   packages: {
     backfillPackageReleaseScansInternal: unknown;
     scanPackageReleaseStaticallyInternal: unknown;
@@ -190,7 +198,11 @@ const internalRefs = internal as unknown as {
     getByHandleInternal: unknown;
   };
   publishers: {
+    getByIdInternal: unknown;
     resolvePublishTargetForUserInternal: unknown;
+  };
+  securityScan: {
+    enqueuePackageReleaseScanInternal: unknown;
   };
   vt: {
     scanPackageReleaseWithVirusTotal: unknown;
@@ -4525,11 +4537,26 @@ async function publishPackageImpl(
     },
     files,
   });
+  const ownerPublisher = ownerPublisherId
+    ? await runQueryRef<Doc<"publishers"> | null>(ctx, internalRefs.publishers.getByIdInternal, {
+        publisherId: ownerPublisherId,
+      })
+    : null;
+  const trustedOpenClawPlugin = isTrustedOpenClawPluginPackage({
+    family,
+    normalizedName: name,
+    ownerPublisher,
+  });
   const verificationSource = codeArtifacts?.verification ?? bundleArtifacts?.verification;
-  const initialScanStatus = staticScan.status === "malicious" ? "malicious" : "pending";
+  const initialScanStatus = trustedOpenClawPlugin
+    ? "clean"
+    : staticScan.status === "malicious"
+      ? "malicious"
+      : "pending";
   const verification = verificationSource
     ? {
         ...verificationSource,
+        trustedOpenClawPlugin: trustedOpenClawPlugin || undefined,
         scanStatus: initialScanStatus,
       }
     : undefined;
@@ -4631,8 +4658,9 @@ async function publishPackageImpl(
       releaseId: publishResult.releaseId,
     },
   );
-  await runAfterRef(ctx, 0, internalRefs.llmEval.evaluatePackageReleaseWithLlm, {
+  await runMutationRef(ctx, internalRefs.securityScan.enqueuePackageReleaseScanInternal, {
     releaseId: publishResult.releaseId,
+    source: "publish",
   });
 
   return publishResult;
@@ -5427,32 +5455,14 @@ export const updateReleaseScanResultsInternal = internalMutation({
   handler: async (ctx, args) => {
     const release = await ctx.db.get(args.releaseId);
     if (!release || release.softDeletedAt) return;
-    const activeRelease = release;
 
     const patch: Partial<Doc<"packageReleases">> = {};
     if (args.sha256hash !== undefined) patch.sha256hash = args.sha256hash;
     if (args.vtAnalysis !== undefined) {
-      const nextScanStatus = resolvePackageReleaseScanStatus({
-        ...activeRelease,
-        vtAnalysis: args.vtAnalysis,
-      });
       patch.vtAnalysis = args.vtAnalysis;
-      patch.verification = activeRelease.verification
-        ? {
-            ...activeRelease.verification,
-            scanStatus: nextScanStatus,
-          }
-        : activeRelease.verification;
     }
     if (Object.keys(patch).length > 0) {
       await ctx.db.patch(args.releaseId, patch);
-    }
-    if (args.vtAnalysis !== undefined) {
-      const updatedRelease = {
-        ...activeRelease,
-        ...patch,
-      } as Doc<"packageReleases">;
-      await syncLatestPackageVerification(ctx, updatedRelease);
     }
   },
 });
@@ -5844,8 +5854,9 @@ export const backfillPackageReleaseScansInternal = internalAction({
         });
       }
       if (release.needsLlm) {
-        await runAfterRef(ctx, 0, internalRefs.llmEval.evaluatePackageReleaseWithLlm, {
+        await runMutationRef(ctx, internalRefs.securityScan.enqueuePackageReleaseScanInternal, {
           releaseId: release.releaseId,
+          source: "backfill",
         });
       }
       if (release.needsStatic) {
@@ -5929,8 +5940,10 @@ export const updateLatestClawScanNoteAndRequestRescan = mutation({
       createdAt: now,
     });
 
-    await runAfterRef(ctx, 0, internalRefs.llmEval.evaluatePackageReleaseWithLlm, {
+    await runAfterRef(ctx, 0, internalRefs.securityScan.enqueuePackageReleaseScanInternal, {
       releaseId: release._id,
+      source: "clawscan-note",
+      waitForVtMs: 0,
     });
 
     return { ok: true as const, packageReleaseId: release._id };

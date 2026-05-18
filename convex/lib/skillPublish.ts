@@ -356,8 +356,9 @@ export async function publishVersionForUser(
     versionId: publishResult.versionId,
   });
 
-  await ctx.scheduler.runAfter(0, internal.llmEval.evaluateWithLlm, {
+  await ctx.runMutation(internal.securityScan.enqueueSkillVersionScanInternal, {
     versionId: publishResult.versionId,
+    source: "publish",
   });
 
   await ctx.scheduler.runAfter(0, internal.depRegistryScan.checkDependencyRegistries, {

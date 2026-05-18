@@ -350,14 +350,11 @@ function buildSkillSecuritySnapshot(
 
   const statuses: NormalizedSecurityStatus[] = [];
   if (staticStatus) statuses.push(staticStatus);
-  if (vtStatus) statuses.push(vtStatus);
   if (llmStatus) statuses.push(llmStatus);
   if (statuses.length === 0 && sha256hash) statuses.push("pending");
   const status = mergeSecurityStatuses(statuses);
   const hasScanResult =
-    isDefinitiveSecurityStatus(staticStatus) ||
-    isDefinitiveSecurityStatus(vtStatus) ||
-    isDefinitiveSecurityStatus(llmStatus);
+    isDefinitiveSecurityStatus(staticStatus) || isDefinitiveSecurityStatus(llmStatus);
   const hasWarnings =
     status === "suspicious" || status === "malicious" || hasLlmDimensionWarnings(llm?.dimensions);
 

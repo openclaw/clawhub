@@ -4,6 +4,7 @@
 
 ### Changes
 
+- Security: move upload ClawScan classification to a GitHub Actions Codex worker, treat VirusTotal as telemetry-only signal, and trust verified `@openclaw/*` plugin packages by default.
 - Admin/Ops: audit profile syncs, self-service account/profile changes, personal
   publisher syncs, and org trusted-publisher changes so slug and ownership
   investigations have a complete ledger.

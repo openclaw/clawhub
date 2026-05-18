@@ -114,6 +114,7 @@ import type * as rateLimits from "../rateLimits.js";
 import type * as search from "../search.js";
 import type * as securityDataset from "../securityDataset.js";
 import type * as securityDatasetNode from "../securityDatasetNode.js";
+import type * as securityScan from "../securityScan.js";
 import type * as seed from "../seed.js";
 import type * as seedSouls from "../seedSouls.js";
 import type * as skillStatEvents from "../skillStatEvents.js";
@@ -245,6 +246,7 @@ declare const fullApi: ApiFromModules<{
   search: typeof search;
   securityDataset: typeof securityDataset;
   securityDatasetNode: typeof securityDatasetNode;
+  securityScan: typeof securityScan;
   seed: typeof seed;
   seedSouls: typeof seedSouls;
   skillStatEvents: typeof skillStatEvents;

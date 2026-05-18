@@ -229,10 +229,10 @@ describe("skills manual overrides", () => {
     expect(patch).toHaveBeenCalledWith(
       "skills:1",
       expect.objectContaining({
-        moderationReason: "scanner.vt.suspicious",
-        moderationVerdict: "suspicious",
-        moderationFlags: ["flagged.suspicious"],
-        isSuspicious: true,
+        moderationReason: "scanner.aggregate.clean",
+        moderationVerdict: "clean",
+        moderationFlags: undefined,
+        isSuspicious: false,
       }),
     );
     expect(insert).toHaveBeenCalledWith(
@@ -291,12 +291,12 @@ describe("skills manual overrides", () => {
     expect(patch).toHaveBeenCalledWith(
       "skills:1",
       expect.objectContaining({
-        moderationStatus: "hidden",
-        moderationReason: "scanner.vt.malicious",
-        moderationVerdict: "malicious",
-        moderationFlags: ["blocked.malware"],
-        hiddenAt: now,
-        lastReviewedAt: now,
+        moderationStatus: "active",
+        moderationReason: "scanner.aggregate.clean",
+        moderationVerdict: "clean",
+        moderationFlags: undefined,
+        hiddenAt: undefined,
+        lastReviewedAt: undefined,
         isSuspicious: false,
       }),
     );

@@ -101,13 +101,18 @@ describe("vt unavailable fallback", () => {
     });
 
     expect(result).toMatchObject({ processed: 1, updated: 0, staled: 1 });
-    expect(runMutation).toHaveBeenCalledTimes(2);
+    expect(runMutation).toHaveBeenCalledTimes(3);
     expect(runMutation).toHaveBeenNthCalledWith(1, expect.anything(), {
       skillId: "skills:pending",
     });
     expect(runMutation).toHaveBeenNthCalledWith(2, expect.anything(), {
       versionId: "skillVersions:pending",
       vtAnalysis: { status: "stale", checkedAt: expect.any(Number) },
+    });
+    expect(runMutation).toHaveBeenNthCalledWith(3, expect.anything(), {
+      versionId: "skillVersions:pending",
+      source: "vt-update",
+      waitForVtMs: 0,
     });
   });
 });

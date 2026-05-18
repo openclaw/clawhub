@@ -383,9 +383,7 @@ export function PluginDetailPage({
   const latestRelease = version?.version ?? null;
   const isDownloadBlocked =
     pkg.verification?.scanStatus === "malicious" ||
-    latestRelease?.verification?.scanStatus === "malicious" ||
-    latestRelease?.vtAnalysis?.status === "malicious" ||
-    latestRelease?.vtAnalysis?.verdict === "malicious";
+    latestRelease?.verification?.scanStatus === "malicious";
   const installSnippet =
     pkg.family === "code-plugin"
       ? `openclaw plugins install clawhub:${pkg.name}`

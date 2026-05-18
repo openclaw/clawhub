@@ -1747,7 +1747,7 @@ describe("httpApiV1 handlers", () => {
     );
     expect(response.status).toBe(200);
     const json = await response.json();
-    expect(json.version.security.status).toBe("suspicious");
+    expect(json.version.security.status).toBe("pending");
     expect(json.version.security.scanners.vt.normalizedStatus).toBe("suspicious");
     expect(json.version.security.virustotalUrl).toContain("virustotal.com/gui/file/");
   });
@@ -2163,7 +2163,7 @@ describe("httpApiV1 handlers", () => {
     expect(response.status).toBe(200);
     const json = await response.json();
     expect(json.security.status).toBe("error");
-    expect(json.security.hasScanResult).toBe(true);
+    expect(json.security.hasScanResult).toBe(false);
     expect(json.security.scanners.vt.normalizedStatus).toBe("clean");
     expect(json.security.scanners.llm.normalizedStatus).toBe("error");
   });
@@ -2303,7 +2303,7 @@ describe("httpApiV1 handlers", () => {
     expect(response.status).toBe(200);
     const json = await response.json();
     expect(json.version.version).toBe("1.0.0");
-    expect(json.security.status).toBe("malicious");
+    expect(json.security.status).toBe("pending");
     expect(json.moderation.sourceVersion).toEqual({
       version: "2.0.0",
       createdAt: 2,
@@ -5056,10 +5056,10 @@ describe("httpApiV1 handlers", () => {
         },
       },
       expected: {
-        scanStatus: "suspicious",
+        scanStatus: "pending",
         blockedFromDownload: false,
-        reasons: ["scan:suspicious", "vt:suspicious"],
-        pending: false,
+        reasons: ["scan:pending"],
+        pending: true,
       },
     },
     {

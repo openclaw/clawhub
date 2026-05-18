@@ -1881,7 +1881,8 @@ async function toDashboardSkillListItem(
     moderationFlags: skill.moderationFlags,
     isSuspicious: skill.isSuspicious,
     pendingReview:
-      skill.moderationReason === "pending.scan" || skill.moderationReason === "pending.scan.stale"
+      skill.moderationStatus === "hidden" &&
+      (skill.moderationReason === "pending.scan" || skill.moderationReason === "pending.scan.stale")
         ? true
         : undefined,
     qualityDecision: skill.quality?.decision,
@@ -6129,8 +6130,10 @@ export const updateLatestClawScanNoteAndRequestRescan = mutation({
       createdAt: now,
     });
 
-    await ctx.scheduler.runAfter(0, internal.llmEval.evaluateWithLlm, {
+    await ctx.scheduler.runAfter(0, internal.securityScan.enqueueSkillVersionScanInternal, {
       versionId: version._id,
+      source: "clawscan-note",
+      waitForVtMs: 0,
     });
 
     return { ok: true as const, skillVersionId: version._id };
@@ -9230,21 +9233,13 @@ export const insertVersion = internalMutation({
     const qualityAssessment = args.qualityAssessment;
     const isQualityQuarantine = qualityAssessment?.decision === "quarantine";
 
-    // Trusted publishers (and moderators/admins) bypass auto-hide for pending scans.
-    // Keep moderationReason as pending.scan so the VT poller keeps working.
-    const isTrustedPublisher =
-      user.trustedPublisher || user.role === "admin" || user.role === "moderator";
     const staticSnapshot = buildModerationSnapshot({
       staticScan: args.staticScan,
     });
     const isPublisherUnderModeration = Boolean(user.requiresModerationAt);
     const isStaticMalicious = staticSnapshot.verdict === "malicious";
     const initialModerationStatus =
-      isStaticMalicious ||
-      isPublisherUnderModeration ||
-      !(isTrustedPublisher && !isQualityQuarantine)
-        ? "hidden"
-        : "active";
+      isStaticMalicious || isQualityQuarantine || isPublisherUnderModeration ? "hidden" : "active";
 
     const moderationReason = isStaticMalicious
       ? "scanner.static.malicious"
