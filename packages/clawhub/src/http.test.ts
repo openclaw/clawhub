@@ -235,11 +235,12 @@ describe("node http client", () => {
     });
 
     await expect(
-      client.apiRequestForm(
-        "https://example.com",
-        { method: "POST", path: "/upload", form: new FormData(), retryCount: 5 },
-        undefined,
-      ),
+      client.apiRequestForm("https://example.com", {
+        method: "POST",
+        path: "/upload",
+        form: new FormData(),
+        retryCount: 5,
+      }),
     ).resolves.toEqual({ ok: true });
     expect(fetchImpl).toHaveBeenCalledTimes(3);
 
