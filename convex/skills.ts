@@ -6864,7 +6864,7 @@ export const restoreOwnedSkillsForUnbanBatchInternal = internalMutation({
       if (
         !skill.softDeletedAt ||
         skill.softDeletedAt !== args.bannedAt ||
-        skill.moderationStatus !== "hidden" ||
+        skill.moderationStatus === "removed" ||
         skill.moderationReason !== "user.banned"
       ) {
         continue;

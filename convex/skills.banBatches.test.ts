@@ -40,6 +40,13 @@ function makeCtx({
         }),
       };
     }
+    if (table === "skillEmbeddings") {
+      return {
+        withIndex: () => ({
+          collect: async () => [],
+        }),
+      };
+    }
     throw new Error(`Unexpected table ${table}`);
   });
   const scheduler = { runAfter: vi.fn() };
@@ -210,6 +217,45 @@ describe("skills ban/unban batches", () => {
 
     expect(query).toHaveBeenCalledWith("skills");
     expect(scheduler.runAfter).not.toHaveBeenCalled();
+  });
+
+  it("restores legacy ban-hidden skills without moderationStatus", async () => {
+    const { ctx, patch } = makeCtx({
+      user: { _id: "users:owner", deletedAt: undefined, deactivatedAt: undefined },
+      skills: [
+        {
+          _id: "skills:legacy-hidden",
+          ownerUserId: "users:owner",
+          softDeletedAt: 1_000,
+          moderationStatus: undefined,
+          moderationReason: "user.banned",
+          stats: {
+            downloads: 0,
+            stars: 0,
+            comments: 0,
+            versions: 1,
+            installsCurrent: 0,
+            installsAllTime: 0,
+          },
+        },
+      ],
+    });
+
+    await expect(
+      restoreUnbanHandler(ctx, { ownerUserId: "users:owner", bannedAt: 1_000 }),
+    ).resolves.toMatchObject({
+      restoredCount: 1,
+      scheduled: false,
+    });
+
+    expect(patch).toHaveBeenCalledWith(
+      "skills:legacy-hidden",
+      expect.objectContaining({
+        softDeletedAt: undefined,
+        moderationStatus: "active",
+        moderationReason: "restored.unban",
+      }),
+    );
   });
 
   it("does not restore removed ban-hidden skills", async () => {
