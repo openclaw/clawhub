@@ -643,7 +643,6 @@ async function viewerCanAccessPackageOwner(
 ) {
   if (!viewerUserId) return false;
   if (!digest.ownerPublisherId) return digest.ownerUserId === viewerUserId;
-  if (digest.ownerKind === "user") return digest.ownerUserId === viewerUserId;
 
   const ownerPublisherId = digest.ownerPublisherId;
   const cacheKey = String(ownerPublisherId);
@@ -667,7 +666,6 @@ async function viewerCanManagePackageOwner(
 ) {
   if (!viewerUserId) return false;
   if (!digest.ownerPublisherId) return digest.ownerUserId === viewerUserId;
-  if (digest.ownerKind === "user") return digest.ownerUserId === viewerUserId;
 
   const ownerPublisher = await ctx.db.get(digest.ownerPublisherId);
   if (ownerPublisher?.kind === "user" && ownerPublisher.linkedUserId === viewerUserId) return true;

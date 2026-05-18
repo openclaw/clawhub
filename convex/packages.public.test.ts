@@ -1626,6 +1626,33 @@ describe("packages public queries", () => {
     expect(result.page.map((entry) => entry.name)).toEqual(["secret-plugin", "public-plugin"]);
   });
 
+  it("does not let stale personal ownerUserId expose private package digests", async () => {
+    const { ctx } = makeDigestCtx({
+      pages: [
+        {
+          page: [
+            makeDigest("stale-personal-secret", {
+              channel: "private",
+              ownerKind: "user",
+              ownerUserId: "users:viewer",
+              ownerPublisherId: "publishers:other-personal",
+            }),
+            makeDigest("public-plugin"),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await listPageForViewerInternalHandler(ctx, {
+      paginationOpts: { cursor: null, numItems: 10 },
+      viewerUserId: "users:viewer",
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual(["public-plugin"]);
+  });
+
   it("allows owners to filter to only their private packages", async () => {
     const { ctx, indexNames } = makeDigestCtx({
       pages: [
@@ -5597,6 +5624,46 @@ describe("packages public queries", () => {
         reasons: ["manual:quarantined", "scan:malicious", "reports:2"],
       },
     });
+  });
+
+  it("does not let stale personal ownerUserId read package moderation status", async () => {
+    await expect(
+      getPackageModerationStatusForUserInternalHandler(
+        {
+          db: {
+            get: vi.fn(async (id: string) => {
+              if (id === "users:viewer") return { _id: id, role: "user" };
+              return null;
+            }),
+            query: vi.fn((table: string) => {
+              if (table === "packages") {
+                return {
+                  withIndex: vi.fn(() => ({
+                    unique: vi.fn().mockResolvedValue(
+                      makePackageDoc({
+                        name: "@scope/demo",
+                        ownerKind: "user",
+                        ownerUserId: "users:viewer",
+                        ownerPublisherId: "publishers:other-personal",
+                      }),
+                    ),
+                  })),
+                };
+              }
+              if (table === "publisherMembers") {
+                return {
+                  withIndex: vi.fn(() => ({
+                    unique: vi.fn().mockResolvedValue(null),
+                  })),
+                };
+              }
+              throw new Error(`Unexpected table ${table}`);
+            }),
+          },
+        } as never,
+        { actorUserId: "users:viewer", name: "@scope/demo" },
+      ),
+    ).rejects.toThrow("Unauthorized");
   });
 
   it("submits owner appeals for quarantined package releases", async () => {
