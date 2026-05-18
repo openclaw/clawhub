@@ -1035,6 +1035,9 @@ describe("package commands", () => {
       });
       expect(getUploadedFileNames()).toEqual([]);
       expect(getUploadedClawPackNames()).toEqual(["scope-demo-plugin-1.0.0.tgz"]);
+      expect(httpMocks.apiRequestForm.mock.calls[0]?.[1]).toEqual(
+        expect.objectContaining({ retryCount: 5 }),
+      );
       const uploadedPack = getUploadedClawPacks()[0];
       if (!uploadedPack) throw new Error("Missing uploaded ClawPack");
       const parsed = parseClawPack(new Uint8Array(await uploadedPack.arrayBuffer()));

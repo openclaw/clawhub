@@ -52,6 +52,7 @@ const LEGACY_DOT_DIR = ".clawdhub";
 const DOT_IGNORE = ".clawhubignore";
 const LEGACY_DOT_IGNORE = ".clawdhubignore";
 const MAX_CLAWPACK_BYTES = 120 * 1024 * 1024;
+const PACKAGE_PUBLISH_RETRY_COUNT = 5;
 
 type PackageInspectOptions = {
   version?: string;
@@ -687,7 +688,13 @@ export async function cmdPublishPackage(
       if (spinner) spinner.text = `Publishing ${plan.payload.name}@${plan.payload.version}`;
       const result = await apiRequestForm(
         registry,
-        { method: "POST", path: ApiRoutes.packages, token: publishToken, form },
+        {
+          method: "POST",
+          path: ApiRoutes.packages,
+          token: publishToken,
+          form,
+          retryCount: PACKAGE_PUBLISH_RETRY_COUNT,
+        },
         ApiV1PackagePublishResponseSchema,
       );
 

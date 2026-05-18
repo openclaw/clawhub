@@ -91,11 +91,23 @@ async function recomputePublisherStats(
   );
 }
 
+export function isZeroPublisherStatsContribution(delta: PublisherStatsContribution) {
+  return (
+    delta.publishedSkills === 0 &&
+    delta.publishedPackages === 0 &&
+    delta.totalInstalls === 0 &&
+    delta.totalDownloads === 0 &&
+    delta.totalStars === 0
+  );
+}
+
 async function patchPublisherStats(
   ctx: Pick<MutationCtx, "db">,
   publisherId: Id<"publishers">,
   delta: PublisherStatsContribution,
 ) {
+  if (isZeroPublisherStatsContribution(delta)) return;
+
   const publisher = await ctx.db.get(publisherId);
   if (!publisher) return;
 
