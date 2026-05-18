@@ -48,6 +48,7 @@
 - Commit messages: Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`…).
 - Keep changes scoped; avoid repo-wide search/replace.
 - Before commit/PR handoff, run `bun run ci:static` so formatting, linting, audit/peer checks, and dead-code export checks match the CI `static` job. For faster inner loops, targeted `bun run format:check -- <files>` / `bun run lint` are fine, but do not treat them as the final pre-push gate.
+- Before commit/PR handoff for non-trivial code changes, use `$autoreview` until no accepted/actionable findings remain, unless equivalent manual review already happened, the change is trivial/docs-only, or the user opts out.
 - Before opening a PR for source or test changes, run the targeted tests for the touched behavior and `bun run ci:unit` (`VITE_CONVEX_URL=https://example.invalid bun run coverage`) unless the change is docs/config-only or the user explicitly asks to rely on CI. For runtime, build, or package changes, also run the matching broader gate when it covers the touched surface: `bun run ci:types-build`, `bun run ci:packages`, `bun run ci:e2e-http`, or `bun run ci:playwright-smoke`.
 - PRs: include summary + test commands run. Add screenshots for UI changes.
 - Before merging any PR, verify TypeScript cleanly with `bunx tsc -p packages/schema/tsconfig.json --noEmit` and `bunx tsc -p packages/clawhub/tsconfig.json --noEmit`; if Convex code changed, also run the repo typecheck path used by deploy so `bunx convex deploy` will not fail on `tsc`.
