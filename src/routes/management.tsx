@@ -668,7 +668,11 @@ function Management() {
                         disabled={!canBanOwner}
                         onClick={() => {
                           if (!ownerUserId || ownerUserId === me?._id) return;
-                          if (!window.confirm(`Ban @${ownerHandle} and delete their skills?`)) {
+                          if (
+                            !window.confirm(
+                              `Ban @${ownerHandle}, hide their skills and personal package/plugin resources, and revoke package publish tokens?`,
+                            )
+                          ) {
                             return;
                           }
                           const reason = promptBanReason(`@${ownerHandle}`);
@@ -1016,7 +1020,7 @@ function Management() {
                         if (user._id === me?._id) return;
                         if (
                           !window.confirm(
-                            `Ban @${user.handle ?? user.name ?? "user"} and delete their skills?`,
+                            `Ban @${user.handle ?? user.name ?? "user"}, hide their skills and personal package/plugin resources, and revoke package publish tokens?`,
                           )
                         ) {
                           return;
@@ -1036,7 +1040,11 @@ function Management() {
                         type="button"
                         onClick={() => {
                           const label = `@${user.handle ?? user.name ?? "user"}`;
-                          if (!window.confirm(`Unban ${label} and restore eligible skills?`)) {
+                          if (
+                            !window.confirm(
+                              `Unban ${label} and restore eligible skills and ban-hidden personal package/plugin resources?`,
+                            )
+                          ) {
                             return;
                           }
                           const reason = promptUnbanReason(label);
