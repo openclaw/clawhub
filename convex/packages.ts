@@ -532,6 +532,8 @@ type PackageDigestLike = Pick<
   capabilityTag?: string;
   pluginCategory?: string;
 };
+type PackageOwnerAccessRef = Pick<PackageDigestLike, "ownerUserId" | "ownerPublisherId"> &
+  Partial<Pick<PackageDigestLike, "ownerKind">>;
 type PublicPageCursorState = {
   cursor: string | null;
   offset: number;
@@ -635,38 +637,41 @@ function requiresPrivilegedPackageAccess(
 
 async function viewerCanAccessPackageOwner(
   ctx: DbReaderCtx,
-  digest: Pick<PackageDigestLike, "ownerUserId" | "ownerPublisherId">,
+  digest: PackageOwnerAccessRef,
   viewerUserId: Id<"users"> | undefined,
   membershipCache?: Map<string, Promise<boolean>>,
 ) {
   if (!viewerUserId) return false;
   if (!digest.ownerPublisherId) return digest.ownerUserId === viewerUserId;
+  if (digest.ownerKind === "user") return digest.ownerUserId === viewerUserId;
 
-  const cacheKey = String(digest.ownerPublisherId);
+  const ownerPublisherId = digest.ownerPublisherId;
+  const cacheKey = String(ownerPublisherId);
   const cached = membershipCache?.get(cacheKey);
   if (cached) return await cached;
 
-  const membershipPromise = getPublisherMembership(ctx, digest.ownerPublisherId, viewerUserId).then(
-    Boolean,
-  );
+  const membershipPromise = (async () => {
+    const ownerPublisher = await ctx.db.get(ownerPublisherId);
+    if (ownerPublisher?.kind === "user") return ownerPublisher.linkedUserId === viewerUserId;
+    const membership = await getPublisherMembership(ctx, ownerPublisherId, viewerUserId);
+    return Boolean(membership);
+  })();
   membershipCache?.set(cacheKey, membershipPromise);
-  if (await membershipPromise) return true;
-
-  if (digest.ownerUserId !== viewerUserId) return false;
-  const ownerPublisher = await ctx.db.get(digest.ownerPublisherId);
-  return ownerPublisher?.kind === "user" && ownerPublisher.linkedUserId === viewerUserId;
+  return await membershipPromise;
 }
 
 async function viewerCanManagePackageOwner(
   ctx: DbReaderCtx,
-  digest: Pick<PackageDigestLike, "ownerUserId" | "ownerPublisherId">,
+  digest: PackageOwnerAccessRef,
   viewerUserId: Id<"users"> | undefined,
 ) {
   if (!viewerUserId) return false;
   if (!digest.ownerPublisherId) return digest.ownerUserId === viewerUserId;
+  if (digest.ownerKind === "user") return digest.ownerUserId === viewerUserId;
 
   const ownerPublisher = await ctx.db.get(digest.ownerPublisherId);
   if (ownerPublisher?.kind === "user" && ownerPublisher.linkedUserId === viewerUserId) return true;
+  if (ownerPublisher?.kind === "user") return false;
 
   const membership = await getPublisherMembership(ctx, digest.ownerPublisherId, viewerUserId);
   return Boolean(membership && isPublisherRoleAllowed(membership.role, ["admin"]));
@@ -674,7 +679,8 @@ async function viewerCanManagePackageOwner(
 
 async function canViewerReadPackage(
   ctx: DbReaderCtx,
-  digest: Pick<PackageDigestLike, "channel" | "scanStatus" | "ownerUserId" | "ownerPublisherId">,
+  digest: Pick<PackageDigestLike, "channel" | "scanStatus" | "ownerUserId" | "ownerPublisherId"> &
+    Partial<Pick<PackageDigestLike, "ownerKind">>,
   viewerUserId: Id<"users"> | undefined,
   membershipCache?: Map<string, Promise<boolean>>,
 ) {

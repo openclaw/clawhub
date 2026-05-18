@@ -561,6 +561,109 @@ describe("skills ownership", () => {
     );
   });
 
+  it("rejects stale personal publisher memberships as skill transfer destinations", async () => {
+    const patch = vi.fn(async () => {});
+    const skill = {
+      _id: "skills:source",
+      slug: "portable",
+      displayName: "Portable",
+      ownerUserId: "users:actor",
+      ownerPublisherId: "publishers:actor",
+      softDeletedAt: undefined,
+    };
+
+    await expect(
+      transferSkillOwnerForUserInternalHandler(
+        {
+          db: {
+            normalizeId: vi.fn(() => null),
+            get: vi.fn(async (id: string) => {
+              if (id === "users:actor") return { _id: "users:actor", role: "user" };
+              if (id === "users:owner") return { _id: "users:owner", role: "user" };
+              if (id === "publishers:actor") {
+                return {
+                  _id: "publishers:actor",
+                  kind: "user",
+                  handle: "actor",
+                  linkedUserId: "users:actor",
+                };
+              }
+              if (id === "publishers:owner") {
+                return {
+                  _id: "publishers:owner",
+                  kind: "user",
+                  handle: "owner",
+                  linkedUserId: "users:owner",
+                  deletedAt: undefined,
+                  deactivatedAt: undefined,
+                };
+              }
+              return null;
+            }),
+            query: vi.fn((table: string) => {
+              if (table === "skills") {
+                return {
+                  withIndex: (name: string, build: (q: ReturnType<typeof chainEq>) => unknown) => {
+                    const constraints: Record<string, unknown> = {};
+                    build(chainEq(constraints));
+                    if (name !== "by_slug") throw new Error(`unexpected skills index ${name}`);
+                    return { unique: async () => (constraints.slug === "portable" ? skill : null) };
+                  },
+                };
+              }
+              if (table === "publishers") {
+                return {
+                  withIndex: (name: string) => {
+                    if (name !== "by_handle") {
+                      throw new Error(`unexpected publishers index ${name}`);
+                    }
+                    return {
+                      unique: async () => ({
+                        _id: "publishers:owner",
+                        kind: "user",
+                        handle: "owner",
+                        linkedUserId: "users:owner",
+                        deletedAt: undefined,
+                        deactivatedAt: undefined,
+                      }),
+                    };
+                  },
+                };
+              }
+              if (table === "publisherMembers") {
+                return {
+                  withIndex: (name: string) => {
+                    if (name !== "by_publisher_user") {
+                      throw new Error(`unexpected publisherMembers index ${name}`);
+                    }
+                    return {
+                      unique: async () => ({
+                        _id: "publisherMembers:stale",
+                        publisherId: "publishers:owner",
+                        userId: "users:actor",
+                        role: "admin",
+                      }),
+                    };
+                  },
+                };
+              }
+              throw new Error(`unexpected table ${table}`);
+            }),
+            patch,
+            insert: vi.fn(),
+          },
+        } as never,
+        {
+          actorUserId: "users:actor",
+          slug: "portable",
+          toOwner: "owner",
+        },
+      ),
+    ).rejects.toThrow('admin access for "@owner"');
+
+    expect(patch).not.toHaveBeenCalled();
+  });
+
   it("rejects merges that would reserve too many historical slugs for one skill", async () => {
     const patch = vi.fn(async () => {});
     const insert = vi.fn(async () => "auditLogs:1");

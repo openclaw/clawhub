@@ -13,6 +13,7 @@ import {
   publishPackageForUserInternal,
   listPackageReportsInternal,
   getPackageModerationStatusForUserInternal,
+  getClawScanNoteSettings,
   reportPackageForUserInternal,
   triagePackageReportForUserInternal,
   submitPackageAppealForUserInternal,
@@ -326,6 +327,12 @@ const getPackageModerationStatusForUserInternalHandler = (
       package: { name: string; reportCount: number };
       latestRelease: { version: string; scanStatus: string; blockedFromDownload: boolean } | null;
     }
+  >
+)._handler;
+const getClawScanNoteSettingsHandler = (
+  getClawScanNoteSettings as unknown as WrappedHandler<
+    { name: string; candidateNames?: string[] },
+    { package: { name: string }; latestRelease: { version: string } } | null
   >
 )._handler;
 const submitPackageAppealForUserInternalHandler = (
@@ -769,6 +776,10 @@ function makeDigestCtx(options: {
     take,
     ctx: {
       db: {
+        get: vi.fn(async (id: string) => {
+          if (options.publisherMemberships?.[id]) return { _id: id, kind: "org" };
+          return null;
+        }),
         query: vi.fn((table: string) => {
           if (table === "packages") {
             return {
@@ -5678,6 +5689,126 @@ describe("packages public queries", () => {
         targetType: "packageAppeal",
       }),
     );
+  });
+
+  it("does not let stale personal-publisher memberships submit package appeals", async () => {
+    const insert = vi.fn();
+
+    await expect(
+      submitPackageAppealForUserInternalHandler(
+        {
+          db: {
+            get: vi.fn(async (id: string) => {
+              if (id === "users:stale-member") return { _id: id, role: "user" };
+              if (id === "publishers:owner") {
+                return {
+                  _id: id,
+                  kind: "user",
+                  handle: "owner",
+                  linkedUserId: "users:owner",
+                };
+              }
+              return null;
+            }),
+            query: vi.fn((table: string) => {
+              if (table === "packages") {
+                return {
+                  withIndex: vi.fn(() => ({
+                    unique: vi.fn().mockResolvedValue(
+                      makePackageDoc({
+                        name: "@scope/demo",
+                        ownerUserId: "users:owner",
+                        ownerPublisherId: "publishers:owner",
+                      }),
+                    ),
+                  })),
+                };
+              }
+              if (table === "publisherMembers") {
+                return {
+                  withIndex: vi.fn(() => ({
+                    unique: vi.fn().mockResolvedValue({
+                      _id: "publisherMembers:stale",
+                      publisherId: "publishers:owner",
+                      userId: "users:stale-member",
+                      role: "admin",
+                    }),
+                  })),
+                };
+              }
+              throw new Error(`Unexpected table ${table}`);
+            }),
+            insert,
+            patch: vi.fn(),
+            replace: vi.fn(),
+            delete: vi.fn(),
+            normalizeId: vi.fn(),
+          },
+        } as never,
+        {
+          actorUserId: "users:stale-member",
+          name: "@scope/demo",
+          version: "1.2.3",
+          message: "please review",
+        },
+      ),
+    ).rejects.toThrow("Unauthorized");
+
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("does not let stale personal-publisher memberships read owner-only scan settings", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:stale-member" as never);
+
+    const result = await getClawScanNoteSettingsHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "users:stale-member") return { _id: id, role: "user" };
+            if (id === "publishers:owner") {
+              return {
+                _id: id,
+                kind: "user",
+                handle: "owner",
+                linkedUserId: "users:owner",
+              };
+            }
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table === "packages") {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue(
+                    makePackageDoc({
+                      name: "@scope/demo",
+                      ownerUserId: "users:owner",
+                      ownerPublisherId: "publishers:owner",
+                    }),
+                  ),
+                })),
+              };
+            }
+            if (table === "publisherMembers") {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue({
+                    _id: "publisherMembers:stale",
+                    publisherId: "publishers:owner",
+                    userId: "users:stale-member",
+                    role: "admin",
+                  }),
+                })),
+              };
+            }
+            throw new Error(`Unexpected table ${table}`);
+          }),
+        },
+      } as never,
+      { name: "@scope/demo" },
+    );
+
+    expect(result).toBeNull();
   });
 
   it("lists package appeals for moderators", async () => {
