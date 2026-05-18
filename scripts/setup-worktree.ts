@@ -6,6 +6,7 @@ import { basename, resolve } from "node:path";
 type Options = {
   from: string | null;
   force: boolean;
+  envOnly?: boolean;
   quiet: boolean;
 };
 
@@ -20,6 +21,7 @@ const LOCAL_CONVEX_CONFIG = ".convex/local/default/config.json";
 function parseArgs(argv: string[]): Options {
   const options: Options = {
     from: process.env.CLAWHUB_WORKTREE_SOURCE ?? null,
+    envOnly: false,
     force: false,
     quiet: false,
   };
@@ -33,6 +35,8 @@ function parseArgs(argv: string[]): Options {
       options.from = arg.slice("--from=".length);
     } else if (arg === "--force") {
       options.force = true;
+    } else if (arg === "--env-only") {
+      options.envOnly = true;
     } else if (arg === "--quiet") {
       options.quiet = true;
     }
@@ -231,6 +235,13 @@ function main() {
 
   linkFromSource(".env.local", resolve(source.path, ".env.local"), options.force);
   linkFromSource(".convex", resolve(source.path, ".convex"), options.force);
+  if (options.envOnly) {
+    if (!options.quiet) {
+      console.log(`Worktree env setup complete using ${source.path}`);
+    }
+    return;
+  }
+
   copyOnWriteDirectory("node_modules", source.path, options.quiet);
 
   if (!existsSync("node_modules/.bin/vite")) {

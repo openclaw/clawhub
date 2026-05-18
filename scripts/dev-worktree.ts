@@ -237,6 +237,7 @@ async function runConvexFunctionWhenReady(args: string[]) {
 function spawnManaged(command: string, args: string[]) {
   const child = spawn(command, args, {
     cwd: process.cwd(),
+    detached: process.platform !== "win32",
     env: process.env,
     stdio: "inherit",
   });
@@ -247,7 +248,16 @@ function spawnManaged(command: string, args: string[]) {
 
 function stopManagedChildren() {
   for (const child of managedChildren) {
-    if (!child.killed) child.kill("SIGTERM");
+    if (child.killed) continue;
+    if (process.platform !== "win32" && child.pid) {
+      try {
+        process.kill(-child.pid, "SIGTERM");
+        continue;
+      } catch {
+        // Fall through to the direct child signal below.
+      }
+    }
+    child.kill("SIGTERM");
   }
 }
 
