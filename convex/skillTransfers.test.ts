@@ -452,7 +452,8 @@ describe("skillTransfers", () => {
       ownerPublisherId: "publishers:owner",
       softDeletedAt: undefined,
       moderationStatus: "active",
-      isSuspicious: true,
+      isSuspicious: false,
+      moderationFlags: ["blocked.malware"],
     };
 
     await expect(

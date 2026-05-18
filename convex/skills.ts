@@ -107,7 +107,12 @@ import {
   queueHighlightedWebhook,
 } from "./lib/skillPublish";
 import { getFrontmatterValue, hashSkillFiles } from "./lib/skills";
-import { computeIsSuspicious, isSkillReviewFlagged, isSkillSuspicious } from "./lib/skillSafety";
+import {
+  computeIsSuspicious,
+  isSkillReviewFlagged,
+  isSkillSuspicious,
+  isSkillTransferBlockedByModeration,
+} from "./lib/skillSafety";
 import {
   digestToHydratableSkill,
   digestToOwnerInfo,
@@ -8701,28 +8706,6 @@ async function canManagePublisherDestination(
   return Boolean(membership && isPublisherRoleAllowed(membership.role, ["admin"]));
 }
 
-function assertSkillCanTransferOwnership(
-  skill: Pick<
-    Doc<"skills">,
-    | "moderationStatus"
-    | "moderationVerdict"
-    | "isSuspicious"
-    | "moderationFlags"
-    | "moderationReason"
-  >,
-) {
-  const moderationStatus = skill.moderationStatus ?? "active";
-  if (
-    moderationStatus !== "active" ||
-    skill.moderationVerdict === "suspicious" ||
-    skill.moderationVerdict === "malicious" ||
-    skill.isSuspicious ||
-    isSkillSuspicious(skill)
-  ) {
-    throw new ConvexError("Skill is not eligible for ownership transfer while under moderation");
-  }
-}
-
 export const transferSkillOwnerForUserInternal = internalMutation({
   args: {
     actorUserId: v.id("users"),
@@ -8749,7 +8732,9 @@ export const transferSkillOwnerForUserInternal = internalMutation({
       allowedPublisherRoles: ["admin"],
       allowPlatformAdmin: true,
     });
-    assertSkillCanTransferOwnership(skill);
+    if (isSkillTransferBlockedByModeration(skill)) {
+      throw new ConvexError("Skill is not eligible for ownership transfer while under moderation");
+    }
 
     const destinationHandle = normalizePublisherHandle(args.toOwner);
     if (!destinationHandle) throw new ConvexError("Destination owner is required");

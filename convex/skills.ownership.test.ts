@@ -569,6 +569,7 @@ describe("skills ownership", () => {
       { moderationVerdict: "malicious" },
       { isSuspicious: true },
       { moderationFlags: ["flagged.suspicious"] },
+      { moderationFlags: ["blocked.malware"] },
       { moderationReason: "scanner.llm.suspicious" },
     ];
 

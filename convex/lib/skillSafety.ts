@@ -12,6 +12,32 @@ export function isSkillSuspicious(
   return isScannerSuspiciousReason(skill.moderationReason);
 }
 
+export function isSkillBlockedByMalware(skill: Pick<Doc<"skills">, "moderationFlags">) {
+  return skill.moderationFlags?.includes("blocked.malware") ?? false;
+}
+
+export function isSkillTransferBlockedByModeration(
+  skill: Pick<
+    Doc<"skills">,
+    | "moderationStatus"
+    | "moderationVerdict"
+    | "isSuspicious"
+    | "moderationFlags"
+    | "moderationReason"
+  >,
+) {
+  const moderationStatus = skill.moderationStatus ?? "active";
+  return (
+    moderationStatus !== "active" ||
+    skill.moderationVerdict === "suspicious" ||
+    skill.moderationVerdict === "malicious" ||
+    skill.isSuspicious ||
+    skill.moderationFlags?.includes("flagged.suspicious") ||
+    isSkillBlockedByMalware(skill) ||
+    isSkillSuspicious(skill)
+  );
+}
+
 export function isSkillReviewFlagged(skill: Pick<Doc<"skills">, "moderationFlags">) {
   return skill.moderationFlags?.includes("flagged.review") ?? false;
 }
