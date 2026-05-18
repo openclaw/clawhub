@@ -51,7 +51,7 @@
     "proof:publish": "node scripts/ui-proof-publish.mjs",
     "proof:ui": "node scripts/ui-proof.mjs",
     "release:clawhub:cli:npm:check": "node scripts/clawhub-cli-npm-release-check.mjs",
-    "seed:dev": "wt --yes seed",
+    "seed:dev": "bun run setup:worktree -- --quiet && bun scripts/dev-worktree.ts --seed-only",
     "setup:worktree": "bun scripts/setup-worktree.ts",
     "test": "vitest run",
     "test:e2e": "vitest run -c vitest.e2e.config.ts",
