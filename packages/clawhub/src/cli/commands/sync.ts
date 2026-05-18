@@ -174,15 +174,20 @@ export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllow
       allowPrompt,
       changelogFlag: options.changelog,
     });
-    const forkOf =
+    const sameRegistryOrigin =
       skill.origin && normalizeRegistry(skill.origin.registry) === normalizeRegistry(registry)
-        ? skill.origin.slug !== skill.slug
-          ? `${skill.origin.slug}@${skill.origin.installedVersion}`
-          : undefined
+        ? skill.origin
+        : null;
+    const originOwnerHandle =
+      sameRegistryOrigin?.ownerHandle?.trim().replace(/^@+/, "") || undefined;
+    const forkOf =
+      sameRegistryOrigin && sameRegistryOrigin.slug !== skill.slug
+        ? `${sameRegistryOrigin.slug}@${sameRegistryOrigin.installedVersion}`
         : undefined;
     await cmdPublish(opts, skill.folder, {
       slug: skill.slug,
       name: skill.displayName,
+      owner: originOwnerHandle,
       version: publishVersion,
       changelog,
       tags,

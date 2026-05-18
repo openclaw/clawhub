@@ -311,6 +311,9 @@ export async function parseMultipartPublish(
     slug: payload.slug,
     displayName: payload.displayName,
     ...(typeof payload.ownerHandle === "string" ? { ownerHandle: payload.ownerHandle } : {}),
+    ...(typeof payload.sourceOwnerHandle === "string"
+      ? { sourceOwnerHandle: payload.sourceOwnerHandle }
+      : {}),
     ...(typeof payload.migrateOwner === "boolean" ? { migrateOwner: payload.migrateOwner } : {}),
     version: payload.version,
     changelog: typeof payload.changelog === "string" ? payload.changelog : "",
@@ -333,6 +336,7 @@ export function parsePublishBody(body: unknown) {
     slug: parsed.slug,
     displayName: parsed.displayName,
     ownerHandle: parsed.ownerHandle?.trim().replace(/^@+/, "") || undefined,
+    sourceOwnerHandle: parsed.sourceOwnerHandle?.trim().replace(/^@+/, "") || undefined,
     migrateOwner: parsed.migrateOwner === true ? true : undefined,
     version: parsed.version,
     changelog: parsed.changelog,

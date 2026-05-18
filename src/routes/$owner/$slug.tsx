@@ -30,7 +30,7 @@ export const Route = createFileRoute("/$owner/$slug")({
 
     if (params.owner.startsWith("@")) throw notFound();
 
-    const data = await fetchSkillPageData(params.slug);
+    const data = await fetchSkillPageData(params.slug, params.owner);
     const canonicalOwner = data.initialData?.result?.owner?.handle ?? null;
     const canonicalSlug = data.initialData?.result?.resolvedSlug ?? params.slug;
 

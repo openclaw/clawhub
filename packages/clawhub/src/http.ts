@@ -41,6 +41,13 @@ type FormRequestArgs =
 
 type TextRequestArgs = { path: string; token?: string } | { url: string; token?: string };
 
+type DownloadZipArgs = {
+  slug: string;
+  ownerHandle?: string;
+  version?: string;
+  token?: string;
+};
+
 type HeaderSource = Headers | Record<string, string> | null | undefined;
 
 type RateLimitInfo = {
@@ -79,10 +86,7 @@ type HttpClient = {
   apiRequestForm<T>(registry: string, args: FormRequestArgs, schema: ArkValidator<T>): Promise<T>;
   fetchText(registry: string, args: TextRequestArgs): Promise<string>;
   fetchBinary(registry: string, args: TextRequestArgs): Promise<Uint8Array>;
-  downloadZip(
-    registry: string,
-    args: { slug: string; version?: string; token?: string },
-  ): Promise<Uint8Array>;
+  downloadZip(registry: string, args: DownloadZipArgs): Promise<Uint8Array>;
 };
 
 class HttpStatusError extends Error {
@@ -252,12 +256,10 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
     });
   }
 
-  async function downloadZipRequest(
-    registry: string,
-    args: { slug: string; version?: string; token?: string },
-  ) {
+  async function downloadZipRequest(registry: string, args: DownloadZipArgs) {
     const url = registryUrl(ApiRoutes.download, registry);
     url.searchParams.set("slug", args.slug);
+    if (args.ownerHandle) url.searchParams.set("ownerHandle", args.ownerHandle);
     if (args.version) url.searchParams.set("version", args.version);
     return await runWithRetries(async () => {
       if (deps.runtime === "bun") {
@@ -349,10 +351,7 @@ export async function fetchBinary(registry: string, args: TextRequestArgs): Prom
   return await defaultHttpClient.fetchBinary(registry, args);
 }
 
-export async function downloadZip(
-  registry: string,
-  args: { slug: string; version?: string; token?: string },
-) {
+export async function downloadZip(registry: string, args: DownloadZipArgs) {
   return await defaultHttpClient.downloadZip(registry, args);
 }
 

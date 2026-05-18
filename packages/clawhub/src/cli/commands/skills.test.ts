@@ -426,6 +426,56 @@ describe("cmdUpdate", () => {
     expect(args?.url).toBeUndefined();
   });
 
+  it("uses stored owner handle when updating an owner-qualified install", async () => {
+    mockApiRequest.mockResolvedValue({
+      skill: {
+        slug: "demo",
+        displayName: "Demo",
+        summary: null,
+        tags: {},
+        stats: {},
+        createdAt: 0,
+        updatedAt: 0,
+      },
+      latestVersion: { version: "2.0.0" },
+      owner: { handle: "openclaw" },
+      moderation: null,
+    });
+    mockDownloadZip.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    vi.mocked(readLockfile).mockResolvedValue({
+      version: 1,
+      skills: { demo: { version: "1.0.0", installedAt: 123, ownerHandle: "openclaw" } },
+    });
+    vi.mocked(writeLockfile).mockResolvedValue();
+    vi.mocked(readSkillOrigin).mockResolvedValue(null);
+    vi.mocked(writeSkillOrigin).mockResolvedValue();
+    vi.mocked(extractZipToDir).mockResolvedValue();
+    vi.mocked(listTextFiles).mockResolvedValue([]);
+    vi.mocked(hashSkillFiles).mockReturnValue({ fingerprint: "hash", files: [] });
+    vi.mocked(stat).mockRejectedValue(new Error("missing"));
+    vi.mocked(rm).mockResolvedValue();
+
+    await cmdUpdate(makeOpts(), undefined, { all: true }, false);
+
+    const [, requestArgs] = mockApiRequest.mock.calls[0] ?? [];
+    expect(requestArgs?.url).toContain("/api/v1/skills/demo?");
+    expect(new URL(String(requestArgs?.url)).searchParams.get("ownerHandle")).toBe("openclaw");
+    expect(mockDownloadZip).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({ slug: "demo", version: "2.0.0", ownerHandle: "openclaw" }),
+    );
+    expect(writeSkillOrigin).toHaveBeenCalledWith(
+      "/work/skills/demo",
+      expect.objectContaining({ slug: "demo", ownerHandle: "openclaw" }),
+    );
+    expect(writeLockfile).toHaveBeenCalledWith("/work", {
+      version: 1,
+      skills: {
+        demo: { version: "2.0.0", installedAt: expect.any(Number), ownerHandle: "openclaw" },
+      },
+    });
+  });
+
   it("trusts the stored install fingerprint when the resolve endpoint cannot match", async () => {
     mockApiRequest
       .mockResolvedValueOnce({
@@ -589,6 +639,60 @@ describe("cmdInstall", () => {
     expect(requestArgs?.token).toBe("tkn");
     const [, zipArgs] = mockDownloadZip.mock.calls[0] ?? [];
     expect(zipArgs?.token).toBe("tkn");
+  });
+
+  it("installs owner-qualified skill refs using owner-scoped API requests", async () => {
+    mockGetOptionalAuthToken.mockResolvedValue("tkn");
+    mockApiRequest.mockResolvedValue({
+      skill: {
+        slug: "demo",
+        displayName: "Demo",
+        summary: null,
+        tags: {},
+        stats: {},
+        createdAt: 0,
+        updatedAt: 0,
+      },
+      latestVersion: { version: "1.0.0" },
+      owner: { handle: "openclaw" },
+      moderation: null,
+    });
+    mockDownloadZip.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    vi.mocked(readLockfile).mockResolvedValue({ version: 1, skills: {} });
+    vi.mocked(writeLockfile).mockResolvedValue();
+    vi.mocked(writeSkillOrigin).mockResolvedValue();
+    vi.mocked(extractZipToDir).mockResolvedValue();
+    vi.mocked(stat).mockRejectedValue(new Error("missing"));
+    vi.mocked(rm).mockResolvedValue();
+
+    await cmdInstall(makeOpts(), "@openclaw/demo");
+
+    const [, requestArgs] = mockApiRequest.mock.calls[0] ?? [];
+    expect(requestArgs?.url).toContain("/api/v1/skills/demo?");
+    expect(new URL(String(requestArgs?.url)).searchParams.get("ownerHandle")).toBe("openclaw");
+    expect(mockDownloadZip).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({
+        slug: "demo",
+        version: "1.0.0",
+        ownerHandle: "openclaw",
+        token: "tkn",
+      }),
+    );
+    expect(writeSkillOrigin).toHaveBeenCalledWith(
+      "/work/skills/demo",
+      expect.objectContaining({
+        slug: "demo",
+        ownerHandle: "openclaw",
+        installedVersion: "1.0.0",
+      }),
+    );
+    expect(writeLockfile).toHaveBeenCalledWith("/work", {
+      version: 1,
+      skills: {
+        demo: { version: "1.0.0", installedAt: expect.any(Number), ownerHandle: "openclaw" },
+      },
+    });
   });
 
   it("blocks force reinstall when a skill is pinned", async () => {

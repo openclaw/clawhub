@@ -2556,6 +2556,9 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     if (skillDetail?.skill) {
       const url = new URL("/api/v1/download", request.url);
       url.searchParams.set("slug", skillDetail.skill.slug);
+      if (skillDetail.owner?.handle) {
+        url.searchParams.set("ownerHandle", skillDetail.owner.handle);
+      }
       const requestUrl = new URL(request.url);
       const version = requestUrl.searchParams.get("version")?.trim();
       const tag = requestUrl.searchParams.get("tag")?.trim();

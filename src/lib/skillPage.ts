@@ -50,10 +50,14 @@ type SkillPageLoaderData = {
   initialData: SkillPageInitialData | null;
 };
 
-export async function fetchSkillPageData(slug: string): Promise<SkillPageLoaderData> {
+export async function fetchSkillPageData(
+  slug: string,
+  ownerHandle?: string,
+): Promise<SkillPageLoaderData> {
   try {
     const result = (await convexHttp.query(api.skills.getBySlug, {
       slug,
+      ...(ownerHandle ? { ownerHandle } : {}),
     })) as SkillBySlugResult;
 
     if (!result?.skill) {

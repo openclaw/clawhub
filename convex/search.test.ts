@@ -5,6 +5,7 @@ import { tokenize } from "./lib/searchText";
 import {
   __test,
   directPrefixSkillMatches,
+  getExactSkillSlugMatch,
   hydrateResults,
   lexicalFallbackSouls,
   lexicalFallbackSkills,
@@ -44,6 +45,14 @@ const searchSoulsHandler = (
 const lexicalFallbackSkillsHandler = (lexicalFallbackSkills as unknown as WrappedHandler)._handler;
 const directPrefixSkillMatchesHandler = (directPrefixSkillMatches as unknown as WrappedHandler)
   ._handler;
+const getExactSkillSlugMatchHandler = (
+  getExactSkillSlugMatch as unknown as {
+    _handler: (
+      ctx: unknown,
+      args: unknown,
+    ) => Promise<Array<{ skill: { slug: string; _id: string }; ownerHandle: string | null }>>;
+  }
+)._handler;
 const lexicalFallbackSoulsHandler = (
   lexicalFallbackSouls as unknown as WrappedHandler<{ soul: { slug: string; _id: string } }>
 )._handler;
@@ -442,6 +451,65 @@ describe("search helpers", () => {
     expect(result[0].skill.slug).toBe("orf");
     expect(ctx.db.query).toHaveBeenCalledWith("skills");
     expect(ctx.db.query).toHaveBeenCalledWith("skillSearchDigest");
+  });
+
+  it("returns duplicate exact slug matches without requiring global slug uniqueness", async () => {
+    const ctx = makeLexicalCtx({
+      exactSlugSkills: [
+        makeSkillDoc({
+          id: "skills:alice-demo",
+          slug: "demo",
+          displayName: "Alice Demo",
+          ownerPublisherId: "publishers:alice",
+        }),
+        makeSkillDoc({
+          id: "skills:org-demo",
+          slug: "demo",
+          displayName: "Org Demo",
+          ownerPublisherId: "publishers:org",
+        }),
+      ],
+      recentSkills: [],
+    });
+
+    const result = await getExactSkillSlugMatchHandler(ctx, { slug: "demo" });
+
+    expect(result.map((entry) => entry.skill._id)).toEqual([
+      "skills:alice-demo",
+      "skills:org-demo",
+    ]);
+    expect(result.map((entry) => entry.ownerHandle)).toEqual(["alice", "org"]);
+  });
+
+  it("includes duplicate exact slug matches from by_slug when recent scan is empty", async () => {
+    const ctx = makeLexicalCtx({
+      exactSlugSkills: [
+        makeSkillDoc({
+          id: "skills:alice-demo",
+          slug: "demo",
+          displayName: "Alice Demo",
+          ownerPublisherId: "publishers:alice",
+        }),
+        makeSkillDoc({
+          id: "skills:org-demo",
+          slug: "demo",
+          displayName: "Org Demo",
+          ownerPublisherId: "publishers:org",
+        }),
+      ],
+      recentSkills: [],
+    });
+
+    const result = await lexicalFallbackSkillsHandler(ctx, {
+      query: "demo",
+      queryTokens: ["demo"],
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.skill._id)).toEqual([
+      "skills:alice-demo",
+      "skills:org-demo",
+    ]);
   });
 
   it("dedupes overlap and enforces rank + limit across vector and fallback", async () => {
@@ -1451,6 +1519,7 @@ function makePublicSkill(params: {
   slug: string;
   displayName: string;
   downloads?: number;
+  ownerPublisherId?: string;
   capabilityTags?: string[];
 }) {
   return {
@@ -1460,6 +1529,7 @@ function makePublicSkill(params: {
     displayName: params.displayName,
     summary: `${params.displayName} summary`,
     ownerUserId: "users:owner",
+    ownerPublisherId: params.ownerPublisherId,
     canonicalSkillId: undefined,
     forkOf: undefined,
     latestVersionId: "skillVersions:1",
@@ -1483,6 +1553,7 @@ function makeSkillDoc(params: {
   id: string;
   slug: string;
   displayName: string;
+  ownerPublisherId?: string;
   moderationFlags?: string[];
   moderationReason?: string;
   softDeletedAt?: number;
@@ -1537,10 +1608,13 @@ function makeSoulDoc(params: {
 }
 
 function makeLexicalCtx(params: {
-  exactSlugSkill: ReturnType<typeof makeSkillDoc> | null;
+  exactSlugSkill?: ReturnType<typeof makeSkillDoc> | null;
+  exactSlugSkills?: Array<ReturnType<typeof makeSkillDoc>>;
   recentSkills: Array<ReturnType<typeof makeSkillDoc>>;
   recentByCreated?: Array<ReturnType<typeof makeSkillDoc>>;
 }) {
+  const exactSlugSkills =
+    params.exactSlugSkills ?? (params.exactSlugSkill ? [params.exactSlugSkill] : []);
   // Convert skill docs to digest-shaped rows (add skillId + owner fields).
   const toDigestRows = (skills: Array<ReturnType<typeof makeSkillDoc>>) =>
     skills.map((skill) => ({
@@ -1566,7 +1640,13 @@ function makeLexicalCtx(params: {
               usedIndexes.push(index);
               if (index === "by_slug") {
                 return {
-                  unique: vi.fn().mockResolvedValue(params.exactSlugSkill),
+                  unique: vi.fn(async () => {
+                    if (exactSlugSkills.length > 1) {
+                      throw new Error("unique should not be used for duplicate exact slug matches");
+                    }
+                    return exactSlugSkills[0] ?? null;
+                  }),
+                  take: vi.fn(async (limit: number) => exactSlugSkills.slice(0, limit)),
                 };
               }
               throw new Error(`Unexpected skills index ${index}`);
@@ -1604,6 +1684,21 @@ function makeLexicalCtx(params: {
         throw new Error(`Unexpected table ${table}`);
       }),
       get: vi.fn(async (id: string) => {
+        if (id.startsWith("publishers:")) {
+          const handle = id.split(":")[1] ?? "owner";
+          return {
+            _id: id,
+            _creationTime: 1,
+            kind: "org",
+            handle,
+            displayName: handle,
+            image: undefined,
+            bio: undefined,
+            linkedUserId: undefined,
+            createdAt: 1,
+            updatedAt: 1,
+          };
+        }
         if (id.startsWith("users:")) return { _id: id, handle: "owner" };
         if (id.startsWith("skillVersions:")) return { _id: id, version: "1.0.0" };
         return null;

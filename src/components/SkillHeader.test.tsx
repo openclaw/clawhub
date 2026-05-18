@@ -133,6 +133,25 @@ describe("SkillHeader", () => {
     expect(screen.queryByText("Demo summary")).toBeNull();
   });
 
+  it("keeps the download link in the owner namespace", () => {
+    renderHeader({
+      latestVersion: {
+        _id: "skillVersions:demo" as Id<"skillVersions">,
+        _creationTime: 1,
+        skillId: skill._id,
+        version: "1.0.0",
+        changelog: "Initial release",
+        files: [],
+        createdBy: "users:owner" as Id<"users">,
+        createdAt: 1,
+      },
+    });
+
+    expect(screen.getByRole("link", { name: "Download" }).getAttribute("href")).toBe(
+      "https://clawhub.ai/api/v1/download?slug=demo&ownerHandle=local",
+    );
+  });
+
   it("falls back to legacy parsed frontmatter description when present", () => {
     renderHeader({
       latestVersion: {

@@ -1,10 +1,11 @@
 import { readFile, readdir, stat } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import semver from "semver";
-import { apiRequestForm } from "../../http.js";
+import { apiRequest, apiRequestForm } from "../../http.js";
 import {
   ApiRoutes,
   ApiV1PublishResponseSchema,
+  ApiV1WhoamiResponseSchema,
   normalizeClawScanNote,
 } from "../../schema/index.js";
 import { listTextFiles } from "../../skills.js";
@@ -21,6 +22,7 @@ export async function cmdPublish(
     slug?: string;
     name?: string;
     owner?: string;
+    sourceOwner?: string;
     version?: string;
     changelog?: string;
     tags?: string;
@@ -42,7 +44,8 @@ export async function cmdPublish(
 
   const slug = options.slug ?? sanitizeSlug(basename(folder));
   const displayName = options.name ?? titleCase(basename(folder));
-  const ownerHandle = options.owner?.trim().replace(/^@+/, "");
+  const explicitOwnerHandle = options.owner?.trim().replace(/^@+/, "");
+  const explicitSourceOwnerHandle = options.sourceOwner?.trim().replace(/^@+/, "");
   const version = options.version;
   const changelog = options.changelog ?? "";
   let clawScanNote: string | undefined;
@@ -63,6 +66,16 @@ export async function cmdPublish(
   if (!slug) fail("--slug required");
   if (!displayName) fail("--name required");
   if (!version || !semver.valid(version)) fail("--version must be valid semver");
+  let defaultOwnerHandle: string | undefined;
+  const getDefaultOwnerHandle = async () => {
+    defaultOwnerHandle ??= await resolveDefaultOwnerHandle(registry, token);
+    return defaultOwnerHandle;
+  };
+  const ownerHandle = explicitOwnerHandle || (await getDefaultOwnerHandle());
+  const sourceOwnerHandle =
+    options.migrateOwner && ownerHandle
+      ? explicitSourceOwnerHandle || (await getDefaultOwnerHandle())
+      : undefined;
 
   const spinner = createSpinner(`Preparing ${slug}@${version}`);
   try {
@@ -83,7 +96,8 @@ export async function cmdPublish(
       JSON.stringify({
         slug,
         displayName,
-        ...(ownerHandle ? { ownerHandle } : {}),
+        ownerHandle,
+        ...(sourceOwnerHandle ? { sourceOwnerHandle } : {}),
         ...(options.migrateOwner ? { migrateOwner: true } : {}),
         version,
         changelog,
@@ -114,6 +128,17 @@ export async function cmdPublish(
     spinner.fail(formatError(error));
     throw error;
   }
+}
+
+async function resolveDefaultOwnerHandle(registry: string, token: string) {
+  const whoami = await apiRequest(
+    registry,
+    { method: "GET", path: ApiRoutes.whoami, token },
+    ApiV1WhoamiResponseSchema,
+  );
+  const handle = whoami.user.handle?.trim().replace(/^@+/, "");
+  if (!handle) fail("Unable to resolve your publisher handle. Pass --owner explicitly.");
+  return handle;
 }
 
 async function ensureRootManifestFile(

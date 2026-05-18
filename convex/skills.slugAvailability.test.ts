@@ -43,7 +43,7 @@ type AliasDoc = {
 };
 
 const checkSlugAvailabilityHandler = (
-  checkSlugAvailability as unknown as WrappedHandler<{ slug: string; ownerHandle?: string }>
+  checkSlugAvailability as unknown as WrappedHandler<{ slug: string; ownerHandle: string }>
 )._handler;
 
 function createCtx(options: {
@@ -172,7 +172,15 @@ function createCtx(options: {
             const constraints = captureConstraints(callback);
             return {
               unique: async () => {
-                const candidates = [options.owner].filter(Boolean);
+                const candidates = [
+                  options.owner,
+                  {
+                    _id: callerId,
+                    handle: "caller",
+                    deletedAt: undefined,
+                    deactivatedAt: undefined,
+                  },
+                ].filter(Boolean);
                 return candidates.find((user) => user?.handle === constraints.handle) ?? null;
               },
             };
@@ -317,7 +325,7 @@ describe("skills.checkSlugAvailability", () => {
         ownerProviderAccountId: "owner-gh",
         callerProviderAccountId: "caller-gh",
       }) as never,
-      { slug: "taken-skill" } as never,
+      { slug: "taken-skill", ownerHandle: "alice" } as never,
     )) as {
       available: boolean;
       reason: string;
@@ -350,8 +358,12 @@ describe("skills.checkSlugAvailability", () => {
           moderationStatus: "hidden",
           moderationFlags: undefined,
         },
+        owner: {
+          _id: "users:owner",
+          handle: "owner",
+        },
       }) as never,
-      { slug: "unpublished-skill" } as never,
+      { slug: "unpublished-skill", ownerHandle: "owner" } as never,
     )) as {
       available: boolean;
       reason: string;
@@ -387,8 +399,12 @@ describe("skills.checkSlugAvailability", () => {
           moderationStatus: "hidden",
           moderationFlags: undefined,
         },
+        owner: {
+          _id: "users:owner",
+          handle: "owner",
+        },
       }) as never,
-      { slug: "unpublished-skill" } as never,
+      { slug: "unpublished-skill", ownerHandle: "owner" } as never,
     )) as {
       available: boolean;
       reason: string;
@@ -426,7 +442,7 @@ describe("skills.checkSlugAvailability", () => {
           handle: "owner",
         },
       }) as never,
-      { slug: "moderated-skill" } as never,
+      { slug: "moderated-skill", ownerHandle: "owner" } as never,
     )) as {
       available: boolean;
       reason: string;
@@ -464,7 +480,7 @@ describe("skills.checkSlugAvailability", () => {
         ownerProviderAccountId: "owner-gh",
         callerProviderAccountId: "caller-gh",
       }) as never,
-      { slug: "taken-skill" } as never,
+      { slug: "taken-skill", ownerHandle: "alice" } as never,
     )) as {
       available: boolean;
       reason: string;
@@ -500,7 +516,7 @@ describe("skills.checkSlugAvailability", () => {
           deactivatedAt: undefined,
         },
       }) as never,
-      { slug: "taken-skill" } as never,
+      { slug: "taken-skill", ownerHandle: "alice" } as never,
     )) as {
       available: boolean;
       reason: string;
@@ -530,7 +546,7 @@ describe("skills.checkSlugAvailability", () => {
           moderationFlags: undefined,
         },
       }) as never,
-      { slug: "taken-skill" } as never,
+      { slug: "taken-skill", ownerHandle: "caller" } as never,
     )) as {
       available: boolean;
       reason: string;
@@ -620,7 +636,30 @@ describe("skills.checkSlugAvailability", () => {
     });
   });
 
-  it("returns a validation result instead of throwing when duplicate slugs exist", async () => {
+  it("requires an owner namespace for availability checks", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:caller" as never);
+
+    const result = (await checkSlugAvailabilityHandler(
+      createCtx({
+        skill: null,
+      }) as never,
+      { slug: "available-skill" } as never,
+    )) as {
+      available: boolean;
+      reason: string;
+      message: string | null;
+      url: string | null;
+    };
+
+    expect(result).toEqual({
+      available: false,
+      reason: "taken",
+      message: "Owner is required to check skill slug availability.",
+      url: null,
+    });
+  });
+
+  it("allows a duplicate slug when the requested owner namespace does not contain it", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:caller" as never);
 
     const result = (await checkSlugAvailabilityHandler(
@@ -661,14 +700,14 @@ describe("skills.checkSlugAvailability", () => {
     };
 
     expect(result).toEqual({
-      available: false,
-      reason: "taken",
-      message: "Slug is already used by multiple publishers. Choose a specific owner.",
+      available: true,
+      reason: "available",
+      message: null,
       url: null,
     });
   });
 
-  it("returns taken when publisher membership does not match the requested owner", async () => {
+  it("returns available when a different requested owner does not contain the slug", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:caller" as never);
 
     const result = (await checkSlugAvailabilityHandler(
@@ -704,11 +743,10 @@ describe("skills.checkSlugAvailability", () => {
     };
 
     expect(result).toEqual({
-      available: false,
-      reason: "taken",
-      message:
-        "Slug is already taken. Choose a different slug. Existing skill: /original/mapv-three",
-      url: "/original/mapv-three",
+      available: true,
+      reason: "available",
+      message: null,
+      url: null,
     });
   });
 
@@ -729,7 +767,7 @@ describe("skills.checkSlugAvailability", () => {
           releasedAt: undefined,
         },
       }) as never,
-      { slug: "taken-skill" } as never,
+      { slug: "taken-skill", ownerHandle: "caller" } as never,
     )) as {
       available: boolean;
       reason: string;
@@ -762,7 +800,7 @@ describe("skills.checkSlugAvailability", () => {
           releasedAt: undefined,
         },
       }) as never,
-      { slug: "taken-skill" } as never,
+      { slug: "taken-skill", ownerHandle: "caller" } as never,
     )) as {
       available: boolean;
       reason: string;
@@ -785,7 +823,7 @@ describe("skills.checkSlugAvailability", () => {
       createCtx({
         skill: null,
       }) as never,
-      { slug: "openclaw-helper" } as never,
+      { slug: "openclaw-helper", ownerHandle: "caller" } as never,
     )) as {
       available: boolean;
       reason: string;
@@ -820,7 +858,7 @@ describe("skills.checkSlugAvailability", () => {
           releasedAt: undefined,
         },
       }) as never,
-      { slug: "taken-skill" } as never,
+      { slug: "taken-skill", ownerHandle: "caller" } as never,
     )) as {
       available: boolean;
       reason: string;
@@ -836,7 +874,7 @@ describe("skills.checkSlugAvailability", () => {
     });
   });
 
-  it("returns available when owner is deleted but GitHub identity matches", async () => {
+  it("returns owner-not-found when requested owner is deleted even if GitHub identity matches", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:caller" as never);
 
     const result = (await checkSlugAvailabilityHandler(
@@ -858,7 +896,7 @@ describe("skills.checkSlugAvailability", () => {
         ownerProviderAccountId: "shared-gh",
         callerProviderAccountId: "shared-gh",
       }) as never,
-      { slug: "taken-skill" } as never,
+      { slug: "taken-skill", ownerHandle: "alice" } as never,
     )) as {
       available: boolean;
       reason: string;
@@ -867,14 +905,14 @@ describe("skills.checkSlugAvailability", () => {
     };
 
     expect(result).toEqual({
-      available: true,
-      reason: "available",
-      message: null,
+      available: false,
+      reason: "taken",
+      message: "Owner @alice was not found.",
       url: null,
     });
   });
 
-  it("returns available when owner is deactivated but GitHub identity matches", async () => {
+  it("returns owner-not-found when requested owner is deactivated even if GitHub identity matches", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:caller" as never);
 
     const result = (await checkSlugAvailabilityHandler(
@@ -896,7 +934,7 @@ describe("skills.checkSlugAvailability", () => {
         ownerProviderAccountId: "shared-gh",
         callerProviderAccountId: "shared-gh",
       }) as never,
-      { slug: "taken-skill" } as never,
+      { slug: "taken-skill", ownerHandle: "alice" } as never,
     )) as {
       available: boolean;
       reason: string;
@@ -905,14 +943,14 @@ describe("skills.checkSlugAvailability", () => {
     };
 
     expect(result).toEqual({
-      available: true,
-      reason: "available",
-      message: null,
+      available: false,
+      reason: "taken",
+      message: "Owner @alice was not found.",
       url: null,
     });
   });
 
-  it("returns taken with contact message when owner is deleted and identity does not match", async () => {
+  it("returns owner-not-found when requested owner is deleted and identity does not match", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:caller" as never);
 
     const result = (await checkSlugAvailabilityHandler(
@@ -934,7 +972,7 @@ describe("skills.checkSlugAvailability", () => {
         ownerProviderAccountId: "owner-gh",
         callerProviderAccountId: "caller-gh",
       }) as never,
-      { slug: "taken-skill" } as never,
+      { slug: "taken-skill", ownerHandle: "alice" } as never,
     )) as {
       available: boolean;
       reason: string;
@@ -945,14 +983,12 @@ describe("skills.checkSlugAvailability", () => {
     expect(result).toEqual({
       available: false,
       reason: "taken",
-      message:
-        "This slug is locked to a deleted or banned account. " +
-        "If you believe you are the rightful owner, please contact security@openclaw.ai to reclaim it.",
+      message: "Owner @alice was not found.",
       url: null,
     });
   });
 
-  it("returns taken with contact message when owner is deleted and caller is unauthenticated", async () => {
+  it("returns owner-not-found when requested owner is deleted and caller is unauthenticated", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue(null as never);
 
     const result = (await checkSlugAvailabilityHandler(
@@ -972,7 +1008,7 @@ describe("skills.checkSlugAvailability", () => {
           deactivatedAt: undefined,
         },
       }) as never,
-      { slug: "taken-skill" } as never,
+      { slug: "taken-skill", ownerHandle: "alice" } as never,
     )) as {
       available: boolean;
       reason: string;
@@ -983,9 +1019,7 @@ describe("skills.checkSlugAvailability", () => {
     expect(result).toEqual({
       available: false,
       reason: "taken",
-      message:
-        "This slug is locked to a deleted or banned account. " +
-        "If you believe you are the rightful owner, please contact security@openclaw.ai to reclaim it.",
+      message: "Owner @alice was not found.",
       url: null,
     });
   });
@@ -1012,7 +1046,7 @@ describe("skills.checkSlugAvailability", () => {
         ownerProviderAccountId: "shared-gh",
         callerProviderAccountId: "shared-gh",
       }) as never,
-      { slug: "taken-skill" } as never,
+      { slug: "taken-skill", ownerHandle: "alice" } as never,
     )) as {
       available: boolean;
       reason: string;
@@ -1038,6 +1072,7 @@ describe("skills.checkSlugAvailability", () => {
           _id: "skillSlugAliases:1",
           slug: "demo-old",
           skillId: "skills:target",
+          ownerUserId: "users:owner",
         },
         aliasedSkill: {
           _id: "skills:target",
@@ -1054,7 +1089,7 @@ describe("skills.checkSlugAvailability", () => {
           deactivatedAt: undefined,
         },
       }) as never,
-      { slug: "demo-old" } as never,
+      { slug: "demo-old", ownerHandle: "alice" } as never,
     )) as {
       available: boolean;
       reason: string;

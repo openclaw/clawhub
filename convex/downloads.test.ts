@@ -141,4 +141,54 @@ describe("downloads helpers", () => {
       hourStart: expect.any(Number),
     });
   });
+
+  it("threads owner handle through the skill lookup", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            ownerUserId: "users:1",
+            slug: "demo",
+            tags: {},
+            latestVersionId: "skillVersions:1",
+          },
+          moderationInfo: null,
+        };
+      }
+      if ("versionId" in args) {
+        return {
+          _id: "skillVersions:1",
+          version: "1.0.0",
+          createdAt: 3,
+          files: [{ path: "SKILL.md", storageId: "_storage:1" }],
+          softDeletedAt: undefined,
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return null;
+    });
+
+    await downloadZipHandler(
+      {
+        runQuery,
+        runMutation,
+        scheduler: { runAfter: vi.fn() },
+        storage: { get: vi.fn().mockResolvedValue(new Blob(["hello"])) },
+      } as unknown as ActionCtx,
+      new Request("https://example.com/api/v1/download?slug=demo&ownerHandle=clawkit"),
+    );
+
+    const skillLookup = runQuery.mock.calls.find(([, args]) => {
+      const value = args as Record<string, unknown>;
+      return value.slug === "demo";
+    });
+    expect(skillLookup?.[1]).toEqual(
+      expect.objectContaining({ slug: "demo", ownerHandle: "clawkit" }),
+    );
+  });
 });

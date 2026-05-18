@@ -21,6 +21,7 @@ export type SkillOrigin = {
   version: 1;
   registry: string;
   slug: string;
+  ownerHandle?: string;
   installedVersion: string;
   installedAt: number;
   fingerprint?: string;
@@ -141,6 +142,7 @@ export async function readSkillOrigin(skillFolder: string): Promise<SkillOrigin 
         version: 1,
         registry: parsed.registry,
         slug: parsed.slug,
+        ownerHandle: typeof parsed.ownerHandle === "string" ? parsed.ownerHandle : undefined,
         installedVersion: parsed.installedVersion,
         installedAt: parsed.installedAt,
         fingerprint: typeof parsed.fingerprint === "string" ? parsed.fingerprint : undefined,

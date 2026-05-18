@@ -43,6 +43,7 @@ type SearchSkillEntry = {
     summary?: string | null;
     updatedAt?: number;
   } | null;
+  ownerHandle?: string | null;
   version: { version?: string; createdAt?: number } | null;
 };
 
@@ -437,6 +438,7 @@ export async function searchSkillsV1Handler(ctx: ActionCtx, request: Request) {
       results: results.map((result) => ({
         score: result.score,
         slug: result.skill?.slug,
+        ownerHandle: result.ownerHandle ?? null,
         displayName: result.skill?.displayName,
         summary: result.skill?.summary ?? null,
         version: result.version?.version ?? null,
@@ -454,11 +456,16 @@ export async function resolveSkillVersionV1Handler(ctx: ActionCtx, request: Requ
 
   const url = new URL(request.url);
   const slug = url.searchParams.get("slug")?.trim().toLowerCase();
+  const ownerHandle = getOwnerHandleParam(url);
   const hash = url.searchParams.get("hash")?.trim().toLowerCase();
   if (!slug || !hash) return text("Missing slug or hash", 400, rate.headers);
   if (!/^[a-f0-9]{64}$/.test(hash)) return text("Invalid hash", 400, rate.headers);
 
-  const resolved = await ctx.runQuery(api.skills.resolveVersionByHash, { slug, hash });
+  const resolved = await ctx.runQuery(api.skills.resolveVersionByHash, {
+    slug,
+    hash,
+    ...(ownerHandle ? { ownerHandle } : {}),
+  });
   if (!resolved) return text("Skill not found", 404, rate.headers);
 
   return json(
@@ -583,8 +590,12 @@ async function describeOwnerVisibleSkillState(
   ctx: ActionCtx,
   request: Request,
   slug: string,
+  ownerHandle?: string,
 ): Promise<{ status: number; message: string } | null> {
-  const skill = await ctx.runQuery(internal.skills.getSkillBySlugInternal, { slug });
+  const skill = await ctx.runQuery(internal.skills.getSkillBySlugInternal, {
+    slug,
+    ...(ownerHandle ? { ownerHandle } : {}),
+  });
   if (!skill) return null;
 
   const apiTokenUserId = await getOptionalApiTokenUserId(ctx, request);
@@ -630,6 +641,11 @@ async function describeOwnerVisibleSkillState(
   return null;
 }
 
+function getOwnerHandleParam(url: URL) {
+  const value = url.searchParams.get("ownerHandle") ?? url.searchParams.get("owner");
+  return value?.trim().replace(/^@+/, "") || undefined;
+}
+
 export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request) {
   const rate = await applyRateLimit(ctx, request, "read");
   if (!rate.ok) return rate.response;
@@ -639,11 +655,13 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
   const slug = segments[0]?.trim().toLowerCase() ?? "";
   const second = segments[1];
   const third = segments[2];
+  const url = new URL(request.url);
+  const ownerHandle = getOwnerHandleParam(url);
+  const skillLookupArgs = { slug, ...(ownerHandle ? { ownerHandle } : {}) };
 
   if (segments[0] === "-" && segments[1] === "reports" && segments.length === 2) {
     const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
     if (!auth.ok) return auth.response;
-    const url = new URL(request.url);
     const status = (url.searchParams.get("status")?.trim() || "open") as SkillReportListStatus;
     if (!["open", "confirmed", "dismissed", "all"].includes(status)) {
       return text("Invalid skill report status", 400, rate.headers);
@@ -660,7 +678,6 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
   if (segments[0] === "-" && segments[1] === "appeals" && segments.length === 2) {
     const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
     if (!auth.ok) return auth.response;
-    const url = new URL(request.url);
     const status = (url.searchParams.get("status")?.trim() || "open") as SkillAppealListStatus;
     if (!["open", "accepted", "rejected", "all"].includes(status)) {
       return text("Invalid skill appeal status", 400, rate.headers);
@@ -675,9 +692,9 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
   }
 
   if (segments.length === 1) {
-    const result = (await ctx.runQuery(api.skills.getBySlug, { slug })) as GetBySlugResult;
+    const result = (await ctx.runQuery(api.skills.getBySlug, skillLookupArgs)) as GetBySlugResult;
     if (!result?.skill) {
-      const hidden = await describeOwnerVisibleSkillState(ctx, request, slug);
+      const hidden = await describeOwnerVisibleSkillState(ctx, request, slug, ownerHandle);
       if (hidden) return text(hidden.message, hidden.status, rate.headers);
       return text("Skill not found", 404, rate.headers);
     }
@@ -743,12 +760,12 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
       }
     }
 
-    const hiddenSkill = await ctx.runQuery(internal.skills.getSkillBySlugInternal, { slug });
+    const hiddenSkill = await ctx.runQuery(internal.skills.getSkillBySlugInternal, skillLookupArgs);
     const isOwner = Boolean(
       apiTokenUserId && hiddenSkill && apiTokenUserId === hiddenSkill.ownerUserId,
     );
 
-    const result = (await ctx.runQuery(api.skills.getBySlug, { slug })) as GetBySlugResult;
+    const result = (await ctx.runQuery(api.skills.getBySlug, skillLookupArgs)) as GetBySlugResult;
     if (!result?.skill) {
       if (hiddenSkill && (isOwner || isStaff)) {
         const mod = normalizeModerationFromSkill(hiddenSkill as SkillModerationShape);
@@ -817,10 +834,12 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
   }
 
   if (second === "versions" && segments.length === 2) {
-    const skillResult = (await ctx.runQuery(api.skills.getBySlug, { slug })) as GetBySlugResult;
+    const skillResult = (await ctx.runQuery(
+      api.skills.getBySlug,
+      skillLookupArgs,
+    )) as GetBySlugResult;
     if (!skillResult?.skill) return text("Skill not found", 404, rate.headers);
 
-    const url = new URL(request.url);
     const limit = toOptionalNumber(url.searchParams.get("limit"));
     const cursor = url.searchParams.get("cursor")?.trim() || undefined;
     const versionsResult = (await ctx.runQuery(api.skills.listVersionsPage, {
@@ -842,7 +861,10 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
   }
 
   if (second === "versions" && third && segments.length === 3) {
-    const skillResult = (await ctx.runQuery(api.skills.getBySlug, { slug })) as GetBySlugResult;
+    const skillResult = (await ctx.runQuery(
+      api.skills.getBySlug,
+      skillLookupArgs,
+    )) as GetBySlugResult;
     if (!skillResult?.skill) return text("Skill not found", 404, rate.headers);
 
     const version = (await ctx.runQuery(api.skills.getVersionBySkillAndVersion, {
@@ -877,13 +899,12 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
   }
 
   if (second === "scan" && segments.length === 2) {
-    const url = new URL(request.url);
     const versionParam = url.searchParams.get("version")?.trim();
     const tagParam = url.searchParams.get("tag")?.trim();
 
-    const result = (await ctx.runQuery(api.skills.getBySlug, { slug })) as GetBySlugResult;
+    const result = (await ctx.runQuery(api.skills.getBySlug, skillLookupArgs)) as GetBySlugResult;
     if (!result?.skill) {
-      const hidden = await describeOwnerVisibleSkillState(ctx, request, slug);
+      const hidden = await describeOwnerVisibleSkillState(ctx, request, slug, ownerHandle);
       if (hidden) return text(hidden.message, hidden.status, rate.headers);
       return text("Skill not found", 404, rate.headers);
     }
@@ -947,13 +968,15 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
   }
 
   if (second === "file" && segments.length === 2) {
-    const url = new URL(request.url);
     const path = url.searchParams.get("path")?.trim();
     if (!path) return text("Missing path", 400, rate.headers);
     const versionParam = url.searchParams.get("version")?.trim();
     const tagParam = url.searchParams.get("tag")?.trim();
 
-    const skillResult = (await ctx.runQuery(api.skills.getBySlug, { slug })) as GetBySlugResult;
+    const skillResult = (await ctx.runQuery(
+      api.skills.getBySlug,
+      skillLookupArgs,
+    )) as GetBySlugResult;
     if (!skillResult?.skill) return text("Skill not found", 404, rate.headers);
 
     let version: Doc<"skillVersions"> | null = skillResult.skill.latestVersionId
@@ -1040,18 +1063,26 @@ async function publishSkillPayloadForApiUser(
   userId: Id<"users">,
   payload: ReturnType<typeof parsePublishBody>,
 ) {
-  const { ownerHandle, migrateOwner, ...publishPayload } = payload;
-  if (!ownerHandle) {
-    return await publishVersionForUser(ctx, userId, publishPayload);
-  }
-  const target = (await ctx.runMutation(internal.publishers.resolvePublishTargetForUserInternal, {
-    actorUserId: userId,
-    ownerHandle,
-    minimumRole: "publisher",
-  })) as { publisherId: Id<"publishers"> };
+  const { ownerHandle, sourceOwnerHandle, migrateOwner, ...publishPayload } = payload;
+  const target = ownerHandle
+    ? ((await ctx.runMutation(internal.publishers.resolvePublishTargetForUserInternal, {
+        actorUserId: userId,
+        ownerHandle,
+        minimumRole: "publisher",
+      })) as { publisherId: Id<"publishers"> })
+    : null;
+  const source =
+    target && migrateOwner === true && sourceOwnerHandle && sourceOwnerHandle !== ownerHandle
+      ? ((await ctx.runMutation(internal.publishers.resolvePublishTargetForUserInternal, {
+          actorUserId: userId,
+          ownerHandle: sourceOwnerHandle,
+          minimumRole: "publisher",
+        })) as { publisherId: Id<"publishers"> })
+      : null;
   return await publishVersionForUser(ctx, userId, publishPayload, {
-    ownerPublisherId: target.publisherId,
-    migrateOwner: migrateOwner === true ? true : undefined,
+    ...(target ? { ownerPublisherId: target.publisherId } : {}),
+    ...(source ? { sourceOwnerPublisherId: source.publisherId } : {}),
+    ...(target && migrateOwner === true ? { migrateOwner: true } : {}),
   });
 }
 

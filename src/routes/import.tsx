@@ -72,10 +72,11 @@ export function ImportGitHub() {
   const [error, setError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const trimmedSlug = slug.trim();
+  const ownerHandle = me?.handle?.trim() || "";
   const slugAvailability = useQuery(
     api.skills.checkSlugAvailability,
-    isAuthenticated && trimmedSlug && SLUG_PATTERN.test(trimmedSlug)
-      ? { slug: trimmedSlug.toLowerCase() }
+    isAuthenticated && ownerHandle && trimmedSlug && SLUG_PATTERN.test(trimmedSlug)
+      ? { slug: trimmedSlug.toLowerCase(), ownerHandle }
       : "skip",
   ) as
     | {
@@ -183,6 +184,10 @@ export function ImportGitHub() {
 
   const doImport = async () => {
     if (!preview) return;
+    if (!ownerHandle) {
+      toast.error("Unable to resolve your publisher handle. Sign out and sign back in.");
+      return;
+    }
     if (slugCollision) {
       toast.error(slugCollision.message);
       return;
@@ -202,13 +207,14 @@ export function ImportGitHub() {
         candidatePath: preview.candidate.path,
         selectedPaths,
         slug: slug.trim(),
+        ownerHandle,
         displayName: displayName.trim(),
         version: version.trim(),
         tags: tagList,
       });
       const nextSlug = result.slug;
       setStatus("Imported.");
-      const ownerParam = me?.handle ?? (me?._id ? String(me._id) : "unknown");
+      const ownerParam = ownerHandle || (me?._id ? String(me._id) : "unknown");
       await navigate({ to: "/$owner/$slug", params: { owner: ownerParam, slug: nextSlug } });
     } catch (e) {
       toast.error(getUserFacingConvexError(e, "Import failed"));
@@ -253,7 +259,7 @@ export function ImportGitHub() {
                 <Link
                   to="/plugins/publish"
                   search={{
-                    ownerHandle: undefined,
+                    ownerHandle: ownerHandle || undefined,
                     name: undefined,
                     displayName: undefined,
                     family: undefined,

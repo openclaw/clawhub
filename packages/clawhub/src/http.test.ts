@@ -269,6 +269,27 @@ describe("node http client", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
+  it("includes ownerHandle when downloading owner-qualified skills", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
+    });
+    const client = createNodeClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
+
+    await client.downloadZip("https://example.com", {
+      slug: "demo",
+      ownerHandle: "openclaw",
+      version: "1.0.0",
+    });
+
+    const [url] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    const parsed = new URL(url);
+    expect(parsed.pathname).toBe("/api/v1/download");
+    expect(parsed.searchParams.get("slug")).toBe("demo");
+    expect(parsed.searchParams.get("ownerHandle")).toBe("openclaw");
+    expect(parsed.searchParams.get("version")).toBe("1.0.0");
+  });
+
   it("retries request and text timeouts using injected timeout helpers", async () => {
     const { setTimeoutImpl, clearTimeoutImpl } = createImmediateTimeouts();
     const fetchImpl = createAbortingFetchMock();

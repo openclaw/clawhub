@@ -55,6 +55,9 @@ describe("cmdPublish", () => {
         skillId: "skill_1",
         versionId: "ver_1",
       });
+      httpMocks.apiRequest.mockResolvedValueOnce({
+        user: { handle: "me" },
+      });
 
       await cmdPublish(makeOpts(workdir), "my-skill", {
         slug: "my-skill",
@@ -76,6 +79,7 @@ describe("cmdPublish", () => {
       const payload = JSON.parse(payloadEntry);
       expect(payload.slug).toBe("my-skill");
       expect(payload.displayName).toBe("My Skill");
+      expect(payload.ownerHandle).toBe("me");
       expect(payload.version).toBe("1.0.0");
       expect(payload.changelog).toBe("");
       expect(payload.clawScanNote).toBe(
@@ -123,6 +127,9 @@ describe("cmdPublish", () => {
         skillId: "skill_1",
         versionId: "ver_2",
       });
+      httpMocks.apiRequest.mockResolvedValueOnce({
+        user: { handle: "me" },
+      });
 
       await cmdPublish(makeOpts(workdir), "existing-skill", {
         version: "1.0.1",
@@ -153,6 +160,9 @@ describe("cmdPublish", () => {
         ok: true,
         skillId: "skill_1",
         versionId: "ver_1",
+      });
+      httpMocks.apiRequest.mockResolvedValueOnce({
+        user: { handle: "me" },
       });
 
       await cmdPublish(makeOpts(workdir), "ignored-manifest", {
@@ -188,6 +198,9 @@ describe("cmdPublish", () => {
         skillId: "skill_1",
         versionId: "ver_2",
       });
+      httpMocks.apiRequest.mockResolvedValueOnce({
+        user: { handle: "me" },
+      });
 
       await cmdPublish(makeOpts(workdir), "org-skill", {
         owner: "@openclaw",
@@ -207,7 +220,32 @@ describe("cmdPublish", () => {
       if (typeof payloadEntry !== "string") throw new Error("Missing publish payload");
       const payload = JSON.parse(payloadEntry);
       expect(payload.ownerHandle).toBe("openclaw");
+      expect(payload.sourceOwnerHandle).toBe("me");
       expect(payload.migrateOwner).toBe(true);
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("fails clearly when publishing without --owner and whoami has no handle", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "anonymous-skill");
+      await mkdir(folder, { recursive: true });
+      await writeFile(join(folder, "SKILL.md"), "# Skill\n", "utf8");
+
+      httpMocks.apiRequest.mockResolvedValueOnce({
+        user: { handle: null },
+      });
+
+      await expect(
+        cmdPublish(makeOpts(workdir), "anonymous-skill", {
+          version: "1.0.0",
+          changelog: "",
+          tags: "latest",
+        }),
+      ).rejects.toThrow("Unable to resolve your publisher handle. Pass --owner explicitly.");
+      expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }

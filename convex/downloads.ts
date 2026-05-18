@@ -20,6 +20,10 @@ export async function downloadZipHandler(
 ) {
   const url = new URL(request.url);
   const slug = url.searchParams.get("slug")?.trim().toLowerCase();
+  const ownerHandle =
+    (url.searchParams.get("ownerHandle") ?? url.searchParams.get("owner"))
+      ?.trim()
+      .replace(/^@+/, "") || undefined;
   const versionParam = url.searchParams.get("version")?.trim();
   const tagParam = url.searchParams.get("tag")?.trim();
 
@@ -33,7 +37,10 @@ export async function downloadZipHandler(
   const rate = await applyRateLimit(ctx, request, "download");
   if (!rate.ok) return rate.response;
 
-  const skillResult = await ctx.runQuery(api.skills.getBySlug, { slug });
+  const skillResult = await ctx.runQuery(api.skills.getBySlug, {
+    slug,
+    ...(ownerHandle ? { ownerHandle } : {}),
+  });
   if (!skillResult?.skill) {
     return new Response("Skill not found", {
       status: 404,

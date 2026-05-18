@@ -54,6 +54,20 @@ type SkillReportTriageOptions = {
   yes?: boolean;
 };
 
+type SkillRef = {
+  slug: string;
+  ownerHandle?: string;
+};
+
+function normalizeOwnerHandle(raw: string | null | undefined) {
+  const handle = raw?.trim().replace(/^@+/, "").toLowerCase();
+  if (!handle) return undefined;
+  if (handle.includes("/") || handle.includes("\\") || handle.includes("..")) {
+    fail(`Invalid owner handle: ${raw}`);
+  }
+  return handle;
+}
+
 function normalizeSkillSlugOrFail(raw: string) {
   const slug = raw.trim();
   if (!slug) fail("Slug required");
@@ -64,8 +78,68 @@ function normalizeSkillSlugOrFail(raw: string) {
   return slug;
 }
 
+function parseSkillRefOrFail(raw: string): SkillRef {
+  const ref = raw.trim();
+  if (!ref) fail("Slug required");
+  const slashIndex = ref.indexOf("/");
+  if (slashIndex < 0) {
+    return { slug: normalizeSkillSlugOrFail(ref) };
+  }
+  if (ref.indexOf("/", slashIndex + 1) >= 0) {
+    fail(`Invalid skill ref: ${ref}`);
+  }
+  const ownerHandle = normalizeOwnerHandle(ref.slice(0, slashIndex));
+  const slug = normalizeSkillSlugOrFail(ref.slice(slashIndex + 1));
+  if (!ownerHandle) fail(`Invalid skill ref: ${ref}`);
+  return { slug, ownerHandle };
+}
+
 function isSafeSkillSlug(slug: string) {
   return Boolean(slug) && !slug.includes("/") && !slug.includes("\\") && !slug.includes("..");
+}
+
+function ownerScopedUrl(registry: string, path: string, ownerHandle?: string) {
+  if (!ownerHandle) return null;
+  const url = registryUrl(path, registry);
+  url.searchParams.set("ownerHandle", ownerHandle);
+  return url.toString();
+}
+
+function skillRequestArgs(
+  registry: string,
+  slug: string,
+  ownerHandle: string | undefined,
+  token: string | undefined,
+) {
+  const path = `${ApiRoutes.skills}/${encodeURIComponent(slug)}`;
+  const url = ownerScopedUrl(registry, path, ownerHandle);
+  return url ? { method: "GET" as const, url, token } : { method: "GET" as const, path, token };
+}
+
+function skillVersionRequestArgs(
+  registry: string,
+  slug: string,
+  version: string,
+  ownerHandle: string | undefined,
+  token: string | undefined,
+) {
+  const path = `${ApiRoutes.skills}/${encodeURIComponent(slug)}/versions/${encodeURIComponent(
+    version,
+  )}`;
+  const url = ownerScopedUrl(registry, path, ownerHandle);
+  return url ? { method: "GET" as const, url, token } : { method: "GET" as const, path, token };
+}
+
+function withOwnerMetadata(
+  version: string | null,
+  installedAt: number,
+  ownerHandle: string | undefined,
+  existing?: { pinned?: boolean; pinReason?: string; ownerHandle?: string },
+) {
+  return {
+    ...withPinnedMetadata(version, installedAt, existing),
+    ...(ownerHandle ? { ownerHandle } : {}),
+  };
 }
 
 function isPinnedSkillEntry(entry?: { pinned?: boolean | null }) {
@@ -109,9 +183,10 @@ export async function cmdSearch(opts: GlobalOpts, query: string, limit?: number)
     spinner.stop();
     for (const entry of result.results) {
       const slug = entry.slug ?? "unknown";
+      const ref = entry.ownerHandle ? `@${entry.ownerHandle}/${slug}` : slug;
       const name = entry.displayName ?? slug;
       const version = entry.version ? ` v${entry.version}` : "";
-      console.log(`${slug}${version}  ${name}  (${entry.score.toFixed(3)})`);
+      console.log(`${ref}${version}  ${name}  (${entry.score.toFixed(3)})`);
     }
   } catch (error) {
     spinner.fail(formatError(error));
@@ -125,7 +200,8 @@ export async function cmdInstall(
   versionFlag?: string,
   force = false,
 ) {
-  const trimmed = normalizeSkillSlugOrFail(slug);
+  const requested = parseSkillRefOrFail(slug);
+  const trimmed = requested.slug;
 
   const token = await getOptionalAuthToken();
 
@@ -148,8 +224,11 @@ export async function cmdInstall(
     // Fetch skill metadata including moderation status
     const skillMeta = await apiRequest(
       registry,
-      { method: "GET", path: `${ApiRoutes.skills}/${encodeURIComponent(trimmed)}`, token },
+      skillRequestArgs(registry, trimmed, requested.ownerHandle, token),
       ApiV1SkillResponseSchema,
+    );
+    const resolvedOwnerHandle = normalizeOwnerHandle(
+      skillMeta.owner?.handle ?? requested.ownerHandle,
     );
 
     // Check moderation status before proceeding
@@ -180,13 +259,7 @@ export async function cmdInstall(
     if (versionFlag) {
       await apiRequest(
         registry,
-        {
-          method: "GET",
-          path: `${ApiRoutes.skills}/${encodeURIComponent(trimmed)}/versions/${encodeURIComponent(
-            resolvedVersion,
-          )}`,
-          token,
-        },
+        skillVersionRequestArgs(registry, trimmed, resolvedVersion, resolvedOwnerHandle, token),
         ApiV1SkillVersionResponseSchema,
       );
     }
@@ -196,7 +269,12 @@ export async function cmdInstall(
     }
 
     spinner.text = `Downloading ${trimmed}@${resolvedVersion}`;
-    const zip = await downloadZip(registry, { slug: trimmed, version: resolvedVersion, token });
+    const zip = await downloadZip(registry, {
+      slug: trimmed,
+      ...(resolvedOwnerHandle ? { ownerHandle: resolvedOwnerHandle } : {}),
+      version: resolvedVersion,
+      token,
+    });
     await extractZipToDir(zip, target);
     const installedFiles = await listTextFiles(target);
     const installedFingerprint =
@@ -206,12 +284,18 @@ export async function cmdInstall(
       version: 1,
       registry,
       slug: trimmed,
+      ...(resolvedOwnerHandle ? { ownerHandle: resolvedOwnerHandle } : {}),
       installedVersion: resolvedVersion,
       installedAt: Date.now(),
       fingerprint: installedFingerprint,
     });
 
-    lock.skills[trimmed] = withPinnedMetadata(resolvedVersion, Date.now(), existingEntry);
+    lock.skills[trimmed] = withOwnerMetadata(
+      resolvedVersion,
+      Date.now(),
+      resolvedOwnerHandle,
+      existingEntry,
+    );
     await writeLockfile(opts.workdir, lock);
     spinner.succeed(`OK. Installed ${trimmed} -> ${target}`);
   } catch (error) {
@@ -226,7 +310,8 @@ export async function cmdUpdate(
   options: { all?: boolean; version?: string; force?: boolean },
   inputAllowed: boolean,
 ) {
-  const slug = slugArg ? normalizeSkillSlugOrFail(slugArg) : undefined;
+  const requestedRef = slugArg ? parseSkillRefOrFail(slugArg) : null;
+  const slug = requestedRef?.slug;
   const all = Boolean(options.all);
   if (!slug && !all) fail("Provide <slug> or --all");
   if (slug && all) fail("Use either <slug> or --all");
@@ -266,12 +351,18 @@ export async function cmdUpdate(
       const target = join(opts.dir, entry);
       const exists = await fileExists(target);
       const existingOrigin = exists ? await readSkillOrigin(target) : null;
+      const requestedOwnerHandle = normalizeOwnerHandle(
+        requestedRef?.ownerHandle ?? lock.skills[entry]?.ownerHandle ?? existingOrigin?.ownerHandle,
+      );
 
       // Always fetch skill metadata to check moderation status
       const skillMeta = await apiRequest(
         registry,
-        { method: "GET", path: `${ApiRoutes.skills}/${encodeURIComponent(entry)}`, token },
+        skillRequestArgs(registry, entry, requestedOwnerHandle, token),
         ApiV1SkillResponseSchema,
+      );
+      const resolvedOwnerHandle = normalizeOwnerHandle(
+        skillMeta.owner?.handle ?? requestedOwnerHandle,
       );
 
       // Check moderation status before proceeding
@@ -311,24 +402,36 @@ export async function cmdUpdate(
 
       let resolveResult: ResolveResult;
       if (localFingerprint) {
-        resolveResult = await resolveSkillVersion(registry, entry, localFingerprint, token);
+        resolveResult = await resolveSkillVersion(
+          registry,
+          entry,
+          localFingerprint,
+          resolvedOwnerHandle,
+          token,
+        );
       } else {
         resolveResult = { match: null, latestVersion: skillMeta.latestVersion ?? null };
       }
 
+      const originOwnerMatches =
+        !resolvedOwnerHandle ||
+        !existingOrigin?.ownerHandle ||
+        normalizeOwnerHandle(existingOrigin.ownerHandle) === resolvedOwnerHandle;
       const latest = resolveResult.latestVersion?.version ?? null;
       const matched =
         resolveResult.match?.version ??
         (localFingerprint &&
         existingOrigin?.fingerprint === localFingerprint &&
-        existingOrigin.slug === entry
+        existingOrigin.slug === entry &&
+        originOwnerMatches
           ? existingOrigin.installedVersion
           : null);
 
       if (matched && lock.skills[entry]?.version !== matched) {
-        lock.skills[entry] = withPinnedMetadata(
+        lock.skills[entry] = withOwnerMetadata(
           matched,
           lock.skills[entry]?.installedAt ?? Date.now(),
+          resolvedOwnerHandle,
           lock.skills[entry],
         );
       }
@@ -371,7 +474,12 @@ export async function cmdUpdate(
         spinner.start(`Updating ${entry} -> ${targetVersion}`);
       }
       await rm(target, { recursive: true, force: true });
-      const zip = await downloadZip(registry, { slug: entry, version: targetVersion, token });
+      const zip = await downloadZip(registry, {
+        slug: entry,
+        ...(resolvedOwnerHandle ? { ownerHandle: resolvedOwnerHandle } : {}),
+        version: targetVersion,
+        token,
+      });
       await extractZipToDir(zip, target);
       const installedFiles = await listTextFiles(target);
       const installedFingerprint =
@@ -381,12 +489,18 @@ export async function cmdUpdate(
         version: 1,
         registry: existingOrigin?.registry ?? registry,
         slug: existingOrigin?.slug ?? entry,
+        ...(resolvedOwnerHandle ? { ownerHandle: resolvedOwnerHandle } : {}),
         installedVersion: targetVersion,
         installedAt: existingOrigin?.installedAt ?? Date.now(),
         fingerprint: installedFingerprint,
       });
 
-      lock.skills[entry] = withPinnedMetadata(targetVersion, Date.now(), lock.skills[entry]);
+      lock.skills[entry] = withOwnerMetadata(
+        targetVersion,
+        Date.now(),
+        resolvedOwnerHandle,
+        lock.skills[entry],
+      );
       spinner.succeed(`${entry}: updated -> ${targetVersion}`);
     } catch (error) {
       spinner.fail(formatError(error));
@@ -754,9 +868,16 @@ function resolveExploreSort(raw?: string): { sort: ExploreSort; apiSort: ApiExpl
   );
 }
 
-async function resolveSkillVersion(registry: string, slug: string, hash: string, token?: string) {
+async function resolveSkillVersion(
+  registry: string,
+  slug: string,
+  hash: string,
+  ownerHandle?: string,
+  token?: string,
+) {
   const url = registryUrl(ApiRoutes.resolve, registry);
   url.searchParams.set("slug", slug);
+  if (ownerHandle) url.searchParams.set("ownerHandle", ownerHandle);
   url.searchParams.set("hash", hash);
   return apiRequest(
     registry,

@@ -74,6 +74,11 @@ function makeCtx({
           withIndex: () => ({ collect: async () => [] }),
         };
       }
+      if (table === "skillSlugAliases") {
+        return {
+          withIndex: () => ({ take: async () => [], unique: async () => null }),
+        };
+      }
       if (table === "publisherMembers") {
         return {
           withIndex: () => ({ unique: async () => membership ?? null }),
@@ -753,6 +758,9 @@ describe("setSkillSoftDeletedInternal B1 undelete gate", () => {
         }
         if (table === "skillEmbeddings") {
           return { withIndex: () => ({ collect: async () => [] }) };
+        }
+        if (table === "skillSlugAliases") {
+          return { withIndex: () => ({ take: async () => [], unique: async () => null }) };
         }
         if (table === "globalStats") {
           return { withIndex: () => ({ unique: async () => null }) };

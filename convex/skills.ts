@@ -74,9 +74,8 @@ import {
 import {
   assertCanManageOwnedResource,
   ensurePersonalPublisherForUser,
-  getActiveUserByHandleOrPersonalPublisher,
-  getOwnerPublisher,
   getPersonalPublisherForUserOrFallback,
+  getOwnerPublisher,
   getPublisherByHandle,
   getPublisherMembership,
   isPublisherActive,
@@ -105,6 +104,14 @@ import {
   queueHighlightedWebhook,
 } from "./lib/skillPublish";
 import { getFrontmatterValue, hashSkillFiles } from "./lib/skills";
+import {
+  getSkillBySlugForPublisher,
+  getSkillSlugAliasBySlugForPublisher,
+  getSkillSlugAliasBySlugScoped,
+  normalizeSkillSlugKey,
+  resolveLegacySkillBySlugOrAlias,
+  resolvePublisherByOwnerHandle,
+} from "./lib/skills/slugResolution";
 import { computeIsSuspicious, isSkillReviewFlagged, isSkillSuspicious } from "./lib/skillSafety";
 import {
   digestToHydratableSkill,
@@ -703,13 +710,6 @@ function buildReleasedUnpublishedSkillSlug(skill: Pick<Doc<"skills">, "_id">, at
   return `__unpublished_${idPart || "skill"}${suffix}`;
 }
 
-function normalizeSkillSlugKey(slug: string) {
-  // Read-path normalization: lowercase + trim only. Intentionally lenient so
-  // that legacy rows (pre-validator) remain lookup-able. Write paths must
-  // use `normalizeSkillSlugForWrite` / `assertValidSkillSlug` instead.
-  return normalizeSkillSlug(slug);
-}
-
 function slugValidationAvailabilityFailure(error: unknown) {
   const message =
     error instanceof ConvexError && typeof error.data === "string" ? error.data : "Invalid slug.";
@@ -739,112 +739,8 @@ function normalizeSkillSlugForWrite(slug: string) {
 
 async function getSkillSlugAliasBySlug(ctx: Pick<QueryCtx | MutationCtx, "db">, slug: string) {
   const normalizedSlug = normalizeSkillSlugKey(slug);
-  return ctx.db
-    .query("skillSlugAliases")
-    .withIndex("by_slug", (q) => q.eq("slug", normalizedSlug))
-    .unique();
-}
-
-async function resolveRequestedAvailabilityPublisher(
-  ctx: Pick<QueryCtx, "db">,
-  ownerHandle: string | undefined,
-) {
-  const requestedHandle = normalizePublisherHandle(ownerHandle);
-  if (!requestedHandle) {
-    return { requestedHandle, requestedPublisher: null };
-  }
-
-  const materializedPublisher = await getPublisherByHandle(ctx, requestedHandle);
-  if (materializedPublisher) {
-    return { requestedHandle, requestedPublisher: materializedPublisher };
-  }
-
-  const user = await getActiveUserByHandleOrPersonalPublisher(ctx, requestedHandle);
-  const fallbackPublisher = user ? await getPersonalPublisherForUserOrFallback(ctx, user) : null;
-  return {
-    requestedHandle,
-    requestedPublisher:
-      fallbackPublisher?.handle === requestedHandle ? fallbackPublisher : materializedPublisher,
-  };
-}
-
-async function getSkillBySlugForAvailabilityPublisher(
-  ctx: Pick<QueryCtx, "db">,
-  slug: string,
-  publisher: Doc<"publishers">,
-) {
-  const scopedSkills = await ctx.db
-    .query("skills")
-    .withIndex("by_owner_publisher_slug", (q) =>
-      q.eq("ownerPublisherId", publisher._id).eq("slug", slug),
-    )
-    .take(2);
-  if (scopedSkills[0]) return scopedSkills[0];
-
-  if (publisher.kind !== "user" || !publisher.linkedUserId) return null;
-
-  const legacySkills = await ctx.db
-    .query("skills")
-    .withIndex("by_owner_slug", (q) => q.eq("ownerUserId", publisher.linkedUserId).eq("slug", slug))
-    .take(2);
-  return (
-    legacySkills.find(
-      (skill) => !skill.ownerPublisherId || skill.ownerPublisherId === publisher._id,
-    ) ?? null
-  );
-}
-
-async function getUnscopedSkillBySlugForAvailability(ctx: Pick<QueryCtx, "db">, slug: string) {
-  const skills = await ctx.db
-    .query("skills")
-    .withIndex("by_slug", (q) => q.eq("slug", slug))
-    .take(2);
-  return {
-    skill: skills.length === 1 ? skills[0] : null,
-    ambiguous: skills.length > 1,
-  };
-}
-
-async function getUnscopedSkillSlugAliasBySlugForAvailability(
-  ctx: Pick<QueryCtx, "db">,
-  slug: string,
-) {
-  const aliases = await ctx.db
-    .query("skillSlugAliases")
-    .withIndex("by_slug", (q) => q.eq("slug", slug))
-    .take(2);
-  return {
-    alias: aliases.length === 1 ? aliases[0] : null,
-    ambiguous: aliases.length > 1,
-  };
-}
-
-async function getSkillSlugAliasBySlugForAvailabilityPublisher(
-  ctx: Pick<QueryCtx, "db">,
-  slug: string,
-  publisher: Doc<"publishers">,
-) {
-  const scopedAliases = await ctx.db
-    .query("skillSlugAliases")
-    .withIndex("by_owner_publisher_slug", (q) =>
-      q.eq("ownerPublisherId", publisher._id).eq("slug", slug),
-    )
-    .take(2);
-  if (scopedAliases[0]) return scopedAliases[0];
-
-  if (publisher.kind !== "user" || !publisher.linkedUserId) return null;
-
-  const legacyAliases = await ctx.db
-    .query("skillSlugAliases")
-    .withIndex("by_owner_slug", (q) =>
-      q.eq("ownerUserId", publisher.linkedUserId as Id<"users">).eq("slug", slug),
-    )
-    .take(2);
-  return (
-    legacyAliases.find(
-      (alias) => !alias.ownerPublisherId || alias.ownerPublisherId === publisher._id,
-    ) ?? null
-  );
+  const resolved = await resolveLegacySkillBySlugOrAlias(ctx, normalizedSlug);
+  return resolved.alias;
 }
 
 async function listSkillSlugAliasesForSkill(
@@ -999,55 +895,57 @@ async function resolveSkillBySlugOrAlias(
   slug: string,
   options: { includeSoftDeleted?: boolean } = {},
 ) {
-  const normalizedSlug = normalizeSkillSlugKey(slug);
-  if (!normalizedSlug) {
-    return {
-      requestedSlug: normalizedSlug,
-      resolvedSlug: null,
-      skill: null,
-      alias: null,
-    };
-  }
+  return await resolveLegacySkillBySlugOrAlias(ctx, slug, options);
+}
 
-  const directSkill = await ctx.db
-    .query("skills")
-    .withIndex("by_slug", (q) => q.eq("slug", normalizedSlug))
-    .unique();
-  if (directSkill && (options.includeSoftDeleted || !directSkill.softDeletedAt)) {
-    return {
-      requestedSlug: normalizedSlug,
-      resolvedSlug: directSkill.slug,
-      skill: directSkill,
-      alias: null,
-    };
+async function resolveUnambiguousSkillForLegacySlug(
+  ctx: Pick<QueryCtx | MutationCtx, "db">,
+  slug: string,
+  options: { includeSoftDeleted?: boolean; notFoundMessage?: string } = {},
+) {
+  const resolved = await resolveSkillBySlugOrAlias(ctx, slug, options);
+  if (resolved.ambiguous) {
+    throw new ConvexError("Slug is used by multiple publishers. Use an owner-qualified skill URL.");
   }
+  if (!resolved.skill) throw new ConvexError(options.notFoundMessage ?? "Skill not found");
+  return resolved.skill;
+}
 
-  const alias = await getSkillSlugAliasBySlug(ctx, normalizedSlug);
-  if (!alias) {
-    return {
-      requestedSlug: normalizedSlug,
-      resolvedSlug: null,
-      skill: null,
-      alias: null,
-    };
+async function resolveOptionalUnambiguousSkillForLegacySlug(
+  ctx: Pick<QueryCtx | MutationCtx, "db">,
+  slug: string,
+  options: { includeSoftDeleted?: boolean } = {},
+) {
+  const resolved = await resolveSkillBySlugOrAlias(ctx, slug, options);
+  if (resolved.ambiguous) {
+    throw new ConvexError("Slug is used by multiple publishers. Use an owner-qualified skill URL.");
   }
+  return resolved.skill;
+}
 
-  const skill = await ctx.db.get(alias.skillId);
-  if (!skill || (!options.includeSoftDeleted && skill.softDeletedAt)) {
-    return {
-      requestedSlug: normalizedSlug,
-      resolvedSlug: null,
-      skill: null,
-      alias,
-    };
+async function resolveLegacyPersonalSkillForSameGitHubOwner(
+  ctx: Pick<QueryCtx | MutationCtx, "db">,
+  slug: string,
+  userId: Id<"users">,
+) {
+  const resolved = await resolveLegacySkillBySlugOrAlias(ctx, slug, {
+    includeSoftDeleted: true,
+  });
+  if (resolved.ambiguous || !resolved.skill || resolved.skill.ownerPublisherId) {
+    return null;
   }
+  if (resolved.skill.ownerUserId === userId) return resolved.skill;
 
-  return {
-    requestedSlug: normalizedSlug,
-    resolvedSlug: skill.slug,
-    skill,
-    alias,
-  };
+  const [ownerProviderAccountId, callerProviderAccountId] = await Promise.all([
+    getGitHubProviderAccountId(ctx, resolved.skill.ownerUserId),
+    getGitHubProviderAccountId(ctx, userId),
+  ]);
+  return canHealSkillOwnershipByGitHubProviderAccountId(
+    ownerProviderAccountId,
+    callerProviderAccountId,
+  )
+    ? resolved.skill
+    : null;
 }
 
 async function repointSkillRelationships(
@@ -1965,11 +1863,52 @@ async function removeSkillBadge(ctx: MutationCtx, skillId: Id<"skills">, kind: B
   }
 }
 
+async function resolveSkillBySlugOrAliasForOwner(
+  ctx: Pick<QueryCtx | MutationCtx, "db">,
+  slug: string,
+  ownerHandle?: string,
+) {
+  let skill: Doc<"skills"> | null = null;
+  let requestedSlug = normalizeSkillSlugKey(slug);
+  let resolvedSlug: string | null = null;
+  if (ownerHandle) {
+    const resolvedOwner = await resolvePublisherByOwnerHandle(ctx, ownerHandle);
+    const scopedOwnerPublisher = resolvedOwner.publisher;
+    if (scopedOwnerPublisher && requestedSlug) {
+      skill = await getSkillBySlugForPublisher(ctx, requestedSlug, scopedOwnerPublisher);
+      if (skill?.softDeletedAt) {
+        skill = null;
+      }
+      if (!skill) {
+        const alias = await getSkillSlugAliasBySlugForPublisher(
+          ctx,
+          requestedSlug,
+          scopedOwnerPublisher,
+        );
+        skill = alias ? await ctx.db.get(alias.skillId) : null;
+        if (skill?.softDeletedAt) {
+          skill = null;
+        }
+      }
+      resolvedSlug = skill?.slug ?? null;
+    }
+  } else {
+    const resolved = await resolveSkillBySlugOrAlias(ctx, slug);
+    skill = resolved.skill;
+    requestedSlug = resolved.requestedSlug;
+    resolvedSlug = resolved.resolvedSlug;
+  }
+  return { requestedSlug, resolvedSlug, skill };
+}
+
 export const getBySlug = query({
-  args: { slug: v.string() },
+  args: { slug: v.string(), ownerHandle: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    const resolved = await resolveSkillBySlugOrAlias(ctx, args.slug);
-    const skill = resolved.skill;
+    const { skill, requestedSlug, resolvedSlug } = await resolveSkillBySlugOrAliasForOwner(
+      ctx,
+      args.slug,
+      args.ownerHandle,
+    );
     if (!skill) return null;
 
     const userId = await getOptionalActiveAuthUserId(ctx);
@@ -2064,8 +2003,8 @@ export const getBySlug = query({
       : null;
 
     return {
-      requestedSlug: resolved.requestedSlug,
-      resolvedSlug: resolved.resolvedSlug,
+      requestedSlug,
+      resolvedSlug,
       skill: responseSkillData,
       latestVersion,
       owner,
@@ -2102,7 +2041,7 @@ export const getBySlug = query({
 });
 
 export const checkSlugAvailability = query({
-  args: { slug: v.string(), ownerHandle: v.optional(v.string()) },
+  args: { slug: v.string(), ownerHandle: v.string() },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
     const slug = normalizeSkillSlugKey(args.slug);
@@ -2115,41 +2054,31 @@ export const checkSlugAvailability = query({
       };
     }
 
-    const { requestedHandle, requestedPublisher } = await resolveRequestedAvailabilityPublisher(
+    const { requestedHandle, publisher: requestedPublisher } = await resolvePublisherByOwnerHandle(
       ctx,
       args.ownerHandle,
     );
-    const unscopedSkillResult = await getUnscopedSkillBySlugForAvailability(ctx, slug);
-    const scopedSkill = requestedPublisher
-      ? await getSkillBySlugForAvailabilityPublisher(ctx, slug, requestedPublisher)
-      : null;
-    const skill = scopedSkill ?? unscopedSkillResult.skill;
-
-    if (!scopedSkill && unscopedSkillResult.ambiguous) {
+    if (!requestedHandle) {
       return {
         available: false,
         reason: "taken" as const,
-        message: "Slug is already used by multiple publishers. Choose a specific owner.",
+        message: "Owner is required to check skill slug availability.",
+        url: null,
+      };
+    }
+    if (!requestedPublisher) {
+      return {
+        available: false,
+        reason: "taken" as const,
+        message: `Owner @${requestedHandle} was not found.`,
         url: null,
       };
     }
 
+    const skill = await getSkillBySlugForPublisher(ctx, slug, requestedPublisher);
+
     if (!skill) {
-      const scopedAlias = requestedPublisher
-        ? await getSkillSlugAliasBySlugForAvailabilityPublisher(ctx, slug, requestedPublisher)
-        : null;
-      const unscopedAliasResult = scopedAlias
-        ? null
-        : await getUnscopedSkillSlugAliasBySlugForAvailability(ctx, slug);
-      if (!scopedAlias && unscopedAliasResult?.ambiguous) {
-        return {
-          available: false,
-          reason: "taken" as const,
-          message: "Slug redirects to skills under multiple publishers. Choose a specific owner.",
-          url: null,
-        };
-      }
-      const alias = scopedAlias ?? unscopedAliasResult?.alias;
+      const alias = await getSkillSlugAliasBySlugForPublisher(ctx, slug, requestedPublisher);
       if (alias) {
         const aliasedSkill = await ctx.db.get(alias.skillId);
         const owner = aliasedSkill
@@ -2302,6 +2231,7 @@ export const checkSlugAvailability = query({
 export const getBySlugForStaff = query({
   args: {
     slug: v.string(),
+    ownerHandle: v.optional(v.string()),
     auditLogLimit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
@@ -2310,7 +2240,7 @@ export const getBySlugForStaff = query({
 
     const auditLogLimit = clampStaffAuditLogLimit(args.auditLogLimit);
 
-    const resolved = await resolveSkillBySlugOrAlias(ctx, args.slug);
+    const resolved = await resolveSkillBySlugOrAliasForOwner(ctx, args.slug, args.ownerHandle);
     const skill = resolved.skill;
     if (!skill) return null;
 
@@ -2423,10 +2353,58 @@ export const getReservedSlugInternal = internalQuery({
 });
 
 export const getSkillBySlugInternal = internalQuery({
-  args: { slug: v.string() },
+  args: { slug: v.string(), ownerHandle: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    const resolved = await resolveSkillBySlugOrAlias(ctx, args.slug);
+    const resolved = await resolveSkillBySlugOrAliasForOwner(ctx, args.slug, args.ownerHandle);
     return resolved.skill;
+  },
+});
+
+export const getSkillForPublishPreflightInternal = internalQuery({
+  args: {
+    userId: v.id("users"),
+    slug: v.string(),
+    ownerPublisherId: v.optional(v.id("publishers")),
+    sourceOwnerPublisherId: v.optional(v.id("publishers")),
+    migrateOwner: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const normalizedSlug = normalizeSkillSlug(args.slug);
+    if (!normalizedSlug) return null;
+
+    const user = await ctx.db.get(args.userId);
+    if (!user || user.deletedAt || user.deactivatedAt) return null;
+    const personalPublisher = await getPersonalPublisherForUserOrFallback(ctx, user);
+    const ownerPublisher = args.ownerPublisherId
+      ? await ctx.db.get(args.ownerPublisherId)
+      : personalPublisher;
+    if (!ownerPublisher) return null;
+
+    let skill = await getSkillBySlugForPublisher(ctx, normalizedSlug, ownerPublisher);
+    if (!skill && args.ownerPublisherId !== undefined && args.migrateOwner === true) {
+      if (args.sourceOwnerPublisherId) {
+        const sourcePublisher = await ctx.db.get(args.sourceOwnerPublisherId);
+        if (!sourcePublisher) throw new ConvexError("Source publisher not found");
+        skill = await getSkillBySlugForPublisher(ctx, normalizedSlug, sourcePublisher);
+        if (!skill) {
+          throw new ConvexError(
+            `Source owner @${sourcePublisher.handle} does not have skill "${normalizedSlug}".`,
+          );
+        }
+      } else {
+        const resolved = await resolveLegacySkillBySlugOrAlias(ctx, normalizedSlug, {
+          includeSoftDeleted: true,
+        });
+        if (resolved.ambiguous) {
+          throw new ConvexError(
+            "Slug is used by multiple publishers. Publish with the source owner namespace instead.",
+          );
+        }
+        skill = resolved.skill;
+      }
+    }
+
+    return skill;
   },
 });
 
@@ -7077,6 +7055,7 @@ export const getVersionBySkillAndVersion = query({
 export const publishVersion: ReturnType<typeof action> = action({
   args: {
     ownerHandle: v.optional(v.string()),
+    sourceOwnerHandle: v.optional(v.string()),
     // Explicit opt-in from the client to migrate an existing skill's owner
     // when `ownerHandle` differs from the skill's current owner. Without this
     // flag, a mismatching Owner selector is treated as a slug collision so
@@ -7109,14 +7088,27 @@ export const publishVersion: ReturnType<typeof action> = action({
     if (args.acceptLicenseTerms !== true) {
       throw new ConvexError("MIT-0 license terms must be accepted to publish skills");
     }
-    const { userId } = await requireUserFromAction(ctx);
+    const { userId, user } = await requireUserFromAction(ctx);
     const target = (await ctx.runMutation(internal.publishers.resolvePublishTargetForUserInternal, {
       actorUserId: userId,
       ownerHandle: args.ownerHandle,
       minimumRole: "publisher",
     })) as { publisherId: Id<"publishers"> };
+    const sourceOwnerHandle =
+      args.migrateOwner === true
+        ? args.sourceOwnerHandle?.trim() || user.handle?.trim() || undefined
+        : undefined;
+    const source =
+      sourceOwnerHandle && sourceOwnerHandle !== args.ownerHandle
+        ? ((await ctx.runMutation(internal.publishers.resolvePublishTargetForUserInternal, {
+            actorUserId: userId,
+            ownerHandle: sourceOwnerHandle,
+            minimumRole: "publisher",
+          })) as { publisherId: Id<"publishers"> })
+        : null;
     return publishVersionForUser(ctx, userId, args, {
       ownerPublisherId: target.publisherId,
+      sourceOwnerPublisherId: source?.publisherId,
       migrateOwner: args.migrateOwner,
     });
   },
@@ -7219,13 +7211,15 @@ export const getFileText: ReturnType<typeof action> = action({
 });
 
 export const resolveVersionByHash = query({
-  args: { slug: v.string(), hash: v.string() },
+  args: { slug: v.string(), hash: v.string(), ownerHandle: v.optional(v.string()) },
   handler: async (ctx, args) => {
     const slug = args.slug.trim().toLowerCase();
     const hash = args.hash.trim().toLowerCase();
     if (!slug || !/^[a-f0-9]{64}$/.test(hash)) return null;
 
-    const resolved = await resolveSkillBySlugOrAlias(ctx, slug);
+    const resolved = args.ownerHandle
+      ? await resolveSkillBySlugOrAliasForOwner(ctx, slug, args.ownerHandle)
+      : await resolveSkillBySlugOrAlias(ctx, slug);
     const skill = resolved.skill;
     if (!skill) return null;
 
@@ -7678,10 +7672,11 @@ export const renameOwnedSkill = mutation({
   args: {
     slug: v.string(),
     newSlug: v.string(),
+    ownerHandle: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { user } = await requireUser(ctx);
-    return renameOwnedSkillByActor(ctx, user._id, args.slug, args.newSlug);
+    return renameOwnedSkillByActor(ctx, user._id, args.slug, args.newSlug, args.ownerHandle);
   },
 });
 
@@ -7689,10 +7684,19 @@ export const mergeOwnedSkillIntoCanonical = mutation({
   args: {
     sourceSlug: v.string(),
     targetSlug: v.string(),
+    sourceOwnerHandle: v.optional(v.string()),
+    targetOwnerHandle: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { user } = await requireUser(ctx);
-    return mergeOwnedSkillIntoCanonicalByActor(ctx, user._id, args.sourceSlug, args.targetSlug);
+    return mergeOwnedSkillIntoCanonicalByActor(
+      ctx,
+      user._id,
+      args.sourceSlug,
+      args.targetSlug,
+      args.sourceOwnerHandle,
+      args.targetOwnerHandle,
+    );
   },
 });
 
@@ -7701,9 +7705,16 @@ export const renameOwnedSkillInternal = internalMutation({
     actorUserId: v.id("users"),
     slug: v.string(),
     newSlug: v.string(),
+    ownerHandle: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    return renameOwnedSkillByActor(ctx, args.actorUserId, args.slug, args.newSlug);
+    return renameOwnedSkillByActor(
+      ctx,
+      args.actorUserId,
+      args.slug,
+      args.newSlug,
+      args.ownerHandle,
+    );
   },
 });
 
@@ -7712,6 +7723,8 @@ export const mergeOwnedSkillIntoCanonicalInternal = internalMutation({
     actorUserId: v.id("users"),
     sourceSlug: v.string(),
     targetSlug: v.string(),
+    sourceOwnerHandle: v.optional(v.string()),
+    targetOwnerHandle: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     return mergeOwnedSkillIntoCanonicalByActor(
@@ -7719,6 +7732,8 @@ export const mergeOwnedSkillIntoCanonicalInternal = internalMutation({
       args.actorUserId,
       args.sourceSlug,
       args.targetSlug,
+      args.sourceOwnerHandle,
+      args.targetOwnerHandle,
     );
   },
 });
@@ -7748,6 +7763,7 @@ async function renameOwnedSkillByActor(
   actorUserId: Id<"users">,
   sourceSlugArg: string,
   newSlugArg: string,
+  ownerHandle?: string,
 ) {
   const user = await ctx.db.get(actorUserId);
   if (!user || user.deletedAt || user.deactivatedAt) {
@@ -7761,7 +7777,7 @@ async function renameOwnedSkillByActor(
   // reserved-word blocklist, no consecutive hyphens.
   const newSlug = assertValidSkillSlug(newSlugArg);
 
-  const resolved = await resolveSkillBySlugOrAlias(ctx, sourceSlug);
+  const resolved = await resolveSkillBySlugOrAliasForOwner(ctx, sourceSlug, ownerHandle);
   const skill = resolved.skill;
   if (!skill || skill.softDeletedAt) throw new ConvexError("Skill not found");
   await assertCanManageOwnedResource(ctx, {
@@ -7775,10 +7791,12 @@ async function renameOwnedSkillByActor(
     return { ok: true as const, slug: skill.slug, previousSlug: skill.slug };
   }
 
-  const existingSkill = await ctx.db
-    .query("skills")
-    .withIndex("by_slug", (q) => q.eq("slug", newSlug))
-    .unique();
+  const skillOwner = await getOwnerPublisher(ctx, {
+    ownerPublisherId: skill.ownerPublisherId,
+    ownerUserId: skill.ownerUserId,
+  });
+  if (!skillOwner) throw new ConvexError("Skill owner not found");
+  const existingSkill = await getSkillBySlugForPublisher(ctx, newSlug, skillOwner);
   if (existingSkill && existingSkill._id !== skill._id) {
     const owner = await ctx.db.get(existingSkill.ownerUserId);
     const ownsExisting =
@@ -7790,7 +7808,9 @@ async function renameOwnedSkillByActor(
     throw new ConvexError(buildSlugTakenErrorMessage(existingSkill, owner));
   }
 
-  const existingAlias = await getSkillSlugAliasBySlug(ctx, newSlug);
+  const existingAlias = skill.ownerPublisherId
+    ? await getSkillSlugAliasBySlugScoped(ctx, newSlug, skill.ownerPublisherId, skill.ownerUserId)
+    : await getSkillSlugAliasBySlug(ctx, newSlug);
   if (existingAlias && existingAlias.skillId !== skill._id) {
     const aliasSkill = await ctx.db.get(existingAlias.skillId);
     const owner = aliasSkill ? await ctx.db.get(aliasSkill.ownerUserId) : null;
@@ -7813,7 +7833,14 @@ async function renameOwnedSkillByActor(
   const aliasesForSkill = await listSkillSlugAliasesForSkill(ctx, skill._id);
   const aliasRemovedForNewSlug =
     existingAlias && existingAlias.skillId === skill._id ? existingAlias : null;
-  const previousAlias = await getSkillSlugAliasBySlug(ctx, skill.slug);
+  const previousAlias = skill.ownerPublisherId
+    ? await getSkillSlugAliasBySlugScoped(
+        ctx,
+        skill.slug,
+        skill.ownerPublisherId,
+        skill.ownerUserId,
+      )
+    : await getSkillSlugAliasBySlug(ctx, skill.slug);
   const addedSkillAliases = previousAlias?.skillId === skill._id ? 0 : 1;
   const removedSkillAliases = aliasRemovedForNewSlug ? 1 : 0;
   const addedOwnerAliases = previousAlias
@@ -7885,6 +7912,8 @@ async function mergeOwnedSkillIntoCanonicalByActor(
   actorUserId: Id<"users">,
   sourceSlugArg: string,
   targetSlugArg: string,
+  sourceOwnerHandle?: string,
+  targetOwnerHandle?: string,
 ) {
   const user = await ctx.db.get(actorUserId);
   if (!user || user.deletedAt || user.deactivatedAt) {
@@ -7901,13 +7930,19 @@ async function mergeOwnedSkillIntoCanonicalByActor(
     throw new ConvexError("Source and target must be different skills");
   }
 
-  const source = await ctx.db
-    .query("skills")
-    .withIndex("by_slug", (q) => q.eq("slug", sourceSlug))
-    .unique();
+  const sourceResolved = await resolveSkillBySlugOrAliasForOwner(
+    ctx,
+    sourceSlug,
+    sourceOwnerHandle,
+  );
+  const source = sourceResolved.skill;
   if (!source || source.softDeletedAt) throw new ConvexError("Source skill not found");
 
-  const targetResolved = await resolveSkillBySlugOrAlias(ctx, targetSlug);
+  const targetResolved = await resolveSkillBySlugOrAliasForOwner(
+    ctx,
+    targetSlug,
+    targetOwnerHandle,
+  );
   const target = targetResolved.skill;
   if (!target || target.softDeletedAt) throw new ConvexError("Target skill not found");
   if (source._id === target._id) {
@@ -7932,7 +7967,14 @@ async function mergeOwnedSkillIntoCanonicalByActor(
   const targetAliases = await listSkillSlugAliasesForSkill(ctx, target._id);
   const targetAliasSlugs = new Set(targetAliases.map((alias) => alias.slug));
   const aliases = await listSkillSlugAliasesForSkill(ctx, source._id);
-  const sourceAlias = await getSkillSlugAliasBySlug(ctx, source.slug);
+  const sourceAlias = source.ownerPublisherId
+    ? await getSkillSlugAliasBySlugScoped(
+        ctx,
+        source.slug,
+        source.ownerPublisherId,
+        source.ownerUserId,
+      )
+    : await getSkillSlugAliasBySlug(ctx, source.slug);
   const addedSkillAliasSlugs = new Set<string>();
   const addedOwnerAliasSlugs = new Set<string>();
 
@@ -8139,10 +8181,9 @@ export const transferSkillOwnerForUserInternal = internalMutation({
 
     const slug = normalizeSkillSlug(args.slug);
     if (!slug) throw new ConvexError("Skill slug required");
-    const skill = await ctx.db
-      .query("skills")
-      .withIndex("by_slug", (q) => q.eq("slug", slug))
-      .unique();
+    const skill = await resolveUnambiguousSkillForLegacySlug(ctx, slug, {
+      includeSoftDeleted: true,
+    });
     if (!skill || skill.softDeletedAt) throw new ConvexError("Skill not found");
 
     await assertCanManageOwnedResource(ctx, {
@@ -8249,10 +8290,9 @@ export const reclaimSlug = mutation({
     const now = Date.now();
 
     // Check if slug is currently occupied by someone else
-    const existingSkill = await ctx.db
-      .query("skills")
-      .withIndex("by_slug", (q) => q.eq("slug", slug))
-      .unique();
+    const existingSkill = await resolveOptionalUnambiguousSkillForLegacySlug(ctx, slug, {
+      includeSoftDeleted: true,
+    });
 
     if (existingSkill) {
       if (existingSkill.ownerUserId === args.rightfulOwnerUserId) {
@@ -8322,10 +8362,9 @@ export const reclaimSlugInternal = internalMutation({
       throw new Error("Rightful owner not found");
     }
 
-    const existingSkill = await ctx.db
-      .query("skills")
-      .withIndex("by_slug", (q) => q.eq("slug", slug))
-      .unique();
+    const existingSkill = await resolveOptionalUnambiguousSkillForLegacySlug(ctx, slug, {
+      includeSoftDeleted: true,
+    });
 
     if (transferRootSlugOnly) {
       if (!existingSkill) {
@@ -8447,10 +8486,9 @@ export const reserveSlugInternal = internalMutation({
     }
 
     const now = Date.now();
-    const existingSkill = await ctx.db
-      .query("skills")
-      .withIndex("by_slug", (q) => q.eq("slug", slug))
-      .unique();
+    const existingSkill = await resolveOptionalUnambiguousSkillForLegacySlug(ctx, slug, {
+      includeSoftDeleted: true,
+    });
 
     if (existingSkill) {
       if (existingSkill.ownerUserId !== args.rightfulOwnerUserId) {
@@ -8528,10 +8566,7 @@ export const setDuplicate = mutation({
       return;
     }
 
-    const canonical = await ctx.db
-      .query("skills")
-      .withIndex("by_slug", (q) => q.eq("slug", canonicalSlug))
-      .unique();
+    const canonical = await resolveUnambiguousSkillForLegacySlug(ctx, canonicalSlug);
     if (!canonical) throw new Error("Canonical skill not found");
     if (canonical._id === skill._id) throw new Error("Cannot duplicate a skill onto itself");
 
@@ -8722,6 +8757,7 @@ export const insertVersion = internalMutation({
   args: {
     userId: v.id("users"),
     ownerPublisherId: v.optional(v.id("publishers")),
+    sourceOwnerPublisherId: v.optional(v.id("publishers")),
     // Explicit opt-in to owner migration. When an existing skill row already has
     // a different `ownerPublisherId` than the one supplied above, the mutation
     // only rewrites ownership if `migrateOwner === true`. Without this flag the
@@ -8825,20 +8861,49 @@ export const insertVersion = internalMutation({
     // upgrade can never re-own an org-owned skill into a personal namespace.
     const callerExplicitlySpecifiedOwner = args.ownerPublisherId !== undefined;
     const ownerPublisherId = args.ownerPublisherId ?? personalPublisher._id;
+    let ownerPublisher: Doc<"publishers"> = personalPublisher;
     if (ownerPublisherId !== personalPublisher._id) {
-      await requirePublisherRole(ctx, {
+      const roleCheck = await requirePublisherRole(ctx, {
         publisherId: ownerPublisherId,
         userId,
         allowed: ["publisher"],
       });
+      if (!roleCheck.publisher) throw new ConvexError("Publisher not found");
+      ownerPublisher = roleCheck.publisher;
     }
 
     const now = Date.now();
 
-    let skill = await ctx.db
-      .query("skills")
-      .withIndex("by_slug", (q) => q.eq("slug", normalizedSlug))
-      .unique();
+    let skill = await getSkillBySlugForPublisher(ctx, normalizedSlug, ownerPublisher);
+    if (!skill && !callerExplicitlySpecifiedOwner) {
+      // Older clients do not send an owner namespace. Keep the narrow legacy
+      // duplicate-auth repair path for pre-publisher personal rows, but do not
+      // use global slug matches to block unrelated owners from publishing the
+      // same slug in their own namespace.
+      skill = await resolveLegacyPersonalSkillForSameGitHubOwner(ctx, normalizedSlug, userId);
+    }
+    if (!skill && callerExplicitlySpecifiedOwner && args.migrateOwner === true) {
+      if (args.sourceOwnerPublisherId) {
+        const sourcePublisher = await ctx.db.get(args.sourceOwnerPublisherId);
+        if (!sourcePublisher) throw new ConvexError("Source publisher not found");
+        skill = await getSkillBySlugForPublisher(ctx, normalizedSlug, sourcePublisher);
+        if (!skill) {
+          throw new ConvexError(
+            `Source owner @${sourcePublisher.handle} does not have skill "${normalizedSlug}".`,
+          );
+        }
+      } else {
+        const resolved = await resolveLegacySkillBySlugOrAlias(ctx, normalizedSlug, {
+          includeSoftDeleted: true,
+        });
+        if (resolved.ambiguous) {
+          throw new ConvexError(
+            "Slug is used by multiple publishers. Publish with the source owner namespace instead.",
+          );
+        }
+        skill = resolved.skill;
+      }
+    }
 
     if (skill && skill.softDeletedAt && skill.ownerUserId !== userId) {
       const unpublishedReservationExpiresAt = getUnpublishedSlugReservationExpiresAt(skill);
@@ -8863,7 +8928,12 @@ export const insertVersion = internalMutation({
     const slug = skill ? normalizedSlug : normalizeSkillSlugForWrite(args.slug);
 
     if (!skill) {
-      const alias = await getSkillSlugAliasBySlug(ctx, slug);
+      const alias = await getSkillSlugAliasBySlugScoped(
+        ctx,
+        slug,
+        ownerPublisherId,
+        ownerPublisher.kind === "user" ? ownerPublisher.linkedUserId : undefined,
+      );
       if (alias) {
         const aliasedSkill = await ctx.db.get(alias.skillId);
         const owner = aliasedSkill
@@ -9140,10 +9210,9 @@ export const insertVersion = internalMutation({
         | undefined;
 
       if (forkOfSlug) {
-        const upstream = await ctx.db
-          .query("skills")
-          .withIndex("by_slug", (q) => q.eq("slug", forkOfSlug))
-          .unique();
+        const upstream = await resolveUnambiguousSkillForLegacySlug(ctx, forkOfSlug, {
+          notFoundMessage: "Upstream skill not found",
+        });
         if (!upstream || upstream.softDeletedAt) throw new Error("Upstream skill not found");
         canonicalSkillId = upstream.canonicalSkillId ?? upstream._id;
         forkOf = {
@@ -9479,10 +9548,9 @@ export const setSkillSoftDeletedInternal = internalMutation({
     const slug = args.slug.trim().toLowerCase();
     if (!slug) throw new Error("Slug required");
 
-    const skill = await ctx.db
-      .query("skills")
-      .withIndex("by_slug", (q) => q.eq("slug", slug))
-      .unique();
+    const skill = await resolveUnambiguousSkillForLegacySlug(ctx, slug, {
+      includeSoftDeleted: true,
+    });
     if (!skill) throw new Error("Skill not found");
 
     const isModeratorOrAdmin = user.role === "admin" || user.role === "moderator";
@@ -9698,10 +9766,7 @@ export const hideSkillForSecurityRedactionInternal = internalMutation({
     const slug = args.slug.trim().toLowerCase();
     if (!slug) throw new Error("Slug required");
 
-    const skill = await ctx.db
-      .query("skills")
-      .withIndex("by_slug", (q) => q.eq("slug", slug))
-      .unique();
+    const skill = await resolveUnambiguousSkillForLegacySlug(ctx, slug);
     if (!skill) throw new Error("Skill not found");
     if (skill.softDeletedAt) return { ok: true as const, changed: false as const };
 

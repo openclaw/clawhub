@@ -42,7 +42,11 @@ function normalizeRelativeSkillPath(rawPath: string) {
   return segments.length ? segments.join("/") : null;
 }
 
-export function resolveSkillReadmeHref(href: string, skillSlug: string) {
+export function resolveSkillReadmeHref(
+  href: string,
+  skillSlug: string,
+  ownerHandle?: string | null,
+) {
   const safeHref = defaultUrlTransform(href);
   if (!safeHref) return "";
 
@@ -53,7 +57,10 @@ export function resolveSkillReadmeHref(href: string, skillSlug: string) {
   const normalizedPath = normalizeRelativeSkillPath(path);
   if (!normalizedPath) return "";
 
+  const ownerQuery = ownerHandle?.trim()
+    ? `&ownerHandle=${encodeURIComponent(ownerHandle.trim().replace(/^@+/, ""))}`
+    : "";
   return `/api/v1/skills/${encodeURIComponent(skillSlug)}/file?path=${encodeURIComponent(
     normalizedPath,
-  )}${fragment}`;
+  )}${ownerQuery}${fragment}`;
 }

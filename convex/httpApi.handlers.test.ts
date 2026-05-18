@@ -40,6 +40,7 @@ describe("httpApi handlers", () => {
       {
         score: 1,
         skill: { slug: "a", displayName: "A", summary: null, updatedAt: 1 },
+        ownerHandle: "openclaw",
         version: null,
       },
     ]);
@@ -56,6 +57,7 @@ describe("httpApi handlers", () => {
     expect(response.status).toBe(200);
     const json = await response.json();
     expect(json.results[0].slug).toBe("a");
+    expect(json.results[0].ownerHandle).toBe("openclaw");
   });
 
   it("searchSkillsHttp forwards highlightedOnly", async () => {
@@ -489,13 +491,17 @@ describe("httpApi handlers", () => {
       body: JSON.stringify({
         slug: "cool-skill",
         displayName: "Cool Skill",
+        ownerHandle: "me",
         version: "1.2.3",
         changelog: "c",
         acceptLicenseTerms: true,
         files: [{ path: "SKILL.md", size: 1, storageId: "id", sha256: "a" }],
       }),
     });
-    const response = await __handlers.cliPublishHandler(makeCtx({}), request);
+    const response = await __handlers.cliPublishHandler(
+      makeCtx({ runMutation: vi.fn().mockResolvedValue({ publisherId: "publishers:me" }) }),
+      request,
+    );
     expect(response.status).toBe(400);
   });
 
@@ -512,17 +518,63 @@ describe("httpApi handlers", () => {
       body: JSON.stringify({
         slug: "cool-skill",
         displayName: "Cool Skill",
+        ownerHandle: "me",
         version: "1.2.3",
         changelog: "c",
         acceptLicenseTerms: true,
         files: [{ path: "SKILL.md", size: 1, storageId: "id", sha256: "a" }],
       }),
     });
-    const response = await __handlers.cliPublishHandler(makeCtx({}), request);
+    const response = await __handlers.cliPublishHandler(
+      makeCtx({ runMutation: vi.fn().mockResolvedValue({ publisherId: "publishers:me" }) }),
+      request,
+    );
+    if (response.status !== 200) throw new Error(await response.text());
     expect(response.status).toBe(200);
     const json = await response.json();
     expect(json.ok).toBe(true);
     expect(json.skillId).toBe("s");
+  });
+
+  it("cliPublishHttp defaults omitted ownerHandle to personal publish scope", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: "user1" } as never);
+    vi.mocked(publishVersionForUser).mockResolvedValueOnce({
+      skillId: "s",
+      versionId: "v",
+      embeddingId: "e",
+    } as never);
+    const runMutation = vi.fn();
+    const request = new Request("https://x/api/cli/publish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        slug: "cool-skill",
+        displayName: "Cool Skill",
+        version: "1.2.3",
+        changelog: "c",
+        acceptLicenseTerms: true,
+        migrateOwner: true,
+        sourceOwnerHandle: "org",
+        files: [{ path: "SKILL.md", size: 1, storageId: "id", sha256: "a" }],
+      }),
+    });
+    const response = await __handlers.cliPublishHandler(makeCtx({ runMutation }), request);
+    if (response.status !== 200) throw new Error(await response.text());
+    expect(response.status).toBe(200);
+    expect(runMutation).not.toHaveBeenCalled();
+    expect(publishVersionForUser).toHaveBeenCalledWith(
+      expect.anything(),
+      "user1",
+      expect.not.objectContaining({ ownerHandle: expect.anything() }),
+      expect.not.objectContaining({ ownerPublisherId: expect.anything() }),
+    );
+    expect(vi.mocked(publishVersionForUser).mock.calls[0]?.[3]).not.toHaveProperty(
+      "ownerPublisherId",
+    );
+    expect(vi.mocked(publishVersionForUser).mock.calls[0]?.[3]).not.toHaveProperty(
+      "sourceOwnerPublisherId",
+    );
+    expect(vi.mocked(publishVersionForUser).mock.calls[0]?.[3]).not.toHaveProperty("migrateOwner");
   });
 
   it("cliPublishHttp rejects omitted license terms", async () => {
@@ -533,6 +585,7 @@ describe("httpApi handlers", () => {
       body: JSON.stringify({
         slug: "cool-skill",
         displayName: "Cool Skill",
+        ownerHandle: "me",
         version: "1.2.3",
         changelog: "c",
         files: [{ path: "SKILL.md", size: 1, storageId: "id", sha256: "a" }],
@@ -552,6 +605,7 @@ describe("httpApi handlers", () => {
       body: JSON.stringify({
         slug: "cool-skill",
         displayName: "Cool Skill",
+        ownerHandle: "me",
         version: "1.2.3",
         changelog: "c",
         acceptLicenseTerms: false,

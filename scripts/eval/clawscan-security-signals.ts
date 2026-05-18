@@ -26,7 +26,7 @@ import {
   getFrontmatterValue,
   parseClawdisMetadata,
   parseFrontmatter,
-} from "../../convex/lib/skills.ts";
+} from "../../convex/lib/skills";
 
 const HF_DATASET_ENV_VAR = "CLAWHUB_SECURITY_EVAL_HF_DATASET";
 const DEFAULT_HF_CONFIG = "default";

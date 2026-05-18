@@ -8,6 +8,7 @@ import {
   createUiModuleMocks,
   makeGlobalOpts,
 } from "../../../test/cliCommandTestKit.js";
+import type { SkillOrigin } from "../../skills.js";
 
 const mockIntro = vi.fn();
 const mockOutro = vi.fn();
@@ -84,7 +85,9 @@ const mockHashSkillZip = vi.fn((_zip?: Uint8Array) => ({
   fingerprint: "remote-fingerprint",
   files: [],
 }));
-const mockReadSkillOrigin = vi.fn(async (_folder?: string) => null);
+const mockReadSkillOrigin = vi.fn<(_folder?: string) => Promise<SkillOrigin | null>>(
+  async () => null,
+);
 vi.mock("../../skills.js", () => ({
   listTextFiles: (folder: string) => mockListTextFiles(folder),
   hashSkillFiles: (files: Array<{ relPath: string; bytes: Uint8Array }>) =>
@@ -147,6 +150,78 @@ describe("cmdSync", () => {
 
     const dryRunOutro = mockOutro.mock.calls.at(-1)?.[0];
     expect(String(dryRunOutro)).toMatch(/Dry run: would upload 2 skill/);
+  });
+
+  it("threads stored owner handles through sync resolution", async () => {
+    interactive = false;
+    const { findSkillFolders } = await import("../scanSkills.js");
+    mocked(findSkillFolders).mockImplementation(async (root: string) => {
+      if (!root.endsWith("/scan")) return [];
+      return [{ folder: "/scan/demo", slug: "demo", displayName: "Demo" }];
+    });
+    mockReadSkillOrigin.mockResolvedValue({
+      version: 1,
+      registry: "https://clawhub.ai",
+      slug: "demo",
+      ownerHandle: "openclaw",
+      installedVersion: "1.0.0",
+      installedAt: 123,
+      fingerprint: "local",
+    });
+    mockApiRequest.mockImplementation(async (_registry: string, args: { path: string }) => {
+      if (args.path === "/api/v1/whoami") return { user: { handle: "steipete" } };
+      if (args.path === "/api/cli/telemetry/sync") return { ok: true };
+      if (args.path.startsWith("/api/v1/resolve?")) {
+        const url = new URL(`https://x.test${args.path}`);
+        expect(url.searchParams.get("ownerHandle")).toBe("openclaw");
+        return { match: { version: "1.0.0" }, latestVersion: { version: "1.0.0" } };
+      }
+      throw new Error(`Unexpected apiRequest: ${args.path}`);
+    });
+
+    await cmdSync(makeOpts(), { root: ["/scan"], all: true, dryRun: true }, true);
+
+    expect(mockCmdPublish).not.toHaveBeenCalled();
+  });
+
+  it("preserves the stored owner handle when publishing sync updates", async () => {
+    interactive = false;
+    const { findSkillFolders } = await import("../scanSkills.js");
+    mocked(findSkillFolders).mockImplementation(async (root: string) => {
+      if (!root.endsWith("/scan")) return [];
+      return [{ folder: "/scan/demo", slug: "demo", displayName: "Demo" }];
+    });
+    mockReadSkillOrigin.mockResolvedValue({
+      version: 1,
+      registry: "https://clawhub.ai",
+      slug: "demo",
+      ownerHandle: "openclaw",
+      installedVersion: "1.0.0",
+      installedAt: 123,
+      fingerprint: "local",
+    });
+    mockApiRequest.mockImplementation(async (_registry: string, args: { path: string }) => {
+      if (args.path === "/api/v1/whoami") return { user: { handle: "steipete" } };
+      if (args.path === "/api/cli/telemetry/sync") return { ok: true };
+      if (args.path.startsWith("/api/v1/resolve?")) {
+        const url = new URL(`https://x.test${args.path}`);
+        expect(url.searchParams.get("ownerHandle")).toBe("openclaw");
+        return { match: null, latestVersion: { version: "1.0.0" } };
+      }
+      throw new Error(`Unexpected apiRequest: ${args.path}`);
+    });
+
+    await cmdSync(makeOpts(), { root: ["/scan"], all: true }, true);
+
+    expect(mockCmdPublish).toHaveBeenCalledWith(
+      expect.anything(),
+      "/scan/demo",
+      expect.objectContaining({
+        slug: "demo",
+        owner: "openclaw",
+        version: "1.0.1",
+      }),
+    );
   });
 
   it("prints bullet lists and selects all actionable by default", async () => {

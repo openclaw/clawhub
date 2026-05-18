@@ -31,6 +31,7 @@ type SkillDetailTabsProps = {
   latestFiles: SkillFile[];
   latestVersionId: Id<"skillVersions"> | null;
   skill: Doc<"skills">;
+  ownerHandle?: string | null;
   diffVersions: Doc<"skillVersions">[] | undefined;
   versions: Doc<"skillVersions">[] | undefined;
   nixPlugin: boolean;
@@ -49,6 +50,7 @@ export function SkillDetailTabs({
   latestFiles,
   latestVersionId,
   skill,
+  ownerHandle,
   diffVersions,
   versions,
   nixPlugin,
@@ -143,7 +145,7 @@ export function SkillDetailTabs({
                 rehypePlugins={REHYPE_PLUGINS}
                 urlTransform={(url, key) =>
                   key === "href"
-                    ? resolveSkillReadmeHref(url, skill.slug)
+                    ? resolveSkillReadmeHref(url, skill.slug, ownerHandle)
                     : defaultUrlTransform(url)
                 }
               >
@@ -180,6 +182,7 @@ export function SkillDetailTabs({
           versions={versions}
           nixPlugin={nixPlugin}
           skillSlug={skill.slug}
+          ownerHandle={ownerHandle}
           suppressScanResults={suppressVersionScanResults}
           suppressedMessage={scanResultsSuppressedMessage}
         />

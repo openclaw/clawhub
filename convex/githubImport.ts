@@ -125,6 +125,7 @@ export const importGitHubSkill = action({
     candidatePath: v.string(),
     selectedPaths: v.array(v.string()),
     slug: v.optional(v.string()),
+    ownerHandle: v.string(),
     displayName: v.optional(v.string()),
     version: v.optional(v.string()),
     tags: v.optional(v.array(v.string())),
@@ -216,28 +217,41 @@ export const importGitHubSkill = action({
     const version = (args.version ?? "").trim();
 
     if (!slugBase) throw new ConvexError("Slug required");
+    const ownerHandle = args.ownerHandle.trim().replace(/^@+/, "");
+    if (!ownerHandle) throw new ConvexError("Owner is required");
     if (!displayName) throw new ConvexError("Display name required");
     if (!version || !semver.valid(version)) throw new ConvexError("Version must be valid semver");
 
+    const target = (await ctx.runMutation(internal.publishers.resolvePublishTargetForUserInternal, {
+      actorUserId: userId,
+      ownerHandle,
+      minimumRole: "publisher",
+    })) as { publisherId: Id<"publishers"> };
+
     let result: Awaited<ReturnType<typeof publishVersionForUser>>;
     try {
-      result = await publishVersionForUser(ctx, userId, {
-        slug: slugBase,
-        displayName,
-        version,
-        changelog: "",
-        tags,
-        files: storedFiles,
-        source: {
-          kind: "github",
-          url: resolved.originalUrl,
-          repo: `${resolved.owner}/${resolved.repo}`,
-          ref: resolved.ref,
-          commit: resolved.commit,
-          path: candidate.path,
-          importedAt: Date.now(),
+      result = await publishVersionForUser(
+        ctx,
+        userId,
+        {
+          slug: slugBase,
+          displayName,
+          version,
+          changelog: "",
+          tags,
+          files: storedFiles,
+          source: {
+            kind: "github",
+            url: resolved.originalUrl,
+            repo: `${resolved.owner}/${resolved.repo}`,
+            ref: resolved.ref,
+            commit: resolved.commit,
+            path: candidate.path,
+            importedAt: Date.now(),
+          },
         },
-      });
+        { ownerPublisherId: target.publisherId },
+      );
     } catch (error) {
       throw new ConvexError(buildPublishFailureMessage(error));
     }

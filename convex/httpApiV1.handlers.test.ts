@@ -1,7 +1,7 @@
 /* @vitest-environment node */
 import { gzipSync, unzipSync } from "fflate";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { internal } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import { RATE_LIMITS } from "./lib/httpRateLimit";
 
 vi.mock("@convex-dev/auth/server", () => ({
@@ -192,7 +192,11 @@ beforeEach(() => {
 describe("httpApiV1 handlers", () => {
   it("search returns empty results for blank query", async () => {
     const runAction = vi.fn();
-    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      if (args.ownerHandle === "me") return { publisherId: "publishers:me" };
+      return okRate();
+    });
     const response = await __handlers.searchSkillsV1Handler(
       makeCtx({ runAction, runMutation }),
       new Request("https://example.com/api/v1/search?q=%20%20"),
@@ -207,7 +211,11 @@ describe("httpApiV1 handlers", () => {
   it("users/restore forbids non-admin api tokens", async () => {
     const runQuery = vi.fn();
     const runAction = vi.fn();
-    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      if (args.ownerHandle === "me") return { publisherId: "publishers:me" };
+      return okRate();
+    });
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:actor",
       user: { _id: "users:actor", role: "user" },
@@ -264,7 +272,11 @@ describe("httpApiV1 handlers", () => {
   it("users/reclaim forbids non-admin api tokens", async () => {
     const runQuery = vi.fn();
     const runAction = vi.fn();
-    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      if (args.ownerHandle === "me") return { publisherId: "publishers:me" };
+      return okRate();
+    });
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:actor",
       user: { _id: "users:actor", role: "user" },
@@ -438,6 +450,7 @@ describe("httpApiV1 handlers", () => {
       {
         score: 1,
         skill: { slug: "a", displayName: "A", summary: null, updatedAt: 1 },
+        ownerHandle: "openclaw",
         version: { version: "1.0.0" },
       },
     ]);
@@ -454,6 +467,9 @@ describe("httpApiV1 handlers", () => {
       limit: 5,
       highlightedOnly: true,
       nonSuspiciousOnly: undefined,
+    });
+    expect(await response.json()).toMatchObject({
+      results: [{ slug: "a", ownerHandle: "openclaw" }],
     });
   });
 
@@ -2309,6 +2325,54 @@ describe("httpApiV1 handlers", () => {
     expect(response.headers.get("X-Content-SHA256")).toBe("abcd");
   });
 
+  it("looks up raw files in the requested owner namespace", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "demo",
+            displayName: "Demo",
+            tags: {},
+            latestVersionId: "skillVersions:1",
+          },
+          latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
+          owner: { handle: "clawkit" },
+        };
+      }
+      if ("versionId" in args) {
+        return {
+          version: "1.0.0",
+          files: [
+            {
+              path: "SKILL.md",
+              size: 5,
+              storageId: "storage:1",
+              sha256: "abcd",
+              contentType: "text/plain",
+            },
+          ],
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const storage = {
+      get: vi.fn().mockResolvedValue(new Blob(["hello"], { type: "text/plain" })),
+    };
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation, storage }),
+      new Request("https://example.com/api/v1/skills/demo/file?path=SKILL.md&ownerHandle=clawkit"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runQuery).toHaveBeenCalledWith(
+      api.skills.getBySlug,
+      expect.objectContaining({ slug: "demo", ownerHandle: "clawkit" }),
+    );
+  });
+
   it("returns 413 when raw file too large", async () => {
     const internalVersion = {
       version: "1.0.0",
@@ -2370,9 +2434,61 @@ describe("httpApiV1 handlers", () => {
     const body = JSON.stringify({
       slug: "demo",
       displayName: "Demo",
+      ownerHandle: "me",
       version: "1.0.0",
       changelog: "c",
       acceptLicenseTerms: true,
+      files: [
+        {
+          path: "SKILL.md",
+          size: 1,
+          storageId: "storage:1",
+          sha256: "abc",
+          contentType: "text/plain",
+        },
+      ],
+    });
+    runMutation.mockImplementation(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      if (args.ownerHandle === "me") return { publisherId: "publishers:me" };
+      return okRate();
+    });
+    const response = await __handlers.publishSkillV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/skills", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer clh_test" },
+        body,
+      }),
+    );
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.ok).toBe(true);
+    expect(publishVersionForUser).toHaveBeenCalled();
+  });
+
+  it("publish json defaults omitted ownerHandle to personal publish scope", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({
+      userId: "users:1",
+      user: { handle: "p" },
+    } as never);
+    vi.mocked(publishVersionForUser).mockResolvedValueOnce({
+      skillId: "s",
+      versionId: "v",
+      embeddingId: "e",
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      throw new Error("owner resolution should not run for omitted ownerHandle");
+    });
+    const body = JSON.stringify({
+      slug: "demo",
+      displayName: "Demo",
+      version: "1.0.0",
+      changelog: "c",
+      acceptLicenseTerms: true,
+      migrateOwner: true,
+      sourceOwnerHandle: "org",
       files: [
         {
           path: "SKILL.md",
@@ -2391,10 +2507,23 @@ describe("httpApiV1 handlers", () => {
         body,
       }),
     );
+    if (response.status !== 200) {
+      throw new Error(await response.text());
+    }
     expect(response.status).toBe(200);
-    const json = await response.json();
-    expect(json.ok).toBe(true);
-    expect(publishVersionForUser).toHaveBeenCalled();
+    expect(publishVersionForUser).toHaveBeenCalledWith(
+      expect.anything(),
+      "users:1",
+      expect.not.objectContaining({ ownerHandle: expect.anything() }),
+      expect.not.objectContaining({ ownerPublisherId: expect.anything() }),
+    );
+    expect(vi.mocked(publishVersionForUser).mock.calls[0]?.[3]).not.toHaveProperty(
+      "ownerPublisherId",
+    );
+    expect(vi.mocked(publishVersionForUser).mock.calls[0]?.[3]).not.toHaveProperty(
+      "sourceOwnerPublisherId",
+    );
+    expect(vi.mocked(publishVersionForUser).mock.calls[0]?.[3]).not.toHaveProperty("migrateOwner");
   });
 
   it("publish json resolves requested owner publisher", async () => {
@@ -2503,6 +2632,7 @@ describe("httpApiV1 handlers", () => {
     const body = JSON.stringify({
       slug: "demo",
       displayName: "Demo",
+      ownerHandle: "me",
       version: "1.0.0",
       changelog: "c",
       files: [
@@ -2538,13 +2668,18 @@ describe("httpApiV1 handlers", () => {
       versionId: "v",
       embeddingId: "e",
     } as never);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      if (args.ownerHandle === "me") return { publisherId: "publishers:me" };
+      return okRate();
+    });
     const form = new FormData();
     form.set(
       "payload",
       JSON.stringify({
         slug: "demo",
         displayName: "Demo",
+        ownerHandle: "me",
         version: "1.0.0",
         changelog: "",
         acceptLicenseTerms: true,
@@ -2617,13 +2752,18 @@ describe("httpApiV1 handlers", () => {
       userId: "users:1",
       user: { handle: "p" },
     } as never);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      if (args.ownerHandle === "me") return { publisherId: "publishers:me" };
+      return okRate();
+    });
     const form = new FormData();
     form.set(
       "payload",
       JSON.stringify({
         slug: "demo",
         displayName: "Demo",
+        ownerHandle: "me",
         version: "1.0.0",
         changelog: "",
         tags: ["latest"],
@@ -2648,10 +2788,15 @@ describe("httpApiV1 handlers", () => {
       userId: "users:1",
       user: { handle: "p" },
     } as never);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      if (args.ownerHandle === "me") return { publisherId: "publishers:me" };
+      return okRate();
+    });
     const body = JSON.stringify({
       slug: "demo",
       displayName: "Demo",
+      ownerHandle: "me",
       version: "1.0.0",
       changelog: "c",
       acceptLicenseTerms: false,
@@ -2695,6 +2840,7 @@ describe("httpApiV1 handlers", () => {
       JSON.stringify({
         slug: "demo",
         displayName: "Demo",
+        ownerHandle: "me",
         version: "1.0.0",
         changelog: "",
         acceptLicenseTerms: true,
@@ -4057,7 +4203,7 @@ describe("httpApiV1 handlers", () => {
 
     expect(response.status).toBe(307);
     expect(response.headers.get("Location")).toBe(
-      "https://example.com/api/v1/download?slug=demo&version=1.0.0",
+      "https://example.com/api/v1/download?slug=demo&ownerHandle=steipete&version=1.0.0",
     );
   });
 

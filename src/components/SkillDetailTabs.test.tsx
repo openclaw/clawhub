@@ -29,6 +29,29 @@ function renderReadme(readmeContent: string) {
   );
 }
 
+function renderReadmeForOwner(readmeContent: string) {
+  return render(
+    <SkillDetailTabs
+      activeTab="readme"
+      setActiveTab={vi.fn()}
+      readmeContent={readmeContent}
+      readmeError={null}
+      latestFiles={[]}
+      latestVersionId={null}
+      skill={{ slug: "api-gateway" } as Doc<"skills">}
+      ownerHandle="clawkit"
+      onCompareIntent={vi.fn()}
+      diffVersions={undefined}
+      versions={undefined}
+      nixPlugin={false}
+      suppressVersionScanResults={false}
+      scanResultsSuppressedMessage={null}
+      clawdis={undefined}
+      osLabels={[]}
+    />,
+  );
+}
+
 describe("SkillDetailTabs README links", () => {
   it("renders files and version history tabs before install metadata tabs", () => {
     renderReadme("# API Gateway");
@@ -61,6 +84,52 @@ describe("SkillDetailTabs README links", () => {
       (link) => link.textContent === "Traversal",
     );
     expect(traversal?.getAttribute("href")).toBe("");
+  });
+
+  it("keeps relative README links in the viewed owner namespace", () => {
+    renderReadmeForOwner("[Usage](docs/Usage.md)");
+
+    expect(screen.getByRole("link", { name: "Usage" }).getAttribute("href")).toBe(
+      "/api/v1/skills/api-gateway/file?path=docs%2FUsage.md&ownerHandle=clawkit",
+    );
+  });
+
+  it("keeps version download links in the viewed owner namespace", () => {
+    render(
+      <SkillDetailTabs
+        activeTab="versions"
+        setActiveTab={vi.fn()}
+        readmeContent="# API Gateway"
+        readmeError={null}
+        latestFiles={[]}
+        latestVersionId={null}
+        skill={{ slug: "api-gateway" } as Doc<"skills">}
+        ownerHandle="clawkit"
+        onCompareIntent={vi.fn()}
+        diffVersions={undefined}
+        versions={[
+          {
+            _id: "skillVersions:1",
+            _creationTime: 1,
+            skillId: "skills:1",
+            version: "1.0.0",
+            changelog: "Initial release",
+            files: [],
+            createdBy: "users:owner",
+            createdAt: 1,
+          } as unknown as Doc<"skillVersions">,
+        ]}
+        nixPlugin={false}
+        suppressVersionScanResults={false}
+        scanResultsSuppressedMessage={null}
+        clawdis={undefined}
+        osLabels={[]}
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: "Zip" }).getAttribute("href")).toBe(
+      "https://clawhub.ai/api/v1/download?slug=api-gateway&ownerHandle=clawkit&version=1.0.0",
+    );
   });
 
   it("adds Clawdis metadata to the existing skill detail tabs", () => {

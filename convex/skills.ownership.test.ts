@@ -6,9 +6,11 @@ vi.mock("@convex-dev/auth/server", () => ({
 }));
 
 import {
+  getSkillForPublishPreflightInternal,
   getSkillBySlugInternal,
   mergeOwnedSkillIntoCanonicalInternal,
   renameOwnedSkillInternal,
+  resolveVersionByHash,
   transferSkillOwnerForUserInternal,
 } from "./skills";
 
@@ -18,6 +20,22 @@ type WrappedHandler<TArgs, TResult = unknown> = {
 
 const getSkillBySlugInternalHandler = (
   getSkillBySlugInternal as unknown as WrappedHandler<{ slug: string }>
+)._handler;
+const getSkillForPublishPreflightInternalHandler = (
+  getSkillForPublishPreflightInternal as unknown as WrappedHandler<{
+    userId: string;
+    slug: string;
+    ownerPublisherId?: string;
+    sourceOwnerPublisherId?: string;
+    migrateOwner?: boolean;
+  }>
+)._handler;
+const resolveVersionByHashHandler = (
+  resolveVersionByHash as unknown as WrappedHandler<{
+    slug: string;
+    hash: string;
+    ownerHandle?: string;
+  }>
 )._handler;
 const mergeOwnedSkillIntoCanonicalInternalHandler = (
   mergeOwnedSkillIntoCanonicalInternal as unknown as WrappedHandler<{
@@ -52,6 +70,103 @@ function chainEq(constraints: Record<string, unknown>) {
 }
 
 describe("skills ownership", () => {
+  it("resolves publish preflight by owner namespace instead of global slug", async () => {
+    const constraintsByIndex: Array<{
+      table: string;
+      index: string;
+      constraints: Record<string, unknown>;
+    }> = [];
+
+    const result = await getSkillForPublishPreflightInternalHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "users:caller") {
+              return {
+                _id: "users:caller",
+                handle: "caller",
+                personalPublisherId: "publishers:personal",
+                deletedAt: undefined,
+                deactivatedAt: undefined,
+              };
+            }
+            if (id === "publishers:personal") {
+              return {
+                _id: "publishers:personal",
+                kind: "user",
+                handle: "caller",
+                linkedUserId: "users:caller",
+                deletedAt: undefined,
+                deactivatedAt: undefined,
+              };
+            }
+            if (id === "publishers:org") {
+              return {
+                _id: "publishers:org",
+                kind: "org",
+                handle: "team",
+                deletedAt: undefined,
+                deactivatedAt: undefined,
+              };
+            }
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table !== "skills") throw new Error(`unexpected table ${table}`);
+            return {
+              withIndex: (
+                index: string,
+                build: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+              ) => {
+                if (index === "by_slug") {
+                  throw new Error("publish preflight must not use global by_slug");
+                }
+                const constraints: Record<string, unknown> = {};
+                const q = chainEq(constraints);
+                build(q);
+                constraintsByIndex.push({ table, index, constraints });
+                return {
+                  unique: async () =>
+                    index === "by_owner_publisher_slug" &&
+                    constraints.ownerPublisherId === "publishers:org" &&
+                    constraints.slug === "publish"
+                      ? {
+                          _id: "skills:orgPublish",
+                          slug: "publish",
+                          ownerUserId: "users:caller",
+                          ownerPublisherId: "publishers:org",
+                          summary: "Grandfathered reserved slug",
+                        }
+                      : null,
+                };
+              },
+            };
+          }),
+        },
+      } as never,
+      {
+        userId: "users:caller",
+        slug: "publish",
+        ownerPublisherId: "publishers:org",
+      } as never,
+    );
+
+    expect(result).toMatchObject({
+      _id: "skills:orgPublish",
+      ownerPublisherId: "publishers:org",
+    });
+    expect(constraintsByIndex).toEqual([
+      {
+        table: "skills",
+        index: "by_owner_publisher_slug",
+        constraints: {
+          ownerPublisherId: "publishers:org",
+          slug: "publish",
+        },
+      },
+    ]);
+  });
+
   it("resolves alias slugs to the live target skill", async () => {
     const result = await getSkillBySlugInternalHandler(
       {
@@ -74,6 +189,7 @@ describe("skills ownership", () => {
                 withIndex: (name: string) => {
                   if (name !== "by_slug") throw new Error(`unexpected skills index ${name}`);
                   return {
+                    take: async () => [],
                     unique: async () => null,
                   };
                 },
@@ -84,6 +200,13 @@ describe("skills ownership", () => {
                 withIndex: (name: string) => {
                   if (name !== "by_slug") throw new Error(`unexpected alias index ${name}`);
                   return {
+                    take: async () => [
+                      {
+                        _id: "skillSlugAliases:1",
+                        slug: "demo-old",
+                        skillId: "skills:target",
+                      },
+                    ],
                     unique: async () => ({
                       _id: "skillSlugAliases:1",
                       slug: "demo-old",
@@ -106,6 +229,203 @@ describe("skills ownership", () => {
         slug: "demo",
       }),
     );
+  });
+
+  it("prefers openclaw for legacy slug-only reads when duplicate visible skills exist", async () => {
+    const skills = [
+      {
+        _id: "skills:community",
+        slug: "demo",
+        ownerUserId: "users:community",
+        ownerPublisherId: "publishers:community",
+        softDeletedAt: undefined,
+      },
+      {
+        _id: "skills:openclaw",
+        slug: "demo",
+        ownerUserId: "users:openclaw",
+        ownerPublisherId: "publishers:openclaw",
+        softDeletedAt: undefined,
+      },
+    ];
+
+    const result = await getSkillBySlugInternalHandler(
+      {
+        db: {
+          normalizeId: vi.fn(() => null),
+          system: {},
+          get: vi.fn(async (id: string) => {
+            if (id === "publishers:community") {
+              return { _id: id, kind: "org", handle: "community" };
+            }
+            if (id === "publishers:openclaw") {
+              return { _id: id, kind: "org", handle: "openclaw" };
+            }
+            return skills.find((entry) => entry._id === id) ?? null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table === "skills") {
+              return {
+                withIndex: (name: string) => {
+                  if (name !== "by_slug") throw new Error(`unexpected skills index ${name}`);
+                  return {
+                    take: async () => skills,
+                    unique: async () => {
+                      throw new Error("unique should not be used for legacy duplicate reads");
+                    },
+                  };
+                },
+              };
+            }
+            throw new Error(`unexpected table ${table}`);
+          }),
+        },
+      } as never,
+      { slug: "demo" } as never,
+    );
+
+    expect(result).toEqual(expect.objectContaining({ _id: "skills:openclaw" }));
+  });
+
+  it("ignores soft-deleted duplicates before treating legacy slug-only reads as ambiguous", async () => {
+    const skills = [
+      {
+        _id: "skills:visible",
+        slug: "demo",
+        ownerUserId: "users:visible",
+        ownerPublisherId: "publishers:visible",
+        softDeletedAt: undefined,
+      },
+      {
+        _id: "skills:deleted",
+        slug: "demo",
+        ownerUserId: "users:deleted",
+        ownerPublisherId: "publishers:deleted",
+        softDeletedAt: 123,
+      },
+    ];
+
+    const result = await getSkillBySlugInternalHandler(
+      {
+        db: {
+          normalizeId: vi.fn(() => null),
+          system: {},
+          get: vi.fn(async (id: string) => skills.find((entry) => entry._id === id) ?? null),
+          query: vi.fn((table: string) => {
+            if (table === "skills") {
+              return {
+                withIndex: (name: string) => {
+                  if (name !== "by_slug") throw new Error(`unexpected skills index ${name}`);
+                  return {
+                    take: async () => skills,
+                    unique: async () => {
+                      throw new Error("unique should not be used for legacy duplicate reads");
+                    },
+                  };
+                },
+              };
+            }
+            throw new Error(`unexpected table ${table}`);
+          }),
+        },
+      } as never,
+      { slug: "demo" } as never,
+    );
+
+    expect(result).toEqual(expect.objectContaining({ _id: "skills:visible" }));
+  });
+
+  it("does not resolve owner-scoped public version metadata for soft-deleted skills", async () => {
+    const result = await resolveVersionByHashHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "publishers:openclaw") {
+              return {
+                _id: id,
+                kind: "org",
+                handle: "openclaw",
+                deletedAt: undefined,
+                deactivatedAt: undefined,
+              };
+            }
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table === "publishers") {
+              return {
+                withIndex: (
+                  name: string,
+                  build: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+                ) => {
+                  if (name !== "by_handle") throw new Error(`unexpected publishers index ${name}`);
+                  const constraints: Record<string, unknown> = {};
+                  build(chainEq(constraints));
+                  return {
+                    unique: async () =>
+                      constraints.handle === "openclaw"
+                        ? {
+                            _id: "publishers:openclaw",
+                            kind: "org",
+                            handle: "openclaw",
+                            deletedAt: undefined,
+                            deactivatedAt: undefined,
+                          }
+                        : null,
+                  };
+                },
+              };
+            }
+            if (table === "skillSlugAliases") {
+              return {
+                withIndex: (
+                  name: string,
+                  build: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+                ) => {
+                  if (name !== "by_owner_publisher_slug") {
+                    throw new Error(`unexpected aliases index ${name}`);
+                  }
+                  build(chainEq({}));
+                  return { unique: async () => null };
+                },
+              };
+            }
+            if (table !== "skills") {
+              throw new Error(`soft-deleted skill should stop before querying ${table}`);
+            }
+            return {
+              withIndex: (
+                name: string,
+                build: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+              ) => {
+                if (name !== "by_owner_publisher_slug") {
+                  throw new Error(`unexpected skills index ${name}`);
+                }
+                const constraints: Record<string, unknown> = {};
+                build(chainEq(constraints));
+                return {
+                  unique: async () => ({
+                    _id: "skills:deleted",
+                    slug: "demo",
+                    ownerUserId: "users:openclaw",
+                    ownerPublisherId: "publishers:openclaw",
+                    latestVersionId: "skillVersions:latest",
+                    softDeletedAt: 123,
+                  }),
+                };
+              },
+            };
+          }),
+        },
+      } as never,
+      {
+        slug: "demo",
+        ownerHandle: "openclaw",
+        hash: "a".repeat(64),
+      },
+    );
+
+    expect(result).toBeNull();
   });
 
   it("allows publisher admins to merge publisher-owned skills and preserves alias ownership", async () => {
@@ -178,6 +498,8 @@ describe("skills ownership", () => {
                   build(chainEq(constraints));
                   if (name === "by_slug") {
                     return {
+                      take: async () =>
+                        skills.filter((skill) => skill.slug === constraints.slug).slice(0, 2),
                       unique: async () =>
                         skills.find((skill) => skill.slug === constraints.slug) ?? null,
                     };
@@ -219,6 +541,8 @@ describe("skills ownership", () => {
                   }
                   if (name === "by_slug") {
                     return {
+                      take: async () =>
+                        aliases.filter((alias) => alias.slug === constraints.slug).slice(0, 2),
                       unique: async () =>
                         aliases.find((alias) => alias.slug === constraints.slug) ?? null,
                     };
@@ -229,6 +553,26 @@ describe("skills ownership", () => {
                         aliases.filter(
                           (alias) => alias.ownerPublisherId === constraints.ownerPublisherId,
                         ),
+                    };
+                  }
+                  if (name === "by_owner_publisher_slug") {
+                    return {
+                      unique: async () =>
+                        aliases.find(
+                          (alias) =>
+                            alias.ownerPublisherId === constraints.ownerPublisherId &&
+                            alias.slug === constraints.slug,
+                        ) ?? null,
+                    };
+                  }
+                  if (name === "by_owner_slug") {
+                    return {
+                      unique: async () =>
+                        aliases.find(
+                          (alias) =>
+                            alias.ownerUserId === constraints.ownerUserId &&
+                            alias.slug === constraints.slug,
+                        ) ?? null,
                     };
                   }
                   if (name === "by_owner") {
@@ -335,8 +679,12 @@ describe("skills ownership", () => {
                 withIndex: (name: string, build: (q: ReturnType<typeof chainEq>) => unknown) => {
                   const constraints: Record<string, unknown> = {};
                   build(chainEq(constraints));
+                  if (name === "by_owner_publisher_slug") {
+                    return { unique: async () => null };
+                  }
                   if (name !== "by_slug") throw new Error(`unexpected skills index ${name}`);
                   return {
+                    take: async () => (constraints.slug === "old-name" ? [skill] : []),
                     unique: async () => (constraints.slug === "old-name" ? skill : null),
                   };
                 },
@@ -362,7 +710,9 @@ describe("skills ownership", () => {
             if (table === "skillSlugAliases") {
               return {
                 withIndex: (name: string) => {
-                  if (name === "by_slug") return { unique: async () => null };
+                  if (name === "by_owner_publisher_slug") return { unique: async () => null };
+                  if (name === "by_owner_slug") return { unique: async () => null };
+                  if (name === "by_slug") return { take: async () => [], unique: async () => null };
                   if (name === "by_skill") return { collect: async () => [] };
                   if (name === "by_owner_publisher") return { take: async () => [] };
                   throw new Error(`unexpected skillSlugAliases index ${name}`);
@@ -458,7 +808,10 @@ describe("skills ownership", () => {
                   const constraints: Record<string, unknown> = {};
                   build(chainEq(constraints));
                   if (name !== "by_slug") throw new Error(`unexpected skills index ${name}`);
-                  return { unique: async () => (constraints.slug === "portable" ? skill : null) };
+                  return {
+                    take: async () => (constraints.slug === "portable" ? [skill] : []),
+                    unique: async () => (constraints.slug === "portable" ? skill : null),
+                  };
                 },
               };
             }
@@ -608,6 +961,8 @@ describe("skills ownership", () => {
                     build(chainEq(constraints));
                     if (name === "by_slug") {
                       return {
+                        take: async () =>
+                          skills.filter((skill) => skill.slug === constraints.slug).slice(0, 2),
                         unique: async () =>
                           skills.find((skill) => skill.slug === constraints.slug) ?? null,
                       };
@@ -632,6 +987,8 @@ describe("skills ownership", () => {
                     }
                     if (name === "by_slug") {
                       return {
+                        take: async () =>
+                          aliases.filter((alias) => alias.slug === constraints.slug).slice(0, 2),
                         unique: async () =>
                           aliases.find((alias) => alias.slug === constraints.slug) ?? null,
                       };
