@@ -78,6 +78,12 @@ function makeCtx(params: { skill: Record<string, unknown>; version?: Record<stri
   };
 }
 
+function findPatchForId(patch: ReturnType<typeof vi.fn>, id: string) {
+  return (patch.mock.calls as Array<[string, Record<string, unknown>]>).find(
+    ([patchedId]) => patchedId === id,
+  )?.[1];
+}
+
 describe("skills manual overrides", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -480,9 +486,7 @@ describe("skills manual overrides", () => {
       },
     });
 
-    const skillPatch = patch.mock.calls.find(([id]) => id === "skills:1")?.[1] as
-      | Record<string, unknown>
-      | undefined;
+    const skillPatch = findPatchForId(patch, "skills:1");
     expect(skillPatch).toEqual(
       expect.objectContaining({
         moderationEvaluatedAt: now,
@@ -534,9 +538,7 @@ describe("skills manual overrides", () => {
       },
     });
 
-    const skillPatch = patch.mock.calls.find(([id]) => id === "skills:1")?.[1] as
-      | Record<string, unknown>
-      | undefined;
+    const skillPatch = findPatchForId(patch, "skills:1");
     expect(skillPatch).toEqual(
       expect.objectContaining({
         moderationReason: "manual.override.clean",

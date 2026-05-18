@@ -50,15 +50,15 @@ Use when:
 
 Pick the smallest proof that matches the touched surface:
 
-| Touched surface | Usual proof |
-| --- | --- |
-| Formatting/lint/static repo health | `bun run ci:static` |
-| Unit-tested source behavior | focused `bunx vitest run ...`, then `bun run ci:unit` when PR-ready |
-| Convex code | read `convex/_generated/ai/guidelines.md` first; run focused tests and the deploy/typecheck path that covers the change |
-| Packages/CLI/mod tool | `bun run ci:packages` or the package-specific `verify` script |
-| Runtime/build/package surface | `bun run ci:types-build`, `bun run ci:e2e-http`, or the matching broader gate |
-| UI behavior | use `clawhub-ui-proof` with `proof:ui`; publish proof before final PR comments when needed |
-| Linux/CI-parity validation | use `crabbox`, normally through the repo scripts |
+| Touched surface                    | Usual proof                                                                                                             |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Formatting/lint/static repo health | `bun run ci:static`                                                                                                     |
+| Unit-tested source behavior        | focused `bunx vitest run ...`, then `bun run ci:unit` when PR-ready                                                     |
+| Convex code                        | read `convex/_generated/ai/guidelines.md` first; run focused tests and the deploy/typecheck path that covers the change |
+| Packages/CLI/mod tool              | `bun run ci:packages` or the package-specific `verify` script                                                           |
+| Runtime/build/package surface      | `bun run ci:types-build`, `bun run ci:e2e-http`, or the matching broader gate                                           |
+| UI behavior                        | use `clawhub-ui-proof` with `proof:ui`; publish proof before final PR comments when needed                              |
+| Linux/CI-parity validation         | use `crabbox`, normally through the repo scripts                                                                        |
 
 For Convex query or schema work, apply the repo's Convex rules: prefer indexes
 over `.filter()` scans, use cursor-based backfills for data shape changes, and
@@ -166,7 +166,7 @@ The helper:
 - writes only to stdout unless `--output` or `AUTOREVIEW_OUTPUT` is set
 - supports `--dry-run`, `--parallel-tests`, and commit refs
 - runs nested review with `--dangerously-bypass-approvals-and-sandbox --sandbox
-  danger-full-access` by default; use `--no-yolo` or `AUTOREVIEW_YOLO=0` to opt
+danger-full-access` by default; use `--no-yolo` or `AUTOREVIEW_YOLO=0` to opt
   out
 - prints `autoreview clean: no accepted/actionable findings reported` when the
   selected review command exits 0 and no accepted/actionable findings are

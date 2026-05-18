@@ -417,6 +417,7 @@ function applySkillManualOverrideToSkillPatch(params: {
   skill: Pick<Doc<"skills">, "manualOverride">;
   basePatch: SkillModerationPatch;
   now: number;
+  stripUpdatedAt?: boolean;
 }) {
   if (!params.skill.manualOverride) return params.basePatch;
   const patch = applyManualOverrideToSkillPatch({
@@ -424,8 +425,9 @@ function applySkillManualOverrideToSkillPatch(params: {
     override: params.skill.manualOverride,
     now: params.now,
   });
-  const { updatedAt: _updatedAt, ...scannerPatch } = patch;
-  return scannerPatch;
+  if (!params.stripUpdatedAt) return patch;
+  const { updatedAt: _updatedAt, ...timestampFreePatch } = patch;
+  return timestampFreePatch;
 }
 
 async function patchStructuredModerationFromVersion(
@@ -446,6 +448,7 @@ async function patchStructuredModerationFromVersion(
     skill,
     basePatch,
     now,
+    stripUpdatedAt: true,
   });
 
   const nextSkill = { ...skill, ...patch };
@@ -635,6 +638,7 @@ async function syncSkillModerationFromLatestVersion(
     skill,
     basePatch,
     now,
+    stripUpdatedAt: true,
   });
 
   const nextSkill = { ...skill, ...patch };
@@ -5935,6 +5939,7 @@ export const updateSkillVersionStaticScanInternal = internalMutation({
       skill,
       basePatch,
       now,
+      stripUpdatedAt: true,
     });
     const nextSkill = { ...skill, ...patch };
     await ctx.db.patch(skill._id, patch);
@@ -7011,6 +7016,7 @@ export const approveSkillByHashInternal = internalMutation({
         skill,
         basePatch,
         now,
+        stripUpdatedAt: true,
       });
       const nextSkill = { ...skill, ...patch };
       await ctx.db.patch(skill._id, patch);
@@ -7153,6 +7159,7 @@ export const escalateByVtInternal = internalMutation({
       skill,
       basePatch,
       now,
+      stripUpdatedAt: true,
     });
     const nextSkill = { ...skill, ...patch };
     await ctx.db.patch(skill._id, patch);
