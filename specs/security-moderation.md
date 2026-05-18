@@ -186,9 +186,9 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Manual unbans and autoban remediation schedule a best-effort account-restored
   email when the target user has an email address. The notice is sent through
   Resend from/reply-to `security@openclaw.org`, states that sign-in works again,
-  mentions restored eligible listings, and reminds the user that revoked API
-  tokens stay revoked. Email delivery failures must not block the unban or
-  remediation.
+  lists every restored skill/plugin listing identified during the review, and
+  reminds the user that revoked API tokens stay revoked. Email delivery failures
+  must not block the unban or remediation.
 - Optional ban reason is stored in `users.banReason` and audit logs.
 - Bans schedule a best-effort email notice when the target user has an email
   address. The notice is sent through Resend from/reply-to

@@ -73,6 +73,7 @@ const sendUnbanNotificationHandler = (
         restoredAt: number;
         to: string;
         handle?: string;
+        restoredListings?: Array<{ kind: "skill" | "plugin"; name: string }>;
         source: "manual" | "autoban_remediation";
       },
     ) => Promise<unknown>;
@@ -266,6 +267,21 @@ function makeBanCtx() {
       if (table === "soulComments") return { collect: vi.fn().mockResolvedValue(soulComments) };
       if (table === "skills") {
         return {
+          order: () => ({
+            paginate: vi.fn().mockResolvedValue({
+              page: [
+                {
+                  _id: "skills:wallet-sync",
+                  ownerUserId: "users:target",
+                  slug: "wallet-sync",
+                  softDeletedAt: 1_700_000_000_000,
+                  moderationReason: "user.banned",
+                },
+              ],
+              isDone: true,
+              continueCursor: null,
+            }),
+          }),
           unique: vi.fn().mockResolvedValue({
             _id: "skills:wallet-sync",
             ownerUserId: "users:target",
@@ -2142,6 +2158,7 @@ describe("users.unbanUserInternal", () => {
         restoredAt: 1_700_000_100_000,
         to: "target@example.com",
         handle: "target-user",
+        restoredListings: [{ kind: "skill", name: "target-user/wallet-sync" }],
         source: "manual",
       }),
     );
@@ -2318,6 +2335,10 @@ describe("users.sendUnbanNotificationInternal", () => {
       restoredAt: 1_700_000_100_000,
       to: "target@example.com",
       handle: "target-user",
+      restoredListings: [
+        { kind: "skill", name: "target-user/wallet-sync" },
+        { kind: "plugin", name: "@target/demo-plugin" },
+      ],
       source: "autoban_remediation",
     });
 
@@ -2347,10 +2368,16 @@ describe("users.sendUnbanNotificationInternal", () => {
       "Your ClawHub account has been restored after ClawHub security checks were reviewed again.",
     );
     expect(payload.text).toContain("Your ClawHub account can sign in again.");
+    expect(payload.text).toContain("Restored listings:");
+    expect(payload.text).toContain("Skill: target-user/wallet-sync");
+    expect(payload.text).toContain("Plugin: @target/demo-plugin");
+    expect(payload.text).not.toContain("Eligible published listings restored");
     expect(payload.text).toContain("Previously revoked API tokens stay revoked.");
     expect(payload.text).toContain("reply to this email");
     expect(payload.html).toContain("<strong>What this means right now:</strong>");
     expect(payload.html).toContain("Your ClawHub account can sign in again.");
+    expect(payload.html).toContain("Skill: target-user/wallet-sync");
+    expect(payload.html).toContain("Plugin: @target/demo-plugin");
   });
 });
 

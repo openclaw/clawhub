@@ -98,6 +98,11 @@ type BanNotificationArtifact = {
   name: string;
 };
 
+type RestoredListing = {
+  kind: BanNotificationArtifactKind;
+  name: string;
+};
+
 function getSecurityEmailAddress() {
   return process.env.CLAWHUB_SECURITY_EMAIL?.trim() || DEFAULT_SECURITY_EMAIL;
 }
@@ -178,8 +183,13 @@ function buildBanNotificationHtml(args: {
 </html>`;
 }
 
-function buildUnbanNotificationText(args: { handle?: string; source: UnbanNotificationSource }) {
+function buildUnbanNotificationText(args: {
+  handle?: string;
+  restoredListings?: RestoredListing[];
+  source: UnbanNotificationSource;
+}) {
   const greeting = args.handle ? `Hi ${args.handle},` : "Hi,";
+  const restoredListings = buildRestoredListingTextLines(args.restoredListings);
   const lines = [
     greeting,
     "",
@@ -187,7 +197,7 @@ function buildUnbanNotificationText(args: { handle?: string; source: UnbanNotifi
     "",
     "What this means right now:",
     "- Your ClawHub account can sign in again.",
-    "- Eligible published listings restored during the review are visible again.",
+    ...restoredListings,
     "- Previously revoked API tokens stay revoked. Create a new API token if you need CLI or API access.",
     "",
     "If you have questions, reply to this email and the ClawHub security team will review.",
@@ -198,8 +208,13 @@ function buildUnbanNotificationText(args: { handle?: string; source: UnbanNotifi
   return lines.join("\n");
 }
 
-function buildUnbanNotificationHtml(args: { handle?: string; source: UnbanNotificationSource }) {
+function buildUnbanNotificationHtml(args: {
+  handle?: string;
+  restoredListings?: RestoredListing[];
+  source: UnbanNotificationSource;
+}) {
   const securityEmail = getSecurityEmailAddress();
+  const restoredListings = buildRestoredListingHtmlItems(args.restoredListings);
   return `<!doctype html>
 <html>
   <body style="margin:0;padding:0;background:#ffffff;color:#202124;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:1.5;">
@@ -209,7 +224,7 @@ function buildUnbanNotificationHtml(args: { handle?: string; source: UnbanNotifi
       <p style="margin:0 0 8px;"><strong>What this means right now:</strong></p>
       <ul style="margin:0 0 16px 20px;padding:0;">
         <li>Your ClawHub account can sign in again.</li>
-        <li>Eligible published listings restored during the review are visible again.</li>
+        ${restoredListings}
         <li>Previously revoked API tokens stay revoked. Create a new API token if you need CLI or API access.</li>
       </ul>
       <p style="margin:0 0 16px;">If you have questions, reply to this email and the ClawHub security team will review.</p>
@@ -217,6 +232,35 @@ function buildUnbanNotificationHtml(args: { handle?: string; source: UnbanNotifi
     </div>
   </body>
 </html>`;
+}
+
+function buildRestoredListingTextLines(restoredListings: RestoredListing[] | undefined) {
+  if (!restoredListings?.length) {
+    return ["- Eligible published listings restored during the review are visible again."];
+  }
+  return [
+    "- Restored listings:",
+    ...restoredListings.map(
+      (listing) => `  - ${formatRestoredListingLabel(listing)}: ${listing.name}`,
+    ),
+  ];
+}
+
+function buildRestoredListingHtmlItems(restoredListings: RestoredListing[] | undefined) {
+  if (!restoredListings?.length) {
+    return "<li>Eligible published listings restored during the review are visible again.</li>";
+  }
+  const items = restoredListings
+    .map(
+      (listing) =>
+        `<li>${escapeHtml(formatRestoredListingLabel(listing))}: ${escapeHtml(listing.name)}</li>`,
+    )
+    .join("");
+  return `<li>Restored listings:<ul style="margin:4px 0 0 20px;padding:0;">${items}</ul></li>`;
+}
+
+function formatRestoredListingLabel(listing: RestoredListing) {
+  return listing.kind === "plugin" ? "Plugin" : "Skill";
 }
 
 function buildHtmlKeyValueRow(label: string, value: string) {
@@ -379,6 +423,7 @@ async function scheduleUnbanNotificationEmail(
   args: {
     userId: Id<"users">;
     restoredAt: number;
+    restoredListings?: RestoredListing[];
     target: Doc<"users">;
     source: UnbanNotificationSource;
   },
@@ -389,6 +434,7 @@ async function scheduleUnbanNotificationEmail(
   await ctx.scheduler.runAfter(0, internal.users.sendUnbanNotificationInternal, {
     userId: args.userId,
     restoredAt: args.restoredAt,
+    restoredListings: args.restoredListings,
     to,
     handle: args.target.handle ?? undefined,
     source: args.source,
@@ -462,6 +508,14 @@ export const sendUnbanNotificationInternal = internalAction({
     restoredAt: v.number(),
     to: v.string(),
     handle: v.optional(v.string()),
+    restoredListings: v.optional(
+      v.array(
+        v.object({
+          kind: v.union(v.literal("skill"), v.literal("plugin")),
+          name: v.string(),
+        }),
+      ),
+    ),
     source: v.union(v.literal("manual"), v.literal("autoban_remediation")),
   },
   handler: async (_ctx, args) => {
@@ -1472,6 +1526,12 @@ async function evaluateAutobanRemediationCandidate(
   }
 
   const now = Date.now();
+  const restoredListings = await listRestorableAutobanListings(
+    ctx,
+    args.target,
+    bannedAt,
+    triggers,
+  );
   await ctx.db.patch(args.target._id, {
     deletedAt: undefined,
     banReason: undefined,
@@ -1509,6 +1569,7 @@ async function evaluateAutobanRemediationCandidate(
   await scheduleUnbanNotificationEmail(ctx, {
     userId: args.target._id,
     restoredAt: now,
+    restoredListings,
     target: args.target,
     source: "autoban_remediation",
   });
@@ -1524,6 +1585,7 @@ async function evaluateAutobanRemediationCandidate(
       decision: "unbanned",
       restoredSkills,
       restoredPackages,
+      restoredListings,
     },
     createdAt: now,
   });
@@ -1537,6 +1599,7 @@ async function evaluateAutobanRemediationCandidate(
       source: "autoban.remediation",
       restoredSkills,
       restoredPackages,
+      restoredListings,
     },
     createdAt: now,
   });
@@ -1680,6 +1743,138 @@ async function countAutobanRemediationRestores(
   ]);
 
   return { skills, packages };
+}
+
+async function listRestorableManualUnbanListings(
+  ctx: MutationCtx,
+  target: Doc<"users">,
+  bannedAt: number,
+): Promise<RestoredListing[]> {
+  const listings: RestoredListing[] = [];
+  let cursor: string | null = null;
+  let isDone = false;
+
+  while (!isDone) {
+    const result = await ctx.db
+      .query("skills")
+      .withIndex("by_owner", (q) => q.eq("ownerUserId", target._id))
+      .order("desc")
+      .paginate({
+        cursor,
+        numItems: AUTOBAN_REMEDIATION_COUNT_PAGE_SIZE,
+      });
+    for (const skill of result.page) {
+      if (
+        !skill.softDeletedAt ||
+        skill.softDeletedAt !== bannedAt ||
+        skill.moderationReason !== "user.banned"
+      ) {
+        continue;
+      }
+      listings.push({
+        kind: "skill",
+        name: `${await resolveOwnerHandle(ctx, skill.ownerPublisherId, target)}/${skill.slug}`,
+      });
+    }
+    isDone = result.isDone;
+    cursor = result.continueCursor;
+  }
+
+  return listings;
+}
+
+async function listRestorableAutobanListings(
+  ctx: MutationCtx,
+  target: Doc<"users">,
+  bannedAt: number,
+  triggers: AutobanRemediationTrigger[] = [],
+): Promise<RestoredListing[]> {
+  const previewRestorableSkillIds = new Set(
+    triggers
+      .filter(
+        (trigger) =>
+          trigger.artifactKind === "skill" &&
+          trigger.artifactId &&
+          isResolvedNonMaliciousTrigger(trigger),
+      )
+      .map((trigger) => trigger.artifactId as Id<"skills">),
+  );
+  const [skills, packages] = await Promise.all([
+    listRestorableAutobanSkillListings(ctx, target, bannedAt, previewRestorableSkillIds),
+    listRestorableAutobanPackageListings(ctx, target, bannedAt),
+  ]);
+
+  return [...skills, ...packages];
+}
+
+async function listRestorableAutobanSkillListings(
+  ctx: MutationCtx,
+  target: Doc<"users">,
+  bannedAt: number,
+  previewRestorableSkillIds: Set<Id<"skills">>,
+): Promise<RestoredListing[]> {
+  const listings: RestoredListing[] = [];
+  let cursor: string | null = null;
+  let isDone = false;
+
+  while (!isDone) {
+    const result = await ctx.db
+      .query("skills")
+      .withIndex("by_owner", (q) => q.eq("ownerUserId", target._id))
+      .order("desc")
+      .paginate({
+        cursor,
+        numItems: AUTOBAN_REMEDIATION_COUNT_PAGE_SIZE,
+      });
+    for (const skill of result.page) {
+      if (
+        !(
+          isRestorableAutobanSkill(skill, bannedAt) ||
+          (skill.softDeletedAt === bannedAt && previewRestorableSkillIds.has(skill._id))
+        )
+      ) {
+        continue;
+      }
+      listings.push({
+        kind: "skill",
+        name: `${await resolveOwnerHandle(ctx, skill.ownerPublisherId, target)}/${skill.slug}`,
+      });
+    }
+    isDone = result.isDone;
+    cursor = result.continueCursor;
+  }
+
+  return listings;
+}
+
+async function listRestorableAutobanPackageListings(
+  ctx: MutationCtx,
+  target: Doc<"users">,
+  bannedAt: number,
+): Promise<RestoredListing[]> {
+  const listings: RestoredListing[] = [];
+  let cursor: string | null = null;
+  let isDone = false;
+
+  while (!isDone) {
+    const result = await ctx.db
+      .query("packages")
+      .withIndex("by_owner", (q) => q.eq("ownerUserId", target._id))
+      .order("desc")
+      .paginate({
+        cursor,
+        numItems: AUTOBAN_REMEDIATION_COUNT_PAGE_SIZE,
+      });
+    for (const pkg of result.page) {
+      if (pkg.softDeletedAt !== bannedAt || pkg.scanStatus === "malicious") continue;
+      if (!(await hasRestorableAutobanPackageRelease(ctx, pkg._id, bannedAt))) continue;
+      listings.push({ kind: "plugin", name: pkg.name });
+    }
+    isDone = result.isDone;
+    cursor = result.continueCursor;
+  }
+
+  return listings;
 }
 
 async function countRestorableAutobanSkills(
@@ -1977,6 +2172,7 @@ async function unbanUserWithActor(
     updatedAt: now,
   });
 
+  const restoredListings = await listRestorableManualUnbanListings(ctx, target, bannedAt);
   const restoreSkillsResult = (await ctx.runMutation(
     internal.skills.restoreOwnedSkillsForUnbanBatchInternal,
     {
@@ -1991,6 +2187,7 @@ async function unbanUserWithActor(
   await scheduleUnbanNotificationEmail(ctx, {
     userId: targetUserId,
     restoredAt: now,
+    restoredListings,
     target,
     source: "manual",
   });
@@ -2000,7 +2197,7 @@ async function unbanUserWithActor(
     action: "user.unban",
     targetType: "user",
     targetId: targetUserId,
-    metadata: { reason: reason || undefined, restoredSkills: restoredCount },
+    metadata: { reason: reason || undefined, restoredSkills: restoredCount, restoredListings },
     createdAt: now,
   });
 

@@ -540,7 +540,36 @@ describe("autoban remediation users", () => {
         return {
           withIndex: (name: string) => {
             if (name === "by_slug") return { unique: vi.fn(async () => triggerSkill) };
+            if (name === "by_owner") {
+              return {
+                order: () => ({
+                  paginate: vi.fn(async () => ({
+                    page: [triggerSkill],
+                    isDone: true,
+                    continueCursor: null,
+                  })),
+                }),
+              };
+            }
             throw new Error(`Unexpected skills index ${name}`);
+          },
+        };
+      }
+      if (table === "packages") {
+        return {
+          withIndex: (name: string) => {
+            if (name === "by_owner") {
+              return {
+                order: () => ({
+                  paginate: vi.fn(async () => ({
+                    page: [],
+                    isDone: true,
+                    continueCursor: null,
+                  })),
+                }),
+              };
+            }
+            throw new Error(`Unexpected packages index ${name}`);
           },
         };
       }
@@ -598,6 +627,7 @@ describe("autoban remediation users", () => {
         restoredAt: 1_700_000_100_000,
         to: "target@example.com",
         handle: "false-positive-owner",
+        restoredListings: [{ kind: "skill", name: "false-positive-owner/false-positive" }],
         source: "autoban_remediation",
       }),
     );
