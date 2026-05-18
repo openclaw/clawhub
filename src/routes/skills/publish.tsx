@@ -39,6 +39,16 @@ import {
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
+type PublisherMembership = {
+  publisher: {
+    _id: string;
+    handle: string;
+    displayName: string;
+    kind: "user" | "org";
+  };
+  role: "owner" | "admin" | "publisher";
+};
+
 export const Route = createFileRoute("/skills/publish")({
   validateSearch: (search) => ({
     updateSlug: typeof search.updateSlug === "string" ? search.updateSlug : undefined,
@@ -118,17 +128,10 @@ export function Upload() {
   const isSubmitting = status !== null;
   const [error, setError] = useState<string | null>(null);
   const publisherMemberships = useQuery(api.publishers.listMine) as
-    | Array<{
-        publisher: {
-          _id: string;
-          handle: string;
-          displayName: string;
-          kind: "user" | "org";
-        };
-        role: "owner" | "admin" | "publisher";
-      }>
+    | PublisherMembership[]
     | undefined;
   const [ownerHandle, setOwnerHandle] = useState(searchOwnerHandle ?? "");
+  const ownerTouchedRef = useRef(false);
   // Owner migration opt-in: when updating an existing skill under a different
   // publisher than its current owner, the backend requires an explicit
   // `migrateOwner: true` signal. We only send it when the user ticks this box,
@@ -247,22 +250,47 @@ export function Upload() {
   }, [existing, isSoulMode]);
 
   useEffect(() => {
-    if (ownerHandle) return;
+    if (isSoulMode) return;
+
     // In update mode, default the Owner selector to the skill's current owner
     // so the New Version flow is a same-owner republish by default and does
     // not require an ownership-migration opt-in for the common case.
-    const existingOwnerHandle = !isSoulMode ? existing?.owner?.handle : undefined;
-    if (existingOwnerHandle) {
-      setOwnerHandle(existingOwnerHandle);
+    const existingOwnerHandle = existing?.owner?.handle;
+    const memberships = publisherMemberships ?? [];
+    if (memberships.length === 0) {
+      if (!ownerHandle && existingOwnerHandle) {
+        setOwnerHandle(existingOwnerHandle);
+      }
       return;
     }
-    const personalPublisher = publisherMemberships?.find(
-      (entry) => entry.publisher.kind === "user",
+
+    const currentOwnerExists = ownerHandle
+      ? memberships.some((entry) => entry.publisher.handle === ownerHandle)
+      : false;
+    const existingOwner = existingOwnerHandle
+      ? memberships.find((entry) => entry.publisher.handle === existingOwnerHandle)
+      : undefined;
+    const shouldPreferExistingOwner = Boolean(
+      !ownerTouchedRef.current &&
+      updateSlug &&
+      existingOwner &&
+      ownerHandle !== existingOwner.publisher.handle,
     );
-    if (personalPublisher?.publisher.handle) {
-      setOwnerHandle(personalPublisher.publisher.handle);
-    }
-  }, [ownerHandle, publisherMemberships, existing, isSoulMode]);
+    if (currentOwnerExists && !shouldPreferExistingOwner) return;
+
+    const personalPublisher = memberships.find((entry) => entry.publisher.kind === "user");
+    const nextOwnerHandle =
+      existingOwner?.publisher.handle ??
+      personalPublisher?.publisher.handle ??
+      memberships[0]?.publisher.handle;
+    if (!nextOwnerHandle || nextOwnerHandle === ownerHandle) return;
+
+    // Convex subscriptions can replace the owner option list after the first
+    // render. Keep the controlled select value aligned so submit does not send
+    // a stale handle while the DOM displays the replacement option.
+    setOwnerHandle(nextOwnerHandle);
+    setConfirmMigrateOwner(false);
+  }, [ownerHandle, publisherMemberships, existing?.owner?.handle, updateSlug, isSoulMode]);
 
   useEffect(() => {
     if (changelogTouchedRef.current) return;
@@ -650,6 +678,7 @@ export function Upload() {
                     id="ownerHandle"
                     value={ownerHandle}
                     onChange={(event) => {
+                      ownerTouchedRef.current = true;
                       setOwnerHandle(event.target.value);
                       // Reset the migration confirmation any time the Owner
                       // selector changes; the user must re-acknowledge the move

@@ -455,6 +455,67 @@ describe("Upload route", () => {
     });
   });
 
+  it("reconciles the selected owner when publisher memberships change", async () => {
+    let memberships = [
+      {
+        publisher: {
+          _id: "publishers:local",
+          handle: "local",
+          displayName: "Local Owner",
+          kind: "user",
+        },
+        role: "owner",
+      },
+    ];
+    useQueryMock.mockImplementation((fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      const name = fn ? getFunctionName(fn as Parameters<typeof getFunctionName>[0]) : "";
+      if (name === "publishers:listMine") return memberships;
+      if (name === "skills:checkSlugAvailability") {
+        return {
+          available: true,
+          reason: "available",
+          message: null,
+          url: null,
+        };
+      }
+      return null;
+    });
+
+    const { rerender } = render(<Upload />);
+
+    await waitFor(() => {
+      expect((screen.getByLabelText("Owner") as HTMLSelectElement).value).toBe("local");
+    });
+
+    memberships = [
+      {
+        publisher: {
+          _id: "publishers:local-owner",
+          handle: "local-owner",
+          displayName: "Local Owner",
+          kind: "user",
+        },
+        role: "owner",
+      },
+    ];
+    rerender(<Upload />);
+
+    await waitFor(() => {
+      expect((screen.getByLabelText("Owner") as HTMLSelectElement).value).toBe("local-owner");
+    });
+
+    fireEvent.change(screen.getByPlaceholderText("skill-name"), {
+      target: { value: "owner-race" },
+    });
+    await waitFor(() => {
+      expect(useQueryMock).toHaveBeenCalledWith(expect.anything(), {
+        slug: "owner-race",
+        ownerHandle: "local-owner",
+      });
+    });
+  });
+
   it("renders the icon picker and forwards the selected lucide icon to publishVersion", async () => {
     generateUploadUrl.mockResolvedValue("https://upload.local");
     publishVersion.mockResolvedValue(undefined);
