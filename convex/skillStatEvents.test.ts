@@ -1,11 +1,86 @@
 /* @vitest-environment node */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("./functions", () => ({
+  internalAction: (def: { handler: unknown }) => ({ _handler: def.handler }),
+  internalMutation: (def: { handler: unknown }) => ({ _handler: def.handler }),
+  internalQuery: (def: { handler: unknown }) => ({ _handler: def.handler }),
+}));
+
+vi.mock("./_generated/api", () => ({
+  internal: {
+    skillStatEvents: {
+      processSkillStatEventsAction: Symbol("processSkillStatEventsAction"),
+      processSkillStatEventsInternal: Symbol("processSkillStatEventsInternal"),
+    },
+  },
+}));
+
+const { processSkillStatEventsInternal } = await import("./skillStatEvents");
+
+const processSkillStatEventsInternalHandler = (
+  processSkillStatEventsInternal as unknown as {
+    _handler: (ctx: unknown, args: { batchSize?: number }) => Promise<{ processed: number }>;
+  }
+)._handler;
 
 // Test the aggregateEvents function by importing and testing the module logic
 // Since aggregateEvents is not exported, we test the behavior indirectly through
 // the event processing contract
 
 describe("skill stat events - comment delta handling", () => {
+  it("marks queued star events processed without patching skill stats", async () => {
+    const starEvent = {
+      _id: "skillStatEvents:star",
+      skillId: "skills:1",
+      kind: "star",
+      occurredAt: 1000,
+      processedAt: undefined,
+    };
+    const skill = {
+      _id: "skills:1",
+      ownerUserId: "users:owner",
+      statsDownloads: 0,
+      statsStars: 0,
+      statsInstallsCurrent: 0,
+      statsInstallsAllTime: 0,
+      stats: {
+        downloads: 0,
+        stars: 0,
+        installsCurrent: 0,
+        installsAllTime: 0,
+        versions: 1,
+        comments: 0,
+      },
+    };
+    const patch = vi.fn();
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => (id === "skills:1" ? skill : null)),
+        patch,
+        query: vi.fn((table: string) => {
+          if (table !== "skillStatEvents") throw new Error(`unexpected table ${table}`);
+          return {
+            withIndex: () => ({
+              take: async () => [starEvent],
+            }),
+          };
+        }),
+      },
+      scheduler: { runAfter: vi.fn() },
+    };
+
+    await expect(processSkillStatEventsInternalHandler(ctx, { batchSize: 10 })).resolves.toEqual({
+      processed: 1,
+    });
+
+    expect(patch).toHaveBeenCalledTimes(1);
+    expect(patch).toHaveBeenCalledWith(
+      "skillStatEvents:star",
+      expect.objectContaining({ processedAt: expect.any(Number) }),
+    );
+  });
+
   it("aggregates comment and uncomment events into net deltas", () => {
     // Simulate the aggregation logic from processSkillStatEventsAction
     type EventKind =
@@ -45,10 +120,8 @@ describe("skill stat events - comment delta handling", () => {
           result.downloadEvents.push(event.occurredAt);
           break;
         case "star":
-          result.stars += 1;
           break;
         case "unstar":
-          result.stars -= 1;
           break;
         case "comment":
           result.comments += 1;
@@ -70,7 +143,7 @@ describe("skill stat events - comment delta handling", () => {
       }
     }
 
-    expect(result.stars).toBe(1);
+    expect(result.stars).toBe(0);
     expect(result.comments).toBe(1); // 2 comments - 1 uncomment
     expect(result.downloads).toBe(1);
     expect(result.downloadEvents).toEqual([5000]);
