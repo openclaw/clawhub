@@ -22,7 +22,12 @@ import { DEFAULT_REGISTRY, DEFAULT_SITE } from "../../clawhub/src/cli/registry.j
 import type { GlobalOpts } from "../../clawhub/src/cli/types.js";
 import { fail } from "../../clawhub/src/cli/ui.js";
 import { getModeratorCliBuildLabel, getModeratorCliVersion } from "./buildInfo.js";
-import { cmdBanUser, cmdSetRole, cmdUnbanUser } from "./commands/moderation.js";
+import {
+  cmdBanUser,
+  cmdRemediateAutobans,
+  cmdSetRole,
+  cmdUnbanUser,
+} from "./commands/moderation.js";
 import {
   cmdBackfillPackageArtifacts,
   cmdDeletePackageTrustedPublisher,
@@ -224,6 +229,22 @@ users
   .action(async (handleOrId, role, options) => {
     const opts = await resolveGlobalOpts();
     await cmdSetRole(opts, handleOrId, role, options, isInputAllowed());
+  });
+
+users
+  .command("remediate-autobans")
+  .description("Dry-run or apply malware autoban remediation")
+  .option("--apply", "Write changes; defaults to dry-run")
+  .option("--dry-run", "Plan only (default)")
+  .option("--user <handleOrId>", "Limit to one user handle or id")
+  .option("--id", "Treat --user as a user id")
+  .option("--since <date>", "Only scan autobans at or after this date")
+  .option("--limit <n>", "Maximum users to scan")
+  .option("--reason <reason>", "Audit reason for apply")
+  .option("--json", "Output JSON")
+  .action(async (options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdRemediateAutobans(opts, options, isInputAllowed());
   });
 
 program

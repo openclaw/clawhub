@@ -162,6 +162,11 @@ const MAX_STAFF_AUDIT_LOG_LIMIT = 50;
 const USER_MODERATION_REASON = "user.moderation";
 const SKILL_CATALOG_CURSOR_PREFIX = "skillcat:";
 const SKILL_CAPABILITY_TAG_SET = new Set<string>(SKILL_CAPABILITY_TAGS);
+const skillAutobanRemediationInternalRefs = internal as unknown as {
+  skills: {
+    restoreOwnedSkillsForAutobanRemediationBatchInternal: never;
+  };
+};
 
 const vtEngineStatsValidator = v.object({
   malicious: v.optional(v.number()),
@@ -455,6 +460,80 @@ async function patchStructuredModerationFromVersion(
   await ctx.db.patch(skill._id, patch);
   await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
 }
+
+export const recomputeLatestSkillModerationInternal = internalMutation({
+  args: { skillId: v.id("skills") },
+  handler: async (ctx, args) => {
+    const skill = await ctx.db.get(args.skillId);
+    if (!skill) return { ok: true as const, skipped: "missing" as const };
+    if (shouldPreserveAutobanRemediationModerationLock(skill)) {
+      return { ok: true as const, skipped: "existing_lock" as const };
+    }
+    if (!skill.latestVersionId) return { ok: true as const, skipped: "missing_latest" as const };
+
+    const version = await ctx.db.get(skill.latestVersionId);
+    if (!version) return { ok: true as const, skipped: "missing_latest" as const };
+
+    const now = Date.now();
+    const owner = skill.ownerUserId ? await ctx.db.get(skill.ownerUserId) : null;
+    const basePatch = buildScannerModerationPatchFromVersion({
+      owner,
+      version,
+      now,
+    });
+    const patch = applySkillManualOverrideToSkillPatch({
+      skill,
+      basePatch,
+      now,
+      stripUpdatedAt: true,
+    });
+    const nextSkill = { ...skill, ...patch };
+    await ctx.db.patch(skill._id, patch);
+    await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
+
+    return {
+      ok: true as const,
+      skillId: skill._id,
+      slug: skill.slug,
+      verdict: patch.moderationVerdict ?? "clean",
+      reason: patch.moderationReason,
+      reasonCodes: patch.moderationReasonCodes ?? [],
+    };
+  },
+});
+
+export const previewLatestSkillModerationInternal = internalQuery({
+  args: { skillId: v.id("skills") },
+  handler: async (ctx, args) => {
+    const skill = await ctx.db.get(args.skillId);
+    if (!skill) return { ok: true as const, skipped: "missing" as const };
+    if (!skill.latestVersionId) return { ok: true as const, skipped: "missing_latest" as const };
+
+    const version = await ctx.db.get(skill.latestVersionId);
+    if (!version) return { ok: true as const, skipped: "missing_latest" as const };
+
+    const owner = skill.ownerUserId ? await ctx.db.get(skill.ownerUserId) : null;
+    const patch = applySkillManualOverrideToSkillPatch({
+      skill,
+      basePatch: buildScannerModerationPatchFromVersion({
+        owner,
+        version,
+        now: Date.now(),
+      }),
+      now: Date.now(),
+      stripUpdatedAt: true,
+    });
+
+    return {
+      ok: true as const,
+      skillId: skill._id,
+      slug: skill.slug,
+      verdict: patch.moderationVerdict ?? "clean",
+      reason: patch.moderationReason,
+      reasonCodes: patch.moderationReasonCodes ?? [],
+    };
+  },
+});
 const TRUSTED_PUBLISHER_SKILL_THRESHOLD = 10;
 const LOW_TRUST_BURST_THRESHOLD_PER_HOUR = 8;
 const OWNER_ACTIVITY_SCAN_LIMIT = 500;
@@ -527,6 +606,14 @@ function shouldPreserveExistingModerationLock(
 ) {
   if (skill.moderationStatus !== "hidden") return false;
   if (isManualOverrideReason(skill.moderationReason)) return false;
+  return !isScannerManagedReason(skill.moderationReason);
+}
+
+function shouldPreserveAutobanRemediationModerationLock(
+  skill: Pick<Doc<"skills">, "moderationStatus" | "moderationReason">,
+) {
+  if (skill.moderationStatus !== "hidden") return false;
+  if (skill.moderationReason === "user.banned") return false;
   return !isScannerManagedReason(skill.moderationReason);
 }
 
@@ -6518,6 +6605,7 @@ export const restoreOwnedSkillsForUnbanBatchInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     const now = Date.now();
+
     const { page, isDone, continueCursor } = await ctx.db
       .query("skills")
       .withIndex("by_owner", (q) => q.eq("ownerUserId", args.ownerUserId))
@@ -6568,6 +6656,111 @@ export const restoreOwnedSkillsForUnbanBatchInternal = internalMutation({
     );
 
     return { ok: true as const, restoredCount, scheduled: !isDone };
+  },
+});
+
+export const restoreOwnedSkillsForAutobanRemediationBatchInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    ownerUserId: v.id("users"),
+    bannedAt: v.number(),
+    cursor: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const owner = await ctx.db.get(args.ownerUserId);
+    if (!owner || owner.deletedAt || owner.deactivatedAt || owner.purgedAt) {
+      return {
+        ok: true as const,
+        restoredCount: 0,
+        skippedMalicious: 0,
+        scheduled: false,
+        aborted: true,
+      };
+    }
+
+    const { page, isDone, continueCursor } = await ctx.db
+      .query("skills")
+      .withIndex("by_owner", (q) => q.eq("ownerUserId", args.ownerUserId))
+      .order("desc")
+      .paginate({
+        cursor: args.cursor ?? null,
+        numItems: BAN_USER_SKILLS_BATCH_SIZE,
+      });
+
+    let restoredCount = 0;
+    let skippedMalicious = 0;
+    for (const skill of page) {
+      if (!skill.softDeletedAt || skill.softDeletedAt !== args.bannedAt) continue;
+
+      const existingFlags = skill.moderationFlags ?? [];
+      const reasonCodes = skill.moderationReasonCodes ?? [];
+      const isStillMalicious =
+        skill.moderationVerdict === "malicious" || existingFlags.includes("blocked.malware");
+      const hasFreshCleanVerdict =
+        skill.moderationVerdict === "clean" && (skill.moderationEvaluatedAt ?? 0) >= args.bannedAt;
+      const hasStaleVtMalwareFlag =
+        existingFlags.includes("blocked.malware") && reasonCodes.length > 0;
+      if (isStillMalicious && !(hasStaleVtMalwareFlag && hasFreshCleanVerdict)) {
+        skippedMalicious += 1;
+        continue;
+      }
+
+      const shouldReplaceReason = skill.moderationReason === "user.banned";
+      const nextReason = shouldReplaceReason
+        ? "restored.autoban_remediation"
+        : skill.moderationReason;
+      const moderationFlags = existingFlags.filter((flag) => flag !== "blocked.malware");
+      const moderationReasonCodes = (skill.moderationReasonCodes ?? []).filter(
+        (code) => !code.startsWith("malicious."),
+      );
+      const keepHiddenForExistingModeration = shouldPreserveAutobanRemediationModerationLock(skill);
+      const patch: Partial<Doc<"skills">> = {
+        softDeletedAt: undefined,
+        moderationStatus: keepHiddenForExistingModeration ? "hidden" : "active",
+        moderationReason: nextReason,
+        moderationFlags,
+        moderationReasonCodes: moderationReasonCodes.length ? moderationReasonCodes : undefined,
+        isSuspicious: computeIsSuspicious({
+          moderationFlags,
+          moderationReason: nextReason,
+        }),
+        hiddenAt: keepHiddenForExistingModeration ? skill.hiddenAt : undefined,
+        hiddenBy: keepHiddenForExistingModeration ? skill.hiddenBy : undefined,
+        lastReviewedAt: keepHiddenForExistingModeration ? skill.lastReviewedAt : now,
+        updatedAt: now,
+      };
+      const nextSkill = { ...skill, ...patch };
+      await ctx.db.patch(skill._id, patch);
+      await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
+      await adjustUserSkillStatsForSkillChange(ctx, skill, nextSkill);
+      await setSkillEmbeddingsSoftDeleted(ctx, skill._id, false, now);
+      await ctx.db.insert("auditLogs", {
+        actorUserId: args.actorUserId,
+        action: "skill.autoban_remediation.restore",
+        targetType: "skill",
+        targetId: skill._id,
+        metadata: {
+          slug: skill.slug,
+          ownerUserId: skill.ownerUserId,
+          bannedAt: args.bannedAt,
+          previousReason: skill.moderationReason,
+        },
+        createdAt: now,
+      });
+      restoredCount += 1;
+    }
+
+    scheduleNextBatchIfNeeded(
+      ctx.scheduler,
+      skillAutobanRemediationInternalRefs.skills
+        .restoreOwnedSkillsForAutobanRemediationBatchInternal,
+      args,
+      isDone,
+      continueCursor,
+    );
+
+    return { ok: true as const, restoredCount, skippedMalicious, scheduled: !isDone };
   },
 });
 

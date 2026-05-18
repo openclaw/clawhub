@@ -13,6 +13,7 @@ import { apiRequest, registryUrl } from "../../../clawhub/src/http.js";
 import {
   ApiRoutes,
   ApiV1BanUserResponseSchema,
+  ApiV1RemediateAutobansResponseSchema,
   ApiV1SetRoleResponseSchema,
   ApiV1UnbanUserResponseSchema,
   ApiV1UserSearchResponseSchema,
@@ -186,6 +187,82 @@ export async function cmdSetRole(
   }
 }
 
+export async function cmdRemediateAutobans(
+  opts: GlobalOpts,
+  options: {
+    apply?: boolean;
+    dryRun?: boolean;
+    user?: string;
+    id?: boolean;
+    since?: string;
+    limit?: string | number;
+    reason?: string;
+    json?: boolean;
+  },
+  inputAllowed: boolean,
+) {
+  if (options.apply && options.dryRun) fail("Choose either --apply or --dry-run, not both");
+
+  const dryRun = options.apply !== true;
+  const target = options.user?.trim();
+  const limit = normalizeOptionalPositiveInt(options.limit);
+  const reason = options.reason?.trim();
+  const since = options.since?.trim();
+
+  if (reason && reason.length > 500) fail("Reason too long (max 500 chars)");
+  if (since && Number.isNaN(Date.parse(since))) fail("Invalid --since date");
+
+  void inputAllowed;
+
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const spinner = options.json
+    ? null
+    : createSpinner(`${dryRun ? "Planning" : "Applying"} autoban remediation`);
+
+  try {
+    const body: Record<string, unknown> = { dryRun };
+    if (target) {
+      if (options.id) body.userId = target;
+      else body.handle = normalizeHandle(target);
+    }
+    if (reason) body.reason = reason;
+    if (since) body.since = since;
+    if (limit !== undefined) body.limit = limit;
+
+    const result = await apiRequest(
+      registry,
+      {
+        method: "POST",
+        path: `${ApiRoutes.users}/remediate-autobans`,
+        token,
+        body,
+      },
+      ApiV1RemediateAutobansResponseSchema,
+    );
+    const parsed = parseArk(
+      ApiV1RemediateAutobansResponseSchema,
+      result,
+      "Remediate autobans response",
+    );
+    spinner?.succeed(
+      `${dryRun ? "Dry run" : "Applied"} autoban remediation: scanned ${parsed.scanned}, ${dryRun ? "would unban" : "unbanned"} ${dryRun ? parsed.wouldUnban : parsed.unbanned}, skipped ${parsed.skipped}.`,
+    );
+    if (options.json) {
+      process.stdout.write(`${JSON.stringify(parsed, null, 2)}\n`);
+    } else {
+      console.log(
+        `Restores: ${formatRestoredSkills(parsed.restoredSkills)}, ${formatRestoredPackages(parsed.restoredPackages)}.`,
+      );
+      if (dryRun) console.log("Re-run with --apply to write these changes.");
+    }
+    return parsed;
+  } catch (error) {
+    spinner?.fail(formatError(error));
+    throw error;
+  }
+}
+
 function normalizeHandle(value: string) {
   const trimmed = value.trim();
   return trimmed.startsWith("@") ? trimmed.slice(1).toLowerCase() : trimmed.toLowerCase();
@@ -287,6 +364,13 @@ function normalizeRole(value: string) {
   return fail("Role must be user|moderator|admin");
 }
 
+function normalizeOptionalPositiveInt(value: string | number | undefined) {
+  if (value === undefined || value === null || value === "") return undefined;
+  const parsed = typeof value === "number" ? value : Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed < 1) fail("Limit must be a positive integer");
+  return Math.floor(parsed);
+}
+
 function formatDeletedSkills(count: number) {
   if (!Number.isFinite(count)) return "deleted skills unknown";
   if (count === 1) return "deleted 1 skill";
@@ -297,4 +381,10 @@ function formatRestoredSkills(count: number | undefined) {
   if (!Number.isFinite(count)) return "restored skills unknown";
   if (count === 1) return "restored 1 skill";
   return `restored ${count} skills`;
+}
+
+function formatRestoredPackages(count: number | undefined) {
+  if (!Number.isFinite(count)) return "restored packages unknown";
+  if (count === 1) return "restored 1 package";
+  return `restored ${count} packages`;
 }

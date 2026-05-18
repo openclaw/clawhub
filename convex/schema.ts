@@ -114,6 +114,7 @@ const users = defineTable({
   .index("email", ["email"])
   .index("phone", ["phone"])
   .index("handle", ["handle"])
+  .index("by_ban_reason_deleted_at", ["banReason", "deletedAt"])
   .index("by_active_handle", ["deletedAt", "deactivatedAt", "handle"]);
 
 const publishers = defineTable({

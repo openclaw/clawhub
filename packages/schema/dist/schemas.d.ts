@@ -455,6 +455,17 @@ export declare const ApiV1SetRoleResponseSchema: import("arktype/internal/varian
     ok: true;
     role: "user" | "admin" | "moderator";
 }, {}>;
+export declare const ApiV1RemediateAutobansResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    dryRun: boolean;
+    scanned: number;
+    wouldUnban: number;
+    unbanned: number;
+    skipped: number;
+    restoredSkills: number;
+    restoredPackages: number;
+    items: unknown[];
+}, {}>;
 export declare const ApiV1StarResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     ok: true;
     starred: boolean;

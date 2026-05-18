@@ -19,7 +19,7 @@ vi.mock("../../../clawhub/src/cli/registry.js", () => registryMocks.moduleFactor
 vi.mock("../../../clawhub/src/http.js", () => httpMocks.moduleFactory());
 vi.mock("../../../clawhub/src/cli/ui.js", () => uiMocks.moduleFactory());
 
-const { cmdBanUser, cmdSetRole, cmdUnbanUser } = await import("./moderation");
+const { cmdBanUser, cmdRemediateAutobans, cmdSetRole, cmdUnbanUser } = await import("./moderation");
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -293,5 +293,83 @@ describe("cmdUnbanUser", () => {
       }),
       expect.anything(),
     );
+  });
+});
+
+describe("cmdRemediateAutobans", () => {
+  it("defaults to dry run and posts no target payload", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      dryRun: true,
+      scanned: 0,
+      wouldUnban: 0,
+      unbanned: 0,
+      skipped: 0,
+      restoredSkills: 0,
+      restoredPackages: 0,
+      items: [],
+    });
+
+    await cmdRemediateAutobans(makeGlobalOpts(), {}, false);
+
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        method: "POST",
+        path: "/api/v1/users/remediate-autobans",
+        body: { dryRun: true },
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("posts apply payload with target, reason, since, limit, and id mode", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      dryRun: false,
+      scanned: 1,
+      wouldUnban: 0,
+      unbanned: 1,
+      skipped: 0,
+      restoredSkills: 12,
+      restoredPackages: 0,
+      items: [],
+    });
+
+    await cmdRemediateAutobans(
+      makeGlobalOpts(),
+      {
+        apply: true,
+        user: "users:target",
+        id: true,
+        reason: "appeal accepted",
+        since: "2026-05-12",
+        limit: "5",
+      },
+      false,
+    );
+
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        method: "POST",
+        path: "/api/v1/users/remediate-autobans",
+        body: {
+          dryRun: false,
+          userId: "users:target",
+          reason: "appeal accepted",
+          since: "2026-05-12",
+          limit: 5,
+        },
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("rejects conflicting apply and dry-run flags", async () => {
+    await expect(
+      cmdRemediateAutobans(makeGlobalOpts(), { apply: true, dryRun: true }, false),
+    ).rejects.toThrow(/either --apply or --dry-run/i);
+    expect(httpMocks.apiRequest).not.toHaveBeenCalled();
   });
 });

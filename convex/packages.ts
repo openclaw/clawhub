@@ -43,6 +43,7 @@ import {
   readArtifactReportStatus,
   appendPackageModerationEventLog,
 } from "./lib/artifactModeration";
+import { scheduleNextBatchIfNeeded } from "./lib/batching";
 import { normalizeClawScanNoteForWrite } from "./lib/clawScanNote";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
@@ -206,6 +207,11 @@ const internalRefs = internal as unknown as {
   };
   vt: {
     scanPackageReleaseWithVirusTotal: unknown;
+  };
+};
+const packageAutobanRemediationInternalRefs = internal as unknown as {
+  packages: {
+    restoreOwnedPackagesForAutobanRemediationBatchInternal: never;
   };
 };
 type DbReaderCtx = Pick<QueryCtx | MutationCtx, "db">;
@@ -2909,6 +2915,166 @@ export const restorePackageInternal = internalMutation({
       actorRole: user.role,
       source: "cli",
     });
+  },
+});
+
+export const restoreOwnedPackagesForAutobanRemediationBatchInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    ownerUserId: v.id("users"),
+    bannedAt: v.number(),
+    cursor: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const owner = await ctx.db.get(args.ownerUserId);
+    if (!owner || owner.deletedAt || owner.deactivatedAt || owner.purgedAt) {
+      return {
+        ok: true as const,
+        restoredCount: 0,
+        restoredReleases: 0,
+        skippedMalicious: 0,
+        scheduled: false,
+        aborted: true,
+      };
+    }
+
+    const { page, isDone, continueCursor } = await ctx.db
+      .query("packages")
+      .withIndex("by_owner", (q) => q.eq("ownerUserId", args.ownerUserId))
+      .order("desc")
+      .paginate({
+        cursor: args.cursor ?? null,
+        numItems: 25,
+      });
+
+    let restoredCount = 0;
+    let restoredReleases = 0;
+    let skippedMalicious = 0;
+    for (const pkg of page) {
+      if (!pkg.softDeletedAt || pkg.softDeletedAt !== args.bannedAt) continue;
+      if (pkg.scanStatus === "malicious") {
+        skippedMalicious += 1;
+        continue;
+      }
+
+      const releases = await ctx.db
+        .query("packageReleases")
+        .withIndex("by_package", (q) => q.eq("packageId", pkg._id))
+        .collect();
+      const nonMaliciousActiveReleases: Doc<"packageReleases">[] = [];
+      const restoredReleaseIds: Array<Id<"packageReleases">> = [];
+      for (const release of releases) {
+        let nextRelease = release;
+        if (
+          release.softDeletedAt === args.bannedAt &&
+          resolvePackageReleaseScanStatus(release) !== "malicious"
+        ) {
+          nextRelease = { ...release, softDeletedAt: undefined };
+          restoredReleaseIds.push(release._id);
+        }
+        if (
+          !nextRelease.softDeletedAt &&
+          resolvePackageReleaseScanStatus(nextRelease) !== "malicious"
+        ) {
+          nonMaliciousActiveReleases.push(nextRelease);
+        }
+      }
+
+      const nextLatest =
+        getPreservedRestoredPackageRelease(pkg, nonMaliciousActiveReleases) ??
+        getPreferredRestoredPackageRelease(pkg.family, nonMaliciousActiveReleases);
+      if (!nextLatest) {
+        skippedMalicious += 1;
+        continue;
+      }
+      for (const releaseId of restoredReleaseIds) {
+        await ctx.db.patch(releaseId, { softDeletedAt: undefined });
+        restoredReleases += 1;
+      }
+
+      const nextTags = rebuildPackageTagsFromActiveReleases(nonMaliciousActiveReleases);
+      if (nextLatest) nextTags.latest = nextLatest._id;
+      if (!(nextLatest.distTags ?? []).includes("latest")) {
+        await ctx.db.patch(nextLatest._id, {
+          distTags: [...(nextLatest.distTags ?? []), "latest"],
+        });
+      }
+
+      const packagePatch: Partial<Doc<"packages">> = {
+        softDeletedAt: undefined,
+        softDeletedBy: undefined,
+        softDeletedByRole: undefined,
+        tags: nextTags,
+        latestReleaseId: nextLatest?._id,
+        latestVersionSummary: nextLatest
+          ? {
+              version: nextLatest.version,
+              createdAt: nextLatest.createdAt,
+              changelog: nextLatest.changelog,
+              compatibility: nextLatest.compatibility,
+              capabilities: nextLatest.capabilities,
+              verification: nextLatest.verification,
+              artifact: packageArtifactSummary(nextLatest),
+            }
+          : undefined,
+        summary: nextLatest?.summary,
+        capabilityTags: nextLatest?.capabilities?.capabilityTags,
+        executesCode:
+          typeof nextLatest?.capabilities?.executesCode === "boolean"
+            ? nextLatest.capabilities.executesCode
+            : undefined,
+        compatibility: nextLatest?.compatibility,
+        capabilities: nextLatest?.capabilities,
+        verification: nextLatest?.verification,
+        scanStatus: nextLatest ? resolvePackageReleaseScanStatus(nextLatest) : pkg.scanStatus,
+        updatedAt: Date.now(),
+      };
+      const nextPackage: Doc<"packages"> = { ...pkg, ...packagePatch };
+      await ctx.db.patch(pkg._id, packagePatch);
+      const restoreOwner = await getOwnerPublisher(ctx, {
+        ownerPublisherId: pkg.ownerPublisherId,
+        ownerUserId: pkg.ownerUserId,
+      });
+      await upsertPackageSearchDigest(ctx, {
+        ...extractPackageDigestFields(nextPackage),
+        ownerHandle: restoreOwner?.handle ?? "",
+        ownerKind: restoreOwner?.kind,
+      });
+      await ctx.db.insert("auditLogs", {
+        actorUserId: args.actorUserId,
+        action: "package.autoban_remediation.restore",
+        targetType: "package",
+        targetId: pkg._id,
+        metadata: {
+          name: pkg.name,
+          normalizedName: pkg.normalizedName,
+          ownerUserId: pkg.ownerUserId,
+          ownerPublisherId: pkg.ownerPublisherId,
+          bannedAt: args.bannedAt,
+          releaseCount: restoredReleaseIds.length,
+          releaseIds: restoredReleaseIds,
+        },
+        createdAt: Date.now(),
+      });
+      restoredCount += 1;
+    }
+
+    scheduleNextBatchIfNeeded(
+      ctx.scheduler,
+      packageAutobanRemediationInternalRefs.packages
+        .restoreOwnedPackagesForAutobanRemediationBatchInternal,
+      args,
+      isDone,
+      continueCursor,
+    );
+
+    return {
+      ok: true as const,
+      restoredCount,
+      restoredReleases,
+      skippedMalicious,
+      scheduled: !isDone,
+    };
   },
 });
 

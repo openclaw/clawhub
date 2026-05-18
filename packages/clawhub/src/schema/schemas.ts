@@ -482,6 +482,18 @@ export const ApiV1UnbanUserResponseSchema = type({
   restoredSkills: "number?",
 });
 
+export const ApiV1RemediateAutobansResponseSchema = type({
+  ok: "true",
+  dryRun: "boolean",
+  scanned: "number",
+  wouldUnban: "number",
+  unbanned: "number",
+  skipped: "number",
+  restoredSkills: "number",
+  restoredPackages: "number",
+  items: "unknown[]",
+});
+
 export const ApiV1SetRoleResponseSchema = type({
   ok: "true",
   role: '"admin"|"moderator"|"user"',

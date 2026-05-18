@@ -3382,6 +3382,67 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("remediate autobans requires admin", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "user" },
+    } as never);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.usersPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/users/remediate-autobans", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ dryRun: true }),
+      }),
+    );
+    expect(response.status).toBe(403);
+  });
+
+  it("remediate autobans forwards admin payload", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runMutation = vi.fn().mockResolvedValueOnce(okRate()).mockResolvedValueOnce({
+      ok: true,
+      dryRun: false,
+      scanned: 1,
+      wouldUnban: 0,
+      unbanned: 1,
+      skipped: 0,
+      restoredSkills: 12,
+      restoredPackages: 0,
+      items: [],
+    });
+    const response = await __handlers.usersPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/users/remediate-autobans", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          dryRun: false,
+          userId: "users:target",
+          reason: "appeal accepted",
+          since: "2026-05-12",
+          limit: 5,
+        }),
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        actorUserId: "users:admin",
+        targetUserId: "users:target",
+        dryRun: false,
+        reason: "appeal accepted",
+        since: "2026-05-12",
+        limit: 5,
+      }),
+    );
+  });
+
   it("set role requires auth", async () => {
     vi.mocked(requireApiTokenUser).mockRejectedValueOnce(new Error("Unauthorized"));
     const runMutation = vi.fn().mockResolvedValue(okRate());
