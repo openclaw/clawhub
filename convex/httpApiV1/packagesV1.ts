@@ -143,6 +143,28 @@ function packageOperationErrorToResponse(
   return text(message, 400, headers);
 }
 
+function isTransientConvexContentionMessage(message: string) {
+  const lower = message.toLowerCase();
+  return (
+    lower.includes("optimistic concurrency") ||
+    lower.includes("write conflict") ||
+    (/documents read from or written to the ".+" table changed/.test(lower) &&
+      lower.includes("while this mutation was being run"))
+  );
+}
+
+function packagePublishErrorToResponse(error: unknown, headers: HeadersInit) {
+  const message = error instanceof Error ? error.message : "Publish failed";
+  if (!isTransientConvexContentionMessage(message)) {
+    return text(message, 400, headers);
+  }
+  return text(
+    `Transient ClawHub write contention. Package validation was not the cause; retrying usually succeeds. ${message}`,
+    503,
+    mergeHeaders(headers, { "Retry-After": "1" }),
+  );
+}
+
 async function runQueryRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): Promise<T> {
   return (await ctx.runQuery(ref as never, args as never)) as T;
 }
@@ -1514,7 +1536,7 @@ export async function publishPackageV1Handler(ctx: ActionCtx, request: Request) 
           });
     return json(result, 200, rate.headers);
   } catch (error) {
-    return text(error instanceof Error ? error.message : "Publish failed", 400, rate.headers);
+    return packagePublishErrorToResponse(error, rate.headers);
   }
 }
 

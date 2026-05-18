@@ -208,6 +208,61 @@ describe("node http client", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(3);
   });
 
+  it("retries and labels transient Convex write contention", async () => {
+    const contention =
+      'Documents read from or written to the "publishers" table changed while this mutation was being run';
+    const { setTimeoutImpl, clearTimeoutImpl } = createImmediateTimeouts();
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        text: async () => contention,
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        text: async () => contention,
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ ok: true }),
+      });
+    const client = createNodeClient({
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      setTimeoutImpl: setTimeoutImpl as unknown as typeof setTimeout,
+      clearTimeoutImpl,
+    });
+
+    await expect(
+      client.apiRequestForm(
+        "https://example.com",
+        { method: "POST", path: "/upload", form: new FormData(), retryCount: 5 },
+        undefined,
+      ),
+    ).resolves.toEqual({ ok: true });
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+
+    const failingFetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      text: async () => contention,
+    });
+    const failingClient = createNodeClient({
+      fetchImpl: failingFetch as unknown as typeof fetch,
+      setTimeoutImpl: setTimeoutImpl as unknown as typeof setTimeout,
+      clearTimeoutImpl,
+    });
+    await expect(
+      failingClient.apiRequestForm("https://example.com", {
+        method: "POST",
+        path: "/upload",
+        form: new FormData(),
+        retryCount: 0,
+      }),
+    ).rejects.toThrow(/Transient ClawHub write contention.*package artifact passed/i);
+  });
+
   it("expands generic auth and visibility failures into actionable messages", async () => {
     const fetchImpl = vi
       .fn()

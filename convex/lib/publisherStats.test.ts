@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { adjustPublisherStatsForSkillChange } from "./publisherStats";
+import {
+  adjustPublisherStatsForPackageChange,
+  adjustPublisherStatsForSkillChange,
+} from "./publisherStats";
 
 function makeSkill(overrides: Record<string, unknown>) {
   return {
@@ -10,6 +13,16 @@ function makeSkill(overrides: Record<string, unknown>) {
     statsStars: 2,
     statsInstallsAllTime: 4,
     stats: { downloads: 10, stars: 2, installsCurrent: 1, installsAllTime: 4 },
+    ...overrides,
+  } as never;
+}
+
+function makePackage(overrides: Record<string, unknown>) {
+  return {
+    _id: "packages:demo",
+    ownerPublisherId: "publishers:alice",
+    softDeletedAt: undefined,
+    stats: { downloads: 10, installs: 4, stars: 2, versions: 1 },
     ...overrides,
   } as never;
 }
@@ -111,6 +124,56 @@ describe("publisher stat maintenance", () => {
       totalDownloads: 18,
       totalStars: 3,
     });
+    expect(ctx.db.query).not.toHaveBeenCalled();
+  });
+
+  it("does not touch publisher rows for existing package version-only updates", async () => {
+    const ctx = {
+      db: {
+        get: vi.fn(),
+        patch: vi.fn(),
+        query: vi.fn(),
+      },
+    };
+
+    await adjustPublisherStatsForPackageChange(
+      ctx as never,
+      makePackage({ stats: { downloads: 10, installs: 4, stars: 2, versions: 1 } }),
+      makePackage({ stats: { downloads: 10, installs: 4, stars: 2, versions: 2 } }),
+    );
+
+    expect(ctx.db.get).not.toHaveBeenCalled();
+    expect(ctx.db.patch).not.toHaveBeenCalled();
+    expect(ctx.db.query).not.toHaveBeenCalled();
+  });
+
+  it("keeps concurrent package version publishes off the shared publisher row", async () => {
+    const ctx = {
+      db: {
+        get: vi.fn(),
+        patch: vi.fn(),
+        query: vi.fn(),
+      },
+    };
+
+    await Promise.all(
+      ["alpha", "bravo", "charlie", "delta"].map((name, index) =>
+        adjustPublisherStatsForPackageChange(
+          ctx as never,
+          makePackage({
+            _id: `packages:${name}`,
+            stats: { downloads: 10 + index, installs: 4, stars: 2, versions: 1 },
+          }),
+          makePackage({
+            _id: `packages:${name}`,
+            stats: { downloads: 10 + index, installs: 4, stars: 2, versions: 2 },
+          }),
+        ),
+      ),
+    );
+
+    expect(ctx.db.get).not.toHaveBeenCalled();
+    expect(ctx.db.patch).not.toHaveBeenCalled();
     expect(ctx.db.query).not.toHaveBeenCalled();
   });
 });
