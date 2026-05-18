@@ -25,7 +25,8 @@ export function getPublicSkillFileAccessBlock(
   if (moderationInfo?.isPendingScan) {
     return {
       status: 423,
-      message: "This skill is pending a ClawScan security review. Please try again in a few minutes.",
+      message:
+        "This skill is pending a ClawScan security review. Please try again in a few minutes.",
     };
   }
   if (moderationInfo?.isRemoved) {

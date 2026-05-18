@@ -99,10 +99,7 @@ import {
 } from "./lib/reservedSlugs";
 import { matchesAllTokens, matchesExploratoryTokenPrefixes, tokenize } from "./lib/searchText";
 import { SKILL_CAPABILITY_TAGS } from "./lib/skillCapabilityTags";
-import {
-  isPublicSkillVersionAvailableForSkill,
-  isSkillVersionForSkill,
-} from "./lib/skillFileAccess";
+import { isPublicSkillVersionAvailableForSkill } from "./lib/skillFileAccess";
 import { normalizeSkillIconValue } from "./lib/skillIcon";
 import {
   fetchText,
@@ -2089,7 +2086,7 @@ export const getBySlug = query({
 
     const latestVersionDoc = skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null;
     const latestVersion = toPublicSkillVersion(
-      isSkillVersionForSkill(latestVersionDoc, skill._id) ? latestVersionDoc : null,
+      isPublicSkillVersionAvailableForSkill(latestVersionDoc, skill._id) ? latestVersionDoc : null,
     );
     const owner = toPublicPublisher(ownerPublisher);
     if (!owner) return null;
@@ -7812,7 +7809,10 @@ export const resolveVersionByHash = query({
     const skill = resolved.skill;
     if (!skill) return null;
 
-    const latestVersion = skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null;
+    const latestVersionDoc = skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null;
+    const latestVersion = isPublicSkillVersionAvailableForSkill(latestVersionDoc, skill._id)
+      ? latestVersionDoc
+      : null;
 
     const fingerprintMatches = await ctx.db
       .query("skillVersionFingerprints")
