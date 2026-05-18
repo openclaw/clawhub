@@ -445,6 +445,108 @@ describe("skills manual overrides", () => {
     expect(query).not.toHaveBeenCalled();
   });
 
+  it("does not bump public updatedAt when llm scan sync updates moderation", async () => {
+    const originalUpdatedAt = 1_700_000_100_000;
+    const now = 1_700_000_300_000;
+    vi.spyOn(Date, "now").mockReturnValue(now);
+
+    const skill = {
+      _id: "skills:1",
+      ownerUserId: "users:owner",
+      latestVersionId: "skillVersions:8",
+      softDeletedAt: undefined,
+      updatedAt: originalUpdatedAt,
+      moderationStatus: "active",
+      moderationReason: "scanner.vt.clean",
+      moderationVerdict: "clean",
+      moderationFlags: undefined,
+    };
+    const version = {
+      _id: "skillVersions:8",
+      skillId: "skills:1",
+      staticScan: undefined,
+      vtAnalysis: { status: "clean", checkedAt: now - 100 },
+      llmAnalysis: undefined,
+    };
+
+    const { ctx, patch } = makeCtx({ skill, version });
+
+    await updateVersionLlmAnalysisInternalHandler(ctx, {
+      versionId: "skillVersions:8",
+      llmAnalysis: {
+        status: "suspicious",
+        verdict: "suspicious",
+        checkedAt: now,
+      },
+    });
+
+    const skillPatch = patch.mock.calls.find(([id]) => id === "skills:1")?.[1] as
+      | Record<string, unknown>
+      | undefined;
+    expect(skillPatch).toEqual(
+      expect.objectContaining({
+        moderationEvaluatedAt: now,
+        moderationSourceVersionId: "skillVersions:8",
+      }),
+    );
+    expect(skillPatch).not.toHaveProperty("updatedAt");
+  });
+
+  it("does not bump public updatedAt when llm scan sync preserves a manual override", async () => {
+    const originalUpdatedAt = 1_700_000_100_000;
+    const overrideUpdatedAt = 1_700_000_200_000;
+    const now = 1_700_000_300_000;
+    vi.spyOn(Date, "now").mockReturnValue(now);
+
+    const skill = {
+      _id: "skills:1",
+      ownerUserId: "users:owner",
+      latestVersionId: "skillVersions:8",
+      softDeletedAt: undefined,
+      updatedAt: originalUpdatedAt,
+      manualOverride: {
+        verdict: "clean",
+        note: "reviewed",
+        reviewerUserId: "users:moderator",
+        updatedAt: overrideUpdatedAt,
+      },
+      moderationStatus: "active",
+      moderationReason: "manual.override.clean",
+      moderationVerdict: "clean",
+      moderationFlags: undefined,
+    };
+    const version = {
+      _id: "skillVersions:8",
+      skillId: "skills:1",
+      staticScan: undefined,
+      vtAnalysis: { status: "clean", checkedAt: now - 100 },
+      llmAnalysis: undefined,
+    };
+
+    const { ctx, patch } = makeCtx({ skill, version });
+
+    await updateVersionLlmAnalysisInternalHandler(ctx, {
+      versionId: "skillVersions:8",
+      llmAnalysis: {
+        status: "suspicious",
+        verdict: "suspicious",
+        checkedAt: now,
+      },
+    });
+
+    const skillPatch = patch.mock.calls.find(([id]) => id === "skills:1")?.[1] as
+      | Record<string, unknown>
+      | undefined;
+    expect(skillPatch).toEqual(
+      expect.objectContaining({
+        moderationReason: "manual.override.clean",
+        moderationEvaluatedAt: overrideUpdatedAt,
+        moderationSourceVersionId: "skillVersions:8",
+      }),
+    );
+    expect(skillPatch).not.toHaveProperty("updatedAt");
+  });
+
   it("updates global public count when llm scan sync restores a skill to active", async () => {
     const now = 1_700_000_300_000;
     vi.spyOn(Date, "now").mockReturnValue(now);

@@ -401,7 +401,6 @@ function buildScannerModerationPatchFromVersion(params: {
     hiddenAt: moderationStatus === "hidden" ? params.now : undefined,
     hiddenBy: undefined,
     lastReviewedAt: moderationStatus === "hidden" ? params.now : undefined,
-    updatedAt: params.now,
   };
 }
 
@@ -420,11 +419,13 @@ function applySkillManualOverrideToSkillPatch(params: {
   now: number;
 }) {
   if (!params.skill.manualOverride) return params.basePatch;
-  return applyManualOverrideToSkillPatch({
+  const patch = applyManualOverrideToSkillPatch({
     basePatch: params.basePatch,
     override: params.skill.manualOverride,
     now: params.now,
   });
+  const { updatedAt: _updatedAt, ...scannerPatch } = patch;
+  return scannerPatch;
 }
 
 async function patchStructuredModerationFromVersion(
@@ -448,10 +449,7 @@ async function patchStructuredModerationFromVersion(
   });
 
   const nextSkill = { ...skill, ...patch };
-  await ctx.db.patch(skill._id, {
-    ...patch,
-    updatedAt: now,
-  });
+  await ctx.db.patch(skill._id, patch);
   await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
 }
 const TRUSTED_PUBLISHER_SKILL_THRESHOLD = 10;
@@ -5935,10 +5933,7 @@ export const updateSkillVersionStaticScanInternal = internalMutation({
     });
     const patch = applySkillManualOverrideToSkillPatch({
       skill,
-      basePatch: {
-        ...basePatch,
-        updatedAt: now,
-      },
+      basePatch,
       now,
     });
     const nextSkill = { ...skill, ...patch };
@@ -7011,7 +7006,6 @@ export const approveSkillByHashInternal = internalMutation({
         unpublishedSlugReleasedAt: undefined,
         unpublishedOriginalSlug: undefined,
         lastReviewedAt: nextModerationStatus === "hidden" ? now : undefined,
-        updatedAt: now,
       };
       const patch = applySkillManualOverrideToSkillPatch({
         skill,
@@ -7108,7 +7102,6 @@ export const escalateByVtInternal = internalMutation({
       moderationEngineVersion: snapshot.engineVersion,
       moderationEvaluatedAt: snapshot.evaluatedAt,
       moderationSourceVersionId: version._id,
-      updatedAt: now,
     };
     if (bypassSuspicious) {
       basePatch.moderationReason = normalizeScannerSuspiciousReason(
