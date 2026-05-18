@@ -4785,11 +4785,10 @@ function buildPublicSkillEntryFromDigest(
 }
 
 function toDigestLatestVersionForSkill(digest: Doc<"skillSearchDigest">) {
-  if (
-    !digest.latestVersionSummary ||
-    !digest.latestVersionId ||
-    digest.latestVersionSkillId !== digest.skillId
-  ) {
+  if (!digest.latestVersionSummary || !digest.latestVersionId) {
+    return null;
+  }
+  if (digest.latestVersionSkillId !== undefined && digest.latestVersionSkillId !== digest.skillId) {
     return null;
   }
   return toPublicSkillListVersionFromSummary(digest.latestVersionSummary, digest.latestVersionId);

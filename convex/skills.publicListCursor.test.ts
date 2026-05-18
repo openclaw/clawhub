@@ -367,6 +367,27 @@ describe("public skill list deterministic cursors", () => {
     expect(result.items[0]).toMatchObject({ latestVersion: null });
   });
 
+  it("keeps legacy API list latest versions without owner markers until backfill", async () => {
+    getPageMock.mockResolvedValueOnce({
+      page: [
+        makeSearchDigest({
+          latestVersionSkillId: undefined,
+        }),
+      ],
+      hasMore: false,
+      indexKeys: [],
+    });
+
+    const result = await listPublicApiPageV1Handler({} as never, { numItems: 10 });
+
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({
+      latestVersion: {
+        version: "1.0.0",
+      },
+    });
+  });
+
   it("drops stale trending latest versions that belong to another skill", async () => {
     const staleDigest = makeSearchDigest({
       latestVersionId: "skillVersions:other",
@@ -407,6 +428,44 @@ describe("public skill list deterministic cursors", () => {
 
     expect(result.items).toHaveLength(1);
     expect(result.items[0]).toMatchObject({ latestVersion: null });
+  });
+
+  it("keeps legacy trending latest versions without owner markers until backfill", async () => {
+    const legacyDigest = makeSearchDigest({
+      latestVersionSkillId: undefined,
+    });
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => {
+          if (table === "skillLeaderboards") {
+            return {
+              withIndex: () => ({
+                order: () => ({
+                  first: async () => ({ items: [{ skillId: "skills:demo" }] }),
+                }),
+              }),
+            };
+          }
+          if (table === "skillSearchDigest") {
+            return {
+              withIndex: () => ({
+                unique: async () => legacyDigest,
+              }),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    const result = await listPublicTrendingPageHandler(ctx as never, { limit: 10 });
+
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({
+      latestVersion: {
+        version: "1.0.0",
+      },
+    });
   });
 });
 
