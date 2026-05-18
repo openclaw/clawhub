@@ -14,8 +14,14 @@ vi.mock("./lib/badges", () => ({
 
 const { getAuthUserId } = await import("@convex-dev/auth/server");
 const { getSkillBadgeMap, getSkillBadgeMaps } = await import("./lib/badges");
-const { getBySlug, getVersionById, getVersionBySkillAndVersion, listVersions, listWithLatest } =
-  await import("./skills");
+const {
+  getBySlug,
+  getVersionById,
+  getVersionBySkillAndVersion,
+  listHighlightedPublic,
+  listVersions,
+  listWithLatest,
+} = await import("./skills");
 
 type WrappedHandler<TArgs, TResult = unknown> = {
   _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
@@ -49,6 +55,11 @@ const listVersionsHandler = (
 
 const listWithLatestHandler = (
   listWithLatest as unknown as WrappedHandler<{
+    limit?: number;
+  }>
+)._handler;
+const listHighlightedPublicHandler = (
+  listHighlightedPublic as unknown as WrappedHandler<{
     limit?: number;
   }>
 )._handler;
@@ -307,5 +318,134 @@ describe("public skill version queries", () => {
     }>;
     expect(result[0]?.latestVersion?.files[0]).not.toHaveProperty("storageId");
     expect(result[0]?.latestVersion?.parsed).not.toHaveProperty("frontmatter");
+  });
+
+  it("drops cross-skill latestVersion in listWithLatest", async () => {
+    const version = { ...makeVersion(), _id: "skillVersions:other", skillId: "skills:other" };
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => {
+          if (table !== "skills") throw new Error(`Unexpected table ${table}`);
+          return {
+            order: vi.fn(() => ({
+              take: vi.fn().mockResolvedValue([
+                {
+                  _id: "skills:1",
+                  _creationTime: 1,
+                  slug: "demo",
+                  displayName: "Demo",
+                  summary: "Summary",
+                  ownerUserId: "users:1",
+                  canonicalSkillId: undefined,
+                  forkOf: undefined,
+                  latestVersionId: version._id,
+                  tags: {},
+                  badges: undefined,
+                  stats: {
+                    downloads: 1,
+                    installsCurrent: 1,
+                    installsAllTime: 1,
+                    stars: 1,
+                    versions: 1,
+                    comments: 0,
+                  },
+                  createdAt: 1,
+                  updatedAt: 2,
+                  softDeletedAt: undefined,
+                  moderationStatus: "active",
+                  moderationFlags: undefined,
+                  moderationReason: undefined,
+                },
+              ]),
+            })),
+          };
+        }),
+        get: vi.fn(async (id: string) => {
+          if (id === "users:1") return { _id: id };
+          if (id === version._id) return version;
+          return null;
+        }),
+      },
+    } as never;
+
+    const result = (await listWithLatestHandler(ctx, { limit: 1 } as never)) as Array<{
+      latestVersion?: { version: string } | null;
+    }>;
+
+    expect(result[0]?.latestVersion).toBeNull();
+  });
+
+  it("drops cross-skill latestVersion summaries in highlighted public list", async () => {
+    const version = { ...makeVersion(), _id: "skillVersions:other", skillId: "skills:other" };
+    const skill = {
+      _id: "skills:1",
+      _creationTime: 1,
+      slug: "demo",
+      displayName: "Demo",
+      summary: "Summary",
+      ownerUserId: "users:1",
+      canonicalSkillId: undefined,
+      forkOf: undefined,
+      latestVersionId: version._id,
+      latestVersionSummary: {
+        version: "9.9.9",
+        createdAt: 9,
+        changelog: "stale",
+        changelogSource: "user",
+        clawdis: undefined,
+      },
+      tags: {},
+      badges: { highlighted: { byUserId: "users:moderator", at: 3 } },
+      stats: {
+        downloads: 1,
+        installsCurrent: 1,
+        installsAllTime: 1,
+        stars: 1,
+        versions: 1,
+        comments: 0,
+      },
+      createdAt: 1,
+      updatedAt: 2,
+      softDeletedAt: undefined,
+      moderationStatus: "active",
+      moderationFlags: undefined,
+      moderationReason: undefined,
+    };
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => {
+          if (table !== "skillBadges") throw new Error(`Unexpected table ${table}`);
+          return {
+            withIndex: vi.fn(() => ({
+              order: vi.fn(() => ({
+                take: vi.fn().mockResolvedValue([{ skillId: skill._id }]),
+              })),
+            })),
+          };
+        }),
+        get: vi.fn(async (id: string) => {
+          if (id === skill._id) return skill;
+          if (id === version._id) return version;
+          if (id === "users:1") {
+            return {
+              _id: "users:1",
+              _creationTime: 1,
+              handle: "demo",
+              displayName: "Demo",
+              image: null,
+              bio: null,
+            };
+          }
+          return null;
+        }),
+      },
+    } as never;
+
+    const result = (await listHighlightedPublicHandler(ctx, { limit: 1 } as never)) as Array<{
+      latestVersion?: { version: string } | null;
+    }>;
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.latestVersion).toBeNull();
   });
 });

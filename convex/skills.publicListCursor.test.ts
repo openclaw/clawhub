@@ -19,6 +19,7 @@ vi.mock("convex-helpers/server/pagination", async () => {
 
 const pagination = await import("convex-helpers/server/pagination");
 const {
+  listAuditPage,
   listPublicApiPageV1,
   listPublicPageV4,
   listPublicTrendingPage,
@@ -70,6 +71,12 @@ const listPublicTrendingPageHandler = (
   listPublicTrendingPage as unknown as WrappedHandler<
     { limit?: number; nonSuspiciousOnly?: boolean },
     PublicApiListResult
+  >
+)._handler;
+const listAuditPageHandler = (
+  listAuditPage as unknown as WrappedHandler<
+    { paginationOpts: { cursor: string | null; numItems: number } },
+    PublicListResult
   >
 )._handler;
 
@@ -466,6 +473,55 @@ describe("public skill list deterministic cursors", () => {
         version: "1.0.0",
       },
     });
+  });
+
+  it("drops audit latest versions that resolve to another skill", async () => {
+    const digest = makeSearchDigest({
+      latestVersionId: "skillVersions:other",
+      latestVersionSkillId: undefined,
+    });
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "skillVersions:other") {
+            return {
+              _id: id,
+              _creationTime: 1,
+              skillId: "skills:other",
+              version: "9.9.9",
+              createdAt: 9,
+              files: [],
+              vtAnalysis: { status: "clean" },
+              llmAnalysis: { status: "clean" },
+              staticScan: { status: "clean", reasonCodes: [], findings: [] },
+              softDeletedAt: undefined,
+            };
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table !== "skillSearchDigest") throw new Error(`unexpected table ${table}`);
+          return {
+            withIndex: vi.fn(() => ({
+              order: vi.fn(() => ({
+                paginate: vi.fn().mockResolvedValue({
+                  page: [digest],
+                  isDone: true,
+                  continueCursor: "",
+                }),
+              })),
+            })),
+          };
+        }),
+      },
+    };
+
+    const result = await listAuditPageHandler(ctx as never, {
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+
+    expect(result.page).toHaveLength(1);
+    expect(result.page[0]).toMatchObject({ latestVersion: null });
   });
 });
 
