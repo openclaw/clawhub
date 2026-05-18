@@ -71,7 +71,22 @@ export async function signInAsLocalPublisher(page: Page, persona: DevPersona) {
   await page.goto("/skills/publish", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "Publish a skill" })).toBeVisible();
   const ownerSelect = page.locator("#ownerHandle");
-  await expect(ownerSelect).not.toHaveValue("");
+  await expect
+    .poll(
+      async () => {
+        const value = await ownerSelect.inputValue();
+        const optionValues = await ownerSelect
+          .locator("option")
+          .evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value));
+        const isCurrentOption = value ? optionValues.includes(value) : false;
+        // The owner persona can briefly render the user handle before the
+        // personal publisher subscription reconciles to the publishable handle.
+        if (!isCurrentOption || (persona === "owner" && value === "local")) return "";
+        return value;
+      },
+      { timeout: 15_000 },
+    )
+    .not.toBe("");
   const ownerHandle = await ownerSelect.inputValue();
   expect(ownerHandle.toLowerCase()).toContain("local");
   return ownerHandle;
