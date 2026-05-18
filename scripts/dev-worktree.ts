@@ -153,6 +153,20 @@ async function isReachable(url: string) {
   }
 }
 
+export function runSync(
+  command: string,
+  args: string[],
+  extraEnv: Record<string, string | undefined>,
+) {
+  return (
+    spawnSync(command, args, {
+      cwd: process.cwd(),
+      env: { ...process.env, ...extraEnv },
+      stdio: "inherit",
+    }).status ?? 1
+  );
+}
+
 function runSyncBuffered(
   command: string,
   args: string[],
