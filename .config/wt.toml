@@ -2,7 +2,7 @@
 url = "http://127.0.0.1:{{ (repo ~ '-' ~ branch) | hash_port }}"
 
 [[pre-start]]
-env = "bun run setup:worktree -- --quiet --env-only"
+env = "bun run setup:worktree -- --quiet"
 
 [[pre-start]]
 deps = "wt step copy-ignored || true; test -x node_modules/.bin/vite || bun install"
