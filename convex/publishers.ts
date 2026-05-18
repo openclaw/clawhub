@@ -885,6 +885,19 @@ export const resolvePublishTargetForUserInternal = internalMutation({
         `Publisher "@${requestedHandle}" not found. Create the "@${requestedHandle}" organization on ClawHub or choose a different owner.`,
       );
     }
+    if (publisher.kind === "user") {
+      if (publisher.linkedUserId !== actor._id) {
+        throw new ConvexError(
+          `You do not have publish access for "@${requestedHandle}". Ask an owner or admin of "@${requestedHandle}" to add you.`,
+        );
+      }
+      return {
+        publisherId: publisher._id,
+        handle: publisher.handle,
+        kind: publisher.kind,
+        linkedUserId: publisher.linkedUserId,
+      };
+    }
     const membership = await getPublisherMembership(ctx, publisher._id, actor._id);
     if (!membership || !isPublisherRoleAllowed(membership.role, [minimumRole])) {
       throw new ConvexError(

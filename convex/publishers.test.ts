@@ -11,6 +11,7 @@ import {
   createOrg,
   removeMember,
   createOrgPublisherForUserInternal,
+  resolvePublishTargetForUserInternal,
   setTrustedPublisherInternal,
   updateProfile,
 } from "./publishers";
@@ -156,6 +157,22 @@ const createOrgHandler = (
   >
 )._handler;
 
+const resolvePublishTargetForUserInternalHandler = (
+  resolvePublishTargetForUserInternal as unknown as WrappedHandler<
+    {
+      actorUserId: string;
+      ownerHandle?: string;
+      minimumRole?: "owner" | "admin" | "publisher";
+    },
+    {
+      publisherId: string;
+      handle: string;
+      kind: "user" | "org";
+      linkedUserId?: string;
+    } | null
+  >
+)._handler;
+
 function indexedRows<T>(rows: T[]) {
   return {
     collect: vi.fn(async () => rows),
@@ -163,7 +180,165 @@ function indexedRows<T>(rows: T[]) {
   };
 }
 
+function makeResolvePublishTargetCtx(options: {
+  targetPublisher: Record<string, unknown>;
+  targetMembership?: Record<string, unknown> | null;
+}) {
+  const actor = {
+    _id: "users:vincent",
+    handle: "vincent",
+    name: "Vincent",
+    displayName: "Vincent",
+    image: null,
+    trustedPublisher: false,
+    personalPublisherId: "publishers:vincent",
+  };
+  const actorPersonalPublisher = {
+    _id: "publishers:vincent",
+    kind: "user",
+    handle: "vincent",
+    displayName: "Vincent",
+    linkedUserId: "users:vincent",
+  };
+  const actorOwnerMembership = {
+    _id: "publisherMembers:vincent-owner",
+    publisherId: "publishers:vincent",
+    userId: "users:vincent",
+    role: "owner",
+  };
+  const queryValues = (
+    builder: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+  ) => {
+    const values = new Map<string, unknown>();
+    const q = {
+      eq(field: string, value: unknown) {
+        values.set(field, value);
+        return q;
+      },
+    };
+    builder(q);
+    return values;
+  };
+  const query = vi.fn((table: string) => {
+    if (table === "publishers") {
+      return {
+        withIndex: vi.fn((_indexName: string, builder) => {
+          const values = queryValues(builder);
+          return {
+            unique: vi.fn(async () => {
+              if (values.get("linkedUserId") === "users:vincent") return actorPersonalPublisher;
+              if (values.get("handle") === "vincent") return actorPersonalPublisher;
+              if (values.get("handle") === options.targetPublisher.handle) {
+                return options.targetPublisher;
+              }
+              return null;
+            }),
+          };
+        }),
+      };
+    }
+    if (table === "publisherMembers") {
+      return {
+        withIndex: vi.fn((_indexName: string, builder) => {
+          const values = queryValues(builder);
+          return {
+            unique: vi.fn(async () => {
+              if (
+                values.get("publisherId") === "publishers:vincent" &&
+                values.get("userId") === "users:vincent"
+              ) {
+                return actorOwnerMembership;
+              }
+              if (
+                values.get("publisherId") === options.targetPublisher._id &&
+                values.get("userId") === "users:vincent"
+              ) {
+                return options.targetMembership ?? null;
+              }
+              return null;
+            }),
+          };
+        }),
+      };
+    }
+    throw new Error(`unexpected table ${table}`);
+  });
+  return {
+    db: {
+      get: vi.fn(async (tableOrId: string, maybeId?: string) => {
+        const id = maybeId ?? tableOrId;
+        if (id === "users:vincent") return actor;
+        if (id === "publishers:vincent") return actorPersonalPublisher;
+        if (id === options.targetPublisher._id) return options.targetPublisher;
+        return null;
+      }),
+      query,
+      patch: vi.fn(),
+      insert: vi.fn(async () => "auditLogs:resolve"),
+      delete: vi.fn(),
+      replace: vi.fn(),
+      normalizeId: vi.fn((table: string, id: string) => (id.startsWith(`${table}:`) ? id : null)),
+      system: {},
+    },
+  };
+}
+
 describe("publishers membership controls", () => {
+  it("does not resolve another personal publisher through a stale membership", async () => {
+    const ctx = makeResolvePublishTargetCtx({
+      targetPublisher: {
+        _id: "publishers:owner",
+        kind: "user",
+        handle: "owner",
+        displayName: "Owner",
+        linkedUserId: "users:owner",
+      },
+      targetMembership: {
+        _id: "publisherMembers:stale",
+        publisherId: "publishers:owner",
+        userId: "users:vincent",
+        role: "publisher",
+      },
+    });
+
+    await expect(
+      resolvePublishTargetForUserInternalHandler(ctx as never, {
+        actorUserId: "users:vincent",
+        ownerHandle: "owner",
+        minimumRole: "publisher",
+      }),
+    ).rejects.toThrow('publish access for "@owner"');
+  });
+
+  it("keeps org publisher memberships valid for publish target resolution", async () => {
+    const ctx = makeResolvePublishTargetCtx({
+      targetPublisher: {
+        _id: "publishers:openclaw",
+        kind: "org",
+        handle: "openclaw",
+        displayName: "OpenClaw",
+      },
+      targetMembership: {
+        _id: "publisherMembers:openclaw",
+        publisherId: "publishers:openclaw",
+        userId: "users:vincent",
+        role: "publisher",
+      },
+    });
+
+    await expect(
+      resolvePublishTargetForUserInternalHandler(ctx as never, {
+        actorUserId: "users:vincent",
+        ownerHandle: "openclaw",
+        minimumRole: "publisher",
+      }),
+    ).resolves.toMatchObject({
+      publisherId: "publishers:openclaw",
+      handle: "openclaw",
+      kind: "org",
+    });
+  });
+
   it("rejects org handles reserved for public routes", async () => {
     const ctx = {
       db: {
