@@ -7,6 +7,9 @@ env = "bun run setup:worktree -- --quiet"
 [[pre-start]]
 deps = "wt step copy-ignored || true; test -x node_modules/.bin/vite || bun install"
 
+[step.copy-ignored]
+exclude = [".convex/", ".env.local"]
+
 [post-start]
 dev = "bun scripts/dev-worktree.ts --detach --port {{ (repo ~ '-' ~ branch) | hash_port }}"
 
