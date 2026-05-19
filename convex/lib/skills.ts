@@ -15,6 +15,11 @@ export type { ClawdisSkillMetadata, SkillInstallSpec };
 
 const FRONTMATTER_START = "---";
 const DEFAULT_EMBEDDING_MAX_CHARS = 12_000;
+// Each OpenAI token maps to at least one UTF-8 byte; keep publish embeddings
+// below the 8192-token model limit with conservative headroom.
+const DEFAULT_EMBEDDING_MAX_BYTES = 7_500;
+
+const encoder = new TextEncoder();
 
 export function parseFrontmatter(content: string): ParsedSkillFrontmatter {
   const frontmatter: ParsedSkillFrontmatter = {};
@@ -184,8 +189,15 @@ export function buildEmbeddingText(params: {
   readme: string;
   otherFiles: Array<{ path: string; content: string }>;
   maxChars?: number;
+  maxBytes?: number;
 }) {
-  const { frontmatter, readme, otherFiles, maxChars = DEFAULT_EMBEDDING_MAX_CHARS } = params;
+  const {
+    frontmatter,
+    readme,
+    otherFiles,
+    maxChars = DEFAULT_EMBEDDING_MAX_CHARS,
+    maxBytes = DEFAULT_EMBEDDING_MAX_BYTES,
+  } = params;
   const headerParts = [
     getFrontmatterValue(frontmatter, "name"),
     getFrontmatterValue(frontmatter, "description"),
@@ -196,11 +208,9 @@ export function buildEmbeddingText(params: {
   ].filter(Boolean);
   const fileParts = otherFiles.map((file) => `# ${file.path}\n${file.content}`);
   const raw = [headerParts.join("\n"), readme, ...fileParts].filter(Boolean).join("\n\n");
-  if (raw.length <= maxChars) return raw;
-  return raw.slice(0, maxChars);
+  const charLimited = truncateCodePoints(raw, maxChars);
+  return truncateUtf8Bytes(charLimited, maxBytes);
 }
-
-const encoder = new TextEncoder();
 
 export async function hashSkillFiles(files: Array<{ path: string; sha256: string }>) {
   const normalized = files
@@ -210,6 +220,49 @@ export async function hashSkillFiles(files: Array<{ path: string; sha256: string
   const payload = normalized.map((file) => `${file.path}:${file.sha256}`).join("\n");
   const digest = await crypto.subtle.digest("SHA-256", encoder.encode(payload));
   return toHex(new Uint8Array(digest));
+}
+
+function truncateCodePoints(text: string, maxChars: number) {
+  if (maxChars <= 0) return "";
+  if (text.length <= maxChars) return text;
+
+  let count = 0;
+  let end = 0;
+  for (const char of text) {
+    if (count >= maxChars) break;
+    end += char.length;
+    count += 1;
+  }
+  return end >= text.length ? text : text.slice(0, end);
+}
+
+function truncateUtf8Bytes(text: string, maxBytes: number) {
+  if (maxBytes <= 0) return "";
+  if (encoder.encode(text).byteLength <= maxBytes) return text;
+
+  const codePointEnds: number[] = [];
+  let end = 0;
+  for (const char of text) {
+    end += char.length;
+    codePointEnds.push(end);
+  }
+
+  let low = 0;
+  let high = codePointEnds.length;
+  let bestEnd = 0;
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    const candidateEnd = mid === 0 ? 0 : codePointEnds[mid - 1];
+    const candidateBytes = encoder.encode(text.slice(0, candidateEnd)).byteLength;
+    if (candidateBytes <= maxBytes) {
+      bestEnd = candidateEnd;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+
+  return text.slice(0, bestEnd);
 }
 
 function toJsonValue(value: unknown): unknown {

@@ -184,6 +184,29 @@ describe("skills utils", () => {
     expect(text.length).toBe(10);
   });
 
+  it("truncates embedding text by maxChars without splitting surrogate pairs", () => {
+    const text = buildEmbeddingText({
+      frontmatter: {},
+      readme: "\u{1f4a1}\u{1f4a1}x",
+      otherFiles: [],
+      maxChars: 1,
+      maxBytes: 100,
+    });
+    expect(text).toBe("\u{1f4a1}");
+  });
+
+  it("truncates embedding text by maxBytes", () => {
+    const text = buildEmbeddingText({
+      frontmatter: {},
+      readme: "\u20ac".repeat(20),
+      otherFiles: [],
+      maxChars: 100,
+      maxBytes: 9,
+    });
+    expect(new TextEncoder().encode(text).byteLength).toBeLessThanOrEqual(9);
+    expect(text).toBe("\u20ac\u20ac\u20ac");
+  });
+
   it("truncates embedding text by default max chars", () => {
     const text = buildEmbeddingText({
       frontmatter: {},
@@ -191,6 +214,25 @@ describe("skills utils", () => {
       otherFiles: [],
     });
     expect(text.length).toBeLessThanOrEqual(12_000);
+  });
+
+  it("keeps default embedding text below the OpenAI token-limit byte budget", () => {
+    const text = buildEmbeddingText({
+      frontmatter: { name: "Dense bundle", description: "Publishes scripts" },
+      readme: "a".repeat(3_090),
+      otherFiles: [
+        { path: "references/FLOW.md", content: "f".repeat(6_663) },
+        { path: "references/DOCTOR.md", content: "d".repeat(5_843) },
+        { path: "references/terms-of-service.md", content: "t".repeat(5_510) },
+        { path: "scripts/auth.py", content: "b".repeat(9_559) },
+        { path: "scripts/bind.py", content: "c".repeat(13_217) },
+        { path: "scripts/diag_auth_log.py", content: "l".repeat(4_917) },
+        { path: "scripts/diag_bind_log.py", content: "m".repeat(4_933) },
+        { path: "scripts/init.sh", content: "i".repeat(3_660) },
+        { path: "scripts/qrcode.sh", content: "q".repeat(3_020) },
+      ],
+    });
+    expect(new TextEncoder().encode(text).byteLength).toBeLessThanOrEqual(7_500);
   });
 
   it("hashes skill files deterministically", async () => {
