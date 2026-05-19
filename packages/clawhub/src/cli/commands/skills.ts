@@ -172,7 +172,7 @@ export async function cmdInstall(
     if (skillMeta.moderation?.isSuspicious && !force) {
       spinner.stop();
       console.log(
-        `\n⚠️  Warning: "${trimmed}" is flagged as suspicious by VirusTotal Code Insight.\n` +
+        `\n⚠️  Warning: "${trimmed}" is flagged for ClawHub security review.\n` +
           "   This skill may contain risky patterns (crypto keys, external APIs, eval, etc.)\n" +
           "   Review the skill code before use.\n",
       );
@@ -295,7 +295,7 @@ export async function cmdUpdate(
       if (skillMeta.moderation?.isSuspicious && !options.force) {
         spinner.stop();
         console.log(
-          `\n⚠️  Warning: "${entry}" is flagged as suspicious by VirusTotal Code Insight.\n` +
+          `\n⚠️  Warning: "${entry}" is flagged for ClawHub security review.\n` +
             "   This skill may contain risky patterns (crypto keys, external APIs, eval, etc.)\n",
         );
         if (allowPrompt) {

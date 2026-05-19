@@ -815,6 +815,73 @@ describe("SkillDetailPage", () => {
     expect(routerInvalidateMock).toHaveBeenCalledTimes(2);
   });
 
+  it("renders refreshed starred server state with the synchronized star count", async () => {
+    useAuthStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: { _id: "users:viewer", role: "user" },
+    });
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (args && typeof args === "object" && "skillId" in args && "limit" in args) return [];
+      if (args && typeof args === "object" && "skillId" in args) return true;
+      if (args && typeof args === "object" && "slug" in args) {
+        return {
+          skill: {
+            _id: skillId,
+            _creationTime: 0,
+            slug: "weather",
+            displayName: "Weather",
+            summary: "Get current weather.",
+            ownerUserId: ownerId,
+            ownerPublisherId,
+            tags: {},
+            badges: {},
+            stats: {
+              stars: 1,
+              downloads: 34,
+              installsCurrent: 5,
+              installsAllTime: 8,
+              versions: 1,
+              comments: 0,
+            },
+            createdAt: 0,
+            updatedAt: 0,
+          },
+          owner: {
+            _id: ownerPublisherId,
+            _creationTime: 0,
+            kind: "user",
+            handle: "steipete",
+            displayName: "Peter",
+            linkedUserId: ownerId,
+          },
+          latestVersion: {
+            _id: versionId,
+            _creationTime: 0,
+            skillId,
+            version: "1.0.0",
+            fingerprint: "abc",
+            changelog: "Initial release",
+            parsed: { license: "MIT-0", frontmatter: {} },
+            files: [],
+            createdBy: ownerId,
+            createdAt: 0,
+          },
+          forkOf: null,
+          canonical: null,
+        };
+      }
+      return undefined;
+    });
+
+    render(<SkillDetailPage slug="weather" />);
+
+    expect((await screen.findByRole("button", { name: "Unstar skill" })).textContent).toContain(
+      "1",
+    );
+  });
+
   it("opens report dialog for authenticated users", async () => {
     useAuthStatusMock.mockReturnValue({
       isAuthenticated: true,

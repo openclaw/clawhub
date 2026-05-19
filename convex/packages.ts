@@ -43,6 +43,7 @@ import {
   readArtifactReportStatus,
   appendPackageModerationEventLog,
 } from "./lib/artifactModeration";
+import { scheduleNextBatchIfNeeded } from "./lib/batching";
 import { normalizeClawScanNoteForWrite } from "./lib/clawScanNote";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
@@ -92,6 +93,7 @@ const MAX_OFFICIAL_MIGRATION_BLOCKERS = 20;
 const MAX_OFFICIAL_MIGRATION_FIELD_LENGTH = 300;
 const MAX_OFFICIAL_MIGRATION_NOTES_LENGTH = 2_000;
 const MAX_STORED_PACKAGE_METADATA_DEPTH = 10;
+const CLAWHUB_PUBLISHER_HANDLE_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
 const REAL_BUNDLE_MANIFESTS = [
   { path: ".codex-plugin/plugin.json", format: "codex" },
   { path: ".claude-plugin/plugin.json", format: "claude" },
@@ -156,6 +158,45 @@ function inferOwnerHandleFromScopedPackageName(name: string) {
   return match?.[1] || undefined;
 }
 
+function getPackageSlugFromName(name: string) {
+  return name.split("/").pop()?.trim() || "plugin-name";
+}
+
+function getClawHubPublisherHandleSuggestion(handle: string) {
+  const suggestion = handle
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40)
+    .replace(/-+$/g, "");
+  return CLAWHUB_PUBLISHER_HANDLE_PATTERN.test(suggestion) ? suggestion : null;
+}
+
+function getScopedPackageMissingPublisherMessage(params: {
+  scopedOwnerHandle: string;
+  packageName: string;
+  legacyPersonalOwnerHandle?: string;
+}) {
+  if (!CLAWHUB_PUBLISHER_HANDLE_PATTERN.test(params.scopedOwnerHandle)) {
+    const suggestedOwnerHandle = getClawHubPublisherHandleSuggestion(params.scopedOwnerHandle);
+    const packageSlug = getPackageSlugFromName(params.packageName);
+    const renameGuidance = suggestedOwnerHandle
+      ? ` Rename package.json to a ClawHub-compatible scope, such as "@${suggestedOwnerHandle}/${packageSlug}", then publish again.`
+      : " Rename package.json to a ClawHub-compatible scope that uses lowercase letters, numbers, and hyphens, then publish again.";
+    return `Cannot publish ${params.packageName}: package.json name is scoped to "@${params.scopedOwnerHandle}", but ClawHub publisher handles may only use lowercase letters, numbers, and hyphens.${renameGuidance}`;
+  }
+  if (params.legacyPersonalOwnerHandle) {
+    const displayName = params.scopedOwnerHandle
+      .split(/[-_]+/)
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
+    return `Cannot publish ${params.packageName}: package.json name is scoped to "@${params.scopedOwnerHandle}", but ClawHub has no "@${params.scopedOwnerHandle}" publisher.\n\nThis package already exists under your personal publisher "@${params.legacyPersonalOwnerHandle}". To move it into the matching org publisher, run:\n\n  clawhub publisher create ${params.scopedOwnerHandle} --display-name "${displayName || params.scopedOwnerHandle}"\n  clawhub package transfer ${params.packageName} --to ${params.scopedOwnerHandle} --reason "Move legacy personal package into @${params.scopedOwnerHandle}"\n\nThen rerun publish.`;
+  }
+  return `Cannot publish ${params.packageName}: package.json name is scoped to "@${params.scopedOwnerHandle}", but ClawHub has no "@${params.scopedOwnerHandle}" publisher. Create it with "clawhub publisher create ${params.scopedOwnerHandle}".`;
+}
+
 function isTrustedOpenClawPluginPackage(params: {
   family: PackageFamily;
   normalizedName: string;
@@ -206,6 +247,11 @@ const internalRefs = internal as unknown as {
   };
   vt: {
     scanPackageReleaseWithVirusTotal: unknown;
+  };
+};
+const packageAutobanRemediationInternalRefs = internal as unknown as {
+  packages: {
+    restoreOwnedPackagesForAutobanRemediationBatchInternal: never;
   };
 };
 type DbReaderCtx = Pick<QueryCtx | MutationCtx, "db">;
@@ -2912,6 +2958,166 @@ export const restorePackageInternal = internalMutation({
   },
 });
 
+export const restoreOwnedPackagesForAutobanRemediationBatchInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    ownerUserId: v.id("users"),
+    bannedAt: v.number(),
+    cursor: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const owner = await ctx.db.get(args.ownerUserId);
+    if (!owner || owner.deletedAt || owner.deactivatedAt || owner.purgedAt) {
+      return {
+        ok: true as const,
+        restoredCount: 0,
+        restoredReleases: 0,
+        skippedMalicious: 0,
+        scheduled: false,
+        aborted: true,
+      };
+    }
+
+    const { page, isDone, continueCursor } = await ctx.db
+      .query("packages")
+      .withIndex("by_owner", (q) => q.eq("ownerUserId", args.ownerUserId))
+      .order("desc")
+      .paginate({
+        cursor: args.cursor ?? null,
+        numItems: 25,
+      });
+
+    let restoredCount = 0;
+    let restoredReleases = 0;
+    let skippedMalicious = 0;
+    for (const pkg of page) {
+      if (!pkg.softDeletedAt || pkg.softDeletedAt !== args.bannedAt) continue;
+      if (pkg.scanStatus === "malicious") {
+        skippedMalicious += 1;
+        continue;
+      }
+
+      const releases = await ctx.db
+        .query("packageReleases")
+        .withIndex("by_package", (q) => q.eq("packageId", pkg._id))
+        .collect();
+      const nonMaliciousActiveReleases: Doc<"packageReleases">[] = [];
+      const restoredReleaseIds: Array<Id<"packageReleases">> = [];
+      for (const release of releases) {
+        let nextRelease = release;
+        if (
+          release.softDeletedAt === args.bannedAt &&
+          resolvePackageReleaseScanStatus(release) !== "malicious"
+        ) {
+          nextRelease = { ...release, softDeletedAt: undefined };
+          restoredReleaseIds.push(release._id);
+        }
+        if (
+          !nextRelease.softDeletedAt &&
+          resolvePackageReleaseScanStatus(nextRelease) !== "malicious"
+        ) {
+          nonMaliciousActiveReleases.push(nextRelease);
+        }
+      }
+
+      const nextLatest =
+        getPreservedRestoredPackageRelease(pkg, nonMaliciousActiveReleases) ??
+        getPreferredRestoredPackageRelease(pkg.family, nonMaliciousActiveReleases);
+      if (!nextLatest) {
+        skippedMalicious += 1;
+        continue;
+      }
+      for (const releaseId of restoredReleaseIds) {
+        await ctx.db.patch(releaseId, { softDeletedAt: undefined });
+        restoredReleases += 1;
+      }
+
+      const nextTags = rebuildPackageTagsFromActiveReleases(nonMaliciousActiveReleases);
+      if (nextLatest) nextTags.latest = nextLatest._id;
+      if (!(nextLatest.distTags ?? []).includes("latest")) {
+        await ctx.db.patch(nextLatest._id, {
+          distTags: [...(nextLatest.distTags ?? []), "latest"],
+        });
+      }
+
+      const packagePatch: Partial<Doc<"packages">> = {
+        softDeletedAt: undefined,
+        softDeletedBy: undefined,
+        softDeletedByRole: undefined,
+        tags: nextTags,
+        latestReleaseId: nextLatest?._id,
+        latestVersionSummary: nextLatest
+          ? {
+              version: nextLatest.version,
+              createdAt: nextLatest.createdAt,
+              changelog: nextLatest.changelog,
+              compatibility: nextLatest.compatibility,
+              capabilities: nextLatest.capabilities,
+              verification: nextLatest.verification,
+              artifact: packageArtifactSummary(nextLatest),
+            }
+          : undefined,
+        summary: nextLatest?.summary,
+        capabilityTags: nextLatest?.capabilities?.capabilityTags,
+        executesCode:
+          typeof nextLatest?.capabilities?.executesCode === "boolean"
+            ? nextLatest.capabilities.executesCode
+            : undefined,
+        compatibility: nextLatest?.compatibility,
+        capabilities: nextLatest?.capabilities,
+        verification: nextLatest?.verification,
+        scanStatus: nextLatest ? resolvePackageReleaseScanStatus(nextLatest) : pkg.scanStatus,
+        updatedAt: Date.now(),
+      };
+      const nextPackage: Doc<"packages"> = { ...pkg, ...packagePatch };
+      await ctx.db.patch(pkg._id, packagePatch);
+      const restoreOwner = await getOwnerPublisher(ctx, {
+        ownerPublisherId: pkg.ownerPublisherId,
+        ownerUserId: pkg.ownerUserId,
+      });
+      await upsertPackageSearchDigest(ctx, {
+        ...extractPackageDigestFields(nextPackage),
+        ownerHandle: restoreOwner?.handle ?? "",
+        ownerKind: restoreOwner?.kind,
+      });
+      await ctx.db.insert("auditLogs", {
+        actorUserId: args.actorUserId,
+        action: "package.autoban_remediation.restore",
+        targetType: "package",
+        targetId: pkg._id,
+        metadata: {
+          name: pkg.name,
+          normalizedName: pkg.normalizedName,
+          ownerUserId: pkg.ownerUserId,
+          ownerPublisherId: pkg.ownerPublisherId,
+          bannedAt: args.bannedAt,
+          releaseCount: restoredReleaseIds.length,
+          releaseIds: restoredReleaseIds,
+        },
+        createdAt: Date.now(),
+      });
+      restoredCount += 1;
+    }
+
+    scheduleNextBatchIfNeeded(
+      ctx.scheduler,
+      packageAutobanRemediationInternalRefs.packages
+        .restoreOwnedPackagesForAutobanRemediationBatchInternal,
+      args,
+      isDone,
+      continueCursor,
+    );
+
+    return {
+      ok: true as const,
+      restoredCount,
+      restoredReleases,
+      skippedMalicious,
+      scheduled: !isDone,
+    };
+  },
+});
+
 export const softDeletePackage = mutation({
   args: {
     packageId: v.id("packages"),
@@ -4385,8 +4591,30 @@ async function publishPackageImpl(
     } catch (error) {
       if (scopedOwnerHandle && error instanceof Error) {
         if (/not found/i.test(error.message)) {
+          let legacyPersonalOwnerHandle: string | undefined;
+          if (existingPackage && actor && existingPackage.ownerUserId === actor._id) {
+            if (existingPackage.ownerPublisherId) {
+              const existingOwnerPublisher = await runQueryRef<Doc<"publishers"> | null>(
+                ctx,
+                internalRefs.publishers.getByIdInternal,
+                { publisherId: existingPackage.ownerPublisherId },
+              );
+              if (
+                existingOwnerPublisher?.kind === "user" &&
+                existingOwnerPublisher.linkedUserId === actor._id
+              ) {
+                legacyPersonalOwnerHandle = normalizePublisherHandle(existingOwnerPublisher.handle);
+              }
+            } else {
+              legacyPersonalOwnerHandle = normalizePublisherHandle(actor.handle);
+            }
+          }
           throw new ConvexError(
-            `This package name uses the "@${scopedOwnerHandle}" namespace, but that publisher does not exist on ClawHub. Create the "@${scopedOwnerHandle}" organization or choose a different package name.`,
+            getScopedPackageMissingPublisherMessage({
+              scopedOwnerHandle,
+              packageName: name,
+              legacyPersonalOwnerHandle,
+            }),
           );
         }
         if (/forbidden|publish access/i.test(error.message)) {

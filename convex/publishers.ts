@@ -19,6 +19,7 @@ import {
   isPublisherRoleAllowed,
   normalizePublisherHandle,
 } from "./lib/publishers";
+import { isHandleReservedForAnotherUser } from "./lib/reservedHandles";
 import { readCanonicalStat } from "./lib/skillStats";
 
 const PUBLISHER_HANDLE_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
@@ -740,6 +741,71 @@ async function ensureOrgPublisherHandleWithActor(
   };
 }
 
+async function createOrgPublisherForUser(
+  ctx: MutationCtx,
+  args: {
+    actorUserId: Id<"users">;
+    handle: string;
+    displayName?: string;
+    bio?: string;
+  },
+) {
+  const actor = await ctx.db.get(args.actorUserId);
+  if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+
+  const handle = validateHandle(args.handle);
+  const existingPublisher = await getPublisherByHandle(ctx, handle);
+  if (existingPublisher) {
+    if (existingPublisher.kind === "user") {
+      throw new ConvexError(`Handle "@${handle}" is already used by a user or personal publisher`);
+    }
+    throw new ConvexError(`Publisher "@${handle}" already exists`);
+  }
+  const existingUser = await getUserByHandle(ctx, handle);
+  if (existingUser) {
+    throw new ConvexError(`Handle "@${handle}" is already used by a user or personal publisher`);
+  }
+  if (await isHandleReservedForAnotherUser(ctx, handle, args.actorUserId)) {
+    throw new ConvexError(`Handle "@${handle}" is reserved for another user`);
+  }
+
+  const now = Date.now();
+  const publisherId = await ctx.db.insert("publishers", {
+    kind: "org",
+    handle,
+    displayName: args.displayName?.trim() || handle,
+    bio: args.bio?.trim() || undefined,
+    image: undefined,
+    linkedUserId: undefined,
+    trustedPublisher: undefined,
+    createdAt: now,
+    updatedAt: now,
+  });
+  await ctx.db.insert("publisherMembers", {
+    publisherId,
+    userId: args.actorUserId,
+    role: "owner",
+    createdAt: now,
+    updatedAt: now,
+  });
+  await ctx.db.insert("auditLogs", {
+    actorUserId: args.actorUserId,
+    action: "publisher.org.create",
+    targetType: "publisher",
+    targetId: publisherId,
+    metadata: { handle },
+    createdAt: now,
+  });
+
+  return {
+    ok: true as const,
+    publisherId,
+    handle,
+    created: true as const,
+    trusted: false as const,
+  };
+}
+
 export const getByIdInternal = internalQuery({
   args: { publisherId: v.id("publishers") },
   handler: async (ctx, args) => await ctx.db.get(args.publisherId),
@@ -1153,50 +1219,14 @@ export const createOrg = mutation({
       actorUserId: userId,
       source: "publisher.create_org",
     });
-
-    const handle = validateHandle(args.handle);
-    const existingPublisher = await getPublisherByHandle(ctx, handle);
-    if (existingPublisher) throw new ConvexError(`Publisher "@${handle}" already exists`);
-
-    const existingUser = await ctx.db
-      .query("users")
-      .withIndex("handle", (q) => q.eq("handle", handle))
-      .unique();
-    if (existingUser && existingUser._id !== userId) {
-      throw new ConvexError(`Handle "@${handle}" is already claimed`);
-    }
-
-    const now = Date.now();
-    const displayName = args.displayName.trim() || handle;
-    const bio = args.bio?.trim() || undefined;
-    const publisherId = await ctx.db.insert("publishers", {
-      kind: "org",
-      handle,
-      displayName,
-      bio,
-      image: undefined,
-      linkedUserId: undefined,
-      trustedPublisher: false,
-      createdAt: now,
-      updatedAt: now,
-    });
-    await ctx.db.insert("publisherMembers", {
-      publisherId,
-      userId,
-      role: "owner",
-      createdAt: now,
-      updatedAt: now,
-    });
-    await ctx.db.insert("auditLogs", {
+    const result = await createOrgPublisherForUser(ctx, {
       actorUserId: userId,
-      action: "publisher.create",
-      targetType: "publisher",
-      targetId: publisherId,
-      metadata: { kind: "org", handle },
-      createdAt: now,
+      handle: args.handle,
+      displayName: args.displayName,
+      bio: args.bio,
     });
     return {
-      publisher: toPublicPublisher(await ctx.db.get(publisherId)),
+      publisher: toPublicPublisher(await ctx.db.get(result.publisherId)),
       role: "owner" as const,
     };
   },
@@ -1290,6 +1320,15 @@ export const ensureOrgPublisherHandleInternal = internalMutation({
     trusted: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => await ensureOrgPublisherHandleWithActor(ctx, args),
+});
+
+export const createOrgPublisherForUserInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    handle: v.string(),
+    displayName: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => await createOrgPublisherForUser(ctx, args),
 });
 
 export const addMember = mutation({

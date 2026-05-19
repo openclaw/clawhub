@@ -7640,55 +7640,6 @@ code {
   text-decoration: underline;
 }
 
-/* Code Insight Analysis */
-.code-insight-analysis {
-  margin-top: 12px;
-  padding: 10px 12px;
-  border-radius: 8px;
-}
-
-.code-insight-analysis.malicious {
-  background: rgba(239, 68, 68, 0.06);
-  border-left: 3px solid #dc2626;
-}
-
-.code-insight-analysis.suspicious {
-  background: rgba(245, 158, 11, 0.06);
-  border-left: 3px solid #f59e0b;
-}
-
-.code-insight-label {
-  font-size: 0.7rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  margin-bottom: 6px;
-}
-
-.code-insight-analysis.malicious .code-insight-label {
-  color: #dc2626;
-}
-
-.code-insight-analysis.suspicious .code-insight-label {
-  color: #f59e0b;
-}
-
-.code-insight-text {
-  font-size: 0.82rem;
-  line-height: 1.5;
-  color: var(--ink);
-  margin: 0;
-}
-
-.code-insight-text code {
-  font-family: var(--font-mono);
-  font-size: 0.78rem;
-  background: rgba(0, 0, 0, 0.06);
-  padding: 2px 5px;
-  border-radius: 4px;
-  word-break: break-all;
-}
-
 .version-scan-results {
   display: flex;
   gap: 8px;

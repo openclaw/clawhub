@@ -154,6 +154,14 @@ export declare const ApiV1UserSearchResponseSchema: import("arktype/internal/var
     }[];
     total: number;
 }, {}>;
+export declare const ApiV1PublisherCreateResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    publisherId: string;
+    handle: string;
+    created: true;
+    trusted: false;
+}, {}>;
+export type ApiV1PublisherCreateResponse = (typeof ApiV1PublisherCreateResponseSchema)[inferred];
 export declare const ApiV1SearchResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     results: {
         score: number;
@@ -454,6 +462,28 @@ export declare const ApiV1TransferListResponseSchema: import("arktype/internal/v
 export declare const ApiV1SetRoleResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     ok: true;
     role: "user" | "admin" | "moderator";
+}, {}>;
+export declare const ApiV1ReclassifyBanResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    dryRun: boolean;
+    userId: string;
+    handle: string | null;
+    previousReason: string | null;
+    nextReason: string;
+    changed: boolean;
+}, {}>;
+export declare const ApiV1RemediateAutobansResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    dryRun: boolean;
+    scanned: number;
+    wouldUnban: number;
+    unbanned: number;
+    skipped: number;
+    restoredSkills: number;
+    restoredPackages: number;
+    items: unknown[];
+    nextCursor?: string | null | undefined;
+    done?: boolean | undefined;
 }, {}>;
 export declare const ApiV1StarResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     ok: true;

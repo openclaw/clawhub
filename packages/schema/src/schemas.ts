@@ -157,6 +157,15 @@ export const ApiV1UserSearchResponseSchema = type({
   total: "number",
 });
 
+export const ApiV1PublisherCreateResponseSchema = type({
+  ok: "true",
+  publisherId: "string",
+  handle: "string",
+  created: "true",
+  trusted: "false",
+});
+export type ApiV1PublisherCreateResponse = (typeof ApiV1PublisherCreateResponseSchema)[inferred];
+
 export const ApiV1SearchResponseSchema = type({
   results: type({
     slug: "string?",
@@ -484,16 +493,28 @@ export const ApiV1SetRoleResponseSchema = type({
   role: '"admin"|"moderator"|"user"',
 });
 
-export const ApiV1StarsListResponseSchema = type({
-  items: type({
-    slug: "string",
-    displayName: "string",
-    summary: "string|null?",
-    tags: "unknown",
-    stats: "unknown",
-    createdAt: "number",
-    updatedAt: "number",
-  }).array(),
+export const ApiV1ReclassifyBanResponseSchema = type({
+  ok: "true",
+  dryRun: "boolean",
+  userId: "string",
+  handle: "string|null",
+  previousReason: "string|null",
+  nextReason: "string",
+  changed: "boolean",
+});
+
+export const ApiV1RemediateAutobansResponseSchema = type({
+  ok: "true",
+  dryRun: "boolean",
+  scanned: "number",
+  wouldUnban: "number",
+  unbanned: "number",
+  skipped: "number",
+  restoredSkills: "number",
+  restoredPackages: "number",
+  items: "unknown[]",
+  "nextCursor?": "string|null",
+  "done?": "boolean",
 });
 
 export const ApiV1StarResponseSchema = type({

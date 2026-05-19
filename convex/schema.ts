@@ -114,6 +114,7 @@ const users = defineTable({
   .index("email", ["email"])
   .index("phone", ["phone"])
   .index("handle", ["handle"])
+  .index("by_ban_reason_deleted_at", ["banReason", "deletedAt"])
   .index("by_active_handle", ["deletedAt", "deactivatedAt", "handle"]);
 
 const publishers = defineTable({
@@ -1025,6 +1026,8 @@ const securityScanJobs = defineTable({
   updatedAt: v.number(),
 })
   .index("by_status_and_next_run_at", ["status", "nextRunAt"])
+  .index("by_status_source_created_at", ["status", "source", "createdAt"])
+  .index("by_status_source_target_kind_created_at", ["status", "source", "targetKind", "createdAt"])
   .index("by_status_and_lease_expires_at", ["status", "leaseExpiresAt"])
   .index("by_status_malicious_signal_next_run_at", ["status", "hasMaliciousSignal", "nextRunAt"])
   .index("by_skill_version", ["skillVersionId"])

@@ -1191,6 +1191,16 @@ legacy shared user/personal publisher, the endpoint migrates it into an org publ
 - Body: `{ "handle": "openclaw", "displayName": "OpenClaw", "trusted": true }`
 - Response: `{ "ok": true, "publisherId": "...", "handle": "openclaw", "created": true, "migrated": false, "trusted": true }`
 
+### `POST /api/v1/publishers`
+
+Authenticated self-serve org publisher creation. Creates a new org publisher and adds the
+caller as owner. This endpoint does not migrate existing user/personal handles and does
+not mark the publisher trusted/official.
+
+- Body: `{ "handle": "opik", "displayName": "Opik" }`
+- Response: `{ "ok": true, "publisherId": "...", "handle": "opik", "created": true, "trusted": false }`
+- Returns `409` when the handle is already used by a publisher, user, or personal publisher.
+
 ### `POST /api/v1/users/reserve`
 
 Admin-only. Reserves root slugs and package names for a rightful owner without publishing a
@@ -1270,6 +1280,37 @@ Response:
 
 ```json
 { "ok": true, "alreadyUnbanned": false, "restoredSkills": 3 }
+```
+
+### `POST /api/v1/users/reclassify-ban`
+
+Change the stored reason for an existing ban without unbanning or restoring
+content (admin only). Defaults to dry-run unless `dryRun` is `false`.
+
+Body:
+
+```json
+{ "handle": "user_handle", "reason": "bulk publishing spam", "dryRun": true }
+```
+
+or
+
+```json
+{ "userId": "users_...", "reason": "bulk publishing spam", "dryRun": false }
+```
+
+Response:
+
+```json
+{
+  "ok": true,
+  "dryRun": false,
+  "userId": "users_...",
+  "handle": "user_handle",
+  "previousReason": "malware auto-ban",
+  "nextReason": "bulk publishing spam",
+  "changed": true
+}
 ```
 
 ### `POST /api/v1/users/role`

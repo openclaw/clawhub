@@ -40,6 +40,24 @@ const ibmPlex500Source = await resolveExistingPath(
 
 const copies = [
   {
+    source: path.resolve("public/clawd-logo.png"),
+    targets: [
+      path.resolve(".output/server/clawd-logo.png"),
+      path.resolve(".output/server/public/clawd-logo.png"),
+      path.resolve(".vercel/output/functions/__server.func/clawd-logo.png"),
+      path.resolve(".vercel/output/functions/__server.func/public/clawd-logo.png"),
+    ],
+  },
+  {
+    source: path.resolve("public/og-clawhub-watermark.png"),
+    targets: [
+      path.resolve(".output/server/og-clawhub-watermark.png"),
+      path.resolve(".output/server/public/og-clawhub-watermark.png"),
+      path.resolve(".vercel/output/functions/__server.func/og-clawhub-watermark.png"),
+      path.resolve(".vercel/output/functions/__server.func/public/og-clawhub-watermark.png"),
+    ],
+  },
+  {
     source: path.resolve("public/clawd-mark.png"),
     targets: [
       path.resolve(".output/server/clawd-mark.png"),

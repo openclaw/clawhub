@@ -85,6 +85,8 @@ User administration:
 bun run mod -- users ban <handleOrId> [--id] [--fuzzy] [--reason <text>] [--yes]
 bun run mod -- users unban <handleOrId> [--id] [--fuzzy] [--reason <text>] [--yes]
 bun run mod -- users set-role <handleOrId> <user|moderator|admin> [--id] [--fuzzy] [--yes]
+bun run mod -- users reclassify-ban <handleOrId> --reason <text> [--id] [--fuzzy] [--dry-run|--apply] [--yes] [--json]
+bun run mod -- users remediate-autobans [--dry-run|--apply] [--user <handleOrId>] [--id] [--since <date>] [--limit <n>] [--cursor <cursor>] [--all] [--json]
 ```
 
 The old top-level names are also available on the moderator binary:

@@ -10,6 +10,7 @@ type GlobalNitroMain = {
 };
 
 let markDataUrlPromise: Promise<string> | null = null;
+let watermarkDataUrlPromise: Promise<string> | null = null;
 let resvgWasmPromise: Promise<Uint8Array> | null = null;
 let fontBuffersPromise: Promise<Uint8Array[]> | null = null;
 let resvgInitPromise: Promise<void> | null = null;
@@ -33,7 +34,12 @@ function getServerUrl(pathname: string) {
 export async function getMarkDataUrl() {
   if (!markDataUrlPromise) {
     markDataUrlPromise = (async () => {
-      const candidates = [getServerUrl("clawd-mark.png"), getServerUrl("public/clawd-mark.png")];
+      const candidates = [
+        getServerUrl("clawd-logo.png"),
+        getServerUrl("public/clawd-logo.png"),
+        getServerUrl("clawd-mark.png"),
+        getServerUrl("public/clawd-mark.png"),
+      ];
       let lastError: unknown = null;
       for (const url of candidates) {
         try {
@@ -47,6 +53,28 @@ export async function getMarkDataUrl() {
     })();
   }
   return markDataUrlPromise;
+}
+
+export async function getWatermarkDataUrl() {
+  if (!watermarkDataUrlPromise) {
+    watermarkDataUrlPromise = (async () => {
+      const candidates = [
+        getServerUrl("og-clawhub-watermark.png"),
+        getServerUrl("public/og-clawhub-watermark.png"),
+      ];
+      let lastError: unknown = null;
+      for (const url of candidates) {
+        try {
+          const buffer = await readFile(url);
+          return `data:image/png;base64,${buffer.toString("base64")}`;
+        } catch (error) {
+          lastError = error;
+        }
+      }
+      throw lastError;
+    })();
+  }
+  return watermarkDataUrlPromise;
 }
 
 export async function getResvgWasm() {

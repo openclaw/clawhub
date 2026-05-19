@@ -3,10 +3,27 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { action, internalMutation, internalQuery } from "./functions";
 
-const MAX_PARALLEL_CODEX_SCANS = 10;
+const MAX_PARALLEL_CODEX_SCANS = 20;
 const DEFAULT_VT_WAIT_MS = 10 * 60 * 1000;
-const DEFAULT_LEASE_MS = 30 * 60 * 1000;
+const DEFAULT_LEASE_MS = 60 * 60 * 1000;
 const MAX_ATTEMPTS = 3;
+const DEFAULT_CANCEL_SCAN_LIMIT = 1000;
+const DEFAULT_CANCEL_DELETE_LIMIT = 500;
+const MAX_CANCEL_SCAN_LIMIT = 5000;
+const CANCEL_SAMPLE_LIMIT = 20;
+
+const finalLlmAnalysisStatuses = new Set(["clean", "suspicious", "malicious"]);
+
+type CancelSkipReason =
+  | "not-queued"
+  | "not-vt-update"
+  | "not-queued-vt-update"
+  | "malicious-signal"
+  | "missing-target-id"
+  | "missing-target"
+  | "missing-llm-analysis"
+  | "non-final-llm-analysis"
+  | "delete-limit-reached";
 
 const jobSourceValidator = v.union(
   v.literal("publish"),
@@ -122,6 +139,25 @@ function normalizeLimit(limit: number | undefined) {
   );
 }
 
+function normalizeMaintenanceScanLimit(limit: number | undefined) {
+  const normalized = Number.isFinite(limit) ? Math.floor(limit ?? DEFAULT_CANCEL_SCAN_LIMIT) : null;
+  return Math.max(1, Math.min(normalized ?? DEFAULT_CANCEL_SCAN_LIMIT, MAX_CANCEL_SCAN_LIMIT));
+}
+
+function normalizeMaintenanceDeleteLimit(limit: number | undefined, scanLimit: number) {
+  const normalized = Number.isFinite(limit)
+    ? Math.floor(limit ?? DEFAULT_CANCEL_DELETE_LIMIT)
+    : null;
+  return Math.max(0, Math.min(normalized ?? DEFAULT_CANCEL_DELETE_LIMIT, scanLimit));
+}
+
+function incrementSkip(
+  skippedByReason: Partial<Record<CancelSkipReason, number>>,
+  reason: CancelSkipReason,
+) {
+  skippedByReason[reason] = (skippedByReason[reason] ?? 0) + 1;
+}
+
 function isOpenClawPluginPackage(
   pkg: Doc<"packages"> | null | undefined,
   ownerPublisher: Pick<Doc<"publishers">, "handle" | "deletedAt"> | null | undefined,
@@ -227,6 +263,102 @@ export const enqueuePackageReleaseScanInternal = internalMutation({
       updatedAt: now,
     });
     return { ok: true as const, jobId };
+  },
+});
+
+export const cancelQueuedVtUpdateJobsInternal = internalMutation({
+  args: {
+    dryRun: v.boolean(),
+    createdBefore: v.number(),
+    scanLimit: v.optional(v.number()),
+    deleteLimit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const scanLimit = normalizeMaintenanceScanLimit(args.scanLimit);
+    const deleteLimit = normalizeMaintenanceDeleteLimit(args.deleteLimit, scanLimit);
+    const jobs = await ctx.db
+      .query("securityScanJobs")
+      .withIndex("by_status_source_created_at", (q) =>
+        q.eq("status", "queued").eq("source", "vt-update").lt("createdAt", args.createdBefore),
+      )
+      .order("asc")
+      .take(scanLimit);
+
+    const skippedByReason: Partial<Record<CancelSkipReason, number>> = {};
+    const sampleMatchedJobIds: string[] = [];
+    const sampleDeletedJobIds: string[] = [];
+    let matched = 0;
+    let deleted = 0;
+
+    for (const job of jobs) {
+      if (job.status !== "queued") {
+        incrementSkip(
+          skippedByReason,
+          job.source === "vt-update" ? "not-queued-vt-update" : "not-queued",
+        );
+        continue;
+      }
+      if (job.source !== "vt-update") {
+        incrementSkip(skippedByReason, "not-vt-update");
+        continue;
+      }
+      if (job.hasMaliciousSignal) {
+        incrementSkip(skippedByReason, "malicious-signal");
+        continue;
+      }
+
+      const targetId =
+        job.targetKind === "skillVersion" ? job.skillVersionId : job.packageReleaseId;
+      if (!targetId) {
+        incrementSkip(skippedByReason, "missing-target-id");
+        continue;
+      }
+      const target = await ctx.db.get(targetId);
+      if (!target || target.softDeletedAt) {
+        incrementSkip(skippedByReason, "missing-target");
+        continue;
+      }
+      const rawLlmStatus = target.llmAnalysis?.status?.trim();
+      if (!rawLlmStatus) {
+        incrementSkip(skippedByReason, "missing-llm-analysis");
+        continue;
+      }
+      if (!finalLlmAnalysisStatuses.has(rawLlmStatus.toLowerCase())) {
+        incrementSkip(skippedByReason, "non-final-llm-analysis");
+        continue;
+      }
+
+      // Emergency cleanup: source may have been overwritten by a VT update, but this
+      // intentionally cancels old VT-origin work once ClawScan has a final result.
+      matched += 1;
+      if (sampleMatchedJobIds.length < CANCEL_SAMPLE_LIMIT) sampleMatchedJobIds.push(job._id);
+      if (matched > deleteLimit) {
+        incrementSkip(skippedByReason, "delete-limit-reached");
+        continue;
+      }
+      if (args.dryRun) continue;
+
+      await ctx.db.delete(job._id);
+      deleted += 1;
+      if (sampleDeletedJobIds.length < CANCEL_SAMPLE_LIMIT) sampleDeletedJobIds.push(job._id);
+    }
+
+    const oldestScannedJob = jobs[0];
+    const newestScannedJob = jobs.at(-1);
+    return {
+      dryRun: args.dryRun,
+      scanned: jobs.length,
+      matched,
+      wouldDelete: Math.min(matched, deleteLimit),
+      deleted,
+      skippedByReason,
+      oldestScannedCreatedAt: oldestScannedJob?.createdAt ?? null,
+      newestScannedCreatedAt: newestScannedJob?.createdAt ?? null,
+      oldestScannedNextRunAt: oldestScannedJob?.nextRunAt ?? null,
+      newestScannedNextRunAt: newestScannedJob?.nextRunAt ?? null,
+      sampleMatchedJobIds,
+      sampleDeletedJobIds,
+    };
   },
 });
 
@@ -389,6 +521,7 @@ export const claimCodexScanJobs = action({
     token: v.string(),
     workerId: v.string(),
     limit: v.optional(v.number()),
+    leaseMs: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     assertWorkerToken(args.token);
@@ -398,6 +531,7 @@ export const claimCodexScanJobs = action({
       {
         workerId: args.workerId,
         limit: normalizeLimit(args.limit),
+        leaseMs: args.leaseMs,
       },
     );
 

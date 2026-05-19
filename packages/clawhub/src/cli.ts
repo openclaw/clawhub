@@ -30,6 +30,7 @@ import {
   cmdVerifyPackage,
 } from "./cli/commands/packages.js";
 import { cmdPublish } from "./cli/commands/publish.js";
+import { cmdCreatePublisher } from "./cli/commands/publishers.js";
 import {
   cmdExplore,
   cmdInstall,
@@ -380,6 +381,21 @@ registerCommand(skill, ["skill", "publish"])
   .action(async (folder, options) => {
     const opts = await resolveGlobalOpts();
     await cmdPublish(opts, folder, options);
+  });
+
+const publisherCmd = registerCommandGroup(program, ["publisher"])
+  .description("Publisher organization commands")
+  .showHelpAfterError()
+  .showSuggestionAfterError();
+
+registerCommand(publisherCmd, ["publisher", "create"])
+  .description("Create an org publisher you own")
+  .argument("<handle>", "Publisher handle, for example opik")
+  .option("--display-name <name>", "Publisher display name")
+  .option("--json", "Output JSON")
+  .action(async (handle, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdCreatePublisher(opts, handle, options);
   });
 
 const packageCmd = registerCommandGroup(program, ["package"]).description(

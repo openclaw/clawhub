@@ -13,6 +13,7 @@ import {
   pluginsGetRouterV1Handler,
   publishPackageV1Handler,
 } from "./httpApiV1/packagesV1";
+import { createPublisherV1Handler } from "./httpApiV1/publishersV1";
 import {
   listSkillsV1Handler,
   publishSkillV1Handler,
@@ -50,6 +51,7 @@ export const npmMirrorGetHttp = httpAction(npmMirrorGetHandler);
 export const listCodePluginsV1Http = httpAction(listCodePluginsV1Handler);
 export const listBundlePluginsV1Http = httpAction(listBundlePluginsV1Handler);
 export const verifyDocsSessionV1Http = httpAction(verifyDocsSessionV1Handler);
+export const createPublisherV1Http = httpAction(createPublisherV1Handler);
 
 export const searchSkillsV1Http = httpAction(searchSkillsV1Handler);
 export const resolveSkillVersionV1Http = httpAction(resolveSkillVersionV1Handler);
@@ -87,6 +89,7 @@ export const __handlers = {
   listCodePluginsV1Handler,
   listBundlePluginsV1Handler,
   verifyDocsSessionV1Handler,
+  createPublisherV1Handler,
   searchSkillsV1Handler,
   resolveSkillVersionV1Handler,
   listSkillsV1Handler,

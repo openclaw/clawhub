@@ -59,6 +59,10 @@ export function buildForegroundArgs(argv: string[]) {
   return argv.filter((arg) => arg !== "--detach");
 }
 
+export function buildViteArgs(port: string) {
+  return ["--bun", "vite", "dev", "--host", "127.0.0.1", "--port", port];
+}
+
 function readDetachedPid() {
   if (!existsSync(DETACHED_PID_FILE)) return null;
   const raw = readFileSync(DETACHED_PID_FILE, "utf8").trim();
@@ -77,43 +81,19 @@ export function isRunningPid(pid: number | null) {
   }
 }
 
-export function parseGitWorktreeList(text: string) {
-  return text
-    .split(/\r?\n/)
-    .filter((line) => line.startsWith("worktree "))
-    .map((line) => line.slice("worktree ".length).trim())
-    .filter(Boolean);
-}
-
-function listGitWorktrees() {
-  const result = spawnSync("git", ["worktree", "list", "--porcelain"], {
-    cwd: process.cwd(),
-    encoding: "utf8",
-  });
-  if (result.status !== 0 || typeof result.stdout !== "string") return [];
-  return parseGitWorktreeList(result.stdout);
-}
-
 export function buildEnvFileCandidates(options: {
   explicit: string | null;
   cwd: string;
   worktrees?: string[];
 }) {
   if (options.explicit) return [options.explicit];
-  const primaryWorktree = options.worktrees?.[0];
-  return [
-    ...DEFAULT_ENV_SOURCES,
-    ...(primaryWorktree && resolve(primaryWorktree) !== resolve(options.cwd)
-      ? [`${primaryWorktree}/.env.local`]
-      : []),
-  ];
+  return DEFAULT_ENV_SOURCES;
 }
 
 function findEnvFile(explicit: string | null) {
   const candidates = buildEnvFileCandidates({
     explicit,
     cwd: process.cwd(),
-    worktrees: explicit ? [] : listGitWorktrees(),
   });
   return candidates
     .map((candidate) => resolve(candidate))
@@ -173,7 +153,11 @@ async function isReachable(url: string) {
   }
 }
 
-function runSync(command: string, args: string[], extraEnv: Record<string, string | undefined>) {
+export function runSync(
+  command: string,
+  args: string[],
+  extraEnv: Record<string, string | undefined>,
+) {
   return (
     spawnSync(command, args, {
       cwd: process.cwd(),
@@ -237,6 +221,7 @@ async function runConvexFunctionWhenReady(args: string[]) {
 function spawnManaged(command: string, args: string[]) {
   const child = spawn(command, args, {
     cwd: process.cwd(),
+    detached: process.platform !== "win32",
     env: process.env,
     stdio: "inherit",
   });
@@ -247,7 +232,16 @@ function spawnManaged(command: string, args: string[]) {
 
 function stopManagedChildren() {
   for (const child of managedChildren) {
-    if (!child.killed) child.kill("SIGTERM");
+    if (child.killed) continue;
+    if (process.platform !== "win32" && child.pid) {
+      try {
+        process.kill(-child.pid, "SIGTERM");
+        continue;
+      } catch {
+        // Fall through to the direct child signal below.
+      }
+    }
+    child.kill("SIGTERM");
   }
 }
 
@@ -337,7 +331,7 @@ async function main() {
   const envFile = findEnvFile(options.envFile);
   if (!envFile) {
     console.error(
-      "Could not find .env.local in this checkout or the primary git worktree. Pass --env-file <path> or set CLAWHUB_ENV_FILE to a shared local env file.",
+      "Could not find .env.local in this checkout. Run bun run setup:worktree, pass --env-file <path>, or set CLAWHUB_ENV_FILE.",
     );
     process.exit(1);
   }
@@ -348,12 +342,6 @@ async function main() {
   if (!convexUrl) {
     console.error(`${basename(envFile)} is missing VITE_CONVEX_URL.`);
     process.exit(1);
-  }
-
-  if (!existsSync("node_modules/.bin/vite")) {
-    console.log("Installing dependencies for this worktree...");
-    const installStatus = runSync("bun", ["install"], {});
-    if (installStatus !== 0) process.exit(installStatus);
   }
 
   await ensureConvex(convexUrl);
@@ -387,7 +375,7 @@ async function main() {
 
   console.log(`Starting ClawHub from ${process.cwd()}`);
   console.log(`Using env file: ${envFile}`);
-  const vite = spawnManaged("bun", ["--bun", "vite", "dev", "--port", options.port]);
+  const vite = spawnManaged("bun", buildViteArgs(options.port));
   process.exit(await waitForExit(vite));
 }
 

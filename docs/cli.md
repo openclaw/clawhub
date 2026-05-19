@@ -453,6 +453,17 @@ Example:
 clawhub package migration-status @openclaw/example-plugin
 ```
 
+### `publisher create <handle>`
+
+- Creates an org publisher owned by the authenticated user.
+- The handle is normalized to lowercase and may be passed with or without `@`.
+- Newly created org publishers are not trusted/official by default.
+- Fails if the handle is already used by an existing publisher, user, or reserved route.
+
+```bash
+clawhub publisher create opik --display-name "Opik"
+```
+
 ### `package publish <source>`
 
 - Publishes a code plugin or bundle plugin via `POST /api/v1/packages`.

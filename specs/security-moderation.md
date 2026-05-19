@@ -114,6 +114,9 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   concerns remain `flagged.suspicious` and are hidden by the suspicious filter.
 - VirusTotal is telemetry only. It is included in the Codex workspace as signal,
   but VT alone must never hide, block, or set malicious/suspicious public status.
+- All-active daily VirusTotal sweeps are disabled. Any future recurring VT
+  freshness job must be bounded or delta-driven, and must not starve
+  publish-triggered ClawScan jobs.
 - Prompt-injection pre-scan hits are also context for Codex, not a deterministic
   post-Codex veto. The release worker must not downgrade a benign Codex verdict
   solely from regex telemetry.
@@ -132,8 +135,8 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   scans the exact uploaded `.tgz`; ClawHub does not currently run deep static/LLM scans across every
   tarball file.
 - Source-linked packages can fall back to a clean package verdict when VirusTotal only returns
-  undetected engine results, provided the LLM scan is clean and static scan is non-malicious. This
-  avoids indefinite pending scans when VT Code Insight never materializes.
+  undetected engine results, provided the LLM scan is clean and static scan is non-malicious. ClawHub
+  does not request or consume VirusTotal AI/code-insight results; VT is engine/vendor telemetry only.
 - Skill moderation state stores a structured snapshot:
   - `moderationVerdict`: `clean | suspicious | malicious`
   - `moderationReasonCodes[]`: canonical machine-readable reasons
@@ -184,6 +187,9 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Admins can manually unban (`deletedAt` + `banReason` cleared); revoked API tokens
   stay revoked and should be recreated by the user.
 - Optional ban reason is stored in `users.banReason` and audit logs.
+- Admins can reclassify an existing ban reason without unbanning or restoring
+  content. This preserves the ban while removing users from remediation flows
+  that key off a specific historical reason such as `malware auto-ban`.
 - Moderators cannot ban admins; nobody can ban themselves.
 - Report counters effectively reset because deleted/banned skills are no longer
   considered active in the per-user report cap.

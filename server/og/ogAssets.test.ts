@@ -15,18 +15,39 @@ vi.mock("@resvg/resvg-wasm", () => ({
 
 describe("ogAssets", () => {
   beforeEach(() => {
+    vi.resetModules();
     delete (globalThis as { __nitro_main__?: unknown }).__nitro_main__;
     readFileMock.mockReset();
     initWasmMock.mockReset();
   });
 
-  it("falls back to the packaged public mark asset", async () => {
+  it("loads the packaged local OG watermark asset", async () => {
     readFileMock.mockImplementation(async (input: unknown) => {
       const path = String(input);
-      if (path.includes("public/clawd-mark.png")) {
+      if (path.includes("public/og-clawhub-watermark.png")) {
+        return Buffer.from("watermark");
+      }
+      if (path.includes("og-clawhub-watermark.png")) {
+        throw new Error("missing root watermark");
+      }
+      throw new Error(`unexpected read: ${path}`);
+    });
+
+    const { getWatermarkDataUrl } = await import("./ogAssets");
+
+    await expect(getWatermarkDataUrl()).resolves.toBe("data:image/png;base64,d2F0ZXJtYXJr");
+    expect(readFileMock).toHaveBeenCalledTimes(2);
+    expect(String(readFileMock.mock.calls[0]?.[0])).toContain("og-clawhub-watermark.png");
+    expect(String(readFileMock.mock.calls[1]?.[0])).toContain("public/og-clawhub-watermark.png");
+  });
+
+  it("falls back to the packaged public site logo asset", async () => {
+    readFileMock.mockImplementation(async (input: unknown) => {
+      const path = String(input);
+      if (path.includes("public/clawd-logo.png")) {
         return Buffer.from("png");
       }
-      if (path.includes("clawd-mark.png")) {
+      if (path.includes("clawd-logo.png")) {
         throw new Error("missing root mark");
       }
       throw new Error(`unexpected read: ${path}`);
@@ -36,8 +57,8 @@ describe("ogAssets", () => {
 
     await expect(getMarkDataUrl()).resolves.toBe("data:image/png;base64,cG5n");
     expect(readFileMock).toHaveBeenCalledTimes(2);
-    expect(String(readFileMock.mock.calls[0]?.[0])).toContain("clawd-mark.png");
-    expect(String(readFileMock.mock.calls[1]?.[0])).toContain("public/clawd-mark.png");
+    expect(String(readFileMock.mock.calls[0]?.[0])).toContain("clawd-logo.png");
+    expect(String(readFileMock.mock.calls[1]?.[0])).toContain("public/clawd-logo.png");
   });
 
   it("initializes resvg wasm only once per process", async () => {

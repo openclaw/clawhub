@@ -2032,7 +2032,7 @@ describe("moderationEngine", () => {
     expect(snapshot.reasonCodes).not.toContain("suspicious.vt_suspicious");
   });
 
-  it("ignores AI-only VT suspicious as moderation authority", () => {
+  it("ignores VT suspicious status as moderation authority", () => {
     const snapshot = buildModerationSnapshot({
       staticScan: {
         status: "clean",
@@ -2044,8 +2044,6 @@ describe("moderationEngine", () => {
       },
       vtAnalysis: {
         status: "suspicious",
-        scanner: "code_insight",
-        source: "palm",
         engineStats: {
           malicious: 0,
           suspicious: 0,
@@ -2060,7 +2058,7 @@ describe("moderationEngine", () => {
     expect(snapshot.reasonCodes).toEqual([]);
   });
 
-  it("ignores AI-only VT malicious without AV-engine corroboration", () => {
+  it("ignores VT malicious status without local corroboration", () => {
     const snapshot = buildModerationSnapshot({
       staticScan: {
         status: "clean",
@@ -2072,8 +2070,6 @@ describe("moderationEngine", () => {
       },
       vtAnalysis: {
         status: "malicious",
-        scanner: "code_insight",
-        source: "palm",
         engineStats: {
           malicious: 0,
           suspicious: 0,
@@ -2127,7 +2123,7 @@ describe("moderationEngine", () => {
     expect(snapshot.legacyFlags).toEqual(["flagged.suspicious"]);
   });
 
-  it("does not let uncorroborated VT Code Insight suspicious override clean local scans", () => {
+  it("does not let uncorroborated VT suspicious override clean local scans", () => {
     const snapshot = buildModerationSnapshot({
       staticScan: {
         status: "clean",
@@ -2139,8 +2135,6 @@ describe("moderationEngine", () => {
       },
       vtAnalysis: {
         status: "suspicious",
-        scanner: "code_insight",
-        source: "VirusTotal Code Insight",
         engineStats: {
           malicious: 0,
           suspicious: 0,
@@ -2155,7 +2149,7 @@ describe("moderationEngine", () => {
     expect(snapshot.reasonCodes).toEqual([]);
   });
 
-  it("keeps VT Code Insight plus engine suspicious as telemetry only", () => {
+  it("keeps VT engine suspicious as telemetry only", () => {
     const snapshot = buildModerationSnapshot({
       staticScan: {
         status: "clean",
@@ -2167,8 +2161,6 @@ describe("moderationEngine", () => {
       },
       vtAnalysis: {
         status: "suspicious",
-        scanner: "code_insight",
-        source: "VirusTotal Code Insight",
         engineStats: {
           malicious: 0,
           suspicious: 1,
