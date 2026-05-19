@@ -132,8 +132,8 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   scans the exact uploaded `.tgz`; ClawHub does not currently run deep static/LLM scans across every
   tarball file.
 - Source-linked packages can fall back to a clean package verdict when VirusTotal only returns
-  undetected engine results, provided the LLM scan is clean and static scan is non-malicious. This
-  avoids indefinite pending scans when VT Code Insight never materializes.
+  undetected engine results, provided the LLM scan is clean and static scan is non-malicious. ClawHub
+  does not request or consume VirusTotal AI/code-insight results; VT is engine/vendor telemetry only.
 - Skill moderation state stores a structured snapshot:
   - `moderationVerdict`: `clean | suspicious | malicious`
   - `moderationReasonCodes[]`: canonical machine-readable reasons

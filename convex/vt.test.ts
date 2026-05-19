@@ -219,6 +219,54 @@ describe("vt result lookup", () => {
       headers: { "x-apikey": "test-key" },
     });
   });
+
+  it("ignores VirusTotal Code Insight results and reports engine stats only", async () => {
+    process.env.VT_API_KEY = "test-key";
+    const hash = "b".repeat(64);
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: {
+          attributes: {
+            crowdsourced_ai_results: [
+              {
+                category: "code_insight",
+                verdict: "malicious",
+                analysis: "AI-only claim that should be ignored.",
+                source: "palm",
+              },
+            ],
+            last_analysis_stats: {
+              malicious: 0,
+              suspicious: 0,
+              harmless: 2,
+              undetected: 20,
+            },
+          },
+        },
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await fetchResultsHandler({} as never, { sha256hash: hash });
+
+    expect(result).toMatchObject({
+      status: "clean",
+      source: "engines",
+      metadata: {
+        stats: {
+          malicious: 0,
+          suspicious: 0,
+          harmless: 2,
+          undetected: 20,
+        },
+      },
+    });
+    expect((result as { metadata?: Record<string, unknown> }).metadata).not.toHaveProperty(
+      "aiVerdict",
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("package VT retries", () => {
@@ -856,10 +904,63 @@ describe("package VT retries", () => {
     );
 
     expect(runMutation).not.toHaveBeenCalled();
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(scheduler.runAfter).toHaveBeenCalledWith(5 * 60 * 1000, expect.anything(), {
       releaseId: "packageReleases:demo",
       attempt: 4,
+    });
+  });
+});
+
+describe("vt pending polling", () => {
+  it("does not request VirusTotal reanalysis to trigger Code Insight", async () => {
+    process.env.VT_API_KEY = "test-key";
+    const hash = "c".repeat(64);
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: {
+          attributes: {
+            last_analysis_stats: {
+              malicious: 0,
+              suspicious: 0,
+              harmless: 0,
+              undetected: 66,
+            },
+          },
+        },
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce({
+        queueSize: 1,
+        staleCount: 0,
+        veryStaleCount: 0,
+        oldestAgeMinutes: 5,
+        healthy: true,
+      })
+      .mockResolvedValueOnce([
+        {
+          skillId: "skills:pending",
+          versionId: "skillVersions:pending",
+          sha256hash: hash,
+          checkCount: 9,
+        },
+      ]);
+    const runMutation = vi.fn(async () => null);
+
+    const result = await pollPendingScansHandler({ runQuery, runMutation } as never, {
+      batchSize: 1,
+    });
+
+    expect(result).toMatchObject({ processed: 1, updated: 0, staled: 1 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(`https://www.virustotal.com/api/v3/files/${hash}`, {
+      method: "GET",
+      headers: { "x-apikey": "test-key" },
     });
   });
 });

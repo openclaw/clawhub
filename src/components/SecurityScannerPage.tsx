@@ -10,7 +10,6 @@ import {
   getVisibleClawScanFindingCount,
   getVirusTotalDisplayStatus,
   hasClawScanRiskReview,
-  isVirusTotalAiOnlyAnalysis,
   RiskLevelBadge,
   ScanResultBadge,
   type LlmAnalysis,
@@ -159,26 +158,68 @@ function SecurityScannerHero({ label, props }: { label: string; props: SecurityS
 function getVisibleFindingCount(props: SecurityScannerPageProps) {
   if (props.scanner === "static-analysis") return props.staticScan?.findings?.length ?? 0;
   if (props.scanner === "clawscan") return getVisibleClawScanFindingCount(props.llmAnalysis);
-  if (props.scanner === "virustotal" && getVirusTotalAdvisoryText(props.vtAnalysis)) return 1;
   return 0;
 }
 
-function getVirusTotalAdvisoryText(analysis?: VtAnalysis | null) {
-  if (!isVirusTotalAiOnlyAnalysis(analysis)) return null;
-  const text = analysis?.analysis?.trim();
-  if (!text) return null;
-  return text.replace(/^Type:\s*.+?\s+Name:\s*.+?\s+Version:\s*\S+\s+/i, "").trim();
+function getVirusTotalEngineStats(analysis?: VtAnalysis | null) {
+  return analysis?.engineStats ?? analysis?.metadata?.stats ?? null;
+}
+
+function hasEngineVirusTotalSource(analysis?: VtAnalysis | null) {
+  const source = analysis?.source?.trim().toLowerCase();
+  const scanner = analysis?.scanner?.trim().toLowerCase();
+  return Boolean(source?.startsWith("engines") || scanner?.startsWith("engines"));
+}
+
+function hasNonEngineVirusTotalSource(analysis?: VtAnalysis | null) {
+  if (!analysis) return false;
+  const source = analysis.source?.trim().toLowerCase();
+  const scanner = analysis.scanner?.trim().toLowerCase();
+  return Boolean(
+    (source && !source.startsWith("engines")) || (scanner && !scanner.startsWith("engines")),
+  );
+}
+
+function getVirusTotalEngineOverview(analysis?: VtAnalysis | null) {
+  const stats = getVirusTotalEngineStats(analysis);
+  if (stats) {
+    const malicious = stats.malicious ?? 0;
+    const suspicious = stats.suspicious ?? 0;
+    if (malicious > 0 || suspicious > 0) {
+      return `VirusTotal vendor engines reported ${malicious} malicious and ${suspicious} suspicious detection(s) for this artifact. ClawHub treats this as telemetry for ClawScan, not as a standalone blocking verdict.`;
+    }
+    return "VirusTotal vendor engines reported no malicious or suspicious detections for this artifact.";
+  }
+
+  if (hasNonEngineVirusTotalSource(analysis)) {
+    return "No VirusTotal vendor-engine telemetry has been recorded for this artifact.";
+  }
+
+  const status = analysis?.status?.trim().toLowerCase();
+  if (status && !["loading", "not_found", "pending"].includes(status)) {
+    return `VirusTotal engine telemetry is currently ${status} for this artifact.`;
+  }
+
+  return null;
+}
+
+function getVirusTotalAnalysisText(analysis?: VtAnalysis | null) {
+  if (!analysis?.analysis || !hasEngineVirusTotalSource(analysis)) return null;
+  return analysis.analysis;
+}
+
+function getVirusTotalSourceLabel(analysis?: VtAnalysis | null) {
+  if (getVirusTotalEngineStats(analysis) || hasEngineVirusTotalSource(analysis)) {
+    return analysis?.source ?? "Engine telemetry";
+  }
+  return "File reputation";
 }
 
 function getOverviewCopy(props: SecurityScannerPageProps) {
   if (props.scanner === "virustotal") {
-    if (isVirusTotalAiOnlyAnalysis(props.vtAnalysis)) {
-      return [
-        "VirusTotal did not report multi-engine malware detections for this artifact. AI-only context from VirusTotal is treated as advisory and does not require user action.",
-      ];
-    }
     return [
-      props.vtAnalysis?.analysis ??
+      getVirusTotalAnalysisText(props.vtAnalysis) ??
+        getVirusTotalEngineOverview(props.vtAnalysis) ??
         "No VirusTotal analysis has been recorded yet. File reputation checks will appear here once the artifact hash has been scanned.",
     ];
   }
@@ -252,10 +293,8 @@ function SecurityScannerReport(props: SecurityScannerPageProps) {
       ? props.llmAnalysis
       : null;
   const riskLevel = props.scanner === "clawscan" ? getClawScanRiskLevel(props.llmAnalysis) : null;
-  const vtAdvisoryText = getVirusTotalAdvisoryText(props.vtAnalysis);
   const visibleFindingCount = getVisibleFindingCount(props);
   const overviewCopy = getOverviewCopy(props).filter(Boolean);
-  const showOverview = !(props.scanner === "virustotal" && vtAdvisoryText);
   const showPublisherNotePrompt =
     props.scanner === "clawscan" &&
     props.canManageArtifact &&
@@ -273,7 +312,7 @@ function SecurityScannerReport(props: SecurityScannerPageProps) {
 
         <div className="security-report-layout">
           <div className="security-report-main">
-            {showOverview ? (
+            {overviewCopy.length > 0 ? (
               <section className="security-report-panel" aria-labelledby="overview-heading">
                 <div className="security-report-panel-header">
                   <h2 id="overview-heading" className="skill-install-panel-title">
@@ -307,21 +346,6 @@ function SecurityScannerReport(props: SecurityScannerPageProps) {
                     />
                   ) : null}
                   <ClawScanRiskReview analysis={riskAnalysis} showTitle={false} />
-                </div>
-              </section>
-            ) : null}
-
-            {props.scanner === "virustotal" && vtAdvisoryText ? (
-              <section className="security-report-panel" aria-labelledby="vt-advisory-heading">
-                <div className="security-report-panel-header">
-                  <h2 id="vt-advisory-heading" className="skill-install-panel-title">
-                    Findings ({visibleFindingCount})
-                  </h2>
-                </div>
-                <div className="security-report-panel-body">
-                  <div className="vt-advisory-finding">
-                    <p>{vtAdvisoryText}</p>
-                  </div>
                 </div>
               </section>
             ) : null}
@@ -435,7 +459,7 @@ function SecurityScannerReport(props: SecurityScannerPageProps) {
                       },
                       {
                         label: "Source",
-                        value: props.vtAnalysis?.source ?? "File reputation",
+                        value: getVirusTotalSourceLabel(props.vtAnalysis),
                       },
                       {
                         label: "External report",

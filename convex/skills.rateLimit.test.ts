@@ -1107,7 +1107,7 @@ describe("skills anti-spam guards", () => {
     );
   });
 
-  it("does not hide or autoban for AI-only VT malicious without engine hits", async () => {
+  it("does not hide or autoban for VT-only malicious without engine hits", async () => {
     const patch = vi.fn(async () => {});
     const runAfter = vi.fn();
     const version = {
@@ -1123,8 +1123,8 @@ describe("skills anti-spam guards", () => {
       },
       vtAnalysis: {
         status: "malicious",
-        scanner: "code_insight",
-        source: "palm",
+        scanner: "legacy-ai",
+        source: "legacy-ai",
         engineStats: { malicious: 0, suspicious: 0, harmless: 12, undetected: 54 },
       },
       llmAnalysis: { status: "clean" },
@@ -2029,7 +2029,7 @@ describe("skills anti-spam guards", () => {
     );
   });
 
-  it("vt suspicious escalation clears legacy quarantine for uncorroborated Code Insight", async () => {
+  it("vt suspicious escalation clears legacy quarantine when local scans are clean", async () => {
     const patch = vi.fn(async () => {});
     const version = {
       _id: "skillVersions:1",
@@ -2044,7 +2044,7 @@ describe("skills anti-spam guards", () => {
       },
       vtAnalysis: {
         status: "suspicious",
-        scanner: "code_insight",
+        scanner: "legacy-ai",
         engineStats: {
           malicious: 0,
           suspicious: 0,
@@ -2115,7 +2115,7 @@ describe("skills anti-spam guards", () => {
     );
   });
 
-  it("vt malicious escalation clears legacy quarantine for AI-only Code Insight", async () => {
+  it("vt malicious escalation clears legacy quarantine when local scans are clean", async () => {
     const patch = vi.fn(async () => {});
     const runAfter = vi.fn();
     const version = {
@@ -2131,8 +2131,8 @@ describe("skills anti-spam guards", () => {
       },
       vtAnalysis: {
         status: "malicious",
-        scanner: "code_insight",
-        source: "palm",
+        scanner: "legacy-ai",
+        source: "legacy-ai",
         engineStats: {
           malicious: 0,
           suspicious: 0,
@@ -2476,8 +2476,8 @@ describe("skills anti-spam guards", () => {
       },
       vtAnalysis: {
         status: "malicious",
-        scanner: "code_insight",
-        source: "palm",
+        scanner: "legacy-ai",
+        source: "legacy-ai",
         engineStats: { malicious: 0, suspicious: 0, harmless: 12, undetected: 54 },
       },
       llmAnalysis: { status: "clean" },

@@ -164,15 +164,16 @@ describe("DetailSecuritySummary", () => {
     expect(screen.queryByText("Benign")).toBeNull();
   });
 
-  it("renders VirusTotal AI-only advisory scans as pass", () => {
+  it("renders legacy VirusTotal AI fields from engine stats instead of source", () => {
     render(
       <DetailSecuritySummary
         scannerBasePath="/tokauthai/skillscan/security"
         vtAnalysis={{
           status: "suspicious",
-          source: "VirusTotal Code Insight",
-          scanner: "code_insight",
-          analysis: "AI-only advisory context.",
+          source: "legacy-ai",
+          scanner: "legacy-ai",
+          analysis: "Legacy AI advisory context.",
+          engineStats: { malicious: 0, suspicious: 0, harmless: 12, undetected: 54 },
           checkedAt: 1,
         }}
         llmAnalysis={{ status: "clean", checkedAt: 1 }}
@@ -189,6 +190,33 @@ describe("DetailSecuritySummary", () => {
 
     expect(screen.getByRole("link", { name: "VirusTotal: Pass" })).toBeTruthy();
     expect(screen.queryByText("Advisory")).toBeNull();
+  });
+
+  it("renders legacy VirusTotal AI fields without engine stats as neutral", () => {
+    render(
+      <DetailSecuritySummary
+        scannerBasePath="/tokauthai/skillscan/security"
+        vtAnalysis={{
+          status: "suspicious",
+          source: "legacy-ai",
+          scanner: "legacy-ai",
+          analysis: "Legacy AI advisory context.",
+          checkedAt: 1,
+        }}
+        llmAnalysis={{ status: "clean", checkedAt: 1 }}
+        staticScan={{
+          status: "clean",
+          reasonCodes: [],
+          findings: [],
+          summary: "Clean.",
+          engineVersion: "v1",
+          checkedAt: 1,
+        }}
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: "VirusTotal: Pass" })).toBeTruthy();
+    expect(screen.queryByText("Warn")).toBeNull();
   });
 
   it("shows static suspicious as review without rolling it up to suspicious", () => {

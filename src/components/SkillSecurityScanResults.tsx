@@ -235,10 +235,13 @@ function getVtEngineStats(analysis?: VtAnalysis | null) {
   return analysis?.engineStats ?? analysis?.metadata?.stats;
 }
 
-export function isVirusTotalAiOnlyAnalysis(analysis?: VtAnalysis | null) {
-  const scanner = analysis?.scanner?.trim().toLowerCase();
-  const source = analysis?.source?.trim().toLowerCase();
-  return scanner === "code_insight" || source === "palm" || source?.includes("code insight");
+function hasNonEngineVirusTotalSource(analysis?: VtAnalysis | null) {
+  if (!analysis) return false;
+  const source = analysis.source?.trim().toLowerCase();
+  const scanner = analysis.scanner?.trim().toLowerCase();
+  return Boolean(
+    (source && !source.startsWith("engines")) || (scanner && !scanner.startsWith("engines")),
+  );
 }
 
 export function getVirusTotalDisplayStatus(analysis?: VtAnalysis | null) {
@@ -249,7 +252,8 @@ export function getVirusTotalDisplayStatus(analysis?: VtAnalysis | null) {
     return "benign";
   }
 
-  if (isVirusTotalAiOnlyAnalysis(analysis)) return "benign";
+  if (hasNonEngineVirusTotalSource(analysis)) return "benign";
+
   return analysis?.verdict ?? analysis?.status ?? "pending";
 }
 
@@ -682,9 +686,6 @@ export function SecurityScanResults({
 
   const vtStatus = getVirusTotalDisplayStatus(vtAnalysis);
   const vtUrl = sha256hash ? `https://www.virustotal.com/gui/file/${sha256hash}` : null;
-  const isCodeInsight = vtAnalysis?.source === "code_insight";
-  const aiAnalysis = vtAnalysis?.analysis;
-
   const llmVerdict = llmAnalysis?.verdict ?? llmAnalysis?.status;
   const llmDisplayStatus = getClawScanDisplayStatus(llmAnalysis);
   const llmStatusInfo = llmVerdict ? getScanStatusInfo(llmDisplayStatus) : null;
@@ -780,12 +781,6 @@ export function SecurityScanResults({
                 Details →
               </a>
             ) : null}
-          </div>
-        ) : null}
-        {isCodeInsight && aiAnalysis && (vtStatus === "malicious" || vtStatus === "suspicious") ? (
-          <div className={`code-insight-analysis ${vtStatus}`}>
-            <div className="code-insight-label">Code Insight</div>
-            <p className="code-insight-text">{aiAnalysis}</p>
           </div>
         ) : null}
         {llmStatusInfo && llmAnalysis ? (

@@ -1732,7 +1732,7 @@ describe("httpApiV1 handlers", () => {
           sha256hash: "a".repeat(64),
           vtAnalysis: {
             status: "suspicious",
-            source: "code_insight",
+            source: "legacy-ai",
             checkedAt: 123,
           },
           files: [],

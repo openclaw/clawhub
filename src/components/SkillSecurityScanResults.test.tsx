@@ -518,8 +518,8 @@ describe("SecurityScanResults static guidance", () => {
         vtAnalysis={{
           status: "clean",
           verdict: "benign",
-          analysis: "No known malicious reputation signals were found.",
-          source: "VirusTotal",
+          source: "engines",
+          engineStats: { malicious: 0, suspicious: 0, harmless: 4, undetected: 58 },
           checkedAt: Date.now(),
         }}
         llmAnalysis={clawScanAnalysis}
@@ -529,7 +529,7 @@ describe("SecurityScanResults static guidance", () => {
     expect(screen.getByRole("heading", { name: "Hash Guard" })).toBeTruthy();
     expect(screen.getByText(/Audited by VirusTotal/i)).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Overview" })).toBeTruthy();
-    expect(screen.getByText("No known malicious reputation signals were found.")).toBeTruthy();
+    expect(screen.getByText(/VirusTotal vendor engines reported no malicious/i)).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Scan Metadata" })).toBeTruthy();
     expect(screen.getByText("abc123")).toBeTruthy();
     expect(screen.queryByRole("heading", { name: /Findings/i })).toBeNull();
@@ -538,7 +538,34 @@ describe("SecurityScanResults static guidance", () => {
     expect(screen.queryByText("Artifact")).toBeNull();
   });
 
-  it("shows neutral VirusTotal summary and advisory paragraph for AI-only context", () => {
+  it("summarizes completed engine-only VirusTotal scans", () => {
+    render(
+      <SecurityScannerPage
+        scanner="virustotal"
+        entity={{
+          kind: "skill",
+          title: "Hash Guard",
+          name: "hash-guard",
+          version: "1.2.3",
+          detailPath: "/local/hash-guard",
+        }}
+        sha256hash="abc123"
+        vtAnalysis={{
+          status: "clean",
+          source: "engines",
+          engineStats: { malicious: 0, suspicious: 0, harmless: 2, undetected: 60 },
+          checkedAt: Date.now(),
+        }}
+        llmAnalysis={clawScanAnalysis}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: "Overview" })).toBeTruthy();
+    expect(screen.getByText(/VirusTotal vendor engines reported no malicious/i)).toBeTruthy();
+    expect(screen.queryByText(/No VirusTotal analysis has been recorded/i)).toBeNull();
+  });
+
+  it("treats legacy non-engine VirusTotal text as neutral and hidden", () => {
     render(
       <SecurityScannerPage
         scanner="virustotal"
@@ -553,7 +580,7 @@ describe("SecurityScanResults static guidance", () => {
         vtAnalysis={{
           status: "suspicious",
           analysis: "Type: OpenClaw Skill Name: skillscan Version: 1.1.6 raw AI context",
-          source: "palm",
+          source: "legacy-ai",
           checkedAt: Date.now(),
         }}
         llmAnalysis={clawScanAnalysis}
@@ -561,12 +588,12 @@ describe("SecurityScanResults static guidance", () => {
     );
 
     expect(screen.getByText(/Audited by VirusTotal/i)).toBeTruthy();
-    expect(screen.queryByRole("heading", { name: "Overview" })).toBeNull();
+    expect(screen.getByText("Pass")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Overview" })).toBeTruthy();
     expect(screen.queryByText(/multi-engine malware detections/i)).toBeNull();
-    expect(screen.getByRole("heading", { name: "Findings (1)" })).toBeTruthy();
-    expect(screen.queryByText("Advisory")).toBeNull();
-    expect(screen.getByText(/raw AI context/i)).toBeTruthy();
-    expect(screen.queryByText(/Type: OpenClaw Skill Name/i)).toBeNull();
+    expect(screen.queryByRole("heading", { name: /Findings/ })).toBeNull();
+    expect(screen.queryByText(/raw AI context/i)).toBeNull();
+    expect(screen.getByText(/No VirusTotal vendor-engine telemetry/i)).toBeTruthy();
   });
 
   it("shows static analysis reports in the shared scanner report shell", () => {

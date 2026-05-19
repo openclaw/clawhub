@@ -40,13 +40,13 @@ describe("packageSecurity", () => {
     ).toBeNull();
   });
 
-  it("keeps AI-only VT suspicious advisory when engines are clean", () => {
+  it("keeps legacy VT suspicious status as telemetry when engines are clean", () => {
     const release = {
       sha256hash: "a".repeat(64),
       vtAnalysis: {
         status: "suspicious",
-        scanner: "code_insight",
-        source: "palm",
+        scanner: "legacy-ai",
+        source: "legacy-ai",
         engineStats: { malicious: 0, suspicious: 0, harmless: 12, undetected: 54 },
       },
     } as never;
@@ -55,13 +55,13 @@ describe("packageSecurity", () => {
     expect(getPackageDownloadSecurityBlock(release)).toBeNull();
   });
 
-  it("keeps AI-only VT malicious advisory when engines are clean", () => {
+  it("keeps legacy VT malicious status as telemetry when engines are clean", () => {
     const release = {
       sha256hash: "a".repeat(64),
       vtAnalysis: {
         status: "malicious",
-        scanner: "code_insight",
-        source: "palm",
+        scanner: "legacy-ai",
+        source: "legacy-ai",
         engineStats: { malicious: 0, suspicious: 0, harmless: 12, undetected: 54 },
       },
     } as never;
@@ -75,8 +75,8 @@ describe("packageSecurity", () => {
       resolvePackageReleaseScanStatus({
         vtAnalysis: {
           status: "clean",
-          scanner: "code_insight",
-          source: "palm",
+          scanner: "legacy-ai",
+          source: "legacy-ai",
           engineStats: { malicious: 0, suspicious: 1, harmless: 12, undetected: 54 },
         },
       } as never),
@@ -87,8 +87,8 @@ describe("packageSecurity", () => {
     const release = {
       vtAnalysis: {
         status: "clean",
-        scanner: "code_insight",
-        source: "palm",
+        scanner: "legacy-ai",
+        source: "legacy-ai",
         engineStats: { malicious: 1, suspicious: 0, harmless: 12, undetected: 54 },
       },
     } as never;
@@ -182,14 +182,14 @@ describe("packageSecurity", () => {
     ).toEqual(["manual:quarantined", "scan:malicious", "reports:2"]);
   });
 
-  it("does not expose AI-only VT advisory statuses as public trust reasons", () => {
+  it("does not expose legacy VT-only statuses as public trust reasons", () => {
     expect(
       getPackageTrustReasons(
         {
           vtAnalysis: {
             status: "malicious",
-            scanner: "code_insight",
-            source: "palm",
+            scanner: "legacy-ai",
+            source: "legacy-ai",
             engineStats: { malicious: 0, suspicious: 0, harmless: 12, undetected: 54 },
           },
         } as never,

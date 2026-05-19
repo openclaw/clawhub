@@ -146,33 +146,10 @@ export const logScanResultInternal = internalMutation({
   },
 });
 
-const BENIGN_VERDICTS = new Set(["benign", "clean"]);
-const MALICIOUS_VERDICTS = new Set(["malicious"]);
-const SUSPICIOUS_VERDICTS = new Set(["suspicious"]);
-
-function normalizeVerdict(value?: string) {
-  return value?.trim().toLowerCase() ?? "";
-}
-
-function verdictToStatus(verdict: string) {
-  if (BENIGN_VERDICTS.has(verdict)) return "clean";
-  if (MALICIOUS_VERDICTS.has(verdict)) return "malicious";
-  if (SUSPICIOUS_VERDICTS.has(verdict)) return "suspicious";
-  return "pending";
-}
-
-type VTAIResult = {
-  category: string;
-  verdict: string;
-  analysis?: string;
-  source?: string;
-};
-
 type VTFileResponse = {
   data: {
     attributes: {
       sha256: string;
-      crowdsourced_ai_results?: VTAIResult[];
       last_analysis_stats?: {
         malicious: number;
         suspicious: number;
@@ -255,23 +232,6 @@ function buildPackageScanAnalysisFromVtResult(
   pkg: PackageScanDoc,
   vtResult: VTFileResponse,
 ) {
-  const aiResult = vtResult.data.attributes.crowdsourced_ai_results?.find(
-    (r) => r.category === "code_insight",
-  );
-  if (aiResult) {
-    const verdict = normalizeVerdict(aiResult.verdict);
-    const stats = vtResult.data.attributes.last_analysis_stats;
-    return {
-      status: verdictToStatus(verdict),
-      verdict: aiResult.verdict,
-      analysis: aiResult.analysis,
-      source: aiResult.source,
-      scanner: "code_insight",
-      engineStats: normalizeVtEngineStats(stats),
-      checkedAt: Date.now(),
-    };
-  }
-
   const stats = vtResult.data.attributes.last_analysis_stats;
   const status = statusFromAvStats(stats);
   if (status) {
@@ -340,13 +300,6 @@ type ActiveSkillsMissingVTCache = {
   slug: string;
 };
 
-type PendingVTSkill = {
-  skillId: Id<"skills">;
-  versionId: Id<"skillVersions">;
-  slug: string;
-  sha256hash: string;
-};
-
 type NullModerationStatusSkill = {
   skillId: Id<"skills">;
   slug: string;
@@ -378,10 +331,6 @@ type ScanLegacySkillsResult =
 
 type BackfillActiveSkillsVTCacheResult =
   | { total: number; updated: number; noResults: number; errors: number; done: boolean }
-  | { error: string };
-
-type RequestReanalysisForPendingResult =
-  | { total: number; requested: number; errors?: number; done: boolean }
   | { error: string };
 
 type FixNullModerationStatusResult = { total: number; fixed: number; done: boolean };
@@ -486,28 +435,14 @@ export const fetchResults = internalAction({
       }
 
       const data = (await response.json()) as VTFileResponse;
-      const aiResult = data.data.attributes.crowdsourced_ai_results?.find(
-        (r) => r.category === "code_insight",
-      );
-
       const stats = data.data.attributes.last_analysis_stats;
-      let status = "pending";
-
-      if (aiResult?.verdict) {
-        // Prioritize AI Analysis (Code Insight)
-        status = verdictToStatus(normalizeVerdict(aiResult.verdict));
-      } else {
-        status = statusFromAvStats(stats) ?? "pending";
-      }
+      const status = statusFromAvStats(stats) ?? "pending";
 
       return {
         status,
-        source: aiResult?.verdict ? "code_insight" : "engines",
+        source: "engines",
         url: `https://www.virustotal.com/gui/file/${args.sha256hash}`,
         metadata: {
-          aiVerdict: aiResult?.verdict,
-          aiAnalysis: aiResult?.analysis,
-          aiSource: aiResult?.source,
           stats: stats,
         },
       };
@@ -579,22 +514,16 @@ export const scanWithVirusTotal = internalAction({
       sha256hash,
     });
 
-    // Check if file already exists in VT and has AI analysis
+    // Check if file already exists in VT and has engine analysis.
     try {
       const existingFile = await checkExistingFile(apiKey, sha256hash);
 
       if (existingFile) {
-        const aiResult = existingFile.data.attributes.crowdsourced_ai_results?.find(
-          (r) => r.category === "code_insight",
-        );
-
-        if (aiResult) {
-          const stats = existingFile.data.attributes.last_analysis_stats;
-          // File exists and has AI analysis - use the verdict
-          const verdict = normalizeVerdict(aiResult.verdict);
-          const status = verdictToStatus(verdict);
+        const stats = existingFile.data.attributes.last_analysis_stats;
+        const status = statusFromAvStats(stats);
+        if (status) {
           console.log(
-            `Version ${args.versionId} found in VT with AI analysis. Hash: ${sha256hash}. Verdict: ${verdict}`,
+            `Version ${args.versionId} found in VT with engine analysis. Hash: ${sha256hash}. Status: ${status}`,
           );
 
           // Cache VT analysis in version
@@ -602,10 +531,7 @@ export const scanWithVirusTotal = internalAction({
             versionId: args.versionId,
             vtAnalysis: {
               status,
-              verdict: aiResult.verdict,
-              analysis: aiResult.analysis,
-              source: aiResult.source,
-              scanner: "code_insight",
+              source: "engines",
               engineStats: normalizeVtEngineStats(stats),
               checkedAt: Date.now(),
             },
@@ -615,9 +541,8 @@ export const scanWithVirusTotal = internalAction({
           return;
         }
 
-        // File exists but no AI analysis - need to upload for fresh scan
         console.log(
-          `Version ${args.versionId} found in VT but no AI analysis. Hash: ${sha256hash}. Uploading...`,
+          `Version ${args.versionId} found in VT but no decisive engine analysis. Hash: ${sha256hash}. Uploading...`,
         );
       } else {
         console.log(`Version ${args.versionId} not found in VT. Hash: ${sha256hash}. Uploading...`);
@@ -893,7 +818,6 @@ export const pollPackageReleaseScanResults = internalAction({
         return;
       }
 
-      await requestRescan(apiKey, release.sha256hash);
       if (attempt < PACKAGE_SCAN_MAX_ATTEMPTS) {
         await runAfterRef(
           ctx,
@@ -1018,84 +942,39 @@ export const pollPendingScans = internalAction({
           continue;
         }
 
-        const aiResult = vtResult.data.attributes.crowdsourced_ai_results?.find(
-          (r) => r.category === "code_insight",
-        );
+        const stats = vtResult.data.attributes.last_analysis_stats;
+        const status = statusFromAvStats(stats);
 
-        if (!aiResult) {
-          // No Code Insight - check AV engine stats as fallback
-          const stats = vtResult.data.attributes.last_analysis_stats;
-          const status = statusFromAvStats(stats);
-          let source = "engines";
-
-          if (status) {
-            // We have a verdict from AV engines - update the skill
-            console.log(
-              `[vt:pollPendingScans] Hash ${sha256hash} verdict from AV engines: ${status}`,
-            );
-
-            // Cache VT analysis in version
-            await ctx.runMutation(internal.skills.updateVersionScanResultsInternal, {
-              versionId,
-              vtAnalysis: {
-                status,
-                source,
-                engineStats: normalizeVtEngineStats(stats),
-                checkedAt: Date.now(),
-              },
-            });
-
-            await enqueueSkillCodexForVtSignal(ctx, versionId);
-            updated++;
-            continue;
-          }
-
-          // No verdict from engines either - trigger a rescan to get Code Insight
+        if (status) {
           console.log(
-            `[vt:pollPendingScans] Hash ${sha256hash} has no Code Insight or engine stats, requesting rescan`,
+            `[vt:pollPendingScans] Hash ${sha256hash} verdict from AV engines: ${status}`,
           );
-          await requestRescan(apiKey, sha256hash);
-          // Check if we've exceeded max attempts — write stale vtAnalysis so it
-          // drops out of the poll query without overwriting LLM moderationReason
-          if (checkCount + 1 >= MAX_CHECK_COUNT) {
-            console.warn(
-              `[vt:pollPendingScans] Skill ${skillId} exceeded max checks, marking stale`,
-            );
-            await ctx.runMutation(internal.skills.updateVersionScanResultsInternal, {
-              versionId,
-              vtAnalysis: { status: "stale", checkedAt: Date.now() },
-            });
-            await enqueueSkillCodexForVtSignal(ctx, versionId);
-            staled++;
-          }
+
+          await ctx.runMutation(internal.skills.updateVersionScanResultsInternal, {
+            versionId,
+            vtAnalysis: {
+              status,
+              source: "engines",
+              engineStats: normalizeVtEngineStats(stats),
+              checkedAt: Date.now(),
+            },
+          });
+
+          await enqueueSkillCodexForVtSignal(ctx, versionId);
+          updated++;
           continue;
         }
 
-        // We have a verdict - update the skill
-        const verdict = normalizeVerdict(aiResult.verdict);
-        const status = verdictToStatus(verdict);
-        const stats = vtResult.data.attributes.last_analysis_stats;
-
-        console.log(
-          `[vt:pollPendingScans] Hash ${sha256hash} verdict: ${verdict} -> status: ${status}`,
-        );
-
-        // Cache VT analysis in version
-        await ctx.runMutation(internal.skills.updateVersionScanResultsInternal, {
-          versionId,
-          vtAnalysis: {
-            status,
-            verdict: aiResult.verdict,
-            analysis: aiResult.analysis,
-            source: aiResult.source,
-            scanner: "code_insight",
-            engineStats: normalizeVtEngineStats(stats),
-            checkedAt: Date.now(),
-          },
-        });
-
-        await enqueueSkillCodexForVtSignal(ctx, versionId);
-        updated++;
+        if (checkCount + 1 >= MAX_CHECK_COUNT) {
+          console.log(`[vt:pollPendingScans] Hash ${sha256hash} has no decisive engine stats`);
+          console.warn(`[vt:pollPendingScans] Skill ${skillId} exceeded max checks, marking stale`);
+          await ctx.runMutation(internal.skills.updateVersionScanResultsInternal, {
+            versionId,
+            vtAnalysis: { status: "stale", checkedAt: Date.now() },
+          });
+          await enqueueSkillCodexForVtSignal(ctx, versionId);
+          staled++;
+        }
       } catch (error) {
         console.error(`[vt:pollPendingScans] Error checking hash ${sha256hash}:`, error);
       }
@@ -1141,30 +1020,6 @@ async function checkExistingFile(
   return (await response.json()) as VTFileResponse;
 }
 
-/**
- * Request a rescan of a file to trigger Code Insight analysis
- */
-async function requestRescan(apiKey: string, sha256hash: string): Promise<boolean> {
-  try {
-    const response = await fetch(`https://www.virustotal.com/api/v3/files/${sha256hash}/analyse`, {
-      method: "POST",
-      headers: {
-        "x-apikey": apiKey,
-      },
-    });
-
-    if (!response.ok) {
-      console.error(`[vt:requestRescan] Failed for ${sha256hash}: ${response.status}`);
-      return false;
-    }
-
-    return true;
-  } catch (error) {
-    console.error(`[vt:requestRescan] Error for ${sha256hash}:`, error);
-    return false;
-  }
-}
-
 export const __test = {
   VIRUSTOTAL_DIRECT_UPLOAD_LIMIT_BYTES,
   normalizeVtEngineStats,
@@ -1181,14 +1036,12 @@ export const backfillPendingScans = internalAction({
   args: {
     triggerRescans: v.optional(v.boolean()),
   },
-  handler: async (ctx, args): Promise<BackfillPendingScansResult> => {
+  handler: async (ctx): Promise<BackfillPendingScansResult> => {
     const apiKey = process.env.VT_API_KEY;
     if (!apiKey) {
       console.log("[vt:backfill] VT_API_KEY not configured");
       return { error: "VT_API_KEY not configured" };
     }
-
-    const triggerRescans = args.triggerRescans ?? true;
 
     // Get ALL pending skills (no limit)
     const pendingSkills: PendingScanSkill[] = await ctx.runQuery(
@@ -1222,56 +1075,19 @@ export const backfillPendingScans = internalAction({
           continue;
         }
 
-        const aiResult = vtResult.data.attributes.crowdsourced_ai_results?.find(
-          (r) => r.category === "code_insight",
-        );
+        const stats = vtResult.data.attributes.last_analysis_stats;
+        const status = statusFromAvStats(stats);
 
-        if (!aiResult) {
-          // No Code Insight - check AV engine stats as fallback
-          const stats = vtResult.data.attributes.last_analysis_stats;
-          const status = statusFromAvStats(stats);
-
-          if (status) {
-            // We have a verdict from AV engines - update the skill
-            console.log(`[vt:backfill] Hash ${sha256hash} verdict from AV engines: ${status}`);
-            await ctx.runMutation(internal.skills.updateVersionScanResultsInternal, {
-              versionId,
-              vtAnalysis: {
-                status,
-                source: "engines",
-                engineStats: normalizeVtEngineStats(stats),
-                checkedAt: Date.now(),
-              },
-            });
-            await enqueueSkillCodexForVtSignal(ctx, versionId);
-            updated++;
-            continue;
-          }
-
-          // No verdict from engines either - trigger a rescan
-          if (triggerRescans) {
-            console.log(
-              `[vt:backfill] Hash ${sha256hash} has no Code Insight or engine stats, requesting rescan`,
-            );
-            await requestRescan(apiKey, sha256hash);
-            rescansRequested++;
-          }
+        if (!status) {
           continue;
         }
 
-        // We have a verdict - update the skill
-        const verdict = normalizeVerdict(aiResult.verdict);
-        const status = verdictToStatus(verdict);
-        const stats = vtResult.data.attributes.last_analysis_stats;
-
+        console.log(`[vt:backfill] Hash ${sha256hash} verdict from AV engines: ${status}`);
         await ctx.runMutation(internal.skills.updateVersionScanResultsInternal, {
           versionId,
           vtAnalysis: {
             status,
-            verdict: aiResult.verdict,
-            analysis: aiResult.analysis,
-            source: aiResult.source,
-            scanner: "code_insight",
+            source: "engines",
             engineStats: normalizeVtEngineStats(stats),
             checkedAt: Date.now(),
           },
@@ -1355,69 +1171,28 @@ export const rescanActiveSkills = internalAction({
           continue;
         }
 
-        const aiResult = vtResult.data.attributes.crowdsourced_ai_results?.find(
-          (r) => r.category === "code_insight",
-        );
+        const stats = vtResult.data.attributes.last_analysis_stats;
+        const status = statusFromAvStats(stats);
 
-        if (!aiResult) {
-          // No Code Insight - check AV engine stats as fallback
-          const stats = vtResult.data.attributes.last_analysis_stats;
-          const status = statusFromAvStats(stats);
-          let source = "engines";
-
-          if (!status) {
-            // No verdict from engines either - keep as pending
-            await ctx.runMutation(internal.skills.updateVersionScanResultsInternal, {
-              versionId,
-              vtAnalysis: {
-                status: "pending",
-                checkedAt: Date.now(),
-              },
-            });
-            accUnchanged++;
-            continue;
-          }
-
-          // We have a verdict from AV engines - continue with normal flow
-          console.log(`[vt:rescan] ${slug} verdict from AV engines: ${status}`);
-
+        if (!status) {
           await ctx.runMutation(internal.skills.updateVersionScanResultsInternal, {
             versionId,
             vtAnalysis: {
-              status,
-              source,
-              engineStats: normalizeVtEngineStats(stats),
+              status: "pending",
               checkedAt: Date.now(),
             },
           });
-
-          if (status === "malicious" || status === "suspicious") {
-            console.warn(`[vt:rescan] ${slug}: verdict changed to ${status}!`);
-            accFlaggedSkills.push({ slug, status });
-            await enqueueSkillCodexForVtSignal(ctx, versionId);
-            accUpdated++;
-          } else if (wasFlagged && status === "clean") {
-            console.log(`[vt:rescan] ${slug}: VT verdict improved to clean`);
-            await enqueueSkillCodexForVtSignal(ctx, versionId);
-            accUpdated++;
-          } else {
-            accUnchanged++;
-          }
+          accUnchanged++;
           continue;
         }
 
-        const verdict = normalizeVerdict(aiResult.verdict);
-        const status = verdictToStatus(verdict);
-        const stats = vtResult.data.attributes.last_analysis_stats;
+        console.log(`[vt:rescan] ${slug} verdict from AV engines: ${status}`);
 
         await ctx.runMutation(internal.skills.updateVersionScanResultsInternal, {
           versionId,
           vtAnalysis: {
             status,
-            verdict: aiResult.verdict,
-            analysis: aiResult.analysis,
-            source: aiResult.source,
-            scanner: "code_insight",
+            source: "engines",
             engineStats: normalizeVtEngineStats(stats),
             checkedAt: Date.now(),
           },
@@ -1666,53 +1441,23 @@ export const backfillActiveSkillsVTCache = internalAction({
           continue;
         }
 
-        const aiResult = vtResult.data.attributes.crowdsourced_ai_results?.find(
-          (r) => r.category === "code_insight",
-        );
+        const stats = vtResult.data.attributes.last_analysis_stats;
+        const status = statusFromAvStats(stats);
 
-        if (!aiResult) {
-          // No Code Insight - check AV engine stats as fallback
-          const stats = vtResult.data.attributes.last_analysis_stats;
-          const status = statusFromAvStats(stats);
-          let source = "engines";
-
-          if (!status) {
-            console.log(`[vt:backfillActive] ${slug}: no Code Insight or engine stats yet`);
-            noResults++;
-            continue;
-          }
-
-          // We have a verdict from AV engines - update the version
-          console.log(`[vt:backfillActive] ${slug}: updated with ${status} (from AV engines)`);
-
-          await ctx.runMutation(internal.skills.updateVersionScanResultsInternal, {
-            versionId,
-            sha256hash,
-            vtAnalysis: {
-              status,
-              source,
-              checkedAt: Date.now(),
-            },
-          });
-          await enqueueSkillCodexForVtSignal(ctx, versionId);
-          updated++;
+        if (!status) {
+          console.log(`[vt:backfillActive] ${slug}: no decisive engine stats yet`);
+          noResults++;
           continue;
         }
 
-        // Update the version with VT analysis
-        const verdict = normalizeVerdict(aiResult.verdict);
-        const status = verdictToStatus(verdict);
-        const stats = vtResult.data.attributes.last_analysis_stats;
+        console.log(`[vt:backfillActive] ${slug}: updated with ${status} (from AV engines)`);
 
         await ctx.runMutation(internal.skills.updateVersionScanResultsInternal, {
           versionId,
           sha256hash,
           vtAnalysis: {
             status,
-            verdict: aiResult.verdict,
-            analysis: aiResult.analysis,
-            source: aiResult.source,
-            scanner: "code_insight",
+            source: "engines",
             engineStats: normalizeVtEngineStats(stats),
             checkedAt: Date.now(),
           },
@@ -1743,63 +1488,6 @@ export const backfillActiveSkillsVTCache = internalAction({
       await ctx.scheduler.runAfter(0, internal.vt.backfillActiveSkillsVTCache, { batchSize });
     }
 
-    return result;
-  },
-});
-
-/**
- * Request VT reanalysis for skills stuck at scanner.vt.pending.
- * This pushes them to the front of VT's Code Insight queue.
- */
-export const requestReanalysisForPending = internalAction({
-  args: { batchSize: v.optional(v.number()) },
-  handler: async (ctx, args): Promise<RequestReanalysisForPendingResult> => {
-    const apiKey = process.env.VT_API_KEY;
-    if (!apiKey) {
-      console.log("[vt:requestReanalysis] VT_API_KEY not configured");
-      return { error: "VT_API_KEY not configured" };
-    }
-
-    const batchSize = args.batchSize ?? 100;
-
-    // Get skills with scanner.vt.pending moderationReason
-    const skills: PendingVTSkill[] = await ctx.runQuery(
-      internal.skills.getPendingVTSkillsInternal,
-      { limit: batchSize },
-    );
-
-    if (skills.length === 0) {
-      console.log("[vt:requestReanalysis] No pending skills found");
-      return { total: 0, requested: 0, done: true };
-    }
-
-    console.log(`[vt:requestReanalysis] Found ${skills.length} skills to request reanalysis`);
-
-    let requested = 0;
-    let errors = 0;
-
-    for (const { slug, sha256hash } of skills) {
-      try {
-        const success = await requestRescan(apiKey, sha256hash);
-        if (success) {
-          console.log(`[vt:requestReanalysis] ${slug}: rescan requested`);
-          requested++;
-        } else {
-          errors++;
-        }
-      } catch (error) {
-        console.error(`[vt:requestReanalysis] ${slug}: error`, error);
-        errors++;
-      }
-    }
-
-    const result: RequestReanalysisForPendingResult = {
-      total: skills.length,
-      requested,
-      errors,
-      done: skills.length < batchSize,
-    };
-    console.log("[vt:requestReanalysis] Complete:", result);
     return result;
   },
 });
