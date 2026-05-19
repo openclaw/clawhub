@@ -47,6 +47,12 @@ jobs:
           ref: refs/tags/${{ inputs.tag }}
           fetch-depth: 0
 
+      - name: Checkout release tooling
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref }}
+          path: release-tools
+
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
@@ -107,6 +113,11 @@ jobs:
           export RELEASE_SHA
           git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
           node scripts/clawhub-cli-npm-release-check.mjs
+
+      - name: Validate GitHub Release notes
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: node release-tools/scripts/extract-changelog-release.mjs --tag "$RELEASE_TAG" >/tmp/clawhub-cli-release-notes.md
 
       - name: Verify CLI package
         run: bun run --cwd "$PACKAGE_DIR" verify
@@ -183,7 +194,7 @@ jobs:
     environment: npm-release
     permissions:
       actions: read
-      contents: read
+      contents: write
       id-token: write
     steps:
       - name: Checkout
@@ -191,6 +202,12 @@ jobs:
         with:
           ref: refs/tags/${{ inputs.tag }}
           fetch-depth: 0
+
+      - name: Checkout release tooling
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref }}
+          path: release-tools
 
       - name: Setup Node
         uses: actions/setup-node@v6
@@ -258,6 +275,11 @@ jobs:
           git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
           node scripts/clawhub-cli-npm-release-check.mjs
 
+      - name: Validate GitHub Release notes
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: node release-tools/scripts/extract-changelog-release.mjs --tag "$RELEASE_TAG" >/tmp/clawhub-cli-release-notes.md
+
       - name: Verify prepared tarball provenance
         env:
           RELEASE_TAG: ${{ inputs.tag }}
@@ -315,3 +337,81 @@ jobs:
             publish_target="./${publish_target}"
           fi
           bash scripts/clawhub-cli-npm-publish.sh --publish "${publish_target}"
+
+      - name: Resolve npm release metadata
+        run: |
+          set -euo pipefail
+          PACKAGE_VERSION="$(node --input-type=module <<'EOF'
+          import { readFileSync } from "node:fs";
+
+          const pkg = JSON.parse(readFileSync(`./${process.env.PACKAGE_DIR}/package.json`, "utf8"));
+          process.stdout.write(String(pkg.version ?? "").trim());
+          EOF
+          )"
+          NPM_DIST_JSON=""
+          for attempt in {1..12}; do
+            if NPM_DIST_JSON="$(npm view "clawhub@${PACKAGE_VERSION}" dist.tarball dist.integrity --json 2>/tmp/npm-view-error)" && [[ -n "$NPM_DIST_JSON" ]]; then
+              break
+            fi
+            if [[ "$attempt" == "12" ]]; then
+              cat /tmp/npm-view-error >&2 || true
+              exit 1
+            fi
+            sleep 5
+          done
+          NPM_TARBALL="$(NPM_DIST_JSON="$NPM_DIST_JSON" node --input-type=module <<'EOF'
+          const dist = JSON.parse(process.env.NPM_DIST_JSON ?? "{}");
+          process.stdout.write(String(dist["dist.tarball"] ?? ""));
+          EOF
+          )"
+          NPM_INTEGRITY="$(NPM_DIST_JSON="$NPM_DIST_JSON" node --input-type=module <<'EOF'
+          const dist = JSON.parse(process.env.NPM_DIST_JSON ?? "{}");
+          process.stdout.write(String(dist["dist.integrity"] ?? ""));
+          EOF
+          )"
+          if [[ -z "$NPM_TARBALL" || -z "$NPM_INTEGRITY" ]]; then
+            echo "npm dist metadata for clawhub@${PACKAGE_VERSION} is incomplete." >&2
+            exit 1
+          fi
+          {
+            echo "PACKAGE_VERSION=$PACKAGE_VERSION"
+            echo "NPM_PACKAGE_URL=https://www.npmjs.com/package/clawhub/v/${PACKAGE_VERSION}"
+            echo "NPM_TARBALL_URL=$NPM_TARBALL"
+            echo "NPM_INTEGRITY=$NPM_INTEGRITY"
+            echo "RELEASE_TITLE=clawhub ${PACKAGE_VERSION}"
+          } >> "$GITHUB_ENV"
+
+      - name: Build GitHub Release notes
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          node release-tools/scripts/extract-changelog-release.mjs --tag "$RELEASE_TAG" > release-body.md
+          {
+            echo
+            echo "### Release Proof"
+            echo
+            echo "- npm: ${NPM_PACKAGE_URL}"
+            echo "- tarball: ${NPM_TARBALL_URL}"
+            echo "- integrity: ${NPM_INTEGRITY}"
+            echo "- npm preflight: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${{ inputs.preflight_run_id }}"
+            echo "- npm publish: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          } >> release-body.md
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$RELEASE_TITLE" \
+              --notes-file release-body.md
+          else
+            gh release create "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$RELEASE_TITLE" \
+              --notes-file release-body.md
+          fi
