@@ -836,6 +836,66 @@ export const unbanUserInternal = internalMutation({
   },
 });
 
+export const reclassifyBanInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    targetUserId: v.id("users"),
+    reason: v.string(),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new Error("User not found");
+    assertAdmin(actor);
+
+    const target = await ctx.db.get(args.targetUserId);
+    if (!target) throw new Error("User not found");
+    if (target.deactivatedAt || target.purgedAt) {
+      throw new Error("Cannot reclassify a deactivated account");
+    }
+    if (!target.deletedAt) {
+      throw new Error("User is not currently banned");
+    }
+
+    const nextReason = args.reason.trim();
+    if (!nextReason) throw new Error("Reason required");
+    if (nextReason.length > 500) throw new Error("Reason too long (max 500 chars)");
+
+    const previousReason = target.banReason ?? null;
+    const changed = previousReason !== nextReason;
+    const dryRun = args.dryRun !== false;
+
+    if (!dryRun && changed) {
+      const now = Date.now();
+      await ctx.db.patch(args.targetUserId, {
+        banReason: nextReason,
+        updatedAt: now,
+      });
+      await ctx.db.insert("auditLogs", {
+        actorUserId: actor._id,
+        action: "user.ban.reclassify",
+        targetType: "user",
+        targetId: args.targetUserId,
+        metadata: {
+          previousReason,
+          nextReason,
+        },
+        createdAt: now,
+      });
+    }
+
+    return {
+      ok: true as const,
+      dryRun,
+      userId: args.targetUserId,
+      handle: target.handle ?? null,
+      previousReason,
+      nextReason,
+      changed,
+    };
+  },
+});
+
 export const remediateAutobansInternal = internalMutation({
   args: {
     actorUserId: v.id("users"),

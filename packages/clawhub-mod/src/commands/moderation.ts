@@ -13,6 +13,7 @@ import { apiRequest, registryUrl } from "../../../clawhub/src/http.js";
 import {
   ApiRoutes,
   ApiV1BanUserResponseSchema,
+  ApiV1ReclassifyBanResponseSchema,
   ApiV1RemediateAutobansResponseSchema,
   ApiV1SetRoleResponseSchema,
   ApiV1UnbanUserResponseSchema,
@@ -183,6 +184,86 @@ export async function cmdSetRole(
     return parsed;
   } catch (error) {
     spinner.fail(formatError(error));
+    throw error;
+  }
+}
+
+export async function cmdReclassifyBan(
+  opts: GlobalOpts,
+  identifierArg: string,
+  options: {
+    apply?: boolean;
+    dryRun?: boolean;
+    yes?: boolean;
+    id?: boolean;
+    fuzzy?: boolean;
+    reason?: string;
+    json?: boolean;
+  },
+  inputAllowed: boolean,
+) {
+  if (options.apply && options.dryRun) fail("Choose either --apply or --dry-run, not both");
+
+  const raw = identifierArg.trim();
+  if (!raw) fail("Handle or user id required");
+
+  const reason = options.reason?.trim();
+  if (!reason) fail("Reason required");
+  if (reason.length > 500) fail("Reason too long (max 500 chars)");
+
+  const dryRun = options.apply !== true;
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const allowPrompt = isInteractive() && inputAllowed !== false;
+  const resolved = await resolveUserIdentifier(
+    registry,
+    token,
+    raw,
+    { id: options.id, fuzzy: options.fuzzy },
+    allowPrompt,
+  );
+  if (!resolved) return undefined;
+
+  if (!dryRun && !options.yes) {
+    if (!allowPrompt) fail("Pass --yes (no input)");
+    const ok = await promptConfirm(
+      `Reclassify ban for ${resolved.label} as "${reason}"? (admin only; no unban/restore)`,
+    );
+    if (!ok) return undefined;
+  }
+
+  const spinner = options.json
+    ? null
+    : createSpinner(
+        `${dryRun ? "Planning" : "Applying"} ban reclassification for ${resolved.label}`,
+      );
+  try {
+    const result = await apiRequest(
+      registry,
+      {
+        method: "POST",
+        path: `${ApiRoutes.users}/reclassify-ban`,
+        token,
+        body: {
+          ...(resolved.userId ? { userId: resolved.userId } : { handle: resolved.handle }),
+          reason,
+          dryRun,
+        },
+      },
+      ApiV1ReclassifyBanResponseSchema,
+    );
+    const parsed = parseArk(ApiV1ReclassifyBanResponseSchema, result, "Reclassify ban response");
+    spinner?.succeed(
+      `${dryRun ? "Dry run" : "Applied"} ban reclassification for ${resolved.label}: ${parsed.previousReason ?? "none"} -> ${parsed.nextReason}${parsed.changed ? "" : " (already set)"}.`,
+    );
+    if (options.json) {
+      process.stdout.write(`${JSON.stringify(parsed, null, 2)}\n`);
+    } else if (dryRun) {
+      console.log("Re-run with --apply --yes to write this change.");
+    }
+    return parsed;
+  } catch (error) {
+    spinner?.fail(formatError(error));
     throw error;
   }
 }

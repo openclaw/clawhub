@@ -3447,6 +3447,101 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("reclassify ban requires admin", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "user" },
+    } as never);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.usersPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/users/reclassify-ban", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ handle: "demo", reason: "bulk publishing spam" }),
+      }),
+    );
+    expect(response.status).toBe(403);
+  });
+
+  it("reclassify ban forwards admin payload", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runMutation = vi.fn().mockResolvedValueOnce(okRate()).mockResolvedValueOnce({
+      ok: true,
+      dryRun: false,
+      userId: "users:target",
+      handle: "demo",
+      previousReason: "malware auto-ban",
+      nextReason: "bulk publishing spam",
+      changed: true,
+    });
+    const response = await __handlers.usersPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/users/reclassify-ban", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          dryRun: false,
+          userId: "users:target",
+          reason: "bulk publishing spam",
+        }),
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        actorUserId: "users:admin",
+        targetUserId: "users:target",
+        dryRun: false,
+        reason: "bulk publishing spam",
+      }),
+    );
+  });
+
+  it("reclassify ban resolves banned users by handle", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runQuery = vi.fn().mockResolvedValue({ _id: "users:target", deletedAt: 123 });
+    const runMutation = vi.fn().mockResolvedValueOnce(okRate()).mockResolvedValueOnce({
+      ok: true,
+      dryRun: true,
+      userId: "users:target",
+      handle: "demo",
+      previousReason: "malware auto-ban",
+      nextReason: "bulk publishing spam",
+      changed: true,
+    });
+    const response = await __handlers.usersPostRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/users/reclassify-ban", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          handle: "demo",
+          reason: "bulk publishing spam",
+        }),
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(runQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ handle: "demo" }),
+    );
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        targetUserId: "users:target",
+        dryRun: true,
+      }),
+    );
+  });
+
   it("set role requires auth", async () => {
     vi.mocked(requireApiTokenUser).mockRejectedValueOnce(new Error("Unauthorized"));
     const runMutation = vi.fn().mockResolvedValue(okRate());

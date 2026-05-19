@@ -24,6 +24,7 @@ import { fail } from "../../clawhub/src/cli/ui.js";
 import { getModeratorCliBuildLabel, getModeratorCliVersion } from "./buildInfo.js";
 import {
   cmdBanUser,
+  cmdReclassifyBan,
   cmdRemediateAutobans,
   cmdSetRole,
   cmdUnbanUser,
@@ -229,6 +230,22 @@ users
   .action(async (handleOrId, role, options) => {
     const opts = await resolveGlobalOpts();
     await cmdSetRole(opts, handleOrId, role, options, isInputAllowed());
+  });
+
+users
+  .command("reclassify-ban")
+  .description("Change the stored reason for an existing ban")
+  .argument("<handleOrId>", "User handle (default) or user id")
+  .option("--apply", "Write changes; defaults to dry-run")
+  .option("--dry-run", "Plan only (default)")
+  .option("--id", "Treat argument as user id")
+  .option("--fuzzy", "Resolve handle via fuzzy user search")
+  .requiredOption("--reason <reason>", "New ban reason")
+  .option("--yes", "Skip confirmation for --apply")
+  .option("--json", "Output JSON")
+  .action(async (handleOrId, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdReclassifyBan(opts, handleOrId, options, isInputAllowed());
   });
 
 users

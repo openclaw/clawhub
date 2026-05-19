@@ -184,6 +184,9 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Admins can manually unban (`deletedAt` + `banReason` cleared); revoked API tokens
   stay revoked and should be recreated by the user.
 - Optional ban reason is stored in `users.banReason` and audit logs.
+- Admins can reclassify an existing ban reason without unbanning or restoring
+  content. This preserves the ban while removing users from remediation flows
+  that key off a specific historical reason such as `malware auto-ban`.
 - Moderators cannot ban admins; nobody can ban themselves.
 - Report counters effectively reset because deleted/banned skills are no longer
   considered active in the per-user report cap.

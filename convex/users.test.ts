@@ -22,6 +22,7 @@ const {
   list,
   searchInternal,
   banUserInternal,
+  reclassifyBanInternal,
   me,
   placeUserUnderModerationInternal,
   liftModerationHoldInternal,
@@ -1937,6 +1938,153 @@ describe("users.banUserInternal", () => {
       softDeletedAt: 1_600_000_000_000,
       deletedBy: "users:actor",
     });
+  });
+});
+
+describe("users.reclassifyBanInternal", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("dry-runs a ban reason reclassification without patching or auditing", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
+    const { ctx, get, patch, insert } = makeBanCtx();
+    get.mockImplementation(async (id: string) => {
+      if (id === "users:actor") return { _id: "users:actor", role: "admin" };
+      if (id === "users:target") {
+        return {
+          _id: "users:target",
+          role: "user",
+          handle: "hanxueyuan",
+          deletedAt: 1_600_000_000_000,
+          banReason: "malware auto-ban",
+        };
+      }
+      return null;
+    });
+
+    const handler = (
+      reclassifyBanInternal as unknown as {
+        _handler: (
+          ctx: unknown,
+          args: {
+            actorUserId: string;
+            targetUserId: string;
+            reason: string;
+            dryRun?: boolean;
+          },
+        ) => Promise<unknown>;
+      }
+    )._handler;
+
+    const result = await handler(ctx, {
+      actorUserId: "users:actor",
+      targetUserId: "users:target",
+      reason: "bulk publishing spam",
+      dryRun: true,
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      dryRun: true,
+      userId: "users:target",
+      handle: "hanxueyuan",
+      previousReason: "malware auto-ban",
+      nextReason: "bulk publishing spam",
+      changed: true,
+    });
+    expect(patch).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("applies a ban reason reclassification with an audit log", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
+    const { ctx, get, patch, insert } = makeBanCtx();
+    get.mockImplementation(async (id: string) => {
+      if (id === "users:actor") return { _id: "users:actor", role: "admin" };
+      if (id === "users:target") {
+        return {
+          _id: "users:target",
+          role: "user",
+          handle: "hanxueyuan",
+          deletedAt: 1_600_000_000_000,
+          banReason: "malware auto-ban",
+        };
+      }
+      return null;
+    });
+
+    const handler = (
+      reclassifyBanInternal as unknown as {
+        _handler: (
+          ctx: unknown,
+          args: {
+            actorUserId: string;
+            targetUserId: string;
+            reason: string;
+            dryRun?: boolean;
+          },
+        ) => Promise<unknown>;
+      }
+    )._handler;
+
+    const result = await handler(ctx, {
+      actorUserId: "users:actor",
+      targetUserId: "users:target",
+      reason: "bulk publishing spam",
+      dryRun: false,
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      dryRun: false,
+      userId: "users:target",
+      previousReason: "malware auto-ban",
+      nextReason: "bulk publishing spam",
+      changed: true,
+    });
+    expect(patch).toHaveBeenCalledWith("users:target", {
+      banReason: "bulk publishing spam",
+      updatedAt: 1_700_000_000_000,
+    });
+    expect(insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({
+        action: "user.ban.reclassify",
+        targetType: "user",
+        targetId: "users:target",
+        metadata: {
+          previousReason: "malware auto-ban",
+          nextReason: "bulk publishing spam",
+        },
+      }),
+    );
+  });
+
+  it("rejects unbanned users", async () => {
+    const { ctx, get } = makeBanCtx();
+    get.mockImplementation(async (id: string) => {
+      if (id === "users:actor") return { _id: "users:actor", role: "admin" };
+      if (id === "users:target") return { _id: "users:target", role: "user" };
+      return null;
+    });
+
+    const handler = (
+      reclassifyBanInternal as unknown as {
+        _handler: (
+          ctx: unknown,
+          args: { actorUserId: string; targetUserId: string; reason: string },
+        ) => Promise<unknown>;
+      }
+    )._handler;
+
+    await expect(
+      handler(ctx, {
+        actorUserId: "users:actor",
+        targetUserId: "users:target",
+        reason: "bulk publishing spam",
+      }),
+    ).rejects.toThrow(/not currently banned/i);
   });
 });
 

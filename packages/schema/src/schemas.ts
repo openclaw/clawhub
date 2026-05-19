@@ -484,6 +484,16 @@ export const ApiV1SetRoleResponseSchema = type({
   role: '"admin"|"moderator"|"user"',
 });
 
+export const ApiV1ReclassifyBanResponseSchema = type({
+  ok: "true",
+  dryRun: "boolean",
+  userId: "string",
+  handle: "string|null",
+  previousReason: "string|null",
+  nextReason: "string",
+  changed: "boolean",
+});
+
 export const ApiV1RemediateAutobansResponseSchema = type({
   ok: "true",
   dryRun: "boolean",

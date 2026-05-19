@@ -19,7 +19,8 @@ vi.mock("../../../clawhub/src/cli/registry.js", () => registryMocks.moduleFactor
 vi.mock("../../../clawhub/src/http.js", () => httpMocks.moduleFactory());
 vi.mock("../../../clawhub/src/cli/ui.js", () => uiMocks.moduleFactory());
 
-const { cmdBanUser, cmdRemediateAutobans, cmdSetRole, cmdUnbanUser } = await import("./moderation");
+const { cmdBanUser, cmdReclassifyBan, cmdRemediateAutobans, cmdSetRole, cmdUnbanUser } =
+  await import("./moderation");
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -433,6 +434,85 @@ describe("cmdRemediateAutobans", () => {
     await expect(
       cmdRemediateAutobans(makeGlobalOpts(), { all: true, user: "demo" }, false),
     ).rejects.toThrow(/either --all or --user/i);
+    expect(httpMocks.apiRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe("cmdReclassifyBan", () => {
+  it("defaults to dry run and posts handle payload", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      dryRun: true,
+      userId: "users:target",
+      handle: "hanxueyuan",
+      previousReason: "malware auto-ban",
+      nextReason: "bulk publishing spam",
+      changed: true,
+    });
+
+    await cmdReclassifyBan(
+      makeGlobalOpts(),
+      "hanxueyuan",
+      { reason: "bulk publishing spam" },
+      false,
+    );
+
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        method: "POST",
+        path: "/api/v1/users/reclassify-ban",
+        body: { handle: "hanxueyuan", reason: "bulk publishing spam", dryRun: true },
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("posts apply payload with user id when --id is set", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      dryRun: false,
+      userId: "users:target",
+      handle: null,
+      previousReason: "malware auto-ban",
+      nextReason: "bulk publishing spam",
+      changed: true,
+    });
+
+    await cmdReclassifyBan(
+      makeGlobalOpts(),
+      "users:target",
+      { id: true, apply: true, yes: true, reason: "bulk publishing spam" },
+      false,
+    );
+
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        method: "POST",
+        path: "/api/v1/users/reclassify-ban",
+        body: { userId: "users:target", reason: "bulk publishing spam", dryRun: false },
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("requires a reason", async () => {
+    await expect(cmdReclassifyBan(makeGlobalOpts(), "hanxueyuan", {}, false)).rejects.toThrow(
+      /reason/i,
+    );
+    expect(httpMocks.apiRequest).not.toHaveBeenCalled();
+  });
+
+  it("requires --yes for apply when input is disabled", async () => {
+    await expect(
+      cmdReclassifyBan(
+        makeGlobalOpts(),
+        "hanxueyuan",
+        { apply: true, reason: "bulk publishing spam" },
+        false,
+      ),
+    ).rejects.toThrow(/--yes/i);
     expect(httpMocks.apiRequest).not.toHaveBeenCalled();
   });
 });
