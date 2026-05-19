@@ -3,9 +3,9 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { action, internalMutation, internalQuery } from "./functions";
 
-const MAX_PARALLEL_CODEX_SCANS = 10;
+const MAX_PARALLEL_CODEX_SCANS = 20;
 const DEFAULT_VT_WAIT_MS = 10 * 60 * 1000;
-const DEFAULT_LEASE_MS = 30 * 60 * 1000;
+const DEFAULT_LEASE_MS = 60 * 60 * 1000;
 const MAX_ATTEMPTS = 3;
 const DEFAULT_CANCEL_SCAN_LIMIT = 1000;
 const DEFAULT_CANCEL_DELETE_LIMIT = 500;
@@ -521,6 +521,7 @@ export const claimCodexScanJobs = action({
     token: v.string(),
     workerId: v.string(),
     limit: v.optional(v.number()),
+    leaseMs: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     assertWorkerToken(args.token);
@@ -530,6 +531,7 @@ export const claimCodexScanJobs = action({
       {
         workerId: args.workerId,
         limit: normalizeLimit(args.limit),
+        leaseMs: args.leaseMs,
       },
     );
 
