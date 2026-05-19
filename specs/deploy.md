@@ -83,7 +83,10 @@ Ensure Convex env is set (auth + embeddings):
 - `JWKS`
 - `OPENAI_API_KEY`
 - `SITE_URL` (your web app URL)
+- `RESEND_API_KEY` (for ban notification emails)
 - Optional webhook env (see `docs/webhook.md`)
+- Optional: `CLAWHUB_SECURITY_EMAIL` / `CLAWHUB_SECURITY_EMAIL_FROM` (default
+  `security@openclaw.org`)
 - Optional: `GITHUB_TOKEN` (recommended; raises GitHub API limits used by publish gates)
 
 ## 2) Deploy web app (Vercel)

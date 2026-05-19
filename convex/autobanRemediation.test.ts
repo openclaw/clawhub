@@ -579,6 +579,133 @@ describe("autoban remediation users", () => {
     expect(runMutation).not.toHaveBeenCalled();
   });
 
+  it("schedules an account restored email when remediation unbans a user", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_700_000_100_000);
+    const bannedAt = 1_700_000_000_000;
+    const triggerSkill = {
+      _id: "skills:trigger",
+      slug: "false-positive",
+      ownerUserId: "users:target",
+      softDeletedAt: bannedAt,
+      moderationStatus: "hidden",
+      moderationReason: "scanner.vt.malicious",
+      moderationVerdict: "malicious",
+      moderationFlags: ["blocked.malware"],
+      moderationReasonCodes: ["malicious.vt_malicious"],
+    };
+    const query = vi.fn((table: string) => {
+      if (table === "auditLogs") {
+        return {
+          withIndex: () => ({
+            collect: vi.fn(async () => [
+              {
+                action: "user.autoban.malware",
+                createdAt: bannedAt,
+                metadata: { slug: "false-positive", trigger: "vt.malicious" },
+              },
+            ]),
+          }),
+        };
+      }
+      if (table === "skills") {
+        return {
+          withIndex: (name: string) => {
+            if (name === "by_slug") return { unique: vi.fn(async () => triggerSkill) };
+            if (name === "by_owner") {
+              return {
+                order: () => ({
+                  paginate: vi.fn(async () => ({
+                    page: [triggerSkill],
+                    isDone: true,
+                    continueCursor: null,
+                  })),
+                }),
+              };
+            }
+            throw new Error(`Unexpected skills index ${name}`);
+          },
+        };
+      }
+      if (table === "packages") {
+        return {
+          withIndex: (name: string) => {
+            if (name === "by_owner") {
+              return {
+                order: () => ({
+                  paginate: vi.fn(async () => ({
+                    page: [],
+                    isDone: true,
+                    continueCursor: null,
+                  })),
+                }),
+              };
+            }
+            throw new Error(`Unexpected packages index ${name}`);
+          },
+        };
+      }
+      throw new Error(`Unexpected table ${table}`);
+    });
+    const get = vi.fn(async (id: string) => {
+      if (id === "users:admin") return { _id: "users:admin", role: "admin" };
+      if (id === "users:target") {
+        return {
+          _id: "users:target",
+          role: "user",
+          handle: "false-positive-owner",
+          email: "target@example.com",
+          deletedAt: bannedAt,
+          banReason: "malware auto-ban",
+        };
+      }
+      return null;
+    });
+    const runMutation = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({ restoredCount: 1, scheduled: false })
+      .mockResolvedValueOnce({ restoredCount: 0, scheduled: false });
+    const runAfter = vi.fn();
+
+    const result = await remediateAutobansHandler(
+      {
+        db: {
+          query,
+          get,
+          patch: vi.fn(),
+          insert: vi.fn(),
+          replace: vi.fn(),
+          delete: vi.fn(),
+          normalizeId: vi.fn(() => null),
+        },
+        runQuery: vi.fn(async () => ({
+          verdict: "clean",
+          reason: "scanner.aggregate.clean",
+          reasonCodes: [],
+        })),
+        runMutation,
+        scheduler: { runAfter },
+      } as never,
+      { actorUserId: "users:admin", targetUserId: "users:target", dryRun: false },
+    );
+
+    expect(result.items[0]).toMatchObject({ decision: "unbanned" });
+    const scheduledEmail = runAfter.mock.calls.at(-1);
+    expect(scheduledEmail?.[0]).toBe(0);
+    expect(scheduledEmail?.[2]).toMatchObject({
+      userId: "users:target",
+      restoredAt: 1_700_000_100_000,
+      to: "target@example.com",
+      handle: "false-positive-owner",
+      listingContext: {
+        targetUserId: "users:target",
+        bannedAt,
+        triggerSkillIds: ["skills:trigger"],
+      },
+      source: "autoban_remediation",
+    });
+  });
+
   it("blocks pending trigger skill scans even when the preview verdict is clean", async () => {
     const bannedAt = 1778569308754;
     const triggerSkill = {

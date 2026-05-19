@@ -22,6 +22,10 @@ const {
   list,
   searchInternal,
   banUserInternal,
+  unbanUserInternal,
+  autobanMalwareAuthorInternal,
+  sendBanNotificationInternal,
+  sendUnbanNotificationInternal,
   me,
   placeUserUnderModerationInternal,
   liftModerationHoldInternal,
@@ -43,6 +47,43 @@ const updateProfileHandler = (
 )._handler;
 const deleteAccountHandler = (
   deleteAccount as unknown as WrappedHandler<Record<string, never>, void>
+)._handler;
+const sendBanNotificationHandler = (
+  sendBanNotificationInternal as unknown as {
+    _handler: (
+      ctx: unknown,
+      args: {
+        userId: string;
+        bannedAt: number;
+        to: string;
+        handle?: string;
+        reason?: string;
+        artifact?: { kind: "skill" | "plugin"; name: string };
+        source: "manual" | "autoban";
+      },
+    ) => Promise<unknown>;
+  }
+)._handler;
+const sendUnbanNotificationHandler = (
+  sendUnbanNotificationInternal as unknown as {
+    _handler: (
+      ctx: unknown,
+      args: {
+        userId: string;
+        restoredAt: number;
+        to: string;
+        handle?: string;
+        restoredListings?: Array<{ kind: "skill" | "plugin"; name: string }>;
+        listingContext?: {
+          targetUserId: string;
+          bannedAt: number;
+          triggerSkillIds?: string[];
+        };
+        listingCollectionAttempt?: number;
+        source: "manual" | "autoban_remediation";
+      },
+    ) => Promise<unknown>;
+  }
 )._handler;
 
 function makeCtx() {
@@ -200,6 +241,7 @@ function makeBanCtx() {
   const insert = vi.fn();
   const get = vi.fn();
   const runMutation = vi.fn();
+  const runAfter = vi.fn();
   const apiTokens = [{ _id: "apiTokens:1", revokedAt: undefined }];
   const userComments = [
     {
@@ -229,12 +271,41 @@ function makeBanCtx() {
       if (table === "apiTokens") return { collect: vi.fn().mockResolvedValue(apiTokens) };
       if (table === "comments") return { collect: vi.fn().mockResolvedValue(userComments) };
       if (table === "soulComments") return { collect: vi.fn().mockResolvedValue(soulComments) };
+      if (table === "skills") {
+        return {
+          order: () => ({
+            paginate: vi.fn().mockResolvedValue({
+              page: [
+                {
+                  _id: "skills:wallet-sync",
+                  ownerUserId: "users:target",
+                  slug: "wallet-sync",
+                  softDeletedAt: 1_700_000_000_000,
+                  moderationReason: "user.banned",
+                },
+              ],
+              isDone: true,
+              continueCursor: null,
+            }),
+          }),
+          unique: vi.fn().mockResolvedValue({
+            _id: "skills:wallet-sync",
+            ownerUserId: "users:target",
+            slug: "wallet-sync",
+          }),
+        };
+      }
+      if (table === "packages") return { collect: vi.fn().mockResolvedValue([]) };
       throw new Error(`Unexpected table ${table}`);
     },
   }));
 
-  const ctx = { db: { patch, insert, get, query, normalizeId: vi.fn() }, runMutation } as never;
-  return { ctx, patch, insert, get, runMutation };
+  const ctx = {
+    db: { patch, insert, get, query, normalizeId: vi.fn() },
+    runMutation,
+    scheduler: { runAfter },
+  } as never;
+  return { ctx, patch, insert, get, runMutation, runAfter };
 }
 
 describe("ensureHandler", () => {
@@ -1844,7 +1915,7 @@ describe("users.banUserInternal", () => {
       banUserInternal as unknown as {
         _handler: (
           ctx: unknown,
-          args: { actorUserId: string; targetUserId: string; reason?: string },
+          args: { actorUserId: string; targetUserId: string; reason?: string; slug?: string },
         ) => Promise<unknown>;
       }
     )._handler;
@@ -1894,6 +1965,59 @@ describe("users.banUserInternal", () => {
     );
   });
 
+  it("schedules a ban notification email when the target has an email address", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
+    const { ctx, get, runMutation, runAfter } = makeBanCtx();
+
+    get.mockImplementation(async (id: string) => {
+      if (id === "users:actor") return { _id: "users:actor", role: "moderator" };
+      if (id === "users:target") {
+        return {
+          _id: "users:target",
+          role: "user",
+          handle: "target-user",
+          email: "target@example.com",
+        };
+      }
+      if (id === "souls:1") return { _id: "souls:1", stats: { comments: 3 } };
+      return null;
+    });
+
+    runMutation
+      .mockResolvedValueOnce({ hiddenCount: 2, scheduled: false })
+      .mockResolvedValueOnce(undefined);
+
+    const handler = (
+      banUserInternal as unknown as {
+        _handler: (
+          ctx: unknown,
+          args: { actorUserId: string; targetUserId: string; reason?: string; slug?: string },
+        ) => Promise<unknown>;
+      }
+    )._handler;
+
+    await handler(ctx, {
+      actorUserId: "users:actor",
+      targetUserId: "users:target",
+      reason: "malware review",
+      slug: "wallet-sync",
+    });
+
+    expect(runAfter).toHaveBeenCalledWith(
+      0,
+      expect.anything(),
+      expect.objectContaining({
+        userId: "users:target",
+        bannedAt: 1_700_000_000_000,
+        to: "target@example.com",
+        handle: "target-user",
+        reason: "malware review",
+        artifact: { kind: "skill", name: "target-user/wallet-sync" },
+        source: "manual",
+      }),
+    );
+  });
+
   it("re-ban of already banned user still cleans lingering comments", async () => {
     vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
     const { ctx, get, patch, runMutation } = makeBanCtx();
@@ -1937,6 +2061,404 @@ describe("users.banUserInternal", () => {
       softDeletedAt: 1_600_000_000_000,
       deletedBy: "users:actor",
     });
+  });
+
+  it("schedules a ban notification email for malware autobans", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
+    const { ctx, get, runMutation, runAfter } = makeBanCtx();
+
+    get.mockImplementation(async (id: string) => {
+      if (id === "users:target") {
+        return {
+          _id: "users:target",
+          role: "user",
+          handle: "target-user",
+          email: "target@example.com",
+        };
+      }
+      if (id === "souls:1") return { _id: "souls:1", stats: { comments: 3 } };
+      return null;
+    });
+
+    runMutation
+      .mockResolvedValueOnce({ hiddenCount: 2, scheduled: false })
+      .mockResolvedValueOnce(undefined);
+
+    const handler = (
+      autobanMalwareAuthorInternal as unknown as {
+        _handler: (
+          ctx: unknown,
+          args: {
+            ownerUserId: string;
+            slug: string;
+            sha256hash?: string;
+            trigger?: string;
+          },
+        ) => Promise<unknown>;
+      }
+    )._handler;
+
+    await handler(ctx, {
+      ownerUserId: "users:target",
+      slug: "wallet-sync",
+      sha256hash: "abc123",
+      trigger: "vt.malicious",
+    });
+
+    expect(runAfter).toHaveBeenCalledWith(
+      0,
+      expect.anything(),
+      expect.objectContaining({
+        userId: "users:target",
+        bannedAt: 1_700_000_000_000,
+        to: "target@example.com",
+        handle: "target-user",
+        reason: "vt.malicious",
+        artifact: { kind: "skill", name: "target-user/wallet-sync" },
+        source: "autoban",
+      }),
+    );
+  });
+});
+
+describe("users.unbanUserInternal", () => {
+  it("schedules an account restored email when the target has an email address", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_700_000_100_000);
+    const { ctx, get, runMutation, runAfter } = makeBanCtx();
+
+    get.mockImplementation(async (id: string) => {
+      if (id === "users:actor") return { _id: "users:actor", role: "admin" };
+      if (id === "users:target") {
+        return {
+          _id: "users:target",
+          role: "user",
+          handle: "target-user",
+          email: "target@example.com",
+          deletedAt: 1_700_000_000_000,
+        };
+      }
+      return null;
+    });
+    runMutation.mockResolvedValueOnce({ restoredCount: 2, scheduled: false });
+
+    const handler = (
+      unbanUserInternal as unknown as {
+        _handler: (
+          ctx: unknown,
+          args: { actorUserId: string; targetUserId: string; reason?: string },
+        ) => Promise<unknown>;
+      }
+    )._handler;
+
+    await handler(ctx, {
+      actorUserId: "users:actor",
+      targetUserId: "users:target",
+      reason: "false positive",
+    });
+
+    expect(runAfter).toHaveBeenCalledWith(
+      0,
+      expect.anything(),
+      expect.objectContaining({
+        userId: "users:target",
+        restoredAt: 1_700_000_100_000,
+        to: "target@example.com",
+        handle: "target-user",
+        listingContext: {
+          targetUserId: "users:target",
+          bannedAt: 1_700_000_000_000,
+        },
+        source: "manual",
+      }),
+    );
+  });
+});
+
+describe("users.sendBanNotificationInternal", () => {
+  const originalResendApiKey = process.env.RESEND_API_KEY;
+  const originalSecurityEmail = process.env.CLAWHUB_SECURITY_EMAIL;
+  const originalSecurityEmailFrom = process.env.CLAWHUB_SECURITY_EMAIL_FROM;
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    if (originalResendApiKey === undefined) {
+      delete process.env.RESEND_API_KEY;
+    } else {
+      process.env.RESEND_API_KEY = originalResendApiKey;
+    }
+    if (originalSecurityEmail === undefined) {
+      delete process.env.CLAWHUB_SECURITY_EMAIL;
+    } else {
+      process.env.CLAWHUB_SECURITY_EMAIL = originalSecurityEmail;
+    }
+    if (originalSecurityEmailFrom === undefined) {
+      delete process.env.CLAWHUB_SECURITY_EMAIL_FROM;
+    } else {
+      process.env.CLAWHUB_SECURITY_EMAIL_FROM = originalSecurityEmailFrom;
+    }
+    globalThis.fetch = originalFetch;
+  });
+
+  it("sends a Resend email from the security mailbox with reply appeal instructions", async () => {
+    process.env.RESEND_API_KEY = "resend-test-key";
+    delete process.env.CLAWHUB_SECURITY_EMAIL;
+    delete process.env.CLAWHUB_SECURITY_EMAIL_FROM;
+    const fetchCalls: Array<[RequestInfo | URL, RequestInit | undefined]> = [];
+    globalThis.fetch = (async (input, init) => {
+      fetchCalls.push([input, init]);
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch;
+
+    const result = await sendBanNotificationHandler({} as never, {
+      userId: "users:target",
+      bannedAt: 1_700_000_000_000,
+      to: "target@example.com",
+      handle: "target-user",
+      reason: "vt.malicious",
+      artifact: { kind: "skill", name: "target-user/wallet-sync" },
+      source: "autoban",
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(fetchCalls[0]?.[0]).toBe("https://api.resend.com/emails");
+    expect(fetchCalls[0]?.[1]?.method).toBe("POST");
+    const headers = new Headers(fetchCalls[0]?.[1]?.headers);
+    expect(headers.get("Authorization")).toBe("Bearer resend-test-key");
+    expect(headers.get("Content-Type")).toBe("application/json");
+    expect(headers.get("Idempotency-Key")).toBe("clawhub-ban-users:target-1700000000000");
+    const firstCall = fetchCalls[0];
+    expect(firstCall).toBeDefined();
+    const rawBody = firstCall?.[1]?.body;
+    expect(typeof rawBody).toBe("string");
+    const payload = JSON.parse(rawBody as string) as {
+      from: string;
+      reply_to: string;
+      subject: string;
+      text: string;
+      html: string;
+    };
+    expect(payload.from).toBe("security@openclaw.org");
+    expect(payload.reply_to).toBe("security@openclaw.org");
+    expect(payload.subject).toBe("Your ClawHub account was disabled");
+    expect(payload.text).toContain(
+      "Your ClawHub account was disabled after automated security checks flagged an uploaded skill.",
+    );
+    expect(payload.text).not.toContain("uploaded skill or plugin");
+    expect(payload.html).toContain(
+      "Your ClawHub account was disabled after automated security checks flagged an uploaded skill.",
+    );
+    expect(payload.html).not.toContain("uploaded skill or plugin");
+    expect(payload.text).toContain("Skill name: target-user/wallet-sync.");
+    expect(payload.text).toContain(
+      "Security finding: VirusTotal reported the upload as malicious.",
+    );
+    expect(payload.text).toContain("API tokens for the account have been revoked.");
+    expect(payload.text).toContain(
+      "Published skills owned by the account have been hidden from public view.",
+    );
+    expect(payload.text).not.toContain("Existing comments");
+    expect(payload.text).toContain("reply to this email");
+    expect(payload.html).toContain("<strong>Skill name:</strong>");
+    expect(payload.html).toContain("target-user/wallet-sync");
+    expect(payload.html).toContain("<strong>Security finding:</strong>");
+    expect(payload.html).toContain("VirusTotal reported the upload as malicious.");
+    expect(payload.html).toContain("<strong>What this means right now:</strong>");
+    expect(payload.html).not.toContain("Existing comments");
+  });
+
+  it("maps internal comment scam ban reasons to public email copy", async () => {
+    process.env.RESEND_API_KEY = "resend-test-key";
+    const fetchCalls: Array<[RequestInfo | URL, RequestInit | undefined]> = [];
+    globalThis.fetch = (async (input, init) => {
+      fetchCalls.push([input, init]);
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch;
+
+    await sendBanNotificationHandler({} as never, {
+      userId: "users:target",
+      bannedAt: 1_700_000_000_000,
+      to: "target@example.com",
+      handle: "target-user",
+      reason:
+        "comment scam auto-ban. LLM evidence includes recovery phrase bait. evidence: secret phrase. commentId=comments:1 skillId=skills:1",
+      source: "manual",
+    });
+
+    const rawBody = fetchCalls[0]?.[1]?.body;
+    expect(typeof rawBody).toBe("string");
+    const payload = JSON.parse(rawBody as string) as { text: string; html: string };
+    expect(payload.text).toContain(
+      "Security review finding: ClawHub security checks found high-confidence scam activity from the account.",
+    );
+    expect(payload.html).toContain(
+      "ClawHub security checks found high-confidence scam activity from the account.",
+    );
+    expect(payload.text).not.toContain("commentId=");
+    expect(payload.text).not.toContain("skillId=");
+    expect(payload.text).not.toContain("recovery phrase");
+    expect(payload.html).not.toContain("commentId=");
+    expect(payload.html).not.toContain("skillId=");
+  });
+});
+
+describe("users.sendUnbanNotificationInternal", () => {
+  const originalResendApiKey = process.env.RESEND_API_KEY;
+  const originalSecurityEmail = process.env.CLAWHUB_SECURITY_EMAIL;
+  const originalSecurityEmailFrom = process.env.CLAWHUB_SECURITY_EMAIL_FROM;
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    if (originalResendApiKey === undefined) {
+      delete process.env.RESEND_API_KEY;
+    } else {
+      process.env.RESEND_API_KEY = originalResendApiKey;
+    }
+    if (originalSecurityEmail === undefined) {
+      delete process.env.CLAWHUB_SECURITY_EMAIL;
+    } else {
+      process.env.CLAWHUB_SECURITY_EMAIL = originalSecurityEmail;
+    }
+    if (originalSecurityEmailFrom === undefined) {
+      delete process.env.CLAWHUB_SECURITY_EMAIL_FROM;
+    } else {
+      process.env.CLAWHUB_SECURITY_EMAIL_FROM = originalSecurityEmailFrom;
+    }
+    globalThis.fetch = originalFetch;
+  });
+
+  it("sends a Resend email for restored accounts", async () => {
+    process.env.RESEND_API_KEY = "resend-test-key";
+    delete process.env.CLAWHUB_SECURITY_EMAIL;
+    delete process.env.CLAWHUB_SECURITY_EMAIL_FROM;
+    const fetchCalls: Array<[RequestInfo | URL, RequestInit | undefined]> = [];
+    globalThis.fetch = (async (input, init) => {
+      fetchCalls.push([input, init]);
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch;
+
+    const result = await sendUnbanNotificationHandler({} as never, {
+      userId: "users:target",
+      restoredAt: 1_700_000_100_000,
+      to: "target@example.com",
+      handle: "target-user",
+      restoredListings: [
+        { kind: "skill", name: "target-user/wallet-sync" },
+        { kind: "plugin", name: "@target/demo-plugin" },
+      ],
+      source: "autoban_remediation",
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(fetchCalls[0]?.[0]).toBe("https://api.resend.com/emails");
+    expect(fetchCalls[0]?.[1]?.method).toBe("POST");
+    const headers = new Headers(fetchCalls[0]?.[1]?.headers);
+    expect(headers.get("Authorization")).toBe("Bearer resend-test-key");
+    expect(headers.get("Content-Type")).toBe("application/json");
+    expect(headers.get("Idempotency-Key")).toBe("clawhub-unban-users:target-1700000100000");
+    const rawBody = fetchCalls[0]?.[1]?.body;
+    expect(typeof rawBody).toBe("string");
+    const payload = JSON.parse(rawBody as string) as {
+      from: string;
+      reply_to: string;
+      subject: string;
+      text: string;
+      html: string;
+    };
+    expect(payload.from).toBe("security@openclaw.org");
+    expect(payload.reply_to).toBe("security@openclaw.org");
+    expect(payload.subject).toBe("Your ClawHub account was restored");
+    expect(payload.text).toContain(
+      "Your ClawHub account has been restored after ClawHub security checks were reviewed again.",
+    );
+    expect(payload.text).toContain("Your ClawHub account can sign in again.");
+    expect(payload.text).toContain("Restored listings:");
+    expect(payload.text).toContain("Skill: target-user/wallet-sync");
+    expect(payload.text).toContain("Plugin: @target/demo-plugin");
+    expect(payload.text).not.toContain("Eligible published listings restored");
+    expect(payload.text).toContain("Previously revoked API tokens stay revoked.");
+    expect(payload.text).toContain("reply to this email");
+    expect(payload.html).toContain("<strong>What this means right now:</strong>");
+    expect(payload.html).toContain("Your ClawHub account can sign in again.");
+    expect(payload.html).toContain("Skill: target-user/wallet-sync");
+    expect(payload.html).toContain("Plugin: @target/demo-plugin");
+  });
+
+  it("summarizes restored listings after the first ten entries", async () => {
+    process.env.RESEND_API_KEY = "resend-test-key";
+    const fetchCalls: Array<[RequestInfo | URL, RequestInit | undefined]> = [];
+    globalThis.fetch = (async (input, init) => {
+      fetchCalls.push([input, init]);
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch;
+
+    const restoredListings = Array.from({ length: 12 }, (_, index) => ({
+      kind: index % 2 === 0 ? ("skill" as const) : ("plugin" as const),
+      name: `target-user/listing-${index + 1}`,
+    }));
+
+    const result = await sendUnbanNotificationHandler({} as never, {
+      userId: "users:target",
+      restoredAt: 1_700_000_100_000,
+      to: "target@example.com",
+      handle: "target-user",
+      restoredListings,
+      source: "autoban_remediation",
+    });
+
+    expect(result).toEqual({ ok: true });
+    const rawBody = fetchCalls[0]?.[1]?.body;
+    expect(typeof rawBody).toBe("string");
+    const payload = JSON.parse(rawBody as string) as { text: string; html: string };
+    expect(payload.text).toContain("target-user/listing-10");
+    expect(payload.text).not.toContain("target-user/listing-11");
+    expect(payload.text).not.toContain("target-user/listing-12");
+    expect(payload.text).toContain("... and 2 more");
+    expect(payload.html).toContain("target-user/listing-10");
+    expect(payload.html).not.toContain("target-user/listing-11");
+    expect(payload.html).not.toContain("target-user/listing-12");
+    expect(payload.html).toContain("... and 2 more");
+  });
+
+  it("waits for restore batches before sending a restored listings email", async () => {
+    process.env.RESEND_API_KEY = "resend-test-key";
+    const fetchMock = vi.fn();
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const runQuery = vi.fn().mockResolvedValue({
+      listings: [],
+      hasRemaining: true,
+      continueCursor: undefined,
+    });
+    const runAfter = vi.fn();
+
+    const result = await sendUnbanNotificationHandler(
+      { runQuery, scheduler: { runAfter } } as never,
+      {
+        userId: "users:target",
+        restoredAt: 1_700_000_100_000,
+        to: "target@example.com",
+        handle: "target-user",
+        listingContext: {
+          targetUserId: "users:target",
+          bannedAt: 1_700_000_000_000,
+        },
+        source: "manual",
+      },
+    );
+
+    expect(result).toEqual({ ok: false, reason: "listing_collection_pending" });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(runAfter).toHaveBeenCalledWith(
+      5_000,
+      expect.anything(),
+      expect.objectContaining({
+        userId: "users:target",
+        listingCollectionAttempt: 1,
+        listingContext: {
+          targetUserId: "users:target",
+          bannedAt: 1_700_000_000_000,
+        },
+      }),
+    );
   });
 });
 

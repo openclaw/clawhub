@@ -10,6 +10,19 @@ import {
   requireUser,
 } from "./lib/access";
 import { isLocalDevAuthEnabled } from "./lib/devAuth";
+import {
+  banNotificationArtifactValidator,
+  restoredListingValidator,
+  sendBanNotificationEmail,
+  sendUnbanNotificationEmail,
+  type BanNotificationArtifact,
+  type BanNotificationArtifactKind,
+  type BanNotificationSource,
+  type RestoredListing,
+  type UnbanNotificationListingContext,
+  type UnbanNotificationSource,
+  unbanNotificationListingContextValidator,
+} from "./lib/emails";
 import { syncGitHubProfile } from "./lib/githubAccount";
 import { resolvePackageReleaseScanStatus } from "./lib/packageSecurity";
 import { toPublicUser } from "./lib/public";
@@ -41,6 +54,9 @@ const DEFAULT_AUTOBAN_REMEDIATION_REASON =
 const MAX_AUTOBAN_REMEDIATION_LIMIT = 100;
 const AUTOBAN_AUDIT_MATCH_WINDOW_MS = 5_000;
 const AUTOBAN_REMEDIATION_COUNT_PAGE_SIZE = 100;
+const UNBAN_NOTIFICATION_LIST_PAGE_SIZE = 100;
+const UNBAN_NOTIFICATION_RETRY_DELAY_MS = 5_000;
+const MAX_UNBAN_NOTIFICATION_LIST_RETRIES = 60;
 const autobanRemediationInternalRefs = internal as unknown as {
   users: {
     countRestorableAutobanSkillsPageInternal: unknown;
@@ -92,6 +108,307 @@ const DEV_PERSONAS = {
 } as const;
 
 type DevPersona = keyof typeof DEV_PERSONAS;
+
+async function resolveBanNotificationArtifact(
+  ctx: Pick<MutationCtx, "db">,
+  args: {
+    ownerUserId: Id<"users">;
+    target: Doc<"users">;
+    slug?: string;
+    kind?: BanNotificationArtifactKind;
+  },
+): Promise<BanNotificationArtifact | undefined> {
+  const slug = args.slug?.trim();
+  if (!slug) return undefined;
+
+  if (args.kind !== "plugin") {
+    const skill = await ctx.db
+      .query("skills")
+      .withIndex("by_owner_slug", (q) => q.eq("ownerUserId", args.ownerUserId).eq("slug", slug))
+      .unique();
+    if (skill) {
+      return {
+        kind: "skill",
+        name: `${await resolveOwnerHandle(ctx, skill.ownerPublisherId, args.target)}/${skill.slug}`,
+      };
+    }
+  }
+
+  if (args.kind !== "skill") {
+    const packages = await ctx.db
+      .query("packages")
+      .withIndex("by_name", (q) => q.eq("normalizedName", slug.toLowerCase()))
+      .collect();
+    const pkg = packages.find((item) => item.ownerUserId === args.ownerUserId);
+    if (pkg && pkg.family !== "skill") {
+      return {
+        kind: "plugin",
+        name: `${await resolveOwnerHandle(ctx, pkg.ownerPublisherId, args.target)}/${pkg.name}`,
+      };
+    }
+  }
+
+  const fallbackKind = args.kind ?? "skill";
+  return {
+    kind: fallbackKind,
+    name: `${args.target.handle ?? args.ownerUserId}/${slug}`,
+  };
+}
+
+async function resolveOwnerHandle(
+  ctx: Pick<QueryCtx, "db">,
+  ownerPublisherId: Id<"publishers"> | undefined,
+  target: Doc<"users">,
+) {
+  if (ownerPublisherId) {
+    const publisher = await ctx.db.get(ownerPublisherId);
+    if (publisher?.handle) return publisher.handle;
+  }
+  return target.handle ?? target._id;
+}
+
+async function scheduleBanNotificationEmail(
+  ctx: MutationCtx,
+  args: {
+    userId: Id<"users">;
+    bannedAt: number;
+    target: Doc<"users">;
+    reason?: string;
+    artifact?: BanNotificationArtifact;
+    source: BanNotificationSource;
+  },
+) {
+  const to = args.target.email?.trim();
+  if (!to) return;
+
+  await ctx.scheduler.runAfter(0, internal.users.sendBanNotificationInternal, {
+    userId: args.userId,
+    bannedAt: args.bannedAt,
+    to,
+    handle: args.target.handle ?? undefined,
+    reason: args.reason,
+    artifact: args.artifact,
+    source: args.source,
+  });
+}
+
+async function scheduleUnbanNotificationEmail(
+  ctx: MutationCtx,
+  args: {
+    userId: Id<"users">;
+    restoredAt: number;
+    restoredListings?: RestoredListing[];
+    listingContext?: UnbanNotificationListingContext;
+    target: Doc<"users">;
+    source: UnbanNotificationSource;
+  },
+) {
+  const to = args.target.email?.trim();
+  if (!to) return;
+
+  await ctx.scheduler.runAfter(0, internal.users.sendUnbanNotificationInternal, {
+    userId: args.userId,
+    restoredAt: args.restoredAt,
+    restoredListings: args.restoredListings,
+    listingContext: args.listingContext,
+    to,
+    handle: args.target.handle ?? undefined,
+    source: args.source,
+  });
+}
+
+export const sendBanNotificationInternal = internalAction({
+  args: {
+    userId: v.id("users"),
+    bannedAt: v.number(),
+    to: v.string(),
+    handle: v.optional(v.string()),
+    reason: v.optional(v.string()),
+    artifact: v.optional(banNotificationArtifactValidator),
+    source: v.union(v.literal("manual"), v.literal("autoban")),
+  },
+  handler: async (_ctx, args) => sendBanNotificationEmail(args),
+});
+
+export const sendUnbanNotificationInternal = internalAction({
+  args: {
+    userId: v.id("users"),
+    restoredAt: v.number(),
+    to: v.string(),
+    handle: v.optional(v.string()),
+    restoredListings: v.optional(v.array(restoredListingValidator)),
+    listingContext: v.optional(unbanNotificationListingContextValidator),
+    listingCollectionAttempt: v.optional(v.number()),
+    source: v.union(v.literal("manual"), v.literal("autoban_remediation")),
+  },
+  handler: async (ctx, args) => {
+    let restoredListings = args.restoredListings;
+    if (!restoredListings && args.listingContext) {
+      const collected = await collectUnbanNotificationListings(ctx, {
+        ...args.listingContext,
+        restoredAt: args.restoredAt,
+        source: args.source,
+      });
+      if (
+        collected.hasRemaining &&
+        (args.listingCollectionAttempt ?? 0) < MAX_UNBAN_NOTIFICATION_LIST_RETRIES
+      ) {
+        await ctx.scheduler.runAfter(
+          UNBAN_NOTIFICATION_RETRY_DELAY_MS,
+          internal.users.sendUnbanNotificationInternal,
+          {
+            ...args,
+            listingCollectionAttempt: (args.listingCollectionAttempt ?? 0) + 1,
+          },
+        );
+        return { ok: false as const, reason: "listing_collection_pending" as const };
+      }
+      restoredListings = collected.listings;
+    }
+
+    return sendUnbanNotificationEmail({ ...args, restoredListings });
+  },
+});
+
+type UnbanNotificationListingPage = {
+  listings: RestoredListing[];
+  hasRemaining: boolean;
+  continueCursor?: string;
+};
+
+async function collectUnbanNotificationListings(
+  ctx: Pick<ActionCtx, "runQuery">,
+  args: UnbanNotificationListingContext & {
+    restoredAt: number;
+    source: UnbanNotificationSource;
+  },
+) {
+  const listings: RestoredListing[] = [];
+  let hasRemaining = false;
+  let skillCursor: string | undefined;
+  do {
+    const page = (await ctx.runQuery(
+      internal.users.listUnbanNotificationSkillListingsPageInternal as never,
+      {
+        targetUserId: args.targetUserId,
+        bannedAt: args.bannedAt,
+        restoredAt: args.restoredAt,
+        source: args.source,
+        triggerSkillIds: args.triggerSkillIds,
+        cursor: skillCursor,
+      } as never,
+    )) as UnbanNotificationListingPage;
+    listings.push(...page.listings);
+    hasRemaining ||= page.hasRemaining;
+    skillCursor = page.continueCursor;
+  } while (skillCursor);
+
+  if (args.source === "autoban_remediation") {
+    let packageCursor: string | undefined;
+    do {
+      const page = (await ctx.runQuery(
+        internal.users.listUnbanNotificationPackageListingsPageInternal as never,
+        {
+          targetUserId: args.targetUserId,
+          bannedAt: args.bannedAt,
+          restoredAt: args.restoredAt,
+          cursor: packageCursor,
+        } as never,
+      )) as UnbanNotificationListingPage;
+      listings.push(...page.listings);
+      hasRemaining ||= page.hasRemaining;
+      packageCursor = page.continueCursor;
+    } while (packageCursor);
+  }
+
+  return { listings, hasRemaining };
+}
+
+export const listUnbanNotificationSkillListingsPageInternal = internalQuery({
+  args: {
+    targetUserId: v.id("users"),
+    bannedAt: v.number(),
+    restoredAt: v.number(),
+    source: v.union(v.literal("manual"), v.literal("autoban_remediation")),
+    triggerSkillIds: v.optional(v.array(v.id("skills"))),
+    cursor: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const target = await ctx.db.get(args.targetUserId);
+    if (!target) return { listings: [], hasRemaining: false };
+    const triggerSkillIds = new Set(args.triggerSkillIds ?? []);
+    const { page, isDone, continueCursor } = await ctx.db
+      .query("skills")
+      .withIndex("by_owner", (q) => q.eq("ownerUserId", args.targetUserId))
+      .order("desc")
+      .paginate({
+        cursor: args.cursor ?? null,
+        numItems: UNBAN_NOTIFICATION_LIST_PAGE_SIZE,
+      });
+
+    const listings: RestoredListing[] = [];
+    let hasRemaining = false;
+    for (const skill of page) {
+      if (isRestoredSkillForUnbanNotification(skill, args.source, args.restoredAt)) {
+        listings.push({
+          kind: "skill",
+          name: `${await resolveOwnerHandle(ctx, skill.ownerPublisherId, target)}/${skill.slug}`,
+        });
+      }
+      if (
+        isRemainingSkillForUnbanNotification(skill, args.source, args.bannedAt, triggerSkillIds)
+      ) {
+        hasRemaining = true;
+      }
+    }
+
+    return {
+      listings,
+      hasRemaining,
+      continueCursor: isDone ? undefined : continueCursor,
+    };
+  },
+});
+
+export const listUnbanNotificationPackageListingsPageInternal = internalQuery({
+  args: {
+    targetUserId: v.id("users"),
+    bannedAt: v.number(),
+    restoredAt: v.number(),
+    cursor: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { page, isDone, continueCursor } = await ctx.db
+      .query("packages")
+      .withIndex("by_owner", (q) => q.eq("ownerUserId", args.targetUserId))
+      .order("desc")
+      .paginate({
+        cursor: args.cursor ?? null,
+        numItems: UNBAN_NOTIFICATION_LIST_PAGE_SIZE,
+      });
+
+    const listings: RestoredListing[] = [];
+    let hasRemaining = false;
+    for (const pkg of page) {
+      if (isRestoredPackageForUnbanNotification(pkg, args.restoredAt)) {
+        listings.push({ kind: "plugin", name: pkg.name });
+      }
+      if (
+        pkg.softDeletedAt === args.bannedAt &&
+        pkg.scanStatus !== "malicious" &&
+        (await hasRestorableAutobanPackageRelease(ctx, pkg._id, args.bannedAt))
+      ) {
+        hasRemaining = true;
+      }
+    }
+
+    return {
+      listings,
+      hasRemaining,
+      continueCursor: isDone ? undefined : continueCursor,
+    };
+  },
+});
 
 export const getById = query({
   args: { userId: v.id("users") },
@@ -807,11 +1124,20 @@ export const banUserInternal = internalMutation({
     actorUserId: v.id("users"),
     targetUserId: v.id("users"),
     reason: v.optional(v.string()),
+    slug: v.optional(v.string()),
+    artifactKind: v.optional(v.union(v.literal("skill"), v.literal("plugin"))),
   },
   handler: async (ctx, args) => {
     const actor = await ctx.db.get(args.actorUserId);
     if (!actor || actor.deletedAt || actor.deactivatedAt) throw new Error("User not found");
-    return banUserWithActor(ctx, actor, args.targetUserId, args.reason);
+    return banUserWithActor(
+      ctx,
+      actor,
+      args.targetUserId,
+      args.reason,
+      args.slug,
+      args.artifactKind,
+    );
   },
 });
 
@@ -1118,6 +1444,17 @@ async function evaluateAutobanRemediationCandidate(
   );
   const restoredSkills = restoreSkillsResult.restoredCount ?? 0;
   const restoredPackages = restorePackagesResult.restoredCount ?? 0;
+  await scheduleUnbanNotificationEmail(ctx, {
+    userId: args.target._id,
+    restoredAt: now,
+    listingContext: {
+      targetUserId: args.target._id,
+      bannedAt,
+      triggerSkillIds: getResolvedAutobanTriggerSkillIds(triggers),
+    },
+    target: args.target,
+    source: "autoban_remediation",
+  });
   await ctx.db.insert("auditLogs", {
     actorUserId: args.actor._id,
     action: "user.autoban_remediation",
@@ -1270,14 +1607,7 @@ async function countAutobanRemediationRestores(
   bannedAt: number,
   triggers: AutobanRemediationTrigger[] = [],
 ) {
-  const previewRestorableSkillIds = triggers
-    .filter(
-      (trigger) =>
-        trigger.artifactKind === "skill" &&
-        trigger.artifactId &&
-        isResolvedNonMaliciousTrigger(trigger),
-    )
-    .map((trigger) => trigger.artifactId as Id<"skills">);
+  const previewRestorableSkillIds = getResolvedAutobanTriggerSkillIds(triggers);
   const [skills, packages] = await Promise.all([
     countRestorableAutobanSkills(ctx, ownerUserId, bannedAt, previewRestorableSkillIds),
     countRestorableAutobanPackages(ctx, ownerUserId, bannedAt),
@@ -1345,7 +1675,7 @@ async function countRestorableAutobanPackages(
 }
 
 async function hasRestorableAutobanPackageRelease(
-  ctx: Pick<MutationCtx, "runQuery">,
+  ctx: Pick<QueryCtx, "runQuery">,
   packageId: Id<"packages">,
   bannedAt: number,
 ) {
@@ -1368,6 +1698,48 @@ async function hasRestorableAutobanPackageRelease(
   }
 
   return false;
+}
+
+function getResolvedAutobanTriggerSkillIds(triggers: AutobanRemediationTrigger[]) {
+  return triggers
+    .filter(
+      (trigger) =>
+        trigger.artifactKind === "skill" &&
+        trigger.artifactId &&
+        isResolvedNonMaliciousTrigger(trigger),
+    )
+    .map((trigger) => trigger.artifactId as Id<"skills">);
+}
+
+function isRestoredSkillForUnbanNotification(
+  skill: Doc<"skills">,
+  source: UnbanNotificationSource,
+  restoredAt: number,
+) {
+  if (skill.softDeletedAt) return false;
+  if (source === "manual") {
+    return skill.moderationReason === "restored.unban" && (skill.lastReviewedAt ?? 0) >= restoredAt;
+  }
+  return (skill.updatedAt ?? 0) >= restoredAt;
+}
+
+function isRemainingSkillForUnbanNotification(
+  skill: Doc<"skills">,
+  source: UnbanNotificationSource,
+  bannedAt: number,
+  previewRestorableSkillIds: Set<Id<"skills">>,
+) {
+  if (source === "manual") {
+    return skill.softDeletedAt === bannedAt && skill.moderationReason === "user.banned";
+  }
+  return (
+    isRestorableAutobanSkill(skill, bannedAt) ||
+    (skill.softDeletedAt === bannedAt && previewRestorableSkillIds.has(skill._id))
+  );
+}
+
+function isRestoredPackageForUnbanNotification(pkg: Doc<"packages">, restoredAt: number) {
+  return !pkg.softDeletedAt && (pkg.updatedAt ?? 0) >= restoredAt;
 }
 
 export const countRestorableAutobanSkillsPageInternal = internalQuery({
@@ -1515,6 +1887,8 @@ async function banUserWithActor(
   actor: Doc<"users">,
   targetUserId: Id<"users">,
   reasonRaw?: string,
+  slug?: string,
+  artifactKind?: BanNotificationArtifactKind,
 ) {
   assertModerator(actor);
 
@@ -1581,6 +1955,20 @@ async function banUserWithActor(
     role: "user",
     updatedAt: now,
     banReason: reason || undefined,
+  });
+
+  await scheduleBanNotificationEmail(ctx, {
+    userId: targetUserId,
+    bannedAt: now,
+    target,
+    reason,
+    artifact: await resolveBanNotificationArtifact(ctx, {
+      ownerUserId: targetUserId,
+      target,
+      slug,
+      kind: artifactKind,
+    }),
+    source: "manual",
   });
 
   await ctx.runMutation(internal.telemetry.clearUserTelemetryInternal, { userId: targetUserId });
@@ -1650,6 +2038,17 @@ async function unbanUserWithActor(
   )) as { restoredCount?: number; scheduled?: boolean };
   const restoredCount = restoreSkillsResult.restoredCount ?? 0;
   const scheduledSkills = restoreSkillsResult.scheduled ?? false;
+
+  await scheduleUnbanNotificationEmail(ctx, {
+    userId: targetUserId,
+    restoredAt: now,
+    listingContext: {
+      targetUserId,
+      bannedAt,
+    },
+    target,
+    source: "manual",
+  });
 
   await ctx.db.insert("auditLogs", {
     actorUserId: actor._id,
@@ -1960,6 +2359,7 @@ export const autobanMalwareAuthorInternal = internalMutation({
     ownerUserId: v.id("users"),
     sha256hash: v.optional(v.string()),
     slug: v.string(),
+    artifactKind: v.optional(v.union(v.literal("skill"), v.literal("plugin"))),
     trigger: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -2009,6 +2409,20 @@ export const autobanMalwareAuthorInternal = internalMutation({
       role: "user",
       updatedAt: now,
       banReason: "malware auto-ban",
+    });
+
+    await scheduleBanNotificationEmail(ctx, {
+      userId: args.ownerUserId,
+      bannedAt: now,
+      target,
+      reason: args.trigger?.trim() || "scanner.malicious",
+      artifact: await resolveBanNotificationArtifact(ctx, {
+        ownerUserId: args.ownerUserId,
+        target,
+        slug: args.slug,
+        kind: args.artifactKind,
+      }),
+      source: "autoban",
     });
 
     await ctx.runMutation(internal.telemetry.clearUserTelemetryInternal, {

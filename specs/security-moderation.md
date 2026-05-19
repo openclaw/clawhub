@@ -177,13 +177,28 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 ## Bans
 
 - Banning a user:
-  - hard-deletes all owned skills
+  - hides owned skills
   - soft-deletes all authored skill comments + soul comments
   - revokes API tokens
   - sets `deletedAt` on the user
 - Admins can manually unban (`deletedAt` + `banReason` cleared); revoked API tokens
   stay revoked and should be recreated by the user.
+- Manual unbans and autoban remediation schedule a best-effort account-restored
+  email when the target user has an email address. The notice is sent through
+  Resend from/reply-to `security@openclaw.org`, states that sign-in works again,
+  lists every restored skill/plugin listing identified during the review, and
+  reminds the user that revoked API tokens stay revoked. Email delivery failures
+  must not block the unban or remediation.
 - Optional ban reason is stored in `users.banReason` and audit logs.
+- Bans schedule a best-effort email notice when the target user has an email
+  address. The notice is sent through Resend from/reply-to
+  `security@openclaw.org`, briefly states that the account was disabled,
+  includes the triggering skill or plugin as `<owner>/<slug>` when one is known,
+  summarizes scanner findings in user-facing language, explains that sign-in is
+  blocked, API tokens are revoked, and owned skills are hidden, and tells the
+  user to reply if they want a manual review. The Resend payload includes both
+  plain text and basic HTML formatting. Email delivery failures must not block
+  the ban.
 - Moderators cannot ban admins; nobody can ban themselves.
 - Report counters effectively reset because deleted/banned skills are no longer
   considered active in the per-user report cap.
