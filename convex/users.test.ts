@@ -2383,6 +2383,42 @@ describe("users.sendUnbanNotificationInternal", () => {
     expect(payload.html).toContain("Plugin: @target/demo-plugin");
   });
 
+  it("summarizes restored listings after the first ten entries", async () => {
+    process.env.RESEND_API_KEY = "resend-test-key";
+    const fetchCalls: Array<[RequestInfo | URL, RequestInit | undefined]> = [];
+    globalThis.fetch = (async (input, init) => {
+      fetchCalls.push([input, init]);
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch;
+
+    const restoredListings = Array.from({ length: 12 }, (_, index) => ({
+      kind: index % 2 === 0 ? ("skill" as const) : ("plugin" as const),
+      name: `target-user/listing-${index + 1}`,
+    }));
+
+    const result = await sendUnbanNotificationHandler({} as never, {
+      userId: "users:target",
+      restoredAt: 1_700_000_100_000,
+      to: "target@example.com",
+      handle: "target-user",
+      restoredListings,
+      source: "autoban_remediation",
+    });
+
+    expect(result).toEqual({ ok: true });
+    const rawBody = fetchCalls[0]?.[1]?.body;
+    expect(typeof rawBody).toBe("string");
+    const payload = JSON.parse(rawBody as string) as { text: string; html: string };
+    expect(payload.text).toContain("target-user/listing-10");
+    expect(payload.text).not.toContain("target-user/listing-11");
+    expect(payload.text).not.toContain("target-user/listing-12");
+    expect(payload.text).toContain("... and 2 more");
+    expect(payload.html).toContain("target-user/listing-10");
+    expect(payload.html).not.toContain("target-user/listing-11");
+    expect(payload.html).not.toContain("target-user/listing-12");
+    expect(payload.html).toContain("... and 2 more");
+  });
+
   it("waits for restore batches before sending a restored listings email", async () => {
     process.env.RESEND_API_KEY = "resend-test-key";
     const fetchMock = vi.fn();

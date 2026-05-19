@@ -4,6 +4,7 @@ import type { CreateEmailOptions } from "resend";
 import type { Id } from "../_generated/dataModel";
 
 const DEFAULT_SECURITY_EMAIL = "security@openclaw.org";
+const MAX_RESTORED_LISTINGS_IN_EMAIL = 10;
 
 export type BanNotificationSource = "manual" | "autoban";
 export type UnbanNotificationSource = "manual" | "autoban_remediation";
@@ -268,11 +269,13 @@ function buildRestoredListingTextLines(restoredListings: RestoredListing[] | und
   if (!restoredListings?.length) {
     return ["- Eligible published listings restored during the review are visible again."];
   }
+  const { visibleListings, hiddenCount } = summarizeRestoredListings(restoredListings);
   return [
     "- Restored listings:",
-    ...restoredListings.map(
+    ...visibleListings.map(
       (listing) => `  - ${formatRestoredListingLabel(listing)}: ${listing.name}`,
     ),
+    ...(hiddenCount > 0 ? [`  - ... and ${hiddenCount} more`] : []),
   ];
 }
 
@@ -280,13 +283,22 @@ function buildRestoredListingHtmlItems(restoredListings: RestoredListing[] | und
   if (!restoredListings?.length) {
     return "<li>Eligible published listings restored during the review are visible again.</li>";
   }
-  const items = restoredListings
+  const { visibleListings, hiddenCount } = summarizeRestoredListings(restoredListings);
+  const items = visibleListings
     .map(
       (listing) =>
         `<li>${escapeHtml(formatRestoredListingLabel(listing))}: ${escapeHtml(listing.name)}</li>`,
     )
     .join("");
-  return `<li>Restored listings:<ul style="margin:4px 0 0 20px;padding:0;">${items}</ul></li>`;
+  const overflowItem = hiddenCount > 0 ? `<li>... and ${hiddenCount} more</li>` : "";
+  return `<li>Restored listings:<ul style="margin:4px 0 0 20px;padding:0;">${items}${overflowItem}</ul></li>`;
+}
+
+function summarizeRestoredListings(restoredListings: RestoredListing[]) {
+  return {
+    visibleListings: restoredListings.slice(0, MAX_RESTORED_LISTINGS_IN_EMAIL),
+    hiddenCount: Math.max(0, restoredListings.length - MAX_RESTORED_LISTINGS_IN_EMAIL),
+  };
 }
 
 function formatRestoredListingLabel(listing: RestoredListing) {
