@@ -114,6 +114,9 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   concerns remain `flagged.suspicious` and are hidden by the suspicious filter.
 - VirusTotal is telemetry only. It is included in the Codex workspace as signal,
   but VT alone must never hide, block, or set malicious/suspicious public status.
+- All-active daily VirusTotal sweeps are disabled. Any future recurring VT
+  freshness job must be bounded or delta-driven, and must not starve
+  publish-triggered ClawScan jobs.
 - Prompt-injection pre-scan hits are also context for Codex, not a deterministic
   post-Codex veto. The release worker must not downgrade a benign Codex verdict
   solely from regex telemetry.
