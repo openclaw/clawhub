@@ -308,6 +308,8 @@ describe("cmdRemediateAutobans", () => {
       restoredSkills: 0,
       restoredPackages: 0,
       items: [],
+      nextCursor: null,
+      done: true,
     });
 
     await cmdRemediateAutobans(makeGlobalOpts(), {}, false);
@@ -334,6 +336,8 @@ describe("cmdRemediateAutobans", () => {
       restoredSkills: 12,
       restoredPackages: 0,
       items: [],
+      nextCursor: null,
+      done: true,
     });
 
     await cmdRemediateAutobans(
@@ -370,6 +374,65 @@ describe("cmdRemediateAutobans", () => {
     await expect(
       cmdRemediateAutobans(makeGlobalOpts(), { apply: true, dryRun: true }, false),
     ).rejects.toThrow(/either --apply or --dry-run/i);
+    expect(httpMocks.apiRequest).not.toHaveBeenCalled();
+  });
+
+  it("can dry-run autoban remediation across all pages", async () => {
+    httpMocks.apiRequest
+      .mockResolvedValueOnce({
+        ok: true,
+        dryRun: true,
+        scanned: 10,
+        wouldUnban: 9,
+        unbanned: 0,
+        skipped: 1,
+        restoredSkills: 12,
+        restoredPackages: 0,
+        items: [{ handle: "first" }],
+        nextCursor: "cursor-2",
+        done: false,
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        dryRun: true,
+        scanned: 3,
+        wouldUnban: 3,
+        unbanned: 0,
+        skipped: 0,
+        restoredSkills: 4,
+        restoredPackages: 1,
+        items: [{ handle: "second" }],
+        nextCursor: null,
+        done: true,
+      });
+
+    const result = await cmdRemediateAutobans(
+      makeGlobalOpts(),
+      { all: true, limit: "10", json: true },
+      false,
+    );
+
+    expect(httpMocks.apiRequest).toHaveBeenCalledTimes(2);
+    expect(httpMocks.apiRequest.mock.calls[0]?.[1]).toMatchObject({
+      body: { dryRun: true, limit: 10 },
+    });
+    expect(httpMocks.apiRequest.mock.calls[1]?.[1]).toMatchObject({
+      body: { dryRun: true, limit: 10, cursor: "cursor-2" },
+    });
+    expect(result).toMatchObject({
+      scanned: 13,
+      wouldUnban: 12,
+      skipped: 1,
+      restoredSkills: 16,
+      restoredPackages: 1,
+      done: true,
+    });
+  });
+
+  it("rejects combining all pages with a targeted user", async () => {
+    await expect(
+      cmdRemediateAutobans(makeGlobalOpts(), { all: true, user: "demo" }, false),
+    ).rejects.toThrow(/either --all or --user/i);
     expect(httpMocks.apiRequest).not.toHaveBeenCalled();
   });
 });

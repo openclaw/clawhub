@@ -3414,6 +3414,8 @@ describe("httpApiV1 handlers", () => {
       restoredSkills: 12,
       restoredPackages: 0,
       items: [],
+      nextCursor: null,
+      done: true,
     });
     const response = await __handlers.usersPostRouterV1Handler(
       makeCtx({ runMutation }),
@@ -3425,6 +3427,7 @@ describe("httpApiV1 handlers", () => {
           userId: "users:target",
           reason: "appeal accepted",
           since: "2026-05-12",
+          cursor: "cursor-1",
           limit: 5,
         }),
       }),
@@ -3438,6 +3441,7 @@ describe("httpApiV1 handlers", () => {
         dryRun: false,
         reason: "appeal accepted",
         since: "2026-05-12",
+        cursor: "cursor-1",
         limit: 5,
       }),
     );

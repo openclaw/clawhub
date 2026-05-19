@@ -843,6 +843,7 @@ export const remediateAutobansInternal = internalMutation({
     handle: v.optional(v.string()),
     dryRun: v.optional(v.boolean()),
     since: v.optional(v.string()),
+    cursor: v.optional(v.string()),
     limit: v.optional(v.number()),
     reason: v.optional(v.string()),
   },
@@ -859,6 +860,7 @@ export const remediateAutobansInternal = internalMutation({
       targetUserId: args.targetUserId,
       handle: args.handle,
       sinceMs,
+      cursor: args.cursor,
       limit,
     });
 
@@ -869,7 +871,7 @@ export const remediateAutobansInternal = internalMutation({
     let restoredSkills = 0;
     let restoredPackages = 0;
 
-    for (const candidate of candidates) {
+    for (const candidate of candidates.items) {
       const item = await evaluateAutobanRemediationCandidate(ctx, {
         actor,
         target: candidate,
@@ -887,13 +889,15 @@ export const remediateAutobansInternal = internalMutation({
     return {
       ok: true as const,
       dryRun,
-      scanned: candidates.length,
+      scanned: candidates.items.length,
       wouldUnban,
       unbanned,
       skipped,
       restoredSkills,
       restoredPackages,
       items,
+      nextCursor: candidates.nextCursor,
+      done: candidates.done,
     };
   },
 });
@@ -952,29 +956,45 @@ async function listAutobanRemediationCandidates(
     targetUserId?: Id<"users">;
     handle?: string;
     sinceMs: number;
+    cursor?: string;
     limit: number;
   },
 ) {
   if (args.targetUserId) {
     const user = await ctx.db.get(args.targetUserId);
-    return user
-      ? [user].filter((candidate) => isAutobanRemediationCandidate(candidate, args.sinceMs))
-      : [];
+    return {
+      items: user
+        ? [user].filter((candidate) => isAutobanRemediationCandidate(candidate, args.sinceMs))
+        : [],
+      nextCursor: null,
+      done: true,
+    };
   }
 
   const handle = args.handle?.trim().toLowerCase();
   if (handle) {
     const user = await getUserByHandleOrPersonalPublisher(ctx, handle);
-    return user && isAutobanRemediationCandidate(user, args.sinceMs) ? [user] : [];
+    return {
+      items: user && isAutobanRemediationCandidate(user, args.sinceMs) ? [user] : [],
+      nextCursor: null,
+      done: true,
+    };
   }
 
-  const candidates = await ctx.db
+  const page = await ctx.db
     .query("users")
     .withIndex("by_ban_reason_deleted_at", (q) =>
       q.eq("banReason", MALWARE_AUTOBAN_REASON).gte("deletedAt", args.sinceMs),
     )
-    .take(args.limit);
-  return candidates.filter((candidate) => isAutobanRemediationCandidate(candidate, args.sinceMs));
+    .paginate({
+      cursor: args.cursor ?? null,
+      numItems: args.limit,
+    });
+  return {
+    items: page.page.filter((candidate) => isAutobanRemediationCandidate(candidate, args.sinceMs)),
+    nextCursor: page.continueCursor || null,
+    done: page.isDone,
+  };
 }
 
 function isAutobanRemediationCandidate(user: Doc<"users">, sinceMs = 0) {

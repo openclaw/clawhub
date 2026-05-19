@@ -492,6 +492,8 @@ export const ApiV1RemediateAutobansResponseSchema = type({
   restoredSkills: "number",
   restoredPackages: "number",
   items: "unknown[]",
+  "nextCursor?": "string|null",
+  "done?": "boolean",
 });
 
 export const ApiV1SetRoleResponseSchema = type({

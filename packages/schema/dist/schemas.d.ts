@@ -465,6 +465,8 @@ export declare const ApiV1RemediateAutobansResponseSchema: import("arktype/inter
     restoredSkills: number;
     restoredPackages: number;
     items: unknown[];
+    nextCursor?: string | null;
+    done?: boolean;
 }, {}>;
 export declare const ApiV1StarResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     ok: true;

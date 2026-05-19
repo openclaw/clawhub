@@ -195,6 +195,7 @@ async function handleAdminRemediateAutobans(
   const userId = typeof body.userId === "string" ? body.userId.trim() : "";
   const reason = typeof body.reason === "string" ? body.reason.trim() : "";
   const since = typeof body.since === "string" ? body.since.trim() : "";
+  const cursor = typeof body.cursor === "string" ? body.cursor.trim() : "";
   const dryRun = body.dryRun !== false;
   const limit =
     typeof body.limit === "number"
@@ -225,6 +226,7 @@ async function handleAdminRemediateAutobans(
         dryRun,
         ...(reason ? { reason } : {}),
         ...(since ? { since } : {}),
+        ...(cursor ? { cursor } : {}),
         ...(limit !== undefined ? { limit } : {}),
       },
     );

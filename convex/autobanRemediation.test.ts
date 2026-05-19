@@ -52,6 +52,9 @@ const remediateAutobansHandler = (
       actorUserId: string;
       targetUserId?: string;
       dryRun?: boolean;
+      cursor?: string;
+      limit?: number;
+      since?: string;
     },
     {
       scanned: number;
@@ -389,6 +392,66 @@ describe("autoban remediation users", () => {
 
     expect(result.scanned).toBe(0);
     expect(result.items).toEqual([]);
+  });
+
+  it("paginates autoban remediation candidates with a cursor", async () => {
+    const bannedAt = 1778569308754;
+    const paginate = vi.fn(async () => ({
+      page: [
+        {
+          _id: "users:target",
+          role: "user",
+          handle: "paged-user",
+          deletedAt: bannedAt,
+          banReason: "malware auto-ban",
+        },
+      ],
+      isDone: false,
+      continueCursor: "cursor-2",
+    }));
+    const query = vi.fn((table: string) => {
+      if (table === "users") {
+        return {
+          withIndex: () => ({
+            paginate,
+          }),
+        };
+      }
+      if (table === "auditLogs") {
+        return {
+          withIndex: () => ({
+            collect: vi.fn(async () => []),
+          }),
+        };
+      }
+      throw new Error(`Unexpected table ${table}`);
+    });
+    const result = await remediateAutobansHandler(
+      {
+        db: {
+          query,
+          get: vi.fn(async (id: string) =>
+            id === "users:admin" ? { _id: "users:admin", role: "admin" } : null,
+          ),
+          patch: vi.fn(),
+          insert: vi.fn(),
+          replace: vi.fn(),
+          delete: vi.fn(),
+          normalizeId: vi.fn(() => null),
+        },
+        runQuery: vi.fn(),
+        runMutation: vi.fn(),
+      } as never,
+      { actorUserId: "users:admin", cursor: "cursor-1", limit: 5, dryRun: true } as never,
+    );
+
+    expect(paginate).toHaveBeenCalledWith({ cursor: "cursor-1", numItems: 5 });
+    expect(result).toMatchObject({
+      scanned: 1,
+      skipped: 1,
+      nextCursor: "cursor-2",
+      done: false,
+    });
   });
 
   it("dry-run counts a clean-preview trigger skill even when persisted flags are stale malicious", async () => {

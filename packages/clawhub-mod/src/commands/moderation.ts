@@ -198,6 +198,8 @@ export async function cmdRemediateAutobans(
     limit?: string | number;
     reason?: string;
     json?: boolean;
+    all?: boolean;
+    cursor?: string;
   },
   inputAllowed: boolean,
 ) {
@@ -208,9 +210,11 @@ export async function cmdRemediateAutobans(
   const limit = normalizeOptionalPositiveInt(options.limit);
   const reason = options.reason?.trim();
   const since = options.since?.trim();
+  let cursor = options.cursor?.trim() || null;
 
   if (reason && reason.length > 500) fail("Reason too long (max 500 chars)");
   if (since && Number.isNaN(Date.parse(since))) fail("Invalid --since date");
+  if (options.all && target) fail("Use either --all or --user, not both");
 
   void inputAllowed;
 
@@ -221,30 +225,51 @@ export async function cmdRemediateAutobans(
     : createSpinner(`${dryRun ? "Planning" : "Applying"} autoban remediation`);
 
   try {
-    const body: Record<string, unknown> = { dryRun };
-    if (target) {
-      if (options.id) body.userId = target;
-      else body.handle = normalizeHandle(target);
-    }
-    if (reason) body.reason = reason;
-    if (since) body.since = since;
-    if (limit !== undefined) body.limit = limit;
+    const pages = [];
+    do {
+      const body: Record<string, unknown> = { dryRun };
+      if (target) {
+        if (options.id) body.userId = target;
+        else body.handle = normalizeHandle(target);
+      }
+      if (reason) body.reason = reason;
+      if (since) body.since = since;
+      if (limit !== undefined) body.limit = limit;
+      if (cursor) body.cursor = cursor;
 
-    const result = await apiRequest(
-      registry,
-      {
-        method: "POST",
-        path: `${ApiRoutes.users}/remediate-autobans`,
-        token,
-        body,
-      },
-      ApiV1RemediateAutobansResponseSchema,
-    );
-    const parsed = parseArk(
-      ApiV1RemediateAutobansResponseSchema,
-      result,
-      "Remediate autobans response",
-    );
+      const result = await apiRequest(
+        registry,
+        {
+          method: "POST",
+          path: `${ApiRoutes.users}/remediate-autobans`,
+          token,
+          body,
+        },
+        ApiV1RemediateAutobansResponseSchema,
+      );
+      const parsedPage = parseArk(
+        ApiV1RemediateAutobansResponseSchema,
+        result,
+        "Remediate autobans response",
+      );
+      pages.push(parsedPage);
+      cursor = parsedPage.nextCursor ?? null;
+      if (!options.all || parsedPage.done) break;
+    } while (cursor);
+
+    const parsed = {
+      ok: true as const,
+      dryRun,
+      scanned: pages.reduce((sum, page) => sum + page.scanned, 0),
+      wouldUnban: pages.reduce((sum, page) => sum + page.wouldUnban, 0),
+      unbanned: pages.reduce((sum, page) => sum + page.unbanned, 0),
+      skipped: pages.reduce((sum, page) => sum + page.skipped, 0),
+      restoredSkills: pages.reduce((sum, page) => sum + page.restoredSkills, 0),
+      restoredPackages: pages.reduce((sum, page) => sum + page.restoredPackages, 0),
+      items: pages.flatMap((page) => page.items),
+      nextCursor: pages.at(-1)?.nextCursor ?? null,
+      done: pages.at(-1)?.done ?? true,
+    };
     spinner?.succeed(
       `${dryRun ? "Dry run" : "Applied"} autoban remediation: scanned ${parsed.scanned}, ${dryRun ? "would unban" : "unbanned"} ${dryRun ? parsed.wouldUnban : parsed.unbanned}, skipped ${parsed.skipped}.`,
     );
@@ -254,6 +279,9 @@ export async function cmdRemediateAutobans(
       console.log(
         `Restores: ${formatRestoredSkills(parsed.restoredSkills)}, ${formatRestoredPackages(parsed.restoredPackages)}.`,
       );
+      if (!parsed.done && parsed.nextCursor) {
+        console.log(`Next cursor: ${parsed.nextCursor}`);
+      }
       if (dryRun) console.log("Re-run with --apply to write these changes.");
     }
     return parsed;

@@ -239,7 +239,9 @@ users
   .option("--user <handleOrId>", "Limit to one user handle or id")
   .option("--id", "Treat --user as a user id")
   .option("--since <date>", "Only scan autobans at or after this date")
-  .option("--limit <n>", "Maximum users to scan")
+  .option("--limit <n>", "Maximum users to scan per page")
+  .option("--cursor <cursor>", "Resume cursor")
+  .option("--all", "Continue until all pages are processed")
   .option("--reason <reason>", "Audit reason for apply")
   .option("--json", "Output JSON")
   .action(async (options) => {
