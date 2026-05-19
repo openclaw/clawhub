@@ -26,7 +26,8 @@ For website/UI changes, attach screenshots or recordings from the real app. Incl
 
 ## Verification
 
-- [ ] `bun run format:check`
-- [ ] `bun run lint`
-- [ ] `bun run test`
+- [ ] `bun run ci:static`
+- [ ] Focused tests for touched behavior:
+- [ ] `bun run ci:unit` or `N/A` for docs/config-only:
+- [ ] Broader gate when required (`ci:types-build`, `ci:packages`, `ci:e2e-http`, `ci:playwright-smoke`, `test:pw:local-auth`, `proof:ui`):
 - [ ] Other:

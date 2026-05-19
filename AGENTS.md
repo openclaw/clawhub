@@ -18,15 +18,24 @@
 
 ## Build, Test, and Development Commands
 
-- `bun run dev` — local app server at `http://localhost:3000`.
+Keep this section as the command map agents normally need, not a full `package.json` script index.
+
+- `bun run dev` — foreground local app server at `http://localhost:3000`.
+- `bunx convex dev --typecheck=disable` — local Convex backend/function watcher for manual setup.
+- `bunx convex codegen` — regenerate `convex/_generated` after Convex API/schema changes.
+- `bun run setup:worktree` — link `.env.local` and `.convex` from a usable source worktree into the current worktree. Use `-- --from <path>` or `CLAWHUB_WORKTREE_SOURCE=<path>` when auto-discovery picks the wrong source.
+- `bun run dev:worktree` — Worktrunk-managed detached worktree server. Requires `wt` on `PATH`; from that worktree use `wt --yes url` to print the branch URL and `wt --yes stop` to stop it.
+- `bun run seed:dev` — canonical local seed path; runs worktree setup, waits for local Convex, seeds local fixtures plus the public corpus, and refreshes stats.
 - `bun run build` — production build (Vite + Nitro).
-- `bun run preview` — preview built app.
-- `bunx convex dev` — Convex dev deployment + function watcher.
-- `bunx convex codegen` — regenerate `convex/_generated`.
-- `bun run format:check` — formatting check.
-- `bun run lint` — Biome + oxlint (type-aware).
-- `bun run test` — Vitest (unit tests).
-- `bun run coverage` — coverage run; keep global >= 80%.
+- `bun run ci:static` — required pre-handoff static gate: peer checks, audit, formatting, lint, and dead-code checks.
+- `bun run ci:unit` — Vitest coverage gate; required for source/test PRs unless docs/config-only.
+- `bun run ci:types-build` — full TypeScript/build gate for app, Convex, and packages.
+- `bun run ci:packages` — schema, CLI, and moderation package verification.
+- `bun run ci:e2e-http` — secretless HTTP and CLI e2e subset.
+- `bun run ci:playwright-smoke` — chromium smoke against the public read backend.
+- `bun run test:pw:local-auth` — local Convex/dev-auth browser gate for signed-in/write flows.
+
+Specialized corpus, scanner, security-worker, UI proof, proof publishing, Crabbox, docs-authoring, and dataset scripts are real maintenance tools, but they should stay in the relevant specs, skills, or package script lookup unless the task touches that subsystem.
 
 ## Coding Style & Naming Conventions
 

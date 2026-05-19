@@ -245,6 +245,11 @@ function stopManagedChildren() {
   }
 }
 
+function exitAfterStoppingManagedChildren(status: number): never {
+  stopManagedChildren();
+  process.exit(status);
+}
+
 function waitForExit(child: ChildProcess) {
   return new Promise<number>((resolve) => {
     child.once("exit", (code, signal) => {
@@ -354,10 +359,10 @@ async function main() {
       "--no-push",
       "devSeed:seedLocalFixtures",
     ]);
-    if (seedStatus !== 0) process.exit(seedStatus);
+    if (seedStatus !== 0) exitAfterStoppingManagedChildren(seedStatus);
 
     const publicCorpusStatus = runSync("bun", ["scripts/public-corpus/seed-public-corpus.ts"], {});
-    if (publicCorpusStatus !== 0) process.exit(publicCorpusStatus);
+    if (publicCorpusStatus !== 0) exitAfterStoppingManagedChildren(publicCorpusStatus);
 
     const statsStatus = await runConvexFunctionWhenReady([
       "convex",
@@ -365,7 +370,7 @@ async function main() {
       "--no-push",
       "statsMaintenance:updateGlobalStatsAction",
     ]);
-    if (statsStatus !== 0) process.exit(statsStatus);
+    if (statsStatus !== 0) exitAfterStoppingManagedChildren(statsStatus);
   }
 
   if (options.seedOnly) {
