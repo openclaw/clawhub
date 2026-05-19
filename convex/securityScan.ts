@@ -7,6 +7,25 @@ const MAX_PARALLEL_CODEX_SCANS = 10;
 const DEFAULT_VT_WAIT_MS = 10 * 60 * 1000;
 const DEFAULT_LEASE_MS = 30 * 60 * 1000;
 const MAX_ATTEMPTS = 3;
+const DEFAULT_PRUNE_SCAN_LIMIT = 1000;
+const DEFAULT_PRUNE_DELETE_LIMIT = 500;
+const MAX_PRUNE_SCAN_LIMIT = 5000;
+const PRUNE_SAMPLE_LIMIT = 20;
+
+const finalLlmAnalysisStatuses = new Set(["clean", "suspicious", "malicious"]);
+
+type PruneSkipReason =
+  | "not-queued"
+  | "not-vt-update"
+  | "not-skill-version"
+  | "malicious-signal"
+  | "missing-version-id"
+  | "missing-version"
+  | "missing-llm-analysis"
+  | "non-final-llm-analysis"
+  | "clawscan-note-newer-than-llm"
+  | "vt-llm-status-mismatch"
+  | "delete-limit-reached";
 
 const jobSourceValidator = v.union(
   v.literal("publish"),
@@ -122,6 +141,25 @@ function normalizeLimit(limit: number | undefined) {
   );
 }
 
+function normalizeMaintenanceScanLimit(limit: number | undefined) {
+  const normalized = Number.isFinite(limit) ? Math.floor(limit ?? DEFAULT_PRUNE_SCAN_LIMIT) : null;
+  return Math.max(1, Math.min(normalized ?? DEFAULT_PRUNE_SCAN_LIMIT, MAX_PRUNE_SCAN_LIMIT));
+}
+
+function normalizeMaintenanceDeleteLimit(limit: number | undefined, scanLimit: number) {
+  const normalized = Number.isFinite(limit)
+    ? Math.floor(limit ?? DEFAULT_PRUNE_DELETE_LIMIT)
+    : null;
+  return Math.max(0, Math.min(normalized ?? DEFAULT_PRUNE_DELETE_LIMIT, scanLimit));
+}
+
+function incrementSkip(
+  skippedByReason: Partial<Record<PruneSkipReason, number>>,
+  reason: PruneSkipReason,
+) {
+  skippedByReason[reason] = (skippedByReason[reason] ?? 0) + 1;
+}
+
 function isOpenClawPluginPackage(
   pkg: Doc<"packages"> | null | undefined,
   ownerPublisher: Pick<Doc<"publishers">, "handle" | "deletedAt"> | null | undefined,
@@ -227,6 +265,113 @@ export const enqueuePackageReleaseScanInternal = internalMutation({
       updatedAt: now,
     });
     return { ok: true as const, jobId };
+  },
+});
+
+export const pruneRedundantQueuedVtScanJobsInternal = internalMutation({
+  args: {
+    dryRun: v.boolean(),
+    scanLimit: v.optional(v.number()),
+    deleteLimit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const scanLimit = normalizeMaintenanceScanLimit(args.scanLimit);
+    const deleteLimit = normalizeMaintenanceDeleteLimit(args.deleteLimit, scanLimit);
+    const jobs = await ctx.db
+      .query("securityScanJobs")
+      .withIndex("by_status_source_target_kind_created_at", (q) =>
+        q.eq("status", "queued").eq("source", "vt-update").eq("targetKind", "skillVersion"),
+      )
+      .order("asc")
+      .take(scanLimit);
+
+    const skippedByReason: Partial<Record<PruneSkipReason, number>> = {};
+    const sampleEligibleJobIds: string[] = [];
+    const sampleDeletedJobIds: string[] = [];
+    let eligible = 0;
+    let deleted = 0;
+
+    for (const job of jobs) {
+      if (job.status !== "queued") {
+        incrementSkip(skippedByReason, "not-queued");
+        continue;
+      }
+      if (job.source !== "vt-update") {
+        incrementSkip(skippedByReason, "not-vt-update");
+        continue;
+      }
+      if (job.targetKind !== "skillVersion") {
+        incrementSkip(skippedByReason, "not-skill-version");
+        continue;
+      }
+      if (job.hasMaliciousSignal) {
+        incrementSkip(skippedByReason, "malicious-signal");
+        continue;
+      }
+      if (!job.skillVersionId) {
+        incrementSkip(skippedByReason, "missing-version-id");
+        continue;
+      }
+
+      const version = await ctx.db.get(job.skillVersionId);
+      if (!version || version.softDeletedAt) {
+        incrementSkip(skippedByReason, "missing-version");
+        continue;
+      }
+
+      const llmAnalysis = version.llmAnalysis;
+      const rawLlmStatus = llmAnalysis?.status?.trim();
+      if (!llmAnalysis || !rawLlmStatus) {
+        incrementSkip(skippedByReason, "missing-llm-analysis");
+        continue;
+      }
+      const llmStatus = rawLlmStatus.toLowerCase();
+      if (!finalLlmAnalysisStatuses.has(llmStatus)) {
+        incrementSkip(skippedByReason, "non-final-llm-analysis");
+        continue;
+      }
+      if ((version.clawScanNoteUpdatedAt ?? 0) > llmAnalysis.checkedAt) {
+        incrementSkip(skippedByReason, "clawscan-note-newer-than-llm");
+        continue;
+      }
+
+      // This helper cancels retroactive VT freshness work after the all-active sweep;
+      // preserve jobs where the current finalized VT outcome disagrees with ClawScan.
+      const vtStatus = version.vtAnalysis?.status?.trim().toLowerCase();
+      if (vtStatus && finalLlmAnalysisStatuses.has(vtStatus) && vtStatus !== llmStatus) {
+        incrementSkip(skippedByReason, "vt-llm-status-mismatch");
+        continue;
+      }
+
+      eligible += 1;
+      if (sampleEligibleJobIds.length < PRUNE_SAMPLE_LIMIT) sampleEligibleJobIds.push(job._id);
+      if (eligible > deleteLimit) {
+        incrementSkip(skippedByReason, "delete-limit-reached");
+        continue;
+      }
+      if (args.dryRun) continue;
+
+      await ctx.db.delete(job._id);
+      deleted += 1;
+      if (sampleDeletedJobIds.length < PRUNE_SAMPLE_LIMIT) sampleDeletedJobIds.push(job._id);
+    }
+
+    const oldestScannedJob = jobs[0];
+    const newestScannedJob = jobs.at(-1);
+    return {
+      dryRun: args.dryRun,
+      scanned: jobs.length,
+      eligible,
+      wouldDelete: Math.min(eligible, deleteLimit),
+      deleted,
+      skippedByReason,
+      oldestScannedCreatedAt: oldestScannedJob?.createdAt ?? null,
+      newestScannedCreatedAt: newestScannedJob?.createdAt ?? null,
+      oldestScannedNextRunAt: oldestScannedJob?.nextRunAt ?? null,
+      newestScannedNextRunAt: newestScannedJob?.nextRunAt ?? null,
+      sampleEligibleJobIds,
+      sampleDeletedJobIds,
+    };
   },
 });
 
