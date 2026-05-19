@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { claimCodexScanJobs, pruneRedundantQueuedVtScanJobsInternal } from "./securityScan";
+import { cancelQueuedVtUpdateJobsInternal, claimCodexScanJobs } from "./securityScan";
 
 type WrappedHandler<TArgs, TResult = unknown> = {
   _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
@@ -12,16 +12,17 @@ const claimCodexScanJobsHandler = (
   >
 )._handler;
 
-type PruneArgs = {
+type CancelArgs = {
   dryRun: boolean;
+  createdBefore: number;
   scanLimit?: number;
   deleteLimit?: number;
 };
 
-type PruneResult = {
+type CancelResult = {
   dryRun: boolean;
   scanned: number;
-  eligible: number;
+  matched: number;
   deleted: number;
   wouldDelete: number;
   skippedByReason: Record<string, number>;
@@ -29,11 +30,11 @@ type PruneResult = {
   newestScannedCreatedAt: number | null;
   oldestScannedNextRunAt: number | null;
   newestScannedNextRunAt: number | null;
-  sampleEligibleJobIds: string[];
+  sampleMatchedJobIds: string[];
   sampleDeletedJobIds: string[];
 };
 
-type PruneJob = {
+type ScanJob = {
   _id: string;
   _creationTime: number;
   status: string;
@@ -50,8 +51,8 @@ type PruneJob = {
   updatedAt: number;
 };
 
-const pruneRedundantQueuedVtScanJobsInternalHandler = (
-  pruneRedundantQueuedVtScanJobsInternal as unknown as WrappedHandler<PruneArgs, PruneResult>
+const cancelQueuedVtUpdateJobsInternalHandler = (
+  cancelQueuedVtUpdateJobsInternal as unknown as WrappedHandler<CancelArgs, CancelResult>
 )._handler;
 
 const claimedJob = {
@@ -69,8 +70,8 @@ const claimedJob = {
   leaseToken: "lease-token",
 };
 
-function makeScanJob(overrides: Partial<PruneJob> = {}): PruneJob {
-  const suffix = (overrides._id ?? "eligible").split(":").at(-1) ?? "eligible";
+function makeScanJob(overrides: Partial<ScanJob> = {}): ScanJob {
+  const suffix = (overrides._id ?? "matched").split(":").at(-1) ?? "matched";
   return {
     _id: `securityScanJobs:${suffix}`,
     _creationTime: 1,
@@ -89,50 +90,38 @@ function makeScanJob(overrides: Partial<PruneJob> = {}): PruneJob {
   };
 }
 
-function makeVersion(
-  llmStatus?: string,
-  vtStatus?: string,
-  overrides: Record<string, unknown> = {},
-) {
+function makeTarget(llmStatus?: string) {
+  if (!llmStatus) return {};
   return {
-    ...(llmStatus
-      ? {
-          llmAnalysis: {
-            status: llmStatus,
-            checkedAt: 123,
-          },
-        }
-      : {}),
-    ...(vtStatus
-      ? {
-          vtAnalysis: {
-            status: vtStatus,
-            checkedAt: 456,
-          },
-        }
-      : {}),
-    ...overrides,
+    llmAnalysis: {
+      status: llmStatus,
+      checkedAt: 123,
+    },
   };
 }
 
-function makePruneCtx(jobs: PruneJob[], versions: Map<string, unknown>) {
+function makeCancelCtx(jobs: ScanJob[], targets: Map<string, unknown> = new Map()) {
   const deleted: string[] = [];
   const deleteDoc = vi.fn(async (id: string) => {
     deleted.push(id);
   });
-  const get = vi.fn(async (id: string) => versions.get(id) ?? null);
+  const get = vi.fn(async (id: string) => targets.get(id) ?? null);
   const noopWrite = vi.fn(async () => undefined);
   const take = vi.fn(async (limit: number) => jobs.slice(0, limit));
   const order = vi.fn(() => ({ take }));
-  const indexBuilder: { eq: ReturnType<typeof vi.fn> } = {
+  const indexBuilder: {
+    eq: ReturnType<typeof vi.fn>;
+    lt: ReturnType<typeof vi.fn>;
+  } = {
     eq: vi.fn(() => indexBuilder),
+    lt: vi.fn(() => indexBuilder),
   };
   const withIndex = vi.fn((indexName: string, buildRange: (q: typeof indexBuilder) => unknown) => {
-    expect(indexName).toBe("by_status_source_target_kind_created_at");
+    expect(indexName).toBe("by_status_source_created_at");
     buildRange(indexBuilder);
     expect(indexBuilder.eq).toHaveBeenCalledWith("status", "queued");
     expect(indexBuilder.eq).toHaveBeenCalledWith("source", "vt-update");
-    expect(indexBuilder.eq).toHaveBeenCalledWith("targetKind", "skillVersion");
+    expect(indexBuilder.lt).toHaveBeenCalledWith("createdAt", 1000);
     return { order };
   });
   const query = vi.fn((tableName: string) => {
@@ -241,20 +230,23 @@ describe("securityScan", () => {
     );
   });
 
-  it("dry-runs redundant queued vt-update skill jobs without deleting", async () => {
+  it("dry-runs queued vt-update jobs without deleting", async () => {
     const job = makeScanJob({ _id: "securityScanJobs:dry-run" });
-    const versions = new Map<string, unknown>([["skillVersions:dry-run", makeVersion("clean")]]);
-    const { ctx, deleteDoc, take } = makePruneCtx([job], versions);
+    const { ctx, deleteDoc, take } = makeCancelCtx(
+      [job],
+      new Map<string, unknown>([["skillVersions:dry-run", makeTarget("clean")]]),
+    );
 
-    const result = await pruneRedundantQueuedVtScanJobsInternalHandler(ctx, {
+    const result = await cancelQueuedVtUpdateJobsInternalHandler(ctx, {
       dryRun: true,
+      createdBefore: 1000,
     });
 
     expect(take).toHaveBeenCalledWith(1000);
     expect(result).toMatchObject({
       dryRun: true,
       scanned: 1,
-      eligible: 1,
+      matched: 1,
       wouldDelete: 1,
       deleted: 0,
       oldestScannedCreatedAt: 50,
@@ -262,19 +254,15 @@ describe("securityScan", () => {
       oldestScannedNextRunAt: 100,
       newestScannedNextRunAt: 100,
       skippedByReason: {},
-      sampleEligibleJobIds: ["securityScanJobs:dry-run"],
+      sampleMatchedJobIds: ["securityScanJobs:dry-run"],
       sampleDeletedJobIds: [],
     });
     expect(deleteDoc).not.toHaveBeenCalled();
   });
 
-  it("deletes only queued vt-update skill jobs with final llmAnalysis", async () => {
+  it("deletes all queued vt-update jobs while preserving other sources and running jobs", async () => {
     const jobs = [
       makeScanJob({ _id: "securityScanJobs:clean" }),
-      makeScanJob({ _id: "securityScanJobs:suspicious" }),
-      makeScanJob({ _id: "securityScanJobs:malicious" }),
-      makeScanJob({ _id: "securityScanJobs:publish", source: "publish" }),
-      makeScanJob({ _id: "securityScanJobs:running", status: "running" }),
       makeScanJob({
         _id: "securityScanJobs:package",
         targetKind: "packageRelease",
@@ -285,95 +273,93 @@ describe("securityScan", () => {
         _id: "securityScanJobs:malicious-signal",
         hasMaliciousSignal: true,
       }),
-      makeScanJob({ _id: "securityScanJobs:missing-version" }),
-      makeScanJob({ _id: "securityScanJobs:no-llm" }),
-      makeScanJob({ _id: "securityScanJobs:error-llm" }),
-      makeScanJob({ _id: "securityScanJobs:clawscan-note-fresh" }),
       makeScanJob({ _id: "securityScanJobs:vt-mismatch" }),
+      makeScanJob({ _id: "securityScanJobs:no-llm" }),
+      makeScanJob({ _id: "securityScanJobs:publish", source: "publish" }),
+      makeScanJob({ _id: "securityScanJobs:manual", source: "manual" }),
+      makeScanJob({ _id: "securityScanJobs:clawscan-note", source: "clawscan-note" }),
+      makeScanJob({ _id: "securityScanJobs:backfill", source: "backfill" }),
+      makeScanJob({ _id: "securityScanJobs:running", status: "running" }),
     ];
-    const versions = new Map<string, unknown>([
-      ["skillVersions:clean", makeVersion("clean")],
-      ["skillVersions:suspicious", makeVersion("suspicious")],
-      ["skillVersions:malicious", makeVersion("malicious")],
-      ["skillVersions:running", makeVersion("clean")],
-      ["skillVersions:malicious-signal", makeVersion("clean")],
-      ["skillVersions:no-llm", makeVersion()],
-      ["skillVersions:error-llm", makeVersion("error")],
-      [
-        "skillVersions:clawscan-note-fresh",
-        makeVersion("clean", "clean", { clawScanNoteUpdatedAt: 456 }),
-      ],
-      ["skillVersions:vt-mismatch", makeVersion("clean", "malicious")],
-    ]);
-    const { ctx, deleted } = makePruneCtx(jobs, versions);
+    const { ctx, deleted, get } = makeCancelCtx(
+      jobs,
+      new Map<string, unknown>([
+        ["skillVersions:clean", makeTarget("clean")],
+        ["packageReleases:package", makeTarget("clean")],
+        ["skillVersions:malicious-signal", makeTarget("clean")],
+        ["skillVersions:vt-mismatch", makeTarget("clean")],
+        ["skillVersions:no-llm", makeTarget()],
+        ["skillVersions:running", makeTarget("clean")],
+      ]),
+    );
 
-    const result = await pruneRedundantQueuedVtScanJobsInternalHandler(ctx, {
+    const result = await cancelQueuedVtUpdateJobsInternalHandler(ctx, {
       dryRun: false,
+      createdBefore: 1000,
       scanLimit: 25,
       deleteLimit: 10,
     });
 
     expect(deleted).toEqual([
       "securityScanJobs:clean",
-      "securityScanJobs:suspicious",
-      "securityScanJobs:malicious",
+      "securityScanJobs:package",
+      "securityScanJobs:vt-mismatch",
     ]);
+    expect(get).toHaveBeenCalled();
     expect(result).toMatchObject({
       dryRun: false,
-      scanned: 12,
-      eligible: 3,
+      scanned: 10,
+      matched: 3,
       wouldDelete: 3,
       deleted: 3,
       skippedByReason: {
-        "not-vt-update": 1,
-        "not-queued": 1,
-        "not-skill-version": 1,
+        "not-vt-update": 4,
+        "not-queued-vt-update": 1,
         "malicious-signal": 1,
-        "missing-version": 1,
         "missing-llm-analysis": 1,
-        "non-final-llm-analysis": 1,
-        "clawscan-note-newer-than-llm": 1,
-        "vt-llm-status-mismatch": 1,
       },
-      sampleEligibleJobIds: [
+      sampleMatchedJobIds: [
         "securityScanJobs:clean",
-        "securityScanJobs:suspicious",
-        "securityScanJobs:malicious",
+        "securityScanJobs:package",
+        "securityScanJobs:vt-mismatch",
       ],
       sampleDeletedJobIds: [
         "securityScanJobs:clean",
-        "securityScanJobs:suspicious",
-        "securityScanJobs:malicious",
+        "securityScanJobs:package",
+        "securityScanJobs:vt-mismatch",
       ],
     });
   });
 
-  it("counts eligible jobs beyond the per-run delete limit without deleting them", async () => {
+  it("counts matched jobs beyond the per-run delete limit without deleting them", async () => {
     const jobs = [
       makeScanJob({ _id: "securityScanJobs:first" }),
       makeScanJob({ _id: "securityScanJobs:second" }),
     ];
-    const versions = new Map<string, unknown>([
-      ["skillVersions:first", makeVersion("clean")],
-      ["skillVersions:second", makeVersion("clean")],
-    ]);
-    const { ctx, deleted } = makePruneCtx(jobs, versions);
+    const { ctx, deleted } = makeCancelCtx(
+      jobs,
+      new Map<string, unknown>([
+        ["skillVersions:first", makeTarget("clean")],
+        ["skillVersions:second", makeTarget("clean")],
+      ]),
+    );
 
-    const result = await pruneRedundantQueuedVtScanJobsInternalHandler(ctx, {
+    const result = await cancelQueuedVtUpdateJobsInternalHandler(ctx, {
       dryRun: false,
+      createdBefore: 1000,
       deleteLimit: 1,
     });
 
     expect(deleted).toEqual(["securityScanJobs:first"]);
     expect(result).toMatchObject({
       scanned: 2,
-      eligible: 2,
+      matched: 2,
       wouldDelete: 1,
       deleted: 1,
       skippedByReason: {
         "delete-limit-reached": 1,
       },
-      sampleEligibleJobIds: ["securityScanJobs:first", "securityScanJobs:second"],
+      sampleMatchedJobIds: ["securityScanJobs:first", "securityScanJobs:second"],
       sampleDeletedJobIds: ["securityScanJobs:first"],
     });
   });
