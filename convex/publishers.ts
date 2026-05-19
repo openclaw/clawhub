@@ -138,11 +138,34 @@ type PublisherPublishedRows = {
   packages: Doc<"packages">[];
 };
 
+type PublisherOwnedRow = {
+  _id: unknown;
+  ownerPublisherId?: Id<"publishers">;
+  softDeletedAt?: number;
+};
+
+function mergePersonalPublisherRows<T extends PublisherOwnedRow>(
+  publisherId: Id<"publishers">,
+  scopedRows: T[],
+  legacyRows: T[],
+) {
+  const seen = new Set<unknown>();
+  return [...scopedRows, ...legacyRows].filter((row) => {
+    if (row.softDeletedAt) return false;
+    if (row.ownerPublisherId && row.ownerPublisherId !== publisherId) return false;
+    if (seen.has(row._id)) return false;
+    seen.add(row._id);
+    return true;
+  });
+}
+
 async function getPublisherPublishedRows(
   ctx: Pick<QueryCtx, "db">,
-  publisherId: Id<"publishers">,
+  publisher: Doc<"publishers">,
 ): Promise<PublisherPublishedRows> {
-  const [skills, packages] = await Promise.all([
+  const publisherId = publisher._id;
+  const shouldIncludeLegacyRows = publisher.kind === "user" && publisher.linkedUserId;
+  const [skills, packages, legacySkills, legacyPackages] = await Promise.all([
     ctx.db
       .query("skills")
       .withIndex("by_owner_publisher_active_updated", (q) =>
@@ -155,8 +178,26 @@ async function getPublisherPublishedRows(
         q.eq("ownerPublisherId", publisherId).eq("softDeletedAt", undefined),
       )
       .collect(),
+    shouldIncludeLegacyRows
+      ? ctx.db
+          .query("skills")
+          .withIndex("by_owner_active_updated", (q) =>
+            q.eq("ownerUserId", publisher.linkedUserId!).eq("softDeletedAt", undefined),
+          )
+          .collect()
+      : [],
+    shouldIncludeLegacyRows
+      ? ctx.db
+          .query("packages")
+          .withIndex("by_owner", (q) => q.eq("ownerUserId", publisher.linkedUserId!))
+          .collect()
+      : [],
   ]);
-  return { skills, packages };
+  if (!shouldIncludeLegacyRows) return { skills, packages };
+  return {
+    skills: mergePersonalPublisherRows(publisherId, skills, legacySkills),
+    packages: mergePersonalPublisherRows(publisherId, packages, legacyPackages),
+  };
 }
 
 async function getPublisherPublishedPreviewRows(
@@ -301,7 +342,7 @@ async function toPublisherListItem(
       : null;
   let publishedRows: PublisherPublishedRows | null = null;
   const getRows = async () => {
-    publishedRows ??= await getPublisherPublishedRows(ctx, publisher._id);
+    publishedRows ??= await getPublisherPublishedRows(ctx, publisher);
     return publishedRows;
   };
   const getPreviewRows = async () =>
@@ -979,7 +1020,7 @@ export const listPublishedPage = query({
     const safeOffset = Number.isFinite(offset) && offset > 0 ? Math.trunc(offset) : 0;
     const items = getPublisherCatalogItems(
       publisher,
-      await getPublisherPublishedRows(ctx, publisher._id),
+      await getPublisherPublishedRows(ctx, publisher),
       args.sort ?? "downloads",
     ).filter((item) => !args.kind || item.kind === args.kind);
     const nextOffset = safeOffset + numItems;

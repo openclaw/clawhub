@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { assertCanManageOwnedResource } from "./lib/publishers";
 import {
   addMember,
+  getProfileByHandle,
   listPublicPage,
   listPublic,
   listMine,
@@ -103,6 +104,22 @@ const listPublishedPageHandler = (
       continueCursor: string;
       isDone: boolean;
     }
+  >
+)._handler;
+
+const getProfileByHandleHandler = (
+  getProfileByHandle as unknown as WrappedHandler<
+    { handle: string },
+    {
+      stats: {
+        skills: number;
+        packages: number;
+        downloads: number;
+        installs: number;
+        stars: number;
+      };
+      publishedItems: Array<{ displayName: string; downloads: number }>;
+    } | null
   >
 )._handler;
 
@@ -231,10 +248,16 @@ describe("publishers membership controls", () => {
                 skillRows.filter((skill) => skill.ownerPublisherId === fields.ownerPublisherId),
               );
             }
+            if (table === "skills" && indexName === "by_owner_active_updated") {
+              return indexedRows([]);
+            }
             if (table === "packages" && indexName === "by_owner_publisher_active_updated") {
               return indexedRows(
                 packageRows.filter((pkg) => pkg.ownerPublisherId === fields.ownerPublisherId),
               );
+            }
+            if (table === "packages" && indexName === "by_owner") {
+              return indexedRows([]);
             }
             throw new Error(`unexpected ${table} index ${indexName}`);
           }),
@@ -734,6 +757,186 @@ describe("publishers membership controls", () => {
 
     expect(result.page).toMatchObject([
       { displayName: "Example Plugin", href: "/plugins/@openclaw/example-plugin" },
+    ]);
+  });
+
+  it("includes legacy user-owned rows on personal publisher profile pages", async () => {
+    const publisher = {
+      _id: "publishers:ivan",
+      _creationTime: 1,
+      kind: "user",
+      handle: "ivangdavila",
+      displayName: "Ivan",
+      linkedUserId: "users:ivan",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const scopedSkill = {
+      _id: "skills:scoped",
+      ownerUserId: "users:ivan",
+      ownerPublisherId: "publishers:ivan",
+      softDeletedAt: undefined,
+      slug: "scoped",
+      displayName: "Scoped Skill",
+      summary: "Modern publisher-owned skill",
+      stats: { downloads: 10, installsAllTime: 1, stars: 0 },
+      updatedAt: 10,
+    };
+    const legacySkill = {
+      _id: "skills:legacy",
+      ownerUserId: "users:ivan",
+      ownerPublisherId: undefined,
+      softDeletedAt: undefined,
+      slug: "self-improving",
+      displayName: "Self Improving",
+      summary: "Legacy user-owned skill",
+      stats: { downloads: 100, installsAllTime: 5, stars: 2 },
+      updatedAt: 20,
+    };
+    const orgSkill = {
+      _id: "skills:org",
+      ownerUserId: "users:ivan",
+      ownerPublisherId: "publishers:org",
+      softDeletedAt: undefined,
+      slug: "org-skill",
+      displayName: "Org Skill",
+      summary: "Belongs to another publisher",
+      stats: { downloads: 200, installsAllTime: 1, stars: 0 },
+      updatedAt: 30,
+    };
+    const scopedPackage = {
+      _id: "packages:scoped",
+      ownerUserId: "users:ivan",
+      ownerPublisherId: "publishers:ivan",
+      softDeletedAt: undefined,
+      family: "code-plugin",
+      name: "scoped-plugin",
+      displayName: "Scoped Plugin",
+      summary: "Modern publisher-owned plugin",
+      stats: { downloads: 5, installs: 1, stars: 0, versions: 1 },
+      updatedAt: 5,
+    };
+    const legacyPackage = {
+      _id: "packages:legacy",
+      ownerUserId: "users:ivan",
+      ownerPublisherId: undefined,
+      softDeletedAt: undefined,
+      family: "code-plugin",
+      name: "legacy-plugin",
+      displayName: "Legacy Plugin",
+      summary: "Legacy user-owned plugin",
+      stats: { downloads: 50, installs: 3, stars: 1, versions: 1 },
+      updatedAt: 15,
+    };
+    const orgPackage = {
+      _id: "packages:org",
+      ownerUserId: "users:ivan",
+      ownerPublisherId: "publishers:org",
+      softDeletedAt: undefined,
+      family: "code-plugin",
+      name: "org-plugin",
+      displayName: "Org Plugin",
+      summary: "Belongs to another publisher",
+      stats: { downloads: 500, installs: 1, stars: 0, versions: 1 },
+      updatedAt: 25,
+    };
+    const queryIndexes: Array<{
+      table: string;
+      indexName: string;
+      fields: Record<string, unknown>;
+    }> = [];
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "publishers:ivan") return publisher;
+          if (id === "users:ivan") return { _id: id, image: "https://github.com/ivan.png" };
+          return null;
+        }),
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
+            const fields: Record<string, unknown> = {};
+            const q = {
+              eq: (field: string, value: unknown) => {
+                fields[field] = value;
+                return q;
+              },
+            };
+            buildQuery(q);
+            queryIndexes.push({ table, indexName, fields });
+            if (table === "publishers" && indexName === "by_handle") {
+              return {
+                unique: vi.fn(async () => (fields.handle === "ivangdavila" ? publisher : null)),
+              };
+            }
+            if (table === "skills" && indexName === "by_owner_publisher_active_updated") {
+              return indexedRows([scopedSkill]);
+            }
+            if (table === "skills" && indexName === "by_owner_active_updated") {
+              return indexedRows([legacySkill, scopedSkill, orgSkill]);
+            }
+            if (table === "packages" && indexName === "by_owner_publisher_active_updated") {
+              return indexedRows([scopedPackage]);
+            }
+            if (table === "packages" && indexName === "by_owner") {
+              return indexedRows([legacyPackage, scopedPackage, orgPackage]);
+            }
+            if (table === "publisherMembers" && indexName === "by_user") {
+              return indexedRows([]);
+            }
+            if (table === "stars" && indexName === "by_user") {
+              return indexedRows([]);
+            }
+            throw new Error(`unexpected ${table} index ${indexName}`);
+          }),
+        })),
+      },
+    };
+
+    const result = await listPublishedPageHandler(ctx as never, {
+      handle: "ivangdavila",
+      paginationOpts: { cursor: null, numItems: 12 },
+    });
+
+    expect(result.page.map((item) => item.displayName)).toEqual([
+      "Self Improving",
+      "Legacy Plugin",
+      "Scoped Skill",
+      "Scoped Plugin",
+    ]);
+    expect(result.page.slice(0, 2)).toMatchObject([
+      { displayName: "Self Improving", href: "/ivangdavila/self-improving" },
+      { displayName: "Legacy Plugin", href: "/plugins/legacy-plugin" },
+    ]);
+    expect(queryIndexes).toEqual(
+      expect.arrayContaining([
+        {
+          table: "skills",
+          indexName: "by_owner_active_updated",
+          fields: { ownerUserId: "users:ivan", softDeletedAt: undefined },
+        },
+        {
+          table: "packages",
+          indexName: "by_owner",
+          fields: { ownerUserId: "users:ivan" },
+        },
+      ]),
+    );
+
+    const profile = await getProfileByHandleHandler(ctx as never, {
+      handle: "ivangdavila",
+    });
+
+    expect(profile?.stats).toEqual({
+      skills: 2,
+      packages: 2,
+      installs: 10,
+      downloads: 165,
+      stars: 3,
+    });
+    expect(profile?.publishedItems.map((item) => item.displayName)).toEqual([
+      "Self Improving",
+      "Legacy Plugin",
+      "Scoped Skill",
     ]);
   });
 
