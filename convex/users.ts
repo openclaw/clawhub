@@ -46,6 +46,11 @@ const UNBAN_NOTIFICATION_LIST_PAGE_SIZE = 100;
 const UNBAN_NOTIFICATION_RETRY_DELAY_MS = 5_000;
 const MAX_UNBAN_NOTIFICATION_LIST_RETRIES = 60;
 const autobanRemediationInternalRefs = internal as unknown as {
+  users: {
+    countRestorableAutobanSkillsPageInternal: unknown;
+    listRestorableAutobanPackageCandidatesPageInternal: unknown;
+    hasRestorableAutobanPackageReleasePageInternal: unknown;
+  };
   skills: {
     previewLatestSkillModerationInternal: unknown;
     recomputeLatestSkillModerationInternal: unknown;
@@ -1572,6 +1577,24 @@ type AutobanRemediationTrigger = {
   reasonCodes: string[];
 };
 
+type AutobanRemediationCountPage = {
+  count: number;
+  isDone: boolean;
+  continueCursor: string | null;
+};
+
+type AutobanRemediationPackageCandidatePage = {
+  packageIds: Array<Id<"packages">>;
+  isDone: boolean;
+  continueCursor: string | null;
+};
+
+type AutobanRemediationPackageReleasePage = {
+  hasRestorable: boolean;
+  isDone: boolean;
+  continueCursor: string | null;
+};
+
 function normalizeAutobanRemediationLimit(limit: number | undefined) {
   if (!Number.isFinite(limit ?? 25)) return 25;
   return Math.max(1, Math.min(Math.floor(limit ?? 25), MAX_AUTOBAN_REMEDIATION_LIMIT));
@@ -1906,7 +1929,7 @@ async function countAutobanRemediationRestores(
   bannedAt: number,
   triggers: AutobanRemediationTrigger[] = [],
 ) {
-  const previewRestorableSkillIds = new Set(getResolvedAutobanTriggerSkillIds(triggers));
+  const previewRestorableSkillIds = getResolvedAutobanTriggerSkillIds(triggers);
   const [skills, packages] = await Promise.all([
     countRestorableAutobanSkills(ctx, ownerUserId, bannedAt, previewRestorableSkillIds),
     countRestorableAutobanPackages(ctx, ownerUserId, bannedAt),
@@ -1919,26 +1942,24 @@ async function countRestorableAutobanSkills(
   ctx: MutationCtx,
   ownerUserId: Id<"users">,
   bannedAt: number,
-  previewRestorableSkillIds: Set<Id<"skills">>,
+  previewRestorableSkillIds: Array<Id<"skills">>,
 ) {
   let count = 0;
   let cursor: string | null = null;
   let isDone = false;
 
   while (!isDone) {
-    const result = await ctx.db
-      .query("skills")
-      .withIndex("by_owner", (q) => q.eq("ownerUserId", ownerUserId))
-      .order("desc")
-      .paginate({
-        cursor,
-        numItems: AUTOBAN_REMEDIATION_COUNT_PAGE_SIZE,
-      });
-    count += result.page.filter(
-      (skill) =>
-        isRestorableAutobanSkill(skill, bannedAt) ||
-        (skill.softDeletedAt === bannedAt && previewRestorableSkillIds.has(skill._id)),
-    ).length;
+    const result: AutobanRemediationCountPage = await runAutobanRemediationQueryRef(
+      ctx,
+      autobanRemediationInternalRefs.users.countRestorableAutobanSkillsPageInternal,
+      {
+        ownerUserId,
+        bannedAt,
+        previewRestorableSkillIds,
+        cursor: cursor ?? undefined,
+      },
+    );
+    count += result.count;
     isDone = result.isDone;
     cursor = result.continueCursor;
   }
@@ -1956,17 +1977,17 @@ async function countRestorableAutobanPackages(
   let isDone = false;
 
   while (!isDone) {
-    const result = await ctx.db
-      .query("packages")
-      .withIndex("by_owner", (q) => q.eq("ownerUserId", ownerUserId))
-      .order("desc")
-      .paginate({
-        cursor,
-        numItems: AUTOBAN_REMEDIATION_COUNT_PAGE_SIZE,
-      });
-    for (const pkg of result.page) {
-      if (pkg.softDeletedAt !== bannedAt || pkg.scanStatus === "malicious") continue;
-      if (await hasRestorableAutobanPackageRelease(ctx, pkg._id, bannedAt)) count += 1;
+    const result: AutobanRemediationPackageCandidatePage = await runAutobanRemediationQueryRef(
+      ctx,
+      autobanRemediationInternalRefs.users.listRestorableAutobanPackageCandidatesPageInternal,
+      {
+        ownerUserId,
+        bannedAt,
+        cursor: cursor ?? undefined,
+      },
+    );
+    for (const packageId of result.packageIds) {
+      if (await hasRestorableAutobanPackageRelease(ctx, packageId, bannedAt)) count += 1;
     }
     isDone = result.isDone;
     cursor = result.continueCursor;
@@ -1976,7 +1997,7 @@ async function countRestorableAutobanPackages(
 }
 
 async function hasRestorableAutobanPackageRelease(
-  ctx: Pick<QueryCtx, "db">,
+  ctx: Pick<QueryCtx, "runQuery">,
   packageId: Id<"packages">,
   bannedAt: number,
 ) {
@@ -1984,21 +2005,16 @@ async function hasRestorableAutobanPackageRelease(
   let isDone = false;
 
   while (!isDone) {
-    const result = await ctx.db
-      .query("packageReleases")
-      .withIndex("by_package", (q) => q.eq("packageId", packageId))
-      .paginate({
-        cursor,
-        numItems: AUTOBAN_REMEDIATION_COUNT_PAGE_SIZE,
-      });
-    if (
-      result.page.some((release) => {
-        const wouldBeActive = !release.softDeletedAt || release.softDeletedAt === bannedAt;
-        return wouldBeActive && resolvePackageReleaseScanStatus(release) !== "malicious";
-      })
-    ) {
-      return true;
-    }
+    const result: AutobanRemediationPackageReleasePage = await runAutobanRemediationQueryRef(
+      ctx,
+      autobanRemediationInternalRefs.users.hasRestorableAutobanPackageReleasePageInternal,
+      {
+        packageId,
+        bannedAt,
+        cursor: cursor ?? undefined,
+      },
+    );
+    if (result.hasRestorable) return true;
     isDone = result.isDone;
     cursor = result.continueCursor;
   }
@@ -2047,6 +2063,88 @@ function isRemainingSkillForUnbanNotification(
 function isRestoredPackageForUnbanNotification(pkg: Doc<"packages">, restoredAt: number) {
   return !pkg.softDeletedAt && (pkg.updatedAt ?? 0) >= restoredAt;
 }
+
+export const countRestorableAutobanSkillsPageInternal = internalQuery({
+  args: {
+    ownerUserId: v.id("users"),
+    bannedAt: v.number(),
+    previewRestorableSkillIds: v.array(v.id("skills")),
+    cursor: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const previewRestorableSkillIds = new Set(args.previewRestorableSkillIds);
+    const result = await ctx.db
+      .query("skills")
+      .withIndex("by_owner", (q) => q.eq("ownerUserId", args.ownerUserId))
+      .order("desc")
+      .paginate({
+        cursor: args.cursor ?? null,
+        numItems: AUTOBAN_REMEDIATION_COUNT_PAGE_SIZE,
+      });
+
+    return {
+      count: result.page.filter(
+        (skill) =>
+          isRestorableAutobanSkill(skill, args.bannedAt) ||
+          (skill.softDeletedAt === args.bannedAt && previewRestorableSkillIds.has(skill._id)),
+      ).length,
+      isDone: result.isDone,
+      continueCursor: result.continueCursor,
+    };
+  },
+});
+
+export const listRestorableAutobanPackageCandidatesPageInternal = internalQuery({
+  args: {
+    ownerUserId: v.id("users"),
+    bannedAt: v.number(),
+    cursor: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const result = await ctx.db
+      .query("packages")
+      .withIndex("by_owner", (q) => q.eq("ownerUserId", args.ownerUserId))
+      .order("desc")
+      .paginate({
+        cursor: args.cursor ?? null,
+        numItems: AUTOBAN_REMEDIATION_COUNT_PAGE_SIZE,
+      });
+
+    return {
+      packageIds: result.page
+        .filter((pkg) => pkg.softDeletedAt === args.bannedAt && pkg.scanStatus !== "malicious")
+        .map((pkg) => pkg._id),
+      isDone: result.isDone,
+      continueCursor: result.continueCursor,
+    };
+  },
+});
+
+export const hasRestorableAutobanPackageReleasePageInternal = internalQuery({
+  args: {
+    packageId: v.id("packages"),
+    bannedAt: v.number(),
+    cursor: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const result = await ctx.db
+      .query("packageReleases")
+      .withIndex("by_package", (q) => q.eq("packageId", args.packageId))
+      .paginate({
+        cursor: args.cursor ?? null,
+        numItems: AUTOBAN_REMEDIATION_COUNT_PAGE_SIZE,
+      });
+
+    return {
+      hasRestorable: result.page.some((release) => {
+        const wouldBeActive = !release.softDeletedAt || release.softDeletedAt === args.bannedAt;
+        return wouldBeActive && resolvePackageReleaseScanStatus(release) !== "malicious";
+      }),
+      isDone: result.isDone,
+      continueCursor: result.continueCursor,
+    };
+  },
+});
 
 function isRestorableAutobanSkill(skill: Doc<"skills">, bannedAt: number) {
   if (skill.softDeletedAt !== bannedAt) return false;

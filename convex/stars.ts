@@ -1,8 +1,18 @@
 import { v } from "convex/values";
+import type { Doc } from "./_generated/dataModel";
+import type { MutationCtx } from "./_generated/server";
 import { internalMutation, mutation, query } from "./functions";
 import { getOptionalActiveAuthUserId, requireUser } from "./lib/access";
 import { toPublicSkill } from "./lib/public";
-import { insertStatEvent } from "./skillStatEvents";
+import { applySkillStatDeltas } from "./lib/skillStats";
+import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";
+
+async function applyStarDelta(ctx: Pick<MutationCtx, "db">, skill: Doc<"skills">, delta: 1 | -1) {
+  const patch = applySkillStatDeltas(skill, { stars: delta });
+  const nextSkill = { ...skill, ...patch };
+  await ctx.db.patch(skill._id, patch);
+  await adjustUserSkillStatsForSkillChange(ctx, skill, nextSkill);
+}
 
 export const isStarred = query({
   args: { skillId: v.id("skills") },
@@ -31,7 +41,7 @@ export const toggle = mutation({
 
     if (existing) {
       await ctx.db.delete(existing._id);
-      await insertStatEvent(ctx, { skillId: skill._id, kind: "unstar" });
+      await applyStarDelta(ctx, skill, -1);
       return { starred: false };
     }
 
@@ -43,7 +53,7 @@ export const toggle = mutation({
       createdAt: Date.now(),
     });
 
-    await insertStatEvent(ctx, { skillId: skill._id, kind: "star" });
+    await applyStarDelta(ctx, skill, 1);
 
     return { starred: true };
   },
@@ -86,7 +96,7 @@ export const addStarInternal = internalMutation({
       createdAt: Date.now(),
     });
 
-    await insertStatEvent(ctx, { skillId: skill._id, kind: "star" });
+    await applyStarDelta(ctx, skill, 1);
 
     return { ok: true as const, starred: true, alreadyStarred: false };
   },
@@ -104,7 +114,7 @@ export const removeStarInternal = internalMutation({
     if (!existing) return { ok: true as const, unstarred: false, alreadyUnstarred: true };
 
     await ctx.db.delete(existing._id);
-    await insertStatEvent(ctx, { skillId: skill._id, kind: "unstar" });
+    await applyStarDelta(ctx, skill, -1);
 
     return { ok: true as const, unstarred: true, alreadyUnstarred: false };
   },
