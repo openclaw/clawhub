@@ -365,7 +365,6 @@ describe("autoban remediation users", () => {
       }
       return null;
     });
-
     const result = await remediateAutobansHandler(
       {
         db: {
@@ -472,6 +471,19 @@ describe("autoban remediation users", () => {
       return null;
     });
     const runMutation = vi.fn();
+    const runQuery = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("skillId" in args) {
+        return {
+          verdict: "clean",
+          reason: "scanner.aggregate.clean",
+          reasonCodes: [],
+        };
+      }
+      if ("previewRestorableSkillIds" in args) {
+        return { count: 1, isDone: true, continueCursor: null };
+      }
+      return { packageIds: [], isDone: true, continueCursor: null };
+    });
 
     const result = await remediateAutobansHandler(
       {
@@ -484,11 +496,7 @@ describe("autoban remediation users", () => {
           delete: vi.fn(),
           normalizeId: vi.fn(() => null),
         },
-        runQuery: vi.fn(async () => ({
-          verdict: "clean",
-          reason: "scanner.aggregate.clean",
-          reasonCodes: [],
-        })),
+        runQuery,
         runMutation,
       } as never,
       { actorUserId: "users:admin", targetUserId: "users:target", dryRun: true },
@@ -557,7 +565,6 @@ describe("autoban remediation users", () => {
       }
       return null;
     });
-
     const result = await remediateAutobansHandler(
       {
         db: {
@@ -649,6 +656,15 @@ describe("autoban remediation users", () => {
       }
       return null;
     });
+    const runQuery = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("previewRestorableSkillIds" in args) {
+        return { count: 0, isDone: true, continueCursor: null };
+      }
+      if ("packageId" in args) {
+        return { hasRestorable: true, isDone: true, continueCursor: null };
+      }
+      return { packageIds: ["packages:demo"], isDone: true, continueCursor: null };
+    });
 
     const result = await remediateAutobansHandler(
       {
@@ -661,7 +677,7 @@ describe("autoban remediation users", () => {
           delete: vi.fn(),
           normalizeId: vi.fn(() => null),
         },
-        runQuery: vi.fn(),
+        runQuery,
         runMutation: vi.fn(),
       } as never,
       { actorUserId: "users:admin", targetUserId: "users:target", dryRun: true },
@@ -789,6 +805,15 @@ describe("autoban remediation users", () => {
       }
       return null;
     });
+    const runQuery = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("previewRestorableSkillIds" in args) {
+        return { count: 0, isDone: true, continueCursor: null };
+      }
+      if ("packageId" in args) {
+        return { hasRestorable: true, isDone: true, continueCursor: null };
+      }
+      return { packageIds: ["packages:demo"], isDone: true, continueCursor: null };
+    });
 
     const result = await remediateAutobansHandler(
       {
@@ -801,7 +826,7 @@ describe("autoban remediation users", () => {
           delete: vi.fn(),
           normalizeId: vi.fn(() => null),
         },
-        runQuery: vi.fn(),
+        runQuery,
         runMutation: vi.fn(),
       } as never,
       { actorUserId: "users:admin", targetUserId: "users:target", dryRun: true },
