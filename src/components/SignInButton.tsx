@@ -1,6 +1,7 @@
 import { useAuthActions } from "@convex-dev/auth/react";
 import type { ComponentProps } from "react";
 import { getUserFacingAuthError } from "../lib/authErrorMessage";
+import { clearAuthRedirectAttempt, markAuthRedirectAttempt } from "../lib/authRedirectAttempt";
 import { clearAuthError, setAuthError } from "../lib/useAuthError";
 import { Button } from "./ui/button";
 
@@ -21,13 +22,16 @@ export function SignInButton({ redirectTo, children = "Sign In", ...props }: Sig
       onClick={() => {
         clearAuthError();
         const next = redirectTo ?? getCurrentRelativeUrl();
+        markAuthRedirectAttempt("github", next || "/");
         void signIn("github", next ? { redirectTo: next } : undefined)
           .then((result) => {
-            if (result?.signingIn === false) {
+            if (result?.signingIn === false && !result.redirect) {
+              clearAuthRedirectAttempt();
               setAuthError("Sign in failed. Please try again.");
             }
           })
           .catch((error) => {
+            clearAuthRedirectAttempt();
             setAuthError(getUserFacingAuthError(error, "Sign in failed. Please try again."));
           });
       }}

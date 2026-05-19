@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getUserFacingAuthError } from "../lib/authErrorMessage";
+import { clearAuthRedirectAttempt, markAuthRedirectAttempt } from "../lib/authRedirectAttempt";
 import { gravatarUrl } from "../lib/gravatar";
 import { NAV_ICONS } from "../lib/marketplaceIcons";
 import { filterNavItems, PRIMARY_NAV_ITEMS, SECONDARY_NAV_ITEMS } from "../lib/nav-items";
@@ -510,16 +511,19 @@ export default function Header() {
                   disabled={isLoading}
                   onClick={() => {
                     clearAuthError();
+                    markAuthRedirectAttempt("github", signInRedirectTo || "/");
                     void signIn(
                       "github",
                       signInRedirectTo ? { redirectTo: signInRedirectTo } : undefined,
                     )
                       .then((result) => {
-                        if (result?.signingIn === false) {
+                        if (result?.signingIn === false && !result.redirect) {
+                          clearAuthRedirectAttempt();
                           setAuthError("Sign in failed. Please try again.");
                         }
                       })
                       .catch((error) => {
+                        clearAuthRedirectAttempt();
                         setAuthError(
                           getUserFacingAuthError(error, "Sign in failed. Please try again."),
                         );

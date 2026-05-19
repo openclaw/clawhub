@@ -1,4 +1,5 @@
 import { ConvexAuthProvider, useAuthActions } from "@convex-dev/auth/react";
+import { useConvexAuth } from "convex/react";
 import { useEffect, useRef } from "react";
 import { convex } from "../convex/client";
 import {
@@ -6,6 +7,7 @@ import {
   getUserFacingAuthError,
   normalizeAuthErrorMessage,
 } from "../lib/authErrorMessage";
+import { clearAuthRedirectAttempt, getActiveAuthRedirectAttempt } from "../lib/authRedirectAttempt";
 import { clearAuthError, setAuthError } from "../lib/useAuthError";
 import { ClientOnly } from "./ClientOnly";
 import { DevPersonaFab } from "./DevPersonaFab";
@@ -38,6 +40,7 @@ export function AuthCodeHandler() {
     if (handledCodeRef.current === pending.code) return;
     handledCodeRef.current = pending.code;
 
+    clearAuthRedirectAttempt();
     clearAuthError();
     window.history.replaceState(null, "", pending.relativeUrl);
 
@@ -77,11 +80,44 @@ export function AuthErrorHandler() {
     if (handledErrorRef.current === pending.description) return;
     handledErrorRef.current = pending.description;
 
+    clearAuthRedirectAttempt();
     window.history.replaceState(null, "", pending.relativeUrl);
     setAuthError(
       normalizeAuthErrorMessage(pending.description, "Sign in failed. Please try again."),
     );
   }, []);
+
+  return null;
+}
+
+export const AUTH_REDIRECT_NO_CODE_MESSAGE =
+  "GitHub sign-in returned to ClawHub without an auth code or error. The OAuth callback likely failed before creating a session. Check the Convex auth logs and GitHub OAuth environment configuration.";
+
+export function AuthRedirectFallbackHandler() {
+  const { isAuthenticated, isLoading } = useConvexAuth();
+  const handledRef = useRef(false);
+
+  useEffect(() => {
+    if (handledRef.current || isLoading) return;
+    const pending = getActiveAuthRedirectAttempt();
+    if (!pending) return;
+
+    if (isAuthenticated) {
+      clearAuthRedirectAttempt();
+      handledRef.current = true;
+      return;
+    }
+
+    const url = new URL(window.location.href);
+    if (url.searchParams.has("code") || url.searchParams.has("error")) return;
+
+    const current = `${url.pathname}${url.search}${url.hash}`;
+    if (current !== pending.redirectTo) return;
+
+    clearAuthRedirectAttempt();
+    handledRef.current = true;
+    setAuthError(AUTH_REDIRECT_NO_CODE_MESSAGE);
+  }, [isAuthenticated, isLoading]);
 
   return null;
 }
@@ -92,6 +128,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
       <TooltipProvider delayDuration={400}>
         <AuthCodeHandler />
         <AuthErrorHandler />
+        <AuthRedirectFallbackHandler />
         <UserBootstrap />
         {children}
         <ClientOnly>

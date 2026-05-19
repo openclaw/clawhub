@@ -7,16 +7,27 @@ import {
   BANNED_SIGN_IN_MESSAGE,
   DELETED_SIGN_IN_MESSAGE,
 } from "../lib/authErrorMessage";
+import { markAuthRedirectAttempt } from "../lib/authRedirectAttempt";
 import { getAuthErrorSnapshot, clearAuthError } from "../lib/useAuthError";
-import { AuthCodeHandler, AuthErrorHandler } from "./AppProviders";
+import {
+  AUTH_REDIRECT_NO_CODE_MESSAGE,
+  AuthCodeHandler,
+  AuthErrorHandler,
+  AuthRedirectFallbackHandler,
+} from "./AppProviders";
 
 const signInMock = vi.fn();
+const useConvexAuthMock = vi.fn();
 
 vi.mock("@convex-dev/auth/react", () => ({
   ConvexAuthProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   useAuthActions: () => ({
     signIn: signInMock,
   }),
+}));
+
+vi.mock("convex/react", () => ({
+  useConvexAuth: () => useConvexAuthMock(),
 }));
 
 vi.mock("../convex/client", () => ({
@@ -155,5 +166,96 @@ describe("AuthErrorHandler", () => {
     expect(`${window.location.pathname}${window.location.search}${window.location.hash}`).toBe(
       "/sign-in",
     );
+  });
+});
+
+describe("AuthRedirectFallbackHandler", () => {
+  beforeEach(() => {
+    clearAuthError();
+    window.sessionStorage.clear();
+    window.history.replaceState(
+      null,
+      "",
+      "/cli/auth?redirect_uri=http%3A%2F%2F127.0.0.1%3A43110%2Fcallback&state=state_123",
+    );
+    useConvexAuthMock.mockReturnValue({ isAuthenticated: false, isLoading: false });
+  });
+
+  afterEach(() => {
+    clearAuthError();
+    window.sessionStorage.clear();
+  });
+
+  it("surfaces callback failures that return without code, error, or session", async () => {
+    markAuthRedirectAttempt(
+      "github",
+      "/cli/auth?redirect_uri=http%3A%2F%2F127.0.0.1%3A43110%2Fcallback&state=state_123",
+    );
+
+    render(<AuthRedirectFallbackHandler />);
+
+    await waitFor(() => {
+      expect(getAuthErrorSnapshot()).toBe(AUTH_REDIRECT_NO_CODE_MESSAGE);
+    });
+  });
+
+  it("preserves provider errors while an OAuth error callback is being processed", async () => {
+    markAuthRedirectAttempt(
+      "github",
+      "/cli/auth?redirect_uri=http%3A%2F%2F127.0.0.1%3A43110%2Fcallback&state=state_123",
+    );
+    window.history.replaceState(
+      null,
+      "",
+      "/cli/auth?redirect_uri=http%3A%2F%2F127.0.0.1%3A43110%2Fcallback&state=state_123&error=access_denied",
+    );
+
+    render(
+      <>
+        <AuthErrorHandler />
+        <AuthRedirectFallbackHandler />
+      </>,
+    );
+
+    await waitFor(() => {
+      expect(getAuthErrorSnapshot()).toBe(ACCESS_DENIED_SIGN_IN_MESSAGE);
+    });
+  });
+
+  it("does not report a missing-code failure while an auth code is being processed", async () => {
+    signInMock.mockReturnValue(new Promise(() => undefined));
+    markAuthRedirectAttempt(
+      "github",
+      "/cli/auth?redirect_uri=http%3A%2F%2F127.0.0.1%3A43110%2Fcallback&state=state_123",
+    );
+    window.history.replaceState(
+      null,
+      "",
+      "/cli/auth?redirect_uri=http%3A%2F%2F127.0.0.1%3A43110%2Fcallback&state=state_123&code=abc123",
+    );
+
+    render(
+      <>
+        <AuthCodeHandler />
+        <AuthRedirectFallbackHandler />
+      </>,
+    );
+
+    await waitFor(() => {
+      expect(signInMock).toHaveBeenCalledWith(undefined, { code: "abc123" });
+    });
+    expect(getAuthErrorSnapshot()).toBeNull();
+  });
+
+  it("clears the pending redirect marker after a successful session", () => {
+    useConvexAuthMock.mockReturnValue({ isAuthenticated: true, isLoading: false });
+    markAuthRedirectAttempt(
+      "github",
+      "/cli/auth?redirect_uri=http%3A%2F%2F127.0.0.1%3A43110%2Fcallback&state=state_123",
+    );
+
+    render(<AuthRedirectFallbackHandler />);
+
+    expect(getAuthErrorSnapshot()).toBeNull();
   });
 });
