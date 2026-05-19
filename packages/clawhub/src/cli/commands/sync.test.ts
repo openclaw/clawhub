@@ -107,6 +107,8 @@ function makeOpts() {
 
 afterEach(async () => {
   vi.clearAllMocks();
+  mockCmdPublish.mockReset();
+  process.exitCode = undefined;
   const { findSkillFolders } = await import("../scanSkills.js");
   mocked(findSkillFolders).mockImplementation(defaultFindSkillFolders);
 });
@@ -298,6 +300,129 @@ describe("cmdSync", () => {
     const update = calls.find((c) => c.slug === "update-skill");
     if (!update) throw new Error("Missing update-skill publish");
     expect(update.changelog).toBe("");
+  });
+
+  it("continues uploading after a slug conflict publish failure", async () => {
+    interactive = false;
+    mockApiRequest.mockImplementation(async (_registry: string, args: { path: string }) => {
+      if (args.path === "/api/v1/whoami") return { user: { handle: "steipete" } };
+      if (args.path === "/api/cli/telemetry/sync") return { ok: true };
+      if (args.path.startsWith("/api/v1/resolve?")) {
+        const u = new URL(`https://x.test${args.path}`);
+        const slug = u.searchParams.get("slug");
+        if (slug === "new-skill") {
+          throw new Error("Skill not found");
+        }
+        if (slug === "synced-skill") {
+          return { match: { version: "1.2.3" }, latestVersion: { version: "1.2.3" } };
+        }
+        if (slug === "update-skill") {
+          return { match: null, latestVersion: { version: "1.0.0" } };
+        }
+      }
+      throw new Error(`Unexpected apiRequest: ${args.path}`);
+    });
+    mockCmdPublish.mockImplementation(async (_opts, _folder, options?: unknown) => {
+      const { slug } = options as { slug: string };
+      if (slug === "new-skill") {
+        throw new Error(
+          "Slug is already taken. Choose a different slug. Existing skill: /TheSethRose/agent-browser",
+        );
+      }
+    });
+
+    await cmdSync(makeOpts(), { root: ["/scan"], all: true, dryRun: false, bump: "patch" }, true);
+
+    expect(mockCmdPublish).toHaveBeenCalledTimes(2);
+    expect(mockCmdPublish.mock.calls.map((call) => (call[2] as { slug: string }).slug)).toEqual([
+      "new-skill",
+      "update-skill",
+    ]);
+
+    const output = mockLog.mock.calls.map((call) => String(call[0])).join("\n");
+    expect(output).toMatch(/Failed to upload/);
+    expect(output).toMatch(/new-skill/);
+    expect(output).toMatch(/Existing skill: \/TheSethRose\/agent-browser/);
+
+    const outro = mockOutro.mock.calls.at(-1)?.[0];
+    expect(String(outro)).toMatch(/Uploaded 1 of 2 skill\(s\). 1 failed/);
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("continues uploading after an alias slug conflict publish failure", async () => {
+    interactive = false;
+    mockApiRequest.mockImplementation(async (_registry: string, args: { path: string }) => {
+      if (args.path === "/api/v1/whoami") return { user: { handle: "steipete" } };
+      if (args.path === "/api/cli/telemetry/sync") return { ok: true };
+      if (args.path.startsWith("/api/v1/resolve?")) {
+        const u = new URL(`https://x.test${args.path}`);
+        const slug = u.searchParams.get("slug");
+        if (slug === "new-skill") {
+          throw new Error("Skill not found");
+        }
+        if (slug === "synced-skill") {
+          return { match: { version: "1.2.3" }, latestVersion: { version: "1.2.3" } };
+        }
+        if (slug === "update-skill") {
+          return { match: null, latestVersion: { version: "1.0.0" } };
+        }
+      }
+      throw new Error(`Unexpected apiRequest: ${args.path}`);
+    });
+    mockCmdPublish.mockImplementation(async (_opts, _folder, options?: unknown) => {
+      const { slug } = options as { slug: string };
+      if (slug === "new-skill") {
+        throw new Error(
+          "Slug redirects to an existing skill. Choose a different slug. Existing skill: /alice/demo",
+        );
+      }
+    });
+
+    await cmdSync(makeOpts(), { root: ["/scan"], all: true, dryRun: false, bump: "patch" }, true);
+
+    expect(mockCmdPublish).toHaveBeenCalledTimes(2);
+    expect(mockCmdPublish.mock.calls.map((call) => (call[2] as { slug: string }).slug)).toEqual([
+      "new-skill",
+      "update-skill",
+    ]);
+
+    const output = mockLog.mock.calls.map((call) => String(call[0])).join("\n");
+    expect(output).toMatch(/Failed to upload/);
+    expect(output).toMatch(/Slug redirects to an existing skill/);
+    expect(output).toMatch(/Existing skill: \/alice\/demo/);
+
+    const outro = mockOutro.mock.calls.at(-1)?.[0];
+    expect(String(outro)).toMatch(/Uploaded 1 of 2 skill\(s\). 1 failed/);
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("does not swallow unrelated publish failures", async () => {
+    interactive = false;
+    mockApiRequest.mockImplementation(async (_registry: string, args: { path: string }) => {
+      if (args.path === "/api/v1/whoami") return { user: { handle: "steipete" } };
+      if (args.path === "/api/cli/telemetry/sync") return { ok: true };
+      if (args.path.startsWith("/api/v1/resolve?")) {
+        const u = new URL(`https://x.test${args.path}`);
+        const slug = u.searchParams.get("slug");
+        if (slug === "new-skill") {
+          throw new Error("Skill not found");
+        }
+        if (slug === "synced-skill") {
+          return { match: { version: "1.2.3" }, latestVersion: { version: "1.2.3" } };
+        }
+        if (slug === "update-skill") {
+          return { match: null, latestVersion: { version: "1.0.0" } };
+        }
+      }
+      throw new Error(`Unexpected apiRequest: ${args.path}`);
+    });
+    mockCmdPublish.mockRejectedValueOnce(new Error("HTTP 500"));
+
+    await expect(
+      cmdSync(makeOpts(), { root: ["/scan"], all: true, dryRun: false, bump: "patch" }, true),
+    ).rejects.toThrow("HTTP 500");
+
+    expect(mockCmdPublish).toHaveBeenCalledTimes(1);
   });
 
   it("skips telemetry when CLAWHUB_DISABLE_TELEMETRY is set", async () => {

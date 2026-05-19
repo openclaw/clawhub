@@ -28,6 +28,11 @@ import {
 } from "./syncHelpers.js";
 import type { Candidate, LocalSkill, SyncOptions } from "./syncTypes.js";
 
+const RECOVERABLE_SLUG_CONFLICT_MESSAGES = [
+  "Slug is already taken. Choose a different slug.",
+  "Slug redirects to an existing skill. Choose a different slug.",
+] as const;
+
 export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllowed: boolean) {
   const allowPrompt = isInteractive() && inputAllowed !== false;
   intro("ClawHub sync");
@@ -167,6 +172,8 @@ export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllow
   }
 
   const tags = options.tags ?? "latest";
+  const failedUploads: Array<{ slug: string; message: string }> = [];
+  let uploaded = 0;
 
   for (const skill of selected) {
     const { publishVersion, changelog } = await resolvePublishMeta(skill, {
@@ -180,14 +187,34 @@ export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllow
           ? `${skill.origin.slug}@${skill.origin.installedVersion}`
           : undefined
         : undefined;
-    await cmdPublish(opts, skill.folder, {
-      slug: skill.slug,
-      name: skill.displayName,
-      version: publishVersion,
-      changelog,
-      tags,
-      forkOf,
-    });
+    try {
+      await cmdPublish(opts, skill.folder, {
+        slug: skill.slug,
+        name: skill.displayName,
+        version: publishVersion,
+        changelog,
+        tags,
+        forkOf,
+      });
+      uploaded += 1;
+    } catch (error) {
+      const conflictMessage = getSlugConflictMessage(error);
+      if (!conflictMessage) throw error;
+      failedUploads.push({ slug: skill.slug, message: conflictMessage });
+    }
+  }
+
+  if (failedUploads.length > 0) {
+    printSection(
+      "Failed to upload",
+      formatBulletList(
+        failedUploads.map((failure) => `${failure.slug}: ${failure.message}`),
+        20,
+      ),
+    );
+    outro(`Uploaded ${uploaded} of ${selected.length} skill(s). ${failedUploads.length} failed.`);
+    process.exitCode = 1;
+    return;
   }
 
   outro(`Uploaded ${selected.length} skill(s).`);
@@ -195,4 +222,11 @@ export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllow
 
 function normalizeRegistry(value: string) {
   return value.trim().replace(/\/+$/, "").toLowerCase();
+}
+
+function getSlugConflictMessage(error: unknown) {
+  const message = formatError(error);
+  return RECOVERABLE_SLUG_CONFLICT_MESSAGES.some((conflict) => message.includes(conflict))
+    ? message
+    : null;
 }
