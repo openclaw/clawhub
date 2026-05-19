@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- CLI/API: add self-serve org publisher creation with `clawhub publisher create <handle>` and scoped package publish errors that point to the command.
+
 ## 0.16.0 - 2026-05-18
 
 ### Fixes

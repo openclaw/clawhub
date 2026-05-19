@@ -8,7 +8,9 @@ import {
   listMine,
   listPublishedPage,
   migrateLegacyPublisherHandleToOrgInternal,
+  createOrg,
   removeMember,
+  createOrgPublisherForUserInternal,
   setTrustedPublisherInternal,
   updateProfile,
 } from "./publishers";
@@ -121,6 +123,37 @@ const setTrustedPublisherInternalHandler = (
     publisherId: string;
     trustedPublisher: boolean;
   }>
+)._handler;
+
+const createOrgPublisherForUserInternalHandler = (
+  createOrgPublisherForUserInternal as unknown as WrappedHandler<
+    {
+      actorUserId: string;
+      handle: string;
+      displayName?: string;
+    },
+    {
+      ok: true;
+      publisherId: string;
+      handle: string;
+      created: true;
+      trusted: false;
+    }
+  >
+)._handler;
+
+const createOrgHandler = (
+  createOrg as unknown as WrappedHandler<
+    {
+      handle: string;
+      displayName: string;
+      bio?: string;
+    },
+    {
+      publisher: { handle: string; bio?: string };
+      role: "owner";
+    }
+  >
 )._handler;
 
 function indexedRows<T>(rows: T[]) {
@@ -1581,6 +1614,366 @@ describe("publisher bootstrap", () => {
         }),
       }),
     ]);
+  });
+});
+
+describe("self-serve org publisher creation", () => {
+  function makeCreateOrgPublisherCtx(options: {
+    existingPublisher?: Record<string, unknown> | null;
+    existingUser?: Record<string, unknown> | null;
+    reservedHandle?: Record<string, unknown> | null;
+    actor?: Record<string, unknown> | null;
+  }) {
+    const inserts: Array<{ table: string; value: Record<string, unknown> }> = [];
+    const query = vi.fn((table: string) => {
+      if (table === "publishers") {
+        return {
+          withIndex: vi.fn((indexName: string) => {
+            if (indexName !== "by_handle") throw new Error(`unexpected index ${indexName}`);
+            return { unique: vi.fn().mockResolvedValue(options.existingPublisher ?? null) };
+          }),
+        };
+      }
+      if (table === "users") {
+        return {
+          withIndex: vi.fn((indexName: string) => {
+            if (indexName !== "handle") throw new Error(`unexpected index ${indexName}`);
+            return { unique: vi.fn().mockResolvedValue(options.existingUser ?? null) };
+          }),
+        };
+      }
+      if (table === "reservedHandles") {
+        return {
+          withIndex: vi.fn((indexName: string) => {
+            if (indexName !== "by_handle_active_updatedAt") {
+              throw new Error(`unexpected index ${indexName}`);
+            }
+            return {
+              order: vi.fn(() => ({
+                take: vi.fn(async () => (options.reservedHandle ? [options.reservedHandle] : [])),
+              })),
+            };
+          }),
+        };
+      }
+      throw new Error(`unexpected table ${table}`);
+    });
+    const ctx = {
+      db: {
+        get: vi.fn(async (...args: string[]) => {
+          const id = args.length === 2 ? args[1] : args[0];
+          if (id === "users:vincent") return options.actor ?? { _id: id, handle: "vincentkoc" };
+          const inserted = inserts.find((entry) => entry.value._id === id);
+          if (inserted) return inserted.value;
+          return null;
+        }),
+        query,
+        insert: vi.fn(async (table: string, value: Record<string, unknown>) => {
+          const id = `${table}:${inserts.length + 1}`;
+          inserts.push({ table, value: { _id: id, ...value } });
+          return id;
+        }),
+        patch: vi.fn(),
+        replace: vi.fn(),
+        delete: vi.fn(),
+        normalizeId: vi.fn((table: string, id: string) => (id.startsWith(`${table}:`) ? id : null)),
+      },
+    };
+    return { ctx, inserts };
+  }
+
+  it("creates an untrusted org publisher and makes the actor owner", async () => {
+    const { ctx, inserts } = makeCreateOrgPublisherCtx({});
+
+    const result = await createOrgPublisherForUserInternalHandler(ctx as never, {
+      actorUserId: "users:vincent",
+      handle: "Opik",
+      displayName: "Opik",
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      publisherId: "publishers:1",
+      handle: "opik",
+      created: true,
+      trusted: false,
+    });
+    expect(inserts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          table: "publishers",
+          value: expect.objectContaining({
+            kind: "org",
+            handle: "opik",
+            displayName: "Opik",
+            trustedPublisher: undefined,
+          }),
+        }),
+        expect.objectContaining({
+          table: "publisherMembers",
+          value: expect.objectContaining({
+            publisherId: "publishers:1",
+            userId: "users:vincent",
+            role: "owner",
+          }),
+        }),
+        expect.objectContaining({
+          table: "auditLogs",
+          value: expect.objectContaining({
+            actorUserId: "users:vincent",
+            action: "publisher.org.create",
+            targetType: "publisher",
+            targetId: "publishers:1",
+          }),
+        }),
+      ]),
+    );
+  });
+
+  it("rejects creation when the org publisher already exists", async () => {
+    const { ctx } = makeCreateOrgPublisherCtx({
+      existingPublisher: { _id: "publishers:opik", kind: "org", handle: "opik" },
+    });
+
+    await expect(
+      createOrgPublisherForUserInternalHandler(ctx as never, {
+        actorUserId: "users:vincent",
+        handle: "opik",
+      }),
+    ).rejects.toThrow('Publisher "@opik" already exists');
+  });
+
+  it("rejects creation when the handle belongs to a user or personal publisher", async () => {
+    const { ctx } = makeCreateOrgPublisherCtx({
+      existingUser: { _id: "users:opik", handle: "opik" },
+    });
+
+    await expect(
+      createOrgPublisherForUserInternalHandler(ctx as never, {
+        actorUserId: "users:vincent",
+        handle: "opik",
+      }),
+    ).rejects.toThrow('Handle "@opik" is already used by a user or personal publisher');
+  });
+
+  it("rejects creation when the handle belongs to a personal publisher", async () => {
+    const { ctx } = makeCreateOrgPublisherCtx({
+      existingPublisher: { _id: "publishers:opik", kind: "user", handle: "opik" },
+    });
+
+    await expect(
+      createOrgPublisherForUserInternalHandler(ctx as never, {
+        actorUserId: "users:vincent",
+        handle: "opik",
+      }),
+    ).rejects.toThrow('Handle "@opik" is already used by a user or personal publisher');
+  });
+
+  it("rejects creation when the handle is reserved for another user", async () => {
+    const { ctx } = makeCreateOrgPublisherCtx({
+      reservedHandle: {
+        _id: "reservedHandles:opik",
+        handle: "opik",
+        rightfulOwnerUserId: "users:opik",
+      },
+    });
+
+    await expect(
+      createOrgPublisherForUserInternalHandler(ctx as never, {
+        actorUserId: "users:vincent",
+        handle: "opik",
+      }),
+    ).rejects.toThrow('Handle "@opik" is reserved for another user');
+  });
+
+  it("allows creation when the handle is reserved for the actor", async () => {
+    const { ctx } = makeCreateOrgPublisherCtx({
+      reservedHandle: {
+        _id: "reservedHandles:opik",
+        handle: "opik",
+        rightfulOwnerUserId: "users:vincent",
+      },
+    });
+
+    await expect(
+      createOrgPublisherForUserInternalHandler(ctx as never, {
+        actorUserId: "users:vincent",
+        handle: "opik",
+      }),
+    ).resolves.toMatchObject({ ok: true, handle: "opik" });
+  });
+
+  function makeSettingsCreateOrgCtx(options: {
+    reservedHandle?: Record<string, unknown> | null;
+    existingOrgPublisher?: Record<string, unknown> | null;
+  }) {
+    const actor = {
+      _id: "users:vincent",
+      _creationTime: 1,
+      handle: "vincentkoc",
+      displayName: "Vincent",
+      personalPublisherId: "publishers:vincent",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const personalPublisher = {
+      _id: "publishers:vincent",
+      _creationTime: 1,
+      kind: "user",
+      handle: "vincentkoc",
+      displayName: "Vincent",
+      linkedUserId: "users:vincent",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const inserts: Array<{ table: string; value: Record<string, unknown> }> = [];
+    const insertCounts = new Map<string, number>();
+    const insertedById = new Map<string, Record<string, unknown>>();
+    const query = vi.fn((table: string) => {
+      if (table === "publishers") {
+        return {
+          withIndex: vi.fn((indexName: string, builder: (q: unknown) => unknown) => {
+            const eqValues: Record<string, unknown> = {};
+            builder({
+              eq: vi.fn((field: string, value: unknown) => {
+                eqValues[field] = value;
+                return { eq: vi.fn() };
+              }),
+            });
+            if (indexName === "by_linked_user") {
+              return { unique: vi.fn().mockResolvedValue(personalPublisher) };
+            }
+            if (indexName !== "by_handle") throw new Error(`unexpected index ${indexName}`);
+            const handle = eqValues.handle;
+            const publisher =
+              handle === "vincentkoc"
+                ? personalPublisher
+                : handle === "opik"
+                  ? options.existingOrgPublisher
+                  : null;
+            return { unique: vi.fn().mockResolvedValue(publisher ?? null) };
+          }),
+        };
+      }
+      if (table === "publisherMembers") {
+        return {
+          withIndex: vi.fn((indexName: string) => {
+            if (indexName !== "by_publisher_user") {
+              throw new Error(`unexpected index ${indexName}`);
+            }
+            return { unique: vi.fn().mockResolvedValue({ _id: "publisherMembers:personal" }) };
+          }),
+        };
+      }
+      if (table === "users") {
+        return {
+          withIndex: vi.fn((indexName: string) => {
+            if (indexName !== "handle") throw new Error(`unexpected index ${indexName}`);
+            return { unique: vi.fn().mockResolvedValue(null) };
+          }),
+        };
+      }
+      if (table === "reservedHandles") {
+        return {
+          withIndex: vi.fn((indexName: string) => {
+            if (indexName !== "by_handle_active_updatedAt") {
+              throw new Error(`unexpected index ${indexName}`);
+            }
+            return {
+              order: vi.fn(() => ({
+                take: vi.fn(async () => (options.reservedHandle ? [options.reservedHandle] : [])),
+              })),
+            };
+          }),
+        };
+      }
+      throw new Error(`unexpected table ${table}`);
+    });
+    const ctx = {
+      db: {
+        get: vi.fn(async (...args: string[]) => {
+          const id = args.length === 2 ? args[1] : args[0];
+          if (id === actor._id) return actor;
+          if (id === personalPublisher._id) return personalPublisher;
+          return insertedById.get(id) ?? null;
+        }),
+        query,
+        insert: vi.fn(async (table: string, value: Record<string, unknown>) => {
+          const next = (insertCounts.get(table) ?? 0) + 1;
+          insertCounts.set(table, next);
+          const id = `${table}:${next}`;
+          const doc = { _id: id, _creationTime: next, ...value };
+          inserts.push({ table, value: doc });
+          insertedById.set(id, doc);
+          return id;
+        }),
+        patch: vi.fn(),
+        replace: vi.fn(),
+        delete: vi.fn(),
+        normalizeId: vi.fn((table: string, id: string) => (id.startsWith(`${table}:`) ? id : null)),
+      },
+    };
+    return { ctx, inserts };
+  }
+
+  it("rejects Settings org creation when the handle is reserved for another user", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:vincent" as never);
+    const { ctx } = makeSettingsCreateOrgCtx({
+      reservedHandle: {
+        _id: "reservedHandles:opik",
+        handle: "opik",
+        rightfulOwnerUserId: "users:opik",
+      },
+    });
+
+    await expect(
+      createOrgHandler(ctx as never, {
+        handle: "opik",
+        displayName: "Opik",
+      }),
+    ).rejects.toThrow('Handle "@opik" is reserved for another user');
+  });
+
+  it("lets Settings org creation use handles reserved for the actor", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:vincent" as never);
+    const { ctx, inserts } = makeSettingsCreateOrgCtx({
+      reservedHandle: {
+        _id: "reservedHandles:opik",
+        handle: "opik",
+        rightfulOwnerUserId: "users:vincent",
+      },
+    });
+
+    await expect(
+      createOrgHandler(ctx as never, {
+        handle: "Opik",
+        displayName: "Opik",
+        bio: "Team publisher",
+      }),
+    ).resolves.toMatchObject({
+      publisher: { handle: "opik", bio: "Team publisher" },
+      role: "owner",
+    });
+    expect(inserts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          table: "publishers",
+          value: expect.objectContaining({
+            kind: "org",
+            handle: "opik",
+            displayName: "Opik",
+            bio: "Team publisher",
+          }),
+        }),
+        expect.objectContaining({
+          table: "publisherMembers",
+          value: expect.objectContaining({
+            userId: "users:vincent",
+            role: "owner",
+          }),
+        }),
+      ]),
+    );
   });
 });
 

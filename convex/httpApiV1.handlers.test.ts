@@ -433,6 +433,86 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("publishers creates a self-serve org publisher for the authenticated user", async () => {
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        ok: true,
+        publisherId: "publishers:opik",
+        handle: "opik",
+        created: true,
+        trusted: false,
+      };
+    });
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:vincent",
+      user: { _id: "users:vincent", role: "user" },
+    } as never);
+
+    const response = await __handlers.createPublisherV1Handler(
+      makeCtx({ runQuery: vi.fn(), runAction: vi.fn(), runMutation }),
+      new Request("https://example.com/api/v1/publishers", {
+        method: "POST",
+        body: JSON.stringify({ handle: "Opik", displayName: "Opik" }),
+      }),
+    );
+    if (response.status !== 201) throw new Error(await response.text());
+
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      publisherId: "publishers:opik",
+      handle: "opik",
+      created: true,
+      trusted: false,
+    });
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        actorUserId: "users:vincent",
+        handle: "opik",
+        displayName: "Opik",
+      }),
+    );
+  });
+
+  it("publishers returns conflict when the org already exists", async () => {
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      throw new Error('Publisher "@opik" already exists');
+    });
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:vincent",
+      user: { _id: "users:vincent", role: "user" },
+    } as never);
+
+    const response = await __handlers.createPublisherV1Handler(
+      makeCtx({ runQuery: vi.fn(), runAction: vi.fn(), runMutation }),
+      new Request("https://example.com/api/v1/publishers", {
+        method: "POST",
+        body: JSON.stringify({ handle: "opik" }),
+      }),
+    );
+
+    expect(response.status).toBe(409);
+    expect(await response.text()).toBe('Publisher "@opik" already exists');
+  });
+
+  it("publishers returns a controlled error when JSON is not an object", async () => {
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.createPublisherV1Handler(
+      makeCtx({ runQuery: vi.fn(), runAction: vi.fn(), runMutation }),
+      new Request("https://example.com/api/v1/publishers", {
+        method: "POST",
+        body: "null",
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toBe("JSON body must be an object");
+    expect(requireApiTokenUser).not.toHaveBeenCalled();
+  });
+
   it("search forwards limit and highlightedOnly", async () => {
     const runAction = vi.fn().mockResolvedValue([
       {

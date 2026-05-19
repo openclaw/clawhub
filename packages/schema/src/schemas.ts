@@ -157,6 +157,15 @@ export const ApiV1UserSearchResponseSchema = type({
   total: "number",
 });
 
+export const ApiV1PublisherCreateResponseSchema = type({
+  ok: "true",
+  publisherId: "string",
+  handle: "string",
+  created: "true",
+  trusted: "false",
+});
+export type ApiV1PublisherCreateResponse = (typeof ApiV1PublisherCreateResponseSchema)[inferred];
+
 export const ApiV1SearchResponseSchema = type({
   results: type({
     slug: "string?",

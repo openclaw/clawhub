@@ -1191,6 +1191,16 @@ legacy shared user/personal publisher, the endpoint migrates it into an org publ
 - Body: `{ "handle": "openclaw", "displayName": "OpenClaw", "trusted": true }`
 - Response: `{ "ok": true, "publisherId": "...", "handle": "openclaw", "created": true, "migrated": false, "trusted": true }`
 
+### `POST /api/v1/publishers`
+
+Authenticated self-serve org publisher creation. Creates a new org publisher and adds the
+caller as owner. This endpoint does not migrate existing user/personal handles and does
+not mark the publisher trusted/official.
+
+- Body: `{ "handle": "opik", "displayName": "Opik" }`
+- Response: `{ "ok": true, "publisherId": "...", "handle": "opik", "created": true, "trusted": false }`
+- Returns `409` when the handle is already used by a publisher, user, or personal publisher.
+
 ### `POST /api/v1/users/reserve`
 
 Admin-only. Reserves root slugs and package names for a rightful owner without publishing a

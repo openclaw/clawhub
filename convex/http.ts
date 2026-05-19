@@ -28,6 +28,7 @@ import {
   packagesGetRouterV1Http,
   packagesPostRouterV1Http,
   pluginsGetRouterV1Http,
+  createPublisherV1Http,
   publishPackageV1Http,
   publishSkillV1Http,
   publishSoulV1Http,
@@ -183,6 +184,12 @@ http.route({
   pathPrefix: `${ApiRoutes.transfers}/`,
   method: "GET",
   handler: transfersGetRouterV1Http,
+});
+
+http.route({
+  path: ApiRoutes.publishers,
+  method: "POST",
+  handler: createPublisherV1Http,
 });
 
 http.route({

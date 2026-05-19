@@ -93,6 +93,7 @@ const MAX_OFFICIAL_MIGRATION_BLOCKERS = 20;
 const MAX_OFFICIAL_MIGRATION_FIELD_LENGTH = 300;
 const MAX_OFFICIAL_MIGRATION_NOTES_LENGTH = 2_000;
 const MAX_STORED_PACKAGE_METADATA_DEPTH = 10;
+const CLAWHUB_PUBLISHER_HANDLE_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
 const REAL_BUNDLE_MANIFESTS = [
   { path: ".codex-plugin/plugin.json", format: "codex" },
   { path: ".claude-plugin/plugin.json", format: "claude" },
@@ -155,6 +156,45 @@ const vtAnalysisValidator = v.object({
 function inferOwnerHandleFromScopedPackageName(name: string) {
   const match = /^@([^/]+)\//.exec(name);
   return match?.[1] || undefined;
+}
+
+function getPackageSlugFromName(name: string) {
+  return name.split("/").pop()?.trim() || "plugin-name";
+}
+
+function getClawHubPublisherHandleSuggestion(handle: string) {
+  const suggestion = handle
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40)
+    .replace(/-+$/g, "");
+  return CLAWHUB_PUBLISHER_HANDLE_PATTERN.test(suggestion) ? suggestion : null;
+}
+
+function getScopedPackageMissingPublisherMessage(params: {
+  scopedOwnerHandle: string;
+  packageName: string;
+  legacyPersonalOwnerHandle?: string;
+}) {
+  if (!CLAWHUB_PUBLISHER_HANDLE_PATTERN.test(params.scopedOwnerHandle)) {
+    const suggestedOwnerHandle = getClawHubPublisherHandleSuggestion(params.scopedOwnerHandle);
+    const packageSlug = getPackageSlugFromName(params.packageName);
+    const renameGuidance = suggestedOwnerHandle
+      ? ` Rename package.json to a ClawHub-compatible scope, such as "@${suggestedOwnerHandle}/${packageSlug}", then publish again.`
+      : " Rename package.json to a ClawHub-compatible scope that uses lowercase letters, numbers, and hyphens, then publish again.";
+    return `Cannot publish ${params.packageName}: package.json name is scoped to "@${params.scopedOwnerHandle}", but ClawHub publisher handles may only use lowercase letters, numbers, and hyphens.${renameGuidance}`;
+  }
+  if (params.legacyPersonalOwnerHandle) {
+    const displayName = params.scopedOwnerHandle
+      .split(/[-_]+/)
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
+    return `Cannot publish ${params.packageName}: package.json name is scoped to "@${params.scopedOwnerHandle}", but ClawHub has no "@${params.scopedOwnerHandle}" publisher.\n\nThis package already exists under your personal publisher "@${params.legacyPersonalOwnerHandle}". To move it into the matching org publisher, run:\n\n  clawhub publisher create ${params.scopedOwnerHandle} --display-name "${displayName || params.scopedOwnerHandle}"\n  clawhub package transfer ${params.packageName} --to ${params.scopedOwnerHandle} --reason "Move legacy personal package into @${params.scopedOwnerHandle}"\n\nThen rerun publish.`;
+  }
+  return `Cannot publish ${params.packageName}: package.json name is scoped to "@${params.scopedOwnerHandle}", but ClawHub has no "@${params.scopedOwnerHandle}" publisher. Create it with "clawhub publisher create ${params.scopedOwnerHandle}".`;
 }
 
 function isTrustedOpenClawPluginPackage(params: {
@@ -4551,8 +4591,30 @@ async function publishPackageImpl(
     } catch (error) {
       if (scopedOwnerHandle && error instanceof Error) {
         if (/not found/i.test(error.message)) {
+          let legacyPersonalOwnerHandle: string | undefined;
+          if (existingPackage && actor && existingPackage.ownerUserId === actor._id) {
+            if (existingPackage.ownerPublisherId) {
+              const existingOwnerPublisher = await runQueryRef<Doc<"publishers"> | null>(
+                ctx,
+                internalRefs.publishers.getByIdInternal,
+                { publisherId: existingPackage.ownerPublisherId },
+              );
+              if (
+                existingOwnerPublisher?.kind === "user" &&
+                existingOwnerPublisher.linkedUserId === actor._id
+              ) {
+                legacyPersonalOwnerHandle = normalizePublisherHandle(existingOwnerPublisher.handle);
+              }
+            } else {
+              legacyPersonalOwnerHandle = normalizePublisherHandle(actor.handle);
+            }
+          }
           throw new ConvexError(
-            `This package name uses the "@${scopedOwnerHandle}" namespace, but that publisher does not exist on ClawHub. Create the "@${scopedOwnerHandle}" organization or choose a different package name.`,
+            getScopedPackageMissingPublisherMessage({
+              scopedOwnerHandle,
+              packageName: name,
+              legacyPersonalOwnerHandle,
+            }),
           );
         }
         if (/forbidden|publish access/i.test(error.message)) {

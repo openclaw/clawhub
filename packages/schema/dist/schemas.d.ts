@@ -154,6 +154,14 @@ export declare const ApiV1UserSearchResponseSchema: import("arktype/internal/var
     }[];
     total: number;
 }, {}>;
+export declare const ApiV1PublisherCreateResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    publisherId: string;
+    handle: string;
+    created: true;
+    trusted: false;
+}, {}>;
+export type ApiV1PublisherCreateResponse = (typeof ApiV1PublisherCreateResponseSchema)[inferred];
 export declare const ApiV1SearchResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     results: {
         score: number;
@@ -474,8 +482,8 @@ export declare const ApiV1RemediateAutobansResponseSchema: import("arktype/inter
     restoredSkills: number;
     restoredPackages: number;
     items: unknown[];
-    nextCursor?: string | null;
-    done?: boolean;
+    nextCursor?: string | null | undefined;
+    done?: boolean | undefined;
 }, {}>;
 export declare const ApiV1StarResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     ok: true;

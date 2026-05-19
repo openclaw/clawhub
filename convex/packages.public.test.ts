@@ -4725,6 +4725,216 @@ describe("packages public queries", () => {
     );
   });
 
+  it("rejects scoped package publishes to missing publishers with package.json guidance", async () => {
+    const runMutation = vi.fn(async () => {
+      throw new Error('Publisher "@opik" not found');
+    });
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          _id: "users:vincent",
+          handle: "vincentkoc",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        })
+        .mockResolvedValueOnce({
+          _id: "users:vincent",
+          handle: "vincentkoc",
+          role: "user",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        }),
+      runMutation,
+      scheduler: {
+        runAfter: vi.fn(),
+      },
+      storage: {
+        get: vi.fn(),
+      },
+    };
+
+    await expect(
+      publishPackageForUserInternalHandler(ctx as never, {
+        actorUserId: "users:vincent",
+        payload: {
+          name: "@opik/opik-openclaw",
+          displayName: "Opik",
+          family: "bundle-plugin",
+          version: "0.2.15",
+          changelog: "beta",
+          bundle: { hostTargets: ["desktop"] },
+          files: [],
+        },
+      }),
+    ).rejects.toThrow('Create it with "clawhub publisher create opik".');
+  });
+
+  it("guides legacy personal scoped packages through org creation and transfer", async () => {
+    const runMutation = vi.fn(async () => {
+      throw new Error('Publisher "@opik" not found');
+    });
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce({
+          _id: "packages:opik-openclaw",
+          ownerUserId: "users:vincent",
+          ownerPublisherId: "publishers:vincent",
+        })
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          _id: "users:vincent",
+          handle: "vincentkoc",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        })
+        .mockResolvedValueOnce({
+          _id: "users:vincent",
+          handle: "vincentkoc",
+          role: "user",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        })
+        .mockResolvedValueOnce({
+          _id: "publishers:vincent",
+          kind: "user",
+          handle: "vincentkoc",
+          linkedUserId: "users:vincent",
+        }),
+      runMutation,
+      scheduler: {
+        runAfter: vi.fn(),
+      },
+      storage: {
+        get: vi.fn(),
+      },
+    };
+
+    await expect(
+      publishPackageForUserInternalHandler(ctx as never, {
+        actorUserId: "users:vincent",
+        payload: {
+          name: "@opik/opik-openclaw",
+          displayName: "Opik",
+          family: "bundle-plugin",
+          version: "0.2.15",
+          changelog: "beta",
+          bundle: { hostTargets: ["desktop"] },
+          files: [],
+        },
+      }),
+    ).rejects.toThrow(
+      [
+        'Cannot publish @opik/opik-openclaw: package.json name is scoped to "@opik", but ClawHub has no "@opik" publisher.',
+        "",
+        'This package already exists under your personal publisher "@vincentkoc". To move it into the matching org publisher, run:',
+        "",
+        '  clawhub publisher create opik --display-name "Opik"',
+        '  clawhub package transfer @opik/opik-openclaw --to opik --reason "Move legacy personal package into @opik"',
+        "",
+        "Then rerun publish.",
+      ].join("\n"),
+    );
+  });
+
+  it("does not show transfer guidance for scoped packages owned by another publisher", async () => {
+    const runMutation = vi.fn(async () => {
+      throw new Error('Publisher "@opik" not found');
+    });
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce({
+          _id: "packages:opik-openclaw",
+          ownerUserId: "users:other",
+          ownerPublisherId: "publishers:other",
+        })
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          _id: "users:vincent",
+          handle: "vincentkoc",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        })
+        .mockResolvedValueOnce({
+          _id: "users:vincent",
+          handle: "vincentkoc",
+          role: "user",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        }),
+      runMutation,
+      scheduler: {
+        runAfter: vi.fn(),
+      },
+      storage: {
+        get: vi.fn(),
+      },
+    };
+
+    await expect(
+      publishPackageForUserInternalHandler(ctx as never, {
+        actorUserId: "users:vincent",
+        payload: {
+          name: "@opik/opik-openclaw",
+          displayName: "Opik",
+          family: "bundle-plugin",
+          version: "0.2.15",
+          changelog: "beta",
+          bundle: { hostTargets: ["desktop"] },
+          files: [],
+        },
+      }),
+    ).rejects.toThrow(
+      [
+        'Cannot publish @opik/opik-openclaw: package.json name is scoped to "@opik", but ClawHub has no "@opik" publisher.',
+        'Create it with "clawhub publisher create opik".',
+      ].join(" "),
+    );
+  });
+
+  it("does not suggest publisher creation for package scopes that are invalid ClawHub handles", async () => {
+    const runMutation = vi.fn(async () => {
+      throw new Error('Publisher "@foo.bar" not found');
+    });
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          _id: "users:vincent",
+          handle: "vincentkoc",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        })
+        .mockResolvedValueOnce({
+          _id: "users:vincent",
+          handle: "vincentkoc",
+          role: "user",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        }),
+      runMutation,
+      scheduler: {
+        runAfter: vi.fn(),
+      },
+      storage: {
+        get: vi.fn(),
+      },
+    };
+
+    await expect(
+      publishPackageForUserInternalHandler(ctx as never, {
+        actorUserId: "users:vincent",
+        payload: {
+          name: "@foo.bar/demo-plugin",
+          displayName: "Demo",
+          family: "bundle-plugin",
+          version: "1.0.0",
+          changelog: "beta",
+          bundle: { hostTargets: ["desktop"] },
+          files: [],
+        },
+      }),
+    ).rejects.toThrow(
+      'ClawHub publisher handles may only use lowercase letters, numbers, and hyphens. Rename package.json to a ClawHub-compatible scope, such as "@foo-bar/demo-plugin", then publish again.',
+    );
+  });
+
   it("rejects scoped package publishes when --owner conflicts with the package scope", async () => {
     const runMutation = vi.fn();
     const ctx = {
