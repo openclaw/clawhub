@@ -46,20 +46,23 @@ export function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-export async function signInAsLocalPersona(page: Page, persona: DevPersona) {
+export async function expectLocalPersonaActive(page: Page, persona: DevPersona) {
   const expectedHandle = persona === "owner" ? "local" : `local-${persona}`;
+  await expect(page.locator("header .user-trigger")).toContainText(
+    devPersonaHeaderPattern(persona, expectedHandle),
+    { timeout: 15_000 },
+  );
+}
 
+export async function signInAsLocalPersona(page: Page, persona: DevPersona) {
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await waitForHydration(page);
 
   await page.getByRole("button", { name: "Open local dev personas" }).click();
   await page.getByRole("menuitem", { name: new RegExp(`use ${persona}`, "i") }).click();
-  await expect(page.locator("header .user-trigger")).toContainText(
-    devPersonaHeaderPattern(persona, expectedHandle),
-    { timeout: 15_000 },
-  );
+  await expectLocalPersonaActive(page, persona);
 
-  return expectedHandle;
+  return persona === "owner" ? "local" : `local-${persona}`;
 }
 
 export async function signInAsLocalOwner(page: Page) {
