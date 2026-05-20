@@ -1,7 +1,9 @@
 import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
+import type { MutationCtx } from "./_generated/server";
 import { action, internalMutation, internalQuery } from "./functions";
+import { assertModerator } from "./lib/access";
 
 const MAX_PARALLEL_CODEX_SCANS = 20;
 const DEFAULT_VT_WAIT_MS = 10 * 60 * 1000;
@@ -32,6 +34,13 @@ const jobSourceValidator = v.union(
   v.literal("backfill"),
   v.literal("manual"),
 );
+
+type EnqueueSkillVersionScanArgs = {
+  versionId: Id<"skillVersions">;
+  source: "publish" | "clawscan-note" | "vt-update" | "backfill" | "manual";
+  priority?: number;
+  waitForVtMs?: number;
+};
 
 const llmAgenticRiskEvidenceValidator = v.object({
   path: v.string(),
@@ -176,46 +185,117 @@ export const enqueueSkillVersionScanInternal = internalMutation({
     waitForVtMs: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const version = await ctx.db.get(args.versionId);
-    if (!version || version.softDeletedAt) return { ok: true as const, skipped: "missing" };
-    const now = Date.now();
-    const waitForVtUntil = now + Math.max(0, args.waitForVtMs ?? DEFAULT_VT_WAIT_MS);
-    const nextRunAt = args.waitForVtMs === 0 || version.vtAnalysis ? now : waitForVtUntil;
-    const hasMaliciousSignal = version.staticScan?.status === "malicious";
-
-    const existing = await ctx.db
-      .query("securityScanJobs")
-      .withIndex("by_skill_version", (q) => q.eq("skillVersionId", args.versionId))
-      .collect();
-    const active = existing.find((job) => job.status === "queued" || job.status === "running");
-    if (active) {
-      await ctx.db.patch(active._id, {
-        source: args.source,
-        priority: Math.max(active.priority, args.priority ?? 0),
-        hasMaliciousSignal: active.hasMaliciousSignal || hasMaliciousSignal,
-        waitForVtUntil: Math.min(active.waitForVtUntil, waitForVtUntil),
-        nextRunAt: Math.min(active.nextRunAt, nextRunAt),
-        updatedAt: now,
-      });
-      return { ok: true as const, jobId: active._id };
-    }
-
-    const jobId = await ctx.db.insert("securityScanJobs", {
-      targetKind: "skillVersion",
-      skillVersionId: args.versionId,
-      status: "queued",
-      source: args.source,
-      priority: args.priority ?? (hasMaliciousSignal ? 100 : 0),
-      hasMaliciousSignal,
-      waitForVtUntil,
-      nextRunAt,
-      attempts: 0,
-      createdAt: now,
-      updatedAt: now,
-    });
-    return { ok: true as const, jobId };
+    return enqueueSkillVersionScan(ctx, args);
   },
 });
+
+export const enqueueSkillRescanForModeratorInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    slug: v.string(),
+    version: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor) throw new ConvexError("Unauthorized");
+    assertModerator(actor);
+
+    const slug = args.slug.trim().toLowerCase();
+    if (!slug) throw new ConvexError("Slug required");
+    const skill = await ctx.db
+      .query("skills")
+      .withIndex("by_slug", (q) => q.eq("slug", slug))
+      .unique();
+    if (!skill || skill.softDeletedAt) throw new ConvexError("Skill not found");
+
+    const requestedVersion = args.version?.trim();
+    const version = requestedVersion
+      ? await ctx.db
+          .query("skillVersions")
+          .withIndex("by_skill_version", (q) =>
+            q.eq("skillId", skill._id).eq("version", requestedVersion),
+          )
+          .unique()
+      : skill.latestVersionId
+        ? await ctx.db.get(skill.latestVersionId)
+        : null;
+    if (!version || version.softDeletedAt) throw new ConvexError("Skill version not found");
+
+    const queued = await enqueueSkillVersionScan(ctx, {
+      versionId: version._id,
+      source: "manual",
+      priority: 100,
+      waitForVtMs: 0,
+    });
+    if (!queued.jobId) throw new ConvexError("Skill version not found");
+
+    await ctx.db.insert("auditLogs", {
+      actorUserId: actor._id,
+      action: "skill.clawscan.rescan",
+      targetType: "skillVersion",
+      targetId: version._id,
+      metadata: {
+        skillId: skill._id,
+        slug: skill.slug,
+        version: version.version,
+        jobId: queued.jobId,
+        alreadyQueued: queued.alreadyQueued === true,
+      },
+      createdAt: Date.now(),
+    });
+
+    return {
+      ok: true as const,
+      slug: skill.slug,
+      version: version.version,
+      skillId: skill._id,
+      skillVersionId: version._id,
+      jobId: queued.jobId,
+      alreadyQueued: queued.alreadyQueued === true,
+    };
+  },
+});
+
+async function enqueueSkillVersionScan(ctx: MutationCtx, args: EnqueueSkillVersionScanArgs) {
+  const version = await ctx.db.get(args.versionId);
+  if (!version || version.softDeletedAt) return { ok: true as const, skipped: "missing" as const };
+  const now = Date.now();
+  const waitForVtUntil = now + Math.max(0, args.waitForVtMs ?? DEFAULT_VT_WAIT_MS);
+  const nextRunAt = args.waitForVtMs === 0 || version.vtAnalysis ? now : waitForVtUntil;
+  const hasMaliciousSignal = version.staticScan?.status === "malicious";
+
+  const existing = await ctx.db
+    .query("securityScanJobs")
+    .withIndex("by_skill_version", (q) => q.eq("skillVersionId", args.versionId))
+    .collect();
+  const active = existing.find((job) => job.status === "queued" || job.status === "running");
+  if (active) {
+    await ctx.db.patch(active._id, {
+      source: args.source,
+      priority: Math.max(active.priority, args.priority ?? 0),
+      hasMaliciousSignal: active.hasMaliciousSignal || hasMaliciousSignal,
+      waitForVtUntil: Math.min(active.waitForVtUntil, waitForVtUntil),
+      nextRunAt: Math.min(active.nextRunAt, nextRunAt),
+      updatedAt: now,
+    });
+    return { ok: true as const, jobId: active._id, alreadyQueued: true as const };
+  }
+
+  const jobId = await ctx.db.insert("securityScanJobs", {
+    targetKind: "skillVersion",
+    skillVersionId: args.versionId,
+    status: "queued",
+    source: args.source,
+    priority: args.priority ?? (hasMaliciousSignal ? 100 : 0),
+    hasMaliciousSignal,
+    waitForVtUntil,
+    nextRunAt,
+    attempts: 0,
+    createdAt: now,
+    updatedAt: now,
+  });
+  return { ok: true as const, jobId, alreadyQueued: false as const };
+}
 
 export const enqueuePackageReleaseScanInternal = internalMutation({
   args: {

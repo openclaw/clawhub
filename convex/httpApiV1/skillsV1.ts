@@ -254,6 +254,9 @@ type SkillSecuritySnapshot = {
 };
 
 const internalRefs = internal as unknown as {
+  securityScan: {
+    enqueueSkillRescanForModeratorInternal: unknown;
+  };
   skills: {
     reportSkillForUserInternal: unknown;
     listSkillReportsInternal: unknown;
@@ -1444,6 +1447,29 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
     }
   }
 
+  if (segments.length === 2 && action === "rescan") {
+    if (!slug) return text("Slug required", 400, rate.headers);
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+    try {
+      const body = await readOptionalJson(request);
+      const version = optionalStringField(body, "version");
+      const result = await runMutationRef(
+        ctx,
+        internalRefs.securityScan.enqueueSkillRescanForModeratorInternal,
+        {
+          actorUserId: auth.userId,
+          slug,
+          ...(version ? { version } : {}),
+        },
+      );
+      return json(result, 200, rate.headers);
+    } catch (error) {
+      if (error instanceof SyntaxError) return text("Invalid JSON", 400, rate.headers);
+      return skillRescanErrorToResponse(error, rate.headers);
+    }
+  }
+
   if (segments.length === 2 && action === "undelete") {
     try {
       const { userId } = await requireApiTokenUser(ctx, request);
@@ -1476,6 +1502,19 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
   }
 
   return text("Not found", 404, rate.headers);
+}
+
+function skillRescanErrorToResponse(error: unknown, headers: HeadersInit) {
+  const message = error instanceof Error ? error.message : "Skill rescan failed";
+  const lower = message.toLowerCase();
+  if (lower.includes("unauthorized")) {
+    return text(formatAuthzMessage(error, "Unauthorized"), 401, headers);
+  }
+  if (lower.includes("forbidden")) {
+    return text(formatAuthzMessage(error, "Forbidden"), 403, headers);
+  }
+  if (lower.includes("not found")) return text(message, 404, headers);
+  return text(message, 400, headers);
 }
 
 export async function skillsDeleteRouterV1Handler(ctx: ActionCtx, request: Request) {

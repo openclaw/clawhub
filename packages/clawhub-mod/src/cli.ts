@@ -26,6 +26,7 @@ import {
   cmdBanUser,
   cmdReclassifyBan,
   cmdRemediateAutobans,
+  cmdRescanSkill,
   cmdSetRole,
   cmdUnbanUser,
 } from "./commands/moderation.js";
@@ -528,6 +529,18 @@ function registerSkillModerationCommands(command: Command) {
       }
       const opts = await resolveGlobalOpts();
       await cmdUnhideSkill(opts, slug, options, isInputAllowed());
+    });
+
+  command
+    .command("rescan")
+    .description("Queue a moderator ClawScan rescan for a skill")
+    .argument("<slug>", "Skill slug")
+    .option("--version <version>", "Specific skill version; defaults to latest")
+    .option("--yes", "Skip confirmation")
+    .option("--json", "Output JSON")
+    .action(async (slug, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdRescanSkill(opts, slug, options, isInputAllowed());
     });
 
   command

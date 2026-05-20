@@ -2956,23 +2956,73 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
-  it("does not expose the removed skill rescan route", async () => {
+  it("skill rescan enqueues moderator ClawScan jobs", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:1",
-      user: { handle: "p" },
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
     } as never);
-    const runMutation = vi.fn(async () => okRate());
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        ok: true,
+        slug: "demo",
+        version: "1.0.0",
+        skillId: "skills:1",
+        skillVersionId: "skillVersions:1",
+        jobId: "securityScanJobs:1",
+        alreadyQueued: false,
+      };
+    });
 
     const response = await __handlers.skillsPostRouterV1Handler(
       makeCtx({ runMutation }),
       new Request("https://example.com/api/v1/skills/demo/rescan", {
         method: "POST",
         headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({ version: "1.0.0" }),
       }),
     );
 
-    expect(response.status).toBe(404);
-    expect(runMutation.mock.calls.length).toBe(1);
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      slug: "demo",
+      version: "1.0.0",
+      jobId: "securityScanJobs:1",
+    });
+    expect(runMutation).toHaveBeenCalledWith(
+      (internal as unknown as { securityScan: Record<string, unknown> }).securityScan
+        .enqueueSkillRescanForModeratorInternal,
+      {
+        actorUserId: "users:moderator",
+        slug: "demo",
+        version: "1.0.0",
+      },
+    );
+  });
+
+  it("skill rescan rejects malformed JSON", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      throw new Error("should not enqueue");
+    });
+
+    const response = await __handlers.skillsPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/rescan", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: "{",
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.text()).resolves.toBe("Invalid JSON");
+    expect(runMutation).toHaveBeenCalledTimes(1);
   });
 
   it("does not expose the removed package rescan route", async () => {

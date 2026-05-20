@@ -19,8 +19,14 @@ vi.mock("../../../clawhub/src/cli/registry.js", () => registryMocks.moduleFactor
 vi.mock("../../../clawhub/src/http.js", () => httpMocks.moduleFactory());
 vi.mock("../../../clawhub/src/cli/ui.js", () => uiMocks.moduleFactory());
 
-const { cmdBanUser, cmdReclassifyBan, cmdRemediateAutobans, cmdSetRole, cmdUnbanUser } =
-  await import("./moderation");
+const {
+  cmdBanUser,
+  cmdReclassifyBan,
+  cmdRemediateAutobans,
+  cmdRescanSkill,
+  cmdSetRole,
+  cmdUnbanUser,
+} = await import("./moderation");
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -150,6 +156,44 @@ describe("cmdBanUser", () => {
     await expect(
       cmdBanUser(makeGlobalOpts(), "moonshine", { yes: true, fuzzy: true }, false),
     ).rejects.toThrow(/multiple users matched/i);
+  });
+});
+
+describe("cmdRescanSkill", () => {
+  it("requires --yes when input is disabled", async () => {
+    await expect(cmdRescanSkill(makeGlobalOpts(), "demo", {}, false)).rejects.toThrow(/--yes/i);
+    expect(httpMocks.apiRequest).not.toHaveBeenCalled();
+  });
+
+  it("posts a moderator skill rescan request", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      slug: "markdown2doc",
+      version: "1.0.4",
+      skillId: "skills:1",
+      skillVersionId: "skillVersions:1",
+      jobId: "securityScanJobs:1",
+      alreadyQueued: false,
+    });
+
+    const result = await cmdRescanSkill(
+      makeGlobalOpts(),
+      "Markdown2Doc",
+      { yes: true, version: "1.0.4" },
+      false,
+    );
+
+    expect(result).toMatchObject({ ok: true, slug: "markdown2doc", version: "1.0.4" });
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({
+        method: "POST",
+        path: "/api/v1/skills/markdown2doc/rescan",
+        token: "tkn",
+        body: { version: "1.0.4" },
+      }),
+      expect.anything(),
+    );
   });
 });
 

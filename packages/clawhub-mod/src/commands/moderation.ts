@@ -16,6 +16,7 @@ import {
   ApiV1ReclassifyBanResponseSchema,
   ApiV1RemediateAutobansResponseSchema,
   ApiV1SetRoleResponseSchema,
+  ApiV1SkillRescanResponseSchema,
   ApiV1UnbanUserResponseSchema,
   ApiV1UserSearchResponseSchema,
   parseArk,
@@ -184,6 +185,51 @@ export async function cmdSetRole(
     return parsed;
   } catch (error) {
     spinner.fail(formatError(error));
+    throw error;
+  }
+}
+
+export async function cmdRescanSkill(
+  opts: GlobalOpts,
+  slugArg: string,
+  options: { version?: string; yes?: boolean; json?: boolean },
+  inputAllowed: boolean,
+) {
+  const slug = normalizeSkillSlug(slugArg);
+  const version = options.version?.trim();
+  const allowPrompt = isInteractive() && inputAllowed !== false;
+
+  if (!options.yes) {
+    if (!allowPrompt) fail("Pass --yes (no input)");
+    const target = version ? `${slug}@${version}` : `${slug} latest`;
+    const ok = await promptConfirm(`Queue ClawScan rescan for ${target}? (moderator/admin)`);
+    if (!ok) return undefined;
+  }
+
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const spinner = options.json ? null : createSpinner(`Queueing ClawScan rescan for ${slug}`);
+  try {
+    const result = await apiRequest(
+      registry,
+      {
+        method: "POST",
+        path: `${ApiRoutes.skills}/${encodeURIComponent(slug)}/rescan`,
+        token,
+        body: version ? { version } : {},
+      },
+      ApiV1SkillRescanResponseSchema,
+    );
+    const parsed = parseArk(ApiV1SkillRescanResponseSchema, result, "Skill rescan response");
+    spinner?.succeed(
+      `OK. Queued ClawScan for ${parsed.slug}@${parsed.version} (${parsed.alreadyQueued ? "existing job" : "new job"}).`,
+    );
+    if (options.json) {
+      process.stdout.write(`${JSON.stringify(parsed, null, 2)}\n`);
+    }
+    return parsed;
+  } catch (error) {
+    spinner?.fail(formatError(error));
     throw error;
   }
 }
@@ -375,6 +421,14 @@ export async function cmdRemediateAutobans(
 function normalizeHandle(value: string) {
   const trimmed = value.trim();
   return trimmed.startsWith("@") ? trimmed.slice(1).toLowerCase() : trimmed.toLowerCase();
+}
+
+function normalizeSkillSlug(value: string) {
+  const slug = value.trim().toLowerCase();
+  if (!slug) fail("Slug required");
+  if (slug.includes("/") || slug.includes("\\") || slug.includes(".."))
+    fail(`Invalid slug: ${slug}`);
+  return slug;
 }
 
 type ResolvedUser = {

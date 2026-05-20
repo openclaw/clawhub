@@ -387,6 +387,17 @@ export const ApiV1SkillAppealResolveResponseSchema = type({
 export type ApiV1SkillAppealResolveResponse =
   (typeof ApiV1SkillAppealResolveResponseSchema)[inferred];
 
+export const ApiV1SkillRescanResponseSchema = type({
+  ok: "true",
+  slug: "string",
+  version: "string",
+  skillId: "string",
+  skillVersionId: "string",
+  jobId: "string",
+  alreadyQueued: "boolean",
+});
+export type ApiV1SkillRescanResponse = (typeof ApiV1SkillRescanResponseSchema)[inferred];
+
 export const ApiV1SkillVersionListResponseSchema = type({
   items: type({
     version: "string",
