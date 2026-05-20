@@ -155,15 +155,23 @@ describe("SecurityScanResults static guidance", () => {
   it("renders capability labels separately from scan verdicts", () => {
     render(
       <SecurityScanResults
-        capabilityTags={["crypto", "requires-wallet", "can-make-purchases"]}
+        capabilityTags={[
+          "crypto",
+          "financial-authority",
+          "requires-wallet",
+          "can-make-purchases",
+          "requires-paid-service",
+        ]}
         llmAnalysis={{ status: "clean", checkedAt: Date.now() }}
       />,
     );
 
     expect(screen.getByText("Capability signals")).toBeTruthy();
     expect(screen.getByText("Crypto")).toBeTruthy();
+    expect(screen.getByText("Financial authority")).toBeTruthy();
     expect(screen.getByText("Requires wallet")).toBeTruthy();
     expect(screen.getByText("Can make purchases")).toBeTruthy();
+    expect(screen.getByText("Requires paid service")).toBeTruthy();
   });
 
   it("hides advisory static findings from the public scan panel", () => {

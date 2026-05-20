@@ -43,9 +43,11 @@ type LlmRiskSummary = Record<ClawScanRiskBucket, LlmRiskSummaryBucket>;
 
 const SKILL_CAPABILITY_LABELS: Record<string, string> = {
   crypto: "Crypto",
+  "financial-authority": "Financial authority",
   "requires-wallet": "Requires wallet",
   "can-make-purchases": "Can make purchases",
   "can-sign-transactions": "Can sign transactions",
+  "requires-paid-service": "Requires paid service",
   "requires-oauth-token": "Requires OAuth token",
   "requires-sensitive-credentials": "Requires sensitive credentials",
   "posts-externally": "Posts externally",
