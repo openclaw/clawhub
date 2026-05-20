@@ -74,6 +74,7 @@ Production-only checks stay in the manual deploy workflow:
 - `bun run verify:convex-contract -- --prod`
 - `bun run test:e2e:prod-http`
 - production Playwright smoke tests
+- production mobile WebKit skill-detail smoke tests
 
 Successful `full` and `frontend` production deploys create two annotated Git
 tags:

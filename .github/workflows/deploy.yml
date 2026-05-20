@@ -205,6 +205,10 @@ jobs:
         if: needs.validate-deploy-request.outputs.run_smoke == 'true' && needs.validate-deploy-request.outputs.deploy_frontend == 'true'
         run: bunx playwright test --workers=1 e2e/menu-smoke.pw.test.ts e2e/publish-entry-workflows.pw.test.ts e2e/upload-auth-smoke.pw.test.ts
 
+      - name: Smoke test production mobile skill detail
+        if: needs.validate-deploy-request.outputs.run_smoke == 'true' && needs.validate-deploy-request.outputs.deploy_frontend == 'true'
+        run: bunx playwright test --workers=1 --project=mobile-safari e2e/mobile-skills.pw.test.ts
+
       - name: Tag production frontend deployment
         if: needs.validate-deploy-request.outputs.deploy_frontend == 'true'
         env:
