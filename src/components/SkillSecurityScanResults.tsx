@@ -137,6 +137,7 @@ export function getScanStatusInfo(status: string) {
   switch (status.toLowerCase()) {
     case "benign":
     case "clean":
+    case "undetected-only-fallback":
       return { label: "Pass", className: "scan-status-clean", badgeVariant: "success" };
     case "cleared":
       return { label: "Cleared", className: "scan-status-clean", badgeVariant: "success" };
@@ -253,6 +254,7 @@ export function getVirusTotalDisplayStatus(analysis?: VtAnalysis | null) {
   }
 
   if (hasNonEngineVirusTotalSource(analysis)) return "benign";
+  if (analysis?.verdict === "undetected-only-fallback") return "benign";
 
   return analysis?.verdict ?? analysis?.status ?? "pending";
 }

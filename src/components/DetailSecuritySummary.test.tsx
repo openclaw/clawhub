@@ -219,6 +219,35 @@ describe("DetailSecuritySummary", () => {
     expect(screen.queryByText("Warn")).toBeNull();
   });
 
+  it("renders VirusTotal undetected-only fallback as pass", () => {
+    render(
+      <DetailSecuritySummary
+        scannerBasePath="/plugins/@opik/opik-openclaw/security"
+        vtAnalysis={{
+          status: "clean",
+          verdict: "undetected-only-fallback",
+          analysis:
+            "VirusTotal reported no malicious or suspicious engine hits. ClawHub promoted this source-linked package after clean LLM and clean static scans.",
+          source: "engines-undetected-fallback",
+          checkedAt: 1,
+        }}
+        llmAnalysis={{ status: "clean", checkedAt: 1 }}
+        staticScan={{
+          status: "clean",
+          reasonCodes: [],
+          findings: [],
+          summary: "Clean.",
+          engineVersion: "v1",
+          checkedAt: 1,
+        }}
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: "VirusTotal: Pass" })).toBeTruthy();
+    expect(screen.getAllByText("Pass")).toHaveLength(4);
+    expect(screen.queryByText("undetected-only-fallback")).toBeNull();
+  });
+
   it("shows static suspicious as review without rolling it up to suspicious", () => {
     render(
       <DetailSecuritySummary
