@@ -238,6 +238,7 @@ function buildPackageScanAnalysisFromVtResult(
     return {
       status,
       source: "engines",
+      engineStats: normalizeVtEngineStats(stats),
       checkedAt: Date.now(),
     };
   }
@@ -300,6 +301,13 @@ type ActiveSkillsMissingVTCache = {
   slug: string;
 };
 
+type PendingVTSkill = {
+  skillId: Id<"skills">;
+  versionId: Id<"skillVersions">;
+  sha256hash: string;
+  slug: string;
+};
+
 type NullModerationStatusSkill = {
   skillId: Id<"skills">;
   slug: string;
@@ -333,6 +341,22 @@ type BackfillActiveSkillsVTCacheResult =
   | { total: number; updated: number; noResults: number; errors: number; done: boolean }
   | { error: string };
 
+type RepairPendingSkillVtAnalysisResult =
+  | {
+      dryRun: boolean;
+      total: number;
+      wouldUpdate: number;
+      updated: number;
+      noResults: number;
+      noDecisiveStats: number;
+      errors: number;
+      done: boolean;
+      cursor: string | null;
+      statusCounts: Record<string, number>;
+      sampleUpdated: Array<{ slug: string; status: string }>;
+    }
+  | { error: string };
+
 type FixNullModerationStatusResult = { total: number; fixed: number; done: boolean };
 
 type SyncModerationReasonsResult = {
@@ -348,8 +372,9 @@ function statusFromAvStats(
   if (!stats) return null;
   if (stats.malicious > 0) return "malicious";
   if (stats.suspicious > 0) return "suspicious";
-  // Keep this aligned with fetchResults: undetected-only should stay pending.
-  if (stats.harmless > 0) return "clean";
+  // VirusTotal "undetected" means engines completed and found no detection;
+  // it is resolved no-detections telemetry, not an in-progress scan.
+  if (stats.harmless > 0 || stats.undetected > 0) return "clean";
   return null;
 }
 
@@ -989,6 +1014,98 @@ export const pollPendingScans = internalAction({
       staled,
       healthy: health.healthy,
       queueSize: health.queueSize,
+    };
+  },
+});
+
+export const repairPendingSkillVtAnalysis = internalAction({
+  args: {
+    dryRun: v.boolean(),
+    batchSize: v.optional(v.number()),
+    cursor: v.optional(v.union(v.string(), v.null())),
+  },
+  handler: async (ctx, args): Promise<RepairPendingSkillVtAnalysisResult> => {
+    const apiKey = process.env.VT_API_KEY;
+    if (!apiKey) {
+      console.log("[vt:repairPendingSkillVt] VT_API_KEY not configured");
+      return { error: "VT_API_KEY not configured" };
+    }
+
+    const batchSize = Math.max(1, Math.min(Math.floor(args.batchSize ?? 100), 500));
+    const pendingPage: {
+      skills: PendingVTSkill[];
+      cursor: string | null;
+      done: boolean;
+    } = await ctx.runQuery(internal.skills.getPendingVTSkillsInternal, {
+      limit: batchSize,
+      cursor: args.cursor ?? null,
+    });
+    const skills = pendingPage.skills;
+
+    let wouldUpdate = 0;
+    let updated = 0;
+    let noResults = 0;
+    let noDecisiveStats = 0;
+    let errors = 0;
+    const statusCounts: Record<string, number> = {};
+    const sampleUpdated: Array<{ slug: string; status: string }> = [];
+
+    for (const { skillId, versionId, sha256hash, slug } of skills) {
+      try {
+        const vtResult = await checkExistingFile(apiKey, sha256hash);
+        if (!vtResult) {
+          noResults++;
+          continue;
+        }
+
+        const stats = vtResult.data.attributes.last_analysis_stats;
+        const status = statusFromAvStats(stats);
+        if (!status) {
+          noDecisiveStats++;
+          continue;
+        }
+
+        wouldUpdate++;
+        statusCounts[status] = (statusCounts[status] ?? 0) + 1;
+        if (sampleUpdated.length < 20) sampleUpdated.push({ slug, status });
+        if (args.dryRun) continue;
+
+        await ctx.runMutation(internal.skills.updateVersionScanResultsInternal, {
+          versionId,
+          sha256hash,
+          vtAnalysis: {
+            status,
+            source: "engines",
+            engineStats: normalizeVtEngineStats(stats),
+            checkedAt: Date.now(),
+          },
+        });
+        if (status === "malicious" || status === "suspicious") {
+          await enqueueSkillCodexForVtSignal(ctx, versionId);
+        } else {
+          await ctx.runMutation(internal.skills.recomputeLatestSkillModerationInternal, {
+            skillId,
+          });
+        }
+        updated++;
+      } catch (error) {
+        console.error(`[vt:repairPendingSkillVt] Error for ${slug}:`, error);
+        errors++;
+      }
+    }
+
+    return {
+      dryRun: args.dryRun,
+      total: skills.length,
+      wouldUpdate,
+      updated,
+      noResults,
+      noDecisiveStats,
+      errors,
+      done: pendingPage.done,
+      cursor: pendingPage.cursor,
+      statusCounts,
+      sampleUpdated,
     };
   },
 });

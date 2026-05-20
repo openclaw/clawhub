@@ -5942,16 +5942,16 @@ export const getSkillsWithStaleModerationReasonInternal = internalQuery({
  * Returns skills regardless of whether they have vtAnalysis cached.
  */
 export const getPendingVTSkillsInternal = internalQuery({
-  args: { limit: v.optional(v.number()) },
+  args: { limit: v.optional(v.number()), cursor: v.optional(v.union(v.string(), v.null())) },
   handler: async (ctx, args) => {
     const limit = args.limit ?? 100;
 
-    const skills = await ctx.db
+    const { page, continueCursor, isDone } = await ctx.db
       .query("skills")
       .withIndex("by_moderation", (q) =>
         q.eq("moderationStatus", "active").eq("moderationReason", "scanner.vt.pending"),
       )
-      .take(limit);
+      .paginate({ cursor: args.cursor ?? null, numItems: limit });
 
     const results: Array<{
       skillId: Id<"skills">;
@@ -5960,7 +5960,7 @@ export const getPendingVTSkillsInternal = internalQuery({
       sha256hash: string;
     }> = [];
 
-    for (const skill of skills) {
+    for (const skill of page) {
       if (!skill.latestVersionId) continue;
       const version = await ctx.db.get(skill.latestVersionId);
       if (!version?.sha256hash) continue;
@@ -5973,7 +5973,7 @@ export const getPendingVTSkillsInternal = internalQuery({
       });
     }
 
-    return results;
+    return { skills: results, cursor: continueCursor, done: isDone };
   },
 });
 
