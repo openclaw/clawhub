@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { wrapText } from "./registryOgSvg";
 import { buildSkillOgSvg } from "./skillOgSvg";
 
 describe("skill OG SVG", () => {
@@ -65,5 +66,23 @@ describe("skill OG SVG", () => {
     const descBlock = svg.match(/<text[^>]*font-size="28"[\s\S]*?<\/text>/)?.[0] ?? "";
     const descTspans = descBlock.match(/<tspan /g) ?? [];
     expect(descTspans.length).toBeLessThanOrEqual(2);
+  });
+
+  it("wraps CJK text as full-width glyphs without inserting continuation ellipses", () => {
+    const description = "西瓜视频数据查询助手。覆盖视频详情、用户数据、搜索、评论等全功能。";
+    const lines = wrapText(description, 760, 28, 2);
+
+    expect(lines.length).toBeGreaterThan(1);
+    expect(lines).toHaveLength(2);
+    expect(lines.join("")).toBe(description);
+    expect(lines[0]).not.toContain("…");
+  });
+
+  it("clips overlong CJK text on the last visible line", () => {
+    const lines = wrapText("视频详情用户数据搜索评论".repeat(10), 760, 28, 2);
+
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).not.toContain("…");
+    expect(lines[1]).toContain("…");
   });
 });

@@ -111,6 +111,16 @@ export async function getFontBuffers() {
           "node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-500-normal.woff2",
         ),
       ),
+      readFile(
+        getServerUrl(
+          "node_modules/@fontsource/noto-sans-sc/files/noto-sans-sc-chinese-simplified-800-normal.woff2",
+        ),
+      ),
+      readFile(
+        getServerUrl(
+          "node_modules/@fontsource/noto-sans-sc/files/noto-sans-sc-chinese-simplified-500-normal.woff2",
+        ),
+      ),
     ]).then((buffers) => buffers.map((buffer) => new Uint8Array(buffer)));
   }
   return fontBuffersPromise;
