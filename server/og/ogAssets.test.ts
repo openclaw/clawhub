@@ -90,15 +90,17 @@ describe("ogAssets", () => {
     const first = await getFontBuffers();
     const second = await getFontBuffers();
 
-    expect(first).toHaveLength(3);
+    expect(first).toHaveLength(5);
     expect(first[0]).toBeInstanceOf(Uint8Array);
     expect(second).toEqual(first);
-    expect(readFileMock).toHaveBeenCalledTimes(3);
+    expect(readFileMock).toHaveBeenCalledTimes(5);
     expect(readFileMock.mock.calls.map((call) => String(call[0]))).toEqual(
       expect.arrayContaining([
         expect.stringContaining("bricolage-grotesque-latin-800-normal.woff2"),
         expect.stringContaining("bricolage-grotesque-latin-500-normal.woff2"),
         expect.stringContaining("ibm-plex-mono-latin-500-normal.woff2"),
+        expect.stringContaining("noto-sans-sc-chinese-simplified-800-normal.woff2"),
+        expect.stringContaining("noto-sans-sc-chinese-simplified-500-normal.woff2"),
       ]),
     );
   });

@@ -37,6 +37,16 @@ const bricolage500Source = await resolveExistingPath(
 const ibmPlex500Source = await resolveExistingPath(
   nodeModuleCandidates("@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-500-normal.woff2"),
 );
+const notoSansSc800Source = await resolveExistingPath(
+  nodeModuleCandidates(
+    "@fontsource/noto-sans-sc/files/noto-sans-sc-chinese-simplified-800-normal.woff2",
+  ),
+);
+const notoSansSc500Source = await resolveExistingPath(
+  nodeModuleCandidates(
+    "@fontsource/noto-sans-sc/files/noto-sans-sc-chinese-simplified-500-normal.woff2",
+  ),
+);
 
 const copies = [
   {
@@ -105,6 +115,28 @@ const copies = [
       ),
       path.resolve(
         ".vercel/output/functions/__server.func/node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-500-normal.woff2",
+      ),
+    ],
+  },
+  {
+    source: notoSansSc800Source,
+    targets: [
+      path.resolve(
+        ".output/server/node_modules/@fontsource/noto-sans-sc/files/noto-sans-sc-chinese-simplified-800-normal.woff2",
+      ),
+      path.resolve(
+        ".vercel/output/functions/__server.func/node_modules/@fontsource/noto-sans-sc/files/noto-sans-sc-chinese-simplified-800-normal.woff2",
+      ),
+    ],
+  },
+  {
+    source: notoSansSc500Source,
+    targets: [
+      path.resolve(
+        ".output/server/node_modules/@fontsource/noto-sans-sc/files/noto-sans-sc-chinese-simplified-500-normal.woff2",
+      ),
+      path.resolve(
+        ".vercel/output/functions/__server.func/node_modules/@fontsource/noto-sans-sc/files/noto-sans-sc-chinese-simplified-500-normal.woff2",
       ),
     ],
   },

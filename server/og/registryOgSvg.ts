@@ -36,9 +36,13 @@ export function escapeXml(value: string) {
     .replace(/'/g, "&#39;");
 }
 
+const FULL_WIDTH_GLYPH_RE =
+  /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\u3000-\u303f\uff00-\uffef]/u;
+
 function glyphWidthFactor(char: string) {
   if (char === " ") return 0.28;
   if (char === "…") return 0.62;
+  if (FULL_WIDTH_GLYPH_RE.test(char)) return 1;
   if (/[ilI.,:;|!'"`]/.test(char)) return 0.28;
   if (/[mwMW@%&]/.test(char)) return 0.9;
   if (/[A-Z]/.test(char)) return 0.68;
@@ -57,90 +61,87 @@ function truncateToWidth(value: string, maxWidth: number, fontSize: number) {
   if (!trimmed) return "";
   if (estimateTextWidth(trimmed, fontSize) <= maxWidth) return trimmed;
 
+  return markTruncated(trimmed, maxWidth, fontSize);
+}
+
+function markTruncated(value: string, maxWidth: number, fontSize: number) {
   const ellipsis = "…";
   const ellipsisWidth = estimateTextWidth(ellipsis, fontSize);
-  let out = "";
-  for (const char of trimmed) {
-    const next = out + char;
-    if (estimateTextWidth(next, fontSize) + ellipsisWidth > maxWidth) break;
-    out = next;
+  const chars = [...value.trim().replace(/[.。,;:!?]+$/g, "")];
+  while (
+    chars.length > 0 &&
+    estimateTextWidth(chars.join(""), fontSize) + ellipsisWidth > maxWidth
+  ) {
+    chars.pop();
   }
+  const out = chars
+    .join("")
+    .replace(/\s+$/g, "")
+    .replace(/[.。,;:!?]+$/g, "");
   return `${out.replace(/\s+$/g, "").replace(/[.。,;:!?]+$/g, "")}${ellipsis}`;
 }
 
 export function wrapText(value: string, maxWidth: number, fontSize: number, maxLines: number) {
+  if (maxLines <= 0) return [];
   const words = value.trim().split(/\s+/).filter(Boolean);
   const lines: string[] = [];
   let current = "";
 
-  function pushLine(line: string) {
-    if (line) lines.push(line);
-  }
-
   function splitLongWord(word: string) {
     if (estimateTextWidth(word, fontSize) <= maxWidth) return [word];
     const parts: string[] = [];
-    let remaining = word;
-    while (remaining && estimateTextWidth(remaining, fontSize) > maxWidth) {
-      let chunk = "";
-      for (const char of remaining) {
-        const next = chunk + char;
-        if (estimateTextWidth(`${next}…`, fontSize) > maxWidth) break;
-        chunk = next;
+    let chunk = "";
+    for (const char of word) {
+      const next = chunk + char;
+      if (chunk && estimateTextWidth(next, fontSize) > maxWidth) {
+        parts.push(chunk);
+        chunk = char;
+        continue;
       }
-      if (!chunk) break;
-      parts.push(`${chunk}…`);
-      remaining = remaining.slice(chunk.length);
+      chunk = next;
     }
-    if (remaining) parts.push(remaining);
+    if (chunk) parts.push(chunk);
     return parts;
   }
 
-  for (let wordIndex = 0; wordIndex < words.length; wordIndex += 1) {
-    const word = words[wordIndex];
-    if (estimateTextWidth(word, fontSize) > maxWidth) {
-      if (current) {
-        if (lines.length >= maxLines - 1) {
-          pushLine(
-            truncateToWidth(`${current} ${words.slice(wordIndex).join(" ")}`, maxWidth, fontSize),
-          );
-          current = "";
-          break;
-        }
-        pushLine(current);
-        current = "";
-        if (lines.length >= maxLines - 1) {
-          current = truncateToWidth(words.slice(wordIndex).join(" "), maxWidth, fontSize);
-          break;
-        }
-      }
-      for (const part of splitLongWord(word)) {
-        pushLine(part);
-        if (lines.length >= maxLines) break;
-      }
-      current = "";
-      if (lines.length >= maxLines - 1) break;
-      continue;
-    }
+  const tokens = words.flatMap((word, wordIndex) =>
+    splitLongWord(word).map((part, partIndex) => ({
+      text: part,
+      needsLeadingSpace: wordIndex > 0 && partIndex === 0,
+    })),
+  );
 
-    const next = current ? `${current} ${word}` : word;
+  for (let tokenIndex = 0; tokenIndex < tokens.length; tokenIndex += 1) {
+    const token = tokens[tokenIndex];
+    const separator = current && token.needsLeadingSpace ? " " : "";
+    const next = current ? `${current}${separator}${token.text}` : token.text;
     if (estimateTextWidth(next, fontSize) <= maxWidth) {
       current = next;
       continue;
     }
-    pushLine(current);
-    if (lines.length >= maxLines - 1) {
-      current = truncateToWidth(words.slice(wordIndex).join(" "), maxWidth, fontSize);
-      break;
-    }
-    current = word;
-  }
-  if (lines.length < maxLines && current) pushLine(current);
-  if (lines.length > maxLines) lines.length = maxLines;
 
-  const usedWords = lines.join(" ").split(/\s+/).filter(Boolean).length;
-  if (usedWords < words.length && lines.length > 0) {
-    lines[lines.length - 1] = truncateToWidth(lines.at(-1) ?? "", maxWidth, fontSize);
+    if (current) {
+      lines.push(current);
+      if (lines.length >= maxLines) {
+        lines[lines.length - 1] = markTruncated(lines.at(-1) ?? "", maxWidth, fontSize);
+        return lines;
+      }
+    }
+
+    current = token.text;
+  }
+
+  if (current) {
+    if (lines.length < maxLines) {
+      lines.push(current);
+    } else if (lines.length > 0) {
+      lines[lines.length - 1] = markTruncated(lines.at(-1) ?? "", maxWidth, fontSize);
+    }
+  }
+
+  if (lines.length > maxLines) {
+    lines.length = maxLines;
+    lines[lines.length - 1] = markTruncated(lines.at(-1) ?? "", maxWidth, fontSize);
   }
   return lines;
 }
