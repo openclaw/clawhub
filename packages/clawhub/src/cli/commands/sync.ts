@@ -31,6 +31,7 @@ import type { Candidate, LocalSkill, SyncOptions } from "./syncTypes.js";
 const RECOVERABLE_SLUG_CONFLICT_MESSAGES = [
   "Slug is already taken. Choose a different slug.",
   "Slug redirects to an existing skill. Choose a different slug.",
+  "This slug is locked to a deleted or banned account.",
 ] as const;
 
 export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllowed: boolean) {
