@@ -4,7 +4,10 @@ import { AlertTriangle, Download, Settings, Upload } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { api } from "../../../convex/_generated/api";
 import { DetailHero, DetailPageShell } from "../../components/DetailPageShell";
-import { DetailSecuritySummary } from "../../components/DetailSecuritySummary";
+import {
+  DetailSecuritySummary,
+  DetailSecuritySummaryLabel,
+} from "../../components/DetailSecuritySummary";
 import { EmptyState } from "../../components/EmptyState";
 import { InstallCopyButton } from "../../components/InstallCopyButton";
 import { Container } from "../../components/layout/Container";
@@ -30,7 +33,7 @@ import {
 import { familyLabel } from "../../lib/packageLabels";
 import {
   buildPluginDetailHref,
-  buildPluginSecurityBaseHref,
+  buildPluginSecurityAuditHref,
   parseScopedPackageName,
 } from "../../lib/pluginRoutes";
 import { useAuthStatus } from "../../lib/useAuthStatus";
@@ -142,11 +145,16 @@ export const Route = createFileRoute("/plugins/$name")({
   beforeLoad: ({ location, params }) => {
     if (parseScopedPackageName(params.name)) {
       const encodedSecurityPrefix = `/plugins/${encodeURIComponent(params.name)}/security/`;
+      const encodedSecurityAuditPath = `/plugins/${encodeURIComponent(params.name)}/security-audit`;
       if (location.pathname.startsWith(encodedSecurityPrefix)) {
         throw redirect({
-          href: `${buildPluginSecurityBaseHref(params.name)}/${location.pathname.slice(
-            encodedSecurityPrefix.length,
-          )}`,
+          href: buildPluginSecurityAuditHref(params.name),
+          statusCode: 308,
+        });
+      }
+      if (location.pathname === encodedSecurityAuditPath) {
+        throw redirect({
+          href: buildPluginSecurityAuditHref(params.name),
           statusCode: 308,
         });
       }
@@ -338,7 +346,10 @@ export function PluginDetailPage({
   const { detail, version, readme, rateLimited } = loaderData;
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const { me } = useAuthStatus();
-  const isNestedPluginRoute = pathname.includes("/security/") || pathname.endsWith("/settings");
+  const isNestedPluginRoute =
+    pathname.includes("/security/") ||
+    pathname.endsWith("/security-audit") ||
+    pathname.endsWith("/settings");
   const settingsCandidateNames = getOpenClawPackageCandidateNames(name);
   const settingsLookupName = detail.package?.name ?? settingsCandidateNames[0] ?? name;
   const settings = useQuery(
@@ -607,10 +618,19 @@ export function PluginDetailPage({
   const hasSourceMetadata = Boolean(
     sourceRepoLink ||
     ownerMetadataValue ||
+    latestRelease ||
     executesCodeValue ||
     pkg.latestVersion ||
     tagMetadataValue,
   );
+  const securitySummary = latestRelease ? (
+    <DetailSecuritySummary
+      auditHref={buildPluginSecurityAuditHref(name)}
+      vtAnalysis={latestRelease.vtAnalysis ?? null}
+      llmAnalysis={latestRelease.llmAnalysis ?? null}
+      staticScan={latestRelease.staticScan ?? null}
+    />
+  ) : null;
 
   return (
     <main className="section detail-page-section">
@@ -655,6 +675,13 @@ export function PluginDetailPage({
                   blocks={[
                     { label: "Repository", value: sourceRepoLink },
                     { label: "Owner", value: ownerMetadataValue },
+                    securitySummary
+                      ? {
+                          key: "security-audit",
+                          label: <DetailSecuritySummaryLabel />,
+                          value: securitySummary,
+                        }
+                      : { label: "", value: null },
                     { label: "Executes code", value: executesCodeValue },
                     {
                       grid: [
@@ -701,15 +728,6 @@ export function PluginDetailPage({
             </div>
           }
         >
-          {latestRelease ? (
-            <DetailSecuritySummary
-              scannerBasePath={buildPluginSecurityBaseHref(name)}
-              sha256hash={latestRelease.sha256hash ?? null}
-              vtAnalysis={latestRelease.vtAnalysis ?? null}
-              llmAnalysis={latestRelease.llmAnalysis ?? null}
-              staticScan={latestRelease.staticScan ?? null}
-            />
-          ) : null}
           <Card className="skill-install-command-card">
             <CardHeader>
               <CardTitle>Install</CardTitle>

@@ -351,7 +351,8 @@ describe("SkillDetailPage", () => {
     );
 
     await screen.findByRole("heading", { name: "Install" });
-    const securityHeading = screen.getByRole("heading", { name: "Audits" });
+    const sidebarMetadata = document.querySelector('dl[aria-label="Skill metadata"]');
+    expect(sidebarMetadata).toBeTruthy();
 
     expect(screen.getAllByRole("heading", { name: "Install" }).length).toBeGreaterThan(0);
     expect(screen.getAllByText("openclaw skills install weather").length).toBeGreaterThan(0);
@@ -360,10 +361,24 @@ describe("SkillDetailPage", () => {
     expect(screen.getByRole("tab", { name: "CLI" }).getAttribute("aria-selected")).toBe("true");
     expect(screen.getByRole("tab", { name: "Prompt" })).toBeTruthy();
     expect(screen.queryByText(/After install, inspect the skill metadata/i)).toBeNull();
-    expect(securityHeading).toBeTruthy();
-    expect(screen.getByRole("link", { name: /VirusTotal.*Pending/i })).toBeTruthy();
-    expect(screen.getByRole("link", { name: /ClawScan.*Pending/i })).toBeTruthy();
-    expect(screen.getByRole("link", { name: /Static analysis.*Pending/i })).toBeTruthy();
+    expect(screen.getByText("Security audit")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "View Security Audit" }).getAttribute("href")).toBe(
+      "/steipete/weather/security-audit",
+    );
+    const sidebarLabels = Array.from(
+      sidebarMetadata?.querySelectorAll(".sidebar-metadata-label") ?? [],
+      (label) => label.textContent?.trim(),
+    );
+    const securityAuditLabelIndex = sidebarLabels.findIndex((label) =>
+      label?.startsWith("Security audit"),
+    );
+    expect(securityAuditLabelIndex).toBe(sidebarLabels.indexOf("Owner") + 1);
+    expect(
+      screen.getByRole("button", {
+        name: "Security checks across static analysis, malware telemetry, and agentic risk",
+      }),
+    ).toBeTruthy();
+    expect(screen.queryByText("No risk analysis has been recorded yet.")).toBeNull();
     expect(screen.queryByText(/Like a lobster shell, security has layers/i)).toBeNull();
     expect(screen.queryByRole("button", { name: "Rescan" })).toBeNull();
 
@@ -371,9 +386,6 @@ describe("SkillDetailPage", () => {
     const filesTab = screen.getByRole("tab", { name: "Files" });
     expect(
       installHeading.compareDocumentPosition(filesTab) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-    expect(
-      securityHeading.compareDocumentPosition(filesTab) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   });
 
@@ -471,11 +483,10 @@ describe("SkillDetailPage", () => {
       />,
     );
 
-    await screen.findByRole("heading", { name: "Audits" });
-    expect(screen.getByText(/reviewed by staff and cleared/i)).toBeTruthy();
-    expect(screen.getByRole("link", { name: /VirusTotal.*Cleared/i })).toBeTruthy();
-    expect(screen.getByRole("link", { name: /ClawScan.*Cleared/i })).toBeTruthy();
-    expect(screen.getByRole("link", { name: /Static analysis.*Cleared/i })).toBeTruthy();
+    await screen.findByText("Security audit");
+    expect(screen.getByText("Cleared")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "View Security Audit" })).toBeTruthy();
+    expect(screen.queryByText(/reviewed by staff and cleared/i)).toBeNull();
     expect(screen.queryByRole("link", { name: /Suspicious/i })).toBeNull();
   });
 

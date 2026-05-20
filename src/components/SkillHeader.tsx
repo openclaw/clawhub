@@ -11,6 +11,7 @@ import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
 import { getRuntimeEnv } from "../lib/runtimeEnv";
 import { timeAgo } from "../lib/timeAgo";
 import { DetailHero } from "./DetailPageShell";
+import { DetailSecuritySummaryLabel } from "./DetailSecuritySummary";
 import { SidebarMetadata } from "./SidebarMetadata";
 import { buildSkillHref } from "./skillDetailUtils";
 import { SkillCommandLineCard } from "./SkillInstallSurface";
@@ -90,6 +91,8 @@ type SkillHeaderProps = {
   clawdis: ClawdisSkillMetadata | undefined;
   category?: SkillCategory | null;
   priorityContent?: ReactNode;
+  postInstallContent?: ReactNode;
+  securityAuditSummary?: ReactNode;
   newVersionHref?: string | null;
   settingsHref?: string | null;
   children?: ReactNode;
@@ -122,6 +125,8 @@ export function SkillHeader({
   clawdis,
   category,
   priorityContent,
+  postInstallContent,
+  securityAuditSummary,
   newVersionHref,
   settingsHref,
   children,
@@ -186,6 +191,7 @@ export function SkillHeader({
               ownerHandle={ownerHandle}
               formattedStats={formattedStats}
               latestVersion={latestVersion}
+              securityAuditSummary={securityAuditSummary}
             />
             {hasSidebarActions ? (
               <div className="skill-sidebar-actions">
@@ -360,6 +366,8 @@ export function SkillHeader({
           clawdis={clawdis}
         />
 
+        {postInstallContent}
+
         {children}
 
         {hasPluginBundle ? (
@@ -432,15 +440,15 @@ function SkillSidebarStats({
   ownerHandle,
   formattedStats,
   latestVersion,
+  securityAuditSummary,
 }: {
   skill: Doc<"skills"> | PublicSkill;
   owner: PublicPublisher | null;
   ownerHandle: string | null;
   formattedStats: ReturnType<typeof formatSkillStatsTriplet>;
   latestVersion: SkillHeaderLatestVersion;
+  securityAuditSummary?: ReactNode;
 }) {
-  const versionCount = skill.stats.versions ?? 0;
-
   return (
     <SidebarMetadata
       ariaLabel="Skill metadata"
@@ -461,19 +469,23 @@ function SkillSidebarStats({
             />
           ),
         },
+        securityAuditSummary
+          ? {
+              key: "security-audit",
+              label: <DetailSecuritySummaryLabel />,
+              value: securityAuditSummary,
+            }
+          : { label: "", value: null },
+        { label: "Last updated", value: timeAgo(skill.updatedAt) },
         {
           grid: [
             {
               label: "Current version",
               value: latestVersion?.version ? `v${latestVersion.version}` : "None",
             },
-            { label: "Versions", value: versionCount },
+            { label: "License", value: PLATFORM_SKILL_LICENSE },
           ],
         },
-        {
-          grid: [{ label: "License", value: PLATFORM_SKILL_LICENSE }],
-        },
-        { label: "Last updated", value: timeAgo(skill.updatedAt) },
       ]}
     />
   );

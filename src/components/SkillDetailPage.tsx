@@ -594,29 +594,21 @@ export function SkillDetailPage({
 
   const securitySummary = latestVersion ? (
     <DetailSecuritySummary
-      scannerBasePath={`/${encodeURIComponent(
-        ownerParam ?? ownerHandle ?? "unknown",
-      )}/${encodeURIComponent(skill.slug)}/security`}
-      sha256hash={latestVersion.sha256hash ?? null}
+      auditHref={`/${encodeURIComponent(ownerParam ?? ownerHandle ?? "unknown")}/${encodeURIComponent(
+        skill.slug,
+      )}/security-audit`}
       vtAnalysis={latestVersion.vtAnalysis ?? null}
       llmAnalysis={latestVersion.llmAnalysis ?? null}
       staticScan={latestVersion.staticScan ?? null}
       suppressScanResults={suppressVersionScanResults}
-      suppressedMessage={scanResultsSuppressedMessage}
     />
   ) : null;
-  const priorityContent =
-    staffModerationNote || securitySummary ? (
-      <>
-        {staffModerationNote ? (
-          <Alert variant="warn" className="skill-visibility-alert" role="status">
-            <TriangleAlert size={18} aria-hidden="true" />
-            <AlertDescription>{staffModerationNote}</AlertDescription>
-          </Alert>
-        ) : null}
-        {securitySummary}
-      </>
-    ) : null;
+  const staffVisibilityAlert = staffModerationNote ? (
+    <Alert variant="warn" className="skill-visibility-alert" role="status">
+      <TriangleAlert size={18} aria-hidden="true" />
+      <AlertDescription>{staffModerationNote}</AlertDescription>
+    </Alert>
+  ) : null;
   const settingsPanel =
     canAccessSettings && skill ? (
       <SkillOwnershipPanel
@@ -697,7 +689,8 @@ export function SkillDetailPage({
           cliHelp={cliHelp}
           clawdis={clawdis}
           category={relatedCategory}
-          priorityContent={priorityContent}
+          priorityContent={staffVisibilityAlert}
+          securityAuditSummary={securitySummary}
           newVersionHref={newVersionHref}
           settingsHref={settingsHref}
         >

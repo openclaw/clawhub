@@ -1,6 +1,4 @@
-import { Info } from "lucide-react";
 import { useId, useState } from "react";
-import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 
 type PublisherClawScanNoteProps = {
   note?: string | null;
@@ -17,7 +15,7 @@ export function PublisherClawScanNote({ note, compact = false }: PublisherClawSc
 
   return (
     <section
-      className={`publisher-clawscan-note${compact ? " publisher-clawscan-note-compact" : ""}`}
+      className={`publisher-clawscan-note${compact ? " publisher-clawscan-note-compact security-report-panel-compact" : ""}`}
       aria-labelledby={headingId}
     >
       <div className="security-report-panel-header publisher-clawscan-note-header">
@@ -25,20 +23,6 @@ export function PublisherClawScanNote({ note, compact = false }: PublisherClawSc
           <h2 id={headingId} className="skill-install-panel-title">
             Publisher note
           </h2>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                className="publisher-clawscan-note-info"
-                aria-label="About publisher ClawScan notes"
-              >
-                <Info aria-hidden="true" size={16} strokeWidth={2} />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="top" align="start" className="publisher-clawscan-note-tooltip">
-              Additional notes the publisher has provided to ClawScan for context when reviewing
-            </TooltipContent>
-          </Tooltip>
         </div>
       </div>
       <div className="publisher-clawscan-note-body">

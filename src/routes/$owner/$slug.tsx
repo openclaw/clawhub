@@ -93,6 +93,7 @@ function OwnerSkill() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   if (
     pathname.includes(`/${encodeURIComponent(slug)}/security/`) ||
+    pathname.endsWith(`/${encodeURIComponent(slug)}/security-audit`) ||
     pathname.endsWith(`/${encodeURIComponent(slug)}/settings`)
   ) {
     return <Outlet />;

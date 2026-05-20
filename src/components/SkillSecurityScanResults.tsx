@@ -103,7 +103,6 @@ type SecurityScanResultsProps = {
   llmAnalysis?: LlmAnalysis | null;
   staticFindings?: StaticFinding[];
   capabilityTags?: string[] | null;
-  scannerBasePath?: string | null;
   variant?: "panel" | "badge";
 };
 
@@ -308,7 +307,11 @@ const RISK_LEVEL_BADGE_META: Record<
 export function RiskLevelBadge({ level }: { level: ClawScanRiskLevel }) {
   const risk = RISK_LEVEL_BADGE_META[level];
   return (
-    <Badge variant={risk.variant} className="scan-risk-level-badge" data-level={risk.level}>
+    <Badge
+      variant={risk.variant}
+      className="scan-risk-level-badge rounded-[4px]"
+      data-level={risk.level}
+    >
       <span className="scan-risk-level-bars" aria-hidden="true">
         <span />
         <span />
@@ -323,7 +326,7 @@ function getVisibleAgenticRiskFindings(analysis?: LlmAnalysis | null) {
   return (analysis?.agenticRiskFindings ?? []).filter(isVisibleAgenticRiskFinding);
 }
 
-export function getVisibleClawScanFindingCount(analysis?: LlmAnalysis | null) {
+function getVisibleClawScanFindingCount(analysis?: LlmAnalysis | null) {
   return getVisibleAgenticRiskFindings(analysis).length;
 }
 
@@ -341,6 +344,9 @@ function getFindingSeverityBadgeMeta(severity: string): {
       return { label: "Critical", variant: "destructive" };
     case "high":
       return { label: "High", variant: "destructive" };
+    case "warn":
+    case "warning":
+      return { label: "Warn", variant: "warning" };
     case "medium":
       return { label: "Medium", variant: "warning" };
     case "low":
@@ -350,6 +356,11 @@ function getFindingSeverityBadgeMeta(severity: string): {
     default:
       return { label: severity || "Finding", variant: "compact" };
   }
+}
+
+export function FindingSeverityBadge({ severity }: { severity: string }) {
+  const severityBadge = getFindingSeverityBadgeMeta(severity);
+  return <Badge variant={severityBadge.variant}>{severityBadge.label}</Badge>;
 }
 
 function getOwaspAgenticSkillsHref(categoryId: string) {
@@ -381,7 +392,6 @@ function AgenticRiskFindingCard({
   const evidence = finding.evidence;
   if (!evidence) return null;
   const categoryHref = getOwaspAgenticSkillsHref(finding.categoryId);
-  const severityBadge = getFindingSeverityBadgeMeta(finding.severity);
   const title = `${finding.categoryId}: ${finding.categoryLabel}`;
   const anchorId = getClawScanFindingAnchorId(finding, index);
 
@@ -392,9 +402,6 @@ function AgenticRiskFindingCard({
       id={anchorId}
     >
       <div className="agentic-risk-finding-header">
-        <div className="agentic-risk-finding-badges">
-          <Badge variant={severityBadge.variant}>{severityBadge.label}</Badge>
-        </div>
         <div className="agentic-risk-finding-title-row">
           <a
             className="agentic-risk-finding-anchor"
@@ -415,6 +422,9 @@ function AgenticRiskFindingCard({
           ) : (
             <div className="agentic-risk-finding-title">{title}</div>
           )}
+        </div>
+        <div className="agentic-risk-finding-badges">
+          <FindingSeverityBadge severity={finding.severity} />
         </div>
       </div>
       <div className="agentic-risk-report-rows">
@@ -670,7 +680,6 @@ export function SecurityScanResults({
   llmAnalysis,
   staticFindings,
   capabilityTags,
-  scannerBasePath,
   variant = "panel",
 }: SecurityScanResultsProps) {
   const visibleCapabilityTags = (capabilityTags ?? []).filter(Boolean);
@@ -711,30 +720,12 @@ export function SecurityScanResults({
                 ↗
               </a>
             ) : null}
-            {scannerBasePath ? (
-              <a
-                href={`${scannerBasePath}/virustotal`}
-                className="version-scan-link"
-                onClick={(event) => event.stopPropagation()}
-              >
-                Details
-              </a>
-            ) : null}
           </div>
         ) : null}
         {llmStatusInfo ? (
           <div className="version-scan-badge">
             <ClawScanIcon className="version-scan-icon version-scan-icon-oc" />
             <ScanResultBadge status={llmDisplayStatus} tone="review" />
-            {scannerBasePath ? (
-              <a
-                href={`${scannerBasePath}/clawscan`}
-                className="version-scan-link"
-                onClick={(event) => event.stopPropagation()}
-              >
-                Details
-              </a>
-            ) : null}
           </div>
         ) : null}
       </>
@@ -778,11 +769,6 @@ export function SecurityScanResults({
                 View report →
               </a>
             ) : null}
-            {scannerBasePath ? (
-              <a href={`${scannerBasePath}/virustotal`} className="scan-result-link">
-                Details →
-              </a>
-            ) : null}
           </div>
         ) : null}
         {llmStatusInfo && llmAnalysis ? (
@@ -797,11 +783,6 @@ export function SecurityScanResults({
                 <RiskLevelBadge level={llmRiskLevel} />
               </span>
             ) : null}
-            {scannerBasePath ? (
-              <a href={`${scannerBasePath}/clawscan`} className="scan-result-link">
-                Details →
-              </a>
-            ) : null}
           </div>
         ) : null}
         {llmAnalysis &&
@@ -812,22 +793,17 @@ export function SecurityScanResults({
         ) : null}
         {hasBlockingStaticFindings ? (
           <>
-            {scannerBasePath ? (
-              <div className="scan-result-row">
-                <div className="scan-result-scanner">
-                  <span className="scan-result-scanner-name">Static analysis</span>
-                </div>
-                <ScanResultBadge
-                  status="malicious"
-                  label={`${blockingStaticFindings.length} blocking finding${
-                    blockingStaticFindings.length === 1 ? "" : "s"
-                  }`}
-                />
-                <a href={`${scannerBasePath}/static-analysis`} className="scan-result-link">
-                  Details →
-                </a>
+            <div className="scan-result-row">
+              <div className="scan-result-scanner">
+                <span className="scan-result-scanner-name">Static analysis</span>
               </div>
-            ) : null}
+              <ScanResultBadge
+                status="malicious"
+                label={`${blockingStaticFindings.length} blocking finding${
+                  blockingStaticFindings.length === 1 ? "" : "s"
+                }`}
+              />
+            </div>
             <StaticAnalysisDetail
               findings={blockingStaticFindings}
               vtStatus={vtStatus}
