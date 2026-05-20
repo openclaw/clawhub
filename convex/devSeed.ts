@@ -1746,6 +1746,14 @@ export async function seedLocalModerationFixturesHandler(
                 "Reconcile local wallet exports against exchange activity and flag mismatched transfers.",
             },
           },
+          vtAnalysis: {
+            status: "malicious",
+            verdict: "malicious",
+            analysis: "Local dev fixture intentionally flagged by VirusTotal.",
+            source: "local-dev-seed",
+            engineStats: { malicious: 2, suspicious: 1, harmless: 3, undetected: 58 },
+            checkedAt: now,
+          },
         });
       }
       if (
@@ -1786,6 +1794,21 @@ export async function seedLocalModerationFixturesHandler(
         await ctx.db.patch(latestRelease._id, {
           clawScanNote: SCANNED_PLUGIN_CLAWSCAN_NOTE,
           llmAnalysis: pluginClawScanRiskAnalysis(now),
+        });
+      }
+    }
+    if (existingPlugin.latestReleaseId) {
+      const latestRelease = await ctx.db.get(existingPlugin.latestReleaseId);
+      if (latestRelease) {
+        await ctx.db.patch(latestRelease._id, {
+          vtAnalysis: {
+            status: "malicious",
+            verdict: "malicious",
+            analysis: "Local dev fixture intentionally flagged by VirusTotal.",
+            source: "local-dev-seed",
+            engineStats: { malicious: 2, suspicious: 1, harmless: 3, undetected: 58 },
+            checkedAt: now,
+          },
         });
       }
     }
@@ -1884,6 +1907,7 @@ export async function seedLocalModerationFixturesHandler(
       verdict: "malicious",
       analysis: "Local dev fixture intentionally flagged by VirusTotal.",
       source: "local-dev-seed",
+      engineStats: { malicious: 2, suspicious: 1, harmless: 3, undetected: 58 },
       checkedAt: now,
     },
     llmAnalysis: flaggedWalletClawScanAnalysis(now),
@@ -2078,6 +2102,7 @@ export async function seedLocalModerationFixturesHandler(
       verdict: "malicious",
       analysis: "Local dev fixture intentionally flagged by VirusTotal.",
       source: "local-dev-seed",
+      engineStats: { malicious: 2, suspicious: 1, harmless: 3, undetected: 58 },
       checkedAt: now,
     },
     llmAnalysis: {

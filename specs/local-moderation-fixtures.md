@@ -40,8 +40,9 @@ Seeded plugin fixtures:
 The scanned fixtures should cover:
 
 - artifact detail pages
-- scan summary strips
+- security audit sidebar summaries
 - security audit pages
+- security audit clean, review, and malicious states
 - publisher note display
 - mobile and desktop security layout
 - report/moderation state previews

@@ -104,6 +104,10 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - New skill publishes now persist a deterministic static scan result on the version.
 - Static suspicious findings are advisory evidence only. Static malicious findings
   hold the artifact until Codex-backed ClawScan completes.
+- Public artifact pages present static analysis, VirusTotal malware telemetry,
+  and ClawScan-powered risk review as one consolidated Security audit page.
+  This is a product-facing model only; scanner storage, moderation decisions,
+  and worker behavior remain separate internally.
 - ClawScan verdicts come from a GitHub Actions Codex worker, not a single
   hosted LLM call. Publishes enqueue a scan job that waits at most 10 minutes
   for VirusTotal telemetry, then Codex reviews the materialized artifact
@@ -114,6 +118,9 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   concerns remain `flagged.suspicious` and are hidden by the suspicious filter.
 - VirusTotal is telemetry only. It is included in the Codex workspace as signal,
   but VT alone must never hide, block, or set malicious/suspicious public status.
+  The public Security audit UI may summarize vendor engine counts, including
+  non-zero malicious or suspicious counts, but that display does not make VT a
+  blocking verdict source.
 - VirusTotal engine stats with zero malicious and zero suspicious detections and
   one or more undetected engines are resolved no-detections telemetry, not an
   in-progress scan. ClawHub should cache them as clean VT results instead of

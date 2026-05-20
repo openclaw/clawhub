@@ -28,6 +28,7 @@ Before installing, review:
 - the overall audit status
 - the risk level
 - any listed findings
+- the publisher note, when present
 - required credentials, permissions, or environment variables
 - owner, source, version, changelog, downloads, stars, and other trust signals
 
@@ -103,34 +104,82 @@ Powerful behavior is not automatically bad. Many useful tools need credentials,
 local commands, provider APIs, or package installs. The audit checks whether that
 power is expected, disclosed, and proportionate.
 
-## ClawScan
+Artifact pages link to the full audit at:
 
-ClawScan is ClawHub's own security audit system. It reviews each release as an
-agent-facing artifact: instructions, metadata, declared permissions, files,
-capability signals, static scan signals, and publisher-provided context.
+```text
+/<owner>/<slug>/security-audit
+```
 
-ClawScan uses the OWASP Agentic AI Top 10 as a lens for risks such as prompt
-injection, tool misuse, credential exposure, unsafe execution, memory or context
-poisoning, and excessive agency.
+The audit page combines:
+
+1. Static analysis
+2. VirusTotal
+3. Risk analysis
+
+## Static analysis
+
+Static analysis checks the submitted artifact for deterministic patterns such as
+credential access, unexpected external transfer instructions, unsafe execution,
+or other content that should be reviewed.
+
+Static findings are shown as concrete findings with the relevant artifact
+content when ClawHub can surface it.
+
+## VirusTotal
+
+ClawHub uses VirusTotal as malware telemetry in the audit stack. VirusTotal is a
+trusted industry standard for file reputation and malware scanning, and our
+partnership lets ClawHub add broader security intelligence to skill and plugin
+review.
+
+VirusTotal is especially useful for known malicious artifacts, engine hits, and
+reputation signals that complement ClawHub's agent-aware review. When vendor
+engine counts are available, the audit summarizes them in plain language, such
+as:
+
+```text
+62/62 vendors flagged this skill as clean.
+```
+
+or:
+
+```text
+2/64 vendors flagged this skill as malicious, 1/64 flagged it as suspicious, and 61/64 flagged it as clean.
+```
+
+When ClawHub has no vendor-count telemetry to summarize, the audit says:
+
+```text
+No VirusTotal findings
+```
+
+VirusTotal remains telemetry. It does not replace ClawHub's own artifact-aware
+risk analysis.
+
+## Risk analysis
+
+Risk analysis is powered internally by ClawScan, ClawHub's own security audit
+system. It reviews each release as an agent-facing artifact: instructions,
+metadata, declared permissions, files, capability signals, static scan signals,
+VirusTotal telemetry, and publisher-provided context.
+
+Risk analysis uses the
+[OWASP Agentic Skills Top 10](https://owasp.org/www-project-agentic-skills-top-10/)
+as a lens for risks such as prompt injection, tool misuse, credential exposure,
+unsafe execution, memory or context poisoning, and excessive agency.
 
 ClawScan does not treat a scary-looking capability as automatically malicious.
 It asks whether the capability is disclosed, purpose-aligned, and supported by
 the release's stated use case.
 
-## VirusTotal
-
-ClawHub also uses VirusTotal as part of the audit stack. VirusTotal is a trusted
-industry standard for file reputation and malware scanning, and our partnership
-lets ClawHub add that broader security intelligence to skill and plugin review.
-
-VirusTotal is especially useful for known malicious artifacts, engine hits, and
-reputation signals that complement ClawScan's agent-aware review.
-
 ## Publisher notes
 
-Publishers can add a ClawScan note when publishing a skill or plugin. This note
-can explain behavior that may otherwise look unusual, such as network access,
-native host access, credentials, or broad provider APIs.
+Publishers can add a note when publishing a skill or plugin. On the Security
+audit page, the publisher note appears after the overview so you can read the
+publisher's explanation before reviewing scanner-specific sections.
+
+Publisher notes can explain behavior that may otherwise look unusual, such as
+network access, native host access, credentials, or broad provider APIs.
 
 Publisher notes help reduce false positives, but they are not trusted proof.
 ClawHub treats them as context and still checks the submitted artifacts.

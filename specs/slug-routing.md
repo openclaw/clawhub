@@ -23,6 +23,9 @@ request is a skill slug, an official OpenClaw plugin alias, or a package route.
 Skills:
 
 - Canonical page: `/<owner>/<slug>`
+- Security audit page: `/<owner>/<slug>/security-audit`
+- Legacy scanner pages: `/<owner>/<slug>/security/:scanner` redirect to
+  `/<owner>/<slug>/security-audit`
 - API detail: `/api/v1/skills/<slug>`
 
 Plugins:
@@ -31,6 +34,7 @@ Plugins:
 - Encoded compatibility page: `/plugins/%40scope%2Fname`
 - Security audit page: `/plugins/@scope/name/security-audit`
 - Encoded security compatibility page: `/plugins/%40scope%2Fname/security-audit`
+- Legacy scanner pages redirect to the corresponding plugin security audit page.
 
 Publisher profiles:
 

@@ -1563,41 +1563,6 @@ code {
   line-height: 1.55;
 }
 
-.security-audit-stat-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  gap: 1px;
-  margin: 18px 0 0;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: var(--line);
-}
-
-.security-audit-stat-grid > div {
-  min-width: 0;
-  display: grid;
-  gap: 4px;
-  padding: 12px;
-  background: var(--surface);
-}
-
-.security-audit-stat-grid dt {
-  color: var(--ink-soft);
-  font-size: 0.72rem;
-  font-weight: 720;
-  line-height: 1.25;
-  text-transform: uppercase;
-}
-
-.security-audit-stat-grid dd {
-  margin: 0;
-  color: var(--ink);
-  font-size: 1rem;
-  font-weight: 760;
-  line-height: 1.2;
-}
-
 .security-audit-external-link {
   display: inline-flex;
   align-items: center;
@@ -1697,9 +1662,10 @@ code {
   }
 
   .security-report-sidebar {
+    order: -1;
     position: static;
     padding: 24px 0;
-    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
   }
 
   .security-report-metadata {
