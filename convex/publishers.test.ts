@@ -8,6 +8,7 @@ import {
   listMine,
   listPublishedPage,
   migrateLegacyPublisherHandleToOrgInternal,
+  ensureOrgPublisherHandleInternal,
   createOrg,
   removeMember,
   createOrgPublisherForUserInternal,
@@ -52,6 +53,25 @@ const migrateLegacyPublisherHandleToOrgInternalHandler = (
       personalPublisherId: string | null;
       convertedExistingPublisher: boolean;
       packagesMigrated: number;
+    }
+  >
+)._handler;
+
+const ensureOrgPublisherHandleInternalHandler = (
+  ensureOrgPublisherHandleInternal as unknown as WrappedHandler<
+    {
+      actorUserId: string;
+      handle: string;
+      displayName?: string;
+      memberHandle?: string;
+      memberRole?: "owner" | "admin" | "publisher";
+    },
+    {
+      ok: true;
+      publisherId: string;
+      handle: string;
+      created: boolean;
+      member?: { userId: string; handle: string; role: "owner" | "admin" | "publisher" };
     }
   >
 )._handler;
@@ -1978,6 +1998,171 @@ describe("self-serve org publisher creation", () => {
 });
 
 describe("legacy publisher migration", () => {
+  it("lets admins create a missing org publisher and add a legacy package owner as admin", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
+
+    const users = new Map<string, Record<string, unknown>>([
+      ["users:admin", { _id: "users:admin", role: "admin", handle: "admin" }],
+      [
+        "users:vincent",
+        {
+          _id: "users:vincent",
+          handle: "vincentkoc",
+          displayName: "Vincent Koc",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+    ]);
+    const publishers = new Map<string, Record<string, unknown>>();
+    const publisherMembers: Array<Record<string, unknown>> = [];
+    const inserts: Array<{ table: string; value: Record<string, unknown> }> = [];
+
+    const insert = vi.fn(async (table: string, value: Record<string, unknown>) => {
+      const id = `${table}:${inserts.length + 1}`;
+      const row = { _id: id, _creationTime: 1, ...value };
+      inserts.push({ table, value: row });
+      if (table === "publishers") publishers.set(id, row);
+      if (table === "publisherMembers") publisherMembers.push(row);
+      return id;
+    });
+
+    const query = vi.fn((table: string) => {
+      if (table === "users") {
+        return {
+          withIndex: vi.fn(
+            (
+              _indexName: string,
+              builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+            ) => {
+              let handle = "";
+              const q = {
+                eq: (field: string, value: string) => {
+                  if (field === "handle") handle = value;
+                  return q;
+                },
+              };
+              builder?.(q);
+              return {
+                unique: vi.fn(
+                  async () => [...users.values()].find((user) => user.handle === handle) ?? null,
+                ),
+              };
+            },
+          ),
+        };
+      }
+      if (table === "publishers") {
+        return {
+          withIndex: vi.fn(
+            (
+              _indexName: string,
+              builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+            ) => {
+              let handle = "";
+              const q = {
+                eq: (field: string, value: string) => {
+                  if (field === "handle") handle = value;
+                  return q;
+                },
+              };
+              builder?.(q);
+              return {
+                unique: vi.fn(
+                  async () =>
+                    [...publishers.values()].find((publisher) => publisher.handle === handle) ??
+                    null,
+                ),
+              };
+            },
+          ),
+        };
+      }
+      if (table === "publisherMembers") {
+        return {
+          withIndex: vi.fn(
+            (
+              _indexName: string,
+              builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+            ) => {
+              let publisherId = "";
+              let userId = "";
+              const q = {
+                eq: (field: string, value: string) => {
+                  if (field === "publisherId") publisherId = value;
+                  if (field === "userId") userId = value;
+                  return q;
+                },
+              };
+              builder?.(q);
+              return {
+                unique: vi.fn(
+                  async () =>
+                    publisherMembers.find(
+                      (member) => member.publisherId === publisherId && member.userId === userId,
+                    ) ?? null,
+                ),
+              };
+            },
+          ),
+        };
+      }
+      throw new Error(`unexpected table ${table}`);
+    });
+
+    const result = await ensureOrgPublisherHandleInternalHandler(
+      {
+        db: {
+          get: vi.fn(async (...args: string[]) => {
+            const id = args.length === 2 ? args[1] : args[0];
+            const inserted = inserts.find((entry) => entry.value._id === id);
+            return users.get(id) ?? publishers.get(id) ?? inserted?.value ?? null;
+          }),
+          query,
+          insert,
+          patch: vi.fn(),
+          delete: vi.fn(),
+          replace: vi.fn(),
+          normalizeId: vi.fn(),
+        },
+      } as never,
+      {
+        actorUserId: "users:admin",
+        handle: "opik",
+        displayName: "Opik",
+        memberHandle: "vincentkoc",
+        memberRole: "admin",
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      handle: "opik",
+      created: true,
+      member: {
+        userId: "users:vincent",
+        handle: "vincentkoc",
+        role: "admin",
+      },
+    });
+    expect(inserts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          table: "publishers",
+          value: expect.objectContaining({ kind: "org", handle: "opik", displayName: "Opik" }),
+        }),
+        expect.objectContaining({
+          table: "publisherMembers",
+          value: expect.objectContaining({
+            publisherId: result.publisherId,
+            userId: "users:vincent",
+            role: "admin",
+          }),
+        }),
+      ]),
+    );
+  });
+
   it("converts a legacy personal publisher into an org and rehomes package ownership", async () => {
     vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
 

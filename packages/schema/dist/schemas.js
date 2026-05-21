@@ -325,6 +325,15 @@ export const ApiV1SkillAppealResolveResponseSchema = type({
     status: SkillAppealStatusSchema,
     actionTaken: SkillAppealFinalActionSchema.optional(),
 });
+export const ApiV1SkillRescanResponseSchema = type({
+    ok: "true",
+    slug: "string",
+    version: "string",
+    skillId: "string",
+    skillVersionId: "string",
+    jobId: "string",
+    alreadyQueued: "boolean",
+});
 export const ApiV1SkillVersionListResponseSchema = type({
     items: type({
         version: "string",

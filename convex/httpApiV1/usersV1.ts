@@ -503,14 +503,27 @@ async function handleAdminEnsurePublisher(
 
   const displayName =
     typeof payload.displayName === "string" ? payload.displayName.trim() : undefined;
-  const trusted = typeof payload.trusted === "boolean" ? payload.trusted : true;
+  const trusted = typeof payload.trusted === "boolean" ? payload.trusted : undefined;
+  const memberHandle =
+    typeof payload.memberHandle === "string" ? payload.memberHandle.trim().toLowerCase() : "";
+  const memberRoleRaw =
+    typeof payload.memberRole === "string" ? payload.memberRole.trim().toLowerCase() : "";
+  const memberRole =
+    memberRoleRaw === "owner" || memberRoleRaw === "admin" || memberRoleRaw === "publisher"
+      ? memberRoleRaw
+      : undefined;
+  if (memberRoleRaw && !memberRole) {
+    return text("memberRole must be owner, admin, or publisher", 400, headers);
+  }
 
   try {
     const result = await ctx.runMutation(internal.publishers.ensureOrgPublisherHandleInternal, {
       actorUserId,
       handle,
       displayName,
-      trusted,
+      ...(typeof trusted === "boolean" ? { trusted } : {}),
+      ...(memberHandle ? { memberHandle } : {}),
+      ...(memberRole ? { memberRole } : {}),
     });
     return json(result, 200, headers);
   } catch (error) {

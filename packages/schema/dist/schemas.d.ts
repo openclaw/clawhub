@@ -361,6 +361,16 @@ export declare const ApiV1SkillAppealResolveResponseSchema: import("arktype/inte
     actionTaken?: "none" | "restore" | undefined;
 }, {}>;
 export type ApiV1SkillAppealResolveResponse = (typeof ApiV1SkillAppealResolveResponseSchema)[inferred];
+export declare const ApiV1SkillRescanResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    slug: string;
+    version: string;
+    skillId: string;
+    skillVersionId: string;
+    jobId: string;
+    alreadyQueued: boolean;
+}, {}>;
+export type ApiV1SkillRescanResponse = (typeof ApiV1SkillRescanResponseSchema)[inferred];
 export declare const ApiV1SkillVersionListResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     items: {
         version: string;

@@ -108,6 +108,13 @@ type PackageRepairNameOptions = {
   json?: boolean;
 };
 
+type PackageTransferOwnerOptions = {
+  to?: string;
+  reason?: string;
+  apply?: boolean;
+  json?: boolean;
+};
+
 export async function cmdSetPackageTrustedPublisher(
   opts: GlobalOpts,
   packageName: string,
@@ -624,6 +631,60 @@ export async function cmdUpsertPackageMigration(
     console.log(
       `OK. Migration ${result.migration.bundledPluginId} is ${result.migration.phase} for ${result.migration.packageName}.`,
     );
+  } catch (error) {
+    spinner?.fail(formatError(error));
+    throw error;
+  }
+}
+
+export async function cmdTransferPackageOwner(
+  opts: GlobalOpts,
+  packageName: string,
+  options: PackageTransferOwnerOptions = {},
+) {
+  const trimmed = normalizePackageNameOrFail(packageName);
+  const owner = options.to?.trim().replace(/^@+/, "").toLowerCase();
+  const reason = options.reason?.trim();
+  const dryRun = options.apply !== true;
+  if (!owner) fail("--to required");
+  if (!reason) fail("--reason required");
+
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const spinner = options.json
+    ? null
+    : createSpinner(`${dryRun ? "Planning" : "Applying"} package owner transfer`);
+  try {
+    const result = await apiRequest(
+      registry,
+      {
+        method: "POST",
+        path: `${ApiRoutes.packages}/${encodeURIComponent(trimmed)}/repair-name`,
+        token,
+        body: {
+          nextName: trimmed,
+          owner,
+          reason,
+          dryRun,
+        },
+      },
+      ApiV1PackageRepairNameResponseSchema,
+    );
+    spinner?.stop();
+    if (options.json) {
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      return result;
+    }
+    console.log(
+      `${result.dryRun ? "Dry run" : "Applied"} package transfer: ${trimmed} -> @${owner}`,
+    );
+    for (const operation of result.operations) {
+      if (operation.action === "transfer-owner") {
+        console.log(`- transfer owner: @${operation.owner}`);
+      }
+    }
+    if (result.dryRun) console.log("Re-run with --apply to write this change.");
+    return result;
   } catch (error) {
     spinner?.fail(formatError(error));
     throw error;

@@ -165,6 +165,21 @@ export const ApiV1PublisherCreateResponseSchema = type({
 });
 export type ApiV1PublisherCreateResponse = (typeof ApiV1PublisherCreateResponseSchema)[inferred];
 
+export const ApiV1PublisherEnsureResponseSchema = type({
+  ok: "true",
+  publisherId: "string",
+  handle: "string",
+  created: "boolean",
+  migrated: "boolean",
+  trusted: "boolean",
+  "member?": type({
+    userId: "string",
+    handle: "string",
+    role: '"owner"|"admin"|"publisher"',
+  }),
+});
+export type ApiV1PublisherEnsureResponse = (typeof ApiV1PublisherEnsureResponseSchema)[inferred];
+
 export const ApiV1SearchResponseSchema = type({
   results: type({
     slug: "string?",

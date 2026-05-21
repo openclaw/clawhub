@@ -30,6 +30,7 @@ import {
   cmdSetRole,
   cmdUnbanUser,
 } from "./commands/moderation.js";
+import { cmdCreateOrg } from "./commands/orgs.js";
 import {
   cmdBackfillPackageArtifacts,
   cmdDeletePackageTrustedPublisher,
@@ -40,6 +41,7 @@ import {
   cmdRepairPackageName,
   cmdSetPackageTrustedPublisher,
   cmdTriagePackageReport,
+  cmdTransferPackageOwner,
   cmdUpsertPackageMigration,
 } from "./commands/packages.js";
 
@@ -313,6 +315,19 @@ const plugins = program
   .showHelpAfterError()
   .showSuggestionAfterError();
 
+const packages = program
+  .command("packages")
+  .alias("package")
+  .description("Package moderation and operations")
+  .showHelpAfterError()
+  .showSuggestionAfterError();
+
+const org = program
+  .command("org")
+  .description("Org publisher administration")
+  .showHelpAfterError()
+  .showSuggestionAfterError();
+
 const skills = program
   .command("skills")
   .alias("skill")
@@ -323,9 +338,42 @@ const skills = program
 registerPluginOperations(plugins);
 registerPluginModerationCommands(plugins);
 registerPluginGovernanceCommands(plugins);
+registerPluginOperations(packages);
+registerPluginModerationCommands(packages);
+registerPluginGovernanceCommands(packages);
+registerOrgCommands(org);
 registerSkillModerationCommands(skills);
 
+function registerOrgCommands(command: Command) {
+  command
+    .command("create")
+    .description("Create or update an org publisher")
+    .argument("<handle>", "Org publisher handle")
+    .option("--display-name <name>", "Display name")
+    .option("--member <handle>", "User handle to add to the org")
+    .option("--role <role>", "owner|admin|publisher for --member", "admin")
+    .option("--trusted", "Mark org as trusted")
+    .option("--json", "Output JSON")
+    .action(async (handle, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdCreateOrg(opts, handle, options);
+    });
+}
+
 function registerPluginGovernanceCommands(command: Command) {
+  command
+    .command("transfer")
+    .description("Transfer a plugin package to another publisher without changing package stats")
+    .argument("<name>", "Plugin package name")
+    .requiredOption("--to <owner>", "Destination publisher handle")
+    .requiredOption("--reason <reason>", "Audit reason")
+    .option("--apply", "Write changes; defaults to dry-run")
+    .option("--json", "Output JSON")
+    .action(async (name, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdTransferPackageOwner(opts, name, options);
+    });
+
   command
     .command("backfill-artifacts")
     .description("Backfill missing plugin artifact-kind metadata")

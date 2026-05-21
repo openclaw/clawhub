@@ -642,6 +642,8 @@ async function ensureOrgPublisherHandleWithActor(
     fallbackUserHandle?: string;
     displayName?: string;
     trusted?: boolean;
+    memberHandle?: string;
+    memberRole?: "owner" | "admin" | "publisher";
   },
 ) {
   const actor = await ctx.db.get(args.actorUserId);
@@ -652,6 +654,14 @@ async function ensureOrgPublisherHandleWithActor(
   const now = Date.now();
   const existingPublisher = await getPublisherByHandle(ctx, handle);
   const existingUser = await getUserByHandle(ctx, handle);
+  const ensureMember = async (publisherId: Id<"publishers">) =>
+    await ensureOrgPublisherMemberWithActor(ctx, {
+      actorUserId: args.actorUserId,
+      publisherId,
+      memberHandle: args.memberHandle,
+      memberRole: args.memberRole,
+      now,
+    });
 
   if (existingPublisher?.kind === "org") {
     await ctx.db.patch(existingPublisher._id, {
@@ -669,6 +679,7 @@ async function ensureOrgPublisherHandleWithActor(
         updatedAt: now,
       });
     }
+    const member = await ensureMember(existingPublisher._id);
     return {
       ok: true as const,
       publisherId: existingPublisher._id,
@@ -676,6 +687,7 @@ async function ensureOrgPublisherHandleWithActor(
       created: false,
       migrated: false,
       trusted: args.trusted ?? existingPublisher.trustedPublisher ?? false,
+      ...(member ? { member } : {}),
     };
   }
 
@@ -692,6 +704,7 @@ async function ensureOrgPublisherHandleWithActor(
         updatedAt: now,
       });
     }
+    const member = await ensureMember(result.orgPublisherId);
     return {
       ok: true as const,
       publisherId: result.orgPublisherId,
@@ -699,6 +712,7 @@ async function ensureOrgPublisherHandleWithActor(
       created: false,
       migrated: true,
       trusted: args.trusted ?? existingPublisher?.trustedPublisher ?? false,
+      ...(member ? { member } : {}),
     };
   }
 
@@ -731,6 +745,7 @@ async function ensureOrgPublisherHandleWithActor(
     },
     createdAt: now,
   });
+  const member = await ensureMember(publisherId);
   return {
     ok: true as const,
     publisherId,
@@ -738,6 +753,62 @@ async function ensureOrgPublisherHandleWithActor(
     created: true,
     migrated: false,
     trusted: args.trusted ?? false,
+    ...(member ? { member } : {}),
+  };
+}
+
+async function ensureOrgPublisherMemberWithActor(
+  ctx: Pick<MutationCtx, "db">,
+  args: {
+    actorUserId: Id<"users">;
+    publisherId: Id<"publishers">;
+    memberHandle?: string;
+    memberRole?: "owner" | "admin" | "publisher";
+    now: number;
+  },
+) {
+  const memberHandle = normalizePublisherHandle(args.memberHandle);
+  if (!memberHandle) return null;
+  const requestedRole = args.memberRole ?? "admin";
+  const targetUser = await getActiveUserByHandleOrPersonalPublisher(ctx, memberHandle);
+  if (!targetUser) throw new ConvexError(`User "@${memberHandle}" not found`);
+  await ensurePersonalPublisherForUser(ctx, targetUser, {
+    actorUserId: args.actorUserId,
+    source: "publisher.org.ensure.member",
+  });
+  const existing = await getPublisherMembership(ctx, args.publisherId, targetUser._id);
+  const role =
+    existing?.role === "owner" && requestedRole !== "owner" ? existing.role : requestedRole;
+  if (existing) {
+    if (existing.role !== role) {
+      await ctx.db.patch(existing._id, { role, updatedAt: args.now });
+    }
+  } else {
+    await ctx.db.insert("publisherMembers", {
+      publisherId: args.publisherId,
+      userId: targetUser._id,
+      role,
+      createdAt: args.now,
+      updatedAt: args.now,
+    });
+  }
+  await ctx.db.insert("auditLogs", {
+    actorUserId: args.actorUserId,
+    action: "publisher.member.upsert",
+    targetType: "publisher",
+    targetId: args.publisherId,
+    metadata: {
+      memberUserId: targetUser._id,
+      memberHandle: targetUser.handle ?? memberHandle,
+      role,
+      source: "publisher.org.ensure",
+    },
+    createdAt: args.now,
+  });
+  return {
+    userId: targetUser._id,
+    handle: targetUser.handle ?? memberHandle,
+    role,
   };
 }
 
@@ -1318,6 +1389,8 @@ export const ensureOrgPublisherHandleInternal = internalMutation({
     fallbackUserHandle: v.optional(v.string()),
     displayName: v.optional(v.string()),
     trusted: v.optional(v.boolean()),
+    memberHandle: v.optional(v.string()),
+    memberRole: v.optional(v.union(v.literal("owner"), v.literal("admin"), v.literal("publisher"))),
   },
   handler: async (ctx, args) => await ensureOrgPublisherHandleWithActor(ctx, args),
 });
