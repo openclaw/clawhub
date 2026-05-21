@@ -8,8 +8,9 @@ import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { getUserFacingAuthError } from "../lib/authErrorMessage";
+import { getSkillCategoryForSkill } from "../lib/categories";
 import { getUserFacingConvexError } from "../lib/convexError";
-import { canManageSkill, isAdmin, isModerator } from "../lib/roles";
+import { canManageSkill, isModerator } from "../lib/roles";
 import type { SkillBySlugResult, SkillPageInitialData } from "../lib/skillPage";
 import { clearAuthError, setAuthError } from "../lib/useAuthError";
 import { useAuthStatus } from "../lib/useAuthStatus";
@@ -29,6 +30,7 @@ import {
 import { SkillHeader } from "./SkillHeader";
 import { buildSkillInstallTabs } from "./SkillInstallCard";
 import { SkillOwnershipPanel } from "./SkillOwnershipPanel";
+import { SkillRelatedSection, type RelatedSkillEntry } from "./SkillRelatedSection";
 import { SkillReportDialog } from "./SkillReportDialog";
 import { Alert, AlertDescription } from "./ui/alert";
 import { Card } from "./ui/card";
@@ -128,13 +130,13 @@ function buildStaffVisibilityAlert({
   } else if (moderationReason === "security.redaction") {
     reason = "because it was hidden for security redaction.";
   } else if (moderationReason?.startsWith("scanner.") && moderationReason.endsWith(".malicious")) {
-    reason = "because automated security checks marked it suspicious or malicious.";
+    reason = "because automated security checks found security warnings or malicious content.";
   } else if (moderationReason?.startsWith("scanner.") && moderationReason.endsWith(".suspicious")) {
-    reason = "because automated security checks marked it suspicious or malicious.";
+    reason = "because automated security checks found security warnings or malicious content.";
   } else if (modInfo?.isMalwareBlocked) {
-    reason = "because automated security checks marked it suspicious or malicious.";
+    reason = "because automated security checks found security warnings or malicious content.";
   } else if (modInfo?.isSuspicious) {
-    reason = "because automated security checks marked it suspicious or malicious.";
+    reason = "because automated security checks found security warnings or malicious content.";
   } else if (isSoftDeleted && !moderationReason) {
     reason = "because it was unpublished.";
   }
@@ -208,6 +210,21 @@ export function SkillDetailPage({
   const skill = result?.skill;
   const owner = result?.owner ?? null;
   const latestVersion = result?.latestVersion ?? null;
+  const relatedCategory = useMemo(() => (skill ? getSkillCategoryForSkill(skill) : null), [skill]);
+  const shouldLoadRelatedSkills = Boolean(
+    skill && relatedCategory && relatedCategory.keywords.length > 0,
+  );
+  const relatedSkillsResult = useQuery(
+    api.skills.listRelatedByCategory,
+    shouldLoadRelatedSkills && skill && relatedCategory
+      ? {
+          skillId: skill._id,
+          categorySlug: relatedCategory.slug,
+          keywords: relatedCategory.keywords,
+          limit: 5,
+        }
+      : "skip",
+  ) as { items: RelatedSkillEntry[] } | undefined;
 
   const versions = useQuery(
     api.skills.listVersions,
@@ -262,7 +279,7 @@ export function SkillDetailPage({
     Boolean(skill?.ownerPublisherId && myPublisherIds.has(skill.ownerPublisherId));
   const canAccessSettings =
     Boolean(me && skill && me._id === skill.ownerUserId) ||
-    isAdmin(me) ||
+    isStaff ||
     Boolean(skill?.ownerPublisherId && myManagePublisherIds.has(skill.ownerPublisherId));
   const ownedSkills = useQuery(
     api.skills.list,
@@ -278,6 +295,13 @@ export function SkillDetailPage({
     canAccessSettings && skill
       ? `${buildSkillHref(ownerHandle, owner?._id ?? null, skill.slug)}/settings`
       : null;
+  const newVersionHref =
+    canAccessSettings && skill
+      ? `/skills/publish?${new URLSearchParams({
+          updateSlug: skill.slug,
+          ...(ownerHandle ? { ownerHandle } : {}),
+        }).toString()}`
+      : null;
   const canonicalOwnerParam =
     typeof canonicalOwner === "string" ? canonicalOwner.trim().toLowerCase() : null;
   const wantsCanonicalRedirect = Boolean(
@@ -286,6 +310,7 @@ export function SkillDetailPage({
       redirectToCanonical ||
       (canonicalOwnerParam && canonicalOwnerParam !== ownerParam)),
   );
+  const redirectSlug = result?.resolvedSlug ?? skill?.slug ?? slug;
 
   const forkOf = result?.forkOf ?? null;
   const canonical = result?.canonical ?? null;
@@ -357,13 +382,22 @@ export function SkillDetailPage({
   const latestFiles: SkillFile[] = latestVersion?.files ?? [];
 
   useEffect(() => {
-    if (!wantsCanonicalRedirect || !ownerParam) return;
+    if (!wantsCanonicalRedirect || !ownerParam || !redirectSlug) return;
+    const params = { owner: ownerParam, slug: redirectSlug };
+    if (mode === "settings") {
+      void navigate({
+        to: "/$owner/$slug/settings",
+        params,
+        replace: true,
+      });
+      return;
+    }
     void navigate({
       to: "/$owner/$slug",
-      params: { owner: ownerParam, slug },
+      params,
       replace: true,
     });
-  }, [navigate, ownerParam, slug, wantsCanonicalRedirect]);
+  }, [mode, navigate, ownerParam, redirectSlug, wantsCanonicalRedirect]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -560,29 +594,21 @@ export function SkillDetailPage({
 
   const securitySummary = latestVersion ? (
     <DetailSecuritySummary
-      scannerBasePath={`/${encodeURIComponent(
-        ownerParam ?? ownerHandle ?? "unknown",
-      )}/${encodeURIComponent(skill.slug)}/security`}
-      sha256hash={latestVersion.sha256hash ?? null}
+      auditHref={`/${encodeURIComponent(ownerParam ?? ownerHandle ?? "unknown")}/${encodeURIComponent(
+        skill.slug,
+      )}/security-audit`}
       vtAnalysis={latestVersion.vtAnalysis ?? null}
       llmAnalysis={latestVersion.llmAnalysis ?? null}
       staticScan={latestVersion.staticScan ?? null}
       suppressScanResults={suppressVersionScanResults}
-      suppressedMessage={scanResultsSuppressedMessage}
     />
   ) : null;
-  const priorityContent =
-    staffModerationNote || securitySummary ? (
-      <>
-        {staffModerationNote ? (
-          <Alert variant="warn" className="skill-visibility-alert" role="status">
-            <TriangleAlert size={18} aria-hidden="true" />
-            <AlertDescription>{staffModerationNote}</AlertDescription>
-          </Alert>
-        ) : null}
-        {securitySummary}
-      </>
-    ) : null;
+  const staffVisibilityAlert = staffModerationNote ? (
+    <Alert variant="warn" className="skill-visibility-alert" role="status">
+      <TriangleAlert size={18} aria-hidden="true" />
+      <AlertDescription>{staffModerationNote}</AlertDescription>
+    </Alert>
+  ) : null;
   const settingsPanel =
     canAccessSettings && skill ? (
       <SkillOwnershipPanel
@@ -620,7 +646,8 @@ export function SkillDetailPage({
               <Card>
                 <h2 className="section-title text-[1.2rem] m-0">Settings unavailable</h2>
                 <p className="section-subtitle mt-3 mb-0">
-                  Only the skill owner can manage these settings.
+                  Only the skill owner, an owner org admin, or platform staff can manage these
+                  settings.
                 </p>
               </Card>
             )}
@@ -661,7 +688,10 @@ export function SkillDetailPage({
           configRequirements={configRequirements}
           cliHelp={cliHelp}
           clawdis={clawdis}
-          priorityContent={priorityContent}
+          category={relatedCategory}
+          priorityContent={staffVisibilityAlert}
+          securityAuditSummary={securitySummary}
+          newVersionHref={newVersionHref}
           settingsHref={settingsHref}
         >
           {nixSnippet ? (
@@ -712,6 +742,12 @@ export function SkillDetailPage({
               />
             </ClientOnly>
           ) : null}
+
+          <SkillRelatedSection
+            category={relatedCategory}
+            relatedSkills={relatedSkillsResult?.items ?? []}
+            isLoading={shouldLoadRelatedSkills && relatedSkillsResult === undefined}
+          />
         </SkillHeader>
       </DetailPageShell>
 

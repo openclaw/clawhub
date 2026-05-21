@@ -86,7 +86,7 @@ function makeVersion() {
       status: "clean",
       verdict: "clean",
       analysis: "safe",
-      source: "code_insight",
+      source: "legacy-ai",
       checkedAt: 1,
     },
     llmAnalysis: {

@@ -174,17 +174,8 @@ export function SkillOwnershipPanel({
     <>
       <div className="skill-admin-panel" data-skill-id={skillId}>
         <SettingsActionRow
-          title="Publish a new version"
-          description="Upload a replacement release for this skill. New releases get a fresh scan."
-        >
-          <Button asChild variant="outline">
-            <a href={`/publish-skill?updateSlug=${encodeURIComponent(slug)}`}>New Version</a>
-          </Button>
-        </SettingsActionRow>
-
-        <SettingsActionRow
-          title="Description"
-          description="Update the short description shown on the skill detail page."
+          title="Short summary"
+          description="Update the short summary used in cards, search, and previews."
         >
           {onSaveSummary ? (
             <SummarySettingsEditor summary={summary} onSaveSummary={onSaveSummary} />

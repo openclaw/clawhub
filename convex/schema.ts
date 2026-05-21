@@ -114,6 +114,7 @@ const users = defineTable({
   .index("email", ["email"])
   .index("phone", ["phone"])
   .index("handle", ["handle"])
+  .index("by_ban_reason_deleted_at", ["banReason", "deletedAt"])
   .index("by_active_handle", ["deletedAt", "deactivatedAt", "handle"]);
 
 const publishers = defineTable({
@@ -298,6 +299,7 @@ const packageVerificationValidator = v.optional(
     sourceCommit: v.optional(v.string()),
     sourceTag: v.optional(v.string()),
     hasProvenance: v.optional(v.boolean()),
+    trustedOpenClawPlugin: v.optional(v.boolean()),
     scanStatus: v.optional(
       v.union(
         v.literal("clean"),
@@ -344,6 +346,24 @@ const packageReleaseModerationOverrideValidator = v.object({
   updatedAt: v.number(),
 });
 
+const securityScanTargetKindValidator = v.union(
+  v.literal("skillVersion"),
+  v.literal("packageRelease"),
+);
+const securityScanJobStatusValidator = v.union(
+  v.literal("queued"),
+  v.literal("running"),
+  v.literal("succeeded"),
+  v.literal("failed"),
+);
+const securityScanJobSourceValidator = v.union(
+  v.literal("publish"),
+  v.literal("clawscan-note"),
+  v.literal("vt-update"),
+  v.literal("backfill"),
+  v.literal("manual"),
+);
+
 const packageFilesValidator = v.array(
   v.object({
     path: v.string(),
@@ -358,6 +378,7 @@ const skills = defineTable({
   slug: v.string(),
   displayName: v.string(),
   summary: v.optional(v.string()),
+  icon: v.optional(v.string()),
   resourceId: v.optional(v.string()),
   ownerUserId: v.id("users"),
   ownerPublisherId: v.optional(v.id("publishers")),
@@ -446,8 +467,16 @@ const skills = defineTable({
   .index("by_slug", ["slug"])
   .index("by_owner", ["ownerUserId"])
   .index("by_owner_publisher", ["ownerPublisherId"])
+  .index("by_owner_slug", ["ownerUserId", "slug"])
+  .index("by_owner_publisher_slug", ["ownerPublisherId", "slug"])
   .index("by_owner_active_updated", ["ownerUserId", "softDeletedAt", "updatedAt"])
   .index("by_owner_publisher_active_updated", ["ownerPublisherId", "softDeletedAt", "updatedAt"])
+  .index("by_owner_publisher_active_downloads", [
+    "ownerPublisherId",
+    "softDeletedAt",
+    "statsDownloads",
+    "updatedAt",
+  ])
   .index("by_updated", ["updatedAt"])
   .index("by_stats_downloads", ["statsDownloads", "updatedAt"])
   .index("by_stats_stars", ["statsStars", "updatedAt"])
@@ -495,7 +524,9 @@ const skillSlugAliases = defineTable({
   .index("by_slug", ["slug"])
   .index("by_skill", ["skillId"])
   .index("by_owner", ["ownerUserId"])
-  .index("by_owner_publisher", ["ownerPublisherId"]);
+  .index("by_owner_publisher", ["ownerPublisherId"])
+  .index("by_owner_slug", ["ownerUserId", "slug"])
+  .index("by_owner_publisher_slug", ["ownerPublisherId", "slug"]);
 
 const souls = defineTable({
   slug: v.string(),
@@ -728,6 +759,9 @@ const skillSearchDigest = defineTable({
   normalizedDisplayName: v.optional(v.string()),
   normalizedDisplayNameFirstToken: v.optional(v.string()),
   summary: v.optional(v.string()),
+  // Mirrors `skills.icon`. Kept on the digest so card/list hydration paths
+  // can render the icon without reading the full skill row.
+  icon: v.optional(v.string()),
   ownerUserId: v.id("users"),
   ownerPublisherId: v.optional(v.id("publishers")),
   ownerHandle: v.optional(v.string()),
@@ -868,11 +902,18 @@ const packages = defineTable({
   .index("by_owner", ["ownerUserId"])
   .index("by_owner_publisher", ["ownerPublisherId"])
   .index("by_owner_publisher_active_updated", ["ownerPublisherId", "softDeletedAt", "updatedAt"])
+  .index("by_owner_publisher_active_downloads", [
+    "ownerPublisherId",
+    "softDeletedAt",
+    "stats.downloads",
+    "updatedAt",
+  ])
   .index("by_family_updated", ["family", "updatedAt"])
   .index("by_family_channel_updated", ["family", "channel", "updatedAt"])
   .index("by_family_official_updated", ["family", "isOfficial", "updatedAt"])
   .index("by_runtime_id", ["runtimeId"])
-  .index("by_active_updated", ["softDeletedAt", "updatedAt"]);
+  .index("by_active_updated", ["softDeletedAt", "updatedAt"])
+  .index("by_active_downloads", ["softDeletedAt", "stats.downloads", "updatedAt"]);
 
 const packageReleases = defineTable({
   packageId: v.id("packages"),
@@ -964,6 +1005,34 @@ const packageReleases = defineTable({
   .index("by_package_version", ["packageId", "version"])
   .index("by_sha256hash", ["sha256hash"]);
 
+const securityScanJobs = defineTable({
+  targetKind: securityScanTargetKindValidator,
+  skillVersionId: v.optional(v.id("skillVersions")),
+  packageReleaseId: v.optional(v.id("packageReleases")),
+  status: securityScanJobStatusValidator,
+  source: securityScanJobSourceValidator,
+  priority: v.number(),
+  hasMaliciousSignal: v.boolean(),
+  waitForVtUntil: v.number(),
+  nextRunAt: v.number(),
+  attempts: v.number(),
+  leaseToken: v.optional(v.string()),
+  leaseExpiresAt: v.optional(v.number()),
+  workerId: v.optional(v.string()),
+  lastError: v.optional(v.string()),
+  runId: v.optional(v.string()),
+  completedAt: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_status_and_next_run_at", ["status", "nextRunAt"])
+  .index("by_status_source_created_at", ["status", "source", "createdAt"])
+  .index("by_status_source_target_kind_created_at", ["status", "source", "targetKind", "createdAt"])
+  .index("by_status_and_lease_expires_at", ["status", "leaseExpiresAt"])
+  .index("by_status_malicious_signal_next_run_at", ["status", "hasMaliciousSignal", "nextRunAt"])
+  .index("by_skill_version", ["skillVersionId"])
+  .index("by_package_release", ["packageReleaseId"]);
+
 const packageStatEvents = defineTable({
   packageId: v.id("packages"),
   kind: v.union(v.literal("download"), v.literal("install")),
@@ -1031,6 +1100,7 @@ const packageSearchDigest = defineTable({
   latestVersion: v.optional(v.string()),
   runtimeId: v.optional(v.string()),
   capabilityTags: v.optional(v.array(v.string())),
+  pluginCategoryTags: v.optional(v.array(v.string())),
   executesCode: v.optional(v.boolean()),
   verificationTier: v.optional(packageVerificationTierValidator),
   scanStatus: packageScanStatusValidator,
@@ -1208,6 +1278,124 @@ const packageCapabilitySearchDigest = defineTable({
     "channel",
     "isOfficial",
     "capabilityTag",
+    "executesCode",
+    "updatedAt",
+  ]);
+
+const packagePluginCategorySearchDigest = defineTable({
+  packageId: v.id("packages"),
+  name: v.string(),
+  normalizedName: v.string(),
+  displayName: v.string(),
+  family: packageFamilyValidator,
+  channel: packageChannelValidator,
+  isOfficial: v.boolean(),
+  ownerUserId: v.id("users"),
+  ownerPublisherId: v.optional(v.id("publishers")),
+  ownerHandle: v.optional(v.string()),
+  ownerKind: v.optional(v.union(v.literal("user"), v.literal("org"))),
+  summary: v.optional(v.string()),
+  latestVersion: v.optional(v.string()),
+  runtimeId: v.optional(v.string()),
+  capabilityTags: v.optional(v.array(v.string())),
+  pluginCategoryTags: v.optional(v.array(v.string())),
+  pluginCategory: v.string(),
+  executesCode: v.optional(v.boolean()),
+  verificationTier: v.optional(packageVerificationTierValidator),
+  scanStatus: packageScanStatusValidator,
+  softDeletedAt: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_package", ["packageId", "pluginCategory"])
+  .index("by_active_category_updated", ["softDeletedAt", "pluginCategory", "updatedAt"])
+  .index("by_active_category_executes_updated", [
+    "softDeletedAt",
+    "pluginCategory",
+    "executesCode",
+    "updatedAt",
+  ])
+  .index("by_active_family_category_updated", [
+    "softDeletedAt",
+    "family",
+    "pluginCategory",
+    "updatedAt",
+  ])
+  .index("by_active_family_category_executes_updated", [
+    "softDeletedAt",
+    "family",
+    "pluginCategory",
+    "executesCode",
+    "updatedAt",
+  ])
+  .index("by_active_channel_category_updated", [
+    "softDeletedAt",
+    "channel",
+    "pluginCategory",
+    "updatedAt",
+  ])
+  .index("by_active_channel_category_executes_updated", [
+    "softDeletedAt",
+    "channel",
+    "pluginCategory",
+    "executesCode",
+    "updatedAt",
+  ])
+  .index("by_active_official_category_updated", [
+    "softDeletedAt",
+    "isOfficial",
+    "pluginCategory",
+    "updatedAt",
+  ])
+  .index("by_active_official_category_executes_updated", [
+    "softDeletedAt",
+    "isOfficial",
+    "pluginCategory",
+    "executesCode",
+    "updatedAt",
+  ])
+  .index("by_active_family_channel_category_updated", [
+    "softDeletedAt",
+    "family",
+    "channel",
+    "pluginCategory",
+    "updatedAt",
+  ])
+  .index("by_active_family_channel_category_executes_updated", [
+    "softDeletedAt",
+    "family",
+    "channel",
+    "pluginCategory",
+    "executesCode",
+    "updatedAt",
+  ])
+  .index("by_active_family_official_category_updated", [
+    "softDeletedAt",
+    "family",
+    "isOfficial",
+    "pluginCategory",
+    "updatedAt",
+  ])
+  .index("by_active_family_official_category_executes_updated", [
+    "softDeletedAt",
+    "family",
+    "isOfficial",
+    "pluginCategory",
+    "executesCode",
+    "updatedAt",
+  ])
+  .index("by_active_channel_official_category_updated", [
+    "softDeletedAt",
+    "channel",
+    "isOfficial",
+    "pluginCategory",
+    "updatedAt",
+  ])
+  .index("by_active_channel_official_category_executes_updated", [
+    "softDeletedAt",
+    "channel",
+    "isOfficial",
+    "pluginCategory",
     "executesCode",
     "updatedAt",
   ]);
@@ -1710,12 +1898,14 @@ export default defineSchema({
   skillSlugAliases,
   packages,
   packageReleases,
+  securityScanJobs,
   packageStatEvents,
   packageTrustedPublishers,
   packagePublishTokens,
   packageBadges,
   packageSearchDigest,
   packageCapabilitySearchDigest,
+  packagePluginCategorySearchDigest,
   souls,
   skillVersions,
   depRegistryCache,

@@ -33,9 +33,9 @@ Enforcement model:
   deleted/banned/disabled accounts should each get actionable text so CLI
   clients can tell users what blocked them.
 
-- Read: 600/min per IP, 2400/min per key
-- Write: 45/min per IP, 180/min per key
-- Download: 30/min per IP, 180/min per key (`/api/v1/download`)
+- Read: 3000/min per IP, 12000/min per key
+- Write: 300/min per IP, 3000/min per key
+- Download: 1200/min per IP, 6000/min per key (download endpoints)
 
 Headers:
 
@@ -77,6 +77,15 @@ IP source:
 - ClawHub uses trusted forwarding headers to identify client IPs at the edge.
 - If no trusted client IP is available, anonymous download requests use an endpoint-scoped fallback bucket instead of one global `ip:unknown` bucket. Anonymous read/write requests still use the shared unknown bucket so missing-IP routing remains visible and conservative.
 
+## Error responses
+
+Public v1 error responses are plain text with `content-type: text/plain; charset=utf-8`.
+This includes validation failures (`400`), missing public resources (`404`), auth and
+permission failures (`401`/`403`), rate limits (`429`), and blocked downloads. Clients
+should read the response body as a human-readable string. Unknown query parameters are
+ignored for compatibility, but recognized query parameters with invalid values return
+`400`.
+
 ## Public endpoints (no auth)
 
 ### `GET /api/v1/search`
@@ -100,7 +109,13 @@ Response:
       "displayName": "GifGrep",
       "summary": "…",
       "version": "1.2.3",
-      "updatedAt": 1730000000000
+      "updatedAt": 1730000000000,
+      "ownerHandle": "openclaw",
+      "owner": {
+        "handle": "openclaw",
+        "displayName": "OpenClaw",
+        "image": "https://example.com/avatar.png"
+      }
     }
   ]
 }
@@ -130,6 +145,8 @@ Query params:
 - `sort` (optional): `updated` (default), `createdAt` (alias: `newest`), `downloads`, `stars` (alias: `rating`), `installsCurrent` (alias: `installs`), `installsAllTime`, `trending`
 - `nonSuspiciousOnly` (optional): `true` to hide suspicious (`flagged.suspicious`) skills
 - `nonSuspicious` (optional): legacy alias for `nonSuspiciousOnly`
+
+Invalid `sort` values return `400`.
 
 Notes:
 
@@ -344,8 +361,9 @@ Notes:
 - If neither `version` nor `tag` is provided, uses the latest version.
 - Includes normalized verification status plus scanner-specific details.
 - `security.capabilityTags` includes deterministic capability/risk labels such as
-  `crypto`, `requires-wallet`, `can-make-purchases`, `can-sign-transactions`,
-  `requires-oauth-token`, and `posts-externally` when detected.
+  `crypto`, `financial-authority`, `requires-wallet`, `can-make-purchases`,
+  `can-sign-transactions`, `requires-paid-service`, `requires-oauth-token`, and
+  `posts-externally` when detected.
 - `security.hasScanResult` is `true` only when a scanner produced a definitive verdict (`clean`, `suspicious`, or `malicious`).
 - `moderation` is a current skill-level moderation snapshot derived from the latest version.
 - When querying a historical version, check `moderation.matchesRequestedVersion` and `moderation.sourceVersion` before treating `moderation` and `security` as the same version context.
@@ -382,6 +400,10 @@ Query params:
 - `isOfficial` (optional): `true` or `false`
 - `executesCode` (optional): `true` or `false`
 - `capabilityTag` (optional): capability filter for plugin packages
+- `category` (optional): plugin category filter. Supported only when the
+  request is scoped to plugin packages (`/api/v1/plugins`,
+  `/api/v1/code-plugins`, `/api/v1/bundle-plugins`, or package endpoints with
+  `family=code-plugin`/`family=bundle-plugin`).
 - `target` / `hostTarget` (optional): shorthand for `host:<target>`
 - `os`, `arch`, `libc` (optional): shorthand for host capability filters
 - `requiresBrowser`, `requiresDesktop`, `requiresNativeDeps`,
@@ -395,6 +417,9 @@ Query params:
 
 Notes:
 
+- Invalid values for `family`, `channel`, `isOfficial`, `executesCode`,
+  `featured`, `highlightedOnly`, `artifactKind`, or boolean capability shorthands
+  return `400`. Unknown query parameters are ignored.
 - `GET /api/v1/code-plugins` and `GET /api/v1/bundle-plugins` remain fixed-family aliases.
 - Skill entries stay backed by the skill registry and can still be published only through `POST /api/v1/skills`.
 - `POST /api/v1/packages` is still only for code-plugin and bundle-plugin releases.
@@ -415,6 +440,8 @@ Query params:
 - `isOfficial` (optional): `true` or `false`
 - `executesCode` (optional): `true` or `false`
 - `capabilityTag` (optional): capability filter for plugin packages
+- `category` (optional): plugin category filter. Supported only when the
+  request is scoped to plugin packages.
 - `target` / `hostTarget`, `os`, `arch`, `libc`, `requiresBrowser`,
   `requiresDesktop`, `requiresNativeDeps`, `requiresExternalService`,
   `requiresBinary`, `requiresOsPermission`, `externalService`, `binary`, and
@@ -425,11 +452,52 @@ Query params:
 
 Notes:
 
+- Invalid values for `family`, `channel`, `isOfficial`, `executesCode`,
+  `featured`, `highlightedOnly`, `artifactKind`, or boolean capability shorthands
+  return `400`. Unknown query parameters are ignored.
 - Anonymous callers only see public package channels.
 - Authenticated callers can search private packages for publishers they belong to.
 - `channel=private` only returns packages the authenticated caller can read.
 - Artifact filters are backed by indexed capability tags:
   `artifact:legacy-zip`, `artifact:npm-pack`, and `npm-mirror:available`.
+
+### `GET /api/v1/plugins`
+
+Plugin-only catalog browse across code-plugin and bundle-plugin packages.
+
+Query params:
+
+- `limit` (optional): integer (1-100)
+- `cursor` (optional): pagination cursor
+- `isOfficial` (optional): `true` or `false`
+- `executesCode` (optional): `true` or `false`
+- `capabilityTag` (optional): capability filter for plugin packages
+- `category` (optional): plugin category filter. Current values:
+  `channels`, `mcp-tooling`, `data`, `security`, `observability`,
+  `automation`, `deployment`, `dev-tools`.
+
+### `GET /api/v1/plugins/search`
+
+Plugin-only search across code-plugin and bundle-plugin packages.
+
+Query params:
+
+- `q` (required): query string
+- `limit` (optional): integer (1-100)
+- `isOfficial` (optional): `true` or `false`
+- `executesCode` (optional): `true` or `false`
+- `capabilityTag` (optional): capability filter for plugin packages
+- `category` (optional): plugin category filter. Current values:
+  `channels`, `mcp-tooling`, `data`, `security`, `observability`,
+  `automation`, `deployment`, `dev-tools`.
+
+Notes:
+
+- Category filtering is a real API filter backed by plugin category digest
+  rows, not a search-query rewrite.
+- Results are returned in relevance order and do not currently paginate.
+- Browser UI sort controls for plugin search reorder the loaded relevance results,
+  matching the current `/skills` browse behavior.
 
 ### `GET /api/v1/packages/{name}`
 
@@ -475,6 +543,81 @@ Notes:
   `npmTarballName` fields.
 - `version.sha256hash`, `version.vtAnalysis`, `version.llmAnalysis`, and `version.staticScan` are included when scan data exists.
 - Private packages return `404` unless the caller can read the owning publisher.
+
+### `GET /api/v1/packages/{name}/versions/{version}/security`
+
+Returns the exact package release security and trust summary for install
+clients. This is the public OpenClaw consumption surface for deciding whether a
+resolved release can be installed.
+
+Auth:
+
+- Public read endpoint. No owner, publisher, moderator, or admin token is
+  required.
+
+Response:
+
+```json
+{
+  "package": {
+    "name": "@openclaw/example-plugin",
+    "displayName": "Example Plugin",
+    "family": "code-plugin"
+  },
+  "release": {
+    "releaseId": "packageReleases:...",
+    "version": "1.2.3",
+    "artifactKind": "npm-pack",
+    "artifactSha256": "0123456789abcdef...",
+    "npmIntegrity": "sha512-...",
+    "npmShasum": "0123456789abcdef0123456789abcdef01234567",
+    "npmTarballName": "example-plugin-1.2.3.tgz",
+    "createdAt": 1730000000000
+  },
+  "trust": {
+    "scanStatus": "malicious",
+    "moderationState": "quarantined",
+    "blockedFromDownload": true,
+    "reasons": ["manual:quarantined", "scan:malicious"],
+    "pending": false,
+    "stale": false
+  }
+}
+```
+
+Response fields:
+
+- `package.name`, `package.displayName`, and `package.family` identify the
+  resolved registry package.
+- `release.releaseId`, `release.version`, and `release.createdAt` identify the
+  exact release that was evaluated.
+- `release.artifactKind`, `release.artifactSha256`, `release.npmIntegrity`,
+  `release.npmShasum`, and `release.npmTarballName` are present when known for
+  the release artifact.
+- `trust.scanStatus` is the effective trust status derived from scanner inputs
+  and manual release moderation.
+- `trust.moderationState` is nullable. It is `null` when no manual release
+  moderation exists.
+- `trust.blockedFromDownload` is the install block signal. OpenClaw and other
+  install clients should block installation when this value is `true` instead of
+  re-deriving blocking rules from scanner or moderation fields.
+- `trust.reasons` is the user-facing and audit explanation list. Reason codes
+  are stable, compact strings such as `manual:quarantined`, `scan:malicious`,
+  `static:malicious`, `vt:suspicious`, and `package:malicious`.
+- `trust.pending` means one or more trust inputs are still awaiting completion.
+- `trust.stale` means the trust summary was computed from outdated inputs and
+  should be treated as requiring refresh before a high-confidence allow decision.
+
+Notes:
+
+- This endpoint is version-exact. Clients should call it after resolving the
+  package version they intend to install, not just after reading the latest
+  package metadata.
+- Private packages return `404` unless the caller can read the owning publisher.
+- This endpoint is intentionally narrower than owner/moderator moderation
+  endpoints. It exposes the install decision and public explanation, not
+  reporter identities, report bodies, private evidence, or internal review
+  timelines.
 
 ### `GET /api/v1/packages/{name}/versions/{version}/artifact`
 
@@ -1049,6 +1192,16 @@ legacy shared user/personal publisher, the endpoint migrates it into an org publ
 - Body: `{ "handle": "openclaw", "displayName": "OpenClaw", "trusted": true }`
 - Response: `{ "ok": true, "publisherId": "...", "handle": "openclaw", "created": true, "migrated": false, "trusted": true }`
 
+### `POST /api/v1/publishers`
+
+Authenticated self-serve org publisher creation. Creates a new org publisher and adds the
+caller as owner. This endpoint does not migrate existing user/personal handles and does
+not mark the publisher trusted/official.
+
+- Body: `{ "handle": "opik", "displayName": "Opik" }`
+- Response: `{ "ok": true, "publisherId": "...", "handle": "opik", "created": true, "trusted": false }`
+- Returns `409` when the handle is already used by a publisher, user, or personal publisher.
+
 ### `POST /api/v1/users/reserve`
 
 Admin-only. Reserves root slugs and package names for a rightful owner without publishing a
@@ -1128,6 +1281,37 @@ Response:
 
 ```json
 { "ok": true, "alreadyUnbanned": false, "restoredSkills": 3 }
+```
+
+### `POST /api/v1/users/reclassify-ban`
+
+Change the stored reason for an existing ban without unbanning or restoring
+content (admin only). Defaults to dry-run unless `dryRun` is `false`.
+
+Body:
+
+```json
+{ "handle": "user_handle", "reason": "bulk publishing spam", "dryRun": true }
+```
+
+or
+
+```json
+{ "userId": "users_...", "reason": "bulk publishing spam", "dryRun": false }
+```
+
+Response:
+
+```json
+{
+  "ok": true,
+  "dryRun": false,
+  "userId": "users_...",
+  "handle": "user_handle",
+  "previousReason": "malware auto-ban",
+  "nextReason": "bulk publishing spam",
+  "changed": true
+}
 ```
 
 ### `POST /api/v1/users/role`

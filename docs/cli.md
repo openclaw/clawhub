@@ -98,6 +98,7 @@ Stores your API token + cached registry URL.
 ### `search <query...>`
 
 - Calls `/api/v1/search?q=...`.
+- Output includes the skill slug, owner handle, display name, and relevance score.
 - Search favors exact slug/name token matches before download popularity. A standalone slug token such as `map` matches `personal-map` more strongly than the substring inside `amap`.
 - Downloads are a small popularity prior, not a guarantee of top placement.
 - If a skill should appear but does not, run `clawhub inspect <slug>` while logged in to check owner-visible moderation diagnostics before renaming metadata.
@@ -443,6 +444,17 @@ Example:
 
 ```bash
 clawhub package migration-status @openclaw/example-plugin
+```
+
+### `publisher create <handle>`
+
+- Creates an org publisher owned by the authenticated user.
+- The handle is normalized to lowercase and may be passed with or without `@`.
+- Newly created org publishers are not trusted/official by default.
+- Fails if the handle is already used by an existing publisher, user, or reserved route.
+
+```bash
+clawhub publisher create opik --display-name "Opik"
 ```
 
 ### `package publish <source>`

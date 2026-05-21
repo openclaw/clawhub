@@ -1,7 +1,12 @@
 /* @vitest-environment node */
 
 import { describe, expect, it } from "vitest";
-import { __test, matchesExactTokens, tokenize } from "./searchText";
+import {
+  __test,
+  matchesExactTokens,
+  matchesExploratoryTokenPrefixes,
+  tokenize,
+} from "./searchText";
 
 describe("searchText", () => {
   it("tokenize lowercases and splits on punctuation", () => {
@@ -43,6 +48,18 @@ describe("searchText", () => {
   it("matchesExactTokens ignores empty inputs", () => {
     expect(matchesExactTokens([], ["text"])).toBe(false);
     expect(matchesExactTokens(["token"], ["  ", null, undefined])).toBe(false);
+  });
+
+  it("requires every query token to meet the exploratory minimum", () => {
+    expect(matchesExploratoryTokenPrefixes(tokenize("postgres"), ["Postgres database"], 3)).toBe(
+      true,
+    );
+    expect(matchesExploratoryTokenPrefixes(tokenize("ai postgres"), ["Postgres database"], 3)).toBe(
+      false,
+    );
+    expect(matchesExploratoryTokenPrefixes(tokenize("pg database"), ["Database tools"], 3)).toBe(
+      false,
+    );
   });
 
   it("normalize uses lowercase", () => {

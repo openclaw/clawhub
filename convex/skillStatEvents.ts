@@ -30,8 +30,7 @@ import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";
  * Event types that affect skill stats:
  *
  * - download: User downloaded skill as zip (+1 downloads)
- * - star: User starred the skill (+1 stars)
- * - unstar: User removed their star (-1 stars)
+ * - star/unstar: legacy queued events; star rows now update counts synchronously
  * - install_new: First time this user installed this skill (+1 installsAllTime, +1 installsCurrent)
  * - install_reactivate: User re-added skill after removing it (+1 installsCurrent only)
  * - install_deactivate: User removed skill from all projects (-1 installsCurrent)
@@ -140,10 +139,11 @@ function aggregateEvents(events: Doc<"skillStatEvents">[]): AggregatedDeltas {
         result.downloadEvents.push(event.occurredAt);
         break;
       case "star":
-        result.stars += 1;
+        // Star counts are updated synchronously from `stars` mutations now.
+        // Historical queued star events are marked processed without changing stats.
         break;
       case "unstar":
-        result.stars -= 1;
+        // See `star` above.
         break;
       case "comment":
         result.comments += 1;
@@ -497,10 +497,10 @@ export const processSkillStatEventsAction = internalAction({
             skillDelta.downloadEvents.push(event.occurredAt);
             break;
           case "star":
-            skillDelta.stars += 1;
+            // Star counts are updated synchronously from `stars` mutations now.
             break;
           case "unstar":
-            skillDelta.stars -= 1;
+            // Historical queued unstar events should not double-apply.
             break;
           case "comment":
             skillDelta.comments += 1;

@@ -466,7 +466,10 @@ Return agentic_risk_findings only for artifact-backed notes or concerns. It is v
 const INJECTION_PATTERNS: Array<{ name: string; regex: RegExp }> = [
   { name: "ignore-previous-instructions", regex: /ignore\s+(all\s+)?previous\s+instructions/i },
   { name: "you-are-now", regex: /you\s+are\s+now\s+(a|an)\b/i },
-  { name: "system-prompt-override", regex: /system\s*prompt\s*[:=]/i },
+  {
+    name: "system-prompt-override",
+    regex: /(?:^|[^A-Za-z0-9_])system[\s_-]+prompt\s*[:=]/i,
+  },
   { name: "base64-block", regex: /[A-Za-z0-9+/=]{200,}/ },
   {
     name: "unicode-control-chars",

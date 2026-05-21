@@ -1,0 +1,1219 @@
+{
+  "ok": true,
+  "generated_at": "2026-05-14T18:43:58.463Z",
+  "validation_summary": {
+    "ok": true,
+    "rowCount": 1250,
+    "skillCount": 1000,
+    "pluginCount": 250,
+    "findings": []
+  },
+  "review_samples": {
+    "redacted_secret_marker_rows": [
+      {
+        "kind": "skill",
+        "key": "1688-shop-health-check"
+      },
+      {
+        "kind": "skill",
+        "key": "24konbini"
+      },
+      {
+        "kind": "skill",
+        "key": "5gc-automation"
+      },
+      {
+        "kind": "skill",
+        "key": "active-campaign"
+      },
+      {
+        "kind": "skill",
+        "key": "afol-brickset"
+      },
+      {
+        "kind": "skill",
+        "key": "afrexai-ai-coding-toolkit"
+      },
+      {
+        "kind": "skill",
+        "key": "agent-belief-discoverer"
+      },
+      {
+        "kind": "skill",
+        "key": "agent-feishu-direct-tools-patch"
+      },
+      {
+        "kind": "skill",
+        "key": "agent-payment-protocol"
+      },
+      {
+        "kind": "skill",
+        "key": "agentmail-integration"
+      },
+      {
+        "kind": "skill",
+        "key": "agntdata-facebook"
+      },
+      {
+        "kind": "skill",
+        "key": "agntdata-linkedin"
+      },
+      {
+        "kind": "skill",
+        "key": "agntdata-x"
+      },
+      {
+        "kind": "skill",
+        "key": "ah-nextjs-pro"
+      },
+      {
+        "kind": "skill",
+        "key": "ai-diabetes-coach"
+      },
+      {
+        "kind": "skill",
+        "key": "ai-scam-defense"
+      },
+      {
+        "kind": "skill",
+        "key": "ai-viral-content"
+      },
+      {
+        "kind": "skill",
+        "key": "aidex"
+      },
+      {
+        "kind": "skill",
+        "key": "aipptskill"
+      },
+      {
+        "kind": "skill",
+        "key": "airtable"
+      },
+      {
+        "kind": "skill",
+        "key": "aleph-vm-replication"
+      },
+      {
+        "kind": "skill",
+        "key": "alibaba-supplier-outreach"
+      },
+      {
+        "kind": "skill",
+        "key": "alibabacloud-cfw-exposure-detection"
+      },
+      {
+        "kind": "skill",
+        "key": "alibabacloud-cli-guidance"
+      },
+      {
+        "kind": "skill",
+        "key": "alibabacloud-ecs-install-extension"
+      },
+      {
+        "kind": "skill",
+        "key": "alibabacloud-emr-spark-manage"
+      },
+      {
+        "kind": "skill",
+        "key": "alibabacloud-maxcompute-migration-service"
+      },
+      {
+        "kind": "skill",
+        "key": "alibabacloud-oss-manage-metaquery"
+      },
+      {
+        "kind": "skill",
+        "key": "alibabacloud-quickbi-smartq"
+      },
+      {
+        "kind": "skill",
+        "key": "alibabacloud-sas-incident-manage"
+      },
+      {
+        "kind": "skill",
+        "key": "alibabacloud-solution-deploy"
+      },
+      {
+        "kind": "skill",
+        "key": "alva"
+      },
+      {
+        "kind": "skill",
+        "key": "amazon-screenshot"
+      },
+      {
+        "kind": "skill",
+        "key": "apex-ia-scanner"
+      },
+      {
+        "kind": "skill",
+        "key": "aqara-agent"
+      },
+      {
+        "kind": "skill",
+        "key": "aurehub-polymarket-trade"
+      },
+      {
+        "kind": "skill",
+        "key": "auth0-springboot-api"
+      },
+      {
+        "kind": "skill",
+        "key": "authoritative-bid-policy-guide-yuanbowang"
+      },
+      {
+        "kind": "skill",
+        "key": "auto-apply"
+      },
+      {
+        "kind": "skill",
+        "key": "auto-news-podcast"
+      },
+      {
+        "kind": "skill",
+        "key": "awesome-geelark-skill"
+      },
+      {
+        "kind": "skill",
+        "key": "awp"
+      },
+      {
+        "kind": "skill",
+        "key": "b2b-lead-engine"
+      },
+      {
+        "kind": "skill",
+        "key": "baoyu-youtube-transcript"
+      },
+      {
+        "kind": "skill",
+        "key": "baserow-api"
+      },
+      {
+        "kind": "skill",
+        "key": "basic-home-repair"
+      },
+      {
+        "kind": "skill",
+        "key": "beeper-api-cli"
+      },
+      {
+        "kind": "skill",
+        "key": "block"
+      },
+      {
+        "kind": "skill",
+        "key": "blossom-jobs"
+      },
+      {
+        "kind": "skill",
+        "key": "bookforge-least-privilege-access-design"
+      },
+      {
+        "kind": "skill",
+        "key": "bookforge-profiling-driven-performance-optimization"
+      },
+      {
+        "kind": "skill",
+        "key": "bookforge-session-state-location-selector"
+      },
+      {
+        "kind": "skill",
+        "key": "bookforge-source-code-security-review"
+      },
+      {
+        "kind": "skill",
+        "key": "bookforge-web-application-fuzzing-automation"
+      },
+      {
+        "kind": "skill",
+        "key": "booksearch-api"
+      },
+      {
+        "kind": "skill",
+        "key": "botmadang"
+      },
+      {
+        "kind": "skill",
+        "key": "brightdata-agent-onboarding"
+      },
+      {
+        "kind": "skill",
+        "key": "browser-agent-pro"
+      },
+      {
+        "kind": "skill",
+        "key": "buffer-api"
+      },
+      {
+        "kind": "skill",
+        "key": "bytesagain-crypto-news-feed"
+      },
+      {
+        "kind": "skill",
+        "key": "canslim-analysis"
+      },
+      {
+        "kind": "skill",
+        "key": "card-transfer"
+      },
+      {
+        "kind": "skill",
+        "key": "cesto-toolkit"
+      },
+      {
+        "kind": "skill",
+        "key": "china-localization"
+      },
+      {
+        "kind": "skill",
+        "key": "chinese-official-writing"
+      },
+      {
+        "kind": "skill",
+        "key": "claim-verifier"
+      },
+      {
+        "kind": "skill",
+        "key": "claw-wallet-pro"
+      },
+      {
+        "kind": "skill",
+        "key": "claw402"
+      },
+      {
+        "kind": "skill",
+        "key": "clawdvine"
+      },
+      {
+        "kind": "skill",
+        "key": "clawmarket"
+      },
+      {
+        "kind": "skill",
+        "key": "clawpost"
+      },
+      {
+        "kind": "skill",
+        "key": "clawrent-agent"
+      },
+      {
+        "kind": "skill",
+        "key": "clawshot"
+      },
+      {
+        "kind": "skill",
+        "key": "clawspaces"
+      },
+      {
+        "kind": "skill",
+        "key": "clerk-auth"
+      },
+      {
+        "kind": "skill",
+        "key": "clickup-api"
+      },
+      {
+        "kind": "skill",
+        "key": "coinversaa-pulse"
+      },
+      {
+        "kind": "skill",
+        "key": "colorpool-skills"
+      },
+      {
+        "kind": "skill",
+        "key": "company-profiling"
+      },
+      {
+        "kind": "skill",
+        "key": "company-profiling-zhcn"
+      },
+      {
+        "kind": "skill",
+        "key": "constant-contact"
+      },
+      {
+        "kind": "skill",
+        "key": "contentforge-api"
+      },
+      {
+        "kind": "skill",
+        "key": "cool-gh-issues"
+      },
+      {
+        "kind": "skill",
+        "key": "create-educational-subagent"
+      },
+      {
+        "kind": "skill",
+        "key": "cremonix-signals"
+      },
+      {
+        "kind": "skill",
+        "key": "criticaster"
+      },
+      {
+        "kind": "skill",
+        "key": "crypto-tax-calc"
+      },
+      {
+        "kind": "skill",
+        "key": "crypto-treasury-ops"
+      },
+      {
+        "kind": "skill",
+        "key": "cutrix-video-translate"
+      },
+      {
+        "kind": "skill",
+        "key": "dance-movement"
+      },
+      {
+        "kind": "skill",
+        "key": "delonix-ai-podcast"
+      },
+      {
+        "kind": "skill",
+        "key": "developer-utils"
+      },
+      {
+        "kind": "skill",
+        "key": "dex-crm"
+      },
+      {
+        "kind": "skill",
+        "key": "dk-soft-agent-module"
+      },
+      {
+        "kind": "skill",
+        "key": "duffel"
+      },
+      {
+        "kind": "skill",
+        "key": "earn-passive-income-claw-agent"
+      },
+      {
+        "kind": "skill",
+        "key": "earnings-calendar"
+      },
+      {
+        "kind": "skill",
+        "key": "emotion-skill"
+      },
+      {
+        "kind": "skill",
+        "key": "enteriva-ai-social-hub"
+      },
+      {
+        "kind": "skill",
+        "key": "equal-data-skill"
+      },
+      {
+        "kind": "skill",
+        "key": "erdmannsilva-gog"
+      },
+      {
+        "kind": "skill",
+        "key": "erpclaw"
+      },
+      {
+        "kind": "skill",
+        "key": "essentialist"
+      },
+      {
+        "kind": "skill",
+        "key": "felo-superagent"
+      },
+      {
+        "kind": "skill",
+        "key": "finskills-trading-plan-generator"
+      },
+      {
+        "kind": "skill",
+        "key": "firecrawl-api"
+      },
+      {
+        "kind": "skill",
+        "key": "follow-news"
+      },
+      {
+        "kind": "skill",
+        "key": "forces-reanalyze-smart"
+      },
+      {
+        "kind": "skill",
+        "key": "free-text-generator"
+      },
+      {
+        "kind": "skill",
+        "key": "ftshare-market-data"
+      },
+      {
+        "kind": "skill",
+        "key": "game-market-skill"
+      },
+      {
+        "kind": "skill",
+        "key": "gate-exchange-spot-v2-staging"
+      },
+      {
+        "kind": "skill",
+        "key": "gceo-global-ceo-skill-system"
+      },
+      {
+        "kind": "skill",
+        "key": "ghost-blog-writer"
+      },
+      {
+        "kind": "skill",
+        "key": "global-search"
+      },
+      {
+        "kind": "skill",
+        "key": "godfery-database"
+      },
+      {
+        "kind": "skill",
+        "key": "gog-cli"
+      },
+      {
+        "kind": "skill",
+        "key": "google-docs"
+      },
+      {
+        "kind": "skill",
+        "key": "google-merchant"
+      },
+      {
+        "kind": "skill",
+        "key": "google-stitch-workflow"
+      },
+      {
+        "kind": "skill",
+        "key": "gougoubi-arena-trade"
+      },
+      {
+        "kind": "skill",
+        "key": "grafana-lens"
+      },
+      {
+        "kind": "skill",
+        "key": "greenhelix-agent-incident-response"
+      },
+      {
+        "kind": "skill",
+        "key": "greenhelix-agent-interoperability-bridge"
+      },
+      {
+        "kind": "skill",
+        "key": "greenhelix-agent-memory-commerce"
+      },
+      {
+        "kind": "skill",
+        "key": "guanyuan-majia"
+      },
+      {
+        "kind": "skill",
+        "key": "hermes-tweet"
+      },
+      {
+        "kind": "skill",
+        "key": "heroku-platform-api"
+      },
+      {
+        "kind": "skill",
+        "key": "huo15-huihuoyun-odoo"
+      },
+      {
+        "kind": "skill",
+        "key": "id-cv-resume-creator"
+      },
+      {
+        "kind": "skill",
+        "key": "ima-wiki-compiler"
+      },
+      {
+        "kind": "skill",
+        "key": "jira-atlassian"
+      },
+      {
+        "kind": "skill",
+        "key": "jobautopilot-submitter"
+      },
+      {
+        "kind": "skill",
+        "key": "justoneapi-tiktok-shop-get-product-detail"
+      },
+      {
+        "kind": "skill",
+        "key": "justoneapi-weibo-get-post-comments"
+      },
+      {
+        "kind": "skill",
+        "key": "justoneapi-xiaohongshu-get-note-detail"
+      },
+      {
+        "kind": "skill",
+        "key": "jx-scrape"
+      },
+      {
+        "kind": "skill",
+        "key": "kaipai-skill"
+      },
+      {
+        "kind": "skill",
+        "key": "kalshi-weather-trader"
+      },
+      {
+        "kind": "skill",
+        "key": "kelcey-zeelin-deep-research"
+      },
+      {
+        "kind": "skill",
+        "key": "lejian-feishu-sheet"
+      },
+      {
+        "kind": "skill",
+        "key": "liberfi-portfolio"
+      },
+      {
+        "kind": "skill",
+        "key": "linkclaw-linkcrux"
+      },
+      {
+        "kind": "skill",
+        "key": "linkedin-api"
+      },
+      {
+        "kind": "skill",
+        "key": "linkedin-community"
+      },
+      {
+        "kind": "skill",
+        "key": "linkfox-amazon-store-report"
+      },
+      {
+        "kind": "skill",
+        "key": "lovefromio-getnote"
+      },
+      {
+        "kind": "skill",
+        "key": "lukaizj-gmail"
+      },
+      {
+        "kind": "skill",
+        "key": "mailchimp"
+      },
+      {
+        "kind": "skill",
+        "key": "mailserver-maintenance"
+      },
+      {
+        "kind": "skill",
+        "key": "maker-japanese"
+      },
+      {
+        "kind": "skill",
+        "key": "maverick-docusign-mcp"
+      },
+      {
+        "kind": "skill",
+        "key": "maverick-hubspot-mcp"
+      },
+      {
+        "kind": "skill",
+        "key": "maverick-linear-mcp"
+      },
+      {
+        "kind": "skill",
+        "key": "mcp-best-practices"
+      },
+      {
+        "kind": "skill",
+        "key": "meshy-3d-agent"
+      },
+      {
+        "kind": "skill",
+        "key": "meta-ad-spy"
+      },
+      {
+        "kind": "skill",
+        "key": "mobazha-store-onboarding"
+      },
+      {
+        "kind": "skill",
+        "key": "modesty-admapix"
+      },
+      {
+        "kind": "skill",
+        "key": "molted-work"
+      },
+      {
+        "kind": "skill",
+        "key": "moltiversity"
+      },
+      {
+        "kind": "skill",
+        "key": "moltlist"
+      },
+      {
+        "kind": "skill",
+        "key": "moltmail-ethermail"
+      },
+      {
+        "kind": "skill",
+        "key": "moltme"
+      },
+      {
+        "kind": "skill",
+        "key": "moltme-dating"
+      },
+      {
+        "kind": "skill",
+        "key": "morestore"
+      },
+      {
+        "kind": "skill",
+        "key": "morning-email-rollup"
+      },
+      {
+        "kind": "skill",
+        "key": "mysql-database-skill"
+      },
+      {
+        "kind": "skill",
+        "key": "n8n-pilot"
+      },
+      {
+        "kind": "skill",
+        "key": "nano-banana-2-runcomfy"
+      },
+      {
+        "kind": "skill",
+        "key": "nansen-mpp-payment"
+      },
+      {
+        "kind": "skill",
+        "key": "network-ai"
+      },
+      {
+        "kind": "skill",
+        "key": "neuralpool"
+      },
+      {
+        "kind": "skill",
+        "key": "nodemaven-premium-proxy"
+      },
+      {
+        "kind": "skill",
+        "key": "notion-api-skill"
+      },
+      {
+        "kind": "skill",
+        "key": "ntriq-x402-code-review-batch"
+      },
+      {
+        "kind": "skill",
+        "key": "ntriq-x402-pii-detect"
+      },
+      {
+        "kind": "skill",
+        "key": "nutrigenomics"
+      },
+      {
+        "kind": "skill",
+        "key": "nvidia-free-api"
+      },
+      {
+        "kind": "skill",
+        "key": "octolens"
+      },
+      {
+        "kind": "skill",
+        "key": "officex"
+      },
+      {
+        "kind": "skill",
+        "key": "okx-cex-trade"
+      },
+      {
+        "kind": "skill",
+        "key": "olares-dashboard"
+      },
+      {
+        "kind": "skill",
+        "key": "openclaw-administrator"
+      },
+      {
+        "kind": "skill",
+        "key": "openclaw-email-lead-generation"
+      },
+      {
+        "kind": "skill",
+        "key": "openclaw-hi-install"
+      },
+      {
+        "kind": "skill",
+        "key": "openclaw-prompt-shield"
+      },
+      {
+        "kind": "skill",
+        "key": "openpayment"
+      },
+      {
+        "kind": "skill",
+        "key": "openpot-awareness"
+      },
+      {
+        "kind": "skill",
+        "key": "opensoul"
+      },
+      {
+        "kind": "skill",
+        "key": "orca-lp-analytics"
+      },
+      {
+        "kind": "skill",
+        "key": "page-agent-browser"
+      },
+      {
+        "kind": "skill",
+        "key": "pangolin-amazon-scraper"
+      },
+      {
+        "kind": "skill",
+        "key": "panthrocorp-google-workspace"
+      },
+      {
+        "kind": "skill",
+        "key": "paprika"
+      },
+      {
+        "kind": "skill",
+        "key": "pinchwork"
+      },
+      {
+        "kind": "skill",
+        "key": "podcast-pipeline"
+      },
+      {
+        "kind": "skill",
+        "key": "policy-sea"
+      },
+      {
+        "kind": "skill",
+        "key": "pollyreach"
+      },
+      {
+        "kind": "skill",
+        "key": "porteden-email"
+      },
+      {
+        "kind": "skill",
+        "key": "property-advisor"
+      },
+      {
+        "kind": "skill",
+        "key": "proton-pass"
+      },
+      {
+        "kind": "skill",
+        "key": "qrcode-tool"
+      },
+      {
+        "kind": "skill",
+        "key": "qwen3-tts-instruct"
+      },
+      {
+        "kind": "skill",
+        "key": "raccoon-data-analysis-skill"
+      },
+      {
+        "kind": "skill",
+        "key": "rankforge-api"
+      },
+      {
+        "kind": "skill",
+        "key": "recipe-send-team-announcement"
+      },
+      {
+        "kind": "skill",
+        "key": "remote-browser"
+      },
+      {
+        "kind": "skill",
+        "key": "resume-cv-builder"
+      },
+      {
+        "kind": "skill",
+        "key": "roster"
+      },
+      {
+        "kind": "skill",
+        "key": "runcomfy-cli"
+      },
+      {
+        "kind": "skill",
+        "key": "scholar-report-x49"
+      },
+      {
+        "kind": "skill",
+        "key": "seedance2-skill"
+      },
+      {
+        "kind": "skill",
+        "key": "shekel-arena"
+      },
+      {
+        "kind": "skill",
+        "key": "shopping-list"
+      },
+      {
+        "kind": "skill",
+        "key": "skill-find"
+      },
+      {
+        "kind": "skill",
+        "key": "skill-pay"
+      },
+      {
+        "kind": "skill",
+        "key": "skylv-secret-detector"
+      },
+      {
+        "kind": "skill",
+        "key": "skylv-universal-bot-maker"
+      },
+      {
+        "kind": "skill",
+        "key": "slack-api"
+      },
+      {
+        "kind": "skill",
+        "key": "smb-sales-boost-leads"
+      },
+      {
+        "kind": "skill",
+        "key": "smyx-arrhythmia-early-warning-analysis"
+      },
+      {
+        "kind": "skill",
+        "key": "socialcannon"
+      },
+      {
+        "kind": "skill",
+        "key": "socialconductor-skill"
+      },
+      {
+        "kind": "skill",
+        "key": "sovereign-api-hardener"
+      },
+      {
+        "kind": "skill",
+        "key": "sovereign-content-scraper"
+      },
+      {
+        "kind": "skill",
+        "key": "sur-pub"
+      },
+      {
+        "kind": "skill",
+        "key": "talagent"
+      },
+      {
+        "kind": "skill",
+        "key": "tandoor-cli"
+      },
+      {
+        "kind": "skill",
+        "key": "tapauth"
+      },
+      {
+        "kind": "skill",
+        "key": "target-intelligence"
+      },
+      {
+        "kind": "skill",
+        "key": "temp-email"
+      },
+      {
+        "kind": "skill",
+        "key": "tender-search-biaozhaozhao"
+      },
+      {
+        "kind": "skill",
+        "key": "texas-llc-formation"
+      },
+      {
+        "kind": "skill",
+        "key": "tianchenwei4"
+      },
+      {
+        "kind": "skill",
+        "key": "tickerdb"
+      },
+      {
+        "kind": "skill",
+        "key": "tokclaw"
+      },
+      {
+        "kind": "skill",
+        "key": "trello-api"
+      },
+      {
+        "kind": "skill",
+        "key": "tuya-smart-control"
+      },
+      {
+        "kind": "skill",
+        "key": "tweet-search"
+      },
+      {
+        "kind": "skill",
+        "key": "twitter-autopilot-aisa-api"
+      },
+      {
+        "kind": "skill",
+        "key": "verimor-sms"
+      },
+      {
+        "kind": "skill",
+        "key": "video-translate"
+      },
+      {
+        "kind": "skill",
+        "key": "vmake-skill"
+      },
+      {
+        "kind": "skill",
+        "key": "vn-skill"
+      },
+      {
+        "kind": "skill",
+        "key": "vn-skill-for-windows"
+      },
+      {
+        "kind": "skill",
+        "key": "wallet-test"
+      },
+      {
+        "kind": "skill",
+        "key": "wangyan-gemini-image-gen"
+      },
+      {
+        "kind": "skill",
+        "key": "wendian-stock-skill"
+      },
+      {
+        "kind": "skill",
+        "key": "whatsapp-cloud-api-reference"
+      }
+    ],
+    "longest_skill_texts": [
+      {
+        "slug": "greenhelix-agent-interoperability-bridge",
+        "length": 120002
+      },
+      {
+        "slug": "linkclaw-linkcrux",
+        "length": 120002
+      },
+      {
+        "slug": "greenhelix-agent-incident-response",
+        "length": 101397
+      },
+      {
+        "slug": "grafana-lens",
+        "length": 95365
+      },
+      {
+        "slug": "greenhelix-agent-memory-commerce",
+        "length": 94803
+      },
+      {
+        "slug": "google-stitch-workflow",
+        "length": 83061
+      },
+      {
+        "slug": "content-writing-thought-leadership",
+        "length": 73670
+      },
+      {
+        "slug": "awp",
+        "length": 71898
+      },
+      {
+        "slug": "integrated-manufacturing-consulting",
+        "length": 68276
+      },
+      {
+        "slug": "olares-dashboard",
+        "length": 65607
+      },
+      {
+        "slug": "alva",
+        "length": 64908
+      },
+      {
+        "slug": "talagent",
+        "length": 63796
+      },
+      {
+        "slug": "clawdvine",
+        "length": 62100
+      },
+      {
+        "slug": "jeff-content-factory",
+        "length": 57673
+      },
+      {
+        "slug": "paper-deepread-comic-studio",
+        "length": 57671
+      },
+      {
+        "slug": "orca-lp-analytics",
+        "length": 54749
+      },
+      {
+        "slug": "developer-utils",
+        "length": 53876
+      },
+      {
+        "slug": "newsletter-creation-curation",
+        "length": 53212
+      },
+      {
+        "slug": "humanizer-skill",
+        "length": 48062
+      },
+      {
+        "slug": "openclaw-email-lead-generation",
+        "length": 48022
+      },
+      {
+        "slug": "claw402",
+        "length": 47138
+      },
+      {
+        "slug": "shopprentice",
+        "length": 46762
+      },
+      {
+        "slug": "mechanic",
+        "length": 46658
+      },
+      {
+        "slug": "tickerdb",
+        "length": 46196
+      },
+      {
+        "slug": "agency-os",
+        "length": 46042
+      }
+    ],
+    "deterministic_random_rows": [
+      {
+        "kind": "skill",
+        "key": "claude-code-evolution"
+      },
+      {
+        "kind": "skill",
+        "key": "game-valuation-skill"
+      },
+      {
+        "kind": "skill",
+        "key": "linkedin-community"
+      },
+      {
+        "kind": "plugin",
+        "key": "ddio"
+      },
+      {
+        "kind": "skill",
+        "key": "enteriva-ai-social-hub"
+      },
+      {
+        "kind": "skill",
+        "key": "synmerco"
+      },
+      {
+        "kind": "skill",
+        "key": "booksearch-api"
+      },
+      {
+        "kind": "skill",
+        "key": "raai-business-analyst-pro"
+      },
+      {
+        "kind": "skill",
+        "key": "emergency-fund-builder"
+      },
+      {
+        "kind": "skill",
+        "key": "niuniu-skill-extractor"
+      },
+      {
+        "kind": "skill",
+        "key": "kalshi-weather-trader"
+      },
+      {
+        "kind": "skill",
+        "key": "openclaw-administrator"
+      },
+      {
+        "kind": "skill",
+        "key": "grok-search"
+      },
+      {
+        "kind": "skill",
+        "key": "indeed"
+      },
+      {
+        "kind": "skill",
+        "key": "customer-journey-mapper"
+      },
+      {
+        "kind": "skill",
+        "key": "nm-hookify-writing-rules"
+      },
+      {
+        "kind": "skill",
+        "key": "afrexai-ai-coding-toolkit"
+      },
+      {
+        "kind": "skill",
+        "key": "web-search-rules-en"
+      },
+      {
+        "kind": "skill",
+        "key": "pollyreach"
+      },
+      {
+        "kind": "skill",
+        "key": "agent-trading-bot"
+      },
+      {
+        "kind": "skill",
+        "key": "smyx-drive-analysis"
+      },
+      {
+        "kind": "plugin",
+        "key": "deeplake-plugin"
+      },
+      {
+        "kind": "skill",
+        "key": "basic-home-repair"
+      },
+      {
+        "kind": "skill",
+        "key": "polymarket-aion-trader"
+      },
+      {
+        "kind": "plugin",
+        "key": "multi-source-search-plugin"
+      }
+    ]
+  }
+}

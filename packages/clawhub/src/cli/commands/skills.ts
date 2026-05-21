@@ -89,6 +89,15 @@ function formatPinnedDetails(entry?: { pinReason?: string }) {
   return entry?.pinReason ? ` (${entry.pinReason})` : "";
 }
 
+function formatSearchOwner(entry: {
+  ownerHandle?: string | null;
+  owner?: { handle?: string | null; displayName?: string | null } | null;
+}) {
+  const handle = entry.ownerHandle ?? entry.owner?.handle;
+  if (handle) return `@${handle}`;
+  return entry.owner?.displayName ?? "unknown owner";
+}
+
 export async function cmdSearch(opts: GlobalOpts, query: string, limit?: number) {
   if (!query) fail("Query required");
 
@@ -111,7 +120,9 @@ export async function cmdSearch(opts: GlobalOpts, query: string, limit?: number)
       const slug = entry.slug ?? "unknown";
       const name = entry.displayName ?? slug;
       const version = entry.version ? ` v${entry.version}` : "";
-      console.log(`${slug}${version}  ${name}  (${entry.score.toFixed(3)})`);
+      console.log(
+        `${slug}${version}  ${formatSearchOwner(entry)}  ${name}  (${entry.score.toFixed(3)})`,
+      );
     }
   } catch (error) {
     spinner.fail(formatError(error));
@@ -161,7 +172,7 @@ export async function cmdInstall(
     if (skillMeta.moderation?.isSuspicious && !force) {
       spinner.stop();
       console.log(
-        `\n⚠️  Warning: "${trimmed}" is flagged as suspicious by VirusTotal Code Insight.\n` +
+        `\n⚠️  Warning: "${trimmed}" is flagged for ClawHub security review.\n` +
           "   This skill may contain risky patterns (crypto keys, external APIs, eval, etc.)\n" +
           "   Review the skill code before use.\n",
       );
@@ -198,6 +209,9 @@ export async function cmdInstall(
     spinner.text = `Downloading ${trimmed}@${resolvedVersion}`;
     const zip = await downloadZip(registry, { slug: trimmed, version: resolvedVersion, token });
     await extractZipToDir(zip, target);
+    const installedFiles = await listTextFiles(target);
+    const installedFingerprint =
+      installedFiles.length > 0 ? hashSkillFiles(installedFiles).fingerprint : undefined;
 
     await writeSkillOrigin(target, {
       version: 1,
@@ -205,6 +219,7 @@ export async function cmdInstall(
       slug: trimmed,
       installedVersion: resolvedVersion,
       installedAt: Date.now(),
+      fingerprint: installedFingerprint,
     });
 
     lock.skills[trimmed] = withPinnedMetadata(resolvedVersion, Date.now(), existingEntry);
@@ -261,6 +276,7 @@ export async function cmdUpdate(
     try {
       const target = join(opts.dir, entry);
       const exists = await fileExists(target);
+      const existingOrigin = exists ? await readSkillOrigin(target) : null;
 
       // Always fetch skill metadata to check moderation status
       const skillMeta = await apiRequest(
@@ -279,7 +295,7 @@ export async function cmdUpdate(
       if (skillMeta.moderation?.isSuspicious && !options.force) {
         spinner.stop();
         console.log(
-          `\n⚠️  Warning: "${entry}" is flagged as suspicious by VirusTotal Code Insight.\n` +
+          `\n⚠️  Warning: "${entry}" is flagged for ClawHub security review.\n` +
             "   This skill may contain risky patterns (crypto keys, external APIs, eval, etc.)\n",
         );
         if (allowPrompt) {
@@ -312,7 +328,13 @@ export async function cmdUpdate(
       }
 
       const latest = resolveResult.latestVersion?.version ?? null;
-      const matched = resolveResult.match?.version ?? null;
+      const matched =
+        resolveResult.match?.version ??
+        (localFingerprint &&
+        existingOrigin?.fingerprint === localFingerprint &&
+        existingOrigin.slug === entry
+          ? existingOrigin.installedVersion
+          : null);
 
       if (matched && lock.skills[entry]?.version !== matched) {
         lock.skills[entry] = withPinnedMetadata(
@@ -362,14 +384,17 @@ export async function cmdUpdate(
       await rm(target, { recursive: true, force: true });
       const zip = await downloadZip(registry, { slug: entry, version: targetVersion, token });
       await extractZipToDir(zip, target);
+      const installedFiles = await listTextFiles(target);
+      const installedFingerprint =
+        installedFiles.length > 0 ? hashSkillFiles(installedFiles).fingerprint : undefined;
 
-      const existingOrigin = await readSkillOrigin(target);
       await writeSkillOrigin(target, {
         version: 1,
         registry: existingOrigin?.registry ?? registry,
         slug: existingOrigin?.slug ?? entry,
         installedVersion: targetVersion,
         installedAt: existingOrigin?.installedAt ?? Date.now(),
+        fingerprint: installedFingerprint,
       });
 
       lock.skills[entry] = withPinnedMetadata(targetVersion, Date.now(), lock.skills[entry]);

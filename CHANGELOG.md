@@ -2,9 +2,58 @@
 
 ## Unreleased
 
-### Changes
+## 0.17.0 - 2026-05-19
+
+- CLI/API: add self-serve org publisher creation with `clawhub publisher create <handle>` and scoped package publish errors that point to the command.
+
+## 0.16.0 - 2026-05-18
 
 ### Fixes
+
+- CLI/API: make package publishes robust under parallel same-publisher release jobs by avoiding unnecessary shared publisher writes, retrying transient Convex contention, and labeling contention separately from package validation failures (#2291).
+- Security: move upload ClawScan classification to a GitHub Actions Codex worker, treat VirusTotal as telemetry-only signal, and trust verified `@openclaw/*` plugin packages by default.
+- Security: cancel pending skill ownership transfers before rejecting accept attempts when the requester is inactive or the skill is hidden, removed, or malicious (#2276, #2277) (thanks @vyctorbrzezowski).
+- API/CLI: fix package delete returning 500 for packages with capability tags when no capability search digest row existed yet (#2212) (thanks @momothemage).
+- API: return a clear 400 for `/api/v1/packages/search` without a non-empty `q` instead of treating `search` as a package name (thanks @vyctorbrzezowski).
+- Web/API: keep search results limited to items with match evidence, preserve trust and popularity as tie-breakers, and show `N+` counts without exact count queries (#2206) (thanks @vyctorbrzezowski).
+- Web: preserve `ownerHandle` through legacy skill publish redirects so org admins land in the correct new-version owner context (#2177).
+- Settings: save display name/bio changes even when a legacy personal publisher handle conflict prevents publisher profile sync (#1199).
+- Auth: show a visible error if the GitHub sign-in request fails before the provider redirect starts (#2197).
+- Schema: include `.tsv`, `.conf`, `.properties`, and `.dat` in the exported text-file allowlist and regenerate the committed schema package runtime (#2172, #874) (thanks @alexuser).
+- API: return `400` for invalid known public package filters and invalid skill list sort values, while continuing to ignore unknown query parameters (#2184).
+- API/docs: document v1 plain-text error responses and expose owner metadata in the OpenAPI search result schema (#2187) (thanks @vyctorbrzezowski).
+- Web: rank publisher card preview items by downloads instead of recent publish order (thanks @vyctorbrzezowski).
+- Web: keep skill/plugin detail tabs at mobile-friendly touch target height.
+
+### Changes
+
+- CLI/API: include skill owner handles in search results so duplicate/common slugs are easier to disambiguate (thanks @vyctorbrzezowski).
+- Web: let skill publishers pick a curated lucide icon for cards and listings (#2174) (thanks @momothemage).
+- Web/API: add keyword-based plugin categories plus API-backed plugin search sorting for recently updated, newest, and name (#2118) (thanks @vyctorbrzezowski).
+- Web: polish the starred skills page with grid/list controls, sorting, and optimistic unstar behavior (#2159) (thanks @vyctorbrzezowski).
+- API/docs: expand the v1 OpenAPI contract with package/plugin catalog endpoints and align documented rate limits with the server constants (#2186) (thanks @vyctorbrzezowski).
+- Admin/Ops: audit profile syncs, self-service account/profile changes, personal publisher syncs, and org trusted-publisher changes so slug and ownership investigations have a complete ledger.
+- Dependencies: update production `@clack/prompts`, `tailwind-merge`, and `yaml` dependencies (#2198).
+
+## 0.15.0 - 2026-05-12
+
+### Changes
+
+- Web: polish dashboard artifact cards, loading skeletons, skill summary/detail layout, and adoption metrics after the 0.14 release (#2150, #2153, #2156, #2157, #2158, #2160).
+- Docs/dev: clarify pre-PR validation gates for local contributors (#2161).
+
+### Fixes
+
+- Web: show plugin settings actions to package managers and preserve manager access in dashboard rows (#2163, #2168).
+- Web: refresh skill star state after mutations and keep skill tabs from causing horizontal scroll (#2154, #2155).
+- Web: show owner names when handles are hidden, and clarify editable skill summary settings copy (#2151, #2162).
+- Dashboard: add a publisher switcher so org-owned skills and plugins are visible to org admins after transfer or publish (#2132).
+- Web: let org publishers/admins republish transferred org-owned skills without the publish form treating the existing slug as taken, including legacy users with synthesized personal publishers (#2171).
+- CLI: send skill ownership command payloads as JSON objects so rename/merge operations reach the API correctly (#1300).
+- CLI: keep an install fingerprint in skill origin metadata so `clawhub update <skill>` does not report fresh installs as local changes when the server cannot resolve the current hash (#169).
+- CLI: migrate cached `registry.clawhub.ai` registries back to `clawhub.ai` so `clawhub explore` no longer talks to the retired Vercel deployment (#1098).
+- CLI: publish `.tsv`, `.conf`, `.properties`, `.dat`, and safe extensionless text files while excluding dotfiles and sampling extensionless files before full reads (#874).
+- Tests: remove obsolete rescan e2e probes that no longer match current moderation behavior (#2152).
 
 ## 0.14.0 - 2026-05-11
 

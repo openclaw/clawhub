@@ -157,6 +157,15 @@ export const ApiV1UserSearchResponseSchema = type({
   total: "number",
 });
 
+export const ApiV1PublisherCreateResponseSchema = type({
+  ok: "true",
+  publisherId: "string",
+  handle: "string",
+  created: "true",
+  trusted: "false",
+});
+export type ApiV1PublisherCreateResponse = (typeof ApiV1PublisherCreateResponseSchema)[inferred];
+
 export const ApiV1SearchResponseSchema = type({
   results: type({
     slug: "string?",
@@ -165,6 +174,14 @@ export const ApiV1SearchResponseSchema = type({
     version: "string|null?",
     score: "number",
     updatedAt: "number?",
+    ownerHandle: "string|null?",
+    owner: type({
+      handle: "string|null?",
+      displayName: "string|null?",
+      image: "string|null?",
+    })
+      .or("null")
+      .optional(),
   }).array(),
 });
 
@@ -371,6 +388,17 @@ export const ApiV1SkillAppealResolveResponseSchema = type({
 export type ApiV1SkillAppealResolveResponse =
   (typeof ApiV1SkillAppealResolveResponseSchema)[inferred];
 
+export const ApiV1SkillRescanResponseSchema = type({
+  ok: "true",
+  slug: "string",
+  version: "string",
+  skillId: "string",
+  skillVersionId: "string",
+  jobId: "string",
+  alreadyQueued: "boolean",
+});
+export type ApiV1SkillRescanResponse = (typeof ApiV1SkillRescanResponseSchema)[inferred];
+
 export const ApiV1SkillVersionListResponseSchema = type({
   items: type({
     version: "string",
@@ -474,6 +502,30 @@ export const ApiV1TransferListResponseSchema = type({
 export const ApiV1SetRoleResponseSchema = type({
   ok: "true",
   role: '"admin"|"moderator"|"user"',
+});
+
+export const ApiV1ReclassifyBanResponseSchema = type({
+  ok: "true",
+  dryRun: "boolean",
+  userId: "string",
+  handle: "string|null",
+  previousReason: "string|null",
+  nextReason: "string",
+  changed: "boolean",
+});
+
+export const ApiV1RemediateAutobansResponseSchema = type({
+  ok: "true",
+  dryRun: "boolean",
+  scanned: "number",
+  wouldUnban: "number",
+  unbanned: "number",
+  skipped: "number",
+  restoredSkills: "number",
+  restoredPackages: "number",
+  items: "unknown[]",
+  "nextCursor?": "string|null",
+  "done?": "boolean",
 });
 
 export const ApiV1StarResponseSchema = type({

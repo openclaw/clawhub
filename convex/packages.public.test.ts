@@ -21,6 +21,7 @@ import {
   resolvePackageAppealForUserInternal,
   upsertOfficialPluginMigrationForUserInternal,
   getVersionByName,
+  getVersionSecurityByNameForViewerInternal,
   insertReleaseInternal,
   listPackageModerationQueueInternal,
   reservePackageNameInternal,
@@ -78,6 +79,12 @@ const getVersionByNameHandler = (
     { package: { name: string }; version: { version: string } } | null
   >
 )._handler;
+const getVersionSecurityByNameForViewerInternalHandler = (
+  getVersionSecurityByNameForViewerInternal as unknown as WrappedHandler<
+    { name: string; version: string; viewerUserId?: string },
+    { package: { name: string }; version: { version: string } } | null
+  >
+)._handler;
 const listPublicPageHandler = (
   listPublicPage as unknown as WrappedHandler<
     {
@@ -86,6 +93,7 @@ const listPublicPageHandler = (
       isOfficial?: boolean;
       executesCode?: boolean;
       capabilityTag?: string;
+      category?: string;
       paginationOpts: { cursor: string | null; numItems: number };
     },
     { page: Array<{ name: string }>; isDone: boolean; continueCursor: string }
@@ -99,6 +107,7 @@ const listPageForViewerInternalHandler = (
       isOfficial?: boolean;
       executesCode?: boolean;
       capabilityTag?: string;
+      category?: string;
       viewerUserId?: string;
       paginationOpts: { cursor: string | null; numItems: number };
     },
@@ -191,6 +200,7 @@ const searchPublicHandler = (
       isOfficial?: boolean;
       executesCode?: boolean;
       capabilityTag?: string;
+      category?: string;
     },
     Array<{ package: { name: string } }>
   >
@@ -205,6 +215,7 @@ const searchForViewerInternalHandler = (
       isOfficial?: boolean;
       executesCode?: boolean;
       capabilityTag?: string;
+      category?: string;
       viewerUserId?: string;
     },
     Array<{ package: { name: string } }>
@@ -589,6 +600,7 @@ function makeDigest(
     updatedAt: 1,
     latestVersion: "1.0.0",
     capabilityTags: [],
+    pluginCategoryTags: [],
     executesCode: false,
     verificationTier: null,
     softDeletedAt: undefined,
@@ -644,6 +656,11 @@ function makeDigestCtx(options: {
     isDone: boolean;
     continueCursor: string;
   }>;
+  categoryPages?: Array<{
+    page: Array<Record<string, unknown>>;
+    isDone: boolean;
+    continueCursor: string;
+  }>;
   exactPackages?: Array<Record<string, unknown>>;
   exactDigests?: Array<Record<string, unknown>>;
   publisherMemberships?: Record<string, "owner" | "admin" | "publisher">;
@@ -693,6 +710,7 @@ function makeDigestCtx(options: {
 
   setPages("packageSearchDigest", options.pages ?? []);
   setPages("packageCapabilitySearchDigest", options.capabilityPages ?? []);
+  setPages("packagePluginCategorySearchDigest", options.categoryPages ?? []);
 
   const paginate = vi.fn();
   const take = vi.fn();
@@ -896,7 +914,10 @@ function makeDigestCtx(options: {
               },
             };
           }
-          if (table !== "packageCapabilitySearchDigest") {
+          if (
+            table !== "packageCapabilitySearchDigest" &&
+            table !== "packagePluginCategorySearchDigest"
+          ) {
             throw new Error(`Unexpected table ${table}`);
           }
           tableNames.push(table);
@@ -1127,7 +1148,10 @@ function makeTransferPackageOwnerCtx(options?: {
               })),
             };
           }
-          if (table === "packageCapabilitySearchDigest") {
+          if (
+            table === "packageCapabilitySearchDigest" ||
+            table === "packagePluginCategorySearchDigest"
+          ) {
             return {
               withIndex: vi.fn(() => ({
                 collect: vi.fn().mockResolvedValue([]),
@@ -1213,7 +1237,10 @@ function makeUserTransferPackageOwnerCtx(options?: {
               })),
             };
           }
-          if (table === "packageCapabilitySearchDigest") {
+          if (
+            table === "packageCapabilitySearchDigest" ||
+            table === "packagePluginCategorySearchDigest"
+          ) {
             return {
               withIndex: vi.fn(() => ({
                 collect: vi.fn().mockResolvedValue([]),
@@ -1434,7 +1461,10 @@ function makeSoftDeletePackageCtx(options?: {
               })),
             };
           }
-          if (table === "packageCapabilitySearchDigest") {
+          if (
+            table === "packageCapabilitySearchDigest" ||
+            table === "packagePluginCategorySearchDigest"
+          ) {
             return {
               withIndex: vi.fn(() => ({
                 collect: vi.fn().mockResolvedValue(capabilityDigests),
@@ -1794,6 +1824,136 @@ describe("packages public queries", () => {
     expect(take).toHaveBeenCalledWith(50);
   });
 
+  it("does not let official status make unrelated packages eligible for search", async () => {
+    const { ctx } = makeDigestCtx({
+      pages: [
+        {
+          page: [
+            makeDigest("openclaw-nostr", {
+              displayName: "OpenClaw Nostr",
+              isOfficial: true,
+              summary: "Protocol integration.",
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await searchPublicHandler(ctx, {
+      query: "zzzznonexistentquery123",
+      limit: 10,
+    });
+
+    expect(result).toEqual([]);
+  });
+
+  it("does not treat punctuation-only queries as package matches", async () => {
+    const { ctx } = makeDigestCtx({
+      pages: [
+        {
+          page: [
+            makeDigest("openclaw-nostr", {
+              isOfficial: true,
+              runtimeId: "openclaw.nostr",
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await searchPublicHandler(ctx, {
+      query: ".",
+      limit: 10,
+    });
+
+    expect(result).toEqual([]);
+  });
+
+  it("does not match short queries through arbitrary summary substrings", async () => {
+    const { ctx } = makeDigestCtx({
+      pages: [
+        {
+          page: [
+            makeDigest("local-tools", {
+              summary: "Available helper tools.",
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await searchPublicHandler(ctx, {
+      query: "ai",
+      limit: 10,
+    });
+
+    expect(result).toEqual([]);
+  });
+
+  it("does not drop short tokens from exploratory package matches", async () => {
+    const { ctx } = makeDigestCtx({
+      pages: [
+        {
+          page: [
+            makeDigest("database-tools", {
+              summary: "Postgres database helper.",
+              capabilityTags: ["postgres"],
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await searchPublicHandler(ctx, {
+      query: "ai postgres",
+      limit: 10,
+    });
+
+    expect(result).toEqual([]);
+  });
+
+  it("orders lexical matches before summary-only matches without exposing rank metadata", async () => {
+    const { ctx } = makeDigestCtx({
+      pages: [
+        {
+          page: [
+            makeDigest("official-helper", {
+              displayName: "Official Helper",
+              isOfficial: true,
+              summary: "Ghost CMS integration.",
+              updatedAt: 100,
+            }),
+            makeDigest("ghost-tools", {
+              displayName: "Ghost Tools",
+              isOfficial: false,
+              summary: "CMS helper.",
+              updatedAt: 1,
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await searchPublicHandler(ctx, {
+      query: "ghost",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.package.name)).toEqual(["ghost-tools", "official-helper"]);
+    expect(result[0]).not.toHaveProperty("rankTier");
+    expect(result[0]).not.toHaveProperty("matchReason");
+  });
+
   it("allows org collaborators to search their private packages", async () => {
     const { ctx } = makeDigestCtx({
       capabilityPages: [
@@ -1885,6 +2045,61 @@ describe("packages public queries", () => {
     expect(result.map((entry) => entry.package.name)).toEqual(["tools-demo"]);
     expect(tableNames).toEqual(["packageCapabilitySearchDigest"]);
     expect(indexNames).toEqual(["by_active_tag_executes_updated"]);
+  });
+
+  it("uses plugin category digests for category-filtered listings", async () => {
+    const { ctx, indexNames, tableNames } = makeDigestCtx({
+      categoryPages: [
+        {
+          page: [
+            makeDigest("api-demo", {
+              pluginCategory: "data",
+              pluginCategoryTags: ["data"],
+              executesCode: true,
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      category: "data",
+      executesCode: true,
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual(["api-demo"]);
+    expect(tableNames).toEqual(["packagePluginCategorySearchDigest"]);
+    expect(indexNames).toEqual(["by_active_category_executes_updated"]);
+  });
+
+  it("uses plugin category digests for category-filtered search", async () => {
+    const { ctx, indexNames, tableNames } = makeDigestCtx({
+      categoryPages: [
+        {
+          page: [
+            makeDigest("api-demo", {
+              pluginCategory: "data",
+              pluginCategoryTags: ["data"],
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await searchPublicHandler(ctx, {
+      query: "api",
+      category: "data",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.package.name)).toEqual(["api-demo"]);
+    expect(tableNames).toEqual(["packagePluginCategorySearchDigest"]);
+    expect(indexNames).toEqual(["by_active_category_updated"]);
   });
 
   it("bounds fallback search to the first digest take window", async () => {
@@ -2247,6 +2462,54 @@ describe("packages public queries", () => {
         viewerUserId: "users:owner",
       } as never),
     ).resolves.toBeNull();
+    await expect(
+      getVersionSecurityByNameForViewerInternalHandler(ctx, {
+        name: "demo-plugin",
+        version: "1.0.0",
+      }),
+    ).resolves.toBeNull();
+  });
+
+  it("allows anonymous exact security reads for blocked public packages", async () => {
+    const { ctx } = makePackageCtx({
+      pkg: makePackageDoc({ channel: "community", scanStatus: "malicious" }),
+    });
+
+    await expect(
+      getByNameHandler(ctx, {
+        name: "demo-plugin",
+      }),
+    ).resolves.toBeNull();
+    await expect(
+      getVersionSecurityByNameForViewerInternalHandler(ctx, {
+        name: "demo-plugin",
+        version: "1.0.0",
+      }),
+    ).resolves.toMatchObject({
+      package: { name: "demo-plugin", publicDownloadBlocked: true },
+      version: { version: "1.0.0" },
+    });
+  });
+
+  it("does not mark owner-readable blocked public packages as public download blocked", async () => {
+    const { ctx } = makePackageCtx({
+      pkg: makePackageDoc({
+        channel: "community",
+        scanStatus: "malicious",
+        ownerUserId: "users:owner",
+      }),
+    });
+
+    await expect(
+      getVersionSecurityByNameForViewerInternalHandler(ctx, {
+        name: "demo-plugin",
+        version: "1.0.0",
+        viewerUserId: "users:owner",
+      }),
+    ).resolves.toMatchObject({
+      package: { name: "demo-plugin", publicDownloadBlocked: false },
+      version: { version: "1.0.0" },
+    });
   });
 
   it("allows owners to read their private packages", async () => {
@@ -3005,6 +3268,14 @@ describe("packages public queries", () => {
       runtimeId: "ivangdavila-whatsapp",
       updatedAt: expect.any(Number),
     });
+    expect(patch).toHaveBeenCalledWith(
+      "packageSearchDigest:demo",
+      expect.objectContaining({
+        name: "ivangdavila-whatsapp",
+        normalizedName: "ivangdavila-whatsapp",
+        runtimeId: "ivangdavila-whatsapp",
+      }),
+    );
     expect(insert).toHaveBeenCalledWith(
       "auditLogs",
       expect.objectContaining({
@@ -4451,6 +4722,216 @@ describe("packages public queries", () => {
         ownerHandle: "opik",
         minimumRole: "publisher",
       }),
+    );
+  });
+
+  it("rejects scoped package publishes to missing publishers with package.json guidance", async () => {
+    const runMutation = vi.fn(async () => {
+      throw new Error('Publisher "@opik" not found');
+    });
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          _id: "users:vincent",
+          handle: "vincentkoc",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        })
+        .mockResolvedValueOnce({
+          _id: "users:vincent",
+          handle: "vincentkoc",
+          role: "user",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        }),
+      runMutation,
+      scheduler: {
+        runAfter: vi.fn(),
+      },
+      storage: {
+        get: vi.fn(),
+      },
+    };
+
+    await expect(
+      publishPackageForUserInternalHandler(ctx as never, {
+        actorUserId: "users:vincent",
+        payload: {
+          name: "@opik/opik-openclaw",
+          displayName: "Opik",
+          family: "bundle-plugin",
+          version: "0.2.15",
+          changelog: "beta",
+          bundle: { hostTargets: ["desktop"] },
+          files: [],
+        },
+      }),
+    ).rejects.toThrow('Create it with "clawhub publisher create opik".');
+  });
+
+  it("guides legacy personal scoped packages through org creation and transfer", async () => {
+    const runMutation = vi.fn(async () => {
+      throw new Error('Publisher "@opik" not found');
+    });
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce({
+          _id: "packages:opik-openclaw",
+          ownerUserId: "users:vincent",
+          ownerPublisherId: "publishers:vincent",
+        })
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          _id: "users:vincent",
+          handle: "vincentkoc",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        })
+        .mockResolvedValueOnce({
+          _id: "users:vincent",
+          handle: "vincentkoc",
+          role: "user",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        })
+        .mockResolvedValueOnce({
+          _id: "publishers:vincent",
+          kind: "user",
+          handle: "vincentkoc",
+          linkedUserId: "users:vincent",
+        }),
+      runMutation,
+      scheduler: {
+        runAfter: vi.fn(),
+      },
+      storage: {
+        get: vi.fn(),
+      },
+    };
+
+    await expect(
+      publishPackageForUserInternalHandler(ctx as never, {
+        actorUserId: "users:vincent",
+        payload: {
+          name: "@opik/opik-openclaw",
+          displayName: "Opik",
+          family: "bundle-plugin",
+          version: "0.2.15",
+          changelog: "beta",
+          bundle: { hostTargets: ["desktop"] },
+          files: [],
+        },
+      }),
+    ).rejects.toThrow(
+      [
+        'Cannot publish @opik/opik-openclaw: package.json name is scoped to "@opik", but ClawHub has no "@opik" publisher.',
+        "",
+        'This package already exists under your personal publisher "@vincentkoc". To move it into the matching org publisher, run:',
+        "",
+        '  clawhub publisher create opik --display-name "Opik"',
+        '  clawhub package transfer @opik/opik-openclaw --to opik --reason "Move legacy personal package into @opik"',
+        "",
+        "Then rerun publish.",
+      ].join("\n"),
+    );
+  });
+
+  it("does not show transfer guidance for scoped packages owned by another publisher", async () => {
+    const runMutation = vi.fn(async () => {
+      throw new Error('Publisher "@opik" not found');
+    });
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce({
+          _id: "packages:opik-openclaw",
+          ownerUserId: "users:other",
+          ownerPublisherId: "publishers:other",
+        })
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          _id: "users:vincent",
+          handle: "vincentkoc",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        })
+        .mockResolvedValueOnce({
+          _id: "users:vincent",
+          handle: "vincentkoc",
+          role: "user",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        }),
+      runMutation,
+      scheduler: {
+        runAfter: vi.fn(),
+      },
+      storage: {
+        get: vi.fn(),
+      },
+    };
+
+    await expect(
+      publishPackageForUserInternalHandler(ctx as never, {
+        actorUserId: "users:vincent",
+        payload: {
+          name: "@opik/opik-openclaw",
+          displayName: "Opik",
+          family: "bundle-plugin",
+          version: "0.2.15",
+          changelog: "beta",
+          bundle: { hostTargets: ["desktop"] },
+          files: [],
+        },
+      }),
+    ).rejects.toThrow(
+      [
+        'Cannot publish @opik/opik-openclaw: package.json name is scoped to "@opik", but ClawHub has no "@opik" publisher.',
+        'Create it with "clawhub publisher create opik".',
+      ].join(" "),
+    );
+  });
+
+  it("does not suggest publisher creation for package scopes that are invalid ClawHub handles", async () => {
+    const runMutation = vi.fn(async () => {
+      throw new Error('Publisher "@foo.bar" not found');
+    });
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          _id: "users:vincent",
+          handle: "vincentkoc",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        })
+        .mockResolvedValueOnce({
+          _id: "users:vincent",
+          handle: "vincentkoc",
+          role: "user",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        }),
+      runMutation,
+      scheduler: {
+        runAfter: vi.fn(),
+      },
+      storage: {
+        get: vi.fn(),
+      },
+    };
+
+    await expect(
+      publishPackageForUserInternalHandler(ctx as never, {
+        actorUserId: "users:vincent",
+        payload: {
+          name: "@foo.bar/demo-plugin",
+          displayName: "Demo",
+          family: "bundle-plugin",
+          version: "1.0.0",
+          changelog: "beta",
+          bundle: { hostTargets: ["desktop"] },
+          files: [],
+        },
+      }),
+    ).rejects.toThrow(
+      'ClawHub publisher handles may only use lowercase letters, numbers, and hyphens. Rename package.json to a ClawHub-compatible scope, such as "@foo-bar/demo-plugin", then publish again.',
     );
   });
 
@@ -6196,5 +6677,271 @@ describe("package scan backfill", () => {
         }),
       }),
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// softDeletePackageInternal / restorePackageInternal
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a ctx that exercises the full softDeletePackageDoc / restorePackageDoc
+ * path, including the upsertPackageSearchDigest → syncPackageCapabilitySearchDigests
+ * branch that previously crashed when ownerHandle was missing.
+ */
+function makeSoftDeleteCtx(options?: {
+  pkg?: Record<string, unknown>;
+  /** When true, no existing packageCapabilitySearchDigest rows exist (forces insert). */
+  noCapabilityDigest?: boolean;
+  /** Personal publisher linked to the owner user. */
+  personalPublisher?: Record<string, unknown> | null;
+  /** Override the releases returned for this package. */
+  releases?: Array<Record<string, unknown>>;
+}) {
+  const pkg =
+    options?.pkg ??
+    makePackageDoc({
+      ownerUserId: "users:owner",
+      ownerPublisherId: "publishers:owner-personal",
+      capabilityTags: ["read-files"],
+    });
+
+  const personalPublisher =
+    options?.personalPublisher === undefined
+      ? {
+          _id: "publishers:owner-personal",
+          kind: "user",
+          handle: "tongfei11",
+          linkedUserId: "users:owner",
+        }
+      : options.personalPublisher;
+
+  const existingCapabilityRows =
+    options?.noCapabilityDigest === true
+      ? []
+      : [
+          {
+            _id: "packageCapabilitySearchDigest:demo-read-files",
+            packageId: pkg._id,
+            capabilityTag: "read-files",
+            ownerHandle: "tongfei11",
+          },
+        ];
+
+  const releases = options?.releases ?? [
+    makeReleaseDoc({ _id: "packageReleases:demo-1", softDeletedAt: undefined }),
+  ];
+
+  const patch = vi.fn();
+  const insert = vi.fn().mockResolvedValue("auditLogs:1");
+
+  return {
+    patch,
+    insert,
+    ctx: {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:owner") return { _id: id, role: "user" };
+          if (id === "publishers:owner-personal") return personalPublisher;
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table === "packages") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue(pkg),
+              })),
+            };
+          }
+          if (table === "packageReleases") {
+            return {
+              withIndex: vi.fn(() => ({
+                collect: vi.fn().mockResolvedValue(releases),
+              })),
+            };
+          }
+          if (table === "packageSearchDigest") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi
+                  .fn()
+                  .mockResolvedValue({ _id: "packageSearchDigest:demo", packageId: pkg._id }),
+              })),
+            };
+          }
+          if (table === "packageCapabilitySearchDigest") {
+            return {
+              withIndex: vi.fn(() => ({
+                collect: vi.fn().mockResolvedValue(existingCapabilityRows),
+              })),
+            };
+          }
+          if (table === "packagePluginCategorySearchDigest") {
+            return {
+              withIndex: vi.fn(() => ({
+                collect: vi.fn().mockResolvedValue([]),
+              })),
+            };
+          }
+          if (table === "publisherMemberships") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue(null),
+              })),
+            };
+          }
+          throw new Error(`Unexpected table: ${table}`);
+        }),
+        insert,
+        patch,
+        replace: vi.fn(),
+        delete: vi.fn(),
+        normalizeId: vi.fn(),
+      },
+    },
+  };
+}
+
+describe("softDeletePackageInternal", () => {
+  it("soft-deletes a package owned by a personal publisher and writes ownerHandle to the search digest", async () => {
+    const { ctx, patch, insert } = makeSoftDeleteCtx();
+
+    const result = await softDeletePackageInternalHandler(ctx as never, {
+      userId: "users:owner",
+      name: "demo-plugin",
+    });
+
+    expect(result).toMatchObject({ ok: true, alreadyDeleted: false, releaseCount: 1 });
+
+    // The package doc must be soft-deleted.
+    expect(patch).toHaveBeenCalledWith(
+      "packages:demo",
+      expect.objectContaining({ softDeletedAt: expect.any(Number) }),
+    );
+
+    // The packageSearchDigest row must be updated with ownerHandle resolved.
+    expect(patch).toHaveBeenCalledWith(
+      "packageSearchDigest:demo",
+      expect.objectContaining({ ownerHandle: "tongfei11", softDeletedAt: expect.any(Number) }),
+    );
+
+    // An audit log must be inserted.
+    expect(insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({ action: "package.delete" }),
+    );
+  });
+
+  it("writes ownerHandle via insert when no packageCapabilitySearchDigest row exists yet", async () => {
+    const { ctx, insert } = makeSoftDeleteCtx({ noCapabilityDigest: true });
+
+    await softDeletePackageInternalHandler(ctx as never, {
+      userId: "users:owner",
+      name: "demo-plugin",
+    });
+
+    // A new capability digest row must be inserted with ownerHandle populated.
+    expect(insert).toHaveBeenCalledWith(
+      "packageCapabilitySearchDigest",
+      expect.objectContaining({
+        capabilityTag: "read-files",
+        ownerHandle: "tongfei11",
+      }),
+    );
+  });
+
+  it("returns alreadyDeleted:true without touching releases when package is already soft-deleted", async () => {
+    const { ctx, patch } = makeSoftDeleteCtx({
+      pkg: makePackageDoc({ softDeletedAt: 999, softDeletedByRole: "user" }),
+    });
+
+    const result = await softDeletePackageInternalHandler(ctx as never, {
+      userId: "users:owner",
+      name: "demo-plugin",
+    });
+
+    expect(result).toMatchObject({ ok: true, alreadyDeleted: true, releaseCount: 0 });
+    // No release patches should have been made.
+    expect(patch).not.toHaveBeenCalledWith("packageReleases:demo-1", expect.anything());
+  });
+});
+
+describe("restorePackageInternal", () => {
+  it("restores a soft-deleted package and writes ownerHandle to the search digest", async () => {
+    const pkg = makePackageDoc({
+      ownerUserId: "users:owner",
+      ownerPublisherId: "publishers:owner-personal",
+      softDeletedAt: 500,
+      softDeletedByRole: "user",
+      softDeletedBy: "users:owner",
+      latestReleaseId: "packageReleases:demo-1",
+      tags: { latest: "packageReleases:demo-1" },
+    });
+    // The release was soft-deleted together with the package; it carries
+    // capabilityTags so that restorePackageDoc rebuilds them on the package.
+    const restoredRelease = makeReleaseDoc({
+      _id: "packageReleases:demo-1",
+      softDeletedAt: 500,
+      distTags: ["latest"],
+      version: "1.0.0",
+      changelog: "",
+      integritySha256: "abc",
+      capabilities: { capabilityTags: ["read-files"] },
+      compatibility: null,
+      verification: null,
+      scanStatus: "clean",
+    });
+
+    const { ctx, patch, insert } = makeSoftDeleteCtx({
+      pkg,
+      noCapabilityDigest: true,
+      releases: [restoredRelease],
+    });
+
+    const result = await restorePackageInternalHandler(ctx as never, {
+      userId: "users:owner",
+      name: "demo-plugin",
+    });
+
+    expect(result).toMatchObject({ ok: true, alreadyRestored: false });
+
+    // The package doc must have softDeletedAt cleared.
+    expect(patch).toHaveBeenCalledWith(
+      "packages:demo",
+      expect.objectContaining({ softDeletedAt: undefined }),
+    );
+
+    // The packageSearchDigest row must be updated with ownerHandle resolved.
+    expect(patch).toHaveBeenCalledWith(
+      "packageSearchDigest:demo",
+      expect.objectContaining({ ownerHandle: "tongfei11", softDeletedAt: undefined }),
+    );
+
+    // A new capability digest row must be inserted with ownerHandle populated.
+    expect(insert).toHaveBeenCalledWith(
+      "packageCapabilitySearchDigest",
+      expect.objectContaining({
+        capabilityTag: "read-files",
+        ownerHandle: "tongfei11",
+      }),
+    );
+
+    // An audit log must be inserted.
+    expect(insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({ action: "package.undelete" }),
+    );
+  });
+
+  it("returns alreadyRestored:true when package is not soft-deleted", async () => {
+    const { ctx, patch } = makeSoftDeleteCtx();
+
+    const result = await restorePackageInternalHandler(ctx as never, {
+      userId: "users:owner",
+      name: "demo-plugin",
+    });
+
+    expect(result).toMatchObject({ ok: true, alreadyRestored: true, releaseCount: 0 });
+    expect(patch).not.toHaveBeenCalledWith("packages:demo", expect.anything());
   });
 });

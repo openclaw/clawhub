@@ -76,7 +76,6 @@ function SkillsHome() {
         numItems: 6,
         sort: "downloads",
         dir: "desc",
-        nonSuspiciousOnly: true,
       })
       .then((r) => {
         if (cancelled) return;
@@ -549,7 +548,6 @@ function SkillsHome() {
                         dir: undefined,
                         featured: true,
                         highlighted: undefined,
-                        nonSuspicious: undefined,
                         view: undefined,
                         focus: undefined,
                       }
@@ -559,7 +557,6 @@ function SkillsHome() {
                         dir: "desc",
                         featured: undefined,
                         highlighted: undefined,
-                        nonSuspicious: true,
                         view: undefined,
                         focus: undefined,
                       }
@@ -679,7 +676,6 @@ function SkillsHome() {
               sort: undefined,
               dir: undefined,
               highlighted: undefined,
-              nonSuspicious: true,
               view: undefined,
               focus: undefined,
             }}
@@ -783,7 +779,6 @@ function SkillsHome() {
                 dir: "desc",
                 featured: undefined,
                 highlighted: undefined,
-                nonSuspicious: true,
                 view: undefined,
                 focus: undefined,
               }}
@@ -906,7 +901,11 @@ function OnlyCrabsHome() {
               public place.
             </p>
             <div style={{ display: "flex", gap: 12, marginTop: 20 }}>
-              <Link to="/upload" search={{ updateSlug: undefined }} className="btn btn-primary">
+              <Link
+                to="/upload"
+                search={{ updateSlug: undefined, ownerHandle: undefined }}
+                className="btn btn-primary"
+              >
                 Publish a soul
               </Link>
               <Link

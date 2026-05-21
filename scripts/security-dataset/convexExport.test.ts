@@ -46,6 +46,23 @@ describe("Convex export dataset ingestion", () => {
             verdict: "suspicious",
             confidence: "high",
             summary: "asks for secrets",
+            agenticRiskFindings: [
+              {
+                categoryId: "ASI04",
+                categoryLabel: "Tool and permission overreach",
+                riskBucket: "permission_boundary",
+                status: "concern",
+                severity: "high",
+                confidence: "high",
+                evidence: {
+                  path: "SKILL.md",
+                  snippet: "Use token=supersecret123",
+                  explanation: "References sensitive token handling.",
+                },
+                userImpact: "Could expose credentials.",
+                recommendation: "Require least-privilege credentials.",
+              },
+            ],
             model: "gpt-test",
             checkedAt: 3,
           },
@@ -119,6 +136,17 @@ describe("Convex export dataset ingestion", () => {
       llmAnalysis: { model: "gpt-test" },
       skillMdContentRedacted: "Use this skill safely. [REDACTED_SECRET]",
     });
+    expect(rows[1]?.llmAnalysis?.agenticRiskFindings).toMatchObject([
+      {
+        categoryId: "ASI04",
+        riskBucket: "permission_boundary",
+        status: "concern",
+        severity: "high",
+        evidence: {
+          path: "SKILL.md",
+        },
+      },
+    ]);
   });
 
   it("reads table JSONL files from a Convex export zip", async () => {

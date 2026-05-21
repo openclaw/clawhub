@@ -213,6 +213,32 @@ describe("github publish source helpers", () => {
     }
   });
 
+  it("prefers an existing local path from an alternate workdir", async () => {
+    const workspace = await makeTmpDir();
+    const callerCwd = await makeTmpDir();
+    try {
+      const localDir = join(callerCwd, "plugin");
+      await mkdir(localDir, { recursive: true });
+
+      await expect(
+        resolveSourceInput(".", { workdir: workspace, localWorkdirs: [callerCwd, workspace] }),
+      ).resolves.toEqual({
+        kind: "local",
+        path: callerCwd,
+      });
+
+      await expect(
+        resolveSourceInput("plugin", { workdir: workspace, localWorkdirs: [callerCwd, workspace] }),
+      ).resolves.toEqual({
+        kind: "local",
+        path: localDir,
+      });
+    } finally {
+      await rm(callerCwd, { recursive: true, force: true });
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
   it("resolves git metadata for a nested folder in a real git repo", async () => {
     const root = await makeTmpDir();
     try {

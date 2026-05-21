@@ -579,6 +579,87 @@ describe("search helpers", () => {
     expect(result.some((entry) => entry.skill.slug === "antigravity-image-generator")).toBe(true);
   });
 
+  it("orders lexical name matches above summary-only matches before popularity", async () => {
+    generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
+    const exactName = {
+      skill: makePublicSkill({
+        id: "skills:postgres",
+        slug: "postgres",
+        displayName: "Postgres",
+        downloads: 0,
+      }),
+      version: null,
+      ownerHandle: "owner",
+      owner: null,
+    };
+    const summaryOnly = {
+      skill: {
+        ...makePublicSkill({
+          id: "skills:database-tools",
+          slug: "database-tools",
+          displayName: "Database Tools",
+          downloads: 1_000_000_000,
+        }),
+        summary: "Postgres database helper.",
+      },
+      version: null,
+      ownerHandle: "owner",
+      owner: null,
+    };
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce(null) // getExactSkillSlugMatch
+      .mockResolvedValueOnce([]) // directPrefixSkillMatches
+      .mockResolvedValueOnce([summaryOnly, exactName]); // lexicalFallbackSkills
+
+    const result = await searchSkillsHandler(
+      {
+        vectorSearch: vi.fn().mockResolvedValue([]),
+        runQuery,
+      },
+      { query: "postgres", limit: 2 },
+    );
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["postgres", "database-tools"]);
+    expect(result[0]).not.toHaveProperty("rankTier");
+    expect(result[0]).not.toHaveProperty("matchReason");
+  });
+
+  it("does not let vector recall make short summary-only skills eligible", async () => {
+    generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
+    const summaryOnly = {
+      embeddingId: "skillEmbeddings:ai",
+      skill: {
+        ...makePublicSkill({
+          id: "skills:ai-summary",
+          slug: "general-helper",
+          displayName: "General Helper",
+          downloads: 1_000,
+        }),
+        summary: "AI helper for teams.",
+      },
+      version: null,
+      ownerHandle: "owner",
+      owner: null,
+    };
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce(null) // getExactSkillSlugMatch
+      .mockResolvedValueOnce([]) // directPrefixSkillMatches
+      .mockResolvedValueOnce([summaryOnly]) // hydrateResults
+      .mockResolvedValueOnce([]); // lexicalFallbackSkills
+
+    const result = await searchSkillsHandler(
+      {
+        vectorSearch: vi.fn().mockResolvedValue([{ _id: "skillEmbeddings:ai", _score: 0.99 }]),
+        runQuery,
+      },
+      { query: "ai", limit: 10 },
+    );
+
+    expect(result).toEqual([]);
+  });
+
   it("always includes an exact slug match even when vector exact matches already fill the limit", async () => {
     generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
 

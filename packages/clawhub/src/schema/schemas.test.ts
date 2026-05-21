@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 import { parseArk } from "./ark";
-import { ClawdisSkillMetadataSchema } from "./schemas";
+import { ApiV1SearchResponseSchema, ClawdisSkillMetadataSchema } from "./schemas";
 
 describe("packages/clawhub skill metadata schema", () => {
   it("preserves optional env var declarations", () => {
@@ -22,5 +22,32 @@ describe("packages/clawhub skill metadata schema", () => {
       required: false,
       description: "Default project",
     });
+  });
+
+  it("parses v1 search owner metadata", () => {
+    const parsed = parseArk(
+      ApiV1SearchResponseSchema,
+      {
+        results: [
+          {
+            slug: "demo",
+            displayName: "Demo",
+            summary: null,
+            version: "1.0.0",
+            score: 1,
+            ownerHandle: "openclaw",
+            owner: {
+              handle: "openclaw",
+              displayName: "OpenClaw",
+              image: null,
+            },
+          },
+        ],
+      },
+      "Search",
+    );
+
+    expect(parsed.results[0]?.ownerHandle).toBe("openclaw");
+    expect(parsed.results[0]?.owner?.displayName).toBe("OpenClaw");
   });
 });

@@ -35,6 +35,7 @@ function makeSkill(overrides: Record<string, unknown> = {}) {
     softDeletedAt: 1_000,
     hiddenAt: 1_000,
     hiddenBy: "users:mod",
+    stats: { downloads: 0, stars: 0, installsCurrent: 0, installsAllTime: 0 },
     ...overrides,
   };
 }
@@ -608,6 +609,69 @@ describe("setSkillSoftDeletedInternal B1 undelete gate", () => {
     expect(patch).toHaveBeenCalledWith(
       "skills:1",
       expect.objectContaining({ moderationStatus: "active" }),
+    );
+  });
+
+  it("lets moderators unhide scanner-blocked skills as a manual clean override", async () => {
+    const now = 1_700_000_000_000;
+    vi.spyOn(Date, "now").mockReturnValue(now);
+    const skill = makeSkill({
+      moderationReason: "scanner.vt.malicious",
+      moderationFlags: ["blocked.malware"],
+      moderationVerdict: "malicious",
+      moderationReasonCodes: ["malicious.vt_malicious"],
+      moderationEvidence: [{ scanner: "vt", detail: "malicious" }],
+      moderationSummary: "Blocked by scanner.",
+      moderationEngineVersion: "old",
+      moderationEvaluatedAt: now - 1_000,
+      moderationSourceVersionId: "skillVersions:old",
+    });
+    const { ctx, patch, insert } = makeCtx({
+      skill,
+      actor: { _id: "users:mod", role: "moderator" },
+    });
+
+    await expect(
+      setSkillSoftDeletedInternalHandler(ctx, {
+        userId: "users:mod",
+        slug: "demo",
+        deleted: false,
+        reason: "VT false positive; reanalysis clean",
+      }),
+    ).resolves.toEqual({ ok: true });
+
+    expect(patch).toHaveBeenCalledWith(
+      "skills:1",
+      expect.objectContaining({
+        softDeletedAt: undefined,
+        moderationStatus: "active",
+        moderationReason: "manual.override.clean",
+        moderationFlags: undefined,
+        moderationVerdict: "clean",
+        moderationReasonCodes: undefined,
+        moderationEvidence: undefined,
+        moderationEngineVersion: undefined,
+        moderationSourceVersionId: undefined,
+        moderationNotes: "VT false positive; reanalysis clean",
+        hiddenAt: undefined,
+        hiddenBy: undefined,
+        manualOverride: expect.objectContaining({
+          verdict: "clean",
+          note: "VT false positive; reanalysis clean",
+          reviewerUserId: "users:mod",
+          updatedAt: now,
+        }),
+      }),
+    );
+    expect(insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({
+        action: "skill.undelete",
+        metadata: expect.objectContaining({
+          reason: "VT false positive; reanalysis clean",
+          actorRole: "moderator",
+        }),
+      }),
     );
   });
 

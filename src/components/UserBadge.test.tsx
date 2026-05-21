@@ -41,7 +41,7 @@ describe("UserBadge", () => {
     renderBadge(user);
 
     expect(screen.getByRole("link", { name: "@steipete" }).getAttribute("href")).toBe(
-      "/p/steipete",
+      "/user/steipete",
     );
   });
 
@@ -49,7 +49,7 @@ describe("UserBadge", () => {
     renderBadge(orgPublisher);
 
     expect(screen.getByRole("link", { name: "@openclaw" }).getAttribute("href")).toBe(
-      "/p/openclaw",
+      "/user/openclaw",
     );
   });
 

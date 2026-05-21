@@ -1,0 +1,84 @@
+import { buildSkillCategoryBrowseHref, type SkillCategory } from "../lib/categories";
+import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
+import { buildSkillHref } from "./skillDetailUtils";
+
+export type RelatedSkillEntry = {
+  skill: PublicSkill;
+  ownerHandle?: string | null;
+  owner?: PublicPublisher | null;
+};
+
+type SkillRelatedSectionProps = {
+  category: SkillCategory | null;
+  relatedSkills: RelatedSkillEntry[];
+  isLoading: boolean;
+};
+
+function ownerLabel(entry: RelatedSkillEntry) {
+  return (
+    entry.ownerHandle?.trim() ||
+    entry.owner?.handle?.trim() ||
+    String(entry.skill.ownerPublisherId ?? entry.skill.ownerUserId)
+  );
+}
+
+export function SkillRelatedSection({
+  category,
+  relatedSkills,
+  isLoading,
+}: SkillRelatedSectionProps) {
+  const visibleSkills = relatedSkills.slice(0, 5);
+  if (!category || (!isLoading && visibleSkills.length === 0)) return null;
+
+  return (
+    <section className="related-skills-section" aria-labelledby="related-skills-heading">
+      <div className="related-skills-header">
+        <h2 id="related-skills-heading" className="related-skills-title">
+          Related skills
+        </h2>
+        <a className="related-skills-category-link" href={buildSkillCategoryBrowseHref(category)}>
+          More in {category.label}
+        </a>
+      </div>
+      <div className="related-skills-list" aria-busy={isLoading}>
+        {isLoading
+          ? Array.from({ length: 3 }).map((_, index) => (
+              <div
+                key={`related-skill-skeleton-${index}`}
+                className="related-skill-row related-skill-row-skeleton"
+              >
+                <span className="related-skill-copy">
+                  <span className="related-skill-title-skeleton" />
+                  <span className="related-skill-summary-skeleton" />
+                </span>
+                <span className="related-skill-owner-skeleton" />
+              </div>
+            ))
+          : visibleSkills.map((entry) => {
+              const owner = ownerLabel(entry);
+              const ownerId =
+                entry.owner?._id ?? entry.skill.ownerPublisherId ?? entry.skill.ownerUserId;
+              const href = buildSkillHref(
+                entry.ownerHandle ?? entry.owner?.handle ?? null,
+                ownerId,
+                entry.skill.slug,
+              );
+
+              return (
+                <a key={entry.skill._id} href={href} className="related-skill-row">
+                  <span className="related-skill-copy">
+                    <span className="related-skill-name">{entry.skill.displayName}</span>
+                    {entry.skill.summary ? (
+                      <span className="related-skill-summary">{entry.skill.summary}</span>
+                    ) : null}
+                  </span>
+                  <span className="related-skill-owner">
+                    {owner}/{entry.skill.slug}
+                  </span>
+                </a>
+              );
+            })}
+      </div>
+    </section>
+  );
+}

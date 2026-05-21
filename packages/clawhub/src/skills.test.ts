@@ -112,6 +112,30 @@ describe("skills", () => {
     expect(files.find((file) => file.relPath === "config.env")?.contentType).toBe("text/plain");
   });
 
+  it("includes tsv and extensionless text files while skipping extensionless binaries", async () => {
+    const workdir = await mkdtemp(join(tmpdir(), "clawhub-extensionless-"));
+    await writeFile(join(workdir, "SKILL.md"), "hi", "utf8");
+    await writeFile(join(workdir, "config.tsv"), "name\tvalue\napi\tok\n", "utf8");
+    await writeFile(join(workdir, ".npmrc"), "//registry.npmjs.org/:_authToken=secret\n", "utf8");
+    await mkdir(join(workdir, "bin"), { recursive: true });
+    await writeFile(
+      join(workdir, "bin", "openclaw-kraken"),
+      "#!/usr/bin/env sh\necho ok\n",
+      "utf8",
+    );
+    const largeBinary = new Uint8Array(1024 * 1024);
+    largeBinary[0] = 0;
+    largeBinary[largeBinary.length - 1] = 255;
+    await writeFile(join(workdir, "bin", "binary"), largeBinary);
+
+    const files = await listTextFiles(workdir);
+    const paths = files.map((file) => file.relPath).sort();
+    expect(paths).toEqual(["SKILL.md", "bin/openclaw-kraken", "config.tsv"]);
+    expect(files.find((file) => file.relPath === "bin/openclaw-kraken")?.contentType).toBe(
+      "text/plain",
+    );
+  });
+
   it("hashes skill files deterministically", async () => {
     const { fingerprint } = hashSkillFiles([
       { relPath: "b.txt", bytes: strToU8("b") },
@@ -128,11 +152,19 @@ describe("skills", () => {
     const zip = zipSync({
       "SKILL.md": strToU8("hello"),
       "notes.md": strToU8("world"),
+      ".npmrc": strToU8("//registry.npmjs.org/:_authToken=secret\n"),
+      "config/endpoints.tsv": strToU8("name\turl\napi\thttps://example.com\n"),
+      "bin/tool": strToU8("#!/usr/bin/env sh\necho ok\n"),
       "image.png": strToU8("nope"),
     });
     const { fingerprint } = hashSkillZip(new Uint8Array(zip));
     const expected = buildSkillFingerprint([
       { path: "SKILL.md", sha256: sha256Hex(strToU8("hello")) },
+      { path: "bin/tool", sha256: sha256Hex(strToU8("#!/usr/bin/env sh\necho ok\n")) },
+      {
+        path: "config/endpoints.tsv",
+        sha256: sha256Hex(strToU8("name\turl\napi\thttps://example.com\n")),
+      },
       { path: "notes.md", sha256: sha256Hex(strToU8("world")) },
     ]);
     expect(fingerprint).toBe(expected);

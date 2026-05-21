@@ -753,6 +753,13 @@ API shape rule:
 - list/search endpoints should support filtering by `family`, `channel`, and
   `isOfficial`
 - list/search endpoints should support filtering by capability tags
+- plugin categories should be exposed as real `category` filters backed by
+  denormalized plugin category digest rows. The UI must not implement category
+  selection by rewriting the user's search query to a representative keyword.
+- plugin search should stay relevance-first until there is a dedicated search
+  index/API contract for global sorted search; UI controls may mirror `/skills`
+  by reordering the loaded relevance results, but must not present that as a
+  global API sort
 - package lookup and routing should normalize names case-insensitively before
   querying storage
 

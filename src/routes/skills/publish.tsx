@@ -16,6 +16,7 @@ import { MAX_PUBLISH_FILE_BYTES, MAX_PUBLISH_TOTAL_BYTES } from "../../../convex
 import { EmptyState } from "../../components/EmptyState";
 import { Container } from "../../components/layout/Container";
 import { SignInButton } from "../../components/SignInButton";
+import { SkillIconPicker } from "../../components/SkillIconPicker";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardTitle } from "../../components/ui/card";
@@ -23,6 +24,7 @@ import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { Textarea } from "../../components/ui/textarea";
 import { getSiteMode } from "../../lib/site";
+import { ALLOWED_LUCIDE_ICONS, makeLucideIconValue, parseSkillIcon } from "../../lib/skillIcon";
 import { getPublicSlugCollision } from "../../lib/slugCollision";
 import { expandDroppedItems, expandFilesWithReport } from "../../lib/uploadFiles";
 import { useAuthStatus } from "../../lib/useAuthStatus";
@@ -37,16 +39,27 @@ import {
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
+type PublisherMembership = {
+  publisher: {
+    _id: string;
+    handle: string;
+    displayName: string;
+    kind: "user" | "org";
+  };
+  role: "owner" | "admin" | "publisher";
+};
+
 export const Route = createFileRoute("/skills/publish")({
   validateSearch: (search) => ({
     updateSlug: typeof search.updateSlug === "string" ? search.updateSlug : undefined,
+    ownerHandle: typeof search.ownerHandle === "string" ? search.ownerHandle : undefined,
   }),
   component: Upload,
 });
 
 export function Upload() {
   const { isAuthenticated, me } = useAuthStatus();
-  const { updateSlug } = useSearch({ from: "/skills/publish" });
+  const { updateSlug, ownerHandle: searchOwnerHandle } = useSearch({ from: "/skills/publish" });
   const siteMode = getSiteMode();
   const isSoulMode = siteMode === "souls";
   const requiredFileLabel = isSoulMode ? "SOUL.md" : "SKILL.md";
@@ -69,7 +82,7 @@ export function Upload() {
   );
   const existing = (isSoulMode ? existingSoul : existingSkill) as
     | {
-        skill?: { slug: string; displayName: string };
+        skill?: { slug: string; displayName: string; icon?: string | null };
         soul?: { slug: string; displayName: string };
         latestVersion?: { version: string; clawScanNote?: string | null };
         // Present on skills.getBySlug; absent on souls.getBySlug. Used to
@@ -85,6 +98,9 @@ export function Upload() {
   const [ignoredMacJunkPaths, setIgnoredMacJunkPaths] = useState<string[]>([]);
   const [slug, setSlug] = useState(updateSlug ?? "");
   const [displayName, setDisplayName] = useState("");
+  // Selected lucide icon name (e.g. `Plug`) or null when "no icon". Skills only;
+  // souls don't expose a custom icon yet.
+  const [iconName, setIconName] = useState<string | null>(null);
   const [version, setVersion] = useState("1.0.0");
   const [tags, setTags] = useState("latest");
   const [acceptedLicenseTerms, setAcceptedLicenseTerms] = useState(false);
@@ -96,23 +112,26 @@ export function Upload() {
   const [clawScanNote, setClawScanNote] = useState("");
   const changelogTouchedRef = useRef(false);
   const clawScanNoteTouchedRef = useRef(false);
+  // Tracks whether the publisher has interacted with the Skill icon picker
+  // during this session. Used by the submit handler to honour the "key
+  // omitted = leave existing alone" branch in skill mode: a routine New
+  // Version publish that never touches the picker must NOT forward an
+  // empty `icon: ""` (which the backend would treat as an explicit
+  // clear). This protects against silently wiping a custom icon when
+  // pre-population fails — for example after the client allow-list is
+  // pruned in a future deploy and the stored lucide name no longer
+  // resolves.
+  const iconTouchedRef = useRef(false);
   const changelogRequestRef = useRef(0);
   const changelogKeyRef = useRef<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const isSubmitting = status !== null;
   const [error, setError] = useState<string | null>(null);
   const publisherMemberships = useQuery(api.publishers.listMine) as
-    | Array<{
-        publisher: {
-          _id: string;
-          handle: string;
-          displayName: string;
-          kind: "user" | "org";
-        };
-        role: "owner" | "admin" | "publisher";
-      }>
+    | PublisherMembership[]
     | undefined;
-  const [ownerHandle, setOwnerHandle] = useState("");
+  const [ownerHandle, setOwnerHandle] = useState(searchOwnerHandle ?? "");
+  const ownerTouchedRef = useRef(false);
   // Owner migration opt-in: when updating an existing skill under a different
   // publisher than its current owner, the backend requires an explicit
   // `migrateOwner: true` signal. We only send it when the user ticks this box,
@@ -189,8 +208,8 @@ export function Upload() {
   const trimmedVersion = version.trim();
   const slugAvailability = useQuery(
     api.skills.checkSlugAvailability,
-    !isSoulMode && isAuthenticated && trimmedSlug && SLUG_PATTERN.test(trimmedSlug)
-      ? { slug: trimmedSlug.toLowerCase() }
+    !isSoulMode && isAuthenticated && ownerHandle && trimmedSlug && SLUG_PATTERN.test(trimmedSlug)
+      ? { slug: trimmedSlug.toLowerCase(), ownerHandle }
       : "skip",
   ) as
     | {
@@ -217,6 +236,12 @@ export function Upload() {
     const nextSlug = existing.skill?.slug ?? existing.soul?.slug;
     if (nextSlug) setSlug(nextSlug);
     if (name) setDisplayName(name);
+    // Pre-populate the icon picker from the existing skill so a New Version
+    // publish keeps the previously selected icon unless the user changes it.
+    if (!isSoulMode && existing.skill?.icon !== undefined) {
+      const parsed = parseSkillIcon(existing.skill.icon ?? null);
+      setIconName(parsed?.kind === "lucide" ? parsed.name : null);
+    }
     const nextVersion = semver.inc(existing.latestVersion.version, "patch");
     if (nextVersion) setVersion(nextVersion);
     if (!isSoulMode && !clawScanNoteTouchedRef.current) {
@@ -225,22 +250,47 @@ export function Upload() {
   }, [existing, isSoulMode]);
 
   useEffect(() => {
-    if (ownerHandle) return;
+    if (isSoulMode) return;
+
     // In update mode, default the Owner selector to the skill's current owner
     // so the New Version flow is a same-owner republish by default and does
     // not require an ownership-migration opt-in for the common case.
-    const existingOwnerHandle = !isSoulMode ? existing?.owner?.handle : undefined;
-    if (existingOwnerHandle) {
-      setOwnerHandle(existingOwnerHandle);
+    const existingOwnerHandle = existing?.owner?.handle;
+    const memberships = publisherMemberships ?? [];
+    if (memberships.length === 0) {
+      if (!ownerHandle && existingOwnerHandle) {
+        setOwnerHandle(existingOwnerHandle);
+      }
       return;
     }
-    const personalPublisher = publisherMemberships?.find(
-      (entry) => entry.publisher.kind === "user",
+
+    const currentOwnerExists = ownerHandle
+      ? memberships.some((entry) => entry.publisher.handle === ownerHandle)
+      : false;
+    const existingOwner = existingOwnerHandle
+      ? memberships.find((entry) => entry.publisher.handle === existingOwnerHandle)
+      : undefined;
+    const shouldPreferExistingOwner = Boolean(
+      !ownerTouchedRef.current &&
+      updateSlug &&
+      existingOwner &&
+      ownerHandle !== existingOwner.publisher.handle,
     );
-    if (personalPublisher?.publisher.handle) {
-      setOwnerHandle(personalPublisher.publisher.handle);
-    }
-  }, [ownerHandle, publisherMemberships, existing, isSoulMode]);
+    if (currentOwnerExists && !shouldPreferExistingOwner) return;
+
+    const personalPublisher = memberships.find((entry) => entry.publisher.kind === "user");
+    const nextOwnerHandle =
+      existingOwner?.publisher.handle ??
+      personalPublisher?.publisher.handle ??
+      memberships[0]?.publisher.handle;
+    if (!nextOwnerHandle || nextOwnerHandle === ownerHandle) return;
+
+    // Convex subscriptions can replace the owner option list after the first
+    // render. Keep the controlled select value aligned so submit does not send
+    // a stale handle while the DOM displays the replacement option.
+    setOwnerHandle(nextOwnerHandle);
+    setConfirmMigrateOwner(false);
+  }, [ownerHandle, publisherMemberships, existing?.owner?.handle, updateSlug, isSoulMode]);
 
   useEffect(() => {
     if (changelogTouchedRef.current) return;
@@ -499,6 +549,25 @@ export function Upload() {
 
     setStatus("Publishing…");
     try {
+      // Skill mode forwards an `icon` field only when the picker has
+      // actually been touched in this session, so the form is the single
+      // source of truth for the tri-state contract:
+      //   * touched + whitelisted name → `lucide:<Name>` (set)
+      //   * touched + None / unparseable selection → `""` (clear)
+      //   * untouched (or soul mode) → field omitted (keep existing)
+      // The backend treats blank input as "clear the icon" and a missing
+      // key as "keep whatever is already stored", so the omit branch is
+      // what protects routine version bumps from silently wiping an
+      // existing custom icon when pre-population fails (e.g. the stored
+      // lucide name was pruned from `ALLOWED_LUCIDE_ICONS`).
+      let iconPayload: string | undefined;
+      if (isSoulMode || !iconTouchedRef.current) {
+        iconPayload = undefined;
+      } else if (iconName && Object.hasOwn(ALLOWED_LUCIDE_ICONS, iconName)) {
+        iconPayload = makeLucideIconValue(iconName as keyof typeof ALLOWED_LUCIDE_ICONS);
+      } else {
+        iconPayload = "";
+      }
       const result = await publishVersion({
         ownerHandle: isSoulMode ? undefined : ownerHandle || undefined,
         // Only propagate the migration opt-in when the user is actually
@@ -507,6 +576,7 @@ export function Upload() {
         migrateOwner: !isSoulMode && isOwnerMigration && confirmMigrateOwner ? true : undefined,
         slug: trimmedSlug,
         displayName: trimmedName,
+        ...(iconPayload !== undefined ? { icon: iconPayload } : {}),
         version: trimmedVersion,
         changelog: trimmedChangelog,
         ...(normalizedClawScanNote ? { clawScanNote: normalizedClawScanNote } : {}),
@@ -582,12 +652,33 @@ export function Upload() {
 
               {!isSoulMode ? (
                 <>
+                  {/* The picker is a custom radiogroup; the visible "Icon"
+                      heading is decorative and does not need `htmlFor` —
+                      `SkillIconPicker` exposes its own `aria-label`. */}
+                  <Label>Icon</Label>
+                  <SkillIconPicker
+                    value={iconName}
+                    onChange={(next) => {
+                      // Mark the picker as user-touched so the submit
+                      // handler knows it can forward the resulting value
+                      // (including `null` → "") instead of falling back
+                      // to the omit-key branch.
+                      iconTouchedRef.current = true;
+                      setIconName(next);
+                    }}
+                  />
+                </>
+              ) : null}
+
+              {!isSoulMode ? (
+                <>
                   <Label htmlFor="ownerHandle">Owner</Label>
                   <select
                     className="w-full min-h-[44px] rounded-[var(--radius-sm)] border px-3.5 py-[13px] text-[color:var(--ink)] transition-all duration-[180ms] ease-out border-[rgba(29,59,78,0.22)] bg-[rgba(255,255,255,0.94)] focus:outline-none focus:border-[color-mix(in_srgb,var(--accent)_70%,white)] focus:shadow-[0_0_0_3px_color-mix(in_srgb,var(--accent)_22%,transparent)] dark:border-[rgba(255,255,255,0.12)] dark:bg-[rgba(14,28,37,0.84)]"
                     id="ownerHandle"
                     value={ownerHandle}
                     onChange={(event) => {
+                      ownerTouchedRef.current = true;
                       setOwnerHandle(event.target.value);
                       // Reset the migration confirmation any time the Owner
                       // selector changes; the user must re-acknowledge the move

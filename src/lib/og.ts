@@ -34,10 +34,33 @@ type SoulMeta = {
   owner: string | null;
 };
 
+type PluginMetaSource = {
+  name: string;
+  displayName?: string | null;
+  summary?: string | null;
+  owner?: string | null;
+  latestVersion?: string | null;
+};
+
+type PublisherMetaSource = {
+  handle: string;
+  displayName?: string | null;
+  bio?: string | null;
+};
+
+type BasicMeta = {
+  title: string;
+  description: string;
+  image: string;
+  url: string;
+};
+
 const DEFAULT_DESCRIPTION = "ClawHub — a fast skill registry for agents, with vector search.";
 const DEFAULT_SOUL_DESCRIPTION = "SoulHub — the home for SOUL.md bundles and personal system lore.";
-const OG_SKILL_IMAGE_LAYOUT_VERSION = "5";
+const OG_SKILL_IMAGE_LAYOUT_VERSION = "7";
 const OG_SOUL_IMAGE_LAYOUT_VERSION = "1";
+const OG_PLUGIN_IMAGE_LAYOUT_VERSION = "2";
+const OG_PUBLISHER_IMAGE_LAYOUT_VERSION = "2";
 
 function getSiteUrl() {
   return getClawHubSiteUrl();
@@ -117,7 +140,7 @@ export function buildSkillMeta(source: SkillMetaSource): SkillMeta {
   return {
     title,
     description: truncate(description, 200),
-    image: `${siteUrl}/og/skill.png?${imageParams.toString()}`,
+    image: `${siteUrl}/og/skill?${imageParams.toString()}`,
     url,
     owner: owner || null,
   };
@@ -141,9 +164,48 @@ export function buildSoulMeta(source: SoulMetaSource): SoulMeta {
   return {
     title,
     description: truncate(description, 200),
-    image: `${siteUrl}/og/soul.png?${imageParams.toString()}`,
+    image: `${siteUrl}/og/soul?${imageParams.toString()}`,
     url,
     owner: owner || null,
+  };
+}
+
+export function buildPluginMeta(source: PluginMetaSource): BasicMeta {
+  const siteUrl = getSiteUrl();
+  const displayName = clean(source.displayName) || clean(source.name);
+  const summary = clean(source.summary);
+  const owner = clean(source.owner);
+  const latestVersion = clean(source.latestVersion);
+  const title = `${displayName} — ClawHub Plugins`;
+  const description = summary || (owner ? `Plugin by @${owner} on ClawHub.` : DEFAULT_DESCRIPTION);
+  const url = `${siteUrl}/plugins/${source.name.startsWith("@") ? source.name : encodeURIComponent(source.name)}`;
+  const imageParams = new URLSearchParams();
+  imageParams.set("v", OG_PLUGIN_IMAGE_LAYOUT_VERSION);
+  imageParams.set("name", source.name);
+  if (latestVersion) imageParams.set("version", latestVersion);
+  return {
+    title,
+    description: truncate(description, 200),
+    image: `${siteUrl}/og/plugin?${imageParams.toString()}`,
+    url,
+  };
+}
+
+export function buildPublisherMeta(source: PublisherMetaSource): BasicMeta {
+  const siteUrl = getSiteUrl();
+  const handle = clean(source.handle).replace(/^@+/, "");
+  const displayName = clean(source.displayName) || `@${handle}`;
+  const bio = clean(source.bio);
+  const title = `${displayName} — ClawHub`;
+  const description = bio || `Publisher @${handle} on ClawHub.`;
+  const imageParams = new URLSearchParams();
+  imageParams.set("v", OG_PUBLISHER_IMAGE_LAYOUT_VERSION);
+  imageParams.set("handle", handle);
+  return {
+    title,
+    description: truncate(description, 200),
+    image: `${siteUrl}/og/profile?${imageParams.toString()}`,
+    url: `${siteUrl}/user/${handle}`,
   };
 }
 

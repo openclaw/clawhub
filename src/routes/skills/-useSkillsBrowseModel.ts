@@ -2,7 +2,12 @@ import { useAction } from "convex/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { api } from "../../../convex/_generated/api";
 import { convexHttp } from "../../convex/client";
-import { ALL_CATEGORY_KEYWORDS } from "../../lib/categories";
+import {
+  ALL_CATEGORY_KEYWORDS,
+  getSkillCategoryByKeyword,
+  getSkillCategoryBySlug,
+  getSkillCategoryForSkill,
+} from "../../lib/categories";
 import { parseDir, parseSort, toListSort, type SortDir, type SortKey } from "./-params";
 import type { SkillListEntry, SkillSearchEntry } from "./-types";
 
@@ -30,7 +35,7 @@ export type SkillsSearchState = {
   dir?: SortDir;
   highlighted?: boolean;
   featured?: boolean;
-  nonSuspicious?: boolean;
+  category?: string;
   tag?: string;
   view?: LegacySkillsView;
   focus?: "search";
@@ -38,9 +43,11 @@ export type SkillsSearchState = {
 
 const SKILL_CAPABILITY_LABELS: Record<string, string> = {
   crypto: "crypto",
+  "financial-authority": "financial authority",
   "requires-wallet": "requires wallet",
   "can-make-purchases": "payments",
   "can-sign-transactions": "signs transactions",
+  "requires-paid-service": "paid service",
   "requires-oauth-token": "oauth",
   "requires-sensitive-credentials": "sensitive credentials",
   "posts-externally": "external posting",
@@ -73,21 +80,29 @@ export function useSkillsBrowseModel({
 
   const view: SkillsView = normalizeSkillsView(search.view) ?? "list";
   const featuredOnly = search.featured ?? search.highlighted ?? false;
-  const nonSuspiciousOnly = search.nonSuspicious ?? false;
   const capabilityTag = search.tag;
   const searchSkills = useAction(api.search.searchSkills);
 
-  const isOtherCategory = query === "__other__";
   const trimmedQuery = useMemo(() => query.trim(), [query]);
-  const hasQuery = !isOtherCategory && trimmedQuery.length > 0;
+  const legacyQueryCategory = useMemo(() => {
+    if (query === "__other__") return getSkillCategoryBySlug("other");
+    return getSkillCategoryByKeyword(trimmedQuery);
+  }, [query, trimmedQuery]);
+  const urlCategory = useMemo(() => getSkillCategoryBySlug(search.category), [search.category]);
+  const activeCategory = urlCategory ?? legacyQueryCategory;
+  const categoryKeywords =
+    activeCategory && activeCategory.slug !== "other" ? activeCategory.keywords : undefined;
+  const excludeCategoryKeywords =
+    activeCategory?.slug === "other" ? ALL_CATEGORY_KEYWORDS : undefined;
+  const hasQuery = trimmedQuery.length > 0 && (Boolean(urlCategory) || !legacyQueryCategory);
   const sort: SortKey =
     search.sort === "relevance" && !hasQuery
       ? "downloads"
       : (search.sort ?? (hasQuery ? "relevance" : "downloads"));
   const listSort = toListSort(sort);
   const dir = parseDir(search.dir, sort);
-  const searchKey = trimmedQuery
-    ? `${trimmedQuery}::${featuredOnly ? "1" : "0"}::${nonSuspiciousOnly ? "1" : "0"}::${capabilityTag ?? ""}`
+  const searchKey = hasQuery
+    ? `${trimmedQuery}::${featuredOnly ? "1" : "0"}::${capabilityTag ?? ""}`
     : "";
 
   // One-shot paginated fetches (no reactive subscription)
@@ -105,8 +120,10 @@ export function useSkillsBrowseModel({
           sort: listSort,
           dir,
           highlightedOnly: featuredOnly,
-          nonSuspiciousOnly,
           capabilityTag,
+          categorySlug: activeCategory?.slug,
+          categoryKeywords,
+          excludeCategoryKeywords,
         });
         if (generation !== fetchGeneration.current) return;
         setListResults((prev) => (cursor ? [...prev, ...result.page] : result.page));
@@ -122,7 +139,15 @@ export function useSkillsBrowseModel({
         setListStatus(cursor ? "idle" : "done");
       }
     },
-    [capabilityTag, dir, featuredOnly, listSort, nonSuspiciousOnly],
+    [
+      activeCategory?.slug,
+      capabilityTag,
+      categoryKeywords,
+      dir,
+      excludeCategoryKeywords,
+      featuredOnly,
+      listSort,
+    ],
   );
 
   // Reset and fetch first page when sort/dir/filters change
@@ -178,7 +203,6 @@ export function useSkillsBrowseModel({
           const data = (await searchSkills({
             query: trimmedQuery,
             highlightedOnly: featuredOnly,
-            nonSuspiciousOnly,
             capabilityTag,
             limit: searchLimit,
           })) as Array<SkillSearchEntry>;
@@ -193,15 +217,7 @@ export function useSkillsBrowseModel({
       })();
     }, 220);
     return () => window.clearTimeout(handle);
-  }, [
-    capabilityTag,
-    hasQuery,
-    featuredOnly,
-    nonSuspiciousOnly,
-    searchLimit,
-    searchSkills,
-    trimmedQuery,
-  ]);
+  }, [capabilityTag, hasQuery, featuredOnly, searchLimit, searchSkills, trimmedQuery]);
 
   const baseItems = useMemo(() => {
     if (hasQuery) {
@@ -217,18 +233,16 @@ export function useSkillsBrowseModel({
   }, [hasQuery, listResults, searchResults]);
 
   const sorted = useMemo(() => {
-    if (isOtherCategory) {
-      return baseItems.filter((entry) => {
-        const text =
-          `${entry.skill.displayName} ${entry.skill.summary ?? ""} ${entry.skill.slug}`.toLowerCase();
-        return !ALL_CATEGORY_KEYWORDS.some((kw) => text.includes(kw));
-      });
-    }
+    const categoryItems = activeCategory
+      ? baseItems.filter(
+          (entry) => getSkillCategoryForSkill(entry.skill)?.slug === activeCategory.slug,
+        )
+      : baseItems;
     if (!hasQuery) {
-      return baseItems;
+      return categoryItems;
     }
     const multiplier = dir === "asc" ? 1 : -1;
-    const results = [...baseItems];
+    const results = [...categoryItems];
     results.sort((a, b) => {
       const tieBreak = () => {
         const updated = (a.skill.updatedAt - b.skill.updatedAt) * multiplier;
@@ -265,11 +279,9 @@ export function useSkillsBrowseModel({
       }
     });
     return results;
-  }, [baseItems, dir, hasQuery, isOtherCategory, sort]);
+  }, [activeCategory, baseItems, dir, hasQuery, sort]);
 
   const isLoadingSkills = hasQuery ? isSearching && searchResults.length === 0 : isLoadingList;
-  const hasSuspiciousResults = sorted.some((entry) => entry.skill.isSuspicious === true);
-  const showSuspiciousFilter = nonSuspiciousOnly || hasSuspiciousResults;
   const canLoadMore = hasQuery
     ? !isSearching && searchResults.length === searchLimit && searchResults.length > 0
     : canLoadMoreList;
@@ -355,11 +367,16 @@ export function useSkillsBrowseModel({
     });
   }, [navigate]);
 
-  const onToggleNonSuspicious = useCallback(() => {
+  const onClearFilters = useCallback(() => {
+    window.clearTimeout(navigateTimer.current);
+    setQuery("");
     void navigate({
       search: (prev) => ({
         ...prev,
-        nonSuspicious: prev.nonSuspicious ? undefined : true,
+        q: undefined,
+        category: undefined,
+        featured: undefined,
+        highlighted: undefined,
       }),
       replace: true,
     });
@@ -402,7 +419,6 @@ export function useSkillsBrowseModel({
 
   const activeFilters: string[] = [];
   if (featuredOnly) activeFilters.push("featured");
-  if (nonSuspiciousOnly) activeFilters.push("non-suspicious");
   if (capabilityTag) activeFilters.push(SKILL_CAPABILITY_LABELS[capabilityTag] ?? capabilityTag);
 
   const onCapabilityTagChange = useCallback(
@@ -420,25 +436,23 @@ export function useSkillsBrowseModel({
 
   return {
     activeFilters,
+    activeCategory: activeCategory?.slug,
     capabilityTag,
     canAutoLoad,
     canLoadMore,
     dir,
     hasQuery,
-    hasSuspiciousResults,
-    showSuspiciousFilter,
     featuredOnly,
     isLoadingMore,
     isLoadingSkills,
     loadMore,
     loadMoreRef,
-    nonSuspiciousOnly,
     onCapabilityTagChange,
+    onClearFilters,
     onQueryChange,
     onSortChange,
     onToggleDir,
     onToggleFeatured,
-    onToggleNonSuspicious,
     onToggleView,
     query,
     sort,

@@ -44,6 +44,12 @@ type SearchSkillEntry = {
     updatedAt?: number;
   } | null;
   version: { version?: string; createdAt?: number } | null;
+  ownerHandle?: string | null;
+  owner?: {
+    handle?: string | null;
+    displayName?: string | null;
+    image?: string | null;
+  } | null;
 };
 
 type ListSkillsResult = {
@@ -248,6 +254,9 @@ type SkillSecuritySnapshot = {
 };
 
 const internalRefs = internal as unknown as {
+  securityScan: {
+    enqueueSkillRescanForModeratorInternal: unknown;
+  };
   skills: {
     reportSkillForUserInternal: unknown;
     listSkillReportsInternal: unknown;
@@ -344,14 +353,11 @@ function buildSkillSecuritySnapshot(
 
   const statuses: NormalizedSecurityStatus[] = [];
   if (staticStatus) statuses.push(staticStatus);
-  if (vtStatus) statuses.push(vtStatus);
   if (llmStatus) statuses.push(llmStatus);
   if (statuses.length === 0 && sha256hash) statuses.push("pending");
   const status = mergeSecurityStatuses(statuses);
   const hasScanResult =
-    isDefinitiveSecurityStatus(staticStatus) ||
-    isDefinitiveSecurityStatus(vtStatus) ||
-    isDefinitiveSecurityStatus(llmStatus);
+    isDefinitiveSecurityStatus(staticStatus) || isDefinitiveSecurityStatus(llmStatus);
   const hasWarnings =
     status === "suspicious" || status === "malicious" || hasLlmDimensionWarnings(llm?.dimensions);
 
@@ -434,14 +440,25 @@ export async function searchSkillsV1Handler(ctx: ActionCtx, request: Request) {
 
   return json(
     {
-      results: results.map((result) => ({
-        score: result.score,
-        slug: result.skill?.slug,
-        displayName: result.skill?.displayName,
-        summary: result.skill?.summary ?? null,
-        version: result.version?.version ?? null,
-        updatedAt: result.skill?.updatedAt,
-      })),
+      results: results.map((result) => {
+        const owner = result.owner
+          ? {
+              handle: result.owner.handle ?? null,
+              displayName: result.owner.displayName ?? null,
+              image: result.owner.image ?? null,
+            }
+          : null;
+        return {
+          score: result.score,
+          slug: result.skill?.slug,
+          displayName: result.skill?.displayName,
+          summary: result.skill?.summary ?? null,
+          version: result.version?.version ?? null,
+          updatedAt: result.skill?.updatedAt,
+          ownerHandle: result.ownerHandle ?? owner?.handle ?? null,
+          owner,
+        };
+      }),
     },
     200,
     rate.headers,
@@ -479,7 +496,8 @@ type SkillListSort =
 
 type PublicListSort = "newest" | "updated" | "downloads" | "stars" | "installs";
 
-function parseListSort(value: string | null): SkillListSort {
+function parseListSort(value: string | null): SkillListSort | null {
+  if (value === null) return "updated";
   const normalized = value?.trim().toLowerCase();
   if (normalized === "createdat" || normalized === "created-at" || normalized === "newest") {
     return "createdAt";
@@ -498,7 +516,8 @@ function parseListSort(value: string | null): SkillListSort {
     return "installsAllTime";
   }
   if (normalized === "trending") return "trending";
-  return "updated";
+  if (normalized === "updated") return "updated";
+  return null;
 }
 
 function toPublicListSort(sort: Exclude<SkillListSort, "trending">): PublicListSort {
@@ -516,6 +535,7 @@ export async function listSkillsV1Handler(ctx: ActionCtx, request: Request) {
   const limit = toOptionalNumber(url.searchParams.get("limit"));
   const rawCursor = url.searchParams.get("cursor")?.trim() || undefined;
   const sort = parseListSort(url.searchParams.get("sort"));
+  if (!sort) return text("Invalid sort query parameter", 400, rate.headers);
   const cursor = sort === "trending" ? undefined : rawCursor;
   const nonSuspiciousOnly = resolveBooleanQueryParam(
     url.searchParams.get("nonSuspiciousOnly"),
@@ -1061,6 +1081,15 @@ function hasAcceptedLegacyLicenseTerms(acceptLicenseTerms: boolean | undefined) 
 
 type TransferDecisionAction = "accept" | "reject" | "cancel";
 
+function isTransferDecisionFailure(result: unknown): result is { ok: false; error: string } {
+  return (
+    typeof result === "object" &&
+    result !== null &&
+    (result as { ok?: unknown }).ok === false &&
+    typeof (result as { error?: unknown }).error === "string"
+  );
+}
+
 function transferErrorToResponse(error: unknown, headers: HeadersInit) {
   const message = error instanceof Error ? error.message : "Transfer failed";
   const lower = message.toLowerCase();
@@ -1190,6 +1219,9 @@ async function handleTransferDecision(
       actorUserId: transferContext.userId,
       transferId: pendingTransfer._id,
     });
+    if (isTransferDecisionFailure(result)) {
+      return transferErrorToResponse(new Error(result.error), headers);
+    }
     return json(result, 200, headers);
   } catch (error) {
     return transferErrorToResponse(error, headers);
@@ -1415,6 +1447,29 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
     }
   }
 
+  if (segments.length === 2 && action === "rescan") {
+    if (!slug) return text("Slug required", 400, rate.headers);
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+    try {
+      const body = await readOptionalJson(request);
+      const version = optionalStringField(body, "version");
+      const result = await runMutationRef(
+        ctx,
+        internalRefs.securityScan.enqueueSkillRescanForModeratorInternal,
+        {
+          actorUserId: auth.userId,
+          slug,
+          ...(version ? { version } : {}),
+        },
+      );
+      return json(result, 200, rate.headers);
+    } catch (error) {
+      if (error instanceof SyntaxError) return text("Invalid JSON", 400, rate.headers);
+      return skillRescanErrorToResponse(error, rate.headers);
+    }
+  }
+
   if (segments.length === 2 && action === "undelete") {
     try {
       const { userId } = await requireApiTokenUser(ctx, request);
@@ -1447,6 +1502,19 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
   }
 
   return text("Not found", 404, rate.headers);
+}
+
+function skillRescanErrorToResponse(error: unknown, headers: HeadersInit) {
+  const message = error instanceof Error ? error.message : "Skill rescan failed";
+  const lower = message.toLowerCase();
+  if (lower.includes("unauthorized")) {
+    return text(formatAuthzMessage(error, "Unauthorized"), 401, headers);
+  }
+  if (lower.includes("forbidden")) {
+    return text(formatAuthzMessage(error, "Forbidden"), 403, headers);
+  }
+  if (lower.includes("not found")) return text(message, 404, headers);
+  return text(message, 400, headers);
 }
 
 export async function skillsDeleteRouterV1Handler(ctx: ActionCtx, request: Request) {

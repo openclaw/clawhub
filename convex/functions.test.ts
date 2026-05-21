@@ -143,6 +143,14 @@ describe("package digest sync", () => {
         packageId: "packages:demo",
         latestVersion: undefined,
         ownerHandle: "owner",
+        pluginCategoryTags: ["dev-tools"],
+      }),
+    );
+    expect(ctx.db.insert).toHaveBeenCalledWith(
+      "packagePluginCategorySearchDigest",
+      expect.objectContaining({
+        packageId: "packages:demo",
+        pluginCategory: "dev-tools",
       }),
     );
   });
@@ -302,7 +310,10 @@ describe("package digest sync", () => {
               })),
             };
           }
-          if (table === "packageCapabilitySearchDigest") {
+          if (
+            table === "packageCapabilitySearchDigest" ||
+            table === "packagePluginCategorySearchDigest"
+          ) {
             return {
               withIndex: vi.fn(() => ({
                 unique: vi.fn().mockResolvedValue(null),
@@ -438,7 +449,10 @@ describe("package digest sync", () => {
               })),
             };
           }
-          if (table === "packageCapabilitySearchDigest") {
+          if (
+            table === "packageCapabilitySearchDigest" ||
+            table === "packagePluginCategorySearchDigest"
+          ) {
             return {
               withIndex: vi.fn(() => ({
                 unique: vi.fn().mockResolvedValue(null),
@@ -537,7 +551,10 @@ describe("package digest sync", () => {
               })),
             };
           }
-          if (table === "packageCapabilitySearchDigest") {
+          if (
+            table === "packageCapabilitySearchDigest" ||
+            table === "packagePluginCategorySearchDigest"
+          ) {
             return {
               withIndex: vi.fn(() => ({
                 unique: vi.fn().mockResolvedValue(null),

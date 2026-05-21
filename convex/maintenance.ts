@@ -4,6 +4,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
 import { action, internalAction, internalMutation, internalQuery } from "./functions";
 import { assertRole, requireUserFromAction } from "./lib/access";
+import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
 import { buildSkillSummaryBackfillPatch, type ParsedSkillData } from "./lib/skillBackfill";
 import { deriveSkillCapabilityTags } from "./lib/skillCapabilityTags";
 import {
@@ -496,6 +497,7 @@ type CapabilityBackfillStats = {
   skillsScanned: number;
   skillsPatched: number;
   versionsPatched: number;
+  digestsPatched: number;
   missingVersions: number;
   missingStorageBlob: number;
 };
@@ -520,12 +522,15 @@ export const applySkillCapabilityTagsInternal = internalMutation({
     if (!skill) return { ok: false as const, reason: "missing_skill" as const };
 
     const normalizedTags = [...new Set(args.capabilityTags)];
+    const nextCapabilityTags = normalizedTags.length ? normalizedTags : undefined;
     let versionPatched = false;
     let skillPatched = false;
+    let digestPatched = false;
+    let skillUpdatedAt: number | undefined;
 
     if (JSON.stringify(version.capabilityTags ?? []) !== JSON.stringify(normalizedTags)) {
       await ctx.db.patch(version._id, {
-        capabilityTags: normalizedTags.length ? normalizedTags : undefined,
+        capabilityTags: nextCapabilityTags,
       });
       versionPatched = true;
     }
@@ -534,14 +539,33 @@ export const applySkillCapabilityTagsInternal = internalMutation({
       skill.latestVersionId === version._id &&
       JSON.stringify(skill.capabilityTags ?? []) !== JSON.stringify(normalizedTags)
     ) {
+      skillUpdatedAt = Date.now();
       await ctx.db.patch(skill._id, {
-        capabilityTags: normalizedTags.length ? normalizedTags : undefined,
-        updatedAt: Date.now(),
+        capabilityTags: nextCapabilityTags,
+        updatedAt: skillUpdatedAt,
       });
       skillPatched = true;
+      digestPatched = true;
     }
 
-    return { ok: true as const, versionPatched, skillPatched };
+    if (skill.latestVersionId === version._id) {
+      const digest = await ctx.db
+        .query("skillSearchDigest")
+        .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
+        .unique();
+      if (
+        digest &&
+        JSON.stringify(digest.capabilityTags ?? []) !== JSON.stringify(normalizedTags)
+      ) {
+        await ctx.db.patch(digest._id, {
+          capabilityTags: nextCapabilityTags,
+          updatedAt: skillUpdatedAt ?? skill.updatedAt,
+        });
+        digestPatched = true;
+      }
+    }
+
+    return { ok: true as const, versionPatched, skillPatched, digestPatched };
   },
 });
 
@@ -565,6 +589,7 @@ export async function backfillSkillCapabilityTagsInternalHandler(
     skillsScanned: 0,
     skillsPatched: 0,
     versionsPatched: 0,
+    digestsPatched: 0,
     missingVersions: 0,
     missingStorageBlob: 0,
   };
@@ -643,6 +668,7 @@ export async function backfillSkillCapabilityTagsInternalHandler(
       if (result.ok) {
         if (result.skillPatched) stats.skillsPatched += 1;
         if (result.versionPatched) stats.versionsPatched += 1;
+        if (result.digestPatched) stats.digestsPatched += 1;
       }
     }
 
@@ -2053,6 +2079,42 @@ export const backfillSkillSearchDigestInternal = internalMutation({
     }
 
     return { inserted, isDone, scanned: page.length };
+  },
+});
+
+// Backfill plugin category digest rows for existing active packages.
+// Run once after deploying the schema change:
+//   npx convex run maintenance:backfillPackagePluginCategoryDigestsInternal --prod
+export const backfillPackagePluginCategoryDigestsInternal = internalMutation({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const batchSize = clampInt(args.batchSize ?? 200, 10, 500);
+    const { page, continueCursor, isDone } = await ctx.db
+      .query("packages")
+      .withIndex("by_active_updated", (q) => q.eq("softDeletedAt", undefined))
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+
+    let synced = 0;
+    for (const pkg of page) {
+      await upsertPackageSearchDigest(ctx, extractPackageDigestFields(pkg));
+      synced++;
+    }
+
+    if (!isDone) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.maintenance.backfillPackagePluginCategoryDigestsInternal,
+        {
+          cursor: continueCursor,
+          batchSize: args.batchSize,
+        },
+      );
+    }
+
+    return { synced, isDone, scanned: page.length };
   },
 });
 

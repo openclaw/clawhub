@@ -6,9 +6,12 @@ import { Stars } from "./stars";
 
 const useQueryMock = vi.fn();
 const useMutationMock = vi.fn();
+const useConvexAuthMock = vi.fn();
 const useAuthActionsMock = vi.fn();
+const navigateMock = vi.fn();
 
 vi.mock("convex/react", () => ({
+  useConvexAuth: () => useConvexAuthMock(),
   useQuery: (...args: unknown[]) => useQueryMock(...args),
   useMutation: (...args: unknown[]) => useMutationMock(...args),
 }));
@@ -22,6 +25,11 @@ vi.mock("@tanstack/react-router", async () => {
     await vi.importActual<typeof import("@tanstack/react-router")>("@tanstack/react-router");
   return {
     ...actual,
+    createFileRoute: () => (options: unknown) => ({
+      ...(options as Record<string, unknown>),
+      useNavigate: () => navigateMock,
+      useSearch: () => ({}),
+    }),
     Link: ({ children, to }: { children: ReactNode; to: string }) => <a href={to}>{children}</a>,
   };
 });
@@ -53,13 +61,18 @@ describe("Stars", () => {
   beforeEach(() => {
     useQueryMock.mockReset();
     useMutationMock.mockReset();
+    useConvexAuthMock.mockReset();
     useAuthActionsMock.mockReset();
+    navigateMock.mockReset();
     useMutationMock.mockReturnValue(toggleStarMock);
+    useConvexAuthMock.mockReturnValue({ isAuthenticated: true, isLoading: false });
     useAuthActionsMock.mockReturnValue({ signIn: vi.fn() });
     toggleStarMock.mockReset();
+    toggleStarMock.mockResolvedValue(null);
   });
 
   it("shows sign-in prompt when user is not authenticated", () => {
+    useConvexAuthMock.mockReturnValue({ isAuthenticated: false, isLoading: false });
     useQueryMock.mockImplementation((_query, args) => {
       if (args === undefined) return null;
       return undefined;
@@ -71,18 +84,8 @@ describe("Stars", () => {
     expect(screen.getByRole("button", { name: /sign in/i })).toBeTruthy();
   });
 
-  it("shows skeleton while loading auth", () => {
-    useQueryMock.mockImplementation((_query, args) => {
-      if (args === undefined) return undefined;
-      return undefined;
-    });
-
-    render(<Stars />);
-
-    expect(document.querySelector(".skeleton-list")).toBeTruthy();
-  });
-
-  it("shows skeleton while loading skills", () => {
+  it("shows skeleton while loading", () => {
+    useConvexAuthMock.mockReturnValue({ isAuthenticated: false, isLoading: true });
     useQueryMock.mockImplementation((_query, args) => {
       if (args === undefined) return { _id: "user_123" };
       return undefined;
@@ -104,6 +107,9 @@ describe("Stars", () => {
 
     expect(screen.getByText("No stars yet")).toBeTruthy();
     expect(screen.getByRole("link", { name: "Browse skills" })).toBeTruthy();
+    expect(screen.queryByRole("combobox", { name: "Sort starred skills" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Grid view" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "List view" })).toBeNull();
   });
 
   it("renders skill cards when user has stars", () => {

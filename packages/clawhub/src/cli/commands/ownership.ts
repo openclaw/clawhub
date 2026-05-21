@@ -57,7 +57,7 @@ export async function cmdRenameSkill(
         method: "POST",
         path: `${ApiRoutes.skills}/${encodeURIComponent(slug)}/rename`,
         token,
-        body: JSON.stringify({ newSlug }),
+        body: { newSlug },
       },
       ApiV1SkillRenameResponseSchema,
     );
@@ -99,7 +99,7 @@ export async function cmdMergeSkill(
         method: "POST",
         path: `${ApiRoutes.skills}/${encodeURIComponent(sourceSlug)}/merge`,
         token,
-        body: JSON.stringify({ targetSlug }),
+        body: { targetSlug },
       },
       ApiV1SkillMergeResponseSchema,
     );

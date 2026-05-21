@@ -1101,13 +1101,13 @@ describe("skills anti-spam guards", () => {
       "skills:1",
       expect.objectContaining({
         moderationStatus: "active",
-        moderationReason: "scanner.vt.suspicious",
-        moderationFlags: ["flagged.suspicious"],
+        moderationReason: "scanner.aggregate.clean",
+        moderationFlags: undefined,
       }),
     );
   });
 
-  it("does not hide or autoban for AI-only VT malicious without engine hits", async () => {
+  it("does not hide or autoban for VT-only malicious without engine hits", async () => {
     const patch = vi.fn(async () => {});
     const runAfter = vi.fn();
     const version = {
@@ -1123,8 +1123,8 @@ describe("skills anti-spam guards", () => {
       },
       vtAnalysis: {
         status: "malicious",
-        scanner: "code_insight",
-        source: "palm",
+        scanner: "legacy-ai",
+        source: "legacy-ai",
         engineStats: { malicious: 0, suspicious: 0, harmless: 12, undetected: 54 },
       },
       llmAnalysis: { status: "clean" },
@@ -1812,11 +1812,11 @@ describe("skills anti-spam guards", () => {
     expect(patch).toHaveBeenCalledWith(
       "skills:1",
       expect.objectContaining({
-        moderationVerdict: "suspicious",
-        moderationReason: "scanner.llm.suspicious",
-        moderationFlags: ["flagged.suspicious"],
-        moderationReasonCodes: ["review.llm_review", "suspicious.vt_suspicious"],
-        isSuspicious: true,
+        moderationVerdict: "clean",
+        moderationReason: "scanner.llm.review",
+        moderationFlags: ["flagged.review"],
+        moderationReasonCodes: ["review.llm_review"],
+        isSuspicious: false,
       }),
     );
   });
@@ -1906,18 +1906,12 @@ describe("skills anti-spam guards", () => {
       1,
       "skills:1",
       expect.objectContaining({
-        moderationStatus: "hidden",
-        moderationVerdict: "malicious",
-        moderationFlags: ["blocked.malware"],
+        moderationStatus: "active",
+        moderationVerdict: "clean",
+        moderationFlags: undefined,
       }),
     );
-    expect(patch).toHaveBeenNthCalledWith(
-      2,
-      "globalStats:1",
-      expect.objectContaining({
-        activeSkillsCount: 99,
-      }),
-    );
+    expect(patch).toHaveBeenCalledTimes(1);
   });
 
   it("ignores non-latest versions when approving by hash", async () => {
@@ -2035,7 +2029,7 @@ describe("skills anti-spam guards", () => {
     );
   });
 
-  it("vt suspicious escalation clears legacy quarantine for uncorroborated Code Insight", async () => {
+  it("vt suspicious escalation clears legacy quarantine when local scans are clean", async () => {
     const patch = vi.fn(async () => {});
     const version = {
       _id: "skillVersions:1",
@@ -2050,7 +2044,7 @@ describe("skills anti-spam guards", () => {
       },
       vtAnalysis: {
         status: "suspicious",
-        scanner: "code_insight",
+        scanner: "legacy-ai",
         engineStats: {
           malicious: 0,
           suspicious: 0,
@@ -2121,7 +2115,7 @@ describe("skills anti-spam guards", () => {
     );
   });
 
-  it("vt malicious escalation clears legacy quarantine for AI-only Code Insight", async () => {
+  it("vt malicious escalation clears legacy quarantine when local scans are clean", async () => {
     const patch = vi.fn(async () => {});
     const runAfter = vi.fn();
     const version = {
@@ -2137,8 +2131,8 @@ describe("skills anti-spam guards", () => {
       },
       vtAnalysis: {
         status: "malicious",
-        scanner: "code_insight",
-        source: "palm",
+        scanner: "legacy-ai",
+        source: "legacy-ai",
         engineStats: {
           malicious: 0,
           suspicious: 0,
@@ -2333,21 +2327,15 @@ describe("skills anti-spam guards", () => {
       1,
       "skills:1",
       expect.objectContaining({
-        moderationStatus: "hidden",
-        moderationReason: "scanner.vt.malicious",
-        moderationFlags: ["blocked.malware"],
-        moderationVerdict: "malicious",
-        moderationReasonCodes: ["malicious.vt_malicious"],
+        moderationStatus: "active",
+        moderationReason: "scanner.aggregate.clean",
+        moderationFlags: undefined,
+        moderationVerdict: "clean",
+        moderationReasonCodes: undefined,
         moderationSourceVersionId: "skillVersions:1",
       }),
     );
-    expect(patch).toHaveBeenNthCalledWith(
-      2,
-      "globalStats:1",
-      expect.objectContaining({
-        activeSkillsCount: 99,
-      }),
-    );
+    expect(patch).toHaveBeenCalledTimes(1);
   });
 
   it("bulk-clears suspicious flags/reasons for privileged owner skills", async () => {
@@ -2488,8 +2476,8 @@ describe("skills anti-spam guards", () => {
       },
       vtAnalysis: {
         status: "malicious",
-        scanner: "code_insight",
-        source: "palm",
+        scanner: "legacy-ai",
+        source: "legacy-ai",
         engineStats: { malicious: 0, suspicious: 0, harmless: 12, undetected: 54 },
       },
       llmAnalysis: { status: "clean" },

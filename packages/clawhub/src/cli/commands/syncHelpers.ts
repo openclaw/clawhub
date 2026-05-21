@@ -370,11 +370,11 @@ export function dedupeSkillsBySlug(skills: SkillFolder[]) {
 }
 
 function formatActionableStatus(candidate: Candidate, bump: "patch" | "minor" | "major"): string {
-  if (candidate.status === "new") return "NEW";
+  if (candidate.status === "new") return "NEW (publish 1.0.0)";
   const latest = candidate.latestVersion;
   const next = latest ? semver.inc(latest, bump) : null;
-  if (latest && next) return `UPDATE ${latest} → ${next}`;
-  return "UPDATE";
+  if (latest && next) return `LOCAL CHANGES latest ${latest}; publish ${next}`;
+  return "LOCAL CHANGES";
 }
 
 export function formatActionableLine(

@@ -86,7 +86,7 @@ test("skill detail page has no horizontal overflow on mobile", async ({ page, re
   );
 
   await page.goto(`/${ownerHandle}/${slug}`, { waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("heading", { name: payload.skill!.displayName! })).toBeVisible();
+  await expect(page.locator("h1.skill-page-title")).toHaveText(payload.skill!.displayName!);
 
   const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
   const clientWidth = await page.evaluate(() => document.documentElement.clientWidth);
@@ -112,8 +112,8 @@ test("detail tabs are scrollable and touch-friendly on mobile", async ({ page, r
   await page.goto(`/${ownerHandle}/${slug}`, { waitUntil: "domcontentloaded" });
 
   // All standard tabs should be accessible (even if scrolled)
-  for (const tabName of ["README", "Files", "Versions"]) {
-    const tab = page.getByRole("button", { name: tabName });
+  for (const tabName of ["SKILL.md", "Files", "Versions"]) {
+    const tab = page.getByRole("tab", { name: tabName });
     await tab.scrollIntoViewIfNeeded();
     await expect(tab).toBeVisible();
 

@@ -49,7 +49,6 @@ describe("skills route default sort", () => {
           dir: undefined,
           highlighted: undefined,
           featured: undefined,
-          nonSuspicious: undefined,
           tag: undefined,
           view: undefined,
           focus: undefined,
@@ -64,7 +63,6 @@ describe("skills route default sort", () => {
   });
 
   it("does not redirect when filters are present", () => {
-    expect(runBeforeLoad({ nonSuspicious: true })).toBeUndefined();
     expect(runBeforeLoad({ featured: true })).toBeUndefined();
     expect(runBeforeLoad({ highlighted: true })).toBeUndefined();
   });

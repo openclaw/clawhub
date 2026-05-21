@@ -1,11 +1,31 @@
 /* @vitest-environment jsdom */
 
 import { fireEvent, render, screen } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { Id } from "../../convex/_generated/dataModel";
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
 import { SkillHeader } from "./SkillHeader";
 import { TooltipProvider } from "./ui/tooltip";
+
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({
+    children,
+    to,
+    search,
+  }: {
+    children?: ReactNode;
+    to?: string;
+    search?: Record<string, string | number | boolean | undefined>;
+  }) => {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(search ?? {})) {
+      if (value !== undefined) params.set(key, String(value));
+    }
+    const query = params.toString();
+    return <a href={`${to ?? "#"}${query ? `?${query}` : ""}`}>{children}</a>;
+  },
+}));
 
 describe("SkillHeader", () => {
   const skill: PublicSkill = {
@@ -103,7 +123,78 @@ describe("SkillHeader", () => {
     expect(screen.getByText("Owner")).toBeTruthy();
     expect(screen.getByText("Downloads")).toBeTruthy();
     expect(screen.getByText("2")).toBeTruthy();
-    expect(container.querySelector('a[href="/p/local"]')).toBeTruthy();
+    expect(container.querySelector('a[href="/user/local"]')).toBeTruthy();
+    expect(
+      container.querySelector('nav[aria-label="Skill breadcrumbs"] a[href="/user/local"]'),
+    ).toBeTruthy();
+  });
+
+  it("shows a New version action for managers above Settings", () => {
+    renderHeader({
+      canManage: true,
+      isAuthenticated: true,
+      settingsHref: "/local/demo/settings",
+      newVersionHref: "/skills/publish?updateSlug=demo&ownerHandle=local",
+    } as Partial<Parameters<typeof SkillHeader>[0]>);
+
+    const newVersionLink = screen.getByRole("link", { name: "New version" });
+    const settingsLink = screen.getByRole("link", { name: "Settings" });
+
+    expect(newVersionLink.getAttribute("href")).toBe(
+      "/skills/publish?updateSlug=demo&ownerHandle=local",
+    );
+    expect(
+      newVersionLink.compareDocumentPosition(settingsLink) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("does not show a New version action without a manager href", () => {
+    renderHeader({
+      canManage: false,
+      isAuthenticated: true,
+      settingsHref: null,
+      newVersionHref: null,
+    });
+
+    expect(screen.queryByRole("link", { name: "New version" })).toBeNull();
+  });
+
+  it("hides Report for non-staff managers", () => {
+    renderHeader({
+      canManage: true,
+      isAuthenticated: true,
+      settingsHref: "/local/demo/settings",
+      newVersionHref: "/skills/publish?updateSlug=demo&ownerHandle=local",
+    } as Partial<Parameters<typeof SkillHeader>[0]>);
+
+    expect(screen.queryByRole("button", { name: "Report" })).toBeNull();
+  });
+
+  it("keeps Report visible for staff managers", () => {
+    renderHeader({
+      canManage: true,
+      isAuthenticated: true,
+      isStaff: true,
+      settingsHref: "/local/demo/settings",
+      newVersionHref: "/skills/publish?updateSlug=demo&ownerHandle=local",
+    } as Partial<Parameters<typeof SkillHeader>[0]>);
+
+    expect(screen.getByRole("button", { name: "Report" })).toBeTruthy();
+  });
+
+  it("does not render a separate warning banner for scanner warnings", () => {
+    renderHeader({
+      modInfo: {
+        isPendingScan: false,
+        isMalwareBlocked: false,
+        isSuspicious: true,
+        isHiddenByMod: false,
+        isRemoved: false,
+      },
+    });
+
+    expect(screen.queryByText("Security warning — review recommended")).toBeNull();
+    expect(screen.queryByText(/Review the scan results before using/i)).toBeNull();
   });
 
   it("shows the latest version description instead of the short catalog summary", () => {

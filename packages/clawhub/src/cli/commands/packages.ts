@@ -52,6 +52,7 @@ const LEGACY_DOT_DIR = ".clawdhub";
 const DOT_IGNORE = ".clawhubignore";
 const LEGACY_DOT_IGNORE = ".clawdhubignore";
 const MAX_CLAWPACK_BYTES = 120 * 1024 * 1024;
+const PACKAGE_PUBLISH_RETRY_COUNT = 5;
 
 type PackageInspectOptions = {
   version?: string;
@@ -494,7 +495,12 @@ export async function cmdPackPackage(
   options: PackagePackOptions = {},
 ) {
   if (!sourceArg?.trim()) fail("Path required");
-  const sourcePath = resolve(opts.workdir, sourceArg);
+  const resolvedSource = await resolveSourceInput(sourceArg, {
+    workdir: opts.workdir,
+    localWorkdirs: [process.cwd(), opts.workdir],
+  });
+  if (resolvedSource.kind !== "local") fail("Path must be a package folder");
+  const sourcePath = resolvedSource.path;
   const sourceStat = await stat(sourcePath).catch(() => null);
   if (!sourceStat?.isDirectory()) fail("Path must be a package folder");
 
@@ -687,7 +693,13 @@ export async function cmdPublishPackage(
       if (spinner) spinner.text = `Publishing ${plan.payload.name}@${plan.payload.version}`;
       const result = await apiRequestForm(
         registry,
-        { method: "POST", path: ApiRoutes.packages, token: publishToken, form },
+        {
+          method: "POST",
+          path: ApiRoutes.packages,
+          token: publishToken,
+          form,
+          retryCount: PACKAGE_PUBLISH_RETRY_COUNT,
+        },
         ApiV1PackagePublishResponseSchema,
       );
 
@@ -1592,7 +1604,10 @@ async function preparePackagePublishPlan(
   sourceArg: string,
   options: PackagePublishOptions,
 ): Promise<PackagePublishPlan> {
-  const resolvedSource = await resolveSourceInput(sourceArg, { workdir: opts.workdir });
+  const resolvedSource = await resolveSourceInput(sourceArg, {
+    workdir: opts.workdir,
+    localWorkdirs: [process.cwd(), opts.workdir],
+  });
   const sourceForFetch = applyGitHubSourcePath(resolvedSource, options.sourcePath);
   let folder = sourceForFetch.kind === "local" ? sourceForFetch.path : "";
   let cleanup: (() => Promise<void>) | undefined;

@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { Command } from "commander";
 import { resolveClawdbotDefaultWorkspace } from "../../clawhub/src/cli/clawdbotConfig.js";
 import { cmdLoginFlow, cmdLogout, cmdWhoami } from "../../clawhub/src/cli/commands/auth.js";
+import { cmdUnhideSkill } from "../../clawhub/src/cli/commands/delete.js";
 import {
   cmdGetPackageTrustedPublisher,
   cmdPackageModerationStatus,
@@ -21,7 +22,14 @@ import { DEFAULT_REGISTRY, DEFAULT_SITE } from "../../clawhub/src/cli/registry.j
 import type { GlobalOpts } from "../../clawhub/src/cli/types.js";
 import { fail } from "../../clawhub/src/cli/ui.js";
 import { getModeratorCliBuildLabel, getModeratorCliVersion } from "./buildInfo.js";
-import { cmdBanUser, cmdSetRole, cmdUnbanUser } from "./commands/moderation.js";
+import {
+  cmdBanUser,
+  cmdReclassifyBan,
+  cmdRemediateAutobans,
+  cmdRescanSkill,
+  cmdSetRole,
+  cmdUnbanUser,
+} from "./commands/moderation.js";
 import {
   cmdBackfillPackageArtifacts,
   cmdDeletePackageTrustedPublisher,
@@ -29,6 +37,7 @@ import {
   cmdListPackageReports,
   cmdModeratePackageRelease,
   cmdPackageModerationQueue,
+  cmdRepairPackageName,
   cmdSetPackageTrustedPublisher,
   cmdTriagePackageReport,
   cmdUpsertPackageMigration,
@@ -224,6 +233,40 @@ users
     await cmdSetRole(opts, handleOrId, role, options, isInputAllowed());
   });
 
+users
+  .command("reclassify-ban")
+  .description("Change the stored reason for an existing ban")
+  .argument("<handleOrId>", "User handle (default) or user id")
+  .option("--apply", "Write changes; defaults to dry-run")
+  .option("--dry-run", "Plan only (default)")
+  .option("--id", "Treat argument as user id")
+  .option("--fuzzy", "Resolve handle via fuzzy user search")
+  .requiredOption("--reason <reason>", "New ban reason")
+  .option("--yes", "Skip confirmation for --apply")
+  .option("--json", "Output JSON")
+  .action(async (handleOrId, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdReclassifyBan(opts, handleOrId, options, isInputAllowed());
+  });
+
+users
+  .command("remediate-autobans")
+  .description("Dry-run or apply malware autoban remediation")
+  .option("--apply", "Write changes; defaults to dry-run")
+  .option("--dry-run", "Plan only (default)")
+  .option("--user <handleOrId>", "Limit to one user handle or id")
+  .option("--id", "Treat --user as a user id")
+  .option("--since <date>", "Only scan autobans at or after this date")
+  .option("--limit <n>", "Maximum users to scan per page")
+  .option("--cursor <cursor>", "Resume cursor")
+  .option("--all", "Continue until all pages are processed")
+  .option("--reason <reason>", "Audit reason for apply")
+  .option("--json", "Output JSON")
+  .action(async (options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdRemediateAutobans(opts, options, isInputAllowed());
+  });
+
 program
   .command("ban-user")
   .description("Alias for users ban")
@@ -294,6 +337,21 @@ function registerPluginGovernanceCommands(command: Command) {
     .action(async (options) => {
       const opts = await resolveGlobalOpts();
       await cmdBackfillPackageArtifacts(opts, options);
+    });
+
+  command
+    .command("repair-name")
+    .description("Admin repair for plugin package names")
+    .argument("<name>", "Current plugin package name")
+    .requiredOption("--next-name <name>", "Target plugin package name")
+    .option("--retire-target", "Rename and soft-delete the current target package first")
+    .option("--owner <handle>", "Transfer repaired package to a publisher handle")
+    .requiredOption("--reason <reason>", "Audit reason")
+    .option("--apply", "Write changes; defaults to dry-run")
+    .option("--json", "Output JSON")
+    .action(async (name, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdRepairPackageName(opts, name, options);
     });
 
   command
@@ -451,6 +509,40 @@ function registerPluginOperations(command: Command) {
 }
 
 function registerSkillModerationCommands(command: Command) {
+  command
+    .command("unhide")
+    .description("Manually restore a hidden skill after moderator review")
+    .argument("<slug>", "Skill slug")
+    .option("--reason <text>", "Audit reason")
+    .option("--note <text>", "Alias for --reason")
+    .option("--yes", "Skip confirmation")
+    .action(async (slug, options) => {
+      if (
+        options.reason?.trim() &&
+        options.note?.trim() &&
+        options.reason.trim() !== options.note.trim()
+      ) {
+        fail("Pass only one of --reason or --note");
+      }
+      if (!options.reason?.trim() && !options.note?.trim()) {
+        fail("--reason required");
+      }
+      const opts = await resolveGlobalOpts();
+      await cmdUnhideSkill(opts, slug, options, isInputAllowed());
+    });
+
+  command
+    .command("rescan")
+    .description("Queue a moderator ClawScan rescan for a skill")
+    .argument("<slug>", "Skill slug")
+    .option("--version <version>", "Specific skill version; defaults to latest")
+    .option("--yes", "Skip confirmation")
+    .option("--json", "Output JSON")
+    .action(async (slug, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdRescanSkill(opts, slug, options, isInputAllowed());
+    });
+
   command
     .command("reports")
     .description("List skill reports for moderator review")

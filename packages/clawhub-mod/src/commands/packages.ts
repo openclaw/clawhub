@@ -13,6 +13,7 @@ import {
   ApiV1PackageModerationQueueResponseSchema,
   ApiV1PackageOfficialMigrationListResponseSchema,
   ApiV1PackageOfficialMigrationResponseSchema,
+  ApiV1PackageRepairNameResponseSchema,
   ApiV1PackageReleaseModerationResponseSchema,
   ApiV1PackageReportListResponseSchema,
   ApiV1PackageReportTriageResponseSchema,
@@ -95,6 +96,15 @@ type PackageMigrationUpsertOptions = {
   moderationApproved?: boolean;
   runtimeBundlesReady?: boolean;
   notes?: string;
+  json?: boolean;
+};
+
+type PackageRepairNameOptions = {
+  nextName?: string;
+  retireTarget?: boolean;
+  owner?: string;
+  reason?: string;
+  apply?: boolean;
   json?: boolean;
 };
 
@@ -436,6 +446,64 @@ export async function cmdBackfillPackageArtifacts(
   );
   if (!summary.done && summary.nextCursor) {
     console.log(`Next cursor: ${summary.nextCursor}`);
+  }
+}
+
+export async function cmdRepairPackageName(
+  opts: GlobalOpts,
+  packageName: string,
+  options: PackageRepairNameOptions = {},
+) {
+  const trimmed = normalizePackageNameOrFail(packageName);
+  const nextName = normalizePackageNameOrFail(options.nextName ?? "");
+  const reason = options.reason?.trim();
+  const owner = options.owner?.trim().replace(/^@+/, "").toLowerCase();
+  const dryRun = options.apply !== true;
+  if (!reason) fail("--reason required");
+
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const spinner = options.json
+    ? null
+    : createSpinner(`${dryRun ? "Planning" : "Applying"} package name repair`);
+  try {
+    const result = await apiRequest(
+      registry,
+      {
+        method: "POST",
+        path: `${ApiRoutes.packages}/${encodeURIComponent(trimmed)}/repair-name`,
+        token,
+        body: {
+          nextName,
+          ...(options.retireTarget ? { retireTarget: true } : {}),
+          ...(owner ? { owner } : {}),
+          reason,
+          dryRun,
+        },
+      },
+      ApiV1PackageRepairNameResponseSchema,
+    );
+    spinner?.stop();
+    if (options.json) {
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      return;
+    }
+
+    console.log(
+      `${result.dryRun ? "Dry run" : "Applied"} package repair: ${trimmed} -> ${nextName}`,
+    );
+    if (result.retiredName) console.log(`Retired target as: ${result.retiredName}`);
+    for (const operation of result.operations) {
+      if (operation.action === "transfer-owner") {
+        console.log(`- transfer owner: @${operation.owner}`);
+      } else {
+        console.log(`- ${operation.action}: ${operation.from} -> ${operation.to}`);
+      }
+    }
+    if (result.dryRun) console.log("Re-run with --apply to write these changes.");
+  } catch (error) {
+    spinner?.fail(formatError(error));
+    throw error;
   }
 }
 

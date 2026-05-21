@@ -53,6 +53,16 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   API/CLI, including open report count, latest release moderation state, and
   download-block reasons. Reporter identities and report bodies remain moderator
   intake data.
+- OpenClaw install clients can read the exact-release public trust endpoint at
+  `GET /api/v1/packages/{name}/versions/{version}/security` without owner or
+  moderator credentials. The endpoint returns only package identity, exact
+  release artifact identifiers, and the install-consumable trust summary.
+- `trust.blockedFromDownload` is the canonical install block signal for package
+  releases. OpenClaw must use it instead of re-deriving blocking behavior from
+  individual scan or moderation fields. `trust.reasons` is the compact user and
+  audit explanation list, for example `manual:quarantined`, `scan:malicious`,
+  `static:malicious`, `vt:suspicious`, or `package:malicious`; public trust
+  responses must not expose open report counts.
 - The legacy skill/package appeal tables and backend routes remain for
   compatibility, but the first-class CLI and docs surface is deprecated.
   Publisher recovery for false positives should use reports or out-of-band
@@ -60,6 +70,10 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Any scanner path that determines a skill is malicious must hide the skill and
   schedule the same account-level autoban/token-revocation workflow. Static
   scan malicious findings must not diverge into a softer moderation-only state.
+- Pending skill ownership transfers must not be accepted when the requesting
+  owner is deleted/deactivated or when the skill is malicious, hidden, or
+  removed. The accept path is the final shared gate before ownership changes,
+  so it must cancel the pending transfer before reporting the rejection.
 - `clawScanNote` is optional publisher-authored context stored directly on a
   `skillVersions` or `packageReleases` row. It is not an appeal, has no
   accepted/rejected state, does not imply staff response, and must not drive
@@ -74,6 +88,10 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - `auditLogs` remains the global compliance/security ledger. Product-facing
   moderation timelines live in `skillModerationEventLogs` and
   `packageModerationEventLogs`.
+- Ownership-adjacent identity changes must also write `auditLogs`: user profile
+  sync/update/ensure/delete, personal publisher create/sync, and org trusted
+  publisher set/unset. Personal publisher sync should log meaningful create,
+  change, link, or membership events, not routine login refreshes.
 - Public queries hide non-active moderation statuses; moderators can still access via
   moderator-only queries and unhide/restore/delete/ban.
 - Legacy report rows with `status: "triaged"` are read as `confirmed` for
@@ -84,19 +102,35 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 ## Skill moderation pipeline
 
 - New skill publishes now persist a deterministic static scan result on the version.
-- Static suspicious findings are advisory evidence only. They no longer produce
-  an aggregate suspicious verdict or public package scan status without VT/LLM
-  corroboration. Static malicious findings still block immediately.
-- ClawScan LLM verdicts treat purpose-aligned notes as user guidance, not a
+- Static suspicious findings are advisory evidence only. Static malicious findings
+  hold the artifact until Codex-backed ClawScan completes.
+- ClawScan verdicts come from a GitHub Actions Codex worker, not a single
+  hosted LLM call. Publishes enqueue a scan job that waits at most 10 minutes
+  for VirusTotal telemetry, then Codex reviews the materialized artifact
+  workspace with static and VT signals as context.
+- ClawScan verdicts treat purpose-aligned notes as user guidance, not a
   suspicious verdict. Medium-only material concerns are visible
   `flagged.review` guidance and must not set `isSuspicious`; high or critical
   concerns remain `flagged.suspicious` and are hidden by the suspicious filter.
-- VirusTotal is telemetry for skills, not the primary classifier. Real AV
-  engine malicious/suspicious hits can still contribute malicious/suspicious
-  reason codes, but Code Insight/Palm suspicious verdicts do not set
-  `isSuspicious` without corroborating engine detections or LLM/static
-  malicious evidence.
-- Operators can schedule targeted LLM rescans for suspicious skills by bucket
+- VirusTotal is telemetry only. It is included in the Codex workspace as signal,
+  but VT alone must never hide, block, or set malicious/suspicious public status.
+- VirusTotal engine stats with zero malicious and zero suspicious detections and
+  one or more undetected engines are resolved no-detections telemetry, not an
+  in-progress scan. ClawHub should cache them as clean VT results instead of
+  leaving public badges pending.
+- All-active daily VirusTotal sweeps are disabled. Any future recurring VT
+  freshness job must be bounded or delta-driven, and must not starve
+  publish-triggered ClawScan jobs.
+- Prompt-injection pre-scan hits are also context for Codex, not a deterministic
+  post-Codex veto. The release worker must not downgrade a benign Codex verdict
+  solely from regex telemetry.
+- Artifacts without non-VT malicious indications are visible immediately while
+  Codex runs. Artifacts with non-VT malicious indications stay hidden/blocked
+  until Codex returns; Codex malicious verdicts hide/block.
+- Plugins under `@openclaw/*` owned by the OpenClaw publisher are trusted by
+  default. They may still be audited, but scanner telemetry alone must not
+  downgrade them.
+- Operators can schedule targeted ClawScan rescans for suspicious skills by bucket
   (`all`, `llm-only`, `vt-only`, `both`) and for suspicious plugin releases.
 - Package/plugin scan backfills now also recompute deterministic static scan results for older releases,
   so legacy plugin versions can surface OpenClaw scan findings without republishing.
@@ -104,9 +138,9 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   `package.json`, `openclaw.plugin.json`, package/source metadata, and release facts. VirusTotal
   scans the exact uploaded `.tgz`; ClawHub does not currently run deep static/LLM scans across every
   tarball file.
-- Source-linked packages can fall back to a clean package verdict when VirusTotal only returns
-  undetected engine results, provided the LLM scan is clean and static scan is non-malicious. This
-  avoids indefinite pending scans when VT Code Insight never materializes.
+- Packages cache VirusTotal undetected-only engine results as clean VT telemetry.
+  ClawHub does not request or consume VirusTotal AI/code-insight results; VT is
+  engine/vendor telemetry only.
 - Skill moderation state stores a structured snapshot:
   - `moderationVerdict`: `clean | suspicious | malicious`
   - `moderationReasonCodes[]`: canonical machine-readable reasons
@@ -157,6 +191,9 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Admins can manually unban (`deletedAt` + `banReason` cleared); revoked API tokens
   stay revoked and should be recreated by the user.
 - Optional ban reason is stored in `users.banReason` and audit logs.
+- Admins can reclassify an existing ban reason without unbanning or restoring
+  content. This preserves the ban while removing users from remediation flows
+  that key off a specific historical reason such as `malware auto-ban`.
 - Moderators cannot ban admins; nobody can ban themselves.
 - Report counters effectively reset because deleted/banned skills are no longer
   considered active in the per-user report cap.

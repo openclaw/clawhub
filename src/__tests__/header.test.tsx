@@ -2,7 +2,7 @@
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -14,7 +14,8 @@ type HeaderAuthStatus = {
 
 const siteModeMock = vi.fn(() => "souls");
 const navigateMock = vi.fn();
-const { useUnifiedSearchMock } = vi.hoisted(() => ({
+const { signInMock, useUnifiedSearchMock } = vi.hoisted(() => ({
+  signInMock: vi.fn(),
   useUnifiedSearchMock: vi.fn(),
 }));
 
@@ -58,6 +59,8 @@ const defaultUnifiedSearchResult = {
   ],
   skillCount: 1,
   pluginCount: 1,
+  skillHasMore: false,
+  pluginHasMore: false,
   isSearching: false,
 };
 
@@ -73,7 +76,7 @@ vi.mock("@tanstack/react-router", () => ({
 
 vi.mock("@convex-dev/auth/react", () => ({
   useAuthActions: () => ({
-    signIn: vi.fn(),
+    signIn: signInMock,
     signOut: vi.fn(),
   }),
 }));
@@ -201,6 +204,8 @@ describe("Header", () => {
     });
     siteModeMock.mockReturnValue("souls");
     useUnifiedSearchMock.mockReturnValue(defaultUnifiedSearchResult);
+    signInMock.mockReset();
+    signInMock.mockResolvedValue({ signingIn: true });
   });
 
   it("hides Packages navigation in soul mode on mobile and desktop", () => {
@@ -228,8 +233,8 @@ describe("Header", () => {
     expect(screen.getAllByText("Skills")).toHaveLength(1);
     expect(screen.getAllByText("Plugins")).toHaveLength(1);
     expect(screen.getAllByText("Publishers")).toHaveLength(1);
-    expect(screen.getAllByText("About")).toHaveLength(1);
     expect(screen.getAllByText("Docs")).toHaveLength(1);
+    expect(screen.queryByText("About")).toBeNull();
     expect(screen.queryByText("Dashboard")).toBeNull();
     expect(screen.queryByText("Manage")).toBeNull();
     expect(screen.getByPlaceholderText("Search skills and plugins")).toBeTruthy();
@@ -243,8 +248,8 @@ describe("Header", () => {
     expect(screen.getAllByText("Skills")).toHaveLength(2);
     expect(screen.getAllByText("Plugins")).toHaveLength(2);
     expect(screen.getAllByText("Publishers")).toHaveLength(2);
-    expect(screen.getAllByText("About")).toHaveLength(2);
     expect(screen.getAllByText("Docs")).toHaveLength(2);
+    expect(screen.queryByText("About")).toBeNull();
   });
 
   it("renders the GitHub sign-in button with desktop and compact labels", () => {
@@ -259,6 +264,21 @@ describe("Header", () => {
     expect(fullCopy?.childNodes).toHaveLength(1);
     expect(signInButton.querySelector(".sign-in-with")).toBeNull();
     expect(signInButton.querySelector(".sign-in-compact-copy")?.textContent).toBe("GitHub");
+  });
+
+  it("shows an auth error when the GitHub sign-in request does not start", async () => {
+    const { setAuthError } = await import("../lib/useAuthError");
+    siteModeMock.mockReturnValue("skills");
+    signInMock.mockResolvedValue({ signingIn: false });
+
+    render(<Header />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Sign in with GitHub" }));
+
+    expect(signInMock).toHaveBeenCalledWith("github", { redirectTo: "/" });
+    await waitFor(() => {
+      expect(setAuthError).toHaveBeenCalledWith("Sign in failed. Please try again.");
+    });
   });
 
   it("keeps inline search and moves content nav into the compact menu", () => {
@@ -301,8 +321,15 @@ describe("Header", () => {
     const typeahead = screen.getByRole("listbox");
     expect(within(typeahead).getByText("Skills")).toBeTruthy();
     expect(screen.getByText("Weather Skill")).toBeTruthy();
+    expect(screen.getByText("@local / weather")).toBeTruthy();
     expect(within(typeahead).getByText("Plugins")).toBeTruthy();
     expect(screen.getByText("Weather Plugin")).toBeTruthy();
+    expect(input.getAttribute("role")).toBe("combobox");
+    expect(input.getAttribute("aria-autocomplete")).toBe("list");
+    expect(input.getAttribute("aria-expanded")).toBe("true");
+    const activeDescendant = input.getAttribute("aria-activedescendant");
+    expect(activeDescendant).toBeTruthy();
+    expect(document.getElementById(activeDescendant ?? "")).toBeTruthy();
     expect(within(typeahead).queryByText("Publishers")).toBeNull();
     expect(within(typeahead).queryByText('See user results for "weather"')).toBeNull();
 
@@ -361,6 +388,8 @@ describe("Header", () => {
       pluginResults: [],
       skillCount: 0,
       pluginCount: 0,
+      skillHasMore: false,
+      pluginHasMore: false,
       isSearching: false,
     });
 
@@ -392,7 +421,7 @@ describe("Header", () => {
       .filter((label): label is string => Boolean(label));
 
     expect(labels.slice(0, 2)).toEqual(["Home", "Skills"]);
-    expect(labels.slice(3, 6)).toEqual(["Publishers", "About", "Docs"]);
+    expect(labels.slice(3, 5)).toEqual(["Publishers", "Docs"]);
   });
 
   it("links starred skills from the signed-in avatar menu", () => {

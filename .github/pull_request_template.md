@@ -14,6 +14,12 @@ For website/UI changes, attach screenshots or recordings from the real app. Incl
 
 - [ ] Screenshots/recordings attached, or `N/A`
 
+## Behavioural Proof
+
+Describe how you verified the user-facing behavior. For UI changes, include the path tested and what changed on screen. For backend/API changes, include the request, command, or scenario that proves the behavior.
+
+- [ ] Behavioural proof included, or `N/A`
+
 ## Security / Trust Impact
 
 - [ ] No security/trust impact
@@ -26,7 +32,8 @@ For website/UI changes, attach screenshots or recordings from the real app. Incl
 
 ## Verification
 
-- [ ] `bun run format:check`
-- [ ] `bun run lint`
-- [ ] `bun run test`
+- [ ] `bun run ci:static`
+- [ ] Focused tests for touched behavior:
+- [ ] `bun run ci:unit` or `N/A` for docs/config-only:
+- [ ] Broader gate when required (`ci:types-build`, `ci:packages`, `ci:e2e-http`, `ci:playwright-smoke`, `test:pw:local-auth`, `proof:ui`):
 - [ ] Other:

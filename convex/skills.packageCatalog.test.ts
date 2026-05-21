@@ -218,6 +218,112 @@ describe("skills package catalog queries", () => {
     expect(result[0]?.score).toBeGreaterThan(0);
   });
 
+  it("does not let official status make unrelated skills eligible for package search", async () => {
+    const result = await searchPackageCatalogPublicHandler(
+      makeCtx([
+        {
+          page: [
+            makeDigest("official-skill", {
+              badges: { official: { byUserId: "users:admin", at: 1 } },
+              displayName: "Official Skill",
+              summary: "General integration.",
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ]),
+      {
+        query: "zzzznonexistentquery123",
+        limit: 5,
+      },
+    );
+
+    expect(result).toEqual([]);
+  });
+
+  it("returns skill package match metadata and orders name matches before summary matches", async () => {
+    const result = await searchPackageCatalogPublicHandler(
+      makeCtx([
+        {
+          page: [
+            makeDigest("official-helper", {
+              badges: { official: { byUserId: "users:admin", at: 1 } },
+              displayName: "Official Helper",
+              summary: "Ghost CMS integration.",
+              updatedAt: 100,
+            }),
+            makeDigest("ghost-tools", {
+              displayName: "Ghost Tools",
+              summary: "CMS helper.",
+              updatedAt: 1,
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ]),
+      {
+        query: "ghost",
+        limit: 5,
+      },
+    );
+
+    expect(result.map((entry) => entry.package.name)).toEqual(["ghost-tools", "official-helper"]);
+    expect(result[0]).not.toHaveProperty("rankTier");
+    expect(result[0]).not.toHaveProperty("matchReason");
+  });
+
+  it("uses capability tags as skill package search evidence", async () => {
+    const result = await searchPackageCatalogPublicHandler(
+      makeCtx([
+        {
+          page: [
+            makeDigest("wallet-helper", {
+              displayName: "Wallet Helper",
+              summary: "Payment helper.",
+              capabilityTags: ["crypto", "requires-wallet"],
+            }),
+            makeDigest("weather"),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ]),
+      {
+        query: "crypto",
+        limit: 5,
+      },
+    );
+
+    expect(result.map((entry) => entry.package.name)).toEqual(["wallet-helper"]);
+    expect(result[0]).not.toHaveProperty("rankTier");
+  });
+
+  it("does not drop short tokens from exploratory skill package matches", async () => {
+    const result = await searchPackageCatalogPublicHandler(
+      makeCtx([
+        {
+          page: [
+            makeDigest("database-tools", {
+              displayName: "Database Tools",
+              summary: "Postgres database helper.",
+              capabilityTags: ["postgres"],
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ]),
+      {
+        query: "ai postgres",
+        limit: 5,
+      },
+    );
+
+    expect(result).toEqual([]);
+  });
+
   it("filters skills by capability tag", async () => {
     const result = await listPackageCatalogPageHandler(
       makeCtx([

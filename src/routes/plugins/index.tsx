@@ -1,22 +1,31 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
+import { isPluginCategorySlug } from "clawhub-schema";
 import { PackageSearch, Search } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { BrowseSidebar } from "../../components/BrowseSidebar";
 import { PluginListItem } from "../../components/PluginListItem";
+import { BrowseResultsSkeleton } from "../../components/skeletons/BrowseResultsSkeleton";
 import { Button } from "../../components/ui/button";
+import { PLUGIN_CATEGORIES } from "../../lib/categories";
 import {
   fetchPluginCatalog,
   isRateLimitedPackageApiError,
   type PackageListItem,
 } from "../../lib/packageApi";
 
+type PluginSort = "relevance" | "updated" | "newest" | "name";
+
+const PLUGINS_PAGE_SIZE = 100;
+
 type PluginSearchState = {
   q?: string;
+  category?: string;
   cursor?: string;
-  family?: "code-plugin";
+  family?: undefined;
   featured?: boolean;
   verified?: boolean;
   executesCode?: boolean;
+  sort?: PluginSort;
   view?: LegacyPluginView;
 };
 
@@ -46,11 +55,54 @@ function formatRetryDelay(retryAfterSeconds: number | null) {
   return `in about ${minutes} minute${minutes === 1 ? "" : "s"}`;
 }
 
+function parsePluginSort(value: unknown): PluginSort | undefined {
+  if (value === "relevance" || value === "updated" || value === "newest" || value === "name") {
+    return value;
+  }
+  return undefined;
+}
+
+function sortPluginSearchItems(items: PackageListItem[], sort: PluginSort) {
+  if (sort === "relevance") return items;
+  const sorted = [...items];
+  sorted.sort((a, b) => {
+    const tieBreak = () =>
+      b.updatedAt - a.updatedAt ||
+      b.createdAt - a.createdAt ||
+      a.family.localeCompare(b.family) ||
+      a.name.localeCompare(b.name);
+
+    if (sort === "name") {
+      return (
+        a.displayName.localeCompare(b.displayName) ||
+        a.name.localeCompare(b.name) ||
+        a.family.localeCompare(b.family)
+      );
+    }
+
+    if (sort === "newest") {
+      return (
+        b.createdAt - a.createdAt ||
+        b.updatedAt - a.updatedAt ||
+        a.family.localeCompare(b.family) ||
+        a.name.localeCompare(b.name)
+      );
+    }
+
+    return tieBreak();
+  });
+  return sorted;
+}
+
 export const Route = createFileRoute("/plugins/")({
+  pendingComponent: PluginsIndexPending,
   validateSearch: (search): PluginSearchState => ({
     q: typeof search.q === "string" && search.q.trim() ? search.q.trim() : undefined,
+    category:
+      typeof search.category === "string" && isPluginCategorySlug(search.category)
+        ? search.category
+        : undefined,
     cursor: typeof search.cursor === "string" && search.cursor ? search.cursor : undefined,
-    family: search.family === "code-plugin" ? search.family : undefined,
     featured:
       search.featured === true || search.featured === "true" || search.featured === "1"
         ? true
@@ -63,12 +115,31 @@ export const Route = createFileRoute("/plugins/")({
       search.executesCode === true || search.executesCode === "true" || search.executesCode === "1"
         ? true
         : undefined,
+    sort: parsePluginSort(search.sort),
     view: normalizePluginView(search.view),
   }),
+  beforeLoad: ({ search }) => {
+    const hasQuery = Boolean(search.q?.trim());
+    const incompatibleSort = !hasQuery && search.sort && search.sort !== "updated";
+    const browseOnlyFeatured = hasQuery && search.featured;
+    const invalidCategory = Boolean(search.category && !isPluginCategorySlug(search.category));
+    if (incompatibleSort || browseOnlyFeatured || invalidCategory) {
+      throw redirect({
+        to: "/plugins",
+        search: {
+          ...search,
+          category: invalidCategory ? undefined : search.category,
+          featured: browseOnlyFeatured ? undefined : search.featured,
+          sort: incompatibleSort ? undefined : search.sort,
+        },
+        replace: true,
+      });
+    }
+  },
   loaderDeps: ({ search }) => ({
     q: search.q,
+    category: search.category,
     cursor: search.cursor,
-    family: search.family,
     featured: search.featured,
     verified: search.verified,
     executesCode: search.executesCode,
@@ -77,12 +148,12 @@ export const Route = createFileRoute("/plugins/")({
     try {
       const data = await fetchPluginCatalog({
         q: deps.q,
+        category: deps.category,
         cursor: deps.q ? undefined : deps.cursor,
-        family: deps.family ?? "code-plugin",
         featured: deps.featured,
         isOfficial: deps.verified,
         executesCode: deps.executesCode,
-        limit: 50,
+        limit: PLUGINS_PAGE_SIZE,
       });
 
       return {
@@ -115,6 +186,55 @@ export const Route = createFileRoute("/plugins/")({
   component: PluginsIndex,
 });
 
+function PluginsIndexPending() {
+  return (
+    <main className="browse-page">
+      <div className="browse-page-header">
+        <button className="browse-sidebar-toggle" type="button" disabled>
+          Filters
+        </button>
+        <h1 className="browse-title">Plugins</h1>
+      </div>
+      <div className="browse-page-search">
+        <Search size={15} className="navbar-search-icon" aria-hidden="true" />
+        <input className="browse-search-input" placeholder="Search plugins..." disabled />
+      </div>
+      <div className="browse-layout">
+        <BrowseSidebar
+          categories={PLUGIN_CATEGORIES}
+          activeCategory={undefined}
+          onCategoryChange={() => {}}
+          sortOptions={[
+            { value: "featured", label: "Featured" },
+            { value: "updated", label: "Recently updated" },
+          ]}
+          activeSort="updated"
+          onSortChange={() => {}}
+          filters={[
+            { key: "verified", label: "Verified only", active: false },
+            { key: "executesCode", label: "Executes code", active: false },
+          ]}
+          onFilterToggle={() => {}}
+        />
+        <div className="browse-results">
+          <div className="browse-results-toolbar">
+            <span className="browse-results-count">Loading results</span>
+            <div className="browse-view-toggle">
+              <button className="browse-view-btn is-active" type="button" disabled>
+                List
+              </button>
+              <button className="browse-view-btn" type="button" disabled>
+                Grid
+              </button>
+            </div>
+          </div>
+          <BrowseResultsSkeleton />
+        </div>
+      </div>
+    </main>
+  );
+}
+
 function PluginsIndex() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
@@ -134,6 +254,35 @@ function PluginsIndex() {
   useEffect(() => {
     setQuery(search.q ?? "");
   }, [search.q]);
+
+  const hasQuery = Boolean(search.q?.trim());
+
+  const activeCategory = search.category;
+
+  const activeSort = hasQuery
+    ? (search.sort ?? "relevance")
+    : search.featured
+      ? "featured"
+      : "updated";
+  const visibleItems = useMemo(
+    () => (hasQuery ? sortPluginSearchItems(items, activeSort as PluginSort) : items),
+    [activeSort, hasQuery, items],
+  );
+
+  const sortOptions = useMemo(() => {
+    if (hasQuery) {
+      return [
+        { value: "relevance", label: "Relevance" },
+        { value: "updated", label: "Recently updated" },
+        { value: "newest", label: "Newest" },
+        { value: "name", label: "Name" },
+      ];
+    }
+    return [
+      { value: "featured", label: "Featured" },
+      { value: "updated", label: "Recently updated" },
+    ];
+  }, [hasQuery]);
 
   const handleFilterToggle = (key: string) => {
     if (key === "verified") {
@@ -155,7 +304,7 @@ function PluginsIndex() {
     }
   };
 
-  const handleFamilySort = (value: string) => {
+  const handleSortChange = (value: string) => {
     if (value === "featured") {
       void navigate({
         search: (prev: PluginSearchState) => ({
@@ -163,19 +312,51 @@ function PluginsIndex() {
           cursor: undefined,
           featured: true,
           family: undefined,
+          q: undefined,
+          sort: undefined,
         }),
       });
       return;
     }
 
-    const family = value === "code-plugin" ? value : undefined;
+    if (hasQuery) {
+      void navigate({
+        search: (prev: PluginSearchState) => ({
+          ...prev,
+          cursor: undefined,
+          family: undefined,
+          featured: undefined,
+          sort: parsePluginSort(value) === "relevance" ? undefined : parsePluginSort(value),
+        }),
+        replace: true,
+      });
+      return;
+    }
+
     void navigate({
       search: (prev: PluginSearchState) => ({
         ...prev,
         cursor: undefined,
+        family: undefined,
         featured: undefined,
-        family,
+        sort: parsePluginSort(value) === "updated" ? undefined : parsePluginSort(value),
       }),
+      replace: true,
+    });
+  };
+
+  const handleCategoryChange = (slug: string | undefined) => {
+    const category = slug && isPluginCategorySlug(slug) ? slug : undefined;
+    void navigate({
+      search: (prev: PluginSearchState) => ({
+        ...prev,
+        cursor: undefined,
+        family: undefined,
+        category,
+        featured: undefined,
+        sort: undefined,
+      }),
+      replace: true,
     });
   };
 
@@ -185,7 +366,10 @@ function PluginsIndex() {
       search: (prev: PluginSearchState) => ({
         ...prev,
         cursor: undefined,
+        family: undefined,
         q: query.trim() || undefined,
+        featured: undefined,
+        sort: undefined,
       }),
     });
   };
@@ -200,6 +384,24 @@ function PluginsIndex() {
     });
   };
 
+  const handleClear = () => {
+    void navigate({
+      search: (prev: PluginSearchState) => ({
+        ...prev,
+        cursor: undefined,
+        family: undefined,
+        q: undefined,
+        category: undefined,
+        verified: undefined,
+        executesCode: undefined,
+        featured: undefined,
+        sort: undefined,
+      }),
+      replace: true,
+    });
+    setQuery("");
+  };
+
   return (
     <main className="browse-page">
       <div className="browse-page-header">
@@ -212,25 +414,8 @@ function PluginsIndex() {
           Filters
         </button>
         <h1 className="browse-title">
-          Plugins <span className="browse-count">{items.length}</span>
+          Plugins <span className="browse-count">{visibleItems.length}</span>
         </h1>
-        <div className="browse-page-actions">
-          <Button asChild variant="primary">
-            <Link
-              to="/plugins/publish"
-              search={{
-                ownerHandle: undefined,
-                name: undefined,
-                displayName: undefined,
-                family: undefined,
-                nextVersion: undefined,
-                sourceRepo: undefined,
-              }}
-            >
-              Publish
-            </Link>
-          </Button>
-        </div>
       </div>
       <form className="browse-page-search" onSubmit={handleSearch}>
         <Search size={15} className="navbar-search-icon" aria-hidden="true" />
@@ -243,12 +428,12 @@ function PluginsIndex() {
       </form>
       <div className={`browse-layout${sidebarOpen ? " sidebar-open" : ""}`}>
         <BrowseSidebar
-          sortOptions={[
-            { value: "featured", label: "Featured" },
-            { value: "code-plugin", label: "Code plugins" },
-          ]}
-          activeSort={search.featured ? "featured" : "code-plugin"}
-          onSortChange={handleFamilySort}
+          categories={PLUGIN_CATEGORIES}
+          activeCategory={activeCategory}
+          onCategoryChange={handleCategoryChange}
+          sortOptions={sortOptions}
+          activeSort={activeSort}
+          onSortChange={handleSortChange}
           filters={[
             { key: "verified", label: "Verified only", active: search.verified ?? false },
             { key: "executesCode", label: "Executes code", active: search.executesCode ?? false },
@@ -258,7 +443,16 @@ function PluginsIndex() {
         <div className="browse-results">
           <div className="browse-results-toolbar">
             <span className="browse-results-count">
-              {items.length} result{items.length !== 1 ? "s" : ""}
+              {visibleItems.length} result{visibleItems.length !== 1 ? "s" : ""}
+              {hasQuery ||
+              search.category ||
+              search.verified ||
+              search.executesCode ||
+              search.featured ? (
+                <button className="browse-clear-btn" type="button" onClick={handleClear}>
+                  Clear
+                </button>
+              ) : null}
             </span>
             <div className="browse-view-toggle">
               <button
@@ -292,14 +486,14 @@ function PluginsIndex() {
               <p className="empty-state-title">Plugin catalog is temporarily unavailable</p>
               <p className="empty-state-body">Try again {formatRetryDelay(retryAfterSeconds)}.</p>
             </div>
-          ) : items.length === 0 ? (
+          ) : visibleItems.length === 0 ? (
             <div className="empty-state">
               <p className="empty-state-title">No plugins found</p>
               <p className="empty-state-body">Try a different search term or remove filters.</p>
             </div>
           ) : (
             <div className={view === "grid" ? "grid" : "results-list"}>
-              {items.map((item) => (
+              {visibleItems.map((item) => (
                 <PluginListItem
                   key={item.name}
                   item={item}
@@ -309,7 +503,7 @@ function PluginsIndex() {
             </div>
           )}
 
-          {!search.q && (search.cursor || nextCursor) ? (
+          {!hasQuery && (search.cursor || nextCursor) ? (
             <div className="mt-5 flex justify-center gap-3">
               {search.cursor ? (
                 <Button

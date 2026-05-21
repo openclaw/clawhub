@@ -3,27 +3,20 @@ import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import {
   ArrowRight,
   ChevronDown,
-  Ghost,
   LayoutDashboard,
   Menu,
   Monitor,
   Moon,
-  Plug,
   Search,
   Settings,
   Star,
   Sun,
-  Wrench,
 } from "lucide-react";
-import { type ComponentType, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { getUserFacingAuthError } from "../lib/authErrorMessage";
 import { gravatarUrl } from "../lib/gravatar";
-import {
-  filterNavItems,
-  type NavIconName,
-  PRIMARY_NAV_ITEMS,
-  SECONDARY_NAV_ITEMS,
-} from "../lib/nav-items";
+import { NAV_ICONS } from "../lib/marketplaceIcons";
+import { filterNavItems, PRIMARY_NAV_ITEMS, SECONDARY_NAV_ITEMS } from "../lib/nav-items";
 import { isModerator } from "../lib/roles";
 import { getClawHubSiteUrl, getSiteMode, getSiteName } from "../lib/site";
 import { applyTheme, useThemeMode } from "../lib/theme";
@@ -51,12 +44,6 @@ import {
   SheetTitle,
 } from "./ui/sheet";
 import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
-
-const NAV_ICONS: Record<NavIconName, ComponentType<{ size?: number; className?: string }>> = {
-  wrench: Wrench,
-  plug: Plug,
-  ghost: Ghost,
-};
 
 const THEME_MODE_SEQUENCE: Array<"system" | "light" | "dark"> = ["system", "light", "dark"];
 
@@ -123,9 +110,7 @@ export default function Header() {
   const showTypeahead = !isSoulMode && typeaheadOpen && trimmedNavSearchQuery.length > 0;
   const {
     skillResults,
-    skillCount,
     pluginResults,
-    pluginCount,
     isSearching: typeaheadSearching,
   } = useUnifiedSearch(navSearchQuery, "all", {
     debounceMs: 180,
@@ -138,7 +123,7 @@ export default function Header() {
     for (const result of skillResults) {
       items.push({ kind: "skill", key: `skill-${result.skill._id}`, result });
     }
-    if (skillCount > 0) {
+    if (skillResults.length > 0) {
       items.push({
         kind: "footer",
         key: "footer-skills",
@@ -149,7 +134,7 @@ export default function Header() {
     for (const result of pluginResults) {
       items.push({ kind: "plugin", key: `plugin-${result.plugin.name}`, result });
     }
-    if (pluginCount > 0) {
+    if (pluginResults.length > 0) {
       items.push({
         kind: "footer",
         key: "footer-plugins",
@@ -158,11 +143,19 @@ export default function Header() {
       });
     }
     return items;
-  }, [pluginCount, pluginResults, showTypeahead, skillCount, skillResults, trimmedNavSearchQuery]);
+  }, [pluginResults, showTypeahead, skillResults, trimmedNavSearchQuery]);
+  const activeTypeaheadItem = showTypeahead ? typeaheadItems[typeaheadActiveIndex] : undefined;
+  const activeTypeaheadId = activeTypeaheadItem
+    ? getTypeaheadOptionId(activeTypeaheadItem)
+    : undefined;
 
   useEffect(() => {
     setTypeaheadActiveIndex(0);
   }, [trimmedNavSearchQuery]);
+
+  useEffect(() => {
+    setTypeaheadActiveIndex((index) => Math.min(index, Math.max(typeaheadItems.length - 1, 0)));
+  }, [typeaheadItems.length]);
 
   useEffect(() => {
     if (!typeaheadOpen) return () => {};
@@ -383,6 +376,7 @@ export default function Header() {
               <input
                 className="navbar-search-input"
                 type="search"
+                role="combobox"
                 placeholder={isSoulMode ? "Search souls..." : "Search skills and plugins"}
                 value={navSearchQuery}
                 onChange={(e) => {
@@ -392,8 +386,10 @@ export default function Header() {
                 onFocus={() => setTypeaheadOpen(true)}
                 onKeyDown={handleSearchKeyDown}
                 aria-label="Search"
+                aria-autocomplete="list"
                 aria-expanded={showTypeahead}
                 aria-controls="navbar-search-typeahead"
+                aria-activedescendant={activeTypeaheadId}
                 autoComplete="off"
               />
             </form>
@@ -517,11 +513,17 @@ export default function Header() {
                     void signIn(
                       "github",
                       signInRedirectTo ? { redirectTo: signInRedirectTo } : undefined,
-                    ).catch((error) => {
-                      setAuthError(
-                        getUserFacingAuthError(error, "Sign in failed. Please try again."),
-                      );
-                    });
+                    )
+                      .then((result) => {
+                        if (result?.signingIn === false) {
+                          setAuthError("Sign in failed. Please try again.");
+                        }
+                      })
+                      .catch((error) => {
+                        setAuthError(
+                          getUserFacingAuthError(error, "Sign in failed. Please try again."),
+                        );
+                      });
                   }}
                 >
                   <GitHubLogo className="github-sign-in-logo" />
@@ -637,7 +639,12 @@ function SearchTypeahead({
   const hasMatches = skillItems.length > 0 || pluginItems.length > 0;
 
   return (
-    <div className="navbar-search-typeahead" id="navbar-search-typeahead" role="listbox">
+    <div
+      className="navbar-search-typeahead"
+      id="navbar-search-typeahead"
+      role="listbox"
+      aria-label="Search suggestions"
+    >
       <TypeaheadSection
         activeIndex={activeIndex}
         items={items}
@@ -728,6 +735,7 @@ function TypeaheadRow({
   const body = getTypeaheadRowBody(item);
   return (
     <button
+      id={getTypeaheadOptionId(item)}
       className={`navbar-search-typeahead-row${active ? " is-active" : ""}${item.kind === "footer" ? " is-footer" : ""}`}
       type="button"
       role="option"
@@ -746,6 +754,10 @@ function TypeaheadRow({
   );
 }
 
+function getTypeaheadOptionId(item: TypeaheadItem) {
+  return `navbar-search-typeahead-${item.key.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+}
+
 function getTypeaheadRowBody(item: TypeaheadItem) {
   if (item.kind === "skill") {
     const owner = item.result.ownerHandle ? `@${item.result.ownerHandle}` : "Skill";
@@ -756,12 +768,13 @@ function getTypeaheadRowBody(item: TypeaheadItem) {
     };
   }
   if (item.kind === "plugin") {
+    const owner = item.result.plugin.ownerHandle
+      ? `@${item.result.plugin.ownerHandle} / ${item.result.plugin.name}`
+      : item.result.plugin.name;
     return {
       icon: "P",
       title: item.result.plugin.displayName,
-      meta: item.result.plugin.ownerHandle
-        ? `@${item.result.plugin.ownerHandle} / ${item.result.plugin.name}`
-        : item.result.plugin.name,
+      meta: owner,
     };
   }
   return {

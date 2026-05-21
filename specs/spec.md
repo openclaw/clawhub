@@ -156,7 +156,7 @@ From SKILL.md frontmatter + AgentSkills + Clawdis extensions:
 5. Server stores files + metadata, sets `latest` tag, updates stats.
 
 Soul upload flow: same as skills (including GitHub account age checks), but only `SOUL.md` is allowed.
-Seed data lives in `convex/seed.ts` for local dev.
+Local fixture data lives in `convex/devSeed.ts` and `fixtures/public-corpus/`.
 
 ## Versioning + tags
 

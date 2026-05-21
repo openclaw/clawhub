@@ -310,6 +310,14 @@ describe("skillTransfers", () => {
         db: {
           normalizeId: vi.fn(),
           get: vi.fn(async (id: string) => {
+            if (id === "users:1") {
+              return {
+                _id: "users:1",
+                handle: "owner",
+                deletedAt: undefined,
+                deactivatedAt: undefined,
+              };
+            }
             if (id === "users:2") {
               return {
                 _id: "users:2",
@@ -540,45 +548,150 @@ describe("skillTransfers", () => {
   it("acceptTransferInternal cancels stale transfer when ownership changed", async () => {
     const patch = vi.fn(async () => {});
 
-    await expect(
-      acceptTransferInternalHandler(
-        {
-          db: {
-            normalizeId: vi.fn(),
-            query: vi.fn(),
-            get: vi.fn(async (id: string) => {
-              if (id === "users:2") return { _id: "users:2", handle: "alice" };
-              if (id === "skillOwnershipTransfers:1") {
-                return {
-                  _id: "skillOwnershipTransfers:1",
-                  skillId: "skills:1",
-                  fromUserId: "users:1",
-                  toUserId: "users:2",
-                  status: "pending",
-                  requestedAt: Date.now() - 1_000,
-                  expiresAt: Date.now() + 10_000,
-                };
-              }
-              if (id === "skills:1") {
-                return {
-                  _id: "skills:1",
-                  slug: "demo",
-                  ownerUserId: "users:someone-else",
-                };
-              }
-              return null;
-            }),
-            patch,
-            insert: vi.fn(async () => "auditLogs:1"),
-          },
-        } as never,
-        {
-          actorUserId: "users:2",
-          transferId: "skillOwnershipTransfers:1",
-        } as never,
-      ),
-    ).rejects.toThrow(/no longer valid/i);
+    const result = await acceptTransferInternalHandler(
+      {
+        db: {
+          normalizeId: vi.fn(),
+          query: vi.fn(),
+          get: vi.fn(async (id: string) => {
+            if (id === "users:2") return { _id: "users:2", handle: "alice" };
+            if (id === "skillOwnershipTransfers:1") {
+              return {
+                _id: "skillOwnershipTransfers:1",
+                skillId: "skills:1",
+                fromUserId: "users:1",
+                toUserId: "users:2",
+                status: "pending",
+                requestedAt: Date.now() - 1_000,
+                expiresAt: Date.now() + 10_000,
+              };
+            }
+            if (id === "skills:1") {
+              return {
+                _id: "skills:1",
+                slug: "demo",
+                ownerUserId: "users:someone-else",
+              };
+            }
+            return null;
+          }),
+          patch,
+          insert: vi.fn(async () => "auditLogs:1"),
+        },
+      } as never,
+      {
+        actorUserId: "users:2",
+        transferId: "skillOwnershipTransfers:1",
+      } as never,
+    );
 
+    expect(result).toEqual({ ok: false, error: "Transfer is no longer valid" });
+
+    expect(patch).toHaveBeenCalledWith(
+      "skillOwnershipTransfers:1",
+      expect.objectContaining({ status: "cancelled" }),
+    );
+    expect(patch).not.toHaveBeenCalledWith(
+      "skills:1",
+      expect.objectContaining({ ownerUserId: "users:2" }),
+    );
+  });
+
+  it("acceptTransferInternal cancels transfer when requester is inactive", async () => {
+    const patch = vi.fn(async () => {});
+
+    const result = await acceptTransferInternalHandler(
+      {
+        db: {
+          normalizeId: vi.fn(),
+          query: vi.fn(),
+          get: vi.fn(async (id: string) => {
+            if (id === "users:2") return { _id: "users:2", handle: "alice" };
+            if (id === "users:1") return { _id: "users:1", handle: "owner", deletedAt: 1 };
+            if (id === "skillOwnershipTransfers:1") {
+              return {
+                _id: "skillOwnershipTransfers:1",
+                skillId: "skills:1",
+                fromUserId: "users:1",
+                toUserId: "users:2",
+                status: "pending",
+                requestedAt: Date.now() - 1_000,
+                expiresAt: Date.now() + 10_000,
+              };
+            }
+            if (id === "skills:1") {
+              return {
+                _id: "skills:1",
+                slug: "demo",
+                ownerUserId: "users:1",
+              };
+            }
+            return null;
+          }),
+          patch,
+          insert: vi.fn(async () => "auditLogs:1"),
+        },
+      } as never,
+      {
+        actorUserId: "users:2",
+        transferId: "skillOwnershipTransfers:1",
+      } as never,
+    );
+
+    expect(result).toEqual({ ok: false, error: "Transfer is no longer valid" });
+    expect(patch).toHaveBeenCalledWith(
+      "skillOwnershipTransfers:1",
+      expect.objectContaining({ status: "cancelled" }),
+    );
+    expect(patch).not.toHaveBeenCalledWith(
+      "skills:1",
+      expect.objectContaining({ ownerUserId: "users:2" }),
+    );
+  });
+
+  it("acceptTransferInternal cancels transfer when skill is under moderation", async () => {
+    const patch = vi.fn(async () => {});
+
+    const result = await acceptTransferInternalHandler(
+      {
+        db: {
+          normalizeId: vi.fn(),
+          query: vi.fn(),
+          get: vi.fn(async (id: string) => {
+            if (id === "users:2") return { _id: "users:2", handle: "alice" };
+            if (id === "skillOwnershipTransfers:1") {
+              return {
+                _id: "skillOwnershipTransfers:1",
+                skillId: "skills:1",
+                fromUserId: "users:1",
+                toUserId: "users:2",
+                status: "pending",
+                requestedAt: Date.now() - 1_000,
+                expiresAt: Date.now() + 10_000,
+              };
+            }
+            if (id === "skills:1") {
+              return {
+                _id: "skills:1",
+                slug: "demo",
+                ownerUserId: "users:1",
+                moderationVerdict: "malicious",
+                moderationStatus: "hidden",
+              };
+            }
+            return null;
+          }),
+          patch,
+          insert: vi.fn(async () => "auditLogs:1"),
+        },
+      } as never,
+      {
+        actorUserId: "users:2",
+        transferId: "skillOwnershipTransfers:1",
+      } as never,
+    );
+
+    expect(result).toEqual({ ok: false, error: "Skill is under moderation" });
     expect(patch).toHaveBeenCalledWith(
       "skillOwnershipTransfers:1",
       expect.objectContaining({ status: "cancelled" }),

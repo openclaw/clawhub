@@ -1,8 +1,13 @@
 import { createFileRoute, Link, Outlet, redirect, useRouterState } from "@tanstack/react-router";
-import { AlertTriangle, Download } from "lucide-react";
+import { useQuery } from "convex/react";
+import { AlertTriangle, Download, Settings, Upload } from "lucide-react";
 import { useState, type ReactNode } from "react";
+import { api } from "../../../convex/_generated/api";
 import { DetailHero, DetailPageShell } from "../../components/DetailPageShell";
-import { DetailSecuritySummary } from "../../components/DetailSecuritySummary";
+import {
+  DetailSecuritySummary,
+  DetailSecuritySummaryLabel,
+} from "../../components/DetailSecuritySummary";
 import { EmptyState } from "../../components/EmptyState";
 import { InstallCopyButton } from "../../components/InstallCopyButton";
 import { Container } from "../../components/layout/Container";
@@ -13,6 +18,7 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { formatRetryDelay } from "../../lib/formatRetryDelay";
+import { buildPluginMeta } from "../../lib/og";
 import { getOpenClawPackageCandidateNames } from "../../lib/openClawExtensionSlugs";
 import {
   fetchPackageDetail,
@@ -27,9 +33,10 @@ import {
 import { familyLabel } from "../../lib/packageLabels";
 import {
   buildPluginDetailHref,
-  buildPluginSecurityBaseHref,
+  buildPluginSecurityAuditHref,
   parseScopedPackageName,
 } from "../../lib/pluginRoutes";
+import { useAuthStatus } from "../../lib/useAuthStatus";
 
 type PluginDetailRateLimitState = {
   scope: "detail" | "metadata";
@@ -107,18 +114,30 @@ export async function loadPluginDetail(requestedName: string): Promise<PluginDet
 }
 
 export function pluginDetailHead(name: string, loaderData?: PluginDetailLoaderData) {
+  const meta = buildPluginMeta({
+    name: loaderData?.detail.package?.name ?? name,
+    displayName: loaderData?.detail.package?.displayName,
+    summary: loaderData?.detail.package?.summary,
+    owner: loaderData?.detail.owner?.handle,
+    latestVersion: loaderData?.detail.package?.latestVersion,
+  });
   return {
     meta: [
-      {
-        title: loaderData?.detail.package?.displayName
-          ? `${loaderData.detail.package.displayName} · Plugins`
-          : name,
-      },
-      {
-        name: "description",
-        content: loaderData?.detail.package?.summary ?? `Plugin ${name}`,
-      },
+      { title: meta.title },
+      { name: "description", content: meta.description },
+      { property: "og:title", content: meta.title },
+      { property: "og:description", content: meta.description },
+      { property: "og:url", content: meta.url },
+      { property: "og:image", content: meta.image },
+      { property: "og:image:width", content: "1200" },
+      { property: "og:image:height", content: "630" },
+      { property: "og:image:alt", content: meta.title },
+      { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:title", content: meta.title },
+      { name: "twitter:description", content: meta.description },
+      { name: "twitter:image", content: meta.image },
     ],
+    links: [{ rel: "canonical", href: meta.url }],
   };
 }
 
@@ -126,11 +145,16 @@ export const Route = createFileRoute("/plugins/$name")({
   beforeLoad: ({ location, params }) => {
     if (parseScopedPackageName(params.name)) {
       const encodedSecurityPrefix = `/plugins/${encodeURIComponent(params.name)}/security/`;
+      const encodedSecurityAuditPath = `/plugins/${encodeURIComponent(params.name)}/security-audit`;
       if (location.pathname.startsWith(encodedSecurityPrefix)) {
         throw redirect({
-          href: `${buildPluginSecurityBaseHref(params.name)}/${location.pathname.slice(
-            encodedSecurityPrefix.length,
-          )}`,
+          href: buildPluginSecurityAuditHref(params.name),
+          statusCode: 308,
+        });
+      }
+      if (location.pathname === encodedSecurityAuditPath) {
+        throw redirect({
+          href: buildPluginSecurityAuditHref(params.name),
           statusCode: 308,
         });
       }
@@ -321,6 +345,19 @@ export function PluginDetailPage({
 }) {
   const { detail, version, readme, rateLimited } = loaderData;
   const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const { me } = useAuthStatus();
+  const isNestedPluginRoute =
+    pathname.includes("/security/") ||
+    pathname.endsWith("/security-audit") ||
+    pathname.endsWith("/settings");
+  const settingsCandidateNames = getOpenClawPackageCandidateNames(name);
+  const settingsLookupName = detail.package?.name ?? settingsCandidateNames[0] ?? name;
+  const settings = useQuery(
+    api.packages.getClawScanNoteSettings,
+    me && !isNestedPluginRoute && detail.package
+      ? { name: settingsLookupName, candidateNames: settingsCandidateNames }
+      : "skip",
+  );
   const [activeTab, setActiveTab] = useState<PluginDetailTab>(() => {
     if (typeof window === "undefined") return "readme";
     const hash = window.location.hash.replace("#", "");
@@ -328,7 +365,7 @@ export function PluginDetailPage({
       ? hash
       : "readme";
   });
-  if (pathname.includes("/security/") || pathname.endsWith("/settings")) {
+  if (isNestedPluginRoute) {
     return <Outlet />;
   }
 
@@ -370,9 +407,7 @@ export function PluginDetailPage({
   const latestRelease = version?.version ?? null;
   const isDownloadBlocked =
     pkg.verification?.scanStatus === "malicious" ||
-    latestRelease?.verification?.scanStatus === "malicious" ||
-    latestRelease?.vtAnalysis?.status === "malicious" ||
-    latestRelease?.vtAnalysis?.verdict === "malicious";
+    latestRelease?.verification?.scanStatus === "malicious";
   const installSnippet =
     pkg.family === "code-plugin"
       ? `openclaw plugins install clawhub:${pkg.name}`
@@ -388,6 +423,14 @@ export function PluginDetailPage({
     pkg.latestVersion && latestRelease?.version && artifact?.kind === "npm-pack"
       ? getPackageArtifactDownloadPath(pkg.name, latestRelease.version)
       : getPackageDownloadPath(pkg.name, pkg.latestVersion);
+  const settingsHref = settings ? `${buildPluginDetailHref(pkg.name)}/settings` : null;
+  const newVersionHref = settings
+    ? `/plugins/publish?${new URLSearchParams({
+        ...(owner?.handle ? { ownerHandle: owner.handle } : {}),
+        name: pkg.name,
+        displayName: pkg.displayName,
+      }).toString()}`
+    : null;
   const capEntries = capabilities
     ? Object.entries(capabilities).filter(
         ([, v]) =>
@@ -564,7 +607,7 @@ export function PluginDetailPage({
         )}
       </span>
       {owner.handle ? (
-        <a className="user-name" href={`/p/${encodeURIComponent(owner.handle)}`}>
+        <a className="user-name" href={`/user/${encodeURIComponent(owner.handle)}`}>
           {owner.displayName ?? owner.handle}
         </a>
       ) : (
@@ -575,10 +618,19 @@ export function PluginDetailPage({
   const hasSourceMetadata = Boolean(
     sourceRepoLink ||
     ownerMetadataValue ||
+    latestRelease ||
     executesCodeValue ||
     pkg.latestVersion ||
     tagMetadataValue,
   );
+  const securitySummary = latestRelease ? (
+    <DetailSecuritySummary
+      auditHref={buildPluginSecurityAuditHref(name)}
+      vtAnalysis={latestRelease.vtAnalysis ?? null}
+      llmAnalysis={latestRelease.llmAnalysis ?? null}
+      staticScan={latestRelease.staticScan ?? null}
+    />
+  ) : null;
 
   return (
     <main className="section detail-page-section">
@@ -589,7 +641,7 @@ export function PluginDetailPage({
               <nav className="skill-hero-breadcrumbs" aria-label="Plugin breadcrumbs">
                 <a href="/plugins">plugins</a>
                 <span aria-hidden="true">/</span>
-                <a href={owner?.handle ? `/u/${encodeURIComponent(owner.handle)}` : "#"}>
+                <a href={owner?.handle ? `/user/${encodeURIComponent(owner.handle)}` : "#"}>
                   {owner?.handle ?? owner?.displayName ?? "unknown"}
                 </a>
                 <span aria-hidden="true">/</span>
@@ -623,6 +675,13 @@ export function PluginDetailPage({
                   blocks={[
                     { label: "Repository", value: sourceRepoLink },
                     { label: "Owner", value: ownerMetadataValue },
+                    securitySummary
+                      ? {
+                          key: "security-audit",
+                          label: <DetailSecuritySummaryLabel />,
+                          value: securitySummary,
+                        }
+                      : { label: "", value: null },
                     { label: "Executes code", value: executesCodeValue },
                     {
                       grid: [
@@ -638,28 +697,37 @@ export function PluginDetailPage({
                 />
               ) : null}
 
-              {pkg.latestVersion && !isDownloadBlocked ? (
+              {(pkg.latestVersion && !isDownloadBlocked) || newVersionHref || settingsHref ? (
                 <div className="skill-sidebar-actions">
-                  <Button asChild variant="outline" className="skill-sidebar-action-button">
-                    <a href={downloadPath}>
-                      <Download size={14} aria-hidden="true" />
-                      Download
-                    </a>
-                  </Button>
+                  {pkg.latestVersion && !isDownloadBlocked ? (
+                    <Button asChild variant="outline" className="skill-sidebar-action-button">
+                      <a href={downloadPath}>
+                        <Download size={14} aria-hidden="true" />
+                        Download
+                      </a>
+                    </Button>
+                  ) : null}
+                  {newVersionHref ? (
+                    <Button asChild variant="outline" className="skill-sidebar-action-button">
+                      <a href={newVersionHref}>
+                        <Upload size={14} aria-hidden="true" />
+                        New version
+                      </a>
+                    </Button>
+                  ) : null}
+                  {settingsHref ? (
+                    <Button asChild variant="outline" className="skill-sidebar-action-button">
+                      <a href={settingsHref}>
+                        <Settings size={14} aria-hidden="true" />
+                        Settings
+                      </a>
+                    </Button>
+                  ) : null}
                 </div>
               ) : null}
             </div>
           }
         >
-          {latestRelease ? (
-            <DetailSecuritySummary
-              scannerBasePath={buildPluginSecurityBaseHref(name)}
-              sha256hash={latestRelease.sha256hash ?? null}
-              vtAnalysis={latestRelease.vtAnalysis ?? null}
-              llmAnalysis={latestRelease.llmAnalysis ?? null}
-              staticScan={latestRelease.staticScan ?? null}
-            />
-          ) : null}
           <Card className="skill-install-command-card">
             <CardHeader>
               <CardTitle>Install</CardTitle>

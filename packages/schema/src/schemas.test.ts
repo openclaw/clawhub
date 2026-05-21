@@ -7,6 +7,7 @@ import { DocsLinks, openClawDocsUrl } from "./docsLinks";
 import { getPackageScopeOwnerMismatch, inferPackageNameScope } from "./packages";
 import {
   ApiSearchResponseSchema,
+  ApiV1SearchResponseSchema,
   CliPublishRequestSchema,
   CliSkillDeleteRequestSchema,
   LockfileSchema,
@@ -186,6 +187,33 @@ describe("clawhub-schema", () => {
     );
     expect(parsed.results).toHaveLength(2);
     expect(parsed.results[0]?.slug).toBe("a");
+  });
+
+  it("parses v1 search owner metadata", () => {
+    const parsed = parseArk(
+      ApiV1SearchResponseSchema,
+      {
+        results: [
+          {
+            slug: "demo",
+            displayName: "Demo",
+            summary: null,
+            version: "1.0.0",
+            score: 1,
+            ownerHandle: "openclaw",
+            owner: {
+              handle: "openclaw",
+              displayName: "OpenClaw",
+              image: null,
+            },
+          },
+        ],
+      },
+      "Search",
+    );
+
+    expect(parsed.results[0]?.ownerHandle).toBe("openclaw");
+    expect(parsed.results[0]?.owner?.displayName).toBe("OpenClaw");
   });
 
   it("parses delete request payload", () => {

@@ -1,11 +1,13 @@
 import {
   PackagePublishRequestSchema,
   getPackageScopeOwnerMismatch,
+  isPluginCategorySlug,
   parseArk,
   validateOpenClawExternalCodePluginPackageContents,
   type PackageArtifactSummary,
   type PackageChannel,
   type PackageFamily,
+  type PluginCategorySlug,
   type PackageModerationQueueStatus,
   type PackageOfficialMigrationListPhase,
   type PackageOfficialMigrationPhase,
@@ -41,6 +43,7 @@ import {
   readArtifactReportStatus,
   appendPackageModerationEventLog,
 } from "./lib/artifactModeration";
+import { scheduleNextBatchIfNeeded } from "./lib/batching";
 import { normalizeClawScanNoteForWrite } from "./lib/clawScanNote";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
@@ -57,7 +60,11 @@ import {
   toConvexSafeJsonValue,
 } from "./lib/packageRegistry";
 import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
-import { isPackageBlockedFromPublic, resolvePackageReleaseScanStatus } from "./lib/packageSecurity";
+import {
+  getPackageTrustReasons,
+  isPackageBlockedFromPublic,
+  resolvePackageReleaseScanStatus,
+} from "./lib/packageSecurity";
 import { toPublicPublisher } from "./lib/public";
 import {
   assertCanManageOwnedResource,
@@ -74,7 +81,7 @@ import {
   MAX_PUBLISH_TOTAL_BYTES,
 } from "./lib/publishLimits";
 import { MAX_ACTIVE_REPORTS_PER_USER, MAX_REPORT_REASON_LENGTH } from "./lib/reporting";
-import { tokenize } from "./lib/searchText";
+import { matchesAllTokens, matchesExploratoryTokenPrefixes, tokenize } from "./lib/searchText";
 import { hashSkillFiles } from "./lib/skills";
 import { runStaticPublishScan } from "./lib/staticPublishScan";
 
@@ -86,6 +93,7 @@ const MAX_OFFICIAL_MIGRATION_BLOCKERS = 20;
 const MAX_OFFICIAL_MIGRATION_FIELD_LENGTH = 300;
 const MAX_OFFICIAL_MIGRATION_NOTES_LENGTH = 2_000;
 const MAX_STORED_PACKAGE_METADATA_DEPTH = 10;
+const CLAWHUB_PUBLISHER_HANDLE_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
 const REAL_BUNDLE_MANIFESTS = [
   { path: ".codex-plugin/plugin.json", format: "codex" },
   { path: ".claude-plugin/plugin.json", format: "claude" },
@@ -150,10 +158,57 @@ function inferOwnerHandleFromScopedPackageName(name: string) {
   return match?.[1] || undefined;
 }
 
+function getPackageSlugFromName(name: string) {
+  return name.split("/").pop()?.trim() || "plugin-name";
+}
+
+function getClawHubPublisherHandleSuggestion(handle: string) {
+  const suggestion = handle
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40)
+    .replace(/-+$/g, "");
+  return CLAWHUB_PUBLISHER_HANDLE_PATTERN.test(suggestion) ? suggestion : null;
+}
+
+function getScopedPackageMissingPublisherMessage(params: {
+  scopedOwnerHandle: string;
+  packageName: string;
+  legacyPersonalOwnerHandle?: string;
+}) {
+  if (!CLAWHUB_PUBLISHER_HANDLE_PATTERN.test(params.scopedOwnerHandle)) {
+    const suggestedOwnerHandle = getClawHubPublisherHandleSuggestion(params.scopedOwnerHandle);
+    const packageSlug = getPackageSlugFromName(params.packageName);
+    const renameGuidance = suggestedOwnerHandle
+      ? ` Rename package.json to a ClawHub-compatible scope, such as "@${suggestedOwnerHandle}/${packageSlug}", then publish again.`
+      : " Rename package.json to a ClawHub-compatible scope that uses lowercase letters, numbers, and hyphens, then publish again.";
+    return `Cannot publish ${params.packageName}: package.json name is scoped to "@${params.scopedOwnerHandle}", but ClawHub publisher handles may only use lowercase letters, numbers, and hyphens.${renameGuidance}`;
+  }
+  if (params.legacyPersonalOwnerHandle) {
+    const displayName = params.scopedOwnerHandle
+      .split(/[-_]+/)
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
+    return `Cannot publish ${params.packageName}: package.json name is scoped to "@${params.scopedOwnerHandle}", but ClawHub has no "@${params.scopedOwnerHandle}" publisher.\n\nThis package already exists under your personal publisher "@${params.legacyPersonalOwnerHandle}". To move it into the matching org publisher, run:\n\n  clawhub publisher create ${params.scopedOwnerHandle} --display-name "${displayName || params.scopedOwnerHandle}"\n  clawhub package transfer ${params.packageName} --to ${params.scopedOwnerHandle} --reason "Move legacy personal package into @${params.scopedOwnerHandle}"\n\nThen rerun publish.`;
+  }
+  return `Cannot publish ${params.packageName}: package.json name is scoped to "@${params.scopedOwnerHandle}", but ClawHub has no "@${params.scopedOwnerHandle}" publisher. Create it with "clawhub publisher create ${params.scopedOwnerHandle}".`;
+}
+
+function isTrustedOpenClawPluginPackage(params: {
+  family: PackageFamily;
+  normalizedName: string;
+  ownerPublisher?: Pick<Doc<"publishers">, "handle" | "deletedAt"> | null;
+}) {
+  if (params.family !== "code-plugin" && params.family !== "bundle-plugin") return false;
+  if (!params.normalizedName.startsWith("@openclaw/")) return false;
+  const ownerHandle = params.ownerPublisher?.handle?.trim().toLowerCase();
+  return ownerHandle === "openclaw" && params.ownerPublisher?.deletedAt === undefined;
+}
+
 const internalRefs = internal as unknown as {
-  llmEval: {
-    evaluatePackageReleaseWithLlm: unknown;
-  };
   packages: {
     backfillPackageReleaseScansInternal: unknown;
     scanPackageReleaseStaticallyInternal: unknown;
@@ -184,10 +239,19 @@ const internalRefs = internal as unknown as {
     getByHandleInternal: unknown;
   };
   publishers: {
+    getByIdInternal: unknown;
     resolvePublishTargetForUserInternal: unknown;
+  };
+  securityScan: {
+    enqueuePackageReleaseScanInternal: unknown;
   };
   vt: {
     scanPackageReleaseWithVirusTotal: unknown;
+  };
+};
+const packageAutobanRemediationInternalRefs = internal as unknown as {
+  packages: {
+    restoreOwnedPackagesForAutobanRemediationBatchInternal: never;
   };
 };
 type DbReaderCtx = Pick<QueryCtx | MutationCtx, "db">;
@@ -375,24 +439,6 @@ function isReservedPackagePlaceholder(pkg: PackageDoc | null | undefined) {
   return Boolean(pkg && !pkg.latestReleaseId && !pkg.latestVersionSummary);
 }
 
-function getPackageModerationQueueReasons(
-  release: Pick<Doc<"packageReleases">, "manualModeration" | "staticScan" | "vtAnalysis">,
-  scanStatus: PackageReleaseScanStatus,
-  reportCount = 0,
-) {
-  const reasons: string[] = [];
-  if (release.manualModeration?.state) reasons.push(`manual:${release.manualModeration.state}`);
-  if (scanStatus !== "clean" && scanStatus !== "not-run") reasons.push(`scan:${scanStatus}`);
-  if (release.staticScan?.status === "malicious") {
-    reasons.push(`static:${release.staticScan.status}`);
-  }
-  if (release.vtAnalysis?.status === "suspicious" || release.vtAnalysis?.status === "malicious") {
-    reasons.push(`vt:${release.vtAnalysis.status}`);
-  }
-  if (reportCount > 0) reasons.push(`reports:${reportCount}`);
-  return [...new Set(reasons)];
-}
-
 function shouldIncludePackageReportsInModerationQueue(
   reportCount: number,
   status: PackageModerationQueueStatus,
@@ -453,7 +499,7 @@ function toPackageModerationQueueItem(
     sourceCommit: typeof source.commit === "string" ? source.commit : null,
     reportCount,
     lastReportedAt: pkg.lastReportedAt ?? null,
-    reasons: getPackageModerationQueueReasons(release, scanStatus, reportCount),
+    reasons: getPackageTrustReasons(release, scanStatus, reportCount),
   };
 }
 
@@ -477,12 +523,14 @@ type PackageDigestLike = Pick<
   | "updatedAt"
   | "latestVersion"
   | "capabilityTags"
+  | "pluginCategoryTags"
   | "executesCode"
   | "verificationTier"
   | "scanStatus"
   | "softDeletedAt"
 > & {
   capabilityTag?: string;
+  pluginCategory?: string;
 };
 type PublicPageCursorState = {
   cursor: string | null;
@@ -754,6 +802,7 @@ function digestMatchesFilters(
   args: {
     executesCode?: boolean;
     capabilityTag?: string;
+    category?: string;
   },
 ) {
   if (
@@ -763,8 +812,18 @@ function digestMatchesFilters(
     return false;
   }
   if (args.capabilityTag) {
-    if (digest.capabilityTag) return digest.capabilityTag === args.capabilityTag;
-    return (digest.capabilityTags ?? []).includes(args.capabilityTag);
+    if (digest.capabilityTag) {
+      if (digest.capabilityTag !== args.capabilityTag) return false;
+    } else if (!(digest.capabilityTags ?? []).includes(args.capabilityTag)) {
+      return false;
+    }
+  }
+  if (args.category) {
+    if (digest.pluginCategory) {
+      if (digest.pluginCategory !== args.category) return false;
+    } else if (!(digest.pluginCategoryTags ?? []).includes(args.category)) {
+      return false;
+    }
   }
   return true;
 }
@@ -777,6 +836,7 @@ function digestMatchesSearchFilters(
     isOfficial?: boolean;
     executesCode?: boolean;
     capabilityTag?: string;
+    category?: string;
   },
 ) {
   if (args.family && digest.family !== args.family) return false;
@@ -973,31 +1033,102 @@ async function getOptionalViewerUserId(ctx: QueryCtx | MutationCtx) {
   return await getOptionalActiveAuthUserId(ctx);
 }
 
-function packageSearchScore(digest: PackageDigestLike, queryText: string) {
+const EXPLORATORY_SEARCH_MIN_TOKEN_LENGTH = 3;
+
+type PackageSearchMatch = {
+  rankTier: number;
+  score: number;
+};
+
+function packageSearchMatch(
+  digest: PackageDigestLike,
+  queryText: string,
+): PackageSearchMatch | null {
   const needle = queryText.toLowerCase();
+  const queryTokens = tokenize(queryText);
+  if (queryTokens.length === 0) return null;
   const normalized = digest.normalizedName.toLowerCase();
   const display = digest.displayName.toLowerCase();
   const runtimeId = digest.runtimeId?.toLowerCase() ?? "";
-  const summary = (digest.summary ?? "").toLowerCase();
+  const nameTokens = tokenize(normalized);
+  const displayTokens = tokenize(display);
+  const runtimeTokens = tokenize(runtimeId);
   let score = 0;
-  if (normalized === needle) score += 200;
-  else if (normalized.startsWith(needle)) score += 120;
-  else if (normalized.includes(needle)) score += 80;
+  let rankTier = Number.POSITIVE_INFINITY;
 
-  if (display === needle) score += 150;
-  else if (display.startsWith(needle)) score += 70;
-  else if (display.includes(needle)) score += 40;
+  const setMatch = (tier: number, boost: number) => {
+    score += boost;
+    rankTier = Math.min(rankTier, tier);
+  };
 
-  if (runtimeId === needle) score += 180;
-  else if (runtimeId.startsWith(needle)) score += 90;
-  else if (runtimeId.includes(needle)) score += 45;
+  if (normalized === needle) setMatch(0, 200);
+  else if (normalized.startsWith(needle)) setMatch(1, 120);
+  else if (normalized.includes(needle)) setMatch(1, 80);
 
-  if (summary.includes(needle)) score += 20;
-  if ((digest.capabilityTags ?? []).some((entry) => entry.toLowerCase().includes(needle))) {
-    score += 12;
+  if (display === needle) setMatch(0, 150);
+  else if (display.startsWith(needle)) setMatch(1, 70);
+  else if (display.includes(needle)) setMatch(1, 40);
+
+  if (runtimeId === needle) setMatch(0, 180);
+  else if (runtimeId.startsWith(needle)) setMatch(1, 90);
+  else if (runtimeId.includes(needle)) setMatch(1, 45);
+
+  if (
+    matchesAllTokens(
+      queryTokens,
+      [...nameTokens, ...displayTokens, ...runtimeTokens],
+      (a, b) => a === b,
+    )
+  ) {
+    setMatch(1, 65);
+  } else if (
+    matchesAllTokens(queryTokens, [...nameTokens, ...displayTokens, ...runtimeTokens], (a, b) =>
+      a.startsWith(b),
+    )
+  ) {
+    setMatch(1, 35);
   }
-  if (digest.isOfficial) score += 5;
-  return score;
+
+  if (
+    matchesExploratoryTokenPrefixes(
+      queryTokens,
+      [digest.summary],
+      EXPLORATORY_SEARCH_MIN_TOKEN_LENGTH,
+    )
+  ) {
+    setMatch(3, 20);
+  }
+  if (
+    matchesExploratoryTokenPrefixes(
+      queryTokens,
+      digest.capabilityTags ?? [],
+      EXPLORATORY_SEARCH_MIN_TOKEN_LENGTH,
+    )
+  ) {
+    setMatch(2, 12);
+  }
+  if (!Number.isFinite(rankTier)) return null;
+  return { rankTier, score };
+}
+
+function comparePackageSearchMatches<
+  T extends PackageSearchMatch & { package: Pick<PackageDigestLike, "isOfficial" | "updatedAt"> },
+>(a: T, b: T) {
+  return (
+    a.rankTier - b.rankTier ||
+    b.score - a.score ||
+    Number(b.package.isOfficial) - Number(a.package.isOfficial) ||
+    b.package.updatedAt - a.package.updatedAt
+  );
+}
+
+function toPublicPackageSearchEntry(
+  entry: PackageSearchMatch & { package: PublicPackageListItem },
+) {
+  return {
+    score: entry.score,
+    package: entry.package,
+  };
 }
 
 function prefixUpperBound(value: string) {
@@ -1341,6 +1472,164 @@ function buildPackageCapabilityDigestQuery(
     );
 }
 
+function buildPackagePluginCategoryDigestQuery(
+  ctx: DbReaderCtx,
+  args: {
+    category: PluginCategorySlug;
+    family?: PackageFamily;
+    channel?: PackageChannel;
+    isOfficial?: boolean;
+    executesCode?: boolean;
+  },
+) {
+  const family = args.family;
+  const channel = args.channel;
+  const isOfficial = args.isOfficial;
+  const executesCode = args.executesCode;
+
+  if (family && channel && typeof executesCode === "boolean") {
+    return ctx.db
+      .query("packagePluginCategorySearchDigest")
+      .withIndex("by_active_family_channel_category_executes_updated", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("family", family)
+          .eq("channel", channel)
+          .eq("pluginCategory", args.category)
+          .eq("executesCode", executesCode),
+      );
+  }
+  if (family && typeof isOfficial === "boolean" && typeof executesCode === "boolean") {
+    return ctx.db
+      .query("packagePluginCategorySearchDigest")
+      .withIndex("by_active_family_official_category_executes_updated", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("family", family)
+          .eq("isOfficial", isOfficial)
+          .eq("pluginCategory", args.category)
+          .eq("executesCode", executesCode),
+      );
+  }
+  if (channel && typeof isOfficial === "boolean" && typeof executesCode === "boolean") {
+    return ctx.db
+      .query("packagePluginCategorySearchDigest")
+      .withIndex("by_active_channel_official_category_executes_updated", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("channel", channel)
+          .eq("isOfficial", isOfficial)
+          .eq("pluginCategory", args.category)
+          .eq("executesCode", executesCode),
+      );
+  }
+  if (family && channel) {
+    return ctx.db
+      .query("packagePluginCategorySearchDigest")
+      .withIndex("by_active_family_channel_category_updated", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("family", family)
+          .eq("channel", channel)
+          .eq("pluginCategory", args.category),
+      );
+  }
+  if (family && typeof isOfficial === "boolean") {
+    return ctx.db
+      .query("packagePluginCategorySearchDigest")
+      .withIndex("by_active_family_official_category_updated", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("family", family)
+          .eq("isOfficial", isOfficial)
+          .eq("pluginCategory", args.category),
+      );
+  }
+  if (channel && typeof isOfficial === "boolean") {
+    return ctx.db
+      .query("packagePluginCategorySearchDigest")
+      .withIndex("by_active_channel_official_category_updated", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("channel", channel)
+          .eq("isOfficial", isOfficial)
+          .eq("pluginCategory", args.category),
+      );
+  }
+  if (family && typeof executesCode === "boolean") {
+    return ctx.db
+      .query("packagePluginCategorySearchDigest")
+      .withIndex("by_active_family_category_executes_updated", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("family", family)
+          .eq("pluginCategory", args.category)
+          .eq("executesCode", executesCode),
+      );
+  }
+  if (channel && typeof executesCode === "boolean") {
+    return ctx.db
+      .query("packagePluginCategorySearchDigest")
+      .withIndex("by_active_channel_category_executes_updated", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("channel", channel)
+          .eq("pluginCategory", args.category)
+          .eq("executesCode", executesCode),
+      );
+  }
+  if (typeof isOfficial === "boolean" && typeof executesCode === "boolean") {
+    return ctx.db
+      .query("packagePluginCategorySearchDigest")
+      .withIndex("by_active_official_category_executes_updated", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("isOfficial", isOfficial)
+          .eq("pluginCategory", args.category)
+          .eq("executesCode", executesCode),
+      );
+  }
+  if (family) {
+    return ctx.db
+      .query("packagePluginCategorySearchDigest")
+      .withIndex("by_active_family_category_updated", (q) =>
+        q.eq("softDeletedAt", undefined).eq("family", family).eq("pluginCategory", args.category),
+      );
+  }
+  if (channel) {
+    return ctx.db
+      .query("packagePluginCategorySearchDigest")
+      .withIndex("by_active_channel_category_updated", (q) =>
+        q.eq("softDeletedAt", undefined).eq("channel", channel).eq("pluginCategory", args.category),
+      );
+  }
+  if (typeof isOfficial === "boolean") {
+    return ctx.db
+      .query("packagePluginCategorySearchDigest")
+      .withIndex("by_active_official_category_updated", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("isOfficial", isOfficial)
+          .eq("pluginCategory", args.category),
+      );
+  }
+  if (typeof executesCode === "boolean") {
+    return ctx.db
+      .query("packagePluginCategorySearchDigest")
+      .withIndex("by_active_category_executes_updated", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("pluginCategory", args.category)
+          .eq("executesCode", executesCode),
+      );
+  }
+  return ctx.db
+    .query("packagePluginCategorySearchDigest")
+    .withIndex("by_active_category_updated", (q) =>
+      q.eq("softDeletedAt", undefined).eq("pluginCategory", args.category),
+    );
+}
+
 async function fetchHighlightedPackageDigests(
   ctx: DbReaderCtx,
   args: {
@@ -1349,6 +1638,7 @@ async function fetchHighlightedPackageDigests(
     isOfficial?: boolean;
     executesCode?: boolean;
     capabilityTag?: string;
+    category?: string;
     viewerUserId?: Id<"users">;
   },
 ) {
@@ -1413,6 +1703,19 @@ async function getReadablePackageByName(
   const pkg = await getPackageByNormalizedName(ctx, normalizedName);
   if (!pkg || pkg.softDeletedAt) return null;
   if (!(await canViewerReadPackage(ctx, pkg, viewerUserId))) return null;
+  return pkg;
+}
+
+async function getPackageReadableForPublicTrust(
+  ctx: DbReaderCtx,
+  name: string,
+  viewerUserId?: Id<"users">,
+) {
+  const pkg = await getPackageByNormalizedName(ctx, normalizePackageName(name));
+  if (!pkg || pkg.softDeletedAt) return null;
+  if (pkg.channel === "private" && !(await viewerCanAccessPackageOwner(ctx, pkg, viewerUserId))) {
+    return null;
+  }
   return pkg;
 }
 
@@ -1497,7 +1800,7 @@ export const getClawScanNoteSettings = query({
 
     const actor = await ctx.db.get(viewerUserId);
     if (!actor || actor.deletedAt || actor.deactivatedAt) return null;
-    if (actor.role !== "admin") {
+    if (actor.role !== "admin" && actor.role !== "moderator") {
       const canAccess = await viewerCanManagePackageOwner(ctx, pkg, viewerUserId);
       if (!canAccess) return null;
     }
@@ -1660,6 +1963,37 @@ export const getVersionByNameForViewerInternal = internalQuery({
   },
 });
 
+export const getVersionSecurityByNameForViewerInternal = internalQuery({
+  args: {
+    name: v.string(),
+    version: v.string(),
+    viewerUserId: v.optional(v.id("users")),
+  },
+  handler: async (ctx, args) => {
+    const pkg = await getPackageReadableForPublicTrust(ctx, args.name, args.viewerUserId);
+    if (!pkg) return null;
+    const publicPackage = toPublicPackage(pkg);
+    if (!publicPackage) return null;
+    const publicDownloadBlocked =
+      isPackageBlockedFromPublic(pkg.scanStatus) &&
+      !(await viewerCanAccessPackageOwner(ctx, pkg, args.viewerUserId));
+    const release = await ctx.db
+      .query("packageReleases")
+      .withIndex("by_package_version", (q) =>
+        q.eq("packageId", pkg._id).eq("version", args.version),
+      )
+      .unique();
+    if (!release || release.softDeletedAt) return null;
+    return {
+      package: {
+        ...publicPackage,
+        publicDownloadBlocked,
+      },
+      version: release,
+    };
+  },
+});
+
 export const list = query({
   args: {
     ownerUserId: v.optional(v.id("users")),
@@ -1697,10 +2031,90 @@ export const listPublicPage = query({
     highlightedOnly: v.optional(v.boolean()),
     executesCode: v.optional(v.boolean()),
     capabilityTag: v.optional(v.string()),
+    category: v.optional(v.string()),
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
     return await listPackagePageImpl(ctx, args);
+  },
+});
+
+export const listAuditPage = query({
+  args: {
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    const numItems = Math.max(1, Math.min(args.paginationOpts.numItems, MAX_PUBLIC_LIST_PAGE_SIZE));
+    const result = await ctx.db
+      .query("packages")
+      .withIndex("by_active_downloads", (q) => q.eq("softDeletedAt", undefined))
+      .order("desc")
+      .paginate({ cursor: args.paginationOpts.cursor, numItems });
+
+    const page = [];
+    const membershipCache = new Map<string, Promise<boolean>>();
+    for (const pkg of result.page) {
+      if (pkg.family === "skill") continue;
+      if (!(await canViewerReadPackage(ctx, pkg, undefined, membershipCache))) continue;
+
+      const owner = toPublicPublisher(
+        await getOwnerPublisher(ctx, {
+          ownerPublisherId: pkg.ownerPublisherId,
+          ownerUserId: pkg.ownerUserId,
+        }),
+      );
+      const latestRelease = pkg.latestReleaseId ? await ctx.db.get(pkg.latestReleaseId) : null;
+      page.push({
+        kind: "plugin" as const,
+        package: {
+          name: pkg.name,
+          displayName: pkg.displayName,
+          family: pkg.family,
+          channel: pkg.channel,
+          isOfficial: pkg.isOfficial,
+          summary: pkg.summary ?? null,
+          ownerHandle: owner?.handle ?? null,
+          createdAt: pkg.createdAt,
+          updatedAt: pkg.updatedAt,
+          latestVersion: pkg.latestVersionSummary?.version ?? null,
+          stats: pkg.stats,
+          verificationTier: pkg.verification?.tier ?? null,
+        },
+        owner,
+        latestRelease:
+          latestRelease && !latestRelease.softDeletedAt
+            ? {
+                version: latestRelease.version,
+                createdAt: latestRelease.createdAt,
+                vtAnalysis: latestRelease.vtAnalysis,
+                llmAnalysis: latestRelease.llmAnalysis,
+                staticScan: latestRelease.staticScan
+                  ? {
+                      status: latestRelease.staticScan.status,
+                      reasonCodes: latestRelease.staticScan.reasonCodes,
+                      findings: (latestRelease.staticScan.findings ?? []).map((finding) => ({
+                        code: finding.code,
+                        severity: finding.severity,
+                        file: finding.file,
+                        line: finding.line,
+                        message: finding.message,
+                        evidence: "",
+                      })),
+                      summary: latestRelease.staticScan.summary,
+                      engineVersion: latestRelease.staticScan.engineVersion,
+                      checkedAt: latestRelease.staticScan.checkedAt,
+                    }
+                  : null,
+              }
+            : null,
+      });
+    }
+
+    return {
+      page,
+      isDone: result.isDone,
+      continueCursor: result.isDone ? "" : result.continueCursor,
+    };
   },
 });
 
@@ -1716,6 +2130,7 @@ export const listPageForViewerInternal = internalQuery({
     highlightedOnly: v.optional(v.boolean()),
     executesCode: v.optional(v.boolean()),
     capabilityTag: v.optional(v.string()),
+    category: v.optional(v.string()),
     viewerUserId: v.optional(v.id("users")),
     paginationOpts: paginationOptsValidator,
   },
@@ -1733,11 +2148,15 @@ async function listPackagePageImpl(
     highlightedOnly?: boolean;
     executesCode?: boolean;
     capabilityTag?: string;
+    category?: string;
     viewerUserId?: Id<"users">;
     paginationOpts: { cursor: string | null; numItems: number };
   },
 ) {
   if (args.channel === "private" && !args.viewerUserId) {
+    return { page: [], isDone: true, continueCursor: "" };
+  }
+  if (args.category && !isPluginCategorySlug(args.category)) {
     return { page: [], isDone: true, continueCursor: "" };
   }
   const viewerUserId = args.viewerUserId;
@@ -1772,21 +2191,30 @@ async function listPackagePageImpl(
   const family = args.family;
   const channel = args.channel;
   const isOfficial = args.isOfficial;
+  const category = isPluginCategorySlug(args.category) ? args.category : undefined;
 
-  const builder = args.capabilityTag
-    ? buildPackageCapabilityDigestQuery(ctx, {
-        capabilityTag: args.capabilityTag,
+  const builder = category
+    ? buildPackagePluginCategoryDigestQuery(ctx, {
+        category,
         family,
         channel,
         isOfficial,
         executesCode: args.executesCode,
       })
-    : buildPackageDigestQuery(ctx, {
-        family,
-        channel,
-        isOfficial,
-        executesCode: args.executesCode,
-      });
+    : args.capabilityTag
+      ? buildPackageCapabilityDigestQuery(ctx, {
+          capabilityTag: args.capabilityTag,
+          family,
+          channel,
+          isOfficial,
+          executesCode: args.executesCode,
+        })
+      : buildPackageDigestQuery(ctx, {
+          family,
+          channel,
+          isOfficial,
+          executesCode: args.executesCode,
+        });
   const page: {
     page: PackageDigestLike[];
     isDone: boolean;
@@ -1851,9 +2279,10 @@ export const searchPublic = query({
     highlightedOnly: v.optional(v.boolean()),
     executesCode: v.optional(v.boolean()),
     capabilityTag: v.optional(v.string()),
+    category: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    return await searchPackagesImpl(ctx, args);
+    return (await searchPackagesImpl(ctx, args)).map(toPublicPackageSearchEntry);
   },
 });
 
@@ -1871,6 +2300,7 @@ export const searchForViewerInternal = internalQuery({
     highlightedOnly: v.optional(v.boolean()),
     executesCode: v.optional(v.boolean()),
     capabilityTag: v.optional(v.string()),
+    category: v.optional(v.string()),
     viewerUserId: v.optional(v.id("users")),
   },
   handler: async (ctx, args) => {
@@ -1889,11 +2319,13 @@ async function searchPackagesImpl(
     highlightedOnly?: boolean;
     executesCode?: boolean;
     capabilityTag?: string;
+    category?: string;
     viewerUserId?: Id<"users">;
   },
 ) {
   const queryText = args.query.trim().toLowerCase();
   if (!queryText) return [];
+  if (args.category && !isPluginCategorySlug(args.category)) return [];
   if (args.channel === "private" && !args.viewerUserId) return [];
   const targetCount = Math.max(1, Math.min(args.limit ?? 20, 100));
   const viewerUserId = args.viewerUserId;
@@ -1903,52 +2335,60 @@ async function searchPackagesImpl(
   if (args.highlightedOnly) {
     const digests = await fetchHighlightedPackageDigests(ctx, args);
     return digests
-      .map((digest) => ({
-        score: packageSearchScore(digest, queryText),
-        package: digest,
-      }))
-      .filter((entry) => entry.score > 0)
-      .sort(
-        (a, b) =>
-          b.score - a.score ||
-          Number(b.package.isOfficial) - Number(a.package.isOfficial) ||
-          b.package.updatedAt - a.package.updatedAt,
+      .map((digest) => {
+        const match = packageSearchMatch(digest, queryText);
+        return match ? { ...match, package: digest } : null;
+      })
+      .filter((entry): entry is PackageSearchMatch & { package: PackageDigestLike } =>
+        Boolean(entry),
       )
+      .sort(comparePackageSearchMatches)
       .slice(0, targetCount)
       .map((entry) => ({
         score: entry.score,
+        rankTier: entry.rankTier,
         package: toPublicPackageListItem(entry.package),
       }));
   }
 
+  const category = isPluginCategorySlug(args.category) ? args.category : undefined;
   const buildSearchDigestQuery = () =>
-    args.capabilityTag
-      ? buildPackageCapabilityDigestQuery(ctx, {
-          capabilityTag: args.capabilityTag,
+    category
+      ? buildPackagePluginCategoryDigestQuery(ctx, {
+          category,
           family: args.family,
           channel: args.channel,
           isOfficial: args.isOfficial,
           executesCode: args.executesCode,
         })
-      : buildPackageDigestQuery(ctx, {
-          family: args.family,
-          channel: args.channel,
-          isOfficial: args.isOfficial,
-          executesCode: args.executesCode,
-        });
-  const matches: Array<{ score: number; package: PublicPackageListItem }> = [];
+      : args.capabilityTag
+        ? buildPackageCapabilityDigestQuery(ctx, {
+            capabilityTag: args.capabilityTag,
+            family: args.family,
+            channel: args.channel,
+            isOfficial: args.isOfficial,
+            executesCode: args.executesCode,
+          })
+        : buildPackageDigestQuery(ctx, {
+            family: args.family,
+            channel: args.channel,
+            isOfficial: args.isOfficial,
+            executesCode: args.executesCode,
+          });
+  const matches: Array<PackageSearchMatch & { package: PublicPackageListItem }> = [];
   const seen = new Set<string>();
-  const directDigests = args.capabilityTag
-    ? []
-    : await resolveDirectPackageSearchDigests(ctx, queryText);
+  const directDigests =
+    args.capabilityTag || args.category
+      ? []
+      : await resolveDirectPackageSearchDigests(ctx, queryText);
   for (const digest of directDigests) {
     if (!(await canViewPackage(digest))) continue;
     if (!digestMatchesSearchFilters(digest, args)) continue;
-    const score = packageSearchScore(digest, queryText);
-    if (score <= 0 || seen.has(digest.packageId)) continue;
+    const match = packageSearchMatch(digest, queryText);
+    if (!match || seen.has(digest.packageId)) continue;
     seen.add(digest.packageId);
     matches.push({
-      score,
+      ...match,
       package: toPublicPackageListItem(digest),
     });
   }
@@ -1962,25 +2402,18 @@ async function searchPackagesImpl(
     for (const digest of digests) {
       if (!(await canViewPackage(digest))) continue;
       if (!digestMatchesSearchFilters(digest, args)) continue;
-      const score = packageSearchScore(digest, queryText);
-      if (score <= 0 || seen.has(digest.packageId)) continue;
+      const match = packageSearchMatch(digest, queryText);
+      if (!match || seen.has(digest.packageId)) continue;
       seen.add(digest.packageId);
       matches.push({
-        score,
+        ...match,
         package: toPublicPackageListItem(digest),
       });
       if (matches.length >= targetCount) break;
     }
   }
 
-  return matches
-    .sort(
-      (a, b) =>
-        b.score - a.score ||
-        Number(b.package.isOfficial) - Number(a.package.isOfficial) ||
-        b.package.updatedAt - a.package.updatedAt,
-    )
-    .slice(0, targetCount);
+  return matches.sort(comparePackageSearchMatches).slice(0, targetCount);
 }
 
 export const getPackageByNameInternal = internalQuery({
@@ -2243,7 +2676,15 @@ async function softDeletePackageDoc(
   };
   const nextPackage: Doc<"packages"> = { ...pkg, ...packagePatch };
   await ctx.db.patch(pkg._id, packagePatch);
-  await upsertPackageSearchDigest(ctx, extractPackageDigestFields(nextPackage));
+  const deleteOwner = await getOwnerPublisher(ctx, {
+    ownerPublisherId: pkg.ownerPublisherId,
+    ownerUserId: pkg.ownerUserId,
+  });
+  await upsertPackageSearchDigest(ctx, {
+    ...extractPackageDigestFields(nextPackage),
+    ownerHandle: deleteOwner?.handle ?? "",
+    ownerKind: deleteOwner?.kind,
+  });
   await ctx.db.insert("auditLogs", {
     actorUserId: params.actorUserId,
     action: "package.delete",
@@ -2413,7 +2854,15 @@ async function restorePackageDoc(
   };
   const nextPackage: Doc<"packages"> = { ...pkg, ...packagePatch };
   await ctx.db.patch(pkg._id, packagePatch);
-  await upsertPackageSearchDigest(ctx, extractPackageDigestFields(nextPackage));
+  const restoreOwner = await getOwnerPublisher(ctx, {
+    ownerPublisherId: pkg.ownerPublisherId,
+    ownerUserId: pkg.ownerUserId,
+  });
+  await upsertPackageSearchDigest(ctx, {
+    ...extractPackageDigestFields(nextPackage),
+    ownerHandle: restoreOwner?.handle ?? "",
+    ownerKind: restoreOwner?.kind,
+  });
   await ctx.db.insert("auditLogs", {
     actorUserId: params.actorUserId,
     action: "package.undelete",
@@ -2506,6 +2955,166 @@ export const restorePackageInternal = internalMutation({
       actorRole: user.role,
       source: "cli",
     });
+  },
+});
+
+export const restoreOwnedPackagesForAutobanRemediationBatchInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    ownerUserId: v.id("users"),
+    bannedAt: v.number(),
+    cursor: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const owner = await ctx.db.get(args.ownerUserId);
+    if (!owner || owner.deletedAt || owner.deactivatedAt || owner.purgedAt) {
+      return {
+        ok: true as const,
+        restoredCount: 0,
+        restoredReleases: 0,
+        skippedMalicious: 0,
+        scheduled: false,
+        aborted: true,
+      };
+    }
+
+    const { page, isDone, continueCursor } = await ctx.db
+      .query("packages")
+      .withIndex("by_owner", (q) => q.eq("ownerUserId", args.ownerUserId))
+      .order("desc")
+      .paginate({
+        cursor: args.cursor ?? null,
+        numItems: 25,
+      });
+
+    let restoredCount = 0;
+    let restoredReleases = 0;
+    let skippedMalicious = 0;
+    for (const pkg of page) {
+      if (!pkg.softDeletedAt || pkg.softDeletedAt !== args.bannedAt) continue;
+      if (pkg.scanStatus === "malicious") {
+        skippedMalicious += 1;
+        continue;
+      }
+
+      const releases = await ctx.db
+        .query("packageReleases")
+        .withIndex("by_package", (q) => q.eq("packageId", pkg._id))
+        .collect();
+      const nonMaliciousActiveReleases: Doc<"packageReleases">[] = [];
+      const restoredReleaseIds: Array<Id<"packageReleases">> = [];
+      for (const release of releases) {
+        let nextRelease = release;
+        if (
+          release.softDeletedAt === args.bannedAt &&
+          resolvePackageReleaseScanStatus(release) !== "malicious"
+        ) {
+          nextRelease = { ...release, softDeletedAt: undefined };
+          restoredReleaseIds.push(release._id);
+        }
+        if (
+          !nextRelease.softDeletedAt &&
+          resolvePackageReleaseScanStatus(nextRelease) !== "malicious"
+        ) {
+          nonMaliciousActiveReleases.push(nextRelease);
+        }
+      }
+
+      const nextLatest =
+        getPreservedRestoredPackageRelease(pkg, nonMaliciousActiveReleases) ??
+        getPreferredRestoredPackageRelease(pkg.family, nonMaliciousActiveReleases);
+      if (!nextLatest) {
+        skippedMalicious += 1;
+        continue;
+      }
+      for (const releaseId of restoredReleaseIds) {
+        await ctx.db.patch(releaseId, { softDeletedAt: undefined });
+        restoredReleases += 1;
+      }
+
+      const nextTags = rebuildPackageTagsFromActiveReleases(nonMaliciousActiveReleases);
+      if (nextLatest) nextTags.latest = nextLatest._id;
+      if (!(nextLatest.distTags ?? []).includes("latest")) {
+        await ctx.db.patch(nextLatest._id, {
+          distTags: [...(nextLatest.distTags ?? []), "latest"],
+        });
+      }
+
+      const packagePatch: Partial<Doc<"packages">> = {
+        softDeletedAt: undefined,
+        softDeletedBy: undefined,
+        softDeletedByRole: undefined,
+        tags: nextTags,
+        latestReleaseId: nextLatest?._id,
+        latestVersionSummary: nextLatest
+          ? {
+              version: nextLatest.version,
+              createdAt: nextLatest.createdAt,
+              changelog: nextLatest.changelog,
+              compatibility: nextLatest.compatibility,
+              capabilities: nextLatest.capabilities,
+              verification: nextLatest.verification,
+              artifact: packageArtifactSummary(nextLatest),
+            }
+          : undefined,
+        summary: nextLatest?.summary,
+        capabilityTags: nextLatest?.capabilities?.capabilityTags,
+        executesCode:
+          typeof nextLatest?.capabilities?.executesCode === "boolean"
+            ? nextLatest.capabilities.executesCode
+            : undefined,
+        compatibility: nextLatest?.compatibility,
+        capabilities: nextLatest?.capabilities,
+        verification: nextLatest?.verification,
+        scanStatus: nextLatest ? resolvePackageReleaseScanStatus(nextLatest) : pkg.scanStatus,
+        updatedAt: Date.now(),
+      };
+      const nextPackage: Doc<"packages"> = { ...pkg, ...packagePatch };
+      await ctx.db.patch(pkg._id, packagePatch);
+      const restoreOwner = await getOwnerPublisher(ctx, {
+        ownerPublisherId: pkg.ownerPublisherId,
+        ownerUserId: pkg.ownerUserId,
+      });
+      await upsertPackageSearchDigest(ctx, {
+        ...extractPackageDigestFields(nextPackage),
+        ownerHandle: restoreOwner?.handle ?? "",
+        ownerKind: restoreOwner?.kind,
+      });
+      await ctx.db.insert("auditLogs", {
+        actorUserId: args.actorUserId,
+        action: "package.autoban_remediation.restore",
+        targetType: "package",
+        targetId: pkg._id,
+        metadata: {
+          name: pkg.name,
+          normalizedName: pkg.normalizedName,
+          ownerUserId: pkg.ownerUserId,
+          ownerPublisherId: pkg.ownerPublisherId,
+          bannedAt: args.bannedAt,
+          releaseCount: restoredReleaseIds.length,
+          releaseIds: restoredReleaseIds,
+        },
+        createdAt: Date.now(),
+      });
+      restoredCount += 1;
+    }
+
+    scheduleNextBatchIfNeeded(
+      ctx.scheduler,
+      packageAutobanRemediationInternalRefs.packages
+        .restoreOwnedPackagesForAutobanRemediationBatchInternal,
+      args,
+      isDone,
+      continueCursor,
+    );
+
+    return {
+      ok: true as const,
+      restoredCount,
+      restoredReleases,
+      skippedMalicious,
+      scheduled: !isDone,
+    };
   },
 });
 
@@ -3116,7 +3725,7 @@ export const getPackageModerationStatusForUserInternal = internalQuery({
             moderationState: activeLatestRelease.manualModeration?.state ?? null,
             moderationReason: activeLatestRelease.manualModeration?.reason ?? null,
             blockedFromDownload: releaseScanStatus === "malicious",
-            reasons: getPackageModerationQueueReasons(
+            reasons: getPackageTrustReasons(
               activeLatestRelease,
               releaseScanStatus,
               pkg.reportCount ?? 0,
@@ -3982,8 +4591,30 @@ async function publishPackageImpl(
     } catch (error) {
       if (scopedOwnerHandle && error instanceof Error) {
         if (/not found/i.test(error.message)) {
+          let legacyPersonalOwnerHandle: string | undefined;
+          if (existingPackage && actor && existingPackage.ownerUserId === actor._id) {
+            if (existingPackage.ownerPublisherId) {
+              const existingOwnerPublisher = await runQueryRef<Doc<"publishers"> | null>(
+                ctx,
+                internalRefs.publishers.getByIdInternal,
+                { publisherId: existingPackage.ownerPublisherId },
+              );
+              if (
+                existingOwnerPublisher?.kind === "user" &&
+                existingOwnerPublisher.linkedUserId === actor._id
+              ) {
+                legacyPersonalOwnerHandle = normalizePublisherHandle(existingOwnerPublisher.handle);
+              }
+            } else {
+              legacyPersonalOwnerHandle = normalizePublisherHandle(actor.handle);
+            }
+          }
           throw new ConvexError(
-            `This package name uses the "@${scopedOwnerHandle}" namespace, but that publisher does not exist on ClawHub. Create the "@${scopedOwnerHandle}" organization or choose a different package name.`,
+            getScopedPackageMissingPublisherMessage({
+              scopedOwnerHandle,
+              packageName: name,
+              legacyPersonalOwnerHandle,
+            }),
           );
         }
         if (/forbidden|publish access/i.test(error.message)) {
@@ -4134,11 +4765,26 @@ async function publishPackageImpl(
     },
     files,
   });
+  const ownerPublisher = ownerPublisherId
+    ? await runQueryRef<Doc<"publishers"> | null>(ctx, internalRefs.publishers.getByIdInternal, {
+        publisherId: ownerPublisherId,
+      })
+    : null;
+  const trustedOpenClawPlugin = isTrustedOpenClawPluginPackage({
+    family,
+    normalizedName: name,
+    ownerPublisher,
+  });
   const verificationSource = codeArtifacts?.verification ?? bundleArtifacts?.verification;
-  const initialScanStatus = staticScan.status === "malicious" ? "malicious" : "pending";
+  const initialScanStatus = trustedOpenClawPlugin
+    ? "clean"
+    : staticScan.status === "malicious"
+      ? "malicious"
+      : "pending";
   const verification = verificationSource
     ? {
         ...verificationSource,
+        trustedOpenClawPlugin: trustedOpenClawPlugin || undefined,
         scanStatus: initialScanStatus,
       }
     : undefined;
@@ -4240,8 +4886,9 @@ async function publishPackageImpl(
       releaseId: publishResult.releaseId,
     },
   );
-  await runAfterRef(ctx, 0, internalRefs.llmEval.evaluatePackageReleaseWithLlm, {
+  await runMutationRef(ctx, internalRefs.securityScan.enqueuePackageReleaseScanInternal, {
     releaseId: publishResult.releaseId,
+    source: "publish",
   });
 
   return publishResult;
@@ -4680,6 +5327,10 @@ export const repairPackageIdentityInternal = internalMutation({
     }
 
     await ctx.db.patch(pkg._id, patch);
+    await upsertPackageSearchDigest(ctx, {
+      ...extractPackageDigestFields(pkg),
+      ...patch,
+    });
     await ctx.db.insert("auditLogs", {
       actorUserId: args.actorUserId,
       action: "package.identity.repair",
@@ -5036,32 +5687,14 @@ export const updateReleaseScanResultsInternal = internalMutation({
   handler: async (ctx, args) => {
     const release = await ctx.db.get(args.releaseId);
     if (!release || release.softDeletedAt) return;
-    const activeRelease = release;
 
     const patch: Partial<Doc<"packageReleases">> = {};
     if (args.sha256hash !== undefined) patch.sha256hash = args.sha256hash;
     if (args.vtAnalysis !== undefined) {
-      const nextScanStatus = resolvePackageReleaseScanStatus({
-        ...activeRelease,
-        vtAnalysis: args.vtAnalysis,
-      });
       patch.vtAnalysis = args.vtAnalysis;
-      patch.verification = activeRelease.verification
-        ? {
-            ...activeRelease.verification,
-            scanStatus: nextScanStatus,
-          }
-        : activeRelease.verification;
     }
     if (Object.keys(patch).length > 0) {
       await ctx.db.patch(args.releaseId, patch);
-    }
-    if (args.vtAnalysis !== undefined) {
-      const updatedRelease = {
-        ...activeRelease,
-        ...patch,
-      } as Doc<"packageReleases">;
-      await syncLatestPackageVerification(ctx, updatedRelease);
     }
   },
 });
@@ -5453,8 +6086,9 @@ export const backfillPackageReleaseScansInternal = internalAction({
         });
       }
       if (release.needsLlm) {
-        await runAfterRef(ctx, 0, internalRefs.llmEval.evaluatePackageReleaseWithLlm, {
+        await runMutationRef(ctx, internalRefs.securityScan.enqueuePackageReleaseScanInternal, {
           releaseId: release.releaseId,
+          source: "backfill",
         });
       }
       if (release.needsStatic) {
@@ -5511,7 +6145,7 @@ export const updateLatestClawScanNoteAndRequestRescan = mutation({
       actor: user,
       ownerUserId: pkg.ownerUserId,
       ownerPublisherId: pkg.ownerPublisherId,
-      allowPlatformAdmin: true,
+      allowPlatformModerator: true,
     });
 
     const now = Date.now();
@@ -5538,8 +6172,10 @@ export const updateLatestClawScanNoteAndRequestRescan = mutation({
       createdAt: now,
     });
 
-    await runAfterRef(ctx, 0, internalRefs.llmEval.evaluatePackageReleaseWithLlm, {
+    await runAfterRef(ctx, 0, internalRefs.securityScan.enqueuePackageReleaseScanInternal, {
       releaseId: release._id,
+      source: "clawscan-note",
+      waitForVtMs: 0,
     });
 
     return { ok: true as const, packageReleaseId: release._id };

@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   buildForegroundArgs,
   buildEnvFileCandidates,
+  buildViteArgs,
   isConvexFunctionUnavailableOutput,
   isRunningPid,
   parseArgs,
   parseEnv,
-  parseGitWorktreeList,
 } from "./dev-worktree";
 
 describe("dev-worktree helpers", () => {
@@ -26,7 +26,7 @@ describe("dev-worktree helpers", () => {
     });
   });
 
-  it("discovers the primary worktree env file after the current checkout", () => {
+  it("uses only the local checkout env unless an env file is explicit", () => {
     expect(
       buildEnvFileCandidates({
         explicit: null,
@@ -36,16 +36,6 @@ describe("dev-worktree helpers", () => {
           "/tmp/worktrees/feature",
           "/tmp/worktrees/other-feature",
         ],
-      }),
-    ).toEqual([".env.local", "/Users/me/Git/openclaw/clawhub/.env.local"]);
-  });
-
-  it("does not scan every sibling worktree for env files", () => {
-    expect(
-      buildEnvFileCandidates({
-        explicit: null,
-        cwd: "/tmp/worktrees/feature",
-        worktrees: ["/tmp/worktrees/feature", "/tmp/worktrees/other-feature"],
       }),
     ).toEqual([".env.local"]);
   });
@@ -60,24 +50,11 @@ describe("dev-worktree helpers", () => {
     ).toEqual(["/secure/shared.env"]);
   });
 
-  it("parses git worktree porcelain output", () => {
-    expect(
-      parseGitWorktreeList(`worktree /Users/me/Git/openclaw/clawhub
-HEAD abc123
-branch refs/heads/main
-
-worktree /tmp/worktrees/feature
-HEAD def456
-branch refs/heads/feature
-`),
-    ).toEqual(["/Users/me/Git/openclaw/clawhub", "/tmp/worktrees/feature"]);
-  });
-
   it("recognizes Convex functions that are not queryable yet", () => {
     expect(
       isConvexFunctionUnavailableOutput(`
-        Failed to run function "devSeed:seedNixSkills":
-        Could not find function for 'devSeed:seedNixSkills'. Did you forget to run \`npx convex dev\`?
+        Failed to run function "devSeed:seedLocalFixtures":
+        Could not find function for 'devSeed:seedLocalFixtures'. Did you forget to run \`npx convex dev\`?
         No functions found.
       `),
     ).toBe(true);
@@ -94,6 +71,18 @@ branch refs/heads/feature
 
   it("does not pass detach mode to the foreground child process", () => {
     expect(buildForegroundArgs(["--detach", "--port", "3999"])).toEqual(["--port", "3999"]);
+  });
+
+  it("binds Vite to the same loopback host advertised by Worktrunk", () => {
+    expect(buildViteArgs("3999")).toEqual([
+      "--bun",
+      "vite",
+      "dev",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "3999",
+    ]);
   });
 
   it("treats invalid detached pid file values as not running", () => {

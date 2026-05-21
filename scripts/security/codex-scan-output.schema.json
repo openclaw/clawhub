@@ -1,0 +1,173 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "verdict",
+    "confidence",
+    "summary",
+    "dimensions",
+    "scan_findings_in_context",
+    "agentic_risk_findings",
+    "risk_summary",
+    "user_guidance"
+  ],
+  "properties": {
+    "verdict": { "type": "string", "enum": ["benign", "suspicious", "malicious"] },
+    "confidence": { "type": "string", "enum": ["high", "medium", "low"] },
+    "summary": { "type": "string" },
+    "dimensions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "purpose_capability",
+        "instruction_scope",
+        "install_mechanism",
+        "environment_proportionality",
+        "persistence_privilege"
+      ],
+      "properties": {
+        "purpose_capability": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "detail"],
+          "properties": {
+            "status": { "type": "string", "enum": ["ok", "note", "concern"] },
+            "detail": { "type": "string" }
+          }
+        },
+        "instruction_scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "detail"],
+          "properties": {
+            "status": { "type": "string", "enum": ["ok", "note", "concern"] },
+            "detail": { "type": "string" }
+          }
+        },
+        "install_mechanism": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "detail"],
+          "properties": {
+            "status": { "type": "string", "enum": ["ok", "note", "concern"] },
+            "detail": { "type": "string" }
+          }
+        },
+        "environment_proportionality": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "detail"],
+          "properties": {
+            "status": { "type": "string", "enum": ["ok", "note", "concern"] },
+            "detail": { "type": "string" }
+          }
+        },
+        "persistence_privilege": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "detail"],
+          "properties": {
+            "status": { "type": "string", "enum": ["ok", "note", "concern"] },
+            "detail": { "type": "string" }
+          }
+        }
+      }
+    },
+    "scan_findings_in_context": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ruleId", "expected_for_purpose", "note"],
+        "properties": {
+          "ruleId": { "type": "string" },
+          "expected_for_purpose": { "type": "boolean" },
+          "note": { "type": "string" }
+        }
+      }
+    },
+    "agentic_risk_findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "category_id",
+          "category_label",
+          "risk_bucket",
+          "status",
+          "severity",
+          "confidence",
+          "evidence",
+          "user_impact",
+          "recommendation"
+        ],
+        "properties": {
+          "category_id": { "type": "string" },
+          "category_label": { "type": "string" },
+          "risk_bucket": {
+            "type": "string",
+            "enum": [
+              "abnormal_behavior_control",
+              "permission_boundary",
+              "sensitive_data_protection"
+            ]
+          },
+          "status": { "type": "string", "enum": ["note", "concern"] },
+          "severity": { "type": "string" },
+          "confidence": { "type": "string", "enum": ["high", "medium", "low"] },
+          "evidence": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "snippet", "explanation"],
+            "properties": {
+              "path": { "type": "string" },
+              "snippet": { "type": "string" },
+              "explanation": { "type": "string" }
+            }
+          },
+          "user_impact": { "type": "string" },
+          "recommendation": { "type": "string" }
+        }
+      }
+    },
+    "risk_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["abnormal_behavior_control", "permission_boundary", "sensitive_data_protection"],
+      "properties": {
+        "abnormal_behavior_control": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "highest_severity", "summary"],
+          "properties": {
+            "status": { "type": "string", "enum": ["none", "note", "concern"] },
+            "highest_severity": { "type": "string" },
+            "summary": { "type": "string" }
+          }
+        },
+        "permission_boundary": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "highest_severity", "summary"],
+          "properties": {
+            "status": { "type": "string", "enum": ["none", "note", "concern"] },
+            "highest_severity": { "type": "string" },
+            "summary": { "type": "string" }
+          }
+        },
+        "sensitive_data_protection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "highest_severity", "summary"],
+          "properties": {
+            "status": { "type": "string", "enum": ["none", "note", "concern"] },
+            "highest_severity": { "type": "string" },
+            "summary": { "type": "string" }
+          }
+        }
+      }
+    },
+    "user_guidance": { "type": "string" }
+  }
+}

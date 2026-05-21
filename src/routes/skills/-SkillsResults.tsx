@@ -1,4 +1,5 @@
 import type { RefObject } from "react";
+import { BrowseResultsSkeleton } from "../../components/skeletons/BrowseResultsSkeleton";
 import { SkillCard } from "../../components/SkillCard";
 import { getPlatformLabels } from "../../components/skillDetailUtils";
 import { SkillListItem } from "../../components/SkillListItem";
@@ -38,18 +39,7 @@ export function SkillsResults({
   return (
     <>
       {isLoadingSkills ? (
-        <div className="skeleton-list">
-          {Array.from({ length: 6 }, (_, i) => (
-            <div key={i} className="skeleton-row">
-              <div className="skeleton-icon" />
-              <div className="skeleton-row-body">
-                <div className="skeleton-bar skeleton-bar-lg" />
-                <div className="skeleton-bar skeleton-bar-sm" />
-                <div className="skeleton-bar skeleton-bar-xs" />
-              </div>
-            </div>
-          ))}
-        </div>
+        <BrowseResultsSkeleton variant={view} />
       ) : sorted.length === 0 ? (
         <div className="empty-state">
           <p className="empty-state-title">No skills found</p>
@@ -117,17 +107,17 @@ export function SkillsResults({
         </div>
       )}
 
-      {canLoadMore || isLoadingMore ? (
+      {isLoadingMore ? (
+        <div ref={canAutoLoad ? loadMoreRef : null} className="mt-4">
+          <BrowseResultsSkeleton count={2} variant={view} />
+        </div>
+      ) : canLoadMore ? (
         <div ref={canAutoLoad ? loadMoreRef : null} className="card mt-4 flex justify-center">
           {canAutoLoad ? (
-            isLoadingMore ? (
-              "Loading more..."
-            ) : (
-              "Scroll to load more"
-            )
+            "Scroll to load more"
           ) : (
             <Button type="button" onClick={loadMore} disabled={isLoadingMore}>
-              {isLoadingMore ? "Loading..." : "Load more"}
+              Load more
             </Button>
           )}
         </div>

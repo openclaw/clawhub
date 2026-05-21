@@ -6,7 +6,7 @@ import { FEATURE_SOULS } from "./features";
  */
 
 /** Lucide icon name used as a key to look up the component at render time. */
-export type NavIconName = "wrench" | "plug" | "ghost";
+type NavIconName = "wrench" | "plug" | "ghost";
 
 interface NavItemBase {
   /** Visible link text */
@@ -54,7 +54,6 @@ const SKILLS_SEARCH = {
   sort: undefined,
   dir: undefined,
   highlighted: undefined,
-  nonSuspicious: undefined,
   view: undefined,
   focus: undefined,
 } as const;
@@ -127,14 +126,6 @@ export const SECONDARY_NAV_ITEMS: NavItem[] = [
     soulModeHide: true,
   },
   {
-    label: "About",
-    to: "/about",
-    authRequired: false,
-    staffOnly: false,
-    soulModeOnly: false,
-    soulModeHide: true,
-  },
-  {
     label: "Docs",
     href: "https://documentation.openclaw.ai/clawhub/",
     authRequired: false,
@@ -170,6 +161,7 @@ export const FOOTER_NAV_SECTIONS: FooterNavSection[] = [
     items: [
       { kind: "link", label: "Skills", to: "/skills", search: SKILLS_SEARCH },
       { kind: "link", label: "Plugins", to: "/plugins" },
+      { kind: "link", label: "Audits", to: "/audits", search: { type: undefined } },
       {
         kind: "link",
         label: "Souls",

@@ -257,8 +257,52 @@ function llmAnalysisFromExport(value: unknown): LlmAnalysisInput | null {
     dimensions: llmDimensionsFromExport(value.dimensions),
     guidance: stringOrNull(value.guidance),
     findings: stringOrNull(value.findings),
+    agenticRiskFindings: llmAgenticRiskFindingsFromExport(value.agenticRiskFindings),
     model: stringOrNull(value.model),
     checkedAt: numberValue(value.checkedAt, "llmAnalysis.checkedAt"),
+  };
+}
+
+function llmAgenticRiskFindingsFromExport(value: unknown): LlmAnalysisInput["agenticRiskFindings"] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((finding) => {
+    if (!isRecord(finding)) return [];
+    const riskBucket = finding.riskBucket;
+    if (
+      riskBucket !== "abnormal_behavior_control" &&
+      riskBucket !== "permission_boundary" &&
+      riskBucket !== "sensitive_data_protection"
+    ) {
+      return [];
+    }
+    const status = finding.status;
+    if (status !== "none" && status !== "note" && status !== "concern") return [];
+    const confidence = finding.confidence;
+    if (confidence !== "high" && confidence !== "medium" && confidence !== "low") return [];
+    return [
+      {
+        categoryId: stringOrNull(finding.categoryId) ?? "",
+        categoryLabel: stringOrNull(finding.categoryLabel) ?? "",
+        riskBucket,
+        status,
+        severity: stringOrNull(finding.severity) ?? "none",
+        confidence,
+        evidence: llmRiskEvidenceFromExport(finding.evidence),
+        userImpact: stringOrNull(finding.userImpact) ?? "",
+        recommendation: stringOrNull(finding.recommendation) ?? "",
+      },
+    ];
+  });
+}
+
+function llmRiskEvidenceFromExport(
+  value: unknown,
+): LlmAnalysisInput["agenticRiskFindings"][number]["evidence"] {
+  if (!isRecord(value)) return null;
+  return {
+    path: stringOrNull(value.path) ?? "",
+    snippet: stringOrNull(value.snippet) ?? "",
+    explanation: stringOrNull(value.explanation) ?? "",
   };
 }
 

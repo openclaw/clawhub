@@ -28,7 +28,25 @@ describe("users route redirect", () => {
     expect(redirectMock).toHaveBeenCalledWith({ to: "/publishers", search, replace: true });
   });
 
-  it("redirects legacy user profile routes to publisher profiles", async () => {
+  it("redirects legacy /p profile routes to user profiles", async () => {
+    const route = (await import("../routes/p/$handle")).Route as unknown as {
+      __config: {
+        beforeLoad: (args: {
+          params: { handle: string };
+          search: Record<string, unknown>;
+        }) => unknown;
+      };
+    };
+
+    expect(() => route.__config.beforeLoad({ params: { handle: "alice" }, search: {} })).toThrow();
+    expect(redirectMock).toHaveBeenCalledWith({
+      to: "/user/$handle",
+      params: { handle: "alice" },
+      replace: true,
+    });
+  });
+
+  it("redirects legacy user profile routes to user profiles", async () => {
     const route = (await import("../routes/u/$handle")).Route as unknown as {
       __config: {
         beforeLoad: (args: {
@@ -40,7 +58,7 @@ describe("users route redirect", () => {
 
     expect(() => route.__config.beforeLoad({ params: { handle: "alice" }, search: {} })).toThrow();
     expect(redirectMock).toHaveBeenCalledWith({
-      to: "/p/$handle",
+      to: "/user/$handle",
       params: { handle: "alice" },
       replace: true,
     });
@@ -60,7 +78,7 @@ describe("users route redirect", () => {
       route.__config.beforeLoad({ params: { handle: "openclaw" }, search: {} }),
     ).toThrow();
     expect(redirectMock).toHaveBeenCalledWith({
-      to: "/p/$handle",
+      to: "/user/$handle",
       params: { handle: "openclaw" },
       replace: true,
     });

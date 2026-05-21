@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildPluginDetailHref,
-  buildPluginSecurityHref,
+  buildPluginSecurityAuditHref,
   packageNameFromScopedRoute,
   parseScopedPackageName,
 } from "./pluginRoutes";
@@ -9,8 +9,8 @@ import {
 describe("plugin routes", () => {
   it("keeps scoped package routes readable", () => {
     expect(buildPluginDetailHref("@openclaw/codex")).toBe("/plugins/@openclaw/codex");
-    expect(buildPluginSecurityHref("@openclaw/codex", "openclaw")).toBe(
-      "/plugins/@openclaw/codex/security/openclaw",
+    expect(buildPluginSecurityAuditHref("@openclaw/codex")).toBe(
+      "/plugins/@openclaw/codex/security-audit",
     );
   });
 

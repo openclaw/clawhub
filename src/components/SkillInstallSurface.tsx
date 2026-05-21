@@ -16,7 +16,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 
 const PROMPT_OPTIONS: Array<{
   description: string;
@@ -219,23 +218,14 @@ export function SkillCommandLineCard({
 
       <div className="skill-install-command-wrap">
         <div className="skill-install-command-shell">
-          <TooltipProvider delayDuration={400}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <pre
-                  className={`skill-install-command${
-                    activeInstallTab === "prompt" ? " skill-install-prompt-compact" : ""
-                  }`}
-                  tabIndex={0}
-                >
-                  <code translate="no">{activeInstallText}</code>
-                </pre>
-              </TooltipTrigger>
-              <TooltipContent side="top" align="start" className="skill-install-command-tooltip">
-                <code translate="no">{activeInstallText}</code>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+          <pre
+            className={`skill-install-command${
+              activeInstallTab === "prompt" ? " skill-install-prompt-compact" : ""
+            }`}
+            tabIndex={0}
+          >
+            <code translate="no">{activeInstallText}</code>
+          </pre>
           <InstallCopyButton
             text={activeInstallText}
             ariaLabel={

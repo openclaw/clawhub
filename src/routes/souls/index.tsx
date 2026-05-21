@@ -71,7 +71,6 @@ function SoulsHoldingPage() {
                 sort: "downloads",
                 dir: "desc",
                 highlighted: undefined,
-                nonSuspicious: true,
                 view: undefined,
                 focus: undefined,
               }}

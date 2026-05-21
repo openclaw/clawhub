@@ -14,11 +14,9 @@ function renderToolbar(overrides?: Partial<ComponentProps<typeof SkillsToolbar>>
       dir="desc"
       view="list"
       highlightedOnly={false}
-      nonSuspiciousOnly={false}
       capabilityTag={undefined}
       onQueryChange={vi.fn()}
       onToggleHighlighted={vi.fn()}
-      onToggleNonSuspicious={vi.fn()}
       onCapabilityTagChange={vi.fn()}
       onSortChange={vi.fn()}
       onToggleDir={vi.fn()}
