@@ -663,6 +663,30 @@ describe("SecurityScanResults static guidance", () => {
     ).toBeTruthy();
   });
 
+  it("avoids denominator prose for partial VirusTotal engine stats", () => {
+    render(
+      <SecurityAuditPage
+        entity={{
+          kind: "skill",
+          title: "Hash Guard",
+          name: "hash-guard",
+          version: "1.2.3",
+          detailPath: "/local/hash-guard",
+        }}
+        sha256hash="abc123"
+        vtAnalysis={{
+          status: "suspicious",
+          source: "engines",
+          engineStats: { suspicious: 1 },
+          checkedAt: Date.now(),
+        }}
+      />,
+    );
+
+    expect(screen.getByText("1 vendor flagged this skill as suspicious.")).toBeTruthy();
+    expect(screen.queryByText("1/1 vendors flagged this skill as suspicious.")).toBeNull();
+  });
+
   it("renders VirusTotal undetected-only fallback as pass", () => {
     render(
       <SecurityAuditPage

@@ -115,12 +115,6 @@ function joinReadableClauses(clauses: string[]) {
   return `${clauses.slice(0, -1).join(", ")}, and ${clauses.at(-1)}`;
 }
 
-function hasEngineVirusTotalSource(analysis?: VtAnalysis | null) {
-  const source = analysis?.source?.trim().toLowerCase();
-  const scanner = analysis?.scanner?.trim().toLowerCase();
-  return Boolean(source?.startsWith("engines") || scanner?.startsWith("engines"));
-}
-
 function hasNonEngineVirusTotalSource(analysis?: VtAnalysis | null) {
   if (!analysis) return false;
   const source = analysis.source?.trim().toLowerCase();
@@ -152,23 +146,35 @@ function getVirusTotalEngineOverview(analysis: VtAnalysis | null | undefined, en
     if (total <= 0) return getVirusTotalNoFindingsCopy(entity);
 
     const artifactKind = getArtifactKindLabel(entity);
+    const hasFullEngineStats =
+      stats.malicious !== undefined &&
+      stats.suspicious !== undefined &&
+      stats.harmless !== undefined &&
+      stats.undetected !== undefined;
+    const firstCountLabel = (count: number) =>
+      hasFullEngineStats
+        ? `${count}/${total} vendors`
+        : `${count} ${count === 1 ? "vendor" : "vendors"}`;
+    const followupCountLabel = (count: number) =>
+      hasFullEngineStats ? `${count}/${total}` : `${count} ${count === 1 ? "vendor" : "vendors"}`;
+
     if (malicious === 0 && suspicious === 0) {
-      return `${clean}/${total} vendors flagged this ${artifactKind} as clean.`;
+      return `${firstCountLabel(clean)} flagged this ${artifactKind} as clean.`;
     }
 
     const clauses: string[] = [];
     if (malicious > 0) {
-      clauses.push(`${malicious}/${total} vendors flagged this ${artifactKind} as malicious`);
+      clauses.push(`${firstCountLabel(malicious)} flagged this ${artifactKind} as malicious`);
     }
     if (suspicious > 0) {
       clauses.push(
         clauses.length === 0
-          ? `${suspicious}/${total} vendors flagged this ${artifactKind} as suspicious`
-          : `${suspicious}/${total} flagged it as suspicious`,
+          ? `${firstCountLabel(suspicious)} flagged this ${artifactKind} as suspicious`
+          : `${followupCountLabel(suspicious)} flagged it as suspicious`,
       );
     }
     if (clean > 0) {
-      clauses.push(`${clean}/${total} flagged it as clean`);
+      clauses.push(`${followupCountLabel(clean)} flagged it as clean`);
     }
     return `${joinReadableClauses(clauses)}.`;
   }
