@@ -100,7 +100,7 @@
   --bg-glow-2: #141416;
   --surface: #0e0e10;
   --surface-muted: #131315;
-  --nav-bg: rgba(6, 6, 8, 0.96);
+  --nav-bg: #060608;
   --ink: #fafafa;
   --ink-soft: #a1a1a1;
   --accent: #dc2626;
@@ -195,7 +195,7 @@
   --bg-soft: #f5f1ec;
   --surface: #fffcf8;
   --surface-muted: #f8f5f0;
-  --nav-bg: rgba(250, 246, 241, 0.96);
+  --nav-bg: #faf6f1;
   --ink: #0a0a0a;
   --ink-soft: #525252;
   --accent: #dc2626;
@@ -405,8 +405,6 @@ code {
   top: 0;
   z-index: 10;
   background: var(--nav-bg);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--line);
 }
 
