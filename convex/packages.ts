@@ -5429,6 +5429,21 @@ export const insertReleaseInternal = internalMutation({
     ) {
       throw new ConvexError("Package owner publisher is unavailable");
     }
+    if (args.publishActor?.kind === "user" && args.publishActor.userId !== args.actorUserId) {
+      throw new ConvexError("Publish actor must match the authenticated actor");
+    }
+    if (args.publishActor?.kind === "user" && ownerPublisher?.kind === "org") {
+      const membership = await getPublisherMembership(
+        ctx,
+        ownerPublisher._id,
+        args.publishActor.userId,
+      );
+      if (!membership || !isPublisherRoleAllowed(membership.role, ["publisher"])) {
+        throw new ConvexError(
+          `You do not have publish access for "@${ownerPublisher.handle}". Ask an owner or admin to add you before publishing this package.`,
+        );
+      }
+    }
     if (args.ownerUserId !== args.actorUserId) {
       assertAdmin(actor);
     }
