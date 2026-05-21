@@ -1518,6 +1518,37 @@ async function readJsonFile(path: string) {
   }
 }
 
+function stripMarkdownFrontmatter(content: string) {
+  const normalized = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  if (!normalized.startsWith("---\n")) return normalized;
+  const endIndex = normalized.indexOf("\n---", 4);
+  if (endIndex === -1) return normalized;
+  return normalized.slice(endIndex + 4).replace(/^\n+/, "");
+}
+
+function extractReadmeH1(content: string) {
+  const body = stripMarkdownFrontmatter(content);
+  for (const line of body.split("\n")) {
+    const match = /^#(?!#)\s+(.+?)\s*$/.exec(line.trim());
+    const title = match?.[1]?.replace(/\s+#+$/, "").trim();
+    if (title) return title;
+  }
+  return undefined;
+}
+
+function readReadmeH1FromPackageFiles(files: PackageFile[]) {
+  const readme = files.find((file) => {
+    const path = file.relPath.toLowerCase();
+    return path === "readme.md" || path === "readme.mdx";
+  });
+  if (!readme) return undefined;
+  try {
+    return extractReadmeH1(new TextDecoder().decode(readme.bytes));
+  } catch {
+    return undefined;
+  }
+}
+
 function packageJsonString(value: Record<string, unknown> | null, key: string): string | undefined {
   const candidate = value?.[key];
   return typeof candidate === "string" && candidate.trim() ? candidate.trim() : undefined;
@@ -1695,6 +1726,7 @@ async function preparePackagePublishPlan(
     packageJsonString(packageJson, "displayName") ||
     packageJsonString(pluginManifest, "name") ||
     packageJsonString(bundleManifest, "name") ||
+    readReadmeH1FromPackageFiles(filesOnDisk) ||
     titleCase(basename(folder));
   const ownerHandle = options.owner?.trim().replace(/^@+/, "");
   const version =

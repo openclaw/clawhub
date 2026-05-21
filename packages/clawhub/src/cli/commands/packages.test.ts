@@ -1058,6 +1058,86 @@ describe("package commands", () => {
     }
   });
 
+  it("uses the README H1 as a package display name fallback", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "clawhub-github-publish-clh4hR");
+      await mkdir(join(folder, "dist"), { recursive: true });
+      await writeFile(
+        join(folder, "package.json"),
+        makeCodePluginPackageJson({
+          name: "@scope/demo-plugin",
+          version: "1.0.0",
+          files: ["dist", "openclaw.plugin.json", "README.md"],
+        }),
+        "utf8",
+      );
+      await writeFile(
+        join(folder, "openclaw.plugin.json"),
+        JSON.stringify({ id: "demo.plugin" }),
+        "utf8",
+      );
+      await writeFile(
+        join(folder, "README.md"),
+        "---\nignored: true\n---\n\n# Honcho Memory Plugin for OpenClaw\n\nDetails.\n",
+        "utf8",
+      );
+      await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
+
+      await cmdPublishPackage(makeOpts(workdir), "clawhub-github-publish-clh4hR", {
+        dryRun: true,
+        json: true,
+        sourceRepo: "openclaw/demo-plugin",
+        sourceCommit: "abc123",
+      });
+
+      const output = String(mockWrite.mock.calls[0]?.[0] ?? "").trim();
+      expect(JSON.parse(output)).toMatchObject({
+        displayName: "Honcho Memory Plugin for OpenClaw",
+      });
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("preserves literal trailing hashes in README H1 display name fallbacks", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "language-plugin");
+      await mkdir(join(folder, "dist"), { recursive: true });
+      await writeFile(
+        join(folder, "package.json"),
+        makeCodePluginPackageJson({
+          name: "@scope/language-plugin",
+          version: "1.0.0",
+          files: ["dist", "openclaw.plugin.json", "README.md"],
+        }),
+        "utf8",
+      );
+      await writeFile(
+        join(folder, "openclaw.plugin.json"),
+        JSON.stringify({ id: "language.plugin" }),
+        "utf8",
+      );
+      await writeFile(join(folder, "README.md"), "# C#\n\nDetails.\n", "utf8");
+      await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
+
+      await cmdPublishPackage(makeOpts(workdir), "language-plugin", {
+        dryRun: true,
+        json: true,
+        sourceRepo: "openclaw/language-plugin",
+        sourceCommit: "abc123",
+      });
+
+      const output = String(mockWrite.mock.calls[0]?.[0] ?? "").trim();
+      expect(JSON.parse(output)).toMatchObject({
+        displayName: "C#",
+      });
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
   it("resolves package publish dot paths from the caller cwd before the OpenClaw workdir", async () => {
     const workspace = await makeTmpWorkdir();
     const pluginRoot = await makeTmpWorkdir();
