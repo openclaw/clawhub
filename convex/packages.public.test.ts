@@ -536,6 +536,7 @@ const applyBanToOwnedPackagesBatchInternalHandler = (
       deletedBy: string;
       deletedByRole: "admin" | "moderator" | "user";
       cursor?: string;
+      allowActiveOwnerBeforeCommit?: boolean;
     },
     { deletedCount: number; revokedTokenCount: number; scheduled: boolean }
   >
@@ -6952,6 +6953,7 @@ describe("owned package sanction batches", () => {
       bannedAt: 1_000,
       deletedBy: "users:moderator",
       deletedByRole: "moderator",
+      allowActiveOwnerBeforeCommit: true,
     });
 
     expect(result).toMatchObject({ deletedCount: 1, revokedTokenCount: 1, scheduled: false });
@@ -6986,6 +6988,82 @@ describe("owned package sanction batches", () => {
     });
     expect(patch).not.toHaveBeenCalledWith("packages:demo", expect.anything());
     expect(patch).not.toHaveBeenCalledWith("packagePublishTokens:demo", expect.anything());
+  });
+
+  it("continues in-flight package ban pages before the user ban commit is visible", async () => {
+    const firstPage = makeOwnedPackageBatchCtx({
+      owner: { _id: "users:owner", deletedAt: undefined, deactivatedAt: undefined },
+      pkg: makePackageDoc({ _id: "packages:first", ownerUserId: "users:owner" }),
+      packageTokens: [
+        {
+          _id: "packagePublishTokens:first",
+          packageId: "packages:first",
+          version: "1.0.1",
+          revokedAt: undefined,
+        },
+      ],
+      isDone: false,
+      continueCursor: "next-page",
+    });
+
+    const firstResult = await applyBanToOwnedPackagesBatchInternalHandler(firstPage.ctx as never, {
+      ownerUserId: "users:owner",
+      bannedAt: 1_000,
+      deletedBy: "users:moderator",
+      deletedByRole: "moderator",
+      allowActiveOwnerBeforeCommit: true,
+    });
+
+    expect(firstResult).toMatchObject({ deletedCount: 1, revokedTokenCount: 1, scheduled: true });
+    expect(firstPage.patch).toHaveBeenCalledWith(
+      "packages:first",
+      expect.objectContaining({ softDeletedAt: 1_000, softDeletedReason: "user.banned" }),
+    );
+    expect(firstPage.patch).toHaveBeenCalledWith("packagePublishTokens:first", {
+      revokedAt: 1_000,
+    });
+    expect(firstPage.runAfter).toHaveBeenCalledWith(
+      0,
+      expect.anything(),
+      expect.objectContaining({
+        cursor: "next-page",
+        allowActiveOwnerBeforeCommit: true,
+      }),
+    );
+
+    const secondPage = makeOwnedPackageBatchCtx({
+      owner: { _id: "users:owner", deletedAt: undefined, deactivatedAt: undefined },
+      pkg: makePackageDoc({ _id: "packages:second", ownerUserId: "users:owner" }),
+      packageTokens: [
+        {
+          _id: "packagePublishTokens:second",
+          packageId: "packages:second",
+          version: "1.0.1",
+          revokedAt: undefined,
+        },
+      ],
+    });
+
+    const secondResult = await applyBanToOwnedPackagesBatchInternalHandler(
+      secondPage.ctx as never,
+      {
+        ownerUserId: "users:owner",
+        bannedAt: 1_000,
+        deletedBy: "users:moderator",
+        deletedByRole: "moderator",
+        cursor: "next-page",
+        allowActiveOwnerBeforeCommit: true,
+      },
+    );
+
+    expect(secondResult).toMatchObject({ deletedCount: 1, revokedTokenCount: 1, scheduled: false });
+    expect(secondPage.patch).toHaveBeenCalledWith(
+      "packages:second",
+      expect.objectContaining({ softDeletedAt: 1_000, softDeletedReason: "user.banned" }),
+    );
+    expect(secondPage.patch).toHaveBeenCalledWith("packagePublishTokens:second", {
+      revokedAt: 1_000,
+    });
   });
 
   it("retimestamps earlier ban-hidden packages during a later ban", async () => {

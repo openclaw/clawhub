@@ -1646,6 +1646,7 @@ async function banUserWithActor(
       deletedBy: actor._id,
       deletedByRole: actor.role === "admin" ? "admin" : "moderator",
       cursor: undefined,
+      allowActiveOwnerBeforeCommit: true,
     },
   )) ?? {}) as { deletedCount?: number; revokedTokenCount?: number; scheduled?: boolean };
   const deletedPackageCount = banPackagesResult.deletedCount ?? 0;
@@ -2106,6 +2107,7 @@ export const autobanMalwareAuthorInternal = internalMutation({
         deletedBy: args.ownerUserId,
         deletedByRole: "user",
         cursor: undefined,
+        allowActiveOwnerBeforeCommit: true,
       },
     )) ?? {}) as { deletedCount?: number; revokedTokenCount?: number; scheduled?: boolean };
     const deletedPackageCount = banPackagesResult.deletedCount ?? 0;

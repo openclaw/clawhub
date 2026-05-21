@@ -2941,13 +2941,17 @@ export const applyBanToOwnedPackagesBatchInternal = internalMutation({
     deletedBy: v.id("users"),
     deletedByRole: v.union(v.literal("admin"), v.literal("moderator"), v.literal("user")),
     cursor: v.optional(v.string()),
+    allowActiveOwnerBeforeCommit: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const owner = await ctx.db.get(args.ownerUserId);
-    const isInitialPage = args.cursor === undefined;
     const ownerMatchesCurrentBan = owner?.deletedAt === args.bannedAt;
+    // Ban callers run this before users.deletedAt is visible; keep the allow flag
+    // through scheduled pages so multi-page batches do not stale-stop mid-ban.
     const ownerIsActiveBeforeBanCommit =
-      isInitialPage && owner?.deletedAt === undefined && !owner?.deactivatedAt;
+      args.allowActiveOwnerBeforeCommit === true &&
+      owner?.deletedAt === undefined &&
+      !owner?.deactivatedAt;
     if (
       !owner ||
       owner.deactivatedAt ||
