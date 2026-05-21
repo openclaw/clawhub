@@ -35,7 +35,7 @@
     "deadcode:files": "bunx knip@6.8.0 --config knip.config.ts --production --no-progress --reporter compact --files --no-config-hints",
     "deadcode:knip": "bun run deadcode:files && bun run deadcode:dependencies && bun run deadcode:exports",
     "dev": "bun --bun vite dev --port 3000",
-    "dev:worktree": "bun run setup:worktree -- --quiet && bun scripts/dev-worktree.ts",
+    "dev:worktree": "wt --yes dev",
     "docs:list": "bun scripts/docs-list.ts",
     "docs:run": "bun scripts/docs-run.ts",
     "eval:clawscan:security-signals": "bun scripts/eval/clawscan-security-signals.ts",
@@ -50,6 +50,7 @@
     "preview": "bun --bun vite preview",
     "proof:publish": "node scripts/ui-proof-publish.mjs",
     "proof:ui": "node scripts/ui-proof.mjs",
+    "release:clawhub:cli:changelog": "node scripts/extract-changelog-release.mjs",
     "release:clawhub:cli:npm:check": "node scripts/clawhub-cli-npm-release-check.mjs",
     "security:codex-worker": "bun scripts/security/run-codex-scan-worker.ts",
     "seed:dev": "bun run setup:worktree -- --quiet && bun scripts/dev-worktree.ts --seed-only",
@@ -73,6 +74,7 @@
     "@fontsource/bricolage-grotesque": "5.2.10",
     "@fontsource/ibm-plex-mono": "5.2.7",
     "@fontsource/manrope": "5.2.8",
+    "@fontsource/noto-sans-sc": "5.2.9",
     "@monaco-editor/react": "4.7.0",
     "@radix-ui/react-avatar": "1.1.11",
     "@radix-ui/react-dialog": "1.1.15",
@@ -143,6 +145,7 @@
   "overrides": {
     "dompurify": "3.4.1",
     "next": "16.2.6",
-    "postcss": "8.5.12"
+    "postcss": "8.5.12",
+    "ws": "8.20.1"
   }
 }

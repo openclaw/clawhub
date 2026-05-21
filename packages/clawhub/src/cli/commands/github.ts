@@ -46,10 +46,11 @@ type FetchedGitHubSource = {
 
 export async function resolveSourceInput(
   input: string,
-  options: { workdir: string },
+  options: { workdir: string; localWorkdirs?: string[] },
 ): Promise<ResolvedPublishSource> {
   const trimmed = input.trim();
   if (!trimmed) throw new Error("Path required");
+  const localWorkdirs = normalizeLocalWorkdirs(options.workdir, options.localWorkdirs);
 
   if (trimmed.startsWith("https://")) {
     return await parseGitHubUrl(trimmed);
@@ -57,15 +58,24 @@ export async function resolveSourceInput(
 
   const shorthand = parseGitHubShorthand(trimmed);
   if (shorthand) {
-    const localPath = resolveLocalPath(options.workdir, trimmed);
-    const localStat = await stat(localPath).catch(() => null);
-    if (localStat?.isDirectory()) {
-      return { kind: "local", path: localPath };
+    for (const workdir of localWorkdirs) {
+      const localPath = resolveLocalPath(workdir, trimmed);
+      const localStat = await stat(localPath).catch(() => null);
+      if (localStat?.isDirectory()) {
+        return { kind: "local", path: localPath };
+      }
     }
     return shorthand;
   }
 
-  return { kind: "local", path: resolveLocalPath(options.workdir, trimmed) };
+  for (const workdir of localWorkdirs) {
+    const localPath = resolveLocalPath(workdir, trimmed);
+    if (await stat(localPath).catch(() => null)) {
+      return { kind: "local", path: localPath };
+    }
+  }
+
+  return { kind: "local", path: resolveLocalPath(localWorkdirs[0] ?? options.workdir, trimmed) };
 }
 
 export async function fetchGitHubSource(
@@ -237,6 +247,11 @@ function resolveLocalPath(workdir: string, input: string) {
   if (input === "~") return homedir();
   if (input.startsWith("~/")) return resolve(homedir(), input.slice(2));
   return resolve(workdir, input);
+}
+
+function normalizeLocalWorkdirs(workdir: string, localWorkdirs?: string[]) {
+  const values = localWorkdirs?.length ? localWorkdirs : [workdir];
+  return Array.from(new Set(values.map((value) => resolve(value))));
 }
 
 function normalizePath(pathValue: string) {

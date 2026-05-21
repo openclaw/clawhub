@@ -29,8 +29,8 @@ Plugins:
 
 - Canonical page: `/plugins/@scope/name`
 - Encoded compatibility page: `/plugins/%40scope%2Fname`
-- Security page: `/plugins/@scope/name/security/<scanner>`
-- Encoded security compatibility page: `/plugins/%40scope%2Fname/security/<scanner>`
+- Security audit page: `/plugins/@scope/name/security-audit`
+- Encoded security compatibility page: `/plugins/%40scope%2Fname/security-audit`
 
 Publisher profiles:
 

@@ -1,12 +1,31 @@
 import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
+import type { MutationCtx } from "./_generated/server";
 import { action, internalMutation, internalQuery } from "./functions";
+import { assertModerator } from "./lib/access";
 
-const MAX_PARALLEL_CODEX_SCANS = 10;
+const MAX_PARALLEL_CODEX_SCANS = 20;
 const DEFAULT_VT_WAIT_MS = 10 * 60 * 1000;
-const DEFAULT_LEASE_MS = 30 * 60 * 1000;
+const DEFAULT_LEASE_MS = 60 * 60 * 1000;
 const MAX_ATTEMPTS = 3;
+const DEFAULT_CANCEL_SCAN_LIMIT = 1000;
+const DEFAULT_CANCEL_DELETE_LIMIT = 500;
+const MAX_CANCEL_SCAN_LIMIT = 5000;
+const CANCEL_SAMPLE_LIMIT = 20;
+
+const finalLlmAnalysisStatuses = new Set(["clean", "suspicious", "malicious"]);
+
+type CancelSkipReason =
+  | "not-queued"
+  | "not-vt-update"
+  | "not-queued-vt-update"
+  | "malicious-signal"
+  | "missing-target-id"
+  | "missing-target"
+  | "missing-llm-analysis"
+  | "non-final-llm-analysis"
+  | "delete-limit-reached";
 
 const jobSourceValidator = v.union(
   v.literal("publish"),
@@ -15,6 +34,13 @@ const jobSourceValidator = v.union(
   v.literal("backfill"),
   v.literal("manual"),
 );
+
+type EnqueueSkillVersionScanArgs = {
+  versionId: Id<"skillVersions">;
+  source: "publish" | "clawscan-note" | "vt-update" | "backfill" | "manual";
+  priority?: number;
+  waitForVtMs?: number;
+};
 
 const llmAgenticRiskEvidenceValidator = v.object({
   path: v.string(),
@@ -122,6 +148,25 @@ function normalizeLimit(limit: number | undefined) {
   );
 }
 
+function normalizeMaintenanceScanLimit(limit: number | undefined) {
+  const normalized = Number.isFinite(limit) ? Math.floor(limit ?? DEFAULT_CANCEL_SCAN_LIMIT) : null;
+  return Math.max(1, Math.min(normalized ?? DEFAULT_CANCEL_SCAN_LIMIT, MAX_CANCEL_SCAN_LIMIT));
+}
+
+function normalizeMaintenanceDeleteLimit(limit: number | undefined, scanLimit: number) {
+  const normalized = Number.isFinite(limit)
+    ? Math.floor(limit ?? DEFAULT_CANCEL_DELETE_LIMIT)
+    : null;
+  return Math.max(0, Math.min(normalized ?? DEFAULT_CANCEL_DELETE_LIMIT, scanLimit));
+}
+
+function incrementSkip(
+  skippedByReason: Partial<Record<CancelSkipReason, number>>,
+  reason: CancelSkipReason,
+) {
+  skippedByReason[reason] = (skippedByReason[reason] ?? 0) + 1;
+}
+
 function isOpenClawPluginPackage(
   pkg: Doc<"packages"> | null | undefined,
   ownerPublisher: Pick<Doc<"publishers">, "handle" | "deletedAt"> | null | undefined,
@@ -140,46 +185,117 @@ export const enqueueSkillVersionScanInternal = internalMutation({
     waitForVtMs: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const version = await ctx.db.get(args.versionId);
-    if (!version || version.softDeletedAt) return { ok: true as const, skipped: "missing" };
-    const now = Date.now();
-    const waitForVtUntil = now + Math.max(0, args.waitForVtMs ?? DEFAULT_VT_WAIT_MS);
-    const nextRunAt = args.waitForVtMs === 0 || version.vtAnalysis ? now : waitForVtUntil;
-    const hasMaliciousSignal = version.staticScan?.status === "malicious";
-
-    const existing = await ctx.db
-      .query("securityScanJobs")
-      .withIndex("by_skill_version", (q) => q.eq("skillVersionId", args.versionId))
-      .collect();
-    const active = existing.find((job) => job.status === "queued" || job.status === "running");
-    if (active) {
-      await ctx.db.patch(active._id, {
-        source: args.source,
-        priority: Math.max(active.priority, args.priority ?? 0),
-        hasMaliciousSignal: active.hasMaliciousSignal || hasMaliciousSignal,
-        waitForVtUntil: Math.min(active.waitForVtUntil, waitForVtUntil),
-        nextRunAt: Math.min(active.nextRunAt, nextRunAt),
-        updatedAt: now,
-      });
-      return { ok: true as const, jobId: active._id };
-    }
-
-    const jobId = await ctx.db.insert("securityScanJobs", {
-      targetKind: "skillVersion",
-      skillVersionId: args.versionId,
-      status: "queued",
-      source: args.source,
-      priority: args.priority ?? (hasMaliciousSignal ? 100 : 0),
-      hasMaliciousSignal,
-      waitForVtUntil,
-      nextRunAt,
-      attempts: 0,
-      createdAt: now,
-      updatedAt: now,
-    });
-    return { ok: true as const, jobId };
+    return enqueueSkillVersionScan(ctx, args);
   },
 });
+
+export const enqueueSkillRescanForModeratorInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    slug: v.string(),
+    version: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor) throw new ConvexError("Unauthorized");
+    assertModerator(actor);
+
+    const slug = args.slug.trim().toLowerCase();
+    if (!slug) throw new ConvexError("Slug required");
+    const skill = await ctx.db
+      .query("skills")
+      .withIndex("by_slug", (q) => q.eq("slug", slug))
+      .unique();
+    if (!skill || skill.softDeletedAt) throw new ConvexError("Skill not found");
+
+    const requestedVersion = args.version?.trim();
+    const version = requestedVersion
+      ? await ctx.db
+          .query("skillVersions")
+          .withIndex("by_skill_version", (q) =>
+            q.eq("skillId", skill._id).eq("version", requestedVersion),
+          )
+          .unique()
+      : skill.latestVersionId
+        ? await ctx.db.get(skill.latestVersionId)
+        : null;
+    if (!version || version.softDeletedAt) throw new ConvexError("Skill version not found");
+
+    const queued = await enqueueSkillVersionScan(ctx, {
+      versionId: version._id,
+      source: "manual",
+      priority: 100,
+      waitForVtMs: 0,
+    });
+    if (!queued.jobId) throw new ConvexError("Skill version not found");
+
+    await ctx.db.insert("auditLogs", {
+      actorUserId: actor._id,
+      action: "skill.clawscan.rescan",
+      targetType: "skillVersion",
+      targetId: version._id,
+      metadata: {
+        skillId: skill._id,
+        slug: skill.slug,
+        version: version.version,
+        jobId: queued.jobId,
+        alreadyQueued: queued.alreadyQueued === true,
+      },
+      createdAt: Date.now(),
+    });
+
+    return {
+      ok: true as const,
+      slug: skill.slug,
+      version: version.version,
+      skillId: skill._id,
+      skillVersionId: version._id,
+      jobId: queued.jobId,
+      alreadyQueued: queued.alreadyQueued === true,
+    };
+  },
+});
+
+async function enqueueSkillVersionScan(ctx: MutationCtx, args: EnqueueSkillVersionScanArgs) {
+  const version = await ctx.db.get(args.versionId);
+  if (!version || version.softDeletedAt) return { ok: true as const, skipped: "missing" as const };
+  const now = Date.now();
+  const waitForVtUntil = now + Math.max(0, args.waitForVtMs ?? DEFAULT_VT_WAIT_MS);
+  const nextRunAt = args.waitForVtMs === 0 || version.vtAnalysis ? now : waitForVtUntil;
+  const hasMaliciousSignal = version.staticScan?.status === "malicious";
+
+  const existing = await ctx.db
+    .query("securityScanJobs")
+    .withIndex("by_skill_version", (q) => q.eq("skillVersionId", args.versionId))
+    .collect();
+  const active = existing.find((job) => job.status === "queued" || job.status === "running");
+  if (active) {
+    await ctx.db.patch(active._id, {
+      source: args.source,
+      priority: Math.max(active.priority, args.priority ?? 0),
+      hasMaliciousSignal: active.hasMaliciousSignal || hasMaliciousSignal,
+      waitForVtUntil: Math.min(active.waitForVtUntil, waitForVtUntil),
+      nextRunAt: Math.min(active.nextRunAt, nextRunAt),
+      updatedAt: now,
+    });
+    return { ok: true as const, jobId: active._id, alreadyQueued: true as const };
+  }
+
+  const jobId = await ctx.db.insert("securityScanJobs", {
+    targetKind: "skillVersion",
+    skillVersionId: args.versionId,
+    status: "queued",
+    source: args.source,
+    priority: args.priority ?? (hasMaliciousSignal ? 100 : 0),
+    hasMaliciousSignal,
+    waitForVtUntil,
+    nextRunAt,
+    attempts: 0,
+    createdAt: now,
+    updatedAt: now,
+  });
+  return { ok: true as const, jobId, alreadyQueued: false as const };
+}
 
 export const enqueuePackageReleaseScanInternal = internalMutation({
   args: {
@@ -227,6 +343,102 @@ export const enqueuePackageReleaseScanInternal = internalMutation({
       updatedAt: now,
     });
     return { ok: true as const, jobId };
+  },
+});
+
+export const cancelQueuedVtUpdateJobsInternal = internalMutation({
+  args: {
+    dryRun: v.boolean(),
+    createdBefore: v.number(),
+    scanLimit: v.optional(v.number()),
+    deleteLimit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const scanLimit = normalizeMaintenanceScanLimit(args.scanLimit);
+    const deleteLimit = normalizeMaintenanceDeleteLimit(args.deleteLimit, scanLimit);
+    const jobs = await ctx.db
+      .query("securityScanJobs")
+      .withIndex("by_status_source_created_at", (q) =>
+        q.eq("status", "queued").eq("source", "vt-update").lt("createdAt", args.createdBefore),
+      )
+      .order("asc")
+      .take(scanLimit);
+
+    const skippedByReason: Partial<Record<CancelSkipReason, number>> = {};
+    const sampleMatchedJobIds: string[] = [];
+    const sampleDeletedJobIds: string[] = [];
+    let matched = 0;
+    let deleted = 0;
+
+    for (const job of jobs) {
+      if (job.status !== "queued") {
+        incrementSkip(
+          skippedByReason,
+          job.source === "vt-update" ? "not-queued-vt-update" : "not-queued",
+        );
+        continue;
+      }
+      if (job.source !== "vt-update") {
+        incrementSkip(skippedByReason, "not-vt-update");
+        continue;
+      }
+      if (job.hasMaliciousSignal) {
+        incrementSkip(skippedByReason, "malicious-signal");
+        continue;
+      }
+
+      const targetId =
+        job.targetKind === "skillVersion" ? job.skillVersionId : job.packageReleaseId;
+      if (!targetId) {
+        incrementSkip(skippedByReason, "missing-target-id");
+        continue;
+      }
+      const target = await ctx.db.get(targetId);
+      if (!target || target.softDeletedAt) {
+        incrementSkip(skippedByReason, "missing-target");
+        continue;
+      }
+      const rawLlmStatus = target.llmAnalysis?.status?.trim();
+      if (!rawLlmStatus) {
+        incrementSkip(skippedByReason, "missing-llm-analysis");
+        continue;
+      }
+      if (!finalLlmAnalysisStatuses.has(rawLlmStatus.toLowerCase())) {
+        incrementSkip(skippedByReason, "non-final-llm-analysis");
+        continue;
+      }
+
+      // Emergency cleanup: source may have been overwritten by a VT update, but this
+      // intentionally cancels old VT-origin work once ClawScan has a final result.
+      matched += 1;
+      if (sampleMatchedJobIds.length < CANCEL_SAMPLE_LIMIT) sampleMatchedJobIds.push(job._id);
+      if (matched > deleteLimit) {
+        incrementSkip(skippedByReason, "delete-limit-reached");
+        continue;
+      }
+      if (args.dryRun) continue;
+
+      await ctx.db.delete(job._id);
+      deleted += 1;
+      if (sampleDeletedJobIds.length < CANCEL_SAMPLE_LIMIT) sampleDeletedJobIds.push(job._id);
+    }
+
+    const oldestScannedJob = jobs[0];
+    const newestScannedJob = jobs.at(-1);
+    return {
+      dryRun: args.dryRun,
+      scanned: jobs.length,
+      matched,
+      wouldDelete: Math.min(matched, deleteLimit),
+      deleted,
+      skippedByReason,
+      oldestScannedCreatedAt: oldestScannedJob?.createdAt ?? null,
+      newestScannedCreatedAt: newestScannedJob?.createdAt ?? null,
+      oldestScannedNextRunAt: oldestScannedJob?.nextRunAt ?? null,
+      newestScannedNextRunAt: newestScannedJob?.nextRunAt ?? null,
+      sampleMatchedJobIds,
+      sampleDeletedJobIds,
+    };
   },
 });
 
@@ -389,6 +601,7 @@ export const claimCodexScanJobs = action({
     token: v.string(),
     workerId: v.string(),
     limit: v.optional(v.number()),
+    leaseMs: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     assertWorkerToken(args.token);
@@ -398,6 +611,7 @@ export const claimCodexScanJobs = action({
       {
         workerId: args.workerId,
         limit: normalizeLimit(args.limit),
+        leaseMs: args.leaseMs,
       },
     );
 

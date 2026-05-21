@@ -5,27 +5,50 @@ import { describe, expect, it } from "vitest";
 import { DetailSecuritySummary } from "./DetailSecuritySummary";
 
 describe("DetailSecuritySummary", () => {
-  it("shows scanner signals in the compact security audit row", () => {
-    render(<DetailSecuritySummary scannerBasePath="/steipete/weather/security" />);
+  it("shows the audit verdict and full audit link in the compact sidebar row", () => {
+    render(
+      <DetailSecuritySummary
+        auditHref="/steipete/weather/security-audit"
+        vtAnalysis={{ status: "clean", checkedAt: 1 }}
+        llmAnalysis={{
+          status: "clean",
+          summary: "ClawScan found the declared purpose aligned with the artifact.",
+          guidance: "Install from publishers you trust.",
+          checkedAt: 1,
+        }}
+        staticScan={{
+          status: "clean",
+          reasonCodes: [],
+          findings: [],
+          summary: "Clean.",
+          engineVersion: "v1",
+          checkedAt: 1,
+        }}
+      />,
+    );
 
-    expect(screen.getByRole("heading", { name: "Audits" })).toBeTruthy();
-    expect(screen.getAllByText("Pending")).toHaveLength(4);
-    expect(screen.getByRole("link", { name: "VirusTotal: Pending" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "ClawScan: Pending" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Static analysis: Pending" })).toBeTruthy();
-    expect(screen.queryByText("Pass")).toBeNull();
+    expect(screen.getByText("Pass")).toBeTruthy();
+    const auditLink = screen.getByRole("link", { name: "View Security Audit" });
+    expect(auditLink.getAttribute("href")).toBe("/steipete/weather/security-audit");
+    expect(auditLink.getAttribute("target")).toBeNull();
+    expect(auditLink.getAttribute("rel")).toBeNull();
     expect(
-      screen
-        .getAllByRole("link")
-        .filter((link) => link.className.includes("security-audit-signal"))
-        .map((link) => link.getAttribute("aria-label")),
-    ).toEqual(["ClawScan: Pending", "Static analysis: Pending", "VirusTotal: Pending"]);
+      screen.queryByText("ClawScan found the declared purpose aligned with the artifact."),
+    ).toBeNull();
+    expect(screen.queryByText("Install from publishers you trust.")).toBeNull();
+    expect(screen.queryByRole("link", { name: /VirusTotal/i })).toBeNull();
+    expect(
+      screen.queryByText(
+        "Security checks across static analysis, malware telemetry, and agentic risk",
+      ),
+    ).toBeNull();
+    expect(document.querySelectorAll(".security-audit-meter span")).toHaveLength(4);
   });
 
   it("shows staff-cleared public scan summaries as cleared", () => {
     render(
       <DetailSecuritySummary
-        scannerBasePath="/suka233/kmind-markdown-to-mindmap/security"
+        auditHref="/suka233/kmind-markdown-to-mindmap/security-audit"
         vtAnalysis={{ status: "suspicious", verdict: "suspicious", checkedAt: 1 }}
         llmAnalysis={{ status: "suspicious", verdict: "suspicious", checkedAt: 1 }}
         staticScan={{
@@ -46,26 +69,23 @@ describe("DetailSecuritySummary", () => {
           checkedAt: 1,
         }}
         suppressScanResults
-        suppressedMessage="Security findings on these releases were reviewed by staff and cleared for public use."
       />,
     );
 
-    expect(screen.getByText(/reviewed by staff and cleared/i)).toBeTruthy();
-    expect(screen.getByRole("link", { name: /VirusTotal.*Cleared/i })).toBeTruthy();
-    expect(screen.getByRole("link", { name: /ClawScan.*Cleared/i })).toBeTruthy();
-    expect(screen.getByRole("link", { name: /Static analysis.*Cleared/i })).toBeTruthy();
+    expect(screen.getByText("Cleared")).toBeTruthy();
     expect(screen.queryByText("Warn")).toBeNull();
   });
 
-  it("shows review and warn as separate audit states", () => {
+  it("rolls ClawScan review and warning states into the compact verdict", () => {
     const { rerender } = render(
       <DetailSecuritySummary
-        scannerBasePath="/steipete/weather/security"
+        auditHref="/steipete/weather/security-audit"
         vtAnalysis={{ status: "clean", checkedAt: 1 }}
         llmAnalysis={{
           status: "suspicious",
           verdict: "suspicious",
           checkedAt: 1,
+          summary: "Review the requested permission boundary.",
           agenticRiskFindings: [
             {
               categoryId: "ASI02",
@@ -95,17 +115,17 @@ describe("DetailSecuritySummary", () => {
       />,
     );
 
-    expect(screen.getByRole("link", { name: "ClawScan: Review" })).toBeTruthy();
     expect(screen.getAllByText("Review").length).toBeGreaterThan(0);
 
     rerender(
       <DetailSecuritySummary
-        scannerBasePath="/steipete/weather/security"
+        auditHref="/steipete/weather/security-audit"
         vtAnalysis={{ status: "clean", checkedAt: 1 }}
         llmAnalysis={{
           status: "suspicious",
           verdict: "suspicious",
           checkedAt: 1,
+          summary: "High concern capability mismatch.",
           agenticRiskFindings: [
             {
               categoryId: "ASI02",
@@ -135,7 +155,6 @@ describe("DetailSecuritySummary", () => {
       />,
     );
 
-    expect(screen.getByRole("link", { name: "ClawScan: Warn" })).toBeTruthy();
     expect(screen.getAllByText("Warn").length).toBeGreaterThan(0);
     expect(screen.queryByText("Suspicious")).toBeNull();
   });
@@ -143,9 +162,9 @@ describe("DetailSecuritySummary", () => {
   it("renders clean scanner outcomes as pass in the user-facing audit UI", () => {
     render(
       <DetailSecuritySummary
-        scannerBasePath="/steipete/weather/security"
+        auditHref="/steipete/weather/security-audit"
         vtAnalysis={{ status: "clean", checkedAt: 1 }}
-        llmAnalysis={{ status: "clean", checkedAt: 1 }}
+        llmAnalysis={{ status: "clean", summary: "No mismatches found.", checkedAt: 1 }}
         staticScan={{
           status: "clean",
           reasonCodes: [],
@@ -157,22 +176,47 @@ describe("DetailSecuritySummary", () => {
       />,
     );
 
-    expect(screen.getAllByText("Pass")).toHaveLength(4);
-    expect(screen.getByRole("link", { name: "VirusTotal: Pass" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "ClawScan: Pass" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Static analysis: Pass" })).toBeTruthy();
+    expect(screen.getByText("Pass")).toBeTruthy();
     expect(screen.queryByText("Benign")).toBeNull();
   });
 
-  it("renders VirusTotal AI-only advisory scans as pass", () => {
+  it("keeps legacy non-engine VirusTotal fields neutral in the aggregate verdict", () => {
     render(
       <DetailSecuritySummary
-        scannerBasePath="/tokauthai/skillscan/security"
+        auditHref="/tokauthai/skillscan/security-audit"
         vtAnalysis={{
           status: "suspicious",
-          source: "VirusTotal Code Insight",
-          scanner: "code_insight",
-          analysis: "AI-only advisory context.",
+          source: "legacy-ai",
+          scanner: "legacy-ai",
+          analysis: "Legacy AI advisory context.",
+          checkedAt: 1,
+        }}
+        llmAnalysis={{ status: "clean", summary: "No ClawScan issues.", checkedAt: 1 }}
+        staticScan={{
+          status: "clean",
+          reasonCodes: [],
+          findings: [],
+          summary: "Clean.",
+          engineVersion: "v1",
+          checkedAt: 1,
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Pass")).toBeTruthy();
+    expect(screen.queryByText("Advisory")).toBeNull();
+    expect(screen.queryByText("Warn")).toBeNull();
+  });
+
+  it("renders legacy VirusTotal AI fields without engine stats as neutral", () => {
+    render(
+      <DetailSecuritySummary
+        auditHref="/tokauthai/skillscan/security-audit"
+        vtAnalysis={{
+          status: "suspicious",
+          source: "legacy-ai",
+          scanner: "legacy-ai",
+          analysis: "Legacy AI advisory context.",
           checkedAt: 1,
         }}
         llmAnalysis={{ status: "clean", checkedAt: 1 }}
@@ -187,14 +231,42 @@ describe("DetailSecuritySummary", () => {
       />,
     );
 
-    expect(screen.getByRole("link", { name: "VirusTotal: Pass" })).toBeTruthy();
-    expect(screen.queryByText("Advisory")).toBeNull();
+    expect(screen.getByText("Pass")).toBeTruthy();
+    expect(screen.queryByText("Warn")).toBeNull();
+  });
+
+  it("renders VirusTotal undetected-only fallback as pass", () => {
+    render(
+      <DetailSecuritySummary
+        auditHref="/plugins/@opik/opik-openclaw/security-audit"
+        vtAnalysis={{
+          status: "clean",
+          verdict: "undetected-only-fallback",
+          analysis:
+            "VirusTotal reported no malicious or suspicious engine hits. ClawHub promoted this source-linked package after clean LLM and clean static scans.",
+          source: "engines-undetected-fallback",
+          checkedAt: 1,
+        }}
+        llmAnalysis={{ status: "clean", checkedAt: 1 }}
+        staticScan={{
+          status: "clean",
+          reasonCodes: [],
+          findings: [],
+          summary: "Clean.",
+          engineVersion: "v1",
+          checkedAt: 1,
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Pass")).toBeTruthy();
+    expect(screen.queryByText("undetected-only-fallback")).toBeNull();
   });
 
   it("shows static suspicious as review without rolling it up to suspicious", () => {
     render(
       <DetailSecuritySummary
-        scannerBasePath="/steipete/weather/security"
+        auditHref="/steipete/weather/security-audit"
         vtAnalysis={{ status: "clean", checkedAt: 1 }}
         llmAnalysis={{ status: "clean", checkedAt: 1 }}
         staticScan={{
@@ -208,17 +280,16 @@ describe("DetailSecuritySummary", () => {
       />,
     );
 
-    expect(screen.getByRole("link", { name: "Static analysis: Review" })).toBeTruthy();
-    expect(screen.getAllByText("Pass")).toHaveLength(3);
+    expect(screen.getByText("Review")).toBeTruthy();
     expect(screen.queryByText("Warn")).toBeNull();
   });
 
   it("does not aggregate scanner operational errors as malicious verdicts", () => {
     render(
       <DetailSecuritySummary
-        scannerBasePath="/steipete/weather/security"
+        auditHref="/steipete/weather/security-audit"
         vtAnalysis={{ status: "failed", checkedAt: 1 }}
-        llmAnalysis={{ status: "clean", checkedAt: 1 }}
+        llmAnalysis={{ status: "clean", summary: "No ClawScan issues.", checkedAt: 1 }}
         staticScan={{
           status: "clean",
           reasonCodes: [],
@@ -230,8 +301,7 @@ describe("DetailSecuritySummary", () => {
       />,
     );
 
-    expect(screen.getAllByText("Error")).toHaveLength(2);
-    expect(screen.getByRole("link", { name: "VirusTotal: Error" })).toBeTruthy();
+    expect(screen.getByText("Error")).toBeTruthy();
     expect(screen.queryByText("Malicious")).toBeNull();
   });
 });

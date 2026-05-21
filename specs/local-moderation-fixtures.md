@@ -41,7 +41,7 @@ The scanned fixtures should cover:
 
 - artifact detail pages
 - scan summary strips
-- ClawScan report pages
+- security audit pages
 - publisher note display
 - mobile and desktop security layout
 - report/moderation state previews
@@ -52,9 +52,9 @@ After running `bun run dev` and `bunx convex dev`, use:
 
 ```text
 http://localhost:3000/local/local-agentic-risk-demo
-http://localhost:3000/local/local-agentic-risk-demo/security/clawscan
+http://localhost:3000/local/local-agentic-risk-demo/security-audit
 http://localhost:3000/plugins/local-scanned-runtime-plugin
-http://localhost:3000/plugins/local-scanned-runtime-plugin/security/clawscan
+http://localhost:3000/plugins/local-scanned-runtime-plugin/security-audit
 ```
 
 The fixture pages should avoid appeal language. Publisher notes are untrusted publisher-provided context, not appeals, staff responses, or moderation decisions.

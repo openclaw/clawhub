@@ -10,7 +10,6 @@ const useAuthStatusMock = vi.fn();
 let paramsMock = {
   owner: "local",
   slug: "local-agentic-risk-demo",
-  scanner: "static-analysis",
 };
 let loaderDataMock: {
   owner: string;
@@ -51,14 +50,14 @@ vi.mock("../lib/skillPage", () => ({
 }));
 
 async function loadRoute() {
-  return (await import("../routes/$owner/$slug/security/$scanner")).Route as unknown as {
+  return (await import("../routes/$owner/$slug/security-audit")).Route as unknown as {
     __config: {
       component?: ComponentType;
     };
   };
 }
 
-describe("skill security scanner route", () => {
+describe("skill security audit route", () => {
   beforeEach(() => {
     useQueryMock.mockReset();
     useQueryMock.mockReturnValue(undefined);
@@ -66,7 +65,6 @@ describe("skill security scanner route", () => {
     paramsMock = {
       owner: "local",
       slug: "local-agentic-risk-demo",
-      scanner: "static-analysis",
     };
     loaderDataMock = {
       owner: "local",
@@ -77,24 +75,15 @@ describe("skill security scanner route", () => {
     };
   });
 
-  it.each(["static-analysis", "clawscan", "virustotal"] as const)(
-    "renders a skeleton while %s security details are loading",
-    async (scanner) => {
-      paramsMock = {
-        owner: "local",
-        slug: "local-agentic-risk-demo",
-        scanner,
-      };
+  it("renders a skeleton while security audit details are loading", async () => {
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
 
-      const route = await loadRoute();
-      const Component = route.__config.component as ComponentType;
+    render(<Component />);
 
-      render(<Component />);
-
-      expect(screen.queryByText("Loading security details...")).toBeNull();
-      const loadingRegion = screen.getByRole("status", { name: "Loading security details" });
-      expect(loadingRegion.getAttribute("aria-busy")).toBe("true");
-      expect(document.querySelector(".security-scanner-skeleton")).toBeTruthy();
-    },
-  );
+    expect(screen.queryByText("Loading security audit...")).toBeNull();
+    const loadingRegion = screen.getByRole("status", { name: "Loading security audit" });
+    expect(loadingRegion.getAttribute("aria-busy")).toBe("true");
+    expect(document.querySelector(".security-scanner-skeleton")).toBeTruthy();
+  });
 });

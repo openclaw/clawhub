@@ -590,7 +590,7 @@ describe("skills manual overrides", () => {
     );
   });
 
-  it("clears legacy suspicious state when LLM corroborates clean VT Code Insight-only suspicious", async () => {
+  it("clears legacy suspicious state when LLM corroborates clean VT telemetry", async () => {
     const now = 1_700_000_400_000;
     vi.spyOn(Date, "now").mockReturnValue(now);
 
@@ -617,7 +617,7 @@ describe("skills manual overrides", () => {
       },
       vtAnalysis: {
         status: "suspicious",
-        scanner: "code_insight",
+        scanner: "legacy-ai",
         engineStats: {
           malicious: 0,
           suspicious: 0,

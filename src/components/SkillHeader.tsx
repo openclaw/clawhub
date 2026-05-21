@@ -5,11 +5,13 @@ import { Download, Flag, Settings, ShieldCheck, Star, Upload } from "lucide-reac
 import type { ReactNode } from "react";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { getSkillBadges } from "../lib/badges";
+import { buildSkillCategoryBrowseHref, type SkillCategory } from "../lib/categories";
 import { formatSkillStatsTriplet } from "../lib/numberFormat";
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
 import { getRuntimeEnv } from "../lib/runtimeEnv";
 import { timeAgo } from "../lib/timeAgo";
 import { DetailHero } from "./DetailPageShell";
+import { DetailSecuritySummaryLabel } from "./DetailSecuritySummary";
 import { SidebarMetadata } from "./SidebarMetadata";
 import { buildSkillHref } from "./skillDetailUtils";
 import { SkillCommandLineCard } from "./SkillInstallSurface";
@@ -87,7 +89,10 @@ type SkillHeaderProps = {
   configRequirements: ClawdisSkillMetadata["config"] | undefined;
   cliHelp: string | undefined;
   clawdis: ClawdisSkillMetadata | undefined;
+  category?: SkillCategory | null;
   priorityContent?: ReactNode;
+  postInstallContent?: ReactNode;
+  securityAuditSummary?: ReactNode;
   newVersionHref?: string | null;
   settingsHref?: string | null;
   children?: ReactNode;
@@ -118,7 +123,10 @@ export function SkillHeader({
   configRequirements,
   cliHelp,
   clawdis,
+  category,
   priorityContent,
+  postInstallContent,
+  securityAuditSummary,
   newVersionHref,
   settingsHref,
   children,
@@ -183,6 +191,7 @@ export function SkillHeader({
               ownerHandle={ownerHandle}
               formattedStats={formattedStats}
               latestVersion={latestVersion}
+              securityAuditSummary={securityAuditSummary}
             />
             {hasSidebarActions ? (
               <div className="skill-sidebar-actions">
@@ -277,22 +286,33 @@ export function SkillHeader({
                   {skill.slug}
                 </a>
               </nav>
-              <div className="skill-hero-title-row">
-                <h1 className="skill-page-title">{skill.displayName}</h1>
-                {showTitleBadges ? (
-                  <div className="skill-title-badges">
-                    {badges.map((badge) =>
-                      badge === "Verified" ? (
-                        <VerifiedBadge key={badge} />
-                      ) : (
-                        <Badge key={badge} variant="compact">
-                          {badge}
-                        </Badge>
-                      ),
-                    )}
-                  </div>
+              <div className="skill-hero-heading-stack">
+                <div className="skill-hero-title-row">
+                  <h1 className="skill-page-title">{skill.displayName}</h1>
+                  {showTitleBadges ? (
+                    <div className="skill-title-badges">
+                      {badges.map((badge) =>
+                        badge === "Verified" ? (
+                          <VerifiedBadge key={badge} />
+                        ) : (
+                          <Badge key={badge} variant="compact">
+                            {badge}
+                          </Badge>
+                        ),
+                      )}
+                    </div>
+                  ) : null}
+                  {nixPlugin ? <Badge variant="accent">Plugin bundle (nix)</Badge> : null}
+                </div>
+                {category ? (
+                  <a
+                    className="skill-category-chip"
+                    href={buildSkillCategoryBrowseHref(category)}
+                    aria-label={`View ${category.label} skills`}
+                  >
+                    {category.label}
+                  </a>
                 ) : null}
-                {nixPlugin ? <Badge variant="accent">Plugin bundle (nix)</Badge> : null}
               </div>
               <div className="skill-summary-block">
                 <p className="section-subtitle skill-summary-line">{headerDescription}</p>
@@ -345,6 +365,8 @@ export function SkillHeader({
           ownerId={installOwnerId}
           clawdis={clawdis}
         />
+
+        {postInstallContent}
 
         {children}
 
@@ -418,15 +440,15 @@ function SkillSidebarStats({
   ownerHandle,
   formattedStats,
   latestVersion,
+  securityAuditSummary,
 }: {
   skill: Doc<"skills"> | PublicSkill;
   owner: PublicPublisher | null;
   ownerHandle: string | null;
   formattedStats: ReturnType<typeof formatSkillStatsTriplet>;
   latestVersion: SkillHeaderLatestVersion;
+  securityAuditSummary?: ReactNode;
 }) {
-  const versionCount = skill.stats.versions ?? 0;
-
   return (
     <SidebarMetadata
       ariaLabel="Skill metadata"
@@ -447,19 +469,23 @@ function SkillSidebarStats({
             />
           ),
         },
+        securityAuditSummary
+          ? {
+              key: "security-audit",
+              label: <DetailSecuritySummaryLabel />,
+              value: securityAuditSummary,
+            }
+          : { label: "", value: null },
+        { label: "Last updated", value: timeAgo(skill.updatedAt) },
         {
           grid: [
             {
               label: "Current version",
               value: latestVersion?.version ? `v${latestVersion.version}` : "None",
             },
-            { label: "Versions", value: versionCount },
+            { label: "License", value: PLATFORM_SKILL_LICENSE },
           ],
         },
-        {
-          grid: [{ label: "License", value: PLATFORM_SKILL_LICENSE }],
-        },
-        { label: "Last updated", value: timeAgo(skill.updatedAt) },
       ]}
     />
   );

@@ -104,14 +104,15 @@ describe("soul og route", () => {
     });
 
     const handler = (await import("./soul.png")).default;
-    await expect(handler({} as never)).resolves.toEqual(new Uint8Array([4, 5, 6]));
+    const response = (await handler({} as never)) as Response;
+    await expect(response.arrayBuffer()).resolves.toEqual(new Uint8Array([4, 5, 6]).buffer);
 
     expect(fetchSoulOgMetaMock).toHaveBeenCalledWith(
       "lorekeeper",
       "https://souls-preview.example.com",
     );
-    expect(setHeaderMock).toHaveBeenCalledWith({}, "Cache-Control", "public, max-age=3600");
-    expect(setHeaderMock).toHaveBeenCalledWith({}, "Content-Type", "image/png");
+    expect(response.headers.get("Cache-Control")).toBe("public, max-age=3600");
+    expect(response.headers.get("Content-Type")).toBe("image/png");
     expect(buildSoulOgSvgMock).toHaveBeenCalledWith({
       markDataUrl: "data:image/png;base64,AAA=",
       title: "Lorekeeper",
@@ -133,14 +134,10 @@ describe("soul og route", () => {
     });
 
     const handler = (await import("./soul.png")).default;
-    await handler({} as never);
+    const response = (await handler({} as never)) as Response;
 
     expect(fetchSoulOgMetaMock).not.toHaveBeenCalled();
-    expect(setHeaderMock).toHaveBeenCalledWith(
-      {},
-      "Cache-Control",
-      "public, max-age=31536000, immutable",
-    );
+    expect(response.headers.get("Cache-Control")).toBe("public, max-age=31536000, immutable");
     expect(buildSoulOgSvgMock).toHaveBeenCalledWith(
       expect.objectContaining({
         ownerLabel: "@steipete",

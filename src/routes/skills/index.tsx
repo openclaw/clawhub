@@ -1,7 +1,7 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
 import { Search } from "lucide-react";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import { BrowseSidebar } from "../../components/BrowseSidebar";
 import { SKILL_CATEGORIES } from "../../lib/categories";
@@ -23,6 +23,12 @@ const SORT_OPTIONS = [
   { value: "name", label: "Name" },
 ];
 
+const SKILL_CATEGORY_SLUGS = new Set(SKILL_CATEGORIES.map((category) => category.slug));
+
+function parseSkillCategorySlug(value: unknown) {
+  return typeof value === "string" && SKILL_CATEGORY_SLUGS.has(value) ? value : undefined;
+}
+
 export const Route = createFileRoute("/skills/")({
   validateSearch: (search): SkillsSearchState => {
     return {
@@ -37,19 +43,21 @@ export const Route = createFileRoute("/skills/")({
         search.featured === "1" || search.featured === "true" || search.featured === true
           ? true
           : undefined,
+      category: parseSkillCategorySlug(search.category),
       view: normalizeSkillsView(search.view),
       focus: search.focus === "search" ? "search" : undefined,
     };
   },
   beforeLoad: ({ search }) => {
     const hasQuery = Boolean(search.q?.trim());
-    if (hasQuery || search.sort || search.featured || search.highlighted) {
+    if (hasQuery || search.category || search.sort || search.featured || search.highlighted) {
       return;
     }
     throw redirect({
       to: "/skills",
       search: {
         q: search.q || undefined,
+        category: search.category || undefined,
         sort: "downloads",
         dir: search.dir || undefined,
         highlighted: search.highlighted || undefined,
@@ -109,31 +117,24 @@ export function SkillsIndex() {
   );
 
   const handleClear = useCallback(() => {
-    model.onQueryChange("");
-    if (model.featuredOnly) model.onToggleFeatured();
-  }, [model.featuredOnly, model.onQueryChange, model.onToggleFeatured]);
+    model.onClearFilters();
+  }, [model.onClearFilters]);
 
   const handleCategoryChange = useCallback(
     (slug: string | undefined) => {
-      if (slug) {
-        const cat = SKILL_CATEGORIES.find((c) => c.slug === slug);
-        if (cat?.keywords[0]) {
-          model.onQueryChange(cat.keywords[0]);
-        }
-      } else {
-        model.onQueryChange("");
-      }
+      const category = parseSkillCategorySlug(slug);
+      void navigate({
+        search: (prev: SkillsSearchState) => ({
+          ...prev,
+          category,
+          featured: undefined,
+          highlighted: undefined,
+        }),
+        replace: true,
+      });
     },
-    [model.onQueryChange],
+    [navigate],
   );
-
-  const activeCategory = useMemo(() => {
-    if (!model.query) return undefined;
-    return (
-      SKILL_CATEGORIES.find((c) => c.keywords.some((k) => k === model.query.trim().toLowerCase()))
-        ?.slug ?? undefined
-    );
-  }, [model.query]);
 
   return (
     <main className="browse-page">
@@ -164,7 +165,7 @@ export function SkillsIndex() {
       <div className={`browse-layout${sidebarOpen ? " sidebar-open" : ""}`}>
         <BrowseSidebar
           categories={SKILL_CATEGORIES}
-          activeCategory={activeCategory}
+          activeCategory={model.activeCategory}
           onCategoryChange={handleCategoryChange}
           sortOptions={[{ value: "featured", label: "Featured" }, ...sortOptionsWithRelevance]}
           activeSort={model.featuredOnly ? "featured" : model.sort}
@@ -174,7 +175,7 @@ export function SkillsIndex() {
           <div className="browse-results-toolbar">
             <span className="browse-results-count">
               {model.isLoadingSkills ? "\u2014" : `${model.sorted.length} results`}
-              {model.hasQuery || model.featuredOnly ? (
+              {model.hasQuery || model.activeCategory || model.featuredOnly ? (
                 <button className="browse-clear-btn" type="button" onClick={handleClear}>
                   Clear
                 </button>

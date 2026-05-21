@@ -362,30 +362,32 @@ describe("plugin detail route", () => {
 
     render(<Component />);
 
-    expect(screen.getByRole("heading", { name: "Audits" })).toBeTruthy();
-    expect(screen.getAllByText("VirusTotal").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("ClawScan").length).toBeGreaterThan(0);
-    expect(screen.getByRole("link", { name: /VirusTotal.*Pass/i }).getAttribute("href")).toBe(
-      "/plugins/demo-plugin/security/virustotal",
+    expect(screen.getByText("Security audit")).toBeTruthy();
+    expect(screen.getByText("Pass")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "View Security Audit" }).getAttribute("href")).toBe(
+      "/plugins/demo-plugin/security-audit",
     );
-    expect(screen.getByRole("link", { name: /Static analysis.*Pass/i }).getAttribute("href")).toBe(
-      "/plugins/demo-plugin/security/static-analysis",
-    );
+    expect(
+      screen.getByRole("button", {
+        name: "Security checks across static analysis, malware telemetry, and agentic risk",
+      }),
+    ).toBeTruthy();
+    expect(screen.queryByText("Looks safe.")).toBeNull();
 
-    const securityHeading = screen.getByRole("heading", { name: "Audits" });
-    const installHeading = screen.getByRole("heading", { name: "Install" });
+    const sidebarMetadata = document.querySelector('dl[aria-label="Plugin metadata"]');
+    expect(sidebarMetadata).toBeTruthy();
+    const sidebarLabels = Array.from(
+      sidebarMetadata?.querySelectorAll(".sidebar-metadata-label") ?? [],
+      (label) => label.textContent?.trim(),
+    );
     const capabilitiesTab = screen.getByRole("tab", { name: "Capabilities" });
-    expect(
-      securityHeading.compareDocumentPosition(capabilitiesTab) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-    expect(
-      securityHeading.compareDocumentPosition(installHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+    const securityAuditLabelIndex = sidebarLabels.findIndex((label) =>
+      label?.startsWith("Security audit"),
+    );
+    expect(securityAuditLabelIndex).toBeGreaterThanOrEqual(0);
+    expect(securityAuditLabelIndex).toBe(sidebarLabels.indexOf("Owner") + 1);
     fireEvent.click(capabilitiesTab);
     expect(screen.getByText("Tags")).toBeTruthy();
-    expect(
-      installHeading.compareDocumentPosition(capabilitiesTab) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
   });
 
   it("does not render owner-only plugin scanner rerun state in the detail security summary", async () => {

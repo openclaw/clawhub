@@ -21,12 +21,8 @@ export function buildPluginDetailHref(name: string) {
   )}`;
 }
 
-export function buildPluginSecurityBaseHref(name: string) {
-  return `${buildPluginDetailHref(name)}/security`;
-}
-
-export function buildPluginSecurityHref(name: string, scanner: string) {
-  return `${buildPluginSecurityBaseHref(name)}/${encodeURIComponent(scanner)}`;
+export function buildPluginSecurityAuditHref(name: string) {
+  return `${buildPluginDetailHref(name)}/security-audit`;
 }
 
 export function packageNameFromScopedRoute(scope: string, name: string) {

@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { getUserFacingAuthError } from "../lib/authErrorMessage";
+import { getSkillCategoryForSkill } from "../lib/categories";
 import { getUserFacingConvexError } from "../lib/convexError";
 import { canManageSkill, isModerator } from "../lib/roles";
 import type { SkillBySlugResult, SkillPageInitialData } from "../lib/skillPage";
@@ -29,6 +30,7 @@ import {
 import { SkillHeader } from "./SkillHeader";
 import { buildSkillInstallTabs } from "./SkillInstallCard";
 import { SkillOwnershipPanel } from "./SkillOwnershipPanel";
+import { SkillRelatedSection, type RelatedSkillEntry } from "./SkillRelatedSection";
 import { SkillReportDialog } from "./SkillReportDialog";
 import { Alert, AlertDescription } from "./ui/alert";
 import { Card } from "./ui/card";
@@ -208,6 +210,21 @@ export function SkillDetailPage({
   const skill = result?.skill;
   const owner = result?.owner ?? null;
   const latestVersion = result?.latestVersion ?? null;
+  const relatedCategory = useMemo(() => (skill ? getSkillCategoryForSkill(skill) : null), [skill]);
+  const shouldLoadRelatedSkills = Boolean(
+    skill && relatedCategory && relatedCategory.keywords.length > 0,
+  );
+  const relatedSkillsResult = useQuery(
+    api.skills.listRelatedByCategory,
+    shouldLoadRelatedSkills && skill && relatedCategory
+      ? {
+          skillId: skill._id,
+          categorySlug: relatedCategory.slug,
+          keywords: relatedCategory.keywords,
+          limit: 5,
+        }
+      : "skip",
+  ) as { items: RelatedSkillEntry[] } | undefined;
 
   const versions = useQuery(
     api.skills.listVersions,
@@ -577,29 +594,21 @@ export function SkillDetailPage({
 
   const securitySummary = latestVersion ? (
     <DetailSecuritySummary
-      scannerBasePath={`/${encodeURIComponent(
-        ownerParam ?? ownerHandle ?? "unknown",
-      )}/${encodeURIComponent(skill.slug)}/security`}
-      sha256hash={latestVersion.sha256hash ?? null}
+      auditHref={`/${encodeURIComponent(ownerParam ?? ownerHandle ?? "unknown")}/${encodeURIComponent(
+        skill.slug,
+      )}/security-audit`}
       vtAnalysis={latestVersion.vtAnalysis ?? null}
       llmAnalysis={latestVersion.llmAnalysis ?? null}
       staticScan={latestVersion.staticScan ?? null}
       suppressScanResults={suppressVersionScanResults}
-      suppressedMessage={scanResultsSuppressedMessage}
     />
   ) : null;
-  const priorityContent =
-    staffModerationNote || securitySummary ? (
-      <>
-        {staffModerationNote ? (
-          <Alert variant="warn" className="skill-visibility-alert" role="status">
-            <TriangleAlert size={18} aria-hidden="true" />
-            <AlertDescription>{staffModerationNote}</AlertDescription>
-          </Alert>
-        ) : null}
-        {securitySummary}
-      </>
-    ) : null;
+  const staffVisibilityAlert = staffModerationNote ? (
+    <Alert variant="warn" className="skill-visibility-alert" role="status">
+      <TriangleAlert size={18} aria-hidden="true" />
+      <AlertDescription>{staffModerationNote}</AlertDescription>
+    </Alert>
+  ) : null;
   const settingsPanel =
     canAccessSettings && skill ? (
       <SkillOwnershipPanel
@@ -679,7 +688,9 @@ export function SkillDetailPage({
           configRequirements={configRequirements}
           cliHelp={cliHelp}
           clawdis={clawdis}
-          priorityContent={priorityContent}
+          category={relatedCategory}
+          priorityContent={staffVisibilityAlert}
+          securityAuditSummary={securitySummary}
           newVersionHref={newVersionHref}
           settingsHref={settingsHref}
         >
@@ -731,6 +742,12 @@ export function SkillDetailPage({
               />
             </ClientOnly>
           ) : null}
+
+          <SkillRelatedSection
+            category={relatedCategory}
+            relatedSkills={relatedSkillsResult?.items ?? []}
+            isLoading={shouldLoadRelatedSkills && relatedSkillsResult === undefined}
+          />
         </SkillHeader>
       </DetailPageShell>
 

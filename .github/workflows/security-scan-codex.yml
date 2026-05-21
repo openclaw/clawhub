@@ -4,9 +4,21 @@ on:
   workflow_dispatch:
     inputs:
       limit:
-        description: "Maximum Codex scans to claim"
+        description: "Deprecated alias for batch-limit"
+        required: false
+        default: ""
+      batch-limit:
+        description: "Maximum Codex scans to run in parallel per batch"
         required: true
-        default: "10"
+        default: "20"
+      max-jobs:
+        description: "Optional total jobs cap for this run"
+        required: false
+        default: ""
+      max-runtime-minutes:
+        description: "Stop claiming new batches after this many minutes"
+        required: true
+        default: "40"
   schedule:
     - cron: "*/10 * * * *"
 
@@ -20,13 +32,16 @@ permissions:
 jobs:
   codex-security-scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     environment: Production
     env:
       CONVEX_URL: ${{ vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud' }}
       SECURITY_SCAN_WORKER_TOKEN: ${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      CODEX_SECURITY_SCAN_LIMIT: ${{ inputs.limit || '10' }}
+      CODEX_SECURITY_SCAN_LIMIT: ${{ inputs.limit || inputs['batch-limit'] || '20' }}
+      CODEX_SECURITY_SCAN_MAX_JOBS: ${{ inputs['max-jobs'] || '' }}
+      CODEX_SECURITY_SCAN_MAX_RUNTIME_MINUTES: ${{ inputs['max-runtime-minutes'] || '40' }}
+      CODEX_SECURITY_SCAN_LEASE_MINUTES: "60"
     steps:
       - uses: actions/checkout@v6
 
@@ -56,4 +71,9 @@ jobs:
         run: printf '%s' "$OPENAI_API_KEY" | codex login --with-api-key
 
       - name: Run Codex security worker
-        run: bun scripts/security/run-codex-scan-worker.ts --limit "$CODEX_SECURITY_SCAN_LIMIT"
+        run: |
+          bun scripts/security/run-codex-scan-worker.ts \
+            --batch-limit "$CODEX_SECURITY_SCAN_LIMIT" \
+            --max-jobs "$CODEX_SECURITY_SCAN_MAX_JOBS" \
+            --max-runtime-minutes "$CODEX_SECURITY_SCAN_MAX_RUNTIME_MINUTES" \
+            --lease-minutes "$CODEX_SECURITY_SCAN_LEASE_MINUTES"

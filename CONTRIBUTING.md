@@ -12,6 +12,7 @@ Welcome! ClawHub is the public skill registry for [OpenClaw](https://github.com/
 
 - [Bun](https://bun.sh/) (Convex CLI runs via `bunx`, no global install needed)
 - [Node.js](https://nodejs.org/) v18, 20, 22, or 24 (required by the local Convex backend; v25+ is not yet supported)
+- [Worktrunk](https://github.com/max-sixty/worktrunk) (`wt`) for `bun run dev:worktree` and disposable/Codex worktrees. On macOS, `brew install worktrunk` is the quickest path; shell integration is optional.
 
 ### Install and configure
 
@@ -80,16 +81,49 @@ bun run dev -- --port 3000
 
 Change the port if 3000 is already in use, and update `SITE_URL` in both `.env.local` and the Convex backend (`bunx convex env set SITE_URL ...`) to match.
 
+### Worktree/Codex fast path
+
+Use this path for disposable branches, Codex sessions, or parallel worktrees after one source worktree already has a working `.env.local` and `.convex` local Convex setup:
+
+```bash
+bun run setup:worktree
+bun run dev:worktree
+wt --yes url
+wt --yes stop
+```
+
+`setup:worktree` finds a usable source worktree and symlinks `.env.local` plus `.convex` into the current checkout. If discovery picks the wrong source, pass one explicitly:
+
+```bash
+bun run setup:worktree -- --from /path/to/source/worktree
+CLAWHUB_WORKTREE_SOURCE=/path/to/source/worktree bun run setup:worktree
+```
+
+`dev:worktree` is the Worktrunk entrypoint. It runs the hooks in `.config/wt.toml`, copies ignored dependencies listed in `.worktreeinclude` when possible, falls back to `bun install` if Vite is missing, and starts detached services on a branch-hashed loopback port. Use `wt --yes url` from the same worktree to print the URL.
+
+The detached server writes runtime state under `.codex/runtime/`. Stop it with `wt --yes stop` before removing the worktree.
+
 ### Seed the database
 
 Populate local QA fixtures and the committed public corpus so the UI isn't empty:
 
 ```bash
-# local moderation/security fixtures
+bun run seed:dev
+```
+
+`seed:dev` runs worktree setup, starts or waits for local Convex, seeds the hand-authored local QA fixtures, imports the committed public corpus, and refreshes cached global stats. It is safe to rerun after fixture or schema changes.
+
+Lower-level seed commands are available for manual recovery or focused fixture work:
+
+```bash
+# local moderation/security fixtures only
 bunx convex run --no-push devSeed:seedLocalFixtures
 
-# real-ish public corpus rows under deterministic dummy accounts
+# committed public corpus only
 bun run seed:public-corpus
+
+# validate the committed public corpus fixture
+bun run validate:public-corpus
 
 # 50 extra skills for pagination testing (optional)
 bunx convex run --no-push devSeedExtra:seedExtraSkillsInternal
@@ -103,7 +137,21 @@ To reset and re-seed:
 ```bash
 bunx convex run --no-push devSeed:seedLocalFixtures '{"reset": true}'
 bun run seed:public-corpus -- --reset
+bunx convex run --no-push statsMaintenance:updateGlobalStatsAction
 ```
+
+Without `OPENAI_API_KEY`, public corpus import still works, but semantic search quality degrades because embeddings fall back to zero vectors.
+
+### Worktree troubleshooting
+
+- `wt: command not found`: install Worktrunk, then rerun `bun run dev:worktree`. Manual `bun run dev` plus `bunx convex dev --typecheck=disable` still works without Worktrunk.
+- Missing `.env.local` or `.convex`: run `bun run setup:worktree -- --from /path/to/source/worktree`. The source must contain `.env.local` and, for local Convex deployments, `.convex/local/default/config.json`.
+- Wrong local Convex deployment: make sure `CONVEX_DEPLOYMENT` in `.env.local` matches the local Convex deployment in `.convex/local/default/config.json` when using a `local:` deployment.
+- Port mismatch: local Convex normally serves cloud functions at `http://127.0.0.1:3210` and HTTP routes/auth callbacks at `http://127.0.0.1:3211`. Keep `VITE_CONVEX_URL`, `VITE_CONVEX_SITE_URL`, and `CONVEX_SITE_URL` aligned with the local config.
+- `wt step copy-ignored` reports that `.convex` cannot be copied: this can happen when `.convex` is a symlink to the source worktree. The Worktrunk hook continues; confirm `.env.local`, `.convex`, and `node_modules/.bin/vite` exist before debugging deeper.
+- Local Convex functions are not queryable yet during seeding: leave `bunx convex dev --typecheck=disable` running or rerun `bun run seed:dev`; the seed runner retries while Convex finishes pushing functions.
+- Local seeding hits a transient Convex write conflict: `seed:public-corpus` retries retryable batch conflicts. If retries are exhausted, stop other local writers and rerun `bun run seed:dev`.
+- Stale detached services: run `wt --yes stop`, then inspect `.codex/runtime/dev-worktree.log` if the server still does not restart cleanly.
 
 ### Optional environment variables
 
@@ -153,16 +201,16 @@ clawhub publish <path-to-skill-directory>
 
 ## Before Submitting a PR
 
-```bash
-bun run format:check # oxfmt
-bun run lint       # oxlint
-bun run deadcode:ci # Knip files/deps/exports
-bun run test       # Vitest (80% coverage threshold)
-bun run build      # Vite + Nitro
-bun run --cwd packages/clawhub verify
-```
+Run the narrowest meaningful check while iterating, then run the matching CI aliases before handoff:
 
-These are the same checks that run in CI (`.github/workflows/ci.yml`).
+- All PRs: `bun run ci:static`.
+- Source or test changes: focused tests for the touched behavior plus `bun run ci:unit` unless the change is docs/config-only or a maintainer asks to rely on CI.
+- App runtime, Convex, or build changes: `bun run ci:types-build`.
+- Package changes: `bun run ci:packages`.
+- HTTP/API/CLI integration changes: `bun run ci:e2e-http`.
+- Browser smoke or visual behavior changes: `bun run ci:playwright-smoke`, `bun run test:pw:local-auth`, and/or `bun run proof:ui` depending on the touched flow.
+
+`bun run ci:pr` is the local aggregate for the non-browser PR gates. See [`specs/ci.md`](specs/ci.md) for the full CI contract.
 
 ### Crabbox remote checks
 

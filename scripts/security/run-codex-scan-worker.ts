@@ -32,6 +32,11 @@ type ClaimedJob = {
   };
 };
 
+const DEFAULT_BATCH_LIMIT = 20;
+const DEFAULT_MAX_RUNTIME_MS = 40 * 60 * 1000;
+const DEFAULT_CODEX_SCAN_TIMEOUT_MS = 20 * 60 * 1000;
+const DEFAULT_LEASE_MS = 60 * 60 * 1000;
+
 const root = resolve(new URL("../..", import.meta.url).pathname);
 const schemaPath = join(root, "scripts/security/codex-scan-output.schema.json");
 const ARTIFACT_SIGNAL_FILE_EXTENSIONS = new Set([
@@ -59,8 +64,30 @@ function parseArgs() {
     const index = args.indexOf(name);
     return index === -1 ? undefined : args[index + 1];
   };
+  const numberFrom = (value: string | undefined, fallback: number) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  };
+  const optionalNumberFrom = (value: string | undefined) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+  };
   return {
-    limit: Number(get("--limit") ?? process.env.CODEX_SECURITY_SCAN_LIMIT ?? 10),
+    batchLimit: numberFrom(
+      get("--batch-limit") ?? get("--limit") ?? process.env.CODEX_SECURITY_SCAN_LIMIT,
+      DEFAULT_BATCH_LIMIT,
+    ),
+    maxJobs: optionalNumberFrom(get("--max-jobs") ?? process.env.CODEX_SECURITY_SCAN_MAX_JOBS),
+    maxRuntimeMs:
+      numberFrom(
+        get("--max-runtime-minutes") ?? process.env.CODEX_SECURITY_SCAN_MAX_RUNTIME_MINUTES,
+        DEFAULT_MAX_RUNTIME_MS / 60_000,
+      ) * 60_000,
+    leaseMs:
+      numberFrom(
+        get("--lease-minutes") ?? process.env.CODEX_SECURITY_SCAN_LEASE_MINUTES,
+        DEFAULT_LEASE_MS / 60_000,
+      ) * 60_000,
   };
 }
 
@@ -256,6 +283,11 @@ function verdictToStatus(verdict: string) {
   return verdict === "benign" ? "clean" : verdict;
 }
 
+function codexScanTimeoutMs() {
+  const parsed = Number(process.env.CODEX_SECURITY_SCAN_TIMEOUT_MS);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_CODEX_SCAN_TIMEOUT_MS;
+}
+
 async function runCodex(job: ClaimedJob, workspace: string) {
   const resultPath = join(workspace, "codex-result.json");
   const args = [
@@ -292,7 +324,7 @@ async function runCodex(job: ClaimedJob, workspace: string) {
   await runCommand("codex", args, {
     cwd: workspace,
     input: prompt,
-    timeoutMs: Number(process.env.CODEX_SECURITY_SCAN_TIMEOUT_MS ?? 20 * 60 * 1000),
+    timeoutMs: codexScanTimeoutMs(),
   });
 
   const raw = await readFile(resultPath, "utf8");
@@ -343,20 +375,45 @@ async function processJob(client: ConvexHttpClient, token: string, job: ClaimedJ
 }
 
 async function main() {
-  const { limit } = parseArgs();
+  const { batchLimit, maxJobs, maxRuntimeMs, leaseMs } = parseArgs();
   const convexUrl = process.env.CONVEX_URL ?? process.env.VITE_CONVEX_URL;
   if (!convexUrl) throw new Error("CONVEX_URL or VITE_CONVEX_URL is required");
   const token = requireEnv("SECURITY_SCAN_WORKER_TOKEN");
   const client = new ConvexHttpClient(convexUrl);
   const workerId = `github-actions:${process.env.GITHUB_RUN_ID ?? process.pid}`;
-  const jobs = (await client.action(api.securityScan.claimCodexScanJobs, {
-    token,
-    workerId,
-    limit,
-  })) as ClaimedJob[];
-  console.log(`claimed ${jobs.length} job(s)`);
-  const results = await Promise.all(jobs.map((job) => processJob(client, token, job)));
-  if (results.some((ok) => !ok)) {
+  const startedAt = Date.now();
+  const claimDeadline = startedAt + maxRuntimeMs;
+  let totalClaimed = 0;
+  let totalCompleted = 0;
+  let totalFailed = 0;
+
+  while (Date.now() < claimDeadline) {
+    const remainingJobs = maxJobs === undefined ? batchLimit : Math.max(0, maxJobs - totalClaimed);
+    if (remainingJobs === 0) break;
+    const claimLimit = Math.min(batchLimit, remainingJobs);
+    const jobs = (await client.action(api.securityScan.claimCodexScanJobs, {
+      token,
+      workerId,
+      limit: claimLimit,
+      leaseMs,
+    })) as ClaimedJob[];
+    console.log(`claimed ${jobs.length} job(s)`);
+    if (jobs.length === 0) break;
+
+    totalClaimed += jobs.length;
+    const results = await Promise.all(jobs.map((job) => processJob(client, token, job)));
+    totalCompleted += results.filter(Boolean).length;
+    totalFailed += results.filter((ok) => !ok).length;
+
+    if (jobs.length < claimLimit) break;
+  }
+
+  console.log(
+    `worker summary: claimed=${totalClaimed} completed=${totalCompleted} failed=${totalFailed} elapsedMs=${
+      Date.now() - startedAt
+    }`,
+  );
+  if (totalFailed > 0) {
     process.exitCode = 1;
   }
 }

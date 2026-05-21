@@ -1,0 +1,285 @@
+name: ClawHub CLI GitHub Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to create or repair, for example v0.17.0
+        required: true
+        type: string
+      main_run_id:
+        description: Optional successful main CI run id to include in release proof
+        required: false
+        type: string
+      preflight_run_id:
+        description: Optional successful CLI npm preflight run id to include in release proof
+        required: false
+        type: string
+      publish_run_id:
+        description: Optional successful CLI npm publish run id to include in release proof
+        required: false
+        type: string
+      update_existing:
+        description: Update an existing GitHub Release instead of failing
+        required: true
+        default: false
+        type: boolean
+
+concurrency:
+  group: clawhub-cli-github-release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+permissions: {}
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  NODE_VERSION: "24.x"
+
+jobs:
+  create_or_update_github_release:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Checkout release tooling
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref }}
+          path: release-tools
+
+      - name: Checkout release tag
+        uses: actions/checkout@v6
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          fetch-depth: 0
+          path: release
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          registry-url: https://registry.npmjs.org
+
+      - name: Validate release tag and package metadata
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_MAIN_REF: origin/main
+        run: |
+          set -euo pipefail
+          RELEASE_SHA="$(git rev-parse HEAD)"
+          echo "RELEASE_SHA=$RELEASE_SHA" >> "$GITHUB_ENV"
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$RELEASE_SHA" "$RELEASE_MAIN_REF"; then
+            echo "Tagged commit ${RELEASE_SHA} is not contained in ${RELEASE_MAIN_REF}." >&2
+            exit 1
+          fi
+          node --input-type=module <<'EOF'
+          import { readFileSync } from "node:fs";
+
+          const releaseTag = process.env.RELEASE_TAG ?? "";
+          const pkg = JSON.parse(readFileSync("./packages/clawhub/package.json", "utf8"));
+          const version = String(pkg.version ?? "").trim();
+          const errors = [];
+
+          if (pkg.name !== "clawhub") {
+            errors.push(`packages/clawhub/package.json name must be "clawhub"; found "${pkg.name ?? ""}".`);
+          }
+          if (!/^\d+\.\d+\.\d+$/.test(version)) {
+            errors.push(`packages/clawhub/package.json version must be stable semver (X.Y.Z); found "${version || "<missing>"}".`);
+          }
+          if (!/^v\d+\.\d+\.\d+$/.test(releaseTag)) {
+            errors.push(`Release tag must match vX.Y.Z; found "${releaseTag || "<missing>"}".`);
+          }
+          if (releaseTag !== `v${version}`) {
+            errors.push(`Release tag ${releaseTag} does not match packages/clawhub/package.json version ${version}; expected v${version}.`);
+          }
+
+          if (errors.length > 0) {
+            for (const error of errors) console.error(error);
+            process.exit(1);
+          }
+          console.log(`Release metadata OK for clawhub@${version} (${releaseTag}).`);
+          EOF
+        working-directory: release
+
+      - name: Resolve release metadata
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          PACKAGE_VERSION="$(node --input-type=module <<'EOF'
+          import { readFileSync } from "node:fs";
+
+          const pkg = JSON.parse(readFileSync("./packages/clawhub/package.json", "utf8"));
+          process.stdout.write(String(pkg.version ?? "").trim());
+          EOF
+          )"
+          NPM_DIST_JSON=""
+          for attempt in {1..12}; do
+            if NPM_DIST_JSON="$(npm view "clawhub@${PACKAGE_VERSION}" dist.tarball dist.integrity --json 2>/tmp/npm-view-error)" && [[ -n "$NPM_DIST_JSON" ]]; then
+              break
+            fi
+            if [[ "$attempt" == "12" ]]; then
+              cat /tmp/npm-view-error >&2 || true
+              exit 1
+            fi
+            sleep 5
+          done
+          NPM_TARBALL="$(NPM_DIST_JSON="$NPM_DIST_JSON" node --input-type=module <<'EOF'
+          const dist = JSON.parse(process.env.NPM_DIST_JSON ?? "{}");
+          process.stdout.write(String(dist["dist.tarball"] ?? ""));
+          EOF
+          )"
+          NPM_INTEGRITY="$(NPM_DIST_JSON="$NPM_DIST_JSON" node --input-type=module <<'EOF'
+          const dist = JSON.parse(process.env.NPM_DIST_JSON ?? "{}");
+          process.stdout.write(String(dist["dist.integrity"] ?? ""));
+          EOF
+          )"
+          if [[ -z "$NPM_TARBALL" || -z "$NPM_INTEGRITY" ]]; then
+            echo "npm dist metadata for clawhub@${PACKAGE_VERSION} is incomplete." >&2
+            exit 1
+          fi
+          {
+            echo "PACKAGE_VERSION=$PACKAGE_VERSION"
+            echo "NPM_PACKAGE_URL=https://www.npmjs.com/package/clawhub/v/${PACKAGE_VERSION}"
+            echo "NPM_TARBALL_URL=$NPM_TARBALL"
+            echo "NPM_INTEGRITY=$NPM_INTEGRITY"
+            echo "RELEASE_TITLE=clawhub ${PACKAGE_VERSION}"
+          } >> "$GITHUB_ENV"
+        working-directory: release
+
+      - name: Resolve proof workflow run URLs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MAIN_RUN_ID: ${{ inputs.main_run_id }}
+          PREFLIGHT_RUN_ID: ${{ inputs.preflight_run_id }}
+          PUBLISH_RUN_ID: ${{ inputs.publish_run_id }}
+        run: |
+          set -euo pipefail
+
+          resolve_run_url() {
+            local env_name="$1"
+            local run_id="$2"
+            local expected_workflow="$3"
+            local expected_event="$4"
+            local expected_branch="$5"
+
+            if [[ -z "$run_id" ]]; then
+              return 0
+            fi
+
+            local run_json
+            run_json="$(gh run view "$run_id" --repo "$GITHUB_REPOSITORY" --json conclusion,event,headBranch,headSha,url,workflowName)"
+            RUN_JSON="$run_json" RUN_ID="$run_id" EXPECTED_WORKFLOW="$expected_workflow" EXPECTED_EVENT="$expected_event" EXPECTED_BRANCH="$expected_branch" node --input-type=module <<'EOF'
+            const run = JSON.parse(process.env.RUN_JSON);
+            const expectedWorkflow = process.env.EXPECTED_WORKFLOW;
+            if (expectedWorkflow && run.workflowName !== expectedWorkflow) {
+              console.error(`Run ${process.env.RUN_ID} must be ${expectedWorkflow}; got ${run.workflowName ?? "<missing>"}.`);
+              process.exit(1);
+            }
+            if (run.conclusion !== "success") {
+              console.error(`Run ${process.env.RUN_ID} must have conclusion=success; got ${run.conclusion ?? "<missing>"}.`);
+              process.exit(1);
+            }
+            if (run.headSha !== process.env.RELEASE_SHA) {
+              console.error(`Run ${process.env.RUN_ID} must use release SHA ${process.env.RELEASE_SHA}; got ${run.headSha ?? "<missing>"}.`);
+              process.exit(1);
+            }
+            if (process.env.EXPECTED_EVENT && run.event !== process.env.EXPECTED_EVENT) {
+              console.error(`Run ${process.env.RUN_ID} must have event=${process.env.EXPECTED_EVENT}; got ${run.event ?? "<missing>"}.`);
+              process.exit(1);
+            }
+            if (process.env.EXPECTED_BRANCH && run.headBranch !== process.env.EXPECTED_BRANCH) {
+              console.error(`Run ${process.env.RUN_ID} must have headBranch=${process.env.EXPECTED_BRANCH}; got ${run.headBranch ?? "<missing>"}.`);
+              process.exit(1);
+            }
+            process.stdout.write(run.url);
+          EOF
+            echo "${env_name}=$(RUN_JSON="$run_json" RUN_ID="$run_id" EXPECTED_WORKFLOW="$expected_workflow" node --input-type=module <<'EOF'
+            const run = JSON.parse(process.env.RUN_JSON);
+            process.stdout.write(run.url);
+          EOF
+            )" >> "$GITHUB_ENV"
+          }
+
+          resolve_run_url MAIN_RUN_URL "$MAIN_RUN_ID" "CI" "" ""
+          resolve_run_url PREFLIGHT_RUN_URL "$PREFLIGHT_RUN_ID" "ClawHub CLI NPM Release" "workflow_dispatch" "main"
+          resolve_run_url PUBLISH_RUN_URL "$PUBLISH_RUN_ID" "ClawHub CLI NPM Release" "workflow_dispatch" "main"
+
+      - name: Verify preflight proof artifact
+        if: ${{ inputs.preflight_run_id != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREFLIGHT_RUN_ID: ${{ inputs.preflight_run_id }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          PROOF_DIR="$RUNNER_TEMP/clawhub-cli-github-release-preflight-proof"
+          rm -rf "$PROOF_DIR"
+          mkdir -p "$PROOF_DIR"
+          gh run download "$PREFLIGHT_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "clawhub-cli-npm-preflight-${RELEASE_TAG}" \
+            --dir "$PROOF_DIR"
+
+          if [[ "$(tr -d '\r\n' < "$PROOF_DIR/release-tag.txt")" != "$RELEASE_TAG" ]]; then
+            echo "Preflight artifact tag does not match ${RELEASE_TAG}." >&2
+            exit 1
+          fi
+          if [[ "$(tr -d '\r\n' < "$PROOF_DIR/release-sha.txt")" != "$RELEASE_SHA" ]]; then
+            echo "Preflight artifact SHA does not match ${RELEASE_SHA}." >&2
+            exit 1
+          fi
+          if [[ "$(tr -d '\r\n' < "$PROOF_DIR/package-version.txt")" != "$PACKAGE_VERSION" ]]; then
+            echo "Preflight artifact version does not match ${PACKAGE_VERSION}." >&2
+            exit 1
+          fi
+
+      - name: Build release notes
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          node ../release-tools/scripts/extract-changelog-release.mjs --tag "$RELEASE_TAG" --changelog CHANGELOG.md > ../release-body.md
+          {
+            echo
+            echo "### Release Proof"
+            echo
+            echo "- npm: ${NPM_PACKAGE_URL}"
+            echo "- tarball: ${NPM_TARBALL_URL}"
+            echo "- integrity: ${NPM_INTEGRITY}"
+            if [[ -n "${MAIN_RUN_URL:-}" ]]; then
+              echo "- main CI: ${MAIN_RUN_URL}"
+            fi
+            if [[ -n "${PREFLIGHT_RUN_URL:-}" ]]; then
+              echo "- npm preflight: ${PREFLIGHT_RUN_URL}"
+            fi
+            if [[ -n "${PUBLISH_RUN_URL:-}" ]]; then
+              echo "- npm publish: ${PUBLISH_RUN_URL}"
+            fi
+          } >> ../release-body.md
+        working-directory: release
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          UPDATE_EXISTING: ${{ inputs.update_existing }}
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            if [[ "$UPDATE_EXISTING" != "true" ]]; then
+              echo "GitHub Release ${RELEASE_TAG} already exists. Rerun with update_existing=true to repair it." >&2
+              exit 1
+            fi
+            gh release edit "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$RELEASE_TITLE" \
+              --notes-file release-body.md
+          else
+            gh release create "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$RELEASE_TITLE" \
+              --notes-file release-body.md
+          fi

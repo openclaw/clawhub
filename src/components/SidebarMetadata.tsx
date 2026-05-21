@@ -2,7 +2,8 @@ import type { ReactNode } from "react";
 import { cn } from "../lib/utils";
 
 type SidebarMetadataItem = {
-  label: string;
+  label: ReactNode;
+  key?: string;
   value: ReactNode;
   large?: boolean;
 };
@@ -15,6 +16,10 @@ type SidebarMetadataBlock =
 
 function isGridBlock(block: SidebarMetadataBlock): block is { grid: SidebarMetadataItem[] } {
   return "grid" in block;
+}
+
+function getSidebarMetadataItemKey(item: SidebarMetadataItem, fallback: string) {
+  return item.key ?? (typeof item.label === "string" ? item.label : fallback);
 }
 
 function SidebarMetadataRow({ item }: { item: SidebarMetadataItem }) {
@@ -50,12 +55,15 @@ export function SidebarMetadata({
       {blocks.map((block, index) =>
         isGridBlock(block) ? (
           <div className="sidebar-metadata-grid" key={`grid-${index}`}>
-            {block.grid.map((item) => (
-              <SidebarMetadataRow key={item.label} item={item} />
+            {block.grid.map((item, itemIndex) => (
+              <SidebarMetadataRow
+                key={getSidebarMetadataItemKey(item, `grid-${index}-${itemIndex}`)}
+                item={item}
+              />
             ))}
           </div>
         ) : (
-          <SidebarMetadataRow key={block.label} item={block} />
+          <SidebarMetadataRow key={getSidebarMetadataItemKey(block, `row-${index}`)} item={block} />
         ),
       )}
     </dl>

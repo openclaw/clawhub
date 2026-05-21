@@ -85,6 +85,8 @@ User administration:
 bun run mod -- users ban <handleOrId> [--id] [--fuzzy] [--reason <text>] [--yes]
 bun run mod -- users unban <handleOrId> [--id] [--fuzzy] [--reason <text>] [--yes]
 bun run mod -- users set-role <handleOrId> <user|moderator|admin> [--id] [--fuzzy] [--yes]
+bun run mod -- users reclassify-ban <handleOrId> --reason <text> [--id] [--fuzzy] [--dry-run|--apply] [--yes] [--json]
+bun run mod -- users remediate-autobans [--dry-run|--apply] [--user <handleOrId>] [--id] [--since <date>] [--limit <n>] [--cursor <cursor>] [--all] [--json]
 ```
 
 The old top-level names are also available on the moderator binary:
@@ -99,11 +101,11 @@ Package moderation and operations:
 
 ```bash
 bun run mod -- skills reports [--status open|confirmed|dismissed|all]
+bun run mod -- skills rescan <slug> [--version <version>] [--yes] [--json]
 bun run mod -- skills unhide <slug> --reason <text> [--yes]
 bun run mod -- skills triage-report <report-id> --status open|confirmed|dismissed [--note <text>] [--action none|hide] [--yes]
 
 bun run mod -- plugins moderate <name> --version <version> --state approved|quarantined|revoked --reason <text>
-bun run mod -- plugins rescan <name> [--yes]
 bun run mod -- plugins status <name>
 bun run mod -- plugins queue [--status open|blocked|manual|all]
 bun run mod -- plugins reports [--status open|confirmed|dismissed|all]

@@ -22,7 +22,14 @@ import { DEFAULT_REGISTRY, DEFAULT_SITE } from "../../clawhub/src/cli/registry.j
 import type { GlobalOpts } from "../../clawhub/src/cli/types.js";
 import { fail } from "../../clawhub/src/cli/ui.js";
 import { getModeratorCliBuildLabel, getModeratorCliVersion } from "./buildInfo.js";
-import { cmdBanUser, cmdSetRole, cmdUnbanUser } from "./commands/moderation.js";
+import {
+  cmdBanUser,
+  cmdReclassifyBan,
+  cmdRemediateAutobans,
+  cmdRescanSkill,
+  cmdSetRole,
+  cmdUnbanUser,
+} from "./commands/moderation.js";
 import {
   cmdBackfillPackageArtifacts,
   cmdDeletePackageTrustedPublisher,
@@ -224,6 +231,40 @@ users
   .action(async (handleOrId, role, options) => {
     const opts = await resolveGlobalOpts();
     await cmdSetRole(opts, handleOrId, role, options, isInputAllowed());
+  });
+
+users
+  .command("reclassify-ban")
+  .description("Change the stored reason for an existing ban")
+  .argument("<handleOrId>", "User handle (default) or user id")
+  .option("--apply", "Write changes; defaults to dry-run")
+  .option("--dry-run", "Plan only (default)")
+  .option("--id", "Treat argument as user id")
+  .option("--fuzzy", "Resolve handle via fuzzy user search")
+  .requiredOption("--reason <reason>", "New ban reason")
+  .option("--yes", "Skip confirmation for --apply")
+  .option("--json", "Output JSON")
+  .action(async (handleOrId, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdReclassifyBan(opts, handleOrId, options, isInputAllowed());
+  });
+
+users
+  .command("remediate-autobans")
+  .description("Dry-run or apply malware autoban remediation")
+  .option("--apply", "Write changes; defaults to dry-run")
+  .option("--dry-run", "Plan only (default)")
+  .option("--user <handleOrId>", "Limit to one user handle or id")
+  .option("--id", "Treat --user as a user id")
+  .option("--since <date>", "Only scan autobans at or after this date")
+  .option("--limit <n>", "Maximum users to scan per page")
+  .option("--cursor <cursor>", "Resume cursor")
+  .option("--all", "Continue until all pages are processed")
+  .option("--reason <reason>", "Audit reason for apply")
+  .option("--json", "Output JSON")
+  .action(async (options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdRemediateAutobans(opts, options, isInputAllowed());
   });
 
 program
@@ -488,6 +529,18 @@ function registerSkillModerationCommands(command: Command) {
       }
       const opts = await resolveGlobalOpts();
       await cmdUnhideSkill(opts, slug, options, isInputAllowed());
+    });
+
+  command
+    .command("rescan")
+    .description("Queue a moderator ClawScan rescan for a skill")
+    .argument("<slug>", "Skill slug")
+    .option("--version <version>", "Specific skill version; defaults to latest")
+    .option("--yes", "Skip confirmation")
+    .option("--json", "Output JSON")
+    .action(async (slug, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdRescanSkill(opts, slug, options, isInputAllowed());
     });
 
   command

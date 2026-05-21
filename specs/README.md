@@ -24,6 +24,8 @@ into `docs/` and leave only the design record here.
 - `slug-routing.md`: internal web route precedence and plugin alias contract.
 - `ci.md`: PR check and production deploy audit-tag policy.
 - `manual-testing.md`: maintainer CLI smoke checklist.
+- `dev-worktrees.md`: disposable Worktrunk/Codex worktree lifecycle contract.
+- `dev-seeding.md`: local development fixture seeding ownership rules.
 - `mintlify.md`: docs publishing setup notes.
 - `openclaw-docs-extraction.md`: CLAW-89 extraction classification.
 - `deploy.md`: maintainer deploy checklist for the ClawHub project.

@@ -1,14 +1,9 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { PublisherClawScanNote } from "./PublisherClawScanNote";
-import { TooltipProvider } from "./ui/tooltip";
 
 function renderNote(note: string) {
-  return render(
-    <TooltipProvider>
-      <PublisherClawScanNote note={note} />
-    </TooltipProvider>,
-  );
+  return render(<PublisherClawScanNote note={note} />);
 }
 
 describe("PublisherClawScanNote", () => {
@@ -34,9 +29,10 @@ describe("PublisherClawScanNote", () => {
     );
   });
 
-  it("renders the note help affordance", () => {
+  it("renders the note title without the removed help affordance", () => {
     renderNote("Publisher context.");
 
-    expect(screen.getByRole("button", { name: "About publisher ClawScan notes" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Publisher note" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /About publisher/i })).toBeNull();
   });
 });

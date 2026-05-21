@@ -17,8 +17,9 @@ paths:
   - src/components/DetailSecuritySummary.tsx
   - src/components/MarkdownPreview.tsx
   - src/components/PackageSourceChooser.tsx
-  - src/components/SecurityScannerPage.tsx
+  - src/components/SecurityAuditPage.tsx
   - src/components/SkillSecurityScanResults.tsx
+  - src/components/securityAuditModel.ts
   - src/lib/authErrorMessage.ts
   - src/lib/packageApi.ts
   - src/lib/packageUpload.ts
@@ -38,8 +39,12 @@ paths:
   - src/routes/skills/publish.tsx
   - src/routes/upload.tsx
   - src/routes/upload
+  - src/routes/$owner/$slug/security-audit.tsx
   - src/routes/$owner/$slug/security
+  - src/routes/plugins/$name/security-audit.tsx
   - src/routes/plugins/$name/security
+  - src/routes/plugins/$scope/$name/security-audit.tsx
+  - src/routes/plugins/$scope/$name/security
 
 paths-ignore:
   - "**/node_modules"

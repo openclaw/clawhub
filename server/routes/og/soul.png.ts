@@ -9,6 +9,7 @@ import {
   getFontBuffers,
   getMarkDataUrl,
 } from "../../og/ogAssets";
+import { pngResponse } from "../../og/pngResponse";
 import { buildSoulOgSvg } from "../../og/soulOgSvg";
 
 type OgQuery = {
@@ -70,9 +71,6 @@ export default defineEventHandler(async (event) => {
   const footer = buildFooter(slug, owner || null);
 
   const cacheKey = version ? "public, max-age=31536000, immutable" : "public, max-age=3600";
-  setHeader(event, "Cache-Control", cacheKey);
-  setHeader(event, "Content-Type", "image/png");
-
   const [markDataUrl, fontBuffers] = await Promise.all([
     getMarkDataUrl(),
     ensureResvgWasm().then(() => getFontBuffers()),
@@ -98,5 +96,5 @@ export default defineEventHandler(async (event) => {
   });
   const png = resvg.render().asPng();
   resvg.free();
-  return png;
+  return pngResponse(png, cacheKey);
 });

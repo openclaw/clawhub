@@ -21,6 +21,15 @@ type SeedCorpusRow = PublicCorpusRow & {
 };
 
 const DEFAULT_BATCH_BYTES = 96_000;
+const MAX_SEED_BATCH_ATTEMPTS = 4;
+const BASE_SEED_BATCH_RETRY_DELAY_MS = 500;
+
+export type SeedBatchRunResult = {
+  status: number;
+  output: string;
+};
+
+export type SeedBatchRunOnce = (args: unknown) => SeedBatchRunResult;
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
@@ -48,7 +57,7 @@ async function main() {
       resetOwnerHandles: options.reset ? owners.map((owner) => owner.handle) : [],
       rows: batch,
     };
-    const status = runConvexSeedBatch(args);
+    const status = await runConvexSeedBatchWithRetry(args);
     if (status !== 0) process.exit(status);
     console.log(
       `Seeded public corpus batch ${index + 1}/${batches.length} (${batch.length} rows).`,
@@ -133,17 +142,70 @@ function corpusKey(row: PublicCorpusRow) {
   return row.kind === "skill" ? `skill:${row.slug}` : `plugin:${row.name}`;
 }
 
-function runConvexSeedBatch(args: unknown) {
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function retryDelayMs(attempt: number) {
+  return BASE_SEED_BATCH_RETRY_DELAY_MS * 2 ** (attempt - 1);
+}
+
+function writeCommandOutput(output: string) {
+  if (output) process.stdout.write(output);
+}
+
+export function isRetryableConvexSeedBatchOutput(output: string) {
+  return output.includes("Data read or written in this mutation changed while it was being run");
+}
+
+export function runConvexSeedBatchOnce(args: unknown): SeedBatchRunResult {
   const result = spawnSync(
     "bunx",
     ["convex", "run", "--no-push", "devSeed:seedPublicCorpusBatch", JSON.stringify(args)],
     {
       cwd: process.cwd(),
       encoding: "utf8",
-      stdio: "inherit",
     },
   );
-  return result.status ?? 1;
+  const output = `${result.stdout ?? ""}${result.stderr ?? ""}${
+    result.error ? `${result.error.message}\n` : ""
+  }`;
+  writeCommandOutput(output);
+  return { status: result.status ?? 1, output };
+}
+
+export async function runConvexSeedBatchWithRetry(
+  args: unknown,
+  options: {
+    runOnce?: SeedBatchRunOnce;
+    sleep?: (ms: number) => Promise<void>;
+    maxAttempts?: number;
+    retryDelayMs?: (attempt: number) => number;
+    log?: (message: string) => void;
+  } = {},
+) {
+  const runOnce = options.runOnce ?? runConvexSeedBatchOnce;
+  const sleepFn = options.sleep ?? sleep;
+  const maxAttempts = Math.max(1, options.maxAttempts ?? MAX_SEED_BATCH_ATTEMPTS);
+  const delayMs = options.retryDelayMs ?? retryDelayMs;
+  const log = options.log ?? console.warn;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const result = runOnce(args);
+    if (result.status === 0) return 0;
+    if (!isRetryableConvexSeedBatchOutput(result.output) || attempt >= maxAttempts) {
+      return result.status;
+    }
+
+    log(
+      `Convex seed batch hit a retryable write conflict; retrying (${attempt + 1}/${maxAttempts}).`,
+    );
+    await sleepFn(delayMs(attempt));
+  }
+
+  return 1;
 }
 
 function readValue(args: string[], index: number, flag: string) {
@@ -159,7 +221,9 @@ function readPositiveInt(value: string, flag: string) {
   return parsed;
 }
 
-main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exit(1);
-});
+if (import.meta.main) {
+  main().catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  });
+}

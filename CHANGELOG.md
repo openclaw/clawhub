@@ -6,6 +6,10 @@
 
 - API: fix `GET /api/v1/skills` pagination so `cursor` advances to the next page instead of repeating the first page for supported non-trending sorts (#2275) (thanks @vyctorbrzezowski, @enerj).
 
+## 0.17.0 - 2026-05-19
+
+- CLI/API: add self-serve org publisher creation with `clawhub publisher create <handle>` and scoped package publish errors that point to the command.
+
 ## 0.16.0 - 2026-05-18
 
 ### Fixes
@@ -23,6 +27,7 @@
 - API: return `400` for invalid known public package filters and invalid skill list sort values, while continuing to ignore unknown query parameters (#2184).
 - API/docs: document v1 plain-text error responses and expose owner metadata in the OpenAPI search result schema (#2187) (thanks @vyctorbrzezowski).
 - Web: rank publisher card preview items by downloads instead of recent publish order (thanks @vyctorbrzezowski).
+- Web: remove the desktop Files tab height cap and make mobile truncation explicit (thanks @vyctorbrzezowski).
 - Web: keep skill/plugin detail tabs at mobile-friendly touch target height.
 
 ### Changes

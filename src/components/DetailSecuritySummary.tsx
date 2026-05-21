@@ -1,176 +1,91 @@
+import { Info } from "lucide-react";
 import {
-  getClawScanDisplayStatus,
-  getScanStatusInfo,
-  getVirusTotalDisplayStatus,
-  type LlmAnalysis,
-  type StaticFinding,
-  type VtAnalysis,
-} from "./SkillSecurityScanResults";
-import { Badge, type BadgeProps } from "./ui/badge";
+  aggregateAuditVerdict,
+  SECURITY_AUDIT_SUBTEXT,
+  type StaticScanAnalysis,
+} from "./securityAuditModel";
+import { getScanStatusInfo, type LlmAnalysis, type VtAnalysis } from "./SkillSecurityScanResults";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 
 type DetailSecuritySummaryProps = {
-  scannerBasePath: string;
-  sha256hash?: string | null;
+  auditHref: string;
   vtAnalysis?: VtAnalysis | null;
   llmAnalysis?: LlmAnalysis | null;
-  staticScan?: {
-    status: string;
-    reasonCodes: string[];
-    findings: StaticFinding[];
-    summary: string;
-    engineVersion: string;
-    checkedAt: number;
-  } | null;
+  staticScan?: StaticScanAnalysis | null;
   suppressScanResults?: boolean;
-  suppressedMessage?: string | null;
 };
 
-function statusFromStaticScan(staticScan: DetailSecuritySummaryProps["staticScan"]) {
-  const status = staticScan?.status?.trim().toLowerCase();
-  if (status === "malicious") return "malicious";
-  if (status === "clean" || status === "benign") return "benign";
-  if (status === "suspicious") return "review";
-  if (status) return status;
-  return "pending";
-}
-
-function severityLevelForStatus(status: string) {
-  const normalized = status.toLowerCase();
-  if (normalized === "malicious") return 4;
-  if (normalized === "warn" || normalized === "warning" || normalized === "suspicious") return 3;
-  if (normalized === "review") return 2;
-  if (normalized === "clean" || normalized === "benign" || normalized === "cleared") return 1;
-  return 0;
-}
-
-function aggregateAuditVerdict(statuses: string[]) {
-  const normalized = statuses.map((status) => status.toLowerCase());
-  if (normalized.some((status) => status === "malicious")) {
-    return "malicious";
-  }
-  if (
-    normalized.some(
-      (status) => status === "warn" || status === "warning" || status === "suspicious",
-    )
-  ) {
-    return "warn";
-  }
-  if (normalized.some((status) => status === "error" || status === "failed")) return "error";
-  if (
-    normalized.some(
-      (status) => status === "pending" || status === "loading" || status === "not_found",
-    )
-  ) {
-    return "pending";
-  }
-  return "benign";
-}
-
-function auditVerdictBadgeVariant(status: string): BadgeProps["variant"] {
+function auditVerdictMeterLevel(status: string) {
   switch (status.toLowerCase()) {
     case "malicious":
-      return "destructive";
+      return 4;
     case "warn":
     case "warning":
     case "suspicious":
-      return "warning";
-    case "pending":
-    case "error":
-    case "failed":
-      return "pending";
+      return 3;
+    case "review":
+      return 2;
+    case "benign":
+    case "clean":
+    case "cleared":
+      return 1;
     default:
-      return "success";
+      return 0;
   }
 }
 
-function ScannerSignal({
-  href,
-  label,
-  description,
-  status,
-  tone,
-}: {
-  href: string;
-  label: string;
-  description: string;
-  status: string;
-  tone?: "review";
-}) {
-  const info = getScanStatusInfo(status);
-  const level = severityLevelForStatus(status);
-  return (
-    <a
-      href={href}
-      className="security-audit-signal !no-underline hover:!no-underline"
-      aria-label={`${label}: ${info.label}`}
-    >
-      <div className="security-audit-signal-head">
-        <span className="security-audit-signal-label">{label}</span>
-        <span className="security-audit-signal-status">{info.label}</span>
-      </div>
-      <div className="security-audit-meter" data-level={level} data-tone={tone} aria-hidden="true">
-        <span />
-        <span />
-        <span />
-        <span />
-      </div>
-      <p>{description}</p>
-    </a>
-  );
-}
-
 export function DetailSecuritySummary({
-  scannerBasePath,
+  auditHref,
   vtAnalysis,
   llmAnalysis,
   staticScan,
   suppressScanResults = false,
-  suppressedMessage,
 }: DetailSecuritySummaryProps) {
-  const vtStatus = suppressScanResults ? "cleared" : getVirusTotalDisplayStatus(vtAnalysis);
-  const llmStatus = suppressScanResults ? "cleared" : getClawScanDisplayStatus(llmAnalysis);
-  const staticStatus = suppressScanResults ? "cleared" : statusFromStaticScan(staticScan);
-  const auditVerdict = aggregateAuditVerdict([vtStatus, llmStatus, staticStatus]);
+  const auditVerdict = aggregateAuditVerdict({
+    vtAnalysis,
+    llmAnalysis,
+    staticScan,
+    suppressScanResults,
+  });
   const auditVerdictInfo = getScanStatusInfo(auditVerdict);
+  const meterLevel = auditVerdictMeterLevel(auditVerdict);
   return (
-    <section className="security-audit-section" aria-labelledby="security-audit-heading">
-      <div className="security-audit-title-row">
-        <h3 id="security-audit-heading" className="skill-install-panel-title security-audit-title">
-          Audits
-        </h3>
-        <Badge
-          variant={auditVerdictBadgeVariant(auditVerdict)}
-          className="security-audit-verdict-badge min-h-0 rounded-[4px] px-2.5 py-0.5 text-[0.78rem] leading-[1.3]"
-        >
+    <a href={auditHref} className="security-audit-sidebar-value" aria-label="View Security Audit">
+      <div className="security-audit-sidebar-value-row">
+        <span className="security-audit-sidebar-verdict" data-status={auditVerdict}>
           {auditVerdictInfo.label}
-        </Badge>
-      </div>
-      <div className="security-audit-row">
-        {suppressScanResults && suppressedMessage ? (
-          <p className="security-audit-suppressed">{suppressedMessage}</p>
-        ) : null}
-        <div className="security-audit-signals">
-          <ScannerSignal
-            href={`${scannerBasePath}/clawscan`}
-            label="ClawScan"
-            description="Agentic behavior and permission review."
-            status={llmStatus}
-            tone="review"
-          />
-          <ScannerSignal
-            href={`${scannerBasePath}/static-analysis`}
-            label="Static analysis"
-            description="Pattern checks against bundled files."
-            status={staticStatus}
-          />
-          <ScannerSignal
-            href={`${scannerBasePath}/virustotal`}
-            label="VirusTotal"
-            description="Multi-engine malware detections and file reputation."
-            status={vtStatus}
-          />
+        </span>
+        <div className="security-audit-meter" data-level={meterLevel} aria-hidden="true">
+          <span />
+          <span />
+          <span />
+          <span />
         </div>
       </div>
-    </section>
+    </a>
+  );
+}
+
+export function DetailSecuritySummaryLabel() {
+  return (
+    <span className="security-audit-sidebar-label">
+      <span>Security audit</span>
+      <TooltipProvider delayDuration={400}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              className="security-audit-sidebar-info"
+              aria-label={SECURITY_AUDIT_SUBTEXT}
+            >
+              <Info size={13} aria-hidden="true" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="top" align="start" className="security-report-title-tooltip">
+            {SECURITY_AUDIT_SUBTEXT}
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    </span>
   );
 }

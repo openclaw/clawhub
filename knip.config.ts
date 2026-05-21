@@ -54,6 +54,7 @@ const config = {
         "@fontsource/bricolage-grotesque",
         "@fontsource/ibm-plex-mono",
         "@fontsource/manrope",
+        "@fontsource/noto-sans-sc",
         "tailwindcss",
         "tw-animate-css",
       ],

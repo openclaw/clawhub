@@ -92,7 +92,7 @@ Details: [`docs/telemetry.md`](docs/telemetry.md).
 
 ## Local dev
 
-Prereqs: [Bun](https://bun.sh/) (Convex runs via `bunx`, no global install needed).
+Prereqs: [Bun](https://bun.sh/) (Convex runs via `bunx`, no global install needed). The detached worktree path also requires [Worktrunk](https://github.com/max-sixty/worktrunk) (`wt`).
 
 ```bash
 bun install
@@ -106,7 +106,9 @@ bunx convex dev
 bun run dev
 
 # detached/Codex worktree preview
+bun run setup:worktree
 bun run dev:worktree
+wt --yes url
 
 # seed local QA fixtures and the public corpus
 bun run seed:dev

@@ -68,6 +68,26 @@ CLI release notes:
 - The publish job waits at the GitHub `npm-release` environment for approval.
 - npm auth is handled through npm trusted publishing, not an `NPM_TOKEN`.
 - npm trusted publisher must be configured for package `clawhub` with repository `openclaw/clawhub`, workflow `clawhub-cli-npm-release.yml`, and environment `npm-release`.
+- After a successful npm publish, the workflow creates or updates the matching GitHub Release from the `CHANGELOG.md` section and appends npm tarball/integrity proof.
+
+If npm publish succeeds but GitHub Release creation needs repair, rerun the
+GitHub Release workflow without publishing to npm again:
+
+```bash
+gh workflow run clawhub-cli-github-release.yml \
+  --repo openclaw/clawhub \
+  --ref main \
+  -f tag=v0.11.0 \
+  -f preflight_run_id=<successful preflight run id> \
+  -f update_existing=false
+```
+
+If the original publish workflow failed after npm publish while creating the
+GitHub Release, omit `publish_run_id`; the repair workflow accepts only
+successful proof run ids.
+
+Use `update_existing=true` only when intentionally replacing the body for an
+existing GitHub Release.
 
 That workflow assumes Vercel Git integration is enabled for this repo. It does
 not run `vercel deploy` directly; frontend-related steps wait for the GitHub
