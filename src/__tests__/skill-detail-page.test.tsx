@@ -649,7 +649,9 @@ describe("SkillDetailPage", () => {
     });
 
     render(<SkillDetailPage slug="missing-skill" />);
-    expect(await screen.findByText(/Skill not found/i)).toBeTruthy();
+    expect(
+      await screen.findByRole("heading", { name: /We couldn't find that page/i }),
+    ).toBeTruthy();
   });
 
   it("redirects legacy routes to canonical owner/slug", async () => {

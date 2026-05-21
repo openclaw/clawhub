@@ -17,6 +17,7 @@ import { useAuthStatus } from "../lib/useAuthStatus";
 import { ClientOnly } from "./ClientOnly";
 import { DetailBody, DetailPageShell } from "./DetailPageShell";
 import { DetailSecuritySummary } from "./DetailSecuritySummary";
+import { GenericNotFoundPage } from "./GenericNotFoundPage";
 import { SkillDetailSkeleton } from "./skeletons/SkillDetailSkeleton";
 import { SkillCommentsPanel } from "./SkillCommentsPanel";
 import { SkillDetailTabs, type DetailTab } from "./SkillDetailTabs";
@@ -585,11 +586,7 @@ export function SkillDetailPage({
   }
 
   if (result === null || !skill || !displayedSkill) {
-    return (
-      <main className="section detail-page-section">
-        <Card>Skill not found.</Card>
-      </main>
-    );
+    return <GenericNotFoundPage />;
   }
 
   const securitySummary = latestVersion ? (
