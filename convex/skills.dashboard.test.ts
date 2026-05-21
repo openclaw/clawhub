@@ -6,7 +6,7 @@ vi.mock("@convex-dev/auth/server", () => ({
   authTables: {},
 }));
 
-import { listDashboardPaginated } from "./skills";
+import { list, listDashboardPaginated } from "./skills";
 
 type WrappedHandler<TArgs, TResult = unknown> = {
   _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
@@ -20,6 +20,16 @@ const handler = (
       paginationOpts: { cursor: string | null; numItems: number };
     },
     { page: Array<{ slug: string }>; isDone: boolean; continueCursor: string }
+  >
+)._handler;
+const listHandler = (
+  list as unknown as WrappedHandler<
+    {
+      ownerUserId?: string;
+      ownerPublisherId?: string;
+      limit?: number;
+    },
+    Array<{ slug: string }>
   >
 )._handler;
 
@@ -61,13 +71,22 @@ function makeSkill(slug: string, overrides: Record<string, unknown> = {}) {
   };
 }
 
-function makeCtx(indexPages: Record<string, ReturnType<typeof makeSkill>[]>) {
+function makeCtx(
+  indexPages: Record<string, ReturnType<typeof makeSkill>[]>,
+  options: { membership?: Record<string, unknown> | null } = {},
+) {
   const indexCalls: string[] = [];
   const ctx = {
     db: {
       get: vi.fn(async (id: string) => {
         if (id === "users:owner") {
           return { _id: "users:owner", _creationTime: 1, handle: "owner", displayName: "Owner" };
+        }
+        if (id === "users:other") {
+          return { _id: "users:other", _creationTime: 1, handle: "other", displayName: "Other" };
+        }
+        if (id === "users:member") {
+          return { _id: "users:member", _creationTime: 1, handle: "member", displayName: "Member" };
         }
         if (id === "publishers:self") {
           return {
@@ -94,7 +113,7 @@ function makeCtx(indexPages: Record<string, ReturnType<typeof makeSkill>[]>) {
         if (table === "publisherMembers") {
           return {
             withIndex: vi.fn(() => ({
-              unique: vi.fn().mockResolvedValue(null),
+              unique: vi.fn().mockResolvedValue(options.membership ?? null),
             })),
           };
         }
@@ -111,6 +130,7 @@ function makeCtx(indexPages: Record<string, ReturnType<typeof makeSkill>[]>) {
               indexCalls.push(indexName);
               return {
                 order: vi.fn(() => ({
+                  take: vi.fn().mockResolvedValue(indexPages[indexName] ?? []),
                   paginate: vi.fn().mockResolvedValue({
                     page: indexPages[indexName] ?? [],
                     isDone: true,
@@ -206,5 +226,101 @@ describe("skills.listDashboardPaginated", () => {
 
     expect(indexCalls).toContain("by_owner_publisher_active_updated");
     expect(result.page).toEqual([expect.objectContaining({ slug: "team-skill" })]);
+  });
+
+  it("ignores stale personal memberships for hidden dashboard skills", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:other" as never);
+    const { ctx, indexCalls } = makeCtx(
+      {
+        by_owner_publisher_active_updated: [
+          makeSkill("hidden-personal", {
+            ownerPublisherId: "publishers:self",
+            moderationStatus: "hidden",
+          }),
+        ],
+      },
+      {
+        membership: {
+          _id: "publisherMembers:stale",
+          publisherId: "publishers:self",
+          userId: "users:other",
+          role: "owner",
+        },
+      },
+    );
+
+    const result = await handler(
+      ctx as never,
+      {
+        ownerPublisherId: "publishers:self",
+        paginationOpts,
+      } as never,
+    );
+
+    expect(indexCalls).toContain("by_owner_publisher_active_updated");
+    expect(indexCalls).not.toContain("by_owner_active_updated");
+    expect(result.page).toEqual([]);
+  });
+
+  it("keeps org members authorized for hidden dashboard skills", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:member" as never);
+    const { ctx } = makeCtx(
+      {
+        by_owner_publisher_active_updated: [
+          makeSkill("hidden-team", {
+            ownerPublisherId: "publishers:org",
+            moderationStatus: "hidden",
+          }),
+        ],
+      },
+      {
+        membership: {
+          _id: "publisherMembers:member",
+          publisherId: "publishers:org",
+          userId: "users:member",
+          role: "publisher",
+        },
+      },
+    );
+
+    const result = await handler(
+      ctx as never,
+      {
+        ownerPublisherId: "publishers:org",
+        paginationOpts,
+      } as never,
+    );
+
+    expect(result.page).toEqual([expect.objectContaining({ slug: "hidden-team" })]);
+  });
+
+  it("ignores stale personal memberships in the non-paginated skill list", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:other" as never);
+    const { ctx, indexCalls } = makeCtx(
+      {
+        by_owner_publisher: [
+          makeSkill("hidden-personal", {
+            ownerPublisherId: "publishers:self",
+            moderationStatus: "hidden",
+          }),
+        ],
+      },
+      {
+        membership: {
+          _id: "publisherMembers:stale",
+          publisherId: "publishers:self",
+          userId: "users:other",
+          role: "owner",
+        },
+      },
+    );
+
+    const result = await listHandler(
+      ctx as never,
+      { ownerPublisherId: "publishers:self", limit: 20 } as never,
+    );
+
+    expect(indexCalls).toContain("by_owner_publisher");
+    expect(result).toEqual([]);
   });
 });

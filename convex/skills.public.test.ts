@@ -152,6 +152,8 @@ const resolveSkillAppealForUserInternalHandler = (
 function makeCtx(args: {
   skill: Record<string, unknown> | null;
   owner: Record<string, unknown> | null;
+  ownerPublisher?: Record<string, unknown> | null;
+  membership?: Record<string, unknown> | null;
   latestVersion?: Record<string, unknown> | null;
   skillsById?: Record<string, Record<string, unknown>>;
   ownersById?: Record<string, Record<string, unknown>>;
@@ -159,6 +161,13 @@ function makeCtx(args: {
   const unique = vi.fn().mockResolvedValue(args.skill);
   const withIndex = vi.fn(() => ({ unique }));
   const query = vi.fn((table: string) => {
+    if (table === "publisherMembers") {
+      return {
+        withIndex: vi.fn(() => ({
+          unique: vi.fn().mockResolvedValue(args.membership ?? null),
+        })),
+      };
+    }
     if (table !== "skills") throw new Error(`Unexpected query table: ${table}`);
     return { withIndex };
   });
@@ -167,6 +176,7 @@ function makeCtx(args: {
     if (id === args.skill._id) return args.skill;
     if (args.skillsById?.[id]) return args.skillsById[id];
     if (args.ownersById?.[id]) return args.ownersById[id];
+    if (id === args.skill.ownerPublisherId) return args.ownerPublisher ?? null;
     if (id === args.skill.ownerUserId) return args.owner;
     if (id === args.skill.latestVersionId) return args.latestVersion ?? null;
     return null;
@@ -326,6 +336,69 @@ describe("skills.getBySlug", () => {
     const result = await getBySlugHandler(ctx, { slug: "demo" } as never);
 
     expect(result).toBeNull();
+  });
+
+  it("does not honor stale personal memberships for hidden skill owner views", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:stranger" as never);
+    const ctx = makeCtx({
+      skill: makeSkill({
+        ownerPublisherId: "publishers:owner",
+        moderationStatus: "hidden",
+        moderationReason: "manual.review",
+      }),
+      owner: makeOwner("users:1", "owner"),
+      ownerPublisher: {
+        _id: "publishers:owner",
+        kind: "user",
+        handle: "owner",
+        displayName: "Owner",
+        linkedUserId: "users:1",
+      },
+      ownersById: {
+        "users:stranger": makeOwner("users:stranger", "stranger"),
+      },
+      membership: {
+        _id: "publisherMembers:stale",
+        publisherId: "publishers:owner",
+        userId: "users:stranger",
+        role: "owner",
+      },
+    });
+
+    const result = await getBySlugHandler(ctx, { slug: "demo" } as never);
+
+    expect(result).toBeNull();
+  });
+
+  it("keeps org memberships authorized for hidden skill owner views", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:member" as never);
+    const ctx = makeCtx({
+      skill: makeSkill({
+        ownerPublisherId: "publishers:org",
+        moderationStatus: "hidden",
+        moderationReason: "manual.review",
+      }),
+      owner: makeOwner("users:1", "owner"),
+      ownerPublisher: {
+        _id: "publishers:org",
+        kind: "org",
+        handle: "team",
+        displayName: "Team",
+      },
+      ownersById: {
+        "users:member": makeOwner("users:member", "member"),
+      },
+      membership: {
+        _id: "publisherMembers:member",
+        publisherId: "publishers:org",
+        userId: "users:member",
+        role: "publisher",
+      },
+    });
+
+    const result = await getBySlugHandler(ctx, { slug: "demo" } as never);
+
+    expect(result?.skill).toMatchObject({ slug: "demo" });
   });
 
   it("omits duplicate references to nonpublic skills", async () => {
@@ -582,6 +655,153 @@ describe("skill artifact moderation", () => {
         action: "skill.appeal.submit",
       }),
     );
+  });
+
+  it("does not let stale personal memberships submit skill appeals", async () => {
+    const skill = makeSkill({
+      softDeletedAt: 123,
+      ownerPublisherId: "publishers:owner",
+      moderationStatus: "hidden",
+      moderationReason: "scanner.llm.suspicious",
+      latestVersionId: undefined,
+    });
+
+    await expect(
+      submitSkillAppealForUserInternalHandler(
+        {
+          db: {
+            get: vi.fn(async (id: string) => {
+              if (id === "users:stranger") return makeOwner("users:stranger", "stranger");
+              if (id === "publishers:owner") {
+                return {
+                  _id: "publishers:owner",
+                  kind: "user",
+                  handle: "owner",
+                  displayName: "Owner",
+                  linkedUserId: "users:1",
+                };
+              }
+              return null;
+            }),
+            query: vi.fn((table: string) => {
+              if (table === "skills") {
+                return {
+                  withIndex: vi.fn(() => ({
+                    unique: vi.fn().mockResolvedValue(skill),
+                  })),
+                };
+              }
+              if (table === "publisherMembers") {
+                return {
+                  withIndex: vi.fn(() => ({
+                    unique: vi.fn().mockResolvedValue({
+                      _id: "publisherMembers:stale",
+                      publisherId: "publishers:owner",
+                      userId: "users:stranger",
+                      role: "owner",
+                    }),
+                  })),
+                };
+              }
+              throw new Error(`Unexpected query table: ${table}`);
+            }),
+            insert: vi.fn(),
+            patch: vi.fn(),
+            replace: vi.fn(),
+            delete: vi.fn(),
+            normalizeId: vi.fn(),
+          },
+        } as never,
+        {
+          actorUserId: "users:stranger",
+          slug: "demo",
+          message: "please review",
+        },
+      ),
+    ).rejects.toThrow("Unauthorized");
+  });
+
+  it("lets org members submit skill appeals", async () => {
+    const skill = makeSkill({
+      softDeletedAt: 123,
+      ownerPublisherId: "publishers:org",
+      moderationStatus: "hidden",
+      moderationReason: "scanner.llm.suspicious",
+      latestVersionId: undefined,
+    });
+    const insert = vi.fn(async (table: string) => {
+      if (table === "skillAppeals") return "skillAppeals:1";
+      if (table === "skillModerationEventLogs") return "skillModerationEventLogs:1";
+      if (table === "auditLogs") return "auditLogs:1";
+      throw new Error(`Unexpected insert table: ${table}`);
+    });
+
+    const result = await submitSkillAppealForUserInternalHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "users:member") return makeOwner("users:member", "member");
+            if (id === "publishers:org") {
+              return {
+                _id: "publishers:org",
+                kind: "org",
+                handle: "team",
+                displayName: "Team",
+              };
+            }
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table === "skills") {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue(skill),
+                })),
+              };
+            }
+            if (table === "publisherMembers") {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue({
+                    _id: "publisherMembers:member",
+                    publisherId: "publishers:org",
+                    userId: "users:member",
+                    role: "publisher",
+                  }),
+                })),
+              };
+            }
+            if (table === "skillAppeals") {
+              return {
+                withIndex: vi.fn(() => ({
+                  order: vi.fn(() => ({
+                    first: vi.fn().mockResolvedValue(null),
+                  })),
+                })),
+              };
+            }
+            throw new Error(`Unexpected query table: ${table}`);
+          }),
+          insert,
+          patch: vi.fn(),
+          replace: vi.fn(),
+          delete: vi.fn(),
+          normalizeId: vi.fn(),
+        },
+      } as never,
+      {
+        actorUserId: "users:member",
+        slug: "demo",
+        message: "please review",
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      submitted: true,
+      appealId: "skillAppeals:1",
+      skillId: "skills:1",
+    });
   });
 
   it("keeps hidden skill reports visible in the moderator queue", async () => {

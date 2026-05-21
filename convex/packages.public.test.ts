@@ -5190,6 +5190,9 @@ describe("packages public queries", () => {
       {
         db: {
           get: vi.fn(async (id: string) => {
+            if (id === "users:stranger") {
+              return { _id: "users:stranger", handle: "stranger", displayName: "Stranger" };
+            }
             if (id === "publishers:owner") {
               return {
                 _id: "publishers:owner",
@@ -5215,6 +5218,110 @@ describe("packages public queries", () => {
     );
 
     expect(result).toEqual([]);
+  });
+
+  it("ignores stale personal memberships for package dashboards", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:stranger" as never);
+    const result = await listHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "publishers:owner") {
+              return {
+                _id: "publishers:owner",
+                kind: "user",
+                linkedUserId: "users:owner",
+              };
+            }
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table === "packages") {
+              return {
+                withIndex: vi.fn(() => ({
+                  order: vi.fn(() => ({
+                    take: vi
+                      .fn()
+                      .mockResolvedValue([
+                        makePackageDoc({ ownerPublisherId: "publishers:owner" }),
+                      ]),
+                  })),
+                })),
+              };
+            }
+            if (table === "publisherMembers") {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue({
+                    _id: "publisherMembers:stale",
+                    publisherId: "publishers:owner",
+                    userId: "users:stranger",
+                    role: "owner",
+                  }),
+                })),
+              };
+            }
+            throw new Error(`Unexpected table ${table}`);
+          }),
+        },
+      } as never,
+      { ownerPublisherId: "publishers:owner", limit: 20 },
+    );
+
+    expect(result).toEqual([]);
+  });
+
+  it("keeps org memberships authorized for package dashboards", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:member" as never);
+    const result = await listHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "users:member") {
+              return { _id: "users:member", handle: "member", displayName: "Member" };
+            }
+            if (id === "publishers:org") {
+              return {
+                _id: "publishers:org",
+                kind: "org",
+                handle: "team",
+                displayName: "Team",
+              };
+            }
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table === "packages") {
+              return {
+                withIndex: vi.fn(() => ({
+                  order: vi.fn(() => ({
+                    take: vi
+                      .fn()
+                      .mockResolvedValue([makePackageDoc({ ownerPublisherId: "publishers:org" })]),
+                  })),
+                })),
+              };
+            }
+            if (table === "publisherMembers") {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue({
+                    _id: "publisherMembers:member",
+                    publisherId: "publishers:org",
+                    userId: "users:member",
+                    role: "publisher",
+                  }),
+                })),
+              };
+            }
+            throw new Error(`Unexpected table ${table}`);
+          }),
+        },
+      } as never,
+      { ownerPublisherId: "publishers:org", limit: 20 },
+    );
+
+    expect(result).toEqual([expect.objectContaining({ name: "demo-plugin" })]);
   });
 
   it("requires auth inside the public publish action", async () => {

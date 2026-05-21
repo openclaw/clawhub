@@ -73,6 +73,7 @@ import {
 } from "./lib/public";
 import {
   assertCanManageOwnedResource,
+  canAccessPublisherOwnerScope,
   ensurePersonalPublisherForUser,
   getActiveUserByHandleOrPersonalPublisher,
   getOwnerPublisher,
@@ -2072,16 +2073,11 @@ export const getBySlug = query({
       ownerPublisherId: skill.ownerPublisherId,
       ownerUserId: skill.ownerUserId,
     });
-    const membership =
-      userId && skill.ownerPublisherId
-        ? await ctx.db
-            .query("publisherMembers")
-            .withIndex("by_publisher_user", (q) =>
-              q.eq("publisherId", skill.ownerPublisherId!).eq("userId", userId),
-            )
-            .unique()
-        : null;
-    const isOwner = Boolean(userId && (userId === skill.ownerUserId || membership));
+    const publisherOwner =
+      userId && ownerPublisher
+        ? await canAccessPublisherOwnerScope(ctx, { publisher: ownerPublisher, userId })
+        : false;
+    const isOwner = Boolean(userId && (userId === skill.ownerUserId || publisherOwner));
 
     const latestVersion = toPublicSkillVersion(
       skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null,
@@ -2838,17 +2834,12 @@ export const list = query({
     if (ownerPublisherId) {
       const userId = await getOptionalActiveAuthUserId(ctx);
       const ownerPublisher = await ctx.db.get(ownerPublisherId);
-      const membership =
-        userId &&
-        (await ctx.db
-          .query("publisherMembers")
-          .withIndex("by_publisher_user", (q) =>
-            q.eq("publisherId", ownerPublisherId).eq("userId", userId),
-          )
-          .unique());
       const isOwnDashboard = Boolean(
-        membership ||
-        (userId && ownerPublisher?.kind === "user" && ownerPublisher.linkedUserId === userId),
+        userId &&
+        (await canAccessPublisherOwnerScope(ctx, {
+          publisher: ownerPublisher,
+          userId,
+        })),
       );
       const scopedEntries = await ctx.db
         .query("skills")
@@ -2946,17 +2937,12 @@ export const listDashboardPaginated = query({
     if (ownerPublisherId) {
       const userId = await getOptionalActiveAuthUserId(ctx);
       const ownerPublisher = await ctx.db.get(ownerPublisherId);
-      const membership =
-        userId &&
-        (await ctx.db
-          .query("publisherMembers")
-          .withIndex("by_publisher_user", (q) =>
-            q.eq("publisherId", ownerPublisherId).eq("userId", userId),
-          )
-          .unique());
       const isOwnDashboard = Boolean(
-        membership ||
-        (userId && ownerPublisher?.kind === "user" && ownerPublisher.linkedUserId === userId),
+        userId &&
+        (await canAccessPublisherOwnerScope(ctx, {
+          publisher: ownerPublisher,
+          userId,
+        })),
       );
 
       const result =
@@ -3699,13 +3685,8 @@ async function applySkillAppealFinalAction(
 async function canUserAppealSkill(ctx: MutationCtx, skill: Doc<"skills">, userId: Id<"users">) {
   if (skill.ownerUserId === userId) return true;
   if (!skill.ownerPublisherId) return false;
-  const member = await ctx.db
-    .query("publisherMembers")
-    .withIndex("by_publisher_user", (q) =>
-      q.eq("publisherId", skill.ownerPublisherId!).eq("userId", userId),
-    )
-    .unique();
-  return Boolean(member);
+  const publisher = await ctx.db.get(skill.ownerPublisherId);
+  return await canAccessPublisherOwnerScope(ctx, { publisher, userId });
 }
 
 async function getActiveSkillVersionForAppeal(

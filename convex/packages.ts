@@ -68,6 +68,7 @@ import {
 import { toPublicPublisher } from "./lib/public";
 import {
   assertCanManageOwnedResource,
+  canAccessPublisherOwnerScope,
   getPublisherByHandle,
   getOwnerPublisher,
   getPublisherMembership,
@@ -951,16 +952,10 @@ async function listDashboardPackagesForOwnerPublisher(
 ) {
   const takeLimit = Math.min(limit * 5, 500);
   const ownerPublisher = await ctx.db.get(ownerPublisherId);
-  const membership =
-    (await ctx.db
-      .query("publisherMembers")
-      .withIndex("by_publisher_user", (q) =>
-        q.eq("publisherId", ownerPublisherId).eq("userId", viewerUserId),
-      )
-      .unique()) ?? null;
-  const isOwnDashboard = Boolean(
-    membership || (ownerPublisher?.kind === "user" && ownerPublisher.linkedUserId === viewerUserId),
-  );
+  const isOwnDashboard = await canAccessPublisherOwnerScope(ctx, {
+    publisher: ownerPublisher,
+    userId: viewerUserId,
+  });
   if (!isOwnDashboard) return [];
 
   const scopedEntries = await ctx.db

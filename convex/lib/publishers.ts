@@ -478,6 +478,26 @@ export async function getPublisherMembership(
   }
 }
 
+export async function canAccessPublisherOwnerScope(
+  ctx: DbCtx,
+  params: {
+    publisher: Doc<"publishers"> | null | undefined;
+    userId: Id<"users">;
+    allowedPublisherRoles?: PublisherRole[];
+  },
+) {
+  const publisher = params.publisher;
+  if (!publisher || !isPublisherActive(publisher)) return false;
+  if (publisher.kind === "user") {
+    return publisher.linkedUserId === params.userId;
+  }
+  const membership = await getPublisherMembership(ctx, publisher._id, params.userId);
+  return Boolean(
+    membership &&
+    isPublisherRoleAllowed(membership.role, params.allowedPublisherRoles ?? ["publisher"]),
+  );
+}
+
 export async function requirePublisherRole(
   ctx: DbCtx,
   params: {
