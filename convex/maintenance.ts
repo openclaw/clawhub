@@ -497,6 +497,7 @@ type CapabilityBackfillStats = {
   skillsScanned: number;
   skillsPatched: number;
   versionsPatched: number;
+  digestsPatched: number;
   missingVersions: number;
   missingStorageBlob: number;
 };
@@ -521,12 +522,15 @@ export const applySkillCapabilityTagsInternal = internalMutation({
     if (!skill) return { ok: false as const, reason: "missing_skill" as const };
 
     const normalizedTags = [...new Set(args.capabilityTags)];
+    const nextCapabilityTags = normalizedTags.length ? normalizedTags : undefined;
     let versionPatched = false;
     let skillPatched = false;
+    let digestPatched = false;
+    let skillUpdatedAt: number | undefined;
 
     if (JSON.stringify(version.capabilityTags ?? []) !== JSON.stringify(normalizedTags)) {
       await ctx.db.patch(version._id, {
-        capabilityTags: normalizedTags.length ? normalizedTags : undefined,
+        capabilityTags: nextCapabilityTags,
       });
       versionPatched = true;
     }
@@ -535,14 +539,33 @@ export const applySkillCapabilityTagsInternal = internalMutation({
       skill.latestVersionId === version._id &&
       JSON.stringify(skill.capabilityTags ?? []) !== JSON.stringify(normalizedTags)
     ) {
+      skillUpdatedAt = Date.now();
       await ctx.db.patch(skill._id, {
-        capabilityTags: normalizedTags.length ? normalizedTags : undefined,
-        updatedAt: Date.now(),
+        capabilityTags: nextCapabilityTags,
+        updatedAt: skillUpdatedAt,
       });
       skillPatched = true;
+      digestPatched = true;
     }
 
-    return { ok: true as const, versionPatched, skillPatched };
+    if (skill.latestVersionId === version._id) {
+      const digest = await ctx.db
+        .query("skillSearchDigest")
+        .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
+        .unique();
+      if (
+        digest &&
+        JSON.stringify(digest.capabilityTags ?? []) !== JSON.stringify(normalizedTags)
+      ) {
+        await ctx.db.patch(digest._id, {
+          capabilityTags: nextCapabilityTags,
+          updatedAt: skillUpdatedAt ?? skill.updatedAt,
+        });
+        digestPatched = true;
+      }
+    }
+
+    return { ok: true as const, versionPatched, skillPatched, digestPatched };
   },
 });
 
@@ -566,6 +589,7 @@ export async function backfillSkillCapabilityTagsInternalHandler(
     skillsScanned: 0,
     skillsPatched: 0,
     versionsPatched: 0,
+    digestsPatched: 0,
     missingVersions: 0,
     missingStorageBlob: 0,
   };
@@ -644,6 +668,7 @@ export async function backfillSkillCapabilityTagsInternalHandler(
       if (result.ok) {
         if (result.skillPatched) stats.skillsPatched += 1;
         if (result.versionPatched) stats.versionsPatched += 1;
+        if (result.digestPatched) stats.digestsPatched += 1;
       }
     }
 

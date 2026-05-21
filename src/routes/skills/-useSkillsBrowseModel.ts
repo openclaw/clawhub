@@ -43,9 +43,11 @@ export type SkillsSearchState = {
 
 const SKILL_CAPABILITY_LABELS: Record<string, string> = {
   crypto: "crypto",
+  "financial-authority": "financial authority",
   "requires-wallet": "requires wallet",
   "can-make-purchases": "payments",
   "can-sign-transactions": "signs transactions",
+  "requires-paid-service": "paid service",
   "requires-oauth-token": "oauth",
   "requires-sensitive-credentials": "sensitive credentials",
   "posts-externally": "external posting",

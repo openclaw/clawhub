@@ -48,9 +48,11 @@ type SkillsToolbarProps = {
 
 const SKILL_CAPABILITY_LABELS: Record<string, string> = {
   crypto: "Crypto",
+  "financial-authority": "Financial authority",
   "requires-wallet": "Requires wallet",
   "can-make-purchases": "Payments",
   "can-sign-transactions": "Signs transactions",
+  "requires-paid-service": "Paid service",
   "requires-oauth-token": "OAuth",
   "requires-sensitive-credentials": "Sensitive credentials",
   "posts-externally": "External posting",
