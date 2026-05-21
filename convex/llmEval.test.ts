@@ -601,9 +601,21 @@ describe("publish hook wiring", () => {
     const source = readFileSync(skillPublishPath, "utf8");
 
     expect(source).toMatch(
-      /scheduler\.runAfter\(\s*0\s*,\s*internal\.llmEval\.evaluateApiKeyRequirement\s*,/,
+      /scheduler\s*\.\s*runAfter\(\s*0\s*,\s*internal\.llmEval\.evaluateApiKeyRequirement\s*,/,
     );
     // Sanity: the schedule is wired with `versionId: publishResult.versionId`.
     expect(source).toMatch(/evaluateApiKeyRequirement[\s\S]{0,200}publishResult\.versionId/);
+
+    // Non-fatal contract: the call must use the `void runAfter(...).catch(...)`
+    // shape (never bare `await`), so a scheduler-table contention or transient
+    // Convex error inside this best-effort badge job cannot break the
+    // user-visible publish itself. Mirrors the `backupSkillForPublishInternal`
+    // pattern a few lines below in skillPublish.ts.
+    expect(source).toMatch(
+      /void\s+ctx\.scheduler\s*\.\s*runAfter\(\s*0\s*,\s*internal\.llmEval\.evaluateApiKeyRequirement\s*,[\s\S]{0,200}\)\s*\.\s*catch\s*\(/,
+    );
+    // Defensive: there must be no `await ctx.scheduler.runAfter(...)` for
+    // `evaluateApiKeyRequirement` anywhere in skillPublish.ts.
+    expect(source).not.toMatch(/await\s+ctx\.scheduler\.runAfter\([^)]*evaluateApiKeyRequirement/);
   });
 });

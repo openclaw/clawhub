@@ -1352,6 +1352,10 @@ type ApiKeyEvalDecision =
   | "llm_not_required"
   | "llm_unknown"
   | "llm_error"
+  // Environment opt-out: OPENAI_API_KEY is not configured. Distinct from
+  // `llm_error` so dashboards can separate "configuration absent" from a
+  // genuine model failure.
+  | "llm_disabled"
   | "no_skill_md";
 
 type ApiKeyEvalResult = {
@@ -1365,15 +1369,15 @@ type ApiKeyEvalResult = {
 };
 
 function selectSensitiveFilePaths(filePaths: readonly string[]): string[] {
-  const matched: string[] = [];
+  // Deduplicate and sort so the prompt input is deterministic regardless of
+  // upload ordering — two publishes with the same content but different
+  // `version.files` array order must produce identical analyser inputs.
+  const matched = new Set<string>();
   for (const path of filePaths) {
     if (typeof path !== "string" || !path) continue;
-    if (SENSITIVE_KEYWORDS_RE.test(path)) {
-      matched.push(path);
-      if (matched.length >= MAX_FILE_PATHS_FOR_PROMPT) break;
-    }
+    if (SENSITIVE_KEYWORDS_RE.test(path)) matched.add(path);
   }
-  return matched;
+  return Array.from(matched).sort().slice(0, MAX_FILE_PATHS_FOR_PROMPT);
 }
 
 async function callApiKeyRequirementLlm(
@@ -1394,9 +1398,12 @@ async function callApiKeyRequirementLlm(
     },
   });
 
-  const MAX_RETRIES = 3;
+  // Total OpenAI calls performed when the server keeps returning retryable
+  // statuses. Named for the count of attempts (not retries) so the loop
+  // bound stays unambiguous.
+  const MAX_RETRY_ATTEMPTS = 4;
   let response: Response | null = null;
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+  for (let attempt = 0; attempt < MAX_RETRY_ATTEMPTS; attempt++) {
     response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: {
@@ -1406,12 +1413,12 @@ async function callApiKeyRequirementLlm(
       body,
     });
 
-    if ((response.status === 429 || response.status >= 500) && attempt < MAX_RETRIES) {
+    if ((response.status === 429 || response.status >= 500) && attempt < MAX_RETRY_ATTEMPTS - 1) {
       const delay = 2 ** attempt * 2000 + Math.random() * 1000;
       console.log(
         `[apiKeyEval] Rate limited (${response.status}), retrying in ${Math.round(
           delay,
-        )}ms (attempt ${attempt + 1}/${MAX_RETRIES})`,
+        )}ms (attempt ${attempt + 1}/${MAX_RETRY_ATTEMPTS})`,
       );
       await new Promise((resolve) => setTimeout(resolve, delay));
       continue;
@@ -1514,7 +1521,11 @@ export const evaluateApiKeyRequirement = internalAction({
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
       console.log(`[apiKeyEval] ${slug}: OPENAI_API_KEY not configured, skipping`);
-      return { ok: false, decision: "llm_error", error: "OPENAI_API_KEY not configured" };
+      return {
+        ok: false,
+        decision: "llm_disabled",
+        error: "OPENAI_API_KEY not configured",
+      };
     }
     const model = getApiKeyRequirementModel();
 

@@ -16,7 +16,9 @@
 //     - llm_unknown
 //     - llm_error (HTTP 500 fallthrough)
 //     - llm_error (unparseable response body)
-//     - llm_error (OPENAI_API_KEY unset, no fetch)
+//     - llm_disabled (OPENAI_API_KEY unset, no fetch — environment opt-out,
+//       distinct from `llm_error` so dashboards can separate "configuration
+//       absent" from a genuine model failure)
 //
 // Each test crafts the minimum SkillVersion / Skill / SKILL.md needed to
 // land in the target branch. The OpenAI HTTP call is replaced with a vi.fn()
@@ -42,6 +44,7 @@ type ApiKeyEvalDecision =
   | "llm_not_required"
   | "llm_unknown"
   | "llm_error"
+  | "llm_disabled"
   | "no_skill_md";
 
 type ApiKeyEvalResult = {
@@ -335,7 +338,7 @@ describe("evaluateApiKeyRequirement — LLM tri-state branches", () => {
     expect(runMutation).not.toHaveBeenCalled();
   });
 
-  it("decision=llm_error early-returns when OPENAI_API_KEY is unset (no fetch attempted)", async () => {
+  it("decision=llm_disabled early-returns when OPENAI_API_KEY is unset (no fetch attempted)", async () => {
     delete process.env.OPENAI_API_KEY;
     const fetchMock = vi.fn();
     globalThis.fetch = fetchMock as unknown as typeof fetch;
@@ -344,7 +347,7 @@ describe("evaluateApiKeyRequirement — LLM tri-state branches", () => {
     const result = await evaluateApiKeyRequirementHandler(ctx, { versionId: VERSION_ID });
 
     expect(result.ok).toBe(false);
-    expect(result.decision).toBe("llm_error");
+    expect(result.decision).toBe("llm_disabled");
     expect(result.error).toBe("OPENAI_API_KEY not configured");
     expect(fetchMock).not.toHaveBeenCalled();
     expect(runMutation).not.toHaveBeenCalled();

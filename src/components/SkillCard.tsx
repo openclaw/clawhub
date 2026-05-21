@@ -33,7 +33,8 @@ export function SkillCard({
   const owner = encodeURIComponent(String(skill.ownerUserId));
   const link = href ?? `/${owner}/${skill.slug}`;
   const badges = Array.isArray(badge) ? badge : badge ? [badge] : [];
-  const hasTags = badges.length || chip || platformLabels?.length;
+  const showApiKeyBadge = apiKeyRequired === true;
+  const hasTags = badges.length || chip || platformLabels?.length || showApiKeyBadge;
 
   return (
     <Link to={link} className={["card skill-card", className].filter(Boolean).join(" ")}>
@@ -52,11 +53,6 @@ export function SkillCard({
               {label}
             </Badge>
           ))}
-          <ApiKeyRequiredBadge apiKeyRequired={apiKeyRequired} />
-        </div>
-      ) : apiKeyRequired === true ? (
-        // Render the badge even when there are no other tags.
-        <div className="skill-card-tags">
           <ApiKeyRequiredBadge apiKeyRequired={apiKeyRequired} />
         </div>
       ) : null}
