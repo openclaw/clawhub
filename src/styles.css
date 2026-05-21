@@ -4036,6 +4036,13 @@ code {
   display: grid;
   gap: 66px;
   min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.skill-hero-main-extra > * {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .skill-hero-action-grid {
@@ -4956,7 +4963,10 @@ code {
   position: relative;
   display: grid;
   width: 100%;
+  max-width: 100%;
   min-width: 0;
+  box-sizing: border-box;
+  overflow: hidden;
   border-radius: var(--radius-md);
   border: 1px solid var(--line);
   background: var(--surface-muted);
