@@ -13,6 +13,7 @@ const MAX_CANCEL_SCAN_LIMIT = 5000;
 const CANCEL_SAMPLE_LIMIT = 20;
 
 const finalLlmAnalysisStatuses = new Set(["clean", "suspicious", "malicious"]);
+const artifactBackedLlmAnalysisStatuses = new Set(["clean", "benign", "suspicious", "malicious"]);
 
 type CancelSkipReason =
   | "not-queued"
@@ -24,6 +25,18 @@ type CancelSkipReason =
   | "missing-llm-analysis"
   | "non-final-llm-analysis"
   | "delete-limit-reached";
+
+type JobTarget = {
+  job: Doc<"securityScanJobs">;
+  version?: Doc<"skillVersions">;
+  release?: Doc<"packageReleases">;
+  missing?: true;
+};
+
+type ExistingLlmAnalysis = {
+  status?: string;
+  verdict?: string;
+};
 
 const jobSourceValidator = v.union(
   v.literal("publish"),
@@ -130,6 +143,48 @@ async function runMutationRef<T>(
 function assertWorkerToken(token: string) {
   const expected = process.env.SECURITY_SCAN_WORKER_TOKEN;
   if (!expected || token !== expected) throw new ConvexError("Unauthorized");
+}
+
+function publicWorkerErrorDetail(error: string) {
+  return error
+    .replace(/https?:\/\/[^\s"')<>]+/g, "[redacted-url]")
+    .replace(
+      /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{12,}/gi,
+      (_match, scheme: string) => `${scheme} [redacted-secret]`,
+    )
+    .replace(
+      /\b(token|secret|password|api[_-]?key|authorization)(["']?\s*[:=]\s*["']?)[^\s"',}]+/gi,
+      (_match, key: string, separator: string) => `${key}${separator}[redacted-secret]`,
+    )
+    .replace(
+      /\b([A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|API[_-]?KEY|AUTHORIZATION))(["']?\s*[:=]\s*["']?)[^\s"',}]+/gi,
+      (_match, key: string, separator: string) => `${key}${separator}[redacted-secret]`,
+    )
+    .replace(/\b[A-Za-z0-9_+/=-]{64,}\b/g, "[redacted-secret]")
+    .slice(0, 500);
+}
+
+function buildWorkerFailureLlmAnalysis(error: string) {
+  return {
+    status: "error",
+    confidence: "low",
+    summary:
+      "ClawScan could not complete because the scanner failed before an artifact-backed review could finish.",
+    guidance:
+      "Treat this scan as incomplete. Retry ClawScan before inferring safety or risk from this result.",
+    findings: `Worker error: ${publicWorkerErrorDetail(error)}`,
+    model: "codex-security-worker",
+    checkedAt: Date.now(),
+  };
+}
+
+function hasArtifactBackedLlmAnalysis(analysis: ExistingLlmAnalysis | undefined) {
+  const status = analysis?.status?.trim().toLowerCase();
+  const verdict = analysis?.verdict?.trim().toLowerCase();
+  return (
+    artifactBackedLlmAnalysisStatuses.has(status ?? "") ||
+    artifactBackedLlmAnalysisStatuses.has(verdict ?? "")
+  );
 }
 
 function normalizeLimit(limit: number | undefined) {
@@ -620,13 +675,13 @@ export const completeCodexScanJob = action({
   },
   handler: async (ctx, args) => {
     assertWorkerToken(args.token);
-    const target = await runQueryRef<{
-      job: Doc<"securityScanJobs">;
-      version?: Doc<"skillVersions">;
-      release?: Doc<"packageReleases">;
-    } | null>(ctx, internalRefs.securityScan.getJobTargetInternal, {
-      jobId: args.jobId,
-    });
+    const target = await runQueryRef<JobTarget | null>(
+      ctx,
+      internalRefs.securityScan.getJobTargetInternal,
+      {
+        jobId: args.jobId,
+      },
+    );
     if (!target) throw new ConvexError("Job not found");
     if (target.job.leaseToken !== args.leaseToken) throw new ConvexError("Lease mismatch");
 
@@ -661,10 +716,45 @@ export const failCodexScanJob = action({
   },
   handler: async (ctx, args) => {
     assertWorkerToken(args.token);
-    return await runMutationRef(ctx, internalRefs.securityScan.failJobInternal, {
-      jobId: args.jobId,
-      leaseToken: args.leaseToken,
-      error: args.error,
-    });
+    const result = await runMutationRef<{ ok: true; retry: boolean }>(
+      ctx,
+      internalRefs.securityScan.failJobInternal,
+      {
+        jobId: args.jobId,
+        leaseToken: args.leaseToken,
+        error: args.error,
+      },
+    );
+
+    if (!result.retry) {
+      const target = await runQueryRef<JobTarget | null>(
+        ctx,
+        internalRefs.securityScan.getJobTargetInternal,
+        {
+          jobId: args.jobId,
+        },
+      );
+      if (target && !target.missing) {
+        const llmAnalysis = buildWorkerFailureLlmAnalysis(args.error);
+        if (target.job.targetKind === "skillVersion" && target.version) {
+          if (!hasArtifactBackedLlmAnalysis(target.version.llmAnalysis)) {
+            await runMutationRef(ctx, internalRefs.skills.updateVersionLlmAnalysisInternal, {
+              versionId: target.version._id,
+              moderationMode: "preserve",
+              llmAnalysis,
+            });
+          }
+        } else if (target.job.targetKind === "packageRelease" && target.release) {
+          if (!hasArtifactBackedLlmAnalysis(target.release.llmAnalysis)) {
+            await runMutationRef(ctx, internalRefs.packages.updateReleaseLlmAnalysisInternal, {
+              releaseId: target.release._id,
+              llmAnalysis,
+            });
+          }
+        }
+      }
+    }
+
+    return result;
   },
 });

@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cancelQueuedVtUpdateJobsInternal, claimCodexScanJobs } from "./securityScan";
+import {
+  cancelQueuedVtUpdateJobsInternal,
+  claimCodexScanJobs,
+  failCodexScanJob,
+} from "./securityScan";
 
 type WrappedHandler<TArgs, TResult = unknown> = {
   _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
@@ -9,6 +13,13 @@ const claimCodexScanJobsHandler = (
   claimCodexScanJobs as unknown as WrappedHandler<
     { token: string; workerId: string; limit?: number },
     Array<unknown>
+  >
+)._handler;
+
+const failCodexScanJobHandler = (
+  failCodexScanJob as unknown as WrappedHandler<
+    { token: string; jobId: string; leaseToken: string; error: string },
+    { ok: true; retry: boolean }
   >
 )._handler;
 
@@ -226,6 +237,192 @@ describe("securityScan", () => {
         jobId: "securityScanJobs:1",
         leaseToken: "lease-token",
         error: "ClawPack artifact unavailable",
+      }),
+    );
+  });
+
+  it("persists an error ClawScan result when worker retries are exhausted", async () => {
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-secret");
+
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("error" in args) return { ok: true, retry: false };
+      return { ok: true };
+    });
+    const runQuery = vi.fn(async () => ({
+      job: {
+        _id: "securityScanJobs:1",
+        targetKind: "skillVersion",
+      },
+      version: {
+        _id: "skillVersions:1",
+      },
+    }));
+
+    const result = await failCodexScanJobHandler(
+      { runMutation, runQuery },
+      {
+        token: "worker-secret",
+        jobId: "securityScanJobs:1",
+        leaseToken: "lease-token",
+        error:
+          "Download failed https://signed.example.invalid/file?token=secret Authorization: Bearer sk-short-secret OPENAI_API_KEY=sk-short-secret",
+      },
+    );
+
+    expect(result).toEqual({ ok: true, retry: false });
+    expect(runMutation).toHaveBeenNthCalledWith(
+      1,
+      expect.anything(),
+      expect.objectContaining({
+        jobId: "securityScanJobs:1",
+        leaseToken: "lease-token",
+      }),
+    );
+    expect(runMutation).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      expect.objectContaining({
+        versionId: "skillVersions:1",
+        moderationMode: "preserve",
+        llmAnalysis: expect.objectContaining({
+          confidence: "low",
+          status: "error",
+          summary: expect.stringContaining("could not complete"),
+        }),
+      }),
+    );
+    const llmAnalysis = runMutation.mock.calls[1]?.[1]?.llmAnalysis as
+      | { findings?: string }
+      | undefined;
+    expect(llmAnalysis?.findings).toContain("Worker error");
+    expect(llmAnalysis?.findings).not.toContain("token=secret");
+    expect(llmAnalysis?.findings).not.toContain("sk-short-secret");
+  });
+
+  it("preserves a prior blocking skill ClawScan verdict when worker retries are exhausted", async () => {
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-secret");
+
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("error" in args) return { ok: true, retry: false };
+      return { ok: true };
+    });
+    const runQuery = vi.fn(async () => ({
+      job: {
+        _id: "securityScanJobs:1",
+        targetKind: "skillVersion",
+      },
+      version: {
+        _id: "skillVersions:1",
+        llmAnalysis: {
+          status: "suspicious",
+          checkedAt: 123,
+        },
+      },
+    }));
+
+    const result = await failCodexScanJobHandler(
+      { runMutation, runQuery },
+      {
+        token: "worker-secret",
+        jobId: "securityScanJobs:1",
+        leaseToken: "lease-token",
+        error: "Codex worker failed",
+      },
+    );
+
+    expect(result).toEqual({ ok: true, retry: false });
+    expect(runMutation).toHaveBeenCalledTimes(1);
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        jobId: "securityScanJobs:1",
+        leaseToken: "lease-token",
+      }),
+    );
+  });
+
+  it("preserves a prior blocking package ClawScan verdict when worker retries are exhausted", async () => {
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-secret");
+
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("error" in args) return { ok: true, retry: false };
+      return { ok: true };
+    });
+    const runQuery = vi.fn(async () => ({
+      job: {
+        _id: "securityScanJobs:1",
+        targetKind: "packageRelease",
+      },
+      release: {
+        _id: "packageReleases:1",
+        llmAnalysis: {
+          status: "error",
+          verdict: "malicious",
+          checkedAt: 123,
+        },
+      },
+    }));
+
+    const result = await failCodexScanJobHandler(
+      { runMutation, runQuery },
+      {
+        token: "worker-secret",
+        jobId: "securityScanJobs:1",
+        leaseToken: "lease-token",
+        error: "Codex worker failed",
+      },
+    );
+
+    expect(result).toEqual({ ok: true, retry: false });
+    expect(runMutation).toHaveBeenCalledTimes(1);
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        jobId: "securityScanJobs:1",
+        leaseToken: "lease-token",
+      }),
+    );
+  });
+
+  it("preserves a prior clean package ClawScan verdict when worker retries are exhausted", async () => {
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-secret");
+
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("error" in args) return { ok: true, retry: false };
+      return { ok: true };
+    });
+    const runQuery = vi.fn(async () => ({
+      job: {
+        _id: "securityScanJobs:1",
+        targetKind: "packageRelease",
+      },
+      release: {
+        _id: "packageReleases:1",
+        llmAnalysis: {
+          status: "clean",
+          verdict: "benign",
+          checkedAt: 123,
+        },
+      },
+    }));
+
+    const result = await failCodexScanJobHandler(
+      { runMutation, runQuery },
+      {
+        token: "worker-secret",
+        jobId: "securityScanJobs:1",
+        leaseToken: "lease-token",
+        error: "Codex worker failed",
+      },
+    );
+
+    expect(result).toEqual({ ok: true, retry: false });
+    expect(runMutation).toHaveBeenCalledTimes(1);
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        jobId: "securityScanJobs:1",
+        leaseToken: "lease-token",
       }),
     );
   });

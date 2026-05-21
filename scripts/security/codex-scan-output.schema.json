@@ -9,7 +9,8 @@
     "scan_findings_in_context",
     "agentic_risk_findings",
     "risk_summary",
-    "user_guidance"
+    "user_guidance",
+    "incomplete_artifact_inspection"
   ],
   "properties": {
     "verdict": { "type": "string", "enum": ["benign", "suspicious", "malicious"] },
@@ -168,6 +169,7 @@
         }
       }
     },
-    "user_guidance": { "type": "string" }
+    "user_guidance": { "type": "string" },
+    "incomplete_artifact_inspection": { "type": "boolean" }
   }
 }

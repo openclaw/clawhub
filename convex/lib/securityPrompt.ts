@@ -159,6 +159,7 @@ export type LlmEvalResponse = {
   findings: string;
   agenticRiskFindings?: LlmAgenticRiskFinding[];
   riskSummary?: LlmRiskSummary;
+  incompleteArtifactInspection?: boolean;
 };
 
 export type PreparedArtifactText = {
@@ -1013,7 +1014,7 @@ export function parseLlmEvalResponse(raw: string): LlmEvalResponse | null {
   const riskSummary = parseRiskSummary(obj.risk_summary ?? obj.riskSummary);
   if (riskSummary === null) return null;
 
-  return normalizeParsedLlmEvalResponse({
+  const result = normalizeParsedLlmEvalResponse({
     verdict: verdict as LlmEvalResponse["verdict"],
     confidence: confidence as LlmEvalResponse["confidence"],
     summary,
@@ -1023,4 +1024,12 @@ export function parseLlmEvalResponse(raw: string): LlmEvalResponse | null {
     agenticRiskFindings: agenticRiskFindings ?? undefined,
     riskSummary: riskSummary ?? undefined,
   });
+
+  const hasIncompleteInspectionSignal =
+    obj.incomplete_artifact_inspection === true || obj.incompleteArtifactInspection === true;
+  if (hasIncompleteInspectionSignal) {
+    return { ...result, incompleteArtifactInspection: true };
+  }
+
+  return result;
 }

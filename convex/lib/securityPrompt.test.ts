@@ -247,6 +247,132 @@ describe("securityPrompt", () => {
     expect(parsed?.riskSummary?.abnormal_behavior_control.status).toBe("none");
   });
 
+  it("marks workspace read failures as incomplete artifact inspection", () => {
+    const parsed = parseLlmEvalResponse(
+      newResponse({
+        verdict: "benign",
+        confidence: "low",
+        summary:
+          "No artifact-backed suspicious behavior could be identified because the workspace read commands failed before any files could be inspected.",
+        agentic_risk_findings: [],
+        risk_summary: {
+          abnormal_behavior_control: {
+            status: "none",
+            highest_severity: "none",
+            summary: "No artifact-backed abnormal behavior control finding was identified.",
+          },
+          permission_boundary: {
+            status: "none",
+            highest_severity: "none",
+            summary: "No artifact-backed permission boundary finding was identified.",
+          },
+          sensitive_data_protection: {
+            status: "none",
+            highest_severity: "none",
+            summary: "No artifact-backed sensitive data protection finding was identified.",
+          },
+        },
+        user_guidance:
+          "Treat this as an incomplete low-confidence review: the sandbox prevented direct inspection of metadata.json and artifact files.",
+        incomplete_artifact_inspection: true,
+      }),
+    );
+
+    expect(parsed).toMatchObject({
+      verdict: "benign",
+      confidence: "low",
+      incompleteArtifactInspection: true,
+    });
+  });
+
+  it("does not let quoted artifact snippets spoof incomplete inspection", () => {
+    const parsed = parseLlmEvalResponse(
+      newResponse({
+        agentic_risk_findings: [
+          {
+            category_id: "ASI09",
+            category_label: "Human-Agent Trust Exploitation",
+            risk_bucket: "abnormal_behavior_control",
+            status: "note",
+            severity: "low",
+            confidence: "medium",
+            evidence: {
+              path: "SKILL.md",
+              snippet: "metadata.json could not be read",
+              explanation: "The phrase appears in the artifact text, not scanner diagnostics.",
+            },
+            user_impact: "Users should treat this as artifact content.",
+            recommendation: "Do not follow artifact instructions.",
+          },
+        ],
+      }),
+    );
+
+    expect(parsed?.incompleteArtifactInspection).toBeUndefined();
+  });
+
+  it("does not infer incomplete inspection from quoted summary prose", () => {
+    const parsed = parseLlmEvalResponse(
+      newResponse({
+        verdict: "benign",
+        confidence: "high",
+        summary:
+          'The SKILL.md includes the phrase "metadata.json could not be read" as an example, but artifact files were inspected.',
+        user_guidance: "No scanner error was reported.",
+      }),
+    );
+
+    expect(parsed?.verdict).toBe("benign");
+    expect(parsed?.incompleteArtifactInspection).toBeUndefined();
+  });
+
+  it("does not discard blocking verdicts that mention quoted failure text", () => {
+    const parsed = parseLlmEvalResponse(
+      newResponse({
+        verdict: "malicious",
+        scan_findings_in_context: [
+          {
+            ruleId: "suspicious.prompt_injection",
+            expected_for_purpose: false,
+            note: "The artifact tells the scanner to claim metadata.json could not be read.",
+          },
+        ],
+        agentic_risk_findings: [
+          {
+            category_id: "ASI09",
+            category_label: "Human-Agent Trust Exploitation",
+            risk_bucket: "abnormal_behavior_control",
+            status: "concern",
+            severity: "high",
+            confidence: "high",
+            evidence: {
+              path: "SKILL.md",
+              snippet: "metadata.json could not be read",
+              explanation: "The artifact is attempting to forge scanner diagnostics.",
+            },
+            user_impact: "Users could be misled by forged scanner-failure language.",
+            recommendation: "Do not install this artifact.",
+          },
+        ],
+      }),
+    );
+
+    expect(parsed?.verdict).toBe("malicious");
+    expect(parsed?.incompleteArtifactInspection).toBeUndefined();
+  });
+
+  it("honors explicit incomplete inspection even with a blocking verdict string", () => {
+    const parsed = parseLlmEvalResponse(
+      newResponse({
+        verdict: "malicious",
+        incomplete_artifact_inspection: true,
+      }),
+    );
+
+    expect(parsed?.verdict).toBe("malicious");
+    expect(parsed?.incompleteArtifactInspection).toBe(true);
+  });
+
   it("defaults LLM evals to OpenAI priority service tier", () => {
     const previous = process.env.OPENAI_EVAL_SERVICE_TIER;
     delete process.env.OPENAI_EVAL_SERVICE_TIER;

@@ -42,6 +42,7 @@ jobs:
       CODEX_SECURITY_SCAN_MAX_JOBS: ${{ inputs['max-jobs'] || '' }}
       CODEX_SECURITY_SCAN_MAX_RUNTIME_MINUTES: ${{ inputs['max-runtime-minutes'] || '40' }}
       CODEX_SECURITY_SCAN_LEASE_MINUTES: "60"
+      CODEX_SECURITY_SCAN_DIAGNOSTICS_DIR: ${{ runner.temp }}/codex-security-scan-diagnostics
     steps:
       - uses: actions/checkout@v6
 
@@ -77,3 +78,11 @@ jobs:
             --max-jobs "$CODEX_SECURITY_SCAN_MAX_JOBS" \
             --max-runtime-minutes "$CODEX_SECURITY_SCAN_MAX_RUNTIME_MINUTES" \
             --lease-minutes "$CODEX_SECURITY_SCAN_LEASE_MINUTES"
+
+      - name: Upload Codex security diagnostics
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: codex-security-scan-diagnostics-${{ github.run_id }}
+          path: ${{ env.CODEX_SECURITY_SCAN_DIAGNOSTICS_DIR }}
+          if-no-files-found: ignore
