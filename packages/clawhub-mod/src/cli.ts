@@ -351,7 +351,7 @@ function registerOrgCommands(command: Command) {
     .argument("<handle>", "Org publisher handle")
     .option("--display-name <name>", "Display name")
     .option("--member <handle>", "User handle to add to the org")
-    .option("--role <role>", "owner|admin|publisher for --member", "admin")
+    .option("--role <role>", "owner|admin|publisher for --member", "owner")
     .option("--trusted", "Mark org as trusted")
     .option("--json", "Output JSON")
     .action(async (handle, options) => {

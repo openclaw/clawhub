@@ -25,7 +25,7 @@ function normalizeHandleOrFail(handle: string, label: string) {
 }
 
 function normalizeRoleOrFail(role: string | undefined): OrgMemberRole {
-  const normalized = (role ?? "admin").trim().toLowerCase();
+  const normalized = (role ?? "owner").trim().toLowerCase();
   if (normalized === "owner" || normalized === "admin" || normalized === "publisher") {
     return normalized;
   }
@@ -36,7 +36,8 @@ export async function cmdCreateOrg(opts: GlobalOpts, handle: string, options: Or
   const orgHandle = normalizeHandleOrFail(handle, "Org handle");
   const displayName = options.displayName?.trim();
   const memberHandle = options.member ? normalizeHandleOrFail(options.member, "--member") : "";
-  const memberRole = memberHandle ? normalizeRoleOrFail(options.role) : undefined;
+  if (!memberHandle) fail("--member required");
+  const memberRole = normalizeRoleOrFail(options.role);
   const trusted = options.trusted === true ? true : undefined;
 
   const token = await requireAuthToken();

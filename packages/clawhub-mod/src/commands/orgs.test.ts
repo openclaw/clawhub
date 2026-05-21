@@ -26,7 +26,7 @@ afterEach(() => {
 });
 
 describe("cmdCreateOrg", () => {
-  it("creates an org publisher and adds a legacy owner member", async () => {
+  it("creates an org publisher and adds the legacy owner as owner by default", async () => {
     httpMocks.apiRequest.mockResolvedValueOnce({
       ok: true,
       publisherId: "publishers:opik",
@@ -37,14 +37,13 @@ describe("cmdCreateOrg", () => {
       member: {
         userId: "users:vincent",
         handle: "vincentkoc",
-        role: "admin",
+        role: "owner",
       },
     });
 
     await cmdCreateOrg(makeGlobalOpts(), "Opik", {
       displayName: "Opik",
       member: "vincentkoc",
-      role: "admin",
     });
 
     expect(authTokenMocks.requireAuthToken).toHaveBeenCalled();
@@ -58,7 +57,7 @@ describe("cmdCreateOrg", () => {
           handle: "opik",
           displayName: "Opik",
           memberHandle: "vincentkoc",
-          memberRole: "admin",
+          memberRole: "owner",
         },
       }),
       expect.anything(),
@@ -73,15 +72,22 @@ describe("cmdCreateOrg", () => {
       created: true,
       migrated: false,
       trusted: true,
+      member: {
+        userId: "users:vincent",
+        handle: "vincentkoc",
+        role: "owner",
+      },
     });
 
-    await cmdCreateOrg(makeGlobalOpts(), "opik", { trusted: true });
+    await cmdCreateOrg(makeGlobalOpts(), "opik", { member: "vincentkoc", trusted: true });
 
     expect(httpMocks.apiRequest).toHaveBeenCalledWith(
       "https://clawhub.ai",
       expect.objectContaining({
         body: {
           handle: "opik",
+          memberHandle: "vincentkoc",
+          memberRole: "owner",
           trusted: true,
         },
       }),
@@ -96,6 +102,11 @@ describe("cmdCreateOrg", () => {
         role: "moderator",
       }),
     ).rejects.toThrow(/--role must be owner, admin, or publisher/i);
+    expect(httpMocks.apiRequest).not.toHaveBeenCalled();
+  });
+
+  it("requires an explicit member so the moderator is not added as owner", async () => {
+    await expect(cmdCreateOrg(makeGlobalOpts(), "opik", {})).rejects.toThrow(/--member required/i);
     expect(httpMocks.apiRequest).not.toHaveBeenCalled();
   });
 });

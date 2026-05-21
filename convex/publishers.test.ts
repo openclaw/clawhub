@@ -1998,7 +1998,7 @@ describe("self-serve org publisher creation", () => {
 });
 
 describe("legacy publisher migration", () => {
-  it("lets admins create a missing org publisher and add a legacy package owner as admin", async () => {
+  it("lets admins create a missing org publisher with only the legacy package owner as owner", async () => {
     vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
 
     const users = new Map<string, Record<string, unknown>>([
@@ -2131,7 +2131,7 @@ describe("legacy publisher migration", () => {
         handle: "opik",
         displayName: "Opik",
         memberHandle: "vincentkoc",
-        memberRole: "admin",
+        memberRole: "owner",
       },
     );
 
@@ -2142,25 +2142,28 @@ describe("legacy publisher migration", () => {
       member: {
         userId: "users:vincent",
         handle: "vincentkoc",
-        role: "admin",
+        role: "owner",
       },
     });
-    expect(inserts).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          table: "publishers",
-          value: expect.objectContaining({ kind: "org", handle: "opik", displayName: "Opik" }),
-        }),
-        expect.objectContaining({
-          table: "publisherMembers",
-          value: expect.objectContaining({
-            publisherId: result.publisherId,
-            userId: "users:vincent",
-            role: "admin",
-          }),
-        }),
-      ]),
+    expect(inserts).toContainEqual(
+      expect.objectContaining({
+        table: "publishers",
+        value: expect.objectContaining({ kind: "org", handle: "opik", displayName: "Opik" }),
+      }),
     );
+    const memberInserts = inserts.filter(
+      (entry) =>
+        entry.table === "publisherMembers" && entry.value.publisherId === result.publisherId,
+    );
+    expect(memberInserts).toEqual([
+      expect.objectContaining({
+        value: expect.objectContaining({
+          publisherId: result.publisherId,
+          userId: "users:vincent",
+          role: "owner",
+        }),
+      }),
+    ]);
   });
 
   it("converts a legacy personal publisher into an org and rehomes package ownership", async () => {

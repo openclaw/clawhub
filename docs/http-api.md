@@ -1188,9 +1188,11 @@ Status codes:
 
 Admin-only. Ensures an org publisher exists for a handle. If the handle still points at a
 legacy shared user/personal publisher, the endpoint migrates it into an org publisher first.
+For a newly-created org, provide `memberHandle`; the acting admin is not added as a member.
+`memberRole` defaults to `owner`.
 
-- Body: `{ "handle": "openclaw", "displayName": "OpenClaw", "trusted": true }`
-- Response: `{ "ok": true, "publisherId": "...", "handle": "openclaw", "created": true, "migrated": false, "trusted": true }`
+- Body: `{ "handle": "openclaw", "displayName": "OpenClaw", "memberHandle": "alice", "memberRole": "owner", "trusted": true }`
+- Response: `{ "ok": true, "publisherId": "...", "handle": "openclaw", "created": true, "migrated": false, "trusted": true, "member": { "userId": "...", "handle": "alice", "role": "owner" } }`
 
 ### `POST /api/v1/publishers`
 
