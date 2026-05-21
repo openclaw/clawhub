@@ -61,6 +61,7 @@ import {
   safeTextFileResponse,
   softDeleteErrorToResponse,
   formatAuthzMessage,
+  formatUserFacingErrorMessage,
   text,
   toOptionalNumber,
 } from "./shared";
@@ -133,7 +134,7 @@ function packageOperationErrorToResponse(
   headers: HeadersInit,
   fallback = "Package operation failed",
 ) {
-  const message = error instanceof Error ? error.message : fallback;
+  const message = formatUserFacingErrorMessage(error, fallback);
   const lower = message.toLowerCase();
   if (lower.includes("unauthorized"))
     return text(formatAuthzMessage(error, "Unauthorized"), 401, headers);
@@ -154,7 +155,7 @@ function isTransientConvexContentionMessage(message: string) {
 }
 
 function packagePublishErrorToResponse(error: unknown, headers: HeadersInit) {
-  const message = error instanceof Error ? error.message : "Publish failed";
+  const message = formatUserFacingErrorMessage(error, "Publish failed");
   if (!isTransientConvexContentionMessage(message)) {
     return text(message, 400, headers);
   }

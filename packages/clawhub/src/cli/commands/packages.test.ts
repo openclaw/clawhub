@@ -1344,6 +1344,48 @@ describe("package commands", () => {
     }
   });
 
+  it("explains missing declared runtime extension files", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const packName = "demo-plugin-1.0.0.tgz";
+      await writeFile(
+        join(workdir, packName),
+        npmPackFixture({
+          "package/package.json": makeCodePluginPackageJson({
+            name: "@scope/demo-plugin",
+            displayName: "Demo Plugin",
+            version: "1.0.0",
+            openclaw: {
+              extensions: ["./index.ts"],
+              runtimeExtensions: ["./dist/index.js"],
+              compat: {
+                pluginApi: ">=2026.3.24-beta.2",
+              },
+              build: {
+                openclawVersion: "2026.3.24-beta.2",
+              },
+            },
+          }),
+          "package/openclaw.plugin.json": JSON.stringify({ id: "demo.plugin" }),
+          "package/index.ts": "export const demo = true;\n",
+        }),
+      );
+
+      await expect(
+        cmdPublishPackage(makeOpts(workdir), packName, {
+          sourceRepo: "openclaw/demo-plugin",
+          sourceCommit: "abc123",
+          sourceRef: "refs/tags/v1.0.0",
+        }),
+      ).rejects.toThrow(
+        "@scope/demo-plugin declares openclaw.runtimeExtensions entry ./dist/index.js, but that file is missing from the package. Build first and publish a local folder or .tgz, or include the runtime file in the GitHub ref.",
+      );
+      expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
   it("rejects a ClawPack tarball without openclaw.plugin.json", async () => {
     const workdir = await makeTmpWorkdir();
     try {

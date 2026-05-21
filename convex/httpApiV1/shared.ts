@@ -371,10 +371,34 @@ export function softDeleteErrorToResponse(
   return text("Internal Server Error", 500, headers);
 }
 
+export function cleanUserFacingErrorMessage(message: string) {
+  let cleaned = message
+    .replace(/\[CONVEX[^\]]*\]\s*/g, "")
+    .replace(/\[Request ID:[^\]]*\]\s*/g, "")
+    .replace(/^Server Error Called by client\s*/i, "")
+    .trim();
+
+  for (let i = 0; i < 3; i += 1) {
+    const next = cleaned
+      .replace(/^Error:\s*/i, "")
+      .replace(/^(?:Uncaught\s+)?ConvexError:\s*/i, "")
+      .trim();
+    if (next === cleaned) break;
+    cleaned = next;
+  }
+
+  return cleaned;
+}
+
+export function formatUserFacingErrorMessage(error: unknown, fallback: string) {
+  const message = error instanceof Error ? error.message : fallback;
+  return cleanUserFacingErrorMessage(message) || fallback;
+}
+
 function formatAuthFailure(error: unknown) {
-  const message = error instanceof Error ? error.message.trim() : "";
+  const message = formatUserFacingErrorMessage(error, "");
   if (!message || /^unauthorized$/i.test(message)) return "Unauthorized";
-  return message.replace(/^ConvexError:\s*/i, "").trim() || "Unauthorized";
+  return message || "Unauthorized";
 }
 
 // Shared formatter for authz responses.
@@ -385,9 +409,9 @@ function formatAuthFailure(error: unknown) {
 //   CLI/API clients can surface actionable reasons such as
 //   "Forbidden: This skill was hidden by moderation ...".
 export function formatAuthzMessage(error: unknown, fallback: "Unauthorized" | "Forbidden") {
-  const message = error instanceof Error ? error.message.trim() : "";
+  const message = formatUserFacingErrorMessage(error, "");
   if (!message) return fallback;
-  const stripped = message.replace(/^ConvexError:\s*/i, "").trim();
+  const stripped = cleanUserFacingErrorMessage(message);
   if (!stripped || stripped.toLowerCase() === fallback.toLowerCase()) return fallback;
   return stripped;
 }
