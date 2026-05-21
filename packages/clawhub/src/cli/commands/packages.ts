@@ -1723,8 +1723,8 @@ async function preparePackagePublishPlan(
     basename(folder).trim().toLowerCase();
   const displayName =
     options.displayName?.trim() ||
-    packageJsonString(packageJson, "displayName") ||
     packageJsonString(pluginManifest, "name") ||
+    packageJsonString(packageJson, "displayName") ||
     packageJsonString(bundleManifest, "name") ||
     readReadmeH1FromPackageFiles(filesOnDisk) ||
     titleCase(basename(folder));

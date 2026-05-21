@@ -1100,6 +1100,44 @@ describe("package commands", () => {
     }
   });
 
+  it("prefers the OpenClaw plugin manifest name over package.json displayName", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "demo-plugin");
+      await mkdir(join(folder, "dist"), { recursive: true });
+      await writeFile(
+        join(folder, "package.json"),
+        makeCodePluginPackageJson({
+          name: "@scope/demo-plugin",
+          displayName: "Package Display Name",
+          version: "1.0.0",
+          files: ["dist", "openclaw.plugin.json"],
+        }),
+        "utf8",
+      );
+      await writeFile(
+        join(folder, "openclaw.plugin.json"),
+        JSON.stringify({ id: "demo.plugin", name: "Manifest Display Name" }),
+        "utf8",
+      );
+      await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
+
+      await cmdPublishPackage(makeOpts(workdir), "demo-plugin", {
+        dryRun: true,
+        json: true,
+        sourceRepo: "openclaw/demo-plugin",
+        sourceCommit: "abc123",
+      });
+
+      const output = String(mockWrite.mock.calls[0]?.[0] ?? "").trim();
+      expect(JSON.parse(output)).toMatchObject({
+        displayName: "Manifest Display Name",
+      });
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
   it("preserves literal trailing hashes in README H1 display name fallbacks", async () => {
     const workdir = await makeTmpWorkdir();
     try {
