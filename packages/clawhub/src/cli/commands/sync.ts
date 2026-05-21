@@ -28,12 +28,6 @@ import {
 } from "./syncHelpers.js";
 import type { Candidate, LocalSkill, SyncOptions } from "./syncTypes.js";
 
-const RECOVERABLE_SLUG_CONFLICT_MESSAGES = [
-  "Slug is already taken. Choose a different slug.",
-  "Slug redirects to an existing skill. Choose a different slug.",
-  "This slug is locked to a deleted or banned account.",
-] as const;
-
 export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllowed: boolean) {
   const allowPrompt = isInteractive() && inputAllowed !== false;
   intro("ClawHub sync");
@@ -199,9 +193,7 @@ export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllow
       });
       uploaded += 1;
     } catch (error) {
-      const conflictMessage = getSlugConflictMessage(error);
-      if (!conflictMessage) throw error;
-      failedUploads.push({ slug: skill.slug, message: conflictMessage });
+      failedUploads.push({ slug: skill.slug, message: formatError(error) });
     }
   }
 
@@ -223,11 +215,4 @@ export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllow
 
 function normalizeRegistry(value: string) {
   return value.trim().replace(/\/+$/, "").toLowerCase();
-}
-
-function getSlugConflictMessage(error: unknown) {
-  const message = formatError(error);
-  return RECOVERABLE_SLUG_CONFLICT_MESSAGES.some((conflict) => message.includes(conflict))
-    ? message
-    : null;
 }

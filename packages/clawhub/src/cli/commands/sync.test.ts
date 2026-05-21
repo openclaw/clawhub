@@ -302,7 +302,7 @@ describe("cmdSync", () => {
     expect(update.changelog).toBe("");
   });
 
-  it("continues uploading after a slug conflict publish failure", async () => {
+  it("continues uploading after a publish failure", async () => {
     interactive = false;
     mockApiRequest.mockImplementation(async (_registry: string, args: { path: string }) => {
       if (args.path === "/api/v1/whoami") return { user: { handle: "steipete" } };
@@ -325,9 +325,7 @@ describe("cmdSync", () => {
     mockCmdPublish.mockImplementation(async (_opts, _folder, options?: unknown) => {
       const { slug } = options as { slug: string };
       if (slug === "new-skill") {
-        throw new Error(
-          "Slug is already taken. Choose a different slug. Existing skill: /TheSethRose/agent-browser",
-        );
+        throw new Error("Registry rejected upload");
       }
     });
 
@@ -342,7 +340,7 @@ describe("cmdSync", () => {
     const output = mockLog.mock.calls.map((call) => String(call[0])).join("\n");
     expect(output).toMatch(/Failed to upload/);
     expect(output).toMatch(/new-skill/);
-    expect(output).toMatch(/Existing skill: \/TheSethRose\/agent-browser/);
+    expect(output).toMatch(/Registry rejected upload/);
 
     const outro = mockOutro.mock.calls.at(-1)?.[0];
     expect(String(outro)).toMatch(/Uploaded 1 of 2 skill\(s\). 1 failed/);
@@ -442,7 +440,7 @@ describe("cmdSync", () => {
     expect(process.exitCode).toBe(1);
   });
 
-  it("does not swallow unrelated publish failures", async () => {
+  it("records unrelated publish failures as per-skill failures", async () => {
     interactive = false;
     mockApiRequest.mockImplementation(async (_registry: string, args: { path: string }) => {
       if (args.path === "/api/v1/whoami") return { user: { handle: "steipete" } };
@@ -464,11 +462,48 @@ describe("cmdSync", () => {
     });
     mockCmdPublish.mockRejectedValueOnce(new Error("HTTP 500"));
 
-    await expect(
-      cmdSync(makeOpts(), { root: ["/scan"], all: true, dryRun: false, bump: "patch" }, true),
-    ).rejects.toThrow("HTTP 500");
+    await cmdSync(makeOpts(), { root: ["/scan"], all: true, dryRun: false, bump: "patch" }, true);
 
-    expect(mockCmdPublish).toHaveBeenCalledTimes(1);
+    expect(mockCmdPublish).toHaveBeenCalledTimes(2);
+    expect(mockCmdPublish.mock.calls.map((call) => (call[2] as { slug: string }).slug)).toEqual([
+      "new-skill",
+      "update-skill",
+    ]);
+
+    const output = mockLog.mock.calls.map((call) => String(call[0])).join("\n");
+    expect(output).toMatch(/Failed to upload/);
+    expect(output).toMatch(/new-skill: HTTP 500/);
+
+    const outro = mockOutro.mock.calls.at(-1)?.[0];
+    expect(String(outro)).toMatch(/Uploaded 1 of 2 skill\(s\). 1 failed/);
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("aborts command-level failures before publishing", async () => {
+    interactive = false;
+    const { findSkillFolders } = await import("../scanSkills.js");
+    mocked(findSkillFolders).mockImplementation(async (root: string) => {
+      if (!root.endsWith("/scan")) return [];
+      return [{ folder: "/scan/update-skill", slug: "update-skill", displayName: "Update Skill" }];
+    });
+    mockApiRequest.mockImplementation(async (_registry: string, args: { path: string }) => {
+      if (args.path === "/api/v1/whoami") return { user: { handle: "steipete" } };
+      if (args.path === "/api/cli/telemetry/sync") return { ok: true };
+      if (args.path.startsWith("/api/v1/resolve?")) {
+        return { match: null, latestVersion: { version: "1.0.0" } };
+      }
+      throw new Error(`Unexpected apiRequest: ${args.path}`);
+    });
+
+    await expect(
+      cmdSync(
+        makeOpts(),
+        { root: ["/scan"], all: true, dryRun: false, bump: "not-semver" as never },
+        true,
+      ),
+    ).rejects.toThrow("Could not bump version for update-skill");
+
+    expect(mockCmdPublish).not.toHaveBeenCalled();
   });
 
   it("skips telemetry when CLAWHUB_DISABLE_TELEMETRY is set", async () => {
