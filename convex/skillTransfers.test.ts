@@ -453,7 +453,7 @@ describe("skillTransfers", () => {
       softDeletedAt: undefined,
       moderationStatus: "active",
       isSuspicious: false,
-      moderationFlags: ["blocked.malware"],
+      moderationReasonCodes: ["suspicious.dynamic_code_execution"],
     };
 
     await expect(
