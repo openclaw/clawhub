@@ -365,6 +365,12 @@ export async function publishVersionForUser(
     versionId: publishResult.versionId,
   });
 
+  // Schedule the async "API key required?" analyser; non-fatal on failure
+  // (UI treats `apiKeyRequired === undefined` as "no badge").
+  await ctx.scheduler.runAfter(0, internal.llmEval.evaluateApiKeyRequirement, {
+    versionId: publishResult.versionId,
+  });
+
   const targetPublisher =
     options.ownerPublisherId !== undefined
       ? ((await ctx.runQuery(internal.publishers.getByIdInternal, {

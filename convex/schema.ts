@@ -392,6 +392,8 @@ const skills = defineTable({
       changelog: v.string(),
       changelogSource: v.optional(v.union(v.literal("auto"), v.literal("user"))),
       clawdis: v.optional(v.any()),
+      // Denormalised mirror of the latest version's `apiKeyRequired`.
+      apiKeyRequired: v.optional(v.boolean()),
     }),
   ),
   tags: v.record(v.string(), v.id("skillVersions")),
@@ -633,6 +635,9 @@ const skillVersions = defineTable({
       checkedAt: v.number(),
     }),
   ),
+  // Whether the user must supply an API key/secret to run this version.
+  // Filled asynchronously by the LLM analyser; absent until analysed.
+  apiKeyRequired: v.optional(v.boolean()),
 })
   .index("by_skill", ["skillId"])
   .index("by_skill_version", ["skillId", "version"])
@@ -779,6 +784,8 @@ const skillSearchDigest = defineTable({
       changelog: v.string(),
       changelogSource: v.optional(v.union(v.literal("auto"), v.literal("user"))),
       clawdis: v.optional(v.any()),
+      // Mirrors `skills.latestVersionSummary.apiKeyRequired`.
+      apiKeyRequired: v.optional(v.boolean()),
     }),
   ),
   tags: v.record(v.string(), v.id("skillVersions")),
