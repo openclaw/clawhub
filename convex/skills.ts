@@ -136,6 +136,7 @@ const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
 const MAX_DIFF_FILE_BYTES = 200 * 1024;
 const MAX_LIST_LIMIT = 50;
 const MAX_PUBLIC_LIST_LIMIT = 200;
+export const MAX_EXPORT_LIST_LIMIT = 1000;
 const MAX_LIST_BULK_LIMIT = 200;
 const MAX_LIST_TAKE = 1000;
 const MAX_SKILL_CATALOG_SCAN_DOCUMENTS = 500;
@@ -10376,3 +10377,61 @@ async function findCanonicalSkillForFingerprint(
 
   return null;
 }
+
+export const listByDateRange = internalQuery({
+  args: {
+    startDate: v.number(),
+    endDate: v.number(),
+    cursor: v.optional(v.string()),
+    numItems: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const numItems = Math.max(
+      1,
+      Math.min(args.numItems ?? MAX_EXPORT_LIST_LIMIT, MAX_EXPORT_LIST_LIMIT),
+    );
+    const { startDate, endDate } = args;
+
+    const decodedCursor = args.cursor
+      ? decodePublicListCursor({
+          cursor: args.cursor,
+          indexName: "by_active_created",
+          maxIndexKeyLength: 4,
+          eqPrefix: [undefined],
+        })
+      : null;
+    if (args.cursor && !decodedCursor) {
+      throw new Error("Invalid cursor format");
+    }
+
+    const isFirstPage = !decodedCursor;
+    const startIndexKey: IndexKey = decodedCursor ?? [undefined, endDate];
+    const endIndexKey: IndexKey = [undefined, startDate];
+
+    const result = await getPage(ctx, {
+      table: "skillSearchDigest",
+      index: "by_active_created",
+      startIndexKey,
+      startInclusive: isFirstPage,
+      endIndexKey,
+      endInclusive: true,
+      order: "desc",
+      absoluteMaxRows: numItems,
+      schema,
+    });
+
+    let nextCursor: string | null = null;
+    if (result.hasMore && result.indexKeys.length > 0) {
+      nextCursor = encodeIndexKey(
+        "by_active_created",
+        result.indexKeys[result.indexKeys.length - 1],
+      );
+    }
+
+    return {
+      page: result.page,
+      nextCursor,
+      hasMore: result.hasMore,
+    };
+  },
+});

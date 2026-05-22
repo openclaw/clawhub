@@ -142,6 +142,56 @@ export async function requirePackagePublishAuth(
   return { kind: "user", user: auth.user, userId: auth.userId };
 }
 
+// ==================== Export Auth Config ====================
+// Only roles listed here may access the export endpoint.
+// To grant access to more roles, add them here (e.g. "moderator" or "mirror").
+const EXPORT_ALLOWED_ROLES: string[] = ["admin"];
+// ==========================================================
+
+export async function requireExportAuth(
+  ctx: ActionCtx,
+  request: Request,
+): Promise<
+  | { ok: true; user: Doc<"users">; userId: Doc<"users">["_id"] }
+  | { ok: false; response: Response }
+> {
+  const header = request.headers.get("authorization") ?? request.headers.get("Authorization");
+
+  if (!header) {
+    return {
+      ok: false,
+      response: new Response("Unauthorized: Bearer token required", {
+        status: 401,
+        headers: { "Content-Type": "text/plain" },
+      }),
+    };
+  }
+
+  try {
+    const { user, userId } = await requireApiTokenUser(ctx, request);
+
+    if (!user.role || !EXPORT_ALLOWED_ROLES.includes(user.role)) {
+      return {
+        ok: false,
+        response: new Response(
+          "Forbidden: export permission required (admin only)",
+          { status: 403, headers: { "Content-Type": "text/plain" } },
+        ),
+      };
+    }
+
+    return { ok: true, user, userId };
+  } catch (err) {
+    return {
+      ok: false,
+      response: new Response(
+        `Unauthorized: ${err instanceof Error ? err.message : "invalid token"}`,
+        { status: 401, headers: { "Content-Type": "text/plain" } },
+      ),
+    };
+  }
+}
+
 export function parseBearerToken(header: string | null) {
   if (!header) return null;
   const trimmed = header.trim();

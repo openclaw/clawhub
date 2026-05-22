@@ -10,8 +10,9 @@ import {
 import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
-import { getOptionalApiTokenUserId, requireApiTokenUser } from "../lib/apiTokenAuth";
+import { getOptionalApiTokenUserId, requireApiTokenUser, requireExportAuth } from "../lib/apiTokenAuth";
 import { applyRateLimit } from "../lib/httpRateLimit";
+import { buildMergedExportZip, type MergedExportManifestEntry, validateSlug, validateFilePath } from "../lib/skillZip";
 import { parseBooleanQueryParam, resolveBooleanQueryParam } from "../lib/httpUtils";
 import type {
   LlmAgenticRiskFinding,
@@ -1550,4 +1551,245 @@ function optionalStringField(value: unknown, key: string): string | undefined {
   if (!value || typeof value !== "object") return undefined;
   const field = (value as Record<string, unknown>)[key];
   return typeof field === "string" ? field : undefined;
+}
+
+async function chunkedParallel<T, R>(
+  items: T[],
+  chunkSize: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = [];
+  for (let i = 0; i < items.length; i += chunkSize) {
+    const chunk = items.slice(i, i + chunkSize);
+    const chunkResults = await Promise.all(chunk.map(fn));
+    results.push(...chunkResults);
+  }
+  return results;
+}
+
+export async function exportSkillsV1Handler(ctx: ActionCtx, request: Request) {
+  const auth = await requireExportAuth(ctx, request);
+  if (!auth.ok) return auth.response;
+
+  const rate = await applyRateLimit(ctx, request, "export");
+  if (!rate.ok) return rate.response;
+
+  const url = new URL(request.url);
+  const startDate = toOptionalNumber(url.searchParams.get("startDate"));
+  const endDate = toOptionalNumber(url.searchParams.get("endDate"));
+  const limit = Math.max(
+    1,
+    Math.min(toOptionalNumber(url.searchParams.get("limit")) ?? 1000, 1000),
+  );
+  const cursor = url.searchParams.get("cursor")?.trim() || undefined;
+
+  if (startDate == null || endDate == null) {
+    return text(
+      "startDate and endDate query parameters are required (Unix milliseconds)",
+      400,
+      rate.headers,
+    );
+  }
+  if (startDate > endDate) {
+    return text("startDate must be <= endDate", 400, rate.headers);
+  }
+
+  let result: {
+    page: Array<{
+      slug: string;
+      displayName: string;
+      latestVersionId?: Id<"skillVersions">;
+      createdAt: number;
+      updatedAt: number;
+      stats?: Record<string, unknown> | null;
+      ownerHandle?: string | null;
+      ownerDisplayName?: string | null;
+    }>;
+    nextCursor: string | null;
+    hasMore: boolean;
+  };
+  try {
+    result = await ctx.runQuery(internal.skills.listByDateRange, {
+      startDate,
+      endDate,
+      cursor,
+      numItems: limit,
+    });
+  } catch (err) {
+    if (err instanceof Error && err.message.includes("Invalid cursor format")) {
+      return text("Invalid cursor format", 400, rate.headers);
+    }
+    throw err;
+  }
+
+  if (result.page.length === 0) {
+    const emptyZip = buildMergedExportZip([], []);
+    return new Response(emptyZip as unknown as BodyInit, {
+      status: 200,
+      headers: {
+        ...rate.headers,
+        "Content-Type": "application/zip",
+        "Content-Disposition": `attachment; filename="skills-export-${startDate}-${endDate}-empty.zip"`,
+        "X-Next-Cursor": "",
+        "X-Has-More": "false",
+        "X-Total-Returned": "0",
+        "X-Date-Range": `${startDate}-${endDate}`,
+      },
+    });
+  }
+
+  const exportErrors: Array<{ slug: string; error: string }> = [];
+
+  const versionDocs = await chunkedParallel(
+    result.page,
+    100,
+    (digest) =>
+      digest.latestVersionId
+        ? ctx.runQuery(internal.skills.getVersionByIdInternal, {
+            versionId: digest.latestVersionId,
+          })
+        : Promise.resolve(null),
+  );
+
+  type BlobTask = { digestIndex: number; fileIndex: number; storageId: Id<"_storage"> };
+  const blobTasks: BlobTask[] = [];
+
+  for (let i = 0; i < result.page.length; i++) {
+    const digest = result.page[i];
+    const version = versionDocs[i] as { files?: Array<{ storageId: Id<"_storage">; path: string }> } | null;
+
+    if (!version) {
+      exportErrors.push({
+        slug: digest.slug,
+        error: `version not found (latestVersionId: ${digest.latestVersionId ?? "null"})`,
+      });
+      continue;
+    }
+    if (!version.files || version.files.length === 0) {
+      exportErrors.push({
+        slug: digest.slug,
+        error: `version has no files (latestVersionId: ${digest.latestVersionId})`,
+      });
+      continue;
+    }
+
+    if (!validateSlug(digest.slug)) {
+      exportErrors.push({
+        slug: digest.slug,
+        error: "invalid slug (fails Zip Slip validation)",
+      });
+      continue;
+    }
+
+    for (let j = 0; j < version.files.length; j++) {
+      blobTasks.push({
+        digestIndex: i,
+        fileIndex: j,
+        storageId: version.files[j].storageId,
+      });
+    }
+  }
+
+  const blobs = await chunkedParallel(blobTasks, 50, (task) => ctx.storage.get(task.storageId));
+
+  const zipEntries: Array<{ path: string; bytes: Uint8Array }> = [];
+  const manifest: MergedExportManifestEntry[] = [];
+
+  const blobsByDigest = new Map<number, Map<number, Blob | null>>();
+  for (let k = 0; k < blobTasks.length; k++) {
+    const task = blobTasks[k];
+    if (!blobsByDigest.has(task.digestIndex)) {
+      blobsByDigest.set(task.digestIndex, new Map());
+    }
+    blobsByDigest.get(task.digestIndex)!.set(task.fileIndex, blobs[k]);
+  }
+
+  for (let i = 0; i < result.page.length; i++) {
+    const digest = result.page[i];
+    const version = versionDocs[i] as {
+      version?: string;
+      files?: Array<{ storageId: Id<"_storage">; path: string }>;
+    } | null;
+    if (!version?.files) continue;
+    if (!validateSlug(digest.slug)) continue;
+
+    const digestBlobs = blobsByDigest.get(i);
+    if (!digestBlobs) continue;
+
+    let fileCount = 0;
+    for (let j = 0; j < version.files.length; j++) {
+      const filePath = version.files[j].path;
+
+      if (!validateFilePath(filePath)) {
+        exportErrors.push({
+          slug: digest.slug,
+          error: `invalid file path: "${filePath}" (fails Zip Slip validation)`,
+        });
+        continue;
+      }
+
+      const blob = digestBlobs.get(j);
+      if (!blob) {
+        exportErrors.push({
+          slug: digest.slug,
+          error: `blob not found for file "${filePath}" (storageId: ${version.files[j].storageId})`,
+        });
+        continue;
+      }
+
+      const buffer = new Uint8Array(await blob.arrayBuffer());
+      zipEntries.push({ path: `${digest.slug}/${filePath}`, bytes: buffer });
+      fileCount++;
+    }
+
+    const skillMeta = {
+      slug: digest.slug,
+      displayName: digest.displayName,
+      version: version.version ?? null,
+      createdAt: digest.createdAt,
+      updatedAt: digest.updatedAt,
+      stats: digest.stats ?? null,
+      owner: {
+        handle: digest.ownerHandle ?? null,
+        displayName: digest.ownerDisplayName ?? null,
+      },
+    };
+    zipEntries.push({
+      path: `${digest.slug}/_export_skill_meta.json`,
+      bytes: new TextEncoder().encode(JSON.stringify(skillMeta, null, 2)),
+    });
+
+    manifest.push({
+      slug: digest.slug,
+      version: version.version ?? null,
+      displayName: digest.displayName,
+      createdAt: digest.createdAt,
+      updatedAt: digest.updatedAt,
+      stats: (digest.stats as Record<string, unknown>) ?? null,
+      fileCount,
+    });
+  }
+
+  if (exportErrors.length > 0) {
+    zipEntries.push({
+      path: "_errors.json",
+      bytes: new TextEncoder().encode(JSON.stringify(exportErrors, null, 2)),
+    });
+  }
+
+  const zipBytes = buildMergedExportZip(zipEntries, manifest);
+
+  return new Response(zipBytes as unknown as BodyInit, {
+    status: 200,
+    headers: {
+      ...rate.headers,
+      "Content-Type": "application/zip",
+      "Content-Disposition": `attachment; filename="skills-export-${startDate}-${endDate}.zip"`,
+      "X-Next-Cursor": result.nextCursor ?? "",
+      "X-Has-More": String(result.hasMore),
+      "X-Total-Returned": String(manifest.length),
+      "X-Date-Range": `${startDate}-${endDate}`,
+      "X-Export-Errors": String(exportErrors.length),
+    },
+  });
 }
