@@ -1,6 +1,6 @@
 /* @vitest-environment node */
 
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
@@ -37,6 +37,10 @@ const listByDateRangeHandler = (
     ExportListResult
   >
 )._handler;
+
+beforeEach(() => {
+  getPageMock.mockReset();
+});
 
 function digest(overrides: Record<string, unknown>) {
   return {
@@ -81,6 +85,23 @@ describe("skills.listByDateRange export list", () => {
         index: "by_active_updated",
         startIndexKey: [undefined, 5],
         endIndexKey: [undefined, 1],
+      }),
+    );
+  });
+
+  it("caps requested export list pages at 250 rows", async () => {
+    getPageMock.mockResolvedValue({
+      page: [],
+      hasMore: false,
+      indexKeys: [],
+    });
+
+    await listByDateRangeHandler({ db: {} }, { startDate: 1, endDate: 5, numItems: 1_000 });
+
+    expect(getPageMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        absoluteMaxRows: 250,
       }),
     );
   });

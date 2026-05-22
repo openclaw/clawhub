@@ -298,6 +298,59 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("skills export defaults to the proven 250 item page limit", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "user" },
+    } as never);
+    vi.mocked(getOptionalApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "user" },
+    } as never);
+
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("startDate" in args) return { page: [], nextCursor: null, hasMore: false };
+      return null;
+    });
+
+    const response = await __handlers.exportSkillsV1Handler(
+      makeCtx({ runQuery }),
+      new Request("https://example.com/api/v1/skills/export?startDate=1&endDate=2", {
+        headers: { authorization: "Bearer user-token" },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    const listCall = runQuery.mock.calls.find(([, args]) => "startDate" in args);
+    expect(listCall?.[1]).toMatchObject({ numItems: 250 });
+  });
+
+  it("skills export rejects pages above 250 items", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "user" },
+    } as never);
+    vi.mocked(getOptionalApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "user" },
+    } as never);
+
+    const runQuery = vi.fn();
+    const response = await __handlers.exportSkillsV1Handler(
+      makeCtx({ runQuery }),
+      new Request("https://example.com/api/v1/skills/export?startDate=1&endDate=2&limit=251", {
+        headers: { authorization: "Bearer user-token" },
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toBe("limit must be <= 250");
+    expect(runQuery).not.toHaveBeenCalledWith(
+      (internal as unknown as { skills: Record<string, unknown> }).skills.listByDateRange,
+      expect.anything(),
+    );
+  });
+
   it("skills export rejects unauthenticated requests", async () => {
     vi.mocked(requireApiTokenUser).mockRejectedValue(new Error("Unauthorized"));
 
@@ -485,7 +538,7 @@ describe("httpApiV1 handlers", () => {
           phase: "build_zip",
           startDate: 1,
           endDate: 5,
-          limit: 1000,
+          limit: 250,
           cursorPresent: false,
           pageLength: 1,
           versionCount: 1,
