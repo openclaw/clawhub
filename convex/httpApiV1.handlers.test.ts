@@ -423,6 +423,87 @@ describe("httpApiV1 handlers", () => {
     ]);
   });
 
+  it("skills export logs generation failure context", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "user" },
+    } as never);
+    vi.mocked(getOptionalApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "user" },
+    } as never);
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("startDate" in args) {
+        return {
+          page: [
+            {
+              slug: "demo",
+              displayName: "Demo",
+              latestVersionId: "skillVersions:demo",
+              createdAt: 1,
+              updatedAt: 2,
+              stats: {},
+              ownerUserId: "users:alice",
+              ownerHandle: "alice",
+              ownerDisplayName: "Alice",
+            },
+          ],
+          nextCursor: null,
+          hasMore: false,
+        };
+      }
+      if (args.versionId === "skillVersions:demo") {
+        return {
+          version: "1.0.0",
+          files: [
+            { storageId: "storage:one", path: "SKILL.md" },
+            { storageId: "storage:two", path: "SKILL.md" },
+          ],
+        };
+      }
+      return null;
+    });
+
+    try {
+      await expect(
+        __handlers.exportSkillsV1Handler(
+          makeCtx({
+            runQuery,
+            storage: { get: vi.fn(async () => new Blob(["content"])) },
+          }),
+          new Request("https://example.com/api/v1/skills/export?startDate=1&endDate=5", {
+            headers: { authorization: "Bearer user-token" },
+          }),
+        ),
+      ).rejects.toThrow(/Duplicate ZIP path/);
+
+      expect(consoleError).toHaveBeenCalledWith(
+        "skills_export_failed",
+        expect.objectContaining({
+          phase: "build_zip",
+          startDate: 1,
+          endDate: 5,
+          limit: 1000,
+          cursorPresent: false,
+          pageLength: 1,
+          versionCount: 1,
+          blobTaskCount: 2,
+          blobCount: 2,
+          zipEntryCount: 3,
+          manifestCount: 1,
+          exportErrorCount: 0,
+          totalExportBytes: 14,
+          errorName: "Error",
+        }),
+      );
+      expect(JSON.stringify(consoleError.mock.calls)).not.toContain("user-token");
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
   it("users/reclaim forbids non-admin api tokens", async () => {
     const runQuery = vi.fn();
     const runAction = vi.fn();

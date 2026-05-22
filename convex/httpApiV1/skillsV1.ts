@@ -1576,6 +1576,42 @@ async function chunkedParallel<T, R>(
   return results;
 }
 
+type SkillsExportPhase =
+  | "list_skills"
+  | "build_empty_zip"
+  | "load_versions"
+  | "plan_blobs"
+  | "load_blobs"
+  | "assemble_entries"
+  | "build_zip";
+
+type SkillsExportLogContext = {
+  phase: SkillsExportPhase;
+  startDate: number;
+  endDate: number;
+  limit: number;
+  cursorPresent: boolean;
+  pageLength: number;
+  hasMore: boolean | null;
+  nextCursorPresent: boolean | null;
+  versionCount: number;
+  blobTaskCount: number;
+  blobCount: number;
+  zipEntryCount: number;
+  manifestCount: number;
+  exportErrorCount: number;
+  totalExportBytes: number;
+};
+
+function logSkillsExportFailure(context: SkillsExportLogContext, error: unknown) {
+  console.error("skills_export_failed", {
+    ...context,
+    errorName: error instanceof Error ? error.name : typeof error,
+    errorMessage:
+      error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500),
+  });
+}
+
 export async function exportSkillsV1Handler(ctx: ActionCtx, request: Request) {
   try {
     await requireApiTokenUser(ctx, request);
@@ -1606,6 +1642,24 @@ export async function exportSkillsV1Handler(ctx: ActionCtx, request: Request) {
     return text("startDate must be <= endDate", 400, rate.headers);
   }
 
+  const logContext: SkillsExportLogContext = {
+    phase: "list_skills",
+    startDate,
+    endDate,
+    limit,
+    cursorPresent: Boolean(cursor),
+    pageLength: 0,
+    hasMore: null,
+    nextCursorPresent: null,
+    versionCount: 0,
+    blobTaskCount: 0,
+    blobCount: 0,
+    zipEntryCount: 0,
+    manifestCount: 0,
+    exportErrorCount: 0,
+    totalExportBytes: 0,
+  };
+
   let result: {
     page: Array<{
       slug: string;
@@ -1632,202 +1686,230 @@ export async function exportSkillsV1Handler(ctx: ActionCtx, request: Request) {
     if (err instanceof Error && err.message.includes("Invalid cursor format")) {
       return text("Invalid cursor format", 400, rate.headers);
     }
+    logSkillsExportFailure(logContext, err);
     throw err;
   }
+  logContext.pageLength = result.page.length;
+  logContext.hasMore = result.hasMore;
+  logContext.nextCursorPresent = Boolean(result.nextCursor);
 
   if (result.page.length === 0) {
-    const emptyZip = buildMergedExportZip([], []);
-    return new Response(emptyZip as unknown as BodyInit, {
-      status: 200,
-      headers: mergeHeaders(rate.headers, {
-        "Content-Type": "application/zip",
-        "Content-Disposition": `attachment; filename="skills-export-${startDate}-${endDate}-empty.zip"`,
-        "X-Next-Cursor": result.nextCursor ?? "",
-        "X-Has-More": String(result.hasMore),
-        "X-Total-Returned": "0",
-        "X-Date-Range": `${startDate}-${endDate}`,
-      }),
-    });
+    try {
+      logContext.phase = "build_empty_zip";
+      const emptyZip = buildMergedExportZip([], []);
+      return new Response(emptyZip as unknown as BodyInit, {
+        status: 200,
+        headers: mergeHeaders(rate.headers, {
+          "Content-Type": "application/zip",
+          "Content-Disposition": `attachment; filename="skills-export-${startDate}-${endDate}-empty.zip"`,
+          "X-Next-Cursor": result.nextCursor ?? "",
+          "X-Has-More": String(result.hasMore),
+          "X-Total-Returned": "0",
+          "X-Date-Range": `${startDate}-${endDate}`,
+        }),
+      });
+    } catch (err) {
+      logSkillsExportFailure(logContext, err);
+      throw err;
+    }
   }
 
   const exportErrors: Array<{ slug: string; error: string }> = [];
 
-  const versionDocs = await chunkedParallel(result.page, 100, (digest) =>
-    digest.latestVersionId
-      ? ctx.runQuery(internal.skills.getVersionByIdInternal, {
-          versionId: digest.latestVersionId,
-        })
-      : Promise.resolve(null),
-  );
+  try {
+    logContext.phase = "load_versions";
+    const versionDocs = await chunkedParallel(result.page, 100, (digest) =>
+      digest.latestVersionId
+        ? ctx.runQuery(internal.skills.getVersionByIdInternal, {
+            versionId: digest.latestVersionId,
+          })
+        : Promise.resolve(null),
+    );
+    logContext.versionCount = versionDocs.filter(Boolean).length;
 
-  type BlobTask = { digestIndex: number; fileIndex: number; storageId: Id<"_storage"> };
-  const blobTasks: BlobTask[] = [];
+    type BlobTask = { digestIndex: number; fileIndex: number; storageId: Id<"_storage"> };
+    const blobTasks: BlobTask[] = [];
 
-  for (let i = 0; i < result.page.length; i++) {
-    const digest = result.page[i];
-    const version = versionDocs[i] as {
-      files?: Array<{ storageId: Id<"_storage">; path: string }>;
-    } | null;
+    logContext.phase = "plan_blobs";
+    for (let i = 0; i < result.page.length; i++) {
+      const digest = result.page[i];
+      const version = versionDocs[i] as {
+        files?: Array<{ storageId: Id<"_storage">; path: string }>;
+      } | null;
 
-    if (!version) {
-      exportErrors.push({
-        slug: digest.slug,
-        error: `version not found (latestVersionId: ${digest.latestVersionId ?? "null"})`,
-      });
-      continue;
-    }
-    if (!version.files || version.files.length === 0) {
-      exportErrors.push({
-        slug: digest.slug,
-        error: `version has no files (latestVersionId: ${digest.latestVersionId})`,
-      });
-      continue;
-    }
-
-    if (!validateSlug(digest.slug)) {
-      exportErrors.push({
-        slug: digest.slug,
-        error: "invalid slug (fails Zip Slip validation)",
-      });
-      continue;
-    }
-
-    for (let j = 0; j < version.files.length; j++) {
-      if (blobTasks.length >= MAX_EXPORT_FILE_COUNT) {
+      if (!version) {
         exportErrors.push({
           slug: digest.slug,
-          error: `file count cap exceeded (${MAX_EXPORT_FILE_COUNT})`,
+          error: `version not found (latestVersionId: ${digest.latestVersionId ?? "null"})`,
         });
-        break;
+        continue;
       }
-      blobTasks.push({
-        digestIndex: i,
-        fileIndex: j,
-        storageId: version.files[j].storageId,
-      });
-    }
-  }
-
-  const blobs = await chunkedParallel(blobTasks, 50, (task) => ctx.storage.get(task.storageId));
-
-  const zipEntries: Array<{ path: string; bytes: Uint8Array }> = [];
-  const manifest: MergedExportManifestEntry[] = [];
-  let totalExportBytes = 0;
-
-  const blobsByDigest = new Map<number, Map<number, Blob | null>>();
-  for (let k = 0; k < blobTasks.length; k++) {
-    const task = blobTasks[k];
-    if (!blobsByDigest.has(task.digestIndex)) {
-      blobsByDigest.set(task.digestIndex, new Map());
-    }
-    blobsByDigest.get(task.digestIndex)!.set(task.fileIndex, blobs[k]);
-  }
-
-  for (let i = 0; i < result.page.length; i++) {
-    const digest = result.page[i];
-    const version = versionDocs[i] as {
-      version?: string;
-      files?: Array<{ storageId: Id<"_storage">; path: string }>;
-    } | null;
-    if (!version?.files) continue;
-    if (!validateSlug(digest.slug)) continue;
-
-    const publisherSegment = getExportPublisherSegment(digest);
-    if (!publisherSegment) {
-      exportErrors.push({
-        slug: digest.slug,
-        error: "invalid publisher path segment (fails Zip Slip validation)",
-      });
-      continue;
-    }
-    const exportRoot = `${publisherSegment}/${digest.slug}`;
-    const digestBlobs = blobsByDigest.get(i);
-    if (!digestBlobs) continue;
-
-    let fileCount = 0;
-    for (let j = 0; j < version.files.length; j++) {
-      const filePath = version.files[j].path;
-
-      if (!validateFilePath(filePath)) {
+      if (!version.files || version.files.length === 0) {
         exportErrors.push({
           slug: digest.slug,
-          error: `invalid file path: "${filePath}" (fails Zip Slip validation)`,
+          error: `version has no files (latestVersionId: ${digest.latestVersionId})`,
         });
         continue;
       }
 
-      const blob = digestBlobs.get(j);
-      if (!blob) {
+      if (!validateSlug(digest.slug)) {
         exportErrors.push({
           slug: digest.slug,
-          error: `blob not found for file "${filePath}" (storageId: ${version.files[j].storageId})`,
+          error: "invalid slug (fails Zip Slip validation)",
         });
         continue;
       }
 
-      const buffer = new Uint8Array(await blob.arrayBuffer());
-      if (totalExportBytes + buffer.byteLength > MAX_EXPORT_TOTAL_BYTES) {
-        exportErrors.push({
-          slug: digest.slug,
-          error: `byte cap exceeded (${MAX_EXPORT_TOTAL_BYTES}) at file "${filePath}"`,
+      for (let j = 0; j < version.files.length; j++) {
+        if (blobTasks.length >= MAX_EXPORT_FILE_COUNT) {
+          exportErrors.push({
+            slug: digest.slug,
+            error: `file count cap exceeded (${MAX_EXPORT_FILE_COUNT})`,
+          });
+          break;
+        }
+        blobTasks.push({
+          digestIndex: i,
+          fileIndex: j,
+          storageId: version.files[j].storageId,
         });
-        continue;
       }
-      totalExportBytes += buffer.byteLength;
-      zipEntries.push({ path: `${exportRoot}/${filePath}`, bytes: buffer });
-      fileCount++;
+    }
+    logContext.blobTaskCount = blobTasks.length;
+    logContext.exportErrorCount = exportErrors.length;
+
+    logContext.phase = "load_blobs";
+    const blobs = await chunkedParallel(blobTasks, 50, (task) => ctx.storage.get(task.storageId));
+    logContext.blobCount = blobs.length;
+
+    const zipEntries: Array<{ path: string; bytes: Uint8Array }> = [];
+    const manifest: MergedExportManifestEntry[] = [];
+    let totalExportBytes = 0;
+
+    const blobsByDigest = new Map<number, Map<number, Blob | null>>();
+    for (let k = 0; k < blobTasks.length; k++) {
+      const task = blobTasks[k];
+      if (!blobsByDigest.has(task.digestIndex)) {
+        blobsByDigest.set(task.digestIndex, new Map());
+      }
+      blobsByDigest.get(task.digestIndex)!.set(task.fileIndex, blobs[k]);
     }
 
-    const skillMeta = {
-      slug: digest.slug,
-      displayName: digest.displayName,
-      version: version.version ?? null,
-      createdAt: digest.createdAt,
-      updatedAt: digest.updatedAt,
-      stats: digest.stats ?? null,
-      owner: {
-        handle: digest.ownerHandle ?? null,
-        displayName: digest.ownerDisplayName ?? null,
-      },
-    };
-    zipEntries.push({
-      path: `${exportRoot}/_export_skill_meta.json`,
-      bytes: new TextEncoder().encode(JSON.stringify(skillMeta, null, 2)),
-    });
+    logContext.phase = "assemble_entries";
+    for (let i = 0; i < result.page.length; i++) {
+      const digest = result.page[i];
+      const version = versionDocs[i] as {
+        version?: string;
+        files?: Array<{ storageId: Id<"_storage">; path: string }>;
+      } | null;
+      if (!version?.files) continue;
+      if (!validateSlug(digest.slug)) continue;
 
-    manifest.push({
-      publisher: publisherSegment,
-      slug: digest.slug,
-      version: version.version ?? null,
-      displayName: digest.displayName,
-      createdAt: digest.createdAt,
-      updatedAt: digest.updatedAt,
-      stats: (digest.stats as Record<string, unknown>) ?? null,
-      fileCount,
+      const publisherSegment = getExportPublisherSegment(digest);
+      if (!publisherSegment) {
+        exportErrors.push({
+          slug: digest.slug,
+          error: "invalid publisher path segment (fails Zip Slip validation)",
+        });
+        continue;
+      }
+      const exportRoot = `${publisherSegment}/${digest.slug}`;
+      const digestBlobs = blobsByDigest.get(i);
+      if (!digestBlobs) continue;
+
+      let fileCount = 0;
+      for (let j = 0; j < version.files.length; j++) {
+        const filePath = version.files[j].path;
+
+        if (!validateFilePath(filePath)) {
+          exportErrors.push({
+            slug: digest.slug,
+            error: `invalid file path: "${filePath}" (fails Zip Slip validation)`,
+          });
+          continue;
+        }
+
+        const blob = digestBlobs.get(j);
+        if (!blob) {
+          exportErrors.push({
+            slug: digest.slug,
+            error: `blob not found for file "${filePath}" (storageId: ${version.files[j].storageId})`,
+          });
+          continue;
+        }
+
+        const buffer = new Uint8Array(await blob.arrayBuffer());
+        if (totalExportBytes + buffer.byteLength > MAX_EXPORT_TOTAL_BYTES) {
+          exportErrors.push({
+            slug: digest.slug,
+            error: `byte cap exceeded (${MAX_EXPORT_TOTAL_BYTES}) at file "${filePath}"`,
+          });
+          continue;
+        }
+        totalExportBytes += buffer.byteLength;
+        zipEntries.push({ path: `${exportRoot}/${filePath}`, bytes: buffer });
+        fileCount++;
+      }
+
+      const skillMeta = {
+        slug: digest.slug,
+        displayName: digest.displayName,
+        version: version.version ?? null,
+        createdAt: digest.createdAt,
+        updatedAt: digest.updatedAt,
+        stats: digest.stats ?? null,
+        owner: {
+          handle: digest.ownerHandle ?? null,
+          displayName: digest.ownerDisplayName ?? null,
+        },
+      };
+      zipEntries.push({
+        path: `${exportRoot}/_export_skill_meta.json`,
+        bytes: new TextEncoder().encode(JSON.stringify(skillMeta, null, 2)),
+      });
+
+      manifest.push({
+        publisher: publisherSegment,
+        slug: digest.slug,
+        version: version.version ?? null,
+        displayName: digest.displayName,
+        createdAt: digest.createdAt,
+        updatedAt: digest.updatedAt,
+        stats: (digest.stats as Record<string, unknown>) ?? null,
+        fileCount,
+      });
+    }
+
+    if (exportErrors.length > 0) {
+      zipEntries.push({
+        path: "_errors.json",
+        bytes: new TextEncoder().encode(JSON.stringify(exportErrors, null, 2)),
+      });
+    }
+    logContext.zipEntryCount = zipEntries.length;
+    logContext.manifestCount = manifest.length;
+    logContext.exportErrorCount = exportErrors.length;
+    logContext.totalExportBytes = totalExportBytes;
+
+    logContext.phase = "build_zip";
+    const zipBytes = buildMergedExportZip(zipEntries, manifest);
+
+    return new Response(zipBytes as unknown as BodyInit, {
+      status: 200,
+      headers: mergeHeaders(rate.headers, {
+        "Content-Type": "application/zip",
+        "Content-Disposition": `attachment; filename="skills-export-${startDate}-${endDate}.zip"`,
+        "X-Next-Cursor": result.nextCursor ?? "",
+        "X-Has-More": String(result.hasMore),
+        "X-Total-Returned": String(manifest.length),
+        "X-Date-Range": `${startDate}-${endDate}`,
+        "X-Export-Errors": String(exportErrors.length),
+      }),
     });
+  } catch (err) {
+    logSkillsExportFailure(logContext, err);
+    throw err;
   }
-
-  if (exportErrors.length > 0) {
-    zipEntries.push({
-      path: "_errors.json",
-      bytes: new TextEncoder().encode(JSON.stringify(exportErrors, null, 2)),
-    });
-  }
-
-  const zipBytes = buildMergedExportZip(zipEntries, manifest);
-
-  return new Response(zipBytes as unknown as BodyInit, {
-    status: 200,
-    headers: mergeHeaders(rate.headers, {
-      "Content-Type": "application/zip",
-      "Content-Disposition": `attachment; filename="skills-export-${startDate}-${endDate}.zip"`,
-      "X-Next-Cursor": result.nextCursor ?? "",
-      "X-Has-More": String(result.hasMore),
-      "X-Total-Returned": String(manifest.length),
-      "X-Date-Range": `${startDate}-${endDate}`,
-      "X-Export-Errors": String(exportErrors.length),
-    }),
-  });
 }
 
 function getExportPublisherSegment(digest: {
