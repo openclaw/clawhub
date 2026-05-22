@@ -43,6 +43,8 @@ import {
 } from "./shared";
 
 const MAX_EXPORT_FILE_COUNT = 10_000;
+const MAX_EXPORT_PAGE_LIMIT = 250;
+const DEFAULT_EXPORT_PAGE_LIMIT = 250;
 const MAX_EXPORT_TOTAL_BYTES = 256 * 1024 * 1024;
 
 type SearchSkillEntry = {
@@ -1625,10 +1627,7 @@ export async function exportSkillsV1Handler(ctx: ActionCtx, request: Request) {
   const url = new URL(request.url);
   const startDate = toOptionalNumber(url.searchParams.get("startDate"));
   const endDate = toOptionalNumber(url.searchParams.get("endDate"));
-  const limit = Math.max(
-    1,
-    Math.min(toOptionalNumber(url.searchParams.get("limit")) ?? 1000, 1000),
-  );
+  const requestedLimit = toOptionalNumber(url.searchParams.get("limit"));
   const cursor = url.searchParams.get("cursor")?.trim() || undefined;
 
   if (startDate == null || endDate == null) {
@@ -1641,6 +1640,10 @@ export async function exportSkillsV1Handler(ctx: ActionCtx, request: Request) {
   if (startDate > endDate) {
     return text("startDate must be <= endDate", 400, rate.headers);
   }
+  if (requestedLimit != null && requestedLimit > MAX_EXPORT_PAGE_LIMIT) {
+    return text(`limit must be <= ${MAX_EXPORT_PAGE_LIMIT}`, 400, rate.headers);
+  }
+  const limit = Math.max(1, requestedLimit ?? DEFAULT_EXPORT_PAGE_LIMIT);
 
   const logContext: SkillsExportLogContext = {
     phase: "list_skills",
