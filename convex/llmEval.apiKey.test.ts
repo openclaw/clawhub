@@ -131,7 +131,7 @@ type CtxOverrides = {
 
 function makeEvalCtx(overrides: CtxOverrides = {}) {
   const skillMd = overrides.skillMd === undefined ? SKILL_MD_CONTENT : overrides.skillMd;
-  const runMutation = vi.fn(async () => undefined);
+  const runMutation = vi.fn(async (_ref: unknown, _args: Record<string, unknown>) => undefined);
   const runQuery = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
     if (args.versionId === VERSION_ID) return makeSkillVersion(overrides.versionOverrides);
     if (args.skillId === SKILL_ID) return makeSkill();
