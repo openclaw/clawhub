@@ -19,6 +19,10 @@ function getPendingAuthCode() {
   const url = new URL(window.location.href);
   const code = url.searchParams.get("code");
   if (!code) return null;
+  if (url.pathname === "/cli/device") {
+    const pending = getActiveAuthRedirectAttempt();
+    if (!pending?.redirectTo.startsWith("/cli/device?user_code=")) return null;
+  }
   url.searchParams.delete("code");
   return {
     code,
@@ -109,7 +113,8 @@ export function AuthRedirectFallbackHandler() {
     }
 
     const url = new URL(window.location.href);
-    if (url.searchParams.has("code") || url.searchParams.has("error")) return;
+    const hasOAuthCode = url.pathname !== "/cli/device" && url.searchParams.has("code");
+    if (hasOAuthCode || url.searchParams.has("error")) return;
 
     const current = `${url.pathname}${url.search}${url.hash}`;
     if (current !== pending.redirectTo) return;

@@ -103,6 +103,35 @@ describe("AuthCodeHandler", () => {
       expect(getAuthErrorSnapshot()).toBe(DELETED_SIGN_IN_MESSAGE);
     });
   });
+
+  it("does not consume initial CLI device codes as OAuth callback codes", async () => {
+    window.history.replaceState(null, "", "/cli/device?code=A8H8-GCLX");
+
+    render(<AuthCodeHandler />);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(signInMock).not.toHaveBeenCalled();
+    expect(getAuthErrorSnapshot()).toBeNull();
+    expect(window.location.pathname + window.location.search + window.location.hash).toBe(
+      "/cli/device?code=A8H8-GCLX",
+    );
+  });
+
+  it("consumes OAuth callback codes on CLI device redirects while preserving the user code", async () => {
+    signInMock.mockResolvedValue({ signingIn: true });
+    markAuthRedirectAttempt("github", "/cli/device?user_code=A8H8-GCLX");
+    window.history.replaceState(null, "", "/cli/device?user_code=A8H8-GCLX&code=oauth123");
+
+    render(<AuthCodeHandler />);
+
+    await waitFor(() => {
+      expect(signInMock).toHaveBeenCalledWith(undefined, { code: "oauth123" });
+    });
+    expect(window.location.pathname + window.location.search + window.location.hash).toBe(
+      "/cli/device?user_code=A8H8-GCLX",
+    );
+  });
 });
 
 describe("AuthErrorHandler", () => {
@@ -220,6 +249,20 @@ describe("AuthRedirectFallbackHandler", () => {
     await waitFor(() => {
       expect(getAuthErrorSnapshot()).toBe(ACCESS_DENIED_SIGN_IN_MESSAGE);
     });
+  });
+
+  it("reports missing OAuth callback failures on CLI device pages without consuming the device code", async () => {
+    markAuthRedirectAttempt("github", "/cli/device?user_code=A8H8-GCLX");
+    window.history.replaceState(null, "", "/cli/device?user_code=A8H8-GCLX");
+
+    render(<AuthRedirectFallbackHandler />);
+
+    await waitFor(() => {
+      expect(getAuthErrorSnapshot()).toBe(AUTH_REDIRECT_NO_CODE_MESSAGE);
+    });
+    expect(window.location.pathname + window.location.search + window.location.hash).toBe(
+      "/cli/device?user_code=A8H8-GCLX",
+    );
   });
 
   it("does not report a missing-code failure while an auth code is being processed", async () => {
