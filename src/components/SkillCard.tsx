@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import type { PublicSkill } from "../lib/publicUser";
+import { ApiKeyRequiredBadge } from "./ApiKeyRequiredBadge";
 import { MarketplaceIcon } from "./MarketplaceIcon";
 import { Badge } from "./ui/badge";
 import { VerifiedBadge } from "./VerifiedBadge";
@@ -14,6 +15,8 @@ type SkillCardProps = {
   meta: ReactNode;
   href?: string;
   className?: string;
+  /** Mirrors `skillVersions.apiKeyRequired` of the latest version. */
+  apiKeyRequired?: boolean;
 };
 
 export function SkillCard({
@@ -25,11 +28,13 @@ export function SkillCard({
   meta,
   href,
   className,
+  apiKeyRequired,
 }: SkillCardProps) {
   const owner = encodeURIComponent(String(skill.ownerUserId));
   const link = href ?? `/${owner}/${skill.slug}`;
   const badges = Array.isArray(badge) ? badge : badge ? [badge] : [];
-  const hasTags = badges.length || chip || platformLabels?.length;
+  const showApiKeyBadge = apiKeyRequired === true;
+  const hasTags = badges.length || chip || platformLabels?.length || showApiKeyBadge;
 
   return (
     <Link to={link} className={["card skill-card", className].filter(Boolean).join(" ")}>
@@ -48,6 +53,7 @@ export function SkillCard({
               {label}
             </Badge>
           ))}
+          <ApiKeyRequiredBadge apiKeyRequired={apiKeyRequired} />
         </div>
       ) : null}
       <div className="skill-card-header">

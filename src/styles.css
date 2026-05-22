@@ -11265,11 +11265,12 @@ a.search-empty-action {
   min-width: 0;
   margin: 0;
   overflow: hidden;
+  padding-block: 0.08em 0.14em;
   color: var(--ink);
   font-size: clamp(1.55rem, 2.45vw, 2.15rem);
   font-weight: 800;
   letter-spacing: 0;
-  line-height: 1.05;
+  line-height: 1.18;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

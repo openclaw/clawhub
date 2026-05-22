@@ -10,6 +10,7 @@ import { formatSkillStatsTriplet } from "../lib/numberFormat";
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
 import { getRuntimeEnv } from "../lib/runtimeEnv";
 import { timeAgo } from "../lib/timeAgo";
+import { ApiKeyRequiredBadge } from "./ApiKeyRequiredBadge";
 import { DetailHero } from "./DetailPageShell";
 import { DetailSecuritySummaryLabel } from "./DetailSecuritySummary";
 import { SidebarMetadata } from "./SidebarMetadata";
@@ -303,6 +304,7 @@ export function SkillHeader({
                     </div>
                   ) : null}
                   {nixPlugin ? <Badge variant="accent">Plugin bundle (nix)</Badge> : null}
+                  <ApiKeyRequiredBadge apiKeyRequired={latestVersion?.apiKeyRequired} />
                 </div>
                 {category ? (
                   <a

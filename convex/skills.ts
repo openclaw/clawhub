@@ -1612,6 +1612,8 @@ type PublicSkillListVersion = Pick<
   "_id" | "_creationTime" | "version" | "createdAt" | "changelog" | "changelogSource"
 > & {
   parsed?: PublicSkillVersionParsed;
+  // Mirrors `skillVersions.apiKeyRequired` of the latest version.
+  apiKeyRequired?: boolean;
 };
 
 type PublicSkillVersionParsed = {
@@ -1648,6 +1650,7 @@ type PublicSkillVersion = {
   sha256hash?: string;
   vtAnalysis?: Doc<"skillVersions">["vtAnalysis"];
   llmAnalysis?: Doc<"skillVersions">["llmAnalysis"];
+  apiKeyRequired?: boolean;
   staticScan?: {
     status: NonNullable<Doc<"skillVersions">["staticScan"]>["status"];
     reasonCodes: NonNullable<Doc<"skillVersions">["staticScan"]>["reasonCodes"];
@@ -1826,6 +1829,7 @@ function toPublicSkillListVersion(
             ...(version.parsed?.clawdis ? { clawdis: version.parsed.clawdis } : {}),
           }
         : undefined,
+    apiKeyRequired: version.apiKeyRequired,
   };
 }
 
@@ -1864,6 +1868,7 @@ function toPublicSkillVersion(
     sha256hash: version.sha256hash,
     vtAnalysis: version.vtAnalysis,
     llmAnalysis: version.llmAnalysis,
+    apiKeyRequired: version.apiKeyRequired,
     clawScanNote: version.clawScanNote,
     staticScan: version.staticScan
       ? {
@@ -1899,6 +1904,7 @@ function toPublicSkillListVersionFromSummary(
     changelog: summary.changelog,
     changelogSource: summary.changelogSource,
     parsed: summary.clawdis ? { clawdis: summary.clawdis } : undefined,
+    apiKeyRequired: summary.apiKeyRequired,
   };
 }
 
@@ -7314,6 +7320,32 @@ export const updateVersionLlmAnalysisInternal = internalMutation({
   },
 });
 
+export const updateVersionApiKeyRequiredInternal = internalMutation({
+  args: {
+    versionId: v.id("skillVersions"),
+    apiKeyRequired: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const version = await ctx.db.get(args.versionId);
+    if (!version) return;
+    await ctx.db.patch(args.versionId, { apiKeyRequired: args.apiKeyRequired });
+
+    // Mirror onto `skills.latestVersionSummary` when this is the current
+    // latest, so list/detail surfaces can render the badge without reading
+    // the full version doc.
+    const skill = await ctx.db.get(version.skillId);
+    if (!skill || skill.latestVersionId !== version._id) return;
+    if (!skill.latestVersionSummary) return;
+    if (skill.latestVersionSummary.apiKeyRequired === args.apiKeyRequired) return;
+    await ctx.db.patch(skill._id, {
+      latestVersionSummary: {
+        ...skill.latestVersionSummary,
+        apiKeyRequired: args.apiKeyRequired,
+      },
+    });
+  },
+});
+
 export const approveSkillByHashInternal = internalMutation({
   args: {
     sha256hash: v.string(),
@@ -7894,6 +7926,7 @@ export const updateTags = mutation({
           changelog: version.changelog,
           changelogSource: version.changelogSource,
           clawdis: version.parsed?.clawdis,
+          apiKeyRequired: version.apiKeyRequired,
         };
         patch.capabilityTags = version.capabilityTags;
       }
@@ -9923,6 +9956,9 @@ export const insertVersion = internalMutation({
             changelog: args.changelog,
             changelogSource: args.changelogSource,
             clawdis: args.parsed.clawdis,
+            // Filled later by the async analyser via
+            // `updateVersionApiKeyRequiredInternal`.
+            apiKeyRequired: undefined,
           }
         : skill.latestVersionSummary,
       tags: nextTags,
@@ -10444,3 +10480,65 @@ function isExportableSkillDigest(
 ) {
   return Boolean(skill.latestVersionId) && isPublicSkillDoc(skill);
 }
+
+/**
+ * Maintenance mutation: mirror `skillVersions.apiKeyRequired` into
+ * `skills.latestVersionSummary.apiKeyRequired` for every skill that's
+ * out of sync. Idempotent — safe to re-run. Rebuilds a missing summary
+ * from the latest version doc when needed.
+ *
+ * CLI: `bunx convex run skills:backfillLatestVersionSummaryApiKeyRequiredInternal`
+ */
+export const backfillLatestVersionSummaryApiKeyRequiredInternal = internalMutation({
+  args: {
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = Math.max(1, Math.min(args.limit ?? 500, 2000));
+    const skills = await ctx.db.query("skills").take(limit);
+    let scanned = 0;
+    let updated = 0;
+    let rebuiltSummary = 0;
+    let skippedNoLatest = 0;
+    let skippedAlreadyMatches = 0;
+    for (const skill of skills) {
+      scanned += 1;
+      if (!skill.latestVersionId) {
+        skippedNoLatest += 1;
+        continue;
+      }
+      const version = await ctx.db.get(skill.latestVersionId);
+      if (!version) {
+        skippedNoLatest += 1;
+        continue;
+      }
+      if (!skill.latestVersionSummary) {
+        // Rebuild missing summary from the latest version doc.
+        await ctx.db.patch(skill._id, {
+          latestVersionSummary: {
+            version: version.version,
+            createdAt: version.createdAt,
+            changelog: version.changelog,
+            changelogSource: version.changelogSource,
+            clawdis: version.parsed?.clawdis,
+            apiKeyRequired: version.apiKeyRequired,
+          },
+        });
+        rebuiltSummary += 1;
+        continue;
+      }
+      if (skill.latestVersionSummary.apiKeyRequired === version.apiKeyRequired) {
+        skippedAlreadyMatches += 1;
+        continue;
+      }
+      await ctx.db.patch(skill._id, {
+        latestVersionSummary: {
+          ...skill.latestVersionSummary,
+          apiKeyRequired: version.apiKeyRequired,
+        },
+      });
+      updated += 1;
+    }
+    return { scanned, updated, rebuiltSummary, skippedNoLatest, skippedAlreadyMatches };
+  },
+});

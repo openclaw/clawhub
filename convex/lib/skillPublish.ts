@@ -365,6 +365,19 @@ export async function publishVersionForUser(
     versionId: publishResult.versionId,
   });
 
+  // Schedule the async "API key required?" analyser; non-fatal on failure
+  // (UI treats `apiKeyRequired === undefined` as "no badge"). Mirrors the
+  // `backupSkillForPublishInternal` pattern below: `void runAfter(...).catch(...)`
+  // so that scheduler-table contention or transient Convex errors never break
+  // a user-visible publish for a best-effort badge job.
+  void ctx.scheduler
+    .runAfter(0, internal.llmEval.evaluateApiKeyRequirement, {
+      versionId: publishResult.versionId,
+    })
+    .catch((error) => {
+      console.error("evaluateApiKeyRequirement scheduling failed", error);
+    });
+
   const targetPublisher =
     options.ownerPublisherId !== undefined
       ? ((await ctx.runQuery(internal.publishers.getByIdInternal, {
