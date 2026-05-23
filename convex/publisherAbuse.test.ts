@@ -421,6 +421,93 @@ describe("publisher abuse dry-run persistence", () => {
     );
   });
 
+  it("derives missing published skill count from active skills", async () => {
+    const insert = vi.fn(async (table: string) => `${table}:new`);
+    const ctx = {
+      db: {
+        get: vi.fn(async () => ({
+          _id: "publisherAbuseScoreRuns:run",
+          modelVersion: TEST_MODEL_CONFIG.modelVersion,
+          modelConfig: TEST_MODEL_CONFIG,
+          status: "running",
+          phase: "collecting",
+          collectCursor: undefined,
+          scannedPublishers: 0,
+          scoredPublishers: 0,
+          sumLogPressure: 0,
+          sumSquaredLogPressure: 0,
+        })),
+        insert,
+        patch: vi.fn(async () => null),
+        query: vi.fn((table: string) => {
+          if (table === "publishers") {
+            return {
+              withIndex: () => ({
+                paginate: async () => ({
+                  page: [
+                    {
+                      _id: "publishers:legacy-stats",
+                      handle: "legacy-stats",
+                      linkedUserId: "users:legacy-stats",
+                      publishedPackages: 0,
+                      totalInstalls: 999,
+                      totalStars: 99,
+                      totalDownloads: 9999,
+                    },
+                  ],
+                  isDone: true,
+                  continueCursor: "",
+                }),
+              }),
+            };
+          }
+          if (table === "skills") {
+            return {
+              withIndex: vi.fn((indexName: string) => {
+                expect(indexName).toBe("by_owner_publisher_active_updated");
+                return {
+                  async *[Symbol.asyncIterator]() {
+                    yield {
+                      _id: "skills:first",
+                      ownerPublisherId: "publishers:legacy-stats",
+                      softDeletedAt: undefined,
+                      statsInstallsAllTime: 3,
+                      statsStars: 1,
+                      statsDownloads: 30,
+                      stats: { downloads: 30, stars: 1, installsCurrent: 1, installsAllTime: 3 },
+                    };
+                    yield {
+                      _id: "skills:second",
+                      ownerPublisherId: "publishers:legacy-stats",
+                      softDeletedAt: undefined,
+                      statsInstallsAllTime: 5,
+                      statsStars: 2,
+                      statsDownloads: 50,
+                      stats: { downloads: 50, stars: 2, installsCurrent: 1, installsAllTime: 5 },
+                    };
+                  },
+                };
+              }),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await collectHandler(ctx, { runId: "publisherAbuseScoreRuns:run" });
+
+    expect(insert).toHaveBeenCalledWith(
+      "publisherAbuseScores",
+      expect.objectContaining({
+        publishedSkills: 2,
+        totalInstalls: 8,
+        totalStars: 3,
+        totalDownloads: 80,
+      }),
+    );
+  });
+
   it("excludes zero-skill publishers from cohort statistics", async () => {
     const insert = vi.fn(async (table: string) => `${table}:new`);
     const patch = vi.fn(async () => null);

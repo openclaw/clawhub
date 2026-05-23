@@ -604,35 +604,41 @@ async function publisherInputFromPublisher(
   publisher: PublisherMetricsDoc,
 ): Promise<PublisherAbuseInput> {
   const publishedPackages = nonNegative(publisher.publishedPackages);
-  const skillTotals = await publisherSkillTotalsForScoring(ctx, publisher, publishedPackages);
+  const skillMetrics = await publisherSkillMetricsForScoring(ctx, publisher, publishedPackages);
   return {
     ownerKey: `publisher:${publisher._id}`,
     ownerPublisherId: publisher._id,
     ownerUserId: publisher.linkedUserId,
     handleSnapshot: publisher.handle,
-    publishedSkills: nonNegative(publisher.publishedSkills),
-    totalInstalls: skillTotals.totalInstalls,
-    totalStars: skillTotals.totalStars,
-    totalDownloads: skillTotals.totalDownloads,
+    publishedSkills: skillMetrics.publishedSkills,
+    totalInstalls: skillMetrics.totalInstalls,
+    totalStars: skillMetrics.totalStars,
+    totalDownloads: skillMetrics.totalDownloads,
   };
 }
 
-type SkillEngagementTotals = Pick<
+type SkillMetricsForScoring = Pick<
   PublisherAbuseInput,
-  "totalInstalls" | "totalStars" | "totalDownloads"
+  "publishedSkills" | "totalInstalls" | "totalStars" | "totalDownloads"
 >;
 
-async function publisherSkillTotalsForScoring(
+async function publisherSkillMetricsForScoring(
   ctx: Pick<MutationCtx, "db">,
   publisher: PublisherMetricsDoc,
   publishedPackages: number,
-): Promise<SkillEngagementTotals> {
+): Promise<SkillMetricsForScoring> {
+  const hasPublishedSkillCount = typeof publisher.publishedSkills === "number";
+  if (!hasPublishedSkillCount)
+    return await computePublisherSkillMetricsForScoring(ctx, publisher._id);
+
+  const publishedSkills = nonNegative(publisher.publishedSkills);
   if (
     typeof publisher.skillTotalInstalls === "number" &&
     typeof publisher.skillTotalStars === "number" &&
     typeof publisher.skillTotalDownloads === "number"
   ) {
     return {
+      publishedSkills,
       totalInstalls: nonNegative(publisher.skillTotalInstalls),
       totalStars: nonNegative(publisher.skillTotalStars),
       totalDownloads: nonNegative(publisher.skillTotalDownloads),
@@ -641,19 +647,24 @@ async function publisherSkillTotalsForScoring(
 
   if (publishedPackages === 0) {
     return {
+      publishedSkills,
       totalInstalls: nonNegative(publisher.totalInstalls),
       totalStars: nonNegative(publisher.totalStars),
       totalDownloads: nonNegative(publisher.totalDownloads),
     };
   }
 
-  return await computePublisherSkillTotalsForScoring(ctx, publisher._id);
+  return {
+    ...(await computePublisherSkillMetricsForScoring(ctx, publisher._id)),
+    publishedSkills,
+  };
 }
 
-async function computePublisherSkillTotalsForScoring(
+async function computePublisherSkillMetricsForScoring(
   ctx: Pick<MutationCtx, "db">,
   publisherId: Id<"publishers">,
-): Promise<SkillEngagementTotals> {
+): Promise<SkillMetricsForScoring> {
+  let publishedSkills = 0;
   let totalInstalls = 0;
   let totalStars = 0;
   let totalDownloads = 0;
@@ -664,11 +675,12 @@ async function computePublisherSkillTotalsForScoring(
     );
   for await (const skill of skills) {
     const contribution = getSkillPublisherContribution(skill);
+    publishedSkills += contribution.publishedSkills;
     totalInstalls += contribution.skillTotalInstalls;
     totalStars += contribution.skillTotalStars;
     totalDownloads += contribution.skillTotalDownloads;
   }
-  return { totalInstalls, totalStars, totalDownloads };
+  return { publishedSkills, totalInstalls, totalStars, totalDownloads };
 }
 
 async function upsertPublisherAbuseReviewNomination(
