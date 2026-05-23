@@ -50,6 +50,7 @@ const skillSpectorAnalysisValidator = v.object({
   severity: v.optional(v.string()),
   recommendation: v.optional(v.string()),
   issueCount: v.number(),
+  // Scanner/action boundaries cap this array before storage; Convex validators cannot express max length.
   issues: v.array(skillSpectorIssueValidator),
   scannerVersion: v.optional(v.string()),
   summary: v.optional(v.string()),

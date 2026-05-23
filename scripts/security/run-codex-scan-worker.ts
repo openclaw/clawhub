@@ -101,6 +101,9 @@ const DEFAULT_BATCH_LIMIT = 20;
 const DEFAULT_MAX_RUNTIME_MS = 40 * 60 * 1000;
 const DEFAULT_CODEX_SCAN_TIMEOUT_MS = 20 * 60 * 1000;
 const MAX_DIAGNOSTIC_TEXT_CHARS = 20_000;
+const MAX_STORED_SKILLSPECTOR_ISSUES = 25;
+const MAX_STORED_SKILLSPECTOR_TEXT_CHARS = 2_000;
+const MAX_STORED_SKILLSPECTOR_SHORT_TEXT_CHARS = 512;
 const DEFAULT_LEASE_MS = 60 * 60 * 1000;
 
 const root = resolve(new URL("../..", import.meta.url).pathname);
@@ -204,7 +207,7 @@ function redactDiagnosticError(value: string) {
 }
 
 const DIAGNOSTIC_CONTENT_KEY_PATTERN =
-  /^(content|detail|explanation|findings|guidance|message|note|notes|output|rawResult|recommendation|result|snippet|stderr|stdout|summary|text|userImpact|user_impact)$/i;
+  /^(code[_-]?snippet|content|detail|evidence|explanation|finding|findings|guidance|match|message|note|notes|output|rawResult|recommendation|result|snippet|stderr|stdout|summary|text|userImpact|user_impact)$/i;
 const DIAGNOSTIC_SECRET_KEY_PATTERN =
   /(api[_-]?key|authorization|password|secret|token|webhook|credential)/i;
 
@@ -462,12 +465,30 @@ async function collectArtifactSignalText(dir: string, maxBytes = 1_000_000) {
   return chunks.join("\n");
 }
 
+async function fileExists(path: string) {
+  try {
+    await readFile(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function resolveSkillSpectorScanInput(workspace: string) {
+  const extractedPackageRoot = join(workspace, "artifact", "package");
+  const hasClawPackExtraction =
+    (await fileExists(join(workspace, "artifact.tgz"))) &&
+    (await fileExists(join(extractedPackageRoot, "package.json")));
+  return hasClawPackExtraction ? "artifact/package" : "artifact";
+}
+
 async function runSkillSpector(
   workspace: string,
   onDiagnostic: (diagnostic: Partial<CodexCommandDiagnostic>) => void,
 ) {
   const resultPath = join(workspace, "skillspector-report.json");
-  const args = ["scan", "artifact", "--format", "json", "--output", resultPath];
+  const scanInput = await resolveSkillSpectorScanInput(workspace);
+  const args = ["scan", scanInput, "--format", "json", "--output", resultPath];
   onDiagnostic({ args });
   try {
     const output = await runCommand("skillspector", args, {
@@ -742,6 +763,44 @@ function normalizeSkillSpectorIssue(input: unknown, index: number): SkillSpector
   };
 }
 
+function truncateStoredSkillSpectorText(
+  value: string | undefined,
+  maxChars = MAX_STORED_SKILLSPECTOR_TEXT_CHARS,
+) {
+  if (value === undefined) return undefined;
+  if (value.length <= maxChars) return value;
+  return `${value.slice(0, maxChars)}\n...[truncated ${value.length - maxChars} chars]`;
+}
+
+function compactSkillSpectorIssue(issue: SkillSpectorIssue): SkillSpectorIssue {
+  return {
+    issueId:
+      truncateStoredSkillSpectorText(issue.issueId, MAX_STORED_SKILLSPECTOR_SHORT_TEXT_CHARS) ??
+      "skillspector-issue",
+    category: truncateStoredSkillSpectorText(
+      issue.category,
+      MAX_STORED_SKILLSPECTOR_SHORT_TEXT_CHARS,
+    ),
+    pattern: truncateStoredSkillSpectorText(
+      issue.pattern,
+      MAX_STORED_SKILLSPECTOR_SHORT_TEXT_CHARS,
+    ),
+    severity:
+      truncateStoredSkillSpectorText(issue.severity, MAX_STORED_SKILLSPECTOR_SHORT_TEXT_CHARS) ??
+      "UNKNOWN",
+    confidence: issue.confidence,
+    file: truncateStoredSkillSpectorText(issue.file, MAX_STORED_SKILLSPECTOR_SHORT_TEXT_CHARS),
+    startLine: issue.startLine,
+    endLine: issue.endLine,
+    explanation:
+      truncateStoredSkillSpectorText(issue.explanation) ??
+      "SkillSpector reported this issue without additional explanation.",
+    remediation: truncateStoredSkillSpectorText(issue.remediation),
+    finding: truncateStoredSkillSpectorText(issue.finding),
+    codeSnippet: truncateStoredSkillSpectorText(issue.codeSnippet),
+  };
+}
+
 function normalizeSkillSpectorStatus(params: {
   rawStatus?: string;
   recommendation?: string;
@@ -762,7 +821,10 @@ function normalizeSkillSpectorStatus(params: {
   return "clean";
 }
 
-function normalizeSkillSpectorAnalysis(raw: string, checkedAt = Date.now()): SkillSpectorAnalysis {
+export function normalizeSkillSpectorAnalysis(
+  raw: string,
+  checkedAt = Date.now(),
+): SkillSpectorAnalysis {
   const parsed = JSON.parse(raw) as unknown;
   const record = asRecord(parsed);
   if (!record) {
@@ -781,19 +843,28 @@ function normalizeSkillSpectorAnalysis(raw: string, checkedAt = Date.now()): Ski
     "issues",
     "vulnerabilities",
   ]);
-  const issues = (Array.isArray(rawIssues) ? rawIssues : [])
+  const rawIssueList = Array.isArray(rawIssues) ? rawIssues : [];
+  const issues = rawIssueList
+    .slice(0, MAX_STORED_SKILLSPECTOR_ISSUES)
     .map((issue, index) => normalizeSkillSpectorIssue(issue, index))
-    .filter((issue): issue is SkillSpectorIssue => Boolean(issue));
-  const score = readNumber(record, ["risk_score", "riskScore", "score"]);
-  const severity = readString(record, ["risk_severity", "riskSeverity", "severity"]);
-  const recommendation = readString(record, [
-    "risk_recommendation",
-    "riskRecommendation",
-    "recommendation",
-  ]);
+    .filter((issue): issue is SkillSpectorIssue => Boolean(issue))
+    .map(compactSkillSpectorIssue);
+  const score =
+    readNumber(record, ["risk_score", "riskScore", "score"]) ??
+    readNumberFromNested(record, ["risk_assessment", "riskAssessment"], ["score"]);
+  const severity =
+    readString(record, ["risk_severity", "riskSeverity", "severity"]) ??
+    readStringFromNested(record, ["risk_assessment", "riskAssessment"], ["severity"]);
+  const recommendation =
+    readString(record, ["risk_recommendation", "riskRecommendation", "recommendation"]) ??
+    readStringFromNested(
+      record,
+      ["risk_assessment", "riskAssessment"],
+      ["recommendation", "risk_recommendation", "riskRecommendation"],
+    );
   const issueCount =
     readNumber(record, ["issue_count", "issueCount", "finding_count", "findingCount"]) ??
-    issues.length;
+    rawIssueList.length;
   return {
     status: normalizeSkillSpectorStatus({
       rawStatus: readString(record, ["status"]),
@@ -806,8 +877,16 @@ function normalizeSkillSpectorAnalysis(raw: string, checkedAt = Date.now()): Ski
     recommendation,
     issueCount,
     issues,
-    scannerVersion: readString(record, ["scanner_version", "scannerVersion", "version"]),
-    summary: readString(record, ["summary", "analysis"]),
+    scannerVersion: truncateStoredSkillSpectorText(
+      readString(record, ["scanner_version", "scannerVersion", "version"]) ??
+        readStringFromNested(
+          record,
+          ["metadata"],
+          ["skillspector_version", "skillspectorVersion", "version"],
+        ),
+      MAX_STORED_SKILLSPECTOR_SHORT_TEXT_CHARS,
+    ),
+    summary: truncateStoredSkillSpectorText(readString(record, ["summary", "analysis"])),
     checkedAt,
   };
 }

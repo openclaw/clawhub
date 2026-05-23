@@ -1,9 +1,15 @@
 /* @vitest-environment node */
-import { mkdir, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { buildPrompt, writeArtifactWorkspace, writeJobDiagnostic } from "./run-codex-scan-worker";
+import {
+  buildPrompt,
+  normalizeSkillSpectorAnalysis,
+  resolveSkillSpectorScanInput,
+  writeArtifactWorkspace,
+  writeJobDiagnostic,
+} from "./run-codex-scan-worker";
 
 const tempDirs: string[] = [];
 
@@ -86,6 +92,95 @@ describe("run-codex-scan-worker diagnostics", () => {
     expect(prompt).not.toContain("OWASP");
   });
 
+  it("normalizes real SkillSpector JSON risk assessment fields", () => {
+    const analysis = normalizeSkillSpectorAnalysis(
+      JSON.stringify({
+        risk_assessment: {
+          score: 55,
+          severity: "HIGH",
+          recommendation: "DO_NOT_INSTALL",
+        },
+        metadata: {
+          skillspector_version: "2.0.0",
+        },
+        issues: [
+          {
+            id: "SDI-1",
+            pattern: "Description-Behavior Mismatch",
+            severity: "HIGH",
+            confidence: 0.97,
+            location: {
+              file: "SKILL.md",
+              start_line: 3,
+              end_line: 4,
+            },
+            explanation: "The manifest description does not match the skill behavior.",
+            remediation: "Make the manifest and skill body describe the same behavior.",
+            code_snippet: "description: Harmless local demo",
+          },
+        ],
+      }),
+      123,
+    );
+
+    expect(analysis).toMatchObject({
+      checkedAt: 123,
+      issueCount: 1,
+      recommendation: "DO_NOT_INSTALL",
+      scannerVersion: "2.0.0",
+      score: 55,
+      severity: "HIGH",
+      status: "suspicious",
+    });
+    expect(analysis.issues[0]).toMatchObject({
+      issueId: "SDI-1",
+      file: "SKILL.md",
+      startLine: 3,
+      endLine: 4,
+      codeSnippet: "description: Harmless local demo",
+    });
+  });
+
+  it("caps stored SkillSpector issues while preserving the full issue count", () => {
+    const longSnippet = "sensitive artifact text ".repeat(200);
+    const analysis = normalizeSkillSpectorAnalysis(
+      JSON.stringify({
+        issues: Array.from({ length: 30 }, (_, index) => ({
+          id: `SDI-${index + 1}`,
+          severity: "HIGH",
+          confidence: 0.97,
+          explanation: `Issue ${index + 1}: ${longSnippet}`,
+          finding: longSnippet,
+          code_snippet: longSnippet,
+        })),
+      }),
+      123,
+    );
+
+    expect(analysis.issueCount).toBe(30);
+    expect(analysis.issues).toHaveLength(25);
+    expect(analysis.issues[0]?.codeSnippet).toContain("...[truncated ");
+    expect(analysis.issues[0]?.codeSnippet?.length).toBeLessThan(longSnippet.length);
+  });
+
+  it("scans the extracted package root for ClawPack artifacts", async () => {
+    const workspace = await tempDir();
+    await mkdir(join(workspace, "artifact", "package"), { recursive: true });
+    await writeFile(join(workspace, "artifact.tgz"), "packed artifact");
+    await writeFile(join(workspace, "artifact", "package", "package.json"), "{}");
+    await writeFile(join(workspace, "artifact", "package.json"), "{}");
+
+    await expect(resolveSkillSpectorScanInput(workspace)).resolves.toBe("artifact/package");
+  });
+
+  it("scans the artifact root when there is no ClawPack extraction", async () => {
+    const workspace = await tempDir();
+    await mkdir(join(workspace, "artifact"), { recursive: true });
+    await writeFile(join(workspace, "artifact", "SKILL.md"), "# Skill");
+
+    await expect(resolveSkillSpectorScanInput(workspace)).resolves.toBe("artifact");
+  });
+
   it("writes scanner metadata without lease tokens or signed file URLs", async () => {
     const workspace = await tempDir();
 
@@ -145,6 +240,12 @@ describe("run-codex-scan-worker diagnostics", () => {
         stdout:
           '{"type":"tool_call","status":"failed","api_key":"sk-short-secret","output":"read https://signed.example.invalid/file?token=secret","content":["quoted array artifact payload should not persist"]}\n',
       },
+      skillSpector: {
+        args: ["scan", "artifact", "--format", "json"],
+        exitCode: 0,
+        rawResult:
+          '{"issues":[{"id":"SDI-1","code_snippet":"quoted SkillSpector artifact payload should not persist","finding":"matched SkillSpector artifact payload should not persist","explanation":"safe to redact"}]}',
+      },
       completedAt: 2000,
       diagnosticsRoot,
       error:
@@ -170,6 +271,20 @@ describe("run-codex-scan-worker diagnostics", () => {
         },
       },
       llmAnalysis: { confidence: "low", status: "clean", verdict: "benign" },
+      skillSpectorAnalysis: {
+        status: "suspicious",
+        issueCount: 1,
+        checkedAt: 123,
+        issues: [
+          {
+            issueId: "SDI-1",
+            severity: "HIGH",
+            explanation: "safe to redact",
+            finding: "matched SkillSpector artifact payload should not persist",
+            codeSnippet: "quoted SkillSpector artifact payload should not persist",
+          },
+        ],
+      },
       runId: "26127771775",
       startedAt: 1000,
       status: "failed",
@@ -193,6 +308,13 @@ describe("run-codex-scan-worker diagnostics", () => {
     expect(resultText).toContain('"verdict"');
     expect(resultText).toContain('"note": "[redacted');
     expect(resultText).not.toContain("quoted artifact payload");
+    const skillSpectorResultText = await readFile(
+      join(jobDir, "skillspector-result.redacted.json"),
+      "utf8",
+    );
+    expect(skillSpectorResultText).toContain('"code_snippet": "[redacted');
+    expect(skillSpectorResultText).toContain('"finding": "[redacted');
+    expect(skillSpectorResultText).not.toContain("SkillSpector artifact payload");
 
     const diagnostic = JSON.parse(await readFile(join(jobDir, "diagnostic.json"), "utf8"));
     expect(diagnostic).toMatchObject({
@@ -219,6 +341,7 @@ describe("run-codex-scan-worker diagnostics", () => {
     expect(diagnosticText).not.toContain("lease-secret");
     expect(diagnosticText).not.toContain("token=secret");
     expect(diagnosticText).not.toContain("quoted artifact payload");
+    expect(diagnosticText).not.toContain("SkillSpector artifact payload");
     expect(await readdir(jobDir)).not.toContain("artifact");
   });
 });

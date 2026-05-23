@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 import { SecurityAuditPage } from "./SecurityAuditPage";
 import {
+  getSkillSpectorIssueCount,
   SecurityScanResults,
   type LlmAnalysis,
   type SkillSpectorAnalysis,
@@ -296,7 +297,7 @@ describe("SecurityScanResults static guidance", () => {
   });
 
   it("promotes clean ClawScan scans with medium-or-higher visible findings to review", () => {
-    const { container } = render(
+    render(
       <SecurityScanResults
         llmAnalysis={{
           status: "clean",
@@ -521,6 +522,31 @@ describe("SecurityScanResults static guidance", () => {
         node.textContent?.trim(),
       ),
     ).toEqual(["Overview", "SkillSpector (1)", "Static analysis", "VirusTotal"]);
+  });
+
+  it("uses the full SkillSpector issue count when stored findings are capped", () => {
+    const cappedSkillSpectorAnalysis: SkillSpectorAnalysis = {
+      ...skillSpectorAnalysis,
+      issueCount: 30,
+      issues: skillSpectorAnalysis.issues,
+    };
+
+    expect(getSkillSpectorIssueCount(cappedSkillSpectorAnalysis)).toBe(30);
+
+    render(
+      <SecurityAuditPage
+        entity={{
+          kind: "skill",
+          title: "Benchmark Guard",
+          name: "benchmark-guard",
+          version: "1.0.0",
+          detailPath: "/local/benchmark-guard",
+        }}
+        skillSpectorAnalysis={cappedSkillSpectorAnalysis}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: "SkillSpector (30)" })).toBeTruthy();
   });
 
   it("prefers SkillSpector findings over legacy ClawScan agentic findings during rollout", () => {

@@ -366,7 +366,8 @@ function formatSkillSpectorConfidence(confidence?: number) {
 
 export function getSkillSpectorIssueCount(analysis?: SkillSpectorAnalysis | null) {
   if (!analysis) return 0;
-  return analysis.issues.length || analysis.issueCount || 0;
+  const reportedCount = Number.isFinite(analysis.issueCount) ? analysis.issueCount : 0;
+  return Math.max(reportedCount, analysis.issues.length);
 }
 
 export function hasSkillSpectorFindings(analysis?: SkillSpectorAnalysis | null) {

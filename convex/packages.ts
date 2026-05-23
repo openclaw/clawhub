@@ -2115,7 +2115,6 @@ export const listAuditPage = query({
                 version: latestRelease.version,
                 createdAt: latestRelease.createdAt,
                 vtAnalysis: latestRelease.vtAnalysis,
-                skillSpectorAnalysis: latestRelease.skillSpectorAnalysis,
                 llmAnalysis: latestRelease.llmAnalysis,
                 staticScan: latestRelease.staticScan
                   ? {

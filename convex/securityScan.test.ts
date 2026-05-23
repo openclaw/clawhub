@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   cancelQueuedVtUpdateJobsInternal,
   claimCodexScanJobs,
+  completeCodexScanJob,
   failCodexScanJob,
 } from "./securityScan";
 
@@ -21,6 +22,31 @@ const failCodexScanJobHandler = (
     { token: string; jobId: string; leaseToken: string; error: string },
     { ok: true; retry: boolean }
   >
+)._handler;
+
+const completeCodexScanJobHandler = (
+  completeCodexScanJob as unknown as WrappedHandler<{
+    token: string;
+    jobId: string;
+    leaseToken: string;
+    llmAnalysis: {
+      status: string;
+      checkedAt: number;
+    };
+    skillSpectorAnalysis?: {
+      status: string;
+      issueCount: number;
+      issues: Array<{
+        issueId: string;
+        severity: string;
+        explanation: string;
+        finding?: string;
+        codeSnippet?: string;
+      }>;
+      checkedAt: number;
+    };
+    runId?: string;
+  }>
 )._handler;
 
 type CancelArgs = {
@@ -239,6 +265,63 @@ describe("securityScan", () => {
         error: "ClawPack artifact unavailable",
       }),
     );
+  });
+
+  it("caps SkillSpector findings before storing completed scan results", async () => {
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-secret");
+    const longSnippet = "sensitive SkillSpector artifact text ".repeat(200);
+    const runQuery = vi.fn(async () => ({
+      job: {
+        _id: "securityScanJobs:1",
+        targetKind: "skillVersion",
+        leaseToken: "lease-token",
+      },
+      version: {
+        _id: "skillVersions:1",
+      },
+    }));
+    const runMutation = vi.fn(async (_ref: unknown, _args: Record<string, unknown>) => ({
+      ok: true,
+    }));
+
+    await completeCodexScanJobHandler(
+      { runMutation, runQuery },
+      {
+        token: "worker-secret",
+        jobId: "securityScanJobs:1",
+        leaseToken: "lease-token",
+        llmAnalysis: {
+          status: "suspicious",
+          checkedAt: 123,
+        },
+        skillSpectorAnalysis: {
+          status: "suspicious",
+          issueCount: 30,
+          checkedAt: 123,
+          issues: Array.from({ length: 30 }, (_, index) => ({
+            issueId: `SDI-${index + 1}`,
+            severity: "HIGH",
+            explanation: `Issue ${index + 1}: ${longSnippet}`,
+            finding: longSnippet,
+            codeSnippet: longSnippet,
+          })),
+        },
+      },
+    );
+
+    const skillSpectorCall = runMutation.mock.calls.find(
+      ([, args]) => "skillSpectorAnalysis" in (args as Record<string, unknown>),
+    );
+    expect(skillSpectorCall).toBeDefined();
+    if (!skillSpectorCall) throw new Error("Expected SkillSpector persistence call");
+    const stored = skillSpectorCall[1].skillSpectorAnalysis as {
+      issueCount: number;
+      issues: Array<{ codeSnippet?: string; finding?: string }>;
+    };
+    expect(stored.issueCount).toBe(30);
+    expect(stored.issues).toHaveLength(25);
+    expect(stored.issues[0]?.codeSnippet).toContain("...[truncated ");
+    expect(stored.issues[0]?.finding?.length).toBeLessThan(longSnippet.length);
   });
 
   it("persists an error ClawScan result when worker retries are exhausted", async () => {
