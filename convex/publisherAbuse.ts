@@ -12,6 +12,7 @@ import {
   type PublisherAbuseInput,
   type PublisherAbuseLabel,
 } from "./lib/publisherAbuseScoring";
+import { getSkillPublisherContribution } from "./lib/publisherStats";
 
 const DEFAULT_BATCH_SIZE = 250;
 const MAX_BATCH_SIZE = 1000;
@@ -324,7 +325,7 @@ export async function collectPublisherAbuseScoresPageInternalHandler(
   const modelConfig = run.modelConfig;
   for (const publisher of page.page) {
     const rawScore = computePublisherAbuseRawScore(
-      publisherInputFromPublisher(publisher),
+      await publisherInputFromPublisher(ctx, publisher),
       modelConfig,
     );
     await ctx.db.insert("publisherAbuseScores", {
@@ -503,6 +504,10 @@ export async function runPublisherAbuseScoreRunInternalHandler(
       });
   let pages = 0;
 
+  if (state.status !== "running") {
+    return { ok: true, runId: state.runId, pages, isDone: true };
+  }
+
   try {
     while (pages < maxPages) {
       let result: PageResult;
@@ -588,44 +593,82 @@ async function requireRunningRun(
 ) {
   const run = await ctx.db.get(runId);
   if (!run) throw new Error("Publisher abuse score run not found");
-  if (run.status !== "running") return run;
+  if (run.status !== "running") {
+    throw new Error(`Publisher abuse score run is ${run.status}`);
+  }
   return run;
 }
 
-function publisherInputFromPublisher(publisher: PublisherMetricsDoc): PublisherAbuseInput {
+async function publisherInputFromPublisher(
+  ctx: Pick<MutationCtx, "db">,
+  publisher: PublisherMetricsDoc,
+): Promise<PublisherAbuseInput> {
   const publishedPackages = nonNegative(publisher.publishedPackages);
+  const skillTotals = await publisherSkillTotalsForScoring(ctx, publisher, publishedPackages);
   return {
     ownerKey: `publisher:${publisher._id}`,
     ownerPublisherId: publisher._id,
     ownerUserId: publisher.linkedUserId,
     handleSnapshot: publisher.handle,
     publishedSkills: nonNegative(publisher.publishedSkills),
-    totalInstalls: publisherSkillTotal(
-      publisher.skillTotalInstalls,
-      publisher.totalInstalls,
-      publishedPackages,
-    ),
-    totalStars: publisherSkillTotal(
-      publisher.skillTotalStars,
-      publisher.totalStars,
-      publishedPackages,
-    ),
-    totalDownloads: publisherSkillTotal(
-      publisher.skillTotalDownloads,
-      publisher.totalDownloads,
-      publishedPackages,
-    ),
+    totalInstalls: skillTotals.totalInstalls,
+    totalStars: skillTotals.totalStars,
+    totalDownloads: skillTotals.totalDownloads,
   };
 }
 
-function publisherSkillTotal(
-  skillTotal: number | undefined,
-  aggregateTotal: number | undefined,
+type SkillEngagementTotals = Pick<
+  PublisherAbuseInput,
+  "totalInstalls" | "totalStars" | "totalDownloads"
+>;
+
+async function publisherSkillTotalsForScoring(
+  ctx: Pick<MutationCtx, "db">,
+  publisher: PublisherMetricsDoc,
   publishedPackages: number,
-) {
-  if (typeof skillTotal === "number") return nonNegative(skillTotal);
-  if (publishedPackages > 0) return 0;
-  return nonNegative(aggregateTotal);
+): Promise<SkillEngagementTotals> {
+  if (
+    typeof publisher.skillTotalInstalls === "number" &&
+    typeof publisher.skillTotalStars === "number" &&
+    typeof publisher.skillTotalDownloads === "number"
+  ) {
+    return {
+      totalInstalls: nonNegative(publisher.skillTotalInstalls),
+      totalStars: nonNegative(publisher.skillTotalStars),
+      totalDownloads: nonNegative(publisher.skillTotalDownloads),
+    };
+  }
+
+  if (publishedPackages === 0) {
+    return {
+      totalInstalls: nonNegative(publisher.totalInstalls),
+      totalStars: nonNegative(publisher.totalStars),
+      totalDownloads: nonNegative(publisher.totalDownloads),
+    };
+  }
+
+  return await computePublisherSkillTotalsForScoring(ctx, publisher._id);
+}
+
+async function computePublisherSkillTotalsForScoring(
+  ctx: Pick<MutationCtx, "db">,
+  publisherId: Id<"publishers">,
+): Promise<SkillEngagementTotals> {
+  let totalInstalls = 0;
+  let totalStars = 0;
+  let totalDownloads = 0;
+  const skills = ctx.db
+    .query("skills")
+    .withIndex("by_owner_publisher_active_updated", (q) =>
+      q.eq("ownerPublisherId", publisherId).eq("softDeletedAt", undefined),
+    );
+  for await (const skill of skills) {
+    const contribution = getSkillPublisherContribution(skill);
+    totalInstalls += contribution.skillTotalInstalls;
+    totalStars += contribution.skillTotalStars;
+    totalDownloads += contribution.skillTotalDownloads;
+  }
+  return { totalInstalls, totalStars, totalDownloads };
 }
 
 async function upsertPublisherAbuseReviewNomination(

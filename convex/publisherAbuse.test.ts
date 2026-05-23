@@ -328,7 +328,7 @@ describe("publisher abuse dry-run persistence", () => {
     );
   });
 
-  it("does not trust aggregate engagement for mixed publishers before skill-only backfill", async () => {
+  it("derives missing skill-only engagement for mixed publishers from active skills", async () => {
     const insert = vi.fn(async (table: string) => `${table}:new`);
     const ctx = {
       db: {
@@ -369,6 +369,35 @@ describe("publisher abuse dry-run persistence", () => {
               }),
             };
           }
+          if (table === "skills") {
+            return {
+              withIndex: vi.fn((indexName: string) => {
+                expect(indexName).toBe("by_owner_publisher_active_updated");
+                return {
+                  async *[Symbol.asyncIterator]() {
+                    yield {
+                      _id: "skills:one",
+                      ownerPublisherId: "publishers:not-backfilled",
+                      softDeletedAt: undefined,
+                      statsInstallsAllTime: 7,
+                      statsStars: 1,
+                      statsDownloads: 70,
+                      stats: { downloads: 70, stars: 1, installsCurrent: 1, installsAllTime: 7 },
+                    };
+                    yield {
+                      _id: "skills:two",
+                      ownerPublisherId: "publishers:not-backfilled",
+                      softDeletedAt: undefined,
+                      statsInstallsAllTime: 11,
+                      statsStars: 2,
+                      statsDownloads: 110,
+                      stats: { downloads: 110, stars: 2, installsCurrent: 1, installsAllTime: 11 },
+                    };
+                  },
+                };
+              }),
+            };
+          }
           throw new Error(`unexpected table ${table}`);
         }),
       },
@@ -377,13 +406,17 @@ describe("publisher abuse dry-run persistence", () => {
     await collectHandler(ctx, { runId: "publisherAbuseScoreRuns:run" });
 
     expect(ctx.db.query).not.toHaveBeenCalledWith("packages");
+    expect(ctx.db.patch).not.toHaveBeenCalledWith(
+      expect.stringMatching(/^publishers:/),
+      expect.anything(),
+    );
     expect(insert).toHaveBeenCalledWith(
       "publisherAbuseScores",
       expect.objectContaining({
         publishedSkills: 40,
-        totalInstalls: 0,
-        totalStars: 0,
-        totalDownloads: 0,
+        totalInstalls: 18,
+        totalStars: 3,
+        totalDownloads: 180,
       }),
     );
   });
@@ -746,6 +779,59 @@ describe("publisher abuse dry-run persistence", () => {
       runId: "publisherAbuseScoreRuns:run",
       errorMessage: "page failed",
     });
+  });
+
+  it("does not continue page processing for a failed score run", async () => {
+    const ctx = {
+      db: {
+        get: vi.fn(async () => ({
+          _id: "publisherAbuseScoreRuns:run",
+          modelVersion: TEST_MODEL_CONFIG.modelVersion,
+          modelConfig: TEST_MODEL_CONFIG,
+          status: "failed",
+          phase: "collecting",
+          scannedPublishers: 0,
+          scoredPublishers: 0,
+          sumLogPressure: 0,
+          sumSquaredLogPressure: 0,
+        })),
+        insert: vi.fn(),
+        patch: vi.fn(),
+        query: vi.fn(),
+      },
+    };
+
+    await expect(collectHandler(ctx, { runId: "publisherAbuseScoreRuns:run" })).rejects.toThrow(
+      "Publisher abuse score run is failed",
+    );
+
+    expect(ctx.db.query).not.toHaveBeenCalled();
+    expect(ctx.db.insert).not.toHaveBeenCalled();
+    expect(ctx.db.patch).not.toHaveBeenCalled();
+  });
+
+  it("does not schedule continuation when resuming a failed score run", async () => {
+    const ctx = {
+      scheduler: { runAfter: vi.fn(async () => null) },
+      runQuery: vi.fn(async () => ({
+        runId: "publisherAbuseScoreRuns:run",
+        phase: "collecting",
+        status: "failed",
+      })),
+      runMutation: vi.fn(),
+    };
+
+    await expect(
+      runHandler(ctx, { runId: "publisherAbuseScoreRuns:run", batchSize: 100, maxPages: 1 }),
+    ).resolves.toEqual({
+      ok: true,
+      runId: "publisherAbuseScoreRuns:run",
+      pages: 0,
+      isDone: true,
+    });
+
+    expect(ctx.runMutation).not.toHaveBeenCalled();
+    expect(ctx.scheduler.runAfter).not.toHaveBeenCalled();
   });
 
   it("keeps the requested label when listing all queue statuses", async () => {
