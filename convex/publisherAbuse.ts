@@ -12,7 +12,6 @@ import {
   type PublisherAbuseInput,
   type PublisherAbuseLabel,
 } from "./lib/publisherAbuseScoring";
-import { readCanonicalStat } from "./lib/skillStats";
 
 const DEFAULT_BATCH_SIZE = 250;
 const MAX_BATCH_SIZE = 1000;
@@ -338,9 +337,11 @@ export async function collectPublisherAbuseScoresPageInternalHandler(
       reasonCodes: rawScore.reasonCodes,
       createdAt: now,
     });
-    sumLogPressure += rawScore.logPressure;
-    sumSquaredLogPressure += rawScore.logPressure ** 2;
-    scored += 1;
+    if (rawScore.publishedSkills > 0) {
+      sumLogPressure += rawScore.logPressure;
+      sumSquaredLogPressure += rawScore.logPressure ** 2;
+      scored += 1;
+    }
   }
 
   const nextPhase: RunPhase = page.isDone ? "finalizing" : "collecting";
@@ -556,39 +557,43 @@ async function publisherInputFromPublisher(
   ctx: Pick<MutationCtx, "db">,
   publisher: PublisherMetricsDoc,
 ): Promise<PublisherAbuseInput> {
-  const skillStats = await getPublisherSkillOnlyStats(ctx, publisher._id);
+  const packageStats = await getPublisherPackageStats(ctx, publisher._id);
   return {
     ownerKey: `publisher:${publisher._id}`,
     ownerPublisherId: publisher._id,
     ownerUserId: publisher.linkedUserId,
     handleSnapshot: publisher.handle,
-    publishedSkills: skillStats.publishedSkills,
-    totalInstalls: skillStats.totalInstalls,
-    totalStars: skillStats.totalStars,
-    totalDownloads: skillStats.totalDownloads,
+    publishedSkills: nonNegative(publisher.publishedSkills),
+    totalInstalls: Math.max(0, nonNegative(publisher.totalInstalls) - packageStats.totalInstalls),
+    totalStars: Math.max(0, nonNegative(publisher.totalStars) - packageStats.totalStars),
+    totalDownloads: Math.max(
+      0,
+      nonNegative(publisher.totalDownloads) - packageStats.totalDownloads,
+    ),
   };
 }
 
-async function getPublisherSkillOnlyStats(
+async function getPublisherPackageStats(
   ctx: Pick<MutationCtx, "db">,
   ownerPublisherId: Id<"publishers">,
 ) {
-  const skills = await ctx.db
-    .query("skills")
-    .withIndex("by_owner_publisher_active_updated", (q) =>
-      q.eq("ownerPublisherId", ownerPublisherId).eq("softDeletedAt", undefined),
-    )
-    .collect();
-
-  return skills.reduce(
-    (totals, skill) => ({
-      publishedSkills: totals.publishedSkills + 1,
-      totalInstalls: totals.totalInstalls + readCanonicalStat(skill, "installsAllTime"),
-      totalStars: totals.totalStars + readCanonicalStat(skill, "stars"),
-      totalDownloads: totals.totalDownloads + readCanonicalStat(skill, "downloads"),
-    }),
-    { publishedSkills: 0, totalInstalls: 0, totalStars: 0, totalDownloads: 0 },
-  );
+  const totals = { totalInstalls: 0, totalStars: 0, totalDownloads: 0 };
+  let cursor: string | null = null;
+  while (true) {
+    const page = await ctx.db
+      .query("packages")
+      .withIndex("by_owner_publisher_active_updated", (q) =>
+        q.eq("ownerPublisherId", ownerPublisherId).eq("softDeletedAt", undefined),
+      )
+      .paginate({ cursor, numItems: 100 });
+    for (const pkg of page.page) {
+      totals.totalInstalls += nonNegative(pkg.stats.installs);
+      totals.totalStars += nonNegative(pkg.stats.stars);
+      totals.totalDownloads += nonNegative(pkg.stats.downloads);
+    }
+    if (page.isDone) return totals;
+    cursor = page.continueCursor;
+  }
 }
 
 async function upsertPublisherAbuseReviewNomination(
@@ -795,6 +800,10 @@ function summarizeRunForQueue(run: ScoreRun) {
 function normalizeNotes(notes: string | undefined) {
   const trimmed = notes?.trim();
   return trimmed ? trimmed : undefined;
+}
+
+function nonNegative(value: number | undefined) {
+  return typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : 0;
 }
 
 function clampInt(value: number, min: number, max: number) {

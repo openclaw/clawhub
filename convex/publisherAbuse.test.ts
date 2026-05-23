@@ -155,11 +155,14 @@ describe("publisher abuse dry-run persistence", () => {
               }),
             };
           }
-          if (table === "skills") {
+          if (table === "packages") {
             return {
               withIndex: () => ({
-                collect: async () =>
-                  skillFixtures(1200, { installsAllTime: 8, stars: 0, downloads: 120 }),
+                paginate: async () => ({
+                  page: [],
+                  isDone: true,
+                  continueCursor: "",
+                }),
               }),
             };
           }
@@ -234,11 +237,14 @@ describe("publisher abuse dry-run persistence", () => {
               }),
             };
           }
-          if (table === "skills") {
+          if (table === "packages") {
             return {
               withIndex: () => ({
-                collect: async () =>
-                  skillFixtures(120, { installsAllTime: 12, stars: 1, downloads: 120 }),
+                paginate: async () => ({
+                  page: [],
+                  isDone: true,
+                  continueCursor: "",
+                }),
               }),
             };
           }
@@ -298,11 +304,22 @@ describe("publisher abuse dry-run persistence", () => {
               }),
             };
           }
-          if (table === "skills") {
+          if (table === "packages") {
             return {
               withIndex: () => ({
-                collect: async () =>
-                  skillFixtures(40, { installsAllTime: 0, stars: 0, downloads: 0 }),
+                paginate: async () => ({
+                  page: [
+                    {
+                      stats: {
+                        installs: 10_000,
+                        stars: 500,
+                        downloads: 500_000,
+                      },
+                    },
+                  ],
+                  isDone: true,
+                  continueCursor: "",
+                }),
               }),
             };
           }
@@ -313,6 +330,7 @@ describe("publisher abuse dry-run persistence", () => {
 
     await collectHandler(ctx, { runId: "publisherAbuseScoreRuns:run" });
 
+    expect(ctx.db.query).not.toHaveBeenCalledWith("skills");
     expect(insert).toHaveBeenCalledWith(
       "publisherAbuseScores",
       expect.objectContaining({
@@ -320,6 +338,84 @@ describe("publisher abuse dry-run persistence", () => {
         totalInstalls: 0,
         totalStars: 0,
         totalDownloads: 0,
+      }),
+    );
+  });
+
+  it("excludes zero-skill publishers from cohort statistics", async () => {
+    const insert = vi.fn(async (table: string) => `${table}:new`);
+    const patch = vi.fn(async () => null);
+    const ctx = {
+      db: {
+        get: vi.fn(async () => ({
+          _id: "publisherAbuseScoreRuns:run",
+          modelVersion: TEST_MODEL_CONFIG.modelVersion,
+          modelConfig: TEST_MODEL_CONFIG,
+          status: "running",
+          phase: "collecting",
+          collectCursor: undefined,
+          scannedPublishers: 0,
+          scoredPublishers: 0,
+          sumLogPressure: 0,
+          sumSquaredLogPressure: 0,
+        })),
+        insert,
+        patch,
+        query: vi.fn((table: string) => {
+          if (table === "publishers") {
+            return {
+              withIndex: () => ({
+                paginate: async () => ({
+                  page: [
+                    {
+                      _id: "publishers:empty",
+                      handle: "empty",
+                      linkedUserId: "users:empty",
+                      publishedSkills: 0,
+                      totalInstalls: 0,
+                      totalStars: 0,
+                      totalDownloads: 0,
+                    },
+                    {
+                      _id: "publishers:active",
+                      handle: "active",
+                      linkedUserId: "users:active",
+                      publishedSkills: 1,
+                      totalInstalls: 0,
+                      totalStars: 0,
+                      totalDownloads: 0,
+                    },
+                  ],
+                  isDone: true,
+                  continueCursor: "",
+                }),
+              }),
+            };
+          }
+          if (table === "packages") {
+            return {
+              withIndex: () => ({
+                paginate: async () => ({
+                  page: [],
+                  isDone: true,
+                  continueCursor: "",
+                }),
+              }),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await collectHandler(ctx, { runId: "publisherAbuseScoreRuns:run" });
+
+    expect(insert).toHaveBeenCalledTimes(2);
+    expect(patch).toHaveBeenCalledWith(
+      "publisherAbuseScoreRuns:run",
+      expect.objectContaining({
+        scannedPublishers: 2,
+        scoredPublishers: 1,
       }),
     );
   });
@@ -866,23 +962,4 @@ function queueCtx(
 
 function sortQueueNominations(nominations: QueueNominationFixture[]) {
   return [...nominations].sort((left, right) => right.lastScoredAt - left.lastScoredAt);
-}
-
-function skillFixtures(
-  count: number,
-  stats: { installsAllTime: number; stars: number; downloads: number },
-) {
-  return Array.from({ length: count }, () => ({
-    statsInstallsAllTime: stats.installsAllTime / count,
-    statsStars: stats.stars / count,
-    statsDownloads: stats.downloads / count,
-    stats: {
-      installsAllTime: stats.installsAllTime / count,
-      installsCurrent: 0,
-      stars: stats.stars / count,
-      downloads: stats.downloads / count,
-      comments: 0,
-      versions: 1,
-    },
-  }));
 }
