@@ -21,6 +21,7 @@ const MAX_MAX_PAGES = 50;
 const ACTION_CONTINUATION_DELAY_MS = 60_000;
 const QUEUE_INITIAL_CANDIDATE_MULTIPLIER = 4;
 const MAX_QUEUE_FILTER_CANDIDATES = 1000;
+const MAX_ACTIVE_SKILL_FALLBACK_SCAN = 500;
 
 const triageStatusValidator = v.union(
   v.literal("pending"),
@@ -674,26 +675,27 @@ async function publisherSkillMetricsForScoring(
 
   if (!options.allowActiveSkillScan) return null;
 
-  return {
-    ...(await computePublisherSkillMetricsForScoring(ctx, publisher._id)),
-    publishedSkills,
-  };
+  const metrics = await computePublisherSkillMetricsForScoring(ctx, publisher._id);
+  if (!metrics) return null;
+  return { ...metrics, publishedSkills };
 }
 
 async function computePublisherSkillMetricsForScoring(
   ctx: Pick<MutationCtx, "db">,
   publisherId: Id<"publishers">,
-): Promise<SkillMetricsForScoring> {
+): Promise<SkillMetricsForScoring | null> {
   let publishedSkills = 0;
   let totalInstalls = 0;
   let totalStars = 0;
   let totalDownloads = 0;
-  const skills = ctx.db
+  const skills = await ctx.db
     .query("skills")
     .withIndex("by_owner_publisher_active_updated", (q) =>
       q.eq("ownerPublisherId", publisherId).eq("softDeletedAt", undefined),
-    );
-  for await (const skill of skills) {
+    )
+    .take(MAX_ACTIVE_SKILL_FALLBACK_SCAN + 1);
+  if (skills.length > MAX_ACTIVE_SKILL_FALLBACK_SCAN) return null;
+  for (const skill of skills) {
     const contribution = getSkillPublisherContribution(skill);
     publishedSkills += contribution.publishedSkills;
     totalInstalls += contribution.skillTotalInstalls;

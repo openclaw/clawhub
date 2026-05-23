@@ -377,26 +377,34 @@ describe("publisher abuse dry-run persistence", () => {
               withIndex: vi.fn((indexName: string) => {
                 expect(indexName).toBe("by_owner_publisher_active_updated");
                 return {
-                  async *[Symbol.asyncIterator]() {
-                    yield {
-                      _id: "skills:one",
-                      ownerPublisherId: "publishers:not-backfilled",
-                      softDeletedAt: undefined,
-                      statsInstallsAllTime: 7,
-                      statsStars: 1,
-                      statsDownloads: 70,
-                      stats: { downloads: 70, stars: 1, installsCurrent: 1, installsAllTime: 7 },
-                    };
-                    yield {
-                      _id: "skills:two",
-                      ownerPublisherId: "publishers:not-backfilled",
-                      softDeletedAt: undefined,
-                      statsInstallsAllTime: 11,
-                      statsStars: 2,
-                      statsDownloads: 110,
-                      stats: { downloads: 110, stars: 2, installsCurrent: 1, installsAllTime: 11 },
-                    };
-                  },
+                  take: vi.fn(async (numItems: number) => {
+                    expect(numItems).toBe(501);
+                    return [
+                      {
+                        _id: "skills:one",
+                        ownerPublisherId: "publishers:not-backfilled",
+                        softDeletedAt: undefined,
+                        statsInstallsAllTime: 7,
+                        statsStars: 1,
+                        statsDownloads: 70,
+                        stats: { downloads: 70, stars: 1, installsCurrent: 1, installsAllTime: 7 },
+                      },
+                      {
+                        _id: "skills:two",
+                        ownerPublisherId: "publishers:not-backfilled",
+                        softDeletedAt: undefined,
+                        statsInstallsAllTime: 11,
+                        statsStars: 2,
+                        statsDownloads: 110,
+                        stats: {
+                          downloads: 110,
+                          stars: 2,
+                          installsCurrent: 1,
+                          installsAllTime: 11,
+                        },
+                      },
+                    ];
+                  }),
                 };
               }),
             };
@@ -420,6 +428,87 @@ describe("publisher abuse dry-run persistence", () => {
         totalInstalls: 18,
         totalStars: 3,
         totalDownloads: 180,
+      }),
+    );
+  });
+
+  it("skips manual fallback scoring when active skill derivation exceeds the bounded page", async () => {
+    const insert = vi.fn(async (table: string) => `${table}:new`);
+    const patch = vi.fn(async () => null);
+    const ctx = {
+      db: {
+        get: vi.fn(async () => ({
+          _id: "publisherAbuseScoreRuns:run",
+          modelVersion: TEST_MODEL_CONFIG.modelVersion,
+          modelConfig: TEST_MODEL_CONFIG,
+          trigger: "manual",
+          status: "running",
+          phase: "collecting",
+          collectCursor: undefined,
+          scannedPublishers: 0,
+          scoredPublishers: 0,
+          sumLogPressure: 0,
+          sumSquaredLogPressure: 0,
+        })),
+        insert,
+        patch,
+        query: vi.fn((table: string) => {
+          if (table === "publishers") {
+            return {
+              withIndex: () => ({
+                paginate: async () => ({
+                  page: [
+                    {
+                      _id: "publishers:too-many-active-skills",
+                      handle: "too-many-active-skills",
+                      linkedUserId: "users:too-many-active-skills",
+                      publishedSkills: 1_200,
+                      publishedPackages: 2,
+                      totalInstalls: 10_000,
+                      totalStars: 500,
+                      totalDownloads: 500_000,
+                    },
+                  ],
+                  isDone: true,
+                  continueCursor: "",
+                }),
+              }),
+            };
+          }
+          if (table === "skills") {
+            return {
+              withIndex: vi.fn((indexName: string) => {
+                expect(indexName).toBe("by_owner_publisher_active_updated");
+                return {
+                  take: vi.fn(async (numItems: number) => {
+                    expect(numItems).toBe(501);
+                    return Array.from({ length: 501 }, (_, index) => ({
+                      _id: `skills:bulk-${index}`,
+                      ownerPublisherId: "publishers:too-many-active-skills",
+                      softDeletedAt: undefined,
+                      statsInstallsAllTime: 1,
+                      statsStars: 0,
+                      statsDownloads: 1,
+                      stats: { downloads: 1, stars: 0, installsCurrent: 0, installsAllTime: 1 },
+                    }));
+                  }),
+                };
+              }),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await collectHandler(ctx, { runId: "publisherAbuseScoreRuns:run" });
+
+    expect(insert).not.toHaveBeenCalledWith("publisherAbuseScores", expect.anything());
+    expect(patch).toHaveBeenCalledWith(
+      "publisherAbuseScoreRuns:run",
+      expect.objectContaining({
+        scannedPublishers: 1,
+        scoredPublishers: 0,
       }),
     );
   });
@@ -591,26 +680,34 @@ describe("publisher abuse dry-run persistence", () => {
               withIndex: vi.fn((indexName: string) => {
                 expect(indexName).toBe("by_owner_publisher_active_updated");
                 return {
-                  async *[Symbol.asyncIterator]() {
-                    yield {
-                      _id: "skills:one",
-                      ownerPublisherId: "publishers:package-count-missing",
-                      softDeletedAt: undefined,
-                      statsInstallsAllTime: 7,
-                      statsStars: 1,
-                      statsDownloads: 70,
-                      stats: { downloads: 70, stars: 1, installsCurrent: 1, installsAllTime: 7 },
-                    };
-                    yield {
-                      _id: "skills:two",
-                      ownerPublisherId: "publishers:package-count-missing",
-                      softDeletedAt: undefined,
-                      statsInstallsAllTime: 11,
-                      statsStars: 2,
-                      statsDownloads: 110,
-                      stats: { downloads: 110, stars: 2, installsCurrent: 1, installsAllTime: 11 },
-                    };
-                  },
+                  take: vi.fn(async (numItems: number) => {
+                    expect(numItems).toBe(501);
+                    return [
+                      {
+                        _id: "skills:one",
+                        ownerPublisherId: "publishers:package-count-missing",
+                        softDeletedAt: undefined,
+                        statsInstallsAllTime: 7,
+                        statsStars: 1,
+                        statsDownloads: 70,
+                        stats: { downloads: 70, stars: 1, installsCurrent: 1, installsAllTime: 7 },
+                      },
+                      {
+                        _id: "skills:two",
+                        ownerPublisherId: "publishers:package-count-missing",
+                        softDeletedAt: undefined,
+                        statsInstallsAllTime: 11,
+                        statsStars: 2,
+                        statsDownloads: 110,
+                        stats: {
+                          downloads: 110,
+                          stars: 2,
+                          installsCurrent: 1,
+                          installsAllTime: 11,
+                        },
+                      },
+                    ];
+                  }),
                 };
               }),
             };
@@ -679,26 +776,29 @@ describe("publisher abuse dry-run persistence", () => {
               withIndex: vi.fn((indexName: string) => {
                 expect(indexName).toBe("by_owner_publisher_active_updated");
                 return {
-                  async *[Symbol.asyncIterator]() {
-                    yield {
-                      _id: "skills:first",
-                      ownerPublisherId: "publishers:legacy-stats",
-                      softDeletedAt: undefined,
-                      statsInstallsAllTime: 3,
-                      statsStars: 1,
-                      statsDownloads: 30,
-                      stats: { downloads: 30, stars: 1, installsCurrent: 1, installsAllTime: 3 },
-                    };
-                    yield {
-                      _id: "skills:second",
-                      ownerPublisherId: "publishers:legacy-stats",
-                      softDeletedAt: undefined,
-                      statsInstallsAllTime: 5,
-                      statsStars: 2,
-                      statsDownloads: 50,
-                      stats: { downloads: 50, stars: 2, installsCurrent: 1, installsAllTime: 5 },
-                    };
-                  },
+                  take: vi.fn(async (numItems: number) => {
+                    expect(numItems).toBe(501);
+                    return [
+                      {
+                        _id: "skills:first",
+                        ownerPublisherId: "publishers:legacy-stats",
+                        softDeletedAt: undefined,
+                        statsInstallsAllTime: 3,
+                        statsStars: 1,
+                        statsDownloads: 30,
+                        stats: { downloads: 30, stars: 1, installsCurrent: 1, installsAllTime: 3 },
+                      },
+                      {
+                        _id: "skills:second",
+                        ownerPublisherId: "publishers:legacy-stats",
+                        softDeletedAt: undefined,
+                        statsInstallsAllTime: 5,
+                        statsStars: 2,
+                        statsDownloads: 50,
+                        stats: { downloads: 50, stars: 2, installsCurrent: 1, installsAllTime: 5 },
+                      },
+                    ];
+                  }),
                 };
               }),
             };

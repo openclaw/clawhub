@@ -55,4 +55,6 @@ reading unbounded child rows or writing zero-engagement scores.
 If cron reaches a publisher that is missing the base published skill count,
 the scorer skips that publisher for the run. It must not write an all-zero pass
 score for unknown publisher stats. Manual runs may derive the missing count from
-active skills because they are operator-triggered.
+active skills because they are operator-triggered, but that fallback must still
+be bounded. If the active-skill fallback page is too large, manual runs skip the
+publisher instead of scanning every child row in one mutation.
