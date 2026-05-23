@@ -145,6 +145,7 @@ describe("publisher abuse dry-run persistence", () => {
                       handle: "gora050",
                       linkedUserId: "users:gora050",
                       publishedSkills: 1200,
+                      publishedPackages: 0,
                       totalInstalls: 8,
                       totalStars: 0,
                       totalDownloads: 120,
@@ -227,6 +228,7 @@ describe("publisher abuse dry-run persistence", () => {
                       handle: "mid-volume",
                       linkedUserId: "users:mid-volume",
                       publishedSkills: 120,
+                      publishedPackages: 0,
                       totalInstalls: 12,
                       totalStars: 1,
                       totalDownloads: 120,
@@ -421,6 +423,94 @@ describe("publisher abuse dry-run persistence", () => {
     );
   });
 
+  it("treats a missing package count as unknown when skill-only engagement is missing", async () => {
+    const insert = vi.fn(async (table: string) => `${table}:new`);
+    const ctx = {
+      db: {
+        get: vi.fn(async () => ({
+          _id: "publisherAbuseScoreRuns:run",
+          modelVersion: TEST_MODEL_CONFIG.modelVersion,
+          modelConfig: TEST_MODEL_CONFIG,
+          status: "running",
+          phase: "collecting",
+          collectCursor: undefined,
+          scannedPublishers: 0,
+          scoredPublishers: 0,
+          sumLogPressure: 0,
+          sumSquaredLogPressure: 0,
+        })),
+        insert,
+        patch: vi.fn(async () => null),
+        query: vi.fn((table: string) => {
+          if (table === "publishers") {
+            return {
+              withIndex: () => ({
+                paginate: async () => ({
+                  page: [
+                    {
+                      _id: "publishers:package-count-missing",
+                      handle: "package-count-missing",
+                      linkedUserId: "users:package-count-missing",
+                      publishedSkills: 40,
+                      totalInstalls: 10_000,
+                      totalStars: 500,
+                      totalDownloads: 500_000,
+                    },
+                  ],
+                  isDone: true,
+                  continueCursor: "",
+                }),
+              }),
+            };
+          }
+          if (table === "skills") {
+            return {
+              withIndex: vi.fn((indexName: string) => {
+                expect(indexName).toBe("by_owner_publisher_active_updated");
+                return {
+                  async *[Symbol.asyncIterator]() {
+                    yield {
+                      _id: "skills:one",
+                      ownerPublisherId: "publishers:package-count-missing",
+                      softDeletedAt: undefined,
+                      statsInstallsAllTime: 7,
+                      statsStars: 1,
+                      statsDownloads: 70,
+                      stats: { downloads: 70, stars: 1, installsCurrent: 1, installsAllTime: 7 },
+                    };
+                    yield {
+                      _id: "skills:two",
+                      ownerPublisherId: "publishers:package-count-missing",
+                      softDeletedAt: undefined,
+                      statsInstallsAllTime: 11,
+                      statsStars: 2,
+                      statsDownloads: 110,
+                      stats: { downloads: 110, stars: 2, installsCurrent: 1, installsAllTime: 11 },
+                    };
+                  },
+                };
+              }),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await collectHandler(ctx, { runId: "publisherAbuseScoreRuns:run" });
+
+    expect(ctx.db.query).toHaveBeenCalledWith("skills");
+    expect(insert).toHaveBeenCalledWith(
+      "publisherAbuseScores",
+      expect.objectContaining({
+        publishedSkills: 40,
+        totalInstalls: 18,
+        totalStars: 3,
+        totalDownloads: 180,
+      }),
+    );
+  });
+
   it("derives missing published skill count from active skills", async () => {
     const insert = vi.fn(async (table: string) => `${table}:new`);
     const ctx = {
@@ -538,6 +628,7 @@ describe("publisher abuse dry-run persistence", () => {
                       handle: "empty",
                       linkedUserId: "users:empty",
                       publishedSkills: 0,
+                      publishedPackages: 0,
                       totalInstalls: 0,
                       totalStars: 0,
                       totalDownloads: 0,
@@ -547,6 +638,7 @@ describe("publisher abuse dry-run persistence", () => {
                       handle: "active",
                       linkedUserId: "users:active",
                       publishedSkills: 1,
+                      publishedPackages: 0,
                       totalInstalls: 0,
                       totalStars: 0,
                       totalDownloads: 0,

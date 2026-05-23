@@ -603,7 +603,10 @@ async function publisherInputFromPublisher(
   ctx: Pick<MutationCtx, "db">,
   publisher: PublisherMetricsDoc,
 ): Promise<PublisherAbuseInput> {
-  const publishedPackages = nonNegative(publisher.publishedPackages);
+  const publishedPackages =
+    typeof publisher.publishedPackages === "number"
+      ? nonNegative(publisher.publishedPackages)
+      : undefined;
   const skillMetrics = await publisherSkillMetricsForScoring(ctx, publisher, publishedPackages);
   return {
     ownerKey: `publisher:${publisher._id}`,
@@ -625,7 +628,7 @@ type SkillMetricsForScoring = Pick<
 async function publisherSkillMetricsForScoring(
   ctx: Pick<MutationCtx, "db">,
   publisher: PublisherMetricsDoc,
-  publishedPackages: number,
+  publishedPackages: number | undefined,
 ): Promise<SkillMetricsForScoring> {
   const hasPublishedSkillCount = typeof publisher.publishedSkills === "number";
   if (!hasPublishedSkillCount)
