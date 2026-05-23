@@ -22,6 +22,7 @@ const ACTION_CONTINUATION_DELAY_MS = 60_000;
 const QUEUE_INITIAL_CANDIDATE_MULTIPLIER = 4;
 const MAX_QUEUE_FILTER_CANDIDATES = 1000;
 const MAX_ACTIVE_SKILL_FALLBACK_SCAN = 500;
+const MAX_MANUAL_ACTIVE_SKILL_FALLBACK_SCANS_PER_PAGE = 20;
 
 const triageStatusValidator = v.union(
   v.literal("pending"),
@@ -91,8 +92,17 @@ type PublisherMetricsDoc = Pick<
   | "skillTotalDownloads"
 >;
 
-type PublisherSkillMetricsOptions = {
-  allowActiveSkillScan: boolean;
+type PublisherSkillMetricsOptions =
+  | {
+      allowActiveSkillScan: false;
+    }
+  | {
+      allowActiveSkillScan: true;
+      activeSkillFallbackBudget: ActiveSkillFallbackBudget;
+    };
+
+type ActiveSkillFallbackBudget = {
+  remainingScans: number;
 };
 
 export const getOrStartPublisherAbuseScoreRunInternal = internalMutation({
@@ -103,11 +113,7 @@ export const getOrStartPublisherAbuseScoreRunInternal = internalMutation({
   },
   handler: async (ctx, args): Promise<RunState> => {
     if (!args.forceNew) {
-      const activeRun = await ctx.db
-        .query("publisherAbuseScoreRuns")
-        .withIndex("by_status_and_updated_at", (q) => q.eq("status", "running"))
-        .order("desc")
-        .first();
+      const activeRun = await getActivePublisherAbuseScoreRun(ctx);
       if (activeRun) {
         return {
           runId: activeRun._id,
@@ -179,6 +185,9 @@ export const startManualPublisherAbuseScoreRun = mutation({
   handler: async (ctx, args): Promise<{ ok: true; runId: Id<"publisherAbuseScoreRuns"> }> => {
     const { userId, user } = await requireUser(ctx);
     assertAdmin(user);
+
+    const activeRun = await getActivePublisherAbuseScoreRun(ctx);
+    if (activeRun) return { ok: true, runId: activeRun._id };
 
     const runId = await createPublisherAbuseScoreRun(ctx, {
       trigger: "manual",
@@ -328,10 +337,15 @@ export async function collectPublisherAbuseScoresPageInternalHandler(
   let sumSquaredLogPressure = 0;
   let scored = 0;
   const modelConfig = run.modelConfig;
+  const activeSkillFallbackBudget: ActiveSkillFallbackBudget = {
+    remainingScans: MAX_MANUAL_ACTIVE_SKILL_FALLBACK_SCANS_PER_PAGE,
+  };
+  const publisherSkillMetricsOptions: PublisherSkillMetricsOptions =
+    run.trigger === "cron"
+      ? { allowActiveSkillScan: false }
+      : { allowActiveSkillScan: true, activeSkillFallbackBudget };
   for (const publisher of page.page) {
-    const input = await publisherInputFromPublisher(ctx, publisher, {
-      allowActiveSkillScan: run.trigger !== "cron",
-    });
+    const input = await publisherInputFromPublisher(ctx, publisher, publisherSkillMetricsOptions);
     if (!input) continue;
     const rawScore = computePublisherAbuseRawScore(input, modelConfig);
     await ctx.db.insert("publisherAbuseScores", {
@@ -593,6 +607,14 @@ async function createPublisherAbuseScoreRun(
   });
 }
 
+async function getActivePublisherAbuseScoreRun(ctx: Pick<MutationCtx, "db">) {
+  return await ctx.db
+    .query("publisherAbuseScoreRuns")
+    .withIndex("by_status_and_updated_at", (q) => q.eq("status", "running"))
+    .order("desc")
+    .first();
+}
+
 async function requireRunningRun(
   ctx: Pick<MutationCtx, "db">,
   runId: Id<"publisherAbuseScoreRuns">,
@@ -608,7 +630,7 @@ async function requireRunningRun(
 async function publisherInputFromPublisher(
   ctx: Pick<MutationCtx, "db">,
   publisher: PublisherMetricsDoc,
-  options: PublisherSkillMetricsOptions = { allowActiveSkillScan: true },
+  options: PublisherSkillMetricsOptions,
 ): Promise<PublisherAbuseInput | null> {
   const publishedPackages =
     typeof publisher.publishedPackages === "number"
@@ -647,6 +669,7 @@ async function publisherSkillMetricsForScoring(
   const hasPublishedSkillCount = typeof publisher.publishedSkills === "number";
   if (!hasPublishedSkillCount) {
     if (!options.allowActiveSkillScan) return null;
+    if (!consumeActiveSkillFallbackBudget(options.activeSkillFallbackBudget)) return null;
     return await computePublisherSkillMetricsForScoring(ctx, publisher._id);
   }
 
@@ -674,6 +697,7 @@ async function publisherSkillMetricsForScoring(
   }
 
   if (!options.allowActiveSkillScan) return null;
+  if (!consumeActiveSkillFallbackBudget(options.activeSkillFallbackBudget)) return null;
 
   const metrics = await computePublisherSkillMetricsForScoring(ctx, publisher._id);
   if (!metrics) return null;
@@ -703,6 +727,12 @@ async function computePublisherSkillMetricsForScoring(
     totalDownloads += contribution.skillTotalDownloads;
   }
   return { publishedSkills, totalInstalls, totalStars, totalDownloads };
+}
+
+function consumeActiveSkillFallbackBudget(budget: ActiveSkillFallbackBudget) {
+  if (budget.remainingScans <= 0) return false;
+  budget.remainingScans -= 1;
+  return true;
 }
 
 async function upsertPublisherAbuseReviewNomination(

@@ -114,6 +114,13 @@ const startManualHandler = (
   >
 )._handler;
 
+const getOrStartHandler = (
+  publisherAbuse.getOrStartPublisherAbuseScoreRunInternal as unknown as Wrapped<
+    { trigger: "cron" | "manual"; actorUserId?: string; forceNew?: boolean },
+    { runId: string; status: string; phase: string }
+  >
+)._handler;
+
 describe("publisher abuse dry-run persistence", () => {
   it("collects score rows without patching enforcement tables", async () => {
     const insert = vi.fn(async (table: string) => `${table}:new`);
@@ -509,6 +516,84 @@ describe("publisher abuse dry-run persistence", () => {
       expect.objectContaining({
         scannedPublishers: 1,
         scoredPublishers: 0,
+      }),
+    );
+  });
+
+  it("bounds manual active-skill fallback derivation across a collection page", async () => {
+    const fallbackPublisherCount = 21;
+    const insert = vi.fn(async (table: string) => `${table}:new`);
+    const patch = vi.fn(async () => null);
+    const skillTake = vi.fn(async () => [
+      {
+        _id: "skills:one",
+        ownerPublisherId: "publishers:fallback",
+        softDeletedAt: undefined,
+        statsInstallsAllTime: 1,
+        statsStars: 0,
+        statsDownloads: 1,
+        stats: { downloads: 1, stars: 0, installsCurrent: 0, installsAllTime: 1 },
+      },
+    ]);
+    const ctx = {
+      db: {
+        get: vi.fn(async () => ({
+          _id: "publisherAbuseScoreRuns:run",
+          modelVersion: TEST_MODEL_CONFIG.modelVersion,
+          modelConfig: TEST_MODEL_CONFIG,
+          trigger: "manual",
+          status: "running",
+          phase: "collecting",
+          collectCursor: undefined,
+          scannedPublishers: 0,
+          scoredPublishers: 0,
+          sumLogPressure: 0,
+          sumSquaredLogPressure: 0,
+        })),
+        insert,
+        patch,
+        query: vi.fn((table: string) => {
+          if (table === "publishers") {
+            return {
+              withIndex: () => ({
+                paginate: async () => ({
+                  page: Array.from({ length: fallbackPublisherCount }, (_, index) => ({
+                    _id: `publishers:fallback-${index}`,
+                    handle: `fallback-${index}`,
+                    linkedUserId: `users:fallback-${index}`,
+                    publishedSkills: 10,
+                    publishedPackages: 1,
+                    totalInstalls: 100,
+                    totalStars: 10,
+                    totalDownloads: 1_000,
+                  })),
+                  isDone: true,
+                  continueCursor: "",
+                }),
+              }),
+            };
+          }
+          if (table === "skills") {
+            return {
+              withIndex: vi.fn(() => ({
+                take: skillTake,
+              })),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await collectHandler(ctx, { runId: "publisherAbuseScoreRuns:run" });
+
+    expect(skillTake).toHaveBeenCalledTimes(20);
+    expect(insert).toHaveBeenCalledTimes(20);
+    expect(patch).toHaveBeenCalledWith(
+      "publisherAbuseScoreRuns:run",
+      expect.objectContaining({
+        scannedPublishers: fallbackPublisherCount,
+        scoredPublishers: 20,
       }),
     );
   });
@@ -1591,6 +1676,13 @@ describe("publisher abuse dry-run persistence", () => {
       scheduler,
       db: {
         insert: vi.fn(async () => "publisherAbuseScoreRuns:manual"),
+        query: vi.fn(() => ({
+          withIndex: () => ({
+            order: () => ({
+              first: async () => null,
+            }),
+          }),
+        })),
       },
     };
 
@@ -1608,6 +1700,62 @@ describe("publisher abuse dry-run persistence", () => {
       expect.anything(),
       expect.objectContaining({ runId: "publisherAbuseScoreRuns:manual" }),
     );
+  });
+
+  it("reuses an active run instead of starting an overlapping manual run", async () => {
+    const scheduler = { runAfter: vi.fn(async () => null) };
+    const ctx = {
+      scheduler,
+      db: {
+        insert: vi.fn(async () => "publisherAbuseScoreRuns:new"),
+        query: vi.fn(() => ({
+          withIndex: () => ({
+            order: () => ({
+              first: async () => ({
+                _id: "publisherAbuseScoreRuns:active",
+                status: "running",
+                phase: "finalizing",
+              }),
+            }),
+          }),
+        })),
+      },
+    };
+
+    await expect(startManualHandler(ctx, { batchSize: 50, maxPages: 2 })).resolves.toEqual({
+      ok: true,
+      runId: "publisherAbuseScoreRuns:active",
+    });
+
+    expect(ctx.db.insert).not.toHaveBeenCalled();
+    expect(scheduler.runAfter).not.toHaveBeenCalled();
+  });
+
+  it("reuses an active run when cron starts while another run is active", async () => {
+    const ctx = {
+      db: {
+        insert: vi.fn(async () => "publisherAbuseScoreRuns:new"),
+        query: vi.fn(() => ({
+          withIndex: () => ({
+            order: () => ({
+              first: async () => ({
+                _id: "publisherAbuseScoreRuns:active",
+                status: "running",
+                phase: "collecting",
+              }),
+            }),
+          }),
+        })),
+      },
+    };
+
+    await expect(getOrStartHandler(ctx, { trigger: "cron" })).resolves.toEqual({
+      runId: "publisherAbuseScoreRuns:active",
+      status: "running",
+      phase: "collecting",
+    });
+
+    expect(ctx.db.insert).not.toHaveBeenCalled();
   });
 });
 

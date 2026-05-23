@@ -58,3 +58,11 @@ score for unknown publisher stats. Manual runs may derive the missing count from
 active skills because they are operator-triggered, but that fallback must still
 be bounded. If the active-skill fallback page is too large, manual runs skip the
 publisher instead of scanning every child row in one mutation.
+
+Only one score run should be active at a time. If a manual or scheduled refresh
+starts while another score run is still running, it reuses the active run instead
+of creating a second run that can race nomination updates.
+
+Manual active-skill fallback derivation is capped per collection page. Once the
+page budget is spent, the remaining fallback-required publishers are skipped for
+that run instead of risking a Convex document-read limit failure.
