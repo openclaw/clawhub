@@ -1,0 +1,64 @@
+{#-
+ClawHub Skill Card template.
+
+This intentionally stays close to NVIDIA's public Skill Card template shape
+while replacing NVIDIA-only ownership, review, and platform boilerplate with
+neutral public-card language.
+-#}
+
+## Description: <br>
+{{ description_sentence }} <br>
+
+{% if usage_posture == "commercial" -%}
+This skill is ready for commercial/non-commercial use. <br>
+{%- elif usage_posture == "research_dev" -%}
+This skill is for research and development only. <br>
+{%- elif usage_posture == "demonstration" -%}
+This skill is for demonstration purposes and not for production usage. <br>
+{%- endif %}
+
+## Publisher: <br>
+{% if owner.kind == "nvidia" -%}
+NVIDIA <br>
+{%- else -%}
+[{{ owner.name }}]({{ owner.card_link }}) <br>
+{%- endif %}
+
+### License/Terms of Use: <br>
+{% if license_identifier -%}
+{{ license_identifier }} <br>
+{% endif %}
+
+## Use Case: <br>
+{{ use_case }} <br>
+
+### Deployment Geography for Use: <br>
+{{ deployment_geography }} <br>
+
+## Known Risks and Mitigations: <br>
+{% if risk_mitigations is defined and risk_mitigations -%}
+{% for item in risk_mitigations -%}
+Risk: {{ item.risk }} <br>
+Mitigation: {{ item.mitigation }} <br>
+{% endfor -%}
+{%- else -%}
+Risk: Review before execution as proposals could introduce incorrect or misleading guidance into skills. <br>
+Mitigation: Review and scan skill before deployment. <br>
+{%- endif %}
+
+## Reference(s): <br>
+{% for ref in references -%}
+- [{{ ref.label }}]({{ ref.url }}) <br>
+{% endfor %}
+
+## Skill Output: <br>
+**Output Type(s):** [{{ output.types | join(", ") }}] <br>
+**Output Format:** [{{ output.format }}] <br>
+**Output Parameters:** [{{ output.parameters }}] <br>
+**Other Properties Related to Output:** [{{ output.other_properties }}] <br>
+
+## Skill Version(s): <br>
+{{ skill_version }} <br>
+
+## Ethical Considerations: <br>
+Users should evaluate whether this skill is appropriate for their environment, review any generated or modified files before relying on them, and apply their organization's safety, security, and compliance requirements before deployment. <br>

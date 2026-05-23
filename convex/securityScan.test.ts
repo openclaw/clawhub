@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   cancelQueuedVtUpdateJobsInternal,
   claimCodexScanJobs,
+  clearQueuedBackfillJobsForLocalDev,
   failCodexScanJob,
 } from "./securityScan";
 
@@ -64,6 +65,12 @@ type ScanJob = {
 
 const cancelQueuedVtUpdateJobsInternalHandler = (
   cancelQueuedVtUpdateJobsInternal as unknown as WrappedHandler<CancelArgs, CancelResult>
+)._handler;
+const clearQueuedBackfillJobsForLocalDevHandler = (
+  clearQueuedBackfillJobsForLocalDev as unknown as WrappedHandler<
+    { dryRun?: boolean; limit?: number },
+    { dryRun: boolean; matched: number; deleted: number; sampleDeletedJobIds: string[] }
+  >
 )._handler;
 
 const claimedJob = {
@@ -208,6 +215,56 @@ describe("securityScan", () => {
         error: "Artifact file unavailable: payload.js",
       }),
     );
+  });
+
+  it("clears only queued backfill jobs in local dev", async () => {
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "local-dev-worker-token");
+    const jobs = [
+      makeScanJob({ _id: "securityScanJobs:backfill-1", source: "backfill" }),
+      makeScanJob({ _id: "securityScanJobs:backfill-2", source: "backfill" }),
+    ];
+    const deleted: string[] = [];
+    const take = vi.fn(async () => jobs);
+    const order = vi.fn(() => ({ take }));
+    const indexBuilder = {
+      eq: vi.fn(() => indexBuilder),
+    };
+    const withIndex = vi.fn(
+      (indexName: string, buildRange: (q: typeof indexBuilder) => unknown) => {
+        expect(indexName).toBe("by_status_source_created_at");
+        buildRange(indexBuilder);
+        expect(indexBuilder.eq).toHaveBeenCalledWith("status", "queued");
+        expect(indexBuilder.eq).toHaveBeenCalledWith("source", "backfill");
+        return { order };
+      },
+    );
+    const ctx = {
+      db: {
+        query: vi.fn((tableName: string) => {
+          expect(tableName).toBe("securityScanJobs");
+          return { withIndex };
+        }),
+        insert: vi.fn(async () => "noop"),
+        patch: vi.fn(async () => undefined),
+        replace: vi.fn(async () => undefined),
+        delete: vi.fn(async (id: string) => {
+          deleted.push(id);
+        }),
+        get: vi.fn(async () => null),
+        normalizeId: vi.fn(() => null),
+        system: {},
+      },
+    };
+
+    const result = await clearQueuedBackfillJobsForLocalDevHandler(ctx as never, {});
+
+    expect(result).toEqual({
+      dryRun: false,
+      matched: 2,
+      deleted: 2,
+      sampleDeletedJobIds: ["securityScanJobs:backfill-1", "securityScanJobs:backfill-2"],
+    });
+    expect(deleted).toEqual(["securityScanJobs:backfill-1", "securityScanJobs:backfill-2"]);
   });
 
   it("fails claimed package jobs when the ClawPack URL is unavailable", async () => {

@@ -363,6 +363,17 @@ const securityScanJobSourceValidator = v.union(
   v.literal("backfill"),
   v.literal("manual"),
 );
+const skillCardGenerationJobStatusValidator = v.union(
+  v.literal("queued"),
+  v.literal("running"),
+  v.literal("succeeded"),
+  v.literal("failed"),
+);
+const skillCardGenerationJobSourceValidator = v.union(
+  v.literal("publish"),
+  v.literal("scan"),
+  v.literal("manual"),
+);
 
 const packageFilesValidator = v.array(
   v.object({
@@ -556,6 +567,17 @@ const skillVersions = defineTable({
   skillId: v.id("skills"),
   version: v.string(),
   fingerprint: v.optional(v.string()),
+  sourceProvenance: v.optional(
+    v.object({
+      kind: v.literal("github"),
+      url: v.string(),
+      repo: v.string(),
+      ref: v.string(),
+      commit: v.string(),
+      path: v.optional(v.string()),
+      importedAt: v.number(),
+    }),
+  ),
   changelog: v.string(),
   changelogSource: v.optional(v.union(v.literal("auto"), v.literal("user"))),
   files: v.array(
@@ -680,9 +702,11 @@ const skillVersionFingerprints = defineTable({
   skillId: v.id("skills"),
   versionId: v.id("skillVersions"),
   fingerprint: v.string(),
+  kind: v.optional(v.union(v.literal("source"), v.literal("generated-bundle"))),
   createdAt: v.number(),
 })
   .index("by_version", ["versionId"])
+  .index("by_version_kind", ["versionId", "kind"])
   .index("by_fingerprint", ["fingerprint"])
   .index("by_skill_fingerprint", ["skillId", "fingerprint"]);
 
@@ -1032,6 +1056,28 @@ const securityScanJobs = defineTable({
   .index("by_status_malicious_signal_next_run_at", ["status", "hasMaliciousSignal", "nextRunAt"])
   .index("by_skill_version", ["skillVersionId"])
   .index("by_package_release", ["packageReleaseId"]);
+
+const skillCardGenerationJobs = defineTable({
+  skillId: v.id("skills"),
+  skillVersionId: v.id("skillVersions"),
+  status: skillCardGenerationJobStatusValidator,
+  source: skillCardGenerationJobSourceValidator,
+  priority: v.number(),
+  nextRunAt: v.number(),
+  attempts: v.number(),
+  leaseToken: v.optional(v.string()),
+  leaseExpiresAt: v.optional(v.number()),
+  workerId: v.optional(v.string()),
+  lastError: v.optional(v.string()),
+  runId: v.optional(v.string()),
+  completedAt: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_status_and_next_run_at", ["status", "nextRunAt"])
+  .index("by_status_and_lease_expires_at", ["status", "leaseExpiresAt"])
+  .index("by_skill", ["skillId"])
+  .index("by_skill_version", ["skillVersionId"]);
 
 const packageStatEvents = defineTable({
   packageId: v.id("packages"),
@@ -1899,6 +1945,7 @@ export default defineSchema({
   packages,
   packageReleases,
   securityScanJobs,
+  skillCardGenerationJobs,
   packageStatEvents,
   packageTrustedPublishers,
   packagePublishTokens,

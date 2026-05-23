@@ -19,7 +19,7 @@ vi.mock("../registry.js", () => registryMocks.moduleFactory());
 vi.mock("../authToken.js", () => authTokenMocks.moduleFactory());
 vi.mock("../ui.js", () => uiMocks.moduleFactory());
 
-const { cmdInspect } = await import("./inspect");
+const { cmdInspect, cmdVerifySkill } = await import("./inspect");
 
 const mockLog = vi.spyOn(console, "log").mockImplementation(() => {});
 const mockWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
@@ -28,6 +28,7 @@ afterEach(() => {
   vi.clearAllMocks();
   mockLog.mockClear();
   mockWrite.mockClear();
+  process.exitCode = undefined;
 });
 
 describe("cmdInspect", () => {
@@ -285,6 +286,112 @@ describe("cmdInspect", () => {
   it("rejects when both version and tag are provided", async () => {
     await expect(
       cmdInspect(makeGlobalOpts(), "demo", { version: "1.0.0", tag: "latest" }),
+    ).rejects.toThrow("Use either --version or --tag");
+  });
+});
+
+describe("cmdVerifySkill", () => {
+  it("fetches and prints JSON verification by default", async () => {
+    const payload = {
+      schema: "clawhub.skill.verify.v1",
+      ok: true,
+      decision: "pass",
+      reasons: [],
+      skill: { slug: "demo", displayName: "Demo" },
+      publisher: { handle: "acme" },
+      version: { version: "1.2.3", resolvedFrom: "tag", tag: "stable" },
+      card: {
+        available: true,
+        path: "skill-card.md",
+        url: "https://clawhub.ai/api/v1/skills/demo/card?version=1.2.3",
+      },
+      artifact: {
+        sourceFingerprint: "source-fingerprint",
+        bundleFingerprints: ["bundle-fingerprint"],
+        files: [{ path: "SKILL.md", size: 42, sha256: "sha256:file" }],
+      },
+      provenance: {
+        source: "server-resolved-github-import",
+        repo: "acme/demo",
+        commit: "0123456789abcdef",
+        path: "skills/demo",
+      },
+      security: {
+        status: "clean",
+        passed: true,
+        staticScan: { status: "clean", reasonCodes: [] },
+        clawScan: { status: "clean", rawStatus: "clean" },
+        depRegistry: null,
+      },
+      signature: { status: "unsigned" },
+    };
+    httpMocks.apiRequest.mockResolvedValueOnce(payload);
+
+    await cmdVerifySkill(makeGlobalOpts(), "demo", { tag: "stable" });
+
+    const request = httpMocks.apiRequest.mock.calls[0]?.[1];
+    const url = new URL(String(request?.url));
+    expect(url.pathname).toBe("/api/v1/skills/demo/verify");
+    expect(url.searchParams.get("tag")).toBe("stable");
+    expect(JSON.parse(String(mockLog.mock.calls[0]?.[0]))).toEqual(payload);
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it("prints JSON by default and sets a non-zero exit code when verification fails", async () => {
+    const payload = {
+      schema: "clawhub.skill.verify.v1",
+      ok: false,
+      decision: "fail",
+      reasons: ["card.missing", "security.status_not_clean"],
+      skill: { slug: "demo", displayName: "Demo" },
+      publisher: null,
+      version: { version: "1.2.3", resolvedFrom: "latest", tag: null },
+      card: { available: false },
+      artifact: { sourceFingerprint: "source-fingerprint", bundleFingerprints: [], files: [] },
+      provenance: { source: "unavailable" },
+      security: { status: "suspicious", passed: false },
+      signature: { status: "unsigned" },
+    };
+    httpMocks.apiRequest.mockResolvedValueOnce(payload);
+
+    await cmdVerifySkill(makeGlobalOpts(), "demo");
+
+    expect(JSON.parse(String(mockLog.mock.calls[0]?.[0]))).toEqual(payload);
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("prints the generated skill card when --card is set", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      schema: "clawhub.skill.verify.v1",
+      ok: true,
+      decision: "pass",
+      reasons: [],
+      skill: { slug: "demo", displayName: "Demo" },
+      publisher: { handle: "acme" },
+      version: { version: "1.2.3", resolvedFrom: "latest", tag: null },
+      card: {
+        available: true,
+        path: "skill-card.md",
+        url: "https://clawhub.ai/api/v1/skills/demo/card?version=1.2.3",
+      },
+      artifact: { sourceFingerprint: "source-fingerprint", bundleFingerprints: [], files: [] },
+      provenance: { source: "unavailable" },
+      security: { status: "clean", passed: true },
+      signature: { status: "unsigned" },
+    });
+    httpMocks.fetchText.mockResolvedValueOnce("# Skill Card\n");
+
+    await cmdVerifySkill(makeGlobalOpts(), "demo", { card: true });
+
+    const fetchArgs = httpMocks.fetchText.mock.calls[0]?.[1];
+    expect(fetchArgs?.url).toBe("https://clawhub.ai/api/v1/skills/demo/card?version=1.2.3");
+    expect(mockWrite).toHaveBeenCalledWith("# Skill Card\n");
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it("rejects when both version and tag are provided", async () => {
+    await expect(
+      cmdVerifySkill(makeGlobalOpts(), "demo", { version: "1.0.0", tag: "latest" }),
     ).rejects.toThrow("Use either --version or --tag");
   });
 });

@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { generateKeyPairSync } from "node:crypto";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
@@ -10,6 +11,7 @@ type Options = {
   seed: boolean;
   seedOnly: boolean;
   detach: boolean;
+  workers: boolean;
 };
 
 const DEFAULT_ENV_SOURCES = [".env.local"];
@@ -19,6 +21,7 @@ const REACHABILITY_POLL_MS = 500;
 const RUNTIME_DIR = ".codex/runtime";
 const DETACHED_PID_FILE = `${RUNTIME_DIR}/dev-worktree.pid`;
 const DETACHED_LOG_FILE = `${RUNTIME_DIR}/dev-worktree.log`;
+const LOCAL_DEV_WORKER_TOKEN = "local-dev-worker-token";
 const managedChildren = new Set<ChildProcess>();
 
 export function parseArgs(argv: string[]): Options {
@@ -28,12 +31,15 @@ export function parseArgs(argv: string[]): Options {
     seed: false,
     seedOnly: false,
     detach: false,
+    workers: true,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === "--detach") {
       options.detach = true;
+    } else if (arg === "--no-workers") {
+      options.workers = false;
     } else if (arg === "--seed") {
       options.seed = true;
     } else if (arg === "--seed-only") {
@@ -61,6 +67,70 @@ export function buildForegroundArgs(argv: string[]) {
 
 export function buildViteArgs(port: string) {
   return ["--bun", "vite", "dev", "--host", "127.0.0.1", "--port", port];
+}
+
+export function buildDevWorkersArgs(envFile: string) {
+  return ["scripts/dev-workers.ts", "--env-file", envFile];
+}
+
+export function shouldStartDevWorkers(options: Pick<Options, "workers">) {
+  if (!options.workers) return { start: false, reason: "--no-workers was passed" };
+  return { start: true, reason: null };
+}
+
+export function applyLocalDevWorkerToken(env: NodeJS.ProcessEnv) {
+  env.SECURITY_SCAN_WORKER_TOKEN = LOCAL_DEV_WORKER_TOKEN;
+  return LOCAL_DEV_WORKER_TOKEN;
+}
+
+function buildLocalAuthKeys() {
+  const { publicKey, privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const privatePem = privateKey.export({ type: "pkcs8", format: "pem" });
+  const publicJwk = publicKey.export({ format: "jwk" });
+  return {
+    JWT_PRIVATE_KEY: privatePem.trimEnd().replace(/\n/g, " "),
+    JWKS: JSON.stringify({ keys: [{ use: "sig", ...publicJwk }] }),
+  };
+}
+
+export function buildLocalConvexEnvChanges(env: NodeJS.ProcessEnv) {
+  const authKeys =
+    env.JWT_PRIVATE_KEY?.trim() && env.JWKS?.trim()
+      ? { JWT_PRIVATE_KEY: env.JWT_PRIVATE_KEY, JWKS: env.JWKS }
+      : buildLocalAuthKeys();
+  const deployment =
+    env.CONVEX_DEPLOYMENT?.trim() ||
+    env.DEV_AUTH_CONVEX_DEPLOYMENT?.trim() ||
+    "anonymous:anonymous-agent";
+
+  return [
+    { name: "DEV_AUTH_ENABLED", value: "1" },
+    { name: "DEV_AUTH_CONVEX_DEPLOYMENT", value: deployment },
+    { name: "SECURITY_SCAN_WORKER_TOKEN", value: LOCAL_DEV_WORKER_TOKEN },
+    { name: "SECURITY_SCAN_DEFAULT_VT_WAIT_MS", value: "0" },
+    { name: "JWT_PRIVATE_KEY", value: authKeys.JWT_PRIVATE_KEY },
+    { name: "JWKS", value: authKeys.JWKS },
+    { name: "AUTH_GITHUB_ID", value: env.AUTH_GITHUB_ID?.trim() || "local-dev" },
+    { name: "AUTH_GITHUB_SECRET", value: env.AUTH_GITHUB_SECRET?.trim() || "local-dev" },
+  ];
+}
+
+function applyLocalConvexEnvToProcess(env: NodeJS.ProcessEnv) {
+  for (const change of buildLocalConvexEnvChanges(env)) {
+    env[change.name] = change.value;
+  }
+}
+
+export function isLocalConvexUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return (
+      (url.protocol === "http:" || url.protocol === "https:") &&
+      (url.hostname === "127.0.0.1" || url.hostname === "localhost" || url.hostname === "::1")
+    );
+  } catch {
+    return false;
+  }
 }
 
 function readDetachedPid() {
@@ -318,6 +388,49 @@ async function ensureConvex(convexUrl: string) {
   }
 }
 
+function readLocalDeploymentConfig() {
+  try {
+    const raw = readFileSync(".convex/local/default/config.json", "utf8");
+    const parsed = JSON.parse(raw) as { adminKey?: unknown };
+    return typeof parsed.adminKey === "string" && parsed.adminKey ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+async function setLocalConvexEnv(
+  convexUrl: string,
+  changes: Array<{ name: string; value: string }>,
+) {
+  const config = readLocalDeploymentConfig();
+  if (!config) {
+    console.warn(
+      "Could not configure local Convex dev environment because .convex/local/default/config.json was not found.",
+    );
+    return;
+  }
+
+  const response = await fetch(new URL("/api/update_environment_variables", convexUrl), {
+    body: JSON.stringify({ changes }),
+    headers: {
+      Authorization: `Convex ${config.adminKey}`,
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+  });
+  if (!response.ok) {
+    console.warn(
+      `Could not configure local Convex dev environment: ${response.status} ${await response.text()}`,
+    );
+  }
+}
+
+async function configureLocalConvexEnv(convexUrl: string) {
+  applyLocalConvexEnvToProcess(process.env);
+  if (!isLocalConvexUrl(convexUrl)) return;
+  await setLocalConvexEnv(convexUrl, buildLocalConvexEnvChanges(process.env));
+}
+
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => {
     stopManagedChildren();
@@ -349,7 +462,9 @@ async function main() {
     process.exit(1);
   }
 
+  applyLocalConvexEnvToProcess(process.env);
   await ensureConvex(convexUrl);
+  await configureLocalConvexEnv(convexUrl);
 
   if (options.seed) {
     console.log("Seeding local fixtures and public corpus...");
@@ -376,6 +491,14 @@ async function main() {
   if (options.seedOnly) {
     stopManagedChildren();
     return;
+  }
+
+  const workers = shouldStartDevWorkers(options);
+  if (workers.start) {
+    console.log("Starting local background workers...");
+    spawnManaged("bun", buildDevWorkersArgs(envFile));
+  } else {
+    console.log(`Skipping local background workers: ${workers.reason}.`);
   }
 
   console.log(`Starting ClawHub from ${process.cwd()}`);

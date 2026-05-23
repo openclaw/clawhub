@@ -14,6 +14,9 @@ function renderReadme(readmeContent: string) {
       setActiveTab={vi.fn()}
       readmeContent={readmeContent}
       readmeError={null}
+      skillCardContent={null}
+      skillCardError={null}
+      hasSkillCard={false}
       latestFiles={[]}
       latestVersionId={null}
       skill={{ slug: "api-gateway" } as Doc<"skills">}
@@ -72,6 +75,9 @@ describe("SkillDetailTabs README links", () => {
           setActiveTab={setActiveTab}
           readmeContent="# API Gateway"
           readmeError={null}
+          skillCardContent={null}
+          skillCardError={null}
+          hasSkillCard={false}
           latestFiles={[]}
           latestVersionId={null}
           skill={{ slug: "api-gateway" } as Doc<"skills">}
@@ -106,5 +112,70 @@ describe("SkillDetailTabs README links", () => {
 
     expect(screen.getByText("ripgrep")).toBeTruthy();
     expect(screen.getByRole("link", { name: "https://example.com/rg" })).toBeTruthy();
+  });
+
+  it("shows a Skill Card tab only when a generated card file exists", () => {
+    render(
+      <SkillDetailTabs
+        activeTab="skill-card"
+        setActiveTab={vi.fn()}
+        readmeContent="# API Gateway"
+        readmeError={null}
+        skillCardContent={["# Skill Card", "", "Generated."].join("\n")}
+        skillCardError={null}
+        hasSkillCard={true}
+        latestFiles={
+          [
+            {
+              path: "skill-card.md",
+              size: 24,
+              storageId: "_storage:card",
+              sha256: "a".repeat(64),
+            },
+          ] as Doc<"skillVersions">["files"]
+        }
+        latestVersionId={null}
+        skill={{ slug: "api-gateway" } as Doc<"skills">}
+        onCompareIntent={vi.fn()}
+        diffVersions={undefined}
+        versions={undefined}
+        nixPlugin={false}
+        suppressVersionScanResults={false}
+        scanResultsSuppressedMessage={null}
+        clawdis={undefined}
+        osLabels={[]}
+      />,
+    );
+
+    expect(screen.getByRole("tab", { name: "Skill Card" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Skill Card" })).toBeTruthy();
+  });
+
+  it("renders safe raw HTML in generated Skill Cards", () => {
+    const { container } = render(
+      <SkillDetailTabs
+        activeTab="skill-card"
+        setActiveTab={vi.fn()}
+        readmeContent="# API Gateway"
+        readmeError={null}
+        skillCardContent={["## Description:<br/>", "", "line one<br/>line two"].join("\n")}
+        skillCardError={null}
+        hasSkillCard={true}
+        latestFiles={[]}
+        latestVersionId={null}
+        skill={{ slug: "api-gateway" } as Doc<"skills">}
+        onCompareIntent={vi.fn()}
+        diffVersions={undefined}
+        versions={undefined}
+        nixPlugin={false}
+        suppressVersionScanResults={false}
+        scanResultsSuppressedMessage={null}
+        clawdis={undefined}
+        osLabels={[]}
+      />,
+    );
+
+    expect(container.querySelectorAll("br").length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText(/<br/i)).toBeNull();
   });
 });

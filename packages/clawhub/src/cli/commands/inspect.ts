@@ -5,6 +5,7 @@ import {
   PLATFORM_SKILL_LICENSE_SUMMARY,
   ApiV1SkillModerationResponseSchema,
   ApiV1SkillResponseSchema,
+  ApiV1SkillVerifyResponseSchema,
   ApiV1SkillVersionListResponseSchema,
   ApiV1SkillVersionResponseSchema,
 } from "../../schema/index.js";
@@ -21,6 +22,13 @@ type InspectOptions = {
   files?: boolean;
   file?: string;
   json?: boolean;
+};
+
+type VerifySkillOptions = {
+  version?: string;
+  tag?: string;
+  json?: boolean;
+  card?: boolean;
 };
 
 type FileEntry = {
@@ -224,6 +232,54 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
   }
 }
 
+export async function cmdVerifySkill(
+  opts: GlobalOpts,
+  slug: string,
+  options: VerifySkillOptions = {},
+) {
+  const trimmed = slug.trim();
+  if (!trimmed) fail("Slug required");
+  if (options.version && options.tag) fail("Use either --version or --tag");
+
+  const token = await getOptionalAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const spinner = createSpinner("Fetching skill verification");
+  try {
+    const url = registryUrl(`${ApiRoutes.skills}/${encodeURIComponent(trimmed)}/verify`, registry);
+    if (options.version) {
+      url.searchParams.set("version", options.version);
+    } else if (options.tag) {
+      url.searchParams.set("tag", options.tag);
+    }
+
+    const result = await apiRequest(
+      registry,
+      { method: "GET", url: url.toString(), token },
+      ApiV1SkillVerifyResponseSchema,
+    );
+
+    if (options.card) {
+      const cardUrl = readSkillCardUrl(result);
+      if (!cardUrl) fail("Skill Card is not available");
+      spinner.text = "Fetching Skill Card";
+      const card = await fetchText(registry, { url: cardUrl, token });
+      spinner.stop();
+      process.stdout.write(card);
+      if (!card.endsWith("\n")) process.stdout.write("\n");
+      if (!readBoolean(result, "ok")) process.exitCode = 1;
+      return;
+    }
+
+    spinner.stop();
+
+    console.log(JSON.stringify(result, null, 2));
+    if (!readBoolean(result, "ok")) process.exitCode = 1;
+  } catch (error) {
+    spinner.fail(formatError(error));
+    throw error;
+  }
+}
+
 function fetchSkillDetail(registry: string, slug: string, token: string | undefined) {
   return apiRequest(
     registry,
@@ -384,6 +440,29 @@ function normalizeTags(tags: unknown): Record<string, string> {
     if (typeof version === "string") resolved[tag] = version;
   }
   return resolved;
+}
+
+function readRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function readString(record: Record<string, unknown> | null, key: string): string | null {
+  const value = record?.[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function readBoolean(value: unknown, key: string): boolean {
+  const record = readRecord(value);
+  return record?.[key] === true;
+}
+
+function readSkillCardUrl(result: unknown): string | null {
+  const root = readRecord(result);
+  const card = readRecord(root?.["card"]);
+  if (!readBoolean(card, "available")) return null;
+  return readString(card, "url");
 }
 
 function normalizeFiles(files: unknown): FileEntry[] {

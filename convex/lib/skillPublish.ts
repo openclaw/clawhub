@@ -317,6 +317,7 @@ export async function publishVersionForUser(
     changelog: changelogText,
     clawScanNote: clawScanNote || undefined,
     changelogSource,
+    sourceProvenance: args.source,
     tags: args.tags?.map((tag) => tag.trim()).filter(Boolean),
     fingerprint,
     forkOf: args.forkOf

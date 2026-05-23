@@ -117,6 +117,7 @@ const publicCorpusPreparedRowValidator = v.union(
 );
 
 const LOCAL_SEED_HANDLE = "local";
+const LEGACY_LOCAL_OWNER_HANDLE = "local-owner";
 const LOCAL_SEED_GITHUB_CREATED_AT = Date.parse("2020-01-01T00:00:00.000Z");
 const CURRENT_USER_SEED_PREFIX = "dev";
 const PUBLIC_CORPUS_BATCH = "public-corpus-v1";
@@ -578,6 +579,126 @@ export function currentUserSeedPackageName(userId: Id<"users">, baseName: string
   return `${CURRENT_USER_SEED_PREFIX}-${currentUserSeedKey(userId)}-${normalized}`;
 }
 
+function legacyLocalOwnerHandle(publisherId: Id<"publishers">) {
+  const suffix = String(publisherId)
+    .replace(/[^a-zA-Z0-9]/g, "")
+    .slice(-10)
+    .toLowerCase();
+  return `legacy-local-owner-${suffix || "publisher"}`;
+}
+
+async function retireLegacyLocalOwnerPublishers(
+  ctx: MutationCtx,
+  owner: { userId: Id<"users">; publisherId: Id<"publishers"> },
+  now: number,
+) {
+  const legacyPublishers = await ctx.db
+    .query("publishers")
+    .withIndex("by_handle", (q) => q.eq("handle", LEGACY_LOCAL_OWNER_HANDLE))
+    .collect();
+
+  for (const publisher of legacyPublishers) {
+    if (publisher._id === owner.publisherId) continue;
+
+    const ownerPatch = {
+      ownerUserId: owner.userId,
+      ownerPublisherId: owner.publisherId,
+      updatedAt: now,
+    };
+    const skills = await ctx.db
+      .query("skills")
+      .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", publisher._id))
+      .collect();
+    for (const skill of skills) {
+      await ctx.db.patch(skill._id, ownerPatch);
+      const digests = await ctx.db
+        .query("skillSearchDigest")
+        .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
+        .collect();
+      for (const digest of digests) {
+        await ctx.db.patch(digest._id, {
+          ownerUserId: owner.userId,
+          ownerPublisherId: owner.publisherId,
+        });
+      }
+    }
+
+    const aliases = await ctx.db
+      .query("skillSlugAliases")
+      .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", publisher._id))
+      .collect();
+    for (const alias of aliases) await ctx.db.patch(alias._id, ownerPatch);
+
+    const souls = await ctx.db
+      .query("souls")
+      .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", publisher._id))
+      .collect();
+    for (const soul of souls) await ctx.db.patch(soul._id, ownerPatch);
+
+    const packages = await ctx.db
+      .query("packages")
+      .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", publisher._id))
+      .collect();
+    for (const pkg of packages) {
+      await ctx.db.patch(pkg._id, ownerPatch);
+      const packageDigests = await ctx.db
+        .query("packageSearchDigest")
+        .withIndex("by_package", (q) => q.eq("packageId", pkg._id))
+        .collect();
+      for (const digest of packageDigests) {
+        await ctx.db.patch(digest._id, {
+          ownerUserId: owner.userId,
+          ownerPublisherId: owner.publisherId,
+        });
+      }
+      const capabilityDigests = await ctx.db
+        .query("packageCapabilitySearchDigest")
+        .withIndex("by_package", (q) => q.eq("packageId", pkg._id))
+        .collect();
+      for (const digest of capabilityDigests) {
+        await ctx.db.patch(digest._id, {
+          ownerUserId: owner.userId,
+          ownerPublisherId: owner.publisherId,
+        });
+      }
+      const categoryDigests = await ctx.db
+        .query("packagePluginCategorySearchDigest")
+        .withIndex("by_package", (q) => q.eq("packageId", pkg._id))
+        .collect();
+      for (const digest of categoryDigests) {
+        await ctx.db.patch(digest._id, {
+          ownerUserId: owner.userId,
+          ownerPublisherId: owner.publisherId,
+        });
+      }
+    }
+
+    const members = await ctx.db
+      .query("publisherMembers")
+      .withIndex("by_publisher", (q) => q.eq("publisherId", publisher._id))
+      .collect();
+    for (const member of members) await ctx.db.delete(member._id);
+
+    if (publisher.linkedUserId) {
+      const linkedUser = await ctx.db.get(publisher.linkedUserId);
+      if (linkedUser?.personalPublisherId === publisher._id) {
+        await ctx.db.patch(linkedUser._id, {
+          personalPublisherId: undefined,
+          updatedAt: now,
+        });
+      }
+    }
+
+    await ctx.db.patch(publisher._id, {
+      handle: legacyLocalOwnerHandle(publisher._id),
+      linkedUserId: undefined,
+      deactivatedAt: now,
+      deletedAt: now,
+      updatedAt: now,
+    });
+  }
+}
+
 function injectMetadata(rawSkillMd: string, metadata: Record<string, unknown>) {
   const frontmatterEnd = rawSkillMd.indexOf("\n---", 3);
   if (frontmatterEnd === -1) return rawSkillMd;
@@ -971,7 +1092,20 @@ async function ensureLocalSeedOwner(ctx: MutationCtx) {
     .withIndex("handle", (q) => q.eq("handle", LOCAL_SEED_HANDLE))
     .collect();
 
-  const userId = existingUsers[0]?._id;
+  let userId = existingUsers[0]?._id;
+  if (!userId) {
+    const localPublishers = await ctx.db
+      .query("publishers")
+      .withIndex("by_handle", (q) => q.eq("handle", LOCAL_SEED_HANDLE))
+      .collect();
+    for (const publisher of localPublishers) {
+      if (publisher.kind !== "user" || !publisher.linkedUserId) continue;
+      const linkedUser = await ctx.db.get(publisher.linkedUserId);
+      if (!linkedUser || linkedUser.deletedAt || linkedUser.deactivatedAt) continue;
+      userId = linkedUser._id;
+      break;
+    }
+  }
   const ensuredUserId =
     userId ??
     (await ctx.db.insert("users", {
@@ -984,8 +1118,13 @@ async function ensureLocalSeedOwner(ctx: MutationCtx) {
     }));
   if (userId) {
     await ctx.db.patch(userId, {
+      handle: LOCAL_SEED_HANDLE,
+      displayName: "Local Dev",
+      name: "Local Dev",
       githubCreatedAt: LOCAL_SEED_GITHUB_CREATED_AT,
-      role: "admin",
+      role: "admin" as const,
+      deletedAt: undefined,
+      deactivatedAt: undefined,
       updatedAt: now,
     });
   }
@@ -1693,6 +1832,9 @@ export async function seedLocalModerationFixturesHandler(
   const scannedSkillSlug = args.scannedSkillSlug ?? SCANNED_SKILL_SLUG;
   const flaggedPluginName = args.flaggedPluginName ?? FLAGGED_PLUGIN_NAME;
   const scannedPluginName = args.scannedPluginName ?? SCANNED_PLUGIN_NAME;
+  const now = Date.now();
+  const owner = await ensureSeedOwner(ctx, args.ownerUserId);
+  await retireLegacyLocalOwnerPublishers(ctx, owner, now);
   const existingSkill = await findSeedSkillFixture(ctx, flaggedSkillSlug);
   const existingScannedSkill = await findScannedSkillFixture(ctx, scannedSkillSlug);
   const existingPlugin = await findSeedPluginFixture(ctx, flaggedPluginName);
@@ -1704,8 +1846,7 @@ export async function seedLocalModerationFixturesHandler(
     existingScannedPlugin &&
     !args.reset
   ) {
-    const now = Date.now();
-    const { userId, publisherId } = await ensureSeedOwner(ctx, args.ownerUserId);
+    const { userId, publisherId } = owner;
     const ownerPatch = { ownerUserId: userId, ownerPublisherId: publisherId, updatedAt: now };
     for (const skill of [existingSkill, existingScannedSkill]) {
       if (skill.ownerUserId !== userId || skill.ownerPublisherId !== publisherId) {
@@ -1833,8 +1974,7 @@ export async function seedLocalModerationFixturesHandler(
   await deleteSeedPluginFixture(ctx, flaggedPluginName);
   await deleteScannedPluginFixture(ctx, scannedPluginName);
 
-  const now = Date.now();
-  const { userId, publisherId } = await ensureSeedOwner(ctx, args.ownerUserId);
+  const { userId, publisherId } = owner;
   const staticScan = staticMaliciousScan(now);
   const scannedSkillStaticScan = staticSuspiciousSkillScan(now);
   const scannedStaticScan = staticSuspiciousScan(now);

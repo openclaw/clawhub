@@ -2443,6 +2443,336 @@ describe("httpApiV1 handlers", () => {
     expect(response.headers.get("X-Content-SHA256")).toBe("abcd");
   });
 
+  it("returns stored Skill Card markdown", async () => {
+    const internalVersion = {
+      version: "1.0.0",
+      createdAt: 1,
+      changelog: "c",
+      files: [
+        {
+          path: "skill-card.md",
+          size: 12,
+          storageId: "storage:card",
+          sha256: "card-sha",
+          contentType: "text/markdown",
+        },
+      ],
+      softDeletedAt: undefined,
+    };
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "demo",
+            displayName: "Demo",
+            summary: "s",
+            tags: { stable: "skillVersions:1" },
+            stats: {},
+            createdAt: 1,
+            updatedAt: 2,
+            latestVersionId: "skillVersions:1",
+          },
+          latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
+          owner: null,
+        };
+      }
+      if ("versionId" in args) return internalVersion;
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const storage = {
+      get: vi.fn().mockResolvedValue(new Blob(["# Skill Card"], { type: "text/markdown" })),
+    };
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation, storage }),
+      new Request("https://example.com/api/v1/skills/demo/card?tag=stable"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("# Skill Card");
+    expect(response.headers.get("X-Content-SHA256")).toBe("card-sha");
+  });
+
+  it("returns 404 when a Skill Card is missing", async () => {
+    const internalVersion = {
+      version: "1.0.0",
+      createdAt: 1,
+      changelog: "c",
+      files: [{ path: "SKILL.md", size: 5, storageId: "storage:1", sha256: "abcd" }],
+      softDeletedAt: undefined,
+    };
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "demo",
+            displayName: "Demo",
+            summary: "s",
+            tags: {},
+            stats: {},
+            createdAt: 1,
+            updatedAt: 2,
+            latestVersionId: "skillVersions:1",
+          },
+          latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
+          owner: null,
+        };
+      }
+      if ("versionId" in args) return internalVersion;
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation, storage: { get: vi.fn() } }),
+      new Request("https://example.com/api/v1/skills/demo/card"),
+    );
+
+    expect(response.status).toBe(404);
+    expect(await response.text()).toBe("Skill Card not found");
+  });
+
+  it("returns a skill verification envelope with card and security metadata", async () => {
+    const internalVersion = {
+      _id: "skillVersions:1",
+      skillId: "skills:1",
+      version: "1.0.0",
+      createdAt: 1,
+      changelog: "c",
+      fingerprint: "source-fingerprint",
+      files: [
+        {
+          path: "SKILL.md",
+          size: 5,
+          storageId: "storage:1",
+          sha256: "source-sha",
+          contentType: "text/markdown",
+        },
+        {
+          path: "skill-card.md",
+          size: 12,
+          storageId: "storage:card",
+          sha256: "card-sha",
+          contentType: "text/markdown",
+        },
+      ],
+      parsed: { license: "MIT-0", clawdis: { requires: { env: ["TOKEN"] } } },
+      sourceProvenance: {
+        kind: "github",
+        url: "https://github.com/acme/demo/tree/main/skills/demo",
+        repo: "acme/demo",
+        ref: "main",
+        commit: "abc123",
+        path: "skills/demo",
+        importedAt: 10,
+      },
+      staticScan: {
+        status: "clean",
+        reasonCodes: [],
+        findings: [],
+        summary: "Static scan clean.",
+        engineVersion: "static-v1",
+        checkedAt: 2,
+      },
+      llmAnalysis: {
+        status: "clean",
+        verdict: "clean",
+        summary: "ClawScan clean.",
+        checkedAt: 3,
+        model: "gpt-test",
+      },
+      depRegistryAnalysis: {
+        status: "clean",
+        results: [],
+        notFoundPackages: [],
+        unresolvedPackages: [],
+        summary: "No dependency issues.",
+        checkedAt: 4,
+      },
+      capabilityTags: ["dev-tools"],
+      softDeletedAt: undefined,
+    };
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "demo",
+            displayName: "Demo",
+            summary: "s",
+            tags: { stable: "skillVersions:1" },
+            stats: {},
+            createdAt: 1,
+            updatedAt: 2,
+            latestVersionId: "skillVersions:1",
+          },
+          latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
+          owner: { _id: "users:1", handle: "acme", displayName: "Acme" },
+        };
+      }
+      if ("skillVersionId" in args) {
+        return [{ fingerprint: "bundle-fingerprint", kind: "generated-bundle", createdAt: 5 }];
+      }
+      if ("versionId" in args) return internalVersion;
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation, storage: { get: vi.fn() } }),
+      new Request("https://example.com/api/v1/skills/demo/verify?tag=stable"),
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json).toMatchObject({
+      schema: "clawhub.skill.verify.v1",
+      ok: true,
+      decision: "pass",
+      reasons: [],
+      skill: {
+        slug: "demo",
+        displayName: "Demo",
+        pageUrl: "https://clawhub.ai/acme/demo",
+      },
+      publisher: {
+        handle: "acme",
+        displayName: "Acme",
+        profileUrl: "https://clawhub.ai/user/acme",
+      },
+      version: {
+        version: "1.0.0",
+        resolvedFrom: "tag",
+        tag: "stable",
+      },
+      card: {
+        available: true,
+        path: "skill-card.md",
+        url: "https://example.com/api/v1/skills/demo/card?version=1.0.0",
+        sha256: "card-sha",
+        size: 12,
+      },
+      artifact: {
+        sourceFingerprint: "source-fingerprint",
+        bundleFingerprints: ["bundle-fingerprint"],
+        files: [{ path: "SKILL.md", sha256: "source-sha", size: 5 }],
+      },
+      provenance: {
+        source: "server-resolved-github-import",
+        repo: "acme/demo",
+        commit: "abc123",
+        path: "skills/demo",
+      },
+      security: {
+        status: "clean",
+        passed: true,
+        staticScan: { status: "clean", reasonCodes: [] },
+        clawScan: { status: "clean", rawStatus: "clean" },
+        depRegistry: { status: "clean" },
+      },
+      signature: { status: "unsigned" },
+    });
+  });
+
+  it("returns ok false when verification has no card or clean scan result", async () => {
+    const internalVersion = {
+      _id: "skillVersions:1",
+      skillId: "skills:1",
+      version: "1.0.0",
+      createdAt: 1,
+      changelog: "c",
+      fingerprint: "source-fingerprint",
+      files: [{ path: "SKILL.md", size: 5, storageId: "storage:1", sha256: "source-sha" }],
+      parsed: {},
+      staticScan: {
+        status: "clean",
+        reasonCodes: [],
+        findings: [],
+        summary: "Static scan clean.",
+        engineVersion: "static-v1",
+        checkedAt: 2,
+      },
+      llmAnalysis: {
+        status: "completed",
+        verdict: "suspicious",
+        summary: "Review risky behavior.",
+        checkedAt: 3,
+      },
+      softDeletedAt: undefined,
+    };
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "demo",
+            displayName: "Demo",
+            summary: "s",
+            tags: {},
+            stats: {},
+            createdAt: 1,
+            updatedAt: 2,
+            latestVersionId: "skillVersions:1",
+          },
+          latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
+          owner: null,
+        };
+      }
+      if ("skillVersionId" in args) return [];
+      if ("versionId" in args) return internalVersion;
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation, storage: { get: vi.fn() } }),
+      new Request("https://example.com/api/v1/skills/demo/verify"),
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.ok).toBe(false);
+    expect(json.decision).toBe("fail");
+    expect(json.reasons).toEqual(["card.missing", "security.status_not_clean"]);
+    expect(json.card.available).toBe(false);
+    expect(json.security).toMatchObject({ status: "suspicious", passed: false });
+  });
+
+  it("returns 410 for soft-deleted Skill Card versions", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "demo",
+            displayName: "Demo",
+            summary: "s",
+            tags: {},
+            stats: {},
+            createdAt: 1,
+            updatedAt: 2,
+            latestVersionId: "skillVersions:1",
+          },
+          latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
+          owner: null,
+        };
+      }
+      if ("versionId" in args) return { softDeletedAt: 123, files: [] };
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation, storage: { get: vi.fn() } }),
+      new Request("https://example.com/api/v1/skills/demo/card"),
+    );
+
+    expect(response.status).toBe(410);
+  });
+
   it("returns 413 when raw file too large", async () => {
     const internalVersion = {
       version: "1.0.0",
