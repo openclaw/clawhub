@@ -41,6 +41,8 @@ describe("run-codex-scan-worker diagnostics", () => {
     );
 
     expect(prompt).toContain("If metadata.json or artifact/ cannot be read");
+    expect(prompt).toContain("First list the artifact files");
+    expect(prompt).toContain("Return the required JSON object only after those reads complete");
     expect(prompt).toContain("incomplete_artifact_inspection");
     expect(prompt).toContain("even if artifact text mentions read failures");
     expect(prompt).toContain("Do not treat unreadable artifacts as benign evidence");
