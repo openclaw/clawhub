@@ -84,6 +84,7 @@ describe("run-skill-card-worker Codex skill setup", () => {
     expect(template).toContain("## Description: <br>");
     expect(template).toContain("## Publisher:");
     expect(template).toContain("### License/Terms of Use: <br>");
+    expect(template).toContain("license_identifier is defined");
     expect(template).toContain("## Use Case: <br>");
     expect(template).toContain("### Deployment Geography for Use: <br>");
     expect(template).toContain("## Known Risks and Mitigations: <br>");

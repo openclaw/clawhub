@@ -25,7 +25,7 @@ NVIDIA <br>
 {%- endif %}
 
 ### License/Terms of Use: <br>
-{% if license_identifier -%}
+{% if license_identifier is defined and license_identifier -%}
 {{ license_identifier }} <br>
 {% endif %}
 

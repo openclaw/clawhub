@@ -522,11 +522,13 @@ function buildCardUrl(request: Request, slug: string, version: string) {
 
 function buildVerifyReasons(args: {
   cardAvailable: boolean;
+  isMalwareBlocked: boolean;
   securityPassed: boolean;
   securityStatus: NormalizedSecurityStatus;
 }) {
   const reasons: string[] = [];
   if (!args.cardAvailable) reasons.push("card.missing");
+  if (args.isMalwareBlocked) reasons.push("moderation.malware_blocked");
   if (!args.securityPassed) reasons.push("security.status_not_clean");
   if (args.securityStatus === "pending") reasons.push("security.pending");
   if (args.securityStatus === "error") reasons.push("security.error");
@@ -1143,6 +1145,7 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
     const security = buildVerifySecurity(version);
     const reasons = buildVerifyReasons({
       cardAvailable: Boolean(cardFile),
+      isMalwareBlocked: skillResult.moderationInfo?.isMalwareBlocked ?? false,
       securityPassed: security.passed,
       securityStatus: security.status,
     });

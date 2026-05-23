@@ -2677,6 +2677,78 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
+  it("fails verification when the skill is malware-blocked by moderation", async () => {
+    const internalVersion = {
+      _id: "skillVersions:1",
+      skillId: "skills:1",
+      version: "1.0.0",
+      createdAt: 1,
+      changelog: "c",
+      fingerprint: "source-fingerprint",
+      files: [
+        { path: "SKILL.md", size: 5, storageId: "storage:1", sha256: "source-sha" },
+        { path: "skill-card.md", size: 12, storageId: "storage:card", sha256: "card-sha" },
+      ],
+      parsed: {},
+      staticScan: {
+        status: "clean",
+        reasonCodes: [],
+        findings: [],
+        summary: "Static scan clean.",
+        checkedAt: 2,
+      },
+      llmAnalysis: {
+        status: "clean",
+        verdict: "clean",
+        summary: "ClawScan clean.",
+        checkedAt: 3,
+      },
+      softDeletedAt: undefined,
+    };
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "demo",
+            displayName: "Demo",
+            summary: "s",
+            tags: {},
+            stats: {},
+            createdAt: 1,
+            updatedAt: 2,
+            latestVersionId: "skillVersions:1",
+          },
+          latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
+          owner: null,
+          moderationInfo: {
+            isPendingScan: false,
+            isMalwareBlocked: true,
+            isSuspicious: false,
+            isHiddenByMod: false,
+            isRemoved: false,
+          },
+        };
+      }
+      if ("skillVersionId" in args) return [];
+      if ("versionId" in args) return internalVersion;
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation, storage: { get: vi.fn() } }),
+      new Request("https://example.com/api/v1/skills/demo/verify"),
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.ok).toBe(false);
+    expect(json.decision).toBe("fail");
+    expect(json.reasons).toEqual(["moderation.malware_blocked"]);
+    expect(json.security).toMatchObject({ status: "clean", passed: true });
+  });
+
   it("passes verification when static findings are advisory but ClawScan is clean", async () => {
     const internalVersion = {
       _id: "skillVersions:1",
