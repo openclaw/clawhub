@@ -274,7 +274,7 @@ export const setPublisherAbuseReviewStatus = mutation({
     if (!nomination) throw new Error("Nomination not found");
 
     const now = Date.now();
-    const notes = normalizeNotes(args.notes);
+    const notes = args.notes === undefined ? nomination.notes : normalizeNotes(args.notes);
     await ctx.db.patch(nomination._id, {
       status: args.status,
       reviewedByUserId: args.status === "pending" ? undefined : userId,

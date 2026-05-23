@@ -114,6 +114,22 @@ const startManualHandler = (
   >
 )._handler;
 
+const setReviewStatusHandler = (
+  publisherAbuse.setPublisherAbuseReviewStatus as unknown as Wrapped<
+    {
+      nominationId: string;
+      status:
+        | "pending"
+        | "reviewed_no_action"
+        | "false_positive"
+        | "needs_policy_discussion"
+        | "candidate_for_future_action";
+      notes?: string;
+    },
+    { ok: true }
+  >
+)._handler;
+
 const getOrStartHandler = (
   publisherAbuse.getOrStartPublisherAbuseScoreRunInternal as unknown as Wrapped<
     { trigger: "cron" | "manual"; actorUserId?: string; forceNew?: boolean },
@@ -1668,6 +1684,44 @@ describe("publisher abuse dry-run persistence", () => {
 
     expect(result.items.map((item) => item.nomination.handleSnapshot)).toEqual(["large-catalog"]);
     expect(result.total).toBe(1);
+  });
+
+  it("preserves existing triage notes when only the status changes", async () => {
+    const patch = vi.fn(async () => null);
+    const insert = vi.fn(async (table: string) => `${table}:new`);
+    const ctx = {
+      db: {
+        get: vi.fn(async () => ({
+          _id: "publisherAbuseReviewNominations:existing",
+          ownerKey: "publisher:publishers:reviewed",
+          latestScoreId: "publisherAbuseScores:reviewed",
+          label: "review",
+          status: "pending",
+          notes: "keep this context",
+        })),
+        patch,
+        insert,
+      },
+    };
+
+    await expect(
+      setReviewStatusHandler(ctx, {
+        nominationId: "publisherAbuseReviewNominations:existing",
+        status: "reviewed_no_action",
+      }),
+    ).resolves.toEqual({ ok: true });
+
+    expect(patch).toHaveBeenCalledWith(
+      "publisherAbuseReviewNominations:existing",
+      expect.objectContaining({
+        status: "reviewed_no_action",
+        notes: "keep this context",
+      }),
+    );
+    expect(insert).toHaveBeenCalledWith(
+      "publisherAbuseReviewEvents",
+      expect.objectContaining({ notes: "keep this context" }),
+    );
   });
 
   it("lets an admin start a manual dry-run recompute", async () => {
