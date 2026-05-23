@@ -17,6 +17,8 @@ const MAX_BATCH_SIZE = 1000;
 const DEFAULT_MAX_PAGES = 5;
 const MAX_MAX_PAGES = 50;
 const ACTION_CONTINUATION_DELAY_MS = 60_000;
+const QUEUE_INITIAL_CANDIDATE_MULTIPLIER = 4;
+const MAX_QUEUE_FILTER_CANDIDATES = 1000;
 
 const triageStatusValidator = v.union(
   v.literal("pending"),
@@ -190,16 +192,31 @@ export const listPublisherAbuseReviewQueue = query({
     const status = args.status ?? "unreviewed";
     const minSkillCount = Math.max(0, args.minSkillCount ?? 0);
     const search = args.search?.trim().toLowerCase() ?? "";
-    const nominations = await listNominationsForQueue(ctx, { label, status, limit: limit * 4 });
-    const filtered = nominations.filter((nomination) =>
-      matchesNominationSearch(nomination, search),
-    );
+    const hasPostFilters = search.length > 0 || minSkillCount > 0;
+    let candidateLimit = limit * QUEUE_INITIAL_CANDIDATE_MULTIPLIER;
+    let eligibleItems: Array<{ nomination: NominationDoc; score: ScoreDoc | null }> = [];
 
-    const eligibleItems: Array<{ nomination: NominationDoc; score: ScoreDoc | null }> = [];
-    for (const nomination of filtered) {
-      const score = await ctx.db.get(nomination.latestScoreId);
-      if (score && score.publishedSkills < minSkillCount) continue;
-      eligibleItems.push({ nomination, score });
+    while (true) {
+      const nominations = await listNominationsForQueue(ctx, {
+        label,
+        status,
+        limit: candidateLimit,
+      });
+      const filtered = nominations.filter((nomination) =>
+        matchesNominationSearch(nomination, search),
+      );
+
+      eligibleItems = [];
+      for (const nomination of filtered) {
+        const score = await ctx.db.get(nomination.latestScoreId);
+        if (score && score.publishedSkills < minSkillCount) continue;
+        eligibleItems.push({ nomination, score });
+      }
+
+      const hasMoreCandidates = nominations.length >= candidateLimit;
+      if (!hasPostFilters || eligibleItems.length >= limit || !hasMoreCandidates) break;
+      if (candidateLimit >= MAX_QUEUE_FILTER_CANDIDATES) break;
+      candidateLimit = Math.min(candidateLimit * 2, MAX_QUEUE_FILTER_CANDIDATES);
     }
 
     const latestRun = await ctx.db

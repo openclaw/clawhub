@@ -582,6 +582,49 @@ describe("publisher abuse dry-run persistence", () => {
     expect(result.total).toBe(1);
   });
 
+  it("keeps scanning queue candidates until filtered matches are found", async () => {
+    const recentLowSkillNominations = Array.from({ length: 40 }, (_, index) =>
+      nominationFixture({
+        _id: `publisherAbuseReviewNominations:small-${index}`,
+        latestScoreId: `publisherAbuseScores:small-${index}`,
+        label: "review",
+        status: "pending",
+        handleSnapshot: `small-catalog-${index}`,
+        lastScoredAt: 1_000 - index,
+      }),
+    );
+    const olderEligibleNomination = nominationFixture({
+      _id: "publisherAbuseReviewNominations:older-eligible",
+      latestScoreId: "publisherAbuseScores:older-eligible",
+      label: "review",
+      status: "pending",
+      handleSnapshot: "older-eligible-catalog",
+      lastScoredAt: 500,
+    });
+    const lowSkillScores = Object.fromEntries(
+      recentLowSkillNominations.map((nomination) => [
+        nomination.latestScoreId,
+        { publishedSkills: 1 },
+      ]),
+    );
+    const ctx = queueCtx([...recentLowSkillNominations, olderEligibleNomination], {
+      ...lowSkillScores,
+      [olderEligibleNomination.latestScoreId]: { publishedSkills: 20 },
+    });
+
+    const result = await listQueueHandler(ctx, {
+      status: "all",
+      label: "all",
+      minSkillCount: 10,
+      limit: 10,
+    });
+
+    expect(result.items.map((item) => item.nomination.handleSnapshot)).toEqual([
+      "older-eligible-catalog",
+    ]);
+    expect(result.total).toBe(1);
+  });
+
   it("counts queue totals after applying the minimum skill count", async () => {
     const smallNomination = nominationFixture({
       _id: "publisherAbuseReviewNominations:small",
