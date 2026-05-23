@@ -328,12 +328,11 @@ export async function collectPublisherAbuseScoresPageInternalHandler(
   let scored = 0;
   const modelConfig = run.modelConfig;
   for (const publisher of page.page) {
-    const rawScore = computePublisherAbuseRawScore(
-      await publisherInputFromPublisher(ctx, publisher, {
-        allowActiveSkillScan: run.trigger !== "cron",
-      }),
-      modelConfig,
-    );
+    const input = await publisherInputFromPublisher(ctx, publisher, {
+      allowActiveSkillScan: run.trigger !== "cron",
+    });
+    if (!input) continue;
+    const rawScore = computePublisherAbuseRawScore(input, modelConfig);
     await ctx.db.insert("publisherAbuseScores", {
       runId: run._id,
       ownerKey: rawScore.input.ownerKey,
@@ -609,7 +608,7 @@ async function publisherInputFromPublisher(
   ctx: Pick<MutationCtx, "db">,
   publisher: PublisherMetricsDoc,
   options: PublisherSkillMetricsOptions = { allowActiveSkillScan: true },
-): Promise<PublisherAbuseInput> {
+): Promise<PublisherAbuseInput | null> {
   const publishedPackages =
     typeof publisher.publishedPackages === "number"
       ? nonNegative(publisher.publishedPackages)
@@ -620,6 +619,7 @@ async function publisherInputFromPublisher(
     publishedPackages,
     options,
   );
+  if (!skillMetrics) return null;
   return {
     ownerKey: `publisher:${publisher._id}`,
     ownerPublisherId: publisher._id,
@@ -642,10 +642,10 @@ async function publisherSkillMetricsForScoring(
   publisher: PublisherMetricsDoc,
   publishedPackages: number | undefined,
   options: PublisherSkillMetricsOptions,
-): Promise<SkillMetricsForScoring> {
+): Promise<SkillMetricsForScoring | null> {
   const hasPublishedSkillCount = typeof publisher.publishedSkills === "number";
   if (!hasPublishedSkillCount) {
-    if (!options.allowActiveSkillScan) return zeroPublisherSkillMetricsForScoring();
+    if (!options.allowActiveSkillScan) return null;
     return await computePublisherSkillMetricsForScoring(ctx, publisher._id);
   }
 

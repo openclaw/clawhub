@@ -52,3 +52,8 @@ publishers that are missing the newer skill-only aggregate fields. Until those
 aggregates are backfilled, cron uses the known skill count with zero skill-only
 engagement as a conservative review signal instead of reading unbounded child
 rows inside the score mutation.
+
+If cron reaches a publisher that is missing the base published skill count,
+the scorer skips that publisher for the run. It must not write an all-zero pass
+score for unknown publisher stats. Manual runs may derive the missing count from
+active skills because they are operator-triggered.

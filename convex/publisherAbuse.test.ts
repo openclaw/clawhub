@@ -485,6 +485,66 @@ describe("publisher abuse dry-run persistence", () => {
     );
   });
 
+  it("skips cron scoring when the base published skill count is missing", async () => {
+    const insert = vi.fn(async (table: string) => `${table}:new`);
+    const patch = vi.fn(async () => null);
+    const ctx = {
+      db: {
+        get: vi.fn(async () => ({
+          _id: "publisherAbuseScoreRuns:run",
+          modelVersion: TEST_MODEL_CONFIG.modelVersion,
+          modelConfig: TEST_MODEL_CONFIG,
+          trigger: "cron",
+          status: "running",
+          phase: "collecting",
+          collectCursor: undefined,
+          scannedPublishers: 0,
+          scoredPublishers: 0,
+          sumLogPressure: 0,
+          sumSquaredLogPressure: 0,
+        })),
+        insert,
+        patch,
+        query: vi.fn((table: string) => {
+          if (table === "publishers") {
+            return {
+              withIndex: () => ({
+                paginate: async () => ({
+                  page: [
+                    {
+                      _id: "publishers:legacy-base",
+                      handle: "legacy-base",
+                      linkedUserId: "users:legacy-base",
+                      publishedPackages: 0,
+                      totalInstalls: 100,
+                      totalStars: 10,
+                      totalDownloads: 1_000,
+                    },
+                  ],
+                  isDone: true,
+                  continueCursor: "",
+                }),
+              }),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await collectHandler(ctx, { runId: "publisherAbuseScoreRuns:run" });
+
+    expect(ctx.db.query).not.toHaveBeenCalledWith("skills");
+    expect(insert).not.toHaveBeenCalledWith("publisherAbuseScores", expect.anything());
+    expect(patch).toHaveBeenCalledWith(
+      "publisherAbuseScoreRuns:run",
+      expect.objectContaining({
+        scannedPublishers: 1,
+        scoredPublishers: 0,
+      }),
+    );
+  });
+
   it("treats a missing package count as unknown when skill-only engagement is missing", async () => {
     const insert = vi.fn(async (table: string) => `${table}:new`);
     const ctx = {
