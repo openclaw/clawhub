@@ -7539,21 +7539,6 @@ code {
   margin-top: 12px;
 }
 
-.management-section-header {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-  align-items: flex-start;
-  justify-content: space-between;
-}
-
-.management-stat-grid {
-  display: grid;
-  gap: 10px;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  margin-top: 14px;
-}
-
 .management-item {
   display: grid;
   gap: 16px;
