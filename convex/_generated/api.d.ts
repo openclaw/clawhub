@@ -110,6 +110,7 @@ import type * as llmEval from "../llmEval.js";
 import type * as maintenance from "../maintenance.js";
 import type * as packagePublishTokens from "../packagePublishTokens.js";
 import type * as packages from "../packages.js";
+import type * as publisherAbuse from "../publisherAbuse.js";
 import type * as publishers from "../publishers.js";
 import type * as rateLimits from "../rateLimits.js";
 import type * as search from "../search.js";
@@ -243,6 +244,7 @@ declare const fullApi: ApiFromModules<{
   maintenance: typeof maintenance;
   packagePublishTokens: typeof packagePublishTokens;
   packages: typeof packages;
+  publisherAbuse: typeof publisherAbuse;
   publishers: typeof publishers;
   rateLimits: typeof rateLimits;
   search: typeof search;

@@ -7539,6 +7539,21 @@ code {
   margin-top: 12px;
 }
 
+.management-section-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.management-stat-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  margin-top: 14px;
+}
+
 .management-item {
   display: grid;
   gap: 16px;
@@ -7552,6 +7567,10 @@ code {
 
 .management-item-detail {
   grid-template-columns: minmax(0, 1fr);
+}
+
+.management-abuse-item {
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 240px);
 }
 
 .management-item-main {
@@ -7571,6 +7590,29 @@ code {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.management-abuse-title {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.management-abuse-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+  color: var(--ink-soft);
+  font-size: 0.88rem;
+}
+
+.management-abuse-metrics span {
+  padding: 4px 7px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
 }
 
 .management-controls {
@@ -7753,6 +7795,10 @@ code {
 
 @media (max-width: 900px) {
   .management-item {
+    grid-template-columns: 1fr;
+  }
+
+  .management-abuse-item {
     grid-template-columns: 1fr;
   }
 

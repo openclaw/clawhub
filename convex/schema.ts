@@ -237,6 +237,37 @@ const packageVerificationScopeValidator = v.union(
   v.literal("dependency-graph-aware"),
 );
 
+const publisherAbuseDryRunLabelValidator = v.union(
+  v.literal("pass"),
+  v.literal("review"),
+  v.literal("potential_ban_candidate"),
+);
+
+const publisherAbuseTriageStatusValidator = v.union(
+  v.literal("pending"),
+  v.literal("reviewed_no_action"),
+  v.literal("false_positive"),
+  v.literal("needs_policy_discussion"),
+  v.literal("candidate_for_future_action"),
+);
+
+const publisherAbuseModelConfigValidator = v.object({
+  modelVersion: v.string(),
+  skillPivot: v.number(),
+  installsPerSkillPivot: v.number(),
+  starsPerSkillPivot: v.number(),
+  downloadsPerSkillPivot: v.number(),
+  outputElasticity: v.number(),
+  installTrustElasticity: v.number(),
+  starTrustElasticity: v.number(),
+  downloadDemandElasticity: v.number(),
+  minInstallsPerSkill: v.number(),
+  minStarsPerSkill: v.number(),
+  minDownloadsPerSkill: v.number(),
+  reviewZThreshold: v.number(),
+  potentialBanCandidateZThreshold: v.number(),
+});
+
 const packageStatsValidator = v.object({
   downloads: v.number(),
   installs: v.number(),
@@ -1711,6 +1742,107 @@ const auditLogs = defineTable({
   .index("by_target", ["targetType", "targetId"])
   .index("by_target_createdAt", ["targetType", "targetId", "createdAt"]);
 
+const publisherAbuseScoreRuns = defineTable({
+  modelVersion: v.string(),
+  modelConfig: publisherAbuseModelConfigValidator,
+  trigger: v.union(v.literal("cron"), v.literal("manual")),
+  actorUserId: v.optional(v.id("users")),
+  status: v.union(v.literal("running"), v.literal("completed"), v.literal("failed")),
+  phase: v.union(v.literal("collecting"), v.literal("finalizing"), v.literal("completed")),
+  collectCursor: v.optional(v.string()),
+  finalizeCursor: v.optional(v.string()),
+  startedAt: v.number(),
+  completedAt: v.optional(v.number()),
+  updatedAt: v.number(),
+  scannedPublishers: v.number(),
+  scoredPublishers: v.number(),
+  finalizedScores: v.number(),
+  nominatedPublishers: v.number(),
+  passCount: v.number(),
+  reviewCount: v.number(),
+  potentialBanCandidateCount: v.number(),
+  sumLogPressure: v.number(),
+  sumSquaredLogPressure: v.number(),
+  meanLogPressure: v.optional(v.number()),
+  stdDevLogPressure: v.optional(v.number()),
+  errorMessage: v.optional(v.string()),
+})
+  .index("by_status_and_updated_at", ["status", "updatedAt"])
+  .index("by_started_at", ["startedAt"]);
+
+const publisherAbuseScores = defineTable({
+  runId: v.id("publisherAbuseScoreRuns"),
+  ownerKey: v.string(),
+  ownerPublisherId: v.optional(v.id("publishers")),
+  ownerUserId: v.optional(v.id("users")),
+  handleSnapshot: v.string(),
+  modelVersion: v.string(),
+  label: publisherAbuseDryRunLabelValidator,
+  rank: v.number(),
+  pressure: v.number(),
+  logPressure: v.number(),
+  zScore: v.number(),
+  publishedSkills: v.number(),
+  totalInstalls: v.number(),
+  totalStars: v.number(),
+  totalDownloads: v.number(),
+  installsPerSkill: v.number(),
+  starsPerSkill: v.number(),
+  downloadsPerSkill: v.number(),
+  reasonCodes: v.array(v.string()),
+  createdAt: v.number(),
+})
+  .index("by_run_and_rank", ["runId", "rank"])
+  .index("by_run_and_pressure", ["runId", "pressure"])
+  .index("by_owner_key_and_created_at", ["ownerKey", "createdAt"])
+  .index("by_owner_key_and_model_version", ["ownerKey", "modelVersion"])
+  .index("by_label_and_z_score", ["label", "zScore"]);
+
+const publisherAbuseReviewNominations = defineTable({
+  ownerKey: v.string(),
+  ownerPublisherId: v.optional(v.id("publishers")),
+  ownerUserId: v.optional(v.id("users")),
+  handleSnapshot: v.string(),
+  latestScoreId: v.id("publisherAbuseScores"),
+  modelVersion: v.string(),
+  label: publisherAbuseDryRunLabelValidator,
+  status: publisherAbuseTriageStatusValidator,
+  openedAt: v.number(),
+  openedByRunId: v.id("publisherAbuseScoreRuns"),
+  lastScoredAt: v.number(),
+  reviewedByUserId: v.optional(v.id("users")),
+  reviewedAt: v.optional(v.number()),
+  notes: v.optional(v.string()),
+  updatedAt: v.number(),
+})
+  .index("by_owner_key_and_model_version", ["ownerKey", "modelVersion"])
+  .index("by_status_and_last_scored_at", ["status", "lastScoredAt"])
+  .index("by_status_and_label_and_last_scored_at", ["status", "label", "lastScoredAt"])
+  .index("by_label_and_status_and_last_scored_at", ["label", "status", "lastScoredAt"])
+  .index("by_last_scored_at", ["lastScoredAt"]);
+
+const publisherAbuseReviewEvents = defineTable({
+  nominationId: v.id("publisherAbuseReviewNominations"),
+  ownerKey: v.string(),
+  actorUserId: v.optional(v.id("users")),
+  runId: v.optional(v.id("publisherAbuseScoreRuns")),
+  scoreId: v.optional(v.id("publisherAbuseScores")),
+  eventType: v.union(
+    v.literal("nomination_opened"),
+    v.literal("nomination_score_updated"),
+    v.literal("triage_status_changed"),
+  ),
+  previousStatus: v.optional(publisherAbuseTriageStatusValidator),
+  nextStatus: v.optional(publisherAbuseTriageStatusValidator),
+  previousLabel: v.optional(publisherAbuseDryRunLabelValidator),
+  nextLabel: v.optional(publisherAbuseDryRunLabelValidator),
+  notes: v.optional(v.string()),
+  createdAt: v.number(),
+})
+  .index("by_nomination_and_created_at", ["nominationId", "createdAt"])
+  .index("by_owner_key_and_created_at", ["ownerKey", "createdAt"])
+  .index("by_actor_and_created_at", ["actorUserId", "createdAt"]);
+
 const vtScanLogs = defineTable({
   type: v.union(v.literal("daily_rescan"), v.literal("backfill"), v.literal("pending_poll")),
   total: v.number(),
@@ -1936,6 +2068,10 @@ export default defineSchema({
   stars,
   soulStars,
   auditLogs,
+  publisherAbuseScoreRuns,
+  publisherAbuseScores,
+  publisherAbuseReviewNominations,
+  publisherAbuseReviewEvents,
   vtScanLogs,
   apiTokens,
   cliDeviceCodes,
