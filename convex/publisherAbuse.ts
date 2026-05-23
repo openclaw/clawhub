@@ -2,7 +2,7 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
-import { internalAction, internalMutation, mutation, query } from "./functions";
+import { internalAction, internalMutation, internalQuery, mutation, query } from "./functions";
 import { assertAdmin, requireUser } from "./lib/access";
 import {
   computePublisherAbuseRawScore,
@@ -31,6 +31,14 @@ const dryRunLabelValidator = v.union(
   v.literal("review"),
   v.literal("potential_ban_candidate"),
 );
+
+const ALL_TRIAGE_STATUSES: TriageStatus[] = [
+  "pending",
+  "reviewed_no_action",
+  "false_positive",
+  "needs_policy_discussion",
+  "candidate_for_future_action",
+];
 
 const queueStatusFilterValidator = v.union(
   v.literal("unreviewed"),
@@ -103,6 +111,17 @@ export const getOrStartPublisherAbuseScoreRunInternal = internalMutation({
   },
 });
 
+export const getPublisherAbuseScoreRunStateInternal = internalQuery({
+  args: {
+    runId: v.id("publisherAbuseScoreRuns"),
+  },
+  handler: async (ctx, args): Promise<RunState> => {
+    const run = await ctx.db.get(args.runId);
+    if (!run) throw new Error("Publisher abuse score run not found");
+    return { runId: run._id, status: run.status, phase: run.phase };
+  },
+});
+
 export const collectPublisherAbuseScoresPageInternal = internalMutation({
   args: {
     runId: v.id("publisherAbuseScoreRuns"),
@@ -171,18 +190,9 @@ export const listPublisherAbuseReviewQueue = query({
     const minSkillCount = Math.max(0, args.minSkillCount ?? 0);
     const search = args.search?.trim().toLowerCase() ?? "";
     const nominations = await listNominationsForQueue(ctx, { label, status, limit: limit * 4 });
-    const filtered = nominations.filter((nomination) => {
-      if (minSkillCount > 0) {
-        // The latest score is checked below before returning the row. Keep this
-        // pass wide so a missing score never hides a data issue from admins.
-        return true;
-      }
-      if (!search) return true;
-      return (
-        nomination.handleSnapshot.toLowerCase().includes(search) ||
-        nomination.ownerKey.toLowerCase().includes(search)
-      );
-    });
+    const filtered = nominations.filter((nomination) =>
+      matchesNominationSearch(nomination, search),
+    );
 
     const items: Array<{ nomination: NominationDoc; score: ScoreDoc | null }> = [];
     for (const nomination of filtered) {
@@ -425,7 +435,9 @@ export async function runPublisherAbuseScoreRunInternalHandler(
   const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
   const maxPages = clampInt(args.maxPages ?? DEFAULT_MAX_PAGES, 1, MAX_MAX_PAGES);
   let state: RunState = args.runId
-    ? { runId: args.runId, status: "running", phase: "collecting" }
+    ? await ctx.runQuery(internal.publisherAbuse.getPublisherAbuseScoreRunStateInternal, {
+        runId: args.runId,
+      })
     : await ctx.runMutation(internal.publisherAbuse.getOrStartPublisherAbuseScoreRunInternal, {
         trigger: args.trigger ?? "cron",
         forceNew: args.forceNew,
@@ -595,12 +607,19 @@ async function listNominationsForQueue(
   ctx: QueryCtx,
   args: {
     label: PublisherAbuseLabel | "all";
-    status: TriageStatus | "unreviewed" | "reviewed" | "all";
+    status: TriageStatus | TriageStatus[] | "unreviewed" | "reviewed" | "all";
     limit: number;
   },
 ) {
   const statuses = statusesForQueueFilter(args.status);
   if (statuses.length === 0) {
+    if (args.label !== "all") {
+      return await listNominationsForQueue(ctx, {
+        label: args.label,
+        status: ALL_TRIAGE_STATUSES,
+        limit: args.limit,
+      });
+    }
     return await ctx.db
       .query("publisherAbuseReviewNominations")
       .withIndex("by_last_scored_at")
@@ -637,14 +656,23 @@ async function listNominationsForQueue(
 }
 
 function statusesForQueueFilter(
-  status: TriageStatus | "unreviewed" | "reviewed" | "all",
+  status: TriageStatus | TriageStatus[] | "unreviewed" | "reviewed" | "all",
 ): TriageStatus[] {
+  if (Array.isArray(status)) return status;
   if (status === "all") return [];
   if (status === "unreviewed") {
     return ["pending", "needs_policy_discussion", "candidate_for_future_action"];
   }
   if (status === "reviewed") return ["reviewed_no_action", "false_positive"];
   return [status];
+}
+
+function matchesNominationSearch(nomination: NominationDoc, search: string) {
+  if (!search) return true;
+  return (
+    nomination.handleSnapshot.toLowerCase().includes(search) ||
+    nomination.ownerKey.toLowerCase().includes(search)
+  );
 }
 
 function dedupeNominations(rows: NominationDoc[]) {

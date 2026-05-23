@@ -16,6 +16,7 @@ vi.mock("./_generated/api", () => ({
       collectPublisherAbuseScoresPageInternal: Symbol("collectPublisherAbuseScoresPageInternal"),
       finalizePublisherAbuseScoresPageInternal: Symbol("finalizePublisherAbuseScoresPageInternal"),
       getOrStartPublisherAbuseScoreRunInternal: Symbol("getOrStartPublisherAbuseScoreRunInternal"),
+      getPublisherAbuseScoreRunStateInternal: Symbol("getPublisherAbuseScoreRunStateInternal"),
       runPublisherAbuseScoreRunInternal: Symbol("runPublisherAbuseScoreRunInternal"),
     },
   },
@@ -52,8 +53,39 @@ const finalizeHandler = (
 
 const runHandler = (
   publisherAbuse.runPublisherAbuseScoreRunInternal as unknown as Wrapped<
-    { batchSize?: number; maxPages?: number },
+    { runId?: string; batchSize?: number; maxPages?: number },
     { ok: true; runId: string; pages: number; isDone: boolean }
+  >
+)._handler;
+
+const listQueueHandler = (
+  publisherAbuse.listPublisherAbuseReviewQueue as unknown as Wrapped<
+    {
+      label?: "all" | "pass" | "review" | "potential_ban_candidate";
+      status?:
+        | "unreviewed"
+        | "reviewed"
+        | "all"
+        | "pending"
+        | "reviewed_no_action"
+        | "false_positive"
+        | "needs_policy_discussion"
+        | "candidate_for_future_action";
+      minSkillCount?: number;
+      search?: string;
+      limit?: number;
+    },
+    {
+      items: Array<{
+        nomination: {
+          _id: string;
+          label: "review" | "potential_ban_candidate";
+          handleSnapshot: string;
+        };
+        score: { publishedSkills: number } | null;
+      }>;
+      total: number;
+    }
   >
 )._handler;
 
@@ -241,6 +273,112 @@ describe("publisher abuse dry-run persistence", () => {
     );
   });
 
+  it("resumes a finalizing run without restarting collection", async () => {
+    const scheduler = { runAfter: vi.fn(async () => null) };
+    const runMutation = vi.fn(async (target: symbol) => {
+      if (String(target).includes("finalizePublisherAbuseScoresPageInternal")) {
+        return {
+          runId: "publisherAbuseScoreRuns:run",
+          phase: "completed",
+          status: "completed",
+          isDone: true,
+          finalized: 1,
+          nominations: 0,
+        };
+      }
+      throw new Error(`unexpected mutation ${String(target)}`);
+    });
+    const ctx = {
+      scheduler,
+      runQuery: vi.fn(async () => ({
+        runId: "publisherAbuseScoreRuns:run",
+        phase: "finalizing",
+        status: "running",
+      })),
+      runMutation,
+    };
+
+    await expect(
+      runHandler(ctx, { runId: "publisherAbuseScoreRuns:run", batchSize: 100, maxPages: 1 }),
+    ).resolves.toEqual({
+      ok: true,
+      runId: "publisherAbuseScoreRuns:run",
+      pages: 1,
+      isDone: true,
+    });
+
+    expect(runMutation).toHaveBeenCalledTimes(1);
+    expect(String(runMutation.mock.calls[0]?.[0])).toContain(
+      "finalizePublisherAbuseScoresPageInternal",
+    );
+    expect(scheduler.runAfter).not.toHaveBeenCalled();
+  });
+
+  it("keeps the requested label when listing all queue statuses", async () => {
+    const reviewNomination = nominationFixture({
+      _id: "publisherAbuseReviewNominations:review",
+      latestScoreId: "publisherAbuseScores:review",
+      label: "review",
+      status: "pending",
+      handleSnapshot: "review-publisher",
+      lastScoredAt: 300,
+    });
+    const candidateNomination = nominationFixture({
+      _id: "publisherAbuseReviewNominations:candidate",
+      latestScoreId: "publisherAbuseScores:candidate",
+      label: "potential_ban_candidate",
+      status: "pending",
+      handleSnapshot: "candidate-publisher",
+      lastScoredAt: 400,
+    });
+    const ctx = queueCtx([reviewNomination, candidateNomination]);
+
+    const result = await listQueueHandler(ctx, {
+      status: "all",
+      label: "review",
+      limit: 10,
+    });
+
+    expect(result.items.map((item) => item.nomination.label)).toEqual(["review"]);
+    expect(result.items.map((item) => item.nomination.handleSnapshot)).toEqual([
+      "review-publisher",
+    ]);
+  });
+
+  it("applies search when a minimum skill count is also set", async () => {
+    const matchingNomination = nominationFixture({
+      _id: "publisherAbuseReviewNominations:match",
+      latestScoreId: "publisherAbuseScores:match",
+      label: "review",
+      status: "pending",
+      handleSnapshot: "needle-maker",
+      lastScoredAt: 300,
+    });
+    const nonMatchingNomination = nominationFixture({
+      _id: "publisherAbuseReviewNominations:miss",
+      latestScoreId: "publisherAbuseScores:miss",
+      label: "review",
+      status: "pending",
+      handleSnapshot: "large-catalog",
+      lastScoredAt: 400,
+    });
+    const ctx = queueCtx([nonMatchingNomination, matchingNomination], {
+      "publisherAbuseScores:match": { publishedSkills: 20 },
+      "publisherAbuseScores:miss": { publishedSkills: 100 },
+    });
+
+    const result = await listQueueHandler(ctx, {
+      status: "all",
+      label: "all",
+      minSkillCount: 10,
+      search: "needle",
+      limit: 10,
+    });
+
+    expect(result.items.map((item) => item.nomination.handleSnapshot)).toEqual(["needle-maker"]);
+    expect(result.total).toBe(1);
+  });
+
   it("lets an admin start a manual dry-run recompute", async () => {
     const scheduler = { runAfter: vi.fn(async () => null) };
     const ctx = {
@@ -266,3 +404,101 @@ describe("publisher abuse dry-run persistence", () => {
     );
   });
 });
+
+type QueueNominationFixture = {
+  _id: string;
+  latestScoreId: string;
+  label: "review" | "potential_ban_candidate";
+  status:
+    | "pending"
+    | "reviewed_no_action"
+    | "false_positive"
+    | "needs_policy_discussion"
+    | "candidate_for_future_action";
+  handleSnapshot: string;
+  ownerKey: string;
+  lastScoredAt: number;
+};
+
+type QueueIndexBuilder = {
+  eq: (field: string, value: string) => QueueIndexBuilder;
+};
+
+function nominationFixture(
+  overrides: Omit<QueueNominationFixture, "ownerKey"> & { ownerKey?: string },
+): QueueNominationFixture {
+  return {
+    ownerKey: `publisher:${overrides.handleSnapshot}`,
+    ...overrides,
+  };
+}
+
+function queueCtx(
+  nominations: QueueNominationFixture[],
+  scores: Record<string, { publishedSkills: number }> = {},
+) {
+  const defaultScores: Record<string, { publishedSkills: number }> = {};
+  for (const nomination of nominations) {
+    defaultScores[nomination.latestScoreId] = { publishedSkills: 25 };
+  }
+  const scoreById = { ...defaultScores, ...scores };
+  return {
+    db: {
+      get: vi.fn(async (id: string) => scoreById[id] ?? null),
+      query: vi.fn((table: string) => {
+        if (table === "publisherAbuseScoreRuns") {
+          return {
+            withIndex: () => ({
+              order: () => ({
+                first: async () => null,
+              }),
+            }),
+          };
+        }
+        if (table !== "publisherAbuseReviewNominations") {
+          throw new Error(`unexpected table ${table}`);
+        }
+        return {
+          withIndex: (indexName: string, buildQuery?: (q: QueueIndexBuilder) => unknown) => {
+            const constraints: Record<string, string> = {};
+            const q: QueueIndexBuilder = {
+              eq: (field: string, value: string) => {
+                constraints[field] = value;
+                return q;
+              },
+            };
+            buildQuery?.(q);
+            return {
+              order: () => ({
+                take: async (limit: number) => {
+                  if (indexName === "by_last_scored_at") {
+                    return sortQueueNominations(nominations).slice(0, limit);
+                  }
+                  if (indexName === "by_status_and_last_scored_at") {
+                    return sortQueueNominations(
+                      nominations.filter((nomination) => nomination.status === constraints.status),
+                    ).slice(0, limit);
+                  }
+                  if (indexName === "by_status_and_label_and_last_scored_at") {
+                    return sortQueueNominations(
+                      nominations.filter(
+                        (nomination) =>
+                          nomination.status === constraints.status &&
+                          nomination.label === constraints.label,
+                      ),
+                    ).slice(0, limit);
+                  }
+                  throw new Error(`unexpected index ${indexName}`);
+                },
+              }),
+            };
+          },
+        };
+      }),
+    },
+  };
+}
+
+function sortQueueNominations(nominations: QueueNominationFixture[]) {
+  return [...nominations].sort((left, right) => right.lastScoredAt - left.lastScoredAt);
+}
