@@ -672,20 +672,11 @@ async function publisherSkillMetricsForScoring(
     };
   }
 
-  if (!options.allowActiveSkillScan) return zeroPublisherSkillMetricsForScoring(publishedSkills);
+  if (!options.allowActiveSkillScan) return null;
 
   return {
     ...(await computePublisherSkillMetricsForScoring(ctx, publisher._id)),
     publishedSkills,
-  };
-}
-
-function zeroPublisherSkillMetricsForScoring(publishedSkills = 0): SkillMetricsForScoring {
-  return {
-    publishedSkills,
-    totalInstalls: 0,
-    totalStars: 0,
-    totalDownloads: 0,
   };
 }
 

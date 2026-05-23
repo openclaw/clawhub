@@ -424,8 +424,9 @@ describe("publisher abuse dry-run persistence", () => {
     );
   });
 
-  it("avoids active skill scans for cron scoring when mixed publisher skill-only stats are missing", async () => {
+  it("skips cron scoring when mixed publisher skill-only stats are missing", async () => {
     const insert = vi.fn(async (table: string) => `${table}:new`);
+    const patch = vi.fn(async () => null);
     const ctx = {
       db: {
         get: vi.fn(async () => ({
@@ -442,7 +443,7 @@ describe("publisher abuse dry-run persistence", () => {
           sumSquaredLogPressure: 0,
         })),
         insert,
-        patch: vi.fn(async () => null),
+        patch,
         query: vi.fn((table: string) => {
           if (table === "publishers") {
             return {
@@ -474,13 +475,12 @@ describe("publisher abuse dry-run persistence", () => {
     await collectHandler(ctx, { runId: "publisherAbuseScoreRuns:run" });
 
     expect(ctx.db.query).not.toHaveBeenCalledWith("skills");
-    expect(insert).toHaveBeenCalledWith(
-      "publisherAbuseScores",
+    expect(insert).not.toHaveBeenCalledWith("publisherAbuseScores", expect.anything());
+    expect(patch).toHaveBeenCalledWith(
+      "publisherAbuseScoreRuns:run",
       expect.objectContaining({
-        publishedSkills: 40,
-        totalInstalls: 0,
-        totalStars: 0,
-        totalDownloads: 0,
+        scannedPublishers: 1,
+        scoredPublishers: 0,
       }),
     );
   });

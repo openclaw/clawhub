@@ -49,9 +49,8 @@ cleanup needs a separate product decision and a separate implementation.
 
 Cron score collection must not scan every active skill for mixed skill/package
 publishers that are missing the newer skill-only aggregate fields. Until those
-aggregates are backfilled, cron uses the known skill count with zero skill-only
-engagement as a conservative review signal instead of reading unbounded child
-rows inside the score mutation.
+aggregates are backfilled, cron skips those publishers for the run instead of
+reading unbounded child rows or writing zero-engagement scores.
 
 If cron reaches a publisher that is missing the base published skill count,
 the scorer skips that publisher for the run. It must not write an all-zero pass
