@@ -338,6 +338,7 @@ describe("publisher abuse dry-run persistence", () => {
           _id: "publisherAbuseScoreRuns:run",
           modelVersion: TEST_MODEL_CONFIG.modelVersion,
           modelConfig: TEST_MODEL_CONFIG,
+          trigger: "manual",
           status: "running",
           phase: "collecting",
           collectCursor: undefined,
@@ -423,6 +424,67 @@ describe("publisher abuse dry-run persistence", () => {
     );
   });
 
+  it("avoids active skill scans for cron scoring when mixed publisher skill-only stats are missing", async () => {
+    const insert = vi.fn(async (table: string) => `${table}:new`);
+    const ctx = {
+      db: {
+        get: vi.fn(async () => ({
+          _id: "publisherAbuseScoreRuns:run",
+          modelVersion: TEST_MODEL_CONFIG.modelVersion,
+          modelConfig: TEST_MODEL_CONFIG,
+          trigger: "cron",
+          status: "running",
+          phase: "collecting",
+          collectCursor: undefined,
+          scannedPublishers: 0,
+          scoredPublishers: 0,
+          sumLogPressure: 0,
+          sumSquaredLogPressure: 0,
+        })),
+        insert,
+        patch: vi.fn(async () => null),
+        query: vi.fn((table: string) => {
+          if (table === "publishers") {
+            return {
+              withIndex: () => ({
+                paginate: async () => ({
+                  page: [
+                    {
+                      _id: "publishers:mixed-cron",
+                      handle: "mixed-cron",
+                      linkedUserId: "users:mixed-cron",
+                      publishedSkills: 40,
+                      publishedPackages: 2,
+                      totalInstalls: 10_000,
+                      totalStars: 500,
+                      totalDownloads: 500_000,
+                    },
+                  ],
+                  isDone: true,
+                  continueCursor: "",
+                }),
+              }),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await collectHandler(ctx, { runId: "publisherAbuseScoreRuns:run" });
+
+    expect(ctx.db.query).not.toHaveBeenCalledWith("skills");
+    expect(insert).toHaveBeenCalledWith(
+      "publisherAbuseScores",
+      expect.objectContaining({
+        publishedSkills: 40,
+        totalInstalls: 0,
+        totalStars: 0,
+        totalDownloads: 0,
+      }),
+    );
+  });
+
   it("treats a missing package count as unknown when skill-only engagement is missing", async () => {
     const insert = vi.fn(async (table: string) => `${table}:new`);
     const ctx = {
@@ -431,6 +493,7 @@ describe("publisher abuse dry-run persistence", () => {
           _id: "publisherAbuseScoreRuns:run",
           modelVersion: TEST_MODEL_CONFIG.modelVersion,
           modelConfig: TEST_MODEL_CONFIG,
+          trigger: "manual",
           status: "running",
           phase: "collecting",
           collectCursor: undefined,
@@ -842,6 +905,94 @@ describe("publisher abuse dry-run persistence", () => {
       expect.objectContaining({
         latestScoreId: "publisherAbuseScores:repeat",
         label: "potential_ban_candidate",
+        status: "pending",
+        reviewedByUserId: undefined,
+        reviewedAt: undefined,
+      }),
+    );
+  });
+
+  it("preserves reviewed nominations when the actionable label does not change", async () => {
+    const insert = vi.fn(async (table: string) => `${table}:new`);
+    const patch = vi.fn(async () => null);
+    const ctx = {
+      db: {
+        get: vi.fn(async () => ({
+          _id: "publisherAbuseScoreRuns:run",
+          status: "running",
+          phase: "finalizing",
+          modelVersion: "publisher-abuse-pressure.v1",
+          modelConfig: TEST_MODEL_CONFIG,
+          scoredPublishers: 1,
+          finalizedScores: 0,
+          passCount: 0,
+          reviewCount: 0,
+          potentialBanCandidateCount: 0,
+          nominatedPublishers: 0,
+          sumLogPressure: 3,
+          sumSquaredLogPressure: 9,
+        })),
+        insert,
+        patch,
+        query: vi.fn((table: string) => {
+          if (table === "publisherAbuseScores") {
+            return {
+              withIndex: () => ({
+                order: () => ({
+                  paginate: async () => ({
+                    page: [
+                      {
+                        _id: "publisherAbuseScores:repeat-review",
+                        ownerKey: "publisher:publishers:repeat-review",
+                        ownerPublisherId: "publishers:repeat-review",
+                        ownerUserId: "users:repeat-review",
+                        handleSnapshot: "repeat-review",
+                        modelVersion: "publisher-abuse-pressure.v1",
+                        pressure: 100,
+                        logPressure: 4.6,
+                        publishedSkills: 120,
+                        totalInstalls: 12,
+                        totalStars: 1,
+                        totalDownloads: 120,
+                        installsPerSkill: 0.1,
+                        starsPerSkill: 0.008,
+                        downloadsPerSkill: 1,
+                        reasonCodes: ["high_catalog_volume"],
+                      },
+                    ],
+                    isDone: true,
+                    continueCursor: "",
+                  }),
+                }),
+              }),
+            };
+          }
+          if (table === "publisherAbuseReviewNominations") {
+            return {
+              withIndex: () => ({
+                first: async () => ({
+                  _id: "publisherAbuseReviewNominations:existing",
+                  ownerKey: "publisher:publishers:repeat-review",
+                  label: "review",
+                  status: "false_positive",
+                  reviewedByUserId: "users:admin",
+                  reviewedAt: 100,
+                }),
+              }),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await expect(finalizeHandler(ctx, { runId: "publisherAbuseScoreRuns:run" })).resolves.toEqual(
+      expect.objectContaining({ isDone: true, finalized: 1, nominations: 1 }),
+    );
+
+    expect(patch).toHaveBeenCalledWith(
+      "publisherAbuseReviewNominations:existing",
+      expect.not.objectContaining({
         status: "pending",
         reviewedByUserId: undefined,
         reviewedAt: undefined,

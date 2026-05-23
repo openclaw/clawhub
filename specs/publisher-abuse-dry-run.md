@@ -46,3 +46,9 @@ The score refresh must not patch:
 
 Any automatic ban, soft-delete, skill hiding, publish hold, rate limit, or
 cleanup needs a separate product decision and a separate implementation.
+
+Cron score collection must not scan every active skill for mixed skill/package
+publishers that are missing the newer skill-only aggregate fields. Until those
+aggregates are backfilled, cron uses the known skill count with zero skill-only
+engagement as a conservative review signal instead of reading unbounded child
+rows inside the score mutation.

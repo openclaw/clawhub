@@ -90,6 +90,10 @@ type PublisherMetricsDoc = Pick<
   | "skillTotalDownloads"
 >;
 
+type PublisherSkillMetricsOptions = {
+  allowActiveSkillScan: boolean;
+};
+
 export const getOrStartPublisherAbuseScoreRunInternal = internalMutation({
   args: {
     trigger: v.union(v.literal("cron"), v.literal("manual")),
@@ -325,7 +329,9 @@ export async function collectPublisherAbuseScoresPageInternalHandler(
   const modelConfig = run.modelConfig;
   for (const publisher of page.page) {
     const rawScore = computePublisherAbuseRawScore(
-      await publisherInputFromPublisher(ctx, publisher),
+      await publisherInputFromPublisher(ctx, publisher, {
+        allowActiveSkillScan: run.trigger !== "cron",
+      }),
       modelConfig,
     );
     await ctx.db.insert("publisherAbuseScores", {
@@ -602,12 +608,18 @@ async function requireRunningRun(
 async function publisherInputFromPublisher(
   ctx: Pick<MutationCtx, "db">,
   publisher: PublisherMetricsDoc,
+  options: PublisherSkillMetricsOptions = { allowActiveSkillScan: true },
 ): Promise<PublisherAbuseInput> {
   const publishedPackages =
     typeof publisher.publishedPackages === "number"
       ? nonNegative(publisher.publishedPackages)
       : undefined;
-  const skillMetrics = await publisherSkillMetricsForScoring(ctx, publisher, publishedPackages);
+  const skillMetrics = await publisherSkillMetricsForScoring(
+    ctx,
+    publisher,
+    publishedPackages,
+    options,
+  );
   return {
     ownerKey: `publisher:${publisher._id}`,
     ownerPublisherId: publisher._id,
@@ -629,10 +641,13 @@ async function publisherSkillMetricsForScoring(
   ctx: Pick<MutationCtx, "db">,
   publisher: PublisherMetricsDoc,
   publishedPackages: number | undefined,
+  options: PublisherSkillMetricsOptions,
 ): Promise<SkillMetricsForScoring> {
   const hasPublishedSkillCount = typeof publisher.publishedSkills === "number";
-  if (!hasPublishedSkillCount)
+  if (!hasPublishedSkillCount) {
+    if (!options.allowActiveSkillScan) return zeroPublisherSkillMetricsForScoring();
     return await computePublisherSkillMetricsForScoring(ctx, publisher._id);
+  }
 
   const publishedSkills = nonNegative(publisher.publishedSkills);
   if (
@@ -657,9 +672,20 @@ async function publisherSkillMetricsForScoring(
     };
   }
 
+  if (!options.allowActiveSkillScan) return zeroPublisherSkillMetricsForScoring(publishedSkills);
+
   return {
     ...(await computePublisherSkillMetricsForScoring(ctx, publisher._id)),
     publishedSkills,
+  };
+}
+
+function zeroPublisherSkillMetricsForScoring(publishedSkills = 0): SkillMetricsForScoring {
+  return {
+    publishedSkills,
+    totalInstalls: 0,
+    totalStars: 0,
+    totalDownloads: 0,
   };
 }
 
@@ -702,7 +728,9 @@ async function upsertPublisherAbuseReviewNomination(
     .first();
 
   if (existing) {
-    const shouldReopen = isReviewedNominationStatus(existing.status);
+    const shouldReopen =
+      isReviewedNominationStatus(existing.status) &&
+      isPublisherAbuseLabelEscalation(existing.label, args.score.label);
     await ctx.db.patch(existing._id, {
       latestScoreId: args.score._id,
       label: args.score.label,
@@ -863,6 +891,19 @@ function statusesForQueueFilter(
 
 function isReviewedNominationStatus(status: TriageStatus) {
   return status === "reviewed_no_action" || status === "false_positive";
+}
+
+function isPublisherAbuseLabelEscalation(
+  previousLabel: PublisherAbuseLabel,
+  nextLabel: PublisherAbuseLabel,
+) {
+  return publisherAbuseLabelSeverity(nextLabel) > publisherAbuseLabelSeverity(previousLabel);
+}
+
+function publisherAbuseLabelSeverity(label: PublisherAbuseLabel) {
+  if (label === "potential_ban_candidate") return 2;
+  if (label === "review") return 1;
+  return 0;
 }
 
 function matchesNominationSearch(nomination: NominationDoc, search: string) {
