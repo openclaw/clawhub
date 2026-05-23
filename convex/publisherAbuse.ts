@@ -80,6 +80,7 @@ type PublisherMetricsDoc = Pick<
   | "handle"
   | "linkedUserId"
   | "publishedSkills"
+  | "publishedPackages"
   | "totalInstalls"
   | "totalStars"
   | "totalDownloads"
@@ -592,20 +593,38 @@ async function requireRunningRun(
 }
 
 function publisherInputFromPublisher(publisher: PublisherMetricsDoc): PublisherAbuseInput {
+  const publishedPackages = nonNegative(publisher.publishedPackages);
   return {
     ownerKey: `publisher:${publisher._id}`,
     ownerPublisherId: publisher._id,
     ownerUserId: publisher.linkedUserId,
     handleSnapshot: publisher.handle,
     publishedSkills: nonNegative(publisher.publishedSkills),
-    totalInstalls: publisherSkillTotal(publisher.skillTotalInstalls, publisher.totalInstalls),
-    totalStars: publisherSkillTotal(publisher.skillTotalStars, publisher.totalStars),
-    totalDownloads: publisherSkillTotal(publisher.skillTotalDownloads, publisher.totalDownloads),
+    totalInstalls: publisherSkillTotal(
+      publisher.skillTotalInstalls,
+      publisher.totalInstalls,
+      publishedPackages,
+    ),
+    totalStars: publisherSkillTotal(
+      publisher.skillTotalStars,
+      publisher.totalStars,
+      publishedPackages,
+    ),
+    totalDownloads: publisherSkillTotal(
+      publisher.skillTotalDownloads,
+      publisher.totalDownloads,
+      publishedPackages,
+    ),
   };
 }
 
-function publisherSkillTotal(skillTotal: number | undefined, aggregateTotal: number | undefined) {
+function publisherSkillTotal(
+  skillTotal: number | undefined,
+  aggregateTotal: number | undefined,
+  publishedPackages: number,
+) {
   if (typeof skillTotal === "number") return nonNegative(skillTotal);
+  if (publishedPackages > 0) return 0;
   return nonNegative(aggregateTotal);
 }
 

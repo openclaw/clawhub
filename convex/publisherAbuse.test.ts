@@ -328,7 +328,7 @@ describe("publisher abuse dry-run persistence", () => {
     );
   });
 
-  it("falls back to aggregate engagement when skill-only totals are not backfilled yet", async () => {
+  it("does not trust aggregate engagement for mixed publishers before skill-only backfill", async () => {
     const insert = vi.fn(async (table: string) => `${table}:new`);
     const ctx = {
       db: {
@@ -381,9 +381,9 @@ describe("publisher abuse dry-run persistence", () => {
       "publisherAbuseScores",
       expect.objectContaining({
         publishedSkills: 40,
-        totalInstalls: 10_000,
-        totalStars: 500,
-        totalDownloads: 500_000,
+        totalInstalls: 0,
+        totalStars: 0,
+        totalDownloads: 0,
       }),
     );
   });
