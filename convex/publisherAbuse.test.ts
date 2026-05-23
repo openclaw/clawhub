@@ -328,6 +328,66 @@ describe("publisher abuse dry-run persistence", () => {
     );
   });
 
+  it("falls back to aggregate engagement when skill-only totals are not backfilled yet", async () => {
+    const insert = vi.fn(async (table: string) => `${table}:new`);
+    const ctx = {
+      db: {
+        get: vi.fn(async () => ({
+          _id: "publisherAbuseScoreRuns:run",
+          modelVersion: TEST_MODEL_CONFIG.modelVersion,
+          modelConfig: TEST_MODEL_CONFIG,
+          status: "running",
+          phase: "collecting",
+          collectCursor: undefined,
+          scannedPublishers: 0,
+          scoredPublishers: 0,
+          sumLogPressure: 0,
+          sumSquaredLogPressure: 0,
+        })),
+        insert,
+        patch: vi.fn(async () => null),
+        query: vi.fn((table: string) => {
+          if (table === "publishers") {
+            return {
+              withIndex: () => ({
+                paginate: async () => ({
+                  page: [
+                    {
+                      _id: "publishers:not-backfilled",
+                      handle: "not-backfilled",
+                      linkedUserId: "users:not-backfilled",
+                      publishedSkills: 40,
+                      publishedPackages: 2,
+                      totalInstalls: 10_000,
+                      totalStars: 500,
+                      totalDownloads: 500_000,
+                    },
+                  ],
+                  isDone: true,
+                  continueCursor: "",
+                }),
+              }),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await collectHandler(ctx, { runId: "publisherAbuseScoreRuns:run" });
+
+    expect(ctx.db.query).not.toHaveBeenCalledWith("packages");
+    expect(insert).toHaveBeenCalledWith(
+      "publisherAbuseScores",
+      expect.objectContaining({
+        publishedSkills: 40,
+        totalInstalls: 10_000,
+        totalStars: 500,
+        totalDownloads: 500_000,
+      }),
+    );
+  });
+
   it("excludes zero-skill publishers from cohort statistics", async () => {
     const insert = vi.fn(async (table: string) => `${table}:new`);
     const patch = vi.fn(async () => null);

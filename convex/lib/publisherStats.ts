@@ -63,19 +63,13 @@ function publisherHasStats(publisher: Doc<"publishers">): publisher is Doc<"publ
   totalInstalls: number;
   totalDownloads: number;
   totalStars: number;
-  skillTotalInstalls: number;
-  skillTotalDownloads: number;
-  skillTotalStars: number;
 } {
   return (
     typeof publisher.publishedSkills === "number" &&
     typeof publisher.publishedPackages === "number" &&
     typeof publisher.totalInstalls === "number" &&
     typeof publisher.totalDownloads === "number" &&
-    typeof publisher.totalStars === "number" &&
-    typeof publisher.skillTotalInstalls === "number" &&
-    typeof publisher.skillTotalDownloads === "number" &&
-    typeof publisher.skillTotalStars === "number"
+    typeof publisher.totalStars === "number"
   );
 }
 
@@ -149,9 +143,18 @@ async function patchPublisherStats(
     totalInstalls: Math.max(0, publisher.totalInstalls + delta.totalInstalls),
     totalDownloads: Math.max(0, publisher.totalDownloads + delta.totalDownloads),
     totalStars: Math.max(0, publisher.totalStars + delta.totalStars),
-    skillTotalInstalls: Math.max(0, publisher.skillTotalInstalls + delta.skillTotalInstalls),
-    skillTotalDownloads: Math.max(0, publisher.skillTotalDownloads + delta.skillTotalDownloads),
-    skillTotalStars: Math.max(0, publisher.skillTotalStars + delta.skillTotalStars),
+    skillTotalInstalls: Math.max(
+      0,
+      (publisher.skillTotalInstalls ?? publisher.totalInstalls) + delta.skillTotalInstalls,
+    ),
+    skillTotalDownloads: Math.max(
+      0,
+      (publisher.skillTotalDownloads ?? publisher.totalDownloads) + delta.skillTotalDownloads,
+    ),
+    skillTotalStars: Math.max(
+      0,
+      (publisher.skillTotalStars ?? publisher.totalStars) + delta.skillTotalStars,
+    ),
   });
 }
 
