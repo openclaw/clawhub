@@ -4651,41 +4651,12 @@ code {
 .security-audit-version-stack {
   display: grid;
   justify-items: start;
-  gap: 10px;
+  gap: 16px;
+  width: 100%;
 }
 
 .security-audit-rescan-button {
-  display: inline-flex;
-  min-height: 32px;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  padding: 6px 10px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--hover-bg) 70%, transparent);
-  color: var(--ink);
-  font-size: 0.82rem;
-  font-weight: 730;
-  line-height: 1.2;
-  cursor: pointer;
-  transition:
-    border-color 0.16s ease,
-    background-color 0.16s ease,
-    color 0.16s ease,
-    opacity 0.16s ease;
-}
-
-.security-audit-rescan-button:hover,
-.security-audit-rescan-button:focus-visible {
-  border-color: color-mix(in srgb, var(--ink-soft) 42%, var(--line));
-  background: var(--hover-bg);
-  outline: none;
-}
-
-.security-audit-rescan-button:disabled {
-  cursor: default;
-  opacity: 0.74;
+  margin-top: 4px;
 }
 
 .security-audit-rescan-icon {
@@ -4694,21 +4665,11 @@ code {
   flex: 0 0 auto;
 }
 
-.security-audit-rescan-icon.is-spinning {
-  animation: security-audit-spin 0.85s linear infinite;
-}
-
 .security-audit-rescan-error {
   color: var(--danger);
   font-size: 0.78rem;
   font-weight: 650;
   line-height: 1.35;
-}
-
-@keyframes security-audit-spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 .skill-action-count {

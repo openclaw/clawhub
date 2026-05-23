@@ -1,4 +1,4 @@
-import { Clock, ExternalLink, Info, Loader2, RefreshCw, X } from "lucide-react";
+import { Clock, ExternalLink, Info, RefreshCw, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { Id } from "../../convex/_generated/dataModel";
 import { getRuntimeEnv } from "../lib/runtimeEnv";
@@ -30,6 +30,7 @@ import {
   type VtAnalysis,
 } from "./SkillSecurityScanResults";
 import { Alert, AlertDescription } from "./ui/alert";
+import { Button } from "./ui/button";
 import { Skeleton } from "./ui/skeleton";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 
@@ -597,7 +598,7 @@ function StaticAnalysisFinding({
         </div>
         {trimmedSnippet ? (
           <div>
-            <dt>Skill content</dt>
+            <dt>Content</dt>
             <dd>
               <pre className="agentic-risk-evidence-snippet">{trimmedSnippet}</pre>
             </dd>
@@ -691,20 +692,20 @@ function SecurityAuditSidebar(props: SecurityAuditPageProps) {
       <span>{props.entity.version ?? "Latest"}</span>
       {showRescanButton ? (
         <>
-          <button
+          <Button
             type="button"
-            className="security-audit-rescan-button"
+            variant="outline"
+            className="skill-sidebar-action-button security-audit-rescan-button"
             onClick={() => void requestRescan()}
             disabled={isRescanBusy}
-            aria-label={isRescanBusy ? "Security scan queued" : "Rescan security audit"}
+            loading={isRescanBusy}
+            aria-label={isRescanBusy ? "Scanning" : "Rescan"}
           >
-            {isRescanBusy ? (
-              <Loader2 className="security-audit-rescan-icon is-spinning" aria-hidden="true" />
-            ) : (
+            {!isRescanBusy ? (
               <RefreshCw className="security-audit-rescan-icon" aria-hidden="true" />
-            )}
-            <span>{isRescanBusy ? "Scan queued" : "Rescan"}</span>
-          </button>
+            ) : null}
+            <span>{isRescanBusy ? "Scanning" : "Rescan"}</span>
+          </Button>
           {rescanState === "error" ? (
             <span className="security-audit-rescan-error" role="status">
               Rescan could not be queued.

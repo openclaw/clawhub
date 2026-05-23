@@ -5,6 +5,7 @@ import type { ComponentType } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const useQueryMock = vi.fn();
+const useMutationMock = vi.fn();
 const useAuthStatusMock = vi.fn();
 
 let paramsMock = {
@@ -38,6 +39,7 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 vi.mock("convex/react", () => ({
+  useMutation: (...args: unknown[]) => useMutationMock(...args),
   useQuery: (...args: unknown[]) => useQueryMock(...args),
 }));
 
@@ -61,6 +63,8 @@ describe("skill security audit route", () => {
   beforeEach(() => {
     useQueryMock.mockReset();
     useQueryMock.mockReturnValue(undefined);
+    useMutationMock.mockReset();
+    useMutationMock.mockReturnValue(vi.fn());
     useAuthStatusMock.mockReturnValue({ me: null });
     paramsMock = {
       owner: "local",

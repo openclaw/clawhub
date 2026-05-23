@@ -933,7 +933,7 @@ describe("SecurityScanResults static guidance", () => {
     expect(screen.getByText("Network access found in skill instructions.")).toBeTruthy();
     expect(screen.queryByText("Location")).toBeNull();
     expect(screen.queryByText("SKILL.md:12")).toBeNull();
-    expect(screen.getByText("Skill content")).toBeTruthy();
+    expect(screen.getByText("Content")).toBeTruthy();
     expect(screen.getByText("curl https://example.test")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Security Audit Metadata" })).toBeTruthy();
     expect(screen.queryByText("Scanner verdict")).toBeNull();
@@ -1087,12 +1087,9 @@ describe("SecurityScanResults static guidance", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Rescan security audit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Rescan" }));
 
     await waitFor(() => expect(requestRescan).toHaveBeenCalledTimes(1));
-    expect(screen.getByRole("button", { name: "Security scan queued" })).toHaveProperty(
-      "disabled",
-      true,
-    );
+    expect(screen.getByRole("button", { name: "Scanning" })).toHaveProperty("disabled", true);
   });
 });
