@@ -136,6 +136,69 @@ describe("publisher stat maintenance", () => {
     expect(ctx.db.query).not.toHaveBeenCalled();
   });
 
+  it("recomputes when skill-only aggregates are missing", async () => {
+    const patch = vi.fn();
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) =>
+          id === "publishers:alice"
+            ? {
+                _id: id,
+                kind: "user",
+                handle: "alice",
+                displayName: "Alice",
+                linkedUserId: "users:alice",
+                publishedSkills: 1,
+                publishedPackages: 1,
+                totalInstalls: 7,
+                totalDownloads: 17,
+                totalStars: 3,
+                createdAt: 1,
+                updatedAt: 1,
+              }
+            : null,
+        ),
+        patch,
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn((indexName: string) => {
+            if (table === "skills" && indexName === "by_owner_publisher_active_updated") {
+              return {
+                collect: vi.fn(async () => [
+                  makeSkill({ statsDownloads: 11, statsStars: 2, statsInstallsAllTime: 5 }),
+                ]),
+              };
+            }
+            if (table === "packages" && indexName === "by_owner_publisher_active_updated") {
+              return {
+                collect: vi.fn(async () => [
+                  makePackage({ stats: { downloads: 7, installs: 3, stars: 1, versions: 1 } }),
+                ]),
+              };
+            }
+            throw new Error(`unexpected ${table} index ${indexName}`);
+          }),
+        })),
+      },
+    };
+
+    await adjustPublisherStatsForSkillChange(
+      ctx as never,
+      makeSkill({ statsDownloads: 10, statsInstallsAllTime: 4 }),
+      makeSkill({ statsDownloads: 11, statsInstallsAllTime: 5 }),
+    );
+
+    expect(patch).toHaveBeenCalledWith("publishers:alice", {
+      publishedSkills: 1,
+      publishedPackages: 1,
+      totalInstalls: 8,
+      totalDownloads: 18,
+      totalStars: 3,
+      skillTotalInstalls: 5,
+      skillTotalDownloads: 11,
+      skillTotalStars: 2,
+    });
+  });
+
   it("does not touch publisher rows for existing package version-only updates", async () => {
     const ctx = {
       db: {
