@@ -3,7 +3,7 @@ export const PUBLISHER_ABUSE_MODEL_VERSION = "publisher-abuse-pressure.v1";
 export type PublisherAbuseLabel = "pass" | "review" | "potential_ban_candidate";
 
 export type PublisherAbuseModelConfig = {
-  modelVersion: typeof PUBLISHER_ABUSE_MODEL_VERSION;
+  modelVersion: string;
   skillPivot: number;
   installsPerSkillPivot: number;
   starsPerSkillPivot: number;

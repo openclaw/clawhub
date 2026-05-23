@@ -195,12 +195,11 @@ export const listPublisherAbuseReviewQueue = query({
       matchesNominationSearch(nomination, search),
     );
 
-    const items: Array<{ nomination: NominationDoc; score: ScoreDoc | null }> = [];
+    const eligibleItems: Array<{ nomination: NominationDoc; score: ScoreDoc | null }> = [];
     for (const nomination of filtered) {
       const score = await ctx.db.get(nomination.latestScoreId);
       if (score && score.publishedSkills < minSkillCount) continue;
-      items.push({ nomination, score });
-      if (items.length >= limit) break;
+      eligibleItems.push({ nomination, score });
     }
 
     const latestRun = await ctx.db
@@ -211,8 +210,8 @@ export const listPublisherAbuseReviewQueue = query({
 
     return {
       latestRun: latestRun ? summarizeRunForQueue(latestRun) : null,
-      items,
-      total: filtered.length,
+      items: eligibleItems.slice(0, limit),
+      total: eligibleItems.length,
     };
   },
 });
@@ -292,10 +291,11 @@ export async function collectPublisherAbuseScoresPageInternalHandler(
   let sumLogPressure = 0;
   let sumSquaredLogPressure = 0;
   let scored = 0;
+  const modelConfig = run.modelConfig;
   for (const publisher of page.page) {
     const rawScore = computePublisherAbuseRawScore(
       publisherInputFromPublisher(publisher),
-      DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG,
+      modelConfig,
     );
     await ctx.db.insert("publisherAbuseScores", {
       runId: run._id,
@@ -303,7 +303,7 @@ export async function collectPublisherAbuseScoresPageInternalHandler(
       ownerPublisherId: publisher._id,
       ownerUserId: publisher.linkedUserId,
       handleSnapshot: rawScore.input.handleSnapshot,
-      modelVersion: DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG.modelVersion,
+      modelVersion: run.modelVersion,
       label: "pass",
       rank: 0,
       pressure: rawScore.pressure,
@@ -377,9 +377,10 @@ export async function finalizePublisherAbuseScoresPageInternalHandler(
   };
   let nominations = 0;
   let finalized = 0;
+  const modelConfig = run.modelConfig;
   for (const score of page.page) {
     const zScore = (score.logPressure - meanLogPressure) / safeStdDev;
-    const label = labelForPublisherAbuseZScore(zScore, DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG);
+    const label = labelForPublisherAbuseZScore(zScore, modelConfig);
     const rank = run.finalizedScores + finalized + 1;
     labelCounts[label] += 1;
     finalized += 1;

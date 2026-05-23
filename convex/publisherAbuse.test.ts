@@ -34,6 +34,23 @@ vi.mock("./lib/access", () => ({
 
 const publisherAbuse = await import("./publisherAbuse");
 
+const TEST_MODEL_CONFIG = {
+  modelVersion: "publisher-abuse-pressure.v1",
+  skillPivot: 100,
+  installsPerSkillPivot: 2,
+  starsPerSkillPivot: 0.05,
+  downloadsPerSkillPivot: 250,
+  outputElasticity: 1,
+  installTrustElasticity: 0.8,
+  starTrustElasticity: 1,
+  downloadDemandElasticity: 0.2,
+  minInstallsPerSkill: 0.05,
+  minStarsPerSkill: 0.02,
+  minDownloadsPerSkill: 1,
+  reviewZThreshold: 1.5,
+  potentialBanCandidateZThreshold: 2.5,
+};
+
 type Handler<TArgs, TResult> = (ctx: unknown, args: TArgs) => Promise<TResult>;
 type Wrapped<TArgs, TResult> = { _handler: Handler<TArgs, TResult> };
 
@@ -104,6 +121,8 @@ describe("publisher abuse dry-run persistence", () => {
       db: {
         get: vi.fn(async () => ({
           _id: "publisherAbuseScoreRuns:run",
+          modelVersion: TEST_MODEL_CONFIG.modelVersion,
+          modelConfig: TEST_MODEL_CONFIG,
           status: "running",
           phase: "collecting",
           collectCursor: undefined,
@@ -160,6 +179,65 @@ describe("publisher abuse dry-run persistence", () => {
     );
   });
 
+  it("uses the run's stored model config while collecting score rows", async () => {
+    const storedModelConfig = {
+      ...TEST_MODEL_CONFIG,
+      modelVersion: "publisher-abuse-pressure.experimental",
+      skillPivot: 1000,
+    };
+    const insert = vi.fn(async (table: string) => `${table}:new`);
+    const ctx = {
+      db: {
+        get: vi.fn(async () => ({
+          _id: "publisherAbuseScoreRuns:run",
+          modelVersion: storedModelConfig.modelVersion,
+          modelConfig: storedModelConfig,
+          status: "running",
+          phase: "collecting",
+          collectCursor: undefined,
+          scannedPublishers: 0,
+          scoredPublishers: 0,
+          sumLogPressure: 0,
+          sumSquaredLogPressure: 0,
+        })),
+        insert,
+        patch: vi.fn(async () => null),
+        query: vi.fn((table: string) => {
+          if (table !== "publishers") throw new Error(`unexpected table ${table}`);
+          return {
+            withIndex: () => ({
+              paginate: async () => ({
+                page: [
+                  {
+                    _id: "publishers:mid-volume",
+                    handle: "mid-volume",
+                    linkedUserId: "users:mid-volume",
+                    publishedSkills: 120,
+                    totalInstalls: 12,
+                    totalStars: 1,
+                    totalDownloads: 120,
+                  },
+                ],
+                isDone: true,
+                continueCursor: "",
+              }),
+            }),
+          };
+        }),
+      },
+    };
+
+    await collectHandler(ctx, { runId: "publisherAbuseScoreRuns:run" });
+
+    expect(insert).toHaveBeenCalledWith(
+      "publisherAbuseScores",
+      expect.objectContaining({
+        modelVersion: storedModelConfig.modelVersion,
+        reasonCodes: expect.not.arrayContaining(["high_catalog_volume"]),
+      }),
+    );
+  });
+
   it("updates an existing nomination for the same publisher and model version", async () => {
     const insert = vi.fn(async (table: string) => `${table}:new`);
     const patch = vi.fn(async () => null);
@@ -170,6 +248,7 @@ describe("publisher abuse dry-run persistence", () => {
           status: "running",
           phase: "finalizing",
           modelVersion: "publisher-abuse-pressure.v1",
+          modelConfig: TEST_MODEL_CONFIG,
           scoredPublishers: 1,
           finalizedScores: 0,
           passCount: 0,
@@ -250,6 +329,7 @@ describe("publisher abuse dry-run persistence", () => {
           status: "running",
           phase: "finalizing",
           modelVersion: "publisher-abuse-pressure.v1",
+          modelConfig: TEST_MODEL_CONFIG,
           scoredPublishers: 1,
           finalizedScores: 0,
           passCount: 0,
@@ -499,6 +579,39 @@ describe("publisher abuse dry-run persistence", () => {
     });
 
     expect(result.items.map((item) => item.nomination.handleSnapshot)).toEqual(["needle-maker"]);
+    expect(result.total).toBe(1);
+  });
+
+  it("counts queue totals after applying the minimum skill count", async () => {
+    const smallNomination = nominationFixture({
+      _id: "publisherAbuseReviewNominations:small",
+      latestScoreId: "publisherAbuseScores:small",
+      label: "review",
+      status: "pending",
+      handleSnapshot: "small-catalog",
+      lastScoredAt: 400,
+    });
+    const largeNomination = nominationFixture({
+      _id: "publisherAbuseReviewNominations:large",
+      latestScoreId: "publisherAbuseScores:large",
+      label: "review",
+      status: "pending",
+      handleSnapshot: "large-catalog",
+      lastScoredAt: 300,
+    });
+    const ctx = queueCtx([smallNomination, largeNomination], {
+      "publisherAbuseScores:small": { publishedSkills: 5 },
+      "publisherAbuseScores:large": { publishedSkills: 20 },
+    });
+
+    const result = await listQueueHandler(ctx, {
+      status: "all",
+      label: "all",
+      minSkillCount: 10,
+      limit: 10,
+    });
+
+    expect(result.items.map((item) => item.nomination.handleSnapshot)).toEqual(["large-catalog"]);
     expect(result.total).toBe(1);
   });
 
