@@ -391,6 +391,12 @@ export async function finalizePublisherAbuseScoresPageInternalHandler(
         now,
       });
       nominations += 1;
+    } else {
+      await updateExistingPublisherAbuseReviewNominationForPass(ctx, {
+        score: { ...score, zScore, label, rank },
+        run,
+        now,
+      });
     }
   }
 
@@ -603,6 +609,45 @@ async function upsertPublisherAbuseReviewNomination(
   return nominationId;
 }
 
+async function updateExistingPublisherAbuseReviewNominationForPass(
+  ctx: Pick<MutationCtx, "db">,
+  args: {
+    score: ScoreDoc;
+    run: ScoreRun;
+    now: number;
+  },
+) {
+  const existing = await ctx.db
+    .query("publisherAbuseReviewNominations")
+    .withIndex("by_owner_key_and_model_version", (q) =>
+      q.eq("ownerKey", args.score.ownerKey).eq("modelVersion", args.score.modelVersion),
+    )
+    .first();
+
+  if (!existing) return null;
+
+  await ctx.db.patch(existing._id, {
+    latestScoreId: args.score._id,
+    label: "pass",
+    ownerPublisherId: args.score.ownerPublisherId,
+    ownerUserId: args.score.ownerUserId,
+    handleSnapshot: args.score.handleSnapshot,
+    lastScoredAt: args.now,
+    updatedAt: args.now,
+  });
+  await ctx.db.insert("publisherAbuseReviewEvents", {
+    nominationId: existing._id,
+    ownerKey: existing.ownerKey,
+    runId: args.run._id,
+    scoreId: args.score._id,
+    eventType: "nomination_score_updated",
+    previousLabel: existing.label,
+    nextLabel: "pass",
+    createdAt: args.now,
+  });
+  return existing._id;
+}
+
 async function listNominationsForQueue(
   ctx: QueryCtx,
   args: {
@@ -613,18 +658,11 @@ async function listNominationsForQueue(
 ) {
   const statuses = statusesForQueueFilter(args.status);
   if (statuses.length === 0) {
-    if (args.label !== "all") {
-      return await listNominationsForQueue(ctx, {
-        label: args.label,
-        status: ALL_TRIAGE_STATUSES,
-        limit: args.limit,
-      });
-    }
-    return await ctx.db
-      .query("publisherAbuseReviewNominations")
-      .withIndex("by_last_scored_at")
-      .order("desc")
-      .take(args.limit);
+    return await listNominationsForQueue(ctx, {
+      label: args.label,
+      status: ALL_TRIAGE_STATUSES,
+      limit: args.limit,
+    });
   }
 
   const rows: NominationDoc[] = [];
@@ -650,7 +688,9 @@ async function listNominationsForQueue(
   }
 
   return dedupeNominations(rows)
-    .filter((nomination) => args.label === "all" || nomination.label === args.label)
+    .filter((nomination) =>
+      args.label === "all" ? nomination.label !== "pass" : nomination.label === args.label,
+    )
     .sort((left, right) => right.lastScoredAt - left.lastScoredAt)
     .slice(0, args.limit);
 }

@@ -79,7 +79,7 @@ const listQueueHandler = (
       items: Array<{
         nomination: {
           _id: string;
-          label: "review" | "potential_ban_candidate";
+          label: "pass" | "review" | "potential_ban_candidate";
           handleSnapshot: string;
         };
         score: { publishedSkills: number } | null;
@@ -240,6 +240,99 @@ describe("publisher abuse dry-run persistence", () => {
     );
   });
 
+  it("refreshes an existing nomination when a later score passes", async () => {
+    const insert = vi.fn(async (table: string) => `${table}:new`);
+    const patch = vi.fn(async () => null);
+    const ctx = {
+      db: {
+        get: vi.fn(async () => ({
+          _id: "publisherAbuseScoreRuns:run",
+          status: "running",
+          phase: "finalizing",
+          modelVersion: "publisher-abuse-pressure.v1",
+          scoredPublishers: 1,
+          finalizedScores: 0,
+          passCount: 0,
+          reviewCount: 0,
+          potentialBanCandidateCount: 0,
+          nominatedPublishers: 0,
+          sumLogPressure: 3,
+          sumSquaredLogPressure: 9,
+        })),
+        insert,
+        patch,
+        query: vi.fn((table: string) => {
+          if (table === "publisherAbuseScores") {
+            return {
+              withIndex: () => ({
+                order: () => ({
+                  paginate: async () => ({
+                    page: [
+                      {
+                        _id: "publisherAbuseScores:pass-score",
+                        ownerKey: "publisher:publishers:recovered",
+                        ownerPublisherId: "publishers:recovered",
+                        ownerUserId: "users:recovered",
+                        handleSnapshot: "recovered",
+                        modelVersion: "publisher-abuse-pressure.v1",
+                        pressure: 20,
+                        logPressure: 3,
+                        publishedSkills: 40,
+                        totalInstalls: 120,
+                        totalStars: 8,
+                        totalDownloads: 2_000,
+                        installsPerSkill: 3,
+                        starsPerSkill: 0.2,
+                        downloadsPerSkill: 50,
+                        reasonCodes: [],
+                      },
+                    ],
+                    isDone: true,
+                    continueCursor: "",
+                  }),
+                }),
+              }),
+            };
+          }
+          if (table === "publisherAbuseReviewNominations") {
+            return {
+              withIndex: () => ({
+                first: async () => ({
+                  _id: "publisherAbuseReviewNominations:existing",
+                  ownerKey: "publisher:publishers:recovered",
+                  label: "review",
+                }),
+              }),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await expect(finalizeHandler(ctx, { runId: "publisherAbuseScoreRuns:run" })).resolves.toEqual(
+      expect.objectContaining({ isDone: true, finalized: 1, nominations: 0 }),
+    );
+
+    expect(insert).not.toHaveBeenCalledWith("publisherAbuseReviewNominations", expect.anything());
+    expect(patch).toHaveBeenCalledWith(
+      "publisherAbuseReviewNominations:existing",
+      expect.objectContaining({
+        latestScoreId: "publisherAbuseScores:pass-score",
+        label: "pass",
+        handleSnapshot: "recovered",
+      }),
+    );
+    expect(insert).toHaveBeenCalledWith(
+      "publisherAbuseReviewEvents",
+      expect.objectContaining({
+        nominationId: "publisherAbuseReviewNominations:existing",
+        previousLabel: "review",
+        nextLabel: "pass",
+      }),
+    );
+  });
+
   it("schedules a continuation after the action page budget is exhausted", async () => {
     const scheduler = { runAfter: vi.fn(async () => null) };
     const ctx = {
@@ -345,6 +438,36 @@ describe("publisher abuse dry-run persistence", () => {
     ]);
   });
 
+  it("does not include pass nominations in the all-label review queue", async () => {
+    const reviewNomination = nominationFixture({
+      _id: "publisherAbuseReviewNominations:review",
+      latestScoreId: "publisherAbuseScores:review",
+      label: "review",
+      status: "pending",
+      handleSnapshot: "review-publisher",
+      lastScoredAt: 300,
+    });
+    const passNomination = nominationFixture({
+      _id: "publisherAbuseReviewNominations:pass",
+      latestScoreId: "publisherAbuseScores:pass",
+      label: "pass",
+      status: "pending",
+      handleSnapshot: "passing-publisher",
+      lastScoredAt: 400,
+    });
+    const ctx = queueCtx([passNomination, reviewNomination]);
+
+    const result = await listQueueHandler(ctx, {
+      status: "all",
+      label: "all",
+      limit: 10,
+    });
+
+    expect(result.items.map((item) => item.nomination.handleSnapshot)).toEqual([
+      "review-publisher",
+    ]);
+  });
+
   it("applies search when a minimum skill count is also set", async () => {
     const matchingNomination = nominationFixture({
       _id: "publisherAbuseReviewNominations:match",
@@ -408,7 +531,7 @@ describe("publisher abuse dry-run persistence", () => {
 type QueueNominationFixture = {
   _id: string;
   latestScoreId: string;
-  label: "review" | "potential_ban_candidate";
+  label: "pass" | "review" | "potential_ban_candidate";
   status:
     | "pending"
     | "reviewed_no_action"
