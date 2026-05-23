@@ -92,40 +92,6 @@ type PluginByNameResult = {
   highlighted: { byUserId: Id<"users">; at: number } | null;
 } | null;
 
-type PublisherAbuseLabelFilter = "all" | Doc<"publisherAbuseScores">["label"];
-type PublisherAbuseStatusFilter =
-  | "unreviewed"
-  | "reviewed"
-  | "all"
-  | Doc<"publisherAbuseReviewNominations">["status"];
-
-type PublisherAbuseQueueResult = {
-  latestRun: {
-    _id: Id<"publisherAbuseScoreRuns">;
-    status: Doc<"publisherAbuseScoreRuns">["status"];
-    phase: Doc<"publisherAbuseScoreRuns">["phase"];
-    trigger: Doc<"publisherAbuseScoreRuns">["trigger"];
-    modelVersion: string;
-    startedAt: number;
-    completedAt?: number;
-    updatedAt: number;
-    scannedPublishers: number;
-    scoredPublishers: number;
-    finalizedScores: number;
-    nominatedPublishers: number;
-    passCount: number;
-    reviewCount: number;
-    potentialBanCandidateCount: number;
-    meanLogPressure?: number;
-    stdDevLogPressure?: number;
-  } | null;
-  items: Array<{
-    nomination: Doc<"publisherAbuseReviewNominations">;
-    score: Doc<"publisherAbuseScores"> | null;
-  }>;
-  total: number;
-};
-
 function resolveOwnerParam(
   handle: string | null | undefined,
   ownerId?: Id<"users"> | Id<"publishers">,
@@ -155,7 +121,7 @@ export const Route = createFileRoute("/management")({
   component: Management,
 });
 
-function Management() {
+export function Management() {
   const { me } = useAuthStatus();
   const search = Route.useSearch();
   const navigate = useNavigate();
@@ -184,34 +150,9 @@ function Management() {
     staff ? { limit: 20 } : "skip",
   ) as DuplicateCandidateEntry[] | undefined;
 
-  const [abuseLabelFilter, setAbuseLabelFilter] = useState<PublisherAbuseLabelFilter>("all");
-  const [abuseStatusFilter, setAbuseStatusFilter] =
-    useState<PublisherAbuseStatusFilter>("unreviewed");
-  const [abuseSearch, setAbuseSearch] = useState("");
-  const [abuseSearchDebounced, setAbuseSearchDebounced] = useState("");
-  const [abuseMinSkillCount, setAbuseMinSkillCount] = useState("");
-  const [abuseRunMessage, setAbuseRunMessage] = useState("");
-  const parsedAbuseMinSkillCount = parseOptionalPositiveInt(abuseMinSkillCount);
-  const abuseQueue = useQuery(
-    api.publisherAbuse.listPublisherAbuseReviewQueue,
-    admin
-      ? {
-          label: abuseLabelFilter,
-          status: abuseStatusFilter,
-          search: abuseSearchDebounced.trim() || undefined,
-          minSkillCount: parsedAbuseMinSkillCount,
-          limit: 50,
-        }
-      : "skip",
-  ) as PublisherAbuseQueueResult | undefined;
-
   const setRole = useMutation(api.users.setRole);
   const banUser = useMutation(api.users.banUser);
   const unbanUser = useMutation(api.users.unbanUser);
-  const startManualAbuseScoreRun = useMutation(
-    api.publisherAbuse.startManualPublisherAbuseScoreRun,
-  );
-  const setAbuseReviewStatus = useMutation(api.publisherAbuse.setPublisherAbuseReviewStatus);
   const setBatch = useMutation(api.skills.setBatch);
   const setPackageBatch = useMutation(api.packages.setBatch);
   const setSoftDeleted = useMutation(api.skills.setSoftDeleted);
@@ -264,11 +205,6 @@ function Management() {
     const handle = setTimeout(() => setUserSearchDebounced(userSearch), 250);
     return () => clearTimeout(handle);
   }, [userSearch]);
-
-  useEffect(() => {
-    const handle = setTimeout(() => setAbuseSearchDebounced(abuseSearch), 250);
-    return () => clearTimeout(handle);
-  }, [abuseSearch]);
 
   if (!staff) {
     return (
@@ -360,218 +296,10 @@ function Management() {
     });
   };
 
-  const startAbuseRun = () => {
-    setAbuseRunMessage("Starting dry-run score refresh…");
-    void startManualAbuseScoreRun({ batchSize: 250, maxPages: 5 })
-      .then((result) => {
-        setAbuseRunMessage(`Started run ${result.runId}.`);
-      })
-      .catch((error) => setAbuseRunMessage(formatMutationError(error)));
-  };
-
-  const changeAbuseStatus = (
-    nomination: Doc<"publisherAbuseReviewNominations">,
-    status: Doc<"publisherAbuseReviewNominations">["status"],
-  ) => {
-    const notes = window.prompt(`Notes for @${nomination.handleSnapshot} (optional)`);
-    if (notes === null) return;
-    void setAbuseReviewStatus({
-      nominationId: nomination._id,
-      status,
-      notes,
-    }).catch((error) => window.alert(formatMutationError(error)));
-  };
-
   return (
     <main className="section">
       <h1 className="section-title">Management console</h1>
       <p className="section-subtitle">Moderation, curation, and ownership tools.</p>
-
-      {admin ? (
-        <Card>
-          <div className="management-section-header">
-            <div>
-              <h2 className="section-title text-[1.2rem] m-0">Publisher abuse dry run</h2>
-              <p className="section-subtitle mt-2 mb-0">
-                Dry run only. Scores create admin review work; they do not ban, hide, throttle, or
-                block publishing.
-              </p>
-            </div>
-            <Button type="button" onClick={startAbuseRun}>
-              Refresh scores
-            </Button>
-          </div>
-          {abuseRunMessage ? <div className="management-count mt-2">{abuseRunMessage}</div> : null}
-          {abuseQueue?.latestRun ? (
-            <div className="management-stat-grid">
-              <div className="stat">
-                <strong>{abuseQueue.latestRun.scoredPublishers.toLocaleString()}</strong>
-                <span>scored</span>
-              </div>
-              <div className="stat">
-                <strong>{abuseQueue.latestRun.reviewCount.toLocaleString()}</strong>
-                <span>review</span>
-              </div>
-              <div className="stat">
-                <strong>{abuseQueue.latestRun.potentialBanCandidateCount.toLocaleString()}</strong>
-                <span>potential ban candidates</span>
-              </div>
-              <div className="stat">
-                <strong>{abuseQueue.latestRun.status}</strong>
-                <span>{formatTimestamp(abuseQueue.latestRun.updatedAt)}</span>
-              </div>
-            </div>
-          ) : (
-            <div className="stat mt-3">No score run recorded yet.</div>
-          )}
-          <div className="management-controls mt-4">
-            <label className="management-control management-control-stack">
-              <span className="mono">Label</span>
-              <Select
-                value={abuseLabelFilter}
-                onValueChange={(value) => {
-                  if (isPublisherAbuseLabelFilter(value)) setAbuseLabelFilter(value);
-                }}
-              >
-                <SelectTrigger className="management-field">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All labels</SelectItem>
-                  <SelectItem value="review">Review</SelectItem>
-                  <SelectItem value="potential_ban_candidate">Potential ban candidate</SelectItem>
-                </SelectContent>
-              </Select>
-            </label>
-            <label className="management-control management-control-stack">
-              <span className="mono">Status</span>
-              <Select
-                value={abuseStatusFilter}
-                onValueChange={(value) => {
-                  if (isPublisherAbuseStatusFilter(value)) setAbuseStatusFilter(value);
-                }}
-              >
-                <SelectTrigger className="management-field">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="unreviewed">Unreviewed</SelectItem>
-                  <SelectItem value="reviewed">Reviewed</SelectItem>
-                  <SelectItem value="all">All statuses</SelectItem>
-                  <SelectItem value="pending">Pending</SelectItem>
-                  <SelectItem value="needs_policy_discussion">Needs policy discussion</SelectItem>
-                  <SelectItem value="candidate_for_future_action">
-                    Candidate for future action
-                  </SelectItem>
-                  <SelectItem value="reviewed_no_action">Reviewed, no action</SelectItem>
-                  <SelectItem value="false_positive">False positive</SelectItem>
-                </SelectContent>
-              </Select>
-            </label>
-            <label className="management-control management-control-stack">
-              <span className="mono">Min skills</span>
-              <input
-                className="management-field"
-                inputMode="numeric"
-                value={abuseMinSkillCount}
-                onChange={(event) => setAbuseMinSkillCount(event.target.value)}
-                placeholder="0"
-              />
-            </label>
-            <div className="management-control management-search">
-              <span className="mono">Search</span>
-              <input
-                type="search"
-                placeholder="Publisher or owner key"
-                value={abuseSearch}
-                onChange={(event) => setAbuseSearch(event.target.value)}
-              />
-            </div>
-            <div className="management-count">
-              {abuseQueue
-                ? `Showing ${abuseQueue.items.length} of ${abuseQueue.total}`
-                : "Loading…"}
-            </div>
-          </div>
-          <div className="management-list">
-            {!abuseQueue ? (
-              <div className="stat">Loading publisher abuse queue…</div>
-            ) : abuseQueue.items.length === 0 ? (
-              <div className="stat">No matching nominations.</div>
-            ) : (
-              abuseQueue.items.map(({ nomination, score }) => (
-                <div key={nomination._id} className="management-item management-abuse-item">
-                  <div className="management-item-main">
-                    <div className="management-abuse-title">
-                      <Link to="/p/$handle" params={{ handle: nomination.handleSnapshot }}>
-                        @{nomination.handleSnapshot}
-                      </Link>
-                      <Badge>{formatPublisherAbuseLabel(nomination.label)}</Badge>
-                    </div>
-                    <div className="section-subtitle m-0">
-                      {nomination.status.replaceAll("_", " ")} · model {nomination.modelVersion} ·
-                      last scored {formatTimestamp(nomination.lastScoredAt)}
-                    </div>
-                    {score ? (
-                      <div className="management-abuse-metrics">
-                        <span>{score.rank.toLocaleString()} rank</span>
-                        <span>{formatFixed(score.zScore, 2)} z</span>
-                        <span>{formatFixed(score.pressure, 2)} pressure</span>
-                        <span>{score.publishedSkills.toLocaleString()} skills</span>
-                        <span>{score.totalInstalls.toLocaleString()} installs</span>
-                        <span>{score.totalStars.toLocaleString()} stars</span>
-                        <span>{score.totalDownloads.toLocaleString()} downloads</span>
-                        <span>{formatFixed(score.installsPerSkill, 2)} installs/skill</span>
-                        <span>{formatFixed(score.starsPerSkill, 3)} stars/skill</span>
-                        <span>{formatFixed(score.downloadsPerSkill, 1)} downloads/skill</span>
-                      </div>
-                    ) : (
-                      <div className="section-subtitle m-0">Latest score row is missing.</div>
-                    )}
-                    {score?.reasonCodes.length ? (
-                      <div className="management-tags">
-                        {score.reasonCodes.map((reason) => (
-                          <Badge key={reason}>{reason.replaceAll("_", " ")}</Badge>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                  <div className="management-actions management-action-grid">
-                    <Select
-                      value={nomination.status}
-                      onValueChange={(value) => {
-                        if (isPublisherAbuseTriageStatus(value)) {
-                          changeAbuseStatus(nomination, value);
-                        }
-                      }}
-                    >
-                      <SelectTrigger className="management-action-btn">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="pending">Pending</SelectItem>
-                        <SelectItem value="reviewed_no_action">Reviewed, no action</SelectItem>
-                        <SelectItem value="false_positive">False positive</SelectItem>
-                        <SelectItem value="needs_policy_discussion">
-                          Needs policy discussion
-                        </SelectItem>
-                        <SelectItem value="candidate_for_future_action">
-                          Candidate for future action
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Button asChild className="management-action-btn">
-                      <Link to="/p/$handle" params={{ handle: nomination.handleSnapshot }}>
-                        View publisher
-                      </Link>
-                    </Button>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </Card>
-      ) : null}
 
       <Card>
         <h2 className="section-title text-[1.2rem] m-0">Reported skills</h2>
@@ -1334,50 +1062,6 @@ function Management() {
 
 function formatTimestamp(value: number) {
   return new Date(value).toLocaleString();
-}
-
-function formatFixed(value: number, digits: number) {
-  return Number.isFinite(value) ? value.toFixed(digits) : "0";
-}
-
-function parseOptionalPositiveInt(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) return undefined;
-  const parsed = Number.parseInt(trimmed, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
-}
-
-function formatPublisherAbuseLabel(label: Doc<"publisherAbuseScores">["label"]) {
-  if (label === "potential_ban_candidate") return "Potential ban candidate";
-  if (label === "review") return "Review";
-  return "Pass";
-}
-
-function isPublisherAbuseLabelFilter(value: string): value is PublisherAbuseLabelFilter {
-  return (
-    value === "all" || value === "pass" || value === "review" || value === "potential_ban_candidate"
-  );
-}
-
-function isPublisherAbuseStatusFilter(value: string): value is PublisherAbuseStatusFilter {
-  return (
-    value === "unreviewed" ||
-    value === "reviewed" ||
-    value === "all" ||
-    isPublisherAbuseTriageStatus(value)
-  );
-}
-
-function isPublisherAbuseTriageStatus(
-  value: string,
-): value is Doc<"publisherAbuseReviewNominations">["status"] {
-  return (
-    value === "pending" ||
-    value === "reviewed_no_action" ||
-    value === "false_positive" ||
-    value === "needs_policy_discussion" ||
-    value === "candidate_for_future_action"
-  );
 }
 
 function formatMutationError(error: unknown) {
