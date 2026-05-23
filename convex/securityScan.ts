@@ -2,8 +2,9 @@ import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
-import { action, internalMutation, internalQuery } from "./functions";
-import { assertModerator } from "./lib/access";
+import { action, internalMutation, internalQuery, mutation } from "./functions";
+import { assertModerator, requireUser } from "./lib/access";
+import { assertCanManageOwnedResource } from "./lib/publishers";
 
 const MAX_PARALLEL_CODEX_SCANS = 20;
 const DEFAULT_VT_WAIT_MS = 10 * 60 * 1000;
@@ -418,6 +419,71 @@ export const enqueueSkillRescanForModeratorInternal = internalMutation({
 
     await ctx.db.insert("auditLogs", {
       actorUserId: actor._id,
+      action: "skill.clawscan.rescan",
+      targetType: "skillVersion",
+      targetId: version._id,
+      metadata: {
+        skillId: skill._id,
+        slug: skill.slug,
+        version: version.version,
+        jobId: queued.jobId,
+        alreadyQueued: queued.alreadyQueued === true,
+      },
+      createdAt: Date.now(),
+    });
+
+    return {
+      ok: true as const,
+      slug: skill.slug,
+      version: version.version,
+      skillId: skill._id,
+      skillVersionId: version._id,
+      jobId: queued.jobId,
+      alreadyQueued: queued.alreadyQueued === true,
+    };
+  },
+});
+
+export const requestSkillRescan = mutation({
+  args: {
+    skillId: v.id("skills"),
+    version: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx);
+    const skill = await ctx.db.get(args.skillId);
+    if (!skill || skill.softDeletedAt) throw new ConvexError("Skill not found");
+
+    await assertCanManageOwnedResource(ctx, {
+      actor: user,
+      ownerUserId: skill.ownerUserId,
+      ownerPublisherId: skill.ownerPublisherId,
+      allowPlatformAdmin: true,
+    });
+
+    const requestedVersion = args.version?.trim();
+    const version = requestedVersion
+      ? await ctx.db
+          .query("skillVersions")
+          .withIndex("by_skill_version", (q) =>
+            q.eq("skillId", skill._id).eq("version", requestedVersion),
+          )
+          .unique()
+      : skill.latestVersionId
+        ? await ctx.db.get(skill.latestVersionId)
+        : null;
+    if (!version || version.softDeletedAt) throw new ConvexError("Skill version not found");
+
+    const queued = await enqueueSkillVersionScan(ctx, {
+      versionId: version._id,
+      source: "manual",
+      priority: 100,
+      waitForVtMs: 0,
+    });
+    if (!queued.jobId) throw new ConvexError("Skill version not found");
+
+    await ctx.db.insert("auditLogs", {
+      actorUserId: user._id,
       action: "skill.clawscan.rescan",
       targetType: "skillVersion",
       targetId: version._id,

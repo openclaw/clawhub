@@ -1,4 +1,4 @@
-import { Clock, ExternalLink, Info, X } from "lucide-react";
+import { Clock, ExternalLink, Info, Loader2, RefreshCw, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { Id } from "../../convex/_generated/dataModel";
 import { getRuntimeEnv } from "../lib/runtimeEnv";
@@ -60,6 +60,7 @@ type SecurityAuditPageProps = {
   clawScanNote?: string | null;
   canManageArtifact?: boolean;
   settingsHref?: string | null;
+  onRequestRescan?: (() => Promise<unknown>) | null;
 };
 
 const EMPTY_STATIC_FINDINGS: StaticScanAnalysis["findings"] = [];
@@ -270,26 +271,15 @@ function SecurityAuditOverview(props: SecurityAuditPageProps) {
 }
 
 function ClawScanSection(props: SecurityAuditPageProps) {
-  const skillSpectorFindingsAvailable = hasSkillSpectorFindings(props.skillSpectorAnalysis);
   const riskAnalysis =
-    !skillSpectorFindingsAvailable && props.llmAnalysis && hasClawScanRiskReview(props.llmAnalysis)
+    props.llmAnalysis && !props.skillSpectorAnalysis && hasClawScanRiskReview(props.llmAnalysis)
       ? props.llmAnalysis
       : null;
+  if (!riskAnalysis) return null;
 
   return (
     <div className="security-report-panel-body security-report-panel-body-findings">
-      {skillSpectorFindingsAvailable ? (
-        <p className="security-audit-empty-detail">
-          Agentic-risk findings are shown in SkillSpector. ClawScan uses those findings with the
-          other scanners to make the final verdict.
-        </p>
-      ) : riskAnalysis ? (
-        <ClawScanRiskReview analysis={riskAnalysis} showTitle={false} />
-      ) : (
-        <p className="security-audit-empty-detail">
-          No visible risk-analysis findings were reported for this release.
-        </p>
-      )}
+      <ClawScanRiskReview analysis={riskAnalysis} showTitle={false} />
     </div>
   );
 }
@@ -344,11 +334,7 @@ function VirusTotalSection(props: SecurityAuditPageProps) {
 
 function SkillSpectorSection(props: SecurityAuditPageProps) {
   const analysis = props.skillSpectorAnalysis ?? null;
-  const hasLegacyFindings =
-    props.llmAnalysis && hasClawScanRiskReview(props.llmAnalysis) && !analysis;
-  const overviewCopy = hasLegacyFindings
-    ? "SkillSpector has not run for this release. Legacy ClawScan findings remain available under Risk analysis."
-    : getSkillSpectorOverviewCopy(analysis);
+  const overviewCopy = getSkillSpectorOverviewCopy(analysis);
   const contentSnippets = useSkillSpectorContentSnippets(
     props.entity,
     analysis?.issues ?? EMPTY_SKILLSPECTOR_ISSUES,
@@ -682,6 +668,52 @@ function SecurityAuditScannerSection({
 function SecurityAuditSidebar(props: SecurityAuditPageProps) {
   const latestCheckedAt = getLatestAuditCheckedAt(props);
   const verdict = aggregateAuditVerdict(props);
+  const [rescanState, setRescanState] = useState<"idle" | "submitting" | "queued" | "error">(
+    "idle",
+  );
+  const showRescanButton =
+    props.entity.kind === "skill" && props.canManageArtifact && props.onRequestRescan;
+  const isRescanBusy = rescanState === "submitting" || rescanState === "queued";
+
+  async function requestRescan() {
+    if (!props.onRequestRescan || isRescanBusy) return;
+    setRescanState("submitting");
+    try {
+      await props.onRequestRescan();
+      setRescanState("queued");
+    } catch {
+      setRescanState("error");
+    }
+  }
+
+  const versionValue = (
+    <div className="security-audit-version-stack">
+      <span>{props.entity.version ?? "Latest"}</span>
+      {showRescanButton ? (
+        <>
+          <button
+            type="button"
+            className="security-audit-rescan-button"
+            onClick={() => void requestRescan()}
+            disabled={isRescanBusy}
+            aria-label={isRescanBusy ? "Security scan queued" : "Rescan security audit"}
+          >
+            {isRescanBusy ? (
+              <Loader2 className="security-audit-rescan-icon is-spinning" aria-hidden="true" />
+            ) : (
+              <RefreshCw className="security-audit-rescan-icon" aria-hidden="true" />
+            )}
+            <span>{isRescanBusy ? "Scan queued" : "Rescan"}</span>
+          </button>
+          {rescanState === "error" ? (
+            <span className="security-audit-rescan-error" role="status">
+              Rescan could not be queued.
+            </span>
+          ) : null}
+        </>
+      ) : null}
+    </div>
+  );
 
   return (
     <SidebarMetadata
@@ -701,7 +733,7 @@ function SecurityAuditSidebar(props: SecurityAuditPageProps) {
             </span>
           ),
         },
-        { label: "Version", value: props.entity.version ?? "Latest" },
+        { label: "Version", value: versionValue },
       ]}
     />
   );

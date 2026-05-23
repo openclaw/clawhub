@@ -1,5 +1,5 @@
 import { createFileRoute, notFound, redirect } from "@tanstack/react-router";
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import {
   SecurityAuditPage,
@@ -65,6 +65,7 @@ function SkillSecurityAuditRoute() {
   const { owner, slug } = Route.useParams();
   const { initialData } = Route.useLoaderData();
   const liveResult = useQuery(api.skills.getBySlug, { slug });
+  const requestSkillRescan = useMutation(api.securityScan.requestSkillRescan);
   const { me } = useAuthStatus();
   const myPublishers = useQuery(api.publishers.listMine, me ? {} : "skip") as
     | Array<{ publisher: { _id: string }; role: string }>
@@ -117,6 +118,11 @@ function SkillSecurityAuditRoute() {
       clawScanNote={latestVersion.clawScanNote ?? null}
       canManageArtifact={canManageArtifact}
       settingsHref={canManageArtifact ? settingsHref : null}
+      onRequestRescan={
+        canManageArtifact
+          ? () => requestSkillRescan({ skillId: skill._id, version: latestVersion.version })
+          : null
+      }
     />
   );
 }

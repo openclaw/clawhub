@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SecurityAuditPage } from "./SecurityAuditPage";
 import {
   getSkillSpectorIssueCount,
@@ -159,7 +159,11 @@ const skillSpectorAnalysis: SkillSpectorAnalysis = {
   ],
 };
 
+const originalFetch = globalThis.fetch;
+
 beforeEach(() => {
+  vi.restoreAllMocks();
+  globalThis.fetch = originalFetch;
   window.localStorage.clear();
   window.history.replaceState(null, "", "/");
 });
@@ -474,14 +478,7 @@ describe("SecurityScanResults static guidance", () => {
       Array.from(container.querySelectorAll(".security-report-main > section h2")).map((node) =>
         node.textContent?.trim(),
       ),
-    ).toEqual([
-      "Overview",
-      "Publisher note",
-      "SkillSpector",
-      "Static analysis",
-      "VirusTotal",
-      "Risk analysis",
-    ]);
+    ).toEqual(["Overview", "Publisher note", "Static analysis", "VirusTotal", "Risk analysis"]);
   });
 
   it("renders SkillSpector findings as the agentic-risk finding source", () => {
@@ -714,7 +711,7 @@ describe("SecurityScanResults static guidance", () => {
       Array.from(container.querySelectorAll(".security-report-main > section h2")).map((node) =>
         node.textContent?.trim(),
       ),
-    ).toEqual(["Overview", "SkillSpector", "Static analysis", "VirusTotal", "Risk analysis"]);
+    ).toEqual(["Overview", "SkillSpector", "Static analysis", "VirusTotal"]);
   });
 
   it("summarizes completed engine-only VirusTotal scans", () => {
@@ -945,7 +942,7 @@ describe("SecurityScanResults static guidance", () => {
       Array.from(container.querySelectorAll(".security-report-main > section h2")).map((node) =>
         node.textContent?.trim(),
       ),
-    ).toEqual(["Overview", "SkillSpector", "Static analysis", "VirusTotal", "Risk analysis"]);
+    ).toEqual(["Overview", "SkillSpector", "Static analysis", "VirusTotal"]);
   });
 
   it("shows plugins with legacy ClawScan analysis in the new ClawScan report shell", () => {
@@ -1007,7 +1004,7 @@ describe("SecurityScanResults static guidance", () => {
     ).toBeTruthy();
   });
 
-  it("shows the new ClawScan empty state when no analysis exists yet", () => {
+  it("shows only SkillSpector pending when no agentic-risk source exists yet", () => {
     render(
       <SecurityAuditPage
         entity={{
@@ -1038,6 +1035,64 @@ describe("SecurityScanResults static guidance", () => {
     ).toBeNull();
     expect(screen.queryByText("Review Dimensions")).toBeNull();
     expect(screen.getByRole("heading", { name: "Overview" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "SkillSpector" })).toBeTruthy();
+    expect(screen.getByText("SkillSpector findings are pending for this release.")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Risk analysis" })).toBeNull();
+    expect(
+      screen.queryByText("No visible risk-analysis findings were reported for this release."),
+    ).toBeNull();
     expect(screen.getByRole("heading", { name: "Security Audit Metadata" })).toBeTruthy();
+  });
+
+  it("shows only legacy Risk analysis when legacy agentic-risk findings exist without SkillSpector", () => {
+    const { container } = render(
+      <SecurityAuditPage
+        entity={{
+          kind: "skill",
+          title: "Legacy Risk Skill",
+          name: "legacy-risk-skill",
+          version: "1.0.0",
+          detailPath: "/local/legacy-risk-skill",
+        }}
+        llmAnalysis={clawScanAnalysis}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: "Risk analysis" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "SkillSpector" })).toBeNull();
+    expect(
+      screen.queryByText(/Legacy ClawScan findings remain available under Risk analysis/i),
+    ).toBeNull();
+    expect(
+      Array.from(container.querySelectorAll(".security-report-main > section h2")).map((node) =>
+        node.textContent?.trim(),
+      ),
+    ).toEqual(["Overview", "Static analysis", "VirusTotal", "Risk analysis"]);
+  });
+
+  it("lets skill managers enqueue a security rescan from the audit sidebar", async () => {
+    const requestRescan = vi.fn().mockResolvedValue({ ok: true });
+
+    render(
+      <SecurityAuditPage
+        entity={{
+          kind: "skill",
+          title: "Rescan Guard",
+          name: "rescan-guard",
+          version: "1.0.0",
+          detailPath: "/local/rescan-guard",
+        }}
+        canManageArtifact
+        onRequestRescan={requestRescan}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Rescan security audit" }));
+
+    await waitFor(() => expect(requestRescan).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("button", { name: "Security scan queued" })).toHaveProperty(
+      "disabled",
+      true,
+    );
   });
 });

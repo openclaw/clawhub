@@ -2,6 +2,7 @@ import {
   getClawScanDisplayStatus,
   getSkillSpectorDisplayStatus,
   getVirusTotalDisplayStatus,
+  hasClawScanRiskReview,
   type LlmAnalysis,
   type SkillSpectorAnalysis,
   type StaticFinding,
@@ -43,6 +44,10 @@ const DEFAULT_AUDIT_SCANNER_ORDER: AuditScannerKind[] = [
   "virustotal",
   "clawscan",
 ];
+
+const SUPPORTING_AUDIT_SCANNER_ORDER: AuditScannerKind[] = DEFAULT_AUDIT_SCANNER_ORDER.filter(
+  (kind) => kind !== "skillspector" && kind !== "clawscan",
+);
 
 const POLICY_VERDICT_SCANNER_ORDER: AuditScannerKind[] = [
   "static-analysis",
@@ -101,11 +106,14 @@ export function getSecurityAuditOverviewCopy({
   ].filter((copy): copy is string => Boolean(copy));
 }
 
-export function getAuditScannerOrder(signals?: SecurityAuditSignals) {
+export function getAuditScannerOrder(signals?: SecurityAuditSignals): AuditScannerKind[] {
   if (signals?.skillSpectorAnalysis) {
-    return DEFAULT_AUDIT_SCANNER_ORDER.filter((kind) => kind !== "clawscan");
+    return ["skillspector", ...SUPPORTING_AUDIT_SCANNER_ORDER];
   }
-  return DEFAULT_AUDIT_SCANNER_ORDER;
+  if (hasClawScanRiskReview(signals?.llmAnalysis)) {
+    return [...SUPPORTING_AUDIT_SCANNER_ORDER, "clawscan"];
+  }
+  return ["skillspector", ...SUPPORTING_AUDIT_SCANNER_ORDER];
 }
 
 export function getLatestAuditCheckedAt(signals: SecurityAuditSignals) {
