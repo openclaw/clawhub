@@ -18,17 +18,17 @@ type DetailSecuritySummaryProps = {
 function auditVerdictMeterLevel(status: string) {
   switch (status.toLowerCase()) {
     case "malicious":
-      return 4;
+      return 1;
     case "warn":
     case "warning":
     case "suspicious":
-      return 3;
-    case "review":
       return 2;
+    case "review":
+      return 3;
     case "benign":
     case "clean":
     case "cleared":
-      return 1;
+      return 4;
     default:
       return 0;
   }

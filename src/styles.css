@@ -4444,19 +4444,19 @@ code {
 }
 
 .security-audit-meter[data-level="1"] span:first-child {
-  background: #79e68e;
+  background: #ef7777;
 }
 
 .security-audit-meter[data-level="2"] span:nth-child(-n + 2) {
-  background: #6aa9ff;
-}
-
-.security-audit-meter[data-level="3"] span:nth-child(-n + 3) {
   background: #f1b85a;
 }
 
+.security-audit-meter[data-level="3"] span:nth-child(-n + 3) {
+  background: #6aa9ff;
+}
+
 .security-audit-meter[data-level="4"] span {
-  background: #ef7777;
+  background: #79e68e;
 }
 
 .publisher-clawscan-note {

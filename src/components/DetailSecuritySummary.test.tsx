@@ -42,6 +42,7 @@ describe("DetailSecuritySummary", () => {
         "Security checks across static analysis, malware telemetry, and agentic risk",
       ),
     ).toBeNull();
+    expect(document.querySelector(".security-audit-meter")?.getAttribute("data-level")).toBe("4");
     expect(document.querySelectorAll(".security-audit-meter span")).toHaveLength(4);
   });
 
@@ -178,6 +179,28 @@ describe("DetailSecuritySummary", () => {
 
     expect(screen.getByText("Pass")).toBeTruthy();
     expect(screen.queryByText("Benign")).toBeNull();
+    expect(document.querySelector(".security-audit-meter")?.getAttribute("data-level")).toBe("4");
+  });
+
+  it("renders malicious scanner outcomes with the lowest safety meter level", () => {
+    render(
+      <DetailSecuritySummary
+        auditHref="/steipete/weather/security-audit"
+        vtAnalysis={{ status: "clean", checkedAt: 1 }}
+        llmAnalysis={{ status: "clean", summary: "No mismatches found.", checkedAt: 1 }}
+        staticScan={{
+          status: "malicious",
+          reasonCodes: ["malicious.external_transfer"],
+          findings: [],
+          summary: "External transfer.",
+          engineVersion: "v1",
+          checkedAt: 1,
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Malicious")).toBeTruthy();
+    expect(document.querySelector(".security-audit-meter")?.getAttribute("data-level")).toBe("1");
   });
 
   it("keeps legacy non-engine VirusTotal fields neutral in the aggregate verdict", () => {
