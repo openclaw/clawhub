@@ -47,22 +47,24 @@ The score refresh must not patch:
 Any automatic ban, soft-delete, skill hiding, publish hold, rate limit, or
 cleanup needs a separate product decision and a separate implementation.
 
-Cron score collection must not scan every active skill for mixed skill/package
+Score collection must not scan every active skill for mixed skill/package
 publishers that are missing the newer skill-only aggregate fields. Until those
-aggregates are backfilled, cron skips those publishers for the run instead of
-reading unbounded child rows or writing zero-engagement scores.
+aggregates are backfilled, collection may derive skill-only stats from active
+skills, but that fallback must be bounded per publisher and per collection page.
+If either bound is exceeded, the scorer skips the publisher for the run instead
+of reading unbounded child rows or writing zero-engagement scores.
 
 If cron reaches a publisher that is missing the base published skill count,
 the scorer skips that publisher for the run. It must not write an all-zero pass
 score for unknown publisher stats. Manual runs may derive the missing count from
 active skills because they are operator-triggered, but that fallback must still
-be bounded. If the active-skill fallback page is too large, manual runs skip the
+be bounded. If the active-skill fallback page is too large, the scorer skips the
 publisher instead of scanning every child row in one mutation.
 
 Only one score run should be active at a time. If a manual or scheduled refresh
 starts while another score run is still running, it reuses the active run instead
 of creating a second run that can race nomination updates.
 
-Manual active-skill fallback derivation is capped per collection page. Once the
-page budget is spent, the remaining fallback-required publishers are skipped for
-that run instead of risking a Convex document-read limit failure.
+Active-skill fallback derivation is capped per collection page. Once the page
+budget is spent, the remaining fallback-required publishers are skipped for that
+run instead of risking a Convex document-read limit failure.

@@ -614,9 +614,29 @@ describe("publisher abuse dry-run persistence", () => {
     );
   });
 
-  it("skips cron scoring when mixed publisher skill-only stats are missing", async () => {
+  it("uses bounded cron fallback scoring when mixed publisher skill-only stats are missing", async () => {
     const insert = vi.fn(async (table: string) => `${table}:new`);
     const patch = vi.fn(async () => null);
+    const skillTake = vi.fn(async () => [
+      {
+        _id: "skills:one",
+        ownerPublisherId: "publishers:mixed-cron",
+        softDeletedAt: undefined,
+        statsInstallsAllTime: 7,
+        statsStars: 1,
+        statsDownloads: 70,
+        stats: { downloads: 70, stars: 1, installsCurrent: 1, installsAllTime: 7 },
+      },
+      {
+        _id: "skills:two",
+        ownerPublisherId: "publishers:mixed-cron",
+        softDeletedAt: undefined,
+        statsInstallsAllTime: 11,
+        statsStars: 2,
+        statsDownloads: 110,
+        stats: { downloads: 110, stars: 2, installsCurrent: 1, installsAllTime: 11 },
+      },
+    ]);
     const ctx = {
       db: {
         get: vi.fn(async () => ({
@@ -657,6 +677,19 @@ describe("publisher abuse dry-run persistence", () => {
               }),
             };
           }
+          if (table === "skills") {
+            return {
+              withIndex: vi.fn((indexName: string) => {
+                expect(indexName).toBe("by_owner_publisher_active_updated");
+                return {
+                  take: vi.fn(async (numItems: number) => {
+                    expect(numItems).toBe(501);
+                    return await skillTake();
+                  }),
+                };
+              }),
+            };
+          }
           throw new Error(`unexpected table ${table}`);
         }),
       },
@@ -664,13 +697,123 @@ describe("publisher abuse dry-run persistence", () => {
 
     await collectHandler(ctx, { runId: "publisherAbuseScoreRuns:run" });
 
-    expect(ctx.db.query).not.toHaveBeenCalledWith("skills");
-    expect(insert).not.toHaveBeenCalledWith("publisherAbuseScores", expect.anything());
+    expect(skillTake).toHaveBeenCalledTimes(1);
+    expect(insert).toHaveBeenCalledWith(
+      "publisherAbuseScores",
+      expect.objectContaining({
+        publishedSkills: 40,
+        totalInstalls: 18,
+        totalStars: 3,
+        totalDownloads: 180,
+      }),
+    );
     expect(patch).toHaveBeenCalledWith(
       "publisherAbuseScoreRuns:run",
       expect.objectContaining({
         scannedPublishers: 1,
-        scoredPublishers: 0,
+        scoredPublishers: 1,
+      }),
+    );
+  });
+
+  it("does not spend fallback scans on known zero-skill publishers", async () => {
+    const zeroSkillPublishers = 20;
+    const insert = vi.fn(async (table: string) => `${table}:new`);
+    const patch = vi.fn(async () => null);
+    const skillTake = vi.fn(async () => [
+      {
+        _id: "skills:mixed",
+        ownerPublisherId: "publishers:mixed-needs-fallback",
+        softDeletedAt: undefined,
+        statsInstallsAllTime: 13,
+        statsStars: 3,
+        statsDownloads: 130,
+        stats: { downloads: 130, stars: 3, installsCurrent: 1, installsAllTime: 13 },
+      },
+    ]);
+    const ctx = {
+      db: {
+        get: vi.fn(async () => ({
+          _id: "publisherAbuseScoreRuns:run",
+          modelVersion: TEST_MODEL_CONFIG.modelVersion,
+          modelConfig: TEST_MODEL_CONFIG,
+          trigger: "cron",
+          status: "running",
+          phase: "collecting",
+          collectCursor: undefined,
+          scannedPublishers: 0,
+          scoredPublishers: 0,
+          sumLogPressure: 0,
+          sumSquaredLogPressure: 0,
+        })),
+        insert,
+        patch,
+        query: vi.fn((table: string) => {
+          if (table === "publishers") {
+            return {
+              withIndex: () => ({
+                paginate: async () => ({
+                  page: [
+                    ...Array.from({ length: zeroSkillPublishers }, (_, index) => ({
+                      _id: `publishers:plugin-only-${index}`,
+                      handle: `plugin-only-${index}`,
+                      linkedUserId: `users:plugin-only-${index}`,
+                      publishedSkills: 0,
+                      publishedPackages: 1,
+                      totalInstalls: 100,
+                      totalStars: 10,
+                      totalDownloads: 1_000,
+                    })),
+                    {
+                      _id: "publishers:mixed-needs-fallback",
+                      handle: "mixed-needs-fallback",
+                      linkedUserId: "users:mixed-needs-fallback",
+                      publishedSkills: 8,
+                      publishedPackages: 1,
+                      totalInstalls: 1_000,
+                      totalStars: 100,
+                      totalDownloads: 10_000,
+                    },
+                  ],
+                  isDone: true,
+                  continueCursor: "",
+                }),
+              }),
+            };
+          }
+          if (table === "skills") {
+            return {
+              withIndex: vi.fn(() => ({
+                take: vi.fn(async (numItems: number) => {
+                  expect(numItems).toBe(501);
+                  return await skillTake();
+                }),
+              })),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await collectHandler(ctx, { runId: "publisherAbuseScoreRuns:run" });
+
+    expect(skillTake).toHaveBeenCalledTimes(1);
+    expect(insert).toHaveBeenCalledWith(
+      "publisherAbuseScores",
+      expect.objectContaining({
+        handleSnapshot: "mixed-needs-fallback",
+        publishedSkills: 8,
+        totalInstalls: 13,
+        totalStars: 3,
+        totalDownloads: 130,
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "publisherAbuseScoreRuns:run",
+      expect.objectContaining({
+        scannedPublishers: zeroSkillPublishers + 1,
+        scoredPublishers: 1,
       }),
     );
   });
@@ -731,6 +874,101 @@ describe("publisher abuse dry-run persistence", () => {
       expect.objectContaining({
         scannedPublishers: 1,
         scoredPublishers: 0,
+      }),
+    );
+  });
+
+  it("derives skill engagement when package count is zero but engagement totals are missing", async () => {
+    const insert = vi.fn(async (table: string) => `${table}:new`);
+    const ctx = {
+      db: {
+        get: vi.fn(async () => ({
+          _id: "publisherAbuseScoreRuns:run",
+          modelVersion: TEST_MODEL_CONFIG.modelVersion,
+          modelConfig: TEST_MODEL_CONFIG,
+          trigger: "cron",
+          status: "running",
+          phase: "collecting",
+          collectCursor: undefined,
+          scannedPublishers: 0,
+          scoredPublishers: 0,
+          sumLogPressure: 0,
+          sumSquaredLogPressure: 0,
+        })),
+        insert,
+        patch: vi.fn(async () => null),
+        query: vi.fn((table: string) => {
+          if (table === "publishers") {
+            return {
+              withIndex: () => ({
+                paginate: async () => ({
+                  page: [
+                    {
+                      _id: "publishers:missing-engagement",
+                      handle: "missing-engagement",
+                      linkedUserId: "users:missing-engagement",
+                      publishedSkills: 40,
+                      publishedPackages: 0,
+                    },
+                  ],
+                  isDone: true,
+                  continueCursor: "",
+                }),
+              }),
+            };
+          }
+          if (table === "skills") {
+            return {
+              withIndex: vi.fn((indexName: string) => {
+                expect(indexName).toBe("by_owner_publisher_active_updated");
+                return {
+                  take: vi.fn(async (numItems: number) => {
+                    expect(numItems).toBe(501);
+                    return [
+                      {
+                        _id: "skills:one",
+                        ownerPublisherId: "publishers:missing-engagement",
+                        softDeletedAt: undefined,
+                        statsInstallsAllTime: 7,
+                        statsStars: 1,
+                        statsDownloads: 70,
+                        stats: { downloads: 70, stars: 1, installsCurrent: 1, installsAllTime: 7 },
+                      },
+                      {
+                        _id: "skills:two",
+                        ownerPublisherId: "publishers:missing-engagement",
+                        softDeletedAt: undefined,
+                        statsInstallsAllTime: 11,
+                        statsStars: 2,
+                        statsDownloads: 110,
+                        stats: {
+                          downloads: 110,
+                          stars: 2,
+                          installsCurrent: 1,
+                          installsAllTime: 11,
+                        },
+                      },
+                    ];
+                  }),
+                };
+              }),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await collectHandler(ctx, { runId: "publisherAbuseScoreRuns:run" });
+
+    expect(ctx.db.query).toHaveBeenCalledWith("skills");
+    expect(insert).toHaveBeenCalledWith(
+      "publisherAbuseScores",
+      expect.objectContaining({
+        publishedSkills: 40,
+        totalInstalls: 18,
+        totalStars: 3,
+        totalDownloads: 180,
       }),
     );
   });

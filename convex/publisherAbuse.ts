@@ -22,7 +22,7 @@ const ACTION_CONTINUATION_DELAY_MS = 60_000;
 const QUEUE_INITIAL_CANDIDATE_MULTIPLIER = 4;
 const MAX_QUEUE_FILTER_CANDIDATES = 1000;
 const MAX_ACTIVE_SKILL_FALLBACK_SCAN = 500;
-const MAX_MANUAL_ACTIVE_SKILL_FALLBACK_SCANS_PER_PAGE = 20;
+const MAX_ACTIVE_SKILL_FALLBACK_SCANS_PER_PAGE = 20;
 
 const triageStatusValidator = v.union(
   v.literal("pending"),
@@ -98,6 +98,7 @@ type PublisherSkillMetricsOptions =
     }
   | {
       allowActiveSkillScan: true;
+      allowMissingPublishedSkillCountScan: boolean;
       activeSkillFallbackBudget: ActiveSkillFallbackBudget;
     };
 
@@ -338,12 +339,20 @@ export async function collectPublisherAbuseScoresPageInternalHandler(
   let scored = 0;
   const modelConfig = run.modelConfig;
   const activeSkillFallbackBudget: ActiveSkillFallbackBudget = {
-    remainingScans: MAX_MANUAL_ACTIVE_SKILL_FALLBACK_SCANS_PER_PAGE,
+    remainingScans: MAX_ACTIVE_SKILL_FALLBACK_SCANS_PER_PAGE,
   };
   const publisherSkillMetricsOptions: PublisherSkillMetricsOptions =
     run.trigger === "cron"
-      ? { allowActiveSkillScan: false }
-      : { allowActiveSkillScan: true, activeSkillFallbackBudget };
+      ? {
+          allowActiveSkillScan: true,
+          allowMissingPublishedSkillCountScan: false,
+          activeSkillFallbackBudget,
+        }
+      : {
+          allowActiveSkillScan: true,
+          allowMissingPublishedSkillCountScan: true,
+          activeSkillFallbackBudget,
+        };
   for (const publisher of page.page) {
     const input = await publisherInputFromPublisher(ctx, publisher, publisherSkillMetricsOptions);
     if (!input) continue;
@@ -669,11 +678,21 @@ async function publisherSkillMetricsForScoring(
   const hasPublishedSkillCount = typeof publisher.publishedSkills === "number";
   if (!hasPublishedSkillCount) {
     if (!options.allowActiveSkillScan) return null;
+    if (!options.allowMissingPublishedSkillCountScan) return null;
     if (!consumeActiveSkillFallbackBudget(options.activeSkillFallbackBudget)) return null;
     return await computePublisherSkillMetricsForScoring(ctx, publisher._id);
   }
 
   const publishedSkills = nonNegative(publisher.publishedSkills);
+  if (publishedSkills === 0) {
+    return {
+      publishedSkills,
+      totalInstalls: 0,
+      totalStars: 0,
+      totalDownloads: 0,
+    };
+  }
+
   if (
     typeof publisher.skillTotalInstalls === "number" &&
     typeof publisher.skillTotalStars === "number" &&
@@ -687,7 +706,11 @@ async function publisherSkillMetricsForScoring(
     };
   }
 
-  if (publishedPackages === 0) {
+  const hasBaseEngagementTotals =
+    typeof publisher.totalInstalls === "number" &&
+    typeof publisher.totalStars === "number" &&
+    typeof publisher.totalDownloads === "number";
+  if (publishedPackages === 0 && hasBaseEngagementTotals) {
     return {
       publishedSkills,
       totalInstalls: nonNegative(publisher.totalInstalls),
