@@ -132,6 +132,7 @@ export function computePublisherAbusePressure(
   },
   config: PublisherAbuseModelConfig = DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG,
 ): number {
+  if (input.publishedSkills <= 0) return 0;
   const skills = Math.max(1, input.publishedSkills);
   const skillPivot = Math.max(1, config.skillPivot);
   const installsPerSkill = Math.max(config.minInstallsPerSkill, input.installsPerSkill);
@@ -211,6 +212,7 @@ function reasonCodesForPublisher(input: {
   config: PublisherAbuseModelConfig;
 }) {
   const codes: string[] = [];
+  if (input.publishedSkills <= 0) return codes;
   if (input.publishedSkills >= input.config.skillPivot) codes.push("high_catalog_volume");
   if (input.installsPerSkill < input.config.installsPerSkillPivot) {
     codes.push("low_installs_per_skill");

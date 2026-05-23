@@ -2,6 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  computePublisherAbuseRawScore,
   DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG,
   labelForPublisherAbuseZScore,
   scorePublisherAbuseCohort,
@@ -89,6 +90,40 @@ describe("publisher abuse scoring", () => {
     expect(withStars?.input.handleSnapshot).toBe("with-stars");
     expect(withInstalls?.input.handleSnapshot).toBe("with-installs");
     expect(withDownloads?.input.handleSnapshot).toBe("with-downloads");
+  });
+
+  it("keeps zero-skill publishers out of review nominations", () => {
+    const rawScore = computePublisherAbuseRawScore(
+      publisher("empty-publisher", {
+        publishedSkills: 0,
+        totalInstalls: 0,
+        totalStars: 0,
+        totalDownloads: 0,
+      }),
+    );
+    expect(rawScore.pressure).toBe(0);
+    expect(rawScore.reasonCodes).toEqual([]);
+
+    const scored = scorePublisherAbuseCohort([
+      ...Array.from({ length: 99 }, (_, index) =>
+        publisher(`ordinary-${index}`, {
+          publishedSkills: 3,
+          totalInstalls: 15,
+          totalStars: 1,
+          totalDownloads: 600,
+        }),
+      ),
+      publisher("empty-publisher", {
+        publishedSkills: 0,
+        totalInstalls: 0,
+        totalStars: 0,
+        totalDownloads: 0,
+      }),
+    ]);
+
+    expect(scored.find((score) => score.input.handleSnapshot === "empty-publisher")?.label).toBe(
+      "pass",
+    );
   });
 });
 
