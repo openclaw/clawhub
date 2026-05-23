@@ -39,6 +39,7 @@ const ALL_TRIAGE_STATUSES: TriageStatus[] = [
   "needs_policy_discussion",
   "candidate_for_future_action",
 ];
+const ACTIONABLE_REVIEW_LABELS = ["review", "potential_ban_candidate"] as const;
 
 const queueStatusFilterValidator = v.union(
   v.literal("unreviewed"),
@@ -668,12 +669,16 @@ async function listNominationsForQueue(
   const rows: NominationDoc[] = [];
   for (const status of statuses) {
     if (args.label === "all") {
-      const page = await ctx.db
-        .query("publisherAbuseReviewNominations")
-        .withIndex("by_status_and_last_scored_at", (q) => q.eq("status", status))
-        .order("desc")
-        .take(args.limit);
-      rows.push(...page);
+      for (const label of ACTIONABLE_REVIEW_LABELS) {
+        const page = await ctx.db
+          .query("publisherAbuseReviewNominations")
+          .withIndex("by_status_and_label_and_last_scored_at", (q) =>
+            q.eq("status", status).eq("label", label),
+          )
+          .order("desc")
+          .take(args.limit);
+        rows.push(...page);
+      }
       continue;
     }
     const label = args.label;
@@ -688,9 +693,7 @@ async function listNominationsForQueue(
   }
 
   return dedupeNominations(rows)
-    .filter((nomination) =>
-      args.label === "all" ? nomination.label !== "pass" : nomination.label === args.label,
-    )
+    .filter((nomination) => args.label === "all" || nomination.label === args.label)
     .sort((left, right) => right.lastScoredAt - left.lastScoredAt)
     .slice(0, args.limit);
 }

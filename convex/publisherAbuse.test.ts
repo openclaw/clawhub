@@ -460,7 +460,7 @@ describe("publisher abuse dry-run persistence", () => {
     const result = await listQueueHandler(ctx, {
       status: "all",
       label: "all",
-      limit: 10,
+      limit: 1,
     });
 
     expect(result.items.map((item) => item.nomination.handleSnapshot)).toEqual([
