@@ -1092,4 +1092,27 @@ describe("SecurityScanResults static guidance", () => {
     await waitFor(() => expect(requestRescan).toHaveBeenCalledTimes(1));
     expect(screen.getByRole("button", { name: "Scanning" })).toHaveProperty("disabled", true);
   });
+
+  it("lets plugin managers use the shared security rescan control", async () => {
+    const requestRescan = vi.fn().mockResolvedValue({ ok: true });
+
+    render(
+      <SecurityAuditPage
+        entity={{
+          kind: "plugin",
+          title: "Plugin Rescan Guard",
+          name: "@acme/plugin-rescan-guard",
+          version: "1.0.0",
+          detailPath: "/plugins/@acme/plugin-rescan-guard",
+        }}
+        canManageArtifact
+        onRequestRescan={requestRescan}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Rescan" }));
+
+    await waitFor(() => expect(requestRescan).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("button", { name: "Scanning" })).toHaveProperty("disabled", true);
+  });
 });

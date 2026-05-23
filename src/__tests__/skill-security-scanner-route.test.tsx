@@ -1,6 +1,6 @@
 /* @vitest-environment jsdom */
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ComponentType } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -89,5 +89,48 @@ describe("skill security audit route", () => {
     const loadingRegion = screen.getByRole("status", { name: "Loading security audit" });
     expect(loadingRegion.getAttribute("aria-busy")).toBe("true");
     expect(document.querySelector(".security-scanner-skeleton")).toBeTruthy();
+  });
+
+  it("lets moderators request skill rescans from the route", async () => {
+    const requestRescan = vi.fn().mockResolvedValue({ ok: true });
+    useMutationMock.mockReturnValue(requestRescan);
+    useAuthStatusMock.mockReturnValue({
+      me: { _id: "users:moderator", role: "moderator" },
+    });
+    useQueryMock.mockImplementation((_ref: unknown, args: unknown) => {
+      if (args === "skip" || (args && Object.keys(args as Record<string, unknown>).length === 0)) {
+        return [];
+      }
+      return {
+        skill: {
+          _id: "skills:1",
+          slug: "local-agentic-risk-demo",
+          displayName: "Local Agentic Risk Demo",
+          ownerUserId: "users:owner",
+        },
+        latestVersion: {
+          _id: "skillVersions:1",
+          version: "1.0.0",
+        },
+        owner: {
+          _id: "users:owner",
+          handle: "local",
+        },
+      };
+    });
+
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Rescan" }));
+
+    await waitFor(() =>
+      expect(requestRescan).toHaveBeenCalledWith({
+        skillId: "skills:1",
+        version: "1.0.0",
+      }),
+    );
   });
 });

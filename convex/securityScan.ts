@@ -4,6 +4,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { action, internalMutation, internalQuery, mutation } from "./functions";
 import { assertModerator, requireUser } from "./lib/access";
+import { normalizePackageName } from "./lib/packageRegistry";
 import { assertCanManageOwnedResource } from "./lib/publishers";
 
 const MAX_PARALLEL_CODEX_SCANS = 20;
@@ -82,6 +83,13 @@ const jobSourceValidator = v.union(
 
 type EnqueueSkillVersionScanArgs = {
   versionId: Id<"skillVersions">;
+  source: "publish" | "clawscan-note" | "vt-update" | "backfill" | "manual";
+  priority?: number;
+  waitForVtMs?: number;
+};
+
+type EnqueuePackageReleaseScanArgs = {
+  releaseId: Id<"packageReleases">;
   source: "publish" | "clawscan-note" | "vt-update" | "backfill" | "manual";
   priority?: number;
   waitForVtMs?: number;
@@ -444,6 +452,90 @@ export const enqueueSkillRescanForModeratorInternal = internalMutation({
   },
 });
 
+async function requestSkillRescanForActor(
+  ctx: MutationCtx,
+  args: {
+    actor: Doc<"users">;
+    skill: Doc<"skills">;
+    version?: string;
+  },
+) {
+  await assertCanManageOwnedResource(ctx, {
+    actor: args.actor,
+    ownerUserId: args.skill.ownerUserId,
+    ownerPublisherId: args.skill.ownerPublisherId,
+    allowPlatformModerator: true,
+  });
+
+  const requestedVersion = args.version?.trim();
+  const version = requestedVersion
+    ? await ctx.db
+        .query("skillVersions")
+        .withIndex("by_skill_version", (q) =>
+          q.eq("skillId", args.skill._id).eq("version", requestedVersion),
+        )
+        .unique()
+    : args.skill.latestVersionId
+      ? await ctx.db.get(args.skill.latestVersionId)
+      : null;
+  if (!version || version.softDeletedAt) throw new ConvexError("Skill version not found");
+
+  const queued = await enqueueSkillVersionScan(ctx, {
+    versionId: version._id,
+    source: "manual",
+    priority: 100,
+    waitForVtMs: 0,
+  });
+  if (!queued.jobId) throw new ConvexError("Skill version not found");
+
+  await ctx.db.insert("auditLogs", {
+    actorUserId: args.actor._id,
+    action: "skill.clawscan.rescan",
+    targetType: "skillVersion",
+    targetId: version._id,
+    metadata: {
+      skillId: args.skill._id,
+      slug: args.skill.slug,
+      version: version.version,
+      jobId: queued.jobId,
+      alreadyQueued: queued.alreadyQueued === true,
+    },
+    createdAt: Date.now(),
+  });
+
+  return {
+    ok: true as const,
+    slug: args.skill.slug,
+    version: version.version,
+    skillId: args.skill._id,
+    skillVersionId: version._id,
+    jobId: queued.jobId,
+    alreadyQueued: queued.alreadyQueued === true,
+  };
+}
+
+export const requestSkillRescanForUserInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    slug: v.string(),
+    version: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor) throw new ConvexError("Unauthorized");
+
+    const slug = args.slug.trim().toLowerCase();
+    if (!slug) throw new ConvexError("Slug required");
+    const skill = await ctx.db
+      .query("skills")
+      .withIndex("by_slug", (q) => q.eq("slug", slug))
+      .unique();
+    if (!skill || skill.softDeletedAt) throw new ConvexError("Skill not found");
+
+    return requestSkillRescanForActor(ctx, { actor, skill, version: args.version });
+  },
+});
+
 export const requestSkillRescan = mutation({
   args: {
     skillId: v.id("skills"),
@@ -454,58 +546,107 @@ export const requestSkillRescan = mutation({
     const skill = await ctx.db.get(args.skillId);
     if (!skill || skill.softDeletedAt) throw new ConvexError("Skill not found");
 
-    await assertCanManageOwnedResource(ctx, {
-      actor: user,
-      ownerUserId: skill.ownerUserId,
-      ownerPublisherId: skill.ownerPublisherId,
-      allowPlatformAdmin: true,
-    });
+    return requestSkillRescanForActor(ctx, { actor: user, skill, version: args.version });
+  },
+});
 
-    const requestedVersion = args.version?.trim();
-    const version = requestedVersion
-      ? await ctx.db
-          .query("skillVersions")
-          .withIndex("by_skill_version", (q) =>
-            q.eq("skillId", skill._id).eq("version", requestedVersion),
-          )
-          .unique()
-      : skill.latestVersionId
-        ? await ctx.db.get(skill.latestVersionId)
-        : null;
-    if (!version || version.softDeletedAt) throw new ConvexError("Skill version not found");
+async function requestPackageRescanForActor(
+  ctx: MutationCtx,
+  args: {
+    actor: Doc<"users">;
+    pkg: Doc<"packages">;
+    version?: string;
+  },
+) {
+  await assertCanManageOwnedResource(ctx, {
+    actor: args.actor,
+    ownerUserId: args.pkg.ownerUserId,
+    ownerPublisherId: args.pkg.ownerPublisherId,
+    allowPlatformModerator: true,
+  });
 
-    const queued = await enqueueSkillVersionScan(ctx, {
-      versionId: version._id,
-      source: "manual",
-      priority: 100,
-      waitForVtMs: 0,
-    });
-    if (!queued.jobId) throw new ConvexError("Skill version not found");
+  const requestedVersion = args.version?.trim();
+  const release = requestedVersion
+    ? await ctx.db
+        .query("packageReleases")
+        .withIndex("by_package_version", (q) =>
+          q.eq("packageId", args.pkg._id).eq("version", requestedVersion),
+        )
+        .unique()
+    : args.pkg.latestReleaseId
+      ? await ctx.db.get(args.pkg.latestReleaseId)
+      : null;
+  if (!release || release.softDeletedAt) throw new ConvexError("Package release not found");
 
-    await ctx.db.insert("auditLogs", {
-      actorUserId: user._id,
-      action: "skill.clawscan.rescan",
-      targetType: "skillVersion",
-      targetId: version._id,
-      metadata: {
-        skillId: skill._id,
-        slug: skill.slug,
-        version: version.version,
-        jobId: queued.jobId,
-        alreadyQueued: queued.alreadyQueued === true,
-      },
-      createdAt: Date.now(),
-    });
+  const queued = await enqueuePackageReleaseScan(ctx, {
+    releaseId: release._id,
+    source: "manual",
+    priority: 100,
+    waitForVtMs: 0,
+  });
+  if (!queued.jobId) throw new ConvexError("Package release not found");
 
-    return {
-      ok: true as const,
-      slug: skill.slug,
-      version: version.version,
-      skillId: skill._id,
-      skillVersionId: version._id,
+  await ctx.db.insert("auditLogs", {
+    actorUserId: args.actor._id,
+    action: "package.clawscan.rescan",
+    targetType: "packageRelease",
+    targetId: release._id,
+    metadata: {
+      packageId: args.pkg._id,
+      name: args.pkg.name,
+      version: release.version,
       jobId: queued.jobId,
       alreadyQueued: queued.alreadyQueued === true,
-    };
+    },
+    createdAt: Date.now(),
+  });
+
+  return {
+    ok: true as const,
+    name: args.pkg.name,
+    version: release.version,
+    packageId: args.pkg._id,
+    packageReleaseId: release._id,
+    jobId: queued.jobId,
+    alreadyQueued: queued.alreadyQueued === true,
+  };
+}
+
+export const requestPackageRescanForUserInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    name: v.string(),
+    version: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor) throw new ConvexError("Unauthorized");
+
+    const normalizedName = normalizePackageName(args.name);
+    if (!normalizedName) throw new ConvexError("Package name required");
+    const pkg = await ctx.db
+      .query("packages")
+      .withIndex("by_name", (q) => q.eq("normalizedName", normalizedName))
+      .unique();
+    if (!pkg || pkg.softDeletedAt || pkg.family === "skill")
+      throw new ConvexError("Package not found");
+
+    return requestPackageRescanForActor(ctx, { actor, pkg, version: args.version });
+  },
+});
+
+export const requestPackageRescan = mutation({
+  args: {
+    packageId: v.id("packages"),
+    version: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx);
+    const pkg = await ctx.db.get(args.packageId);
+    if (!pkg || pkg.softDeletedAt || pkg.family === "skill")
+      throw new ConvexError("Package not found");
+
+    return requestPackageRescanForActor(ctx, { actor: user, pkg, version: args.version });
   },
 });
 
@@ -558,46 +699,50 @@ export const enqueuePackageReleaseScanInternal = internalMutation({
     waitForVtMs: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const release = await ctx.db.get(args.releaseId);
-    if (!release || release.softDeletedAt) return { ok: true as const, skipped: "missing" };
-    const now = Date.now();
-    const waitForVtUntil = now + Math.max(0, args.waitForVtMs ?? DEFAULT_VT_WAIT_MS);
-    const nextRunAt = args.waitForVtMs === 0 || release.vtAnalysis ? now : waitForVtUntil;
-    const hasMaliciousSignal = release.staticScan?.status === "malicious";
-
-    const existing = await ctx.db
-      .query("securityScanJobs")
-      .withIndex("by_package_release", (q) => q.eq("packageReleaseId", args.releaseId))
-      .collect();
-    const active = existing.find((job) => job.status === "queued" || job.status === "running");
-    if (active) {
-      await ctx.db.patch(active._id, {
-        source: args.source,
-        priority: Math.max(active.priority, args.priority ?? 0),
-        hasMaliciousSignal: active.hasMaliciousSignal || hasMaliciousSignal,
-        waitForVtUntil: Math.min(active.waitForVtUntil, waitForVtUntil),
-        nextRunAt: Math.min(active.nextRunAt, nextRunAt),
-        updatedAt: now,
-      });
-      return { ok: true as const, jobId: active._id };
-    }
-
-    const jobId = await ctx.db.insert("securityScanJobs", {
-      targetKind: "packageRelease",
-      packageReleaseId: args.releaseId,
-      status: "queued",
-      source: args.source,
-      priority: args.priority ?? (hasMaliciousSignal ? 100 : 0),
-      hasMaliciousSignal,
-      waitForVtUntil,
-      nextRunAt,
-      attempts: 0,
-      createdAt: now,
-      updatedAt: now,
-    });
-    return { ok: true as const, jobId };
+    return enqueuePackageReleaseScan(ctx, args);
   },
 });
+
+async function enqueuePackageReleaseScan(ctx: MutationCtx, args: EnqueuePackageReleaseScanArgs) {
+  const release = await ctx.db.get(args.releaseId);
+  if (!release || release.softDeletedAt) return { ok: true as const, skipped: "missing" as const };
+  const now = Date.now();
+  const waitForVtUntil = now + Math.max(0, args.waitForVtMs ?? DEFAULT_VT_WAIT_MS);
+  const nextRunAt = args.waitForVtMs === 0 || release.vtAnalysis ? now : waitForVtUntil;
+  const hasMaliciousSignal = release.staticScan?.status === "malicious";
+
+  const existing = await ctx.db
+    .query("securityScanJobs")
+    .withIndex("by_package_release", (q) => q.eq("packageReleaseId", args.releaseId))
+    .collect();
+  const active = existing.find((job) => job.status === "queued" || job.status === "running");
+  if (active) {
+    await ctx.db.patch(active._id, {
+      source: args.source,
+      priority: Math.max(active.priority, args.priority ?? 0),
+      hasMaliciousSignal: active.hasMaliciousSignal || hasMaliciousSignal,
+      waitForVtUntil: Math.min(active.waitForVtUntil, waitForVtUntil),
+      nextRunAt: Math.min(active.nextRunAt, nextRunAt),
+      updatedAt: now,
+    });
+    return { ok: true as const, jobId: active._id, alreadyQueued: true as const };
+  }
+
+  const jobId = await ctx.db.insert("securityScanJobs", {
+    targetKind: "packageRelease",
+    packageReleaseId: args.releaseId,
+    status: "queued",
+    source: args.source,
+    priority: args.priority ?? (hasMaliciousSignal ? 100 : 0),
+    hasMaliciousSignal,
+    waitForVtUntil,
+    nextRunAt,
+    attempts: 0,
+    createdAt: now,
+    updatedAt: now,
+  });
+  return { ok: true as const, jobId, alreadyQueued: false as const };
+}
 
 export const cancelQueuedVtUpdateJobsInternal = internalMutation({
   args: {

@@ -6,7 +6,7 @@ import {
   SecurityAuditPageSkeleton,
 } from "../../../components/SecurityAuditPage";
 import { buildSkillMeta } from "../../../lib/og";
-import { isAdmin } from "../../../lib/roles";
+import { isModerator } from "../../../lib/roles";
 import { fetchSkillPageData } from "../../../lib/skillPage";
 import { useAuthStatus } from "../../../lib/useAuthStatus";
 
@@ -95,7 +95,7 @@ function SkillSecurityAuditRoute() {
   const canManageArtifact =
     Boolean(me && skill && me._id === skill.ownerUserId) ||
     Boolean(skill?.ownerPublisherId && myManagePublisherIds.has(skill.ownerPublisherId)) ||
-    isAdmin(me);
+    isModerator(me);
   const settingsHref = `/${encodeURIComponent(ownerSegment)}/${encodeURIComponent(slug)}/settings`;
 
   return (

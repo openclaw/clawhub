@@ -672,8 +672,7 @@ function SecurityAuditSidebar(props: SecurityAuditPageProps) {
   const [rescanState, setRescanState] = useState<"idle" | "submitting" | "queued" | "error">(
     "idle",
   );
-  const showRescanButton =
-    props.entity.kind === "skill" && props.canManageArtifact && props.onRequestRescan;
+  const showRescanButton = props.canManageArtifact && props.onRequestRescan;
   const isRescanBusy = rescanState === "submitting" || rescanState === "queued";
 
   async function requestRescan() {

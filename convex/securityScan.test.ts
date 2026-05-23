@@ -1,10 +1,19 @@
+import { getAuthUserId } from "@convex-dev/auth/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   cancelQueuedVtUpdateJobsInternal,
   claimCodexScanJobs,
   completeCodexScanJob,
   failCodexScanJob,
+  requestPackageRescanForUserInternal,
+  requestPackageRescan,
+  requestSkillRescanForUserInternal,
+  requestSkillRescan,
 } from "./securityScan";
+
+vi.mock("@convex-dev/auth/server", () => ({
+  getAuthUserId: vi.fn(),
+}));
 
 type WrappedHandler<TArgs, TResult = unknown> = {
   _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
@@ -92,6 +101,34 @@ const cancelQueuedVtUpdateJobsInternalHandler = (
   cancelQueuedVtUpdateJobsInternal as unknown as WrappedHandler<CancelArgs, CancelResult>
 )._handler;
 
+const requestSkillRescanHandler = (
+  requestSkillRescan as unknown as WrappedHandler<
+    { skillId: string; version?: string },
+    { jobId: string; alreadyQueued: boolean }
+  >
+)._handler;
+
+const requestPackageRescanHandler = (
+  requestPackageRescan as unknown as WrappedHandler<
+    { packageId: string; version?: string },
+    { jobId: string; alreadyQueued: boolean; packageReleaseId: string }
+  >
+)._handler;
+
+const requestSkillRescanForUserInternalHandler = (
+  requestSkillRescanForUserInternal as unknown as WrappedHandler<
+    { actorUserId: string; slug: string; version?: string },
+    { jobId: string; alreadyQueued: boolean; skillVersionId: string }
+  >
+)._handler;
+
+const requestPackageRescanForUserInternalHandler = (
+  requestPackageRescanForUserInternal as unknown as WrappedHandler<
+    { actorUserId: string; name: string; version?: string },
+    { jobId: string; alreadyQueued: boolean; packageReleaseId: string }
+  >
+)._handler;
+
 const claimedJob = {
   _id: "securityScanJobs:1",
   _creationTime: 1,
@@ -134,6 +171,114 @@ function makeTarget(llmStatus?: string) {
       status: llmStatus,
       checkedAt: 123,
     },
+  };
+}
+
+function makeRescanCtx(options: {
+  actorId: string;
+  actorRole?: "admin" | "moderator" | "user";
+  docs: Record<string, Record<string, unknown>>;
+  activeJobs?: Array<Record<string, unknown>>;
+  membership?: Record<string, unknown> | null;
+}) {
+  vi.mocked(getAuthUserId).mockResolvedValue(options.actorId as never);
+  const docs = new Map<string, Record<string, unknown>>(
+    Object.entries({
+      [options.actorId]: {
+        _id: options.actorId,
+        role: options.actorRole ?? "user",
+      },
+      ...options.docs,
+    }),
+  );
+  const inserts: Array<{ table: string; doc: Record<string, unknown> }> = [];
+  const patches: Array<{ id: string; patch: Record<string, unknown> }> = [];
+  const get = vi.fn(async (id: string) => docs.get(id) ?? null);
+  const insert = vi.fn(async (table: string, doc: Record<string, unknown>) => {
+    const id = `${table}:${inserts.length + 1}`;
+    inserts.push({ table, doc });
+    return id;
+  });
+  const patch = vi.fn(async (id: string, doc: Record<string, unknown>) => {
+    patches.push({ id, patch: doc });
+  });
+  const query = vi.fn((table: string) => ({
+    withIndex: vi.fn((_indexName: string, buildRange: (q: { eq: typeof eq }) => unknown) => {
+      const equals = new Map<string, unknown>();
+      function eq(field: string, value: unknown) {
+        equals.set(field, value);
+        return { eq };
+      }
+      buildRange({ eq });
+      return {
+        collect: vi.fn(async () => {
+          if (table === "securityScanJobs") return options.activeJobs ?? [];
+          return [];
+        }),
+        unique: vi.fn(async () => {
+          if (table === "publisherMembers") return options.membership ?? null;
+          if (table === "skills") {
+            return (
+              Array.from(docs.values()).find(
+                (doc) =>
+                  doc._id?.toString().startsWith("skills:") && doc.slug === equals.get("slug"),
+              ) ?? null
+            );
+          }
+          if (table === "packages") {
+            return (
+              Array.from(docs.values()).find(
+                (doc) =>
+                  doc._id?.toString().startsWith("packages:") &&
+                  doc.normalizedName === equals.get("normalizedName"),
+              ) ?? null
+            );
+          }
+          if (table === "skillVersions") {
+            return (
+              Array.from(docs.values()).find(
+                (doc) =>
+                  doc._id?.toString().startsWith("skillVersions:") &&
+                  doc.skillId === equals.get("skillId") &&
+                  doc.version === equals.get("version"),
+              ) ?? null
+            );
+          }
+          if (table === "packageReleases") {
+            return (
+              Array.from(docs.values()).find(
+                (doc) =>
+                  doc._id?.toString().startsWith("packageReleases:") &&
+                  doc.packageId === equals.get("packageId") &&
+                  doc.version === equals.get("version"),
+              ) ?? null
+            );
+          }
+          return null;
+        }),
+      };
+    }),
+  }));
+
+  return {
+    ctx: {
+      db: {
+        get,
+        insert,
+        patch,
+        query,
+        replace: vi.fn(),
+        delete: vi.fn(),
+        normalizeId: vi.fn(() => null),
+        system: {},
+      },
+    },
+    inserts,
+    patches,
+    get,
+    insert,
+    patch,
+    query,
   };
 }
 
@@ -189,6 +334,229 @@ function makeCancelCtx(jobs: ScanJob[], targets: Map<string, unknown> = new Map(
 describe("securityScan", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
+    vi.mocked(getAuthUserId).mockReset();
+  });
+
+  it("lets platform moderators request skill rescans", async () => {
+    const { ctx, inserts } = makeRescanCtx({
+      actorId: "users:moderator",
+      actorRole: "moderator",
+      docs: {
+        "skills:1": {
+          _id: "skills:1",
+          slug: "demo-skill",
+          ownerUserId: "users:owner",
+          latestVersionId: "skillVersions:1",
+        },
+        "skillVersions:1": {
+          _id: "skillVersions:1",
+          skillId: "skills:1",
+          version: "1.0.0",
+        },
+      },
+    });
+
+    const result = await requestSkillRescanHandler(ctx, {
+      skillId: "skills:1",
+      version: "1.0.0",
+    });
+
+    expect(result).toMatchObject({
+      jobId: "securityScanJobs:1",
+      alreadyQueued: false,
+    });
+    expect(inserts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          table: "securityScanJobs",
+          doc: expect.objectContaining({
+            targetKind: "skillVersion",
+            skillVersionId: "skillVersions:1",
+            source: "manual",
+            priority: 100,
+          }),
+        }),
+        expect.objectContaining({
+          table: "auditLogs",
+          doc: expect.objectContaining({
+            actorUserId: "users:moderator",
+            action: "skill.clawscan.rescan",
+            targetType: "skillVersion",
+            targetId: "skillVersions:1",
+          }),
+        }),
+      ]),
+    );
+  });
+
+  it("lets skill owners request skill rescans through the API helper", async () => {
+    const { ctx, inserts } = makeRescanCtx({
+      actorId: "users:owner",
+      docs: {
+        "skills:1": {
+          _id: "skills:1",
+          slug: "demo-skill",
+          ownerUserId: "users:owner",
+          latestVersionId: "skillVersions:1",
+        },
+        "skillVersions:1": {
+          _id: "skillVersions:1",
+          skillId: "skills:1",
+          version: "1.0.0",
+        },
+      },
+    });
+
+    const result = await requestSkillRescanForUserInternalHandler(ctx, {
+      actorUserId: "users:owner",
+      slug: "demo-skill",
+      version: "1.0.0",
+    });
+
+    expect(result).toMatchObject({
+      skillVersionId: "skillVersions:1",
+      jobId: "securityScanJobs:1",
+      alreadyQueued: false,
+    });
+    expect(inserts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          table: "auditLogs",
+          doc: expect.objectContaining({
+            actorUserId: "users:owner",
+            action: "skill.clawscan.rescan",
+          }),
+        }),
+      ]),
+    );
+  });
+
+  it("lets platform moderators request package rescans", async () => {
+    const { ctx, inserts } = makeRescanCtx({
+      actorId: "users:moderator",
+      actorRole: "moderator",
+      docs: {
+        "packages:1": {
+          _id: "packages:1",
+          name: "@acme/demo-plugin",
+          normalizedName: "@acme/demo-plugin",
+          family: "plugin",
+          ownerUserId: "users:owner",
+          latestReleaseId: "packageReleases:1",
+        },
+        "packageReleases:1": {
+          _id: "packageReleases:1",
+          packageId: "packages:1",
+          version: "1.0.0",
+        },
+      },
+    });
+
+    const result = await requestPackageRescanHandler(ctx, {
+      packageId: "packages:1",
+      version: "1.0.0",
+    });
+
+    expect(result).toMatchObject({
+      packageReleaseId: "packageReleases:1",
+      jobId: "securityScanJobs:1",
+      alreadyQueued: false,
+    });
+    expect(inserts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          table: "securityScanJobs",
+          doc: expect.objectContaining({
+            targetKind: "packageRelease",
+            packageReleaseId: "packageReleases:1",
+            source: "manual",
+            priority: 100,
+          }),
+        }),
+        expect.objectContaining({
+          table: "auditLogs",
+          doc: expect.objectContaining({
+            actorUserId: "users:moderator",
+            action: "package.clawscan.rescan",
+            targetType: "packageRelease",
+            targetId: "packageReleases:1",
+          }),
+        }),
+      ]),
+    );
+  });
+
+  it("lets package owners request package rescans through the API helper", async () => {
+    const { ctx, inserts } = makeRescanCtx({
+      actorId: "users:owner",
+      docs: {
+        "packages:1": {
+          _id: "packages:1",
+          name: "@acme/demo-plugin",
+          normalizedName: "@acme/demo-plugin",
+          family: "code-plugin",
+          ownerUserId: "users:owner",
+          latestReleaseId: "packageReleases:1",
+        },
+        "packageReleases:1": {
+          _id: "packageReleases:1",
+          packageId: "packages:1",
+          version: "1.0.0",
+        },
+      },
+    });
+
+    const result = await requestPackageRescanForUserInternalHandler(ctx, {
+      actorUserId: "users:owner",
+      name: "@acme/demo-plugin",
+      version: "1.0.0",
+    });
+
+    expect(result).toMatchObject({
+      packageReleaseId: "packageReleases:1",
+      jobId: "securityScanJobs:1",
+      alreadyQueued: false,
+    });
+    expect(inserts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          table: "auditLogs",
+          doc: expect.objectContaining({
+            actorUserId: "users:owner",
+            action: "package.clawscan.rescan",
+          }),
+        }),
+      ]),
+    );
+  });
+
+  it("rejects unrelated package rescan callers", async () => {
+    const { ctx, insert } = makeRescanCtx({
+      actorId: "users:random",
+      actorRole: "user",
+      docs: {
+        "packages:1": {
+          _id: "packages:1",
+          name: "@acme/demo-plugin",
+          normalizedName: "@acme/demo-plugin",
+          family: "plugin",
+          ownerUserId: "users:owner",
+          latestReleaseId: "packageReleases:1",
+        },
+        "packageReleases:1": {
+          _id: "packageReleases:1",
+          packageId: "packages:1",
+          version: "1.0.0",
+        },
+      },
+    });
+
+    await expect(
+      requestPackageRescanHandler(ctx, {
+        packageId: "packages:1",
+      }),
+    ).rejects.toThrow("Forbidden");
+    expect(insert).not.toHaveBeenCalled();
   });
 
   it("fails claimed jobs when an artifact file URL is unavailable", async () => {

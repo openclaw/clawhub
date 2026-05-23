@@ -127,6 +127,9 @@ const internalRefs = internal as unknown as {
   publishers: {
     getByHandleInternal: unknown;
   };
+  securityScan: {
+    requestPackageRescanForUserInternal: unknown;
+  };
 };
 
 function packageOperationErrorToResponse(
@@ -142,6 +145,18 @@ function packageOperationErrorToResponse(
     return text(formatAuthzMessage(error, "Forbidden"), 403, headers);
   if (lower.includes("not found")) return text(message, 404, headers);
   return text(message, 400, headers);
+}
+
+async function readOptionalJson(request: Request): Promise<unknown> {
+  const raw = await request.text();
+  if (!raw.trim()) return undefined;
+  return JSON.parse(raw) as unknown;
+}
+
+function optionalStringField(value: unknown, key: string): string | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const field = (value as Record<string, unknown>)[key];
+  return typeof field === "string" ? field : undefined;
 }
 
 function isTransientConvexContentionMessage(message: string) {
@@ -1829,6 +1844,31 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
   if (!packageRoute) return text("Not found", 404);
   const packageName = packageRoute.packageName;
   const packageSegments = packageRoute.rest;
+
+  if (packageSegments[0] === "rescan" && packageSegments.length === 1) {
+    const rate = await applyRateLimit(ctx, request, "write");
+    if (!rate.ok) return rate.response;
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+
+    try {
+      const body = await readOptionalJson(request);
+      const version = optionalStringField(body, "version");
+      const result = await runMutationRef(
+        ctx,
+        internalRefs.securityScan.requestPackageRescanForUserInternal,
+        {
+          actorUserId: auth.userId,
+          name: packageName,
+          ...(version ? { version } : {}),
+        },
+      );
+      return json(result, 200, rate.headers);
+    } catch (error) {
+      if (error instanceof SyntaxError) return text("Invalid JSON", 400, rate.headers);
+      return packageOperationErrorToResponse(error, rate.headers, "Package rescan failed");
+    }
+  }
 
   if (packageSegments[0] === "repair-name" && packageSegments.length === 1) {
     const rate = await applyRateLimit(ctx, request, "write");

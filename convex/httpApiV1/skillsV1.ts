@@ -277,7 +277,7 @@ type SkillSecuritySnapshot = {
 
 const internalRefs = internal as unknown as {
   securityScan: {
-    enqueueSkillRescanForModeratorInternal: unknown;
+    requestSkillRescanForUserInternal: unknown;
   };
   skills: {
     reportSkillForUserInternal: unknown;
@@ -1501,7 +1501,7 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
       const version = optionalStringField(body, "version");
       const result = await runMutationRef(
         ctx,
-        internalRefs.securityScan.enqueueSkillRescanForModeratorInternal,
+        internalRefs.securityScan.requestSkillRescanForUserInternal,
         {
           actorUserId: auth.userId,
           slug,
