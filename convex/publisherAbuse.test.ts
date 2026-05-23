@@ -134,26 +134,36 @@ describe("publisher abuse dry-run persistence", () => {
         insert,
         patch,
         query: vi.fn((table: string) => {
-          if (table !== "publishers") throw new Error(`unexpected table ${table}`);
-          return {
-            withIndex: () => ({
-              paginate: async () => ({
-                page: [
-                  {
-                    _id: "publishers:gora050",
-                    handle: "gora050",
-                    linkedUserId: "users:gora050",
-                    publishedSkills: 1200,
-                    totalInstalls: 8,
-                    totalStars: 0,
-                    totalDownloads: 120,
-                  },
-                ],
-                isDone: true,
-                continueCursor: "",
+          if (table === "publishers") {
+            return {
+              withIndex: () => ({
+                paginate: async () => ({
+                  page: [
+                    {
+                      _id: "publishers:gora050",
+                      handle: "gora050",
+                      linkedUserId: "users:gora050",
+                      publishedSkills: 1200,
+                      totalInstalls: 8,
+                      totalStars: 0,
+                      totalDownloads: 120,
+                    },
+                  ],
+                  isDone: true,
+                  continueCursor: "",
+                }),
               }),
-            }),
-          };
+            };
+          }
+          if (table === "skills") {
+            return {
+              withIndex: () => ({
+                collect: async () =>
+                  skillFixtures(1200, { installsAllTime: 8, stars: 0, downloads: 120 }),
+              }),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
         }),
       },
     };
@@ -203,26 +213,36 @@ describe("publisher abuse dry-run persistence", () => {
         insert,
         patch: vi.fn(async () => null),
         query: vi.fn((table: string) => {
-          if (table !== "publishers") throw new Error(`unexpected table ${table}`);
-          return {
-            withIndex: () => ({
-              paginate: async () => ({
-                page: [
-                  {
-                    _id: "publishers:mid-volume",
-                    handle: "mid-volume",
-                    linkedUserId: "users:mid-volume",
-                    publishedSkills: 120,
-                    totalInstalls: 12,
-                    totalStars: 1,
-                    totalDownloads: 120,
-                  },
-                ],
-                isDone: true,
-                continueCursor: "",
+          if (table === "publishers") {
+            return {
+              withIndex: () => ({
+                paginate: async () => ({
+                  page: [
+                    {
+                      _id: "publishers:mid-volume",
+                      handle: "mid-volume",
+                      linkedUserId: "users:mid-volume",
+                      publishedSkills: 120,
+                      totalInstalls: 12,
+                      totalStars: 1,
+                      totalDownloads: 120,
+                    },
+                  ],
+                  isDone: true,
+                  continueCursor: "",
+                }),
               }),
-            }),
-          };
+            };
+          }
+          if (table === "skills") {
+            return {
+              withIndex: () => ({
+                collect: async () =>
+                  skillFixtures(120, { installsAllTime: 12, stars: 1, downloads: 120 }),
+              }),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
         }),
       },
     };
@@ -234,6 +254,72 @@ describe("publisher abuse dry-run persistence", () => {
       expect.objectContaining({
         modelVersion: storedModelConfig.modelVersion,
         reasonCodes: expect.not.arrayContaining(["high_catalog_volume"]),
+      }),
+    );
+  });
+
+  it("uses skill-only engagement when publisher stats include package totals", async () => {
+    const insert = vi.fn(async (table: string) => `${table}:new`);
+    const ctx = {
+      db: {
+        get: vi.fn(async () => ({
+          _id: "publisherAbuseScoreRuns:run",
+          modelVersion: TEST_MODEL_CONFIG.modelVersion,
+          modelConfig: TEST_MODEL_CONFIG,
+          status: "running",
+          phase: "collecting",
+          collectCursor: undefined,
+          scannedPublishers: 0,
+          scoredPublishers: 0,
+          sumLogPressure: 0,
+          sumSquaredLogPressure: 0,
+        })),
+        insert,
+        patch: vi.fn(async () => null),
+        query: vi.fn((table: string) => {
+          if (table === "publishers") {
+            return {
+              withIndex: () => ({
+                paginate: async () => ({
+                  page: [
+                    {
+                      _id: "publishers:mixed",
+                      handle: "mixed",
+                      linkedUserId: "users:mixed",
+                      publishedSkills: 40,
+                      totalInstalls: 10_000,
+                      totalStars: 500,
+                      totalDownloads: 500_000,
+                    },
+                  ],
+                  isDone: true,
+                  continueCursor: "",
+                }),
+              }),
+            };
+          }
+          if (table === "skills") {
+            return {
+              withIndex: () => ({
+                collect: async () =>
+                  skillFixtures(40, { installsAllTime: 0, stars: 0, downloads: 0 }),
+              }),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await collectHandler(ctx, { runId: "publisherAbuseScoreRuns:run" });
+
+    expect(insert).toHaveBeenCalledWith(
+      "publisherAbuseScores",
+      expect.objectContaining({
+        publishedSkills: 40,
+        totalInstalls: 0,
+        totalStars: 0,
+        totalDownloads: 0,
       }),
     );
   });
@@ -780,4 +866,23 @@ function queueCtx(
 
 function sortQueueNominations(nominations: QueueNominationFixture[]) {
   return [...nominations].sort((left, right) => right.lastScoredAt - left.lastScoredAt);
+}
+
+function skillFixtures(
+  count: number,
+  stats: { installsAllTime: number; stars: number; downloads: number },
+) {
+  return Array.from({ length: count }, () => ({
+    statsInstallsAllTime: stats.installsAllTime / count,
+    statsStars: stats.stars / count,
+    statsDownloads: stats.downloads / count,
+    stats: {
+      installsAllTime: stats.installsAllTime / count,
+      installsCurrent: 0,
+      stars: stats.stars / count,
+      downloads: stats.downloads / count,
+      comments: 0,
+      versions: 1,
+    },
+  }));
 }

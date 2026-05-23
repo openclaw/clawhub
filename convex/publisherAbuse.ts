@@ -9,8 +9,10 @@ import {
   DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG,
   labelForPublisherAbuseZScore,
   summarizePublisherAbuseLogPressure,
+  type PublisherAbuseInput,
   type PublisherAbuseLabel,
 } from "./lib/publisherAbuseScoring";
+import { readCanonicalStat } from "./lib/skillStats";
 
 const DEFAULT_BATCH_SIZE = 250;
 const MAX_BATCH_SIZE = 1000;
@@ -311,7 +313,7 @@ export async function collectPublisherAbuseScoresPageInternalHandler(
   const modelConfig = run.modelConfig;
   for (const publisher of page.page) {
     const rawScore = computePublisherAbuseRawScore(
-      publisherInputFromPublisher(publisher),
+      await publisherInputFromPublisher(ctx, publisher),
       modelConfig,
     );
     await ctx.db.insert("publisherAbuseScores", {
@@ -550,17 +552,43 @@ async function requireRunningRun(
   return run;
 }
 
-function publisherInputFromPublisher(publisher: PublisherMetricsDoc) {
+async function publisherInputFromPublisher(
+  ctx: Pick<MutationCtx, "db">,
+  publisher: PublisherMetricsDoc,
+): Promise<PublisherAbuseInput> {
+  const skillStats = await getPublisherSkillOnlyStats(ctx, publisher._id);
   return {
     ownerKey: `publisher:${publisher._id}`,
     ownerPublisherId: publisher._id,
     ownerUserId: publisher.linkedUserId,
     handleSnapshot: publisher.handle,
-    publishedSkills: nonNegative(publisher.publishedSkills),
-    totalInstalls: nonNegative(publisher.totalInstalls),
-    totalStars: nonNegative(publisher.totalStars),
-    totalDownloads: nonNegative(publisher.totalDownloads),
+    publishedSkills: skillStats.publishedSkills,
+    totalInstalls: skillStats.totalInstalls,
+    totalStars: skillStats.totalStars,
+    totalDownloads: skillStats.totalDownloads,
   };
+}
+
+async function getPublisherSkillOnlyStats(
+  ctx: Pick<MutationCtx, "db">,
+  ownerPublisherId: Id<"publishers">,
+) {
+  const skills = await ctx.db
+    .query("skills")
+    .withIndex("by_owner_publisher_active_updated", (q) =>
+      q.eq("ownerPublisherId", ownerPublisherId).eq("softDeletedAt", undefined),
+    )
+    .collect();
+
+  return skills.reduce(
+    (totals, skill) => ({
+      publishedSkills: totals.publishedSkills + 1,
+      totalInstalls: totals.totalInstalls + readCanonicalStat(skill, "installsAllTime"),
+      totalStars: totals.totalStars + readCanonicalStat(skill, "stars"),
+      totalDownloads: totals.totalDownloads + readCanonicalStat(skill, "downloads"),
+    }),
+    { publishedSkills: 0, totalInstalls: 0, totalStars: 0, totalDownloads: 0 },
+  );
 }
 
 async function upsertPublisherAbuseReviewNomination(
@@ -767,10 +795,6 @@ function summarizeRunForQueue(run: ScoreRun) {
 function normalizeNotes(notes: string | undefined) {
   const trimmed = notes?.trim();
   return trimmed ? trimmed : undefined;
-}
-
-function nonNegative(value: number | undefined) {
-  return typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : 0;
 }
 
 function clampInt(value: number, min: number, max: number) {
