@@ -80,9 +80,13 @@ type PublisherMetricsDoc = Pick<
   | "handle"
   | "linkedUserId"
   | "publishedSkills"
+  | "publishedPackages"
   | "totalInstalls"
   | "totalStars"
   | "totalDownloads"
+  | "skillTotalInstalls"
+  | "skillTotalStars"
+  | "skillTotalDownloads"
 >;
 
 export const getOrStartPublisherAbuseScoreRunInternal = internalMutation({
@@ -140,6 +144,14 @@ export const finalizePublisherAbuseScoresPageInternal = internalMutation({
     batchSize: v.optional(v.number()),
   },
   handler: finalizePublisherAbuseScoresPageInternalHandler,
+});
+
+export const markPublisherAbuseScoreRunFailedInternal = internalMutation({
+  args: {
+    runId: v.id("publisherAbuseScoreRuns"),
+    errorMessage: v.string(),
+  },
+  handler: markPublisherAbuseScoreRunFailedInternalHandler,
 });
 
 export const runPublisherAbuseScoreRunInternal = internalAction({
@@ -312,7 +324,7 @@ export async function collectPublisherAbuseScoresPageInternalHandler(
   const modelConfig = run.modelConfig;
   for (const publisher of page.page) {
     const rawScore = computePublisherAbuseRawScore(
-      await publisherInputFromPublisher(ctx, publisher),
+      publisherInputFromPublisher(publisher),
       modelConfig,
     );
     await ctx.db.insert("publisherAbuseScores", {
@@ -450,6 +462,25 @@ export async function finalizePublisherAbuseScoresPageInternalHandler(
   };
 }
 
+export async function markPublisherAbuseScoreRunFailedInternalHandler(
+  ctx: MutationCtx,
+  args: { runId: Id<"publisherAbuseScoreRuns">; errorMessage: string },
+): Promise<RunState> {
+  const run = await ctx.db.get(args.runId);
+  if (!run) throw new Error("Publisher abuse score run not found");
+  if (run.status !== "running") {
+    return { runId: run._id, status: run.status, phase: run.phase };
+  }
+
+  const now = Date.now();
+  await ctx.db.patch(run._id, {
+    status: "failed",
+    errorMessage: args.errorMessage,
+    updatedAt: now,
+  });
+  return { runId: run._id, status: "failed", phase: run.phase };
+}
+
 export async function runPublisherAbuseScoreRunInternalHandler(
   ctx: ActionCtx,
   args: {
@@ -472,33 +503,41 @@ export async function runPublisherAbuseScoreRunInternalHandler(
       });
   let pages = 0;
 
-  while (pages < maxPages) {
-    let result: PageResult;
-    if (state.phase === "collecting") {
-      result = await ctx.runMutation(
-        internal.publisherAbuse.collectPublisherAbuseScoresPageInternal,
-        {
-          runId: state.runId,
-          batchSize,
-        },
-      );
-    } else if (state.phase === "finalizing") {
-      result = await ctx.runMutation(
-        internal.publisherAbuse.finalizePublisherAbuseScoresPageInternal,
-        {
-          runId: state.runId,
-          batchSize,
-        },
-      );
-    } else {
-      return { ok: true, runId: state.runId, pages, isDone: true };
-    }
+  try {
+    while (pages < maxPages) {
+      let result: PageResult;
+      if (state.phase === "collecting") {
+        result = await ctx.runMutation(
+          internal.publisherAbuse.collectPublisherAbuseScoresPageInternal,
+          {
+            runId: state.runId,
+            batchSize,
+          },
+        );
+      } else if (state.phase === "finalizing") {
+        result = await ctx.runMutation(
+          internal.publisherAbuse.finalizePublisherAbuseScoresPageInternal,
+          {
+            runId: state.runId,
+            batchSize,
+          },
+        );
+      } else {
+        return { ok: true, runId: state.runId, pages, isDone: true };
+      }
 
-    pages += 1;
-    state = { runId: result.runId, status: result.status, phase: result.phase };
-    if (result.isDone && result.phase === "completed") {
-      return { ok: true, runId: result.runId, pages, isDone: true };
+      pages += 1;
+      state = { runId: result.runId, status: result.status, phase: result.phase };
+      if (result.isDone && result.phase === "completed") {
+        return { ok: true, runId: result.runId, pages, isDone: true };
+      }
     }
+  } catch (error) {
+    await ctx.runMutation(internal.publisherAbuse.markPublisherAbuseScoreRunFailedInternal, {
+      runId: state.runId,
+      errorMessage: errorMessageFromUnknown(error),
+    });
+    throw error;
   }
 
   await ctx.scheduler.runAfter(
@@ -553,47 +592,40 @@ async function requireRunningRun(
   return run;
 }
 
-async function publisherInputFromPublisher(
-  ctx: Pick<MutationCtx, "db">,
-  publisher: PublisherMetricsDoc,
-): Promise<PublisherAbuseInput> {
-  const packageStats = await getPublisherPackageStats(ctx, publisher._id);
+function publisherInputFromPublisher(publisher: PublisherMetricsDoc): PublisherAbuseInput {
+  const publishedPackages = nonNegative(publisher.publishedPackages);
   return {
     ownerKey: `publisher:${publisher._id}`,
     ownerPublisherId: publisher._id,
     ownerUserId: publisher.linkedUserId,
     handleSnapshot: publisher.handle,
     publishedSkills: nonNegative(publisher.publishedSkills),
-    totalInstalls: Math.max(0, nonNegative(publisher.totalInstalls) - packageStats.totalInstalls),
-    totalStars: Math.max(0, nonNegative(publisher.totalStars) - packageStats.totalStars),
-    totalDownloads: Math.max(
-      0,
-      nonNegative(publisher.totalDownloads) - packageStats.totalDownloads,
+    totalInstalls: publisherSkillTotal(
+      publisher.skillTotalInstalls,
+      publisher.totalInstalls,
+      publishedPackages,
+    ),
+    totalStars: publisherSkillTotal(
+      publisher.skillTotalStars,
+      publisher.totalStars,
+      publishedPackages,
+    ),
+    totalDownloads: publisherSkillTotal(
+      publisher.skillTotalDownloads,
+      publisher.totalDownloads,
+      publishedPackages,
     ),
   };
 }
 
-async function getPublisherPackageStats(
-  ctx: Pick<MutationCtx, "db">,
-  ownerPublisherId: Id<"publishers">,
+function publisherSkillTotal(
+  skillTotal: number | undefined,
+  aggregateTotal: number | undefined,
+  publishedPackages: number,
 ) {
-  const totals = { totalInstalls: 0, totalStars: 0, totalDownloads: 0 };
-  let cursor: string | null = null;
-  while (true) {
-    const page = await ctx.db
-      .query("packages")
-      .withIndex("by_owner_publisher_active_updated", (q) =>
-        q.eq("ownerPublisherId", ownerPublisherId).eq("softDeletedAt", undefined),
-      )
-      .paginate({ cursor, numItems: 100 });
-    for (const pkg of page.page) {
-      totals.totalInstalls += nonNegative(pkg.stats.installs);
-      totals.totalStars += nonNegative(pkg.stats.stars);
-      totals.totalDownloads += nonNegative(pkg.stats.downloads);
-    }
-    if (page.isDone) return totals;
-    cursor = page.continueCursor;
-  }
+  if (typeof skillTotal === "number") return nonNegative(skillTotal);
+  if (publishedPackages > 0) return 0;
+  return nonNegative(aggregateTotal);
 }
 
 async function upsertPublisherAbuseReviewNomination(
@@ -800,6 +832,12 @@ function summarizeRunForQueue(run: ScoreRun) {
 function normalizeNotes(notes: string | undefined) {
   const trimmed = notes?.trim();
   return trimmed ? trimmed : undefined;
+}
+
+function errorMessageFromUnknown(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  return "Publisher abuse score run failed";
 }
 
 function nonNegative(value: number | undefined) {

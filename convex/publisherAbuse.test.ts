@@ -17,6 +17,7 @@ vi.mock("./_generated/api", () => ({
       finalizePublisherAbuseScoresPageInternal: Symbol("finalizePublisherAbuseScoresPageInternal"),
       getOrStartPublisherAbuseScoreRunInternal: Symbol("getOrStartPublisherAbuseScoreRunInternal"),
       getPublisherAbuseScoreRunStateInternal: Symbol("getPublisherAbuseScoreRunStateInternal"),
+      markPublisherAbuseScoreRunFailedInternal: Symbol("markPublisherAbuseScoreRunFailedInternal"),
       runPublisherAbuseScoreRunInternal: Symbol("runPublisherAbuseScoreRunInternal"),
     },
   },
@@ -70,7 +71,7 @@ const finalizeHandler = (
 
 const runHandler = (
   publisherAbuse.runPublisherAbuseScoreRunInternal as unknown as Wrapped<
-    { runId?: string; batchSize?: number; maxPages?: number },
+    { runId?: string; batchSize?: number; maxPages?: number; trigger?: "cron" | "manual" },
     { ok: true; runId: string; pages: number; isDone: boolean }
   >
 )._handler;
@@ -296,25 +297,9 @@ describe("publisher abuse dry-run persistence", () => {
                       totalInstalls: 10_000,
                       totalStars: 500,
                       totalDownloads: 500_000,
-                    },
-                  ],
-                  isDone: true,
-                  continueCursor: "",
-                }),
-              }),
-            };
-          }
-          if (table === "packages") {
-            return {
-              withIndex: () => ({
-                paginate: async () => ({
-                  page: [
-                    {
-                      stats: {
-                        installs: 10_000,
-                        stars: 500,
-                        downloads: 500_000,
-                      },
+                      skillTotalInstalls: 24,
+                      skillTotalStars: 3,
+                      skillTotalDownloads: 240,
                     },
                   ],
                   isDone: true,
@@ -331,13 +316,14 @@ describe("publisher abuse dry-run persistence", () => {
     await collectHandler(ctx, { runId: "publisherAbuseScoreRuns:run" });
 
     expect(ctx.db.query).not.toHaveBeenCalledWith("skills");
+    expect(ctx.db.query).not.toHaveBeenCalledWith("packages");
     expect(insert).toHaveBeenCalledWith(
       "publisherAbuseScores",
       expect.objectContaining({
         publishedSkills: 40,
-        totalInstalls: 0,
-        totalStars: 0,
-        totalDownloads: 0,
+        totalInstalls: 24,
+        totalStars: 3,
+        totalDownloads: 240,
       }),
     );
   });
@@ -667,6 +653,39 @@ describe("publisher abuse dry-run persistence", () => {
       "finalizePublisherAbuseScoresPageInternal",
     );
     expect(scheduler.runAfter).not.toHaveBeenCalled();
+  });
+
+  it("marks the score run failed when a page mutation fails", async () => {
+    const pageError = new Error("page failed");
+    const runMutation = vi
+      .fn()
+      .mockResolvedValueOnce({
+        runId: "publisherAbuseScoreRuns:run",
+        phase: "collecting",
+        status: "running",
+      })
+      .mockRejectedValueOnce(pageError)
+      .mockResolvedValueOnce({
+        runId: "publisherAbuseScoreRuns:run",
+        phase: "collecting",
+        status: "failed",
+      });
+    const ctx = {
+      scheduler: { runAfter: vi.fn(async () => null) },
+      runMutation,
+    };
+
+    await expect(runHandler(ctx, { batchSize: 100, maxPages: 1, trigger: "cron" })).rejects.toThrow(
+      "page failed",
+    );
+
+    expect(String(runMutation.mock.calls[2]?.[0])).toContain(
+      "markPublisherAbuseScoreRunFailedInternal",
+    );
+    expect(runMutation.mock.calls[2]?.[1]).toEqual({
+      runId: "publisherAbuseScoreRuns:run",
+      errorMessage: "page failed",
+    });
   });
 
   it("keeps the requested label when listing all queue statuses", async () => {

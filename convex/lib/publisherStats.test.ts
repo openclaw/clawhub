@@ -85,6 +85,9 @@ describe("publisher stat maintenance", () => {
       totalInstalls: 8,
       totalDownloads: 18,
       totalStars: 3,
+      skillTotalInstalls: 5,
+      skillTotalDownloads: 11,
+      skillTotalStars: 2,
     });
   });
 
@@ -103,6 +106,9 @@ describe("publisher stat maintenance", () => {
           totalInstalls: 7,
           totalDownloads: 17,
           totalStars: 3,
+          skillTotalInstalls: 4,
+          skillTotalDownloads: 10,
+          skillTotalStars: 2,
           createdAt: 1,
           updatedAt: 1,
         })),
@@ -123,6 +129,9 @@ describe("publisher stat maintenance", () => {
       totalInstalls: 8,
       totalDownloads: 18,
       totalStars: 3,
+      skillTotalInstalls: 5,
+      skillTotalDownloads: 11,
+      skillTotalStars: 2,
     });
     expect(ctx.db.query).not.toHaveBeenCalled();
   });
