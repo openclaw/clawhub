@@ -759,6 +759,96 @@ describe("publisher abuse dry-run persistence", () => {
     );
   });
 
+  it("reopens a reviewed nomination when a later score is actionable again", async () => {
+    const insert = vi.fn(async (table: string) => `${table}:new`);
+    const patch = vi.fn(async () => null);
+    const ctx = {
+      db: {
+        get: vi.fn(async () => ({
+          _id: "publisherAbuseScoreRuns:run",
+          status: "running",
+          phase: "finalizing",
+          modelVersion: "publisher-abuse-pressure.v1",
+          modelConfig: TEST_MODEL_CONFIG,
+          scoredPublishers: 1,
+          finalizedScores: 0,
+          passCount: 0,
+          reviewCount: 0,
+          potentialBanCandidateCount: 0,
+          nominatedPublishers: 0,
+          sumLogPressure: 3,
+          sumSquaredLogPressure: 9,
+        })),
+        insert,
+        patch,
+        query: vi.fn((table: string) => {
+          if (table === "publisherAbuseScores") {
+            return {
+              withIndex: () => ({
+                order: () => ({
+                  paginate: async () => ({
+                    page: [
+                      {
+                        _id: "publisherAbuseScores:repeat",
+                        ownerKey: "publisher:publishers:repeat",
+                        ownerPublisherId: "publishers:repeat",
+                        ownerUserId: "users:repeat",
+                        handleSnapshot: "repeat",
+                        modelVersion: "publisher-abuse-pressure.v1",
+                        pressure: 1000,
+                        logPressure: 6,
+                        publishedSkills: 1200,
+                        totalInstalls: 8,
+                        totalStars: 0,
+                        totalDownloads: 120,
+                        installsPerSkill: 0.006,
+                        starsPerSkill: 0,
+                        downloadsPerSkill: 0.1,
+                        reasonCodes: ["high_catalog_volume"],
+                      },
+                    ],
+                    isDone: true,
+                    continueCursor: "",
+                  }),
+                }),
+              }),
+            };
+          }
+          if (table === "publisherAbuseReviewNominations") {
+            return {
+              withIndex: () => ({
+                first: async () => ({
+                  _id: "publisherAbuseReviewNominations:existing",
+                  ownerKey: "publisher:publishers:repeat",
+                  label: "review",
+                  status: "false_positive",
+                  reviewedByUserId: "users:admin",
+                  reviewedAt: 100,
+                }),
+              }),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await expect(finalizeHandler(ctx, { runId: "publisherAbuseScoreRuns:run" })).resolves.toEqual(
+      expect.objectContaining({ isDone: true, finalized: 1, nominations: 1 }),
+    );
+
+    expect(patch).toHaveBeenCalledWith(
+      "publisherAbuseReviewNominations:existing",
+      expect.objectContaining({
+        latestScoreId: "publisherAbuseScores:repeat",
+        label: "potential_ban_candidate",
+        status: "pending",
+        reviewedByUserId: undefined,
+        reviewedAt: undefined,
+      }),
+    );
+  });
+
   it("refreshes an existing nomination when a later score passes", async () => {
     const insert = vi.fn(async (table: string) => `${table}:new`);
     const patch = vi.fn(async () => null);

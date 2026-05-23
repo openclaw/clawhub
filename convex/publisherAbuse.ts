@@ -702,6 +702,7 @@ async function upsertPublisherAbuseReviewNomination(
     .first();
 
   if (existing) {
+    const shouldReopen = isReviewedNominationStatus(existing.status);
     await ctx.db.patch(existing._id, {
       latestScoreId: args.score._id,
       label: args.score.label,
@@ -710,6 +711,13 @@ async function upsertPublisherAbuseReviewNomination(
       handleSnapshot: args.score.handleSnapshot,
       lastScoredAt: args.now,
       updatedAt: args.now,
+      ...(shouldReopen
+        ? {
+            status: "pending" as const,
+            reviewedByUserId: undefined,
+            reviewedAt: undefined,
+          }
+        : {}),
     });
     await ctx.db.insert("publisherAbuseReviewEvents", {
       nominationId: existing._id,
@@ -719,6 +727,8 @@ async function upsertPublisherAbuseReviewNomination(
       eventType: "nomination_score_updated",
       previousLabel: existing.label,
       nextLabel: args.score.label,
+      previousStatus: shouldReopen ? existing.status : undefined,
+      nextStatus: shouldReopen ? "pending" : undefined,
       createdAt: args.now,
     });
     return existing._id;
@@ -849,6 +859,10 @@ function statusesForQueueFilter(
   }
   if (status === "reviewed") return ["reviewed_no_action", "false_positive"];
   return [status];
+}
+
+function isReviewedNominationStatus(status: TriageStatus) {
+  return status === "reviewed_no_action" || status === "false_positive";
 }
 
 function matchesNominationSearch(nomination: NominationDoc, search: string) {
