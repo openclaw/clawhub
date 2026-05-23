@@ -37,6 +37,41 @@ openclaw skills update --all
 OpenClaw records where the skill came from so later updates can continue to
 resolve through ClawHub.
 
+### Example: a community skill
+
+The community skill [`iflow-search`](https://clawhub.ai/iflow-ai/iflow-search) is
+a third-party example of the install path above. It bundles three bash scripts
+that call the iFlow Search API for web search, image search, and webpage fetch.
+
+Requirements (declared in the skill's `SKILL.md`):
+
+- `env`: `IFLOW_API_KEY`
+- `bins`: `bash`, `curl`
+
+Set the API key in your shell before launching the agent (do not pass it as a
+CLI flag, and do not commit it):
+
+```bash
+echo 'export IFLOW_API_KEY="YOUR_IFLOW_API_KEY"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+Use the equivalent shell profile file if you use bash or another shell.
+
+Install and verify:
+
+```bash
+openclaw skills install iflow-search
+openclaw skills info iflow-search   # shows ✓ Ready when env + bins are present
+```
+
+Source and API references:
+
+- ClawHub listing: <https://clawhub.ai/iflow-ai/iflow-search>
+- Skill source: <https://github.com/iflow-ai/iflow-skills/tree/main/skills/iflow-search>
+- iFlow skill docs: <https://platform.iflow.cn/docs/skill>
+- iFlow platform docs: <https://platform.iflow.cn/docs/>
+
 ## Find and install a plugin
 
 Search from OpenClaw:
