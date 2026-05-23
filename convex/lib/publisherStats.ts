@@ -57,22 +57,34 @@ export function getPackagePublisherContribution(pkg: Doc<"packages">): Publisher
   };
 }
 
-function publisherHasStats(publisher: Doc<"publishers">): publisher is Doc<"publishers"> & {
+type PublisherWithBaseStats = Doc<"publishers"> & {
   publishedSkills: number;
   publishedPackages: number;
   totalInstalls: number;
   totalDownloads: number;
   totalStars: number;
+};
+
+type PublisherWithSkillTotalStats = Doc<"publishers"> & {
   skillTotalInstalls: number;
   skillTotalDownloads: number;
   skillTotalStars: number;
-} {
+};
+
+function publisherHasBaseStats(publisher: Doc<"publishers">): publisher is PublisherWithBaseStats {
   return (
     typeof publisher.publishedSkills === "number" &&
     typeof publisher.publishedPackages === "number" &&
     typeof publisher.totalInstalls === "number" &&
     typeof publisher.totalDownloads === "number" &&
-    typeof publisher.totalStars === "number" &&
+    typeof publisher.totalStars === "number"
+  );
+}
+
+function publisherHasSkillTotalStats(
+  publisher: Doc<"publishers">,
+): publisher is PublisherWithSkillTotalStats {
+  return (
     typeof publisher.skillTotalInstalls === "number" &&
     typeof publisher.skillTotalDownloads === "number" &&
     typeof publisher.skillTotalStars === "number"
@@ -138,21 +150,27 @@ async function patchPublisherStats(
   const publisher = await ctx.db.get(publisherId);
   if (!publisher) return;
 
-  if (!publisherHasStats(publisher)) {
+  if (!publisherHasBaseStats(publisher)) {
     await ctx.db.patch(publisherId, await recomputePublisherStats(ctx, publisherId));
     return;
   }
 
-  await ctx.db.patch(publisherId, {
+  const patch: Partial<Doc<"publishers">> = {
     publishedSkills: Math.max(0, publisher.publishedSkills + delta.publishedSkills),
     publishedPackages: Math.max(0, publisher.publishedPackages + delta.publishedPackages),
     totalInstalls: Math.max(0, publisher.totalInstalls + delta.totalInstalls),
     totalDownloads: Math.max(0, publisher.totalDownloads + delta.totalDownloads),
     totalStars: Math.max(0, publisher.totalStars + delta.totalStars),
-    skillTotalInstalls: Math.max(0, publisher.skillTotalInstalls + delta.skillTotalInstalls),
-    skillTotalDownloads: Math.max(0, publisher.skillTotalDownloads + delta.skillTotalDownloads),
-    skillTotalStars: Math.max(0, publisher.skillTotalStars + delta.skillTotalStars),
-  });
+  };
+  if (publisherHasSkillTotalStats(publisher)) {
+    patch.skillTotalInstalls = Math.max(0, publisher.skillTotalInstalls + delta.skillTotalInstalls);
+    patch.skillTotalDownloads = Math.max(
+      0,
+      publisher.skillTotalDownloads + delta.skillTotalDownloads,
+    );
+    patch.skillTotalStars = Math.max(0, publisher.skillTotalStars + delta.skillTotalStars);
+  }
+  await ctx.db.patch(publisherId, patch);
 }
 
 function diffPublisherStats(
