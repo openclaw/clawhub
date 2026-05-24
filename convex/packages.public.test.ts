@@ -3486,6 +3486,94 @@ describe("packages public queries", () => {
     expect(ctx.runMutation).not.toHaveBeenCalled();
   });
 
+  it("allows package publishes when the matching skill slug belongs to the same owner", async () => {
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          _id: "users:owner",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        })
+        .mockResolvedValueOnce({
+          _id: "users:owner",
+          role: "user",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        })
+        .mockResolvedValueOnce({
+          _id: "skills:demo",
+          slug: "demo-plugin",
+          ownerUserId: "users:owner",
+          ownerPublisherId: "publishers:owner",
+        }),
+      runMutation: vi.fn(async () => ({
+        publisherId: "publishers:owner",
+        linkedUserId: "users:owner",
+      })),
+      scheduler: { runAfter: vi.fn() },
+      storage: { get: vi.fn() },
+    };
+
+    await expect(
+      publishPackageForUserInternalHandler(ctx as never, {
+        actorUserId: "users:owner",
+        payload: {
+          name: "demo-plugin",
+          displayName: "Demo Plugin",
+          family: "bundle-plugin",
+          version: "1.0.0",
+          changelog: "init",
+          bundle: { hostTargets: ["desktop"] },
+          files: [],
+        },
+      }),
+    ).rejects.toThrow("openclaw.plugin.json is required");
+  });
+
+  it("rejects package publishes when the matching skill slug belongs to another owner", async () => {
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          _id: "users:owner",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        })
+        .mockResolvedValueOnce({
+          _id: "users:owner",
+          role: "user",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        })
+        .mockResolvedValueOnce({
+          _id: "skills:demo",
+          slug: "demo-plugin",
+          ownerUserId: "users:other",
+          ownerPublisherId: "publishers:other",
+        }),
+      runMutation: vi.fn(async () => ({
+        publisherId: "publishers:owner",
+        linkedUserId: "users:owner",
+      })),
+      scheduler: { runAfter: vi.fn() },
+      storage: { get: vi.fn() },
+    };
+
+    await expect(
+      publishPackageForUserInternalHandler(ctx as never, {
+        actorUserId: "users:owner",
+        payload: {
+          name: "demo-plugin",
+          displayName: "Demo Plugin",
+          family: "bundle-plugin",
+          version: "1.0.0",
+          changelog: "init",
+          bundle: { hostTargets: ["desktop"] },
+          files: [],
+        },
+      }),
+    ).rejects.toThrow('Package name collides with existing skill slug "demo-plugin"');
+  });
+
   it("rejects runtime id changes on an existing code plugin package", async () => {
     const ctx = makeInsertReleaseCtx(makePackageDoc({ runtimeId: "demo.plugin" }));
 

@@ -4535,6 +4535,17 @@ function doesTrustedPublisherMatchPublishToken(
   );
 }
 
+function doesPackagePublishOwnMatchingSkillSlug(
+  skill: Pick<Doc<"skills">, "ownerUserId" | "ownerPublisherId">,
+  ownerUserId: Id<"users">,
+  ownerPublisherId: Id<"publishers"> | undefined,
+) {
+  if (skill.ownerPublisherId && ownerPublisherId) {
+    return skill.ownerPublisherId === ownerPublisherId;
+  }
+  return skill.ownerUserId === ownerUserId;
+}
+
 async function publishPackageImpl(
   ctx: Parameters<typeof requireGitHubAccountAge>[0] & Pick<ActionCtx, "storage" | "scheduler">,
   auth: PackagePublishAuthContext,
@@ -4674,10 +4685,14 @@ async function publishPackageImpl(
     throw new ConvexError(getPublishTotalSizeError("package"));
   }
 
-  const existingSkill = await runQueryRef(ctx, internalRefs.skills.getSkillBySlugInternal, {
-    slug: name,
-  });
-  if (existingSkill) {
+  const existingSkill = await runQueryRef<Pick<
+    Doc<"skills">,
+    "ownerUserId" | "ownerPublisherId"
+  > | null>(ctx, internalRefs.skills.getSkillBySlugInternal, { slug: name });
+  if (
+    existingSkill &&
+    !doesPackagePublishOwnMatchingSkillSlug(existingSkill, ownerUserId, ownerPublisherId)
+  ) {
     throw new ConvexError(`Package name collides with existing skill slug "${name}"`);
   }
   if (family === "code-plugin" && (!effectiveSource?.repo || !effectiveSource?.commit)) {
