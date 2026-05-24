@@ -7,7 +7,7 @@ import { assertModerator, requireUser } from "./lib/access";
 import { normalizePackageName } from "./lib/packageRegistry";
 import { assertCanManageOwnedResource } from "./lib/publishers";
 
-const MAX_PARALLEL_CODEX_SCANS = 20;
+const MAX_PARALLEL_CODEX_SCANS = 64;
 const DEFAULT_VT_WAIT_MS = 10 * 60 * 1000;
 const DEFAULT_LEASE_MS = 60 * 60 * 1000;
 const MAX_ATTEMPTS = 3;
@@ -81,16 +81,25 @@ const jobSourceValidator = v.union(
   v.literal("manual"),
 );
 
+type SecurityScanJobSource = "publish" | "clawscan-note" | "vt-update" | "backfill" | "manual";
+
+const CLAIM_SOURCE_ORDER: SecurityScanJobSource[] = [
+  "clawscan-note",
+  "backfill",
+  "publish",
+  "vt-update",
+];
+
 type EnqueueSkillVersionScanArgs = {
   versionId: Id<"skillVersions">;
-  source: "publish" | "clawscan-note" | "vt-update" | "backfill" | "manual";
+  source: SecurityScanJobSource;
   priority?: number;
   waitForVtMs?: number;
 };
 
 type EnqueuePackageReleaseScanArgs = {
   releaseId: Id<"packageReleases">;
-  source: "publish" | "clawscan-note" | "vt-update" | "backfill" | "manual";
+  source: SecurityScanJobSource;
   priority?: number;
   waitForVtMs?: number;
 };
@@ -871,28 +880,46 @@ export const claimQueuedJobsInternal = internalMutation({
     const capacity = Math.max(0, Math.min(limit, MAX_PARALLEL_CODEX_SCANS - activeRunning));
     if (capacity === 0) return [];
 
-    const maliciousSignalReady = await ctx.db
-      .query("securityScanJobs")
-      .withIndex("by_status_malicious_signal_next_run_at", (q) =>
-        q.eq("status", "queued").eq("hasMaliciousSignal", true).lte("nextRunAt", now),
-      )
-      .order("asc")
-      .take(capacity);
-    const claimedIds = new Set(maliciousSignalReady.map((job) => job._id));
-    const remainingCapacity = capacity - maliciousSignalReady.length;
-    const queued = remainingCapacity
-      ? await ctx.db
+    const ready: Doc<"securityScanJobs">[] = [];
+    const claimedIds = new Set<Id<"securityScanJobs">>();
+    const remainingCapacity = () => capacity - ready.length;
+    const addReadyJobs = (jobs: Doc<"securityScanJobs">[]) => {
+      for (const job of jobs) {
+        if (remainingCapacity() === 0) break;
+        if (claimedIds.has(job._id) || job.nextRunAt > now) continue;
+        claimedIds.add(job._id);
+        ready.push(job);
+      }
+    };
+    const takeReadySourceJobs = async (source: SecurityScanJobSource) => {
+      if (remainingCapacity() === 0) return [];
+      return await ctx.db
+        .query("securityScanJobs")
+        .withIndex("by_status_source_next_run_at", (q) =>
+          q.eq("status", "queued").eq("source", source).lte("nextRunAt", now),
+        )
+        .order("asc")
+        .take(remainingCapacity());
+    };
+
+    addReadyJobs(await takeReadySourceJobs("manual"));
+
+    if (remainingCapacity() > 0) {
+      addReadyJobs(
+        await ctx.db
           .query("securityScanJobs")
-          .withIndex("by_status_and_next_run_at", (q) =>
-            q.eq("status", "queued").lte("nextRunAt", now),
+          .withIndex("by_status_malicious_signal_next_run_at", (q) =>
+            q.eq("status", "queued").eq("hasMaliciousSignal", true).lte("nextRunAt", now),
           )
           .order("asc")
-          .take(remainingCapacity * 4)
-      : [];
-    const ready = [...maliciousSignalReady, ...queued.filter((job) => !claimedIds.has(job._id))]
-      .filter((job) => job.nextRunAt <= now)
-      .sort((a, b) => b.priority - a.priority || a.createdAt - b.createdAt)
-      .slice(0, capacity);
+          .take(remainingCapacity()),
+      );
+    }
+
+    for (const source of CLAIM_SOURCE_ORDER) {
+      addReadyJobs(await takeReadySourceJobs(source));
+      if (remainingCapacity() === 0) break;
+    }
 
     const claimed = [];
     for (const job of ready) {

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   cancelQueuedVtUpdateJobsInternal,
   claimCodexScanJobs,
+  claimQueuedJobsInternal,
   completeCodexScanJob,
   failCodexScanJob,
   requestPackageRescanForUserInternal,
@@ -23,6 +24,13 @@ const claimCodexScanJobsHandler = (
   claimCodexScanJobs as unknown as WrappedHandler<
     { token: string; workerId: string; limit?: number },
     Array<unknown>
+  >
+)._handler;
+
+const claimQueuedJobsInternalHandler = (
+  claimQueuedJobsInternal as unknown as WrappedHandler<
+    { workerId: string; limit: number; leaseMs?: number },
+    Array<ScanJob & { leaseToken: string; workerId: string }>
   >
 )._handler;
 
@@ -331,6 +339,86 @@ function makeCancelCtx(jobs: ScanJob[], targets: Map<string, unknown> = new Map(
   };
 }
 
+function makeClaimCtx(jobs: ScanJob[]) {
+  const patches: Array<{ id: string; patch: Record<string, unknown> }> = [];
+  const patch = vi.fn(async (id: string, doc: Record<string, unknown>) => {
+    patches.push({ id, patch: doc });
+  });
+  const query = vi.fn((tableName: string) => {
+    expect(tableName).toBe("securityScanJobs");
+    return {
+      withIndex: vi.fn(
+        (
+          indexName: string,
+          buildRange: (q: {
+            eq: (field: string, value: unknown) => unknown;
+            lte: (field: string, value: number) => unknown;
+          }) => unknown,
+        ) => {
+          const eqFilters = new Map<string, unknown>();
+          const lteFilters = new Map<string, number>();
+          const indexBuilder = {
+            eq(field: string, value: unknown) {
+              eqFilters.set(field, value);
+              return indexBuilder;
+            },
+            lte(field: string, value: number) {
+              lteFilters.set(field, value);
+              return indexBuilder;
+            },
+          };
+          buildRange(indexBuilder);
+          const select = () =>
+            jobs
+              .filter((job) => {
+                for (const [field, value] of eqFilters) {
+                  if ((job as unknown as Record<string, unknown>)[field] !== value) return false;
+                }
+                for (const [field, value] of lteFilters) {
+                  const fieldValue = (job as unknown as Record<string, unknown>)[field];
+                  if (typeof fieldValue !== "number" || fieldValue > value) return false;
+                }
+                return true;
+              })
+              .sort((a, b) => {
+                if (indexName.includes("next_run_at")) return a.nextRunAt - b.nextRunAt;
+                if (indexName.includes("lease_expires_at")) {
+                  return (
+                    Number((a as unknown as { leaseExpiresAt?: number }).leaseExpiresAt ?? 0) -
+                    Number((b as unknown as { leaseExpiresAt?: number }).leaseExpiresAt ?? 0)
+                  );
+                }
+                return a.createdAt - b.createdAt;
+              });
+          const take = vi.fn(async (limit: number) => select().slice(0, limit));
+          return {
+            take,
+            order: vi.fn(() => ({ take })),
+          };
+        },
+      ),
+    };
+  });
+
+  return {
+    ctx: {
+      db: {
+        query,
+        patch,
+        get: vi.fn(),
+        insert: vi.fn(),
+        replace: vi.fn(),
+        delete: vi.fn(),
+        normalizeId: vi.fn(() => null),
+        system: {},
+      },
+    },
+    patches,
+    patch,
+    query,
+  };
+}
+
 describe("securityScan", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
@@ -633,6 +721,85 @@ describe("securityScan", () => {
         error: "ClawPack artifact unavailable",
       }),
     );
+  });
+
+  it("claims manual rescans and malicious signals before older publish backlog", async () => {
+    const { ctx, patches } = makeClaimCtx([
+      makeScanJob({
+        _id: "securityScanJobs:old-publish",
+        source: "publish",
+        createdAt: 10,
+        nextRunAt: 10,
+      }),
+      makeScanJob({
+        _id: "securityScanJobs:older-vt-update",
+        source: "vt-update",
+        createdAt: 20,
+        nextRunAt: 20,
+      }),
+      makeScanJob({
+        _id: "securityScanJobs:malicious-publish",
+        source: "publish",
+        hasMaliciousSignal: true,
+        createdAt: 30,
+        nextRunAt: 30,
+      }),
+      makeScanJob({
+        _id: "securityScanJobs:clawscan-note",
+        source: "clawscan-note",
+        createdAt: 40,
+        nextRunAt: 40,
+      }),
+      makeScanJob({
+        _id: "securityScanJobs:backfill",
+        source: "backfill",
+        createdAt: 50,
+        nextRunAt: 50,
+      }),
+      makeScanJob({
+        _id: "securityScanJobs:manual",
+        source: "manual",
+        priority: 100,
+        createdAt: 1000,
+        nextRunAt: 1000,
+      }),
+    ]);
+
+    const claimed = await claimQueuedJobsInternalHandler(ctx, {
+      workerId: "worker-1",
+      limit: 4,
+      leaseMs: 60_000,
+    });
+
+    expect(claimed.map((job) => job._id)).toEqual([
+      "securityScanJobs:manual",
+      "securityScanJobs:malicious-publish",
+      "securityScanJobs:clawscan-note",
+      "securityScanJobs:backfill",
+    ]);
+    expect(patches.map((entry) => entry.id)).toEqual(claimed.map((job) => job._id));
+  });
+
+  it("allows up to 64 active Codex scan claims", async () => {
+    const { ctx } = makeClaimCtx(
+      Array.from({ length: 70 }, (_, index) =>
+        makeScanJob({
+          _id: `securityScanJobs:manual-${index}`,
+          source: "manual",
+          priority: 100,
+          createdAt: index,
+          nextRunAt: index,
+        }),
+      ),
+    );
+
+    const claimed = await claimQueuedJobsInternalHandler(ctx, {
+      workerId: "worker-1",
+      limit: 100,
+      leaseMs: 60_000,
+    });
+
+    expect(claimed).toHaveLength(64);
   });
 
   it("caps SkillSpector findings before storing completed scan results", async () => {

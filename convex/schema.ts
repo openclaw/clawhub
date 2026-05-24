@@ -1067,6 +1067,7 @@ const securityScanJobs = defineTable({
 })
   .index("by_status_and_next_run_at", ["status", "nextRunAt"])
   .index("by_status_source_created_at", ["status", "source", "createdAt"])
+  .index("by_status_source_next_run_at", ["status", "source", "nextRunAt"])
   .index("by_status_source_target_kind_created_at", ["status", "source", "targetKind", "createdAt"])
   .index("by_status_and_lease_expires_at", ["status", "leaseExpiresAt"])
   .index("by_status_malicious_signal_next_run_at", ["status", "hasMaliciousSignal", "nextRunAt"])

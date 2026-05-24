@@ -97,7 +97,7 @@ type JobDiagnosticInput = {
   status: "completed" | "failed";
 };
 
-const DEFAULT_BATCH_LIMIT = 20;
+const DEFAULT_BATCH_LIMIT = 6;
 const DEFAULT_MAX_RUNTIME_MS = 40 * 60 * 1000;
 const DEFAULT_CODEX_SCAN_TIMEOUT_MS = 20 * 60 * 1000;
 const MAX_DIAGNOSTIC_TEXT_CHARS = 20_000;
@@ -1070,7 +1070,11 @@ async function main() {
   if (!convexUrl) throw new Error("CONVEX_URL or VITE_CONVEX_URL is required");
   const token = requireEnv("SECURITY_SCAN_WORKER_TOKEN");
   const client = new ConvexHttpClient(convexUrl);
-  const workerId = `github-actions:${process.env.GITHUB_RUN_ID ?? process.pid}`;
+  const workerId =
+    process.env.CODEX_SECURITY_SCAN_WORKER_ID ??
+    `github-actions:${process.env.GITHUB_RUN_ID ?? process.pid}:${
+      process.env.GITHUB_RUN_ATTEMPT ?? "1"
+    }:${process.env.CODEX_SECURITY_SCAN_SHARD ?? process.env.GITHUB_JOB ?? "0"}`;
   const startedAt = Date.now();
   const claimDeadline = startedAt + maxRuntimeMs;
   let totalClaimed = 0;
