@@ -159,7 +159,6 @@ export type LlmEvalResponse = {
   findings: string;
   agenticRiskFindings?: LlmAgenticRiskFinding[];
   riskSummary?: LlmRiskSummary;
-  incompleteArtifactInspection?: boolean;
 };
 
 export type PreparedArtifactText = {
@@ -376,8 +375,7 @@ Respond with a JSON object and nothing else:
   "scan_findings_in_context": [
     { "ruleId": "...", "expected_for_purpose": true | false, "note": "..." }
   ],
-  "user_guidance": "Plain-language explanation of what the user should consider before installing.",
-  "incomplete_artifact_inspection": false
+  "user_guidance": "Plain-language explanation of what the user should consider before installing."
 }`;
 
 // ---------------------------------------------------------------------------
@@ -934,7 +932,7 @@ export function parseLlmEvalResponse(raw: string): LlmEvalResponse | null {
   const riskSummary = parseRiskSummary(obj.risk_summary ?? obj.riskSummary);
   if (riskSummary === null) return null;
 
-  const result = normalizeParsedLlmEvalResponse({
+  return normalizeParsedLlmEvalResponse({
     verdict: verdict as LlmEvalResponse["verdict"],
     confidence: confidence as LlmEvalResponse["confidence"],
     summary,
@@ -944,12 +942,4 @@ export function parseLlmEvalResponse(raw: string): LlmEvalResponse | null {
     agenticRiskFindings: agenticRiskFindings ?? undefined,
     riskSummary: riskSummary ?? undefined,
   });
-
-  const hasIncompleteInspectionSignal =
-    obj.incomplete_artifact_inspection === true || obj.incompleteArtifactInspection === true;
-  if (hasIncompleteInspectionSignal) {
-    return { ...result, incompleteArtifactInspection: true };
-  }
-
-  return result;
 }

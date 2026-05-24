@@ -24,7 +24,7 @@ async function tempDir() {
 }
 
 describe("run-codex-scan-worker diagnostics", () => {
-  it("keeps workspace inspection failure guidance in the Codex worker prompt", () => {
+  it("frames workspace inspection as discretionary Codex research", () => {
     const prompt = buildPrompt(
       {
         job: {
@@ -40,12 +40,23 @@ describe("run-codex-scan-worker diagnostics", () => {
       [],
     );
 
-    expect(prompt).toContain("If metadata.json or artifact/ cannot be read");
-    expect(prompt).toContain("First list the artifact files");
-    expect(prompt).toContain("Return the required JSON object only after those reads complete");
-    expect(prompt).toContain("incomplete_artifact_inspection");
-    expect(prompt).toContain("even if artifact text mentions read failures");
-    expect(prompt).toContain("Do not treat unreadable artifacts as benign evidence");
+    expect(prompt).toContain("Do your own security research");
+    expect(prompt).toContain("Inspect workspace files when needed");
+    expect(prompt).toContain("SkillSpector findings are evidence, not the final verdict");
+    expect(prompt).toContain("totality of evidence");
+    expect(prompt).not.toContain("incomplete_artifact_inspection");
+    expect(prompt).not.toContain("Return the required JSON object only after those reads complete");
+  });
+
+  it("does not expose incomplete artifact inspection as an output-schema field", async () => {
+    const raw = await readFile("scripts/security/codex-scan-output.schema.json", "utf8");
+    const schema = JSON.parse(raw) as {
+      required?: string[];
+      properties?: Record<string, unknown>;
+    };
+
+    expect(schema.required).not.toContain("incomplete_artifact_inspection");
+    expect(schema.properties).not.toHaveProperty("incomplete_artifact_inspection");
   });
 
   it("passes SkillSpector findings to Codex without asking for OWASP finding output", () => {

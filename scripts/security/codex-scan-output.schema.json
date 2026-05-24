@@ -7,8 +7,7 @@
     "summary",
     "dimensions",
     "scan_findings_in_context",
-    "user_guidance",
-    "incomplete_artifact_inspection"
+    "user_guidance"
   ],
   "properties": {
     "verdict": { "type": "string", "enum": ["benign", "suspicious", "malicious"] },
@@ -85,7 +84,6 @@
         }
       }
     },
-    "user_guidance": { "type": "string" },
-    "incomplete_artifact_inspection": { "type": "boolean" }
+    "user_guidance": { "type": "string" }
   }
 }

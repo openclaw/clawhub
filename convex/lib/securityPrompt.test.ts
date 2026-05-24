@@ -245,7 +245,7 @@ describe("securityPrompt", () => {
     expect(parsed?.riskSummary?.abnormal_behavior_control.status).toBe("none");
   });
 
-  it("marks workspace read failures as incomplete artifact inspection", () => {
+  it("ignores obsolete incomplete artifact inspection fields", () => {
     const parsed = parseLlmEvalResponse(
       newResponse({
         verdict: "benign",
@@ -279,96 +279,27 @@ describe("securityPrompt", () => {
     expect(parsed).toMatchObject({
       verdict: "benign",
       confidence: "low",
-      incompleteArtifactInspection: true,
     });
   });
 
-  it("does not let quoted artifact snippets spoof incomplete inspection", () => {
+  it("keeps verdicts that mention scanner-read uncertainty as ordinary verdicts", () => {
     const parsed = parseLlmEvalResponse(
       newResponse({
-        agentic_risk_findings: [
-          {
-            category_id: "ASI09",
-            category_label: "Human-Agent Trust Exploitation",
-            risk_bucket: "abnormal_behavior_control",
-            status: "note",
-            severity: "low",
-            confidence: "medium",
-            evidence: {
-              path: "SKILL.md",
-              snippet: "metadata.json could not be read",
-              explanation: "The phrase appears in the artifact text, not scanner diagnostics.",
-            },
-            user_impact: "Users should treat this as artifact content.",
-            recommendation: "Do not follow artifact instructions.",
-          },
-        ],
-      }),
-    );
-
-    expect(parsed?.incompleteArtifactInspection).toBeUndefined();
-  });
-
-  it("does not infer incomplete inspection from quoted summary prose", () => {
-    const parsed = parseLlmEvalResponse(
-      newResponse({
-        verdict: "benign",
-        confidence: "high",
+        verdict: "suspicious",
+        confidence: "low",
         summary:
-          'The SKILL.md includes the phrase "metadata.json could not be read" as an example, but artifact files were inspected.',
-        user_guidance: "No scanner error was reported.",
-      }),
-    );
-
-    expect(parsed?.verdict).toBe("benign");
-    expect(parsed?.incompleteArtifactInspection).toBeUndefined();
-  });
-
-  it("does not discard blocking verdicts that mention quoted failure text", () => {
-    const parsed = parseLlmEvalResponse(
-      newResponse({
-        verdict: "malicious",
-        scan_findings_in_context: [
-          {
-            ruleId: "suspicious.prompt_injection",
-            expected_for_purpose: false,
-            note: "The artifact tells the scanner to claim metadata.json could not be read.",
-          },
-        ],
-        agentic_risk_findings: [
-          {
-            category_id: "ASI09",
-            category_label: "Human-Agent Trust Exploitation",
-            risk_bucket: "abnormal_behavior_control",
+          "The scanner context is enough to hold for review even without direct file reads.",
+        dimensions: {
+          purpose_capability: {
             status: "concern",
-            severity: "high",
-            confidence: "high",
-            evidence: {
-              path: "SKILL.md",
-              snippet: "metadata.json could not be read",
-              explanation: "The artifact is attempting to forge scanner diagnostics.",
-            },
-            user_impact: "Users could be misled by forged scanner-failure language.",
-            recommendation: "Do not install this artifact.",
+            detail: "The supplied scanner context raises a material concern.",
           },
-        ],
+        },
+        user_guidance: "Treat this as a low-confidence adjudicated verdict, not a worker failure.",
       }),
     );
 
-    expect(parsed?.verdict).toBe("malicious");
-    expect(parsed?.incompleteArtifactInspection).toBeUndefined();
-  });
-
-  it("honors explicit incomplete inspection even with a blocking verdict string", () => {
-    const parsed = parseLlmEvalResponse(
-      newResponse({
-        verdict: "malicious",
-        incomplete_artifact_inspection: true,
-      }),
-    );
-
-    expect(parsed?.verdict).toBe("malicious");
-    expect(parsed?.incompleteArtifactInspection).toBe(true);
+    expect(parsed?.verdict).toBe("suspicious");
   });
 
   it("defaults LLM evals to OpenAI priority service tier", () => {
