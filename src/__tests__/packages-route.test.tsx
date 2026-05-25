@@ -328,6 +328,9 @@ describe("plugins route", () => {
 
     render(<Component />);
 
+    expect(screen.getByRole("heading", { name: "Plugins 1+" })).toBeTruthy();
+    expect(screen.getByText("1+ results")).toBeTruthy();
+
     fireEvent.click(screen.getByRole("button", { name: "Next page" }));
 
     expect(navigateMock).toHaveBeenCalled();

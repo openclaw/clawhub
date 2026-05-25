@@ -94,6 +94,19 @@ function sortPluginSearchItems(items: PackageListItem[], sort: PluginSort) {
   return sorted;
 }
 
+function formatPluginHeadingCount(count: number, hasNextPage: boolean, hasPreviousPage: boolean) {
+  if (hasPreviousPage) return `${count} shown`;
+  if (hasNextPage) return `${count}+`;
+  return String(count);
+}
+
+function formatPluginResultsCount(count: number, hasNextPage: boolean, hasPreviousPage: boolean) {
+  const plural = count === 1 && !hasNextPage ? "" : "s";
+  if (hasPreviousPage) return `${count} result${plural} shown`;
+  if (hasNextPage) return `${count}+ results`;
+  return `${count} result${plural}`;
+}
+
 export const Route = createFileRoute("/plugins/")({
   pendingComponent: PluginsIndexPending,
   validateSearch: (search): PluginSearchState => ({
@@ -268,6 +281,10 @@ function PluginsIndex() {
     () => (hasQuery ? sortPluginSearchItems(items, activeSort as PluginSort) : items),
     [activeSort, hasQuery, items],
   );
+  const hasPreviousPage = Boolean(!hasQuery && search.cursor);
+  const hasNextPage = Boolean(!hasQuery && nextCursor);
+  const headingCount = formatPluginHeadingCount(visibleItems.length, hasNextPage, hasPreviousPage);
+  const resultsCount = formatPluginResultsCount(visibleItems.length, hasNextPage, hasPreviousPage);
 
   const sortOptions = useMemo(() => {
     if (hasQuery) {
@@ -414,7 +431,7 @@ function PluginsIndex() {
           Filters
         </button>
         <h1 className="browse-title">
-          Plugins <span className="browse-count">{visibleItems.length}</span>
+          Plugins <span className="browse-count">{headingCount}</span>
         </h1>
       </div>
       <form className="browse-page-search" onSubmit={handleSearch}>
@@ -443,7 +460,7 @@ function PluginsIndex() {
         <div className="browse-results">
           <div className="browse-results-toolbar">
             <span className="browse-results-count">
-              {visibleItems.length} result{visibleItems.length !== 1 ? "s" : ""}
+              {resultsCount}
               {hasQuery ||
               search.category ||
               search.verified ||
