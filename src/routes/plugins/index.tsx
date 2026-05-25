@@ -101,10 +101,9 @@ function formatPluginHeadingCount(count: number, hasNextPage: boolean, hasPrevio
 }
 
 function formatPluginResultsCount(count: number, hasNextPage: boolean, hasPreviousPage: boolean) {
-  const plural = count === 1 && !hasNextPage ? "" : "s";
-  if (hasPreviousPage) return `${count} result${plural} shown`;
+  if (hasPreviousPage) return `${count} result${count === 1 ? "" : "s"} shown`;
   if (hasNextPage) return `${count}+ results`;
-  return `${count} result${plural}`;
+  return `${count} result${count === 1 ? "" : "s"}`;
 }
 
 export const Route = createFileRoute("/plugins/")({

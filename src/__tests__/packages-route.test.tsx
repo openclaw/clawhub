@@ -342,6 +342,34 @@ describe("plugins route", () => {
     });
   });
 
+  it("uses singular shown text on non-first browse pages", async () => {
+    searchMock = { cursor: "cursor:current" };
+    loaderDataMock = {
+      items: [
+        {
+          name: "demo-plugin",
+          displayName: "Demo Plugin",
+          family: "code-plugin",
+          channel: "community",
+          isOfficial: false,
+          executesCode: true,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      nextCursor: "cursor:next",
+      rateLimited: false,
+      retryAfterSeconds: null,
+    };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(screen.getByRole("heading", { name: "Plugins 1 shown" })).toBeTruthy();
+    expect(screen.getByText("1 result shown")).toBeTruthy();
+  });
+
   it("renders a title count and switches to grid view", async () => {
     loaderDataMock = {
       items: [
