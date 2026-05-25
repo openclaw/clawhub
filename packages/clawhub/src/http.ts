@@ -475,7 +475,7 @@ function buildHttpErrorMessage(status: number, text: string, rateLimit: RateLimi
 }
 
 function normalizeHttpErrorBody(status: number, text: string): string {
-  const body = text.trim();
+  const body = cleanUserFacingErrorMessage(text);
   const lowered = body.toLowerCase();
   if (body && lowered !== "unauthorized" && lowered !== "forbidden") {
     if (isTransientConvexContention(body)) {
@@ -497,6 +497,25 @@ function normalizeHttpErrorBody(status: number, text: string): string {
   }
   if (body) return body;
   return `HTTP ${status}`;
+}
+
+function cleanUserFacingErrorMessage(message: string) {
+  let cleaned = message
+    .replace(/\[CONVEX[^\]]*\]\s*/g, "")
+    .replace(/\[Request ID:[^\]]*\]\s*/g, "")
+    .replace(/^Server Error Called by client\s*/i, "")
+    .trim();
+
+  for (let i = 0; i < 3; i += 1) {
+    const next = cleaned
+      .replace(/^Error:\s*/i, "")
+      .replace(/^(?:Uncaught\s+)?ConvexError:\s*/i, "")
+      .trim();
+    if (next === cleaned) break;
+    cleaned = next;
+  }
+
+  return cleaned;
 }
 
 function isTransientConvexContention(text: string) {

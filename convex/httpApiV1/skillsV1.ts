@@ -11,6 +11,7 @@ import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { getOptionalApiTokenUserId, requireApiTokenUser } from "../lib/apiTokenAuth";
+import { mergeHeaders } from "../lib/httpHeaders";
 import { applyRateLimit } from "../lib/httpRateLimit";
 import { parseBooleanQueryParam, resolveBooleanQueryParam } from "../lib/httpUtils";
 import type {
@@ -19,6 +20,12 @@ import type {
   LlmRiskSummary,
 } from "../lib/securityPrompt";
 import { selectGeneratedSkillCardFile, sourceSkillVersionFiles } from "../lib/skillCards";
+import {
+  buildMergedExportZip,
+  type MergedExportManifestEntry,
+  validateSlug,
+  validateFilePath,
+} from "../lib/skillZip";
 import { publishVersionForUser } from "../skills";
 import {
   MAX_RAW_FILE_BYTES,
@@ -35,6 +42,11 @@ import {
   text,
   toOptionalNumber,
 } from "./shared";
+
+const MAX_EXPORT_FILE_COUNT = 10_000;
+const MAX_EXPORT_PAGE_LIMIT = 250;
+const DEFAULT_EXPORT_PAGE_LIMIT = 250;
+const MAX_EXPORT_TOTAL_BYTES = 256 * 1024 * 1024;
 
 type SearchSkillEntry = {
   score: number;
@@ -108,6 +120,7 @@ type PublicSkillVersionResponse = {
   softDeletedAt?: number;
   sha256hash?: string;
   vtAnalysis?: Doc<"skillVersions">["vtAnalysis"];
+  skillSpectorAnalysis?: Doc<"skillVersions">["skillSpectorAnalysis"];
   llmAnalysis?: Doc<"skillVersions">["llmAnalysis"];
   staticScan?: PublicSkillVersionStaticScan;
   capabilityTags?: string[];
@@ -237,6 +250,15 @@ type SkillSecuritySnapshot = {
       source: string | null;
       checkedAt: number | null;
     } | null;
+    skillspector: {
+      status: string;
+      normalizedStatus: NormalizedSecurityStatus;
+      score: number | null;
+      severity: string | null;
+      recommendation: string | null;
+      issueCount: number;
+      checkedAt: number | null;
+    } | null;
     llm: {
       status: string;
       verdict: string | null;
@@ -256,7 +278,7 @@ type SkillSecuritySnapshot = {
 
 const internalRefs = internal as unknown as {
   securityScan: {
-    enqueueSkillRescanForModeratorInternal: unknown;
+    requestSkillRescanForUserInternal: unknown;
   };
   skills: {
     reportSkillForUserInternal: unknown;
@@ -334,37 +356,49 @@ function hasLlmDimensionWarnings(dimensions: LlmEvalDimension[] | undefined) {
 function buildSkillSecuritySnapshot(
   version: Pick<
     PublicSkillVersionResponse,
-    "sha256hash" | "vtAnalysis" | "llmAnalysis" | "staticScan" | "capabilityTags"
+    | "sha256hash"
+    | "vtAnalysis"
+    | "skillSpectorAnalysis"
+    | "llmAnalysis"
+    | "staticScan"
+    | "capabilityTags"
   >,
 ): SkillSecuritySnapshot | null {
   const capabilityTags = version.capabilityTags ?? [];
   const sha256hash = version.sha256hash ?? null;
   const vt = version.vtAnalysis;
+  const skillSpector = version.skillSpectorAnalysis;
   const llm = version.llmAnalysis;
   const staticScan = version.staticScan;
 
-  if (!sha256hash && !vt && !llm && !staticScan && capabilityTags.length === 0) return null;
+  if (!sha256hash && !vt && !skillSpector && !llm && !staticScan && capabilityTags.length === 0) {
+    return null;
+  }
 
   const staticStatus =
     staticScan?.status?.trim().toLowerCase() === "malicious"
       ? ("malicious" satisfies NormalizedSecurityStatus)
       : null;
   const vtStatus = vt ? normalizeSecurityStatus(vt.verdict ?? vt.status) : null;
+  const skillSpectorStatus = skillSpector ? normalizeSecurityStatus(skillSpector.status) : null;
   const llmStatus = llm ? normalizeSecurityStatus(llm.verdict ?? llm.status) : null;
 
   const statuses: NormalizedSecurityStatus[] = [];
   if (staticStatus) statuses.push(staticStatus);
   if (llmStatus) statuses.push(llmStatus);
-  if (statuses.length === 0 && sha256hash) statuses.push("pending");
+  if (statuses.length === 0 && (sha256hash || skillSpector)) statuses.push("pending");
   const status = mergeSecurityStatuses(statuses);
   const hasScanResult =
     isDefinitiveSecurityStatus(staticStatus) || isDefinitiveSecurityStatus(llmStatus);
   const hasWarnings =
     status === "suspicious" || status === "malicious" || hasLlmDimensionWarnings(llm?.dimensions);
 
-  const checkedAtCandidates = [staticScan?.checkedAt, vt?.checkedAt, llm?.checkedAt].filter(
-    (value): value is number => typeof value === "number",
-  );
+  const checkedAtCandidates = [
+    staticScan?.checkedAt,
+    vt?.checkedAt,
+    skillSpector?.checkedAt,
+    llm?.checkedAt,
+  ].filter((value): value is number => typeof value === "number");
   const checkedAt = checkedAtCandidates.length > 0 ? Math.max(...checkedAtCandidates) : null;
 
   return {
@@ -395,6 +429,17 @@ function buildSkillSecuritySnapshot(
             analysis: vt.analysis ?? null,
             source: vt.source ?? null,
             checkedAt: vt.checkedAt ?? null,
+          }
+        : null,
+      skillspector: skillSpector
+        ? {
+            status: skillSpector.status,
+            normalizedStatus: skillSpectorStatus ?? "pending",
+            score: skillSpector.score ?? null,
+            severity: skillSpector.severity ?? null,
+            recommendation: skillSpector.recommendation ?? null,
+            issueCount: skillSpector.issueCount ?? 0,
+            checkedAt: skillSpector.checkedAt ?? null,
           }
         : null,
       llm: llm
@@ -1773,7 +1818,7 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
       const version = optionalStringField(body, "version");
       const result = await runMutationRef(
         ctx,
-        internalRefs.securityScan.enqueueSkillRescanForModeratorInternal,
+        internalRefs.securityScan.requestSkillRescanForUserInternal,
         {
           actorUserId: auth.userId,
           slug,
@@ -1867,4 +1912,365 @@ function optionalStringField(value: unknown, key: string): string | undefined {
   if (!value || typeof value !== "object") return undefined;
   const field = (value as Record<string, unknown>)[key];
   return typeof field === "string" ? field : undefined;
+}
+
+async function chunkedParallel<T, R>(
+  items: T[],
+  chunkSize: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = [];
+  for (let i = 0; i < items.length; i += chunkSize) {
+    const chunk = items.slice(i, i + chunkSize);
+    const chunkResults = await Promise.all(chunk.map(fn));
+    results.push(...chunkResults);
+  }
+  return results;
+}
+
+type SkillsExportPhase =
+  | "list_skills"
+  | "build_empty_zip"
+  | "load_versions"
+  | "plan_blobs"
+  | "load_blobs"
+  | "assemble_entries"
+  | "build_zip";
+
+type SkillsExportLogContext = {
+  phase: SkillsExportPhase;
+  startDate: number;
+  endDate: number;
+  limit: number;
+  cursorPresent: boolean;
+  pageLength: number;
+  hasMore: boolean | null;
+  nextCursorPresent: boolean | null;
+  versionCount: number;
+  blobTaskCount: number;
+  blobCount: number;
+  zipEntryCount: number;
+  manifestCount: number;
+  exportErrorCount: number;
+  totalExportBytes: number;
+};
+
+function logSkillsExportFailure(context: SkillsExportLogContext, error: unknown) {
+  console.error("skills_export_failed", {
+    ...context,
+    errorName: error instanceof Error ? error.name : typeof error,
+    errorMessage:
+      error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500),
+  });
+}
+
+export async function exportSkillsV1Handler(ctx: ActionCtx, request: Request) {
+  try {
+    await requireApiTokenUser(ctx, request);
+  } catch (err) {
+    return text(err instanceof Error ? err.message : "Unauthorized", 401);
+  }
+
+  const rate = await applyRateLimit(ctx, request, "export");
+  if (!rate.ok) return rate.response;
+
+  const url = new URL(request.url);
+  const startDate = toOptionalNumber(url.searchParams.get("startDate"));
+  const endDate = toOptionalNumber(url.searchParams.get("endDate"));
+  const requestedLimit = toOptionalNumber(url.searchParams.get("limit"));
+  const cursor = url.searchParams.get("cursor")?.trim() || undefined;
+
+  if (startDate == null || endDate == null) {
+    return text(
+      "startDate and endDate query parameters are required (Unix milliseconds)",
+      400,
+      rate.headers,
+    );
+  }
+  if (startDate > endDate) {
+    return text("startDate must be <= endDate", 400, rate.headers);
+  }
+  if (requestedLimit != null && requestedLimit > MAX_EXPORT_PAGE_LIMIT) {
+    return text(`limit must be <= ${MAX_EXPORT_PAGE_LIMIT}`, 400, rate.headers);
+  }
+  const limit = Math.max(1, requestedLimit ?? DEFAULT_EXPORT_PAGE_LIMIT);
+
+  const logContext: SkillsExportLogContext = {
+    phase: "list_skills",
+    startDate,
+    endDate,
+    limit,
+    cursorPresent: Boolean(cursor),
+    pageLength: 0,
+    hasMore: null,
+    nextCursorPresent: null,
+    versionCount: 0,
+    blobTaskCount: 0,
+    blobCount: 0,
+    zipEntryCount: 0,
+    manifestCount: 0,
+    exportErrorCount: 0,
+    totalExportBytes: 0,
+  };
+
+  let result: {
+    page: Array<{
+      slug: string;
+      displayName: string;
+      latestVersionId?: Id<"skillVersions">;
+      createdAt: number;
+      updatedAt: number;
+      stats?: Record<string, unknown> | null;
+      ownerUserId: Id<"users">;
+      ownerHandle?: string | null;
+      ownerDisplayName?: string | null;
+    }>;
+    nextCursor: string | null;
+    hasMore: boolean;
+  };
+  try {
+    result = await ctx.runQuery(internal.skills.listByDateRange, {
+      startDate,
+      endDate,
+      cursor,
+      numItems: limit,
+    });
+  } catch (err) {
+    if (err instanceof Error && err.message.includes("Invalid cursor format")) {
+      return text("Invalid cursor format", 400, rate.headers);
+    }
+    logSkillsExportFailure(logContext, err);
+    throw err;
+  }
+  logContext.pageLength = result.page.length;
+  logContext.hasMore = result.hasMore;
+  logContext.nextCursorPresent = Boolean(result.nextCursor);
+
+  if (result.page.length === 0) {
+    try {
+      logContext.phase = "build_empty_zip";
+      const emptyZip = buildMergedExportZip([], []);
+      return new Response(emptyZip as unknown as BodyInit, {
+        status: 200,
+        headers: mergeHeaders(rate.headers, {
+          "Content-Type": "application/zip",
+          "Content-Disposition": `attachment; filename="skills-export-${startDate}-${endDate}-empty.zip"`,
+          "X-Next-Cursor": result.nextCursor ?? "",
+          "X-Has-More": String(result.hasMore),
+          "X-Total-Returned": "0",
+          "X-Date-Range": `${startDate}-${endDate}`,
+        }),
+      });
+    } catch (err) {
+      logSkillsExportFailure(logContext, err);
+      throw err;
+    }
+  }
+
+  const exportErrors: Array<{ slug: string; error: string }> = [];
+
+  try {
+    logContext.phase = "load_versions";
+    const versionDocs = await chunkedParallel(result.page, 100, (digest) =>
+      digest.latestVersionId
+        ? ctx.runQuery(internal.skills.getVersionByIdInternal, {
+            versionId: digest.latestVersionId,
+          })
+        : Promise.resolve(null),
+    );
+    logContext.versionCount = versionDocs.filter(Boolean).length;
+
+    type BlobTask = { digestIndex: number; fileIndex: number; storageId: Id<"_storage"> };
+    const blobTasks: BlobTask[] = [];
+
+    logContext.phase = "plan_blobs";
+    for (let i = 0; i < result.page.length; i++) {
+      const digest = result.page[i];
+      const version = versionDocs[i] as {
+        files?: Array<{ storageId: Id<"_storage">; path: string }>;
+      } | null;
+
+      if (!version) {
+        exportErrors.push({
+          slug: digest.slug,
+          error: `version not found (latestVersionId: ${digest.latestVersionId ?? "null"})`,
+        });
+        continue;
+      }
+      if (!version.files || version.files.length === 0) {
+        exportErrors.push({
+          slug: digest.slug,
+          error: `version has no files (latestVersionId: ${digest.latestVersionId})`,
+        });
+        continue;
+      }
+
+      if (!validateSlug(digest.slug)) {
+        exportErrors.push({
+          slug: digest.slug,
+          error: "invalid slug (fails Zip Slip validation)",
+        });
+        continue;
+      }
+
+      for (let j = 0; j < version.files.length; j++) {
+        if (blobTasks.length >= MAX_EXPORT_FILE_COUNT) {
+          exportErrors.push({
+            slug: digest.slug,
+            error: `file count cap exceeded (${MAX_EXPORT_FILE_COUNT})`,
+          });
+          break;
+        }
+        blobTasks.push({
+          digestIndex: i,
+          fileIndex: j,
+          storageId: version.files[j].storageId,
+        });
+      }
+    }
+    logContext.blobTaskCount = blobTasks.length;
+    logContext.exportErrorCount = exportErrors.length;
+
+    logContext.phase = "load_blobs";
+    const blobs = await chunkedParallel(blobTasks, 50, (task) => ctx.storage.get(task.storageId));
+    logContext.blobCount = blobs.length;
+
+    const zipEntries: Array<{ path: string; bytes: Uint8Array }> = [];
+    const manifest: MergedExportManifestEntry[] = [];
+    let totalExportBytes = 0;
+
+    const blobsByDigest = new Map<number, Map<number, Blob | null>>();
+    for (let k = 0; k < blobTasks.length; k++) {
+      const task = blobTasks[k];
+      if (!blobsByDigest.has(task.digestIndex)) {
+        blobsByDigest.set(task.digestIndex, new Map());
+      }
+      blobsByDigest.get(task.digestIndex)!.set(task.fileIndex, blobs[k]);
+    }
+
+    logContext.phase = "assemble_entries";
+    for (let i = 0; i < result.page.length; i++) {
+      const digest = result.page[i];
+      const version = versionDocs[i] as {
+        version?: string;
+        files?: Array<{ storageId: Id<"_storage">; path: string }>;
+      } | null;
+      if (!version?.files) continue;
+      if (!validateSlug(digest.slug)) continue;
+
+      const publisherSegment = getExportPublisherSegment(digest);
+      if (!publisherSegment) {
+        exportErrors.push({
+          slug: digest.slug,
+          error: "invalid publisher path segment (fails Zip Slip validation)",
+        });
+        continue;
+      }
+      const exportRoot = `${publisherSegment}/${digest.slug}`;
+      const digestBlobs = blobsByDigest.get(i);
+      if (!digestBlobs) continue;
+
+      let fileCount = 0;
+      for (let j = 0; j < version.files.length; j++) {
+        const filePath = version.files[j].path;
+
+        if (!validateFilePath(filePath)) {
+          exportErrors.push({
+            slug: digest.slug,
+            error: `invalid file path: "${filePath}" (fails Zip Slip validation)`,
+          });
+          continue;
+        }
+
+        const blob = digestBlobs.get(j);
+        if (!blob) {
+          exportErrors.push({
+            slug: digest.slug,
+            error: `blob not found for file "${filePath}" (storageId: ${version.files[j].storageId})`,
+          });
+          continue;
+        }
+
+        const buffer = new Uint8Array(await blob.arrayBuffer());
+        if (totalExportBytes + buffer.byteLength > MAX_EXPORT_TOTAL_BYTES) {
+          exportErrors.push({
+            slug: digest.slug,
+            error: `byte cap exceeded (${MAX_EXPORT_TOTAL_BYTES}) at file "${filePath}"`,
+          });
+          continue;
+        }
+        totalExportBytes += buffer.byteLength;
+        zipEntries.push({ path: `${exportRoot}/${filePath}`, bytes: buffer });
+        fileCount++;
+      }
+
+      const skillMeta = {
+        slug: digest.slug,
+        displayName: digest.displayName,
+        version: version.version ?? null,
+        createdAt: digest.createdAt,
+        updatedAt: digest.updatedAt,
+        stats: digest.stats ?? null,
+        owner: {
+          handle: digest.ownerHandle ?? null,
+          displayName: digest.ownerDisplayName ?? null,
+        },
+      };
+      zipEntries.push({
+        path: `${exportRoot}/_export_skill_meta.json`,
+        bytes: new TextEncoder().encode(JSON.stringify(skillMeta, null, 2)),
+      });
+
+      manifest.push({
+        publisher: publisherSegment,
+        slug: digest.slug,
+        version: version.version ?? null,
+        displayName: digest.displayName,
+        createdAt: digest.createdAt,
+        updatedAt: digest.updatedAt,
+        stats: (digest.stats as Record<string, unknown>) ?? null,
+        fileCount,
+      });
+    }
+
+    if (exportErrors.length > 0) {
+      zipEntries.push({
+        path: "_errors.json",
+        bytes: new TextEncoder().encode(JSON.stringify(exportErrors, null, 2)),
+      });
+    }
+    logContext.zipEntryCount = zipEntries.length;
+    logContext.manifestCount = manifest.length;
+    logContext.exportErrorCount = exportErrors.length;
+    logContext.totalExportBytes = totalExportBytes;
+
+    logContext.phase = "build_zip";
+    const zipBytes = buildMergedExportZip(zipEntries, manifest);
+
+    return new Response(zipBytes as unknown as BodyInit, {
+      status: 200,
+      headers: mergeHeaders(rate.headers, {
+        "Content-Type": "application/zip",
+        "Content-Disposition": `attachment; filename="skills-export-${startDate}-${endDate}.zip"`,
+        "X-Next-Cursor": result.nextCursor ?? "",
+        "X-Has-More": String(result.hasMore),
+        "X-Total-Returned": String(manifest.length),
+        "X-Date-Range": `${startDate}-${endDate}`,
+        "X-Export-Errors": String(exportErrors.length),
+      }),
+    });
+  } catch (err) {
+    logSkillsExportFailure(logContext, err);
+    throw err;
+  }
+}
+
+function getExportPublisherSegment(digest: {
+  ownerHandle?: string | null;
+  ownerUserId: Id<"users">;
+}) {
+  const ownerHandle = digest.ownerHandle?.trim();
+  if (ownerHandle && validateSlug(ownerHandle)) return ownerHandle;
+  const fallback = String(digest.ownerUserId).replace(/[^a-zA-Z0-9._-]/g, "-");
+  return validateSlug(fallback) ? fallback : null;
 }

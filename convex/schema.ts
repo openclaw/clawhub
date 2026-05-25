@@ -29,6 +29,35 @@ const vtAnalysisValidator = v.object({
   checkedAt: v.number(),
 });
 
+const skillSpectorIssueValidator = v.object({
+  issueId: v.string(),
+  category: v.optional(v.string()),
+  pattern: v.optional(v.string()),
+  severity: v.string(),
+  confidence: v.optional(v.number()),
+  file: v.optional(v.string()),
+  startLine: v.optional(v.number()),
+  endLine: v.optional(v.number()),
+  explanation: v.string(),
+  remediation: v.optional(v.string()),
+  finding: v.optional(v.string()),
+  codeSnippet: v.optional(v.string()),
+});
+
+const skillSpectorAnalysisValidator = v.object({
+  status: v.string(),
+  score: v.optional(v.number()),
+  severity: v.optional(v.string()),
+  recommendation: v.optional(v.string()),
+  issueCount: v.number(),
+  // Scanner/action boundaries cap this array before storage; Convex validators cannot express max length.
+  issues: v.array(skillSpectorIssueValidator),
+  scannerVersion: v.optional(v.string()),
+  summary: v.optional(v.string()),
+  error: v.optional(v.string()),
+  checkedAt: v.number(),
+});
+
 const depRegistryStatusValidator = v.union(
   v.literal("clean"),
   v.literal("suspicious"),
@@ -403,6 +432,8 @@ const skills = defineTable({
       changelog: v.string(),
       changelogSource: v.optional(v.union(v.literal("auto"), v.literal("user"))),
       clawdis: v.optional(v.any()),
+      // Denormalised mirror of the latest version's `apiKeyRequired`.
+      apiKeyRequired: v.optional(v.boolean()),
     }),
   ),
   tags: v.record(v.string(), v.id("skillVersions")),
@@ -603,6 +634,7 @@ const skillVersions = defineTable({
   softDeletedAt: v.optional(v.number()),
   sha256hash: v.optional(v.string()),
   vtAnalysis: v.optional(vtAnalysisValidator),
+  skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
   llmAnalysis: v.optional(
     v.object({
       status: v.string(),
@@ -655,6 +687,9 @@ const skillVersions = defineTable({
       checkedAt: v.number(),
     }),
   ),
+  // Whether the user must supply an API key/secret to run this version.
+  // Filled asynchronously by the LLM analyser; absent until analysed.
+  apiKeyRequired: v.optional(v.boolean()),
 })
   .index("by_skill", ["skillId"])
   .index("by_skill_version", ["skillId", "version"])
@@ -803,6 +838,8 @@ const skillSearchDigest = defineTable({
       changelog: v.string(),
       changelogSource: v.optional(v.union(v.literal("auto"), v.literal("user"))),
       clawdis: v.optional(v.any()),
+      // Mirrors `skills.latestVersionSummary.apiKeyRequired`.
+      apiKeyRequired: v.optional(v.boolean()),
     }),
   ),
   tags: v.record(v.string(), v.id("skillVersions")),
@@ -965,6 +1002,7 @@ const packageReleases = defineTable({
   verification: packageVerificationValidator,
   sha256hash: v.optional(v.string()),
   vtAnalysis: v.optional(vtAnalysisValidator),
+  skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
   llmAnalysis: v.optional(
     v.object({
       status: v.string(),
@@ -1051,6 +1089,7 @@ const securityScanJobs = defineTable({
 })
   .index("by_status_and_next_run_at", ["status", "nextRunAt"])
   .index("by_status_source_created_at", ["status", "source", "createdAt"])
+  .index("by_status_source_next_run_at", ["status", "source", "nextRunAt"])
   .index("by_status_source_target_kind_created_at", ["status", "source", "targetKind", "createdAt"])
   .index("by_status_and_lease_expires_at", ["status", "leaseExpiresAt"])
   .index("by_status_malicious_signal_next_run_at", ["status", "hasMaliciousSignal", "nextRunAt"])

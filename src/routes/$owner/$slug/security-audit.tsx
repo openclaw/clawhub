@@ -1,12 +1,12 @@
 import { createFileRoute, notFound, redirect } from "@tanstack/react-router";
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import {
   SecurityAuditPage,
   SecurityAuditPageSkeleton,
 } from "../../../components/SecurityAuditPage";
 import { buildSkillMeta } from "../../../lib/og";
-import { isAdmin } from "../../../lib/roles";
+import { isModerator } from "../../../lib/roles";
 import { fetchSkillPageData } from "../../../lib/skillPage";
 import { useAuthStatus } from "../../../lib/useAuthStatus";
 
@@ -65,6 +65,7 @@ function SkillSecurityAuditRoute() {
   const { owner, slug } = Route.useParams();
   const { initialData } = Route.useLoaderData();
   const liveResult = useQuery(api.skills.getBySlug, { slug });
+  const requestSkillRescan = useMutation(api.securityScan.requestSkillRescan);
   const { me } = useAuthStatus();
   const myPublishers = useQuery(api.publishers.listMine, me ? {} : "skip") as
     | Array<{ publisher: { _id: string }; role: string }>
@@ -94,7 +95,7 @@ function SkillSecurityAuditRoute() {
   const canManageArtifact =
     Boolean(me && skill && me._id === skill.ownerUserId) ||
     Boolean(skill?.ownerPublisherId && myManagePublisherIds.has(skill.ownerPublisherId)) ||
-    isAdmin(me);
+    isModerator(me);
   const settingsHref = `/${encodeURIComponent(ownerSegment)}/${encodeURIComponent(slug)}/settings`;
 
   return (
@@ -112,10 +113,16 @@ function SkillSecurityAuditRoute() {
       sha256hash={latestVersion.sha256hash ?? null}
       vtAnalysis={latestVersion.vtAnalysis ?? null}
       llmAnalysis={latestVersion.llmAnalysis ?? null}
+      skillSpectorAnalysis={latestVersion.skillSpectorAnalysis ?? null}
       staticScan={latestVersion.staticScan ?? null}
       clawScanNote={latestVersion.clawScanNote ?? null}
       canManageArtifact={canManageArtifact}
       settingsHref={canManageArtifact ? settingsHref : null}
+      onRequestRescan={
+        canManageArtifact
+          ? () => requestSkillRescan({ skillId: skill._id, version: latestVersion.version })
+          : null
+      }
     />
   );
 }

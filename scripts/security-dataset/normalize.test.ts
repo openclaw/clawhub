@@ -47,6 +47,25 @@ const baseArtifact: ArtifactExportInput = {
     engineStats: { malicious: 0, suspicious: 0, harmless: 30 },
     checkedAt: Date.UTC(2026, 3, 29),
   },
+  skillSpectorAnalysis: {
+    status: "suspicious",
+    score: 55,
+    severity: "HIGH",
+    recommendation: "DO_NOT_INSTALL",
+    issueCount: 1,
+    scannerVersion: "skillspector-v2.0.0",
+    summary: "SkillSpector found deceptive metadata.",
+    error: null,
+    checkedAt: Date.UTC(2026, 3, 29),
+    issues: [
+      {
+        issueId: "SDI-1",
+        severity: "HIGH",
+        confidence: 0.98,
+        explanation: "The skill body does not match the declared purpose.",
+      },
+    ],
+  },
   staticScan: {
     status: "malicious",
     reasonCodes: ["malicious.install_terminal_payload", "suspicious.dangerous_exec"],
@@ -139,10 +158,23 @@ describe("security dataset normalizer", () => {
       file_ext_counts: { ".md": 1, ".sh": 1 },
       capability_tags: ["automation", "shell"],
       has_vt_scan: true,
+      has_skillspector_scan: true,
       has_static_scan: true,
       has_llm_scan: true,
     });
-    expect(rows.scanResults.map((row) => row.scanner)).toEqual(["static", "virustotal", "llm"]);
+    expect(rows.scanResults.map((row) => row.scanner)).toEqual([
+      "static",
+      "virustotal",
+      "skillspector",
+      "llm",
+    ]);
+    expect(rows.scanResults.find((row) => row.scanner === "skillspector")).toMatchObject({
+      scanner_version: "skillspector-v2.0.0",
+      status: "suspicious",
+      verdict: "DO_NOT_INSTALL",
+      reason_codes: ["SDI-1"],
+      raw_status_family: "suspicious",
+    });
     expect(rows.staticFindings[0]).toMatchObject({
       code: "malicious.install_terminal_payload",
       severity: "critical",

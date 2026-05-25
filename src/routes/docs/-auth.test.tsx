@@ -62,7 +62,7 @@ const { DocsAuth } = await import("./auth");
 
 describe("DocsAuth", () => {
   beforeEach(() => {
-    mockSearch = { return_to: "https://documentation.openclaw.ai/concepts/models" };
+    mockSearch = { return_to: "https://docs.openclaw.ai/concepts/models" };
     mockAuthToken = "convex.jwt";
     mockAuthStatus = {
       isAuthenticated: true,
@@ -76,14 +76,12 @@ describe("DocsAuth", () => {
 
     const form = screen.getByRole("button", { name: /continue to docs/i }).closest("form");
     expect(form?.getAttribute("method")).toBe("post");
-    expect(form?.getAttribute("action")).toBe(
-      "https://documentation.openclaw.ai/ask-molty/auth/callback",
-    );
+    expect(form?.getAttribute("action")).toBe("https://docs.openclaw.ai/ask-molty/auth/callback");
     expect(document.querySelector<HTMLInputElement>('input[name="token"]')?.value).toBe(
       "convex.jwt",
     );
     expect(document.querySelector<HTMLInputElement>('input[name="return_to"]')?.value).toBe(
-      "https://documentation.openclaw.ai/concepts/models",
+      "https://docs.openclaw.ai/concepts/models",
     );
   });
 
@@ -94,7 +92,7 @@ describe("DocsAuth", () => {
 
     expect(screen.getByRole("heading", { name: /verify with github/i })).toBeTruthy();
     expect(screen.getByRole("button", { name: /verify with github/i }).dataset.redirectTo).toBe(
-      "/docs/auth?return_to=https%3A%2F%2Fdocumentation.openclaw.ai%2Fconcepts%2Fmodels",
+      "/docs/auth?return_to=https%3A%2F%2Fdocs.openclaw.ai%2Fconcepts%2Fmodels",
     );
   });
 

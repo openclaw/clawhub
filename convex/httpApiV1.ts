@@ -15,6 +15,7 @@ import {
 } from "./httpApiV1/packagesV1";
 import { createPublisherV1Handler } from "./httpApiV1/publishersV1";
 import {
+  exportSkillsV1Handler,
   listSkillsV1Handler,
   publishSkillV1Handler,
   resolveSkillVersionV1Handler,
@@ -56,6 +57,7 @@ export const skillsGetRouterV1Http = httpAction(skillsGetRouterV1Handler);
 export const publishSkillV1Http = httpAction(publishSkillV1Handler);
 export const skillsPostRouterV1Http = httpAction(skillsPostRouterV1Handler);
 export const skillsDeleteRouterV1Http = httpAction(skillsDeleteRouterV1Handler);
+export const exportSkillsV1Http = httpAction(exportSkillsV1Handler);
 
 export const listSoulsV1Http = httpAction(listSoulsV1Handler);
 export const soulsGetRouterV1Http = httpAction(soulsGetRouterV1Handler);
@@ -92,6 +94,7 @@ export const __handlers = {
   publishSkillV1Handler,
   skillsPostRouterV1Handler,
   skillsDeleteRouterV1Handler,
+  exportSkillsV1Handler,
   listSoulsV1Handler,
   soulsGetRouterV1Handler,
   publishSoulV1Handler,

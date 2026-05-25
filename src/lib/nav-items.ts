@@ -127,7 +127,7 @@ export const SECONDARY_NAV_ITEMS: NavItem[] = [
   },
   {
     label: "Docs",
-    href: "https://documentation.openclaw.ai/clawhub/",
+    href: "https://docs.openclaw.ai/clawhub/",
     authRequired: false,
     staffOnly: false,
     soulModeOnly: false,

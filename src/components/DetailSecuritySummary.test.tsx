@@ -42,6 +42,7 @@ describe("DetailSecuritySummary", () => {
         "Security checks across static analysis, malware telemetry, and agentic risk",
       ),
     ).toBeNull();
+    expect(document.querySelector(".security-audit-meter")?.getAttribute("data-level")).toBe("4");
     expect(document.querySelectorAll(".security-audit-meter span")).toHaveLength(4);
   });
 
@@ -178,6 +179,30 @@ describe("DetailSecuritySummary", () => {
 
     expect(screen.getByText("Pass")).toBeTruthy();
     expect(screen.queryByText("Benign")).toBeNull();
+    expect(document.querySelector(".security-audit-meter")?.getAttribute("data-level")).toBe("4");
+  });
+
+  it("bases the compact verdict on ClawScan instead of supporting scanner findings", () => {
+    render(
+      <DetailSecuritySummary
+        auditHref="/steipete/weather/security-audit"
+        vtAnalysis={{ status: "pending", checkedAt: 1 }}
+        llmAnalysis={{ status: "clean", summary: "No mismatches found.", checkedAt: 1 }}
+        staticScan={{
+          status: "malicious",
+          reasonCodes: ["malicious.external_transfer"],
+          findings: [],
+          summary: "External transfer.",
+          engineVersion: "v1",
+          checkedAt: 1,
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Pass")).toBeTruthy();
+    expect(screen.queryByText("Malicious")).toBeNull();
+    expect(screen.queryByText("Pending")).toBeNull();
+    expect(document.querySelector(".security-audit-meter")?.getAttribute("data-level")).toBe("4");
   });
 
   it("keeps legacy non-engine VirusTotal fields neutral in the aggregate verdict", () => {
@@ -263,7 +288,7 @@ describe("DetailSecuritySummary", () => {
     expect(screen.queryByText("undetected-only-fallback")).toBeNull();
   });
 
-  it("shows static suspicious as review without rolling it up to suspicious", () => {
+  it("does not let static suspicious drive the compact verdict", () => {
     render(
       <DetailSecuritySummary
         auditHref="/steipete/weather/security-audit"
@@ -280,11 +305,12 @@ describe("DetailSecuritySummary", () => {
       />,
     );
 
-    expect(screen.getByText("Review")).toBeTruthy();
+    expect(screen.getByText("Pass")).toBeTruthy();
+    expect(screen.queryByText("Review")).toBeNull();
     expect(screen.queryByText("Warn")).toBeNull();
   });
 
-  it("does not aggregate scanner operational errors as malicious verdicts", () => {
+  it("does not let supporting scanner operational errors drive the compact verdict", () => {
     render(
       <DetailSecuritySummary
         auditHref="/steipete/weather/security-audit"
@@ -301,7 +327,8 @@ describe("DetailSecuritySummary", () => {
       />,
     );
 
-    expect(screen.getByText("Error")).toBeTruthy();
+    expect(screen.getByText("Pass")).toBeTruthy();
+    expect(screen.queryByText("Error")).toBeNull();
     expect(screen.queryByText("Malicious")).toBeNull();
   });
 });

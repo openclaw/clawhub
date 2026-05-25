@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changes
+
+- Web/API: surface an "API key required" attribute on skills so listings, cards, and detail views show whether a skill needs an LLM API key, with publish-time inference from skill prompts and metadata (#2353) (thanks @momothemage).
+
 ### Fixes
 
 - API: fix `GET /api/v1/skills` pagination so `cursor` advances to the next page instead of repeating the first page for supported non-trending sorts (#2275) (thanks @vyctorbrzezowski, @enerj).

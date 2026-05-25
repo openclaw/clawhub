@@ -1,4 +1,4 @@
-import { Clock, ExternalLink, Info, X } from "lucide-react";
+import { Check, Clock, ExternalLink, Info, RefreshCw, TriangleAlert, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { Id } from "../../convex/_generated/dataModel";
 import { getRuntimeEnv } from "../lib/runtimeEnv";
@@ -18,14 +18,19 @@ import { SidebarMetadata } from "./SidebarMetadata";
 import {
   ClawScanRiskReview,
   FindingSeverityBadge,
-  getClawScanRiskLevel,
+  getSkillSpectorIssueCount,
+  getSkillSpectorOverviewCopy,
   hasClawScanRiskReview,
-  RiskLevelBadge,
+  hasSkillSpectorFindings,
   ScanResultBadge,
+  SkillSpectorFindings,
   type LlmAnalysis,
+  type SkillSpectorAnalysis,
+  type SkillSpectorIssue,
   type VtAnalysis,
 } from "./SkillSecurityScanResults";
 import { Alert, AlertDescription } from "./ui/alert";
+import { Button } from "./ui/button";
 import { Skeleton } from "./ui/skeleton";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 
@@ -50,16 +55,201 @@ type SecurityAuditPageProps = {
   sha256hash?: string | null;
   vtAnalysis?: VtAnalysis | null;
   llmAnalysis?: LlmAnalysis | null;
+  skillSpectorAnalysis?: SkillSpectorAnalysis | null;
   staticScan?: StaticScanAnalysis | null;
   source?: Record<string, unknown> | null;
   clawScanNote?: string | null;
   canManageArtifact?: boolean;
   settingsHref?: string | null;
+  onRequestRescan?: (() => Promise<unknown>) | null;
 };
 
 const EMPTY_STATIC_FINDINGS: StaticScanAnalysis["findings"] = [];
+const EMPTY_SKILLSPECTOR_ISSUES: SkillSpectorIssue[] = [];
+const SKILLSPECTOR_VISIBLE_CHECK_LIMIT = 5;
 const RISK_ANALYSIS_SCOPE_COPY =
-  "Risk analysis is mapped to the OWASP Agentic Skills Top 10 using artifact evidence from this release.";
+  "ClawHub reviews SkillSpector, VirusTotal, static analysis, and artifact evidence before producing the final verdict.";
+const SKILLSPECTOR_CLEAN_CHECKS = [
+  {
+    category: "Prompt Injection",
+    ruleIds: ["P1", "P2", "P3", "P4", "P5"],
+    patterns: ["Instruction Override", "Hidden Instructions", "Exfiltration Commands"],
+  },
+  {
+    category: "Data Exfiltration",
+    ruleIds: ["E1", "E2", "E3", "E4"],
+    patterns: ["External Transmission", "Env Variable Harvesting", "File System Enumeration"],
+  },
+  {
+    category: "Privilege Escalation",
+    ruleIds: ["PE1", "PE2", "PE3"],
+    patterns: ["Excessive Permissions", "Sudo/Root Execution", "Credential Access"],
+  },
+  {
+    category: "Supply Chain",
+    ruleIds: ["SC1", "SC2", "SC3", "SC4", "SC5", "SC6"],
+    patterns: ["Unpinned Dependencies", "External Script Fetching", "Obfuscated Code"],
+  },
+  {
+    category: "Excessive Agency",
+    ruleIds: ["EA1", "EA2", "EA3", "EA4", "SDI2", "SDI3"],
+    patterns: ["Unrestricted Tool Access", "Autonomous Decision Making", "Scope Creep"],
+  },
+  {
+    category: "Output Handling",
+    ruleIds: ["OH1", "OH2", "OH3"],
+    patterns: ["Unvalidated Output Injection", "Cross-Context Output", "Unbounded Output"],
+  },
+  {
+    category: "System Prompt Leakage",
+    ruleIds: ["P6", "P7", "P8"],
+    patterns: ["Direct Leakage", "Indirect Extraction", "Tool-Based Exfiltration"],
+  },
+  {
+    category: "Memory Poisoning",
+    ruleIds: ["MP1", "MP2", "MP3"],
+    patterns: ["Persistent Context Injection", "Context Window Stuffing", "Memory Manipulation"],
+  },
+  {
+    category: "Tool Misuse",
+    ruleIds: ["TM1", "TM2", "TM3"],
+    patterns: ["Tool Parameter Abuse", "Chaining Abuse", "Unsafe Defaults"],
+  },
+  {
+    category: "Rogue Agent",
+    ruleIds: ["RA1", "RA2"],
+    patterns: ["Self-Modification", "Session Persistence"],
+  },
+  {
+    category: "Trigger Abuse",
+    ruleIds: ["TR1", "TR2", "TR3", "SQP1"],
+    patterns: ["Overly Broad Trigger", "Shadow Command Trigger", "Keyword Baiting Trigger"],
+  },
+  {
+    category: "Behavioral AST",
+    ruleIds: ["AST1", "AST2", "AST3", "AST4", "AST5", "AST6", "AST7", "AST8"],
+    patterns: ["exec() Call", "eval() Call", "Dynamic Import"],
+  },
+  {
+    category: "Taint Tracking",
+    ruleIds: ["TT1", "TT2", "TT3", "TT4", "TT5"],
+    patterns: [
+      "Direct Taint Flow",
+      "Variable-Mediated Taint Flow",
+      "Credential Exfiltration Chain",
+    ],
+  },
+  {
+    category: "YARA Signatures",
+    ruleIds: ["YR1", "YR2", "YR3", "YR4"],
+    patterns: ["Malware Match", "Webshell Match", "Cryptominer Match"],
+  },
+  {
+    category: "MCP Least Privilege",
+    ruleIds: ["LP1", "LP2", "LP3", "LP4"],
+    patterns: ["Underdeclared Capability", "Wildcard Permission", "Missing Permission Declaration"],
+  },
+  {
+    category: "MCP Tool Poisoning",
+    ruleIds: ["TP1", "TP2", "TP3", "TP4", "SDI1", "SDI4"],
+    patterns: ["Hidden Instructions", "Unicode Deception", "Parameter Description Injection"],
+  },
+];
+
+function normalizeSkillSpectorPatternValue(value?: string | null) {
+  return value
+    ?.trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+function normalizeSkillSpectorIssueId(value?: string | null) {
+  return value
+    ?.trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
+}
+
+function getSkillSpectorIssueSearchText(issue: SkillSpectorIssue) {
+  return [
+    issue.issueId,
+    issue.category,
+    issue.pattern,
+    issue.finding,
+    issue.explanation,
+    issue.codeSnippet,
+    issue.remediation,
+  ]
+    .filter((value): value is string => Boolean(value?.trim()))
+    .join(" ")
+    .toLowerCase();
+}
+
+function inferSkillSpectorPatternCategory(issue: SkillSpectorIssue) {
+  const issueId = normalizeSkillSpectorIssueId(issue.issueId);
+  const category = normalizeSkillSpectorPatternValue(issue.category);
+  const pattern = normalizeSkillSpectorPatternValue(issue.pattern);
+
+  for (const check of SKILLSPECTOR_CLEAN_CHECKS) {
+    if (check.ruleIds.some((ruleId) => normalizeSkillSpectorIssueId(ruleId) === issueId)) {
+      return check.category;
+    }
+  }
+  for (const check of SKILLSPECTOR_CLEAN_CHECKS) {
+    if (normalizeSkillSpectorPatternValue(check.category) === category) return check.category;
+  }
+  for (const check of SKILLSPECTOR_CLEAN_CHECKS) {
+    if (check.patterns.some((value) => normalizeSkillSpectorPatternValue(value) === pattern)) {
+      return check.category;
+    }
+  }
+
+  const text = getSkillSpectorIssueSearchText(issue);
+  if (
+    /\b(exfiltrat\w*|external|transmit\w*|upload\w*|send|sending|post|session|token|secret|credential\w*)\b/.test(
+      text,
+    )
+  ) {
+    return "Data Exfiltration";
+  }
+  if (/\b(sudo|root|ssh key|password|credential access)\b/.test(text)) {
+    return "Privilege Escalation";
+  }
+  if (/\b(unpinned|dependency|curl\s*\|\s*bash|remote script|obfuscat|typosquat)\b/.test(text)) {
+    return "Supply Chain";
+  }
+  if (/\b(scope creep|autonomous|unrestricted|excessive|capability)\b/.test(text)) {
+    return "Excessive Agency";
+  }
+  if (/\b(system prompt|prompt leakage|internal rules)\b/.test(text)) {
+    return "System Prompt Leakage";
+  }
+  if (/\b(trigger|activation|keyword)\b/.test(text)) {
+    return "Trigger Abuse";
+  }
+  if (/\b(exec|eval|subprocess|os\.system|dynamic import)\b/.test(text)) {
+    return "Behavioral AST";
+  }
+  if (
+    /\b(description.behavior|description behavior|mismatch|hidden instruction|unicode|parameter)\b/.test(
+      text,
+    )
+  ) {
+    return "MCP Tool Poisoning";
+  }
+  if (/\b(ignore|override|hidden instruction|jailbreak|instruction)\b/.test(text)) {
+    return "Prompt Injection";
+  }
+  return null;
+}
+
+function getFlaggedSkillSpectorPatternCategories(issues: SkillSpectorIssue[]) {
+  return new Set(
+    issues
+      .map((issue) => inferSkillSpectorPatternCategory(issue))
+      .filter((category): category is string => Boolean(category)),
+  );
+}
 
 function formatTime(value?: number | null) {
   if (!value) return "Not checked yet";
@@ -265,17 +455,14 @@ function SecurityAuditOverview(props: SecurityAuditPageProps) {
 
 function ClawScanSection(props: SecurityAuditPageProps) {
   const riskAnalysis =
-    props.llmAnalysis && hasClawScanRiskReview(props.llmAnalysis) ? props.llmAnalysis : null;
+    props.llmAnalysis && !props.skillSpectorAnalysis && hasClawScanRiskReview(props.llmAnalysis)
+      ? props.llmAnalysis
+      : null;
+  if (!riskAnalysis) return null;
 
   return (
     <div className="security-report-panel-body security-report-panel-body-findings">
-      {riskAnalysis ? (
-        <ClawScanRiskReview analysis={riskAnalysis} showTitle={false} />
-      ) : (
-        <p className="security-audit-empty-detail">
-          No visible risk-analysis findings were reported for this release.
-        </p>
-      )}
+      <ClawScanRiskReview analysis={riskAnalysis} showTitle={false} />
     </div>
   );
 }
@@ -324,6 +511,117 @@ function VirusTotalSection(props: SecurityAuditPageProps) {
           <ExternalLink className="h-3 w-3" aria-hidden="true" />
         </a>
       ) : null}
+    </div>
+  );
+}
+
+function SkillSpectorSection(props: SecurityAuditPageProps) {
+  const analysis = props.skillSpectorAnalysis ?? null;
+  const overviewCopy = getSkillSpectorOverviewCopy(analysis);
+  const contentSnippets = useSkillSpectorContentSnippets(
+    props.entity,
+    analysis?.issues ?? EMPTY_SKILLSPECTOR_ISSUES,
+  );
+  const hasFindings = analysis ? hasSkillSpectorFindings(analysis) : false;
+  const issueCount = getSkillSpectorIssueCount(analysis);
+  const storedIssueCount = analysis?.issues.length ?? 0;
+  const hasHiddenFindings = issueCount > storedIssueCount;
+  const findingsTitle = issueCount > 0 ? `Findings (${issueCount})` : "Findings";
+  const status = analysis?.status?.trim().toLowerCase();
+  const showChecks = Boolean(
+    analysis && !["error", "failed", "loading", "not_found", "pending"].includes(status ?? ""),
+  );
+  const showOverview = !hasFindings && !showChecks;
+
+  return (
+    <div className="security-report-panel-body security-report-panel-body-findings">
+      {showOverview ? (
+        <div className="security-report-overview-body">
+          <p>{overviewCopy}</p>
+        </div>
+      ) : null}
+      {showChecks ? (
+        <SkillSpectorChecks
+          hasHiddenFindings={hasHiddenFindings}
+          issues={analysis?.issues ?? EMPTY_SKILLSPECTOR_ISSUES}
+        />
+      ) : null}
+      {analysis && hasFindings ? (
+        <div className="skillspector-findings-block">
+          <div className="skillspector-subsection-title">{findingsTitle}</div>
+          <SkillSpectorFindings analysis={analysis} contentSnippets={contentSnippets} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function SkillSpectorChecks({
+  hasHiddenFindings,
+  issues,
+}: {
+  hasHiddenFindings: boolean;
+  issues: SkillSpectorIssue[];
+}) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const flaggedCategories = getFlaggedSkillSpectorPatternCategories(issues);
+  const sortedChecks = [...SKILLSPECTOR_CLEAN_CHECKS].sort((left, right) => {
+    const leftFlagged = flaggedCategories.has(left.category);
+    const rightFlagged = flaggedCategories.has(right.category);
+    if (leftFlagged === rightFlagged) return 0;
+    return leftFlagged ? -1 : 1;
+  });
+  const visibleChecks = isExpanded
+    ? sortedChecks
+    : sortedChecks.slice(0, SKILLSPECTOR_VISIBLE_CHECK_LIMIT);
+  const remainingCount = sortedChecks.length - SKILLSPECTOR_VISIBLE_CHECK_LIMIT;
+
+  return (
+    <div className="skillspector-checks" aria-label="SkillSpector checks">
+      <div className="skillspector-subsection-title">Vulnerability Patterns</div>
+      <ul className="skillspector-checks-list">
+        {visibleChecks.map((check) => {
+          const isFlagged = flaggedCategories.has(check.category);
+          const isUnknown = hasHiddenFindings && !isFlagged;
+          const Icon = isFlagged ? TriangleAlert : isUnknown ? Info : Check;
+          return (
+            <li
+              className={`skillspector-check-row${isFlagged ? " skillspector-check-row-flagged" : ""}${isUnknown ? " skillspector-check-row-unknown" : ""}`}
+              key={check.category}
+            >
+              <Icon
+                className={`skillspector-check-icon${isFlagged ? " skillspector-check-icon-flagged" : ""}${isUnknown ? " skillspector-check-icon-unknown" : ""}`}
+                aria-hidden="true"
+              />
+              <span className="skillspector-check-category">{check.category}</span>
+              <span className="skillspector-check-patterns">{check.patterns.join(", ")}</span>
+            </li>
+          );
+        })}
+      </ul>
+      {remainingCount > 0 ? (
+        <button
+          type="button"
+          className="skillspector-checks-toggle"
+          onClick={() => setIsExpanded((value) => !value)}
+        >
+          {isExpanded ? "Show less" : `Show ${remainingCount} more`}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function SkillSpectorAttribution() {
+  return (
+    <div className="skillspector-attribution" aria-label="By NVIDIA">
+      <img
+        className="skillspector-nvidia-mark"
+        src="https://www.nvidia.com/favicon.ico"
+        alt=""
+        aria-hidden="true"
+      />
+      <span>By NVIDIA</span>
     </div>
   );
 }
@@ -385,6 +683,18 @@ function extractLineFromFile(content: string, line: number) {
   return value?.trim() ? value : null;
 }
 
+function extractLineRangeFromFile(content: string, startLine: number, endLine?: number) {
+  if (!Number.isFinite(startLine) || startLine < 1) return null;
+  const lines = content.split(/\r?\n/);
+  const start = Math.floor(startLine);
+  const end = Math.max(start, Math.min(Math.floor(endLine ?? start), start + 12));
+  const value = lines
+    .slice(start - 1, end)
+    .map((line) => line.trimEnd())
+    .join("\n");
+  return value.trim() ? value : null;
+}
+
 function useStaticFindingSnippets(entity: EntityRef, findings: StaticScanAnalysis["findings"]) {
   const [snippets, setSnippets] = useState<Record<string, string>>({});
 
@@ -425,6 +735,69 @@ function useStaticFindingSnippets(entity: EntityRef, findings: StaticScanAnalysi
     void loadSnippets();
     return () => controller.abort();
   }, [entity.kind, entity.name, entity.version, findings]);
+
+  return snippets;
+}
+
+function useSkillSpectorContentSnippets(entity: EntityRef, issues: SkillSpectorIssue[]) {
+  const [snippets, setSnippets] = useState<Record<number, string>>({});
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const issuesWithLocations = issues
+      .map((issue, index) => ({ issue, index }))
+      .filter(
+        ({ issue }) =>
+          Boolean(issue.file?.trim()) &&
+          typeof issue.startLine === "number" &&
+          Number.isFinite(issue.startLine),
+      );
+
+    if (!issuesWithLocations.length) {
+      setSnippets((current) => (Object.keys(current).length ? {} : current));
+      return () => controller.abort();
+    }
+
+    const uniqueFiles = Array.from(
+      new Set(
+        issuesWithLocations
+          .map(({ issue }) => issue.file?.trim())
+          .filter((file): file is string => Boolean(file)),
+      ),
+    );
+
+    async function loadSnippets() {
+      const fileContents = new Map<string, string>();
+      await Promise.all(
+        uniqueFiles.map(async (file) => {
+          try {
+            const response = await fetch(buildArtifactFileUrl(entity, file), {
+              signal: controller.signal,
+            });
+            if (!response.ok) return;
+            fileContents.set(file, await response.text());
+          } catch {
+            return;
+          }
+        }),
+      );
+
+      const entries = issuesWithLocations
+        .map(({ issue, index }) => {
+          const file = issue.file?.trim();
+          const content = file ? fileContents.get(file) : null;
+          if (!content || typeof issue.startLine !== "number") return null;
+          const snippet = extractLineRangeFromFile(content, issue.startLine, issue.endLine);
+          return snippet ? ([index, snippet] as const) : null;
+        })
+        .filter((entry): entry is readonly [number, string] => entry !== null);
+
+      if (!controller.signal.aborted) setSnippets(Object.fromEntries(entries));
+    }
+
+    void loadSnippets();
+    return () => controller.abort();
+  }, [entity.kind, entity.name, entity.version, issues]);
 
   return snippets;
 }
@@ -481,7 +854,7 @@ function StaticAnalysisFinding({
         </div>
         {trimmedSnippet ? (
           <div>
-            <dt>Skill content</dt>
+            <dt>Content</dt>
             <dd>
               <pre className="agentic-risk-evidence-snippet">{trimmedSnippet}</pre>
             </dd>
@@ -532,10 +905,12 @@ function SecurityAuditScannerSection({
             {label}
           </h2>
           {kind === "clawscan" ? <RiskAnalysisInfoLink /> : null}
+          {kind === "skillspector" ? <SkillSpectorAttribution /> : null}
         </div>
       </div>
       {kind === "clawscan" ? <ClawScanSection {...props} /> : null}
       {kind === "virustotal" ? <VirusTotalSection {...props} /> : null}
+      {kind === "skillspector" ? <SkillSpectorSection {...props} /> : null}
       {kind === "static-analysis" ? <StaticAnalysisSection {...props} /> : null}
     </section>
   );
@@ -543,8 +918,52 @@ function SecurityAuditScannerSection({
 
 function SecurityAuditSidebar(props: SecurityAuditPageProps) {
   const latestCheckedAt = getLatestAuditCheckedAt(props);
-  const clawScanRiskLevel = getClawScanRiskLevel(props.llmAnalysis);
   const verdict = aggregateAuditVerdict(props);
+  const [rescanState, setRescanState] = useState<"idle" | "submitting" | "queued" | "error">(
+    "idle",
+  );
+  const showRescanButton = props.canManageArtifact && props.onRequestRescan;
+  const isRescanBusy = rescanState === "submitting" || rescanState === "queued";
+
+  async function requestRescan() {
+    if (!props.onRequestRescan || isRescanBusy) return;
+    setRescanState("submitting");
+    try {
+      await props.onRequestRescan();
+      setRescanState("queued");
+    } catch {
+      setRescanState("error");
+    }
+  }
+
+  const versionValue = (
+    <div className="security-audit-version-stack">
+      <span>{props.entity.version ?? "Latest"}</span>
+      {showRescanButton ? (
+        <>
+          <Button
+            type="button"
+            variant="outline"
+            className="skill-sidebar-action-button security-audit-rescan-button"
+            onClick={() => void requestRescan()}
+            disabled={isRescanBusy}
+            loading={isRescanBusy}
+            aria-label={isRescanBusy ? "Scanning" : "Rescan"}
+          >
+            {!isRescanBusy ? (
+              <RefreshCw className="security-audit-rescan-icon" aria-hidden="true" />
+            ) : null}
+            <span>{isRescanBusy ? "Scanning" : "Rescan"}</span>
+          </Button>
+          {rescanState === "error" ? (
+            <span className="security-audit-rescan-error" role="status">
+              Rescan could not be queued.
+            </span>
+          ) : null}
+        </>
+      ) : null}
+    </div>
+  );
 
   return (
     <SidebarMetadata
@@ -556,10 +975,6 @@ function SecurityAuditSidebar(props: SecurityAuditPageProps) {
           value: <ScanResultBadge status={verdict} />,
         },
         {
-          label: "Risk",
-          value: clawScanRiskLevel ? <RiskLevelBadge level={clawScanRiskLevel} /> : "Not reported",
-        },
-        {
           label: "Latest audit",
           value: (
             <span className="sidebar-metadata-inline">
@@ -568,14 +983,14 @@ function SecurityAuditSidebar(props: SecurityAuditPageProps) {
             </span>
           ),
         },
-        { label: "Version", value: props.entity.version ?? "Latest" },
+        { label: "Version", value: versionValue },
       ]}
     />
   );
 }
 
 export function SecurityAuditPage(props: SecurityAuditPageProps) {
-  const orderedScanners = getAuditScannerOrder();
+  const orderedScanners = getAuditScannerOrder(props);
 
   return (
     <main className="section detail-page-section security-report-section">

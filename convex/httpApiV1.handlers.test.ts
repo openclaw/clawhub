@@ -150,7 +150,7 @@ function makeCtx(partial: Record<string, unknown>) {
       ? (partial.runQuery as (query: unknown, args: Record<string, unknown>) => unknown)
       : null;
   const runQuery = vi.fn(async (query: unknown, args: Record<string, unknown>) => {
-    if (isRateLimitArgs(args)) return okRate();
+    if (isRateLimitArgs(args)) return { ...okRate(), limit: args.limit };
     return partialRunQuery ? await partialRunQuery(query, args) : null;
   });
   const runMutation =
@@ -260,6 +260,302 @@ describe("httpApiV1 handlers", () => {
       slugs: ["a", "b"],
       forceOverwriteSquatter: true,
     });
+  });
+
+  it("skills export allows authenticated non-admin users at the key rate limit", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "user" },
+    } as never);
+    vi.mocked(getOptionalApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "user" },
+    } as never);
+
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return { ...okRate(), limit: args.limit };
+      return { ok: true };
+    });
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("startDate" in args) return { page: [], nextCursor: null, hasMore: false };
+      return null;
+    });
+
+    const response = await __handlers.exportSkillsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/export?startDate=1&endDate=2", {
+        headers: { authorization: "Bearer user-token" },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("X-RateLimit-Limit")).toBe(String(RATE_LIMITS.export.key));
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        key: "user:users:actor:export",
+        limit: RATE_LIMITS.export.key,
+      }),
+    );
+  });
+
+  it("skills export defaults to the proven 250 item page limit", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "user" },
+    } as never);
+    vi.mocked(getOptionalApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "user" },
+    } as never);
+
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("startDate" in args) return { page: [], nextCursor: null, hasMore: false };
+      return null;
+    });
+
+    const response = await __handlers.exportSkillsV1Handler(
+      makeCtx({ runQuery }),
+      new Request("https://example.com/api/v1/skills/export?startDate=1&endDate=2", {
+        headers: { authorization: "Bearer user-token" },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    const listCall = runQuery.mock.calls.find(([, args]) => "startDate" in args);
+    expect(listCall?.[1]).toMatchObject({ numItems: 250 });
+  });
+
+  it("skills export rejects pages above 250 items", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "user" },
+    } as never);
+    vi.mocked(getOptionalApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "user" },
+    } as never);
+
+    const runQuery = vi.fn();
+    const response = await __handlers.exportSkillsV1Handler(
+      makeCtx({ runQuery }),
+      new Request("https://example.com/api/v1/skills/export?startDate=1&endDate=2&limit=251", {
+        headers: { authorization: "Bearer user-token" },
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toBe("limit must be <= 250");
+    expect(runQuery).not.toHaveBeenCalledWith(
+      (internal as unknown as { skills: Record<string, unknown> }).skills.listByDateRange,
+      expect.anything(),
+    );
+  });
+
+  it("skills export rejects unauthenticated requests", async () => {
+    vi.mocked(requireApiTokenUser).mockRejectedValue(new Error("Unauthorized"));
+
+    const runQuery = vi.fn();
+    const response = await __handlers.exportSkillsV1Handler(
+      makeCtx({ runQuery }),
+      new Request("https://example.com/api/v1/skills/export?startDate=1&endDate=2"),
+    );
+
+    expect(response.status).toBe(401);
+    expect(runQuery).not.toHaveBeenCalledWith(
+      (internal as unknown as { skills: Record<string, unknown> }).skills.listByDateRange,
+      expect.anything(),
+    );
+  });
+
+  it("skills export preserves pagination headers for empty filtered pages", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "user" },
+    } as never);
+    vi.mocked(getOptionalApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "user" },
+    } as never);
+
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("startDate" in args) return { page: [], nextCursor: "next-page", hasMore: true };
+      return null;
+    });
+
+    const response = await __handlers.exportSkillsV1Handler(
+      makeCtx({ runQuery }),
+      new Request("https://example.com/api/v1/skills/export?startDate=1&endDate=2", {
+        headers: { authorization: "Bearer user-token" },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("X-Next-Cursor")).toBe("next-page");
+    expect(response.headers.get("X-Has-More")).toBe("true");
+  });
+
+  it("skills export namespaces files by publisher and slug", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "user" },
+    } as never);
+    vi.mocked(getOptionalApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "user" },
+    } as never);
+
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("startDate" in args) {
+        return {
+          page: [
+            {
+              slug: "demo",
+              displayName: "Alice Demo",
+              latestVersionId: "skillVersions:alice",
+              createdAt: 1,
+              updatedAt: 2,
+              stats: {},
+              ownerUserId: "users:alice",
+              ownerHandle: "alice",
+              ownerDisplayName: "Alice",
+            },
+            {
+              slug: "demo",
+              displayName: "Bob Demo",
+              latestVersionId: "skillVersions:bob",
+              createdAt: 1,
+              updatedAt: 3,
+              stats: {},
+              ownerUserId: "users:bob",
+              ownerHandle: "bob",
+              ownerDisplayName: "Bob",
+            },
+          ],
+          nextCursor: null,
+          hasMore: false,
+        };
+      }
+      if (args.versionId === "skillVersions:alice") {
+        return {
+          version: "1.0.0",
+          files: [{ storageId: "storage:alice", path: "SKILL.md" }],
+        };
+      }
+      if (args.versionId === "skillVersions:bob") {
+        return {
+          version: "1.0.0",
+          files: [{ storageId: "storage:bob", path: "SKILL.md" }],
+        };
+      }
+      return null;
+    });
+
+    const response = await __handlers.exportSkillsV1Handler(
+      makeCtx({
+        runQuery,
+        storage: {
+          get: vi.fn(
+            async (storageId: string) =>
+              new Blob([storageId === "storage:alice" ? "alice" : "bob"]),
+          ),
+        },
+      }),
+      new Request("https://example.com/api/v1/skills/export?startDate=1&endDate=5", {
+        headers: { authorization: "Bearer user-token" },
+      }),
+    );
+
+    if (response.status !== 200) throw new Error(await response.text());
+    const zipEntries = unzipSync(new Uint8Array(await response.arrayBuffer()));
+    expect(Object.keys(zipEntries).sort()).toEqual([
+      "_manifest.json",
+      "alice/demo/SKILL.md",
+      "alice/demo/_export_skill_meta.json",
+      "bob/demo/SKILL.md",
+      "bob/demo/_export_skill_meta.json",
+    ]);
+  });
+
+  it("skills export logs generation failure context", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "user" },
+    } as never);
+    vi.mocked(getOptionalApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "user" },
+    } as never);
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("startDate" in args) {
+        return {
+          page: [
+            {
+              slug: "demo",
+              displayName: "Demo",
+              latestVersionId: "skillVersions:demo",
+              createdAt: 1,
+              updatedAt: 2,
+              stats: {},
+              ownerUserId: "users:alice",
+              ownerHandle: "alice",
+              ownerDisplayName: "Alice",
+            },
+          ],
+          nextCursor: null,
+          hasMore: false,
+        };
+      }
+      if (args.versionId === "skillVersions:demo") {
+        return {
+          version: "1.0.0",
+          files: [
+            { storageId: "storage:one", path: "SKILL.md" },
+            { storageId: "storage:two", path: "SKILL.md" },
+          ],
+        };
+      }
+      return null;
+    });
+
+    try {
+      await expect(
+        __handlers.exportSkillsV1Handler(
+          makeCtx({
+            runQuery,
+            storage: { get: vi.fn(async () => new Blob(["content"])) },
+          }),
+          new Request("https://example.com/api/v1/skills/export?startDate=1&endDate=5", {
+            headers: { authorization: "Bearer user-token" },
+          }),
+        ),
+      ).rejects.toThrow(/Duplicate ZIP path/);
+
+      expect(consoleError).toHaveBeenCalledWith(
+        "skills_export_failed",
+        expect.objectContaining({
+          phase: "build_zip",
+          startDate: 1,
+          endDate: 5,
+          limit: 250,
+          cursorPresent: false,
+          pageLength: 1,
+          versionCount: 1,
+          blobTaskCount: 2,
+          blobCount: 2,
+          zipEntryCount: 3,
+          manifestCount: 1,
+          exportErrorCount: 0,
+          totalExportBytes: 14,
+          errorName: "Error",
+        }),
+      );
+      expect(JSON.stringify(consoleError.mock.calls)).not.toContain("user-token");
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 
   it("users/reclaim forbids non-admin api tokens", async () => {
@@ -3629,7 +3925,7 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
-  it("skill rescan enqueues moderator ClawScan jobs", async () => {
+  it("skill rescan enqueues owner-authorized ClawScan jobs", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:moderator",
       user: { _id: "users:moderator", role: "moderator" },
@@ -3665,7 +3961,7 @@ describe("httpApiV1 handlers", () => {
     });
     expect(runMutation).toHaveBeenCalledWith(
       (internal as unknown as { securityScan: Record<string, unknown> }).securityScan
-        .enqueueSkillRescanForModeratorInternal,
+        .requestSkillRescanForUserInternal,
       {
         actorUserId: "users:moderator",
         slug: "demo",
@@ -3698,23 +3994,73 @@ describe("httpApiV1 handlers", () => {
     expect(runMutation).toHaveBeenCalledTimes(1);
   });
 
-  it("does not expose the removed package rescan route", async () => {
+  it("package rescan enqueues owner-authorized ClawScan jobs", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:1",
       user: { handle: "p" },
     } as never);
-    const runMutation = vi.fn(async () => okRate());
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        ok: true,
+        name: "@scope/demo",
+        version: "1.2.3",
+        packageId: "packages:1",
+        packageReleaseId: "packageReleases:1",
+        jobId: "securityScanJobs:1",
+        alreadyQueued: false,
+      };
+    });
 
     const response = await __handlers.packagesPostRouterV1Handler(
       makeCtx({ runMutation }),
       new Request("https://example.com/api/v1/packages/%40scope%2Fdemo/rescan", {
         method: "POST",
         headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({ version: "1.2.3" }),
       }),
     );
 
-    expect(response.status).toBe(404);
-    expect(runMutation.mock.calls.length).toBe(0);
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      name: "@scope/demo",
+      version: "1.2.3",
+      jobId: "securityScanJobs:1",
+    });
+    expect(runMutation).toHaveBeenCalledWith(
+      (internal as unknown as { securityScan: Record<string, unknown> }).securityScan
+        .requestPackageRescanForUserInternal,
+      {
+        actorUserId: "users:1",
+        name: "@scope/demo",
+        version: "1.2.3",
+      },
+    );
+  });
+
+  it("package rescan rejects malformed JSON", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:1",
+      user: { handle: "p" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      throw new Error("should not enqueue");
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/packages/%40scope%2Fdemo/rescan", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: "{",
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.text()).resolves.toBe("Invalid JSON");
+    expect(runMutation).toHaveBeenCalledTimes(1);
   });
 
   it("transfer request requires auth", async () => {

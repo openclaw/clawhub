@@ -16,6 +16,7 @@ import {
   searchSkillsHttp,
 } from "./httpApi";
 import {
+  exportSkillsV1Http,
   listBundlePluginsV1Http,
   listCodePluginsV1Http,
   listPackagesV1Http,
@@ -70,6 +71,12 @@ http.route({
   path: ApiRoutes.resolve,
   method: "GET",
   handler: resolveSkillVersionV1Http,
+});
+
+http.route({
+  path: ApiRoutes.skillsExport,
+  method: "GET",
+  handler: exportSkillsV1Http,
 });
 
 http.route({
