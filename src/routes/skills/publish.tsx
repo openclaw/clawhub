@@ -7,7 +7,15 @@ import {
 } from "clawhub-schema/licenseConstants";
 import { normalizeTextContentType } from "clawhub-schema/textFiles";
 import { useAction, useMutation, useQuery } from "convex/react";
-import { Check, CircleX, FolderOpen, Lock, Upload as UploadIcon, X } from "lucide-react";
+import {
+  Check,
+  CircleX,
+  ExternalLink,
+  FolderOpen,
+  Lock,
+  Upload as UploadIcon,
+  X,
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import semver from "semver";
 import { toast } from "sonner";
@@ -96,6 +104,7 @@ export function Upload() {
   const [hasAttempted, setHasAttempted] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
   const [ignoredLocalMetadataPaths, setIgnoredLocalMetadataPaths] = useState<string[]>([]);
+  const [pendingFileRemovalIndex, setPendingFileRemovalIndex] = useState<number | null>(null);
   const [slug, setSlug] = useState(updateSlug ?? "");
   const [displayName, setDisplayName] = useState("");
   const [touchedFields, setTouchedFields] = useState<Record<SkillPublishField, boolean>>({
@@ -198,6 +207,15 @@ export function Upload() {
         path: normalizedPaths[index] ?? file.name,
       })),
     [files, normalizedPaths],
+  );
+  const visibleFileEntries = useMemo(
+    () =>
+      [...normalizedFileEntries].sort((left, right) => {
+        const leftRank = requiredFileSortRank(left.path, isSoulMode);
+        const rightRank = requiredFileSortRank(right.path, isSoulMode);
+        return leftRank === rightRank ? left.index - right.index : leftRank - rightRank;
+      }),
+    [isSoulMode, normalizedFileEntries],
   );
   const unsupportedFileEntries = useMemo(
     () => normalizedFileEntries.filter((entry) => !isTextFile(entry.file)),
@@ -563,6 +581,7 @@ export function Upload() {
     const report = await expandFilesWithReport(selected);
     setFiles(report.files);
     setIgnoredLocalMetadataPaths(report.ignoredLocalMetadataPaths);
+    setPendingFileRemovalIndex(null);
     setMetadataPrefillNote(null);
     resetFileInput();
 
@@ -587,20 +606,35 @@ export function Upload() {
     }
   }
 
+  function handleFilesDrop(event: React.DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setIsDragging(false);
+    const items = event.dataTransfer.items;
+    void (async () => {
+      const dropped = items?.length
+        ? await expandDroppedItems(items)
+        : Array.from(event.dataTransfer.files);
+      await applyExpandedFiles(dropped);
+    })();
+  }
+
   function clearSelectedFiles() {
     setFiles([]);
     setIgnoredLocalMetadataPaths([]);
+    setPendingFileRemovalIndex(null);
     setMetadataPrefillNote(null);
     resetFileInput();
   }
 
   function removeFileAtIndex(index: number) {
     setFiles((current) => current.filter((_, currentIndex) => currentIndex !== index));
+    setPendingFileRemovalIndex(null);
     resetFileInput();
   }
 
   function removeUnsupportedFiles() {
     setFiles((current) => current.filter((file) => isTextFile(file)));
+    setPendingFileRemovalIndex(null);
     resetFileInput();
   }
 
@@ -746,89 +780,130 @@ export function Upload() {
           {/* File upload panel */}
           <Card>
             <CardContent>
-              <div
-                className={`relative flex flex-col items-center gap-3 overflow-hidden rounded-[var(--radius-md)] border-2 border-dashed p-8 transition-colors ${
-                  isDragging
-                    ? "border-[color:var(--accent)] bg-[color:var(--accent)]/5"
-                    : "border-[color:var(--line)] bg-[color:var(--surface-muted)]"
-                }`}
-                onDragOver={(event) => {
-                  event.preventDefault();
-                  setIsDragging(true);
+              <input
+                ref={setFileInputRef}
+                className="sr-only"
+                id="upload-files"
+                data-testid="upload-input"
+                type="file"
+                multiple
+                onChange={(event) => {
+                  const picked = Array.from(event.target.files ?? []);
+                  void applyExpandedFiles(picked);
                 }}
-                onDragLeave={() => setIsDragging(false)}
-                onDrop={(event) => {
-                  event.preventDefault();
-                  setIsDragging(false);
-                  const items = event.dataTransfer.items;
-                  void (async () => {
-                    const dropped = items?.length
-                      ? await expandDroppedItems(items)
-                      : Array.from(event.dataTransfer.files);
-                    await applyExpandedFiles(dropped);
-                  })();
-                }}
-              >
-                <input
-                  ref={setFileInputRef}
-                  className="sr-only"
-                  id="upload-files"
-                  data-testid="upload-input"
-                  type="file"
-                  multiple
-                  onChange={(event) => {
-                    const picked = Array.from(event.target.files ?? []);
-                    void applyExpandedFiles(picked);
-                  }}
-                />
-                <UploadDropzoneDecor kind="skill" />
-                <div className="relative z-10 flex flex-col items-center gap-2 text-center">
-                  <div className="flex items-center gap-3">
-                    <UploadIcon className="h-5 w-5 text-[color:var(--ink-soft)]" />
-                    <strong>Drop a skill folder</strong>
-                    {files.length > 0 ? (
-                      <span className="text-xs font-medium text-[color:var(--ink-soft)]">
-                        {files.length} files · {sizeLabel}
-                      </span>
-                    ) : null}
-                  </div>
-                  <span className="text-xs text-[color:var(--ink-soft)]">
-                    We keep folder paths and flatten the outer wrapper automatically.
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    <FolderOpen className="h-4 w-4" aria-hidden="true" />
-                    Choose folder
-                  </Button>
-                </div>
-              </div>
+              />
 
               {files.length > 0 ? (
-                <div className="flex flex-wrap gap-2">
-                  {unsupportedFileEntries.length > 0 ? (
+                <div
+                  className={`rounded-[var(--radius-sm)] border px-4 py-4 transition-colors ${
+                    isDragging
+                      ? "border-[color:var(--accent)] bg-[color:var(--accent)]/5"
+                      : "border-[color:var(--line)] bg-[color:var(--surface-muted)]"
+                  }`}
+                  onDragOver={(event) => {
+                    event.preventDefault();
+                    setIsDragging(true);
+                  }}
+                  onDragLeave={() => setIsDragging(false)}
+                  onDrop={handleFilesDrop}
+                >
+                  <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                    <div className="flex min-w-0 gap-3">
+                      <div
+                        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface)]"
+                        aria-hidden="true"
+                      >
+                        <FolderOpen className="h-5 w-5 text-[color:var(--ink-soft)]" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                          <strong className="text-sm text-[color:var(--ink)]">
+                            Skill folder selected
+                          </strong>
+                          <span className="text-xs text-[color:var(--ink-soft)]">
+                            {files.length} files · {sizeLabel}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-sm text-[color:var(--ink-soft)]">
+                          Inner paths are preserved; the top-level folder is removed.
+                        </p>
+                        <div className="mt-3 flex flex-wrap gap-1.5">
+                          <Badge variant={hasRequiredFile ? "compact" : "warning"}>
+                            {hasRequiredFile ? requiredFileLabel : `Missing ${requiredFileLabel}`}
+                          </Badge>
+                          {unsupportedFileEntries.length > 0 ? (
+                            <Badge variant="warning">
+                              {unsupportedFileEntries.length} unsupported
+                            </Badge>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 flex-wrap gap-2 md:justify-end">
+                      {unsupportedFileEntries.length > 0 ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          type="button"
+                          onClick={removeUnsupportedFiles}
+                        >
+                          Remove unsupported
+                        </Button>
+                      ) : null}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        Replace folder
+                      </Button>
+                      <Button variant="ghost" size="sm" type="button" onClick={clearSelectedFiles}>
+                        Clear files
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div
+                  className={`relative flex flex-col items-center gap-3 overflow-hidden rounded-[var(--radius-md)] border-2 border-dashed p-8 transition-colors ${
+                    isDragging
+                      ? "border-[color:var(--accent)] bg-[color:var(--accent)]/5"
+                      : "border-[color:var(--line)] bg-[color:var(--surface-muted)]"
+                  }`}
+                  onDragOver={(event) => {
+                    event.preventDefault();
+                    setIsDragging(true);
+                  }}
+                  onDragLeave={() => setIsDragging(false)}
+                  onDrop={handleFilesDrop}
+                >
+                  <UploadDropzoneDecor kind="skill" />
+                  <div className="relative z-[1] flex flex-col items-center gap-2 text-center">
+                    <div className="flex items-center gap-3">
+                      <UploadIcon className="h-5 w-5 text-[color:var(--ink-soft)]" />
+                      <strong>Drop a skill folder</strong>
+                    </div>
+                    <span className="text-xs text-[color:var(--ink-soft)]">
+                      We keep inner paths and remove the top-level folder automatically.
+                    </span>
                     <Button
                       variant="outline"
                       size="sm"
                       type="button"
-                      onClick={removeUnsupportedFiles}
+                      onClick={() => fileInputRef.current?.click()}
                     >
-                      Remove unsupported files
+                      Choose folder
                     </Button>
-                  ) : null}
-                  <Button variant="ghost" size="sm" type="button" onClick={clearSelectedFiles}>
-                    Clear files
-                  </Button>
+                  </div>
                 </div>
-              ) : null}
+              )}
 
               <div className="flex flex-col gap-1 max-h-[300px] overflow-y-auto">
                 {files.length > 0
-                  ? normalizedFileEntries.map(({ file, index, path }) => {
+                  ? visibleFileEntries.map(({ file, index, path }) => {
                       const isUnsupported = !isTextFile(file);
+                      const isConfirmingRemoval = pendingFileRemovalIndex === index;
                       return (
                         <div
                           key={`${index}:${path}`}
@@ -841,16 +916,45 @@ export function Upload() {
                             {path}
                           </span>
                           {isUnsupported ? <Badge variant="warning">Unsupported</Badge> : null}
-                          <Button
-                            aria-label={`Remove ${path}`}
-                            title={`Remove ${path}`}
-                            variant="ghost"
-                            size="icon-xs"
-                            type="button"
-                            onClick={() => removeFileAtIndex(index)}
-                          >
-                            <X className="h-3.5 w-3.5" aria-hidden="true" />
-                          </Button>
+                          {isConfirmingRemoval ? (
+                            <div className="flex shrink-0 items-center gap-1">
+                              <span className="text-xs font-medium text-status-error-fg">
+                                Remove?
+                              </span>
+                              <Button
+                                aria-label={`Cancel removing ${path}`}
+                                title={`Cancel removing ${path}`}
+                                variant="ghost"
+                                size="icon-xs"
+                                type="button"
+                                onClick={() => setPendingFileRemovalIndex(null)}
+                              >
+                                <X className="h-3.5 w-3.5" aria-hidden="true" />
+                              </Button>
+                              <Button
+                                aria-label={`Confirm removing ${path}`}
+                                title={`Confirm removing ${path}`}
+                                variant="ghost"
+                                size="icon-xs"
+                                type="button"
+                                className="text-status-error-fg hover:not-disabled:bg-status-error-bg"
+                                onClick={() => removeFileAtIndex(index)}
+                              >
+                                <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                              </Button>
+                            </div>
+                          ) : (
+                            <Button
+                              aria-label={`Remove ${path}`}
+                              title={`Remove ${path}`}
+                              variant="ghost"
+                              size="icon-xs"
+                              type="button"
+                              onClick={() => setPendingFileRemovalIndex(index)}
+                            >
+                              <X className="h-3.5 w-3.5" aria-hidden="true" />
+                            </Button>
+                          )}
                         </div>
                       );
                     })
@@ -874,66 +978,75 @@ export function Upload() {
           {/* Metadata panel */}
           <Card>
             <CardContent>
-              <Label htmlFor="slug">Slug</Label>
-              <div className="relative">
-                <Input
-                  id="slug"
-                  value={slug}
-                  aria-invalid={Boolean(slugIssue)}
-                  aria-describedby={slugIssue ? "slug-validation-error" : undefined}
-                  className={showSlugStatusIcon ? "pr-10" : undefined}
-                  onChange={(event) => {
-                    markFieldTouched("slug");
-                    setMetadataPrefillNote(null);
-                    setSlug(event.target.value);
-                  }}
-                  onBlur={() => markFieldTouched("slug")}
-                  placeholder={`${contentLabel}-name`}
-                />
-                {showSlugAvailableIcon ? (
-                  <Check
-                    aria-label="Slug available"
-                    className="pointer-events-none absolute right-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-status-success-fg"
+              <div className="grid gap-x-4 gap-y-3 md:grid-cols-2">
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="displayName">Display name</Label>
+                  <Input
+                    id="displayName"
+                    value={displayName}
+                    aria-invalid={Boolean(displayNameIssue)}
+                    aria-describedby={
+                      displayNameIssue ? "display-name-validation-error" : undefined
+                    }
+                    onChange={(event) => {
+                      markFieldTouched("displayName");
+                      setMetadataPrefillNote(null);
+                      setDisplayName(event.target.value);
+                    }}
+                    onBlur={() => markFieldTouched("displayName")}
+                    placeholder={`My ${contentLabel}`}
                   />
-                ) : null}
-                {showSlugUnavailableIcon ? (
-                  <CircleX
-                    aria-label="Slug unavailable"
-                    className="pointer-events-none absolute right-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-status-error-fg"
+                  <InlineValidationMessage
+                    id="display-name-validation-error"
+                    message={displayNameIssue}
                   />
-                ) : null}
-              </div>
-              <InlineValidationMessage id="slug-validation-error" message={slugIssue} />
-              {slugCollisionIssue?.url ? (
-                <div className="text-sm text-[color:var(--ink-soft)]">
-                  Existing skill:{" "}
-                  <a
-                    href={slugCollisionIssue.url}
-                    className="text-[color:var(--accent)] hover:underline"
-                  >
-                    {slugCollisionIssue.url}
-                  </a>
                 </div>
-              ) : null}
 
-              <Label htmlFor="displayName">Display name</Label>
-              <Input
-                id="displayName"
-                value={displayName}
-                aria-invalid={Boolean(displayNameIssue)}
-                aria-describedby={displayNameIssue ? "display-name-validation-error" : undefined}
-                onChange={(event) => {
-                  markFieldTouched("displayName");
-                  setMetadataPrefillNote(null);
-                  setDisplayName(event.target.value);
-                }}
-                onBlur={() => markFieldTouched("displayName")}
-                placeholder={`My ${contentLabel}`}
-              />
-              <InlineValidationMessage
-                id="display-name-validation-error"
-                message={displayNameIssue}
-              />
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="slug">Slug</Label>
+                  <div className="relative">
+                    <Input
+                      id="slug"
+                      value={slug}
+                      aria-invalid={Boolean(slugIssue)}
+                      aria-describedby={slugIssue ? "slug-validation-error" : undefined}
+                      className={showSlugStatusIcon ? "pr-10" : undefined}
+                      onChange={(event) => {
+                        markFieldTouched("slug");
+                        setMetadataPrefillNote(null);
+                        setSlug(event.target.value);
+                      }}
+                      onBlur={() => markFieldTouched("slug")}
+                      placeholder={`${contentLabel}-name`}
+                    />
+                    {showSlugAvailableIcon ? (
+                      <Check
+                        aria-label="Slug available"
+                        className="pointer-events-none absolute right-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-status-success-fg"
+                      />
+                    ) : null}
+                    {showSlugUnavailableIcon ? (
+                      <CircleX
+                        aria-label="Slug unavailable"
+                        className="pointer-events-none absolute right-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-status-error-fg"
+                      />
+                    ) : null}
+                  </div>
+                  <InlineValidationMessage id="slug-validation-error" message={slugIssue} />
+                  {slugCollisionIssue?.url ? (
+                    <a
+                      href={slugCollisionIssue.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label="Open existing skill in a new tab"
+                      className="inline-flex w-fit items-center gap-1 text-sm text-[color:var(--ink-soft)] hover:text-[color:var(--accent)] hover:underline"
+                    >
+                      View existing skill
+                      <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+                    </a>
+                  ) : null}
+                </div>
+              </div>
               {metadataPrefillNote ? (
                 <p className="text-sm text-[color:var(--ink-soft)]">{metadataPrefillNote}</p>
               ) : null}
@@ -1195,6 +1308,14 @@ function missingPublishLabel(issue: string, requiredFileLabel: string) {
   if (issue === "Add at least one file.") return ["files"];
   if (issue === `${requiredFileLabel} is required.`) return [requiredFileLabel];
   return [];
+}
+
+function requiredFileSortRank(path: string, isSoulMode: boolean) {
+  const normalized = path.trim().toLowerCase();
+  if (isSoulMode) return normalized === "soul.md" ? 0 : 1;
+  if (normalized === "skill.md") return 0;
+  if (normalized === "skills.md") return 1;
+  return 2;
 }
 
 function getSharedTopLevelFolderName(files: File[]) {

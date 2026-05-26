@@ -146,21 +146,23 @@ describe("plugins publish route", () => {
     expect(
       screen.getByText("You need to be signed in to publish plugins on ClawHub."),
     ).toBeTruthy();
-    expect(screen.queryByText(/Upload plugin code to detect the package shape/i)).toBeNull();
+    expect(screen.queryByText(/Upload plugin code first/i)).toBeNull();
     expect(screen.queryByPlaceholderText("Plugin name")).toBeNull();
   });
 
   it("keeps metadata inputs locked until plugin code is uploaded", () => {
     renderPublishRoute();
 
-    expect(screen.getByText(/Upload plugin code to detect the package shape/i)).toBeTruthy();
+    expect(screen.getByText(/Upload plugin code first/i)).toBeTruthy();
     expect(screen.getByPlaceholderText("Plugin name").getAttribute("disabled")).not.toBeNull();
     expect(screen.getByPlaceholderText("Display name").getAttribute("disabled")).not.toBeNull();
     expect(screen.getByPlaceholderText("Version").getAttribute("disabled")).not.toBeNull();
-    expect(screen.getByPlaceholderText("Changelog").getAttribute("disabled")).not.toBeNull();
+    expect(screen.queryByPlaceholderText("Describe what changed in this release...")).toBeNull();
     expect(screen.getByLabelText("Owner").textContent).toContain("@vintageayu · VintageAyu");
     expect(document.querySelector('img[src="https://example.com/vintageayu.png"]')).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Publish" }).getAttribute("disabled")).not.toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Publish plugin" }).getAttribute("disabled"),
+    ).not.toBeNull();
   });
 
   it("opens only the directory picker when clicking Choose folder", () => {
@@ -228,20 +230,17 @@ describe("plugins publish route", () => {
       expect(screen.getByDisplayValue("1.2.3")).toBeTruthy();
       expect(screen.getByDisplayValue("openclaw/demo-plugin")).toBeTruthy();
       expect(screen.getByPlaceholderText("Plugin name").getAttribute("disabled")).toBeNull();
-      expect(screen.getByText("Source commit is required.")).toBeTruthy();
+      expect(screen.getByText("Commit SHA is required.")).toBeTruthy();
     });
 
-    fireEvent.change(screen.getByPlaceholderText("Changelog"), {
-      target: { value: "Initial release" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("Source commit"), {
+    fireEvent.change(screen.getByPlaceholderText("Full commit SHA"), {
       target: { value: "abc123" },
     });
-    fireEvent.change(screen.getByPlaceholderText("Source ref (tag or branch)"), {
+    fireEvent.change(screen.getByPlaceholderText("v1.0.0 or main"), {
       target: { value: "refs/tags/v1.2.3" },
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Publish" }));
+    fireEvent.click(screen.getByRole("button", { name: "Publish plugin" }));
 
     await waitFor(() => {
       expect(publishRelease).toHaveBeenCalledTimes(1);
@@ -255,7 +254,7 @@ describe("plugins publish route", () => {
         displayName: "Demo Plugin",
         family: "code-plugin",
         version: "1.2.3",
-        changelog: "Initial release",
+        changelog: "",
         source: expect.objectContaining({
           kind: "github",
           repo: "openclaw/demo-plugin",
@@ -320,7 +319,9 @@ describe("plugins publish route", () => {
     expect(docsLink.getAttribute("href")).toBe(DocsLinks.openclaw.pluginPackageMetadata);
     expect(docsLink.getAttribute("target")).toBe("_blank");
     expect(docsLink.getAttribute("rel")).toBe("noopener noreferrer");
-    expect(screen.getByRole("button", { name: "Publish" }).getAttribute("disabled")).not.toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Publish plugin" }).getAttribute("disabled"),
+    ).not.toBeNull();
     expect(publishRelease).not.toHaveBeenCalled();
   });
 
@@ -360,7 +361,9 @@ describe("plugins publish route", () => {
     expect(docsLink.getAttribute("href")).toBe(DocsLinks.clawhub.packageScopeFaq);
     expect(docsLink.getAttribute("target")).toBe("_blank");
     expect(docsLink.getAttribute("rel")).toBe("noopener noreferrer");
-    expect(screen.getByRole("button", { name: "Publish" }).getAttribute("disabled")).not.toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Publish plugin" }).getAttribute("disabled"),
+    ).not.toBeNull();
     expect(publishRelease).not.toHaveBeenCalled();
   });
 
@@ -472,12 +475,13 @@ describe("plugins publish route", () => {
       expect(screen.getByDisplayValue("Opik")).toBeTruthy();
       expect(screen.getByDisplayValue("0.2.9")).toBeTruthy();
       expect(screen.getByDisplayValue("comet-ml/opik-openclaw")).toBeTruthy();
-      expect(screen.getByText(/Metadata detected and prefilled/i)).toBeTruthy();
+      expect(screen.getByText(/Package detected/i)).toBeTruthy();
       expect(
         screen.getByText(
-          /Autofilled package type, plugin name, display name, version, source repo, compatibility\./i,
+          /Autofilled: package type, plugin name, display name, version, source repo, compatibility\./i,
         ),
       ).toBeTruthy();
+      expect(screen.queryByText(/^Compatibility:/i)).toBeNull();
       expect(screen.getByText("Package manifest")).toBeTruthy();
       expect(screen.getByText("Plugin manifest")).toBeTruthy();
       expect(screen.queryByText("opik-openclaw-0.2.9/package.json")).toBeNull();
@@ -526,20 +530,17 @@ describe("plugins publish route", () => {
       expect(screen.getByText(/Ignored 1 package files/i)).toBeTruthy();
     });
 
-    fireEvent.change(screen.getByPlaceholderText("Changelog"), {
-      target: { value: "Initial release" },
-    });
     fireEvent.change(screen.getByLabelText("ClawScan note"), {
       target: { value: "Native host access is limited to the OpenClaw extension bridge." },
     });
-    fireEvent.change(screen.getByPlaceholderText("Source repo (owner/repo)"), {
+    fireEvent.change(screen.getByPlaceholderText("owner/repo"), {
       target: { value: "openclaw/demo-plugin" },
     });
-    fireEvent.change(screen.getByPlaceholderText("Source commit"), {
+    fireEvent.change(screen.getByPlaceholderText("Full commit SHA"), {
       target: { value: "abc123" },
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Publish" }));
+    fireEvent.click(screen.getByRole("button", { name: "Publish plugin" }));
 
     await waitFor(() => {
       expect(publishRelease).toHaveBeenCalledTimes(1);
@@ -593,7 +594,9 @@ describe("plugins publish route", () => {
     await waitFor(() => {
       expect(screen.getByText(/Each file must be 10MB or smaller: plugin\.wasm/i)).toBeTruthy();
     });
-    expect(screen.getByRole("button", { name: "Publish" }).getAttribute("disabled")).not.toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Publish plugin" }).getAttribute("disabled"),
+    ).not.toBeNull();
     expect(publishRelease).not.toHaveBeenCalled();
   });
 
@@ -623,17 +626,14 @@ describe("plugins publish route", () => {
     await waitFor(() => {
       expect(screen.getByDisplayValue("demo-plugin")).toBeTruthy();
     });
-    fireEvent.change(screen.getByPlaceholderText("Changelog"), {
-      target: { value: "Initial release" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("Source repo (owner/repo)"), {
+    fireEvent.change(screen.getByPlaceholderText("owner/repo"), {
       target: { value: "openclaw/demo-plugin" },
     });
-    fireEvent.change(screen.getByPlaceholderText("Source commit"), {
+    fireEvent.change(screen.getByPlaceholderText("Full commit SHA"), {
       target: { value: "abc123" },
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Publish" }));
+    fireEvent.click(screen.getByRole("button", { name: "Publish plugin" }));
 
     expect(
       await screen.findByText(/Pending security checks and verification before public listing\./i),

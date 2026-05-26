@@ -1,7 +1,6 @@
-import { DocsLinks, type PackageCompatibility } from "clawhub-schema";
+import { DocsLinks } from "clawhub-schema";
 import { Package } from "lucide-react";
-import { useRef, useState } from "react";
-import { formatPackageCompatibility } from "../lib/pluginPublishPrefill";
+import { type DragEvent, useRef, useState } from "react";
 import { expandDroppedItems } from "../lib/uploadFiles";
 import { formatBytes } from "../routes/upload/-utils";
 import { Badge } from "./ui/badge";
@@ -19,13 +18,19 @@ export function PackageSourceChooser(props: {
   family: "code-plugin" | "bundle-plugin";
   validationError: string | null;
   codePluginFieldIssues: string[];
-  codePluginCompatibility: PackageCompatibility | null;
   onPickFiles: (selected: File[]) => Promise<void>;
+  onClearFiles: () => void;
 }) {
   const [isDragging, setIsDragging] = useState(false);
   const archiveInputRef = useRef<HTMLInputElement | null>(null);
   const directoryInputRef = useRef<HTMLInputElement | null>(null);
   const isMetadataLocked = props.files.length === 0 || Boolean(props.validationError);
+  const hasSelectedPackage = props.normalizedPaths.length > 0;
+  const fileSummary = `${props.files.length} files \u00b7 ${formatBytes(props.totalBytes)}`;
+  const prefillSummary =
+    props.detectedPrefillFields.length > 0
+      ? `Autofilled: ${props.detectedPrefillFields.join(", ")}.`
+      : "Review and fill the release details below.";
 
   const setDirectoryInputRef = (node: HTMLInputElement | null) => {
     directoryInputRef.current = node;
@@ -34,9 +39,29 @@ export function PackageSourceChooser(props: {
       node.setAttribute("directory", "");
     }
   };
+  const handleDrop = (event: DragEvent<HTMLElement>) => {
+    event.preventDefault();
+    setIsDragging(false);
+    void (async () => {
+      const dropped = event.dataTransfer.items?.length
+        ? await expandDroppedItems(event.dataTransfer.items)
+        : Array.from(event.dataTransfer.files);
+      await props.onPickFiles(dropped);
+    })();
+  };
 
   return (
-    <Card className="mb-5">
+    <Card
+      className={`mb-5 ${
+        hasSelectedPackage
+          ? isDragging
+            ? "border-[color:var(--accent)] bg-[rgba(255,107,74,0.06)]"
+            : isMetadataLocked
+              ? "border-[color:var(--line)] bg-[color:var(--surface-muted)]"
+              : "border-emerald-300/45 bg-emerald-50/80 dark:border-emerald-500/30 dark:bg-emerald-950/25"
+          : ""
+      }`}
+    >
       <input
         ref={archiveInputRef}
         className="hidden"
@@ -60,106 +85,113 @@ export function PackageSourceChooser(props: {
           void props.onPickFiles(selected);
         }}
       />
-      <div
-        className={`relative flex flex-col items-center gap-4 overflow-hidden rounded-[var(--radius-md)] border-2 border-dashed p-8 text-center transition-colors ${
-          isDragging
-            ? "border-[color:var(--accent)] bg-[rgba(255,107,74,0.06)]"
-            : "border-[color:var(--line)] bg-[color:var(--surface-muted)]"
-        }`}
-        onDragOver={(event) => {
-          event.preventDefault();
-          setIsDragging(true);
-        }}
-        onDragLeave={() => setIsDragging(false)}
-        onDrop={(event) => {
-          event.preventDefault();
-          setIsDragging(false);
-          void (async () => {
-            const dropped = event.dataTransfer.items?.length
-              ? await expandDroppedItems(event.dataTransfer.items)
-              : Array.from(event.dataTransfer.files);
-            await props.onPickFiles(dropped);
-          })();
-        }}
-      >
-        <UploadDropzoneDecor kind="plugin" />
+      {hasSelectedPackage ? (
         <div
-          className="relative z-10 flex h-14 w-14 items-center justify-center rounded-full bg-[color:var(--surface)]"
-          aria-hidden="true"
+          className="transition-colors"
+          onDragOver={(event) => {
+            event.preventDefault();
+            setIsDragging(true);
+          }}
+          onDragLeave={() => setIsDragging(false)}
+          onDrop={handleDrop}
         >
-          <Package size={28} className="text-[color:var(--ink-soft)]" />
-        </div>
-        <div className="relative z-10 flex flex-col items-center gap-2">
-          <div className="flex flex-wrap items-center justify-center gap-2">
-            <strong className="text-[color:var(--ink)]">Upload plugin code first</strong>
-            {props.files.length > 0 ? (
-              <span className="text-xs text-[color:var(--ink-soft)]">
-                {props.files.length} files &middot; {formatBytes(props.totalBytes)}
-              </span>
-            ) : null}
+          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div className="flex min-w-0 gap-3">
+              <div
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface)]"
+                aria-hidden="true"
+              >
+                <Package size={20} className="text-[color:var(--ink-soft)]" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <strong className="text-sm text-[color:var(--ink)]">
+                    {isMetadataLocked ? "Package selected" : "Package detected"}
+                  </strong>
+                  <span className="text-xs text-[color:var(--ink-soft)]">{fileSummary}</span>
+                </div>
+                <p className="mt-1 text-sm text-[color:var(--ink-soft)]">{prefillSummary}</p>
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {props.normalizedPathSet.has("package.json") ? (
+                    <Badge variant="compact">Package manifest</Badge>
+                  ) : null}
+                  {props.normalizedPathSet.has("openclaw.plugin.json") ? (
+                    <Badge variant="compact">Plugin manifest</Badge>
+                  ) : null}
+                  {props.normalizedPathSet.has(".codex-plugin/plugin.json") ||
+                  props.normalizedPathSet.has(".claude-plugin/plugin.json") ||
+                  props.normalizedPathSet.has(".cursor-plugin/plugin.json") ? (
+                    <Badge variant="compact">Agent metadata</Badge>
+                  ) : null}
+                  {props.normalizedPathSet.has("readme.md") ||
+                  props.normalizedPathSet.has("readme.mdx") ? (
+                    <Badge variant="compact">README</Badge>
+                  ) : null}
+                  {props.ignoredPaths.length > 0 ? (
+                    <Badge variant="compact">
+                      Ignored {props.ignoredPaths.length} package files
+                    </Badge>
+                  ) : null}
+                </div>
+                {props.ignoredPaths.length > 0 ? (
+                  <p className="mt-2 text-xs text-[color:var(--ink-soft)]">
+                    Ignored: {props.ignoredPaths.slice(0, 4).join(", ")}
+                    {props.ignoredPaths.length > 4 ? ", ..." : ""}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+            <div className="flex shrink-0 flex-wrap gap-2 md:justify-end">
+              <Button variant="outline" size="sm" onClick={() => archiveInputRef.current?.click()}>
+                Replace archive
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => directoryInputRef.current?.click()}>
+                Replace folder
+              </Button>
+              <Button variant="ghost" size="sm" onClick={props.onClearFiles}>
+                Clear package
+              </Button>
+            </div>
           </div>
-          <span className="max-w-md text-sm text-[color:var(--ink-soft)]">
-            Drag a folder, zip, or tgz here. We inspect the package to unlock and prefill the rest
-            of the form.
-          </span>
-          <div className="flex gap-2 pt-2">
-            <Button variant="outline" size="sm" onClick={() => archiveInputRef.current?.click()}>
-              Choose archive
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => directoryInputRef.current?.click()}>
-              Choose folder
-            </Button>
-          </div>
         </div>
-      </div>
-
-      {props.normalizedPaths.length > 0 ? (
+      ) : (
         <div
-          className={`rounded-[var(--radius-sm)] border px-4 py-3 transition-colors ${
-            isMetadataLocked
-              ? "border-[color:var(--line)] bg-[color:var(--surface-muted)]"
-              : "border-emerald-300/40 bg-emerald-50 dark:border-emerald-500/30 dark:bg-emerald-950/30"
+          className={`relative flex flex-col items-center gap-4 overflow-hidden rounded-[var(--radius-md)] border-2 border-dashed p-8 text-center transition-colors ${
+            isDragging
+              ? "border-[color:var(--accent)] bg-[rgba(255,107,74,0.06)]"
+              : "border-[color:var(--line)] bg-[color:var(--surface-muted)]"
           }`}
+          onDragOver={(event) => {
+            event.preventDefault();
+            setIsDragging(true);
+          }}
+          onDragLeave={() => setIsDragging(false)}
+          onDrop={handleDrop}
         >
-          <div>
-            <div className="flex items-center justify-between">
-              <strong className="text-sm text-[color:var(--ink)]">Package detected</strong>
-              <span className="text-xs text-[color:var(--ink-soft)]">
-                {props.files.length} files &middot; {formatBytes(props.totalBytes)}
-              </span>
+          <UploadDropzoneDecor kind="plugin" />
+          <div
+            className="relative z-[1] flex h-14 w-14 items-center justify-center rounded-full bg-[color:var(--surface)]"
+            aria-hidden="true"
+          >
+            <Package size={28} className="text-[color:var(--ink-soft)]" />
+          </div>
+          <div className="relative z-[1] flex flex-col items-center gap-2">
+            <strong className="text-[color:var(--ink)]">Upload plugin code first</strong>
+            <span className="max-w-md text-sm text-[color:var(--ink-soft)]">
+              Drag a folder, zip, or tgz here. We inspect the package to unlock and prefill the rest
+              of the form.
+            </span>
+            <div className="flex gap-2 pt-2">
+              <Button variant="outline" size="sm" onClick={() => archiveInputRef.current?.click()}>
+                Choose archive
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => directoryInputRef.current?.click()}>
+                Choose folder
+              </Button>
             </div>
-            <p className="mt-1 text-sm text-[color:var(--ink-soft)]">
-              {props.detectedPrefillFields.length > 0
-                ? `Autofilled ${props.detectedPrefillFields.join(", ")}.`
-                : "Package files were detected. Review and fill the release details below."}
-            </p>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {props.normalizedPathSet.has("package.json") ? <Badge>Package manifest</Badge> : null}
-              {props.normalizedPathSet.has("openclaw.plugin.json") ? (
-                <Badge>Plugin manifest</Badge>
-              ) : null}
-              {props.normalizedPathSet.has(".codex-plugin/plugin.json") ||
-              props.normalizedPathSet.has(".claude-plugin/plugin.json") ||
-              props.normalizedPathSet.has(".cursor-plugin/plugin.json") ? (
-                <Badge>Agent metadata</Badge>
-              ) : null}
-              {props.normalizedPathSet.has("readme.md") ||
-              props.normalizedPathSet.has("readme.mdx") ? (
-                <Badge>README</Badge>
-              ) : null}
-              {props.ignoredPaths.length > 0 ? (
-                <Badge>Ignored {props.ignoredPaths.length} package files</Badge>
-              ) : null}
-            </div>
-            {props.ignoredPaths.length > 0 ? (
-              <p className="mt-2 text-xs text-[color:var(--ink-soft)]">
-                Ignored: {props.ignoredPaths.slice(0, 4).join(", ")}
-                {props.ignoredPaths.length > 4 ? ", ..." : ""}
-              </p>
-            ) : null}
           </div>
         </div>
-      ) : null}
+      )}
       {props.validationError ? <Badge variant="warning">{props.validationError}</Badge> : null}
       {props.family === "code-plugin" && props.codePluginFieldIssues.length > 0 ? (
         <Badge variant="warning">
@@ -175,11 +207,6 @@ export function PackageSourceChooser(props: {
           </a>
           .
         </Badge>
-      ) : null}
-      {props.family === "code-plugin" && props.codePluginCompatibility ? (
-        <p className="text-sm text-[color:var(--ink-soft)]">
-          Compatibility: {formatPackageCompatibility(props.codePluginCompatibility)}
-        </p>
       ) : null}
     </Card>
   );
