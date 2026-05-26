@@ -596,7 +596,6 @@ export function SkillDetailPage({
       )}/security-audit`}
       vtAnalysis={latestVersion.vtAnalysis ?? null}
       llmAnalysis={latestVersion.llmAnalysis ?? null}
-      staticScan={latestVersion.staticScan ?? null}
       suppressScanResults={suppressVersionScanResults}
     />
   ) : null;

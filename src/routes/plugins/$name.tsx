@@ -628,7 +628,6 @@ export function PluginDetailPage({
       auditHref={buildPluginSecurityAuditHref(name)}
       vtAnalysis={latestRelease.vtAnalysis ?? null}
       llmAnalysis={latestRelease.llmAnalysis ?? null}
-      staticScan={latestRelease.staticScan ?? null}
     />
   ) : null;
 

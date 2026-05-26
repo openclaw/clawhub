@@ -603,7 +603,7 @@ Response fields:
   re-deriving blocking rules from scanner or moderation fields.
 - `trust.reasons` is the user-facing and audit explanation list. Reason codes
   are stable, compact strings such as `manual:quarantined`, `scan:malicious`,
-  `static:malicious`, `vt:suspicious`, and `package:malicious`.
+  and `package:malicious`.
 - `trust.pending` means one or more trust inputs are still awaiting completion.
 - `trust.stale` means the trust summary was computed from outdated inputs and
   should be treated as requiring refresh before a high-confidence allow decision.

@@ -287,8 +287,7 @@ describe("securityPrompt", () => {
       newResponse({
         verdict: "suspicious",
         confidence: "low",
-        summary:
-          "The scanner context is enough to hold for review even without direct file reads.",
+        summary: "The scanner context is enough to hold for review even without direct file reads.",
         dimensions: {
           purpose_capability: {
             status: "concern",

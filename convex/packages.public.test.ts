@@ -6073,7 +6073,7 @@ describe("package scan backfill", () => {
           moderationReason: "manual review",
           sourceRepo: "openclaw/demo",
           sourceCommit: "abc123",
-          reasons: ["manual:quarantined", "scan:malicious", "static:malicious"],
+          reasons: ["manual:quarantined", "scan:malicious"],
         }),
       ],
       nextCursor: null,
@@ -6596,7 +6596,7 @@ describe("package scan backfill", () => {
     }
   });
 
-  it("promotes latest package scan status when a static rescan finds malware", async () => {
+  it("stores static package scan results without promoting malware status", async () => {
     const patch = vi.fn().mockResolvedValue(undefined);
     const release = {
       _id: "packageReleases:demo-1",
@@ -6663,17 +6663,17 @@ describe("package scan backfill", () => {
       "packageReleases:demo-1",
       expect.objectContaining({
         staticScan: expect.objectContaining({ status: "malicious" }),
-        verification: expect.objectContaining({ scanStatus: "malicious" }),
+        verification: expect.objectContaining({ scanStatus: "pending" }),
       }),
     );
     expect(patch).toHaveBeenNthCalledWith(
       2,
       "packages:demo",
       expect.objectContaining({
-        scanStatus: "malicious",
-        verification: expect.objectContaining({ scanStatus: "malicious" }),
+        scanStatus: "pending",
+        verification: expect.objectContaining({ scanStatus: "pending" }),
         latestVersionSummary: expect.objectContaining({
-          verification: expect.objectContaining({ scanStatus: "malicious" }),
+          verification: expect.objectContaining({ scanStatus: "pending" }),
         }),
       }),
     );

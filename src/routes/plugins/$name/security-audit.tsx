@@ -149,7 +149,6 @@ export function PluginSecurityAuditPage({
       vtAnalysis={release.vtAnalysis ?? null}
       llmAnalysis={release.llmAnalysis ?? null}
       skillSpectorAnalysis={release.skillSpectorAnalysis ?? null}
-      staticScan={release.staticScan ?? null}
       clawScanNote={release.clawScanNote ?? null}
       canManageArtifact={Boolean(settings)}
       settingsHref={settings ? `${buildPluginDetailHref(resolvedName)}/settings` : null}

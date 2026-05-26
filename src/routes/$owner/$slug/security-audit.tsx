@@ -114,7 +114,6 @@ function SkillSecurityAuditRoute() {
       vtAnalysis={latestVersion.vtAnalysis ?? null}
       llmAnalysis={latestVersion.llmAnalysis ?? null}
       skillSpectorAnalysis={latestVersion.skillSpectorAnalysis ?? null}
-      staticScan={latestVersion.staticScan ?? null}
       clawScanNote={latestVersion.clawScanNote ?? null}
       canManageArtifact={canManageArtifact}
       settingsHref={canManageArtifact ? settingsHref : null}

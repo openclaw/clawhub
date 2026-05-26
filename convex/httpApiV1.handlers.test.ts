@@ -2128,7 +2128,7 @@ describe("httpApiV1 handlers", () => {
     expect(json.version.security.virustotalUrl).toContain("virustotal.com/gui/file/");
   });
 
-  it("keeps static-scan suspicious status advisory in version security snapshot", async () => {
+  it("keeps static-scan suspicious status out of version security snapshot verdicts", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("slug" in args) {
         return {
@@ -2176,12 +2176,12 @@ describe("httpApiV1 handlers", () => {
     expect(json.version.security.status).toBe("clean");
     expect(json.version.security.hasWarnings).toBe(false);
     expect(json.version.security.hasScanResult).toBe(true);
-    expect(json.version.security.scanners.static.normalizedStatus).toBe("pending");
+    expect(json.version.security.scanners.static).toBeUndefined();
     expect(json.version.security.scanners.vt.normalizedStatus).toBe("clean");
     expect(json.version.security.scanners.llm.normalizedStatus).toBe("clean");
   });
 
-  it("lets static-scan malicious status dominate benign vt and llm results", async () => {
+  it("keeps static-scan malicious status advisory when ClawScan is benign", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("slug" in args) {
         return {
@@ -2226,14 +2226,14 @@ describe("httpApiV1 handlers", () => {
     );
     expect(response.status).toBe(200);
     const json = await response.json();
-    expect(json.version.security.status).toBe("malicious");
-    expect(json.version.security.hasWarnings).toBe(true);
+    expect(json.version.security.status).toBe("clean");
+    expect(json.version.security.hasWarnings).toBe(false);
     expect(json.version.security.hasScanResult).toBe(true);
-    expect(json.version.security.checkedAt).toBe(555);
-    expect(json.version.security.scanners.static.normalizedStatus).toBe("malicious");
+    expect(json.version.security.checkedAt).toBe(222);
+    expect(json.version.security.scanners.static).toBeUndefined();
   });
 
-  it("does not treat a static scan by itself as a definitive scan result", async () => {
+  it("omits version security when only static scan evidence exists", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("slug" in args) {
         return {
@@ -2267,13 +2267,7 @@ describe("httpApiV1 handlers", () => {
     );
     expect(response.status).toBe(200);
     const json = await response.json();
-    expect(json.version.security.status).toBe("pending");
-    expect(json.version.security.hasWarnings).toBe(false);
-    expect(json.version.security.hasScanResult).toBe(false);
-    expect(json.version.security.virustotalUrl).toBeNull();
-    expect(json.version.security.scanners.static.normalizedStatus).toBe("pending");
-    expect(json.version.security.scanners.vt).toBeNull();
-    expect(json.version.security.scanners.llm).toBeNull();
+    expect(json.version.security).toBeUndefined();
   });
 
   it("keeps hasWarnings true when llm dimensions include non-ok ratings", async () => {
@@ -5701,6 +5695,24 @@ describe("httpApiV1 handlers", () => {
     {
       name: "malicious",
       release: {
+        llmAnalysis: {
+          status: "malicious",
+          verdict: "malicious",
+          summary: "ClawScan found malicious behavior.",
+          checkedAt: 123,
+        },
+      },
+      expected: {
+        scanStatus: "malicious",
+        blockedFromDownload: true,
+        reasons: ["scan:malicious"],
+        pending: false,
+      },
+    },
+    {
+      name: "static-only",
+      release: {
+        sha256hash: "b".repeat(64),
         staticScan: {
           status: "malicious",
           reasonCodes: ["malicious.test"],
@@ -5711,10 +5723,10 @@ describe("httpApiV1 handlers", () => {
         },
       },
       expected: {
-        scanStatus: "malicious",
-        blockedFromDownload: true,
-        reasons: ["scan:malicious", "static:malicious"],
-        pending: false,
+        scanStatus: "pending",
+        blockedFromDownload: false,
+        reasons: ["scan:pending"],
+        pending: true,
       },
     },
     {

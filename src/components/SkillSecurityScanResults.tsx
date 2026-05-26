@@ -118,7 +118,7 @@ export type SkillSpectorAnalysis = {
   checkedAt: number;
 };
 
-export type StaticFinding = {
+type StaticFinding = {
   code: string;
   severity: string;
   file: string;
@@ -353,7 +353,7 @@ function getFindingSeverityBadgeMeta(severity: string): {
   }
 }
 
-export function FindingSeverityBadge({ severity }: { severity: string }) {
+function FindingSeverityBadge({ severity }: { severity: string }) {
   const severityBadge = getFindingSeverityBadgeMeta(severity);
   return <Badge variant={severityBadge.variant}>{severityBadge.label}</Badge>;
 }
@@ -679,137 +679,15 @@ function LlmAnalysisDetail({ analysis }: { analysis: LlmAnalysis }) {
   );
 }
 
-function isCleanStatus(status?: string) {
-  if (!status) return false;
-  const s = status.toLowerCase();
-  return s === "clean" || s === "benign";
-}
-
-const EXTERNALLY_CLEARED_STATIC_CODES = new Set(["suspicious.env_credential_access"]);
-
-function areStaticFindingsExternallyCleared(
-  findings: StaticFinding[],
-  vtStatus?: string,
-  llmStatus?: string,
-) {
-  return (
-    findings.length > 0 &&
-    isCleanStatus(vtStatus) &&
-    isCleanStatus(llmStatus) &&
-    findings.every((finding) => EXTERNALLY_CLEARED_STATIC_CODES.has(finding.code))
-  );
-}
-
-function getStaticGuidance(findings: StaticFinding[], vtStatus?: string, llmStatus?: string) {
-  const hasMaliciousCode = findings.some((f) => f.code.startsWith("malicious."));
-  if (hasMaliciousCode) {
-    return {
-      className: "malicious",
-      label: "Critical security concern",
-      text: "These patterns indicate potentially dangerous behavior. Exercise extreme caution and review the code thoroughly before installing.",
-    };
-  }
-  const externallyCleared = areStaticFindingsExternallyCleared(findings, vtStatus, llmStatus);
-  if (externallyCleared) {
-    return {
-      className: "benign",
-      label: "Confirmed safe by external scanners",
-      text: "Static analysis detected API credential-access patterns, but both VirusTotal and ClawScan confirmed this skill is safe. These patterns are common in legitimate API integration skills.",
-    };
-  }
-  const hasCritical = findings.some((f) => f.severity === "critical");
-  if (hasCritical) {
-    return {
-      className: "suspicious",
-      label: "Patterns worth reviewing",
-      text: "These patterns may indicate risky behavior. Check the VirusTotal and ClawScan results above for context-aware analysis before installing.",
-    };
-  }
-  return {
-    className: "benign",
-    label: "About static analysis",
-    text: "These patterns were detected by automated regex scanning. They may be normal for skills that integrate with external APIs. Check the VirusTotal and ClawScan results above for context-aware analysis.",
-  };
-}
-
-function StaticAnalysisDetail({
-  findings,
-  vtStatus,
-  llmStatus,
-}: {
-  findings: StaticFinding[];
-  vtStatus?: string;
-  llmStatus?: string;
-}) {
-  const [isOpen, setIsOpen] = useState(false);
-  const guidance = getStaticGuidance(findings, vtStatus, llmStatus);
-
-  return (
-    <div className={`analysis-detail${isOpen ? " is-open" : ""}`}>
-      <button
-        type="button"
-        className="analysis-detail-header"
-        onClick={() => {
-          const selection = window.getSelection();
-          if (selection && !selection.isCollapsed) return;
-          setIsOpen((prev) => !prev);
-        }}
-        aria-expanded={isOpen}
-      >
-        <span className="analysis-summary-text">
-          Static analysis: {findings.length} pattern{findings.length !== 1 ? "s" : ""} detected
-        </span>
-        <span className="analysis-detail-toggle">
-          Details <span className="chevron">{"\u25BE"}</span>
-        </span>
-      </button>
-      <div className="analysis-body">
-        <div className="analysis-dimensions">
-          {findings.map((finding, i) => {
-            const icon =
-              finding.severity === "critical"
-                ? { className: "dimension-icon-danger", symbol: "\u2717" }
-                : { className: "dimension-icon-concern", symbol: "!" };
-            return (
-              <div key={`${finding.code}-${finding.file}-${i}`} className="dimension-row">
-                <div className={`dimension-icon ${icon.className}`}>{icon.symbol}</div>
-                <div className="dimension-content">
-                  <div className="dimension-label">
-                    {finding.file}:{finding.line}
-                  </div>
-                  <div className="dimension-detail">{finding.message}</div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-        <div className={`analysis-guidance ${guidance.className}`}>
-          <div className="analysis-guidance-label">{guidance.label}</div>
-          {guidance.text}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export function SecurityScanResults({
   sha256hash,
   vtAnalysis,
   llmAnalysis,
-  staticFindings,
   capabilityTags,
   variant = "panel",
 }: SecurityScanResultsProps) {
   const visibleCapabilityTags = (capabilityTags ?? []).filter(Boolean);
-  const blockingStaticFindings =
-    staticFindings?.filter((finding) => finding.code.startsWith("malicious.")) ?? [];
-  const hasBlockingStaticFindings = blockingStaticFindings.length > 0;
-  if (
-    !sha256hash &&
-    !llmAnalysis &&
-    !hasBlockingStaticFindings &&
-    visibleCapabilityTags.length === 0
-  ) {
+  if (!sha256hash && !llmAnalysis && visibleCapabilityTags.length === 0) {
     return null;
   }
 
@@ -902,26 +780,6 @@ export function SecurityScanResults({
         llmAnalysis.status !== "pending" &&
         llmAnalysis.summary ? (
           <LlmAnalysisDetail analysis={llmAnalysis} />
-        ) : null}
-        {hasBlockingStaticFindings ? (
-          <>
-            <div className="scan-result-row">
-              <div className="scan-result-scanner">
-                <span className="scan-result-scanner-name">Static analysis</span>
-              </div>
-              <ScanResultBadge
-                status="malicious"
-                label={`${blockingStaticFindings.length} blocking finding${
-                  blockingStaticFindings.length === 1 ? "" : "s"
-                }`}
-              />
-            </div>
-            <StaticAnalysisDetail
-              findings={blockingStaticFindings}
-              vtStatus={vtStatus}
-              llmStatus={llmVerdict}
-            />
-          </>
         ) : null}
       </div>
     </div>

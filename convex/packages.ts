@@ -4804,11 +4804,7 @@ async function publishPackageImpl(
     ownerPublisher,
   });
   const verificationSource = codeArtifacts?.verification ?? bundleArtifacts?.verification;
-  const initialScanStatus = trustedOpenClawPlugin
-    ? "clean"
-    : staticScan.status === "malicious"
-      ? "malicious"
-      : "pending";
+  const initialScanStatus = trustedOpenClawPlugin ? "clean" : "pending";
   const verification = verificationSource
     ? {
         ...verificationSource,

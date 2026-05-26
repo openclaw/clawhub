@@ -375,7 +375,7 @@ describe("SkillDetailPage", () => {
     expect(securityAuditLabelIndex).toBe(sidebarLabels.indexOf("Owner") + 1);
     expect(
       screen.getByRole("button", {
-        name: "Security checks across static analysis, malware telemetry, and agentic risk",
+        name: "Security checks across malware telemetry and agentic risk",
       }),
     ).toBeTruthy();
     expect(screen.queryByText("No risk analysis has been recorded yet.")).toBeNull();

@@ -10160,7 +10160,7 @@ a.agentic-risk-finding-title:focus-visible {
 .audits-table-row {
   display: grid;
   grid-template-columns:
-    minmax(460px, 1.9fr) minmax(132px, 0.55fr) minmax(132px, 0.55fr) minmax(132px, 0.55fr)
+    minmax(460px, 1.9fr) minmax(132px, 0.55fr) minmax(132px, 0.55fr)
     minmax(108px, 0.35fr);
   column-gap: 32px;
   row-gap: 16px;
@@ -10186,8 +10186,7 @@ a.agentic-risk-finding-title:focus-visible {
 }
 
 .audits-table-head > div:nth-child(2),
-.audits-table-head > div:nth-child(3),
-.audits-table-head > div:nth-child(4) {
+.audits-table-head > div:nth-child(3) {
   text-align: right;
 }
 
@@ -10348,10 +10347,6 @@ a.agentic-risk-finding-title:focus-visible {
   }
 
   .audits-table-row > .audits-signal-cell:nth-child(3)::before {
-    content: "Static analysis";
-  }
-
-  .audits-table-row > .audits-signal-cell:nth-child(4)::before {
     content: "VirusTotal";
   }
 

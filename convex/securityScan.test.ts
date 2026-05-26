@@ -384,8 +384,8 @@ function makeClaimCtx(jobs: ScanJob[]) {
                 if (indexName.includes("next_run_at")) return a.nextRunAt - b.nextRunAt;
                 if (indexName.includes("lease_expires_at")) {
                   return (
-                    Number((a as unknown as { leaseExpiresAt?: number }).leaseExpiresAt ?? 0) -
-                    Number((b as unknown as { leaseExpiresAt?: number }).leaseExpiresAt ?? 0)
+                    ((a as unknown as { leaseExpiresAt?: number }).leaseExpiresAt ?? 0) -
+                    ((b as unknown as { leaseExpiresAt?: number }).leaseExpiresAt ?? 0)
                   );
                 }
                 return a.createdAt - b.createdAt;

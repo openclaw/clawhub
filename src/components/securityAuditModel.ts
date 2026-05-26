@@ -5,29 +5,17 @@ import {
   hasClawScanRiskReview,
   type LlmAnalysis,
   type SkillSpectorAnalysis,
-  type StaticFinding,
   type VtAnalysis,
 } from "./SkillSecurityScanResults";
 
-export type AuditScannerKind = "clawscan" | "virustotal" | "skillspector" | "static-analysis";
+export type AuditScannerKind = "clawscan" | "virustotal" | "skillspector";
 
-export const SECURITY_AUDIT_SUBTEXT =
-  "Security checks across static analysis, malware telemetry, and agentic risk";
-
-export type StaticScanAnalysis = {
-  status: string;
-  reasonCodes: string[];
-  findings: StaticFinding[];
-  summary: string;
-  engineVersion: string;
-  checkedAt: number;
-};
+export const SECURITY_AUDIT_SUBTEXT = "Security checks across malware telemetry and agentic risk";
 
 type SecurityAuditSignals = {
   vtAnalysis?: VtAnalysis | null;
   llmAnalysis?: LlmAnalysis | null;
   skillSpectorAnalysis?: SkillSpectorAnalysis | null;
-  staticScan?: StaticScanAnalysis | null;
   suppressScanResults?: boolean;
 };
 
@@ -35,41 +23,21 @@ export const AUDIT_SCANNER_LABELS: Record<AuditScannerKind, string> = {
   clawscan: "Risk analysis",
   skillspector: "SkillSpector",
   virustotal: "VirusTotal",
-  "static-analysis": "Static analysis",
 };
 
-const DEFAULT_AUDIT_SCANNER_ORDER: AuditScannerKind[] = [
-  "skillspector",
-  "static-analysis",
-  "virustotal",
-  "clawscan",
-];
+const DEFAULT_AUDIT_SCANNER_ORDER: AuditScannerKind[] = ["skillspector", "virustotal", "clawscan"];
 
 const SUPPORTING_AUDIT_SCANNER_ORDER: AuditScannerKind[] = DEFAULT_AUDIT_SCANNER_ORDER.filter(
   (kind) => kind !== "skillspector" && kind !== "clawscan",
 );
 
-const POLICY_VERDICT_SCANNER_ORDER: AuditScannerKind[] = [
-  "static-analysis",
-  "virustotal",
-  "clawscan",
-];
-
-function getStaticScanDisplayStatus(staticScan?: StaticScanAnalysis | null) {
-  const status = staticScan?.status?.trim().toLowerCase();
-  if (status === "malicious") return "malicious";
-  if (status === "suspicious") return "review";
-  if (status === "clean" || status === "benign") return "benign";
-  if (status) return status;
-  return "pending";
-}
+const POLICY_VERDICT_SCANNER_ORDER: AuditScannerKind[] = ["clawscan"];
 
 export function getAuditScannerStatus(kind: AuditScannerKind, signals: SecurityAuditSignals) {
   if (signals.suppressScanResults) return "cleared";
   if (kind === "clawscan") return getClawScanDisplayStatus(signals.llmAnalysis);
   if (kind === "virustotal") return getVirusTotalDisplayStatus(signals.vtAnalysis);
-  if (kind === "skillspector") return getSkillSpectorDisplayStatus(signals.skillSpectorAnalysis);
-  return getStaticScanDisplayStatus(signals.staticScan);
+  return getSkillSpectorDisplayStatus(signals.skillSpectorAnalysis);
 }
 
 export function aggregateAuditVerdict(signals: SecurityAuditSignals) {
@@ -121,7 +89,6 @@ export function getLatestAuditCheckedAt(signals: SecurityAuditSignals) {
     signals.llmAnalysis?.checkedAt,
     signals.skillSpectorAnalysis?.checkedAt,
     signals.vtAnalysis?.checkedAt,
-    signals.staticScan?.checkedAt,
   ].filter((value): value is number => typeof value === "number" && Number.isFinite(value));
   return values.length ? Math.max(...values) : null;
 }

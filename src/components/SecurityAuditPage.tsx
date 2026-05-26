@@ -12,14 +12,12 @@ import {
   getLatestAuditCheckedAt,
   getSecurityAuditOverviewCopy,
   type AuditScannerKind,
-  type StaticScanAnalysis,
 } from "./securityAuditModel";
 import { SidebarMetadata } from "./SidebarMetadata";
 import {
   ClawScanRiskReview,
-  FindingSeverityBadge,
-  getSkillSpectorIssueCount,
   getSkillSpectorOverviewCopy,
+  getSkillSpectorIssueCount,
   hasClawScanRiskReview,
   hasSkillSpectorFindings,
   ScanResultBadge,
@@ -56,7 +54,6 @@ type SecurityAuditPageProps = {
   vtAnalysis?: VtAnalysis | null;
   llmAnalysis?: LlmAnalysis | null;
   skillSpectorAnalysis?: SkillSpectorAnalysis | null;
-  staticScan?: StaticScanAnalysis | null;
   source?: Record<string, unknown> | null;
   clawScanNote?: string | null;
   canManageArtifact?: boolean;
@@ -64,10 +61,9 @@ type SecurityAuditPageProps = {
   onRequestRescan?: (() => Promise<unknown>) | null;
 };
 
-const EMPTY_STATIC_FINDINGS: StaticScanAnalysis["findings"] = [];
 const EMPTY_SKILLSPECTOR_ISSUES: SkillSpectorIssue[] = [];
 const RISK_ANALYSIS_SCOPE_COPY =
-  "ClawHub reviews SkillSpector, VirusTotal, static analysis, and artifact evidence before producing the final verdict.";
+  "ClawHub reviews SkillSpector, VirusTotal, and artifact evidence before producing the final verdict.";
 
 function formatTime(value?: number | null) {
   if (!value) return "Not checked yet";
@@ -370,20 +366,6 @@ function SkillSpectorAttribution() {
   );
 }
 
-function formatStaticFindingTitle(code: string) {
-  const withoutPrefix = code.replace(/^(?:suspicious|malicious|review)\./, "");
-  const words = withoutPrefix
-    .split(/[._-]+/)
-    .filter(Boolean)
-    .map((part) => part.toLowerCase());
-  if (!words.length) return code;
-  return [words[0].charAt(0).toUpperCase() + words[0].slice(1), ...words.slice(1)].join(" ");
-}
-
-function getStaticFindingKey(finding: StaticScanAnalysis["findings"][number]) {
-  return `${finding.file}:${finding.line}`;
-}
-
 function resolveAbsoluteBaseUrl(...candidates: Array<string | undefined>) {
   for (const candidate of candidates) {
     const value = candidate?.trim();
@@ -421,12 +403,6 @@ function buildArtifactFileUrl(entity: EntityRef, path: string) {
   return relativePath;
 }
 
-function extractLineFromFile(content: string, line: number) {
-  if (!Number.isFinite(line) || line < 1) return null;
-  const value = content.split(/\r?\n/)[line - 1]?.trimEnd();
-  return value?.trim() ? value : null;
-}
-
 function extractLineRangeFromFile(content: string, startLine: number, endLine?: number) {
   if (!Number.isFinite(startLine) || startLine < 1) return null;
   const lines = content.split(/\r?\n/);
@@ -437,50 +413,6 @@ function extractLineRangeFromFile(content: string, startLine: number, endLine?: 
     .map((line) => line.trimEnd())
     .join("\n");
   return value.trim() ? value : null;
-}
-
-function useStaticFindingSnippets(entity: EntityRef, findings: StaticScanAnalysis["findings"]) {
-  const [snippets, setSnippets] = useState<Record<string, string>>({});
-
-  useEffect(() => {
-    const controller = new AbortController();
-
-    if (!findings.length) {
-      setSnippets({});
-      return () => controller.abort();
-    }
-
-    const uniqueFindings = Array.from(
-      new Map(findings.map((finding) => [getStaticFindingKey(finding), finding])).values(),
-    );
-
-    async function loadSnippets() {
-      const entries = await Promise.all(
-        uniqueFindings.map(async (finding) => {
-          try {
-            const response = await fetch(buildArtifactFileUrl(entity, finding.file), {
-              signal: controller.signal,
-            });
-            if (!response.ok) return null;
-            const content = await response.text();
-            const snippet = extractLineFromFile(content, finding.line);
-            return snippet ? ([getStaticFindingKey(finding), snippet] as const) : null;
-          } catch {
-            return null;
-          }
-        }),
-      );
-
-      if (!controller.signal.aborted) {
-        setSnippets(Object.fromEntries(entries.filter((entry) => entry !== null)));
-      }
-    }
-
-    void loadSnippets();
-    return () => controller.abort();
-  }, [entity.kind, entity.name, entity.version, findings]);
-
-  return snippets;
 }
 
 function useSkillSpectorContentSnippets(entity: EntityRef, issues: SkillSpectorIssue[]) {
@@ -546,69 +478,6 @@ function useSkillSpectorContentSnippets(entity: EntityRef, issues: SkillSpectorI
   return snippets;
 }
 
-function StaticAnalysisSection(props: SecurityAuditPageProps) {
-  const status = props.staticScan?.status?.trim().toLowerCase() ?? null;
-  const findings = props.staticScan?.findings ?? EMPTY_STATIC_FINDINGS;
-  const fetchedSnippets = useStaticFindingSnippets(props.entity, findings);
-  const emptyCopy =
-    status === "clean" || status === "benign"
-      ? "No static analysis findings were reported for this release."
-      : status && !["loading", "not_found", "pending"].includes(status)
-        ? `Static analysis reported ${status} with no visible findings.`
-        : "Static analysis findings are pending for this release.";
-  return (
-    <div className="security-report-panel-body security-report-panel-body-findings">
-      {findings.length ? (
-        <div className="static-analysis-findings">
-          {findings.map((finding, index) => (
-            <StaticAnalysisFinding
-              key={`${finding.code}-${finding.file}-${finding.line}-${index}`}
-              finding={finding}
-              snippet={fetchedSnippets[getStaticFindingKey(finding)] ?? finding.evidence}
-            />
-          ))}
-        </div>
-      ) : (
-        <p className="security-audit-empty-detail">{emptyCopy}</p>
-      )}
-    </div>
-  );
-}
-
-function StaticAnalysisFinding({
-  finding,
-  snippet,
-}: {
-  finding: StaticScanAnalysis["findings"][number];
-  snippet?: string | null;
-}) {
-  const trimmedSnippet = snippet?.trim();
-  return (
-    <article className="static-analysis-finding">
-      <div className="static-analysis-finding-header">
-        <h3 className="agentic-risk-finding-title">{formatStaticFindingTitle(finding.code)}</h3>
-        <div className="agentic-risk-finding-badges">
-          <FindingSeverityBadge severity={finding.severity} />
-        </div>
-      </div>
-      <dl className="static-analysis-finding-details">
-        <div>
-          <dt>Finding</dt>
-          <dd>{finding.message}</dd>
-        </div>
-        {trimmedSnippet ? (
-          <div>
-            <dt>Content</dt>
-            <dd>
-              <pre className="agentic-risk-evidence-snippet">{trimmedSnippet}</pre>
-            </dd>
-          </div>
-        ) : null}
-      </dl>
-    </article>
-  );
-}
-
 function RiskAnalysisInfoLink() {
   return (
     <TooltipProvider delayDuration={400}>
@@ -661,7 +530,6 @@ function SecurityAuditScannerSection({
       {kind === "clawscan" ? <ClawScanSection {...props} /> : null}
       {kind === "virustotal" ? <VirusTotalSection {...props} /> : null}
       {kind === "skillspector" ? <SkillSpectorSection {...props} /> : null}
-      {kind === "static-analysis" ? <StaticAnalysisSection {...props} /> : null}
     </section>
   );
 }
