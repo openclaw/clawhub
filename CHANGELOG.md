@@ -2,8 +2,11 @@
 
 ## Unreleased
 
+## 0.18.0 - 2026-05-25
+
 ### Changes
 
+- CLI/API: add Skill Card verification surfaces, including `clawhub skill verify <slug>` JSON output and `--card` Markdown retrieval (#2382).
 - Web/API: surface an "API key required" attribute on skills so listings, cards, and detail views show whether a skill needs an LLM API key, with publish-time inference from skill prompts and metadata (#2353) (thanks @momothemage).
 
 ### Fixes
