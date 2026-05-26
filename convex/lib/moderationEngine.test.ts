@@ -1988,6 +1988,33 @@ describe("moderationEngine", () => {
     expect(snapshot.reasonCodes).toEqual([]);
   });
 
+  it("lets explicit scanner status override a stale stored ClawScan verdict", () => {
+    const snapshot = buildModerationSnapshot({
+      llmStatus: "malicious",
+      llmAnalysis: {
+        status: "clean",
+        verdict: "benign",
+      },
+    });
+
+    expect(snapshot.verdict).toBe("malicious");
+    expect(snapshot.reasonCodes).toEqual(["malicious.llm_malicious"]);
+  });
+
+  it("lets canonical ClawScan verdict override explicit legacy scanner status", () => {
+    const snapshot = buildModerationSnapshot({
+      clawScanVerdict: "clean",
+      llmStatus: "malicious",
+      llmAnalysis: {
+        status: "malicious",
+        verdict: "malicious",
+      },
+    });
+
+    expect(snapshot.verdict).toBe("clean");
+    expect(snapshot.reasonCodes).toEqual([]);
+  });
+
   it("keeps review pending clean when only one external scanner is clean", () => {
     const snapshot = buildModerationSnapshot({
       staticScan: {
@@ -2100,12 +2127,12 @@ describe("moderationEngine", () => {
     });
 
     expect(snapshot.verdict).toBe("clean");
-    expect(snapshot.reasonCodes).toEqual(["review.llm_review"]);
-    expect(snapshot.summary).toBe("Review: review.llm_review");
+    expect(snapshot.reasonCodes).toEqual([]);
+    expect(snapshot.summary).toBe("No suspicious patterns detected.");
     expect(snapshot.legacyFlags).toBeUndefined();
   });
 
-  it("keeps high LLM concerns in the suspicious bucket", () => {
+  it("maps legacy high LLM concerns to visible review unless ClawScan marks malicious", () => {
     const snapshot = buildModerationSnapshot({
       llmStatus: "suspicious",
       llmAnalysis: {
@@ -2119,9 +2146,9 @@ describe("moderationEngine", () => {
       },
     });
 
-    expect(snapshot.verdict).toBe("suspicious");
-    expect(snapshot.reasonCodes).toEqual(["suspicious.llm_suspicious"]);
-    expect(snapshot.legacyFlags).toEqual(["flagged.suspicious"]);
+    expect(snapshot.verdict).toBe("clean");
+    expect(snapshot.reasonCodes).toEqual([]);
+    expect(snapshot.legacyFlags).toBeUndefined();
   });
 
   it("does not let uncorroborated VT suspicious override clean local scans", () => {

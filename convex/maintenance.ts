@@ -4,6 +4,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
 import { action, internalAction, internalMutation, internalQuery } from "./functions";
 import { assertRole, requireUserFromAction } from "./lib/access";
+import { clawScanStateFromAnalysisStatus, normalizeClawScanVerdict } from "./lib/clawScanVerdict";
 import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
 import { buildSkillSummaryBackfillPatch, type ParsedSkillData } from "./lib/skillBackfill";
 import { deriveSkillCapabilityTags } from "./lib/skillCapabilityTags";
@@ -31,6 +32,192 @@ const DEFAULT_EMPTY_SKILL_MAX_README_BYTES = 8000;
 const DEFAULT_EMPTY_SKILL_NOMINATION_THRESHOLD = 3;
 const DEFAULT_CAPABILITY_BACKFILL_DELAY_MS = 500;
 const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
+
+function canonicalClawScanFields(
+  doc: Pick<Doc<"skillVersions"> | Doc<"packageReleases">, "llmAnalysis" | "sha256hash">,
+) {
+  const verdict = normalizeClawScanVerdict(doc.llmAnalysis?.verdict ?? doc.llmAnalysis?.status);
+  const state = doc.llmAnalysis
+    ? clawScanStateFromAnalysisStatus(doc.llmAnalysis.status)
+    : doc.sha256hash
+      ? "pending"
+      : undefined;
+  return { verdict: verdict ?? undefined, state };
+}
+
+function stripLegacySuspiciousFlags(flags: string[] | undefined) {
+  if (!flags?.length) return undefined;
+  const next = flags.filter((flag) => flag !== "flagged.review" && flag !== "flagged.suspicious");
+  return next.length ? next : undefined;
+}
+
+function normalizeLegacySuspiciousReason(reason: string | undefined) {
+  if (!reason) return undefined;
+  if (reason === "scanner.llm.review") return "scanner.llm.clean";
+  if (reason.startsWith("scanner.") && reason.endsWith(".suspicious")) {
+    return `${reason.slice(0, -".suspicious".length)}.clean`;
+  }
+  return reason;
+}
+
+function stripNonBlockingModerationReasonCodes(codes: string[] | undefined) {
+  const next = (codes ?? []).filter((code) => code.startsWith("malicious."));
+  return next.length ? next : undefined;
+}
+
+function hasMaliciousReasonCode(codes: string[] | undefined) {
+  return (codes ?? []).some((code) => code.startsWith("malicious."));
+}
+
+function isLegacyMaliciousModerationReason(reason: string | undefined) {
+  return Boolean(reason?.startsWith("scanner.") && reason.endsWith(".malicious"));
+}
+
+function isLegacySuspiciousModerationReason(reason: string | undefined) {
+  return Boolean(
+    reason === "scanner.llm.review" ||
+    (reason?.startsWith("scanner.") && reason.endsWith(".suspicious")),
+  );
+}
+
+function hasLegacySuspiciousModerationCode(codes: string[] | undefined) {
+  return (codes ?? []).some(
+    (code) =>
+      code.startsWith("review.") || code.startsWith("suspicious.") || code.endsWith(".suspicious"),
+  );
+}
+
+function hasLegacySuspiciousModerationMarker(
+  fields: Pick<
+    Doc<"skills">,
+    "moderationFlags" | "moderationReason" | "moderationReasonCodes" | "moderationVerdict"
+  >,
+) {
+  return (
+    fields.moderationFlags?.some(
+      (flag) => flag === "flagged.review" || flag === "flagged.suspicious",
+    ) ||
+    isLegacySuspiciousModerationReason(fields.moderationReason) ||
+    hasLegacySuspiciousModerationCode(fields.moderationReasonCodes) ||
+    fields.moderationVerdict === "suspicious"
+  );
+}
+
+function hasLegacySuspiciousDigestMarker(
+  fields: Pick<Doc<"skillSearchDigest">, "moderationFlags" | "moderationReason">,
+) {
+  return (
+    fields.moderationFlags?.some(
+      (flag) => flag === "flagged.review" || flag === "flagged.suspicious",
+    ) || isLegacySuspiciousModerationReason(fields.moderationReason)
+  );
+}
+
+function cleanupLegacySuspiciousSkillPatch(
+  skill: Pick<
+    Doc<"skills">,
+    | "isSuspicious"
+    | "moderationFlags"
+    | "moderationReason"
+    | "moderationReasonCodes"
+    | "moderationVerdict"
+    | "moderationStatus"
+    | "softDeletedAt"
+    | "hiddenAt"
+    | "hiddenBy"
+    | "lastReviewedAt"
+  >,
+) {
+  const moderationFlags = stripLegacySuspiciousFlags(skill.moderationFlags);
+  const moderationReason = normalizeLegacySuspiciousReason(skill.moderationReason);
+  const moderationReasonCodes = stripNonBlockingModerationReasonCodes(skill.moderationReasonCodes);
+  const hasMalwareBlock =
+    moderationFlags?.includes("blocked.malware") ||
+    skill.moderationVerdict === "malicious" ||
+    isLegacyMaliciousModerationReason(skill.moderationReason) ||
+    hasMaliciousReasonCode(skill.moderationReasonCodes);
+  const legacySuspiciousHold = hasLegacySuspiciousModerationMarker(skill);
+  const moderationVerdict =
+    skill.moderationVerdict === "suspicious" ? "clean" : skill.moderationVerdict;
+
+  const patch: Partial<Doc<"skills">> = {};
+  if (skill.isSuspicious !== undefined) patch.isSuspicious = undefined;
+  if (JSON.stringify(skill.moderationFlags) !== JSON.stringify(moderationFlags)) {
+    patch.moderationFlags = moderationFlags;
+  }
+  if (skill.moderationReason !== moderationReason) {
+    patch.moderationReason = moderationReason;
+  }
+  if (JSON.stringify(skill.moderationReasonCodes) !== JSON.stringify(moderationReasonCodes)) {
+    patch.moderationReasonCodes = moderationReasonCodes;
+  }
+  if (skill.moderationVerdict !== moderationVerdict) {
+    patch.moderationVerdict = moderationVerdict;
+  }
+  if (
+    !hasMalwareBlock &&
+    legacySuspiciousHold &&
+    !skill.softDeletedAt &&
+    !skill.hiddenBy &&
+    skill.moderationStatus === "hidden"
+  ) {
+    patch.moderationStatus = "active";
+    patch.hiddenAt = undefined;
+    patch.hiddenBy = undefined;
+    patch.lastReviewedAt = undefined;
+  }
+  if (Object.keys(patch).length > 0) {
+    patch.updatedAt = Date.now();
+  }
+  return patch;
+}
+
+function cleanupLegacySuspiciousDigestPatch(
+  digest: Pick<
+    Doc<"skillSearchDigest">,
+    "isSuspicious" | "moderationFlags" | "moderationReason" | "moderationStatus" | "softDeletedAt"
+  >,
+) {
+  const moderationFlags = stripLegacySuspiciousFlags(digest.moderationFlags);
+  const moderationReason = normalizeLegacySuspiciousReason(digest.moderationReason);
+  const legacySuspiciousHold = hasLegacySuspiciousDigestMarker(digest);
+  const patch: Partial<Doc<"skillSearchDigest">> = {};
+  if (digest.isSuspicious !== undefined) patch.isSuspicious = undefined;
+  if (JSON.stringify(digest.moderationFlags) !== JSON.stringify(moderationFlags)) {
+    patch.moderationFlags = moderationFlags;
+  }
+  if (digest.moderationReason !== moderationReason) {
+    patch.moderationReason = moderationReason;
+  }
+  if (
+    !(moderationFlags?.includes("blocked.malware") ?? false) &&
+    !isLegacyMaliciousModerationReason(digest.moderationReason) &&
+    legacySuspiciousHold &&
+    !digest.softDeletedAt &&
+    digest.moderationStatus === "hidden"
+  ) {
+    patch.moderationStatus = "active";
+  }
+  if (Object.keys(patch).length > 0) {
+    patch.updatedAt = Date.now();
+  }
+  return patch;
+}
+
+function cleanPackageScanStatus(
+  status: string | undefined,
+): "clean" | "malicious" | "pending" | "not-run" | undefined {
+  if (status === "suspicious") return "clean";
+  if (
+    status === "clean" ||
+    status === "malicious" ||
+    status === "pending" ||
+    status === "not-run"
+  ) {
+    return status;
+  }
+  return undefined;
+}
 
 type BackfillStats = {
   skillsScanned: number;
@@ -2035,8 +2222,8 @@ export const backfillLatestSkillModeration: ReturnType<typeof action> = action({
 });
 
 /**
- * Backfill `isSuspicious` on all skills. Cursor-based paginated mutation
- * that self-schedules until done.
+ * Clear the deprecated `isSuspicious` field on all skills. Cursor-based
+ * paginated mutation that self-schedules until done.
  */
 export const backfillIsSuspiciousInternal = internalMutation({
   args: {
@@ -2066,6 +2253,377 @@ export const backfillIsSuspiciousInternal = internalMutation({
     }
 
     return { patched, isDone, scanned: page.length };
+  },
+});
+
+// Backfill canonical ClawScan verdict/state fields on skill versions.
+export const backfillSkillVersionClawScanFieldsInternal = internalMutation({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    delayMs: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const batchSize = clampInt(args.batchSize ?? 100, 10, 200);
+    const delayMs = args.delayMs ?? 500;
+    const { page, continueCursor, isDone } = await ctx.db
+      .query("skillVersions")
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+
+    let patched = 0;
+    for (const version of page) {
+      const canonical = canonicalClawScanFields(version);
+      const patch: Partial<Doc<"skillVersions">> = {};
+      if (version.clawScanVerdict !== canonical.verdict) {
+        patch.clawScanVerdict = canonical.verdict;
+      }
+      if (version.clawScanState !== canonical.state) {
+        patch.clawScanState = canonical.state;
+      }
+      if (Object.keys(patch).length === 0) continue;
+      await ctx.db.patch(version._id, patch);
+      patched++;
+    }
+
+    if (!isDone) {
+      await ctx.scheduler.runAfter(
+        delayMs,
+        internal.maintenance.backfillSkillVersionClawScanFieldsInternal,
+        {
+          cursor: continueCursor,
+          batchSize: args.batchSize,
+          delayMs: args.delayMs,
+        },
+      );
+    }
+
+    return { patched, isDone, scanned: page.length };
+  },
+});
+
+// Run after deploying the widened schema:
+//   npx convex run maintenance:backfillSkillVersionClawScanFields '{"batchSize":100}' --prod
+export const backfillSkillVersionClawScanFields: ReturnType<typeof action> = action({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    delayMs: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUserFromAction(ctx);
+    assertRole(user, ["admin"]);
+    return await ctx.runMutation(
+      internal.maintenance.backfillSkillVersionClawScanFieldsInternal,
+      args,
+    );
+  },
+});
+
+// Backfill canonical ClawScan verdict/state fields on package/plugin releases.
+export const backfillPackageReleaseClawScanFieldsInternal = internalMutation({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    delayMs: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const batchSize = clampInt(args.batchSize ?? 100, 10, 200);
+    const delayMs = args.delayMs ?? 500;
+    const { page, continueCursor, isDone } = await ctx.db
+      .query("packageReleases")
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+
+    let patched = 0;
+    for (const release of page) {
+      const canonical = canonicalClawScanFields(release);
+      const patch: Partial<Doc<"packageReleases">> = {};
+      if (release.clawScanVerdict !== canonical.verdict) {
+        patch.clawScanVerdict = canonical.verdict;
+      }
+      if (release.clawScanState !== canonical.state) {
+        patch.clawScanState = canonical.state;
+      }
+      if (Object.keys(patch).length === 0) continue;
+      await ctx.db.patch(release._id, patch);
+      patched++;
+    }
+
+    if (!isDone) {
+      await ctx.scheduler.runAfter(
+        delayMs,
+        internal.maintenance.backfillPackageReleaseClawScanFieldsInternal,
+        {
+          cursor: continueCursor,
+          batchSize: args.batchSize,
+          delayMs: args.delayMs,
+        },
+      );
+    }
+
+    return { patched, isDone, scanned: page.length };
+  },
+});
+
+// Run after deploying the widened schema:
+//   npx convex run maintenance:backfillPackageReleaseClawScanFields '{"batchSize":100}' --prod
+export const backfillPackageReleaseClawScanFields: ReturnType<typeof action> = action({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    delayMs: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUserFromAction(ctx);
+    assertRole(user, ["admin"]);
+    return await ctx.runMutation(
+      internal.maintenance.backfillPackageReleaseClawScanFieldsInternal,
+      args,
+    );
+  },
+});
+
+// Remove legacy suspicious/review denormalized fields after canonical ClawScan
+// verdicts have been backfilled and latest moderation has been recomputed.
+// Run before deploying the schema/index narrowing PR.
+export const cleanupLegacySuspiciousSkillFieldsInternal = internalMutation({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    delayMs: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const batchSize = clampInt(args.batchSize ?? 100, 10, 200);
+    const delayMs = args.delayMs ?? 500;
+    const { page, continueCursor, isDone } = await ctx.db
+      .query("skills")
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+
+    let patched = 0;
+    for (const skill of page) {
+      const patch = cleanupLegacySuspiciousSkillPatch(skill);
+      if (Object.keys(patch).length === 0) continue;
+      await ctx.db.patch(skill._id, patch);
+      patched++;
+    }
+
+    if (!isDone) {
+      await ctx.scheduler.runAfter(
+        delayMs,
+        internal.maintenance.cleanupLegacySuspiciousSkillFieldsInternal,
+        {
+          cursor: continueCursor,
+          batchSize: args.batchSize,
+          delayMs: args.delayMs,
+        },
+      );
+    }
+
+    return { patched, isDone, scanned: page.length };
+  },
+});
+
+export const cleanupLegacySuspiciousSkillFields: ReturnType<typeof action> = action({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    delayMs: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUserFromAction(ctx);
+    assertRole(user, ["admin"]);
+    return await ctx.runMutation(
+      internal.maintenance.cleanupLegacySuspiciousSkillFieldsInternal,
+      args,
+    );
+  },
+});
+
+export const cleanupLegacySuspiciousDigestFieldsInternal = internalMutation({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    delayMs: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const batchSize = clampInt(args.batchSize ?? 100, 10, 200);
+    const delayMs = args.delayMs ?? 500;
+    const { page, continueCursor, isDone } = await ctx.db
+      .query("skillSearchDigest")
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+
+    let patched = 0;
+    for (const digest of page) {
+      const patch = cleanupLegacySuspiciousDigestPatch(digest);
+      if (Object.keys(patch).length === 0) continue;
+      await ctx.db.patch(digest._id, patch);
+      patched++;
+    }
+
+    if (!isDone) {
+      await ctx.scheduler.runAfter(
+        delayMs,
+        internal.maintenance.cleanupLegacySuspiciousDigestFieldsInternal,
+        {
+          cursor: continueCursor,
+          batchSize: args.batchSize,
+          delayMs: args.delayMs,
+        },
+      );
+    }
+
+    return { patched, isDone, scanned: page.length };
+  },
+});
+
+export const cleanupLegacySuspiciousDigestFields: ReturnType<typeof action> = action({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    delayMs: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUserFromAction(ctx);
+    assertRole(user, ["admin"]);
+    return await ctx.runMutation(
+      internal.maintenance.cleanupLegacySuspiciousDigestFieldsInternal,
+      args,
+    );
+  },
+});
+
+export const cleanupLegacySuspiciousPackageScanStatusesInternal = internalMutation({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    delayMs: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const batchSize = clampInt(args.batchSize ?? 100, 10, 200);
+    const delayMs = args.delayMs ?? 500;
+    const { page, continueCursor, isDone } = await ctx.db
+      .query("packages")
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+
+    let patched = 0;
+    for (const pkg of page) {
+      const verificationScanStatus = cleanPackageScanStatus(pkg.verification?.scanStatus);
+      const latestVerificationScanStatus = cleanPackageScanStatus(
+        pkg.latestVersionSummary?.verification?.scanStatus,
+      );
+      const patch: Partial<Doc<"packages">> = {};
+      if (pkg.scanStatus === "suspicious") patch.scanStatus = "clean";
+      if (pkg.verification?.scanStatus !== verificationScanStatus) {
+        patch.verification = pkg.verification
+          ? { ...pkg.verification, scanStatus: verificationScanStatus }
+          : pkg.verification;
+      }
+      if (pkg.latestVersionSummary?.verification?.scanStatus !== latestVerificationScanStatus) {
+        patch.latestVersionSummary = pkg.latestVersionSummary
+          ? {
+              ...pkg.latestVersionSummary,
+              verification: pkg.latestVersionSummary.verification
+                ? {
+                    ...pkg.latestVersionSummary.verification,
+                    scanStatus: latestVerificationScanStatus,
+                  }
+                : pkg.latestVersionSummary.verification,
+            }
+          : pkg.latestVersionSummary;
+      }
+      if (Object.keys(patch).length === 0) continue;
+      await ctx.db.patch(pkg._id, patch);
+      patched++;
+    }
+
+    if (!isDone) {
+      await ctx.scheduler.runAfter(
+        delayMs,
+        internal.maintenance.cleanupLegacySuspiciousPackageScanStatusesInternal,
+        {
+          cursor: continueCursor,
+          batchSize: args.batchSize,
+          delayMs: args.delayMs,
+        },
+      );
+    }
+
+    return { patched, isDone, scanned: page.length };
+  },
+});
+
+export const cleanupLegacySuspiciousPackageScanStatuses: ReturnType<typeof action> = action({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    delayMs: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUserFromAction(ctx);
+    assertRole(user, ["admin"]);
+    return await ctx.runMutation(
+      internal.maintenance.cleanupLegacySuspiciousPackageScanStatusesInternal,
+      args,
+    );
+  },
+});
+
+export const cleanupLegacySuspiciousPackageReleaseScanStatusesInternal = internalMutation({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    delayMs: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const batchSize = clampInt(args.batchSize ?? 100, 10, 200);
+    const delayMs = args.delayMs ?? 500;
+    const { page, continueCursor, isDone } = await ctx.db
+      .query("packageReleases")
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+
+    let patched = 0;
+    for (const release of page) {
+      const scanStatus = cleanPackageScanStatus(release.verification?.scanStatus);
+      if (release.verification?.scanStatus === scanStatus) continue;
+      await ctx.db.patch(release._id, {
+        verification: release.verification
+          ? {
+              ...release.verification,
+              scanStatus,
+            }
+          : release.verification,
+      });
+      patched++;
+    }
+
+    if (!isDone) {
+      await ctx.scheduler.runAfter(
+        delayMs,
+        internal.maintenance.cleanupLegacySuspiciousPackageReleaseScanStatusesInternal,
+        {
+          cursor: continueCursor,
+          batchSize: args.batchSize,
+          delayMs: args.delayMs,
+        },
+      );
+    }
+
+    return { patched, isDone, scanned: page.length };
+  },
+});
+
+export const cleanupLegacySuspiciousPackageReleaseScanStatuses: ReturnType<typeof action> = action({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    delayMs: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUserFromAction(ctx);
+    assertRole(user, ["admin"]);
+    return await ctx.runMutation(
+      internal.maintenance.cleanupLegacySuspiciousPackageReleaseScanStatusesInternal,
+      args,
+    );
   },
 });
 

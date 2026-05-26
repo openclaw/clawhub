@@ -331,6 +331,45 @@ describe("skillCards queue", () => {
     );
   });
 
+  it("enqueues when the canonical ClawScan verdict is warn", async () => {
+    const version = makeSettledVersion({
+      clawScanVerdict: "warn",
+      llmAnalysis: {
+        status: "warn",
+        verdict: "warn",
+        checkedAt: 2,
+      },
+    });
+    const insert = vi.fn(async () => "skillCardGenerationJobs:1");
+    const ctx = {
+      db: completeDb({
+        get: vi.fn(async () => version),
+        query: vi.fn(() => makeQueryWithCollect([])),
+        insert,
+        patch: vi.fn(),
+      }),
+    };
+
+    const result = await enqueueHandler(ctx, {
+      versionId: "skillVersions:1",
+      source: "scan",
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      jobId: "skillCardGenerationJobs:1",
+      alreadyQueued: false,
+    });
+    expect(insert).toHaveBeenCalledWith(
+      "skillCardGenerationJobs",
+      expect.objectContaining({
+        skillVersionId: "skillVersions:1",
+        status: "queued",
+        source: "scan",
+      }),
+    );
+  });
+
   it("bounds queued job lookup by version and status", async () => {
     const version = makeSettledVersion();
     const eq = vi.fn(function (this: unknown) {

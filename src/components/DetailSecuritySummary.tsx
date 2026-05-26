@@ -5,6 +5,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/t
 
 type DetailSecuritySummaryProps = {
   auditHref: string;
+  clawScanVerdict?: string | null;
+  clawScanState?: string | null;
   vtAnalysis?: VtAnalysis | null;
   llmAnalysis?: LlmAnalysis | null;
   suppressScanResults?: boolean;
@@ -31,11 +33,15 @@ function auditVerdictMeterLevel(status: string) {
 
 export function DetailSecuritySummary({
   auditHref,
+  clawScanVerdict,
+  clawScanState,
   vtAnalysis,
   llmAnalysis,
   suppressScanResults = false,
 }: DetailSecuritySummaryProps) {
   const auditVerdict = aggregateAuditVerdict({
+    clawScanVerdict,
+    clawScanState,
     vtAnalysis,
     llmAnalysis,
     suppressScanResults,

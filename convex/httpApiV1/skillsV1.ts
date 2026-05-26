@@ -11,6 +11,7 @@ import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { getOptionalApiTokenUserId, requireApiTokenUser } from "../lib/apiTokenAuth";
+import { normalizeClawScanVerdict, type ClawScanState } from "../lib/clawScanVerdict";
 import { mergeHeaders } from "../lib/httpHeaders";
 import { applyRateLimit } from "../lib/httpRateLimit";
 import { parseBooleanQueryParam, resolveBooleanQueryParam } from "../lib/httpUtils";
@@ -119,6 +120,8 @@ type PublicSkillVersionResponse = {
   parsed?: PublicSkillVersionParsed;
   softDeletedAt?: number;
   sha256hash?: string;
+  clawScanVerdict?: Doc<"skillVersions">["clawScanVerdict"];
+  clawScanState?: Doc<"skillVersions">["clawScanState"];
   vtAnalysis?: Doc<"skillVersions">["vtAnalysis"];
   skillSpectorAnalysis?: Doc<"skillVersions">["skillSpectorAnalysis"];
   llmAnalysis?: Doc<"skillVersions">["llmAnalysis"];
@@ -222,7 +225,7 @@ function normalizeModerationFromSkill(skill: SkillModerationShape) {
   };
 }
 
-type NormalizedSecurityStatus = "clean" | "suspicious" | "malicious" | "pending" | "error";
+type NormalizedSecurityStatus = "clean" | "review" | "warn" | "malicious" | "pending" | "error";
 
 type SkillSecuritySnapshot = {
   status: NormalizedSecurityStatus;
@@ -292,17 +295,9 @@ async function runMutationRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): P
 
 function isDefinitiveSecurityStatus(
   status: NormalizedSecurityStatus | null | undefined,
-): status is "clean" | "suspicious" | "malicious" {
-  return status === "clean" || status === "suspicious" || status === "malicious";
+): status is "clean" | "review" | "warn" | "malicious" {
+  return status === "clean" || status === "review" || status === "warn" || status === "malicious";
 }
-
-const SECURITY_STATUS_PRIORITY: Record<NormalizedSecurityStatus, number> = {
-  clean: 0,
-  error: 1,
-  pending: 2,
-  suspicious: 3,
-  malicious: 4,
-};
 
 function normalizeSecurityStatus(value: string | null | undefined): NormalizedSecurityStatus {
   const normalized = value?.trim().toLowerCase();
@@ -310,8 +305,13 @@ function normalizeSecurityStatus(value: string | null | undefined): NormalizedSe
     case "benign":
     case "clean":
       return "clean";
+    case "review":
+      return "review";
+    case "warn":
+    case "warning":
+      return "warn";
     case "suspicious":
-      return "suspicious";
+      return "review";
     case "malicious":
       return "malicious";
     case "error":
@@ -329,11 +329,17 @@ function normalizeSecurityStatus(value: string | null | undefined): NormalizedSe
   }
 }
 
-function mergeSecurityStatuses(statuses: NormalizedSecurityStatus[]) {
-  if (statuses.length === 0) return "pending" satisfies NormalizedSecurityStatus;
-  return statuses.reduce((current, candidate) =>
-    SECURITY_STATUS_PRIORITY[candidate] > SECURITY_STATUS_PRIORITY[current] ? candidate : current,
-  );
+function normalizeClawScanState(value: string | null | undefined): ClawScanState | null {
+  const normalized = value?.trim().toLowerCase();
+  if (
+    normalized === "pending" ||
+    normalized === "running" ||
+    normalized === "complete" ||
+    normalized === "error"
+  ) {
+    return normalized;
+  }
+  return null;
 }
 
 function hasLlmDimensionWarnings(dimensions: LlmEvalDimension[] | undefined) {
@@ -348,7 +354,13 @@ function hasLlmDimensionWarnings(dimensions: LlmEvalDimension[] | undefined) {
 function buildSkillSecuritySnapshot(
   version: Pick<
     PublicSkillVersionResponse,
-    "sha256hash" | "vtAnalysis" | "skillSpectorAnalysis" | "llmAnalysis" | "capabilityTags"
+    | "sha256hash"
+    | "clawScanVerdict"
+    | "clawScanState"
+    | "vtAnalysis"
+    | "skillSpectorAnalysis"
+    | "llmAnalysis"
+    | "capabilityTags"
   >,
 ): SkillSecuritySnapshot | null {
   const capabilityTags = version.capabilityTags ?? [];
@@ -364,14 +376,36 @@ function buildSkillSecuritySnapshot(
   const vtStatus = vt ? normalizeSecurityStatus(vt.verdict ?? vt.status) : null;
   const skillSpectorStatus = skillSpector ? normalizeSecurityStatus(skillSpector.status) : null;
   const llmStatus = llm ? normalizeSecurityStatus(llm.verdict ?? llm.status) : null;
+  const clawScanVerdict = normalizeClawScanVerdict(version.clawScanVerdict);
+  const clawScanStatus = clawScanVerdict
+    ? (clawScanVerdict satisfies NormalizedSecurityStatus)
+    : null;
+  const clawScanState = normalizeClawScanState(version.clawScanState);
 
-  const statuses: NormalizedSecurityStatus[] = [];
-  if (llmStatus) statuses.push(llmStatus);
-  if (statuses.length === 0 && (sha256hash || skillSpector)) statuses.push("pending");
-  const status = mergeSecurityStatuses(statuses);
-  const hasScanResult = isDefinitiveSecurityStatus(llmStatus);
+  let status: NormalizedSecurityStatus = "pending";
+  let hasScanResult = false;
+  if (clawScanStatus === "malicious") {
+    status = "malicious";
+    hasScanResult = true;
+  } else if (clawScanState === "pending" || clawScanState === "running") {
+    status = "pending";
+  } else if (clawScanState === "error") {
+    status = "error";
+  } else if (clawScanStatus) {
+    status = clawScanStatus;
+    hasScanResult = true;
+  } else if (clawScanState === "complete") {
+    status = isDefinitiveSecurityStatus(llmStatus) ? llmStatus : "error";
+    hasScanResult = isDefinitiveSecurityStatus(llmStatus);
+  } else if (llmStatus) {
+    status = llmStatus;
+    hasScanResult = isDefinitiveSecurityStatus(llmStatus);
+  }
   const hasWarnings =
-    status === "suspicious" || status === "malicious" || hasLlmDimensionWarnings(llm?.dimensions);
+    status === "review" ||
+    status === "warn" ||
+    status === "malicious" ||
+    hasLlmDimensionWarnings(llm?.dimensions);
 
   const checkedAtCandidates = [vt?.checkedAt, skillSpector?.checkedAt, llm?.checkedAt].filter(
     (value): value is number => typeof value === "number",
@@ -441,7 +475,8 @@ function normalizeVerificationStatus(value: string | null | undefined): Normaliz
   const normalized = value?.trim().toLowerCase();
   if (!normalized) return "pending";
   if (normalized === "clean" || normalized === "benign") return "clean";
-  if (normalized === "suspicious" || normalized === "review") return "suspicious";
+  if (normalized === "suspicious" || normalized === "review") return "review";
+  if (normalized === "warn" || normalized === "warning") return "warn";
   if (normalized === "malicious") return "malicious";
   if (normalized === "error" || normalized === "failed") return "error";
   if (normalized === "completed") return "pending";
@@ -451,13 +486,25 @@ function normalizeVerificationStatus(value: string | null | undefined): Normaliz
 function buildVerifySecurity(version: Doc<"skillVersions">) {
   const staticStatus = normalizeVerificationStatus(version.staticScan?.status);
   const clawRawStatus = version.llmAnalysis?.status ?? null;
-  const clawStatus = normalizeVerificationStatus(version.llmAnalysis?.verdict ?? clawRawStatus);
   const vtStatus = version.vtAnalysis
     ? normalizeVerificationStatus(version.vtAnalysis.verdict ?? version.vtAnalysis.status)
     : null;
   const skillSpectorStatus = version.skillSpectorAnalysis
     ? normalizeVerificationStatus(version.skillSpectorAnalysis.status)
     : null;
+  const clawScanVerdict = normalizeClawScanVerdict(
+    version.clawScanVerdict ?? version.llmAnalysis?.verdict ?? clawRawStatus,
+  );
+  const clawScanState =
+    normalizeClawScanState(version.clawScanState) ??
+    (version.llmAnalysis ? (normalizeClawScanState(clawRawStatus) ?? "complete") : null);
+  const clawStatus =
+    clawScanState === "pending" || clawScanState === "running"
+      ? "pending"
+      : clawScanState === "error"
+        ? "error"
+        : (clawScanVerdict ??
+          normalizeVerificationStatus(version.llmAnalysis?.verdict ?? clawRawStatus));
   const depStatus = version.depRegistryAnalysis
     ? normalizeVerificationStatus(version.depRegistryAnalysis.status)
     : null;

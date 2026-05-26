@@ -381,7 +381,7 @@ export declare const ApiV1SkillVersionListResponseSchema: import("arktype/intern
     nextCursor: string | null;
 }, {}>;
 export declare const SecurityStatusSchema: import("arktype/internal/variants/object.ts").ObjectType<{
-    status: "clean" | "suspicious" | "malicious" | "pending" | "error";
+    status: "clean" | "suspicious" | "malicious" | "warn" | "review" | "pending" | "error";
     hasWarnings: boolean;
     checkedAt: number | null;
     model: string | null;
@@ -395,7 +395,7 @@ export declare const ApiV1SkillVersionResponseSchema: import("arktype/internal/v
         license?: "MIT-0" | null | undefined;
         files?: unknown;
         security?: {
-            status: "clean" | "suspicious" | "malicious" | "pending" | "error";
+            status: "clean" | "suspicious" | "malicious" | "warn" | "review" | "pending" | "error";
             hasWarnings: boolean;
             checkedAt: number | null;
             model: string | null;

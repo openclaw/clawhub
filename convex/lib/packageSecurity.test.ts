@@ -126,6 +126,16 @@ describe("packageSecurity", () => {
     ).toBe("pending");
   });
 
+  it("keeps legacy verification malicious status as pending ClawScan input", () => {
+    const release = {
+      verification: { scanStatus: "malicious" },
+      sha256hash: "a".repeat(64),
+    } as never;
+
+    expect(resolvePackageReleaseScanStatus(release)).toBe("pending");
+    expect(getPackageDownloadSecurityBlock(release)).toBeNull();
+  });
+
   it("lets package ClawScan clear non-malicious scanner noise", () => {
     expect(
       resolvePackageReleaseScanStatus({
@@ -134,6 +144,26 @@ describe("packageSecurity", () => {
         verification: { scanStatus: "suspicious" },
       } as never),
     ).toBe("clean");
+  });
+
+  it("shows package releases as pending while a non-malicious ClawScan verdict is rescanning", () => {
+    expect(
+      resolvePackageReleaseScanStatus({
+        clawScanVerdict: "clean",
+        clawScanState: "pending",
+        llmAnalysis: { status: "clean", verdict: "clean" },
+      } as never),
+    ).toBe("pending");
+  });
+
+  it("keeps malicious package ClawScan verdicts blocked during rescans", () => {
+    expect(
+      resolvePackageReleaseScanStatus({
+        clawScanVerdict: "malicious",
+        clawScanState: "running",
+        llmAnalysis: { status: "malicious", verdict: "malicious" },
+      } as never),
+    ).toBe("malicious");
   });
 
   it("lets package ClawScan clear a static malicious hold", () => {

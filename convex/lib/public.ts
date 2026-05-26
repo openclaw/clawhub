@@ -151,7 +151,7 @@ export function toPublicSkill(skill: HydratableSkill | null | undefined): Public
     capabilityTags: skill.capabilityTags,
     badges: skill.badges,
     stats,
-    isSuspicious: skill.isSuspicious,
+    isSuspicious: false,
     createdAt: skill.createdAt,
     updatedAt: skill.updatedAt,
   };

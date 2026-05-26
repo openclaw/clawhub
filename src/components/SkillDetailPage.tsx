@@ -442,11 +442,7 @@ export function SkillDetailPage({
   }, [clawdis, hasSkillCard, osLabels, versions]);
 
   useEffect(() => {
-    setActiveTab((prev) => {
-      const hashTab = typeof window === "undefined" ? "readme" : tabFromHash(window.location.hash);
-      if (hashTab !== "readme" && validTabIds.has(hashTab)) return hashTab;
-      return validTabIds.has(prev) ? prev : "readme";
-    });
+    setActiveTab((prev) => (validTabIds.has(prev) ? prev : "readme"));
   }, [validTabIds]);
 
   useEffect(() => {
@@ -665,6 +661,8 @@ export function SkillDetailPage({
       auditHref={`/${encodeURIComponent(ownerParam ?? ownerHandle ?? "unknown")}/${encodeURIComponent(
         skill.slug,
       )}/security-audit`}
+      clawScanVerdict={latestVersion.clawScanVerdict ?? null}
+      clawScanState={latestVersion.clawScanState ?? null}
       vtAnalysis={latestVersion.vtAnalysis ?? null}
       llmAnalysis={latestVersion.llmAnalysis ?? null}
       suppressScanResults={suppressVersionScanResults}

@@ -283,6 +283,8 @@ export const ApiV1PackageVersionResponseSchema = type({
         verification: PackageVerificationSummarySchema.or("null").optional(),
         artifact: PackageArtifactSummarySchema.or("null").optional(),
         sha256hash: "string|null?",
+        clawScanVerdict: '"clean"|"review"|"warn"|"malicious"|null?',
+        clawScanState: '"pending"|"running"|"complete"|"error"|null?',
         vtAnalysis: PackageVtAnalysisSchema.or("null").optional(),
         skillSpectorAnalysis: PackageSkillSpectorAnalysisSchema.or("null").optional(),
         llmAnalysis: PackageLlmAnalysisSchema.or("null").optional(),

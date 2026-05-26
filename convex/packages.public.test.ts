@@ -25,6 +25,7 @@ import {
   getVersionSecurityByNameForViewerInternal,
   insertReleaseInternal,
   listPackageModerationQueueInternal,
+  getSuspiciousPluginReleaseBatchForLlmRescanInternal,
   reservePackageNameInternal,
   listPublicPage,
   listPageForViewerInternal,
@@ -113,6 +114,17 @@ const listPageForViewerInternalHandler = (
       paginationOpts: { cursor: string | null; numItems: number };
     },
     { page: Array<{ name: string }>; isDone: boolean; continueCursor: string }
+  >
+)._handler;
+const getSuspiciousPluginReleaseBatchForLlmRescanInternalHandler = (
+  getSuspiciousPluginReleaseBatchForLlmRescanInternal as unknown as WrappedHandler<
+    { cursor?: string | null; batchSize?: number },
+    {
+      releases: Array<{ packageId: string; releaseId: string; name: string; family: string }>;
+      examined: number;
+      continueCursor: string;
+      isDone: boolean;
+    }
   >
 )._handler;
 const listVersionsHandler = (
@@ -944,6 +956,45 @@ function makeDigestCtx(options: {
   };
 }
 
+function makePluginRescanCtx(
+  packages: Array<Record<string, unknown>>,
+  releasesById: Record<string, Record<string, unknown>>,
+) {
+  const paginate = vi.fn(async () => ({
+    page: packages,
+    isDone: true,
+    continueCursor: "",
+  }));
+  const order = vi.fn(() => ({ paginate }));
+  const eq = vi.fn(() => queryBuilder);
+  const queryBuilder = { eq };
+  const withIndex = vi.fn(
+    (
+      indexName: string,
+      builder?: (q: { eq: (field: string, value: undefined) => unknown }) => unknown,
+    ) => {
+      expect(indexName).toBe("by_active_updated");
+      builder?.(queryBuilder);
+      return { order };
+    },
+  );
+  const get = vi.fn(async (id: string) => releasesById[id] ?? null);
+
+  return {
+    paginate,
+    get,
+    ctx: {
+      db: {
+        get,
+        query: vi.fn((table: string) => {
+          expect(table).toBe("packages");
+          return { withIndex };
+        }),
+      },
+    },
+  };
+}
+
 function makeInsertReleaseCtx(
   existing: Record<string, unknown> | null,
   priorReleases: Array<Record<string, unknown>> = [],
@@ -1498,6 +1549,73 @@ function makeSoftDeletePackageCtx(options?: {
 }
 
 describe("packages public queries", () => {
+  it("finds legacy suspicious plugin releases for ClawScan rescan after canonical status normalization", async () => {
+    const legacyReleasePackage = makePackageDoc({
+      _id: "packages:legacy-release",
+      normalizedName: "legacy-release",
+      latestReleaseId: "packageReleases:legacy-release",
+      scanStatus: "clean",
+    });
+    const legacyPackageStatus = makePackageDoc({
+      _id: "packages:legacy-package",
+      normalizedName: "legacy-package",
+      latestReleaseId: "packageReleases:legacy-package",
+      scanStatus: "suspicious",
+    });
+    const canonicalReview = makePackageDoc({
+      _id: "packages:canonical-review",
+      normalizedName: "canonical-review",
+      latestReleaseId: "packageReleases:canonical-review",
+      scanStatus: "clean",
+    });
+    const blocked = makePackageDoc({
+      _id: "packages:blocked",
+      normalizedName: "blocked",
+      latestReleaseId: "packageReleases:blocked",
+      scanStatus: "suspicious",
+    });
+
+    const { ctx } = makePluginRescanCtx(
+      [legacyReleasePackage, legacyPackageStatus, canonicalReview, blocked],
+      {
+        "packageReleases:legacy-release": makeReleaseDoc({
+          _id: "packageReleases:legacy-release",
+          packageId: "packages:legacy-release",
+          llmAnalysis: { status: "suspicious", checkedAt: 123 },
+        }),
+        "packageReleases:legacy-package": makeReleaseDoc({
+          _id: "packageReleases:legacy-package",
+          packageId: "packages:legacy-package",
+          llmAnalysis: { status: "complete", verdict: "clean", checkedAt: 123 },
+        }),
+        "packageReleases:canonical-review": makeReleaseDoc({
+          _id: "packageReleases:canonical-review",
+          packageId: "packages:canonical-review",
+          clawScanVerdict: "review",
+          clawScanState: "complete",
+          llmAnalysis: { status: "complete", verdict: "review", checkedAt: 123 },
+        }),
+        "packageReleases:blocked": makeReleaseDoc({
+          _id: "packageReleases:blocked",
+          packageId: "packages:blocked",
+          clawScanVerdict: "malicious",
+          clawScanState: "complete",
+          llmAnalysis: { status: "suspicious", checkedAt: 123 },
+        }),
+      },
+    );
+
+    const result = await getSuspiciousPluginReleaseBatchForLlmRescanInternalHandler(ctx, {
+      cursor: null,
+      batchSize: 100,
+    });
+
+    expect(result.releases.map((release) => release.name)).toEqual([
+      "legacy-release",
+      "legacy-package",
+    ]);
+  });
+
   it("keeps buffered cursor items aligned across paginated public pages", async () => {
     const { ctx, paginate } = makeDigestCtx({
       pages: [
@@ -6992,7 +7110,7 @@ describe("package scan backfill", () => {
     );
   });
 
-  it("stores static package scan results without promoting malware status", async () => {
+  it("keeps package scan status pending when only static telemetry finds malware", async () => {
     const patch = vi.fn().mockResolvedValue(undefined);
     const release = {
       _id: "packageReleases:demo-1",

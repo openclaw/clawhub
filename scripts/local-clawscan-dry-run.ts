@@ -53,7 +53,7 @@ type RunOptions = {
 };
 
 type LocalLlmAnalysis = {
-  status: "clean" | "suspicious" | "malicious" | "pending";
+  status: "clean" | "review" | "warn" | "malicious" | "pending";
   verdict: LlmEvalResponse["verdict"];
   confidence: LlmEvalResponse["confidence"];
   summary: string;
@@ -346,9 +346,7 @@ async function evaluateWithLlm(params: {
 }
 
 function verdictToStatus(verdict: LlmEvalResponse["verdict"]): LocalLlmAnalysis["status"] {
-  if (verdict === "benign") return "clean";
-  if (verdict === "malicious" || verdict === "suspicious") return verdict;
-  return "pending";
+  return verdict;
 }
 
 async function listTextFiles(root: string) {

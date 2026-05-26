@@ -44,6 +44,8 @@ describe("run-codex-scan-worker diagnostics", () => {
     expect(prompt).toContain("Inspect workspace files when needed");
     expect(prompt).toContain("SkillSpector findings are evidence, not the final verdict");
     expect(prompt).toContain("totality of evidence");
+    expect(prompt).toContain("malicious, warn, or review verdict");
+    expect(prompt).toContain("return clean");
     expect(prompt).not.toContain("incomplete_artifact_inspection");
     expect(prompt).not.toContain("Return the required JSON object only after those reads complete");
   });
@@ -248,7 +250,7 @@ describe("run-codex-scan-worker diagnostics", () => {
         args: ["exec", "--sandbox", "read-only"],
         exitCode: 0,
         rawResult:
-          '{"verdict":"benign","scan_findings_in_context":[{"ruleId":"x","expected_for_purpose":true,"note":"quoted artifact payload should not persist"}]}',
+          '{"verdict":"clean","scan_findings_in_context":[{"ruleId":"x","expected_for_purpose":true,"note":"quoted artifact payload should not persist"}]}',
         stderr: "workspace read failed https://signed.example.invalid/file?token=secret",
         stdout:
           '{"type":"tool_call","status":"failed","api_key":"sk-short-secret","output":"read https://signed.example.invalid/file?token=secret","content":["quoted array artifact payload should not persist"]}\n',
@@ -283,7 +285,7 @@ describe("run-codex-scan-worker diagnostics", () => {
           ],
         },
       },
-      llmAnalysis: { confidence: "low", status: "clean", verdict: "benign" },
+      llmAnalysis: { confidence: "low", status: "clean", verdict: "clean" },
       skillSpectorAnalysis: {
         status: "suspicious",
         issueCount: 1,
@@ -339,7 +341,7 @@ describe("run-codex-scan-worker diagnostics", () => {
       llmAnalysis: {
         confidence: "low",
         status: "clean",
-        verdict: "benign",
+        verdict: "clean",
       },
       runId: "26127771775",
       status: "failed",

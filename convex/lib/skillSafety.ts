@@ -1,27 +1,21 @@
 import type { Doc } from "../_generated/dataModel";
 
-function isScannerSuspiciousReason(reason: string | undefined) {
-  if (!reason) return false;
-  return reason.startsWith("scanner.") && reason.endsWith(".suspicious");
-}
-
 export function isSkillSuspicious(
-  skill: Pick<Doc<"skills">, "moderationFlags" | "moderationReason">,
+  _skill: Pick<Doc<"skills">, "moderationFlags" | "moderationReason">,
 ) {
-  if (skill.moderationFlags?.includes("flagged.suspicious")) return true;
-  return isScannerSuspiciousReason(skill.moderationReason);
+  return false;
 }
 
-export function isSkillReviewFlagged(skill: Pick<Doc<"skills">, "moderationFlags">) {
-  return skill.moderationFlags?.includes("flagged.review") ?? false;
+export function isSkillReviewFlagged(_skill: Pick<Doc<"skills">, "moderationFlags">) {
+  return false;
 }
 
 /**
- * Compute the denormalized `isSuspicious` boolean for a skill.
- * Use at every mutation site that writes `moderationFlags` or `moderationReason`.
+ * Legacy compatibility while suspicious storage fields are being removed.
+ * Returning undefined prevents new writes from recreating `isSuspicious`.
  */
 export function computeIsSuspicious(
-  skill: Pick<Doc<"skills">, "moderationFlags" | "moderationReason">,
-): boolean {
-  return isSkillSuspicious(skill);
+  _skill: Pick<Doc<"skills">, "moderationFlags" | "moderationReason">,
+): undefined {
+  return undefined;
 }

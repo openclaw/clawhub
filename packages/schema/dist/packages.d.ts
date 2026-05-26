@@ -491,6 +491,8 @@ export declare const ApiV1PackageVersionResponseSchema: import("arktype/internal
             version?: string | undefined;
         } | null | undefined;
         sha256hash?: string | null | undefined;
+        clawScanVerdict?: "clean" | "malicious" | "warn" | "review" | null | undefined;
+        clawScanState?: "pending" | "error" | "running" | "complete" | null | undefined;
         vtAnalysis?: {
             status: string;
             checkedAt: number;

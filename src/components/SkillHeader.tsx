@@ -158,11 +158,10 @@ export function SkillHeader({
       {modInfo?.isPendingScan ? (
         <div className="pending-banner">
           <div className="pending-banner-content">
-            <strong>Security scan in progress</strong>
+            <strong>ClawScan in progress</strong>
             <p>
-              Your skill is being scanned by VirusTotal. It will be visible to others once the scan
-              completes. This usually takes up to 5 minutes — grab a coffee or exfoliate your shell
-              while you wait.
+              ClawScan is still reviewing this release. The skill remains visible unless ClawScan
+              marks it malicious or staff moderation hides it.
             </p>
           </div>
         </div>

@@ -1,4 +1,5 @@
 import type { Doc, Id } from "../_generated/dataModel";
+import { normalizeClawScanVerdict, type ClawScanVerdict } from "./clawScanVerdict";
 import {
   legacyFlagsFromVerdict,
   MODERATION_ENGINE_VERSION,
@@ -1264,63 +1265,6 @@ function scanManifestFile(path: string, content: string, findings: ModerationFin
   }
 }
 
-function normalizedSeverityRank(severity: string | undefined) {
-  switch (severity?.trim().toLowerCase()) {
-    case "critical":
-      return 5;
-    case "high":
-      return 4;
-    case "medium":
-      return 3;
-    case "low":
-      return 2;
-    case "info":
-      return 1;
-    default:
-      return 0;
-  }
-}
-
-function highestLlmConcernSeverityRank(analysis: LlmAnalysis | undefined) {
-  let rank = 0;
-  for (const finding of analysis?.agenticRiskFindings ?? []) {
-    if (finding.status !== "concern") continue;
-    rank = Math.max(rank, normalizedSeverityRank(finding.severity));
-  }
-  for (const bucket of Object.values(analysis?.riskSummary ?? {})) {
-    if (bucket?.status !== "concern") continue;
-    rank = Math.max(rank, normalizedSeverityRank(bucket.highestSeverity));
-  }
-  return rank;
-}
-
-function addLlmStatusReason(reasonCodes: string[], status?: string, analysis?: LlmAnalysis) {
-  const normalized = status?.trim().toLowerCase();
-  if (normalized === "malicious") {
-    reasonCodes.push("malicious.llm_malicious");
-    return;
-  }
-  if (normalized !== "suspicious") return;
-
-  const concernRank = highestLlmConcernSeverityRank(analysis);
-  if (concernRank >= normalizedSeverityRank("high")) {
-    reasonCodes.push("suspicious.llm_suspicious");
-  } else {
-    reasonCodes.push(REASON_CODES.LLM_REVIEW);
-  }
-}
-
-function completedCodexStatus(status?: string, analysis?: LlmAnalysis) {
-  const normalized = status?.trim().toLowerCase();
-  if (normalized === "clean" || normalized === "suspicious" || normalized === "malicious") {
-    return normalized;
-  }
-  const verdict = analysis?.verdict?.trim().toLowerCase();
-  if (verdict === "benign") return "clean";
-  if (verdict === "suspicious" || verdict === "malicious") return verdict;
-  return undefined;
-}
-
 export function runStaticModerationScan(input: StaticScanInput): StaticScanResult {
   const findings: ModerationFinding[] = [];
   const files = [...input.fileContents].sort((a, b) => a.path.localeCompare(b.path));
@@ -1419,13 +1363,18 @@ export function buildModerationSnapshot(params: {
   vtStatus?: string;
   llmStatus?: string;
   llmAnalysis?: LlmAnalysis;
+  clawScanVerdict?: ClawScanVerdict | null;
   sourceVersionId?: Id<"skillVersions">;
 }): ModerationSnapshot {
-  const llmStatus = params.llmStatus ?? params.llmAnalysis?.status;
-  const codexStatus = completedCodexStatus(llmStatus, params.llmAnalysis);
+  const codexVerdict =
+    params.clawScanVerdict ??
+    normalizeClawScanVerdict(
+      params.llmStatus ?? params.llmAnalysis?.verdict ?? params.llmAnalysis?.status,
+    );
 
-  const reasonCodes: string[] = [];
-  addLlmStatusReason(reasonCodes, codexStatus, params.llmAnalysis);
+  // Static and VT signals are ClawScan inputs/telemetry only. Automatic
+  // scanner blocking starts at the canonical ClawScan verdict.
+  const reasonCodes = codexVerdict === "malicious" ? ["malicious.llm_malicious"] : [];
 
   const normalizedCodes = normalizeReasonCodes(reasonCodes);
   const verdict = verdictFromCodes(normalizedCodes);
@@ -1447,26 +1396,17 @@ export function resolveSkillVerdict(
     "moderationVerdict" | "moderationFlags" | "moderationReason" | "moderationReasonCodes"
   >,
 ): ModerationVerdict {
-  if (skill.moderationVerdict) return skill.moderationVerdict;
+  if (skill.moderationVerdict === "malicious") return "malicious";
+  if (skill.moderationVerdict === "clean") return "clean";
   if (skill.moderationFlags?.includes("blocked.malware")) return "malicious";
-  if (skill.moderationFlags?.includes("flagged.suspicious")) return "suspicious";
   if (
     skill.moderationReason?.startsWith("scanner.") &&
     skill.moderationReason.endsWith(".malicious")
   ) {
     return "malicious";
   }
-  if (
-    skill.moderationReason?.startsWith("scanner.") &&
-    skill.moderationReason.endsWith(".suspicious")
-  ) {
-    return "suspicious";
-  }
   if ((skill.moderationReasonCodes ?? []).some((code) => code.startsWith("malicious."))) {
     return "malicious";
-  }
-  if ((skill.moderationReasonCodes ?? []).some((code) => code.startsWith("suspicious."))) {
-    return "suspicious";
   }
   return "clean";
 }

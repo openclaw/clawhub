@@ -2,22 +2,22 @@ import { describe, expect, it } from "vitest";
 import { isSkillReviewFlagged, isSkillSuspicious } from "./skillSafety";
 
 describe("isSkillSuspicious", () => {
-  it("returns true when suspicious flag is present", () => {
+  it("ignores legacy suspicious flags", () => {
     expect(
       isSkillSuspicious({
         moderationFlags: ["flagged.suspicious"],
         moderationReason: undefined,
       }),
-    ).toBe(true);
+    ).toBe(false);
   });
 
-  it("returns true for scanner suspicious reason", () => {
+  it("ignores legacy scanner suspicious reasons", () => {
     expect(
       isSkillSuspicious({
         moderationFlags: [],
         moderationReason: "scanner.vt.suspicious",
       }),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("returns false for clean moderation states", () => {
@@ -29,13 +29,13 @@ describe("isSkillSuspicious", () => {
     ).toBe(false);
   });
 
-  it("keeps review flags out of the hidden suspicious bucket", () => {
+  it("ignores legacy review flags", () => {
     const skill = {
       moderationFlags: ["flagged.review"],
       moderationReason: "scanner.llm.review",
     };
 
     expect(isSkillSuspicious(skill)).toBe(false);
-    expect(isSkillReviewFlagged(skill)).toBe(true);
+    expect(isSkillReviewFlagged(skill)).toBe(false);
   });
 });

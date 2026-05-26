@@ -344,7 +344,7 @@ export const ApiV1SkillVersionListResponseSchema = type({
     nextCursor: "string|null",
 });
 export const SecurityStatusSchema = type({
-    status: '"clean" | "suspicious" | "malicious" | "pending" | "error"',
+    status: '"clean" | "review" | "warn" | "suspicious" | "malicious" | "pending" | "error"',
     hasWarnings: "boolean",
     checkedAt: "number|null",
     model: "string|null",

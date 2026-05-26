@@ -948,7 +948,12 @@ describe("securityScan", () => {
       "securityScanJobs:clawscan-note",
       "securityScanJobs:backfill",
     ]);
-    expect(patches.map((entry) => entry.id)).toEqual(claimed.map((job) => job._id));
+    expect(
+      patches.filter((entry) => entry.id.startsWith("securityScanJobs:")).map((entry) => entry.id),
+    ).toEqual(claimed.map((job) => job._id));
+    expect(
+      patches.filter((entry) => entry.id.startsWith("skillVersions:")).map((entry) => entry.patch),
+    ).toEqual(claimed.map(() => ({ clawScanState: "running" })));
   });
 
   it("allows up to 64 active Codex scan claims", async () => {

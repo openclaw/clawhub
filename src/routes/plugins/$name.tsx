@@ -625,6 +625,8 @@ export function PluginDetailPage({
   const securitySummary = latestRelease ? (
     <DetailSecuritySummary
       auditHref={buildPluginSecurityAuditHref(name)}
+      clawScanVerdict={latestRelease.clawScanVerdict ?? null}
+      clawScanState={latestRelease.clawScanState ?? null}
       vtAnalysis={latestRelease.vtAnalysis ?? null}
       llmAnalysis={latestRelease.llmAnalysis ?? null}
     />

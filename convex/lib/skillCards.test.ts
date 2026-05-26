@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { isSkillCardPath, sourceSkillVersionFiles } from "./skillCards";
+import {
+  hasSettledSkillCardInputs,
+  isSkillCardPath,
+  normalizeSkillCardSecurityStatus,
+  sourceSkillVersionFiles,
+} from "./skillCards";
 
 describe("skill card file helpers", () => {
   it("detects reserved Skill Card paths after upload-style dot prefixes", () => {
@@ -32,5 +37,34 @@ describe("skill card file helpers", () => {
       { path: "SKILL.md", sha256: "a" },
       { path: "references/guide.md", sha256: "b" },
     ]);
+  });
+
+  it("normalizes legacy scanner statuses into canonical ClawScan buckets", () => {
+    expect(normalizeSkillCardSecurityStatus("benign")).toBe("clean");
+    expect(normalizeSkillCardSecurityStatus("suspicious")).toBe("review");
+    expect(normalizeSkillCardSecurityStatus("warning")).toBe("warn");
+    expect(normalizeSkillCardSecurityStatus("malicious")).toBe("malicious");
+  });
+
+  it("treats review and warn ClawScan verdicts as settled card inputs", () => {
+    expect(
+      hasSettledSkillCardInputs({
+        staticScan: { status: "clean" },
+        clawScanVerdict: "review",
+        llmAnalysis: { status: "clean", verdict: "clean" },
+      }),
+    ).toBe(true);
+    expect(
+      hasSettledSkillCardInputs({
+        staticScan: { status: "clean" },
+        clawScanVerdict: "warn",
+      }),
+    ).toBe(true);
+    expect(
+      hasSettledSkillCardInputs({
+        staticScan: { status: "clean" },
+        llmAnalysis: { status: "suspicious", verdict: "suspicious" },
+      }),
+    ).toBe(true);
   });
 });

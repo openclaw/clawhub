@@ -134,7 +134,7 @@ describe("runLocalClawScanDryRun", () => {
       const plugin = await writePlugin(root);
       await writeFile(join(root, ".env.local"), "OPENAI_API_KEY=test-key\n", "utf8");
       const fetchImpl = makeOpenAiFetch({
-        verdict: "benign",
+        verdict: "clean",
         confidence: "high",
         summary: "No concerning behavior found.",
         dimensions: {},
@@ -154,7 +154,7 @@ describe("runLocalClawScanDryRun", () => {
       expect(result.staticScan.status).toBe("clean");
       expect(result.llmAnalysis).toMatchObject({
         status: "clean",
-        verdict: "benign",
+        verdict: "clean",
         confidence: "high",
         summary: "No concerning behavior found.",
         guidance: "Looks fine for local testing.",

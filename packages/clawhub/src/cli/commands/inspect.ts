@@ -39,7 +39,7 @@ type FileEntry = {
 };
 
 type SecurityStatus = {
-  status: "clean" | "suspicious" | "malicious" | "pending" | "error";
+  status: "clean" | "review" | "warn" | "suspicious" | "malicious" | "pending" | "error";
   hasWarnings: boolean;
   checkedAt: number | null;
   model: string | null;
@@ -527,6 +527,8 @@ function normalizeSecurity(security: unknown): SecurityStatus | null {
   };
   if (
     value.status !== "clean" &&
+    value.status !== "review" &&
+    value.status !== "warn" &&
     value.status !== "suspicious" &&
     value.status !== "malicious" &&
     value.status !== "pending" &&

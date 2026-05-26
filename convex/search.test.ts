@@ -204,10 +204,9 @@ describe("search helpers", () => {
     expect(result.map((entry) => entry.skill.slug)).toEqual(["baidu-yijian-vision"]);
   });
 
-  it("does not return suspicious skills via full-text search when nonSuspiciousOnly is set", async () => {
-    // Even though the full-text search would token-match the suspicious
-    // skill, the filterField `isSuspicious=false` plus the post-hydration
-    // `isSkillSuspicious` guard must keep it out of the results.
+  it("keeps formerly suspicious skills in full-text search when nonSuspiciousOnly is set", async () => {
+    // The legacy suspicious product state is no longer a visibility filter.
+    // The compatibility flag is accepted but intentionally does not hide rows.
     const clean = makeSkillDoc({
       id: "skills:clean",
       slug: "baidu-yijian-vision",
@@ -227,7 +226,10 @@ describe("search helpers", () => {
       limit: 10,
     });
 
-    expect(result.map((entry) => entry.skill.slug)).toEqual(["baidu-yijian-vision"]);
+    expect(result.map((entry) => entry.skill.slug)).toEqual([
+      "baidu-yijian-vision",
+      "shady-yijian-trick",
+    ]);
   });
 
   it("does not return soft-deleted skills via full-text search", async () => {
@@ -351,7 +353,7 @@ describe("search helpers", () => {
     expect(result[0].skill.slug).toBe("orf-highlighted");
   });
 
-  it("applies nonSuspiciousOnly filtering in lexical fallback", async () => {
+  it("does not apply legacy nonSuspiciousOnly filtering in lexical fallback", async () => {
     const suspicious = makeSkillDoc({
       id: "skills:suspicious",
       slug: "orf-suspicious",
@@ -372,9 +374,8 @@ describe("search helpers", () => {
       limit: 10,
     });
 
-    expect(result).toHaveLength(1);
-    expect(result[0].skill.slug).toBe("orf-clean");
-    expect(ctx.usedIndexes).toEqual(
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["orf-suspicious", "orf-clean"]);
+    expect(ctx.usedIndexes).not.toEqual(
       expect.arrayContaining(["by_nonsuspicious_updated", "by_nonsuspicious_created"]),
     );
   });
@@ -948,7 +949,7 @@ describe("search helpers", () => {
     expect(result[0].skill.slug).toBe("orf");
   });
 
-  it("filters suspicious vector results in hydrateResults when requested", async () => {
+  it("keeps formerly suspicious vector results in hydrateResults when requested", async () => {
     const result = await hydrateResultsHandler(
       {
         db: {
@@ -980,7 +981,8 @@ describe("search helpers", () => {
       { embeddingIds: ["skillEmbeddings:1"], nonSuspiciousOnly: true },
     );
 
-    expect(result).toHaveLength(0);
+    expect(result).toHaveLength(1);
+    expect(result[0].skill.slug).toBe("suspicious");
   });
 
   it("excludes soft-deleted skills from vector search results (#29)", async () => {

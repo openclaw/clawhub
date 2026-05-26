@@ -485,18 +485,18 @@ export function selectCorpusRowsBySecuritySignalRisk(rows: CorpusRow[], enabled:
   if (!enabled) return rows;
   return rows.filter((row) => {
     const reference = normalizeReferenceVerdict(row);
-    return reference.verdict !== "unknown" && reference.verdict !== "benign";
+    return reference.verdict !== "unknown" && reference.verdict !== "clean";
   });
 }
 
 export function selectCorpusRowsByReferenceClean(rows: CorpusRow[], enabled: boolean) {
   if (!enabled) return rows;
-  return rows.filter((row) => normalizeReferenceVerdict(row).verdict === "benign");
+  return rows.filter((row) => normalizeReferenceVerdict(row).verdict === "clean");
 }
 
 export function selectCorpusRowsBySkillTesterPass(rows: CorpusRow[], enabled: boolean) {
   if (!enabled) return rows;
-  return rows.filter((row) => normalizeReferenceVerdict(row).skillTesterVerdict === "benign");
+  return rows.filter((row) => normalizeReferenceVerdict(row).skillTesterVerdict === "clean");
 }
 
 function timestampFromRow(row: CorpusRow) {
@@ -532,13 +532,13 @@ function verdictFromSecurityLevel(securityLevel: string | undefined): Normalized
     return "malicious";
   }
   if (/\b(suspicious|warning|caution|cautious|risky|moderate|review)\b/.test(label)) {
-    return "suspicious";
+    return "review";
   }
   if (/\b(benign|safe|clean|secure|passed|pass|excellent|good)\b/.test(label)) {
-    return "benign";
+    return "clean";
   }
-  if (/^high(?:\s+security)?$/.test(label)) return "benign";
-  if (/^medium(?:\s+security)?$/.test(label)) return "suspicious";
+  if (/^high(?:\s+security)?$/.test(label)) return "clean";
+  if (/^medium(?:\s+security)?$/.test(label)) return "review";
   if (/^low(?:\s+security)?$/.test(label)) return "malicious";
   return "unknown";
 }
@@ -590,7 +590,7 @@ export function normalizeReferenceVerdict(row: CorpusRow): {
   if (typeof securityScore === "number") {
     if (securityScore >= 80) {
       return {
-        verdict: "benign",
+        verdict: "clean",
         basis: "score",
         securityLevel,
         securityScore,
@@ -601,7 +601,7 @@ export function normalizeReferenceVerdict(row: CorpusRow): {
     }
     if (securityScore >= 50) {
       return {
-        verdict: "suspicious",
+        verdict: "review",
         basis: "score",
         securityLevel,
         securityScore,
@@ -681,8 +681,9 @@ export async function readHfJsonl(
 
 function normalizedLabelValue(value: string | null | undefined): NormalizedVerdict {
   const label = value?.toLowerCase().trim();
-  if (label === "clean" || label === "benign") return "benign";
-  if (label === "suspicious") return "suspicious";
+  if (label === "clean" || label === "benign") return "clean";
+  if (label === "review" || label === "suspicious") return "review";
+  if (label === "warn" || label === "warning") return "warn";
   if (label === "malicious") return "malicious";
   return "unknown";
 }
@@ -706,9 +707,10 @@ function normalizedHfLabel(row: HfSecuritySignalsRow): NormalizedVerdict {
 
 function securityLevelForHfLabel(label: NormalizedVerdict): string | undefined {
   switch (label) {
-    case "benign":
+    case "clean":
       return "high security";
-    case "suspicious":
+    case "review":
+    case "warn":
       return "moderate security";
     case "malicious":
       return "low security";
@@ -739,9 +741,10 @@ function securityScoreForHfRow(
   const score = securityScoreFromRiskScore(riskScore);
   if (score !== undefined) return score;
   switch (label) {
-    case "benign":
+    case "clean":
       return 100;
-    case "suspicious":
+    case "review":
+    case "warn":
       return 65;
     case "malicious":
       return 25;
@@ -1154,7 +1157,7 @@ function firstEvidenceSnippet(skillMdContent: string) {
 
 function mockPromptRunner(request: PromptRunRequest): Promise<PromptRunResult> {
   const reference = normalizeReferenceVerdict(request.row);
-  const verdict = reference.verdict === "unknown" ? "benign" : reference.verdict;
+  const verdict = reference.verdict === "unknown" ? "clean" : reference.verdict;
   const summary = `Mock ${request.kind} prompt result for ${request.context.slug}.`;
   const base = {
     verdict,
@@ -1170,7 +1173,7 @@ function mockPromptRunner(request: PromptRunRequest): Promise<PromptRunResult> {
     return Promise.resolve({ raw: JSON.stringify(base), cache: "mock" });
   }
 
-  const risky = verdict !== "benign";
+  const risky = verdict !== "clean";
   const evidence = {
     path: request.context.files[0]?.path ?? "SKILL.md",
     snippet: firstEvidenceSnippet(request.context.skillMdContent) ?? request.context.slug,
@@ -1363,26 +1366,27 @@ function buildPromptMetrics(rows: RowComparison[], prompt: PromptKind): PromptMe
   const promptRows = rows.map((row) => row[prompt]).filter((row) => !row.skipped);
   const activeRows = rows.filter((row) => !row[prompt].skipped);
   const referenceRows = activeRows.filter((row) => row.reference.verdict !== "unknown");
-  const riskyReferenceRows = referenceRows.filter((row) => row.reference.verdict !== "benign");
+  const riskyReferenceRows = referenceRows.filter((row) => row.reference.verdict !== "clean");
   const matchesReference = referenceRows.filter(
     (row) => row[prompt].verdict === row.reference.verdict,
   ).length;
   const riskyReferenceDetected = riskyReferenceRows.filter(
-    (row) => row[prompt].verdict !== "benign",
+    (row) => row[prompt].verdict !== "clean",
   ).length;
   const falsePositivesOnBenign = referenceRows.filter(
     (row) =>
-      row.reference.verdict === "benign" && row[prompt].verdict && row[prompt].verdict !== "benign",
+      row.reference.verdict === "clean" && row[prompt].verdict && row[prompt].verdict !== "clean",
   ).length;
   const skillTesterPassRows = activeRows.filter(
-    (row) => row.reference.skillTesterVerdict === "benign",
+    (row) => row.reference.skillTesterVerdict === "clean",
   );
   const falsePositivesOnSkillTesterPass = skillTesterPassRows.filter(
-    (row) => row[prompt].verdict && row[prompt].verdict !== "benign",
+    (row) => row[prompt].verdict && row[prompt].verdict !== "clean",
   ).length;
   const verdicts = {
-    benign: promptRows.filter((row) => row.verdict === "benign").length,
-    suspicious: promptRows.filter((row) => row.verdict === "suspicious").length,
+    clean: promptRows.filter((row) => row.verdict === "clean").length,
+    review: promptRows.filter((row) => row.verdict === "review").length,
+    warn: promptRows.filter((row) => row.verdict === "warn").length,
     malicious: promptRows.filter((row) => row.verdict === "malicious").length,
   };
   const evidenceQuality = promptRows.reduce(
@@ -1584,7 +1588,7 @@ function buildFalsePositiveAnalysisForPrompt(
 ): FalsePositiveAnalysisForPrompt {
   const falsePositiveRows = rows.filter(
     (row) =>
-      row.reference.verdict === "benign" && row[prompt].verdict && row[prompt].verdict !== "benign",
+      row.reference.verdict === "clean" && row[prompt].verdict && row[prompt].verdict !== "clean",
   );
   const themeRows = new Map<string, FalsePositiveThemeRow[]>();
   const ruleById = new Map<string, (typeof FALSE_POSITIVE_THEME_RULES)[number]>(
@@ -1674,10 +1678,10 @@ export function buildEvalReport(params: {
       row.old.unsupportedRuntimeClaims.length > 0 || row.new.unsupportedRuntimeClaims.length > 0,
   );
   const oldFalsePositiveExamples = params.rows.filter(
-    (row) => row.reference.verdict === "benign" && row.old.verdict && row.old.verdict !== "benign",
+    (row) => row.reference.verdict === "clean" && row.old.verdict && row.old.verdict !== "clean",
   );
   const newFalsePositiveExamples = params.rows.filter(
-    (row) => row.reference.verdict === "benign" && row.new.verdict && row.new.verdict !== "benign",
+    (row) => row.reference.verdict === "clean" && row.new.verdict && row.new.verdict !== "clean",
   );
 
   return {

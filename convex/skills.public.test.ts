@@ -50,6 +50,11 @@ const getBySlugHandler = (
           path: string;
           contentType?: string;
         }>;
+        clawScanState?: string;
+      } | null;
+      moderationInfo?: {
+        isPendingScan: boolean;
+        isHiddenByMod?: boolean;
       } | null;
       forkOf?: {
         skill: {
@@ -283,6 +288,49 @@ describe("skills.getBySlug", () => {
     expect(result?.owner).not.toHaveProperty("githubCreatedAt");
     expect(result?.owner).not.toHaveProperty("githubFetchedAt");
     expect(result?.owner).not.toHaveProperty("githubProfileSyncedAt");
+  });
+
+  it("reports visible pending ClawScan state to owners", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:1" as never);
+    const ctx = makeCtx({
+      skill: makeSkill({
+        latestVersionId: "skillVersions:1",
+      }),
+      latestVersion: {
+        _id: "skillVersions:1",
+        skillId: "skills:1",
+        version: "1.0.0",
+        clawScanState: "pending",
+      },
+      owner: makeOwner("users:1", "demo-owner"),
+    });
+
+    const result = await getBySlugHandler(ctx, { slug: "demo" } as never);
+
+    expect(result?.moderationInfo?.isPendingScan).toBe(true);
+  });
+
+  it("preserves manual hidden state while ClawScan is active", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:1" as never);
+    const ctx = makeCtx({
+      skill: makeSkill({
+        latestVersionId: "skillVersions:1",
+        moderationStatus: "hidden",
+        moderationReason: "quality.low",
+      }),
+      latestVersion: {
+        _id: "skillVersions:1",
+        skillId: "skills:1",
+        version: "1.0.0",
+        clawScanState: "running",
+      },
+      owner: makeOwner("users:1", "demo-owner"),
+    });
+
+    const result = await getBySlugHandler(ctx, { slug: "demo" } as never);
+
+    expect(result?.moderationInfo?.isPendingScan).toBe(false);
+    expect(result?.moderationInfo?.isHiddenByMod).toBe(true);
   });
 
   it("hides skills whose owner is deleted or banned", async () => {

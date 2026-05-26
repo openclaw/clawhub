@@ -197,6 +197,23 @@ describe("SkillHeader", () => {
     expect(screen.queryByText(/Review the scan results before using/i)).toBeNull();
   });
 
+  it("shows the in-progress ClawScan banner for visible pending scans", () => {
+    renderHeader({
+      modInfo: {
+        isPendingScan: true,
+        isMalwareBlocked: false,
+        isSuspicious: false,
+        isHiddenByMod: false,
+        isRemoved: false,
+      },
+    });
+
+    expect(screen.getByText("ClawScan in progress")).toBeTruthy();
+    expect(
+      screen.getByText(/The skill remains visible unless ClawScan marks it malicious/i),
+    ).toBeTruthy();
+  });
+
   it("shows the latest version description instead of the short catalog summary", () => {
     renderHeader({
       latestVersion: {

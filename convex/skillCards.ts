@@ -87,7 +87,7 @@ function clawScanRiskFindings(version: Doc<"skillVersions">) {
 
 function versionClawScanVerdict(version: Doc<"skillVersions">) {
   const status = normalizeSkillCardSecurityStatus(
-    version.llmAnalysis?.verdict ?? version.llmAnalysis?.status,
+    version.clawScanVerdict ?? version.llmAnalysis?.verdict ?? version.llmAnalysis?.status,
   );
   return status === "pending" ? null : status;
 }

@@ -135,7 +135,7 @@ describe("skills manual overrides", () => {
         moderationFlags: undefined,
         moderationReasonCodes: ["suspicious.vt_suspicious"],
         moderationEngineVersion: "v2.0.0",
-        isSuspicious: false,
+        isSuspicious: undefined,
       }),
     );
     expect(insert).toHaveBeenCalledWith(
@@ -184,7 +184,7 @@ describe("skills manual overrides", () => {
     );
   });
 
-  it("clears a skill-level override and restores scanner-derived suspicious state", async () => {
+  it("clears a skill-level override and restores pending ClawScan state", async () => {
     const now = 1_700_000_100_000;
     vi.spyOn(Date, "now").mockReturnValue(now);
     vi.mocked(requireUser).mockResolvedValue({
@@ -235,10 +235,10 @@ describe("skills manual overrides", () => {
     expect(patch).toHaveBeenCalledWith(
       "skills:1",
       expect.objectContaining({
-        moderationReason: "scanner.aggregate.clean",
+        moderationReason: "scanner.llm.pending",
         moderationVerdict: "clean",
         moderationFlags: undefined,
-        isSuspicious: false,
+        isSuspicious: undefined,
       }),
     );
     expect(insert).toHaveBeenCalledWith(
@@ -251,7 +251,7 @@ describe("skills manual overrides", () => {
     );
   });
 
-  it("clears a skill-level override and restores hidden malicious state", async () => {
+  it("clears a skill-level override and ignores VT-only malicious telemetry", async () => {
     const now = 1_700_000_200_000;
     vi.spyOn(Date, "now").mockReturnValue(now);
     vi.mocked(requireUser).mockResolvedValue({
@@ -298,12 +298,12 @@ describe("skills manual overrides", () => {
       "skills:1",
       expect.objectContaining({
         moderationStatus: "active",
-        moderationReason: "scanner.aggregate.clean",
+        moderationReason: "scanner.llm.pending",
         moderationVerdict: "clean",
         moderationFlags: undefined,
         hiddenAt: undefined,
         lastReviewedAt: undefined,
-        isSuspicious: false,
+        isSuspicious: undefined,
       }),
     );
   });
@@ -400,6 +400,8 @@ describe("skills manual overrides", () => {
         status: "clean",
         checkedAt: 200,
       },
+      clawScanState: "complete",
+      clawScanVerdict: "clean",
     });
   });
 
@@ -444,6 +446,8 @@ describe("skills manual overrides", () => {
         verdict: "malicious",
         checkedAt: now,
       },
+      clawScanState: "complete",
+      clawScanVerdict: "malicious",
     });
     expect(get).toHaveBeenCalledTimes(1);
     expect(get).toHaveBeenCalledWith("skillVersions:7");
@@ -643,11 +647,11 @@ describe("skills manual overrides", () => {
       "skills:1",
       expect.objectContaining({
         moderationStatus: "active",
-        moderationReason: "scanner.aggregate.clean",
+        moderationReason: "scanner.llm.clean",
         moderationFlags: undefined,
         moderationVerdict: "clean",
         moderationReasonCodes: undefined,
-        isSuspicious: false,
+        isSuspicious: undefined,
       }),
     );
   });

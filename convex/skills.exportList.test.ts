@@ -54,7 +54,6 @@ function digest(overrides: Record<string, unknown>) {
     softDeletedAt: undefined,
     moderationStatus: "active",
     moderationFlags: [],
-    isSuspicious: false,
     createdAt: 1,
     updatedAt: 2,
     ...overrides,

@@ -45,6 +45,8 @@ const {
   backfillSkillFingerprintsInternalHandler,
   backfillSkillSummariesInternalHandler,
   backfillUserStatsInternalHandler,
+  cleanupLegacySuspiciousDigestFieldsInternal,
+  cleanupLegacySuspiciousSkillFieldsInternal,
   cleanupEmptySkillsInternalHandler,
   nominateEmptySkillSpammersInternalHandler,
   upsertSkillBadgeRecordInternal,
@@ -267,6 +269,272 @@ describe("maintenance backfill", () => {
       },
     });
     expect(runAfter).not.toHaveBeenCalled();
+  });
+
+  it("does not reactivate legacy malicious skill rows during suspicious cleanup", async () => {
+    const now = 1_700_000_000_000;
+    vi.spyOn(Date, "now").mockReturnValue(now);
+    const paginate = vi.fn().mockResolvedValue({
+      page: [
+        {
+          _id: "skills:malicious",
+          isSuspicious: true,
+          moderationFlags: ["flagged.suspicious"],
+          moderationReason: "scanner.llm.malicious",
+          moderationReasonCodes: ["malicious.llm_malicious"],
+          moderationVerdict: "clean",
+          moderationStatus: "hidden",
+          softDeletedAt: undefined,
+          hiddenAt: now - 1,
+          hiddenBy: undefined,
+          lastReviewedAt: now - 1,
+        },
+      ],
+      continueCursor: null,
+      isDone: true,
+    });
+    const patch = vi.fn().mockResolvedValue(undefined);
+
+    const result = await (
+      cleanupLegacySuspiciousSkillFieldsInternal as unknown as { _handler: Function }
+    )._handler(
+      {
+        db: {
+          query: vi.fn(() => ({ paginate })),
+          get: vi.fn(),
+          insert: vi.fn(),
+          patch,
+          replace: vi.fn(),
+          delete: vi.fn(),
+          normalizeId: vi.fn(),
+        },
+        scheduler: { runAfter: vi.fn() },
+      } as never,
+      { batchSize: 10 },
+    );
+
+    expect(result).toEqual({ patched: 1, isDone: true, scanned: 1 });
+    const skillPatch = patch.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(skillPatch).toEqual(
+      expect.objectContaining({
+        isSuspicious: undefined,
+        moderationFlags: undefined,
+        updatedAt: now,
+      }),
+    );
+    expect(skillPatch).not.toHaveProperty("moderationStatus");
+    expect(skillPatch).not.toHaveProperty("hiddenAt");
+    expect(skillPatch).not.toHaveProperty("lastReviewedAt");
+  });
+
+  it("reactivates legacy suspicious skill rows identified only by structured reason codes", async () => {
+    const now = 1_700_000_000_000;
+    vi.spyOn(Date, "now").mockReturnValue(now);
+    const paginate = vi.fn().mockResolvedValue({
+      page: [
+        {
+          _id: "skills:suspicious-code",
+          isSuspicious: true,
+          moderationFlags: undefined,
+          moderationReason: undefined,
+          moderationReasonCodes: ["suspicious.dynamic_code_execution"],
+          moderationVerdict: "clean",
+          moderationStatus: "hidden",
+          softDeletedAt: undefined,
+          hiddenAt: now - 1,
+          hiddenBy: undefined,
+          lastReviewedAt: now - 1,
+        },
+      ],
+      continueCursor: null,
+      isDone: true,
+    });
+    const patch = vi.fn().mockResolvedValue(undefined);
+
+    const result = await (
+      cleanupLegacySuspiciousSkillFieldsInternal as unknown as { _handler: Function }
+    )._handler(
+      {
+        db: {
+          query: vi.fn(() => ({ paginate })),
+          get: vi.fn(),
+          insert: vi.fn(),
+          patch,
+          replace: vi.fn(),
+          delete: vi.fn(),
+          normalizeId: vi.fn(),
+        },
+        scheduler: { runAfter: vi.fn() },
+      } as never,
+      { batchSize: 10 },
+    );
+
+    expect(result).toEqual({ patched: 1, isDone: true, scanned: 1 });
+    expect(patch).toHaveBeenCalledWith(
+      "skills:suspicious-code",
+      expect.objectContaining({
+        isSuspicious: undefined,
+        moderationReasonCodes: undefined,
+        moderationStatus: "active",
+        hiddenAt: undefined,
+        lastReviewedAt: undefined,
+        updatedAt: now,
+      }),
+    );
+  });
+
+  it("does not reactivate legacy malicious digest rows during suspicious cleanup", async () => {
+    const now = 1_700_000_000_000;
+    vi.spyOn(Date, "now").mockReturnValue(now);
+    const paginate = vi.fn().mockResolvedValue({
+      page: [
+        {
+          _id: "skillSearchDigest:malicious",
+          isSuspicious: true,
+          moderationFlags: ["flagged.suspicious"],
+          moderationReason: "scanner.llm.malicious",
+          moderationStatus: "hidden",
+          softDeletedAt: undefined,
+        },
+      ],
+      continueCursor: null,
+      isDone: true,
+    });
+    const patch = vi.fn().mockResolvedValue(undefined);
+
+    const result = await (
+      cleanupLegacySuspiciousDigestFieldsInternal as unknown as { _handler: Function }
+    )._handler(
+      {
+        db: {
+          query: vi.fn(() => ({ paginate })),
+          get: vi.fn(),
+          insert: vi.fn(),
+          patch,
+          replace: vi.fn(),
+          delete: vi.fn(),
+          normalizeId: vi.fn(),
+        },
+        scheduler: { runAfter: vi.fn() },
+      } as never,
+      { batchSize: 10 },
+    );
+
+    expect(result).toEqual({ patched: 1, isDone: true, scanned: 1 });
+    const digestPatch = patch.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(digestPatch).toEqual(
+      expect.objectContaining({
+        isSuspicious: undefined,
+        moderationFlags: undefined,
+        updatedAt: now,
+      }),
+    );
+    expect(digestPatch).not.toHaveProperty("moderationStatus");
+  });
+
+  it("does not reactivate pending scan skill rows during suspicious cleanup", async () => {
+    const now = 1_700_000_000_000;
+    vi.spyOn(Date, "now").mockReturnValue(now);
+    const paginate = vi.fn().mockResolvedValue({
+      page: [
+        {
+          _id: "skills:pending",
+          isSuspicious: true,
+          moderationFlags: undefined,
+          moderationReason: "pending.scan",
+          moderationReasonCodes: undefined,
+          moderationVerdict: "clean",
+          moderationStatus: "hidden",
+          softDeletedAt: undefined,
+          hiddenAt: now - 1,
+          hiddenBy: undefined,
+          lastReviewedAt: now - 1,
+        },
+      ],
+      continueCursor: null,
+      isDone: true,
+    });
+    const patch = vi.fn().mockResolvedValue(undefined);
+
+    const result = await (
+      cleanupLegacySuspiciousSkillFieldsInternal as unknown as { _handler: Function }
+    )._handler(
+      {
+        db: {
+          query: vi.fn(() => ({ paginate })),
+          get: vi.fn(),
+          insert: vi.fn(),
+          patch,
+          replace: vi.fn(),
+          delete: vi.fn(),
+          normalizeId: vi.fn(),
+        },
+        scheduler: { runAfter: vi.fn() },
+      } as never,
+      { batchSize: 10 },
+    );
+
+    expect(result).toEqual({ patched: 1, isDone: true, scanned: 1 });
+    expect(patch).toHaveBeenCalledWith(
+      "skills:pending",
+      expect.objectContaining({
+        isSuspicious: undefined,
+        updatedAt: now,
+      }),
+    );
+    const skillPatch = patch.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(skillPatch).not.toHaveProperty("moderationStatus");
+    expect(skillPatch).not.toHaveProperty("hiddenAt");
+    expect(skillPatch).not.toHaveProperty("lastReviewedAt");
+  });
+
+  it("does not reactivate pending scan digest rows during suspicious cleanup", async () => {
+    const now = 1_700_000_000_000;
+    vi.spyOn(Date, "now").mockReturnValue(now);
+    const paginate = vi.fn().mockResolvedValue({
+      page: [
+        {
+          _id: "skillSearchDigest:pending",
+          isSuspicious: true,
+          moderationFlags: undefined,
+          moderationReason: "pending.scan",
+          moderationStatus: "hidden",
+          softDeletedAt: undefined,
+        },
+      ],
+      continueCursor: null,
+      isDone: true,
+    });
+    const patch = vi.fn().mockResolvedValue(undefined);
+
+    const result = await (
+      cleanupLegacySuspiciousDigestFieldsInternal as unknown as { _handler: Function }
+    )._handler(
+      {
+        db: {
+          query: vi.fn(() => ({ paginate })),
+          get: vi.fn(),
+          insert: vi.fn(),
+          patch,
+          replace: vi.fn(),
+          delete: vi.fn(),
+          normalizeId: vi.fn(),
+        },
+        scheduler: { runAfter: vi.fn() },
+      } as never,
+      { batchSize: 10 },
+    );
+
+    expect(result).toEqual({ patched: 1, isDone: true, scanned: 1 });
+    expect(patch).toHaveBeenCalledWith(
+      "skillSearchDigest:pending",
+      expect.objectContaining({
+        isSuspicious: undefined,
+        updatedAt: now,
+      }),
+    );
+    const digestPatch = patch.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(digestPatch).not.toHaveProperty("moderationStatus");
   });
 
   it("backfills denormalized user hover stats from indexed owner pages", async () => {

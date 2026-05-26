@@ -111,6 +111,8 @@ function SkillSecurityAuditRoute() {
         detailPath: `/${encodeURIComponent(ownerSegment)}/${encodeURIComponent(slug)}`,
       }}
       sha256hash={latestVersion.sha256hash ?? null}
+      clawScanVerdict={latestVersion.clawScanVerdict ?? null}
+      clawScanState={latestVersion.clawScanState ?? null}
       vtAnalysis={latestVersion.vtAnalysis ?? null}
       llmAnalysis={latestVersion.llmAnalysis ?? null}
       skillSpectorAnalysis={latestVersion.skillSpectorAnalysis ?? null}

@@ -29,6 +29,20 @@ const vtAnalysisValidator = v.object({
   checkedAt: v.number(),
 });
 
+const clawScanVerdictValidator = v.union(
+  v.literal("clean"),
+  v.literal("review"),
+  v.literal("warn"),
+  v.literal("malicious"),
+);
+
+const clawScanStateValidator = v.union(
+  v.literal("pending"),
+  v.literal("running"),
+  v.literal("complete"),
+  v.literal("error"),
+);
+
 const skillSpectorIssueValidator = v.object({
   issueId: v.string(),
   category: v.optional(v.string()),
@@ -634,6 +648,8 @@ const skillVersions = defineTable({
   softDeletedAt: v.optional(v.number()),
   sha256hash: v.optional(v.string()),
   vtAnalysis: v.optional(vtAnalysisValidator),
+  clawScanVerdict: v.optional(clawScanVerdictValidator),
+  clawScanState: v.optional(clawScanStateValidator),
   skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
   llmAnalysis: v.optional(
     v.object({
@@ -1002,6 +1018,8 @@ const packageReleases = defineTable({
   verification: packageVerificationValidator,
   sha256hash: v.optional(v.string()),
   vtAnalysis: v.optional(vtAnalysisValidator),
+  clawScanVerdict: v.optional(clawScanVerdictValidator),
+  clawScanState: v.optional(clawScanStateValidator),
   skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
   llmAnalysis: v.optional(
     v.object({

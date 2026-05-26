@@ -45,6 +45,7 @@ import {
 } from "./lib/artifactModeration";
 import { scheduleNextBatchIfNeeded } from "./lib/batching";
 import { normalizeClawScanNoteForWrite } from "./lib/clawScanNote";
+import { clawScanStateFromAnalysisStatus, normalizeClawScanVerdict } from "./lib/clawScanVerdict";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
 import {
@@ -5836,14 +5837,45 @@ export const updateReleaseLlmAnalysisInternal = internalMutation({
   handler: async (ctx, args) => {
     const release = await ctx.db.get(args.releaseId);
     if (!isReleaseActive(release)) return;
-    await ctx.db.patch(args.releaseId, { llmAnalysis: args.llmAnalysis });
+    const clawScanVerdict = normalizeClawScanVerdict(
+      args.llmAnalysis.verdict ?? args.llmAnalysis.status,
+    );
+    const clawScanState = clawScanStateFromAnalysisStatus(args.llmAnalysis.status);
+    const patch = {
+      llmAnalysis: args.llmAnalysis,
+      clawScanVerdict: clawScanVerdict ?? undefined,
+      clawScanState,
+    };
+    await ctx.db.patch(args.releaseId, patch);
     const updatedRelease = {
       ...release,
-      llmAnalysis: args.llmAnalysis,
+      ...patch,
     } as Doc<"packageReleases">;
     await syncLatestPackageVerification(ctx, updatedRelease);
   },
 });
+
+function isLegacySuspiciousScanValue(value: string | null | undefined) {
+  return value?.trim().toLowerCase() === "suspicious";
+}
+
+function packageHasLegacySuspiciousScanSignal(pkg: Doc<"packages">) {
+  return (
+    isLegacySuspiciousScanValue(pkg.scanStatus) ||
+    isLegacySuspiciousScanValue(pkg.verification?.scanStatus) ||
+    isLegacySuspiciousScanValue(pkg.latestVersionSummary?.verification?.scanStatus)
+  );
+}
+
+function releaseHasLegacySuspiciousScanSignal(release: Doc<"packageReleases">) {
+  return (
+    isLegacySuspiciousScanValue(release.verification?.scanStatus) ||
+    isLegacySuspiciousScanValue(release.llmAnalysis?.status) ||
+    isLegacySuspiciousScanValue(release.llmAnalysis?.verdict) ||
+    isLegacySuspiciousScanValue(release.vtAnalysis?.status) ||
+    isLegacySuspiciousScanValue(release.vtAnalysis?.verdict)
+  );
+}
 
 export const getSuspiciousPluginReleaseBatchForLlmRescanInternal = internalQuery({
   args: {
@@ -5867,13 +5899,18 @@ export const getSuspiciousPluginReleaseBatchForLlmRescanInternal = internalQuery
 
     for (const pkg of page) {
       if (pkg.family === "skill") continue;
-      if (pkg.scanStatus !== "suspicious") continue;
       if (!pkg.latestReleaseId) continue;
       const release = await ctx.db.get(pkg.latestReleaseId);
       if (!isReleaseActive(release)) continue;
       if (release.manualModeration?.state === "quarantined") continue;
       if (release.manualModeration?.state === "revoked") continue;
-      if (resolvePackageReleaseScanStatus(release) !== "suspicious") continue;
+      if (resolvePackageReleaseScanStatus(release) === "malicious") continue;
+      if (
+        !packageHasLegacySuspiciousScanSignal(pkg) &&
+        !releaseHasLegacySuspiciousScanSignal(release)
+      ) {
+        continue;
+      }
 
       releases.push({
         packageId: pkg._id,

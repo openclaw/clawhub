@@ -146,6 +146,8 @@ export function PluginSecurityAuditPage({
         detailPath: buildPluginDetailHref(name),
       }}
       sha256hash={release.sha256hash ?? null}
+      clawScanVerdict={release.clawScanVerdict ?? null}
+      clawScanState={release.clawScanState ?? null}
       vtAnalysis={release.vtAnalysis ?? null}
       llmAnalysis={release.llmAnalysis ?? null}
       skillSpectorAnalysis={release.skillSpectorAnalysis ?? null}

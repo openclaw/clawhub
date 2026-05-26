@@ -74,7 +74,8 @@ export function normalizeSkillCardSecurityStatus(value: string | null | undefine
   const normalized = value?.trim().toLowerCase();
   if (!normalized) return "pending";
   if (normalized === "clean" || normalized === "benign") return "clean";
-  if (normalized === "suspicious" || normalized === "review") return "suspicious";
+  if (normalized === "suspicious" || normalized === "review") return "review";
+  if (normalized === "warning" || normalized === "warn") return "warn";
   if (normalized === "malicious") return "malicious";
   if (normalized === "error" || normalized === "failed") return "error";
   if (normalized === "completed") return "pending";
@@ -82,11 +83,12 @@ export function normalizeSkillCardSecurityStatus(value: string | null | undefine
 }
 
 export function hasSettledSkillCardInputs(version: {
+  clawScanVerdict?: string | null;
   staticScan?: unknown;
   llmAnalysis?: { status?: string; verdict?: string };
 }) {
   const status = normalizeSkillCardSecurityStatus(
-    version.llmAnalysis?.verdict ?? version.llmAnalysis?.status,
+    version.clawScanVerdict ?? version.llmAnalysis?.verdict ?? version.llmAnalysis?.status,
   );
-  return Boolean(version.staticScan && ["clean", "suspicious", "malicious"].includes(status));
+  return Boolean(version.staticScan && ["clean", "review", "warn", "malicious"].includes(status));
 }

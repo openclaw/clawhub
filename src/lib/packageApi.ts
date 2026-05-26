@@ -59,6 +59,8 @@ export type PackageVersionDetail = {
       npmFileCount?: number;
     } | null;
     sha256hash?: string | null;
+    clawScanVerdict?: "clean" | "review" | "warn" | "malicious" | null;
+    clawScanState?: "pending" | "running" | "complete" | "error" | null;
     vtAnalysis?: {
       status: string;
       verdict?: string;

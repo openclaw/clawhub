@@ -116,6 +116,11 @@ The audit page combines:
 2. VirusTotal
 3. Risk analysis
 
+The top-level Outcome is the ClawScan verdict for the release:
+`clean`, `review`, `warn`, or `malicious`. Static analysis and VirusTotal are
+shown as supporting telemetry and ClawScan inputs, but they do not roll up into
+the Outcome by themselves.
+
 ## VirusTotal
 
 ClawHub uses VirusTotal as malware telemetry in the audit stack. VirusTotal is a
@@ -145,7 +150,8 @@ No VirusTotal findings
 ```
 
 VirusTotal remains telemetry. It does not replace ClawHub's own artifact-aware
-risk analysis.
+risk analysis, and vendor engine counts do not by themselves determine the
+top-level Outcome.
 
 ## Risk analysis
 

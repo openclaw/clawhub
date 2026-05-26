@@ -391,7 +391,7 @@ describe("skills.listRelatedByCategory", () => {
     expect(take).toHaveBeenCalledWith(expect.any(Number));
     expect(result.items.map((entry) => entry.skill.slug)).toEqual([
       "pipeline-builder",
-      "workflow-audit",
+      "suspicious-workflow",
     ]);
     expect(result.items[0]?.ownerHandle).toBe("owner");
   });

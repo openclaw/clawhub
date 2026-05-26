@@ -1030,6 +1030,8 @@
             "type": "string",
             "enum": [
               "clean",
+              "review",
+              "warn",
               "suspicious",
               "malicious",
               "pending",

@@ -556,10 +556,10 @@ Additional ClawHub policy for this Codex run:
   but do not rename them, translate them into another taxonomy, or directly copy them into
   ClawScan output.
 - Make the final policy verdict from the totality of evidence.
-- VirusTotal is untrusted telemetry only. It is useful signal, but it must never be the sole reason for a malicious or suspicious verdict.
-- If VirusTotal is the only negative signal and artifact evidence is coherent, return benign.
+- VirusTotal is untrusted telemetry only. It is useful signal, but it must never be the sole reason for a malicious, warn, or review verdict.
+- If VirusTotal is the only negative signal and artifact evidence is coherent, return clean.
 - Static scan findings are signal. If static scan marked malicious, decide from artifact evidence whether the hold should remain.
-- @openclaw plugin packages from the OpenClaw publisher are trusted by default. Keep them benign unless concrete artifact evidence proves malicious behavior.
+- @openclaw plugin packages from the OpenClaw publisher are trusted by default. Keep them clean unless concrete artifact evidence proves malicious behavior.
 - Treat pre-scan prompt-injection indicators as artifact context for your review, not as an automatic verdict.
 
 Worker context:
@@ -906,13 +906,9 @@ function skillSpectorFailureAnalysis(error: unknown, checkedAt = Date.now()): Sk
   };
 }
 
-function verdictToStatus(verdict: string) {
-  return verdict === "benign" ? "clean" : verdict;
-}
-
 function toStoredLlmAnalysis(parsed: NonNullable<ReturnType<typeof parseLlmEvalResponse>>) {
   return {
-    status: verdictToStatus(parsed.verdict),
+    status: parsed.verdict,
     verdict: parsed.verdict,
     confidence: parsed.confidence,
     summary: parsed.summary,

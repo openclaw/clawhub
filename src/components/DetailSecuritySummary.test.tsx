@@ -9,6 +9,8 @@ describe("DetailSecuritySummary", () => {
     render(
       <DetailSecuritySummary
         auditHref="/steipete/weather/security-audit"
+        clawScanVerdict="clean"
+        clawScanState="complete"
         vtAnalysis={{ status: "clean", checkedAt: 1 }}
         llmAnalysis={{
           status: "clean",
@@ -40,6 +42,8 @@ describe("DetailSecuritySummary", () => {
     render(
       <DetailSecuritySummary
         auditHref="/suka233/kmind-markdown-to-mindmap/security-audit"
+        clawScanVerdict="review"
+        clawScanState="complete"
         vtAnalysis={{ status: "suspicious", verdict: "suspicious", checkedAt: 1 }}
         llmAnalysis={{ status: "suspicious", verdict: "suspicious", checkedAt: 1 }}
         suppressScanResults
@@ -54,6 +58,8 @@ describe("DetailSecuritySummary", () => {
     const { rerender } = render(
       <DetailSecuritySummary
         auditHref="/steipete/weather/security-audit"
+        clawScanVerdict="review"
+        clawScanState="complete"
         vtAnalysis={{ status: "clean", checkedAt: 1 }}
         llmAnalysis={{
           status: "suspicious",
@@ -86,6 +92,8 @@ describe("DetailSecuritySummary", () => {
     rerender(
       <DetailSecuritySummary
         auditHref="/steipete/weather/security-audit"
+        clawScanVerdict="warn"
+        clawScanState="complete"
         vtAnalysis={{ status: "clean", checkedAt: 1 }}
         llmAnalysis={{
           status: "suspicious",
@@ -117,10 +125,30 @@ describe("DetailSecuritySummary", () => {
     expect(screen.queryByText("Suspicious")).toBeNull();
   });
 
+  it("falls back to legacy LLM verdicts before canonical fields are backfilled", () => {
+    render(
+      <DetailSecuritySummary
+        auditHref="/steipete/weather/security-audit"
+        llmAnalysis={{
+          status: "completed",
+          verdict: "suspicious",
+          checkedAt: 1,
+          summary: "Review the requested permission boundary.",
+        }}
+        vtAnalysis={{ status: "clean", checkedAt: 1 }}
+      />,
+    );
+
+    expect(screen.getAllByText("Review").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Pending")).toBeNull();
+  });
+
   it("renders clean scanner outcomes as pass in the user-facing audit UI", () => {
     render(
       <DetailSecuritySummary
         auditHref="/steipete/weather/security-audit"
+        clawScanVerdict="clean"
+        clawScanState="complete"
         vtAnalysis={{ status: "clean", checkedAt: 1 }}
         llmAnalysis={{ status: "clean", summary: "No mismatches found.", checkedAt: 1 }}
       />,
@@ -135,6 +163,8 @@ describe("DetailSecuritySummary", () => {
     render(
       <DetailSecuritySummary
         auditHref="/steipete/weather/security-audit"
+        clawScanVerdict="malicious"
+        clawScanState="complete"
         vtAnalysis={{ status: "clean", checkedAt: 1 }}
         llmAnalysis={{
           status: "malicious",
@@ -153,6 +183,8 @@ describe("DetailSecuritySummary", () => {
     render(
       <DetailSecuritySummary
         auditHref="/tokauthai/skillscan/security-audit"
+        clawScanVerdict="clean"
+        clawScanState="complete"
         vtAnalysis={{
           status: "suspicious",
           source: "legacy-ai",
@@ -173,6 +205,8 @@ describe("DetailSecuritySummary", () => {
     render(
       <DetailSecuritySummary
         auditHref="/tokauthai/skillscan/security-audit"
+        clawScanVerdict="clean"
+        clawScanState="complete"
         vtAnalysis={{
           status: "suspicious",
           source: "legacy-ai",
@@ -192,6 +226,8 @@ describe("DetailSecuritySummary", () => {
     render(
       <DetailSecuritySummary
         auditHref="/plugins/@opik/opik-openclaw/security-audit"
+        clawScanVerdict="clean"
+        clawScanState="complete"
         vtAnalysis={{
           status: "clean",
           verdict: "undetected-only-fallback",
@@ -212,6 +248,8 @@ describe("DetailSecuritySummary", () => {
     render(
       <DetailSecuritySummary
         auditHref="/steipete/weather/security-audit"
+        clawScanVerdict="clean"
+        clawScanState="complete"
         vtAnalysis={{ status: "clean", checkedAt: 1 }}
         llmAnalysis={{ status: "clean", checkedAt: 1 }}
       />,
@@ -226,6 +264,8 @@ describe("DetailSecuritySummary", () => {
     render(
       <DetailSecuritySummary
         auditHref="/steipete/weather/security-audit"
+        clawScanVerdict="clean"
+        clawScanState="complete"
         vtAnalysis={{ status: "failed", checkedAt: 1 }}
         llmAnalysis={{ status: "clean", summary: "No ClawScan issues.", checkedAt: 1 }}
       />,

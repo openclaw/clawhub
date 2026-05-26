@@ -20,8 +20,22 @@ const MAX_STORED_SKILLSPECTOR_ISSUES = 25;
 const MAX_STORED_SKILLSPECTOR_TEXT_CHARS = 2_000;
 const MAX_STORED_SKILLSPECTOR_SHORT_TEXT_CHARS = 512;
 
-const finalLlmAnalysisStatuses = new Set(["clean", "suspicious", "malicious"]);
-const artifactBackedLlmAnalysisStatuses = new Set(["clean", "benign", "suspicious", "malicious"]);
+const finalLlmAnalysisStatuses = new Set([
+  "benign",
+  "clean",
+  "review",
+  "warn",
+  "suspicious",
+  "malicious",
+]);
+const artifactBackedLlmAnalysisStatuses = new Set([
+  "clean",
+  "benign",
+  "review",
+  "warn",
+  "suspicious",
+  "malicious",
+]);
 
 type CancelSkipReason =
   | "not-queued"
@@ -686,6 +700,9 @@ async function enqueueSkillVersionScan(ctx: MutationCtx, args: EnqueueSkillVersi
     .collect();
   const active = existing.find((job) => job.status === "queued" || job.status === "running");
   if (active) {
+    await ctx.db.patch(args.versionId, {
+      clawScanState: active.status === "running" ? "running" : "pending",
+    });
     await ctx.db.patch(active._id, {
       source: args.source,
       priority: Math.max(active.priority, args.priority ?? 0),
@@ -696,6 +713,7 @@ async function enqueueSkillVersionScan(ctx: MutationCtx, args: EnqueueSkillVersi
     });
     return { ok: true as const, jobId: active._id, alreadyQueued: true as const };
   }
+  await ctx.db.patch(args.versionId, { clawScanState: "pending" });
 
   const jobId = await ctx.db.insert("securityScanJobs", {
     targetKind: "skillVersion",
@@ -739,6 +757,9 @@ async function enqueuePackageReleaseScan(ctx: MutationCtx, args: EnqueuePackageR
     .collect();
   const active = existing.find((job) => job.status === "queued" || job.status === "running");
   if (active) {
+    await ctx.db.patch(args.releaseId, {
+      clawScanState: active.status === "running" ? "running" : "pending",
+    });
     await ctx.db.patch(active._id, {
       source: args.source,
       priority: Math.max(active.priority, args.priority ?? 0),
@@ -749,6 +770,7 @@ async function enqueuePackageReleaseScan(ctx: MutationCtx, args: EnqueuePackageR
     });
     return { ok: true as const, jobId: active._id, alreadyQueued: true as const };
   }
+  await ctx.db.patch(args.releaseId, { clawScanState: "pending" });
 
   const jobId = await ctx.db.insert("securityScanJobs", {
     targetKind: "packageRelease",
@@ -838,6 +860,7 @@ export const cancelQueuedVtUpdateJobsInternal = internalMutation({
       }
       if (args.dryRun) continue;
 
+      await ctx.db.patch(targetId, { clawScanState: "complete" });
       await ctx.db.delete(job._id);
       deleted += 1;
       if (sampleDeletedJobIds.length < CANCEL_SAMPLE_LIMIT) sampleDeletedJobIds.push(job._id);
@@ -985,6 +1008,11 @@ export const claimQueuedJobsInternal = internalMutation({
         lastError: undefined,
         updatedAt: now,
       });
+      if (job.targetKind === "skillVersion" && job.skillVersionId) {
+        await ctx.db.patch(job.skillVersionId, { clawScanState: "running" });
+      } else if (job.targetKind === "packageRelease" && job.packageReleaseId) {
+        await ctx.db.patch(job.packageReleaseId, { clawScanState: "running" });
+      }
       claimed.push({
         ...job,
         status: "running" as const,
@@ -1069,6 +1097,16 @@ export const failJobInternal = internalMutation({
       workerId: undefined,
       updatedAt: now,
     });
+    const nextClawScanState = retry ? "pending" : "error";
+    if (job.targetKind === "skillVersion" && job.skillVersionId) {
+      await ctx.db.patch(job.skillVersionId, {
+        clawScanState: nextClawScanState,
+      });
+    } else if (job.targetKind === "packageRelease" && job.packageReleaseId) {
+      await ctx.db.patch(job.packageReleaseId, {
+        clawScanState: nextClawScanState,
+      });
+    }
     return { ok: true as const, retry };
   },
 });
