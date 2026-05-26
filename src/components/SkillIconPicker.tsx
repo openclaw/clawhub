@@ -37,11 +37,6 @@ export function SkillIconPicker({ value, onChange }: SkillIconPickerProps) {
           );
         })}
       </div>
-      <p className="text-xs text-[color:var(--ink-soft)]">
-        {value
-          ? `Selected: ${value}. Click again to change, or pick "None" to use the default icon.`
-          : "Optional. Pick an icon shown on the skill card and listings."}
-      </p>
     </div>
   );
 }

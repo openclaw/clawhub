@@ -7,7 +7,7 @@ import {
 } from "clawhub-schema/licenseConstants";
 import { normalizeTextContentType } from "clawhub-schema/textFiles";
 import { useAction, useMutation, useQuery } from "convex/react";
-import { Upload as UploadIcon } from "lucide-react";
+import { Check, CircleX, FolderOpen, Lock, Upload as UploadIcon, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import semver from "semver";
 import { toast } from "sonner";
@@ -15,6 +15,11 @@ import { api } from "../../../convex/_generated/api";
 import { MAX_PUBLISH_FILE_BYTES, MAX_PUBLISH_TOTAL_BYTES } from "../../../convex/lib/publishLimits";
 import { EmptyState } from "../../components/EmptyState";
 import { Container } from "../../components/layout/Container";
+import {
+  PublisherOwnerSelect,
+  type PublisherOwnerMembership,
+} from "../../components/PublisherOwnerSelect";
+import { PublishFormSkeleton } from "../../components/PublishFormSkeleton";
 import { SignInButton } from "../../components/SignInButton";
 import { SkillIconPicker } from "../../components/SkillIconPicker";
 import { Badge } from "../../components/ui/badge";
@@ -23,6 +28,8 @@ import { Card, CardContent, CardTitle } from "../../components/ui/card";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { Textarea } from "../../components/ui/textarea";
+import { UploadDropzoneDecor } from "../../components/UploadDropzoneDecor";
+import { VersionInput } from "../../components/VersionInput";
 import { getSiteMode } from "../../lib/site";
 import { ALLOWED_LUCIDE_ICONS, makeLucideIconValue, parseSkillIcon } from "../../lib/skillIcon";
 import { getPublicSlugCollision } from "../../lib/slugCollision";
@@ -39,15 +46,7 @@ import {
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
-type PublisherMembership = {
-  publisher: {
-    _id: string;
-    handle: string;
-    displayName: string;
-    kind: "user" | "org";
-  };
-  role: "owner" | "admin" | "publisher";
-};
+type SkillPublishField = "slug" | "displayName" | "version" | "tags" | "clawScanNote" | "license";
 
 export const Route = createFileRoute("/skills/publish")({
   validateSearch: (search) => ({
@@ -58,12 +57,13 @@ export const Route = createFileRoute("/skills/publish")({
 });
 
 export function Upload() {
-  const { isAuthenticated, me } = useAuthStatus();
+  const { isAuthenticated, isLoading: isAuthLoading, me } = useAuthStatus();
   const { updateSlug, ownerHandle: searchOwnerHandle } = useSearch({ from: "/skills/publish" });
   const siteMode = getSiteMode();
   const isSoulMode = siteMode === "souls";
   const requiredFileLabel = isSoulMode ? "SOUL.md" : "SKILL.md";
   const contentLabel = isSoulMode ? "soul" : "skill";
+  const showChangelogField = Boolean(updateSlug);
 
   const generateUploadUrl = useMutation(api.uploads.generateUploadUrl);
   const publishVersion = useAction(
@@ -95,9 +95,18 @@ export function Upload() {
 
   const [hasAttempted, setHasAttempted] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
-  const [ignoredMacJunkPaths, setIgnoredMacJunkPaths] = useState<string[]>([]);
+  const [ignoredLocalMetadataPaths, setIgnoredLocalMetadataPaths] = useState<string[]>([]);
   const [slug, setSlug] = useState(updateSlug ?? "");
   const [displayName, setDisplayName] = useState("");
+  const [touchedFields, setTouchedFields] = useState<Record<SkillPublishField, boolean>>({
+    slug: false,
+    displayName: false,
+    version: false,
+    tags: false,
+    clawScanNote: false,
+    license: false,
+  });
+  const [metadataPrefillNote, setMetadataPrefillNote] = useState<string | null>(null);
   // Selected lucide icon name (e.g. `Plug`) or null when "no icon". Skills only;
   // souls don't expose a custom icon yet.
   const [iconName, setIconName] = useState<string | null>(null);
@@ -128,7 +137,7 @@ export function Upload() {
   const isSubmitting = status !== null;
   const [error, setError] = useState<string | null>(null);
   const publisherMemberships = useQuery(api.publishers.listMine) as
-    | PublisherMembership[]
+    | PublisherOwnerMembership[]
     | undefined;
   const [ownerHandle, setOwnerHandle] = useState(searchOwnerHandle ?? "");
   const ownerTouchedRef = useRef(false);
@@ -148,6 +157,18 @@ export function Upload() {
     }
   };
   const navigate = useNavigate();
+
+  function markFieldTouched(field: SkillPublishField) {
+    setTouchedFields((current) => {
+      if (current[field]) return current;
+      return { ...current, [field]: true };
+    });
+  }
+
+  function resetFileInput() {
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
   const totalBytes = useMemo(() => files.reduce((sum, file) => sum + file.size, 0), [files]);
   const stripRoot = useMemo(() => {
     if (files.length === 0) return null;
@@ -169,6 +190,19 @@ export function Upload() {
       }),
     [files, stripRoot],
   );
+  const normalizedFileEntries = useMemo(
+    () =>
+      files.map((file, index) => ({
+        file,
+        index,
+        path: normalizedPaths[index] ?? file.name,
+      })),
+    [files, normalizedPaths],
+  );
+  const unsupportedFileEntries = useMemo(
+    () => normalizedFileEntries.filter((entry) => !isTextFile(entry.file)),
+    [normalizedFileEntries],
+  );
   const hasRequiredFile = useMemo(
     () =>
       normalizedPaths.some((path) => {
@@ -186,15 +220,15 @@ export function Upload() {
     () => oversizedFiles.slice(0, 3).map((file) => file.name),
     [oversizedFiles],
   );
-  const ignoredMacJunkNote = useMemo(() => {
-    if (ignoredMacJunkPaths.length === 0) return null;
+  const ignoredLocalMetadataNote = useMemo(() => {
+    if (ignoredLocalMetadataPaths.length === 0) return null;
     const labels = Array.from(
-      new Set(ignoredMacJunkPaths.map((path) => path.split("/").at(-1) ?? path)),
+      new Set(ignoredLocalMetadataPaths.map((path) => path.split("/").at(-1) ?? path)),
     ).slice(0, 3);
-    const suffix = ignoredMacJunkPaths.length > 3 ? ", ..." : "";
-    const count = ignoredMacJunkPaths.length;
-    return `Ignored ${count} macOS junk file${count === 1 ? "" : "s"} (${labels.join(", ")}${suffix})`;
-  }, [ignoredMacJunkPaths]);
+    const suffix = ignoredLocalMetadataPaths.length > 3 ? ", ..." : "";
+    const count = ignoredLocalMetadataPaths.length;
+    return `Ignored ${count} local metadata file${count === 1 ? "" : "s"} (${labels.join(", ")}${suffix})`;
+  }, [ignoredLocalMetadataPaths]);
   const trimmedSlug = slug.trim();
   const trimmedName = displayName.trim();
   const trimmedChangelog = changelog.trim();
@@ -293,6 +327,7 @@ export function Upload() {
   }, [ownerHandle, publisherMemberships, existing?.owner?.handle, updateSlug, isSoulMode]);
 
   useEffect(() => {
+    if (!showChangelogField) return;
     if (changelogTouchedRef.current) return;
     if (trimmedChangelog) return;
     if (!trimmedSlug || !SLUG_PATTERN.test(trimmedSlug)) return;
@@ -343,6 +378,7 @@ export function Upload() {
     hasRequiredFile,
     isSoulMode,
     normalizedPaths,
+    showChangelogField,
     trimmedChangelog,
     trimmedSlug,
     trimmedVersion,
@@ -404,13 +440,12 @@ export function Upload() {
         `Confirm the ownership move from @${existingOwnerHandle} to @${ownerHandle} to publish.`,
       );
     }
-    const invalidFiles = files.filter((file) => !isTextFile(file));
-    if (invalidFiles.length > 0) {
+    if (unsupportedFileEntries.length > 0) {
       issues.push(
-        `Remove non-text files: ${invalidFiles
+        `Remove unsupported files: ${unsupportedFileEntries
           .slice(0, 3)
-          .map((file) => file.name)
-          .join(", ")}`,
+          .map((entry) => entry.path)
+          .join(", ")}${unsupportedFileEntries.length > 3 ? ", ..." : ""}`,
       );
     }
     if (oversizedFiles.length > 0) {
@@ -434,6 +469,7 @@ export function Upload() {
     parsedTags.length,
     acceptedLicenseTerms,
     files,
+    unsupportedFileEntries,
     hasRequiredFile,
     isSoulMode,
     totalBytes,
@@ -446,18 +482,67 @@ export function Upload() {
     existingOwnerHandle,
     ownerHandle,
   ]);
-  const slugIssue = validation.issues.find(
-    (issue) =>
-      issue === "Slug is required." ||
-      issue.startsWith("Slug must ") ||
-      issue === effectiveSlugCollision?.message,
-  );
-  const displayNameIssue = validation.issues.find((issue) => issue === "Display name is required.");
-  const versionIssue = validation.issues.find((issue) => issue.startsWith("Version must "));
+  const shouldShowSlugIssue = hasAttempted || touchedFields.slug;
+  const shouldShowDisplayNameIssue = hasAttempted || touchedFields.displayName;
+  const shouldShowVersionIssue = hasAttempted || touchedFields.version;
+  const shouldShowTagsIssue = hasAttempted || touchedFields.tags;
+  const shouldShowClawScanIssue = hasAttempted || touchedFields.clawScanNote;
+  const shouldShowFileIssues = hasAttempted || files.length > 0;
+
+  const slugIssue = shouldShowSlugIssue
+    ? validation.issues.find(
+        (issue) =>
+          issue === "Slug is required." ||
+          issue.startsWith("Slug must ") ||
+          issue === effectiveSlugCollision?.message,
+      )
+    : undefined;
+  const slugCollisionIssue =
+    effectiveSlugCollision && slugIssue === effectiveSlugCollision.message
+      ? effectiveSlugCollision
+      : null;
+  const showSlugAvailableIcon =
+    Boolean(trimmedSlug) &&
+    SLUG_PATTERN.test(trimmedSlug) &&
+    slugAvailability?.available === true &&
+    !slugIssue;
+  const showSlugUnavailableIcon = Boolean(slugCollisionIssue);
+  const showSlugStatusIcon = showSlugAvailableIcon || showSlugUnavailableIcon;
+  const displayNameIssue = shouldShowDisplayNameIssue
+    ? validation.issues.find((issue) => issue === "Display name is required.")
+    : undefined;
+  const versionIssue = shouldShowVersionIssue
+    ? validation.issues.find((issue) => issue.startsWith("Version must "))
+    : undefined;
   const ownerIssue = validation.issues.find((issue) => issue.startsWith("Confirm the ownership "));
+  const visibleMetadataIssues = validation.issues.filter((issue) => {
+    if (issue.startsWith("Slug")) return shouldShowSlugIssue;
+    if (issue.startsWith("Display name")) return shouldShowDisplayNameIssue;
+    if (issue.startsWith("Version")) return shouldShowVersionIssue;
+    if (issue.startsWith("At least one tag")) return shouldShowTagsIssue;
+    if (issue.startsWith("ClawScan note")) return shouldShowClawScanIssue;
+    if (issue.includes("already exists")) return Boolean(trimmedSlug);
+    return false;
+  });
+  const visibleFileIssues = validation.issues.filter((issue) => {
+    if (issue.startsWith("Add at least one file")) return hasAttempted;
+    if (issue === `${requiredFileLabel} is required.`) return shouldShowFileIssues;
+    if (issue.startsWith("Remove unsupported files")) return shouldShowFileIssues;
+    if (issue.startsWith("Each file")) return shouldShowFileIssues;
+    if (issue.startsWith("Total file size")) return shouldShowFileIssues;
+    return false;
+  });
+  const publishBlockerSummary =
+    !validation.ready && !isSubmitting
+      ? summarizePublishBlockers(validation.issues, requiredFileLabel)
+      : null;
 
   // webkitdirectory/directory attributes are set via the ref callback (setFileInputRef)
   // to ensure they persist across hydration and re-renders (#58)
+
+  if (isAuthLoading) {
+    return <PublishFormSkeleton />;
+  }
 
   if (!isAuthenticated) {
     return (
@@ -477,7 +562,46 @@ export function Upload() {
   async function applyExpandedFiles(selected: File[]) {
     const report = await expandFilesWithReport(selected);
     setFiles(report.files);
-    setIgnoredMacJunkPaths(report.ignoredMacJunkPaths);
+    setIgnoredLocalMetadataPaths(report.ignoredLocalMetadataPaths);
+    setMetadataPrefillNote(null);
+    resetFileInput();
+
+    if (updateSlug) return;
+
+    const folderName = getSharedTopLevelFolderName(report.files);
+    if (!folderName) return;
+
+    const nextSlug = slugFromFolderName(folderName);
+    const nextDisplayName = displayNameFromFolderName(folderName);
+    const prefilled: string[] = [];
+    if (nextSlug && !touchedFields.slug && !trimmedSlug) {
+      setSlug(nextSlug);
+      prefilled.push("slug");
+    }
+    if (nextDisplayName && !touchedFields.displayName && !trimmedName) {
+      setDisplayName(nextDisplayName);
+      prefilled.push("display name");
+    }
+    if (prefilled.length > 0) {
+      setMetadataPrefillNote(`Suggested ${prefilled.join(" and ")} from the selected folder.`);
+    }
+  }
+
+  function clearSelectedFiles() {
+    setFiles([]);
+    setIgnoredLocalMetadataPaths([]);
+    setMetadataPrefillNote(null);
+    resetFileInput();
+  }
+
+  function removeFileAtIndex(index: number) {
+    setFiles((current) => current.filter((_, currentIndex) => currentIndex !== index));
+    resetFileInput();
+  }
+
+  function removeUnsupportedFiles() {
+    setFiles((current) => current.filter((file) => isTextFile(file)));
+    resetFileInput();
   }
 
   async function handleSubmit(event: React.FormEvent) {
@@ -619,177 +743,11 @@ export function Upload() {
         </header>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-6">
-          {/* Metadata panel */}
-          <Card>
-            <CardContent>
-              <Label htmlFor="slug">Slug</Label>
-              <div className="flex items-center gap-2">
-                <Input
-                  id="slug"
-                  value={slug}
-                  onChange={(event) => setSlug(event.target.value)}
-                  placeholder={`${contentLabel}-name`}
-                />
-                {trimmedSlug && SLUG_PATTERN.test(trimmedSlug) && slugAvailability ? (
-                  <Badge variant={slugAvailability.available ? "success" : "destructive"}>
-                    {slugAvailability.available ? "Available" : "Taken"}
-                  </Badge>
-                ) : null}
-              </div>
-              <InlineValidationMessage id="slug-validation-error" message={slugIssue} />
-
-              <Label htmlFor="displayName">Display name</Label>
-              <Input
-                id="displayName"
-                value={displayName}
-                onChange={(event) => setDisplayName(event.target.value)}
-                placeholder={`My ${contentLabel}`}
-              />
-              <InlineValidationMessage
-                id="display-name-validation-error"
-                message={displayNameIssue}
-              />
-
-              {!isSoulMode ? (
-                <>
-                  {/* The picker is a custom radiogroup; the visible "Icon"
-                      heading is decorative and does not need `htmlFor` —
-                      `SkillIconPicker` exposes its own `aria-label`. */}
-                  <Label>Icon</Label>
-                  <SkillIconPicker
-                    value={iconName}
-                    onChange={(next) => {
-                      // Mark the picker as user-touched so the submit
-                      // handler knows it can forward the resulting value
-                      // (including `null` → "") instead of falling back
-                      // to the omit-key branch.
-                      iconTouchedRef.current = true;
-                      setIconName(next);
-                    }}
-                  />
-                </>
-              ) : null}
-
-              {!isSoulMode ? (
-                <>
-                  <Label htmlFor="ownerHandle">Owner</Label>
-                  <select
-                    className="w-full min-h-[44px] rounded-[var(--radius-sm)] border px-3.5 py-[13px] text-[color:var(--ink)] transition-all duration-[180ms] ease-out border-[rgba(29,59,78,0.22)] bg-[rgba(255,255,255,0.94)] focus:outline-none focus:border-[color-mix(in_srgb,var(--accent)_70%,white)] focus:shadow-[0_0_0_3px_color-mix(in_srgb,var(--accent)_22%,transparent)] dark:border-[rgba(255,255,255,0.12)] dark:bg-[rgba(14,28,37,0.84)]"
-                    id="ownerHandle"
-                    value={ownerHandle}
-                    onChange={(event) => {
-                      ownerTouchedRef.current = true;
-                      setOwnerHandle(event.target.value);
-                      // Reset the migration confirmation any time the Owner
-                      // selector changes; the user must re-acknowledge the move
-                      // after picking a different target to avoid a stale tick
-                      // turning into a silent transfer.
-                      setConfirmMigrateOwner(false);
-                    }}
-                  >
-                    {(publisherMemberships ?? []).map((entry) => (
-                      <option key={entry.publisher._id} value={entry.publisher.handle}>
-                        @{entry.publisher.handle} · {entry.publisher.displayName}
-                      </option>
-                    ))}
-                  </select>
-                  {isOwnerMigration ? (
-                    <label className="flex items-start gap-2 text-sm cursor-pointer mt-2">
-                      <input
-                        type="checkbox"
-                        className="mt-0.5"
-                        checked={confirmMigrateOwner}
-                        onChange={(event) => setConfirmMigrateOwner(event.target.checked)}
-                      />
-                      <span>
-                        Move ownership of <strong>{trimmedSlug || "this skill"}</strong> from{" "}
-                        <strong>@{existingOwnerHandle}</strong> to <strong>@{ownerHandle}</strong>.
-                        Versions, tags, stats, comments and stars are preserved; the old URL
-                        redirects to the new one.
-                      </span>
-                    </label>
-                  ) : null}
-                  <InlineValidationMessage id="owner-validation-error" message={ownerIssue} />
-                </>
-              ) : null}
-
-              <Label htmlFor="version">Version</Label>
-              <Input
-                id="version"
-                value={version}
-                onChange={(event) => setVersion(event.target.value)}
-                placeholder="1.0.0"
-              />
-              <InlineValidationMessage id="version-validation-error" message={versionIssue} />
-
-              <Label htmlFor="tags">Tags</Label>
-              <Input
-                id="tags"
-                value={tags}
-                onChange={(event) => setTags(event.target.value)}
-                placeholder="latest, stable"
-              />
-
-              {!isSoulMode ? (
-                <>
-                  <Label htmlFor="clawScanNote">ClawScan note</Label>
-                  <Textarea
-                    id="clawScanNote"
-                    rows={4}
-                    value={clawScanNote}
-                    maxLength={MAX_CLAWSCAN_NOTE_CHARS + 1}
-                    onChange={(event) => {
-                      clawScanNoteTouchedRef.current = true;
-                      setClawScanNote(event.target.value);
-                    }}
-                    placeholder="Optional context for ClawScan, e.g. why this version needs network access."
-                  />
-                </>
-              ) : null}
-              {validation.issues.some(
-                (issue) =>
-                  issue.startsWith("Slug") ||
-                  issue.startsWith("Display name") ||
-                  issue.startsWith("Version") ||
-                  issue.startsWith("At least one tag") ||
-                  issue.startsWith("ClawScan note") ||
-                  issue.includes("already exists"),
-              ) ? (
-                <ul className="flex flex-col gap-1 list-disc pl-5 text-sm text-[color:var(--ink-soft)]">
-                  {validation.issues
-                    .filter(
-                      (issue) =>
-                        issue.startsWith("Slug") ||
-                        issue.startsWith("Display name") ||
-                        issue.startsWith("Version") ||
-                        issue.startsWith("At least one tag") ||
-                        issue.startsWith("ClawScan note") ||
-                        issue.includes("already exists"),
-                    )
-                    .map((issue) => (
-                      <li key={issue}>{issue}</li>
-                    ))}
-                </ul>
-              ) : null}
-              {effectiveSlugCollision?.url ? (
-                <div className="text-sm text-[color:var(--ink-soft)]">
-                  Existing skill:{" "}
-                  <a
-                    href={effectiveSlugCollision.url}
-                    className="text-[color:var(--accent)] hover:underline"
-                  >
-                    {effectiveSlugCollision.url}
-                  </a>
-                </div>
-              ) : null}
-            </CardContent>
-          </Card>
-
           {/* File upload panel */}
           <Card>
             <CardContent>
-              <label
-                className={`flex flex-col items-center gap-3 rounded-[var(--radius-md)] border-2 border-dashed p-8 transition-colors cursor-pointer ${
+              <div
+                className={`relative flex flex-col items-center gap-3 overflow-hidden rounded-[var(--radius-md)] border-2 border-dashed p-8 transition-colors ${
                   isDragging
                     ? "border-[color:var(--accent)] bg-[color:var(--accent)]/5"
                     : "border-[color:var(--line)] bg-[color:var(--surface-muted)]"
@@ -823,13 +781,16 @@ export function Upload() {
                     void applyExpandedFiles(picked);
                   }}
                 />
-                <div className="flex flex-col items-center gap-2 text-center">
+                <UploadDropzoneDecor kind="skill" />
+                <div className="relative z-10 flex flex-col items-center gap-2 text-center">
                   <div className="flex items-center gap-3">
                     <UploadIcon className="h-5 w-5 text-[color:var(--ink-soft)]" />
-                    <strong>Drop a folder</strong>
-                    <span className="text-xs font-medium text-[color:var(--ink-soft)]">
-                      {files.length} files · {sizeLabel}
-                    </span>
+                    <strong>Drop a skill folder</strong>
+                    {files.length > 0 ? (
+                      <span className="text-xs font-medium text-[color:var(--ink-soft)]">
+                        {files.length} files · {sizeLabel}
+                      </span>
+                    ) : null}
                   </div>
                   <span className="text-xs text-[color:var(--ink-soft)]">
                     We keep folder paths and flatten the outer wrapper automatically.
@@ -840,49 +801,250 @@ export function Upload() {
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
                   >
+                    <FolderOpen className="h-4 w-4" aria-hidden="true" />
                     Choose folder
                   </Button>
                 </div>
-              </label>
+              </div>
+
+              {files.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {unsupportedFileEntries.length > 0 ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      type="button"
+                      onClick={removeUnsupportedFiles}
+                    >
+                      Remove unsupported files
+                    </Button>
+                  ) : null}
+                  <Button variant="ghost" size="sm" type="button" onClick={clearSelectedFiles}>
+                    Clear files
+                  </Button>
+                </div>
+              ) : null}
 
               <div className="flex flex-col gap-1 max-h-[300px] overflow-y-auto">
-                {files.length === 0 ? (
-                  <div className="text-sm text-[color:var(--ink-soft)]">No files selected.</div>
-                ) : (
-                  normalizedPaths.map((path) => (
-                    <div
-                      key={path}
-                      className="flex items-center gap-2 rounded-[var(--radius-sm)] px-3 py-1.5 text-sm font-mono text-[color:var(--ink-soft)] bg-[color:var(--surface-muted)]"
-                    >
-                      <span>{path}</span>
-                    </div>
-                  ))
-                )}
+                {files.length > 0
+                  ? normalizedFileEntries.map(({ file, index, path }) => {
+                      const isUnsupported = !isTextFile(file);
+                      return (
+                        <div
+                          key={`${index}:${path}`}
+                          className={[
+                            "flex items-center gap-2 rounded-[var(--radius-sm)] px-3 py-1.5 text-sm bg-[color:var(--surface-muted)]",
+                            isUnsupported ? "text-status-error-fg" : "text-[color:var(--ink-soft)]",
+                          ].join(" ")}
+                        >
+                          <span className="min-w-0 flex-1 truncate font-mono" title={path}>
+                            {path}
+                          </span>
+                          {isUnsupported ? <Badge variant="warning">Unsupported</Badge> : null}
+                          <Button
+                            aria-label={`Remove ${path}`}
+                            title={`Remove ${path}`}
+                            variant="ghost"
+                            size="icon-xs"
+                            type="button"
+                            onClick={() => removeFileAtIndex(index)}
+                          >
+                            <X className="h-3.5 w-3.5" aria-hidden="true" />
+                          </Button>
+                        </div>
+                      );
+                    })
+                  : null}
               </div>
-              {ignoredMacJunkNote ? (
-                <div className="text-sm text-[color:var(--ink-soft)]">{ignoredMacJunkNote}</div>
+              {ignoredLocalMetadataNote ? (
+                <div className="text-sm text-[color:var(--ink-soft)]">
+                  {ignoredLocalMetadataNote}
+                </div>
               ) : null}
-              {validation.issues.some(
-                (issue) =>
-                  issue.startsWith("Add at least one file") ||
-                  issue === `${requiredFileLabel} is required.` ||
-                  issue.startsWith("Remove non-text files") ||
-                  issue.startsWith("Each file") ||
-                  issue.startsWith("Total file size"),
-              ) ? (
+              {visibleFileIssues.length > 0 ? (
                 <ul className="flex flex-col gap-1 list-disc pl-5 text-sm text-[color:var(--ink-soft)]">
-                  {validation.issues
-                    .filter(
-                      (issue) =>
-                        issue.startsWith("Add at least one file") ||
-                        issue === `${requiredFileLabel} is required.` ||
-                        issue.startsWith("Remove non-text files") ||
-                        issue.startsWith("Each file") ||
-                        issue.startsWith("Total file size"),
-                    )
-                    .map((issue) => (
-                      <li key={issue}>{issue}</li>
-                    ))}
+                  {visibleFileIssues.map((issue) => (
+                    <li key={issue}>{issue}</li>
+                  ))}
+                </ul>
+              ) : null}
+            </CardContent>
+          </Card>
+
+          {/* Metadata panel */}
+          <Card>
+            <CardContent>
+              <Label htmlFor="slug">Slug</Label>
+              <div className="relative">
+                <Input
+                  id="slug"
+                  value={slug}
+                  aria-invalid={Boolean(slugIssue)}
+                  aria-describedby={slugIssue ? "slug-validation-error" : undefined}
+                  className={showSlugStatusIcon ? "pr-10" : undefined}
+                  onChange={(event) => {
+                    markFieldTouched("slug");
+                    setMetadataPrefillNote(null);
+                    setSlug(event.target.value);
+                  }}
+                  onBlur={() => markFieldTouched("slug")}
+                  placeholder={`${contentLabel}-name`}
+                />
+                {showSlugAvailableIcon ? (
+                  <Check
+                    aria-label="Slug available"
+                    className="pointer-events-none absolute right-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-status-success-fg"
+                  />
+                ) : null}
+                {showSlugUnavailableIcon ? (
+                  <CircleX
+                    aria-label="Slug unavailable"
+                    className="pointer-events-none absolute right-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-status-error-fg"
+                  />
+                ) : null}
+              </div>
+              <InlineValidationMessage id="slug-validation-error" message={slugIssue} />
+              {slugCollisionIssue?.url ? (
+                <div className="text-sm text-[color:var(--ink-soft)]">
+                  Existing skill:{" "}
+                  <a
+                    href={slugCollisionIssue.url}
+                    className="text-[color:var(--accent)] hover:underline"
+                  >
+                    {slugCollisionIssue.url}
+                  </a>
+                </div>
+              ) : null}
+
+              <Label htmlFor="displayName">Display name</Label>
+              <Input
+                id="displayName"
+                value={displayName}
+                aria-invalid={Boolean(displayNameIssue)}
+                aria-describedby={displayNameIssue ? "display-name-validation-error" : undefined}
+                onChange={(event) => {
+                  markFieldTouched("displayName");
+                  setMetadataPrefillNote(null);
+                  setDisplayName(event.target.value);
+                }}
+                onBlur={() => markFieldTouched("displayName")}
+                placeholder={`My ${contentLabel}`}
+              />
+              <InlineValidationMessage
+                id="display-name-validation-error"
+                message={displayNameIssue}
+              />
+              {metadataPrefillNote ? (
+                <p className="text-sm text-[color:var(--ink-soft)]">{metadataPrefillNote}</p>
+              ) : null}
+
+              {!isSoulMode ? (
+                <>
+                  {/* The picker is a custom radiogroup; the visible "Icon"
+                      heading is decorative and does not need `htmlFor` —
+                      `SkillIconPicker` exposes its own `aria-label`. */}
+                  <Label>Icon</Label>
+                  <SkillIconPicker
+                    value={iconName}
+                    onChange={(next) => {
+                      // Mark the picker as user-touched so the submit
+                      // handler knows it can forward the resulting value
+                      // (including `null` → "") instead of falling back
+                      // to the omit-key branch.
+                      iconTouchedRef.current = true;
+                      setIconName(next);
+                    }}
+                  />
+                </>
+              ) : null}
+
+              {!isSoulMode ? (
+                <>
+                  <Label htmlFor="ownerHandle">Owner</Label>
+                  <PublisherOwnerSelect
+                    id="ownerHandle"
+                    value={ownerHandle}
+                    memberships={publisherMemberships}
+                    onValueChange={(nextOwnerHandle) => {
+                      ownerTouchedRef.current = true;
+                      setOwnerHandle(nextOwnerHandle);
+                      // Reset the migration confirmation any time the Owner
+                      // selector changes; the user must re-acknowledge the move
+                      // after picking a different target to avoid a stale tick
+                      // turning into a silent transfer.
+                      setConfirmMigrateOwner(false);
+                    }}
+                  />
+                  {isOwnerMigration ? (
+                    <label className="flex items-start gap-2 text-sm cursor-pointer mt-2">
+                      <input
+                        type="checkbox"
+                        className="mt-0.5"
+                        checked={confirmMigrateOwner}
+                        onChange={(event) => setConfirmMigrateOwner(event.target.checked)}
+                      />
+                      <span>
+                        Move ownership of <strong>{trimmedSlug || "this skill"}</strong> from{" "}
+                        <strong>@{existingOwnerHandle}</strong> to <strong>@{ownerHandle}</strong>.
+                        Versions, tags, stats, comments and stars are preserved; the old URL
+                        redirects to the new one.
+                      </span>
+                    </label>
+                  ) : null}
+                  <InlineValidationMessage id="owner-validation-error" message={ownerIssue} />
+                </>
+              ) : null}
+
+              <Label htmlFor="version">Version</Label>
+              <VersionInput
+                id="version"
+                value={version}
+                aria-invalid={Boolean(versionIssue)}
+                aria-describedby={versionIssue ? "version-validation-error" : undefined}
+                onValueChange={(nextVersion) => {
+                  markFieldTouched("version");
+                  setVersion(nextVersion);
+                }}
+                onBlur={() => markFieldTouched("version")}
+                placeholder="1.0.0"
+              />
+              <InlineValidationMessage id="version-validation-error" message={versionIssue} />
+
+              <Label htmlFor="tags">Tags</Label>
+              <Input
+                id="tags"
+                value={tags}
+                onChange={(event) => {
+                  markFieldTouched("tags");
+                  setTags(event.target.value);
+                }}
+                onBlur={() => markFieldTouched("tags")}
+                placeholder="latest, stable"
+              />
+
+              {!isSoulMode ? (
+                <>
+                  <Label htmlFor="clawScanNote">ClawScan note</Label>
+                  <Textarea
+                    id="clawScanNote"
+                    rows={4}
+                    value={clawScanNote}
+                    maxLength={MAX_CLAWSCAN_NOTE_CHARS + 1}
+                    onChange={(event) => {
+                      markFieldTouched("clawScanNote");
+                      clawScanNoteTouchedRef.current = true;
+                      setClawScanNote(event.target.value);
+                    }}
+                    onBlur={() => markFieldTouched("clawScanNote")}
+                    placeholder="Optional context for ClawScan, e.g. why this version needs network access."
+                  />
+                </>
+              ) : null}
+              {visibleMetadataIssues.length > 0 ? (
+                <ul className="flex flex-col gap-1 list-disc pl-5 text-sm text-[color:var(--ink-soft)]">
+                  {visibleMetadataIssues.map((issue) => (
+                    <li key={issue}>{issue}</li>
+                  ))}
                 </ul>
               ) : null}
             </CardContent>
@@ -890,87 +1052,93 @@ export function Upload() {
 
           {!isSoulMode ? (
             <Card>
-              <CardContent>
-                <CardTitle>License</CardTitle>
-                <div className="flex flex-col gap-3">
-                  <Badge variant="accent">
-                    {PLATFORM_SKILL_LICENSE} · {PLATFORM_SKILL_LICENSE_NAME}
-                  </Badge>
+              <CardContent className="gap-4">
+                <div>
+                  <CardTitle>License</CardTitle>
                   <p className="text-sm text-[color:var(--ink-soft)]">
+                    {PLATFORM_SKILL_LICENSE} · {PLATFORM_SKILL_LICENSE_NAME}
+                  </p>
+                </div>
+                <div className="flex flex-col gap-1 text-sm text-[color:var(--ink-soft)]">
+                  <p>
                     All skills published on ClawHub are licensed under {PLATFORM_SKILL_LICENSE}.{" "}
                     {PLATFORM_SKILL_LICENSE_SUMMARY}
                   </p>
-                  <p className="text-sm text-[color:var(--ink-soft)]">
+                  <p>
                     ClawHub does not support paid skills, per-skill pricing, or paywalled releases.
                   </p>
-                  <label className="flex items-start gap-2 text-sm cursor-pointer">
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label className="flex cursor-pointer items-start gap-3 rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)] p-3 text-sm">
                     <input
                       type="checkbox"
-                      className="mt-0.5"
+                      className="mt-0.5 h-4 w-4 accent-[color:var(--accent)]"
                       checked={acceptedLicenseTerms}
-                      onChange={(event) => setAcceptedLicenseTerms(event.target.checked)}
+                      onChange={(event) => {
+                        setAcceptedLicenseTerms(event.target.checked);
+                      }}
                     />
                     <span>
-                      I have the rights to this skill and agree to publish it under{" "}
-                      {PLATFORM_SKILL_LICENSE}.
+                      I have the rights to publish this skill under {PLATFORM_SKILL_LICENSE}.
                     </span>
                   </label>
-                  {!acceptedLicenseTerms ? (
-                    <div className="text-sm text-[color:var(--ink-soft)]">
-                      Accept the MIT-0 license terms to publish this skill.
-                    </div>
-                  ) : null}
                 </div>
               </CardContent>
             </Card>
           ) : null}
 
-          <Card>
-            <CardContent>
-              <CardTitle>Changelog</CardTitle>
-              <Label htmlFor="changelog">Changelog</Label>
-              <Textarea
-                id="changelog"
-                rows={6}
-                value={changelog}
-                onChange={(event) => {
-                  changelogTouchedRef.current = true;
-                  setChangelogSource("user");
-                  setChangelog(event.target.value);
-                }}
-                placeholder={`Describe what changed in this ${contentLabel}...`}
-              />
-              {changelogStatus === "loading" ? (
-                <div className="text-sm text-[color:var(--ink-soft)]">Generating changelog…</div>
-              ) : null}
-              {changelogStatus === "error" ? (
-                <div className="text-sm text-[color:var(--ink-soft)]">
-                  Could not auto-generate changelog.
+          {showChangelogField ? (
+            <Card>
+              <CardContent>
+                <div>
+                  <CardTitle>Changelog</CardTitle>
+                  <p className="text-sm text-[color:var(--ink-soft)]">
+                    Summarize what changed in this version.
+                  </p>
                 </div>
-              ) : null}
-              {changelogSource === "auto" && changelog ? (
-                <div className="text-sm text-[color:var(--ink-soft)]">
-                  Auto-generated changelog (edit as needed).
-                </div>
-              ) : null}
-            </CardContent>
-          </Card>
+                <Label htmlFor="changelog" className="sr-only">
+                  Changelog
+                </Label>
+                <Textarea
+                  id="changelog"
+                  rows={4}
+                  value={changelog}
+                  onChange={(event) => {
+                    changelogTouchedRef.current = true;
+                    setChangelogSource("user");
+                    setChangelog(event.target.value);
+                  }}
+                  placeholder={`Describe what changed in this ${contentLabel}...`}
+                />
+                {changelogStatus === "loading" ? (
+                  <div className="text-sm text-[color:var(--ink-soft)]">Generating changelog…</div>
+                ) : null}
+                {changelogStatus === "error" ? (
+                  <div className="text-sm text-[color:var(--ink-soft)]">
+                    Could not auto-generate changelog.
+                  </div>
+                ) : null}
+                {changelogSource === "auto" && changelog ? (
+                  <div className="text-sm text-[color:var(--ink-soft)]">
+                    Auto-generated changelog (edit as needed).
+                  </div>
+                ) : null}
+              </CardContent>
+            </Card>
+          ) : null}
 
           {/* Submit row */}
           <div className="flex items-center justify-between gap-4">
             <div className="flex flex-col gap-2">
-              {validation.ready ? (
-                <div className="text-sm text-[color:var(--ink-soft)]">All checks passed.</div>
-              ) : null}
               {error ? (
                 <div className="text-sm font-medium text-red-600 dark:text-red-400" role="alert">
                   {error}
                 </div>
               ) : null}
               {status ? <div className="text-sm text-[color:var(--ink-soft)]">{status}</div> : null}
-              {hasAttempted && !validation.ready ? (
-                <div className="text-sm text-[color:var(--ink-soft)]">
-                  Fix validation issues to continue.
+              {publishBlockerSummary ? (
+                <div className="text-sm font-medium text-status-error-fg">
+                  {publishBlockerSummary}
                 </div>
               ) : null}
             </div>
@@ -981,6 +1149,9 @@ export function Upload() {
               disabled={!validation.ready || isSubmitting}
               loading={isSubmitting}
             >
+              {!validation.ready && !isSubmitting ? (
+                <Lock className="h-4 w-4" aria-hidden="true" />
+              ) : null}
               Publish {contentLabel}
             </Button>
           </div>
@@ -997,4 +1168,61 @@ function InlineValidationMessage(props: { id: string; message?: string }) {
       {props.message}
     </p>
   );
+}
+
+function summarizePublishBlockers(issues: string[], requiredFileLabel: string) {
+  const missing = issues.flatMap((issue) => missingPublishLabel(issue, requiredFileLabel));
+  const uniqueMissing = [...new Set(missing)];
+  if (uniqueMissing.length > 0) {
+    return `Complete ${formatInlineList(uniqueMissing)} to publish.`;
+  }
+  return `Fix: ${issues[0] ?? "validation issues"}`;
+}
+
+function formatInlineList(items: string[]) {
+  if (items.length <= 1) return items[0] ?? "";
+  if (items.length === 2) return `${items[0]} and ${items[1]}`;
+  return `${items.slice(0, -1).join(", ")}, and ${items.at(-1)}`;
+}
+
+function missingPublishLabel(issue: string, requiredFileLabel: string) {
+  if (issue === "Slug is required.") return ["slug"];
+  if (issue === "Display name is required.") return ["display name"];
+  if (issue === "At least one tag is required.") return ["tags"];
+  if (issue === "Accept the MIT-0 license terms to publish this skill.") {
+    return ["MIT-0 acceptance"];
+  }
+  if (issue === "Add at least one file.") return ["files"];
+  if (issue === `${requiredFileLabel} is required.`) return [requiredFileLabel];
+  return [];
+}
+
+function getSharedTopLevelFolderName(files: File[]) {
+  if (files.length === 0) return null;
+  const paths = files
+    .map((file) => (file.webkitRelativePath || file.name).replace(/^\.\//, ""))
+    .filter(Boolean);
+  if (paths.length === 0 || paths.some((path) => !path.includes("/"))) return null;
+  const firstSegment = paths[0]?.split("/").filter(Boolean)[0];
+  if (!firstSegment) return null;
+  return paths.every((path) => path.startsWith(`${firstSegment}/`)) ? firstSegment : null;
+}
+
+function slugFromFolderName(name: string) {
+  return name
+    .trim()
+    .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-{2,}/g, "-");
+}
+
+function displayNameFromFolderName(name: string) {
+  return name
+    .trim()
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[-_]+/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
