@@ -101,6 +101,7 @@ describe("plugins publish route", () => {
           handle: "vintageayu",
           displayName: "VintageAyu",
           kind: "user",
+          image: "https://example.com/vintageayu.png",
         },
         role: "owner",
       },
@@ -157,6 +158,8 @@ describe("plugins publish route", () => {
     expect(screen.getByPlaceholderText("Display name").getAttribute("disabled")).not.toBeNull();
     expect(screen.getByPlaceholderText("Version").getAttribute("disabled")).not.toBeNull();
     expect(screen.getByPlaceholderText("Changelog").getAttribute("disabled")).not.toBeNull();
+    expect(screen.getByLabelText("Owner").textContent).toContain("@vintageayu · VintageAyu");
+    expect(document.querySelector('img[src="https://example.com/vintageayu.png"]')).toBeTruthy();
     expect(screen.getByRole("button", { name: "Publish" }).getAttribute("disabled")).not.toBeNull();
   });
 
@@ -175,7 +178,7 @@ describe("plugins publish route", () => {
     expect(archiveClick).not.toHaveBeenCalled();
   });
 
-  it("opens only the archive picker when clicking Browse files", () => {
+  it("opens only the archive picker when clicking Choose archive", () => {
     renderPublishRoute();
 
     const [archiveInput, directoryInput] = getFileInputs();
@@ -184,7 +187,7 @@ describe("plugins publish route", () => {
     archiveInput.click = archiveClick;
     directoryInput.click = directoryClick;
 
-    fireEvent.click(screen.getByRole("button", { name: "Browse files" }));
+    fireEvent.click(screen.getByRole("button", { name: "Choose archive" }));
 
     expect(archiveClick).toHaveBeenCalledTimes(1);
     expect(directoryClick).not.toHaveBeenCalled();
@@ -225,6 +228,7 @@ describe("plugins publish route", () => {
       expect(screen.getByDisplayValue("1.2.3")).toBeTruthy();
       expect(screen.getByDisplayValue("openclaw/demo-plugin")).toBeTruthy();
       expect(screen.getByPlaceholderText("Plugin name").getAttribute("disabled")).toBeNull();
+      expect(screen.getByText("Source commit is required.")).toBeTruthy();
     });
 
     fireEvent.change(screen.getByPlaceholderText("Changelog"), {
@@ -415,11 +419,11 @@ describe("plugins publish route", () => {
       expect(screen.getByDisplayValue("demo-bundle")).toBeTruthy();
       expect(screen.getByDisplayValue("Demo Bundle")).toBeTruthy();
       expect(screen.getByDisplayValue("0.4.0")).toBeTruthy();
-      expect(screen.getAllByRole("combobox")[0].textContent).toBe("Code plugin");
+      expect(screen.getByText("Code plugin")).toBeTruthy();
       expect(screen.queryByText("Bundle plugin")).toBeNull();
       expect(screen.getByText("Agent metadata")).toBeTruthy();
       expect(screen.queryByPlaceholderText("Bundle format")).toBeNull();
-      expect(screen.getByText(/Browse files/i)).toBeTruthy();
+      expect(screen.getByText(/Choose archive/i)).toBeTruthy();
       expect(screen.getByText(/Choose folder/i)).toBeTruthy();
     });
     expect(publishRelease).not.toHaveBeenCalled();
@@ -519,7 +523,7 @@ describe("plugins publish route", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText(/Ignored 1 files/i)).toBeTruthy();
+      expect(screen.getByText(/Ignored 1 package files/i)).toBeTruthy();
     });
 
     fireEvent.change(screen.getByPlaceholderText("Changelog"), {

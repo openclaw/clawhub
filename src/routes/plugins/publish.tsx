@@ -15,6 +15,11 @@ import { MAX_PUBLISH_FILE_BYTES, MAX_PUBLISH_TOTAL_BYTES } from "../../../convex
 import { EmptyState } from "../../components/EmptyState";
 import { Container } from "../../components/layout/Container";
 import { PackageSourceChooser } from "../../components/PackageSourceChooser";
+import {
+  PublisherOwnerSelect,
+  type PublisherOwnerMembership,
+} from "../../components/PublisherOwnerSelect";
+import { PublishFormSkeleton } from "../../components/PublishFormSkeleton";
 import { SignInButton } from "../../components/SignInButton";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -22,6 +27,7 @@ import { Card } from "../../components/ui/card";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { Textarea } from "../../components/ui/textarea";
+import { VersionInput } from "../../components/VersionInput";
 import {
   buildPackageUploadEntries,
   filterIgnoredPackageFiles,
@@ -54,17 +60,9 @@ const apiRefs = api as unknown as {
 const SHOW_CLAWPACK_ONBOARDING_BANNER = false;
 export function PublishPluginRoute() {
   const search = useSearch({ from: "/plugins/publish" });
-  const { isAuthenticated } = useAuthStatus();
+  const { isAuthenticated, isLoading: isAuthLoading } = useAuthStatus();
   const publishers = useQuery(api.publishers.listMine) as
-    | Array<{
-        publisher: {
-          _id: string;
-          handle: string;
-          displayName: string;
-          kind: "user" | "org";
-        };
-        role: "owner" | "admin" | "publisher";
-      }>
+    | Array<PublisherOwnerMembership>
     | undefined;
   const existingPackage = useQuery(
     apiRefs.packages.getByName as never,
@@ -138,6 +136,19 @@ export function PublishPluginRoute() {
   const ownerScopeError = useMemo(() => {
     return getPackageScopeOwnerMismatch(name, ownerHandle)?.message ?? null;
   }, [name, ownerHandle]);
+  const submitBlockers = useMemo(() => {
+    if (isMetadataLocked) return [];
+    const blockers: string[] = [];
+    if (!name.trim()) blockers.push("Plugin name is required.");
+    if (!version.trim()) blockers.push("Version is required.");
+    if (family === "code-plugin") {
+      if (!sourceRepo.trim()) blockers.push("Source repo is required.");
+      if (!sourceCommit.trim()) blockers.push("Source commit is required.");
+    }
+    return blockers;
+  }, [family, isMetadataLocked, name, sourceCommit, sourceRepo, version]);
+  const hasPackageBlocker =
+    Boolean(validationError) || Boolean(ownerScopeError) || codePluginFieldIssues.length > 0;
 
   const onPickFiles = async (selected: File[]) => {
     const expanded = await expandFilesWithReport(selected, {
@@ -146,7 +157,7 @@ export function PublishPluginRoute() {
     const filtered = await filterIgnoredPackageFiles(expanded.files);
     const normalized = normalizePackageUploadFiles(filtered.files);
     const nextIgnoredPaths = [
-      ...new Set([...expanded.ignoredMacJunkPaths, ...filtered.ignoredPaths]),
+      ...new Set([...expanded.ignoredLocalMetadataPaths, ...filtered.ignoredPaths]),
     ];
     setFiles(filtered.files);
     setIgnoredPaths(nextIgnoredPaths);
@@ -178,6 +189,10 @@ export function PublishPluginRoute() {
     setClawScanNote(existingPackage?.latestRelease?.clawScanNote ?? "");
   }, [existingPackage?.latestRelease?.clawScanNote]);
 
+  if (isAuthLoading) {
+    return <PublishFormSkeleton />;
+  }
+
   if (!isAuthenticated) {
     return (
       <main className="py-10">
@@ -195,7 +210,7 @@ export function PublishPluginRoute() {
 
   return (
     <main className="py-10">
-      <Container>
+      <Container size="narrow">
         <header className="mb-6">
           <h1 className="mb-2 font-display text-2xl font-bold text-[color:var(--ink)]">
             {search.name ? "Publish Plugin Release" : "Publish Plugin"}
@@ -252,22 +267,23 @@ export function PublishPluginRoute() {
                 ? "Upload plugin code to detect the package shape and unlock the release form."
                 : "Metadata detected and prefilled. Review it, then fill any missing release details."}
             </p>
-            <select
-              className="min-h-[44px] w-full rounded-[var(--radius-sm)] border border-[rgba(29,59,78,0.22)] bg-[rgba(255,255,255,0.94)] px-3.5 py-[13px] text-sm text-[color:var(--ink)] disabled:cursor-not-allowed disabled:opacity-60 dark:border-[rgba(255,255,255,0.12)] dark:bg-[rgba(14,28,37,0.84)]"
-              value={family}
-              disabled={metadataDisabled}
-              onChange={(event) => setFamily(event.target.value as never)}
+            <Label htmlFor="pluginFamily">Package type</Label>
+            <div
+              id="pluginFamily"
+              className="min-h-[44px] w-full rounded-[var(--radius-sm)] border border-[rgba(29,59,78,0.22)] bg-[rgba(255,255,255,0.94)] px-3.5 py-[13px] text-sm text-[color:var(--ink)] dark:border-[rgba(255,255,255,0.12)] dark:bg-[rgba(14,28,37,0.84)]"
             >
-              <option value="code-plugin">Code plugin</option>
-            </select>
+              {family === "code-plugin" ? "Code plugin" : "Bundle plugin"}
+            </div>
+            <Label htmlFor="pluginName">Plugin name</Label>
             <Input
+              id="pluginName"
               placeholder="Plugin name"
               value={name}
               disabled={metadataDisabled}
               onChange={(event) => setName(event.target.value)}
             />
             {ownerScopeError ? (
-              <Badge variant="accent">
+              <Badge variant="warning">
                 <span>{ownerScopeError}</span>
                 <a
                   href={DocsLinks.clawhub.packageScopeFaq}
@@ -279,31 +295,33 @@ export function PublishPluginRoute() {
                 </a>
               </Badge>
             ) : null}
+            <Label htmlFor="pluginDisplayName">Display name</Label>
             <Input
+              id="pluginDisplayName"
               placeholder="Display name"
               value={displayName}
               disabled={metadataDisabled}
               onChange={(event) => setDisplayName(event.target.value)}
             />
-            <select
-              className="min-h-[44px] w-full rounded-[var(--radius-sm)] border border-[rgba(29,59,78,0.22)] bg-[rgba(255,255,255,0.94)] px-3.5 py-[13px] text-sm text-[color:var(--ink)] disabled:cursor-not-allowed disabled:opacity-60 dark:border-[rgba(255,255,255,0.12)] dark:bg-[rgba(14,28,37,0.84)]"
+            <Label htmlFor="pluginOwner">Owner</Label>
+            <PublisherOwnerSelect
+              id="pluginOwner"
               value={ownerHandle}
+              memberships={publishers}
               disabled={metadataDisabled}
-              onChange={(event) => setOwnerHandle(event.target.value)}
-            >
-              {(publishers ?? []).map((entry) => (
-                <option key={entry.publisher._id} value={entry.publisher.handle}>
-                  @{entry.publisher.handle} &middot; {entry.publisher.displayName}
-                </option>
-              ))}
-            </select>
-            <Input
+              onValueChange={setOwnerHandle}
+            />
+            <Label htmlFor="pluginVersion">Version</Label>
+            <VersionInput
+              id="pluginVersion"
               placeholder="Version"
               value={version}
               disabled={metadataDisabled}
-              onChange={(event) => setVersion(event.target.value)}
+              onValueChange={setVersion}
             />
+            <Label htmlFor="pluginChangelog">Changelog</Label>
             <Textarea
+              id="pluginChangelog"
               placeholder="Changelog"
               rows={4}
               value={changelog}
@@ -323,25 +341,33 @@ export function PublishPluginRoute() {
                 setClawScanNote(event.target.value);
               }}
             />
+            <Label htmlFor="pluginSourceRepo">Source repo</Label>
             <Input
+              id="pluginSourceRepo"
               placeholder="Source repo (owner/repo)"
               value={sourceRepo}
               disabled={metadataDisabled}
               onChange={(event) => setSourceRepo(event.target.value)}
             />
+            <Label htmlFor="pluginSourceCommit">Source commit</Label>
             <Input
+              id="pluginSourceCommit"
               placeholder="Source commit"
               value={sourceCommit}
               disabled={metadataDisabled}
               onChange={(event) => setSourceCommit(event.target.value)}
             />
+            <Label htmlFor="pluginSourceRef">Source ref</Label>
             <Input
+              id="pluginSourceRef"
               placeholder="Source ref (tag or branch)"
               value={sourceRef}
               disabled={metadataDisabled}
               onChange={(event) => setSourceRef(event.target.value)}
             />
+            <Label htmlFor="pluginSourcePath">Source path</Label>
             <Input
+              id="pluginSourcePath"
               placeholder="Source path"
               value={sourcePath}
               disabled={metadataDisabled}
@@ -349,13 +375,17 @@ export function PublishPluginRoute() {
             />
             {family === "bundle-plugin" ? (
               <>
+                <Label htmlFor="pluginBundleFormat">Bundle format</Label>
                 <Input
+                  id="pluginBundleFormat"
                   placeholder="Bundle format"
                   value={bundleFormat}
                   disabled={metadataDisabled}
                   onChange={(event) => setBundleFormat(event.target.value)}
                 />
+                <Label htmlFor="pluginHostTargets">Host targets</Label>
                 <Input
+                  id="pluginHostTargets"
                   placeholder="Host targets (comma separated)"
                   value={hostTargets}
                   disabled={metadataDisabled}
@@ -372,14 +402,9 @@ export function PublishPluginRoute() {
             disabled={
               !isAuthenticated ||
               isMetadataLocked ||
-              !name.trim() ||
-              !version.trim() ||
-              files.length === 0 ||
-              Boolean(validationError) ||
-              Boolean(ownerScopeError) ||
-              isSubmitting ||
-              (family === "code-plugin" &&
-                (!sourceRepo.trim() || !sourceCommit.trim() || codePluginFieldIssues.length > 0))
+              hasPackageBlocker ||
+              submitBlockers.length > 0 ||
+              isSubmitting
             }
             onClick={() => {
               startTransition(() => {
@@ -458,7 +483,14 @@ export function PublishPluginRoute() {
           >
             {status ?? "Publish"}
           </Button>
-          {error ? <Badge variant="accent">{error}</Badge> : null}
+          {submitBlockers.length > 0 ? (
+            <ul className="flex flex-col gap-1 list-disc pl-5 text-sm text-[color:var(--ink-soft)]">
+              {submitBlockers.map((blocker) => (
+                <li key={blocker}>{blocker}</li>
+              ))}
+            </ul>
+          ) : null}
+          {error ? <Badge variant="destructive">{error}</Badge> : null}
         </div>
       </Container>
     </main>

@@ -7,6 +7,7 @@ import { formatBytes } from "../routes/upload/-utils";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
+import { UploadDropzoneDecor } from "./UploadDropzoneDecor";
 
 export function PackageSourceChooser(props: {
   files: File[];
@@ -44,6 +45,7 @@ export function PackageSourceChooser(props: {
         accept=".zip,.tgz,.tar.gz,application/zip,application/gzip,application/x-gzip,application/x-tar"
         onChange={(event) => {
           const selected = Array.from(event.target.files ?? []);
+          event.target.value = "";
           void props.onPickFiles(selected);
         }}
       />
@@ -54,11 +56,12 @@ export function PackageSourceChooser(props: {
         multiple
         onChange={(event) => {
           const selected = Array.from(event.target.files ?? []);
+          event.target.value = "";
           void props.onPickFiles(selected);
         }}
       />
       <div
-        className={`flex flex-col items-center gap-4 rounded-[var(--radius-md)] border-2 border-dashed p-8 text-center transition-colors ${
+        className={`relative flex flex-col items-center gap-4 overflow-hidden rounded-[var(--radius-md)] border-2 border-dashed p-8 text-center transition-colors ${
           isDragging
             ? "border-[color:var(--accent)] bg-[rgba(255,107,74,0.06)]"
             : "border-[color:var(--line)] bg-[color:var(--surface-muted)]"
@@ -79,18 +82,21 @@ export function PackageSourceChooser(props: {
           })();
         }}
       >
+        <UploadDropzoneDecor kind="plugin" />
         <div
-          className="flex h-14 w-14 items-center justify-center rounded-full bg-[color:var(--surface)]"
+          className="relative z-10 flex h-14 w-14 items-center justify-center rounded-full bg-[color:var(--surface)]"
           aria-hidden="true"
         >
           <Package size={28} className="text-[color:var(--ink-soft)]" />
         </div>
-        <div className="flex flex-col items-center gap-2">
+        <div className="relative z-10 flex flex-col items-center gap-2">
           <div className="flex flex-wrap items-center justify-center gap-2">
             <strong className="text-[color:var(--ink)]">Upload plugin code first</strong>
-            <span className="text-xs text-[color:var(--ink-soft)]">
-              {props.files.length} files &middot; {formatBytes(props.totalBytes)}
-            </span>
+            {props.files.length > 0 ? (
+              <span className="text-xs text-[color:var(--ink-soft)]">
+                {props.files.length} files &middot; {formatBytes(props.totalBytes)}
+              </span>
+            ) : null}
           </div>
           <span className="max-w-md text-sm text-[color:var(--ink-soft)]">
             Drag a folder, zip, or tgz here. We inspect the package to unlock and prefill the rest
@@ -98,7 +104,7 @@ export function PackageSourceChooser(props: {
           </span>
           <div className="flex gap-2 pt-2">
             <Button variant="outline" size="sm" onClick={() => archiveInputRef.current?.click()}>
-              Browse files
+              Choose archive
             </Button>
             <Button variant="ghost" size="sm" onClick={() => directoryInputRef.current?.click()}>
               Choose folder
@@ -107,19 +113,15 @@ export function PackageSourceChooser(props: {
         </div>
       </div>
 
-      <div
-        className={`rounded-[var(--radius-sm)] border px-4 py-3 transition-colors ${
-          isMetadataLocked
-            ? "border-[color:var(--line)] bg-[color:var(--surface-muted)]"
-            : "border-emerald-300/40 bg-emerald-50 dark:border-emerald-500/30 dark:bg-emerald-950/30"
-        }`}
-      >
-        {props.normalizedPaths.length === 0 ? (
-          <div className="text-sm text-[color:var(--ink-soft)]">
-            No plugin package selected yet.
-          </div>
-        ) : (
-          <>
+      {props.normalizedPaths.length > 0 ? (
+        <div
+          className={`rounded-[var(--radius-sm)] border px-4 py-3 transition-colors ${
+            isMetadataLocked
+              ? "border-[color:var(--line)] bg-[color:var(--surface-muted)]"
+              : "border-emerald-300/40 bg-emerald-50 dark:border-emerald-500/30 dark:bg-emerald-950/30"
+          }`}
+        >
+          <div>
             <div className="flex items-center justify-between">
               <strong className="text-sm text-[color:var(--ink)]">Package detected</strong>
               <span className="text-xs text-[color:var(--ink-soft)]">
@@ -146,15 +148,21 @@ export function PackageSourceChooser(props: {
                 <Badge>README</Badge>
               ) : null}
               {props.ignoredPaths.length > 0 ? (
-                <Badge>Ignored {props.ignoredPaths.length} files</Badge>
+                <Badge>Ignored {props.ignoredPaths.length} package files</Badge>
               ) : null}
             </div>
-          </>
-        )}
-      </div>
-      {props.validationError ? <Badge variant="accent">{props.validationError}</Badge> : null}
+            {props.ignoredPaths.length > 0 ? (
+              <p className="mt-2 text-xs text-[color:var(--ink-soft)]">
+                Ignored: {props.ignoredPaths.slice(0, 4).join(", ")}
+                {props.ignoredPaths.length > 4 ? ", ..." : ""}
+              </p>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+      {props.validationError ? <Badge variant="warning">{props.validationError}</Badge> : null}
       {props.family === "code-plugin" && props.codePluginFieldIssues.length > 0 ? (
-        <Badge variant="accent">
+        <Badge variant="warning">
           Missing required OpenClaw package metadata: {props.codePluginFieldIssues.join(", ")}. Add
           these fields to <code>package.json</code> before publishing. See{" "}
           <a
