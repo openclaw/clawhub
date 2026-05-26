@@ -120,4 +120,16 @@ bun run mod -- plugins trusted-publisher set <name> --repository <owner/repo> --
 bun run mod -- plugins trusted-publisher delete <name>
 ```
 
+Security scan visibility:
+
+```bash
+bun run mod -- security-scans overview [--artifact-kind all|skill|plugin] [--window-hours 24] [--json]
+bun run mod -- security-scans list [--artifact-kind all|skill|plugin] [--verdict <verdict>] [--scan-job-status <status>] [--failure-status failed] [--category <key>] [--json]
+bun run mod -- security-scans failed [--artifact-kind all|skill|plugin] [--json]
+bun run mod -- security-scans queued [--artifact-kind all|skill|plugin] [--json]
+bun run mod -- security-scans running [--artifact-kind all|skill|plugin] [--json]
+bun run mod -- security-scans inspect --skill <slug> [--json]
+bun run mod -- security-scans inspect --plugin <package> [--json]
+```
+
 All skill and plugin commands accept `--json` where the underlying endpoint supports machine-readable output.

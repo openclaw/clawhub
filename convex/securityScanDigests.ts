@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
-import { internalMutation, query } from "./functions";
+import { internalMutation, internalQuery, query } from "./functions";
 import { assertModerator, requireUser } from "./lib/access";
 import { normalizePackageName } from "./lib/packageRegistry";
 import {
@@ -127,6 +127,15 @@ type SecurityScanArtifactKind = "skill" | "plugin";
 
 async function requireStaff(ctx: QueryCtx) {
   const { user } = await requireUser(ctx);
+  assertModerator(user);
+  return user;
+}
+
+async function requireStaffByUserId(ctx: QueryCtx, actorUserId: Id<"users">) {
+  const user = await ctx.db.get(actorUserId);
+  if (!user || user.deletedAt || user.deactivatedAt) {
+    throw new Error("User not found");
+  }
   assertModerator(user);
   return user;
 }
@@ -348,6 +357,277 @@ async function getCurrentAllRollups(ctx: DigestReadCtx, kind: SecurityScanArtifa
     .take(SECURITY_SCAN_ROLLUP_TAKE_LIMIT);
 }
 
+async function readStaffSecurityScanOverview(
+  ctx: QueryCtx,
+  args: {
+    artifactKind?: SecurityScanArtifactKind;
+    windowHours?: number;
+    failedLimit?: number;
+  },
+) {
+  const now = Date.now();
+  const windowHours = clampInt(
+    args.windowHours,
+    SECURITY_SCAN_OVERVIEW_DEFAULT_WINDOW_HOURS,
+    1,
+    SECURITY_SCAN_OVERVIEW_MAX_WINDOW_HOURS,
+  );
+  const failedLimit = clampInt(
+    args.failedLimit,
+    SECURITY_SCAN_OVERVIEW_FAILED_LIMIT,
+    0,
+    SECURITY_SCAN_OVERVIEW_MAX_FAILED_LIMIT,
+  );
+  const windowStartMs = toSecurityScanHourBucket(now - windowHours * 60 * 60 * 1000);
+  const kinds = artifactKindsForArg(args.artifactKind);
+
+  const currentByKind: Record<
+    SecurityScanArtifactKind,
+    {
+      totals: ReturnType<typeof emptyCounts>;
+      rollups: ReturnType<typeof toRollupResponse>[];
+      truncated: boolean;
+    }
+  > = {
+    skill: { totals: emptyCounts(), rollups: [], truncated: false },
+    plugin: { totals: emptyCounts(), rollups: [], truncated: false },
+  };
+  const hourlyRows: ReturnType<typeof toHourlySummary>[] = [];
+  const hourlyTotals: Record<SecurityScanArtifactKind, ReturnType<typeof emptyCounts>> = {
+    skill: emptyCounts(),
+    plugin: emptyCounts(),
+  };
+  const failedRows: ReturnType<typeof toArtifactStateSummary>[] = [];
+
+  for (const kind of kinds) {
+    const allRollups = await getCurrentAllRollups(ctx, kind);
+    for (const row of allRollups) addRollupToCounts(currentByKind[kind].totals, row);
+
+    const rollupRows = await ctx.db
+      .query("securityScanCurrentRollups")
+      .withIndex("by_artifact_kind_and_rollup_kind_and_category_key", (q) =>
+        q.eq("artifactKind", kind),
+      )
+      .take(SECURITY_SCAN_ROLLUP_TAKE_LIMIT);
+    currentByKind[kind].truncated = rollupRows.length >= SECURITY_SCAN_ROLLUP_TAKE_LIMIT;
+    currentByKind[kind].rollups = rollupRows.map((row) =>
+      toRollupResponse(row, currentByKind[kind].totals.total),
+    );
+
+    const hourly = await ctx.db
+      .query("securityScanHourlyRollups")
+      .withIndex("by_artifact_kind_and_bucket_start_ms", (q) =>
+        q.eq("artifactKind", kind).gte("bucketStartMs", windowStartMs),
+      )
+      .order("desc")
+      .take(SECURITY_SCAN_HOURLY_TAKE_LIMIT);
+    for (const row of hourly) {
+      const summary = toHourlySummary(row);
+      hourlyRows.push(summary);
+      addRollupToCounts(hourlyTotals[kind], row);
+    }
+
+    if (failedLimit > 0) {
+      const failed = await ctx.db
+        .query("securityScanArtifactStates")
+        .withIndex("by_artifact_kind_and_failure_status_and_updated_at", (q) =>
+          q.eq("artifactKind", kind).eq("failureStatus", "failed"),
+        )
+        .order("desc")
+        .take(failedLimit);
+      failedRows.push(...failed.map(toArtifactStateSummary));
+    }
+  }
+
+  return {
+    generatedAt: now,
+    window: {
+      hours: windowHours,
+      startMs: windowStartMs,
+      endMs: now,
+      totalsByKind: Object.fromEntries(kinds.map((kind) => [kind, hourlyTotals[kind]])),
+      rows: hourlyRows.sort((a, b) => b.bucketStartMs - a.bucketStartMs),
+      truncated: hourlyRows.length >= SECURITY_SCAN_HOURLY_TAKE_LIMIT * kinds.length,
+    },
+    current: Object.fromEntries(kinds.map((kind) => [kind, currentByKind[kind]])),
+    failed: {
+      items: failedRows.sort((a, b) => b.updatedAt - a.updatedAt).slice(0, failedLimit),
+      limit: failedLimit,
+    },
+  };
+}
+
+async function listStaffSecurityScanArtifactsPage(
+  ctx: QueryCtx,
+  args: {
+    artifactKind: SecurityScanArtifactKind;
+    cursor?: string | null;
+    limit?: number;
+    clawScanVerdict?: (typeof CLAW_SCAN_DIGEST_VERDICTS)[number];
+    scanJobStatus?: (typeof SECURITY_SCAN_PIPELINE_STATUSES)[number];
+    failureStatus?: (typeof SECURITY_SCAN_FAILURE_STATUSES)[number];
+    clawScanPrimaryCategoryKey?: string;
+  },
+) {
+  const limit = clampInt(
+    args.limit,
+    SECURITY_SCAN_LIST_DEFAULT_LIMIT,
+    1,
+    SECURITY_SCAN_LIST_MAX_LIMIT,
+  );
+  const cursor = args.cursor ?? null;
+  const filterCount = [
+    args.failureStatus,
+    args.scanJobStatus,
+    args.clawScanVerdict,
+    args.clawScanPrimaryCategoryKey,
+  ].filter((value) => value !== undefined).length;
+  if (filterCount > 1) {
+    throw new Error("Provide at most one security scan artifact filter");
+  }
+
+  const page = args.failureStatus
+    ? await ctx.db
+        .query("securityScanArtifactStates")
+        .withIndex("by_artifact_kind_and_failure_status_and_updated_at", (q) =>
+          q.eq("artifactKind", args.artifactKind).eq("failureStatus", args.failureStatus!),
+        )
+        .order("desc")
+        .paginate({ cursor, numItems: limit })
+    : args.scanJobStatus
+      ? await ctx.db
+          .query("securityScanArtifactStates")
+          .withIndex("by_artifact_kind_and_scan_job_status_and_updated_at", (q) =>
+            q.eq("artifactKind", args.artifactKind).eq("scanJobStatus", args.scanJobStatus!),
+          )
+          .order("desc")
+          .paginate({ cursor, numItems: limit })
+      : args.clawScanVerdict
+        ? await ctx.db
+            .query("securityScanArtifactStates")
+            .withIndex("by_artifact_kind_and_claw_scan_verdict_and_updated_at", (q) =>
+              q.eq("artifactKind", args.artifactKind).eq("clawScanVerdict", args.clawScanVerdict!),
+            )
+            .order("desc")
+            .paginate({ cursor, numItems: limit })
+        : args.clawScanPrimaryCategoryKey
+          ? await ctx.db
+              .query("securityScanArtifactStates")
+              .withIndex("by_kind_claw_category_updated_at", (q) =>
+                q
+                  .eq("artifactKind", args.artifactKind)
+                  .eq("clawScanPrimaryCategoryKey", args.clawScanPrimaryCategoryKey!),
+              )
+              .order("desc")
+              .paginate({ cursor, numItems: limit })
+          : await ctx.db
+              .query("securityScanArtifactStates")
+              .withIndex("by_artifact_kind_and_updated_at", (q) =>
+                q.eq("artifactKind", args.artifactKind),
+              )
+              .order("desc")
+              .paginate({ cursor, numItems: limit });
+
+  return {
+    items: page.page.map(toArtifactStateSummary),
+    nextCursor: page.isDone ? null : page.continueCursor,
+    done: page.isDone,
+    limit,
+  };
+}
+
+async function readStaffSecurityScanArtifact(
+  ctx: QueryCtx,
+  args: { skillSlug?: string; packageName?: string },
+) {
+  const skillSlug = args.skillSlug?.trim();
+  const packageName = args.packageName?.trim();
+  if (Boolean(skillSlug) === Boolean(packageName)) {
+    throw new Error("Provide exactly one of skillSlug or packageName");
+  }
+
+  if (skillSlug) {
+    const skill = await ctx.db
+      .query("skills")
+      .withIndex("by_slug", (q) => q.eq("slug", skillSlug))
+      .unique();
+    if (!skill || skill.softDeletedAt) {
+      return {
+        found: false as const,
+        artifactKind: "skill" as const,
+        reason: "missing" as const,
+      };
+    }
+    const state = await getArtifactStateByKey(ctx, "skill", `skill:${skill._id}`);
+    const version = skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null;
+    const scanJob = state?.lastScanJobId ? await ctx.db.get(state.lastScanJobId) : null;
+    return {
+      found: true as const,
+      artifactKind: "skill" as const,
+      state: state ? toArtifactStateSummary(state) : null,
+      artifact: {
+        skill: {
+          _id: skill._id,
+          slug: skill.slug,
+          displayName: skill.displayName,
+          ownerUserId: skill.ownerUserId,
+          ownerPublisherId: skill.ownerPublisherId,
+          latestVersionId: skill.latestVersionId,
+        },
+        version: version
+          ? {
+              _id: version._id,
+              version: version.version,
+              createdAt: version.createdAt,
+            }
+          : null,
+      },
+      scanJob: toScanJobSummary(scanJob),
+      evidence: toEvidenceSummary(version),
+    };
+  }
+
+  const normalizedName = normalizePackageName(packageName ?? "");
+  if (!normalizedName) {
+    return { found: false as const, artifactKind: "plugin" as const, reason: "missing" as const };
+  }
+  const pkg = await ctx.db
+    .query("packages")
+    .withIndex("by_name", (q) => q.eq("normalizedName", normalizedName))
+    .unique();
+  if (!pkg || pkg.softDeletedAt || pkg.family === "skill") {
+    return { found: false as const, artifactKind: "plugin" as const, reason: "missing" as const };
+  }
+  const state = await getArtifactStateByKey(ctx, "plugin", `plugin:${pkg._id}`);
+  const release = pkg.latestReleaseId ? await ctx.db.get(pkg.latestReleaseId) : null;
+  const scanJob = state?.lastScanJobId ? await ctx.db.get(state.lastScanJobId) : null;
+  return {
+    found: true as const,
+    artifactKind: "plugin" as const,
+    state: state ? toArtifactStateSummary(state) : null,
+    artifact: {
+      package: {
+        _id: pkg._id,
+        name: pkg.name,
+        displayName: pkg.displayName,
+        ownerUserId: pkg.ownerUserId,
+        ownerPublisherId: pkg.ownerPublisherId,
+        family: pkg.family,
+        latestReleaseId: pkg.latestReleaseId,
+      },
+      release: release
+        ? {
+            _id: release._id,
+            version: release.version,
+            createdAt: release.createdAt,
+          }
+        : null,
+    },
+    scanJob: toScanJobSummary(scanJob),
+    evidence: toEvidenceSummary(release),
+  };
+}
+
 export const getStaffSecurityScanOverview = query({
   args: {
     artifactKind: v.optional(securityScanArtifactKindValidator),
@@ -356,97 +636,20 @@ export const getStaffSecurityScanOverview = query({
   },
   handler: async (ctx, args) => {
     await requireStaff(ctx);
+    return await readStaffSecurityScanOverview(ctx, args);
+  },
+});
 
-    const now = Date.now();
-    const windowHours = clampInt(
-      args.windowHours,
-      SECURITY_SCAN_OVERVIEW_DEFAULT_WINDOW_HOURS,
-      1,
-      SECURITY_SCAN_OVERVIEW_MAX_WINDOW_HOURS,
-    );
-    const failedLimit = clampInt(
-      args.failedLimit,
-      SECURITY_SCAN_OVERVIEW_FAILED_LIMIT,
-      0,
-      SECURITY_SCAN_OVERVIEW_MAX_FAILED_LIMIT,
-    );
-    const windowStartMs = toSecurityScanHourBucket(now - windowHours * 60 * 60 * 1000);
-    const kinds = artifactKindsForArg(args.artifactKind);
-
-    const currentByKind: Record<
-      SecurityScanArtifactKind,
-      {
-        totals: ReturnType<typeof emptyCounts>;
-        rollups: ReturnType<typeof toRollupResponse>[];
-        truncated: boolean;
-      }
-    > = {
-      skill: { totals: emptyCounts(), rollups: [], truncated: false },
-      plugin: { totals: emptyCounts(), rollups: [], truncated: false },
-    };
-    const hourlyRows: ReturnType<typeof toHourlySummary>[] = [];
-    const hourlyTotals: Record<SecurityScanArtifactKind, ReturnType<typeof emptyCounts>> = {
-      skill: emptyCounts(),
-      plugin: emptyCounts(),
-    };
-    const failedRows: ReturnType<typeof toArtifactStateSummary>[] = [];
-
-    for (const kind of kinds) {
-      const allRollups = await getCurrentAllRollups(ctx, kind);
-      for (const row of allRollups) addRollupToCounts(currentByKind[kind].totals, row);
-
-      const rollupRows = await ctx.db
-        .query("securityScanCurrentRollups")
-        .withIndex("by_artifact_kind_and_rollup_kind_and_category_key", (q) =>
-          q.eq("artifactKind", kind),
-        )
-        .take(SECURITY_SCAN_ROLLUP_TAKE_LIMIT);
-      currentByKind[kind].truncated = rollupRows.length >= SECURITY_SCAN_ROLLUP_TAKE_LIMIT;
-      currentByKind[kind].rollups = rollupRows.map((row) =>
-        toRollupResponse(row, currentByKind[kind].totals.total),
-      );
-
-      const hourly = await ctx.db
-        .query("securityScanHourlyRollups")
-        .withIndex("by_artifact_kind_and_bucket_start_ms", (q) =>
-          q.eq("artifactKind", kind).gte("bucketStartMs", windowStartMs),
-        )
-        .order("desc")
-        .take(SECURITY_SCAN_HOURLY_TAKE_LIMIT);
-      for (const row of hourly) {
-        const summary = toHourlySummary(row);
-        hourlyRows.push(summary);
-        addRollupToCounts(hourlyTotals[kind], row);
-      }
-
-      if (failedLimit > 0) {
-        const failed = await ctx.db
-          .query("securityScanArtifactStates")
-          .withIndex("by_artifact_kind_and_failure_status_and_updated_at", (q) =>
-            q.eq("artifactKind", kind).eq("failureStatus", "failed"),
-          )
-          .order("desc")
-          .take(failedLimit);
-        failedRows.push(...failed.map(toArtifactStateSummary));
-      }
-    }
-
-    return {
-      generatedAt: now,
-      window: {
-        hours: windowHours,
-        startMs: windowStartMs,
-        endMs: now,
-        totalsByKind: Object.fromEntries(kinds.map((kind) => [kind, hourlyTotals[kind]])),
-        rows: hourlyRows.sort((a, b) => b.bucketStartMs - a.bucketStartMs),
-        truncated: hourlyRows.length >= SECURITY_SCAN_HOURLY_TAKE_LIMIT * kinds.length,
-      },
-      current: Object.fromEntries(kinds.map((kind) => [kind, currentByKind[kind]])),
-      failed: {
-        items: failedRows.sort((a, b) => b.updatedAt - a.updatedAt).slice(0, failedLimit),
-        limit: failedLimit,
-      },
-    };
+export const getStaffSecurityScanOverviewInternal = internalQuery({
+  args: {
+    actorUserId: v.id("users"),
+    artifactKind: v.optional(securityScanArtifactKindValidator),
+    windowHours: v.optional(v.number()),
+    failedLimit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    await requireStaffByUserId(ctx, args.actorUserId);
+    return await readStaffSecurityScanOverview(ctx, args);
   },
 });
 
@@ -462,73 +665,24 @@ export const listStaffSecurityScanArtifacts = query({
   },
   handler: async (ctx, args) => {
     await requireStaff(ctx);
-    const limit = clampInt(
-      args.limit,
-      SECURITY_SCAN_LIST_DEFAULT_LIMIT,
-      1,
-      SECURITY_SCAN_LIST_MAX_LIMIT,
-    );
-    const cursor = args.cursor ?? null;
-    const filterCount = [
-      args.failureStatus,
-      args.scanJobStatus,
-      args.clawScanVerdict,
-      args.clawScanPrimaryCategoryKey,
-    ].filter((value) => value !== undefined).length;
-    if (filterCount > 1) {
-      throw new Error("Provide at most one security scan artifact filter");
-    }
+    return await listStaffSecurityScanArtifactsPage(ctx, args);
+  },
+});
 
-    const page = args.failureStatus
-      ? await ctx.db
-          .query("securityScanArtifactStates")
-          .withIndex("by_artifact_kind_and_failure_status_and_updated_at", (q) =>
-            q.eq("artifactKind", args.artifactKind).eq("failureStatus", args.failureStatus!),
-          )
-          .order("desc")
-          .paginate({ cursor, numItems: limit })
-      : args.scanJobStatus
-        ? await ctx.db
-            .query("securityScanArtifactStates")
-            .withIndex("by_artifact_kind_and_scan_job_status_and_updated_at", (q) =>
-              q.eq("artifactKind", args.artifactKind).eq("scanJobStatus", args.scanJobStatus!),
-            )
-            .order("desc")
-            .paginate({ cursor, numItems: limit })
-        : args.clawScanVerdict
-          ? await ctx.db
-              .query("securityScanArtifactStates")
-              .withIndex("by_artifact_kind_and_claw_scan_verdict_and_updated_at", (q) =>
-                q
-                  .eq("artifactKind", args.artifactKind)
-                  .eq("clawScanVerdict", args.clawScanVerdict!),
-              )
-              .order("desc")
-              .paginate({ cursor, numItems: limit })
-          : args.clawScanPrimaryCategoryKey
-            ? await ctx.db
-                .query("securityScanArtifactStates")
-                .withIndex("by_kind_claw_category_updated_at", (q) =>
-                  q
-                    .eq("artifactKind", args.artifactKind)
-                    .eq("clawScanPrimaryCategoryKey", args.clawScanPrimaryCategoryKey!),
-                )
-                .order("desc")
-                .paginate({ cursor, numItems: limit })
-            : await ctx.db
-                .query("securityScanArtifactStates")
-                .withIndex("by_artifact_kind_and_updated_at", (q) =>
-                  q.eq("artifactKind", args.artifactKind),
-                )
-                .order("desc")
-                .paginate({ cursor, numItems: limit });
-
-    return {
-      items: page.page.map(toArtifactStateSummary),
-      nextCursor: page.isDone ? null : page.continueCursor,
-      done: page.isDone,
-      limit,
-    };
+export const listStaffSecurityScanArtifactsInternal = internalQuery({
+  args: {
+    actorUserId: v.id("users"),
+    artifactKind: securityScanArtifactKindValidator,
+    cursor: v.optional(v.union(v.string(), v.null())),
+    limit: v.optional(v.number()),
+    clawScanVerdict: v.optional(clawScanDigestVerdictValidator),
+    scanJobStatus: v.optional(securityScanPipelineStatusValidator),
+    failureStatus: v.optional(securityScanFailureStatusValidator),
+    clawScanPrimaryCategoryKey: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await requireStaffByUserId(ctx, args.actorUserId);
+    return await listStaffSecurityScanArtifactsPage(ctx, args);
   },
 });
 
@@ -539,92 +693,19 @@ export const getStaffSecurityScanArtifact = query({
   },
   handler: async (ctx, args) => {
     await requireStaff(ctx);
-    const skillSlug = args.skillSlug?.trim();
-    const packageName = args.packageName?.trim();
-    if (Boolean(skillSlug) === Boolean(packageName)) {
-      throw new Error("Provide exactly one of skillSlug or packageName");
-    }
+    return await readStaffSecurityScanArtifact(ctx, args);
+  },
+});
 
-    if (skillSlug) {
-      const skill = await ctx.db
-        .query("skills")
-        .withIndex("by_slug", (q) => q.eq("slug", skillSlug))
-        .unique();
-      if (!skill || skill.softDeletedAt) {
-        return {
-          found: false as const,
-          artifactKind: "skill" as const,
-          reason: "missing" as const,
-        };
-      }
-      const state = await getArtifactStateByKey(ctx, "skill", `skill:${skill._id}`);
-      const version = skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null;
-      const scanJob = state?.lastScanJobId ? await ctx.db.get(state.lastScanJobId) : null;
-      return {
-        found: true as const,
-        artifactKind: "skill" as const,
-        state: state ? toArtifactStateSummary(state) : null,
-        artifact: {
-          skill: {
-            _id: skill._id,
-            slug: skill.slug,
-            displayName: skill.displayName,
-            ownerUserId: skill.ownerUserId,
-            ownerPublisherId: skill.ownerPublisherId,
-            latestVersionId: skill.latestVersionId,
-          },
-          version: version
-            ? {
-                _id: version._id,
-                version: version.version,
-                createdAt: version.createdAt,
-              }
-            : null,
-        },
-        scanJob: toScanJobSummary(scanJob),
-        evidence: toEvidenceSummary(version),
-      };
-    }
-
-    const normalizedName = normalizePackageName(packageName ?? "");
-    if (!normalizedName) {
-      return { found: false as const, artifactKind: "plugin" as const, reason: "missing" as const };
-    }
-    const pkg = await ctx.db
-      .query("packages")
-      .withIndex("by_name", (q) => q.eq("normalizedName", normalizedName))
-      .unique();
-    if (!pkg || pkg.softDeletedAt || pkg.family === "skill") {
-      return { found: false as const, artifactKind: "plugin" as const, reason: "missing" as const };
-    }
-    const state = await getArtifactStateByKey(ctx, "plugin", `plugin:${pkg._id}`);
-    const release = pkg.latestReleaseId ? await ctx.db.get(pkg.latestReleaseId) : null;
-    const scanJob = state?.lastScanJobId ? await ctx.db.get(state.lastScanJobId) : null;
-    return {
-      found: true as const,
-      artifactKind: "plugin" as const,
-      state: state ? toArtifactStateSummary(state) : null,
-      artifact: {
-        package: {
-          _id: pkg._id,
-          name: pkg.name,
-          displayName: pkg.displayName,
-          ownerUserId: pkg.ownerUserId,
-          ownerPublisherId: pkg.ownerPublisherId,
-          family: pkg.family,
-          latestReleaseId: pkg.latestReleaseId,
-        },
-        release: release
-          ? {
-              _id: release._id,
-              version: release.version,
-              createdAt: release.createdAt,
-            }
-          : null,
-      },
-      scanJob: toScanJobSummary(scanJob),
-      evidence: toEvidenceSummary(release),
-    };
+export const getStaffSecurityScanArtifactInternal = internalQuery({
+  args: {
+    actorUserId: v.id("users"),
+    skillSlug: v.optional(v.string()),
+    packageName: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await requireStaffByUserId(ctx, args.actorUserId);
+    return await readStaffSecurityScanArtifact(ctx, args);
   },
 });
 

@@ -33,6 +33,7 @@ import type * as httpApiV1 from "../httpApiV1.js";
 import type * as httpApiV1_docsSessionV1 from "../httpApiV1/docsSessionV1.js";
 import type * as httpApiV1_packagesV1 from "../httpApiV1/packagesV1.js";
 import type * as httpApiV1_publishersV1 from "../httpApiV1/publishersV1.js";
+import type * as httpApiV1_securityScansV1 from "../httpApiV1/securityScansV1.js";
 import type * as httpApiV1_shared from "../httpApiV1/shared.js";
 import type * as httpApiV1_skillsV1 from "../httpApiV1/skillsV1.js";
 import type * as httpApiV1_soulsV1 from "../httpApiV1/soulsV1.js";
@@ -172,6 +173,7 @@ declare const fullApi: ApiFromModules<{
   "httpApiV1/docsSessionV1": typeof httpApiV1_docsSessionV1;
   "httpApiV1/packagesV1": typeof httpApiV1_packagesV1;
   "httpApiV1/publishersV1": typeof httpApiV1_publishersV1;
+  "httpApiV1/securityScansV1": typeof httpApiV1_securityScansV1;
   "httpApiV1/shared": typeof httpApiV1_shared;
   "httpApiV1/skillsV1": typeof httpApiV1_skillsV1;
   "httpApiV1/soulsV1": typeof httpApiV1_soulsV1;

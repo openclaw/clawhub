@@ -262,6 +262,120 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
+  it("security-scans forbids non-moderator api tokens", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:viewer",
+      user: { _id: "users:viewer", role: "user" },
+    } as never);
+    const runQuery = vi.fn();
+    const ctx = makeCtx({ runQuery });
+
+    const response = await __handlers.securityScansGetRouterV1Handler(
+      ctx,
+      new Request("https://example.com/api/v1/security-scans/overview"),
+    );
+
+    expect(response.status).toBe(403);
+    expect(runQuery).not.toHaveBeenCalled();
+  });
+
+  it("security-scans overview passes moderator token actor through to the digest query", async () => {
+    const overview = {
+      generatedAt: 1,
+      window: { hours: 24, totalsByKind: {}, rows: [], truncated: false },
+      current: {},
+      failed: { items: [], limit: 2 },
+    };
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:mod",
+      user: { _id: "users:mod", role: "moderator" },
+    } as never);
+    const runQuery = vi.fn().mockResolvedValue(overview);
+    const ctx = makeCtx({
+      runQuery,
+    });
+
+    const response = await __handlers.securityScansGetRouterV1Handler(
+      ctx,
+      new Request(
+        "https://example.com/api/v1/security-scans/overview?artifactKind=skill&windowHours=48&failedLimit=2",
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(overview);
+    expect(runQuery).toHaveBeenCalledWith(expect.anything(), {
+      actorUserId: "users:mod",
+      artifactKind: "skill",
+      windowHours: 48,
+      failedLimit: 2,
+    });
+  });
+
+  it("security-scans artifacts parses filters and pagination", async () => {
+    const page = { items: [], nextCursor: "next", done: false, limit: 5 };
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runQuery = vi.fn().mockResolvedValue(page);
+    const ctx = makeCtx({
+      runQuery,
+    });
+
+    const response = await __handlers.securityScansGetRouterV1Handler(
+      ctx,
+      new Request(
+        "https://example.com/api/v1/security-scans/artifacts?artifactKind=plugin&scanJobStatus=queued&limit=5&cursor=c1",
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(page);
+    expect(runQuery).toHaveBeenCalledWith(expect.anything(), {
+      actorUserId: "users:admin",
+      artifactKind: "plugin",
+      cursor: "c1",
+      limit: 5,
+      clawScanVerdict: undefined,
+      scanJobStatus: "queued",
+      failureStatus: undefined,
+      clawScanPrimaryCategoryKey: undefined,
+    });
+  });
+
+  it("security-scans artifact inspect accepts a skill slug", async () => {
+    const detail = {
+      found: true,
+      artifactKind: "skill",
+      state: null,
+      artifact: {},
+      scanJob: null,
+      evidence: {},
+    };
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:mod",
+      user: { _id: "users:mod", role: "moderator" },
+    } as never);
+    const runQuery = vi.fn().mockResolvedValue(detail);
+    const ctx = makeCtx({
+      runQuery,
+    });
+
+    const response = await __handlers.securityScansGetRouterV1Handler(
+      ctx,
+      new Request("https://example.com/api/v1/security-scans/artifact?skillSlug=demo"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(detail);
+    expect(runQuery).toHaveBeenCalledWith(expect.anything(), {
+      actorUserId: "users:mod",
+      skillSlug: "demo",
+      packageName: undefined,
+    });
+  });
+
   it("skills export allows authenticated non-admin users at the key rate limit", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:actor",

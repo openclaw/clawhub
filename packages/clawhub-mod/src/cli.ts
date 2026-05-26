@@ -44,6 +44,14 @@ import {
   cmdTransferPackageOwner,
   cmdUpsertPackageMigration,
 } from "./commands/packages.js";
+import {
+  cmdInspectSecurityScanArtifact,
+  cmdListFailedSecurityScans,
+  cmdListQueuedSecurityScans,
+  cmdListRunningSecurityScans,
+  cmdListSecurityScanArtifacts,
+  cmdSecurityScanOverview,
+} from "./commands/securityScans.js";
 
 const program = new Command()
   .name("clawhub-mod")
@@ -335,6 +343,13 @@ const skills = program
   .showHelpAfterError()
   .showSuggestionAfterError();
 
+const securityScans = program
+  .command("security-scans")
+  .alias("security-scan")
+  .description("Security scan digest inspection")
+  .showHelpAfterError()
+  .showSuggestionAfterError();
+
 registerPluginOperations(plugins);
 registerPluginModerationCommands(plugins);
 registerPluginGovernanceCommands(plugins);
@@ -343,6 +358,7 @@ registerPluginModerationCommands(packages);
 registerPluginGovernanceCommands(packages);
 registerOrgCommands(org);
 registerSkillModerationCommands(skills);
+registerSecurityScanCommands(securityScans);
 
 function registerOrgCommands(command: Command) {
   command
@@ -357,6 +373,83 @@ function registerOrgCommands(command: Command) {
     .action(async (handle, options) => {
       const opts = await resolveGlobalOpts();
       await cmdCreateOrg(opts, handle, options);
+    });
+}
+
+function registerSecurityScanCommands(command: Command) {
+  command
+    .command("overview")
+    .description("Show ClawScan-first security scan rollups")
+    .option("--artifact-kind <kind>", "all|skill|plugin", "all")
+    .option("--window-hours <n>", "Recent window size in hours")
+    .option("--failed-limit <n>", "Failed sample size")
+    .option("--json", "Output JSON")
+    .action(async (options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdSecurityScanOverview(opts, options);
+    });
+
+  command
+    .command("list")
+    .description("List security scan digest rows")
+    .option("--artifact-kind <kind>", "all|skill|plugin", "all")
+    .option("--verdict <verdict>", "pass|suspicious|malicious|pending|failed|unknown")
+    .option("--scan-job-status <status>", "none|queued|running|succeeded|failed")
+    .option("--failure-status <status>", "none|failed")
+    .option("--category <key>", "ClawScan category key")
+    .option("--cursor <cursor>", "Resume cursor")
+    .option("--limit <n>", "Number of rows to show")
+    .option("--json", "Output JSON")
+    .action(async (options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdListSecurityScanArtifacts(opts, options);
+    });
+
+  command
+    .command("failed")
+    .description("List failed security scan rows")
+    .option("--artifact-kind <kind>", "all|skill|plugin", "all")
+    .option("--cursor <cursor>", "Resume cursor")
+    .option("--limit <n>", "Number of rows to show")
+    .option("--json", "Output JSON")
+    .action(async (options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdListFailedSecurityScans(opts, options);
+    });
+
+  command
+    .command("queued")
+    .description("List queued security scan rows")
+    .option("--artifact-kind <kind>", "all|skill|plugin", "all")
+    .option("--cursor <cursor>", "Resume cursor")
+    .option("--limit <n>", "Number of rows to show")
+    .option("--json", "Output JSON")
+    .action(async (options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdListQueuedSecurityScans(opts, options);
+    });
+
+  command
+    .command("running")
+    .description("List running security scan rows")
+    .option("--artifact-kind <kind>", "all|skill|plugin", "all")
+    .option("--cursor <cursor>", "Resume cursor")
+    .option("--limit <n>", "Number of rows to show")
+    .option("--json", "Output JSON")
+    .action(async (options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdListRunningSecurityScans(opts, options);
+    });
+
+  command
+    .command("inspect")
+    .description("Inspect scanner outcomes for one skill or plugin")
+    .option("--skill <slug>", "Skill slug")
+    .option("--plugin <package>", "Plugin package name")
+    .option("--json", "Output JSON")
+    .action(async (options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdInspectSecurityScanArtifact(opts, options);
     });
 }
 

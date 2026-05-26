@@ -14,6 +14,7 @@ import {
   publishPackageV1Handler,
 } from "./httpApiV1/packagesV1";
 import { createPublisherV1Handler } from "./httpApiV1/publishersV1";
+import { securityScansGetRouterV1Handler } from "./httpApiV1/securityScansV1";
 import {
   exportSkillsV1Handler,
   listSkillsV1Handler,
@@ -49,6 +50,7 @@ export const listCodePluginsV1Http = httpAction(listCodePluginsV1Handler);
 export const listBundlePluginsV1Http = httpAction(listBundlePluginsV1Handler);
 export const verifyDocsSessionV1Http = httpAction(verifyDocsSessionV1Handler);
 export const createPublisherV1Http = httpAction(createPublisherV1Handler);
+export const securityScansGetRouterV1Http = httpAction(securityScansGetRouterV1Handler);
 
 export const searchSkillsV1Http = httpAction(searchSkillsV1Handler);
 export const resolveSkillVersionV1Http = httpAction(resolveSkillVersionV1Handler);
@@ -87,6 +89,7 @@ export const __handlers = {
   listBundlePluginsV1Handler,
   verifyDocsSessionV1Handler,
   createPublisherV1Handler,
+  securityScansGetRouterV1Handler,
   searchSkillsV1Handler,
   resolveSkillVersionV1Handler,
   listSkillsV1Handler,

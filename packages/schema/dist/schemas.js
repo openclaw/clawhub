@@ -470,6 +470,30 @@ export const ApiV1RemediateAutobansResponseSchema = type({
     "nextCursor?": "string|null",
     "done?": "boolean",
 });
+export const ApiV1SecurityScanOverviewResponseSchema = type({
+    generatedAt: "number",
+    window: "unknown",
+    current: "unknown",
+    failed: {
+        items: "unknown[]",
+        limit: "number",
+    },
+});
+export const ApiV1SecurityScanArtifactListResponseSchema = type({
+    items: "unknown[]",
+    nextCursor: "string|null",
+    done: "boolean",
+    limit: "number",
+});
+export const ApiV1SecurityScanArtifactResponseSchema = type({
+    found: "boolean",
+    artifactKind: '"skill"|"plugin"',
+    "state?": "unknown|null",
+    "artifact?": "unknown",
+    "scanJob?": "unknown|null",
+    "evidence?": "unknown",
+    "reason?": "string",
+});
 export const ApiV1StarResponseSchema = type({
     ok: "true",
     starred: "boolean",

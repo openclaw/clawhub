@@ -1,0 +1,4 @@
+interface:
+  display_name: "Security Scan Overview"
+  short_description: "Summarize ClawHub scan health."
+  default_prompt: "Use $security-scan-overview to summarize ClawHub security scan health with ClawScan as the verdict source of truth."

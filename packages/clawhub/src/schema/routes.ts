@@ -23,6 +23,7 @@ export const ApiRoutes = {
   stars: "/api/v1/stars",
   transfers: "/api/v1/transfers",
   publishers: "/api/v1/publishers",
+  securityScans: "/api/v1/security-scans",
   souls: "/api/v1/souls",
   users: "/api/v1/users",
   whoami: "/api/v1/whoami",

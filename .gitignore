@@ -51,6 +51,8 @@ skills-lock.json
 !.agents/skills/clawhub-moderation/**
 !.agents/skills/autoreview/
 !.agents/skills/autoreview/**
+!.agents/skills/security-scan-overview/
+!.agents/skills/security-scan-overview/**
 skills/*
 .codex/*
 !.codex/environments/

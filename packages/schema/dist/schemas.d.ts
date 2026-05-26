@@ -516,6 +516,33 @@ export declare const ApiV1RemediateAutobansResponseSchema: import("arktype/inter
     nextCursor?: string | null | undefined;
     done?: boolean | undefined;
 }, {}>;
+export declare const ApiV1SecurityScanOverviewResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    generatedAt: number;
+    window: unknown;
+    current: unknown;
+    failed: {
+        items: unknown[];
+        limit: number;
+    };
+}, {}>;
+export type ApiV1SecurityScanOverviewResponse = (typeof ApiV1SecurityScanOverviewResponseSchema)[inferred];
+export declare const ApiV1SecurityScanArtifactListResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    items: unknown[];
+    nextCursor: string | null;
+    done: boolean;
+    limit: number;
+}, {}>;
+export type ApiV1SecurityScanArtifactListResponse = (typeof ApiV1SecurityScanArtifactListResponseSchema)[inferred];
+export declare const ApiV1SecurityScanArtifactResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    found: boolean;
+    artifactKind: "skill" | "plugin";
+    state?: unknown;
+    artifact?: unknown;
+    scanJob?: unknown;
+    evidence?: unknown;
+    reason?: string | undefined;
+}, {}>;
+export type ApiV1SecurityScanArtifactResponse = (typeof ApiV1SecurityScanArtifactResponseSchema)[inferred];
 export declare const ApiV1StarResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     ok: true;
     starred: boolean;

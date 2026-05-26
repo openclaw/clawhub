@@ -35,6 +35,7 @@ import {
   publishSoulV1Http,
   resolveSkillVersionV1Http,
   searchSkillsV1Http,
+  securityScansGetRouterV1Http,
   skillsDeleteRouterV1Http,
   skillsGetRouterV1Http,
   skillsPostRouterV1Http,
@@ -197,6 +198,12 @@ http.route({
   path: ApiRoutes.publishers,
   method: "POST",
   handler: createPublisherV1Http,
+});
+
+http.route({
+  pathPrefix: `${ApiRoutes.securityScans}/`,
+  method: "GET",
+  handler: securityScansGetRouterV1Http,
 });
 
 http.route({
