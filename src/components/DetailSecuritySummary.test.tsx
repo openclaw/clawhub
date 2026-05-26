@@ -218,10 +218,11 @@ describe("DetailSecuritySummary", () => {
     );
 
     expect(screen.getByText("Pass")).toBeTruthy();
+    expect(screen.queryByText("Review")).toBeNull();
     expect(screen.queryByText("Warn")).toBeNull();
   });
 
-  it("does not aggregate scanner operational errors as malicious verdicts", () => {
+  it("does not let supporting scanner operational errors drive the compact verdict", () => {
     render(
       <DetailSecuritySummary
         auditHref="/steipete/weather/security-audit"

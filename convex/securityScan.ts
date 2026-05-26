@@ -6,6 +6,7 @@ import { action, internalMutation, internalQuery, mutation } from "./functions";
 import { assertModerator, requireUser } from "./lib/access";
 import { normalizePackageName } from "./lib/packageRegistry";
 import { assertCanManageOwnedResource } from "./lib/publishers";
+import { sourceSkillVersionFiles } from "./lib/skillCards";
 
 const MAX_PARALLEL_CODEX_SCANS = 64;
 const DEFAULT_VT_WAIT_MS = 10 * 60 * 1000;
@@ -208,8 +209,12 @@ const internalRefs = internal as unknown as {
   skills: {
     getSkillByIdInternal: unknown;
     getVersionByIdInternal: unknown;
+    listVersionFingerprintsInternal: unknown;
     updateVersionLlmAnalysisInternal: unknown;
     updateVersionSkillSpectorAnalysisInternal: unknown;
+  };
+  skillCards: {
+    enqueueForVersionInternal: unknown;
   };
 };
 
@@ -232,6 +237,14 @@ async function runMutationRef<T>(
 function assertWorkerToken(token: string) {
   const expected = process.env.SECURITY_SCAN_WORKER_TOKEN;
   if (!expected || token !== expected) throw new ConvexError("Unauthorized");
+}
+
+function defaultVtWaitMs() {
+  const raw = process.env.SECURITY_SCAN_DEFAULT_VT_WAIT_MS?.trim();
+  if (!raw) return DEFAULT_VT_WAIT_MS;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return DEFAULT_VT_WAIT_MS;
+  return Math.max(0, Math.min(parsed, DEFAULT_VT_WAIT_MS));
 }
 
 function publicWorkerErrorDetail(error: string) {
@@ -663,7 +676,7 @@ async function enqueueSkillVersionScan(ctx: MutationCtx, args: EnqueueSkillVersi
   const version = await ctx.db.get(args.versionId);
   if (!version || version.softDeletedAt) return { ok: true as const, skipped: "missing" as const };
   const now = Date.now();
-  const waitForVtUntil = now + Math.max(0, args.waitForVtMs ?? DEFAULT_VT_WAIT_MS);
+  const waitForVtUntil = now + Math.max(0, args.waitForVtMs ?? defaultVtWaitMs());
   const nextRunAt = args.waitForVtMs === 0 || version.vtAnalysis ? now : waitForVtUntil;
   const hasMaliciousSignal = false;
 
@@ -844,6 +857,45 @@ export const cancelQueuedVtUpdateJobsInternal = internalMutation({
       oldestScannedNextRunAt: oldestScannedJob?.nextRunAt ?? null,
       newestScannedNextRunAt: newestScannedJob?.nextRunAt ?? null,
       sampleMatchedJobIds,
+      sampleDeletedJobIds,
+    };
+  },
+});
+
+export const clearQueuedBackfillJobsForLocalDev = internalMutation({
+  args: {
+    dryRun: v.optional(v.boolean()),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const localDevEnabled =
+      process.env.DEV_AUTH_ENABLED === "1" ||
+      process.env.SECURITY_SCAN_WORKER_TOKEN === "local-dev-worker-token";
+    if (!localDevEnabled) {
+      throw new ConvexError("Refusing to clear backfill scan jobs outside local dev");
+    }
+
+    const limit = Math.max(1, Math.min(args.limit ?? 1000, MAX_CANCEL_SCAN_LIMIT));
+    const jobs = await ctx.db
+      .query("securityScanJobs")
+      .withIndex("by_status_source_created_at", (q) =>
+        q.eq("status", "queued").eq("source", "backfill"),
+      )
+      .order("asc")
+      .take(limit);
+
+    const sampleDeletedJobIds: string[] = [];
+    if (!args.dryRun) {
+      for (const job of jobs) {
+        await ctx.db.delete(job._id);
+        if (sampleDeletedJobIds.length < CANCEL_SAMPLE_LIMIT) sampleDeletedJobIds.push(job._id);
+      }
+    }
+
+    return {
+      dryRun: args.dryRun === true,
+      matched: jobs.length,
+      deleted: args.dryRun ? 0 : jobs.length,
       sampleDeletedJobIds,
     };
   },
@@ -1056,15 +1108,29 @@ export const claimCodexScanJobs = action({
         continue;
       }
 
-      const files = ((target.version as Doc<"skillVersions"> | undefined)?.files ??
-        (target.release as Doc<"packageReleases"> | undefined)?.files ??
-        []) as Array<{
+      const version = target.version as Doc<"skillVersions"> | undefined;
+      const release = target.release as Doc<"packageReleases"> | undefined;
+      let files: Array<{
         path: string;
         size: number;
         sha256: string;
         storageId: Id<"_storage">;
         contentType?: string;
-      }>;
+      }> = [];
+      if (version) {
+        const fingerprintEntries = await runQueryRef<
+          Array<{ fingerprint: string; kind?: "source" | "generated-bundle" }>
+        >(ctx, internalRefs.skills.listVersionFingerprintsInternal, {
+          skillVersionId: version._id,
+        });
+        files = sourceSkillVersionFiles(version.files, {
+          generatedBundleFingerprints: fingerprintEntries
+            .filter((entry) => entry.kind === "generated-bundle")
+            .map((entry) => entry.fingerprint),
+        });
+      } else if (release) {
+        files = release.files;
+      }
       const fileUrls = [];
       let missingStoragePath: string | null = null;
       for (const file of files) {
@@ -1090,7 +1156,6 @@ export const claimCodexScanJobs = action({
         continue;
       }
 
-      const release = target.release as Doc<"packageReleases"> | undefined;
       const clawpackUrl = release?.clawpackStorageId
         ? await ctx.storage.getUrl(release.clawpackStorageId)
         : null;

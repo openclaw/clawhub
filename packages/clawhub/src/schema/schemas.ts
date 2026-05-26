@@ -443,6 +443,21 @@ export const ApiV1SkillResolveResponseSchema = type({
   latestVersion: type({ version: "string" }).or("null"),
 });
 
+export const ApiV1SkillVerifyResponseSchema = type({
+  schema: '"clawhub.skill.verify.v1"',
+  ok: "boolean",
+  decision: '"pass"|"fail"',
+  reasons: "string[]",
+  skill: "unknown",
+  publisher: "unknown",
+  version: "unknown",
+  card: "unknown",
+  artifact: "unknown",
+  provenance: "unknown",
+  security: "unknown",
+  signature: "unknown",
+});
+
 export const ApiV1PublishResponseSchema = type({
   ok: "true",
   skillId: "string",

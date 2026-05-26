@@ -1,3 +1,4 @@
+import { getFunctionName } from "convex/server";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@convex-dev/auth/server", () => ({
@@ -1461,7 +1462,25 @@ describe("skills anti-spam guards", () => {
         }),
       }),
     );
-    expect(runAfter).not.toHaveBeenCalled();
+    expect(runAfter).toHaveBeenCalledTimes(1);
+    const [delay, scheduledFunction, scheduledArgs] = runAfter.mock.calls[0] ?? [];
+    expect(delay).toBe(0);
+    const scheduledName = scheduledFunction
+      ? getFunctionName(scheduledFunction as Parameters<typeof getFunctionName>[0])
+      : "";
+    expect(scheduledName).toBe("skillCards:enqueueForVersionInternal");
+    expect(scheduledArgs).toEqual({
+      versionId: "skillVersions:1",
+      source: "scan",
+    });
+    expect(
+      runAfter.mock.calls.some(
+        ([, functionRef]) =>
+          functionRef &&
+          getFunctionName(functionRef as Parameters<typeof getFunctionName>[0]) ===
+            "users:autobanMalwareAuthorInternal",
+      ),
+    ).toBe(false);
   });
 
   it("schedules owner autoban when the latest version ClawScan verdict becomes malicious", async () => {

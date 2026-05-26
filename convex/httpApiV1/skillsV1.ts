@@ -19,6 +19,7 @@ import type {
   LlmEvalDimension,
   LlmRiskSummary,
 } from "../lib/securityPrompt";
+import { selectGeneratedSkillCardFile, sourceSkillVersionFiles } from "../lib/skillCards";
 import {
   buildMergedExportZip,
   type MergedExportManifestEntry,
@@ -428,6 +429,125 @@ function buildSkillSecuritySnapshot(
   };
 }
 
+type VerificationResolvedFrom = "latest" | "version" | "tag";
+
+type SkillVersionFingerprintSummary = {
+  fingerprint: string;
+  kind?: "source" | "generated-bundle";
+  createdAt: number;
+};
+
+function normalizeVerificationStatus(value: string | null | undefined): NormalizedSecurityStatus {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) return "pending";
+  if (normalized === "clean" || normalized === "benign") return "clean";
+  if (normalized === "suspicious" || normalized === "review") return "suspicious";
+  if (normalized === "malicious") return "malicious";
+  if (normalized === "error" || normalized === "failed") return "error";
+  if (normalized === "completed") return "pending";
+  return normalizeSecurityStatus(normalized);
+}
+
+function buildVerifySecurity(version: Doc<"skillVersions">) {
+  const staticStatus = normalizeVerificationStatus(version.staticScan?.status);
+  const blockingStaticStatus = staticStatus === "malicious" ? staticStatus : null;
+  const clawRawStatus = version.llmAnalysis?.status ?? null;
+  const clawStatus = normalizeVerificationStatus(version.llmAnalysis?.verdict ?? clawRawStatus);
+  const depStatus = version.depRegistryAnalysis
+    ? normalizeVerificationStatus(version.depRegistryAnalysis.status)
+    : null;
+  const status = mergeSecurityStatuses([
+    clawStatus,
+    ...(blockingStaticStatus ? [blockingStaticStatus] : []),
+    ...(depStatus ? [depStatus] : []),
+  ]);
+
+  return {
+    status,
+    passed: status === "clean",
+    staticScan: version.staticScan
+      ? {
+          status: staticStatus,
+          rawStatus: version.staticScan.status,
+          reasonCodes: version.staticScan.reasonCodes ?? [],
+          summary: version.staticScan.summary ?? null,
+          engineVersion: version.staticScan.engineVersion ?? null,
+          checkedAt: version.staticScan.checkedAt ?? null,
+        }
+      : {
+          status: "pending" as const,
+          rawStatus: null,
+          reasonCodes: [],
+          summary: null,
+          engineVersion: null,
+          checkedAt: null,
+        },
+    clawScan: version.llmAnalysis
+      ? {
+          status: clawStatus,
+          rawStatus: clawRawStatus,
+          verdict: version.llmAnalysis.verdict ?? null,
+          summary: version.llmAnalysis.summary ?? null,
+          model: version.llmAnalysis.model ?? null,
+          checkedAt: version.llmAnalysis.checkedAt ?? null,
+        }
+      : {
+          status: "pending" as const,
+          rawStatus: null,
+          verdict: null,
+          summary: null,
+          model: null,
+          checkedAt: null,
+        },
+    depRegistry: version.depRegistryAnalysis
+      ? {
+          status: depStatus ?? "pending",
+          rawStatus: version.depRegistryAnalysis.status,
+          summary: version.depRegistryAnalysis.summary ?? null,
+          notFoundPackages: version.depRegistryAnalysis.notFoundPackages ?? [],
+          unresolvedPackages: version.depRegistryAnalysis.unresolvedPackages ?? [],
+          checkedAt: version.depRegistryAnalysis.checkedAt ?? null,
+        }
+      : null,
+  };
+}
+
+function sourceFilesForVerify(
+  files: Doc<"skillVersions">["files"],
+  generatedBundleFingerprints: readonly string[],
+) {
+  return sourceSkillVersionFiles(files, { generatedBundleFingerprints }).map((file) => ({
+    path: file.path,
+    size: file.size,
+    sha256: file.sha256,
+    contentType: normalizeTextContentType(file.path, file.contentType) ?? null,
+  }));
+}
+
+function buildCardUrl(request: Request, slug: string, version: string) {
+  const cardUrl = new URL(
+    `/api/v1/skills/${encodeURIComponent(slug)}/card`,
+    new URL(request.url).origin,
+  );
+  cardUrl.searchParams.set("version", version);
+  return cardUrl.toString();
+}
+
+function buildVerifyReasons(args: {
+  cardAvailable: boolean;
+  isMalwareBlocked: boolean;
+  securityPassed: boolean;
+  securityStatus: NormalizedSecurityStatus;
+}) {
+  const reasons: string[] = [];
+  if (!args.cardAvailable) reasons.push("card.missing");
+  if (args.isMalwareBlocked) reasons.push("moderation.malware_blocked");
+  if (!args.securityPassed) reasons.push("security.status_not_clean");
+  if (args.securityStatus === "pending") reasons.push("security.pending");
+  if (args.securityStatus === "error") reasons.push("security.error");
+  return [...new Set(reasons)];
+}
+
 export async function searchSkillsV1Handler(ctx: ActionCtx, request: Request) {
   const rate = await applyRateLimit(ctx, request, "read");
   if (!rate.ok) return rate.response;
@@ -671,6 +791,26 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
   const slug = segments[0]?.trim().toLowerCase() ?? "";
   const second = segments[1];
   const third = segments[2];
+
+  if (segments.length === 1 && slug === "resolve") {
+    const url = new URL(request.url);
+    if (url.searchParams.has("slug") || url.searchParams.has("hash")) {
+      const resolveSlug = url.searchParams.get("slug")?.trim().toLowerCase();
+      const hash = url.searchParams.get("hash")?.trim().toLowerCase();
+      if (!resolveSlug || !hash) return text("Missing slug or hash", 400, rate.headers);
+      if (!/^[a-f0-9]{64}$/.test(hash)) return text("Invalid hash", 400, rate.headers);
+      const resolved = await ctx.runQuery(api.skills.resolveVersionByHash, {
+        slug: resolveSlug,
+        hash,
+      });
+      if (!resolved) return text("Skill not found", 404, rate.headers);
+      return json(
+        { slug: resolveSlug, match: resolved.match, latestVersion: resolved.latestVersion },
+        200,
+        rate.headers,
+      );
+    }
+  }
 
   if (segments[0] === "-" && segments[1] === "reports" && segments.length === 2) {
     const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
@@ -976,6 +1116,183 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
       200,
       rate.headers,
     );
+  }
+
+  if (second === "verify" && segments.length === 2) {
+    const url = new URL(request.url);
+    const versionParam = url.searchParams.get("version")?.trim();
+    const tagParam = url.searchParams.get("tag")?.trim();
+    if (versionParam && tagParam) return text("Use either version or tag", 400, rate.headers);
+
+    const skillResult = (await ctx.runQuery(api.skills.getBySlug, { slug })) as GetBySlugResult;
+    if (!skillResult?.skill) {
+      const hidden = await describeOwnerVisibleSkillState(ctx, request, slug);
+      if (hidden) return text(hidden.message, hidden.status, rate.headers);
+      return text("Skill not found", 404, rate.headers);
+    }
+
+    let resolvedFrom: VerificationResolvedFrom = "latest";
+    let version: Doc<"skillVersions"> | null = skillResult.skill.latestVersionId
+      ? await ctx.runQuery(internal.skills.getVersionByIdInternal, {
+          versionId: skillResult.skill.latestVersionId,
+        })
+      : null;
+    if (versionParam) {
+      resolvedFrom = "version";
+      version = await ctx.runQuery(internal.skills.getVersionBySkillAndVersionInternal, {
+        skillId: skillResult.skill._id,
+        version: versionParam,
+      });
+    } else if (tagParam) {
+      resolvedFrom = "tag";
+      const versionId = skillResult.skill.tags[tagParam];
+      version = versionId
+        ? await ctx.runQuery(internal.skills.getVersionByIdInternal, { versionId })
+        : null;
+    }
+
+    if (!version) return text("Version not found", 404, rate.headers);
+    if (version.softDeletedAt) return text("Version not available", 410, rate.headers);
+
+    const fingerprintEntries = ((await ctx.runQuery(
+      internal.skills.listVersionFingerprintsInternal,
+      { skillVersionId: version._id },
+    )) ?? []) as SkillVersionFingerprintSummary[];
+    const bundleFingerprints = fingerprintEntries
+      .filter((entry) => entry.kind === "generated-bundle")
+      .map((entry) => entry.fingerprint);
+    const generatedCardFile = await selectGeneratedSkillCardFile(version.files, bundleFingerprints);
+    const security = buildVerifySecurity(version);
+    const reasons = buildVerifyReasons({
+      cardAvailable: Boolean(generatedCardFile),
+      isMalwareBlocked: skillResult.moderationInfo?.isMalwareBlocked ?? false,
+      securityPassed: security.passed,
+      securityStatus: security.status,
+    });
+    const ownerHandle = skillResult.owner?.handle ?? null;
+    const ownerDisplayName = skillResult.owner?.displayName ?? null;
+
+    return json(
+      {
+        schema: "clawhub.skill.verify.v1",
+        ok: reasons.length === 0,
+        decision: reasons.length === 0 ? "pass" : "fail",
+        reasons,
+        skill: {
+          slug: skillResult.skill.slug,
+          displayName: skillResult.skill.displayName,
+          pageUrl: ownerHandle
+            ? `https://clawhub.ai/${ownerHandle}/${skillResult.skill.slug}`
+            : `https://clawhub.ai/api/v1/skills/${skillResult.skill.slug}`,
+        },
+        publisher:
+          ownerHandle || ownerDisplayName
+            ? {
+                handle: ownerHandle,
+                displayName: ownerDisplayName,
+                profileUrl: ownerHandle ? `https://clawhub.ai/user/${ownerHandle}` : null,
+              }
+            : null,
+        version: {
+          version: version.version,
+          resolvedFrom,
+          tag: tagParam || null,
+          createdAt: version.createdAt,
+        },
+        card: generatedCardFile
+          ? {
+              available: true,
+              path: generatedCardFile.path,
+              url: buildCardUrl(request, skillResult.skill.slug, version.version),
+              sha256: generatedCardFile.sha256,
+              size: generatedCardFile.size,
+              contentType: generatedCardFile.contentType ?? "text/markdown; charset=utf-8",
+            }
+          : {
+              available: false,
+              path: "skill-card.md",
+              url: buildCardUrl(request, skillResult.skill.slug, version.version),
+              sha256: null,
+              size: null,
+              contentType: null,
+            },
+        artifact: {
+          sourceFingerprint: version.fingerprint ?? null,
+          bundleFingerprints,
+          files: sourceFilesForVerify(version.files, bundleFingerprints),
+        },
+        provenance: version.sourceProvenance
+          ? {
+              ...version.sourceProvenance,
+              source: "server-resolved-github-import",
+            }
+          : {
+              source: "unavailable",
+              reason: "No server-resolved GitHub import provenance is stored for this version.",
+            },
+        security,
+        signature: {
+          status: "unsigned",
+        },
+      },
+      200,
+      rate.headers,
+    );
+  }
+
+  if (second === "card" && segments.length === 2) {
+    const url = new URL(request.url);
+    const versionParam = url.searchParams.get("version")?.trim();
+    const tagParam = url.searchParams.get("tag")?.trim();
+
+    const skillResult = (await ctx.runQuery(api.skills.getBySlug, { slug })) as GetBySlugResult;
+    if (!skillResult?.skill) {
+      const hidden = await describeOwnerVisibleSkillState(ctx, request, slug);
+      if (hidden) return text(hidden.message, hidden.status, rate.headers);
+      return text("Skill not found", 404, rate.headers);
+    }
+
+    let version: Doc<"skillVersions"> | null = skillResult.skill.latestVersionId
+      ? await ctx.runQuery(internal.skills.getVersionByIdInternal, {
+          versionId: skillResult.skill.latestVersionId,
+        })
+      : null;
+    if (versionParam) {
+      version = await ctx.runQuery(internal.skills.getVersionBySkillAndVersionInternal, {
+        skillId: skillResult.skill._id,
+        version: versionParam,
+      });
+    } else if (tagParam) {
+      const versionId = skillResult.skill.tags[tagParam];
+      version = versionId
+        ? await ctx.runQuery(internal.skills.getVersionByIdInternal, { versionId })
+        : null;
+    }
+
+    if (!version) return text("Version not found", 404, rate.headers);
+    if (version.softDeletedAt) return text("Version not available", 410, rate.headers);
+
+    const fingerprintEntries = ((await ctx.runQuery(
+      internal.skills.listVersionFingerprintsInternal,
+      { skillVersionId: version._id },
+    )) ?? []) as SkillVersionFingerprintSummary[];
+    const bundleFingerprints = fingerprintEntries
+      .filter((entry) => entry.kind === "generated-bundle")
+      .map((entry) => entry.fingerprint);
+    const file = await selectGeneratedSkillCardFile(version.files, bundleFingerprints);
+    if (!file) return text("Skill Card not found", 404, rate.headers);
+    if (file.size > MAX_RAW_FILE_BYTES) return text("File exceeds 200KB limit", 413, rate.headers);
+
+    const blob = await ctx.storage.get(file.storageId);
+    if (!blob) return text("File missing in storage", 410, rate.headers);
+    return safeTextFileResponse({
+      textContent: await blob.text(),
+      path: file.path,
+      contentType: file.contentType ?? "text/markdown; charset=utf-8",
+      sha256: file.sha256,
+      size: file.size,
+      headers: rate.headers,
+    });
   }
 
   if (second === "file" && segments.length === 2) {

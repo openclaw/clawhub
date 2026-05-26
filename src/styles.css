@@ -1406,6 +1406,111 @@ code {
   border-radius: 3px;
 }
 
+.skillspector-findings-block {
+  display: grid;
+  gap: 18px;
+}
+
+.skillspector-checks {
+  display: grid;
+  gap: 10px;
+  margin-top: 28px;
+}
+
+.skillspector-findings-block + .skillspector-checks {
+  margin-top: 44px;
+}
+
+.skillspector-checks + .skillspector-findings-block {
+  margin-top: 44px;
+}
+
+.skillspector-subsection-title {
+  color: var(--ink);
+  font-size: 1.1rem;
+  font-weight: 720;
+  line-height: 1.25;
+}
+
+.skillspector-checks-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.skillspector-check-row {
+  display: grid;
+  align-items: center;
+  grid-template-columns: 24px minmax(170px, max-content) minmax(0, 1fr);
+  gap: 10px 14px;
+  padding: 8px 0;
+}
+
+.skillspector-check-row-flagged .skillspector-check-category {
+  color: var(--ink);
+}
+
+.skillspector-check-icon {
+  width: 18px;
+  height: 18px;
+  align-self: center;
+  color: var(--status-success-fg);
+  stroke-width: 2.2;
+}
+
+.skillspector-check-icon-flagged {
+  color: var(--status-warning-fg);
+}
+
+.skillspector-check-icon-unknown {
+  color: var(--ink-soft);
+}
+
+.skillspector-check-category {
+  color: var(--ink);
+  font-size: 0.95rem;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.skillspector-check-patterns {
+  color: var(--ink-soft);
+  font-size: 0.95rem;
+  line-height: 1.35;
+}
+
+.skillspector-checks-toggle {
+  width: fit-content;
+  border: 0;
+  background: transparent;
+  padding: 4px 0;
+  color: var(--ink);
+  font-size: 0.88rem;
+  font-weight: 700;
+  line-height: 1.3;
+  cursor: pointer;
+}
+
+.skillspector-checks-toggle:hover,
+.skillspector-checks-toggle:focus-visible {
+  color: var(--accent);
+  outline: none;
+}
+
+@media (max-width: 720px) {
+  .skillspector-check-row {
+    align-items: center;
+    grid-template-columns: 24px minmax(0, 1fr);
+    gap: 4px 12px;
+  }
+
+  .skillspector-check-patterns {
+    grid-column: 2;
+  }
+}
+
 .security-report-title-info-link {
   display: inline-flex;
   align-items: center;
@@ -5861,6 +5966,29 @@ code {
 .tab-body .markdown {
   font-size: 1.05rem;
   line-height: 1.75;
+}
+
+.skill-card-info-callout {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--surface-muted) 64%, transparent);
+  color: var(--ink-soft);
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+}
+
+.skill-card-info-callout a {
+  color: var(--ink);
+  font-weight: 650;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.skill-card-info-callout a:hover,
+.skill-card-info-callout a:focus-visible {
+  color: var(--accent-deep);
 }
 
 .file-list {

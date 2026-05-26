@@ -38,6 +38,7 @@ import {
   parseLlmEvalResponse,
   SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT,
 } from "./lib/securityPrompt";
+import { sourceSkillVersionFiles } from "./lib/skillCards";
 
 const internalRefs = internal as unknown as {
   packages: {
@@ -263,8 +264,16 @@ export const evaluateWithLlm = internalAction({
       return;
     }
 
+    const fingerprintEntries = await ctx.runQuery(internal.skills.listVersionFingerprintsInternal, {
+      skillVersionId: version._id,
+    });
+    const generatedBundleFingerprints = fingerprintEntries
+      .filter((entry) => entry.kind === "generated-bundle")
+      .map((entry) => entry.fingerprint);
+
     // 3. Read SKILL.md content
-    const skillMdFile = version.files.find((f) => {
+    const sourceFiles = sourceSkillVersionFiles(version.files, { generatedBundleFingerprints });
+    const skillMdFile = sourceFiles.find((f) => {
       const lower = f.path.toLowerCase();
       return lower === "skill.md" || lower === "skills.md";
     });
@@ -284,7 +293,7 @@ export const evaluateWithLlm = internalAction({
 
     // 4. Read all file contents
     const fileContents: Array<{ path: string; content: string }> = [];
-    for (const f of version.files) {
+    for (const f of sourceFiles) {
       const lower = f.path.toLowerCase();
       if (lower === "skill.md" || lower === "skills.md") continue;
       try {
@@ -325,7 +334,7 @@ export const evaluateWithLlm = internalAction({
         (clawdisLinks.homepage as string | undefined) ??
         undefined,
       parsed,
-      files: version.files.map((f) => ({ path: f.path, size: f.size })),
+      files: sourceFiles.map((f) => ({ path: f.path, size: f.size })),
       skillMdContent,
       clawScanNote: version.clawScanNote,
       fileContents,
