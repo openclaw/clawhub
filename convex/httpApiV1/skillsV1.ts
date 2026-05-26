@@ -176,7 +176,7 @@ type GetBySlugResult = {
     reason?: string;
   } | null;
 } | null;
-type GetBySlugOwner = NonNullable<GetBySlugResult>["owner"];
+type SkillUrlOwner = { _id: string; handle?: string | null } | null;
 
 type ListVersionsResult = {
   items: PublicSkillVersionResponse[];
@@ -275,6 +275,7 @@ const internalRefs = internal as unknown as {
     requestSkillRescanForUserInternal: unknown;
   };
   skills: {
+    getSecurityVerdictTargetInternal: unknown;
     reportSkillForUserInternal: unknown;
     listSkillReportsInternal: unknown;
     triageSkillReportForUserInternal: unknown;
@@ -444,6 +445,36 @@ type SecurityVerdictRequestItem = {
   version: string;
 };
 
+type VerifySecurityVersion = Pick<
+  Doc<"skillVersions">,
+  "staticScan" | "llmAnalysis" | "vtAnalysis" | "skillSpectorAnalysis" | "depRegistryAnalysis"
+>;
+
+type SecurityVerdictTargetResult = {
+  skill: {
+    _id: Id<"skills">;
+    slug: string;
+    displayName: string;
+  } | null;
+  owner: { _id: string; handle?: string | null; displayName?: string | null } | null;
+  moderationInfo?: {
+    isPendingScan: boolean;
+    isMalwareBlocked: boolean;
+    isSuspicious: boolean;
+    isHiddenByMod: boolean;
+    isRemoved: boolean;
+    verdict?: "clean" | "suspicious" | "malicious";
+    reasonCodes?: string[];
+    summary?: string;
+    engineVersion?: string;
+    updatedAt?: number;
+  } | null;
+  version:
+    | (VerifySecurityVersion &
+        Pick<Doc<"skillVersions">, "_id" | "version" | "createdAt" | "softDeletedAt">)
+    | null;
+} | null;
+
 function normalizeVerificationStatus(value: string | null | undefined): NormalizedSecurityStatus {
   const normalized = value?.trim().toLowerCase();
   if (!normalized) return "pending";
@@ -455,7 +486,7 @@ function normalizeVerificationStatus(value: string | null | undefined): Normaliz
   return normalizeSecurityStatus(normalized);
 }
 
-function buildVerifySecurity(version: Doc<"skillVersions">) {
+function buildVerifySecurity(version: VerifySecurityVersion) {
   const staticStatus = normalizeVerificationStatus(version.staticScan?.status);
   const clawRawStatus = version.llmAnalysis?.status ?? null;
   const clawStatus = normalizeVerificationStatus(version.llmAnalysis?.verdict ?? clawRawStatus);
@@ -659,9 +690,13 @@ function isValidRequestedVersion(version: string) {
 }
 
 function parseSecurityVerdictItems(
-  payload: Record<string, unknown>,
+  payload: unknown,
 ): { ok: true; items: SecurityVerdictRequestItem[] } | { ok: false; message: string } {
-  const items = payload.items;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return { ok: false, message: "JSON body must be an object" };
+  }
+
+  const items = (payload as Record<string, unknown>).items;
   if (!Array.isArray(items) || items.length < 1 || items.length > MAX_SECURITY_VERDICT_ITEMS) {
     return { ok: false, message: `items must contain 1 to ${MAX_SECURITY_VERDICT_ITEMS} entries` };
   }
@@ -696,7 +731,7 @@ function parseSecurityVerdictItems(
   return { ok: true, items: parsed };
 }
 
-function buildSkillPageUrl(request: Request, owner: GetBySlugOwner, slug: string) {
+function buildSkillPageUrl(request: Request, owner: SkillUrlOwner, slug: string) {
   const origin = new URL(request.url).origin;
   const ownerSegment = owner?.handle ?? owner?._id ?? null;
   if (!ownerSegment) {
@@ -710,7 +745,7 @@ function buildSkillPageUrl(request: Request, owner: GetBySlugOwner, slug: string
 
 function buildSecurityAuditUrl(
   request: Request,
-  owner: GetBySlugOwner,
+  owner: SkillUrlOwner,
   slug: string,
   version: string,
 ) {
@@ -756,17 +791,19 @@ async function buildSecurityVerdictItem(
   request: Request,
   item: SecurityVerdictRequestItem,
 ) {
-  const skillResult = (await ctx.runQuery(api.skills.getBySlug, {
-    slug: item.slug,
-  })) as GetBySlugResult;
-  if (!skillResult?.skill) {
+  const result = await runQueryRef<SecurityVerdictTargetResult>(
+    ctx,
+    internalRefs.skills.getSecurityVerdictTargetInternal,
+    {
+      slug: item.slug,
+      version: item.version,
+    },
+  );
+  if (!result?.skill) {
     return buildSecurityVerdictError(item, "skill_not_found", "Skill not found", "skill.not_found");
   }
 
-  const version = (await ctx.runQuery(internal.skills.getVersionBySkillAndVersionInternal, {
-    skillId: skillResult.skill._id,
-    version: item.version,
-  })) as Doc<"skillVersions"> | null;
+  const version = result.version;
   if (!version) {
     return buildSecurityVerdictError(
       item,
@@ -786,7 +823,7 @@ async function buildSecurityVerdictItem(
 
   const security = buildVerifySecurity(version);
   const reasons = buildSecurityVerdictReasons({
-    isMalwareBlocked: skillResult.moderationInfo?.isMalwareBlocked ?? false,
+    isMalwareBlocked: result.moderationInfo?.isMalwareBlocked ?? false,
     securityPassed: security.passed,
     securityStatus: security.status,
   });
@@ -796,19 +833,19 @@ async function buildSecurityVerdictItem(
     decision: reasons.length === 0 ? "pass" : "fail",
     reasons,
     requestedSlug: item.slug,
-    slug: skillResult.skill.slug,
-    displayName: skillResult.skill.displayName,
-    publisherHandle: skillResult.owner?.handle ?? null,
-    publisherDisplayName: skillResult.owner?.displayName ?? null,
+    slug: result.skill.slug,
+    displayName: result.skill.displayName,
+    publisherHandle: result.owner?.handle ?? null,
+    publisherDisplayName: result.owner?.displayName ?? null,
     requestedVersion: item.version,
     version: version.version,
     createdAt: version.createdAt,
     checkedAt: getVerifySecurityCheckedAt(security),
-    skillUrl: buildSkillPageUrl(request, skillResult.owner, skillResult.skill.slug),
+    skillUrl: buildSkillPageUrl(request, result.owner, result.skill.slug),
     securityAuditUrl: buildSecurityAuditUrl(
       request,
-      skillResult.owner,
-      skillResult.skill.slug,
+      result.owner,
+      result.skill.slug,
       version.version,
     ),
     security: buildSecurityVerdictSummary(security),

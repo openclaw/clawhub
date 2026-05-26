@@ -2665,6 +2665,87 @@ export const getSkillBySlugInternal = internalQuery({
   },
 });
 
+export const getSecurityVerdictTargetInternal = internalQuery({
+  args: { slug: v.string(), version: v.string() },
+  handler: async (ctx, args) => {
+    const resolved = await resolveSkillBySlugOrAlias(ctx, args.slug);
+    const skill = resolved.skill;
+    if (!skill) return null;
+
+    const isMalwareBlocked = skill.moderationFlags?.includes("blocked.malware") ?? false;
+    const isSuspicious = skill.moderationFlags?.includes("flagged.suspicious") ?? false;
+    const isReviewFlagged = isSkillReviewFlagged(skill);
+    const overrideActive = Boolean(skill.manualOverride);
+    if (!isPublicSkillDoc(skill) && !isMalwareBlocked) return null;
+
+    const owner = toPublicPublisher(
+      await getOwnerPublisher(ctx, {
+        ownerPublisherId: skill.ownerPublisherId,
+        ownerUserId: skill.ownerUserId,
+      }),
+    );
+    if (!owner) return null;
+
+    const version = await ctx.db
+      .query("skillVersions")
+      .withIndex("by_skill_version", (q) => q.eq("skillId", skill._id).eq("version", args.version))
+      .unique();
+    const isPendingScan =
+      skill.moderationStatus === "hidden" && skill.moderationReason === "pending.scan";
+    const isHiddenByMod =
+      skill.moderationStatus === "hidden" && !isPendingScan && !isMalwareBlocked;
+    const isRemoved = skill.moderationStatus === "removed";
+    const showModerationInfo =
+      isMalwareBlocked || isSuspicious || isReviewFlagged || overrideActive;
+    const publicModerationSummary =
+      overrideActive && !isMalwareBlocked && !isSuspicious
+        ? "Security findings were reviewed by moderators and cleared for public use."
+        : skill.moderationSummary;
+
+    return {
+      skill: {
+        _id: skill._id,
+        slug: skill.slug,
+        displayName: skill.displayName,
+      },
+      owner: {
+        _id: owner._id,
+        handle: owner.handle ?? null,
+        displayName: owner.displayName ?? null,
+      },
+      moderationInfo: showModerationInfo
+        ? {
+            isPendingScan,
+            isMalwareBlocked,
+            isSuspicious,
+            isReviewFlagged,
+            isHiddenByMod,
+            isRemoved,
+            overrideActive,
+            verdict: skill.moderationVerdict,
+            reasonCodes: skill.moderationReasonCodes,
+            summary: publicModerationSummary,
+            engineVersion: skill.moderationEngineVersion,
+            updatedAt: skill.moderationEvaluatedAt,
+          }
+        : null,
+      version: version
+        ? {
+            _id: version._id,
+            version: version.version,
+            createdAt: version.createdAt,
+            softDeletedAt: version.softDeletedAt,
+            staticScan: version.staticScan,
+            llmAnalysis: version.llmAnalysis,
+            vtAnalysis: version.vtAnalysis,
+            skillSpectorAnalysis: version.skillSpectorAnalysis,
+            depRegistryAnalysis: version.depRegistryAnalysis,
+          }
+        : null,
+    };
+  },
+});
+
 export const getOwnerSkillActivityInternal = internalQuery({
   args: {
     ownerUserId: v.id("users"),

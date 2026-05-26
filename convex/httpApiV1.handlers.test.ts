@@ -2925,14 +2925,7 @@ describe("httpApiV1 handlers", () => {
             _id: "skills:1",
             slug: "demo",
             displayName: "Demo",
-            summary: "s",
-            tags: {},
-            stats: {},
-            createdAt: 1,
-            updatedAt: 2,
-            latestVersionId: "skillVersions:1",
           },
-          latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
           owner: { _id: "users:1", handle: "acme", displayName: "Acme" },
           moderationInfo: {
             isPendingScan: false,
@@ -2941,9 +2934,9 @@ describe("httpApiV1 handlers", () => {
             isHiddenByMod: false,
             isRemoved: false,
           },
+          version,
         };
       }
-      if ("skillId" in args && "version" in args) return version;
       return null;
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -2994,6 +2987,11 @@ describe("httpApiV1 handlers", () => {
     expect(json.items[0].artifact).toBeUndefined();
     expect(json.items[0].security.signals.staticScan.findings).toBeUndefined();
     expect(json.items[0].security.signals.dependencyRegistry.notFoundPackages).toBeUndefined();
+    expect(runQuery.mock.calls.map(([, args]) => args)).toContainEqual({
+      slug: "demo",
+      version: "1.0.0",
+    });
+    expect(runQuery.mock.calls.some(([, args]) => "skillId" in args)).toBe(false);
   });
 
   it("keeps bulk verdict item failures local to each requested skill", async () => {
@@ -3015,13 +3013,10 @@ describe("httpApiV1 handlers", () => {
             _id: "skills:no-version",
             slug: "no-version",
             displayName: "No Version",
-            tags: {},
-            stats: {},
-            createdAt: 1,
-            updatedAt: 2,
           },
-          latestVersion: null,
           owner: null,
+          moderationInfo: null,
+          version: null,
         };
       }
       if (args.slug === "soft") {
@@ -3030,16 +3025,12 @@ describe("httpApiV1 handlers", () => {
             _id: "skills:soft",
             slug: "soft",
             displayName: "Soft",
-            tags: {},
-            stats: {},
-            createdAt: 1,
-            updatedAt: 2,
           },
-          latestVersion: softDeletedVersion,
           owner: null,
+          moderationInfo: null,
+          version: softDeletedVersion,
         };
       }
-      if (args.skillId === "skills:soft") return softDeletedVersion;
       return null;
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -3119,25 +3110,19 @@ describe("httpApiV1 handlers", () => {
             _id: "skills:1",
             slug: "demo",
             displayName: "Demo",
-            tags: {},
-            stats: {},
-            createdAt: 1,
-            updatedAt: 2,
           },
-          latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
           owner: null,
-        };
-      }
-      if ("skillId" in args && "version" in args) {
-        return {
-          _id: "skillVersions:1",
-          skillId: "skills:1",
-          version: "1.0.0",
-          createdAt: 1,
-          changelog: "c",
-          files: [],
-          llmAnalysis: analysis,
-          softDeletedAt: undefined,
+          moderationInfo: null,
+          version: {
+            _id: "skillVersions:1",
+            skillId: "skills:1",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "c",
+            files: [],
+            llmAnalysis: analysis,
+            softDeletedAt: undefined,
+          },
         };
       }
       return null;
@@ -3166,6 +3151,28 @@ describe("httpApiV1 handlers", () => {
   it("rejects malformed bulk security verdict request bodies", async () => {
     const runQuery = vi.fn();
     const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const nullBody = await __handlers.skillSecurityVerdictsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/-/security-verdicts", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "null",
+      }),
+    );
+    expect(nullBody.status).toBe(400);
+    expect(await nullBody.text()).toBe("JSON body must be an object");
+
+    const scalarBody = await __handlers.skillSecurityVerdictsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/-/security-verdicts", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify("nope"),
+      }),
+    );
+    expect(scalarBody.status).toBe(400);
+    expect(await scalarBody.text()).toBe("JSON body must be an object");
 
     const missingItems = await __handlers.skillSecurityVerdictsV1Handler(
       makeCtx({ runQuery, runMutation }),
