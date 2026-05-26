@@ -6,8 +6,6 @@ vi.mock("./functions", () => ({
   internalAction: (def: { handler: unknown }) => ({ _handler: def.handler }),
   internalMutation: (def: { handler: unknown }) => ({ _handler: def.handler }),
   internalQuery: (def: { handler: unknown }) => ({ _handler: def.handler }),
-  mutation: (def: { handler: unknown }) => ({ _handler: def.handler }),
-  query: (def: { handler: unknown }) => ({ _handler: def.handler }),
 }));
 
 vi.mock("./_generated/api", () => ({
@@ -21,16 +19,6 @@ vi.mock("./_generated/api", () => ({
       runPublisherAbuseScoreRunInternal: Symbol("runPublisherAbuseScoreRunInternal"),
     },
   },
-}));
-
-vi.mock("./lib/access", () => ({
-  assertAdmin: vi.fn((user: { role?: string }) => {
-    if (user.role !== "admin") throw new Error("Forbidden");
-  }),
-  requireUser: vi.fn(async () => ({
-    userId: "users:admin",
-    user: { _id: "users:admin", role: "admin" },
-  })),
 }));
 
 const publisherAbuse = await import("./publisherAbuse");
@@ -76,60 +64,6 @@ const runHandler = (
   >
 )._handler;
 
-const listQueueHandler = (
-  publisherAbuse.listPublisherAbuseReviewQueue as unknown as Wrapped<
-    {
-      label?: "all" | "pass" | "review" | "potential_ban_candidate";
-      status?:
-        | "unreviewed"
-        | "reviewed"
-        | "all"
-        | "pending"
-        | "reviewed_no_action"
-        | "false_positive"
-        | "needs_policy_discussion"
-        | "candidate_for_future_action";
-      minSkillCount?: number;
-      search?: string;
-      limit?: number;
-    },
-    {
-      items: Array<{
-        nomination: {
-          _id: string;
-          label: "pass" | "review" | "potential_ban_candidate";
-          handleSnapshot: string;
-        };
-        score: { publishedSkills: number } | null;
-      }>;
-      total: number;
-    }
-  >
-)._handler;
-
-const startManualHandler = (
-  publisherAbuse.startManualPublisherAbuseScoreRun as unknown as Wrapped<
-    { batchSize?: number; maxPages?: number },
-    { ok: true; runId: string }
-  >
-)._handler;
-
-const setReviewStatusHandler = (
-  publisherAbuse.setPublisherAbuseReviewStatus as unknown as Wrapped<
-    {
-      nominationId: string;
-      status:
-        | "pending"
-        | "reviewed_no_action"
-        | "false_positive"
-        | "needs_policy_discussion"
-        | "candidate_for_future_action";
-      notes?: string;
-    },
-    { ok: true }
-  >
-)._handler;
-
 const getOrStartHandler = (
   publisherAbuse.getOrStartPublisherAbuseScoreRunInternal as unknown as Wrapped<
     { trigger: "cron" | "manual"; actorUserId?: string; forceNew?: boolean },
@@ -138,6 +72,18 @@ const getOrStartHandler = (
 )._handler;
 
 describe("publisher abuse dry-run persistence", () => {
+  it("does not expose public admin API functions", () => {
+    expect(
+      Object.prototype.hasOwnProperty.call(publisherAbuse, "startManualPublisherAbuseScoreRun"),
+    ).toBe(false);
+    expect(
+      Object.prototype.hasOwnProperty.call(publisherAbuse, "listPublisherAbuseReviewQueue"),
+    ).toBe(false);
+    expect(
+      Object.prototype.hasOwnProperty.call(publisherAbuse, "setPublisherAbuseReviewStatus"),
+    ).toBe(false);
+  });
+
   it("collects score rows without patching enforcement tables", async () => {
     const insert = vi.fn(async (table: string) => `${table}:new`);
     const patch = vi.fn(async () => null);
@@ -1753,276 +1699,6 @@ describe("publisher abuse dry-run persistence", () => {
     expect(ctx.scheduler.runAfter).not.toHaveBeenCalled();
   });
 
-  it("keeps the requested label when listing all queue statuses", async () => {
-    const reviewNomination = nominationFixture({
-      _id: "publisherAbuseReviewNominations:review",
-      latestScoreId: "publisherAbuseScores:review",
-      label: "review",
-      status: "pending",
-      handleSnapshot: "review-publisher",
-      lastScoredAt: 300,
-    });
-    const candidateNomination = nominationFixture({
-      _id: "publisherAbuseReviewNominations:candidate",
-      latestScoreId: "publisherAbuseScores:candidate",
-      label: "potential_ban_candidate",
-      status: "pending",
-      handleSnapshot: "candidate-publisher",
-      lastScoredAt: 400,
-    });
-    const ctx = queueCtx([reviewNomination, candidateNomination]);
-
-    const result = await listQueueHandler(ctx, {
-      status: "all",
-      label: "review",
-      limit: 10,
-    });
-
-    expect(result.items.map((item) => item.nomination.label)).toEqual(["review"]);
-    expect(result.items.map((item) => item.nomination.handleSnapshot)).toEqual([
-      "review-publisher",
-    ]);
-  });
-
-  it("does not include pass nominations in the all-label review queue", async () => {
-    const reviewNomination = nominationFixture({
-      _id: "publisherAbuseReviewNominations:review",
-      latestScoreId: "publisherAbuseScores:review",
-      label: "review",
-      status: "pending",
-      handleSnapshot: "review-publisher",
-      lastScoredAt: 300,
-    });
-    const passNomination = nominationFixture({
-      _id: "publisherAbuseReviewNominations:pass",
-      latestScoreId: "publisherAbuseScores:pass",
-      label: "pass",
-      status: "pending",
-      handleSnapshot: "passing-publisher",
-      lastScoredAt: 400,
-    });
-    const ctx = queueCtx([passNomination, reviewNomination]);
-
-    const result = await listQueueHandler(ctx, {
-      status: "all",
-      label: "all",
-      limit: 1,
-    });
-
-    expect(result.items.map((item) => item.nomination.handleSnapshot)).toEqual([
-      "review-publisher",
-    ]);
-  });
-
-  it("applies search when a minimum skill count is also set", async () => {
-    const matchingNomination = nominationFixture({
-      _id: "publisherAbuseReviewNominations:match",
-      latestScoreId: "publisherAbuseScores:match",
-      label: "review",
-      status: "pending",
-      handleSnapshot: "needle-maker",
-      lastScoredAt: 300,
-    });
-    const nonMatchingNomination = nominationFixture({
-      _id: "publisherAbuseReviewNominations:miss",
-      latestScoreId: "publisherAbuseScores:miss",
-      label: "review",
-      status: "pending",
-      handleSnapshot: "large-catalog",
-      lastScoredAt: 400,
-    });
-    const ctx = queueCtx([nonMatchingNomination, matchingNomination], {
-      "publisherAbuseScores:match": { publishedSkills: 20 },
-      "publisherAbuseScores:miss": { publishedSkills: 100 },
-    });
-
-    const result = await listQueueHandler(ctx, {
-      status: "all",
-      label: "all",
-      minSkillCount: 10,
-      search: "needle",
-      limit: 10,
-    });
-
-    expect(result.items.map((item) => item.nomination.handleSnapshot)).toEqual(["needle-maker"]);
-    expect(result.total).toBe(1);
-  });
-
-  it("keeps scanning queue candidates until filtered matches are found", async () => {
-    const recentLowSkillNominations = Array.from({ length: 40 }, (_, index) =>
-      nominationFixture({
-        _id: `publisherAbuseReviewNominations:small-${index}`,
-        latestScoreId: `publisherAbuseScores:small-${index}`,
-        label: "review",
-        status: "pending",
-        handleSnapshot: `small-catalog-${index}`,
-        lastScoredAt: 1_000 - index,
-      }),
-    );
-    const olderEligibleNomination = nominationFixture({
-      _id: "publisherAbuseReviewNominations:older-eligible",
-      latestScoreId: "publisherAbuseScores:older-eligible",
-      label: "review",
-      status: "pending",
-      handleSnapshot: "older-eligible-catalog",
-      lastScoredAt: 500,
-    });
-    const lowSkillScores = Object.fromEntries(
-      recentLowSkillNominations.map((nomination) => [
-        nomination.latestScoreId,
-        { publishedSkills: 1 },
-      ]),
-    );
-    const ctx = queueCtx([...recentLowSkillNominations, olderEligibleNomination], {
-      ...lowSkillScores,
-      [olderEligibleNomination.latestScoreId]: { publishedSkills: 20 },
-    });
-
-    const result = await listQueueHandler(ctx, {
-      status: "all",
-      label: "all",
-      minSkillCount: 10,
-      limit: 10,
-    });
-
-    expect(result.items.map((item) => item.nomination.handleSnapshot)).toEqual([
-      "older-eligible-catalog",
-    ]);
-    expect(result.total).toBe(1);
-  });
-
-  it("counts queue totals after applying the minimum skill count", async () => {
-    const smallNomination = nominationFixture({
-      _id: "publisherAbuseReviewNominations:small",
-      latestScoreId: "publisherAbuseScores:small",
-      label: "review",
-      status: "pending",
-      handleSnapshot: "small-catalog",
-      lastScoredAt: 400,
-    });
-    const largeNomination = nominationFixture({
-      _id: "publisherAbuseReviewNominations:large",
-      latestScoreId: "publisherAbuseScores:large",
-      label: "review",
-      status: "pending",
-      handleSnapshot: "large-catalog",
-      lastScoredAt: 300,
-    });
-    const ctx = queueCtx([smallNomination, largeNomination], {
-      "publisherAbuseScores:small": { publishedSkills: 5 },
-      "publisherAbuseScores:large": { publishedSkills: 20 },
-    });
-
-    const result = await listQueueHandler(ctx, {
-      status: "all",
-      label: "all",
-      minSkillCount: 10,
-      limit: 10,
-    });
-
-    expect(result.items.map((item) => item.nomination.handleSnapshot)).toEqual(["large-catalog"]);
-    expect(result.total).toBe(1);
-  });
-
-  it("preserves existing triage notes when only the status changes", async () => {
-    const patch = vi.fn(async () => null);
-    const insert = vi.fn(async (table: string) => `${table}:new`);
-    const ctx = {
-      db: {
-        get: vi.fn(async () => ({
-          _id: "publisherAbuseReviewNominations:existing",
-          ownerKey: "publisher:publishers:reviewed",
-          latestScoreId: "publisherAbuseScores:reviewed",
-          label: "review",
-          status: "pending",
-          notes: "keep this context",
-        })),
-        patch,
-        insert,
-      },
-    };
-
-    await expect(
-      setReviewStatusHandler(ctx, {
-        nominationId: "publisherAbuseReviewNominations:existing",
-        status: "reviewed_no_action",
-      }),
-    ).resolves.toEqual({ ok: true });
-
-    expect(patch).toHaveBeenCalledWith(
-      "publisherAbuseReviewNominations:existing",
-      expect.objectContaining({
-        status: "reviewed_no_action",
-        notes: "keep this context",
-      }),
-    );
-    expect(insert).toHaveBeenCalledWith(
-      "publisherAbuseReviewEvents",
-      expect.objectContaining({ notes: "keep this context" }),
-    );
-  });
-
-  it("lets an admin start a manual dry-run recompute", async () => {
-    const scheduler = { runAfter: vi.fn(async () => null) };
-    const ctx = {
-      scheduler,
-      db: {
-        insert: vi.fn(async () => "publisherAbuseScoreRuns:manual"),
-        query: vi.fn(() => ({
-          withIndex: () => ({
-            order: () => ({
-              first: async () => null,
-            }),
-          }),
-        })),
-      },
-    };
-
-    await expect(startManualHandler(ctx, { batchSize: 50, maxPages: 2 })).resolves.toEqual({
-      ok: true,
-      runId: "publisherAbuseScoreRuns:manual",
-    });
-
-    expect(ctx.db.insert).toHaveBeenCalledWith(
-      "publisherAbuseScoreRuns",
-      expect.objectContaining({ trigger: "manual", actorUserId: "users:admin" }),
-    );
-    expect(scheduler.runAfter).toHaveBeenCalledWith(
-      0,
-      expect.anything(),
-      expect.objectContaining({ runId: "publisherAbuseScoreRuns:manual" }),
-    );
-  });
-
-  it("reuses an active run instead of starting an overlapping manual run", async () => {
-    const scheduler = { runAfter: vi.fn(async () => null) };
-    const ctx = {
-      scheduler,
-      db: {
-        insert: vi.fn(async () => "publisherAbuseScoreRuns:new"),
-        query: vi.fn(() => ({
-          withIndex: () => ({
-            order: () => ({
-              first: async () => ({
-                _id: "publisherAbuseScoreRuns:active",
-                status: "running",
-                phase: "finalizing",
-              }),
-            }),
-          }),
-        })),
-      },
-    };
-
-    await expect(startManualHandler(ctx, { batchSize: 50, maxPages: 2 })).resolves.toEqual({
-      ok: true,
-      runId: "publisherAbuseScoreRuns:active",
-    });
-
-    expect(ctx.db.insert).not.toHaveBeenCalled();
-    expect(scheduler.runAfter).not.toHaveBeenCalled();
-  });
-
   it("reuses an active run when cron starts while another run is active", async () => {
     const ctx = {
       db: {
@@ -2050,101 +1726,3 @@ describe("publisher abuse dry-run persistence", () => {
     expect(ctx.db.insert).not.toHaveBeenCalled();
   });
 });
-
-type QueueNominationFixture = {
-  _id: string;
-  latestScoreId: string;
-  label: "pass" | "review" | "potential_ban_candidate";
-  status:
-    | "pending"
-    | "reviewed_no_action"
-    | "false_positive"
-    | "needs_policy_discussion"
-    | "candidate_for_future_action";
-  handleSnapshot: string;
-  ownerKey: string;
-  lastScoredAt: number;
-};
-
-type QueueIndexBuilder = {
-  eq: (field: string, value: string) => QueueIndexBuilder;
-};
-
-function nominationFixture(
-  overrides: Omit<QueueNominationFixture, "ownerKey"> & { ownerKey?: string },
-): QueueNominationFixture {
-  return {
-    ownerKey: `publisher:${overrides.handleSnapshot}`,
-    ...overrides,
-  };
-}
-
-function queueCtx(
-  nominations: QueueNominationFixture[],
-  scores: Record<string, { publishedSkills: number }> = {},
-) {
-  const defaultScores: Record<string, { publishedSkills: number }> = {};
-  for (const nomination of nominations) {
-    defaultScores[nomination.latestScoreId] = { publishedSkills: 25 };
-  }
-  const scoreById = { ...defaultScores, ...scores };
-  return {
-    db: {
-      get: vi.fn(async (id: string) => scoreById[id] ?? null),
-      query: vi.fn((table: string) => {
-        if (table === "publisherAbuseScoreRuns") {
-          return {
-            withIndex: () => ({
-              order: () => ({
-                first: async () => null,
-              }),
-            }),
-          };
-        }
-        if (table !== "publisherAbuseReviewNominations") {
-          throw new Error(`unexpected table ${table}`);
-        }
-        return {
-          withIndex: (indexName: string, buildQuery?: (q: QueueIndexBuilder) => unknown) => {
-            const constraints: Record<string, string> = {};
-            const q: QueueIndexBuilder = {
-              eq: (field: string, value: string) => {
-                constraints[field] = value;
-                return q;
-              },
-            };
-            buildQuery?.(q);
-            return {
-              order: () => ({
-                take: async (limit: number) => {
-                  if (indexName === "by_last_scored_at") {
-                    return sortQueueNominations(nominations).slice(0, limit);
-                  }
-                  if (indexName === "by_status_and_last_scored_at") {
-                    return sortQueueNominations(
-                      nominations.filter((nomination) => nomination.status === constraints.status),
-                    ).slice(0, limit);
-                  }
-                  if (indexName === "by_status_and_label_and_last_scored_at") {
-                    return sortQueueNominations(
-                      nominations.filter(
-                        (nomination) =>
-                          nomination.status === constraints.status &&
-                          nomination.label === constraints.label,
-                      ),
-                    ).slice(0, limit);
-                  }
-                  throw new Error(`unexpected index ${indexName}`);
-                },
-              }),
-            };
-          },
-        };
-      }),
-    },
-  };
-}
-
-function sortQueueNominations(nominations: QueueNominationFixture[]) {
-  return [...nominations].sort((left, right) => right.lastScoredAt - left.lastScoredAt);
-}

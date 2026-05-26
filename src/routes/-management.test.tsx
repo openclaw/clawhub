@@ -56,22 +56,14 @@ describe("Management", () => {
       if (name === "skills:listReportedSkills") return [];
       if (name === "skills:listDuplicateCandidates") return [];
       if (name === "users:list") return { items: [], total: 0 };
-      if (name === "publisherAbuse:listPublisherAbuseReviewQueue") {
-        return { latestRun: null, items: [], total: 0 };
-      }
       return undefined;
     });
   });
 
-  it("does not render or query the publisher abuse dry-run UI", () => {
+  it("does not render the publisher abuse dry-run UI", () => {
     render(<Management />);
 
     expect(screen.getByRole("heading", { name: "Management console" })).toBeTruthy();
     expect(screen.queryByText("Publisher abuse dry run")).toBeNull();
-    expect(
-      useQueryMock.mock.calls
-        .map(([query]) => getFunctionName(query))
-        .includes("publisherAbuse:listPublisherAbuseReviewQueue"),
-    ).toBe(false);
   });
 });

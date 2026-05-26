@@ -1,9 +1,8 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
-import { internalAction, internalMutation, internalQuery, mutation, query } from "./functions";
-import { assertAdmin, requireUser } from "./lib/access";
+import type { ActionCtx, MutationCtx } from "./_generated/server";
+import { internalAction, internalMutation, internalQuery } from "./functions";
 import {
   computePublisherAbuseRawScore,
   DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG,
@@ -19,49 +18,12 @@ const MAX_BATCH_SIZE = 1000;
 const DEFAULT_MAX_PAGES = 5;
 const MAX_MAX_PAGES = 50;
 const ACTION_CONTINUATION_DELAY_MS = 60_000;
-const QUEUE_INITIAL_CANDIDATE_MULTIPLIER = 4;
-const MAX_QUEUE_FILTER_CANDIDATES = 1000;
 const MAX_ACTIVE_SKILL_FALLBACK_SCAN = 500;
 const MAX_ACTIVE_SKILL_FALLBACK_SCANS_PER_PAGE = 20;
-
-const triageStatusValidator = v.union(
-  v.literal("pending"),
-  v.literal("reviewed_no_action"),
-  v.literal("false_positive"),
-  v.literal("needs_policy_discussion"),
-  v.literal("candidate_for_future_action"),
-);
-
-const dryRunLabelValidator = v.union(
-  v.literal("pass"),
-  v.literal("review"),
-  v.literal("potential_ban_candidate"),
-);
-
-const ALL_TRIAGE_STATUSES: TriageStatus[] = [
-  "pending",
-  "reviewed_no_action",
-  "false_positive",
-  "needs_policy_discussion",
-  "candidate_for_future_action",
-];
-const ACTIONABLE_REVIEW_LABELS = ["review", "potential_ban_candidate"] as const;
-
-const queueStatusFilterValidator = v.union(
-  v.literal("unreviewed"),
-  v.literal("reviewed"),
-  v.literal("all"),
-  v.literal("pending"),
-  v.literal("reviewed_no_action"),
-  v.literal("false_positive"),
-  v.literal("needs_policy_discussion"),
-  v.literal("candidate_for_future_action"),
-);
 
 type TriageStatus = Doc<"publisherAbuseReviewNominations">["status"];
 type ScoreRun = Doc<"publisherAbuseScoreRuns">;
 type ScoreDoc = Doc<"publisherAbuseScores">;
-type NominationDoc = Doc<"publisherAbuseReviewNominations">;
 type RunPhase = ScoreRun["phase"];
 
 type RunState = {
@@ -176,139 +138,6 @@ export const runPublisherAbuseScoreRunInternal = internalAction({
     trigger: v.optional(v.union(v.literal("cron"), v.literal("manual"))),
   },
   handler: runPublisherAbuseScoreRunInternalHandler,
-});
-
-export const startManualPublisherAbuseScoreRun = mutation({
-  args: {
-    batchSize: v.optional(v.number()),
-    maxPages: v.optional(v.number()),
-  },
-  handler: async (ctx, args): Promise<{ ok: true; runId: Id<"publisherAbuseScoreRuns"> }> => {
-    const { userId, user } = await requireUser(ctx);
-    assertAdmin(user);
-
-    const activeRun = await getActivePublisherAbuseScoreRun(ctx);
-    if (activeRun) return { ok: true, runId: activeRun._id };
-
-    const runId = await createPublisherAbuseScoreRun(ctx, {
-      trigger: "manual",
-      actorUserId: userId,
-    });
-    await ctx.scheduler.runAfter(0, internal.publisherAbuse.runPublisherAbuseScoreRunInternal, {
-      runId,
-      batchSize: args.batchSize,
-      maxPages: args.maxPages,
-      trigger: "manual",
-    });
-    return { ok: true, runId };
-  },
-});
-
-export const listPublisherAbuseReviewQueue = query({
-  args: {
-    label: v.optional(v.union(v.literal("all"), dryRunLabelValidator)),
-    status: v.optional(queueStatusFilterValidator),
-    minSkillCount: v.optional(v.number()),
-    search: v.optional(v.string()),
-    limit: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const { user } = await requireUser(ctx);
-    assertAdmin(user);
-
-    const limit = clampInt(args.limit ?? 50, 1, 100);
-    const label = args.label ?? "all";
-    const status = args.status ?? "unreviewed";
-    const minSkillCount = Math.max(0, args.minSkillCount ?? 0);
-    const search = args.search?.trim().toLowerCase() ?? "";
-    const hasPostFilters = search.length > 0 || minSkillCount > 0;
-    let candidateLimit = limit * QUEUE_INITIAL_CANDIDATE_MULTIPLIER;
-    let eligibleItems: Array<{ nomination: NominationDoc; score: ScoreDoc | null }> = [];
-
-    while (true) {
-      const nominations = await listNominationsForQueue(ctx, {
-        label,
-        status,
-        limit: candidateLimit,
-      });
-      const filtered = nominations.filter((nomination) =>
-        matchesNominationSearch(nomination, search),
-      );
-
-      eligibleItems = [];
-      for (const nomination of filtered) {
-        const score = await ctx.db.get(nomination.latestScoreId);
-        if (score && score.publishedSkills < minSkillCount) continue;
-        eligibleItems.push({ nomination, score });
-      }
-
-      const hasMoreCandidates = nominations.length >= candidateLimit;
-      if (!hasPostFilters || eligibleItems.length >= limit || !hasMoreCandidates) break;
-      if (candidateLimit >= MAX_QUEUE_FILTER_CANDIDATES) break;
-      candidateLimit = Math.min(candidateLimit * 2, MAX_QUEUE_FILTER_CANDIDATES);
-    }
-
-    const latestRun = await ctx.db
-      .query("publisherAbuseScoreRuns")
-      .withIndex("by_started_at")
-      .order("desc")
-      .first();
-
-    return {
-      latestRun: latestRun ? summarizeRunForQueue(latestRun) : null,
-      items: eligibleItems.slice(0, limit),
-      total: eligibleItems.length,
-    };
-  },
-});
-
-export const setPublisherAbuseReviewStatus = mutation({
-  args: {
-    nominationId: v.id("publisherAbuseReviewNominations"),
-    status: triageStatusValidator,
-    notes: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const { userId, user } = await requireUser(ctx);
-    assertAdmin(user);
-    const nomination = await ctx.db.get(args.nominationId);
-    if (!nomination) throw new Error("Nomination not found");
-
-    const now = Date.now();
-    const notes = args.notes === undefined ? nomination.notes : normalizeNotes(args.notes);
-    await ctx.db.patch(nomination._id, {
-      status: args.status,
-      reviewedByUserId: args.status === "pending" ? undefined : userId,
-      reviewedAt: args.status === "pending" ? undefined : now,
-      notes,
-      updatedAt: now,
-    });
-    await ctx.db.insert("publisherAbuseReviewEvents", {
-      nominationId: nomination._id,
-      ownerKey: nomination.ownerKey,
-      actorUserId: userId,
-      eventType: "triage_status_changed",
-      previousStatus: nomination.status,
-      nextStatus: args.status,
-      notes,
-      createdAt: now,
-    });
-    await ctx.db.insert("auditLogs", {
-      actorUserId: userId,
-      action: "publisher_abuse.triage_status.change",
-      targetType: "publisher_abuse_nomination",
-      targetId: nomination._id,
-      metadata: {
-        ownerKey: nomination.ownerKey,
-        previousStatus: nomination.status,
-        nextStatus: args.status,
-        notes,
-      },
-      createdAt: now,
-    });
-
-    return { ok: true as const };
-  },
 });
 
 export async function collectPublisherAbuseScoresPageInternalHandler(
@@ -874,67 +703,6 @@ async function updateExistingPublisherAbuseReviewNominationForPass(
   return existing._id;
 }
 
-async function listNominationsForQueue(
-  ctx: QueryCtx,
-  args: {
-    label: PublisherAbuseLabel | "all";
-    status: TriageStatus | TriageStatus[] | "unreviewed" | "reviewed" | "all";
-    limit: number;
-  },
-) {
-  const statuses = statusesForQueueFilter(args.status);
-  if (statuses.length === 0) {
-    return await listNominationsForQueue(ctx, {
-      label: args.label,
-      status: ALL_TRIAGE_STATUSES,
-      limit: args.limit,
-    });
-  }
-
-  const rows: NominationDoc[] = [];
-  for (const status of statuses) {
-    if (args.label === "all") {
-      for (const label of ACTIONABLE_REVIEW_LABELS) {
-        const page = await ctx.db
-          .query("publisherAbuseReviewNominations")
-          .withIndex("by_status_and_label_and_last_scored_at", (q) =>
-            q.eq("status", status).eq("label", label),
-          )
-          .order("desc")
-          .take(args.limit);
-        rows.push(...page);
-      }
-      continue;
-    }
-    const label = args.label;
-    const page = await ctx.db
-      .query("publisherAbuseReviewNominations")
-      .withIndex("by_status_and_label_and_last_scored_at", (q) =>
-        q.eq("status", status).eq("label", label),
-      )
-      .order("desc")
-      .take(args.limit);
-    rows.push(...page);
-  }
-
-  return dedupeNominations(rows)
-    .filter((nomination) => args.label === "all" || nomination.label === args.label)
-    .sort((left, right) => right.lastScoredAt - left.lastScoredAt)
-    .slice(0, args.limit);
-}
-
-function statusesForQueueFilter(
-  status: TriageStatus | TriageStatus[] | "unreviewed" | "reviewed" | "all",
-): TriageStatus[] {
-  if (Array.isArray(status)) return status;
-  if (status === "all") return [];
-  if (status === "unreviewed") {
-    return ["pending", "needs_policy_discussion", "candidate_for_future_action"];
-  }
-  if (status === "reviewed") return ["reviewed_no_action", "false_positive"];
-  return [status];
-}
-
 function isReviewedNominationStatus(status: TriageStatus) {
   return status === "reviewed_no_action" || status === "false_positive";
 }
@@ -950,47 +718,6 @@ function publisherAbuseLabelSeverity(label: PublisherAbuseLabel) {
   if (label === "potential_ban_candidate") return 2;
   if (label === "review") return 1;
   return 0;
-}
-
-function matchesNominationSearch(nomination: NominationDoc, search: string) {
-  if (!search) return true;
-  return (
-    nomination.handleSnapshot.toLowerCase().includes(search) ||
-    nomination.ownerKey.toLowerCase().includes(search)
-  );
-}
-
-function dedupeNominations(rows: NominationDoc[]) {
-  const byId = new Map<Id<"publisherAbuseReviewNominations">, NominationDoc>();
-  for (const row of rows) byId.set(row._id, row);
-  return [...byId.values()];
-}
-
-function summarizeRunForQueue(run: ScoreRun) {
-  return {
-    _id: run._id,
-    status: run.status,
-    phase: run.phase,
-    trigger: run.trigger,
-    modelVersion: run.modelVersion,
-    startedAt: run.startedAt,
-    completedAt: run.completedAt,
-    updatedAt: run.updatedAt,
-    scannedPublishers: run.scannedPublishers,
-    scoredPublishers: run.scoredPublishers,
-    finalizedScores: run.finalizedScores,
-    nominatedPublishers: run.nominatedPublishers,
-    passCount: run.passCount,
-    reviewCount: run.reviewCount,
-    potentialBanCandidateCount: run.potentialBanCandidateCount,
-    meanLogPressure: run.meanLogPressure,
-    stdDevLogPressure: run.stdDevLogPressure,
-  };
-}
-
-function normalizeNotes(notes: string | undefined) {
-  const trimmed = notes?.trim();
-  return trimmed ? trimmed : undefined;
 }
 
 function errorMessageFromUnknown(error: unknown) {
