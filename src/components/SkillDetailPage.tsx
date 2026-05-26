@@ -442,7 +442,11 @@ export function SkillDetailPage({
   }, [clawdis, hasSkillCard, osLabels, versions]);
 
   useEffect(() => {
-    setActiveTab((prev) => (validTabIds.has(prev) ? prev : "readme"));
+    setActiveTab((prev) => {
+      const hashTab = typeof window === "undefined" ? "readme" : tabFromHash(window.location.hash);
+      if (hashTab !== "readme" && validTabIds.has(hashTab)) return hashTab;
+      return validTabIds.has(prev) ? prev : "readme";
+    });
   }, [validTabIds]);
 
   useEffect(() => {

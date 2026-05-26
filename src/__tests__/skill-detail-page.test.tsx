@@ -249,6 +249,118 @@ describe("SkillDetailPage", () => {
     expect(screen.queryByRole("tab", { name: "Skill Card" })).toBeNull();
   });
 
+  it("restores the hash-selected Skill Card tab once the generated card is available", async () => {
+    window.history.replaceState(null, "", "/steipete/weather#skill-card");
+    getReadmeMock.mockResolvedValue({ text: "# Skill Card\n\nGenerated from worker." });
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      return undefined;
+    });
+
+    const baseInitialData = {
+      result: {
+        skill: {
+          _id: skillId,
+          _creationTime: 0,
+          slug: "weather",
+          displayName: "Weather",
+          summary: "Get current weather.",
+          ownerUserId: ownerId,
+          ownerPublisherId,
+          tags: {},
+          badges: {},
+          stats: {
+            stars: 12,
+            downloads: 34,
+            installsCurrent: 5,
+            installsAllTime: 8,
+            versions: 1,
+            comments: 0,
+          },
+          createdAt: 0,
+          updatedAt: 0,
+        },
+        owner: {
+          _id: ownerPublisherId,
+          _creationTime: 0,
+          kind: "user" as const,
+          handle: "steipete",
+          displayName: "Peter",
+          linkedUserId: ownerId,
+        },
+        latestVersion: {
+          _id: versionId,
+          _creationTime: 0,
+          skillId,
+          version: "1.0.0",
+          fingerprint: "abc",
+          changelog: "Initial release",
+          parsed: { license: "MIT-0" as const, frontmatter: {} },
+          files: [
+            {
+              path: "SKILL.md",
+              size: 10,
+              storageId,
+              sha256: "abc",
+              contentType: "text/markdown",
+            },
+          ],
+          createdBy: ownerId,
+          createdAt: 0,
+        },
+        forkOf: null,
+        canonical: null,
+      },
+      readme: "# Weather",
+      readmeError: null,
+    };
+
+    const { rerender } = render(<SkillDetailPage slug="weather" initialData={baseInitialData} />);
+
+    expect(await screen.findByRole("tab", { name: "Files" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "SKILL.md" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+
+    rerender(
+      <SkillDetailPage
+        slug="weather"
+        initialData={{
+          ...baseInitialData,
+          result: {
+            ...baseInitialData.result,
+            latestVersion: {
+              ...baseInitialData.result.latestVersion,
+              files: [
+                ...baseInitialData.result.latestVersion.files,
+                {
+                  path: "skill-card.md",
+                  size: 32,
+                  storageId,
+                  sha256: "def",
+                  contentType: "text/markdown",
+                },
+              ],
+              generatedSkillCard: {
+                path: "skill-card.md",
+                size: 32,
+                sha256: "def",
+                contentType: "text/markdown",
+              },
+            },
+          },
+        }}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("tab", { name: "Skill Card" }).getAttribute("aria-selected")).toBe(
+        "true",
+      );
+    });
+    expect(await screen.findByText("Generated from worker.")).toBeTruthy();
+  });
+
   it("renders related skills from the inferred category with a browse link", async () => {
     useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;
