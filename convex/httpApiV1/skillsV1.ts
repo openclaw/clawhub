@@ -452,6 +452,12 @@ function buildVerifySecurity(version: Doc<"skillVersions">) {
   const staticStatus = normalizeVerificationStatus(version.staticScan?.status);
   const clawRawStatus = version.llmAnalysis?.status ?? null;
   const clawStatus = normalizeVerificationStatus(version.llmAnalysis?.verdict ?? clawRawStatus);
+  const vtStatus = version.vtAnalysis
+    ? normalizeVerificationStatus(version.vtAnalysis.verdict ?? version.vtAnalysis.status)
+    : null;
+  const skillSpectorStatus = version.skillSpectorAnalysis
+    ? normalizeVerificationStatus(version.skillSpectorAnalysis.status)
+    : null;
   const depStatus = version.depRegistryAnalysis
     ? normalizeVerificationStatus(version.depRegistryAnalysis.status)
     : null;
@@ -460,50 +466,67 @@ function buildVerifySecurity(version: Doc<"skillVersions">) {
   return {
     status,
     passed: status === "clean",
-    staticScan: version.staticScan
-      ? {
-          status: staticStatus,
-          rawStatus: version.staticScan.status,
-          reasonCodes: version.staticScan.reasonCodes ?? [],
-          summary: version.staticScan.summary ?? null,
-          engineVersion: version.staticScan.engineVersion ?? null,
-          checkedAt: version.staticScan.checkedAt ?? null,
-        }
-      : {
-          status: "pending" as const,
-          rawStatus: null,
-          reasonCodes: [],
-          summary: null,
-          engineVersion: null,
-          checkedAt: null,
-        },
-    clawScan: version.llmAnalysis
-      ? {
-          status: clawStatus,
-          rawStatus: clawRawStatus,
-          verdict: version.llmAnalysis.verdict ?? null,
-          summary: version.llmAnalysis.summary ?? null,
-          model: version.llmAnalysis.model ?? null,
-          checkedAt: version.llmAnalysis.checkedAt ?? null,
-        }
-      : {
-          status: "pending" as const,
-          rawStatus: null,
-          verdict: null,
-          summary: null,
-          model: null,
-          checkedAt: null,
-        },
-    depRegistry: version.depRegistryAnalysis
-      ? {
-          status: depStatus ?? "pending",
-          rawStatus: version.depRegistryAnalysis.status,
-          summary: version.depRegistryAnalysis.summary ?? null,
-          notFoundPackages: version.depRegistryAnalysis.notFoundPackages ?? [],
-          unresolvedPackages: version.depRegistryAnalysis.unresolvedPackages ?? [],
-          checkedAt: version.depRegistryAnalysis.checkedAt ?? null,
-        }
-      : null,
+    rawStatus: clawRawStatus,
+    verdict: version.llmAnalysis?.verdict ?? null,
+    confidence: version.llmAnalysis?.confidence ?? null,
+    summary: version.llmAnalysis?.summary ?? null,
+    model: version.llmAnalysis?.model ?? null,
+    checkedAt: version.llmAnalysis?.checkedAt ?? null,
+    signals: {
+      staticScan: version.staticScan
+        ? {
+            status: staticStatus,
+            rawStatus: version.staticScan.status,
+            reasonCodes: version.staticScan.reasonCodes ?? [],
+            summary: version.staticScan.summary ?? null,
+            engineVersion: version.staticScan.engineVersion ?? null,
+            checkedAt: version.staticScan.checkedAt ?? null,
+          }
+        : {
+            status: "pending" as const,
+            rawStatus: null,
+            reasonCodes: [],
+            summary: null,
+            engineVersion: null,
+            checkedAt: null,
+          },
+      virusTotal: version.vtAnalysis
+        ? {
+            status: vtStatus ?? "pending",
+            rawStatus: version.vtAnalysis.status,
+            verdict: version.vtAnalysis.verdict ?? null,
+            analysis: version.vtAnalysis.analysis ?? null,
+            source: version.vtAnalysis.source ?? null,
+            scanner: version.vtAnalysis.scanner ?? null,
+            engineStats: version.vtAnalysis.engineStats ?? null,
+            checkedAt: version.vtAnalysis.checkedAt ?? null,
+          }
+        : null,
+      skillSpector: version.skillSpectorAnalysis
+        ? {
+            status: skillSpectorStatus ?? "pending",
+            rawStatus: version.skillSpectorAnalysis.status,
+            score: version.skillSpectorAnalysis.score ?? null,
+            severity: version.skillSpectorAnalysis.severity ?? null,
+            recommendation: version.skillSpectorAnalysis.recommendation ?? null,
+            issueCount: version.skillSpectorAnalysis.issueCount ?? 0,
+            scannerVersion: version.skillSpectorAnalysis.scannerVersion ?? null,
+            summary: version.skillSpectorAnalysis.summary ?? null,
+            error: version.skillSpectorAnalysis.error ?? null,
+            checkedAt: version.skillSpectorAnalysis.checkedAt ?? null,
+          }
+        : null,
+      dependencyRegistry: version.depRegistryAnalysis
+        ? {
+            status: depStatus ?? "pending",
+            rawStatus: version.depRegistryAnalysis.status,
+            summary: version.depRegistryAnalysis.summary ?? null,
+            notFoundPackages: version.depRegistryAnalysis.notFoundPackages ?? [],
+            unresolvedPackages: version.depRegistryAnalysis.unresolvedPackages ?? [],
+            checkedAt: version.depRegistryAnalysis.checkedAt ?? null,
+          }
+        : null,
+    },
   };
 }
 
@@ -1173,27 +1196,18 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
         ok: reasons.length === 0,
         decision: reasons.length === 0 ? "pass" : "fail",
         reasons,
-        skill: {
-          slug: skillResult.skill.slug,
-          displayName: skillResult.skill.displayName,
-          pageUrl: ownerHandle
-            ? `https://clawhub.ai/${ownerHandle}/${skillResult.skill.slug}`
-            : `https://clawhub.ai/api/v1/skills/${skillResult.skill.slug}`,
-        },
-        publisher:
-          ownerHandle || ownerDisplayName
-            ? {
-                handle: ownerHandle,
-                displayName: ownerDisplayName,
-                profileUrl: ownerHandle ? `https://clawhub.ai/user/${ownerHandle}` : null,
-              }
-            : null,
-        version: {
-          version: version.version,
-          resolvedFrom,
-          tag: tagParam || null,
-          createdAt: version.createdAt,
-        },
+        slug: skillResult.skill.slug,
+        displayName: skillResult.skill.displayName,
+        pageUrl: ownerHandle
+          ? `https://clawhub.ai/${ownerHandle}/${skillResult.skill.slug}`
+          : `https://clawhub.ai/api/v1/skills/${skillResult.skill.slug}`,
+        publisherHandle: ownerHandle,
+        publisherDisplayName: ownerDisplayName,
+        publisherProfileUrl: ownerHandle ? `https://clawhub.ai/user/${ownerHandle}` : null,
+        version: version.version,
+        resolvedFrom,
+        tag: tagParam || null,
+        createdAt: version.createdAt,
         card: generatedCardFile
           ? {
               available: true,

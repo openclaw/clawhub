@@ -368,6 +368,23 @@ Notes:
 - `moderation` is a current skill-level moderation snapshot derived from the latest version.
 - When querying a historical version, check `moderation.matchesRequestedVersion` and `moderation.sourceVersion` before treating `moderation` and `security` as the same version context.
 
+### `GET /api/v1/skills/{slug}/verify`
+
+Returns the Skill Card verification envelope used by `clawhub skill verify`.
+
+Query params:
+
+- `version` (optional): specific version string.
+- `tag` (optional): resolve a tagged version (for example `latest`).
+
+Notes:
+
+- `ok` is `true` only when the selected version has a generated Skill Card, is not malware-blocked by moderation, and ClawScan verification is clean.
+- Skill identity, publisher identity, and selected version metadata are top-level envelope fields (`slug`, `displayName`, `publisherHandle`, `version`, `resolvedFrom`, `tag`, `createdAt`) so shell automation can read them without unpacking nested wrappers.
+- `security` is the top-level ClawScan/security verdict. Automation should key off `ok`, `decision`, `reasons`, and `security.status`.
+- `security.signals` contains supporting scanner evidence such as `staticScan`, `virusTotal`, `skillSpector`, and `dependencyRegistry`.
+- `provenance` is `server-resolved-github-import` only when ClawHub resolved and stored a GitHub repo/ref/commit/path during publish or import; otherwise it is `unavailable`.
+
 ### `GET /api/v1/skills/{slug}/file`
 
 Returns raw text content.

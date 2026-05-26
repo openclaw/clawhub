@@ -2928,9 +2928,28 @@ describe("httpApiV1 handlers", () => {
       llmAnalysis: {
         status: "clean",
         verdict: "clean",
+        confidence: "high",
         summary: "ClawScan clean.",
         checkedAt: 3,
         model: "gpt-test",
+      },
+      vtAnalysis: {
+        status: "clean",
+        verdict: "clean",
+        analysis: "VirusTotal clean.",
+        source: "engines",
+        checkedAt: 4,
+      },
+      skillSpectorAnalysis: {
+        status: "clean",
+        score: 0,
+        severity: "LOW",
+        recommendation: "INSTALL",
+        issueCount: 0,
+        issues: [],
+        scannerVersion: "skillspector-test",
+        summary: "SkillSpector clean.",
+        checkedAt: 5,
       },
       depRegistryAnalysis: {
         status: "clean",
@@ -2938,7 +2957,7 @@ describe("httpApiV1 handlers", () => {
         notFoundPackages: [],
         unresolvedPackages: [],
         summary: "No dependency issues.",
-        checkedAt: 4,
+        checkedAt: 6,
       },
       capabilityTags: ["dev-tools"],
       softDeletedAt: undefined,
@@ -2984,21 +3003,16 @@ describe("httpApiV1 handlers", () => {
       ok: true,
       decision: "pass",
       reasons: [],
-      skill: {
-        slug: "demo",
-        displayName: "Demo",
-        pageUrl: "https://clawhub.ai/acme/demo",
-      },
-      publisher: {
-        handle: "acme",
-        displayName: "Acme",
-        profileUrl: "https://clawhub.ai/user/acme",
-      },
-      version: {
-        version: "1.0.0",
-        resolvedFrom: "tag",
-        tag: "stable",
-      },
+      slug: "demo",
+      displayName: "Demo",
+      pageUrl: "https://clawhub.ai/acme/demo",
+      publisherHandle: "acme",
+      publisherDisplayName: "Acme",
+      publisherProfileUrl: "https://clawhub.ai/user/acme",
+      version: "1.0.0",
+      resolvedFrom: "tag",
+      tag: "stable",
+      createdAt: 1,
       card: {
         available: true,
         path: "skill-card.md",
@@ -3020,12 +3034,34 @@ describe("httpApiV1 handlers", () => {
       security: {
         status: "clean",
         passed: true,
-        staticScan: { status: "clean", reasonCodes: [] },
-        clawScan: { status: "clean", rawStatus: "clean" },
-        depRegistry: { status: "clean" },
+        rawStatus: "clean",
+        verdict: "clean",
+        confidence: "high",
+        summary: "ClawScan clean.",
+        model: "gpt-test",
+        checkedAt: 3,
+        signals: {
+          staticScan: { status: "clean", rawStatus: "clean", reasonCodes: [] },
+          virusTotal: {
+            status: "clean",
+            rawStatus: "clean",
+            verdict: "clean",
+            source: "engines",
+          },
+          skillSpector: {
+            status: "clean",
+            rawStatus: "clean",
+            score: 0,
+            recommendation: "INSTALL",
+            issueCount: 0,
+          },
+          dependencyRegistry: { status: "clean" },
+        },
       },
       signature: { status: "unsigned" },
     });
+    expect(json.skill).toBeUndefined();
+    expect(json.publisher).toBeUndefined();
   });
 
   it("does not let publisher-supplied skill-card.md satisfy verification", async () => {
@@ -3257,9 +3293,12 @@ describe("httpApiV1 handlers", () => {
     expect(json.security).toMatchObject({
       status: "clean",
       passed: true,
-      staticScan: { status: "malicious", rawStatus: "malicious" },
-      clawScan: { status: "clean", verdict: "benign" },
-      depRegistry: { status: "malicious" },
+      rawStatus: "clean",
+      verdict: "benign",
+      signals: {
+        staticScan: { status: "malicious", rawStatus: "malicious" },
+        dependencyRegistry: { status: "malicious", rawStatus: "malicious" },
+      },
     });
   });
 

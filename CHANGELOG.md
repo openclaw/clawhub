@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixes
+
+- API/CLI: report Skill Card verification with flattened skill/version metadata, ClawScan verdict fields at `security.*`, and supporting scanner evidence under `security.signals`.
+
 ## 0.18.0 - 2026-05-25
 
 ### Changes

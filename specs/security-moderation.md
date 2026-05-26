@@ -114,6 +114,11 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   hosted LLM call. Publishes enqueue a scan job that waits at most 10 minutes
   for VirusTotal telemetry, then Codex reviews the materialized artifact
   workspace with static and VT signals as context.
+- The Skill Card verification envelope exposes ClawScan as the top-level
+  `security` verdict for install automation, with deterministic and third-party
+  scanner evidence grouped under `security.signals`. Clients should key install
+  decisions off `ok`, `decision`, `reasons`, and `security.status` instead of
+  re-deriving trust from individual signal payloads.
 - ClawScan verdicts treat purpose-aligned notes as user guidance, not a
   suspicious verdict. Medium-only material concerns are visible
   `flagged.review` guidance and must not set `isSuspicious`; high or critical
