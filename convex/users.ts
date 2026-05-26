@@ -149,6 +149,55 @@ export const getByHandleInternal = internalQuery({
   },
 });
 
+export const getBanAppealContextByGitHubProviderAccountIdInternal = internalQuery({
+  args: { providerAccountId: v.string() },
+  handler: async (ctx, args) => {
+    const providerAccountId = args.providerAccountId.trim();
+    if (!/^\d+$/.test(providerAccountId)) {
+      return { ok: true as const, action: "moderated" as const, userId: null };
+    }
+
+    const account = await ctx.db
+      .query("authAccounts")
+      .withIndex("providerAndAccountId", (q) =>
+        q.eq("provider", "github").eq("providerAccountId", providerAccountId),
+      )
+      .unique();
+    const userId = account?.userId as Id<"users"> | undefined;
+    if (!userId) return { ok: true as const, action: "moderated" as const, userId: null };
+
+    const user = await ctx.db.get(userId);
+    if (!user) return { ok: true as const, action: "moderated" as const, userId: null };
+
+    const banned = Boolean(user.deletedAt && !user.deactivatedAt);
+    const auditLogs = banned
+      ? await ctx.db
+          .query("auditLogs")
+          .withIndex("by_target_createdAt", (q) =>
+            q.eq("targetType", "user").eq("targetId", user._id.toString()),
+          )
+          .order("desc")
+          .take(20)
+      : [];
+    const banLog = auditLogs.find(
+      (log) => log.action === "user.ban" || log.action === "user.autoban.malware",
+    );
+    const metadata = banLog?.metadata as { reason?: string } | undefined;
+
+    return {
+      ok: true as const,
+      action: banned ? ("banned" as const) : ("moderated" as const),
+      userId: user._id,
+      handle: user.handle ?? null,
+      displayName: user.displayName ?? user.name ?? null,
+      banReason: banned ? (user.banReason ?? metadata?.reason ?? null) : null,
+      bannedAt: banned ? (user.deletedAt ?? null) : null,
+      auditAction: banLog?.action ?? null,
+      auditActorUserId: banLog?.actorUserId ?? null,
+    };
+  },
+});
+
 export const searchInternal = internalQuery({
   args: {
     actorUserId: v.id("users"),
@@ -833,6 +882,17 @@ export const unbanUserInternal = internalMutation({
     const actor = await ctx.db.get(args.actorUserId);
     if (!actor || actor.deletedAt || actor.deactivatedAt) throw new Error("User not found");
     return unbanUserWithActor(ctx, actor, args.targetUserId, args.reason);
+  },
+});
+
+export const unbanUserForBanAppealServiceInternal = internalMutation({
+  args: {
+    targetUserId: v.id("users"),
+    reason: v.optional(v.string()),
+    reviewerDiscordId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    return unbanUserForBanAppealService(ctx, args);
   },
 });
 
@@ -1664,6 +1724,65 @@ async function banUserWithActor(
     alreadyBanned: false,
     deletedSkills: hiddenCount,
     deletedComments,
+    scheduledSkills,
+  };
+}
+
+async function unbanUserForBanAppealService(
+  ctx: MutationCtx,
+  args: { targetUserId: Id<"users">; reason?: string; reviewerDiscordId: string },
+) {
+  const target = await ctx.db.get(args.targetUserId);
+  if (!target) throw new Error("User not found");
+  if (target.deactivatedAt) {
+    throw new Error("Cannot unban a permanently deleted account");
+  }
+  if (!target.deletedAt) {
+    return { ok: true as const, alreadyUnbanned: true };
+  }
+
+  const reason = args.reason?.trim();
+  if (reason && reason.length > 500) {
+    throw new Error("Reason too long (max 500 chars)");
+  }
+
+  const now = Date.now();
+  const bannedAt = target.deletedAt;
+  await ctx.db.patch(args.targetUserId, {
+    deletedAt: undefined,
+    banReason: undefined,
+    role: "user",
+    updatedAt: now,
+  });
+
+  const restoreSkillsResult = (await ctx.runMutation(
+    internal.skills.restoreOwnedSkillsForUnbanBatchInternal,
+    {
+      ownerUserId: args.targetUserId,
+      bannedAt,
+      cursor: undefined,
+    },
+  )) as { restoredCount?: number; scheduled?: boolean };
+  const restoredCount = restoreSkillsResult.restoredCount ?? 0;
+  const scheduledSkills = restoreSkillsResult.scheduled ?? false;
+
+  await ctx.db.insert("auditLogs", {
+    action: "user.unban",
+    targetType: "user",
+    targetId: args.targetUserId,
+    metadata: {
+      reason: reason || undefined,
+      restoredSkills: restoredCount,
+      source: "ban_appeal.service",
+      reviewerDiscordId: args.reviewerDiscordId,
+    },
+    createdAt: now,
+  });
+
+  return {
+    ok: true as const,
+    alreadyUnbanned: false,
+    restoredSkills: restoredCount,
     scheduledSkills,
   };
 }

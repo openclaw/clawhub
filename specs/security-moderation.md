@@ -201,6 +201,10 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   - sets `deletedAt` on the user
 - Admins can manually unban (`deletedAt` + `banReason` cleared); revoked API tokens
   stay revoked and should be recreated by the user.
+- The external appeals site may query ban context and accept account-ban appeals
+  through the dedicated `CLAWHUB_BAN_APPEALS_TOKEN` service path. Accepted
+  appeals record the Discord reviewer id in audit metadata; the token must not
+  authorize any other moderation action.
 - Optional ban reason is stored in `users.banReason` and audit logs.
 - Admins can reclassify an existing ban reason without unbanning or restoring
   content. This preserves the ban while removing users from remediation flows

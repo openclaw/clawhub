@@ -74,6 +74,7 @@ import type * as lib_manualOverrides from "../lib/manualOverrides.js";
 import type * as lib_moderation from "../lib/moderation.js";
 import type * as lib_moderationEngine from "../lib/moderationEngine.js";
 import type * as lib_moderationReasonCodes from "../lib/moderationReasonCodes.js";
+import type * as lib_officialPublishers from "../lib/officialPublishers.js";
 import type * as lib_openaiResponse from "../lib/openaiResponse.js";
 import type * as lib_packageRegistry from "../lib/packageRegistry.js";
 import type * as lib_packageSearchDigest from "../lib/packageSearchDigest.js";
@@ -213,6 +214,7 @@ declare const fullApi: ApiFromModules<{
   "lib/moderation": typeof lib_moderation;
   "lib/moderationEngine": typeof lib_moderationEngine;
   "lib/moderationReasonCodes": typeof lib_moderationReasonCodes;
+  "lib/officialPublishers": typeof lib_officialPublishers;
   "lib/openaiResponse": typeof lib_openaiResponse;
   "lib/packageRegistry": typeof lib_packageRegistry;
   "lib/packageSearchDigest": typeof lib_packageSearchDigest;

@@ -1820,7 +1820,7 @@ const soulStars = defineTable({
   .index("by_soul_user", ["soulId", "userId"]);
 
 const auditLogs = defineTable({
-  actorUserId: v.id("users"),
+  actorUserId: v.optional(v.id("users")),
   action: v.string(),
   targetType: v.string(),
   targetId: v.string(),
