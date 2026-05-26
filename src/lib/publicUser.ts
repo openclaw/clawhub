@@ -8,7 +8,7 @@ export type PublicUser = Pick<
 export type PublicPublisher = Pick<
   Doc<"publishers">,
   "_id" | "_creationTime" | "kind" | "handle" | "displayName" | "image" | "bio" | "linkedUserId"
->;
+> & { official?: boolean };
 
 type PublicPublisherStats = {
   skills: number;
@@ -47,6 +47,7 @@ export type PublicPublisherCatalogItem = {
   href: string;
   downloads: number;
   stars: number;
+  isOfficial: boolean;
   updatedAt: number;
 };
 

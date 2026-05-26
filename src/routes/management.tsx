@@ -774,7 +774,7 @@ export function Management() {
                     </div>
                     <div className="management-tags">
                       <Badge>{plugin.channel}</Badge>
-                      {plugin.isOfficial ? <Badge>official</Badge> : null}
+                      {plugin.isOfficial ? <Badge variant="official">Official</Badge> : null}
                       {plugin.executesCode ? <Badge>executes code</Badge> : null}
                       {plugin.runtimeId ? <Badge>{plugin.runtimeId}</Badge> : null}
                     </div>

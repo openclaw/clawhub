@@ -4,6 +4,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { internalMutation, internalQuery, mutation, query } from "./functions";
 import { assertAdmin, getOptionalActiveAuthUserId, requireUser } from "./lib/access";
+import { isOfficialPublisher, toPublicPublisherWithOfficial } from "./lib/officialPublishers";
 import { toPublicPublisher } from "./lib/public";
 import {
   formatReservedPublicOwnerHandleMessage,
@@ -53,6 +54,7 @@ type PublisherCatalogItem = {
   href: string;
   downloads: number;
   stars: number;
+  isOfficial: boolean;
   updatedAt: number;
 };
 
@@ -256,6 +258,7 @@ function comparePublisherCatalogItems(sort: PublisherCatalogSort) {
 function getPublisherCatalogItems(
   publisher: Doc<"publishers">,
   rows: PublisherPublishedRows,
+  publisherOfficial: boolean,
   sort: PublisherCatalogSort = "downloads",
 ): PublisherCatalogItem[] {
   return [
@@ -268,6 +271,7 @@ function getPublisherCatalogItems(
       href: `/${encodeURIComponent(publisher.handle)}/${encodeURIComponent(skill.slug)}`,
       downloads: readCanonicalStat(skill, "downloads"),
       stars: readCanonicalStat(skill, "stars"),
+      isOfficial: publisherOfficial || Boolean(skill.badges?.official),
       updatedAt: skill.updatedAt,
     })),
     ...rows.packages.map((pkg) => ({
@@ -279,6 +283,7 @@ function getPublisherCatalogItems(
       href: buildPluginDetailHref(pkg.name),
       downloads: pkg.stats.downloads,
       stars: pkg.stats.stars,
+      isOfficial: publisherOfficial || pkg.isOfficial,
       updatedAt: pkg.updatedAt,
     })),
   ].sort(comparePublisherCatalogItems(sort));
@@ -294,7 +299,7 @@ async function toPublisherListItem(
     includeStarredCount?: boolean;
   } = {},
 ): Promise<PublisherListItem | null> {
-  const publicPublisher = toPublicPublisher(publisher);
+  const publicPublisher = await toPublicPublisherWithOfficial(ctx, publisher);
   if (!publicPublisher) return null;
   const linkedUser =
     publisher.kind === "user" && publisher.linkedUserId
@@ -395,7 +400,7 @@ async function getUserPublisherAffiliations(
       ) {
         return null;
       }
-      const publicPublisher = toPublicPublisher(publisher);
+      const publicPublisher = await toPublicPublisherWithOfficial(ctx, publisher);
       if (!publicPublisher) return null;
       return {
         publisher: publicPublisher,
@@ -979,7 +984,7 @@ export const listMine = query({
     const publishers = await Promise.all(
       memberships.map(async (membership) => {
         const publisher = await ctx.db.get(membership.publisherId);
-        const publicPublisher = toPublicPublisher(publisher);
+        const publicPublisher = await toPublicPublisherWithOfficial(ctx, publisher);
         if (!publicPublisher) return null;
         return {
           publisher: publicPublisher,
@@ -995,7 +1000,8 @@ export const listMine = query({
         role: Doc<"publisherMembers">["role"];
       } => Boolean(item),
     );
-    const personalPublisher = toPublicPublisher(
+    const personalPublisher = await toPublicPublisherWithOfficial(
+      ctx,
       await getPersonalPublisherForUserOrFallback(ctx, user),
     );
     if (
@@ -1071,6 +1077,7 @@ export const listStarredPage = query({
             ownerPublisher && !ownerPublisher.deletedAt && !ownerPublisher.deactivatedAt
               ? ownerPublisher.handle
               : String(skill.ownerUserId);
+          const official = await isOfficialPublisher(ctx, ownerPublisher);
           return {
             _id: skill._id,
             kind: "skill" as const,
@@ -1080,6 +1087,7 @@ export const listStarredPage = query({
             href: `/${encodeURIComponent(ownerHandle)}/${encodeURIComponent(skill.slug)}`,
             downloads: readCanonicalStat(skill, "downloads"),
             stars: readCanonicalStat(skill, "stars"),
+            isOfficial: official || Boolean(skill.badges?.official),
             updatedAt: skill.updatedAt,
           };
         }),
@@ -1117,6 +1125,7 @@ export const listPublishedPage = query({
     const items = getPublisherCatalogItems(
       publisher,
       await getPublisherPublishedRows(ctx, publisher._id),
+      await isOfficialPublisher(ctx, publisher),
       args.sort ?? "downloads",
     ).filter((item) => !args.kind || item.kind === args.kind);
     const nextOffset = safeOffset + numItems;
@@ -1260,6 +1269,7 @@ export const listMembers = query({
       memberships.map(async (membership) => {
         const user = await ctx.db.get(membership.userId);
         if (!user || user.deletedAt || user.deactivatedAt) return null;
+        const memberPublisher = await getPersonalPublisherForUser(ctx, user._id);
         return {
           role: membership.role,
           user: {
@@ -1267,12 +1277,13 @@ export const listMembers = query({
             handle: user.handle ?? null,
             displayName: user.displayName ?? user.name ?? null,
             image: user.image ?? null,
+            official: await isOfficialPublisher(ctx, memberPublisher),
           },
         };
       }),
     );
     return {
-      publisher: toPublicPublisher(publisher),
+      publisher: await toPublicPublisherWithOfficial(ctx, publisher),
       members: items.filter(Boolean),
     };
   },
@@ -1297,7 +1308,7 @@ export const createOrg = mutation({
       bio: args.bio,
     });
     return {
-      publisher: toPublicPublisher(await ctx.db.get(result.publisherId)),
+      publisher: await toPublicPublisherWithOfficial(ctx, await ctx.db.get(result.publisherId)),
       role: "owner" as const,
     };
   },
@@ -1362,7 +1373,7 @@ export const updateProfile = mutation({
 
     return {
       ok: true as const,
-      publisher: toPublicPublisher(await ctx.db.get(publisher._id)),
+      publisher: await toPublicPublisherWithOfficial(ctx, await ctx.db.get(publisher._id)),
     };
   },
 });

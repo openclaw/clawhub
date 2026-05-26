@@ -3153,7 +3153,7 @@ describe("packages public queries", () => {
     ).rejects.toThrow("Package already exists and belongs to another publisher");
   });
 
-  it("lets admins transfer a package to a trusted publisher and make it official", async () => {
+  it("lets admins transfer a package to the OpenClaw publisher and make it official", async () => {
     const { ctx, patch, insert } = makeTransferPackageOwnerCtx();
 
     await expect(
@@ -3380,14 +3380,13 @@ describe("packages public queries", () => {
     );
   });
 
-  it("rejects official package transfers to untrusted publishers", async () => {
+  it("rejects official package transfers to non-OpenClaw publishers", async () => {
     const { ctx } = makeTransferPackageOwnerCtx({
       ownerPublisher: {
         _id: "publishers:openclaw",
         kind: "org",
-        handle: "openclaw",
-        displayName: "OpenClaw",
-        trustedPublisher: false,
+        handle: "other",
+        displayName: "Other",
       },
     });
 
@@ -3399,7 +3398,7 @@ describe("packages public queries", () => {
         ownerPublisherId: "publishers:openclaw",
         channel: "official",
       }),
-    ).rejects.toThrow("Only trusted publishers may own official packages");
+    ).rejects.toThrow("Only official publishers may own official packages");
   });
 
   it("lets owners publish real releases into reserved package placeholders", async () => {
@@ -3653,22 +3652,32 @@ describe("packages public queries", () => {
     ).resolves.toMatchObject({ ok: true, packageId: "packages:new" });
   });
 
-  it("promotes existing packages to official when publisher becomes trusted", async () => {
+  it("promotes existing packages to official when owner is the OpenClaw publisher", async () => {
     const ctx = makeInsertReleaseCtx(
       makePackageDoc({
+        ownerUserId: "users:openclaw",
+        ownerPublisherId: "publishers:openclaw",
         channel: "community",
         isOfficial: false,
         stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
       }),
+      [],
+      {
+        "users:owner": { _id: "users:owner", role: "admin" },
+        "users:openclaw": { _id: "users:openclaw", role: "user" },
+        "publishers:openclaw": {
+          _id: "publishers:openclaw",
+          kind: "org",
+          handle: "openclaw",
+          displayName: "OpenClaw",
+        },
+      },
     );
-    ctx.db.get.mockImplementation(async (id: string) => {
-      if (id === "users:owner") return { _id: id, trustedPublisher: true };
-      return null;
-    });
 
     await insertReleaseInternalHandler(ctx, {
       actorUserId: "users:owner",
-      ownerUserId: "users:owner",
+      ownerUserId: "users:openclaw",
+      ownerPublisherId: "publishers:openclaw",
       name: "demo-plugin",
       displayName: "Demo Plugin",
       family: "code-plugin",
@@ -3694,6 +3703,7 @@ describe("packages public queries", () => {
     const ctx = makeInsertReleaseCtx(
       makePackageDoc({
         ownerUserId: "users:openclaw",
+        ownerPublisherId: "publishers:openclaw",
         channel: "official",
         isOfficial: true,
         stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
@@ -3708,7 +3718,12 @@ describe("packages public queries", () => {
         "users:openclaw": {
           _id: "users:openclaw",
           role: "user",
-          trustedPublisher: true,
+        },
+        "publishers:openclaw": {
+          _id: "publishers:openclaw",
+          kind: "org",
+          handle: "openclaw",
+          displayName: "OpenClaw",
         },
       },
     );
@@ -3716,6 +3731,7 @@ describe("packages public queries", () => {
     await insertReleaseInternalHandler(ctx, {
       actorUserId: "users:admin",
       ownerUserId: "users:openclaw",
+      ownerPublisherId: "publishers:openclaw",
       name: "demo-plugin",
       displayName: "Demo Plugin",
       family: "code-plugin",

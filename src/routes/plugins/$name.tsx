@@ -12,6 +12,7 @@ import { EmptyState } from "../../components/EmptyState";
 import { InstallCopyButton } from "../../components/InstallCopyButton";
 import { Container } from "../../components/layout/Container";
 import { MarkdownPreview } from "../../components/MarkdownPreview";
+import { OfficialTag } from "../../components/OfficialBadge";
 import { SidebarMetadata } from "../../components/SidebarMetadata";
 import { SkillDetailSkeleton } from "../../components/skeletons/SkillDetailSkeleton";
 import { Badge } from "../../components/ui/badge";
@@ -649,6 +650,11 @@ export function PluginDetailPage({
               </nav>
               <div className="skill-hero-title-row">
                 <h1 className="skill-page-title">{pkg.displayName}</h1>
+                {pkg.isOfficial ? (
+                  <div className="skill-title-badges">
+                    <OfficialTag />
+                  </div>
+                ) : null}
                 {isDownloadBlocked ? (
                   <div className="skill-title-actions">
                     <Badge variant="destructive">Download blocked</Badge>

@@ -47,6 +47,7 @@ import { scheduleNextBatchIfNeeded } from "./lib/batching";
 import { normalizeClawScanNoteForWrite } from "./lib/clawScanNote";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
+import { isOfficialPublisher } from "./lib/officialPublishers";
 import {
   assertPackageVersion,
   ensurePluginNameMatchesPackage,
@@ -461,6 +462,25 @@ function getRequestedPackageOwnerKey(args: {
   ownerPublisherId?: Id<"publishers">;
 }) {
   return args.ownerPublisherId ? `publisher:${args.ownerPublisherId}` : `user:${args.ownerUserId}`;
+}
+
+function derivePackagePublisherChannel(args: {
+  requestedChannel?: PackageChannel;
+  currentChannel?: PackageChannel;
+  currentIsReservation?: boolean;
+  publisherOfficial: boolean;
+}) {
+  if (
+    args.currentChannel === "private" &&
+    !args.currentIsReservation &&
+    args.requestedChannel === undefined
+  ) {
+    return "private";
+  }
+  if (args.publisherOfficial) {
+    return args.requestedChannel === "private" ? "private" : "official";
+  }
+  return args.requestedChannel ?? "community";
 }
 
 function isReservedPackagePlaceholder(pkg: PackageDoc | null | undefined) {
@@ -5141,15 +5161,21 @@ async function patchPackageOwnerWithAudit(
     pkg: Doc<"packages">;
     owner: Doc<"users">;
     ownerPublisher?: Doc<"publishers"> | null;
+    publisherOfficial?: boolean;
     channel?: "official" | "community" | "private";
     reason?: string;
   },
 ) {
   const now = Date.now();
-  const nextChannel = args.channel ?? args.pkg.channel;
-  const publisherTrusted = args.ownerPublisher?.trustedPublisher ?? args.owner.trustedPublisher;
-  if (nextChannel === "official" && !publisherTrusted) {
-    throw new ConvexError("Only trusted publishers may own official packages");
+  const publisherOfficial =
+    args.publisherOfficial ?? (await isOfficialPublisher(ctx, args.ownerPublisher));
+  const nextChannel = derivePackagePublisherChannel({
+    requestedChannel: args.channel,
+    currentChannel: args.pkg.channel,
+    publisherOfficial,
+  });
+  if (nextChannel === "official" && !publisherOfficial) {
+    throw new ConvexError("Only official publishers may own official packages");
   }
   const nextPackageFields = {
     ownerUserId: args.owner._id,
@@ -5273,6 +5299,7 @@ async function transferPackageOwnerForUser(
     pkg,
     owner: actor,
     ownerPublisher: destinationPublisher,
+    publisherOfficial: await isOfficialPublisher(ctx, destinationPublisher),
     reason: args.reason,
   });
 }
@@ -5327,6 +5354,10 @@ export const transferPackageOwnerInternal = internalMutation({
     if (args.ownerPublisherId && (!ownerPublisher || ownerPublisher.deletedAt)) {
       throw new ConvexError("Owner publisher not found");
     }
+    const officialPublisher = await getOwnerPublisher(ctx, {
+      ownerPublisherId: args.ownerPublisherId,
+      ownerUserId: args.ownerUserId,
+    });
 
     const normalizedName = normalizePackageName(args.name);
     const pkg = await getPackageByNormalizedName(ctx, normalizedName);
@@ -5337,6 +5368,7 @@ export const transferPackageOwnerInternal = internalMutation({
       pkg,
       owner,
       ownerPublisher,
+      publisherOfficial: await isOfficialPublisher(ctx, officialPublisher),
       channel: args.channel,
       reason: args.reason,
     });
@@ -5496,9 +5528,13 @@ export const insertReleaseInternal = internalMutation({
     if (args.ownerUserId !== args.actorUserId) {
       assertAdmin(actor);
     }
-    const publisherTrusted = ownerPublisher?.trustedPublisher ?? owner.trustedPublisher;
-    if (args.channel === "official" && !publisherTrusted) {
-      throw new ConvexError("Only trusted publishers may publish to the official channel");
+    const officialPublisher = await getOwnerPublisher(ctx, {
+      ownerPublisherId: args.ownerPublisherId,
+      ownerUserId: args.ownerUserId,
+    });
+    const publisherOfficial = await isOfficialPublisher(ctx, officialPublisher);
+    if (args.channel === "official" && !publisherOfficial) {
+      throw new ConvexError("Only official publishers may publish to the official channel");
     }
     const nextCapabilities = withArtifactCapabilityTags(args.capabilities, args);
     const nextCapabilityTags = mergeArtifactCapabilityTags(args.capabilities?.capabilityTags, args);
@@ -5510,13 +5546,12 @@ export const insertReleaseInternal = internalMutation({
         `Package "${nextNameLabel}" was deleted. Restore it before publishing another release or choose a new package name.`,
       );
     }
-    const nextChannel =
-      args.channel ??
-      (existing?.channel === "private" && !existingIsReservation
-        ? "private"
-        : publisherTrusted
-          ? "official"
-          : "community");
+    const nextChannel = derivePackagePublisherChannel({
+      requestedChannel: args.channel,
+      currentChannel: existing?.channel,
+      currentIsReservation: existingIsReservation,
+      publisherOfficial,
+    });
     const nextIsOfficial = nextChannel === "official";
     const nextRuntimeIdLabel = typeof args.runtimeId === "string" ? args.runtimeId : "<unknown>";
     const nextVersionLabel = typeof args.version === "string" ? args.version : "<unknown>";

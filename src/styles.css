@@ -128,6 +128,9 @@
   --status-warning-fg: #fbbf24;
   --status-error-bg: rgba(239, 68, 68, 0.12);
   --status-error-fg: #ef4444;
+  --official-bg: rgba(59, 130, 246, 0.14);
+  --official-fg: #60a5fa;
+  --official-border: rgba(96, 165, 250, 0.3);
 
   /* Form controls — crisp, modern */
   --input-border: rgba(255, 255, 255, 0.1);
@@ -214,6 +217,9 @@
   --status-warning-fg: #d97706;
   --status-error-bg: rgba(239, 68, 68, 0.1);
   --status-error-fg: #dc2626;
+  --official-bg: rgba(37, 99, 235, 0.1);
+  --official-fg: #2563eb;
+  --official-border: rgba(37, 99, 235, 0.26);
 
   /* Form controls — light */
   --input-border: rgba(0, 0, 0, 0.12);
@@ -4822,17 +4828,29 @@ code {
   align-items: center;
 }
 
-.verified-badge {
-  color: var(--ink-soft);
+.official-badge-icon {
+  color: currentColor;
 }
 
-.verified-badge-icon {
-  color: #6aa9ff;
+.official-badge {
+  flex: 0 0 auto;
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  background: var(--official-bg);
+  color: var(--official-fg);
+  border-color: var(--official-border);
+  line-height: 1;
+  vertical-align: middle;
 }
 
-.skill-list-item-main .verified-badge {
-  padding-block: 0;
-  line-height: 1.35;
+.official-badge svg {
+  width: 12px;
+  height: 12px;
 }
 
 .skill-hero-scan-row {
@@ -11612,6 +11630,20 @@ a.publisher-profile-detail:hover {
   font-weight: 700;
 }
 
+.publisher-profile-org-name {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.publisher-profile-org-name-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .publisher-profile-org small {
   color: var(--ink-soft);
   font-size: var(--fs-xs);
@@ -11676,13 +11708,20 @@ a.publisher-profile-detail:hover {
   text-decoration: none;
 }
 
-.publisher-profile-member span {
+.publisher-profile-member-copy {
   min-width: 0;
   display: grid;
   gap: 2px;
 }
 
-.publisher-profile-member strong,
+.publisher-profile-member-name {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.publisher-profile-member-name-text,
 .publisher-profile-member small {
   overflow: hidden;
   text-overflow: ellipsis;

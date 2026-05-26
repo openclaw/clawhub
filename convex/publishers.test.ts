@@ -274,6 +274,9 @@ describe("publishers membership controls", () => {
               },
             };
             buildQuery(q);
+            if (table === "publishers" && indexName === "by_handle") {
+              return { unique: vi.fn(async () => null) };
+            }
             if (table === "publishers" && indexName === "by_active_total_downloads") {
               return {
                 order: vi.fn(() => ({ collect: vi.fn(async () => publisherRows) })),
@@ -352,6 +355,9 @@ describe("publishers membership controls", () => {
               },
             };
             buildQuery(q);
+            if (table === "publishers" && indexName === "by_handle") {
+              return { unique: vi.fn(async () => null) };
+            }
             if (table === "publishers" && indexName === "by_active_total_downloads") {
               return {
                 order: vi.fn(() => ({ collect: vi.fn(async () => publisherRows) })),
@@ -440,6 +446,9 @@ describe("publishers membership controls", () => {
               },
             };
             buildQuery(q);
+            if (table === "publishers" && indexName === "by_handle") {
+              return { unique: vi.fn(async () => null) };
+            }
             if (table === "publishers" && indexName === "by_active_kind_total_downloads") {
               return {
                 order: vi.fn(() => ({
@@ -577,6 +586,9 @@ describe("publishers membership controls", () => {
               },
             };
             buildQuery(q);
+            if (table === "publishers" && indexName === "by_handle") {
+              return { unique: vi.fn(async () => null) };
+            }
             if (table === "publishers" && indexName === "by_active_total_downloads") {
               return {
                 order: vi.fn(() => ({
@@ -647,6 +659,9 @@ describe("publishers membership controls", () => {
               },
             };
             buildQuery(q);
+            if (table === "publishers" && indexName === "by_handle") {
+              return { unique: vi.fn(async () => null) };
+            }
             if (table === "publishers" && indexName === "by_active_total_downloads") {
               return {
                 order: vi.fn(() => ({
@@ -1490,6 +1505,7 @@ describe("publisher bootstrap", () => {
           if (table === "publishers") {
             return {
               withIndex: vi.fn((indexName: string) => {
+                if (indexName === "by_handle") return { unique: vi.fn().mockResolvedValue(null) };
                 if (indexName !== "by_linked_user") {
                   throw new Error(`unexpected index ${indexName}`);
                 }
@@ -1533,6 +1549,7 @@ describe("publisher bootstrap", () => {
           if (table === "publishers") {
             return {
               withIndex: vi.fn((indexName: string) => {
+                if (indexName === "by_handle") return { unique: vi.fn().mockResolvedValue(null) };
                 if (indexName !== "by_linked_user") {
                   throw new Error(`unexpected index ${indexName}`);
                 }
@@ -1587,6 +1604,7 @@ describe("publisher bootstrap", () => {
           if (table === "publishers") {
             return {
               withIndex: vi.fn((indexName: string) => {
+                if (indexName === "by_handle") return { unique: vi.fn().mockResolvedValue(null) };
                 if (indexName !== "by_linked_user") {
                   throw new Error(`unexpected index ${indexName}`);
                 }

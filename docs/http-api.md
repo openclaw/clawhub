@@ -1169,7 +1169,8 @@ Validation highlights:
   metadata, config schema metadata, `openclaw.compat.pluginApi`, and
   `openclaw.build.openclawVersion`.
 - `openclaw.hostTargets` and `openclaw.environment` are optional metadata.
-- Only trusted publishers may publish to the `official` channel.
+- Only the `openclaw` org publisher and current `openclaw` org members'
+  personal publishers may publish to the `official` channel.
 - On-behalf publishes still validate official-channel eligibility against the target owner account.
 
 ### `DELETE /api/v1/skills/{slug}` / `POST /api/v1/skills/{slug}/undelete`

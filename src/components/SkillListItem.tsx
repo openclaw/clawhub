@@ -6,8 +6,8 @@ import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
 import { timeAgo } from "../lib/timeAgo";
 import { ApiKeyRequiredBadge } from "./ApiKeyRequiredBadge";
 import { MarketplaceIcon } from "./MarketplaceIcon";
+import { OfficialBadge } from "./OfficialBadge";
 import { Badge } from "./ui/badge";
-import { VerifiedBadge } from "./VerifiedBadge";
 
 type SkillListItemProps = {
   skill: PublicSkill;
@@ -36,8 +36,8 @@ export function SkillListItem({ skill, ownerHandle, owner, apiKeyRequired }: Ski
           ) : null}
           <span className="skill-list-item-name">{skill.displayName}</span>
           {badges.map((b) =>
-            b === "Verified" ? (
-              <VerifiedBadge key={b} />
+            b === "Official" ? (
+              <OfficialBadge key={b} />
             ) : (
               <Badge key={b} variant="compact">
                 {b}

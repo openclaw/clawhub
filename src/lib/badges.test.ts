@@ -67,12 +67,12 @@ describe("badges", () => {
       ).toEqual(["Deprecated"]);
     });
 
-    it("returns Verified when official is set", () => {
+    it("returns Official when official is set", () => {
       expect(
         getSkillBadges({
           badges: { official: { byUserId: "user1" as never, at: 123 } },
         }),
-      ).toEqual(["Verified"]);
+      ).toEqual(["Official"]);
     });
 
     it("does not surface Highlighted as a trust badge", () => {
@@ -92,7 +92,7 @@ describe("badges", () => {
             highlighted: { byUserId: "user1" as never, at: 123 },
           },
         }),
-      ).toEqual(["Deprecated", "Verified"]);
+      ).toEqual(["Deprecated", "Official"]);
     });
   });
 });

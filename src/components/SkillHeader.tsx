@@ -13,6 +13,7 @@ import { timeAgo } from "../lib/timeAgo";
 import { ApiKeyRequiredBadge } from "./ApiKeyRequiredBadge";
 import { DetailHero } from "./DetailPageShell";
 import { DetailSecuritySummaryLabel } from "./DetailSecuritySummary";
+import { OfficialTag } from "./OfficialBadge";
 import { SidebarMetadata } from "./SidebarMetadata";
 import { buildSkillHref } from "./skillDetailUtils";
 import { SkillCommandLineCard } from "./SkillInstallSurface";
@@ -20,7 +21,6 @@ import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { UserBadge } from "./UserBadge";
-import { VerifiedBadge } from "./VerifiedBadge";
 
 type SkillModerationInfo = {
   isPendingScan: boolean;
@@ -148,8 +148,10 @@ export function SkillHeader({
     Boolean(settingsHref) ||
     hasTitleActions;
   const badges = getSkillBadges(skill);
+  const isOfficial = badges.includes("Official") || owner?.official === true;
+  const titleBadges = badges.filter((badge) => badge !== "Official");
   const showHeroMeta = Boolean((forkOf && forkOfHref) || canonicalHref);
-  const showTitleBadges = badges.length > 0;
+  const showTitleBadges = titleBadges.length > 0;
   const headerDescription =
     getLatestVersionDescription(latestVersion) ?? skill.summary ?? "No summary provided.";
 
@@ -290,17 +292,14 @@ export function SkillHeader({
               <div className="skill-hero-heading-stack">
                 <div className="skill-hero-title-row">
                   <h1 className="skill-page-title">{skill.displayName}</h1>
+                  {isOfficial ? <OfficialTag /> : null}
                   {showTitleBadges ? (
                     <div className="skill-title-badges">
-                      {badges.map((badge) =>
-                        badge === "Verified" ? (
-                          <VerifiedBadge key={badge} />
-                        ) : (
-                          <Badge key={badge} variant="compact">
-                            {badge}
-                          </Badge>
-                        ),
-                      )}
+                      {titleBadges.map((badge) => (
+                        <Badge key={badge} variant="compact">
+                          {badge}
+                        </Badge>
+                      ))}
                     </div>
                   ) : null}
                   {nixPlugin ? <Badge variant="accent">Plugin bundle (nix)</Badge> : null}
