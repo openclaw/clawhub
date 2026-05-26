@@ -3178,7 +3178,7 @@ describe("httpApiV1 handlers", () => {
     expect(json.security).toMatchObject({ status: "clean", passed: true });
   });
 
-  it("passes verification when static findings are advisory but ClawScan is clean", async () => {
+  it("passes verification when static and dependency findings are advisory but ClawScan is clean", async () => {
     const internalVersion = {
       _id: "skillVersions:1",
       skillId: "skills:1",
@@ -3192,7 +3192,7 @@ describe("httpApiV1 handlers", () => {
       ],
       parsed: {},
       staticScan: {
-        status: "suspicious",
+        status: "malicious",
         reasonCodes: ["suspicious.external_api"],
         findings: [],
         summary: "Static advisory warning.",
@@ -3204,6 +3204,14 @@ describe("httpApiV1 handlers", () => {
         verdict: "benign",
         summary: "ClawScan clean.",
         checkedAt: 3,
+      },
+      depRegistryAnalysis: {
+        status: "malicious",
+        results: [],
+        notFoundPackages: ["left-pad"],
+        unresolvedPackages: [],
+        summary: "Dependency advisory warning.",
+        checkedAt: 4,
       },
       softDeletedAt: undefined,
     };
@@ -3249,8 +3257,9 @@ describe("httpApiV1 handlers", () => {
     expect(json.security).toMatchObject({
       status: "clean",
       passed: true,
-      staticScan: { status: "suspicious", rawStatus: "suspicious" },
+      staticScan: { status: "malicious", rawStatus: "malicious" },
       clawScan: { status: "clean", verdict: "benign" },
+      depRegistry: { status: "malicious" },
     });
   });
 
@@ -5811,7 +5820,7 @@ describe("httpApiV1 handlers", () => {
             verification: {
               tier: "source-linked",
               scope: "artifact-only",
-              scanStatus: "clean",
+              scanStatus: "malicious",
             },
             sha256hash: "a".repeat(64),
             vtAnalysis: {
@@ -5826,10 +5835,10 @@ describe("httpApiV1 handlers", () => {
               checkedAt: 1,
             },
             staticScan: {
-              status: "clean",
-              reasonCodes: [],
+              status: "malicious",
+              reasonCodes: ["malicious.static_fixture"],
               findings: [],
-              summary: "No issues",
+              summary: "Static fixture only.",
               engineVersion: "1",
               checkedAt: 1,
             },
@@ -5862,9 +5871,12 @@ describe("httpApiV1 handlers", () => {
           status: "clean",
           verdict: "clean",
         },
+        verification: {
+          scanStatus: "clean",
+        },
         staticScan: {
-          status: "clean",
-          summary: "No issues",
+          status: "malicious",
+          summary: "Static fixture only.",
         },
       },
     });

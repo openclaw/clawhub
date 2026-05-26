@@ -48,7 +48,8 @@ export function resolvePackageReleaseScanStatus(
 
   const staticStatus = normalizePackageScanStatus(release.staticScan?.status);
   const effectiveVerificationStatus =
-    verificationStatus === "suspicious" && staticStatus === "suspicious"
+    (verificationStatus === "suspicious" && staticStatus === "suspicious") ||
+    (verificationStatus === "malicious" && staticStatus === "malicious")
       ? undefined
       : verificationStatus;
   if (effectiveVerificationStatus === "malicious") return "malicious";

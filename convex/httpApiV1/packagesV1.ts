@@ -2919,6 +2919,10 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
       },
     )) as { package: PublicPackageDocLike; version: ReleaseLike } | null;
     if (!result) return text("Version not found", 404, rate.headers);
+    const scanStatus = resolvePackageReleaseScanStatus(result.version);
+    const verification = result.version.verification
+      ? { ...result.version.verification, scanStatus }
+      : null;
     return json(
       {
         package: {
@@ -2939,7 +2943,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
           })),
           compatibility: result.version.compatibility ?? null,
           capabilities: result.version.capabilities ?? null,
-          verification: result.version.verification ?? null,
+          verification,
           artifact: toReleaseArtifact(result.version, result.package.name),
           sha256hash: result.version.sha256hash ?? null,
           vtAnalysis: result.version.vtAnalysis ?? null,

@@ -321,6 +321,7 @@ export const ApiV1PackageResponseSchema = type({
     capabilities: PackageCapabilitySummarySchema.or("null").optional(),
     verification: PackageVerificationSummarySchema.or("null").optional(),
     artifact: PackageArtifactSummarySchema.or("null").optional(),
+    scanStatus: '"clean"|"suspicious"|"malicious"|"pending"|"not-run"?',
     stats: PackageStatsSchema.optional(),
   }).or("null"),
   owner: type({

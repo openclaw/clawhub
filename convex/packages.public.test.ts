@@ -3,6 +3,7 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  backfillLatestPackageScanStatusInternal,
   backfillPackageReleaseScansInternal,
   backfillPackageArtifactKindsInternal,
   getPackageReleaseScanBackfillBatchInternal,
@@ -76,7 +77,7 @@ const listHandler = (
 const getVersionByNameHandler = (
   getVersionByName as unknown as WrappedHandler<
     { name: string; version: string },
-    { package: { name: string }; version: { version: string } } | null
+    { package: { name: string; scanStatus?: string }; version: { version: string } } | null
   >
 )._handler;
 const getVersionSecurityByNameForViewerInternalHandler = (
@@ -398,6 +399,19 @@ const getPackageReleaseScanBackfillBatchInternalHandler = (
       }>;
       nextCursor: number;
       done: boolean;
+    }
+  >
+)._handler;
+const backfillLatestPackageScanStatusInternalHandler = (
+  backfillLatestPackageScanStatusInternal as unknown as WrappedHandler<
+    {
+      cursor?: string | null;
+      batchSize?: number;
+    },
+    {
+      patched: number;
+      isDone: boolean;
+      scanned: number;
     }
   >
 )._handler;
@@ -2487,6 +2501,80 @@ describe("packages public queries", () => {
       }),
     ).resolves.toMatchObject({
       package: { name: "demo-plugin", publicDownloadBlocked: true },
+      version: { version: "1.0.0" },
+    });
+  });
+
+  it("normalizes legacy static-only package blocks through latest ClawScan state", async () => {
+    const verification = {
+      tier: "source-linked",
+      scope: "artifact-only",
+      scanStatus: "malicious",
+    };
+    const latestRelease = makeReleaseDoc({
+      sha256hash: "a".repeat(64),
+      verification,
+      staticScan: {
+        status: "malicious",
+        reasonCodes: ["malicious.static_fixture"],
+        findings: [],
+        summary: "Static fixture only.",
+        engineVersion: "test",
+        checkedAt: 1,
+      },
+      llmAnalysis: {
+        status: "clean",
+        verdict: "clean",
+        checkedAt: 2,
+      },
+    });
+    const { ctx } = makePackageCtx({
+      pkg: makePackageDoc({
+        channel: "community",
+        scanStatus: "malicious",
+        verification,
+        latestVersionSummary: {
+          version: "1.0.0",
+          verification,
+        },
+      }),
+      latestRelease,
+    });
+
+    await expect(
+      getByNameHandler(ctx, {
+        name: "demo-plugin",
+      }),
+    ).resolves.toMatchObject({
+      package: {
+        name: "demo-plugin",
+        scanStatus: "clean",
+        verification: { scanStatus: "clean" },
+      },
+    });
+    await expect(
+      getVersionByNameHandler(ctx, {
+        name: "demo-plugin",
+        version: "1.0.0",
+      }),
+    ).resolves.toMatchObject({
+      package: {
+        name: "demo-plugin",
+        scanStatus: "clean",
+      },
+      version: { version: "1.0.0" },
+    });
+    await expect(
+      getVersionSecurityByNameForViewerInternalHandler(ctx, {
+        name: "demo-plugin",
+        version: "1.0.0",
+      }),
+    ).resolves.toMatchObject({
+      package: {
+        name: "demo-plugin",
+        scanStatus: "clean",
+        publicDownloadBlocked: false,
+      },
       version: { version: "1.0.0" },
     });
   });
@@ -5391,7 +5479,29 @@ describe("packages public queries", () => {
           }),
           patch,
           insert,
-          query: vi.fn(),
+          query: vi.fn((table: string) => {
+            if (table === "packageSearchDigest") {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue({
+                    _id: "packageSearchDigest:demo",
+                    packageId: "packages:demo",
+                  }),
+                })),
+              };
+            }
+            if (
+              table === "packageCapabilitySearchDigest" ||
+              table === "packagePluginCategorySearchDigest"
+            ) {
+              return {
+                withIndex: vi.fn(() => ({
+                  collect: vi.fn().mockResolvedValue([]),
+                })),
+              };
+            }
+            throw new Error(`Unexpected table ${table}`);
+          }),
           replace: vi.fn(),
           delete: vi.fn(),
           normalizeId: vi.fn(),
@@ -5461,7 +5571,29 @@ describe("packages public queries", () => {
           }),
           patch,
           insert,
-          query: vi.fn(),
+          query: vi.fn((table: string) => {
+            if (table === "packageSearchDigest") {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue({
+                    _id: "packageSearchDigest:demo",
+                    packageId: "packages:demo",
+                  }),
+                })),
+              };
+            }
+            if (
+              table === "packageCapabilitySearchDigest" ||
+              table === "packagePluginCategorySearchDigest"
+            ) {
+              return {
+                withIndex: vi.fn(() => ({
+                  collect: vi.fn().mockResolvedValue([]),
+                })),
+              };
+            }
+            throw new Error(`Unexpected table ${table}`);
+          }),
           replace: vi.fn(),
           delete: vi.fn(),
           normalizeId: vi.fn(),
@@ -5733,7 +5865,29 @@ describe("packages public queries", () => {
           }),
           patch,
           insert,
-          query: vi.fn(),
+          query: vi.fn((table: string) => {
+            if (table === "packageSearchDigest") {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue({
+                    _id: "packageSearchDigest:demo",
+                    packageId: "packages:demo",
+                  }),
+                })),
+              };
+            }
+            if (
+              table === "packageCapabilitySearchDigest" ||
+              table === "packagePluginCategorySearchDigest"
+            ) {
+              return {
+                withIndex: vi.fn(() => ({
+                  collect: vi.fn().mockResolvedValue([]),
+                })),
+              };
+            }
+            throw new Error(`Unexpected table ${table}`);
+          }),
           replace: vi.fn(),
           delete: vi.fn(),
           normalizeId: vi.fn(),
@@ -5808,7 +5962,29 @@ describe("packages public queries", () => {
           }),
           patch,
           insert,
-          query: vi.fn(),
+          query: vi.fn((table: string) => {
+            if (table === "packageSearchDigest") {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue({
+                    _id: "packageSearchDigest:demo",
+                    packageId: "packages:demo",
+                  }),
+                })),
+              };
+            }
+            if (
+              table === "packageCapabilitySearchDigest" ||
+              table === "packagePluginCategorySearchDigest"
+            ) {
+              return {
+                withIndex: vi.fn(() => ({
+                  collect: vi.fn().mockResolvedValue([]),
+                })),
+              };
+            }
+            throw new Error(`Unexpected table ${table}`);
+          }),
           replace: vi.fn(),
           delete: vi.fn(),
           normalizeId: vi.fn(),
@@ -6596,6 +6772,226 @@ describe("package scan backfill", () => {
     }
   });
 
+  it("backfills legacy static-only package scan status into the package search digest", async () => {
+    const verification = {
+      tier: "source-linked",
+      scope: "artifact-only",
+      scanStatus: "malicious",
+    };
+    const pkg = makePackageDoc({
+      scanStatus: "malicious",
+      verification,
+      latestVersionSummary: {
+        version: "1.0.0",
+        verification,
+      },
+    });
+    const release = makeReleaseDoc({
+      sha256hash: "a".repeat(64),
+      verification,
+      staticScan: {
+        status: "malicious",
+        reasonCodes: ["malicious.static_fixture"],
+        findings: [],
+        summary: "Static fixture only.",
+        engineVersion: "test",
+        checkedAt: 1,
+      },
+      llmAnalysis: {
+        status: "clean",
+        verdict: "clean",
+        checkedAt: 2,
+      },
+    });
+    const patch = vi.fn();
+
+    const result = await backfillLatestPackageScanStatusInternalHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "packageReleases:demo-1") return release;
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table === "packages") {
+              return {
+                paginate: vi.fn().mockResolvedValue({
+                  page: [pkg],
+                  continueCursor: null,
+                  isDone: true,
+                }),
+              };
+            }
+            if (table === "packageSearchDigest") {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue({
+                    _id: "packageSearchDigest:demo",
+                    packageId: "packages:demo",
+                    scanStatus: "malicious",
+                  }),
+                })),
+              };
+            }
+            if (
+              table === "packageCapabilitySearchDigest" ||
+              table === "packagePluginCategorySearchDigest"
+            ) {
+              return {
+                withIndex: vi.fn(() => ({
+                  collect: vi.fn().mockResolvedValue([]),
+                })),
+              };
+            }
+            throw new Error(`Unexpected table ${table}`);
+          }),
+          patch,
+          insert: vi.fn(),
+          replace: vi.fn(),
+          delete: vi.fn(),
+          normalizeId: vi.fn(),
+        },
+        scheduler: { runAfter: vi.fn() },
+      } as never,
+      { batchSize: 10 },
+    );
+
+    expect(result).toEqual({ patched: 1, isDone: true, scanned: 1 });
+    expect(patch).toHaveBeenCalledWith(
+      "packageReleases:demo-1",
+      expect.objectContaining({
+        verification: expect.objectContaining({ scanStatus: "clean" }),
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "packages:demo",
+      expect.objectContaining({
+        scanStatus: "clean",
+        verification: expect.objectContaining({ scanStatus: "clean" }),
+        latestVersionSummary: expect.objectContaining({
+          verification: expect.objectContaining({ scanStatus: "clean" }),
+        }),
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "packageSearchDigest:demo",
+      expect.objectContaining({ scanStatus: "clean" }),
+    );
+  });
+
+  it("repairs stale package search digests even when package scan status is already current", async () => {
+    const verification = {
+      tier: "source-linked",
+      scope: "artifact-only",
+      scanStatus: "clean",
+    };
+    const pkg = makePackageDoc({
+      ownerPublisherId: "publishers:owner",
+      capabilityTags: ["read-files"],
+      scanStatus: "clean",
+      verification,
+      latestVersionSummary: {
+        version: "1.0.0",
+        verification,
+      },
+    });
+    const release = makeReleaseDoc({
+      verification,
+      llmAnalysis: {
+        status: "clean",
+        verdict: "clean",
+        checkedAt: 2,
+      },
+    });
+    const patch = vi.fn();
+
+    const result = await backfillLatestPackageScanStatusInternalHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "packageReleases:demo-1") return release;
+            if (id === "publishers:owner") {
+              return {
+                _id: "publishers:owner",
+                kind: "user",
+                handle: "tongfei11",
+                linkedUserId: "users:owner",
+              };
+            }
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table === "packages") {
+              return {
+                paginate: vi.fn().mockResolvedValue({
+                  page: [pkg],
+                  continueCursor: null,
+                  isDone: true,
+                }),
+              };
+            }
+            if (table === "packageSearchDigest") {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue({
+                    _id: "packageSearchDigest:demo",
+                    packageId: "packages:demo",
+                    scanStatus: "malicious",
+                  }),
+                })),
+              };
+            }
+            if (table === "packageCapabilitySearchDigest") {
+              return {
+                withIndex: vi.fn(() => ({
+                  collect: vi.fn().mockResolvedValue([
+                    {
+                      _id: "packageCapabilitySearchDigest:demo-read-files",
+                      packageId: "packages:demo",
+                      capabilityTag: "read-files",
+                      scanStatus: "malicious",
+                      ownerHandle: undefined,
+                    },
+                  ]),
+                })),
+              };
+            }
+            if (table === "packagePluginCategorySearchDigest") {
+              return {
+                withIndex: vi.fn(() => ({
+                  collect: vi.fn().mockResolvedValue([]),
+                })),
+              };
+            }
+            throw new Error(`Unexpected table ${table}`);
+          }),
+          patch,
+          insert: vi.fn(),
+          replace: vi.fn(),
+          delete: vi.fn(),
+          normalizeId: vi.fn(),
+        },
+        scheduler: { runAfter: vi.fn() },
+      } as never,
+      { batchSize: 10 },
+    );
+
+    expect(result).toEqual({ patched: 0, isDone: true, scanned: 1 });
+    expect(patch).not.toHaveBeenCalledWith("packages:demo", expect.anything());
+    expect(patch).toHaveBeenCalledWith(
+      "packageSearchDigest:demo",
+      expect.objectContaining({ scanStatus: "clean" }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "packageCapabilitySearchDigest:demo-read-files",
+      expect.objectContaining({
+        scanStatus: "clean",
+        ownerHandle: "tongfei11",
+        ownerKind: "user",
+      }),
+    );
+  });
+
   it("stores static package scan results without promoting malware status", async () => {
     const patch = vi.fn().mockResolvedValue(undefined);
     const release = {
@@ -6636,6 +7032,27 @@ describe("package scan backfill", () => {
             return null;
           }),
           query: vi.fn((table: string) => {
+            if (table === "packageSearchDigest") {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue({
+                    _id: "packageSearchDigest:demo",
+                    packageId: "packages:demo",
+                    scanStatus: "pending",
+                  }),
+                })),
+              };
+            }
+            if (
+              table === "packageCapabilitySearchDigest" ||
+              table === "packagePluginCategorySearchDigest"
+            ) {
+              return {
+                withIndex: vi.fn(() => ({
+                  collect: vi.fn().mockResolvedValue([]),
+                })),
+              };
+            }
             throw new Error(`Unexpected query table: ${table}`);
           }),
           insert: vi.fn(),
@@ -6676,6 +7093,10 @@ describe("package scan backfill", () => {
           verification: expect.objectContaining({ scanStatus: "pending" }),
         }),
       }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "packageSearchDigest:demo",
+      expect.objectContaining({ scanStatus: "pending" }),
     );
   });
 });

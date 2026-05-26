@@ -116,6 +116,16 @@ describe("packageSecurity", () => {
     ).toBe("pending");
   });
 
+  it("does not preserve old static-only malicious verification", () => {
+    expect(
+      resolvePackageReleaseScanStatus({
+        staticScan: { status: "malicious" },
+        verification: { scanStatus: "malicious" },
+        sha256hash: "a".repeat(64),
+      } as never),
+    ).toBe("pending");
+  });
+
   it("lets package ClawScan clear non-malicious scanner noise", () => {
     expect(
       resolvePackageReleaseScanStatus({

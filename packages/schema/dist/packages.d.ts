@@ -400,6 +400,7 @@ export declare const ApiV1PackageResponseSchema: import("arktype/internal/varian
             packageName?: string | undefined;
             version?: string | undefined;
         } | null | undefined;
+        scanStatus?: "clean" | "suspicious" | "malicious" | "pending" | "not-run" | undefined;
         stats?: {
             downloads: number;
             installs: number;

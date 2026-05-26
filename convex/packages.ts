@@ -719,6 +719,26 @@ async function canViewerReadPackage(
   );
 }
 
+function resolvePublicPackageScanStatus(
+  pkg: Pick<Doc<"packages">, "scanStatus">,
+  latestRelease?: Doc<"packageReleases"> | null,
+) {
+  if (latestRelease && !latestRelease.softDeletedAt) {
+    const releaseScanStatus = resolvePackageReleaseScanStatus(latestRelease);
+    return releaseScanStatus === "not-run" ? pkg.scanStatus : releaseScanStatus;
+  }
+  return pkg.scanStatus;
+}
+
+function resolvePublicPackageVerification(
+  pkg: Pick<Doc<"packages">, "verification" | "latestVersionSummary" | "scanStatus">,
+  latestRelease?: Doc<"packageReleases"> | null,
+) {
+  const scanStatus = resolvePublicPackageScanStatus(pkg, latestRelease);
+  const source = pkg.verification ?? pkg.latestVersionSummary?.verification;
+  return source && scanStatus ? { ...source, scanStatus } : source;
+}
+
 function toPublicPackage(
   pkg: Doc<"packages"> | null | undefined,
   latestRelease?: Doc<"packageReleases"> | null,
@@ -730,6 +750,7 @@ function toPublicPackage(
       : latestRelease && !latestRelease.softDeletedAt
         ? latestRelease.version
         : null;
+  const scanStatus = resolvePublicPackageScanStatus(pkg, latestRelease);
   return {
     _id: pkg._id,
     name: pkg.name,
@@ -744,14 +765,14 @@ function toPublicPackage(
     latestVersion,
     compatibility: pkg.compatibility,
     capabilities: pkg.capabilities,
-    verification: pkg.verification,
+    verification: resolvePublicPackageVerification(pkg, latestRelease),
     artifact:
       latestRelease === undefined
         ? pkg.latestVersionSummary?.artifact
         : latestRelease && !latestRelease.softDeletedAt
           ? packageArtifactSummary(latestRelease)
           : undefined,
-    scanStatus: pkg.scanStatus,
+    scanStatus,
     stats: pkg.stats,
     createdAt: pkg.createdAt,
     updatedAt: pkg.updatedAt,
@@ -1730,7 +1751,16 @@ async function getReadablePackageByName(
   const normalizedName = normalizePackageName(name);
   const pkg = await getPackageByNormalizedName(ctx, normalizedName);
   if (!pkg || pkg.softDeletedAt) return null;
-  if (!(await canViewerReadPackage(ctx, pkg, viewerUserId))) return null;
+  if (pkg.channel === "private" || isPackageBlockedFromPublic(pkg.scanStatus)) {
+    const canAccessOwner = await viewerCanAccessPackageOwner(ctx, pkg, viewerUserId);
+    if (pkg.channel === "private" && !canAccessOwner) return null;
+
+    if (isPackageBlockedFromPublic(pkg.scanStatus)) {
+      const latestRelease = pkg.latestReleaseId ? await ctx.db.get(pkg.latestReleaseId) : null;
+      const scanStatus = resolvePublicPackageScanStatus(pkg, latestRelease);
+      if (isPackageBlockedFromPublic(scanStatus) && !canAccessOwner) return null;
+    }
+  }
   return pkg;
 }
 
@@ -1950,8 +1980,6 @@ export const getVersionByName = query({
     const viewerUserId = await getOptionalViewerUserId(ctx);
     const pkg = await getReadablePackageByName(ctx, args.name, viewerUserId);
     if (!pkg) return null;
-    const publicPackage = toPublicPackage(pkg);
-    if (!publicPackage) return null;
     const release = await ctx.db
       .query("packageReleases")
       .withIndex("by_package_version", (q) =>
@@ -1959,6 +1987,14 @@ export const getVersionByName = query({
       )
       .unique();
     if (!release || release.softDeletedAt) return null;
+    const latestRelease =
+      pkg.latestReleaseId === release._id
+        ? release
+        : pkg.latestReleaseId
+          ? await ctx.db.get(pkg.latestReleaseId)
+          : null;
+    const publicPackage = toPublicPackage(pkg, latestRelease);
+    if (!publicPackage) return null;
     return {
       package: publicPackage,
       version: release,
@@ -1975,8 +2011,6 @@ export const getVersionByNameForViewerInternal = internalQuery({
   handler: async (ctx, args) => {
     const pkg = await getReadablePackageByName(ctx, args.name, args.viewerUserId);
     if (!pkg) return null;
-    const publicPackage = toPublicPackage(pkg);
-    if (!publicPackage) return null;
     const release = await ctx.db
       .query("packageReleases")
       .withIndex("by_package_version", (q) =>
@@ -1984,6 +2018,14 @@ export const getVersionByNameForViewerInternal = internalQuery({
       )
       .unique();
     if (!release || release.softDeletedAt) return null;
+    const latestRelease =
+      pkg.latestReleaseId === release._id
+        ? release
+        : pkg.latestReleaseId
+          ? await ctx.db.get(pkg.latestReleaseId)
+          : null;
+    const publicPackage = toPublicPackage(pkg, latestRelease);
+    if (!publicPackage) return null;
     return {
       package: publicPackage,
       version: release,
@@ -2000,11 +2042,6 @@ export const getVersionSecurityByNameForViewerInternal = internalQuery({
   handler: async (ctx, args) => {
     const pkg = await getPackageReadableForPublicTrust(ctx, args.name, args.viewerUserId);
     if (!pkg) return null;
-    const publicPackage = toPublicPackage(pkg);
-    if (!publicPackage) return null;
-    const publicDownloadBlocked =
-      isPackageBlockedFromPublic(pkg.scanStatus) &&
-      !(await viewerCanAccessPackageOwner(ctx, pkg, args.viewerUserId));
     const release = await ctx.db
       .query("packageReleases")
       .withIndex("by_package_version", (q) =>
@@ -2012,6 +2049,17 @@ export const getVersionSecurityByNameForViewerInternal = internalQuery({
       )
       .unique();
     if (!release || release.softDeletedAt) return null;
+    const latestRelease =
+      pkg.latestReleaseId === release._id
+        ? release
+        : pkg.latestReleaseId
+          ? await ctx.db.get(pkg.latestReleaseId)
+          : null;
+    const publicPackage = toPublicPackage(pkg, latestRelease);
+    if (!publicPackage) return null;
+    const publicDownloadBlocked =
+      isPackageBlockedFromPublic(publicPackage.scanStatus) &&
+      !(await viewerCanAccessPackageOwner(ctx, pkg, args.viewerUserId));
     return {
       package: {
         ...publicPackage,
@@ -5689,16 +5737,32 @@ async function syncLatestPackageVerification(ctx: MutationCtx, release: Doc<"pac
           scanStatus,
         }
       : undefined;
+  const nextLatestVersionSummary = pkg.latestVersionSummary
+    ? {
+        ...pkg.latestVersionSummary,
+        verification: nextVerification,
+      }
+    : pkg.latestVersionSummary;
+  const nextPackage: Doc<"packages"> = {
+    ...pkg,
+    verification: nextVerification,
+    scanStatus,
+    latestVersionSummary: nextLatestVersionSummary,
+  };
 
   await ctx.db.patch(pkg._id, {
     verification: nextVerification,
     scanStatus,
-    latestVersionSummary: pkg.latestVersionSummary
-      ? {
-          ...pkg.latestVersionSummary,
-          verification: nextVerification,
-        }
-      : pkg.latestVersionSummary,
+    latestVersionSummary: nextLatestVersionSummary,
+  });
+  const owner = await getOwnerPublisher(ctx, {
+    ownerPublisherId: pkg.ownerPublisherId,
+    ownerUserId: pkg.ownerUserId,
+  });
+  await upsertPackageSearchDigest(ctx, {
+    ...extractPackageDigestFields(nextPackage),
+    ownerHandle: owner?.handle ?? "",
+    ownerKind: owner?.kind,
   });
 }
 
@@ -5945,6 +6009,12 @@ export const backfillLatestPackageScanStatusInternal = internalMutation({
             verification: nextVerification,
           }
         : pkg.latestVersionSummary;
+      const nextPackage: Doc<"packages"> = {
+        ...pkg,
+        verification: nextVerification,
+        scanStatus,
+        latestVersionSummary: nextLatestVersionSummary,
+      };
 
       if (
         pkg.scanStatus !== scanStatus ||
@@ -5959,6 +6029,15 @@ export const backfillLatestPackageScanStatusInternal = internalMutation({
         });
         patched++;
       }
+      const owner = await getOwnerPublisher(ctx, {
+        ownerPublisherId: pkg.ownerPublisherId,
+        ownerUserId: pkg.ownerUserId,
+      });
+      await upsertPackageSearchDigest(ctx, {
+        ...extractPackageDigestFields(nextPackage),
+        ownerHandle: owner?.handle ?? "",
+        ownerKind: owner?.kind,
+      });
     }
 
     if (!isDone) {

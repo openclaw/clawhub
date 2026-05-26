@@ -484,8 +484,6 @@ async function patchStructuredModerationFromVersion(
     "_id" | "staticScan" | "vtAnalysis" | "llmAnalysis" | "sha256hash"
   >,
 ) {
-  if (shouldPreserveExistingModerationLock(skill)) return;
-
   const now = Date.now();
   const owner = skill.ownerUserId ? await ctx.db.get(skill.ownerUserId) : null;
   const basePatch = buildScannerModerationPatchFromVersion({
@@ -500,10 +498,30 @@ async function patchStructuredModerationFromVersion(
     stripUpdatedAt: true,
   });
 
+  const shouldPersistClawScanMalwareBlock =
+    patch.moderationVerdict === "malicious" && isClawScanMaliciousAnalysis(version.llmAnalysis);
+
+  // A ClawScan-malicious result is itself a security lock. Persist it even
+  // when the skill was already hidden by a user or quality hold so a later
+  // hold lift cannot restore a latest-version malware verdict.
+  if (shouldPreserveExistingModerationLock(skill) && !shouldPersistClawScanMalwareBlock) {
+    await scheduleClawScanAutobanForMalware(ctx, skill, version, patch);
+    return;
+  }
+
   const nextSkill = { ...skill, ...patch };
   await ctx.db.patch(skill._id, patch);
   await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
 
+  await scheduleClawScanAutobanForMalware(ctx, skill, version, patch);
+}
+
+async function scheduleClawScanAutobanForMalware(
+  ctx: MutationCtx,
+  skill: Doc<"skills">,
+  version: Pick<Doc<"skillVersions">, "llmAnalysis" | "sha256hash">,
+  patch: SkillModerationPatch,
+) {
   if (
     patch.moderationVerdict === "malicious" &&
     skill.ownerUserId &&
@@ -660,6 +678,10 @@ function isScannerManagedReason(reason: string | undefined) {
   );
 }
 
+function isLegacyStaticScannerReason(reason: string | undefined) {
+  return reason === "scanner.static.malicious" || reason === "scanner.static.suspicious";
+}
+
 function shouldPreserveExistingModerationLock(
   skill: Pick<Doc<"skills">, "moderationStatus" | "moderationReason">,
 ) {
@@ -732,6 +754,7 @@ function shouldBackfillLatestSkillModeration(
   if (skill.manualOverride) return false;
   if (!shouldSyncModerationFromLatestVersion(skill)) return false;
   if (!skill.latestVersionId) return false;
+  if (isLegacyStaticScannerReason(skill.moderationReason as string | undefined)) return true;
   if (skill.moderationSourceVersionId === skill.latestVersionId) return false;
   return isScannerManagedReason(skill.moderationReason as string | undefined);
 }
