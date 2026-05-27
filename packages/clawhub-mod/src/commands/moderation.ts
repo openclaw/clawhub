@@ -378,7 +378,41 @@ async function pollBulkRescanStatus(
 }
 
 function emitBulkRescanProgress(options: { json?: boolean }, event: Record<string, unknown>) {
-  if (options.json) process.stdout.write(`${JSON.stringify(event)}\n`);
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify(event)}\n`);
+    return;
+  }
+
+  if (event.type === "batch") {
+    const nextCursor = typeof event.nextCursor === "string" ? event.nextCursor : null;
+    const suffix = nextCursor ? ` Next cursor: ${nextCursor}.` : "";
+    console.log(
+      `Batch ${readEventNumber(event, "batch")}: queued ${readEventNumber(event, "queued")}, already queued ${readEventNumber(event, "alreadyQueued")}, skipped ${readEventNumber(event, "skipped")}.${suffix}`,
+    );
+    return;
+  }
+
+  if (event.type === "status") {
+    console.log(
+      `Batch ${readEventNumber(event, "batch")} status: ${readEventNumber(event, "succeeded")} succeeded, ${readEventNumber(event, "failed")} failed, ${readEventNumber(event, "running")} running, ${readEventNumber(event, "queued")} queued.`,
+    );
+    return;
+  }
+
+  if (event.type === "summary") {
+    const label = event.dryRun ? "Bulk rescan dry run" : "Bulk rescan";
+    console.log(
+      `${label} finished: ${readEventNumber(event, "batches")} batch(es), ${readEventNumber(event, "queued")} queued, ${readEventNumber(event, "alreadyQueued")} already queued, ${readEventNumber(event, "skipped")} skipped, ${readEventNumber(event, "failed")} failed.`,
+    );
+    if (typeof event.cursor === "string" && event.cursor) {
+      console.log(`Resume cursor: ${event.cursor}`);
+    }
+  }
+}
+
+function readEventNumber(event: Record<string, unknown>, key: string) {
+  const value = event[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
 function sleep(ms: number) {

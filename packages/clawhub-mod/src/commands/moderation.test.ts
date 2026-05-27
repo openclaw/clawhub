@@ -330,6 +330,52 @@ describe("cmdRescanAllSkills", () => {
     );
   });
 
+  it("prints human-readable progress and summary by default", async () => {
+    const consoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      httpMocks.apiRequest
+        .mockResolvedValueOnce({
+          ok: true,
+          mode: "all-active-latest",
+          queued: 1,
+          alreadyQueued: 1,
+          skipped: 1,
+          jobIds: ["securityScanJobs:1"],
+          nextCursor: null,
+          done: true,
+          sampleSlugs: ["one"],
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          total: 1,
+          queued: 0,
+          running: 0,
+          succeeded: 1,
+          failed: 0,
+          missing: 0,
+          terminal: 1,
+          done: true,
+          failedJobIds: [],
+        });
+
+      await cmdRescanAllSkills(
+        makeGlobalOpts(),
+        { yes: true, batchSize: 3, pollInterval: 0 },
+        false,
+      );
+
+      expect(consoleLog).toHaveBeenCalledWith("Batch 1: queued 1, already queued 1, skipped 1.");
+      expect(consoleLog).toHaveBeenCalledWith(
+        "Batch 1 status: 1 succeeded, 0 failed, 0 running, 0 queued.",
+      );
+      expect(consoleLog).toHaveBeenCalledWith(
+        "Bulk rescan finished: 1 batch(es), 1 queued, 1 already queued, 1 skipped, 0 failed.",
+      );
+    } finally {
+      consoleLog.mockRestore();
+    }
+  });
+
   it("fails when drained batches contain failed jobs", async () => {
     httpMocks.apiRequest
       .mockResolvedValueOnce({
