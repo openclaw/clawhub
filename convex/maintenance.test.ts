@@ -737,6 +737,57 @@ describe("maintenance fingerprint backfill", () => {
       existingEntryIds: ["skillVersionFingerprints:1"],
     });
   });
+
+  it("ignores generated Skill Cards and bundle fingerprints for source backfills", async () => {
+    const { hashSkillFiles } = await import("./lib/skills");
+    const sourceFingerprint = await hashSkillFiles([{ path: "SKILL.md", sha256: "abc" }]);
+    const bundleFingerprint = await hashSkillFiles([
+      { path: "SKILL.md", sha256: "abc" },
+      { path: "skill-card.md", sha256: "def" },
+    ]);
+
+    const runQuery = vi.fn().mockResolvedValue({
+      items: [
+        {
+          skillId: "skills:1",
+          versionId: "skillVersions:1",
+          versionFingerprint: sourceFingerprint,
+          files: [
+            { path: "SKILL.md", sha256: "abc" },
+            { path: "skill-card.md", sha256: "def" },
+          ],
+          hasGeneratedBundleFingerprint: true,
+          existingEntries: [
+            {
+              id: "skillVersionFingerprints:source",
+              fingerprint: sourceFingerprint,
+              kind: "source",
+            },
+            {
+              id: "skillVersionFingerprints:bundle",
+              fingerprint: bundleFingerprint,
+              kind: "generated-bundle",
+            },
+          ],
+        },
+      ],
+      cursor: null,
+      isDone: true,
+    });
+
+    const runMutation = vi.fn();
+
+    const result = await backfillSkillFingerprintsInternalHandler(
+      { runQuery, runMutation } as never,
+      { dryRun: false, batchSize: 10, maxBatches: 1 },
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.stats.versionsPatched).toBe(0);
+    expect(result.stats.fingerprintsInserted).toBe(0);
+    expect(result.stats.fingerprintMismatches).toBe(0);
+    expect(runMutation).not.toHaveBeenCalled();
+  });
 });
 
 describe("maintenance empty skill cleanup", () => {

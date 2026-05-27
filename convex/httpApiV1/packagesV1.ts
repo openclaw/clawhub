@@ -54,6 +54,7 @@ import {
   MAX_RAW_FILE_BYTES,
   getPathSegments,
   json,
+  publicApiOrigin,
   resolveTagsBatch,
   requireApiTokenUserOrResponse,
   requireAdminOrResponse,
@@ -61,6 +62,7 @@ import {
   safeTextFileResponse,
   softDeleteErrorToResponse,
   formatAuthzMessage,
+  formatUserFacingErrorMessage,
   text,
   toOptionalNumber,
 } from "./shared";
@@ -126,6 +128,9 @@ const internalRefs = internal as unknown as {
   publishers: {
     getByHandleInternal: unknown;
   };
+  securityScan: {
+    requestPackageRescanForUserInternal: unknown;
+  };
 };
 
 function packageOperationErrorToResponse(
@@ -133,7 +138,7 @@ function packageOperationErrorToResponse(
   headers: HeadersInit,
   fallback = "Package operation failed",
 ) {
-  const message = error instanceof Error ? error.message : fallback;
+  const message = formatUserFacingErrorMessage(error, fallback);
   const lower = message.toLowerCase();
   if (lower.includes("unauthorized"))
     return text(formatAuthzMessage(error, "Unauthorized"), 401, headers);
@@ -141,6 +146,18 @@ function packageOperationErrorToResponse(
     return text(formatAuthzMessage(error, "Forbidden"), 403, headers);
   if (lower.includes("not found")) return text(message, 404, headers);
   return text(message, 400, headers);
+}
+
+async function readOptionalJson(request: Request): Promise<unknown> {
+  const raw = await request.text();
+  if (!raw.trim()) return undefined;
+  return JSON.parse(raw) as unknown;
+}
+
+function optionalStringField(value: unknown, key: string): string | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const field = (value as Record<string, unknown>)[key];
+  return typeof field === "string" ? field : undefined;
 }
 
 function isTransientConvexContentionMessage(message: string) {
@@ -154,7 +171,7 @@ function isTransientConvexContentionMessage(message: string) {
 }
 
 function packagePublishErrorToResponse(error: unknown, headers: HeadersInit) {
-  const message = error instanceof Error ? error.message : "Publish failed";
+  const message = formatUserFacingErrorMessage(error, "Publish failed");
   if (!isTransientConvexContentionMessage(message)) {
     return text(message, 400, headers);
   }
@@ -413,6 +430,7 @@ type ReleaseLike = {
   extractedPackageJson?: Doc<"packageReleases">["extractedPackageJson"];
   sha256hash?: string;
   vtAnalysis?: Doc<"packageReleases">["vtAnalysis"];
+  skillSpectorAnalysis?: Doc<"packageReleases">["skillSpectorAnalysis"];
   llmAnalysis?: Doc<"packageReleases">["llmAnalysis"];
   clawScanNote?: string;
   clawScanNoteUpdatedAt?: number;
@@ -584,67 +602,6 @@ function encodePackagePath(name: string) {
         : encodeURIComponent(segment),
     )
     .join("/");
-}
-
-const DEFAULT_PUBLIC_SITE_URL = "https://clawhub.ai";
-
-function normalizeOrigin(value: string | null | undefined) {
-  const trimmed = value?.trim();
-  if (!trimmed) return null;
-  try {
-    return new URL(trimmed).origin;
-  } catch {
-    return null;
-  }
-}
-
-function firstForwardedValue(value: string | null) {
-  return value?.split(",")[0]?.trim() || null;
-}
-
-function isProductionDeployment() {
-  const deployment = process.env.CONVEX_DEPLOYMENT?.trim() ?? "";
-  return deployment.startsWith("prod:") || deployment.includes("production");
-}
-
-function isTrustedForwardedHost(value: string) {
-  try {
-    const hostname = new URL(`https://${value}`).hostname.toLowerCase();
-    return (
-      hostname === "clawhub.ai" ||
-      hostname === "www.clawhub.ai" ||
-      hostname === "localhost" ||
-      hostname === "127.0.0.1" ||
-      hostname === "0.0.0.0"
-    );
-  } catch {
-    return false;
-  }
-}
-
-function publicApiOrigin(request: Request) {
-  const configured = normalizeOrigin(process.env.SITE_URL ?? process.env.VITE_SITE_URL);
-  if (configured) return configured;
-
-  const forwardedHost = firstForwardedValue(request.headers.get("x-forwarded-host"));
-  if (
-    forwardedHost &&
-    !forwardedHost.endsWith(".convex.site") &&
-    isTrustedForwardedHost(forwardedHost)
-  ) {
-    const forwardedProto =
-      firstForwardedValue(request.headers.get("x-forwarded-proto")) ??
-      firstForwardedValue(request.headers.get("x-forwarded-protocol")) ??
-      "https";
-    const proto = forwardedProto === "http" ? "http" : "https";
-    return `${proto}://${forwardedHost}`;
-  }
-
-  const requestUrl = new URL(request.url);
-  if (isProductionDeployment() && requestUrl.hostname.endsWith(".convex.site")) {
-    return DEFAULT_PUBLIC_SITE_URL;
-  }
-  return requestUrl.origin;
 }
 
 function absoluteApiUrl(request: Request, path: string) {
@@ -1828,6 +1785,31 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
   const packageName = packageRoute.packageName;
   const packageSegments = packageRoute.rest;
 
+  if (packageSegments[0] === "rescan" && packageSegments.length === 1) {
+    const rate = await applyRateLimit(ctx, request, "write");
+    if (!rate.ok) return rate.response;
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+
+    try {
+      const body = await readOptionalJson(request);
+      const version = optionalStringField(body, "version");
+      const result = await runMutationRef(
+        ctx,
+        internalRefs.securityScan.requestPackageRescanForUserInternal,
+        {
+          actorUserId: auth.userId,
+          name: packageName,
+          ...(version ? { version } : {}),
+        },
+      );
+      return json(result, 200, rate.headers);
+    } catch (error) {
+      if (error instanceof SyntaxError) return text("Invalid JSON", 400, rate.headers);
+      return packageOperationErrorToResponse(error, rate.headers, "Package rescan failed");
+    }
+  }
+
   if (packageSegments[0] === "repair-name" && packageSegments.length === 1) {
     const rate = await applyRateLimit(ctx, request, "write");
     if (!rate.ok) return rate.response;
@@ -2877,6 +2859,10 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
       },
     )) as { package: PublicPackageDocLike; version: ReleaseLike } | null;
     if (!result) return text("Version not found", 404, rate.headers);
+    const scanStatus = resolvePackageReleaseScanStatus(result.version);
+    const verification = result.version.verification
+      ? { ...result.version.verification, scanStatus }
+      : null;
     return json(
       {
         package: {
@@ -2897,10 +2883,11 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
           })),
           compatibility: result.version.compatibility ?? null,
           capabilities: result.version.capabilities ?? null,
-          verification: result.version.verification ?? null,
+          verification,
           artifact: toReleaseArtifact(result.version, result.package.name),
           sha256hash: result.version.sha256hash ?? null,
           vtAnalysis: result.version.vtAnalysis ?? null,
+          skillSpectorAnalysis: result.version.skillSpectorAnalysis ?? null,
           llmAnalysis: result.version.llmAnalysis ?? null,
           clawScanNote: result.version.clawScanNote ?? null,
           clawScanNoteUpdatedAt: result.version.clawScanNoteUpdatedAt ?? null,

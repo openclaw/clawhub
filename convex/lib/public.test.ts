@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Doc } from "../_generated/dataModel";
-import { toPublicSkill } from "./public";
+import { toPublicPublisher, toPublicSkill } from "./public";
 
 function makeSkill(overrides: Partial<Doc<"skills">> = {}): Doc<"skills"> {
   return {
@@ -92,5 +92,22 @@ describe("public skill mapping", () => {
       moderationFlags: ["blocked.malware"],
     });
     expect(toPublicSkill(skill)).toBeNull();
+  });
+});
+
+describe("public publisher mapping", () => {
+  it("exposes official publisher status only when supplied by the caller", () => {
+    const publisher = {
+      _id: "publishers:openclaw",
+      _creationTime: 1,
+      kind: "org",
+      handle: "openclaw",
+      displayName: "OpenClaw",
+      createdAt: 1,
+      updatedAt: 1,
+    } as Doc<"publishers">;
+
+    expect(toPublicPublisher(publisher)).not.toHaveProperty("official");
+    expect(toPublicPublisher(publisher, { official: true })?.official).toBe(true);
   });
 });

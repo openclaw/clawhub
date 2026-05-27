@@ -68,6 +68,7 @@ export function SkillsResults({
                 chip={isPlugin ? "Plugin bundle (nix)" : undefined}
                 platformLabels={platforms.length ? platforms : undefined}
                 summaryFallback="Agent-ready skill pack."
+                apiKeyRequired={entry.latestVersion?.apiKeyRequired}
                 meta={
                   <div className="skill-card-footer-rows">
                     <UserBadge
@@ -101,6 +102,7 @@ export function SkillsResults({
                 skill={skill}
                 ownerHandle={ownerHandle}
                 owner={entry.owner}
+                apiKeyRequired={entry.latestVersion?.apiKeyRequired}
               />
             );
           })}

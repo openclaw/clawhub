@@ -8,6 +8,9 @@ export type PublisherStatsContribution = {
   totalInstalls: number;
   totalDownloads: number;
   totalStars: number;
+  skillTotalInstalls: number;
+  skillTotalDownloads: number;
+  skillTotalStars: number;
 };
 
 export function emptyPublisherStatsContribution(): PublisherStatsContribution {
@@ -17,17 +20,26 @@ export function emptyPublisherStatsContribution(): PublisherStatsContribution {
     totalInstalls: 0,
     totalDownloads: 0,
     totalStars: 0,
+    skillTotalInstalls: 0,
+    skillTotalDownloads: 0,
+    skillTotalStars: 0,
   };
 }
 
 export function getSkillPublisherContribution(skill: Doc<"skills">): PublisherStatsContribution {
   if (skill.softDeletedAt) return emptyPublisherStatsContribution();
+  const totalInstalls = readCanonicalStat(skill, "installsAllTime");
+  const totalDownloads = readCanonicalStat(skill, "downloads");
+  const totalStars = readCanonicalStat(skill, "stars");
   return {
     publishedSkills: 1,
     publishedPackages: 0,
-    totalInstalls: readCanonicalStat(skill, "installsAllTime"),
-    totalDownloads: readCanonicalStat(skill, "downloads"),
-    totalStars: readCanonicalStat(skill, "stars"),
+    totalInstalls,
+    totalDownloads,
+    totalStars,
+    skillTotalInstalls: totalInstalls,
+    skillTotalDownloads: totalDownloads,
+    skillTotalStars: totalStars,
   };
 }
 
@@ -39,22 +51,43 @@ export function getPackagePublisherContribution(pkg: Doc<"packages">): Publisher
     totalInstalls: pkg.stats.installs,
     totalDownloads: pkg.stats.downloads,
     totalStars: pkg.stats.stars,
+    skillTotalInstalls: 0,
+    skillTotalDownloads: 0,
+    skillTotalStars: 0,
   };
 }
 
-function publisherHasStats(publisher: Doc<"publishers">): publisher is Doc<"publishers"> & {
+type PublisherWithBaseStats = Doc<"publishers"> & {
   publishedSkills: number;
   publishedPackages: number;
   totalInstalls: number;
   totalDownloads: number;
   totalStars: number;
-} {
+};
+
+type PublisherWithSkillTotalStats = Doc<"publishers"> & {
+  skillTotalInstalls: number;
+  skillTotalDownloads: number;
+  skillTotalStars: number;
+};
+
+function publisherHasBaseStats(publisher: Doc<"publishers">): publisher is PublisherWithBaseStats {
   return (
     typeof publisher.publishedSkills === "number" &&
     typeof publisher.publishedPackages === "number" &&
     typeof publisher.totalInstalls === "number" &&
     typeof publisher.totalDownloads === "number" &&
     typeof publisher.totalStars === "number"
+  );
+}
+
+function publisherHasSkillTotalStats(
+  publisher: Doc<"publishers">,
+): publisher is PublisherWithSkillTotalStats {
+  return (
+    typeof publisher.skillTotalInstalls === "number" &&
+    typeof publisher.skillTotalDownloads === "number" &&
+    typeof publisher.skillTotalStars === "number"
   );
 }
 
@@ -86,6 +119,9 @@ async function recomputePublisherStats(
       totalInstalls: total.totalInstalls + contribution.totalInstalls,
       totalDownloads: total.totalDownloads + contribution.totalDownloads,
       totalStars: total.totalStars + contribution.totalStars,
+      skillTotalInstalls: total.skillTotalInstalls + contribution.skillTotalInstalls,
+      skillTotalDownloads: total.skillTotalDownloads + contribution.skillTotalDownloads,
+      skillTotalStars: total.skillTotalStars + contribution.skillTotalStars,
     }),
     emptyPublisherStatsContribution(),
   );
@@ -97,7 +133,10 @@ export function isZeroPublisherStatsContribution(delta: PublisherStatsContributi
     delta.publishedPackages === 0 &&
     delta.totalInstalls === 0 &&
     delta.totalDownloads === 0 &&
-    delta.totalStars === 0
+    delta.totalStars === 0 &&
+    delta.skillTotalInstalls === 0 &&
+    delta.skillTotalDownloads === 0 &&
+    delta.skillTotalStars === 0
   );
 }
 
@@ -111,18 +150,27 @@ async function patchPublisherStats(
   const publisher = await ctx.db.get(publisherId);
   if (!publisher) return;
 
-  if (!publisherHasStats(publisher)) {
+  if (!publisherHasBaseStats(publisher)) {
     await ctx.db.patch(publisherId, await recomputePublisherStats(ctx, publisherId));
     return;
   }
 
-  await ctx.db.patch(publisherId, {
+  const patch: Partial<Doc<"publishers">> = {
     publishedSkills: Math.max(0, publisher.publishedSkills + delta.publishedSkills),
     publishedPackages: Math.max(0, publisher.publishedPackages + delta.publishedPackages),
     totalInstalls: Math.max(0, publisher.totalInstalls + delta.totalInstalls),
     totalDownloads: Math.max(0, publisher.totalDownloads + delta.totalDownloads),
     totalStars: Math.max(0, publisher.totalStars + delta.totalStars),
-  });
+  };
+  if (publisherHasSkillTotalStats(publisher)) {
+    patch.skillTotalInstalls = Math.max(0, publisher.skillTotalInstalls + delta.skillTotalInstalls);
+    patch.skillTotalDownloads = Math.max(
+      0,
+      publisher.skillTotalDownloads + delta.skillTotalDownloads,
+    );
+    patch.skillTotalStars = Math.max(0, publisher.skillTotalStars + delta.skillTotalStars);
+  }
+  await ctx.db.patch(publisherId, patch);
 }
 
 function diffPublisherStats(
@@ -135,6 +183,9 @@ function diffPublisherStats(
     totalInstalls: (next?.totalInstalls ?? 0) - (previous?.totalInstalls ?? 0),
     totalDownloads: (next?.totalDownloads ?? 0) - (previous?.totalDownloads ?? 0),
     totalStars: (next?.totalStars ?? 0) - (previous?.totalStars ?? 0),
+    skillTotalInstalls: (next?.skillTotalInstalls ?? 0) - (previous?.skillTotalInstalls ?? 0),
+    skillTotalDownloads: (next?.skillTotalDownloads ?? 0) - (previous?.skillTotalDownloads ?? 0),
+    skillTotalStars: (next?.skillTotalStars ?? 0) - (previous?.skillTotalStars ?? 0),
   };
 }
 

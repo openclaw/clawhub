@@ -8,6 +8,7 @@ export interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
     | "compact"
     | "pending"
     | "success"
+    | "official"
     | "warning"
     | "review"
     | "destructive";
@@ -28,6 +29,8 @@ const Badge = React.forwardRef<HTMLSpanElement, BadgeProps>(
         variant === "pending" && "bg-hover-bg px-3 py-1 text-ink-soft border border-line",
         variant === "success" &&
           "bg-status-success-bg px-3 py-1 text-status-success-fg border border-line",
+        variant === "official" &&
+          "bg-[color:var(--official-bg)] px-3 py-1 text-[color:var(--official-fg)] border border-[color:var(--official-border)]",
         variant === "warning" &&
           "bg-status-warning-bg px-3 py-1 text-status-warning-fg border border-line",
         variant === "review" &&

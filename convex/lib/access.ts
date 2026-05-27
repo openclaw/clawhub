@@ -3,7 +3,7 @@ import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "../_generated/server";
 
-export type Role = "admin" | "moderator" | "user";
+export type Role = "admin" | "moderator" | "user" | "mirror";
 
 const DEV_IMPERSONATE_LOCAL_HANDLE = "local";
 

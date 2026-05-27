@@ -53,6 +53,20 @@ describe("github import", () => {
     });
   });
 
+  it("strips credentials, query, and fragment from stored original urls", () => {
+    expect(
+      parseGitHubImportUrl(
+        "https://token:secret@github.com/a/b/tree/main/skills/foo?access_token=secret#readme",
+      ),
+    ).toEqual({
+      owner: "a",
+      repo: "b",
+      ref: "main",
+      path: "skills/foo",
+      originalUrl: "https://github.com/a/b/tree/main/skills/foo",
+    });
+  });
+
   it("parses blob urls and derives folder path", () => {
     expect(parseGitHubImportUrl("https://github.com/a/b/blob/main/skills/foo/SKILL.md")).toEqual({
       owner: "a",

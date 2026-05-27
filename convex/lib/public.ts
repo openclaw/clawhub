@@ -9,7 +9,7 @@ export type PublicUser = Pick<
 export type PublicPublisher = Pick<
   Doc<"publishers">,
   "_id" | "_creationTime" | "kind" | "handle" | "displayName" | "image" | "bio" | "linkedUserId"
->;
+> & { official?: boolean };
 
 export type PublicSkill = Pick<
   Doc<"skills">,
@@ -101,6 +101,7 @@ export function toPublicUser(user: Doc<"users"> | null | undefined): PublicUser 
 
 export function toPublicPublisher(
   publisher: Doc<"publishers"> | null | undefined,
+  options?: { official?: boolean },
 ): PublicPublisher | null {
   if (!publisher || publisher.deletedAt || publisher.deactivatedAt) return null;
   return {
@@ -112,6 +113,7 @@ export function toPublicPublisher(
     image: publisher.image,
     bio: publisher.bio,
     linkedUserId: publisher.linkedUserId,
+    ...(options?.official ? { official: true } : {}),
   };
 }
 

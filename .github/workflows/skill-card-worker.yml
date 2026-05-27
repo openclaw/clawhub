@@ -1,0 +1,91 @@
+name: Skill Card Worker
+
+on:
+  workflow_run:
+    workflows: ["Security Scan Codex Worker"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      batch-limit:
+        description: "Maximum Skill Card jobs to run in parallel per batch"
+        required: true
+        default: "5"
+      max-jobs:
+        description: "Optional total jobs cap for this run"
+        required: false
+        default: ""
+      max-runtime-minutes:
+        description: "Stop claiming new batches after this many minutes"
+        required: true
+        default: "30"
+
+concurrency:
+  group: skill-card-worker
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  skill-card-worker:
+    runs-on: blacksmith-8vcpu-ubuntu-2404
+    timeout-minutes: 45
+    environment: Production
+    env:
+      CONVEX_URL: ${{ vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud' }}
+      # Shared Convex worker credential used by security and Skill Card workers.
+      SECURITY_SCAN_WORKER_TOKEN: ${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}
+      SKILL_CARD_WORKER_LIMIT: ${{ github.event.inputs['batch-limit'] || '5' }}
+      SKILL_CARD_WORKER_MAX_JOBS: ${{ github.event.inputs['max-jobs'] || '' }}
+      SKILL_CARD_WORKER_MAX_RUNTIME_MINUTES: ${{ github.event.inputs['max-runtime-minutes'] || '30' }}
+      SKILL_CARD_WORKER_LEASE_MINUTES: "30"
+      NVIDIA_TRUSTWORTHY_AI_DIR: ${{ github.workspace }}/.artifacts/nvidia-trustworthy-ai
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/checkout@v6
+        with:
+          repository: NVIDIA/Trustworthy-AI
+          ref: fb5867e9070b4080d28818242e20334e10ac55fc
+          path: .artifacts/nvidia-trustworthy-ai
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Check configuration
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$SECURITY_SCAN_WORKER_TOKEN" ]]; then
+            echo "::error::SECURITY_SCAN_WORKER_TOKEN is required"
+            exit 1
+          fi
+          if [[ -z "$OPENAI_API_KEY" ]]; then
+            echo "::error::OPENAI_API_KEY is required"
+            exit 1
+          fi
+
+      - name: Install Codex CLI and renderer dependencies
+        run: |
+          set -euo pipefail
+          if ! command -v codex >/dev/null 2>&1; then
+            npm install -g @openai/codex@latest
+          fi
+          python3 -m pip install --user jinja2
+          codex --version
+
+      - name: Authenticate Codex CLI
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: printf '%s' "$OPENAI_API_KEY" | codex login --with-api-key
+
+      - name: Run Skill Card worker
+        run: |
+          args=(
+            --batch-limit "$SKILL_CARD_WORKER_LIMIT"
+            --max-jobs "$SKILL_CARD_WORKER_MAX_JOBS"
+            --max-runtime-minutes "$SKILL_CARD_WORKER_MAX_RUNTIME_MINUTES"
+            --lease-minutes "$SKILL_CARD_WORKER_LEASE_MINUTES"
+            --nvidia-tool-dir "$NVIDIA_TRUSTWORTHY_AI_DIR"
+          )
+          bun scripts/skill-cards/run-skill-card-worker.ts "${args[@]}"

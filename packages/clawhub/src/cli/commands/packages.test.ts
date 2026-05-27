@@ -1100,6 +1100,44 @@ describe("package commands", () => {
     }
   });
 
+  it("prefers the OpenClaw plugin manifest name over package.json displayName", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "demo-plugin");
+      await mkdir(join(folder, "dist"), { recursive: true });
+      await writeFile(
+        join(folder, "package.json"),
+        makeCodePluginPackageJson({
+          name: "@scope/demo-plugin",
+          displayName: "Package Display Name",
+          version: "1.0.0",
+          files: ["dist", "openclaw.plugin.json"],
+        }),
+        "utf8",
+      );
+      await writeFile(
+        join(folder, "openclaw.plugin.json"),
+        JSON.stringify({ id: "demo.plugin", name: "Manifest Display Name" }),
+        "utf8",
+      );
+      await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
+
+      await cmdPublishPackage(makeOpts(workdir), "demo-plugin", {
+        dryRun: true,
+        json: true,
+        sourceRepo: "openclaw/demo-plugin",
+        sourceCommit: "abc123",
+      });
+
+      const output = String(mockWrite.mock.calls[0]?.[0] ?? "").trim();
+      expect(JSON.parse(output)).toMatchObject({
+        displayName: "Manifest Display Name",
+      });
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
   it("preserves literal trailing hashes in README H1 display name fallbacks", async () => {
     const workdir = await makeTmpWorkdir();
     try {
@@ -1337,6 +1375,48 @@ describe("package commands", () => {
         }),
       ).rejects.toThrow(
         "@scope/demo-plugin requires compiled runtime output for TypeScript entry ./index.ts",
+      );
+      expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("explains missing declared runtime extension files", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const packName = "demo-plugin-1.0.0.tgz";
+      await writeFile(
+        join(workdir, packName),
+        npmPackFixture({
+          "package/package.json": makeCodePluginPackageJson({
+            name: "@scope/demo-plugin",
+            displayName: "Demo Plugin",
+            version: "1.0.0",
+            openclaw: {
+              extensions: ["./index.ts"],
+              runtimeExtensions: ["./dist/index.js"],
+              compat: {
+                pluginApi: ">=2026.3.24-beta.2",
+              },
+              build: {
+                openclawVersion: "2026.3.24-beta.2",
+              },
+            },
+          }),
+          "package/openclaw.plugin.json": JSON.stringify({ id: "demo.plugin" }),
+          "package/index.ts": "export const demo = true;\n",
+        }),
+      );
+
+      await expect(
+        cmdPublishPackage(makeOpts(workdir), packName, {
+          sourceRepo: "openclaw/demo-plugin",
+          sourceCommit: "abc123",
+          sourceRef: "refs/tags/v1.0.0",
+        }),
+      ).rejects.toThrow(
+        "@scope/demo-plugin declares openclaw.runtimeExtensions entry ./dist/index.js, but that file is missing from the package. Build first and publish a local folder or .tgz, or include the runtime file in the GitHub ref.",
       );
       expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
     } finally {

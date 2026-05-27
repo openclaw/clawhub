@@ -12,7 +12,7 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 describe("SkillListItem", () => {
-  it("renders official skills with the shared verified badge", () => {
+  it("renders official skills with the compact official mark", () => {
     const { container } = render(
       <SkillListItem
         skill={makeSkill({
@@ -27,9 +27,9 @@ describe("SkillListItem", () => {
       />,
     );
 
-    expect(screen.getByText("Verified")).toBeTruthy();
-    expect(container.querySelector(".verified-badge")).toBeTruthy();
-    expect(container.querySelector(".verified-badge-icon")).toBeTruthy();
+    expect(screen.getByLabelText("Official")).toBeTruthy();
+    expect(screen.queryByText("Official")).toBeNull();
+    expect(container.querySelector(".official-badge")).toBeTruthy();
   });
 });
 

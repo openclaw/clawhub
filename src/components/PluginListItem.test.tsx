@@ -11,20 +11,20 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 describe("PluginListItem", () => {
-  it("renders official list plugins with the shared verified badge", () => {
-    const { container } = render(<PluginListItem item={makePlugin()} />);
+  it("renders official list plugins with the compact official mark", () => {
+    render(<PluginListItem item={makePlugin()} />);
 
-    expect(screen.getByText("Verified")).toBeTruthy();
-    expect(container.querySelector(".verified-badge")).toBeTruthy();
-    expect(container.querySelector(".verified-badge-icon")).toBeTruthy();
+    expect(screen.getByLabelText("Official")).toBeTruthy();
+    expect(screen.queryByText("Official")).toBeNull();
+    expect(screen.queryByText("Verified")).toBeNull();
   });
 
-  it("renders official plugin cards with the shared verified badge", () => {
-    const { container } = render(<PluginListItem item={makePlugin()} variant="card" />);
+  it("renders official plugin cards with the compact official mark", () => {
+    render(<PluginListItem item={makePlugin()} variant="card" />);
 
-    expect(screen.getByText("Verified")).toBeTruthy();
-    expect(container.querySelector(".verified-badge")).toBeTruthy();
-    expect(container.querySelector(".verified-badge-icon")).toBeTruthy();
+    expect(screen.getByLabelText("Official")).toBeTruthy();
+    expect(screen.queryByText("Official")).toBeNull();
+    expect(screen.queryByText("Verified")).toBeNull();
   });
 });
 
