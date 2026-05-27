@@ -152,12 +152,14 @@ export function PublishPluginRoute() {
   }, [family, isMetadataLocked, name, sourceCommit, sourceRepo, version]);
   const hasPackageBlocker =
     Boolean(validationError) || Boolean(ownerScopeError) || codePluginFieldIssues.length > 0;
+  const hasPublished = status?.startsWith("Published.") ?? false;
   const isPublishDisabled =
     !isAuthenticated ||
     isMetadataLocked ||
     hasPackageBlocker ||
     submitBlockers.length > 0 ||
-    isSubmitting;
+    isSubmitting ||
+    hasPublished;
   const publishBlockerSummary = useMemo(() => {
     if (isSubmitting) return null;
     if (!isAuthenticated) return "Sign in to publish.";

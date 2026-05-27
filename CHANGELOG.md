@@ -5,7 +5,6 @@
 ### Fixes
 
 - API/CLI: report Skill Card verification with flattened skill/version metadata, ClawScan verdict fields at `security.*`, and supporting scanner evidence under `security.signals`.
-- Web: polish skill and plugin publish upload forms with clearer post-upload file states, validation feedback, and submit gating (#2377) (thanks @vyctorbrzezowski).
 
 ## 0.18.0 - 2026-05-25
 

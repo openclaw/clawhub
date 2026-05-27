@@ -636,6 +636,6 @@ describe("plugins publish route", () => {
     ).toBeTruthy();
     expect(
       screen.getByRole("button", { name: "Publish plugin" }).getAttribute("disabled"),
-    ).toBeNull();
+    ).not.toBeNull();
   });
 });
