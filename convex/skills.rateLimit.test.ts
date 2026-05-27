@@ -966,32 +966,34 @@ describe("skills anti-spam guards", () => {
         if (table === "skillEmbeddings") {
           return {
             withIndex: (name: string) => {
-              if (name !== "by_version") {
-                throw new Error(`unexpected skillEmbeddings index ${name}`);
+              if (name === "by_version") {
+                return {
+                  unique: async () => null,
+                };
               }
-              return {
-                unique: async () => null,
-              };
+              if (name === "by_skill") {
+                return {
+                  collect: async () => [],
+                };
+              }
+              throw new Error(`unexpected skillEmbeddings index ${name}`);
             },
           };
         }
         if (table === "skillSlugAliases") {
           return {
             withIndex: (name: string) => {
-              if (name !== "by_slug") throw new Error(`unexpected skillSlugAliases index ${name}`);
-              return {
-                unique: async () => null,
-              };
-            },
-          };
-        }
-        if (table === "skillSlugAliases") {
-          return {
-            withIndex: (name: string) => {
-              if (name !== "by_slug") throw new Error(`unexpected skillSlugAliases index ${name}`);
-              return {
-                unique: async () => null,
-              };
+              if (name === "by_slug") {
+                return {
+                  unique: async () => null,
+                };
+              }
+              if (name === "by_skill") {
+                return {
+                  collect: async () => [],
+                };
+              }
+              throw new Error(`unexpected skillSlugAliases index ${name}`);
             },
           };
         }
