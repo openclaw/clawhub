@@ -134,6 +134,16 @@ const insertReleaseInternalHandler = (
       actorUserId: string;
       ownerUserId: string;
       ownerPublisherId?: string;
+      publishActor?:
+        | { kind: "user"; userId: string }
+        | {
+            kind: "github-actions";
+            repository: string;
+            workflow: string;
+            runId: string;
+            runAttempt: string;
+            sha: string;
+          };
       name: string;
       displayName: string;
       family: "skill" | "code-plugin" | "bundle-plugin";
@@ -949,6 +959,7 @@ function makeInsertReleaseCtx(
   priorReleases: Array<Record<string, unknown>> = [],
   recordsById: Record<string, Record<string, unknown>> = {},
   runtimePackages: Array<Record<string, unknown>> = [],
+  finalPublisherMembershipRole?: "owner" | "admin" | "publisher" | null,
 ) {
   const patch = vi.fn();
   let insertedPackage: Record<string, unknown> | null = null;
@@ -1043,6 +1054,39 @@ function makeInsertReleaseCtx(
                 }
                 return {
                   unique: vi.fn().mockResolvedValue(null),
+                };
+              },
+            ),
+          };
+        }
+        if (table === "publisherMembers") {
+          return {
+            withIndex: vi.fn(
+              (
+                _indexName: string,
+                buildQuery?: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+              ) => {
+                const filters = new Map<string, unknown>();
+                const query = {
+                  eq(field: string, value: unknown) {
+                    filters.set(field, value);
+                    return query;
+                  },
+                };
+                buildQuery?.(query);
+                const membership =
+                  finalPublisherMembershipRole &&
+                  filters.get("publisherId") === "publishers:org" &&
+                  filters.get("userId") === "users:member"
+                    ? {
+                        _id: "publisherMembers:org-member",
+                        publisherId: "publishers:org",
+                        userId: "users:member",
+                        role: finalPublisherMembershipRole,
+                      }
+                    : null;
+                return {
+                  unique: vi.fn().mockResolvedValue(membership),
                 };
               },
             ),
@@ -3504,6 +3548,247 @@ describe("packages public queries", () => {
         integritySha256: "abc123",
       }),
     ).rejects.toThrow("Restore it before publishing another release");
+  });
+
+  it("rejects final package publish inserts when the actor was banned mid-publish", async () => {
+    const ctx = makeInsertReleaseCtx(makePackageDoc(), [], {
+      "users:owner": {
+        _id: "users:owner",
+        role: "user",
+        trustedPublisher: false,
+        deletedAt: 123,
+      },
+    });
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:owner",
+        ownerUserId: "users:owner",
+        name: "demo-plugin",
+        displayName: "Demo Plugin",
+        family: "code-plugin",
+        version: "1.0.1",
+        changelog: "try banned owner",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+      }),
+    ).rejects.toThrow("Unauthorized");
+    expect(ctx.insert).not.toHaveBeenCalledWith("packageReleases", expect.anything());
+  });
+
+  it("rejects final package publish inserts when the requested owner was banned mid-publish", async () => {
+    const ctx = makeInsertReleaseCtx(makePackageDoc(), [], {
+      "users:admin": { _id: "users:admin", role: "admin", trustedPublisher: false },
+      "users:owner": {
+        _id: "users:owner",
+        role: "user",
+        trustedPublisher: false,
+        deletedAt: 123,
+      },
+    });
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:admin",
+        ownerUserId: "users:owner",
+        name: "demo-plugin",
+        displayName: "Demo Plugin",
+        family: "code-plugin",
+        version: "1.0.1",
+        changelog: "try banned owner",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+      }),
+    ).rejects.toThrow("Package owner is unavailable");
+    expect(ctx.insert).not.toHaveBeenCalledWith("packageReleases", expect.anything());
+  });
+
+  it("rejects final package publish inserts when the owner publisher was deleted mid-publish", async () => {
+    const ctx = makeInsertReleaseCtx(makePackageDoc(), [], {
+      "users:owner": { _id: "users:owner", role: "user", trustedPublisher: false },
+      "publishers:org": {
+        _id: "publishers:org",
+        kind: "org",
+        handle: "org",
+        deletedAt: 123,
+      },
+    });
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:owner",
+        ownerUserId: "users:owner",
+        ownerPublisherId: "publishers:org",
+        name: "demo-plugin",
+        displayName: "Demo Plugin",
+        family: "code-plugin",
+        version: "1.0.1",
+        changelog: "try deleted publisher",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+      }),
+    ).rejects.toThrow("Package owner publisher is unavailable");
+    expect(ctx.insert).not.toHaveBeenCalledWith("packageReleases", expect.anything());
+  });
+
+  it("rejects final user org package publish inserts when membership was removed mid-publish", async () => {
+    const ctx = makeInsertReleaseCtx(null, [], {
+      "users:member": { _id: "users:member", role: "user", trustedPublisher: false },
+      "publishers:org": {
+        _id: "publishers:org",
+        kind: "org",
+        handle: "org",
+        trustedPublisher: false,
+      },
+    });
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:member",
+        ownerUserId: "users:member",
+        ownerPublisherId: "publishers:org",
+        publishActor: { kind: "user", userId: "users:member" },
+        name: "@org/demo-plugin",
+        displayName: "Demo Plugin",
+        family: "bundle-plugin",
+        version: "1.0.0",
+        changelog: "init",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+      }),
+    ).rejects.toThrow('publish access for "@org"');
+    expect(ctx.insert).not.toHaveBeenCalledWith("packages", expect.anything());
+    expect(ctx.insert).not.toHaveBeenCalledWith("packageReleases", expect.anything());
+  });
+
+  it("rejects final user org package publish inserts when publish actor drifts from actor user", async () => {
+    const ctx = makeInsertReleaseCtx(
+      null,
+      [],
+      {
+        "users:member": { _id: "users:member", role: "user", trustedPublisher: false },
+        "publishers:org": {
+          _id: "publishers:org",
+          kind: "org",
+          handle: "org",
+          trustedPublisher: false,
+        },
+      },
+      [],
+      "publisher",
+    );
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:member",
+        ownerUserId: "users:member",
+        ownerPublisherId: "publishers:org",
+        publishActor: { kind: "user", userId: "users:other" },
+        name: "@org/demo-plugin",
+        displayName: "Demo Plugin",
+        family: "bundle-plugin",
+        version: "1.0.0",
+        changelog: "init",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+      }),
+    ).rejects.toThrow("Publish actor must match the authenticated actor");
+    expect(ctx.insert).not.toHaveBeenCalledWith("packages", expect.anything());
+    expect(ctx.insert).not.toHaveBeenCalledWith("packageReleases", expect.anything());
+  });
+
+  it("keeps final user org package publishes working when membership remains valid", async () => {
+    const ctx = makeInsertReleaseCtx(
+      null,
+      [],
+      {
+        "users:member": { _id: "users:member", role: "user", trustedPublisher: false },
+        "publishers:org": {
+          _id: "publishers:org",
+          kind: "org",
+          handle: "org",
+          trustedPublisher: false,
+        },
+      },
+      [],
+      "publisher",
+    );
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:member",
+        ownerUserId: "users:member",
+        ownerPublisherId: "publishers:org",
+        publishActor: { kind: "user", userId: "users:member" },
+        name: "@org/demo-plugin",
+        displayName: "Demo Plugin",
+        family: "bundle-plugin",
+        version: "1.0.0",
+        changelog: "init",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+      }),
+    ).resolves.toMatchObject({ ok: true, packageId: "packages:new" });
+    expect(ctx.insert).toHaveBeenCalledWith("packageReleases", expect.anything());
+  });
+
+  it("preserves trusted GitHub Actions package publishes without org membership", async () => {
+    const ctx = makeInsertReleaseCtx(
+      makePackageDoc({
+        name: "@org/demo-plugin",
+        normalizedName: "@org/demo-plugin",
+        ownerUserId: "users:member",
+        ownerPublisherId: "publishers:org",
+      }),
+      [],
+      {
+        "users:member": { _id: "users:member", role: "user", trustedPublisher: false },
+        "publishers:org": {
+          _id: "publishers:org",
+          kind: "org",
+          handle: "org",
+          trustedPublisher: false,
+        },
+      },
+    );
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:member",
+        ownerUserId: "users:member",
+        ownerPublisherId: "publishers:org",
+        publishActor: {
+          kind: "github-actions",
+          repository: "org/demo-plugin",
+          workflow: "publish.yml",
+          runId: "1",
+          runAttempt: "1",
+          sha: "abc123",
+        },
+        name: "@org/demo-plugin",
+        displayName: "Demo Plugin",
+        family: "code-plugin",
+        version: "1.0.1",
+        changelog: "trusted publish",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+      }),
+    ).resolves.toMatchObject({ ok: true, packageId: "packages:demo" });
+    expect(ctx.insert).toHaveBeenCalledWith("packageReleases", expect.anything());
   });
 
   it("rejects package scopes that do not match the selected owner handle", async () => {

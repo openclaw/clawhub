@@ -156,16 +156,3 @@ export function listPrefilledFields(prefill: PluginPublishPrefill) {
   if (prefill.hostTargets) fields.push("host targets");
   return fields;
 }
-
-export function formatPackageCompatibility(compatibility: PackageCompatibility) {
-  return [
-    compatibility.pluginApiRange ? `pluginApi=${compatibility.pluginApiRange}` : null,
-    compatibility.builtWithOpenClawVersion
-      ? `builtWith=${compatibility.builtWithOpenClawVersion}`
-      : null,
-    compatibility.pluginSdkVersion ? `sdk=${compatibility.pluginSdkVersion}` : null,
-    compatibility.minGatewayVersion ? `minGateway=${compatibility.minGatewayVersion}` : null,
-  ]
-    .filter(Boolean)
-    .join(", ");
-}

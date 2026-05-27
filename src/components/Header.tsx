@@ -90,6 +90,7 @@ export default function Header() {
   const initial = (me?.displayName ?? me?.name ?? rawHandle).charAt(0).toUpperCase();
   const isStaff = isModerator(me);
   const hasResolvedUser = Boolean(me);
+  const isAuthResolving = isLoading || (isAuthenticated && me === undefined);
   const navCtx = useMemo(
     () => ({ isSoulMode, isAuthenticated: hasResolvedUser, isStaff }),
     [hasResolvedUser, isSoulMode, isStaff],
@@ -486,6 +487,8 @@ export default function Header() {
                   <DropdownMenuItem onClick={() => void signOut()}>Sign out</DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
+            ) : isAuthResolving ? (
+              <div className="github-sign-in-button auth-loading-placeholder" aria-hidden="true" />
             ) : (
               <>
                 {authError ? (
