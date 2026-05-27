@@ -6992,8 +6992,10 @@ export const applyBanToOwnedSkillsBatchInternal = internalMutation({
     let hiddenCount = 0;
     for (const skill of page) {
       if (skill.softDeletedAt) {
+        const isBanHiddenStatus =
+          skill.moderationStatus === "hidden" || skill.moderationStatus === undefined;
         if (
-          skill.moderationStatus === "hidden" &&
+          isBanHiddenStatus &&
           skill.moderationReason === "user.banned" &&
           skill.softDeletedAt < args.bannedAt
         ) {

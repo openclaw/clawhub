@@ -111,6 +111,75 @@ describe("skills ban/unban batches", () => {
     expect(scheduler.runAfter).not.toHaveBeenCalled();
   });
 
+  it("retimestamps legacy ban-hidden skills so a final unban restores them after a re-ban", async () => {
+    const legacySkill = {
+      _id: "skills:legacy-hidden",
+      ownerUserId: "users:owner",
+      softDeletedAt: 1_000,
+      moderationStatus: undefined,
+      moderationReason: "user.banned",
+      hiddenAt: 1_000,
+      hiddenBy: "users:first-moderator",
+      stats: {
+        downloads: 0,
+        stars: 0,
+        comments: 0,
+        versions: 1,
+        installsCurrent: 0,
+        installsAllTime: 0,
+      },
+    };
+    const { ctx: banCtx, patch: banPatch } = makeCtx({
+      user: { _id: "users:owner", deletedAt: 2_000 },
+      skills: [legacySkill],
+    });
+
+    await expect(
+      applyBanHandler(banCtx, {
+        ownerUserId: "users:owner",
+        bannedAt: 2_000,
+        hiddenBy: "users:second-moderator",
+      }),
+    ).resolves.toEqual({
+      ok: true,
+      hiddenCount: 0,
+      scheduled: false,
+    });
+
+    expect(banPatch).toHaveBeenCalledWith(
+      "skills:legacy-hidden",
+      expect.objectContaining({
+        softDeletedAt: 2_000,
+        hiddenAt: 2_000,
+        hiddenBy: "users:second-moderator",
+        lastReviewedAt: 2_000,
+        updatedAt: 2_000,
+      }),
+    );
+
+    const retimestampPatch = banPatch.mock.calls[0]?.[1] ?? {};
+    const { ctx: unbanCtx, patch: unbanPatch } = makeCtx({
+      user: { _id: "users:owner", deletedAt: undefined, deactivatedAt: undefined },
+      skills: [{ ...legacySkill, ...retimestampPatch }],
+    });
+
+    await expect(
+      restoreUnbanHandler(unbanCtx, { ownerUserId: "users:owner", bannedAt: 2_000 }),
+    ).resolves.toMatchObject({
+      restoredCount: 1,
+      scheduled: false,
+    });
+
+    expect(unbanPatch).toHaveBeenCalledWith(
+      "skills:legacy-hidden",
+      expect.objectContaining({
+        softDeletedAt: undefined,
+        moderationStatus: "active",
+        moderationReason: "restored.unban",
+      }),
+    );
+  });
+
   it("does not retimestamp removed ban-hidden skills during a later ban", async () => {
     const { ctx, patch } = makeCtx({
       user: { _id: "users:owner", deletedAt: 2_000 },
