@@ -13,6 +13,9 @@ import {
 } from "./shared";
 
 const usersV1InternalRefs = internal as unknown as {
+  publishers: {
+    removeOrgPublisherMemberInternal: unknown;
+  };
   users: {
     getByHandleInternal: unknown;
     remediateAutobansInternal: unknown;
@@ -54,7 +57,8 @@ export async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request)
     action !== "reclassify-ban" &&
     action !== "reclaim" &&
     action !== "reserve" &&
-    action !== "publisher"
+    action !== "publisher" &&
+    action !== "publisher-member"
   ) {
     return text("Not found", 404, rate.headers);
   }
@@ -103,6 +107,12 @@ export async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request)
     const admin = requireAdminOrResponse(actorUser, rate.headers);
     if (!admin.ok) return admin.response;
     return handleAdminEnsurePublisher(ctx, payload, actorUserId, rate.headers);
+  }
+
+  if (action === "publisher-member") {
+    const admin = requireAdminOrResponse(actorUser, rate.headers);
+    if (!admin.ok) return admin.response;
+    return handleAdminRemovePublisherMember(ctx, payload, actorUserId, rate.headers);
   }
 
   const handleRaw = typeof payload.handle === "string" ? payload.handle.trim() : "";
@@ -503,18 +513,66 @@ async function handleAdminEnsurePublisher(
 
   const displayName =
     typeof payload.displayName === "string" ? payload.displayName.trim() : undefined;
-  const trusted = typeof payload.trusted === "boolean" ? payload.trusted : true;
+  const trusted = typeof payload.trusted === "boolean" ? payload.trusted : undefined;
+  const memberHandle =
+    typeof payload.memberHandle === "string" ? payload.memberHandle.trim().toLowerCase() : "";
+  const memberRoleRaw =
+    typeof payload.memberRole === "string" ? payload.memberRole.trim().toLowerCase() : "";
+  const memberRole =
+    memberRoleRaw === "owner" || memberRoleRaw === "admin" || memberRoleRaw === "publisher"
+      ? memberRoleRaw
+      : undefined;
+  if (memberRoleRaw && !memberRole) {
+    return text("memberRole must be owner, admin, or publisher", 400, headers);
+  }
 
   try {
     const result = await ctx.runMutation(internal.publishers.ensureOrgPublisherHandleInternal, {
       actorUserId,
       handle,
       displayName,
-      trusted,
+      ...(typeof trusted === "boolean" ? { trusted } : {}),
+      ...(memberHandle ? { memberHandle } : {}),
+      ...(memberRole ? { memberRole } : {}),
     });
     return json(result, 200, headers);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Publisher ensure failed";
+    if (message.toLowerCase().includes("forbidden")) {
+      return text("Forbidden", 403, headers);
+    }
+    if (message.toLowerCase().includes("not found")) {
+      return text(message, 404, headers);
+    }
+    return text(message, 400, headers);
+  }
+}
+
+async function handleAdminRemovePublisherMember(
+  ctx: ActionCtx,
+  payload: Record<string, unknown>,
+  actorUserId: Id<"users">,
+  headers: HeadersInit,
+) {
+  const handle = typeof payload.handle === "string" ? payload.handle.trim().toLowerCase() : "";
+  const memberHandle =
+    typeof payload.memberHandle === "string" ? payload.memberHandle.trim().toLowerCase() : "";
+  if (!handle) return text("Missing handle", 400, headers);
+  if (!memberHandle) return text("Missing memberHandle", 400, headers);
+
+  try {
+    const result = await runUsersV1MutationRef(
+      ctx,
+      usersV1InternalRefs.publishers.removeOrgPublisherMemberInternal,
+      {
+        actorUserId,
+        handle,
+        memberHandle,
+      },
+    );
+    return json(result, 200, headers);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Publisher member removal failed";
     if (message.toLowerCase().includes("forbidden")) {
       return text("Forbidden", 403, headers);
     }

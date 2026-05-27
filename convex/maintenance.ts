@@ -7,6 +7,7 @@ import { assertRole, requireUserFromAction } from "./lib/access";
 import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
 import { buildSkillSummaryBackfillPatch, type ParsedSkillData } from "./lib/skillBackfill";
 import { deriveSkillCapabilityTags } from "./lib/skillCapabilityTags";
+import { isSkillCardPath } from "./lib/skillCards";
 import {
   computeQualitySignals,
   evaluateQuality,
@@ -735,7 +736,12 @@ type FingerprintBackfillPageItem = {
   versionId: Id<"skillVersions">;
   versionFingerprint?: string;
   files: Array<{ path: string; sha256: string }>;
-  existingEntries: Array<{ id: Id<"skillVersionFingerprints">; fingerprint: string }>;
+  hasGeneratedBundleFingerprint?: boolean;
+  existingEntries: Array<{
+    id: Id<"skillVersionFingerprints">;
+    fingerprint: string;
+    kind?: "source" | "generated-bundle";
+  }>;
 };
 
 type FingerprintBackfillPageResult = {
@@ -791,13 +797,21 @@ export const getSkillFingerprintBackfillPageInternal = internalQuery({
         .withIndex("by_version", (q) => q.eq("versionId", version._id))
         .take(20);
 
-      const normalizedFiles = version.files.map((file) => ({
-        path: file.path,
-        sha256: file.sha256,
-      }));
+      const hasGeneratedBundleFingerprint = existingEntries.some(
+        (entry) => entry.kind === "generated-bundle",
+      );
+      const normalizedFiles = version.files
+        .filter((file) => !hasGeneratedBundleFingerprint || !isSkillCardPath(file.path))
+        .map((file) => ({
+          path: file.path,
+          sha256: file.sha256,
+        }));
+      const sourceFingerprintEntries = existingEntries.filter(
+        (entry) => entry.kind !== "generated-bundle",
+      );
 
-      const hasAnyEntry = existingEntries.length > 0;
-      const entryFingerprints = new Set(existingEntries.map((entry) => entry.fingerprint));
+      const hasAnyEntry = sourceFingerprintEntries.length > 0;
+      const entryFingerprints = new Set(sourceFingerprintEntries.map((entry) => entry.fingerprint));
       const hasFingerprintMismatch =
         typeof version.fingerprint === "string" &&
         hasAnyEntry &&
@@ -812,9 +826,11 @@ export const getSkillFingerprintBackfillPageInternal = internalQuery({
         versionId: version._id,
         versionFingerprint: version.fingerprint ?? undefined,
         files: normalizedFiles,
-        existingEntries: existingEntries.map((entry) => ({
+        hasGeneratedBundleFingerprint,
+        existingEntries: sourceFingerprintEntries.map((entry) => ({
           id: entry._id,
           fingerprint: entry.fingerprint,
+          kind: entry.kind === "source" ? "source" : undefined,
         })),
       });
     }
@@ -851,6 +867,7 @@ export const applySkillFingerprintBackfillPatchInternal = internalMutation({
         skillId: version.skillId,
         versionId: version._id,
         fingerprint: args.fingerprint,
+        kind: "source",
         createdAt: now,
       });
     }
@@ -897,10 +914,17 @@ export async function backfillSkillFingerprintsInternalHandler(
     for (const item of page.items) {
       totals.versionsScanned++;
 
-      const fingerprint = await hashSkillFiles(item.files);
+      const fingerprint = await hashSkillFiles(
+        item.files.filter(
+          (file) => !item.hasGeneratedBundleFingerprint || !isSkillCardPath(file.path),
+        ),
+      );
 
-      const existingFingerprints = new Set(item.existingEntries.map((entry) => entry.fingerprint));
-      const hasAnyEntry = item.existingEntries.length > 0;
+      const sourceEntries = item.existingEntries.filter(
+        (entry) => entry.kind !== "generated-bundle",
+      );
+      const existingFingerprints = new Set(sourceEntries.map((entry) => entry.fingerprint));
+      const hasAnyEntry = sourceEntries.length > 0;
       const entryIsCorrect =
         hasAnyEntry && existingFingerprints.size === 1 && existingFingerprints.has(fingerprint);
       const versionFingerprintIsCorrect = item.versionFingerprint === fingerprint;
@@ -921,7 +945,7 @@ export async function backfillSkillFingerprintsInternalHandler(
         fingerprint,
         patchVersion: shouldPatchVersion,
         replaceEntries: shouldReplaceEntries,
-        existingEntryIds: shouldReplaceEntries ? item.existingEntries.map((entry) => entry.id) : [],
+        existingEntryIds: shouldReplaceEntries ? sourceEntries.map((entry) => entry.id) : [],
       });
     }
 

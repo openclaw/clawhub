@@ -8,11 +8,11 @@ on:
         required: false
         default: ""
       batch-limit:
-        description: "Maximum Codex scans to run in parallel per batch"
+        description: "Maximum Codex scans to run in parallel per worker shard"
         required: true
-        default: "20"
+        default: "6"
       max-jobs:
-        description: "Optional total jobs cap for this run"
+        description: "Optional total jobs cap per worker shard"
         required: false
         default: ""
       max-runtime-minutes:
@@ -20,33 +20,41 @@ on:
         required: true
         default: "40"
   schedule:
-    - cron: "*/10 * * * *"
-
-concurrency:
-  group: security-scan-codex-worker
-  cancel-in-progress: false
+    - cron: "*/5 * * * *"
 
 permissions:
   contents: read
 
 jobs:
   codex-security-scan:
-    runs-on: ubuntu-latest
+    name: Codex security scan shard ${{ matrix.shard }}
+    runs-on: blacksmith-8vcpu-ubuntu-2404
     timeout-minutes: 60
     environment: Production
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
     env:
       CONVEX_URL: ${{ vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud' }}
       SECURITY_SCAN_WORKER_TOKEN: ${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      CODEX_SECURITY_SCAN_LIMIT: ${{ inputs.limit || inputs['batch-limit'] || '20' }}
+      CODEX_SECURITY_SCAN_LIMIT: ${{ inputs.limit || inputs['batch-limit'] || '6' }}
       CODEX_SECURITY_SCAN_MAX_JOBS: ${{ inputs['max-jobs'] || '' }}
       CODEX_SECURITY_SCAN_MAX_RUNTIME_MINUTES: ${{ inputs['max-runtime-minutes'] || '40' }}
       CODEX_SECURITY_SCAN_LEASE_MINUTES: "60"
-      CODEX_SECURITY_SCAN_DIAGNOSTICS_DIR: ${{ runner.temp }}/codex-security-scan-diagnostics
+      CODEX_SECURITY_SCAN_DIAGNOSTICS_DIR: codex-security-scan-diagnostics-${{ matrix.shard }}
+      CODEX_SECURITY_SCAN_SHARD: ${{ matrix.shard }}
+      CODEX_SECURITY_SCAN_WORKER_ID: "github-actions:${{ github.run_id }}:${{ github.run_attempt }}:${{ matrix.shard }}"
+      SKILLSPECTOR_PROVIDER: openai
     steps:
       - uses: actions/checkout@v6
 
       - uses: ./.github/actions/setup-bun
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
 
       - name: Check configuration
         run: |
@@ -68,6 +76,16 @@ jobs:
           fi
           codex --version
 
+      - name: Install SkillSpector
+        run: |
+          set -euo pipefail
+          python -m venv "$RUNNER_TEMP/skillspector-venv"
+          source "$RUNNER_TEMP/skillspector-venv/bin/activate"
+          python -m pip install --upgrade pip
+          python -m pip install 'git+https://github.com/NVIDIA/skillspector.git'
+          echo "$RUNNER_TEMP/skillspector-venv/bin" >> "$GITHUB_PATH"
+          skillspector --help >/dev/null
+
       - name: Authenticate Codex CLI
         run: printf '%s' "$OPENAI_API_KEY" | codex login --with-api-key
 
@@ -83,6 +101,6 @@ jobs:
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
-          name: codex-security-scan-diagnostics-${{ github.run_id }}
+          name: codex-security-scan-diagnostics-${{ github.run_id }}-${{ matrix.shard }}
           path: ${{ env.CODEX_SECURITY_SCAN_DIAGNOSTICS_DIR }}
           if-no-files-found: ignore

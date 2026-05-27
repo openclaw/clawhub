@@ -165,6 +165,35 @@ export const ApiV1PublisherCreateResponseSchema = type({
 });
 export type ApiV1PublisherCreateResponse = (typeof ApiV1PublisherCreateResponseSchema)[inferred];
 
+export const ApiV1PublisherEnsureResponseSchema = type({
+  ok: "true",
+  publisherId: "string",
+  handle: "string",
+  created: "boolean",
+  migrated: "boolean",
+  trusted: "boolean",
+  "member?": type({
+    userId: "string",
+    handle: "string",
+    role: '"owner"|"admin"|"publisher"',
+  }),
+});
+export type ApiV1PublisherEnsureResponse = (typeof ApiV1PublisherEnsureResponseSchema)[inferred];
+
+export const ApiV1PublisherRemoveMemberResponseSchema = type({
+  ok: "true",
+  publisherId: "string",
+  handle: "string",
+  removed: "boolean",
+  member: type({
+    userId: "string",
+    handle: "string",
+    role: '"owner"|"admin"|"publisher"',
+  }),
+});
+export type ApiV1PublisherRemoveMemberResponse =
+  (typeof ApiV1PublisherRemoveMemberResponseSchema)[inferred];
+
 export const ApiV1SearchResponseSchema = type({
   results: type({
     slug: "string?",
@@ -426,6 +455,28 @@ export const ApiV1SkillVersionResponseSchema = type({
 export const ApiV1SkillResolveResponseSchema = type({
   match: type({ version: "string" }).or("null"),
   latestVersion: type({ version: "string" }).or("null"),
+});
+
+export const ApiV1SkillVerifyResponseSchema = type({
+  schema: '"clawhub.skill.verify.v1"',
+  ok: "boolean",
+  decision: '"pass"|"fail"',
+  reasons: "string[]",
+  slug: "string",
+  displayName: "string",
+  pageUrl: "string",
+  publisherHandle: "string|null",
+  publisherDisplayName: "string|null",
+  publisherProfileUrl: "string|null",
+  version: "string",
+  resolvedFrom: '"latest"|"version"|"tag"',
+  tag: "string|null",
+  createdAt: "number",
+  card: "unknown",
+  artifact: "unknown",
+  provenance: "unknown",
+  security: "unknown",
+  signature: "unknown",
 });
 
 export const ApiV1PublishResponseSchema = type({

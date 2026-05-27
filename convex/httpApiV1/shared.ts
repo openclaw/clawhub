@@ -9,6 +9,7 @@ import { getPublishFileSizeError, MAX_PUBLISH_FILE_BYTES } from "../lib/publishL
 import { isMacJunkPath } from "../lib/skills";
 
 export const MAX_RAW_FILE_BYTES = 200 * 1024;
+const DEFAULT_PUBLIC_SITE_URL = "https://clawhub.ai";
 
 const SAFE_TEXT_FILE_CSP =
   "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
@@ -86,6 +87,65 @@ export async function parseJsonPayload(request: Request, headers: HeadersInit) {
   } catch {
     return { ok: false as const, response: text("Invalid JSON", 400, headers) };
   }
+}
+
+function normalizeOrigin(value: string | null | undefined) {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  try {
+    return new URL(trimmed).origin;
+  } catch {
+    return null;
+  }
+}
+
+function firstForwardedValue(value: string | null) {
+  return value?.split(",")[0]?.trim() || null;
+}
+
+function isProductionDeployment() {
+  const deployment = process.env.CONVEX_DEPLOYMENT?.trim() ?? "";
+  return deployment.startsWith("prod:") || deployment.includes("production");
+}
+
+function isTrustedForwardedHost(value: string) {
+  try {
+    const hostname = new URL(`https://${value}`).hostname.toLowerCase();
+    return (
+      hostname === "clawhub.ai" ||
+      hostname === "www.clawhub.ai" ||
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname === "0.0.0.0"
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function publicApiOrigin(request: Request) {
+  const configured = normalizeOrigin(process.env.SITE_URL ?? process.env.VITE_SITE_URL);
+  if (configured) return configured;
+
+  const forwardedHost = firstForwardedValue(request.headers.get("x-forwarded-host"));
+  if (
+    forwardedHost &&
+    !forwardedHost.endsWith(".convex.site") &&
+    isTrustedForwardedHost(forwardedHost)
+  ) {
+    const forwardedProto =
+      firstForwardedValue(request.headers.get("x-forwarded-proto")) ??
+      firstForwardedValue(request.headers.get("x-forwarded-protocol")) ??
+      "https";
+    const proto = forwardedProto === "http" ? "http" : "https";
+    return `${proto}://${forwardedHost}`;
+  }
+
+  const requestUrl = new URL(request.url);
+  if (isProductionDeployment() && requestUrl.hostname.endsWith(".convex.site")) {
+    return DEFAULT_PUBLIC_SITE_URL;
+  }
+  return requestUrl.origin;
 }
 
 export async function requireApiTokenUserOrResponse(
@@ -409,10 +469,34 @@ export function softDeleteErrorToResponse(
   return text("Internal Server Error", 500, headers);
 }
 
+export function cleanUserFacingErrorMessage(message: string) {
+  let cleaned = message
+    .replace(/\[CONVEX[^\]]*\]\s*/g, "")
+    .replace(/\[Request ID:[^\]]*\]\s*/g, "")
+    .replace(/^Server Error Called by client\s*/i, "")
+    .trim();
+
+  for (let i = 0; i < 3; i += 1) {
+    const next = cleaned
+      .replace(/^Error:\s*/i, "")
+      .replace(/^(?:Uncaught\s+)?ConvexError:\s*/i, "")
+      .trim();
+    if (next === cleaned) break;
+    cleaned = next;
+  }
+
+  return cleaned;
+}
+
+export function formatUserFacingErrorMessage(error: unknown, fallback: string) {
+  const message = error instanceof Error ? error.message : fallback;
+  return cleanUserFacingErrorMessage(message) || fallback;
+}
+
 function formatAuthFailure(error: unknown) {
-  const message = error instanceof Error ? error.message.trim() : "";
+  const message = formatUserFacingErrorMessage(error, "");
   if (!message || /^unauthorized$/i.test(message)) return "Unauthorized";
-  return message.replace(/^ConvexError:\s*/i, "").trim() || "Unauthorized";
+  return message || "Unauthorized";
 }
 
 // Shared formatter for authz responses.
@@ -423,9 +507,9 @@ function formatAuthFailure(error: unknown) {
 //   CLI/API clients can surface actionable reasons such as
 //   "Forbidden: This skill was hidden by moderation ...".
 export function formatAuthzMessage(error: unknown, fallback: "Unauthorized" | "Forbidden") {
-  const message = error instanceof Error ? error.message.trim() : "";
+  const message = formatUserFacingErrorMessage(error, "");
   if (!message) return fallback;
-  const stripped = message.replace(/^ConvexError:\s*/i, "").trim();
+  const stripped = cleanUserFacingErrorMessage(message);
   if (!stripped || stripped.toLowerCase() === fallback.toLowerCase()) return fallback;
   return stripped;
 }

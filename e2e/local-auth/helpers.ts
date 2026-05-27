@@ -60,7 +60,13 @@ export async function signInAsLocalPersona(page: Page, persona: DevPersona) {
 
   await page.getByRole("button", { name: "Open local dev personas" }).click();
   await page.getByRole("menuitem", { name: new RegExp(`use ${persona}`, "i") }).click();
-  await expectLocalPersonaActive(page, persona);
+  try {
+    await expectLocalPersonaActive(page, persona);
+  } catch {
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await waitForHydration(page);
+    await expectLocalPersonaActive(page, persona);
+  }
 
   return persona === "owner" ? "local" : `local-${persona}`;
 }

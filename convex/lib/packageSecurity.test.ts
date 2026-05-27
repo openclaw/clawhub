@@ -116,6 +116,16 @@ describe("packageSecurity", () => {
     ).toBe("pending");
   });
 
+  it("does not preserve old static-only malicious verification", () => {
+    expect(
+      resolvePackageReleaseScanStatus({
+        staticScan: { status: "malicious" },
+        verification: { scanStatus: "malicious" },
+        sha256hash: "a".repeat(64),
+      } as never),
+    ).toBe("pending");
+  });
+
   it("lets package ClawScan clear non-malicious scanner noise", () => {
     expect(
       resolvePackageReleaseScanStatus({
@@ -142,6 +152,16 @@ describe("packageSecurity", () => {
     } as never;
 
     expect(resolvePackageReleaseScanStatus(release)).toBe("clean");
+    expect(getPackageDownloadSecurityBlock(release)).toBeNull();
+  });
+
+  it("keeps static malicious package scans advisory until ClawScan decides", () => {
+    const release = {
+      staticScan: { status: "malicious" },
+      sha256hash: "a".repeat(64),
+    } as never;
+
+    expect(resolvePackageReleaseScanStatus(release)).toBe("pending");
     expect(getPackageDownloadSecurityBlock(release)).toBeNull();
   });
 
@@ -198,7 +218,7 @@ describe("packageSecurity", () => {
     ).toEqual(["scan:pending"]);
   });
 
-  it("deduplicates overlapping scanner reason codes", () => {
+  it("keeps static-only package findings out of trust reason codes", () => {
     expect(
       getPackageTrustReasons(
         {
@@ -206,7 +226,7 @@ describe("packageSecurity", () => {
         } as never,
         "malicious",
       ),
-    ).toEqual(["scan:malicious", "static:malicious"]);
+    ).toEqual(["scan:malicious"]);
   });
 
   it("keeps clean and not-run releases free of scan reason noise", () => {

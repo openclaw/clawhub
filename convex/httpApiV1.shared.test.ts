@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Id } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
-import { resolveVersionTagsBatch } from "./httpApiV1/shared";
+import { formatUserFacingErrorMessage, resolveVersionTagsBatch } from "./httpApiV1/shared";
 
 function makeCtx() {
   return {
@@ -11,6 +11,23 @@ function makeCtx() {
 }
 
 describe("http API v1 shared helpers", () => {
+  it("removes Convex transport wrappers from user-facing errors", () => {
+    expect(
+      formatUserFacingErrorMessage(
+        new Error(
+          "[CONVEX A] [Request ID: abc] Server Error Called by client Uncaught ConvexError: Bad publish payload",
+        ),
+        "Request failed",
+      ),
+    ).toBe("Bad publish payload");
+    expect(
+      formatUserFacingErrorMessage(
+        new Error("Uncaught ConvexError: Uncaught ConvexError: Publisher not found"),
+        "Request failed",
+      ),
+    ).toBe("Publisher not found");
+  });
+
   it("resolves latest tags without reading version documents", async () => {
     const ctx = makeCtx();
     const versionId = "skillVersions:latest" as Id<"skillVersions">;

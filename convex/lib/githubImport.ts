@@ -40,15 +40,16 @@ const CODELOAD_HOST = "codeload.github.com";
 const SKILL_FILENAMES = ["skill.md", "skills.md"];
 
 export function parseGitHubImportUrl(input: string): GitHubImportUrl {
-  const originalUrl = input.trim();
+  const rawUrl = input.trim();
   let url: URL;
   try {
-    url = new URL(originalUrl);
+    url = new URL(rawUrl);
   } catch {
     throw new Error("Invalid URL");
   }
   if (url.protocol !== "https:") throw new Error("Only https:// URLs are supported");
   if (url.hostname !== GITHUB_HOST) throw new Error("Only github.com URLs are supported");
+  const originalUrl = canonicalGitHubImportUrl(url);
 
   const segments = url.pathname
     .split("/")
@@ -87,6 +88,15 @@ export function parseGitHubImportUrl(input: string): GitHubImportUrl {
 
   if (rest && !normalizedRest) throw new Error("Invalid path in GitHub URL");
   return { owner, repo, ref, path: normalizedRest || undefined, originalUrl };
+}
+
+function canonicalGitHubImportUrl(url: URL) {
+  const canonical = new URL(url.toString());
+  canonical.username = "";
+  canonical.password = "";
+  canonical.search = "";
+  canonical.hash = "";
+  return `${canonical.origin}${canonical.pathname}`;
 }
 
 export async function resolveGitHubCommit(

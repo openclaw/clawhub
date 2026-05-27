@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, internalMutation } from "./functions";
+import { sourceSkillVersionFiles } from "./lib/skillCards";
 import { buildDeterministicPackageZip, buildDeterministicZip } from "./lib/skillZip";
 
 const SHA256_HASH_PATTERN = /^[a-f0-9]{64}$/i;
@@ -508,9 +509,16 @@ export const scanWithVirusTotal = internalAction({
       return;
     }
 
+    const fingerprintEntries = await ctx.runQuery(internal.skills.listVersionFingerprintsInternal, {
+      skillVersionId: version._id,
+    });
+    const generatedBundleFingerprints = fingerprintEntries
+      .filter((entry) => entry.kind === "generated-bundle")
+      .map((entry) => entry.fingerprint);
+
     // Build deterministic ZIP with stable meta (no version history).
     const entries: Array<{ path: string; bytes: Uint8Array }> = [];
-    for (const file of version.files) {
+    for (const file of sourceSkillVersionFiles(version.files, { generatedBundleFingerprints })) {
       const content = await ctx.storage.get(file.storageId);
       if (content) {
         const buffer = new Uint8Array(await content.arrayBuffer());

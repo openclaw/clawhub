@@ -1,5 +1,5 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import { SecurityAuditPage } from "../../../components/SecurityAuditPage";
 import { getOpenClawPackageCandidateNames } from "../../../lib/openClawExtensionSlugs";
@@ -111,6 +111,7 @@ export function PluginSecurityAuditPage({
   const { detail, version, resolvedName, rateLimited } = loaderData;
   const pkg = detail.package;
   const release = version?.version ?? null;
+  const requestPackageRescan = useMutation(api.securityScan.requestPackageRescan);
   const settings = useQuery(api.packages.getClawScanNoteSettings, {
     name: resolvedName,
     candidateNames: getOpenClawPackageCandidateNames(name),
@@ -147,10 +148,16 @@ export function PluginSecurityAuditPage({
       sha256hash={release.sha256hash ?? null}
       vtAnalysis={release.vtAnalysis ?? null}
       llmAnalysis={release.llmAnalysis ?? null}
-      staticScan={release.staticScan ?? null}
+      skillSpectorAnalysis={release.skillSpectorAnalysis ?? null}
       clawScanNote={release.clawScanNote ?? null}
       canManageArtifact={Boolean(settings)}
       settingsHref={settings ? `${buildPluginDetailHref(resolvedName)}/settings` : null}
+      onRequestRescan={
+        settings
+          ? () =>
+              requestPackageRescan({ packageId: settings.package._id, version: release.version })
+          : null
+      }
     />
   );
 }

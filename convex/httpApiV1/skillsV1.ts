@@ -11,6 +11,7 @@ import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { getOptionalApiTokenUserId, requireApiTokenUser } from "../lib/apiTokenAuth";
+import { mergeHeaders } from "../lib/httpHeaders";
 import { applyRateLimit } from "../lib/httpRateLimit";
 import { parseBooleanQueryParam, resolveBooleanQueryParam } from "../lib/httpUtils";
 import type {
@@ -18,7 +19,14 @@ import type {
   LlmEvalDimension,
   LlmRiskSummary,
 } from "../lib/securityPrompt";
+import { selectGeneratedSkillCardFile, sourceSkillVersionFiles } from "../lib/skillCards";
 import { getPublicSkillFileAccessBlock, isSkillVersionForSkill } from "../lib/skillFileAccess";
+import {
+  buildMergedExportZip,
+  type MergedExportManifestEntry,
+  validateSlug,
+  validateFilePath,
+} from "../lib/skillZip";
 import { publishVersionForUser } from "../skills";
 import {
   MAX_RAW_FILE_BYTES,
@@ -28,6 +36,7 @@ import {
   parseJsonPayload,
   parseMultipartPublish,
   parsePublishBody,
+  publicApiOrigin,
   requireApiTokenUserOrResponse,
   resolveTagsBatch,
   safeTextFileResponse,
@@ -35,6 +44,12 @@ import {
   text,
   toOptionalNumber,
 } from "./shared";
+
+const MAX_EXPORT_FILE_COUNT = 10_000;
+const MAX_EXPORT_PAGE_LIMIT = 250;
+const DEFAULT_EXPORT_PAGE_LIMIT = 250;
+const MAX_EXPORT_TOTAL_BYTES = 256 * 1024 * 1024;
+const MAX_SECURITY_VERDICT_ITEMS = 100;
 
 type SearchSkillEntry = {
   score: number;
@@ -109,6 +124,7 @@ type PublicSkillVersionResponse = {
   softDeletedAt?: number;
   sha256hash?: string;
   vtAnalysis?: Doc<"skillVersions">["vtAnalysis"];
+  skillSpectorAnalysis?: Doc<"skillVersions">["skillSpectorAnalysis"];
   llmAnalysis?: Doc<"skillVersions">["llmAnalysis"];
   staticScan?: PublicSkillVersionStaticScan;
   capabilityTags?: string[];
@@ -163,6 +179,7 @@ type GetBySlugResult = {
     reason?: string;
   } | null;
 } | null;
+type SkillUrlOwner = { _id: string; handle?: string | null } | null;
 
 type ListVersionsResult = {
   items: PublicSkillVersionResponse[];
@@ -222,20 +239,21 @@ type SkillSecuritySnapshot = {
   virustotalUrl: string | null;
   capabilityTags: string[];
   scanners: {
-    static: {
-      status: string;
-      normalizedStatus: NormalizedSecurityStatus;
-      reasonCodes: string[];
-      summary: string | null;
-      engineVersion: string | null;
-      checkedAt: number | null;
-    } | null;
     vt: {
       status: string;
       verdict: string | null;
       normalizedStatus: NormalizedSecurityStatus;
       analysis: string | null;
       source: string | null;
+      checkedAt: number | null;
+    } | null;
+    skillspector: {
+      status: string;
+      normalizedStatus: NormalizedSecurityStatus;
+      score: number | null;
+      severity: string | null;
+      recommendation: string | null;
+      issueCount: number;
       checkedAt: number | null;
     } | null;
     llm: {
@@ -257,9 +275,10 @@ type SkillSecuritySnapshot = {
 
 const internalRefs = internal as unknown as {
   securityScan: {
-    enqueueSkillRescanForModeratorInternal: unknown;
+    requestSkillRescanForUserInternal: unknown;
   };
   skills: {
+    getSecurityVerdictTargetInternal: unknown;
     reportSkillForUserInternal: unknown;
     listSkillReportsInternal: unknown;
     triageSkillReportForUserInternal: unknown;
@@ -335,35 +354,32 @@ function hasLlmDimensionWarnings(dimensions: LlmEvalDimension[] | undefined) {
 function buildSkillSecuritySnapshot(
   version: Pick<
     PublicSkillVersionResponse,
-    "sha256hash" | "vtAnalysis" | "llmAnalysis" | "staticScan" | "capabilityTags"
+    "sha256hash" | "vtAnalysis" | "skillSpectorAnalysis" | "llmAnalysis" | "capabilityTags"
   >,
 ): SkillSecuritySnapshot | null {
   const capabilityTags = version.capabilityTags ?? [];
   const sha256hash = version.sha256hash ?? null;
   const vt = version.vtAnalysis;
+  const skillSpector = version.skillSpectorAnalysis;
   const llm = version.llmAnalysis;
-  const staticScan = version.staticScan;
 
-  if (!sha256hash && !vt && !llm && !staticScan && capabilityTags.length === 0) return null;
+  if (!sha256hash && !vt && !skillSpector && !llm && capabilityTags.length === 0) {
+    return null;
+  }
 
-  const staticStatus =
-    staticScan?.status?.trim().toLowerCase() === "malicious"
-      ? ("malicious" satisfies NormalizedSecurityStatus)
-      : null;
   const vtStatus = vt ? normalizeSecurityStatus(vt.verdict ?? vt.status) : null;
+  const skillSpectorStatus = skillSpector ? normalizeSecurityStatus(skillSpector.status) : null;
   const llmStatus = llm ? normalizeSecurityStatus(llm.verdict ?? llm.status) : null;
 
   const statuses: NormalizedSecurityStatus[] = [];
-  if (staticStatus) statuses.push(staticStatus);
   if (llmStatus) statuses.push(llmStatus);
-  if (statuses.length === 0 && sha256hash) statuses.push("pending");
+  if (statuses.length === 0 && (sha256hash || skillSpector)) statuses.push("pending");
   const status = mergeSecurityStatuses(statuses);
-  const hasScanResult =
-    isDefinitiveSecurityStatus(staticStatus) || isDefinitiveSecurityStatus(llmStatus);
+  const hasScanResult = isDefinitiveSecurityStatus(llmStatus);
   const hasWarnings =
     status === "suspicious" || status === "malicious" || hasLlmDimensionWarnings(llm?.dimensions);
 
-  const checkedAtCandidates = [staticScan?.checkedAt, vt?.checkedAt, llm?.checkedAt].filter(
+  const checkedAtCandidates = [vt?.checkedAt, skillSpector?.checkedAt, llm?.checkedAt].filter(
     (value): value is number => typeof value === "number",
   );
   const checkedAt = checkedAtCandidates.length > 0 ? Math.max(...checkedAtCandidates) : null;
@@ -378,16 +394,6 @@ function buildSkillSecuritySnapshot(
     virustotalUrl: sha256hash ? `https://www.virustotal.com/gui/file/${sha256hash}` : null,
     capabilityTags,
     scanners: {
-      static: staticScan
-        ? {
-            status: staticScan.status,
-            normalizedStatus: staticStatus ?? "pending",
-            reasonCodes: staticScan.reasonCodes ?? [],
-            summary: staticScan.summary ?? null,
-            engineVersion: staticScan.engineVersion ?? null,
-            checkedAt: staticScan.checkedAt ?? null,
-          }
-        : null,
       vt: vt
         ? {
             status: vt.status,
@@ -396,6 +402,17 @@ function buildSkillSecuritySnapshot(
             analysis: vt.analysis ?? null,
             source: vt.source ?? null,
             checkedAt: vt.checkedAt ?? null,
+          }
+        : null,
+      skillspector: skillSpector
+        ? {
+            status: skillSpector.status,
+            normalizedStatus: skillSpectorStatus ?? "pending",
+            score: skillSpector.score ?? null,
+            severity: skillSpector.severity ?? null,
+            recommendation: skillSpector.recommendation ?? null,
+            issueCount: skillSpector.issueCount ?? 0,
+            checkedAt: skillSpector.checkedAt ?? null,
           }
         : null,
       llm: llm
@@ -416,6 +433,522 @@ function buildSkillSecuritySnapshot(
         : null,
     },
   };
+}
+
+type VerificationResolvedFrom = "latest" | "version" | "tag";
+
+type SkillVersionFingerprintSummary = {
+  fingerprint: string;
+  kind?: "source" | "generated-bundle";
+  createdAt: number;
+};
+
+type SecurityVerdictRequestItem = {
+  slug: string;
+  version: string;
+};
+
+type VerifySecurityVersion = {
+  staticScan?: Pick<
+    NonNullable<Doc<"skillVersions">["staticScan"]>,
+    "status" | "reasonCodes" | "summary" | "engineVersion" | "checkedAt"
+  >;
+  llmAnalysis?: Pick<
+    NonNullable<Doc<"skillVersions">["llmAnalysis"]>,
+    "status" | "verdict" | "confidence" | "summary" | "model" | "checkedAt"
+  >;
+  vtAnalysis?: Pick<
+    NonNullable<Doc<"skillVersions">["vtAnalysis"]>,
+    "status" | "verdict" | "source" | "checkedAt"
+  > &
+    Partial<
+      Pick<NonNullable<Doc<"skillVersions">["vtAnalysis"]>, "analysis" | "scanner" | "engineStats">
+    >;
+  skillSpectorAnalysis?: Pick<
+    NonNullable<Doc<"skillVersions">["skillSpectorAnalysis"]>,
+    | "status"
+    | "score"
+    | "severity"
+    | "recommendation"
+    | "issueCount"
+    | "scannerVersion"
+    | "checkedAt"
+  > &
+    Partial<Pick<NonNullable<Doc<"skillVersions">["skillSpectorAnalysis"]>, "summary" | "error">>;
+  depRegistryAnalysis?: Pick<
+    NonNullable<Doc<"skillVersions">["depRegistryAnalysis"]>,
+    "status" | "summary" | "checkedAt"
+  > &
+    Partial<
+      Pick<
+        NonNullable<Doc<"skillVersions">["depRegistryAnalysis"]>,
+        "notFoundPackages" | "unresolvedPackages"
+      >
+    >;
+};
+
+type SecurityVerdictTargetResult = {
+  skill: {
+    _id: Id<"skills">;
+    slug: string;
+    displayName: string;
+  } | null;
+  owner: { _id: string; handle?: string | null; displayName?: string | null } | null;
+  moderationInfo?: {
+    isPendingScan: boolean;
+    isMalwareBlocked: boolean;
+    isSuspicious: boolean;
+    isHiddenByMod: boolean;
+    isRemoved: boolean;
+    verdict?: "clean" | "suspicious" | "malicious";
+    reasonCodes?: string[];
+    summary?: string;
+    engineVersion?: string;
+    updatedAt?: number;
+    overrideActive?: boolean;
+  } | null;
+  version:
+    | (VerifySecurityVersion &
+        Pick<Doc<"skillVersions">, "_id" | "version" | "createdAt" | "softDeletedAt">)
+    | null;
+} | null;
+
+function normalizeVerificationStatus(value: string | null | undefined): NormalizedSecurityStatus {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) return "pending";
+  if (normalized === "clean" || normalized === "benign") return "clean";
+  if (normalized === "suspicious" || normalized === "review") return "suspicious";
+  if (normalized === "malicious") return "malicious";
+  if (normalized === "error" || normalized === "failed") return "error";
+  if (normalized === "completed") return "pending";
+  return normalizeSecurityStatus(normalized);
+}
+
+function buildVerifySecurity(version: VerifySecurityVersion) {
+  const staticStatus = normalizeVerificationStatus(version.staticScan?.status);
+  const clawRawStatus = version.llmAnalysis?.status ?? null;
+  const clawStatus = normalizeVerificationStatus(version.llmAnalysis?.verdict ?? clawRawStatus);
+  const vtStatus = version.vtAnalysis
+    ? normalizeVerificationStatus(version.vtAnalysis.verdict ?? version.vtAnalysis.status)
+    : null;
+  const skillSpectorStatus = version.skillSpectorAnalysis
+    ? normalizeVerificationStatus(version.skillSpectorAnalysis.status)
+    : null;
+  const depStatus = version.depRegistryAnalysis
+    ? normalizeVerificationStatus(version.depRegistryAnalysis.status)
+    : null;
+  const status = clawStatus;
+
+  return {
+    status,
+    passed: status === "clean",
+    rawStatus: clawRawStatus,
+    verdict: version.llmAnalysis?.verdict ?? null,
+    confidence: version.llmAnalysis?.confidence ?? null,
+    summary: version.llmAnalysis?.summary ?? null,
+    model: version.llmAnalysis?.model ?? null,
+    checkedAt: version.llmAnalysis?.checkedAt ?? null,
+    signals: {
+      staticScan: version.staticScan
+        ? {
+            status: staticStatus,
+            rawStatus: version.staticScan.status,
+            reasonCodes: version.staticScan.reasonCodes ?? [],
+            summary: version.staticScan.summary ?? null,
+            engineVersion: version.staticScan.engineVersion ?? null,
+            checkedAt: version.staticScan.checkedAt ?? null,
+          }
+        : {
+            status: "pending" as const,
+            rawStatus: null,
+            reasonCodes: [],
+            summary: null,
+            engineVersion: null,
+            checkedAt: null,
+          },
+      virusTotal: version.vtAnalysis
+        ? {
+            status: vtStatus ?? "pending",
+            rawStatus: version.vtAnalysis.status,
+            verdict: version.vtAnalysis.verdict ?? null,
+            analysis: version.vtAnalysis.analysis ?? null,
+            source: version.vtAnalysis.source ?? null,
+            scanner: version.vtAnalysis.scanner ?? null,
+            engineStats: version.vtAnalysis.engineStats ?? null,
+            checkedAt: version.vtAnalysis.checkedAt ?? null,
+          }
+        : null,
+      skillSpector: version.skillSpectorAnalysis
+        ? {
+            status: skillSpectorStatus ?? "pending",
+            rawStatus: version.skillSpectorAnalysis.status,
+            score: version.skillSpectorAnalysis.score ?? null,
+            severity: version.skillSpectorAnalysis.severity ?? null,
+            recommendation: version.skillSpectorAnalysis.recommendation ?? null,
+            issueCount: version.skillSpectorAnalysis.issueCount ?? 0,
+            scannerVersion: version.skillSpectorAnalysis.scannerVersion ?? null,
+            summary: version.skillSpectorAnalysis.summary ?? null,
+            error: version.skillSpectorAnalysis.error ?? null,
+            checkedAt: version.skillSpectorAnalysis.checkedAt ?? null,
+          }
+        : null,
+      dependencyRegistry: version.depRegistryAnalysis
+        ? {
+            status: depStatus ?? "pending",
+            rawStatus: version.depRegistryAnalysis.status,
+            summary: version.depRegistryAnalysis.summary ?? null,
+            notFoundPackages: version.depRegistryAnalysis.notFoundPackages ?? [],
+            unresolvedPackages: version.depRegistryAnalysis.unresolvedPackages ?? [],
+            checkedAt: version.depRegistryAnalysis.checkedAt ?? null,
+          }
+        : null,
+    },
+  };
+}
+
+function sourceFilesForVerify(
+  files: Doc<"skillVersions">["files"],
+  generatedBundleFingerprints: readonly string[],
+) {
+  return sourceSkillVersionFiles(files, { generatedBundleFingerprints }).map((file) => ({
+    path: file.path,
+    size: file.size,
+    sha256: file.sha256,
+    contentType: normalizeTextContentType(file.path, file.contentType) ?? null,
+  }));
+}
+
+function buildCardUrl(request: Request, slug: string, version: string) {
+  const cardUrl = new URL(
+    `/api/v1/skills/${encodeURIComponent(slug)}/card`,
+    new URL(request.url).origin,
+  );
+  cardUrl.searchParams.set("version", version);
+  return cardUrl.toString();
+}
+
+function buildVerifyReasons(args: {
+  cardAvailable: boolean;
+  isMalwareBlocked: boolean;
+  securityPassed: boolean;
+  securityStatus: NormalizedSecurityStatus;
+}) {
+  const reasons: string[] = [];
+  if (!args.cardAvailable) reasons.push("card.missing");
+  reasons.push(
+    ...buildSecurityVerdictReasons({
+      isMalwareBlocked: args.isMalwareBlocked,
+      securityPassed: args.securityPassed,
+      securityStatus: args.securityStatus,
+      staffCleared: false,
+    }),
+  );
+  return [...new Set(reasons)];
+}
+
+function buildSecurityVerdictReasons(args: {
+  isMalwareBlocked: boolean;
+  securityPassed: boolean;
+  securityStatus: NormalizedSecurityStatus;
+  staffCleared: boolean;
+}) {
+  const reasons: string[] = [];
+  if (args.isMalwareBlocked) reasons.push("moderation.malware_blocked");
+  if (!args.staffCleared) {
+    if (!args.securityPassed) reasons.push("security.status_not_clean");
+    if (args.securityStatus === "pending") reasons.push("security.pending");
+    if (args.securityStatus === "error") reasons.push("security.error");
+  }
+  return [...new Set(reasons)];
+}
+
+function getVerifySecurityCheckedAt(security: ReturnType<typeof buildVerifySecurity>) {
+  const candidates = [
+    security.checkedAt,
+    security.signals.staticScan?.checkedAt,
+    security.signals.virusTotal?.checkedAt,
+    security.signals.skillSpector?.checkedAt,
+    security.signals.dependencyRegistry?.checkedAt,
+  ].filter((value): value is number => typeof value === "number");
+  return candidates.length > 0 ? Math.max(...candidates) : null;
+}
+
+function buildSecurityVerdictSummary(security: ReturnType<typeof buildVerifySecurity>) {
+  return {
+    status: security.status,
+    passed: security.passed,
+    rawStatus: security.rawStatus,
+    verdict: security.verdict,
+    confidence: security.confidence,
+    summary: security.summary,
+    model: security.model,
+    checkedAt: security.checkedAt,
+    signals: {
+      staticScan: security.signals.staticScan
+        ? {
+            status: security.signals.staticScan.status,
+            rawStatus: security.signals.staticScan.rawStatus,
+            reasonCodes: security.signals.staticScan.reasonCodes,
+            summary: security.signals.staticScan.summary,
+            engineVersion: security.signals.staticScan.engineVersion,
+            checkedAt: security.signals.staticScan.checkedAt,
+          }
+        : null,
+      virusTotal: security.signals.virusTotal
+        ? {
+            status: security.signals.virusTotal.status,
+            rawStatus: security.signals.virusTotal.rawStatus,
+            verdict: security.signals.virusTotal.verdict,
+            source: security.signals.virusTotal.source,
+            checkedAt: security.signals.virusTotal.checkedAt,
+          }
+        : null,
+      skillSpector: security.signals.skillSpector
+        ? {
+            status: security.signals.skillSpector.status,
+            rawStatus: security.signals.skillSpector.rawStatus,
+            score: security.signals.skillSpector.score,
+            severity: security.signals.skillSpector.severity,
+            recommendation: security.signals.skillSpector.recommendation,
+            issueCount: security.signals.skillSpector.issueCount,
+            scannerVersion: security.signals.skillSpector.scannerVersion,
+            checkedAt: security.signals.skillSpector.checkedAt,
+          }
+        : null,
+      dependencyRegistry: security.signals.dependencyRegistry
+        ? {
+            status: security.signals.dependencyRegistry.status,
+            rawStatus: security.signals.dependencyRegistry.rawStatus,
+            summary: security.signals.dependencyRegistry.summary,
+            checkedAt: security.signals.dependencyRegistry.checkedAt,
+          }
+        : null,
+    },
+  };
+}
+
+type SecurityVerdictModerationInfo = NonNullable<SecurityVerdictTargetResult>["moderationInfo"];
+
+function isStaffClearedSecurityVerdict(moderationInfo: SecurityVerdictModerationInfo) {
+  return Boolean(
+    moderationInfo?.overrideActive &&
+    moderationInfo.verdict === "clean" &&
+    !moderationInfo.isMalwareBlocked,
+  );
+}
+
+function buildEffectiveSecurityVerdictSummary(
+  security: ReturnType<typeof buildVerifySecurity>,
+  moderationInfo: SecurityVerdictModerationInfo,
+) {
+  const summary = buildSecurityVerdictSummary(security);
+  if (!isStaffClearedSecurityVerdict(moderationInfo)) return summary;
+
+  return {
+    ...summary,
+    status: "clean" as const,
+    passed: true,
+    verdict: "clean",
+    summary: moderationInfo?.summary ?? summary.summary,
+    checkedAt: getEffectiveSecurityVerdictCheckedAt(security, moderationInfo),
+  };
+}
+
+function getEffectiveSecurityVerdictCheckedAt(
+  security: ReturnType<typeof buildVerifySecurity>,
+  moderationInfo: SecurityVerdictModerationInfo,
+) {
+  const candidates = [getVerifySecurityCheckedAt(security)];
+  if (isStaffClearedSecurityVerdict(moderationInfo)) {
+    candidates.push(moderationInfo?.updatedAt ?? null);
+  }
+  const checkedAt = candidates.filter((value): value is number => typeof value === "number");
+  return checkedAt.length > 0 ? Math.max(...checkedAt) : null;
+}
+
+function isValidRequestedVersion(version: string) {
+  return version.length > 0 && version.length <= 128 && !/[\s/\\]/.test(version);
+}
+
+function parseSecurityVerdictItems(
+  payload: unknown,
+): { ok: true; items: SecurityVerdictRequestItem[] } | { ok: false; message: string } {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return { ok: false, message: "JSON body must be an object" };
+  }
+
+  const items = (payload as Record<string, unknown>).items;
+  if (!Array.isArray(items) || items.length < 1 || items.length > MAX_SECURITY_VERDICT_ITEMS) {
+    return { ok: false, message: `items must contain 1 to ${MAX_SECURITY_VERDICT_ITEMS} entries` };
+  }
+
+  const parsed: SecurityVerdictRequestItem[] = [];
+  const seen = new Set<string>();
+  for (const [index, item] of items.entries()) {
+    if (!item || typeof item !== "object") {
+      return { ok: false, message: `Invalid item at items[${index}]` };
+    }
+    const raw = item as Record<string, unknown>;
+    if (typeof raw.slug !== "string" || typeof raw.version !== "string") {
+      return { ok: false, message: `items[${index}] requires slug and version strings` };
+    }
+    if ("tag" in raw) {
+      return { ok: false, message: `items[${index}] uses version only; tag is not supported` };
+    }
+    const slug = raw.slug.trim().toLowerCase();
+    const version = raw.version.trim();
+    if (!validateSlug(slug)) {
+      return { ok: false, message: `Invalid slug at items[${index}]` };
+    }
+    if (!isValidRequestedVersion(version)) {
+      return { ok: false, message: `Invalid version at items[${index}]` };
+    }
+    const key = `${slug}@${version}`;
+    if (seen.has(key)) return { ok: false, message: `Duplicate item: ${key}` };
+    seen.add(key);
+    parsed.push({ slug, version });
+  }
+
+  return { ok: true, items: parsed };
+}
+
+function buildSkillPageUrl(request: Request, owner: SkillUrlOwner, slug: string) {
+  const origin = publicApiOrigin(request);
+  const ownerSegment = owner?.handle ?? owner?._id ?? null;
+  if (!ownerSegment) {
+    return new URL(`/api/v1/skills/${encodeURIComponent(slug)}`, origin).toString();
+  }
+  return new URL(
+    `/${encodeURIComponent(ownerSegment)}/${encodeURIComponent(slug)}`,
+    origin,
+  ).toString();
+}
+
+function buildSecurityAuditUrl(
+  request: Request,
+  owner: SkillUrlOwner,
+  slug: string,
+  version: string,
+) {
+  const ownerSegment = owner?.handle ?? owner?._id ?? null;
+  if (!ownerSegment) return null;
+
+  const url = new URL(
+    `/${encodeURIComponent(ownerSegment)}/${encodeURIComponent(slug)}/security-audit`,
+    publicApiOrigin(request),
+  );
+  url.searchParams.set("version", version);
+  return url.toString();
+}
+
+function buildSecurityVerdictError(
+  item: SecurityVerdictRequestItem,
+  code: string,
+  message: string,
+  reason: string,
+) {
+  return {
+    ok: false,
+    decision: "fail",
+    reasons: [reason],
+    requestedSlug: item.slug,
+    slug: item.slug,
+    requestedVersion: item.version,
+    version: null,
+    displayName: null,
+    publisherHandle: null,
+    publisherDisplayName: null,
+    createdAt: null,
+    checkedAt: null,
+    skillUrl: null,
+    securityAuditUrl: null,
+    security: null,
+    error: { code, message },
+  };
+}
+
+async function buildSecurityVerdictItem(
+  ctx: ActionCtx,
+  request: Request,
+  item: SecurityVerdictRequestItem,
+) {
+  const result = await runQueryRef<SecurityVerdictTargetResult>(
+    ctx,
+    internalRefs.skills.getSecurityVerdictTargetInternal,
+    {
+      slug: item.slug,
+      version: item.version,
+    },
+  );
+  if (!result?.skill) {
+    return buildSecurityVerdictError(item, "skill_not_found", "Skill not found", "skill.not_found");
+  }
+
+  const version = result.version;
+  if (!version) {
+    return buildSecurityVerdictError(
+      item,
+      "version_not_found",
+      "Version not found",
+      "version.not_found",
+    );
+  }
+  if (version.softDeletedAt) {
+    return buildSecurityVerdictError(
+      item,
+      "version_unavailable",
+      "Version not available",
+      "version.unavailable",
+    );
+  }
+
+  const security = buildVerifySecurity(version);
+  const staffCleared = isStaffClearedSecurityVerdict(result.moderationInfo);
+  const reasons = buildSecurityVerdictReasons({
+    isMalwareBlocked: result.moderationInfo?.isMalwareBlocked ?? false,
+    securityPassed: security.passed,
+    securityStatus: security.status,
+    staffCleared,
+  });
+
+  return {
+    ok: reasons.length === 0,
+    decision: reasons.length === 0 ? "pass" : "fail",
+    reasons,
+    requestedSlug: item.slug,
+    slug: result.skill.slug,
+    displayName: result.skill.displayName,
+    publisherHandle: result.owner?.handle ?? null,
+    publisherDisplayName: result.owner?.displayName ?? null,
+    requestedVersion: item.version,
+    version: version.version,
+    createdAt: version.createdAt,
+    checkedAt: getEffectiveSecurityVerdictCheckedAt(security, result.moderationInfo),
+    skillUrl: buildSkillPageUrl(request, result.owner, result.skill.slug),
+    securityAuditUrl: buildSecurityAuditUrl(
+      request,
+      result.owner,
+      result.skill.slug,
+      version.version,
+    ),
+    security: buildEffectiveSecurityVerdictSummary(security, result.moderationInfo),
+  };
+}
+
+export async function skillSecurityVerdictsV1Handler(ctx: ActionCtx, request: Request) {
+  const rate = await applyRateLimit(ctx, request, "read");
+  if (!rate.ok) return rate.response;
+
+  const parsed = await parseJsonPayload(request, rate.headers);
+  if (!parsed.ok) return parsed.response;
+
+  const requestItems = parseSecurityVerdictItems(parsed.payload);
+  if (!requestItems.ok) return text(requestItems.message, 400, rate.headers);
+
+  const items = await chunkedParallel(requestItems.items, 20, (item) =>
+    buildSecurityVerdictItem(ctx, request, item),
+  );
+  return json({ schema: "clawhub.skill.security-verdicts.v1", items }, 200, rate.headers);
 }
 
 export async function searchSkillsV1Handler(ctx: ActionCtx, request: Request) {
@@ -662,6 +1195,26 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
   const slug = segments[0]?.trim().toLowerCase() ?? "";
   const second = segments[1];
   const third = segments[2];
+
+  if (segments.length === 1 && slug === "resolve") {
+    const url = new URL(request.url);
+    if (url.searchParams.has("slug") || url.searchParams.has("hash")) {
+      const resolveSlug = url.searchParams.get("slug")?.trim().toLowerCase();
+      const hash = url.searchParams.get("hash")?.trim().toLowerCase();
+      if (!resolveSlug || !hash) return text("Missing slug or hash", 400, rate.headers);
+      if (!/^[a-f0-9]{64}$/.test(hash)) return text("Invalid hash", 400, rate.headers);
+      const resolved = await ctx.runQuery(api.skills.resolveVersionByHash, {
+        slug: resolveSlug,
+        hash,
+      });
+      if (!resolved) return text("Skill not found", 404, rate.headers);
+      return json(
+        { slug: resolveSlug, match: resolved.match, latestVersion: resolved.latestVersion },
+        200,
+        rate.headers,
+      );
+    }
+  }
 
   if (segments[0] === "-" && segments[1] === "reports" && segments.length === 2) {
     const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
@@ -974,6 +1527,182 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
       200,
       rate.headers,
     );
+  }
+
+  if (second === "verify" && segments.length === 2) {
+    const url = new URL(request.url);
+    const versionParam = url.searchParams.get("version")?.trim();
+    const tagParam = url.searchParams.get("tag")?.trim();
+    if (versionParam && tagParam) return text("Use either version or tag", 400, rate.headers);
+
+    const skillResult = (await ctx.runQuery(api.skills.getBySlug, { slug })) as GetBySlugResult;
+    if (!skillResult?.skill) {
+      const hidden = await describeOwnerVisibleSkillState(ctx, request, slug);
+      if (hidden) return text(hidden.message, hidden.status, rate.headers);
+      return text("Skill not found", 404, rate.headers);
+    }
+
+    let resolvedFrom: VerificationResolvedFrom = "latest";
+    let version: Doc<"skillVersions"> | null = skillResult.skill.latestVersionId
+      ? await ctx.runQuery(internal.skills.getVersionByIdInternal, {
+          versionId: skillResult.skill.latestVersionId,
+        })
+      : null;
+    if (versionParam) {
+      resolvedFrom = "version";
+      version = await ctx.runQuery(internal.skills.getVersionBySkillAndVersionInternal, {
+        skillId: skillResult.skill._id,
+        version: versionParam,
+      });
+    } else if (tagParam) {
+      resolvedFrom = "tag";
+      const versionId = skillResult.skill.tags[tagParam];
+      version = versionId
+        ? await ctx.runQuery(internal.skills.getVersionByIdInternal, { versionId })
+        : null;
+    }
+
+    if (!version || !isSkillVersionForSkill(version, skillResult.skill._id)) {
+      return text("Version not found", 404, rate.headers);
+    }
+    if (version.softDeletedAt) return text("Version not available", 410, rate.headers);
+
+    const fingerprintEntries = ((await ctx.runQuery(
+      internal.skills.listVersionFingerprintsInternal,
+      { skillVersionId: version._id },
+    )) ?? []) as SkillVersionFingerprintSummary[];
+    const bundleFingerprints = fingerprintEntries
+      .filter((entry) => entry.kind === "generated-bundle")
+      .map((entry) => entry.fingerprint);
+    const generatedCardFile = await selectGeneratedSkillCardFile(version.files, bundleFingerprints);
+    const security = buildVerifySecurity(version);
+    const reasons = buildVerifyReasons({
+      cardAvailable: Boolean(generatedCardFile),
+      isMalwareBlocked: skillResult.moderationInfo?.isMalwareBlocked ?? false,
+      securityPassed: security.passed,
+      securityStatus: security.status,
+    });
+    const ownerHandle = skillResult.owner?.handle ?? null;
+    const ownerDisplayName = skillResult.owner?.displayName ?? null;
+
+    return json(
+      {
+        schema: "clawhub.skill.verify.v1",
+        ok: reasons.length === 0,
+        decision: reasons.length === 0 ? "pass" : "fail",
+        reasons,
+        slug: skillResult.skill.slug,
+        displayName: skillResult.skill.displayName,
+        pageUrl: ownerHandle
+          ? `https://clawhub.ai/${ownerHandle}/${skillResult.skill.slug}`
+          : `https://clawhub.ai/api/v1/skills/${skillResult.skill.slug}`,
+        publisherHandle: ownerHandle,
+        publisherDisplayName: ownerDisplayName,
+        publisherProfileUrl: ownerHandle ? `https://clawhub.ai/user/${ownerHandle}` : null,
+        version: version.version,
+        resolvedFrom,
+        tag: tagParam || null,
+        createdAt: version.createdAt,
+        card: generatedCardFile
+          ? {
+              available: true,
+              path: generatedCardFile.path,
+              url: buildCardUrl(request, skillResult.skill.slug, version.version),
+              sha256: generatedCardFile.sha256,
+              size: generatedCardFile.size,
+              contentType: generatedCardFile.contentType ?? "text/markdown; charset=utf-8",
+            }
+          : {
+              available: false,
+              path: "skill-card.md",
+              url: buildCardUrl(request, skillResult.skill.slug, version.version),
+              sha256: null,
+              size: null,
+              contentType: null,
+            },
+        artifact: {
+          sourceFingerprint: version.fingerprint ?? null,
+          bundleFingerprints,
+          files: sourceFilesForVerify(version.files, bundleFingerprints),
+        },
+        provenance: version.sourceProvenance
+          ? {
+              ...version.sourceProvenance,
+              source: "server-resolved-github-import",
+            }
+          : {
+              source: "unavailable",
+              reason: "No server-resolved GitHub import provenance is stored for this version.",
+            },
+        security,
+        signature: {
+          status: "unsigned",
+        },
+      },
+      200,
+      rate.headers,
+    );
+  }
+
+  if (second === "card" && segments.length === 2) {
+    const url = new URL(request.url);
+    const versionParam = url.searchParams.get("version")?.trim();
+    const tagParam = url.searchParams.get("tag")?.trim();
+
+    const skillResult = (await ctx.runQuery(api.skills.getBySlug, { slug })) as GetBySlugResult;
+    if (!skillResult?.skill) {
+      const hidden = await describeOwnerVisibleSkillState(ctx, request, slug);
+      if (hidden) return text(hidden.message, hidden.status, rate.headers);
+      return text("Skill not found", 404, rate.headers);
+    }
+    const moderationBlock = getPublicSkillFileAccessBlock(skillResult.moderationInfo);
+    if (moderationBlock) {
+      return text(moderationBlock.message, moderationBlock.status, rate.headers);
+    }
+
+    let version: Doc<"skillVersions"> | null = skillResult.skill.latestVersionId
+      ? await ctx.runQuery(internal.skills.getVersionByIdInternal, {
+          versionId: skillResult.skill.latestVersionId,
+        })
+      : null;
+    if (versionParam) {
+      version = await ctx.runQuery(internal.skills.getVersionBySkillAndVersionInternal, {
+        skillId: skillResult.skill._id,
+        version: versionParam,
+      });
+    } else if (tagParam) {
+      const versionId = skillResult.skill.tags[tagParam];
+      version = versionId
+        ? await ctx.runQuery(internal.skills.getVersionByIdInternal, { versionId })
+        : null;
+    }
+
+    if (!version || !isSkillVersionForSkill(version, skillResult.skill._id)) {
+      return text("Version not found", 404, rate.headers);
+    }
+    if (version.softDeletedAt) return text("Version not available", 410, rate.headers);
+
+    const fingerprintEntries = ((await ctx.runQuery(
+      internal.skills.listVersionFingerprintsInternal,
+      { skillVersionId: version._id },
+    )) ?? []) as SkillVersionFingerprintSummary[];
+    const bundleFingerprints = fingerprintEntries
+      .filter((entry) => entry.kind === "generated-bundle")
+      .map((entry) => entry.fingerprint);
+    const file = await selectGeneratedSkillCardFile(version.files, bundleFingerprints);
+    if (!file) return text("Skill Card not found", 404, rate.headers);
+    if (file.size > MAX_RAW_FILE_BYTES) return text("File exceeds 200KB limit", 413, rate.headers);
+
+    const blob = await ctx.storage.get(file.storageId);
+    if (!blob) return text("File missing in storage", 410, rate.headers);
+    return safeTextFileResponse({
+      textContent: await blob.text(),
+      path: file.path,
+      contentType: file.contentType ?? "text/markdown; charset=utf-8",
+      sha256: file.sha256,
+      size: file.size,
+      headers: rate.headers,
+    });
   }
 
   if (second === "file" && segments.length === 2) {
@@ -1472,7 +2201,7 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
       const version = optionalStringField(body, "version");
       const result = await runMutationRef(
         ctx,
-        internalRefs.securityScan.enqueueSkillRescanForModeratorInternal,
+        internalRefs.securityScan.requestSkillRescanForUserInternal,
         {
           actorUserId: auth.userId,
           slug,
@@ -1566,4 +2295,382 @@ function optionalStringField(value: unknown, key: string): string | undefined {
   if (!value || typeof value !== "object") return undefined;
   const field = (value as Record<string, unknown>)[key];
   return typeof field === "string" ? field : undefined;
+}
+
+async function chunkedParallel<T, R>(
+  items: T[],
+  chunkSize: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = [];
+  for (let i = 0; i < items.length; i += chunkSize) {
+    const chunk = items.slice(i, i + chunkSize);
+    const chunkResults = await Promise.all(chunk.map(fn));
+    results.push(...chunkResults);
+  }
+  return results;
+}
+
+type SkillsExportPhase =
+  | "list_skills"
+  | "build_empty_zip"
+  | "load_versions"
+  | "plan_blobs"
+  | "load_blobs"
+  | "assemble_entries"
+  | "build_zip";
+
+type SkillsExportLogContext = {
+  phase: SkillsExportPhase;
+  startDate: number;
+  endDate: number;
+  limit: number;
+  cursorPresent: boolean;
+  pageLength: number;
+  hasMore: boolean | null;
+  nextCursorPresent: boolean | null;
+  versionCount: number;
+  blobTaskCount: number;
+  blobCount: number;
+  zipEntryCount: number;
+  manifestCount: number;
+  exportErrorCount: number;
+  totalExportBytes: number;
+};
+
+function logSkillsExportFailure(context: SkillsExportLogContext, error: unknown) {
+  console.error("skills_export_failed", {
+    ...context,
+    errorName: error instanceof Error ? error.name : typeof error,
+    errorMessage:
+      error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500),
+  });
+}
+
+export async function exportSkillsV1Handler(ctx: ActionCtx, request: Request) {
+  try {
+    await requireApiTokenUser(ctx, request);
+  } catch (err) {
+    return text(err instanceof Error ? err.message : "Unauthorized", 401);
+  }
+
+  const rate = await applyRateLimit(ctx, request, "export");
+  if (!rate.ok) return rate.response;
+
+  const url = new URL(request.url);
+  const startDate = toOptionalNumber(url.searchParams.get("startDate"));
+  const endDate = toOptionalNumber(url.searchParams.get("endDate"));
+  const requestedLimit = toOptionalNumber(url.searchParams.get("limit"));
+  const cursor = url.searchParams.get("cursor")?.trim() || undefined;
+
+  if (startDate == null || endDate == null) {
+    return text(
+      "startDate and endDate query parameters are required (Unix milliseconds)",
+      400,
+      rate.headers,
+    );
+  }
+  if (startDate > endDate) {
+    return text("startDate must be <= endDate", 400, rate.headers);
+  }
+  if (requestedLimit != null && requestedLimit > MAX_EXPORT_PAGE_LIMIT) {
+    return text(`limit must be <= ${MAX_EXPORT_PAGE_LIMIT}`, 400, rate.headers);
+  }
+  const limit = Math.max(1, requestedLimit ?? DEFAULT_EXPORT_PAGE_LIMIT);
+
+  const logContext: SkillsExportLogContext = {
+    phase: "list_skills",
+    startDate,
+    endDate,
+    limit,
+    cursorPresent: Boolean(cursor),
+    pageLength: 0,
+    hasMore: null,
+    nextCursorPresent: null,
+    versionCount: 0,
+    blobTaskCount: 0,
+    blobCount: 0,
+    zipEntryCount: 0,
+    manifestCount: 0,
+    exportErrorCount: 0,
+    totalExportBytes: 0,
+  };
+
+  let result: {
+    page: Array<{
+      skillId: Id<"skills">;
+      slug: string;
+      displayName: string;
+      latestVersionId?: Id<"skillVersions">;
+      createdAt: number;
+      updatedAt: number;
+      stats?: Record<string, unknown> | null;
+      ownerUserId: Id<"users">;
+      ownerHandle?: string | null;
+      ownerDisplayName?: string | null;
+    }>;
+    nextCursor: string | null;
+    hasMore: boolean;
+  };
+  try {
+    result = await ctx.runQuery(internal.skills.listByDateRange, {
+      startDate,
+      endDate,
+      cursor,
+      numItems: limit,
+    });
+  } catch (err) {
+    if (err instanceof Error && err.message.includes("Invalid cursor format")) {
+      return text("Invalid cursor format", 400, rate.headers);
+    }
+    logSkillsExportFailure(logContext, err);
+    throw err;
+  }
+  logContext.pageLength = result.page.length;
+  logContext.hasMore = result.hasMore;
+  logContext.nextCursorPresent = Boolean(result.nextCursor);
+
+  if (result.page.length === 0) {
+    try {
+      logContext.phase = "build_empty_zip";
+      const emptyZip = buildMergedExportZip([], []);
+      return new Response(emptyZip as unknown as BodyInit, {
+        status: 200,
+        headers: mergeHeaders(rate.headers, {
+          "Content-Type": "application/zip",
+          "Content-Disposition": `attachment; filename="skills-export-${startDate}-${endDate}-empty.zip"`,
+          "X-Next-Cursor": result.nextCursor ?? "",
+          "X-Has-More": String(result.hasMore),
+          "X-Total-Returned": "0",
+          "X-Date-Range": `${startDate}-${endDate}`,
+        }),
+      });
+    } catch (err) {
+      logSkillsExportFailure(logContext, err);
+      throw err;
+    }
+  }
+
+  const exportErrors: Array<{ slug: string; error: string }> = [];
+
+  try {
+    logContext.phase = "load_versions";
+    const versionDocs = await chunkedParallel(result.page, 100, (digest) =>
+      digest.latestVersionId
+        ? ctx.runQuery(internal.skills.getVersionByIdInternal, {
+            versionId: digest.latestVersionId,
+          })
+        : Promise.resolve(null),
+    );
+    logContext.versionCount = versionDocs.filter(Boolean).length;
+    const exportableVersions: Array<Doc<"skillVersions"> | null> = new Array(
+      result.page.length,
+    ).fill(null);
+
+    type BlobTask = { digestIndex: number; fileIndex: number; storageId: Id<"_storage"> };
+    const blobTasks: BlobTask[] = [];
+
+    logContext.phase = "plan_blobs";
+    for (let i = 0; i < result.page.length; i++) {
+      const digest = result.page[i];
+      const version = versionDocs[i] as Doc<"skillVersions"> | null;
+
+      if (!version) {
+        exportErrors.push({
+          slug: digest.slug,
+          error: `version not found (latestVersionId: ${digest.latestVersionId ?? "null"})`,
+        });
+        continue;
+      }
+      if (!isSkillVersionForSkill(version, digest.skillId)) {
+        exportErrors.push({
+          slug: digest.slug,
+          error: `version not found (latestVersionId: ${digest.latestVersionId})`,
+        });
+        continue;
+      }
+      if (version.softDeletedAt) {
+        exportErrors.push({
+          slug: digest.slug,
+          error: `version not available (latestVersionId: ${digest.latestVersionId})`,
+        });
+        continue;
+      }
+      if (!version.files || version.files.length === 0) {
+        exportErrors.push({
+          slug: digest.slug,
+          error: `version has no files (latestVersionId: ${digest.latestVersionId})`,
+        });
+        continue;
+      }
+      exportableVersions[i] = version;
+
+      if (!validateSlug(digest.slug)) {
+        exportErrors.push({
+          slug: digest.slug,
+          error: "invalid slug (fails Zip Slip validation)",
+        });
+        continue;
+      }
+
+      for (let j = 0; j < version.files.length; j++) {
+        if (blobTasks.length >= MAX_EXPORT_FILE_COUNT) {
+          exportErrors.push({
+            slug: digest.slug,
+            error: `file count cap exceeded (${MAX_EXPORT_FILE_COUNT})`,
+          });
+          break;
+        }
+        blobTasks.push({
+          digestIndex: i,
+          fileIndex: j,
+          storageId: version.files[j].storageId,
+        });
+      }
+    }
+    logContext.blobTaskCount = blobTasks.length;
+    logContext.exportErrorCount = exportErrors.length;
+
+    logContext.phase = "load_blobs";
+    const blobs = await chunkedParallel(blobTasks, 50, (task) => ctx.storage.get(task.storageId));
+    logContext.blobCount = blobs.length;
+
+    const zipEntries: Array<{ path: string; bytes: Uint8Array }> = [];
+    const manifest: MergedExportManifestEntry[] = [];
+    let totalExportBytes = 0;
+
+    const blobsByDigest = new Map<number, Map<number, Blob | null>>();
+    for (let k = 0; k < blobTasks.length; k++) {
+      const task = blobTasks[k];
+      if (!blobsByDigest.has(task.digestIndex)) {
+        blobsByDigest.set(task.digestIndex, new Map());
+      }
+      blobsByDigest.get(task.digestIndex)!.set(task.fileIndex, blobs[k]);
+    }
+
+    logContext.phase = "assemble_entries";
+    for (let i = 0; i < result.page.length; i++) {
+      const digest = result.page[i];
+      const version = exportableVersions[i] as {
+        version?: string;
+        files?: Array<{ storageId: Id<"_storage">; path: string }>;
+      } | null;
+      if (!version?.files) continue;
+      if (!validateSlug(digest.slug)) continue;
+
+      const publisherSegment = getExportPublisherSegment(digest);
+      if (!publisherSegment) {
+        exportErrors.push({
+          slug: digest.slug,
+          error: "invalid publisher path segment (fails Zip Slip validation)",
+        });
+        continue;
+      }
+      const exportRoot = `${publisherSegment}/${digest.slug}`;
+      const digestBlobs = blobsByDigest.get(i);
+      if (!digestBlobs) continue;
+
+      let fileCount = 0;
+      for (let j = 0; j < version.files.length; j++) {
+        const filePath = version.files[j].path;
+
+        if (!validateFilePath(filePath)) {
+          exportErrors.push({
+            slug: digest.slug,
+            error: `invalid file path: "${filePath}" (fails Zip Slip validation)`,
+          });
+          continue;
+        }
+
+        const blob = digestBlobs.get(j);
+        if (!blob) {
+          exportErrors.push({
+            slug: digest.slug,
+            error: `blob not found for file "${filePath}" (storageId: ${version.files[j].storageId})`,
+          });
+          continue;
+        }
+
+        const buffer = new Uint8Array(await blob.arrayBuffer());
+        if (totalExportBytes + buffer.byteLength > MAX_EXPORT_TOTAL_BYTES) {
+          exportErrors.push({
+            slug: digest.slug,
+            error: `byte cap exceeded (${MAX_EXPORT_TOTAL_BYTES}) at file "${filePath}"`,
+          });
+          continue;
+        }
+        totalExportBytes += buffer.byteLength;
+        zipEntries.push({ path: `${exportRoot}/${filePath}`, bytes: buffer });
+        fileCount++;
+      }
+
+      const skillMeta = {
+        slug: digest.slug,
+        displayName: digest.displayName,
+        version: version.version ?? null,
+        createdAt: digest.createdAt,
+        updatedAt: digest.updatedAt,
+        stats: digest.stats ?? null,
+        owner: {
+          handle: digest.ownerHandle ?? null,
+          displayName: digest.ownerDisplayName ?? null,
+        },
+      };
+      zipEntries.push({
+        path: `${exportRoot}/_export_skill_meta.json`,
+        bytes: new TextEncoder().encode(JSON.stringify(skillMeta, null, 2)),
+      });
+
+      manifest.push({
+        publisher: publisherSegment,
+        slug: digest.slug,
+        version: version.version ?? null,
+        displayName: digest.displayName,
+        createdAt: digest.createdAt,
+        updatedAt: digest.updatedAt,
+        stats: (digest.stats as Record<string, unknown>) ?? null,
+        fileCount,
+      });
+    }
+
+    if (exportErrors.length > 0) {
+      zipEntries.push({
+        path: "_errors.json",
+        bytes: new TextEncoder().encode(JSON.stringify(exportErrors, null, 2)),
+      });
+    }
+    logContext.zipEntryCount = zipEntries.length;
+    logContext.manifestCount = manifest.length;
+    logContext.exportErrorCount = exportErrors.length;
+    logContext.totalExportBytes = totalExportBytes;
+
+    logContext.phase = "build_zip";
+    const zipBytes = buildMergedExportZip(zipEntries, manifest);
+
+    return new Response(zipBytes as unknown as BodyInit, {
+      status: 200,
+      headers: mergeHeaders(rate.headers, {
+        "Content-Type": "application/zip",
+        "Content-Disposition": `attachment; filename="skills-export-${startDate}-${endDate}.zip"`,
+        "X-Next-Cursor": result.nextCursor ?? "",
+        "X-Has-More": String(result.hasMore),
+        "X-Total-Returned": String(manifest.length),
+        "X-Date-Range": `${startDate}-${endDate}`,
+        "X-Export-Errors": String(exportErrors.length),
+      }),
+    });
+  } catch (err) {
+    logSkillsExportFailure(logContext, err);
+    throw err;
+  }
+}
+
+function getExportPublisherSegment(digest: {
+  ownerHandle?: string | null;
+  ownerUserId: Id<"users">;
+}) {
+  const ownerHandle = digest.ownerHandle?.trim();
+  if (ownerHandle && validateSlug(ownerHandle)) return ownerHandle;
+  const fallback = String(digest.ownerUserId).replace(/[^a-zA-Z0-9._-]/g, "-");
+  return validateSlug(fallback) ? fallback : null;
 }

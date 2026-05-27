@@ -18,6 +18,7 @@ describe("ui-proof", () => {
       {
         baseline: "origin/main",
         candidate: "worktree",
+        devAuth: false,
         mode: "before-after",
         provider: "hetzner",
         scenario: ".artifacts/proof-scenarios/demo.pw.ts",
@@ -49,6 +50,41 @@ describe("ui-proof", () => {
     expect(() =>
       parseProofUiArgs(["--mode", "smoke", "--scenario", ".artifacts/proof-scenarios/demo.pw.ts"]),
     ).toThrow("Unknown proof:ui mode: smoke");
+  });
+
+  it("parses seed command and explicit proof env options", () => {
+    expect(
+      parseProofUiArgs([
+        "--dev-auth",
+        "--env",
+        "FEATURE_FLAG=1",
+        "--seed-command",
+        "bunx convex run --no-push devSeed:seedNixSkills",
+        "--scenario",
+        ".artifacts/proof-scenarios/demo.pw.ts",
+      ]),
+    ).toMatchObject({
+      devAuth: true,
+      env: { FEATURE_FLAG: "1" },
+      seedCommand: "bunx convex run --no-push devSeed:seedNixSkills",
+    });
+
+    expect(() =>
+      parseProofUiArgs([
+        "--backend",
+        "prod",
+        "--scenario",
+        ".artifacts/proof-scenarios/demo.pw.ts",
+      ]),
+    ).toThrow("Unknown proof:ui argument: --backend");
+    expect(() =>
+      parseProofUiArgs([
+        "--env",
+        "FEATURE_FLAG",
+        "--scenario",
+        ".artifacts/proof-scenarios/demo.pw.ts",
+      ]),
+    ).toThrow("--env requires KEY=VALUE");
   });
 
   it("builds a before/after plan with stable lane output directories", () => {
@@ -251,5 +287,77 @@ describe("ui-proof", () => {
     expect(script).toContain(
       'manifest_status="$(CLAWHUB_UI_PROOF_MANIFEST="$remote_out/proof-steps.json" bun -e',
     );
+  });
+
+  it("renders lane-local Convex env, seed command, and process cleanup for proof lanes", () => {
+    const script = renderRemoteLaneScript({
+      lane: {
+        convexCloudPort: 4417,
+        convexSitePort: 4517,
+        name: "baseline",
+        outputDir: "/tmp/out/baseline",
+        port: 4317,
+        ref: "origin/main",
+      },
+      opts: {
+        devAuth: true,
+        env: { FEATURE_FLAG: "1" },
+        seedCommand: "bunx convex run --no-push devSeed:seedNixSkills",
+        skipInstall: true,
+        videoDuration: "1",
+      },
+      plan: {
+        outputDir: "/tmp/out",
+      },
+      scenarioText: "export default async function scenario() {}\n",
+    });
+
+    expect(script).toContain('convex_pid=""');
+    expect(script).toContain('kill "$convex_pid"');
+    expect(script).toContain("VITE_CONVEX_URL='http://127.0.0.1:4417'");
+    expect(script).toContain("VITE_CONVEX_SITE_URL='http://127.0.0.1:4517'");
+    expect(script).toContain("CONVEX_DEPLOYMENT='local:anonymous-clawhub-ui-proof-baseline'");
+    expect(script).toContain(
+      "DEV_AUTH_CONVEX_DEPLOYMENT='local:anonymous-clawhub-ui-proof-baseline'",
+    );
+    expect(script).toContain("local Convex did not write $app_root/.env.local");
+    expect(script).toContain('. "$app_root/.env.local"');
+    expect(script).toContain('export DEV_AUTH_CONVEX_DEPLOYMENT="$CONVEX_DEPLOYMENT"');
+    expect(script).toContain("--local-cloud-port 4417");
+    expect(script).toContain("--local-site-port 4517");
+    expect(script).toContain('bunx convex dev --local --env-file "$lane_env_file"');
+    expect(script).toContain("bunx convex run --no-push devSeed:seedNixSkills");
+    expect(script).toContain("VITE_ENABLE_DEV_AUTH=1");
+    expect(script).toContain("FEATURE_FLAG='1'");
+    expect(script).not.toContain("https://wry-manatee-359.convex.cloud");
+  });
+
+  it("does not enable dev auth by default but still uses lane-local Convex", () => {
+    const script = renderRemoteLaneScript({
+      lane: {
+        convexCloudPort: 4418,
+        convexSitePort: 4518,
+        name: "candidate",
+        outputDir: "/tmp/out/candidate",
+        port: 4318,
+        ref: "worktree",
+      },
+      opts: {
+        devAuth: false,
+        env: {},
+        skipInstall: true,
+        videoDuration: "1",
+      },
+      plan: {
+        outputDir: "/tmp/out",
+      },
+      scenarioText: "export default async function scenario() {}\n",
+    });
+
+    expect(script).toContain("VITE_CONVEX_URL='http://127.0.0.1:4418'");
+    expect(script).toContain("VITE_CONVEX_SITE_URL='http://127.0.0.1:4518'");
+    expect(script).toContain("convex dev --local");
+    expect(script).not.toContain("VITE_ENABLE_DEV_AUTH=1");
+    expect(script).not.toContain("https://wry-manatee-359.convex.cloud");
   });
 });

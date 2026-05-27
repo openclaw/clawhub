@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyLocalDevWorkerToken,
+  buildLocalConvexEnvChanges,
+  buildDevWorkersArgs,
   buildForegroundArgs,
   buildEnvFileCandidates,
   buildViteArgs,
+  applyLocalConvexEnvForUrl,
   isConvexFunctionUnavailableOutput,
+  isLocalConvexUrl,
   isRunningPid,
   parseArgs,
   parseEnv,
+  shouldStartDevWorkers,
 } from "./dev-worktree";
 
 describe("dev-worktree helpers", () => {
@@ -66,6 +72,13 @@ describe("dev-worktree helpers", () => {
     expect(parseArgs(["--detach", "--port", "3999"])).toMatchObject({
       detach: true,
       port: "3999",
+      workers: true,
+    });
+  });
+
+  it("allows local background workers to be disabled explicitly", () => {
+    expect(parseArgs(["--no-workers"])).toMatchObject({
+      workers: false,
     });
   });
 
@@ -83,6 +96,80 @@ describe("dev-worktree helpers", () => {
       "--port",
       "3999",
     ]);
+  });
+
+  it("starts dev workers with the same env file as the app", () => {
+    expect(buildDevWorkersArgs("/tmp/clawhub/.env.local")).toEqual([
+      "scripts/dev-workers.ts",
+      "--env-file",
+      "/tmp/clawhub/.env.local",
+    ]);
+  });
+
+  it("overrides the shared worker token with a fixed local-dev value", () => {
+    const env: NodeJS.ProcessEnv = { SECURITY_SCAN_WORKER_TOKEN: "prod-like-token" };
+
+    expect(applyLocalDevWorkerToken(env)).toBe("local-dev-worker-token");
+    expect(env.SECURITY_SCAN_WORKER_TOKEN).toBe("local-dev-worker-token");
+  });
+
+  it("builds local Convex env for dev auth without overriding built-ins", () => {
+    const changes = buildLocalConvexEnvChanges({
+      CONVEX_DEPLOYMENT: "anonymous:anonymous-agent",
+      CONVEX_SITE_URL: "http://127.0.0.1:3211",
+    });
+    const byName = Object.fromEntries(changes.map((change) => [change.name, change.value]));
+
+    expect(byName.DEV_AUTH_ENABLED).toBe("1");
+    expect(byName.DEV_AUTH_CONVEX_DEPLOYMENT).toBe("anonymous:anonymous-agent");
+    expect(byName.SECURITY_SCAN_WORKER_TOKEN).toBe("local-dev-worker-token");
+    expect(byName.SECURITY_SCAN_DEFAULT_VT_WAIT_MS).toBe("0");
+    expect(byName.AUTH_GITHUB_ID).toBe("local-dev");
+    expect(byName.AUTH_GITHUB_SECRET).toBe("local-dev");
+    expect(byName.JWT_PRIVATE_KEY).toContain("BEGIN PRIVATE KEY");
+    expect(JSON.parse(byName.JWKS)).toMatchObject({
+      keys: [expect.objectContaining({ use: "sig" })],
+    });
+    expect(byName.CONVEX_SITE_URL).toBeUndefined();
+  });
+
+  it("does not apply local dev auth overrides for cloud Convex URLs", () => {
+    const env: NodeJS.ProcessEnv = {
+      SECURITY_SCAN_WORKER_TOKEN: "remote-worker-token",
+      JWT_PRIVATE_KEY: "remote-private-key",
+    };
+
+    expect(applyLocalConvexEnvForUrl(env, "https://example.convex.cloud")).toBe(false);
+    expect(env.SECURITY_SCAN_WORKER_TOKEN).toBe("remote-worker-token");
+    expect(env.JWT_PRIVATE_KEY).toBe("remote-private-key");
+    expect(env.DEV_AUTH_ENABLED).toBeUndefined();
+  });
+
+  it("recognizes local Convex URLs", () => {
+    expect(isLocalConvexUrl("http://127.0.0.1:3210")).toBe(true);
+    expect(isLocalConvexUrl("http://localhost:3210")).toBe(true);
+    expect(isLocalConvexUrl("http://[::1]:3210")).toBe(true);
+    expect(isLocalConvexUrl("https://example.convex.cloud")).toBe(false);
+    expect(isLocalConvexUrl("not-a-url")).toBe(false);
+  });
+
+  it("starts dev workers by default unless disabled", () => {
+    expect(shouldStartDevWorkers({ workers: true }, "http://127.0.0.1:3210")).toEqual({
+      start: true,
+      reason: null,
+    });
+
+    expect(shouldStartDevWorkers({ workers: false }, "http://127.0.0.1:3210")).toEqual({
+      start: false,
+      reason: "--no-workers was passed",
+    });
+  });
+
+  it("does not start dev workers by default for non-local Convex URLs", () => {
+    expect(shouldStartDevWorkers({ workers: true }, "https://example.convex.cloud")).toEqual({
+      start: false,
+      reason: "VITE_CONVEX_URL is not local",
+    });
   });
 
   it("treats invalid detached pid file values as not running", () => {
