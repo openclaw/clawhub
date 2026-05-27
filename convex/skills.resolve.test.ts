@@ -46,10 +46,13 @@ describe("resolveVersionByHash", () => {
     };
     const latestVersion = {
       _id: "skillVersions:latest",
+      skillId: skill._id,
       version: "2.0.0",
+      softDeletedAt: undefined,
     };
     const matchedVersion = {
       _id: "skillVersions:1",
+      skillId: skill._id,
       version: "1.0.0",
       softDeletedAt: undefined,
     };

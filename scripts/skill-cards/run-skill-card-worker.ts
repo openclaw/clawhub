@@ -35,9 +35,9 @@ type CommandResult = {
 
 type JsonRecord = Record<string, unknown>;
 
-const DEFAULT_BATCH_LIMIT = 5;
-const DEFAULT_MAX_RUNTIME_MS = 30 * 60 * 1000;
-const DEFAULT_LEASE_MS = 30 * 60 * 1000;
+export const DEFAULT_BATCH_LIMIT = 6;
+export const DEFAULT_MAX_RUNTIME_MS = 40 * 60 * 1000;
+export const DEFAULT_LEASE_MS = 60 * 60 * 1000;
 const DEFAULT_CODEX_TIMEOUT_MS = 15 * 60 * 1000;
 const root = resolve(new URL("../..", import.meta.url).pathname);
 const NVIDIA_AUTOMATION_DIR = "AI Transparency Card Automation";
@@ -108,6 +108,15 @@ function requireEnv(name: string) {
 function workerToken() {
   // Reuse the existing shared Convex worker credential; do not require a Skill Card-specific token.
   return requireEnv("SECURITY_SCAN_WORKER_TOKEN");
+}
+
+export function skillCardWorkerId(env: NodeJS.ProcessEnv = process.env) {
+  return (
+    env.SKILL_CARD_WORKER_ID ??
+    `github-actions:${env.GITHUB_RUN_ID ?? process.pid}:${env.GITHUB_RUN_ATTEMPT ?? "1"}:${
+      env.SKILL_CARD_WORKER_SHARD ?? env.GITHUB_JOB ?? "0"
+    }`
+  );
 }
 
 function safeOutputPath(workspace: string, artifactPath: string) {
@@ -437,7 +446,7 @@ async function main() {
   if (!convexUrl) throw new Error("CONVEX_URL or VITE_CONVEX_URL is required");
   const token = workerToken();
   const client = new ConvexHttpClient(convexUrl);
-  const workerId = `skill-card:${process.env.GITHUB_RUN_ID ?? process.pid}`;
+  const workerId = skillCardWorkerId();
   const startedAt = Date.now();
   const claimDeadline = startedAt + maxRuntimeMs;
   let totalClaimed = 0;

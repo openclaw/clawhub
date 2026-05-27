@@ -74,6 +74,7 @@ function makeDigest(
     canonicalSkillId: undefined,
     forkOf: undefined,
     latestVersionId: `skillVersions:${slug}-1`,
+    latestVersionSkillId: `skills:${slug}`,
     latestVersionSummary: {
       version: "1.0.0",
       createdAt: 10,

@@ -349,6 +349,11 @@ describe("securityPrompt", () => {
       "Start with a plain artifact-coherence review",
     );
     expect(SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT).toContain("SkillSpector");
+    expect(SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT).toContain("advisory research-preview scanner");
+    expect(SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT).toContain("not validated findings");
+    expect(SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT).toContain(
+      "must not directly determine the final verdict",
+    );
     expect(SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT).toContain(
       'The internal verdict value "suspicious" is the user-facing Review bucket',
     );

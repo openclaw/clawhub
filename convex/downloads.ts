@@ -4,6 +4,7 @@ import { httpAction, internalMutation } from "./functions";
 import { getOptionalApiTokenUserId } from "./lib/apiTokenAuth";
 import { corsHeaders, mergeHeaders } from "./lib/httpHeaders";
 import { applyRateLimit, getClientIp } from "./lib/httpRateLimit";
+import { getPublicSkillFileAccessBlock, isSkillVersionForSkill } from "./lib/skillFileAccess";
 import { buildDeterministicZip } from "./lib/skillZip";
 import { hashToken } from "./lib/tokens";
 import { insertStatEvent } from "./skillStatEvents";
@@ -41,35 +42,10 @@ export async function downloadZipHandler(
     });
   }
 
-  // Block downloads based on moderation status.
-  const mod = skillResult.moderationInfo;
-  if (mod?.isMalwareBlocked) {
-    return new Response(
-      "Blocked: this skill has been flagged as malicious by ClawScan and cannot be downloaded.",
-      {
-        status: 403,
-        headers: mergeHeaders(rate.headers, corsHeaders()),
-      },
-    );
-  }
-  if (mod?.isPendingScan) {
-    return new Response(
-      "This skill is pending a ClawScan security review. Please try again in a few minutes.",
-      {
-        status: 423,
-        headers: mergeHeaders(rate.headers, corsHeaders()),
-      },
-    );
-  }
-  if (mod?.isRemoved) {
-    return new Response("This skill has been removed by a moderator.", {
-      status: 410,
-      headers: mergeHeaders(rate.headers, corsHeaders()),
-    });
-  }
-  if (mod?.isHiddenByMod) {
-    return new Response("This skill is currently unavailable.", {
-      status: 403,
+  const moderationBlock = getPublicSkillFileAccessBlock(skillResult.moderationInfo);
+  if (moderationBlock) {
+    return new Response(moderationBlock.message, {
+      status: moderationBlock.status,
       headers: mergeHeaders(rate.headers, corsHeaders()),
     });
   }
@@ -93,7 +69,7 @@ export async function downloadZipHandler(
     }
   }
 
-  if (!version) {
+  if (!version || !isSkillVersionForSkill(version, skill._id)) {
     return new Response("Version not found", {
       status: 404,
       headers: mergeHeaders(rate.headers, corsHeaders()),

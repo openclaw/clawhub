@@ -109,6 +109,14 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   change, link, or membership events, not routine login refreshes.
 - Public queries hide non-active moderation statuses; moderators can still access via
   moderator-only queries and unhide/restore/delete/ban.
+- Public skill raw-file, README, package-compat file, and zip download reads must
+  honor the same malware/pending/hidden/removed download block. Metadata routes
+  may keep exposing malware-blocked skill summaries for transparency, but they
+  must not serve the blocked artifact payload to public callers.
+- Skill version tags and `latestVersionId` are only valid when the referenced
+  `skillVersions` row belongs to the same skill and is not soft-deleted. Writers
+  must reject cross-skill tag targets, and public readers should treat stale
+  cross-skill pointers as missing versions.
 - Legacy report rows with `status: "triaged"` are read as `confirmed` for
   compatibility while new writes store `confirmed`.
 - Skills directory supports an optional "Hide suspicious" filter to exclude
@@ -210,6 +218,12 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 
 - Banning a user:
   - hard-deletes all owned skills
+  - soft-deletes all owned packages/plugins with a ban-specific reason marker
+    and revokes package publish tokens
+    - the first package batch may run before `users.deletedAt` is committed;
+      later paginated package batches must match the current ban timestamp
+    - packages already hidden by an earlier user ban are retimestamped to the
+      current ban so the next matching unban can restore them
   - retimestamps already ban-hidden owned skills to the current ban marker so
     a later matching unban can restore them
   - soft-deletes all authored skill comments + soul comments
@@ -217,6 +231,8 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   - sets `deletedAt` on the user
 - Admins can manually unban (`deletedAt` + `banReason` cleared); revoked API tokens
   stay revoked and should be recreated by the user.
+- Unban restore batches only restore packages/plugins hidden by the matching
+  ban timestamp and must stop if the user has been banned again.
 - Stale unban restore batches must stop if the user was banned again before a
   later page runs.
 - Optional ban reason is stored in `users.banReason` and audit logs.

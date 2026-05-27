@@ -17,7 +17,7 @@ import {
 import { hashSkillFiles, isTextFile } from "./lib/skills";
 import { computeIsSuspicious } from "./lib/skillSafety";
 import {
-  extractDigestFields,
+  extractValidatedDigestFields,
   getFirstSearchToken,
   normalizeSkillSearchText,
 } from "./lib/skillSearchDigest";
@@ -2090,7 +2090,7 @@ export const backfillSkillSearchDigestInternal = internalMutation({
         .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
         .unique();
       if (!existing) {
-        await ctx.db.insert("skillSearchDigest", extractDigestFields(skill));
+        await ctx.db.insert("skillSearchDigest", await extractValidatedDigestFields(ctx, skill));
         inserted++;
       }
     }
@@ -2286,12 +2286,25 @@ export const backfillDigestVersionSummary = internalMutation({
 
     let patched = 0;
     for (const digest of page) {
-      if (digest.latestVersionSummary !== undefined) continue;
       const skill = await ctx.db.get(digest.skillId);
-      if (!skill?.latestVersionSummary) continue;
-      await ctx.db.patch(digest._id, {
-        latestVersionSummary: skill.latestVersionSummary,
-      });
+      if (!skill) continue;
+      const fields = await extractValidatedDigestFields(ctx, skill);
+      const patch = {
+        latestVersionId: fields.latestVersionId,
+        latestVersionSkillId: fields.latestVersionSkillId,
+        latestVersionSummary: fields.latestVersionSummary,
+        capabilityTags: fields.capabilityTags,
+      };
+      if (
+        digest.latestVersionId === patch.latestVersionId &&
+        digest.latestVersionSkillId === patch.latestVersionSkillId &&
+        JSON.stringify(digest.latestVersionSummary) ===
+          JSON.stringify(patch.latestVersionSummary) &&
+        JSON.stringify(digest.capabilityTags ?? []) === JSON.stringify(patch.capabilityTags ?? [])
+      ) {
+        continue;
+      }
+      await ctx.db.patch(digest._id, patch);
       patched++;
     }
 

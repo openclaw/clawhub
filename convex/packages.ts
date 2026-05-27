@@ -43,7 +43,6 @@ import {
   readArtifactReportStatus,
   appendPackageModerationEventLog,
 } from "./lib/artifactModeration";
-import { scheduleNextBatchIfNeeded } from "./lib/batching";
 import { normalizeClawScanNoteForWrite } from "./lib/clawScanNote";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
@@ -71,6 +70,7 @@ import {
   assertCanManageOwnedResource,
   canAccessPublisherOwnerScope,
   getPublisherByHandle,
+  getPersonalPublisherForUser,
   getOwnerPublisher,
   getPublisherMembership,
   isPublisherActive,
@@ -286,6 +286,13 @@ const packageAutobanRemediationInternalRefs = internal as unknown as {
   };
 };
 type DbReaderCtx = Pick<QueryCtx | MutationCtx, "db">;
+const BAN_USER_PACKAGES_BATCH_SIZE = 25;
+const PACKAGE_PUBLISH_TOKEN_REVOKE_BATCH_SIZE = 25;
+type PackageSoftDeletedReason = "user.banned" | "user.deactivated";
+const ownedPackageScanScopeValidator = v.optional(
+  v.union(v.literal("ownerUserId"), v.literal("personalPublisher")),
+);
+type OwnedPackageScanScope = "ownerUserId" | "personalPublisher";
 type PackagePublishActor =
   | {
       kind: "user";
@@ -2774,15 +2781,33 @@ async function softDeletePackageDoc(
   params: {
     actorUserId: Id<"users">;
     actorRole?: Doc<"users">["role"];
+    deletedAt?: number;
+    reason?: PackageSoftDeletedReason;
     source: "cli" | "dashboard";
   },
 ) {
+  const now = params.deletedAt ?? Date.now();
   if (pkg.softDeletedAt) {
     if (params.actorRole === "admin" || params.actorRole === "moderator") {
-      await ctx.db.patch(pkg._id, {
+      const packagePatch: Partial<Doc<"packages">> = {
         softDeletedBy: params.actorUserId,
         softDeletedByRole: params.actorRole,
-        updatedAt: Date.now(),
+        updatedAt: now,
+      };
+      if (pkg.softDeletedReason === "user.banned" && params.reason !== "user.banned") {
+        packagePatch.softDeletedAt = now;
+        packagePatch.softDeletedReason = params.reason;
+      }
+      const nextPackage: Doc<"packages"> = { ...pkg, ...packagePatch };
+      await ctx.db.patch(pkg._id, packagePatch);
+      const deleteOwner = await getOwnerPublisher(ctx, {
+        ownerPublisherId: pkg.ownerPublisherId,
+        ownerUserId: pkg.ownerUserId,
+      });
+      await upsertPackageSearchDigest(ctx, {
+        ...extractPackageDigestFields(nextPackage),
+        ownerHandle: deleteOwner?.handle ?? "",
+        ownerKind: deleteOwner?.kind,
       });
     }
     return {
@@ -2793,7 +2818,6 @@ async function softDeletePackageDoc(
     };
   }
 
-  const now = Date.now();
   const releases = await ctx.db
     .query("packageReleases")
     .withIndex("by_package", (q) => q.eq("packageId", pkg._id))
@@ -2809,6 +2833,7 @@ async function softDeletePackageDoc(
 
   const packagePatch: Partial<Doc<"packages">> = {
     softDeletedAt: now,
+    softDeletedReason: params.reason,
     softDeletedBy: params.actorUserId,
     softDeletedByRole: params.actorRole ?? "user",
     updatedAt: now,
@@ -2835,6 +2860,7 @@ async function softDeletePackageDoc(
       ownerUserId: pkg.ownerUserId,
       ownerPublisherId: pkg.ownerPublisherId,
       actorRole: params.actorRole ?? "user",
+      softDeletedReason: params.reason ?? null,
       releaseCount,
       releaseIds: deletedReleaseIds,
       source: params.source,
@@ -2910,6 +2936,8 @@ async function restorePackageDoc(
   params: {
     actorUserId: Id<"users">;
     actorRole?: Doc<"users">["role"];
+    allowBanRestore?: boolean;
+    releaseSoftDeletedAt?: number;
     source: "cli" | "dashboard";
   },
 ) {
@@ -2924,7 +2952,13 @@ async function restorePackageDoc(
 
   const now = Date.now();
   const actorRole = params.actorRole ?? "user";
-  if (actorRole !== "admin" && actorRole !== "moderator" && pkg.softDeletedByRole !== "user") {
+  const isPrivilegedActor = actorRole === "admin" || actorRole === "moderator";
+  const isDirectlyRestorableDelete = pkg.softDeletedReason === undefined;
+  const isPrivilegedRestorableDelete = isPrivilegedActor && isDirectlyRestorableDelete;
+  const isUserRestorableDelete = pkg.softDeletedByRole === "user" && isDirectlyRestorableDelete;
+  const isUnbanBatchRestore =
+    params.allowBanRestore === true && pkg.softDeletedReason === "user.banned";
+  if (!isPrivilegedRestorableDelete && !isUserRestorableDelete && !isUnbanBatchRestore) {
     throw new ConvexError(
       "Forbidden: This package was hidden by moderation and cannot be restored by the owner. Please contact a moderator.",
     );
@@ -2939,6 +2973,12 @@ async function restorePackageDoc(
   const activeReleases: Doc<"packageReleases">[] = [];
   for (const release of releases) {
     if (release.softDeletedAt) {
+      if (
+        params.releaseSoftDeletedAt !== undefined &&
+        release.softDeletedAt !== params.releaseSoftDeletedAt
+      ) {
+        continue;
+      }
       const restoredRelease = { ...release, softDeletedAt: undefined };
       await ctx.db.patch(release._id, { softDeletedAt: undefined });
       releaseCount += 1;
@@ -2964,6 +3004,7 @@ async function restorePackageDoc(
 
   const packagePatch: Partial<Doc<"packages">> = {
     softDeletedAt: undefined,
+    softDeletedReason: undefined,
     softDeletedBy: undefined,
     softDeletedByRole: undefined,
     tags: nextTags,
@@ -3028,6 +3069,359 @@ async function restorePackageDoc(
     alreadyRestored: false as const,
   };
 }
+
+async function revokePackagePublishTokensForPackage(
+  ctx: Pick<MutationCtx, "db" | "scheduler">,
+  packageId: Id<"packages">,
+  revokedAt: number,
+) {
+  const tokens = await ctx.db
+    .query("packagePublishTokens")
+    .withIndex("by_package_revoked_created", (q) =>
+      q.eq("packageId", packageId).eq("revokedAt", undefined).lte("createdAt", revokedAt),
+    )
+    .order("desc")
+    .take(PACKAGE_PUBLISH_TOKEN_REVOKE_BATCH_SIZE + 1);
+  let revokedCount = 0;
+  for (const token of tokens.slice(0, PACKAGE_PUBLISH_TOKEN_REVOKE_BATCH_SIZE)) {
+    await ctx.db.patch(token._id, { revokedAt });
+    revokedCount += 1;
+  }
+  const scheduled = tokens.length > PACKAGE_PUBLISH_TOKEN_REVOKE_BATCH_SIZE;
+  if (scheduled) {
+    void ctx.scheduler.runAfter(
+      0,
+      internal.packages.revokePackagePublishTokensForPackageBatchInternal,
+      { packageId, revokedAt },
+    );
+  }
+  return { revokedCount, scheduled };
+}
+
+async function isPackageOwnedByPersonalUser(
+  ctx: Pick<MutationCtx, "db">,
+  pkg: Pick<Doc<"packages">, "ownerPublisherId">,
+  owner: Doc<"users">,
+) {
+  if (!pkg.ownerPublisherId) return true;
+  if (owner.personalPublisherId && pkg.ownerPublisherId === owner.personalPublisherId) {
+    return true;
+  }
+  const ownerPublisher = await ctx.db.get(pkg.ownerPublisherId);
+  return ownerPublisher?.kind === "user" && ownerPublisher.linkedUserId === owner._id;
+}
+
+async function getOwnedPackagePersonalPublisherId(
+  ctx: Pick<MutationCtx, "db">,
+  owner: Pick<Doc<"users">, "_id" | "personalPublisherId">,
+) {
+  if (owner.personalPublisherId) return owner.personalPublisherId;
+  const linkedPublisher = await getPersonalPublisherForUser(ctx, owner._id);
+  if (
+    linkedPublisher?.kind === "user" &&
+    !linkedPublisher.deletedAt &&
+    !linkedPublisher.deactivatedAt
+  ) {
+    return linkedPublisher._id;
+  }
+  return undefined;
+}
+
+function getOwnedPackageScanScope(args: { scope?: OwnedPackageScanScope }) {
+  return args.scope ?? "ownerUserId";
+}
+
+function shouldSkipOwnedPackageScanRow(
+  pkg: Pick<Doc<"packages">, "ownerUserId">,
+  args: { ownerUserId: Id<"users">; scope?: OwnedPackageScanScope },
+) {
+  return (
+    getOwnedPackageScanScope(args) === "personalPublisher" && pkg.ownerUserId === args.ownerUserId
+  );
+}
+
+function scheduleNextOwnedPackageScanBatch(
+  ctx: Pick<MutationCtx, "scheduler">,
+  fn: unknown,
+  args: { ownerUserId: Id<"users">; cursor?: string; scope?: OwnedPackageScanScope } & Record<
+    string,
+    unknown
+  >,
+  personalPublisherId: Id<"publishers"> | undefined,
+  isDone: boolean,
+  continueCursor: string | null,
+) {
+  if (!isDone) {
+    void ctx.scheduler.runAfter(
+      0,
+      fn as never,
+      {
+        ...args,
+        cursor: continueCursor ?? undefined,
+      } as never,
+    );
+    return true;
+  }
+  if (getOwnedPackageScanScope(args) === "ownerUserId" && personalPublisherId) {
+    void ctx.scheduler.runAfter(
+      0,
+      fn as never,
+      {
+        ...args,
+        scope: "personalPublisher",
+        cursor: undefined,
+      } as never,
+    );
+    return true;
+  }
+  return false;
+}
+
+export const revokePackagePublishTokensForPackageBatchInternal = internalMutation({
+  args: {
+    packageId: v.id("packages"),
+    revokedAt: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const result = await revokePackagePublishTokensForPackage(ctx, args.packageId, args.revokedAt);
+    return { ok: true as const, ...result };
+  },
+});
+
+export const applyBanToOwnedPackagesBatchInternal = internalMutation({
+  args: {
+    ownerUserId: v.id("users"),
+    bannedAt: v.number(),
+    deletedBy: v.id("users"),
+    deletedByRole: v.union(v.literal("admin"), v.literal("moderator"), v.literal("user")),
+    cursor: v.optional(v.string()),
+    scope: ownedPackageScanScopeValidator,
+  },
+  handler: async (ctx, args) => {
+    const owner = await ctx.db.get(args.ownerUserId);
+    const scope = getOwnedPackageScanScope(args);
+    const isInitialOwnerUserIdBatch = !args.cursor && scope === "ownerUserId";
+    const ownerMatchesCurrentBan = owner?.deletedAt === args.bannedAt;
+    if (!owner || owner.deactivatedAt || (!isInitialOwnerUserIdBatch && !ownerMatchesCurrentBan)) {
+      return {
+        ok: true as const,
+        deletedCount: 0,
+        revokedTokenCount: 0,
+        scheduled: false,
+        stale: true as const,
+      };
+    }
+
+    const personalPublisherId = await getOwnedPackagePersonalPublisherId(ctx, owner);
+    const packageQuery =
+      scope === "personalPublisher" && personalPublisherId
+        ? ctx.db
+            .query("packages")
+            .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", personalPublisherId))
+        : ctx.db
+            .query("packages")
+            .withIndex("by_owner", (q) => q.eq("ownerUserId", args.ownerUserId));
+    const { page, isDone, continueCursor } = await packageQuery.order("desc").paginate({
+      cursor: args.cursor ?? null,
+      numItems: BAN_USER_PACKAGES_BATCH_SIZE,
+    });
+
+    let deletedCount = 0;
+    let revokedTokenCount = 0;
+    for (const pkg of page) {
+      if (shouldSkipOwnedPackageScanRow(pkg, args)) continue;
+      if (!(await isPackageOwnedByPersonalUser(ctx, pkg, owner))) continue;
+      const revokeResult = await revokePackagePublishTokensForPackage(ctx, pkg._id, args.bannedAt);
+      revokedTokenCount += revokeResult.revokedCount;
+      if (pkg.softDeletedAt) {
+        if (pkg.softDeletedReason === "user.banned" && pkg.softDeletedAt !== args.bannedAt) {
+          const previousBanHiddenAt = pkg.softDeletedAt;
+          const releases = await ctx.db
+            .query("packageReleases")
+            .withIndex("by_package", (q) => q.eq("packageId", pkg._id))
+            .collect();
+          for (const release of releases) {
+            if (release.softDeletedAt === previousBanHiddenAt) {
+              await ctx.db.patch(release._id, { softDeletedAt: args.bannedAt });
+            }
+          }
+          const packagePatch: Partial<Doc<"packages">> = {
+            softDeletedAt: args.bannedAt,
+            softDeletedBy: args.deletedBy,
+            softDeletedByRole: args.deletedByRole,
+            updatedAt: args.bannedAt,
+          };
+          const nextPackage: Doc<"packages"> = { ...pkg, ...packagePatch };
+          await ctx.db.patch(pkg._id, packagePatch);
+          const ownerPublisher = await getOwnerPublisher(ctx, {
+            ownerPublisherId: pkg.ownerPublisherId,
+            ownerUserId: pkg.ownerUserId,
+          });
+          await upsertPackageSearchDigest(ctx, {
+            ...extractPackageDigestFields(nextPackage),
+            ownerHandle: ownerPublisher?.handle ?? "",
+            ownerKind: ownerPublisher?.kind,
+          });
+        }
+        continue;
+      }
+
+      await softDeletePackageDoc(ctx, pkg, {
+        actorUserId: args.deletedBy,
+        actorRole: args.deletedByRole,
+        deletedAt: args.bannedAt,
+        reason: "user.banned",
+        source: "dashboard",
+      });
+      deletedCount += 1;
+    }
+
+    const scheduled = scheduleNextOwnedPackageScanBatch(
+      ctx,
+      internal.packages.applyBanToOwnedPackagesBatchInternal,
+      args,
+      personalPublisherId,
+      isDone,
+      continueCursor,
+    );
+
+    return { ok: true as const, deletedCount, revokedTokenCount, scheduled };
+  },
+});
+
+export const restoreOwnedPackagesForUnbanBatchInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    ownerUserId: v.id("users"),
+    bannedAt: v.number(),
+    cursor: v.optional(v.string()),
+    scope: ownedPackageScanScopeValidator,
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) {
+      throw new ConvexError("Unauthorized");
+    }
+    const owner = await ctx.db.get(args.ownerUserId);
+    if (!owner || owner.deletedAt || owner.deactivatedAt) {
+      return { ok: true as const, restoredCount: 0, scheduled: false, stale: true as const };
+    }
+
+    const scope = getOwnedPackageScanScope(args);
+    const personalPublisherId = await getOwnedPackagePersonalPublisherId(ctx, owner);
+    const packageQuery =
+      scope === "personalPublisher" && personalPublisherId
+        ? ctx.db
+            .query("packages")
+            .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", personalPublisherId))
+        : ctx.db
+            .query("packages")
+            .withIndex("by_owner", (q) => q.eq("ownerUserId", args.ownerUserId));
+    const { page, isDone, continueCursor } = await packageQuery.order("desc").paginate({
+      cursor: args.cursor ?? null,
+      numItems: BAN_USER_PACKAGES_BATCH_SIZE,
+    });
+
+    let restoredCount = 0;
+    for (const pkg of page) {
+      if (shouldSkipOwnedPackageScanRow(pkg, args)) continue;
+      if (!(await isPackageOwnedByPersonalUser(ctx, pkg, owner))) continue;
+      if (
+        !pkg.softDeletedAt ||
+        pkg.softDeletedAt !== args.bannedAt ||
+        pkg.softDeletedReason !== "user.banned"
+      ) {
+        continue;
+      }
+
+      await restorePackageDoc(ctx, pkg, {
+        actorUserId: actor._id,
+        actorRole: actor.role,
+        allowBanRestore: true,
+        releaseSoftDeletedAt: args.bannedAt,
+        source: "dashboard",
+      });
+      restoredCount += 1;
+    }
+
+    const scheduled = scheduleNextOwnedPackageScanBatch(
+      ctx,
+      internal.packages.restoreOwnedPackagesForUnbanBatchInternal,
+      args,
+      personalPublisherId,
+      isDone,
+      continueCursor,
+    );
+
+    return { ok: true as const, restoredCount, scheduled };
+  },
+});
+
+export const applyAccountDeletionToOwnedPackagesBatchInternal = internalMutation({
+  args: {
+    ownerUserId: v.id("users"),
+    deletedAt: v.number(),
+    cursor: v.optional(v.string()),
+    scope: ownedPackageScanScopeValidator,
+  },
+  handler: async (ctx, args) => {
+    const owner = await ctx.db.get(args.ownerUserId);
+    if (!owner) {
+      return {
+        ok: true as const,
+        deletedCount: 0,
+        revokedTokenCount: 0,
+        scheduled: false,
+        stale: true as const,
+      };
+    }
+
+    const scope = getOwnedPackageScanScope(args);
+    const personalPublisherId = await getOwnedPackagePersonalPublisherId(ctx, owner);
+    const packageQuery =
+      scope === "personalPublisher" && personalPublisherId
+        ? ctx.db
+            .query("packages")
+            .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", personalPublisherId))
+        : ctx.db
+            .query("packages")
+            .withIndex("by_owner", (q) => q.eq("ownerUserId", args.ownerUserId));
+    const { page, isDone, continueCursor } = await packageQuery.order("desc").paginate({
+      cursor: args.cursor ?? null,
+      numItems: BAN_USER_PACKAGES_BATCH_SIZE,
+    });
+
+    let deletedCount = 0;
+    let revokedTokenCount = 0;
+    for (const pkg of page) {
+      if (shouldSkipOwnedPackageScanRow(pkg, args)) continue;
+      if (!(await isPackageOwnedByPersonalUser(ctx, pkg, owner))) continue;
+      const revokeResult = await revokePackagePublishTokensForPackage(ctx, pkg._id, args.deletedAt);
+      revokedTokenCount += revokeResult.revokedCount;
+      if (pkg.softDeletedAt) continue;
+
+      await softDeletePackageDoc(ctx, pkg, {
+        actorUserId: args.ownerUserId,
+        actorRole: "user",
+        deletedAt: args.deletedAt,
+        reason: "user.deactivated",
+        source: "dashboard",
+      });
+      deletedCount += 1;
+    }
+
+    const scheduled = scheduleNextOwnedPackageScanBatch(
+      ctx,
+      internal.packages.applyAccountDeletionToOwnedPackagesBatchInternal,
+      args,
+      personalPublisherId,
+      isDone,
+      continueCursor,
+    );
+
+    return { ok: true as const, deletedCount, revokedTokenCount, scheduled };
+  },
+});
 
 export const softDeletePackageInternal = internalMutation({
   args: {
@@ -3103,6 +3497,7 @@ export const restoreOwnedPackagesForAutobanRemediationBatchInternal = internalMu
     ownerUserId: v.id("users"),
     bannedAt: v.number(),
     cursor: v.optional(v.string()),
+    scope: ownedPackageScanScopeValidator,
   },
   handler: async (ctx, args) => {
     const owner = await ctx.db.get(args.ownerUserId);
@@ -3117,19 +3512,27 @@ export const restoreOwnedPackagesForAutobanRemediationBatchInternal = internalMu
       };
     }
 
-    const { page, isDone, continueCursor } = await ctx.db
-      .query("packages")
-      .withIndex("by_owner", (q) => q.eq("ownerUserId", args.ownerUserId))
-      .order("desc")
-      .paginate({
-        cursor: args.cursor ?? null,
-        numItems: 25,
-      });
+    const scope = getOwnedPackageScanScope(args);
+    const personalPublisherId = await getOwnedPackagePersonalPublisherId(ctx, owner);
+    const packageQuery =
+      scope === "personalPublisher" && personalPublisherId
+        ? ctx.db
+            .query("packages")
+            .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", personalPublisherId))
+        : ctx.db
+            .query("packages")
+            .withIndex("by_owner", (q) => q.eq("ownerUserId", args.ownerUserId));
+    const { page, isDone, continueCursor } = await packageQuery.order("desc").paginate({
+      cursor: args.cursor ?? null,
+      numItems: BAN_USER_PACKAGES_BATCH_SIZE,
+    });
 
     let restoredCount = 0;
     let restoredReleases = 0;
     let skippedMalicious = 0;
     for (const pkg of page) {
+      if (shouldSkipOwnedPackageScanRow(pkg, args)) continue;
+      if (!(await isPackageOwnedByPersonalUser(ctx, pkg, owner))) continue;
       if (!pkg.softDeletedAt || pkg.softDeletedAt !== args.bannedAt) continue;
       if (pkg.scanStatus === "malicious") {
         skippedMalicious += 1;
@@ -3183,6 +3586,7 @@ export const restoreOwnedPackagesForAutobanRemediationBatchInternal = internalMu
         softDeletedAt: undefined,
         softDeletedBy: undefined,
         softDeletedByRole: undefined,
+        softDeletedReason: undefined,
         tags: nextTags,
         latestReleaseId: nextLatest?._id,
         latestVersionSummary: nextLatest
@@ -3238,11 +3642,12 @@ export const restoreOwnedPackagesForAutobanRemediationBatchInternal = internalMu
       restoredCount += 1;
     }
 
-    scheduleNextBatchIfNeeded(
-      ctx.scheduler,
+    const scheduled = scheduleNextOwnedPackageScanBatch(
+      ctx,
       packageAutobanRemediationInternalRefs.packages
         .restoreOwnedPackagesForAutobanRemediationBatchInternal,
       args,
+      personalPublisherId,
       isDone,
       continueCursor,
     );
@@ -3252,7 +3657,7 @@ export const restoreOwnedPackagesForAutobanRemediationBatchInternal = internalMu
       restoredCount,
       restoredReleases,
       skippedMalicious,
-      scheduled: !isDone,
+      scheduled,
     };
   },
 });
@@ -5589,6 +5994,16 @@ export const insertReleaseInternal = internalMutation({
       (!ownerPublisher || ownerPublisher.deletedAt || ownerPublisher.deactivatedAt)
     ) {
       throw new ConvexError("Package owner publisher is unavailable");
+    }
+    if (ownerPublisher?.kind === "user" && ownerPublisher.linkedUserId) {
+      const linkedPublisherUser = await ctx.db.get(ownerPublisher.linkedUserId);
+      if (
+        !linkedPublisherUser ||
+        linkedPublisherUser.deletedAt ||
+        linkedPublisherUser.deactivatedAt
+      ) {
+        throw new ConvexError("Package owner publisher is unavailable");
+      }
     }
     if (args.publishActor?.kind === "user" && args.publishActor.userId !== args.actorUserId) {
       throw new ConvexError("Publish actor must match the authenticated actor");

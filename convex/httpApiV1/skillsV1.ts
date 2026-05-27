@@ -22,6 +22,7 @@ import type {
   LlmRiskSummary,
 } from "../lib/securityPrompt";
 import { selectGeneratedSkillCardFile, sourceSkillVersionFiles } from "../lib/skillCards";
+import { getPublicSkillFileAccessBlock, isSkillVersionForSkill } from "../lib/skillFileAccess";
 import {
   buildMergedExportZip,
   type MergedExportManifestEntry,
@@ -116,6 +117,7 @@ type PublicSkillVersionStaticScan = Pick<
 
 type PublicSkillVersionResponse = {
   _id: Id<"skillVersions">;
+  skillId?: Id<"skills">;
   version: string;
   createdAt?: number;
   changelog?: string;
@@ -1108,6 +1110,7 @@ export async function listSkillsV1Handler(ctx: ActionCtx, request: Request) {
     ctx,
     result.items.map((item) => item.skill.tags),
     result.items.map((item) => item.latestVersion),
+    result.items.map((item) => item.skill._id),
   );
 
   const items = result.items.map((item, idx) => ({
@@ -1260,7 +1263,12 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
       return text("Skill not found", 404, rate.headers);
     }
 
-    const [tags] = await resolveTagsBatch(ctx, [result.skill.tags], [result.latestVersion]);
+    const [tags] = await resolveTagsBatch(
+      ctx,
+      [result.skill.tags],
+      [result.latestVersion],
+      [result.skill._id],
+    );
     return json(
       {
         skill: {
@@ -1481,7 +1489,9 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
       }
     }
 
-    if (!version) return text("Version not found", 404, rate.headers);
+    if (!version || !isSkillVersionForSkill(version, result.skill._id)) {
+      return text("Version not found", 404, rate.headers);
+    }
     if (version.softDeletedAt) return text("Version not available", 410, rate.headers);
 
     const security = buildSkillSecuritySnapshot(version);
@@ -1557,7 +1567,9 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
         : null;
     }
 
-    if (!version) return text("Version not found", 404, rate.headers);
+    if (!version || !isSkillVersionForSkill(version, skillResult.skill._id)) {
+      return text("Version not found", 404, rate.headers);
+    }
     if (version.softDeletedAt) return text("Version not available", 410, rate.headers);
 
     const fingerprintEntries = ((await ctx.runQuery(
@@ -1648,6 +1660,10 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
       if (hidden) return text(hidden.message, hidden.status, rate.headers);
       return text("Skill not found", 404, rate.headers);
     }
+    const moderationBlock = getPublicSkillFileAccessBlock(skillResult.moderationInfo);
+    if (moderationBlock) {
+      return text(moderationBlock.message, moderationBlock.status, rate.headers);
+    }
 
     let version: Doc<"skillVersions"> | null = skillResult.skill.latestVersionId
       ? await ctx.runQuery(internal.skills.getVersionByIdInternal, {
@@ -1666,7 +1682,9 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
         : null;
     }
 
-    if (!version) return text("Version not found", 404, rate.headers);
+    if (!version || !isSkillVersionForSkill(version, skillResult.skill._id)) {
+      return text("Version not found", 404, rate.headers);
+    }
     if (version.softDeletedAt) return text("Version not available", 410, rate.headers);
 
     const fingerprintEntries = ((await ctx.runQuery(
@@ -1701,6 +1719,10 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
 
     const skillResult = (await ctx.runQuery(api.skills.getBySlug, { slug })) as GetBySlugResult;
     if (!skillResult?.skill) return text("Skill not found", 404, rate.headers);
+    const moderationBlock = getPublicSkillFileAccessBlock(skillResult.moderationInfo);
+    if (moderationBlock) {
+      return text(moderationBlock.message, moderationBlock.status, rate.headers);
+    }
 
     let version: Doc<"skillVersions"> | null = skillResult.skill.latestVersionId
       ? await ctx.runQuery(internal.skills.getVersionByIdInternal, {
@@ -1719,7 +1741,9 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
       }
     }
 
-    if (!version) return text("Version not found", 404, rate.headers);
+    if (!version || !isSkillVersionForSkill(version, skillResult.skill._id)) {
+      return text("Version not found", 404, rate.headers);
+    }
     if (version.softDeletedAt) return text("Version not available", 410, rate.headers);
 
     const normalized = path.trim();
@@ -2452,6 +2476,7 @@ export async function exportSkillsV1Handler(ctx: ActionCtx, request: Request) {
 
   let result: {
     page: Array<{
+      skillId: Id<"skills">;
       slug: string;
       displayName: string;
       latestVersionId?: Id<"skillVersions">;
@@ -2516,6 +2541,10 @@ export async function exportSkillsV1Handler(ctx: ActionCtx, request: Request) {
         : Promise.resolve(null),
     );
     logContext.versionCount = versionDocs.filter(Boolean).length;
+    const exportableVersions: Array<Doc<"skillVersions"> | null> = Array.from(
+      { length: result.page.length },
+      () => null,
+    );
 
     type BlobTask = { digestIndex: number; fileIndex: number; storageId: Id<"_storage"> };
     const blobTasks: BlobTask[] = [];
@@ -2523,14 +2552,26 @@ export async function exportSkillsV1Handler(ctx: ActionCtx, request: Request) {
     logContext.phase = "plan_blobs";
     for (let i = 0; i < result.page.length; i++) {
       const digest = result.page[i];
-      const version = versionDocs[i] as {
-        files?: Array<{ storageId: Id<"_storage">; path: string }>;
-      } | null;
+      const version = versionDocs[i] as Doc<"skillVersions"> | null;
 
       if (!version) {
         exportErrors.push({
           slug: digest.slug,
           error: `version not found (latestVersionId: ${digest.latestVersionId ?? "null"})`,
+        });
+        continue;
+      }
+      if (!isSkillVersionForSkill(version, digest.skillId)) {
+        exportErrors.push({
+          slug: digest.slug,
+          error: `version not found (latestVersionId: ${digest.latestVersionId})`,
+        });
+        continue;
+      }
+      if (version.softDeletedAt) {
+        exportErrors.push({
+          slug: digest.slug,
+          error: `version not available (latestVersionId: ${digest.latestVersionId})`,
         });
         continue;
       }
@@ -2541,6 +2582,7 @@ export async function exportSkillsV1Handler(ctx: ActionCtx, request: Request) {
         });
         continue;
       }
+      exportableVersions[i] = version;
 
       if (!validateSlug(digest.slug)) {
         exportErrors.push({
@@ -2588,7 +2630,7 @@ export async function exportSkillsV1Handler(ctx: ActionCtx, request: Request) {
     logContext.phase = "assemble_entries";
     for (let i = 0; i < result.page.length; i++) {
       const digest = result.page[i];
-      const version = versionDocs[i] as {
+      const version = exportableVersions[i] as {
         version?: string;
         files?: Array<{ storageId: Id<"_storage">; path: string }>;
       } | null;

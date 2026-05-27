@@ -514,6 +514,135 @@ describe("skillCards queue", () => {
     );
   });
 
+  it("caps global running Skill Card claims at security-worker parity", async () => {
+    const now = Date.now();
+    const queuedJobs = Array.from({ length: 80 }, (_, index) => ({
+      _id: `skillCardGenerationJobs:${index}`,
+      skillId: `skills:${index}`,
+      skillVersionId: `skillVersions:${index}`,
+      status: "queued",
+      source: "scan",
+      priority: 0,
+      nextRunAt: now - index - 1,
+      attempts: 0,
+      createdAt: now - index - 1,
+      updatedAt: now - index - 1,
+    }));
+    const patch = vi.fn(async () => undefined);
+    const ctx = {
+      db: completeDb({
+        patch,
+        query: vi.fn(() => ({
+          withIndex: vi.fn(
+            (
+              name: string,
+              build: (q: {
+                eq: (...args: unknown[]) => unknown;
+                lte: (...args: unknown[]) => unknown;
+              }) => unknown,
+            ) => {
+              const q = {
+                eq: vi.fn(function (this: unknown) {
+                  return this;
+                }),
+                lte: vi.fn(function (this: unknown) {
+                  return this;
+                }),
+              };
+              build(q);
+              if (name === "by_status_and_lease_expires_at") {
+                return { take: vi.fn(async () => []) };
+              }
+              return {
+                order: vi.fn(() => ({
+                  take: vi.fn(async () => queuedJobs),
+                })),
+              };
+            },
+          ),
+        })),
+      }),
+    };
+
+    const claimed = await claimQueuedHandler(ctx, {
+      workerId: "worker",
+      limit: 80,
+      leaseMs: 60_000,
+    });
+
+    expect(claimed).toHaveLength(64);
+    expect(patch).toHaveBeenCalledTimes(64);
+  });
+
+  it("uses the same default queued job lease as the security worker", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-27T12:00:00.000Z"));
+    const now = Date.now();
+    const queuedJob = {
+      _id: "skillCardGenerationJobs:queued",
+      skillId: "skills:1",
+      skillVersionId: "skillVersions:1",
+      status: "queued",
+      source: "scan",
+      priority: 0,
+      nextRunAt: now - 1,
+      attempts: 0,
+      createdAt: now - 1,
+      updatedAt: now - 1,
+    };
+    const patch = vi.fn(async () => undefined);
+    const ctx = {
+      db: completeDb({
+        patch,
+        query: vi.fn(() => ({
+          withIndex: vi.fn(
+            (
+              name: string,
+              build: (q: {
+                eq: (...args: unknown[]) => unknown;
+                lte: (...args: unknown[]) => unknown;
+              }) => unknown,
+            ) => {
+              const q = {
+                eq: vi.fn(function (this: unknown) {
+                  return this;
+                }),
+                lte: vi.fn(function (this: unknown) {
+                  return this;
+                }),
+              };
+              build(q);
+              if (name === "by_status_and_lease_expires_at") {
+                return { take: vi.fn(async () => []) };
+              }
+              return {
+                order: vi.fn(() => ({
+                  take: vi.fn(async () => [queuedJob]),
+                })),
+              };
+            },
+          ),
+        })),
+      }),
+    };
+
+    try {
+      await claimQueuedHandler(ctx, {
+        workerId: "worker",
+        limit: 1,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(patch).toHaveBeenCalledWith(
+      "skillCardGenerationJobs:queued",
+      expect.objectContaining({
+        leaseExpiresAt: now + 60 * 60 * 1000,
+      }),
+    );
+  });
+
   it("generation failure is non-blocking and retryable", async () => {
     const patch = vi.fn(async () => undefined);
     const ctx = {
