@@ -113,7 +113,12 @@ import {
   queueHighlightedWebhook,
 } from "./lib/skillPublish";
 import { getFrontmatterValue, hashSkillFiles } from "./lib/skills";
-import { computeIsSuspicious, isSkillReviewFlagged, isSkillSuspicious } from "./lib/skillSafety";
+import {
+  computeIsSuspicious,
+  isSkillReviewFlagged,
+  isSkillSuspicious,
+  isSkillTransferBlockedByModeration,
+} from "./lib/skillSafety";
 import {
   digestToHydratableSkill,
   digestToOwnerInfo,
@@ -6997,6 +7002,13 @@ export const applyBanToOwnedSkillsBatchInternal = internalMutation({
     cursor: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    if (args.cursor) {
+      const owner = await ctx.db.get(args.ownerUserId);
+      if (!owner || owner.deletedAt !== args.bannedAt || owner.deactivatedAt) {
+        return { ok: true as const, hiddenCount: 0, scheduled: false, aborted: true };
+      }
+    }
+
     const { page, isDone, continueCursor } = await ctx.db
       .query("skills")
       .withIndex("by_owner", (q) => q.eq("ownerUserId", args.ownerUserId))
@@ -7008,7 +7020,24 @@ export const applyBanToOwnedSkillsBatchInternal = internalMutation({
 
     let hiddenCount = 0;
     for (const skill of page) {
-      if (skill.softDeletedAt) continue;
+      if (skill.softDeletedAt) {
+        const isBanHiddenStatus =
+          skill.moderationStatus === "hidden" || skill.moderationStatus === undefined;
+        if (
+          isBanHiddenStatus &&
+          skill.moderationReason === "user.banned" &&
+          skill.softDeletedAt < args.bannedAt
+        ) {
+          await ctx.db.patch(skill._id, {
+            softDeletedAt: args.bannedAt,
+            hiddenAt: args.bannedAt,
+            hiddenBy: args.hiddenBy,
+            lastReviewedAt: args.bannedAt,
+            updatedAt: args.bannedAt,
+          });
+        }
+        continue;
+      }
 
       // Only overwrite moderation fields for active skills. Keep existing hidden/removed
       // moderation reasons intact.
@@ -7125,6 +7154,11 @@ export const restoreOwnedSkillsForUnbanBatchInternal = internalMutation({
     cursor: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const user = await ctx.db.get(args.ownerUserId);
+    if (!user || user.deletedAt || user.deactivatedAt) {
+      return { ok: true as const, restoredCount: 0, scheduled: false, aborted: true };
+    }
+
     const now = Date.now();
 
     const { page, isDone, continueCursor } = await ctx.db
@@ -7141,6 +7175,7 @@ export const restoreOwnedSkillsForUnbanBatchInternal = internalMutation({
       if (
         !skill.softDeletedAt ||
         skill.softDeletedAt !== args.bannedAt ||
+        skill.moderationStatus === "removed" ||
         skill.moderationReason !== "user.banned"
       ) {
         continue;
@@ -8575,23 +8610,11 @@ export const changeOwner = mutation({
     if (skill.ownerUserId === args.ownerUserId) return;
 
     const now = Date.now();
-    await ctx.db.patch(skill._id, {
+    await transferSkillOwnershipAndEmbeddings(ctx, {
+      skill,
       ownerUserId: args.ownerUserId,
-      lastReviewedAt: now,
-      updatedAt: now,
+      now,
     });
-    await adjustUserSkillStatsForSkillChange(ctx, skill, {
-      ...skill,
-      ownerUserId: args.ownerUserId,
-    });
-
-    const embeddings = await listSkillEmbeddingsForSkill(ctx, skill._id);
-    for (const embedding of embeddings) {
-      await ctx.db.patch(embedding._id, {
-        ownerId: args.ownerUserId,
-        updatedAt: now,
-      });
-    }
 
     await ctx.db.insert("auditLogs", {
       actorUserId: user._id,
@@ -9001,6 +9024,9 @@ async function transferSkillOwnershipAndEmbeddings(
   const publisherChanged =
     "ownerPublisherId" in params && params.skill.ownerPublisherId !== params.ownerPublisherId;
   if (!ownerChanged && !publisherChanged) return;
+  if (isSkillTransferBlockedByModeration(params.skill)) {
+    throw new ConvexError("Skill is not eligible for ownership transfer while under moderation");
+  }
 
   await ctx.db.patch(params.skill._id, patch);
 
@@ -9086,6 +9112,9 @@ export const transferSkillOwnerForUserInternal = internalMutation({
       allowedPublisherRoles: ["admin"],
       allowPlatformAdmin: true,
     });
+    if (isSkillTransferBlockedByModeration(skill)) {
+      throw new ConvexError("Skill is not eligible for ownership transfer while under moderation");
+    }
 
     const destinationHandle = normalizePublisherHandle(args.toOwner);
     if (!destinationHandle) throw new ConvexError("Destination owner is required");
@@ -9913,47 +9942,16 @@ export const insertVersion = internalMutation({
         ...skill,
         ownerPublisherId,
         ownerUserId: userId,
+        lastReviewedAt: now,
         updatedAt: now,
       };
 
-      await ctx.db.patch(skill._id, {
+      await transferSkillOwnershipAndEmbeddings(ctx, {
+        skill,
         ownerPublisherId,
         ownerUserId: userId,
-        updatedAt: now,
+        now,
       });
-
-      // Reassign per-user counters from the previous owner to the new one.
-      // Without this, `users.publishedSkills / totalStars / totalDownloads`
-      // would still credit the source owner after an org→org or
-      // personal→org migration (and double-count once the new owner
-      // publishes anything else). `adjustUserSkillStatsForSkillChange`
-      // already handles the cross-owner move cleanly — this mirrors the
-      // moderator `changeOwner` path above.
-      await adjustUserSkillStatsForSkillChange(ctx, skill, nextSkill);
-
-      // Keep `skillEmbeddings.ownerId` in sync with the skill's owner so
-      // "authored by" queries/filters and embedding-side access checks
-      // don't keep resolving to the previous owner after the migration.
-      const embeddings = await listSkillEmbeddingsForSkill(ctx, skill._id);
-      for (const embedding of embeddings) {
-        if (embedding.ownerId === userId) continue;
-        await ctx.db.patch(embedding._id, {
-          ownerId: userId,
-          updatedAt: now,
-        });
-      }
-
-      // Keep existing slug aliases pointed at the new owner so old URLs still
-      // resolve correctly while the canonical page moves (the `$owner/$slug`
-      // loader already redirects to the canonical owner handle on read).
-      const aliases = await listSkillSlugAliasesForSkill(ctx, skill._id);
-      for (const alias of aliases) {
-        await ctx.db.patch(alias._id, {
-          ownerPublisherId,
-          ownerUserId: userId,
-          updatedAt: now,
-        });
-      }
 
       await ctx.db.insert("auditLogs", {
         actorUserId: userId,
@@ -10000,21 +9998,30 @@ export const insertVersion = internalMutation({
           callerProviderAccountId,
         )
       ) {
-        await ctx.db.patch(skill._id, {
+        await transferSkillOwnershipAndEmbeddings(ctx, {
+          skill,
           ownerUserId: userId,
           ownerPublisherId,
-          updatedAt: now,
+          now,
         });
-        skill = { ...skill, ownerUserId: userId, ownerPublisherId };
+        skill = {
+          ...skill,
+          ownerUserId: userId,
+          ownerPublisherId,
+          lastReviewedAt: now,
+          updatedAt: now,
+        };
       } else {
         throw new ConvexError(slugTakenMessage);
       }
     } else if (skill && !skill.ownerPublisherId) {
-      await ctx.db.patch(skill._id, {
+      await transferSkillOwnershipAndEmbeddings(ctx, {
+        skill,
+        ownerUserId: userId,
         ownerPublisherId,
-        updatedAt: now,
+        now,
       });
-      skill = { ...skill, ownerPublisherId };
+      skill = { ...skill, ownerPublisherId, lastReviewedAt: now, updatedAt: now };
     }
 
     const qualityAssessment = args.qualityAssessment;

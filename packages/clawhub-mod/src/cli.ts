@@ -26,6 +26,7 @@ import {
   cmdBanUser,
   cmdReclassifyBan,
   cmdRemediateAutobans,
+  cmdRescanAllSkills,
   cmdRescanSkill,
   cmdSetRole,
   cmdUnbanUser,
@@ -617,6 +618,28 @@ function registerSkillModerationCommands(command: Command) {
     .action(async (slug, options) => {
       const opts = await resolveGlobalOpts();
       await cmdRescanSkill(opts, slug, options, isInputAllowed());
+    });
+
+  command
+    .command("rescan-all")
+    .description("Queue admin ClawScan rescans for active latest skills in paced batches")
+    .option("--batch-size <n>", "Batch size; backend caps at 100", (value) =>
+      Number.parseInt(value, 10),
+    )
+    .option("--poll-interval <sec>", "Seconds between batch status polls", (value) =>
+      Number.parseInt(value, 10),
+    )
+    .option("--cursor <cursor>", "Resume from a backend pagination cursor")
+    .option("--max-skills <n>", "Stop after this many scanned/queued/skipped skills", (value) =>
+      Number.parseInt(value, 10),
+    )
+    .option("--dry-run", "Page eligible skills without queueing jobs")
+    .option("--yes", "Skip confirmation")
+    .option("--json", "Output JSON progress events")
+    .option("--fail-fast", "Stop after the first drained batch with failed jobs")
+    .action(async (options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdRescanAllSkills(opts, options, isInputAllowed());
     });
 
   command

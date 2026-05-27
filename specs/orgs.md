@@ -164,6 +164,8 @@ Use dual fields during rollout:
   administer both the current owner and destination publisher. User-to-user skill
   transfers remain recipient-accepted unless the actor controls the destination
   publisher.
+- No ownership transfer path should move a skill while it is hidden, removed,
+  suspicious, or malicious; the artifact must be cleared by moderation first.
 
 ## Naming Rules
 
