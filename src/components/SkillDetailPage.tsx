@@ -2,7 +2,7 @@ import { useAuthActions } from "@convex-dev/auth/react";
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import type { ClawdisSkillMetadata } from "clawhub-schema";
 import { useAction, useMutation, useQuery } from "convex/react";
-import { ArrowLeft, TriangleAlert } from "lucide-react";
+import { ArrowLeft, TriangleAlert, Upload } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
@@ -35,6 +35,7 @@ import { SkillOwnershipPanel } from "./SkillOwnershipPanel";
 import { SkillRelatedSection, type RelatedSkillEntry } from "./SkillRelatedSection";
 import { SkillReportDialog } from "./SkillReportDialog";
 import { Alert, AlertDescription } from "./ui/alert";
+import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 
 type SkillDetailPageProps = {
@@ -702,9 +703,23 @@ export function SkillDetailPage({
               <ArrowLeft size={16} aria-hidden="true" />
               Back to {skill.displayName}
             </a>
-            <div>
+            <div className="skill-settings-page-title-row">
               <h1 className="skill-settings-page-title">Skill settings</h1>
+              {newVersionHref ? (
+                <Button
+                  asChild
+                  variant="outline"
+                  size="sm"
+                  className="skill-settings-new-version-button"
+                >
+                  <a href={newVersionHref}>
+                    <Upload size={14} aria-hidden="true" />
+                    New version
+                  </a>
+                </Button>
+              ) : null}
             </div>
+            <hr className="skill-settings-page-divider" />
           </div>
           <DetailBody>
             {settingsPanel ? (

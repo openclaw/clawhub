@@ -54,6 +54,7 @@ import {
 } from "../upload/-utils";
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const SKILL_PUBLISHING_GUIDE_URL = "https://docs.openclaw.ai/clawhub/skill-format";
 
 type SkillPublishField = "slug" | "displayName" | "version" | "tags" | "clawScanNote" | "license";
 
@@ -767,7 +768,7 @@ export function Upload() {
   return (
     <main className="py-10">
       <Container size="narrow">
-        <header className="flex flex-col gap-2 mb-6">
+        <header className="flex flex-col gap-3 mb-6 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="font-display text-2xl font-bold text-[color:var(--ink)]">
               Publish a {contentLabel}
@@ -776,6 +777,12 @@ export function Upload() {
               Drop a folder with {requiredFileLabel} and text files. We will handle the rest.
             </p>
           </div>
+          <Button asChild variant="outline" size="sm" className="w-fit">
+            <a href={SKILL_PUBLISHING_GUIDE_URL} target="_blank" rel="noreferrer">
+              Skill publishing guide
+              <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+            </a>
+          </Button>
         </header>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-6">

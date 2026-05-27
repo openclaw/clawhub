@@ -133,6 +133,16 @@ describe("plugins publish route", () => {
     expect(Route).toBeTruthy();
   });
 
+  it("links to the plugin publishing guide", () => {
+    renderPublishRoute();
+
+    const guideLink = screen.getByRole("link", { name: /Plugin publishing guide/i });
+    expect(guideLink.getAttribute("href")).toBe(
+      "https://docs.openclaw.ai/clawhub/publishing#plugins",
+    );
+    expect(guideLink.getAttribute("target")).toBe("_blank");
+  });
+
   it("requires sign-in before showing the plugin publish form", () => {
     useAuthStatusMock.mockReturnValue({
       isAuthenticated: false,
