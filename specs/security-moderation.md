@@ -61,15 +61,16 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   releases. OpenClaw must use it instead of re-deriving blocking behavior from
   individual scan or moderation fields. `trust.reasons` is the compact user and
   audit explanation list, for example `manual:quarantined`, `scan:malicious`,
-  `static:malicious`, `vt:suspicious`, or `package:malicious`; public trust
-  responses must not expose open report counts.
+  or `package:malicious`; public trust responses must not expose open report
+  counts.
 - The legacy skill/package appeal tables and backend routes remain for
   compatibility, but the first-class CLI and docs surface is deprecated.
   Publisher recovery for false positives should use reports or out-of-band
   support, while account bans require out-of-band support.
-- Any scanner path that determines a skill is malicious must hide the skill and
+- Any ClawScan path that determines a skill is malicious must hide the skill and
   schedule the same account-level autoban/token-revocation workflow. Static
-  scan malicious findings must not diverge into a softer moderation-only state.
+  scan findings are ClawScan input context only and must not schedule autobans
+  or set public/install-blocking trust by themselves.
 - Pending skill ownership transfers must not be accepted when the requesting
   owner is deleted/deactivated or when the skill is malicious, hidden, or
   removed. The accept path is the final shared gate before ownership changes,
@@ -102,9 +103,10 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 ## Skill moderation pipeline
 
 - New skill publishes now persist a deterministic static scan result on the version.
-- Static suspicious findings are advisory evidence only. Static malicious findings
-  hold the artifact until Codex-backed ClawScan completes.
-- Public artifact pages present static analysis, VirusTotal malware telemetry,
+- Static findings are internal evidence for Codex-backed ClawScan only. They do
+  not hide, block, set public security status, affect installability, or trigger
+  user autobans.
+- Public artifact pages present SkillSpector findings, VirusTotal malware telemetry,
   and ClawScan-powered risk review as one consolidated Security audit page.
   This is a product-facing model only; scanner storage, moderation decisions,
   and worker behavior remain separate internally.
@@ -112,6 +114,11 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   hosted LLM call. Publishes enqueue a scan job that waits at most 10 minutes
   for VirusTotal telemetry, then Codex reviews the materialized artifact
   workspace with static and VT signals as context.
+- The Skill Card verification envelope exposes ClawScan as the top-level
+  `security` verdict for install automation, with deterministic and third-party
+  scanner evidence grouped under `security.signals`. Clients should key install
+  decisions off `ok`, `decision`, `reasons`, and `security.status` instead of
+  re-deriving trust from individual signal payloads.
 - ClawScan verdicts treat purpose-aligned notes as user guidance, not a
   suspicious verdict. Medium-only material concerns are visible
   `flagged.review` guidance and must not set `isSuspicious`; high or critical
@@ -131,16 +138,15 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Prompt-injection pre-scan hits are also context for Codex, not a deterministic
   post-Codex veto. The release worker must not downgrade a benign Codex verdict
   solely from regex telemetry.
-- Artifacts without non-VT malicious indications are visible immediately while
-  Codex runs. Artifacts with non-VT malicious indications stay hidden/blocked
-  until Codex returns; Codex malicious verdicts hide/block.
+- Artifacts remain visible while Codex runs unless another non-scanner moderation
+  hold applies. Codex malicious verdicts hide/block.
 - Plugins under `@openclaw/*` owned by the OpenClaw publisher are trusted by
   default. They may still be audited, but scanner telemetry alone must not
   downgrade them.
 - Operators can schedule targeted ClawScan rescans for suspicious skills by bucket
   (`all`, `llm-only`, `vt-only`, `both`) and for suspicious plugin releases.
-- Package/plugin scan backfills now also recompute deterministic static scan results for older releases,
-  so legacy plugin versions can surface OpenClaw scan findings without republishing.
+- Package/plugin scan backfills may recompute deterministic static scan results for older releases,
+  but those results remain ClawScan context and are not public trust status.
 - ClawPack package releases keep static/LLM scan inputs intentionally metadata-only for now:
   `package.json`, `openclaw.plugin.json`, package/source metadata, and release facts. VirusTotal
   scans the exact uploaded `.tgz`; ClawHub does not currently run deep static/LLM scans across every
@@ -148,10 +154,10 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Packages cache VirusTotal undetected-only engine results as clean VT telemetry.
   ClawHub does not request or consume VirusTotal AI/code-insight results; VT is
   engine/vendor telemetry only.
-- Skill moderation state stores a structured snapshot:
+- Skill moderation state stores a structured ClawScan moderation snapshot:
   - `moderationVerdict`: `clean | suspicious | malicious`
   - `moderationReasonCodes[]`: canonical machine-readable reasons
-  - `moderationEvidence[]`: capped file/line evidence for static findings
+  - `moderationEvidence[]`: capped file/line evidence when ClawScan produces it
   - `moderationSummary`, engine version, evaluation timestamp, source version id
 - Structured moderation is rebuilt from current signals instead of appending stale scanner codes.
 - Legacy moderation flags remain in sync for existing public visibility and suspicious-skill filtering:
@@ -167,11 +173,9 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   - Basic Auth/base64 credential encoding and provider-response base64 decoding are normal integration behavior.
   - scoped uninstall cleanup under a skill-owned `.openclaw` path is not a destructive-delete finding unless it deletes a broad/protected path or hides impact.
   - stealth/anti-detection browser automation becomes malicious only when paired with bot-protection bypass and persistent sessions.
-- Static malware detection now hard-blocks install prompts that tell users to paste obfuscated shell payloads
-  (for example base64-decoded `curl|bash` terminal commands). When triggered:
-  - the uploaded skill is hidden immediately
-  - the uploader is placed into manual moderation
-  - all owned skills are hidden until moderator review
+- Static malware detection still records deterministic findings such as
+  obfuscated shell payload prompts, but those findings are context for ClawScan,
+  not a standalone hard block or uploader moderation trigger.
 
 ## AI comment scam backfill
 

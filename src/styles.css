@@ -128,6 +128,9 @@
   --status-warning-fg: #fbbf24;
   --status-error-bg: rgba(239, 68, 68, 0.12);
   --status-error-fg: #ef4444;
+  --official-bg: rgba(59, 130, 246, 0.14);
+  --official-fg: #60a5fa;
+  --official-border: rgba(96, 165, 250, 0.3);
 
   /* Form controls — crisp, modern */
   --input-border: rgba(255, 255, 255, 0.1);
@@ -214,6 +217,9 @@
   --status-warning-fg: #d97706;
   --status-error-bg: rgba(239, 68, 68, 0.1);
   --status-error-fg: #dc2626;
+  --official-bg: rgba(37, 99, 235, 0.1);
+  --official-fg: #2563eb;
+  --official-border: rgba(37, 99, 235, 0.26);
 
   /* Form controls — light */
   --input-border: rgba(0, 0, 0, 0.12);
@@ -1386,6 +1392,129 @@ code {
   flex-wrap: wrap;
   gap: 8px;
   min-width: 0;
+}
+
+.skillspector-attribution {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-soft);
+  font-size: 0.72rem;
+  font-weight: 650;
+  line-height: 1;
+  text-transform: none;
+}
+
+.skillspector-nvidia-mark {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+  border-radius: 3px;
+}
+
+.skillspector-findings-block {
+  display: grid;
+  gap: 18px;
+}
+
+.skillspector-checks {
+  display: grid;
+  gap: 10px;
+  margin-top: 28px;
+}
+
+.skillspector-findings-block + .skillspector-checks {
+  margin-top: 44px;
+}
+
+.skillspector-checks + .skillspector-findings-block {
+  margin-top: 44px;
+}
+
+.skillspector-subsection-title {
+  color: var(--ink);
+  font-size: 1.1rem;
+  font-weight: 720;
+  line-height: 1.25;
+}
+
+.skillspector-checks-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.skillspector-check-row {
+  display: grid;
+  align-items: center;
+  grid-template-columns: 24px minmax(170px, max-content) minmax(0, 1fr);
+  gap: 10px 14px;
+  padding: 8px 0;
+}
+
+.skillspector-check-row-flagged .skillspector-check-category {
+  color: var(--ink);
+}
+
+.skillspector-check-icon {
+  width: 18px;
+  height: 18px;
+  align-self: center;
+  color: var(--status-success-fg);
+  stroke-width: 2.2;
+}
+
+.skillspector-check-icon-flagged {
+  color: var(--status-warning-fg);
+}
+
+.skillspector-check-icon-unknown {
+  color: var(--ink-soft);
+}
+
+.skillspector-check-category {
+  color: var(--ink);
+  font-size: 0.95rem;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.skillspector-check-patterns {
+  color: var(--ink-soft);
+  font-size: 0.95rem;
+  line-height: 1.35;
+}
+
+.skillspector-checks-toggle {
+  width: fit-content;
+  border: 0;
+  background: transparent;
+  padding: 4px 0;
+  color: var(--ink);
+  font-size: 0.88rem;
+  font-weight: 700;
+  line-height: 1.3;
+  cursor: pointer;
+}
+
+.skillspector-checks-toggle:hover,
+.skillspector-checks-toggle:focus-visible {
+  color: var(--accent);
+  outline: none;
+}
+
+@media (max-width: 720px) {
+  .skillspector-check-row {
+    align-items: center;
+    grid-template-columns: 24px minmax(0, 1fr);
+    gap: 4px 12px;
+  }
+
+  .skillspector-check-patterns {
+    grid-column: 2;
+  }
 }
 
 .security-report-title-info-link {
@@ -4036,6 +4165,13 @@ code {
   display: grid;
   gap: 66px;
   min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.skill-hero-main-extra > * {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .skill-hero-action-grid {
@@ -4419,19 +4555,19 @@ code {
 }
 
 .security-audit-meter[data-level="1"] span:first-child {
-  background: #79e68e;
+  background: #ef7777;
 }
 
 .security-audit-meter[data-level="2"] span:nth-child(-n + 2) {
-  background: #6aa9ff;
-}
-
-.security-audit-meter[data-level="3"] span:nth-child(-n + 3) {
   background: #f1b85a;
 }
 
+.security-audit-meter[data-level="3"] span:nth-child(-n + 3) {
+  background: #6aa9ff;
+}
+
 .security-audit-meter[data-level="4"] span {
-  background: #ef7777;
+  background: #79e68e;
 }
 
 .publisher-clawscan-note {
@@ -4623,6 +4759,30 @@ code {
   gap: 8px;
 }
 
+.security-audit-version-stack {
+  display: grid;
+  justify-items: start;
+  gap: 16px;
+  width: 100%;
+}
+
+.security-audit-rescan-button {
+  margin-top: 4px;
+}
+
+.security-audit-rescan-icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+}
+
+.security-audit-rescan-error {
+  color: var(--danger);
+  font-size: 0.78rem;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
 .skill-action-count {
   display: inline-flex;
   align-items: center;
@@ -4668,17 +4828,29 @@ code {
   align-items: center;
 }
 
-.verified-badge {
-  color: var(--ink-soft);
+.official-badge-icon {
+  color: currentColor;
 }
 
-.verified-badge-icon {
-  color: #6aa9ff;
+.official-badge {
+  flex: 0 0 auto;
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  background: var(--official-bg);
+  color: var(--official-fg);
+  border-color: var(--official-border);
+  line-height: 1;
+  vertical-align: middle;
 }
 
-.skill-list-item-main .verified-badge {
-  padding-block: 0;
-  line-height: 1.35;
+.official-badge svg {
+  width: 12px;
+  height: 12px;
 }
 
 .skill-hero-scan-row {
@@ -4956,7 +5128,10 @@ code {
   position: relative;
   display: grid;
   width: 100%;
+  max-width: 100%;
   min-width: 0;
+  box-sizing: border-box;
+  overflow: hidden;
   border-radius: var(--radius-md);
   border: 1px solid var(--line);
   background: var(--surface-muted);
@@ -5809,6 +5984,29 @@ code {
 .tab-body .markdown {
   font-size: 1.05rem;
   line-height: 1.75;
+}
+
+.skill-card-info-callout {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--surface-muted) 64%, transparent);
+  color: var(--ink-soft);
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+}
+
+.skill-card-info-callout a {
+  color: var(--ink);
+  font-weight: 650;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.skill-card-info-callout a:hover,
+.skill-card-info-callout a:focus-visible {
+  color: var(--accent-deep);
 }
 
 .file-list {
@@ -8074,10 +8272,6 @@ code {
   font-style: italic;
 }
 
-.scan-result-risk {
-  justify-self: end;
-}
-
 /* LLM Analysis Detail */
 .analysis-detail {
   margin-top: 10px;
@@ -8564,40 +8758,6 @@ a.agentic-risk-finding-title:focus-visible {
   }
 }
 
-.scan-risk-level-badge {
-  width: fit-content;
-  max-width: 100%;
-  gap: 8px;
-  padding: 0.25rem 0.55rem;
-  font-family: var(--font-mono);
-  font-size: 0.78rem;
-  font-weight: 500;
-  line-height: 1.2;
-  overflow-wrap: normal;
-}
-
-.scan-risk-level-bars {
-  display: inline-grid;
-  grid-template-columns: repeat(3, 3px);
-  gap: 3px;
-  align-items: center;
-  height: 10px;
-}
-
-.scan-risk-level-bars span {
-  display: block;
-  width: 3px;
-  height: 10px;
-  border-radius: 999px;
-  background: color-mix(in srgb, currentColor 22%, transparent);
-}
-
-.scan-risk-level-badge[data-level="1"] .scan-risk-level-bars span:nth-child(-n + 1),
-.scan-risk-level-badge[data-level="2"] .scan-risk-level-bars span:nth-child(-n + 2),
-.scan-risk-level-badge[data-level="3"] .scan-risk-level-bars span:nth-child(-n + 3) {
-  background: currentColor;
-}
-
 .agentic-risk-impact span,
 .agentic-risk-recommendation span {
   font-size: 0.68rem;
@@ -8807,8 +8967,7 @@ a.agentic-risk-finding-title:focus-visible {
     gap: 6px 10px;
   }
 
-  .scan-result-link,
-  .scan-result-risk {
+  .scan-result-link {
     grid-column: 1 / -1;
     justify-self: start;
   }
@@ -10147,7 +10306,7 @@ a.agentic-risk-finding-title:focus-visible {
 .audits-table-row {
   display: grid;
   grid-template-columns:
-    minmax(460px, 1.9fr) minmax(132px, 0.55fr) minmax(132px, 0.55fr) minmax(132px, 0.55fr)
+    minmax(460px, 1.9fr) minmax(132px, 0.55fr) minmax(132px, 0.55fr)
     minmax(108px, 0.35fr);
   column-gap: 32px;
   row-gap: 16px;
@@ -10173,8 +10332,7 @@ a.agentic-risk-finding-title:focus-visible {
 }
 
 .audits-table-head > div:nth-child(2),
-.audits-table-head > div:nth-child(3),
-.audits-table-head > div:nth-child(4) {
+.audits-table-head > div:nth-child(3) {
   text-align: right;
 }
 
@@ -10335,10 +10493,6 @@ a.agentic-risk-finding-title:focus-visible {
   }
 
   .audits-table-row > .audits-signal-cell:nth-child(3)::before {
-    content: "Static analysis";
-  }
-
-  .audits-table-row > .audits-signal-cell:nth-child(4)::before {
     content: "VirusTotal";
   }
 
@@ -11255,11 +11409,12 @@ a.search-empty-action {
   min-width: 0;
   margin: 0;
   overflow: hidden;
+  padding-block: 0.08em 0.14em;
   color: var(--ink);
   font-size: clamp(1.55rem, 2.45vw, 2.15rem);
   font-weight: 800;
   letter-spacing: 0;
-  line-height: 1.05;
+  line-height: 1.18;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -11475,6 +11630,20 @@ a.publisher-profile-detail:hover {
   font-weight: 700;
 }
 
+.publisher-profile-org-name {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.publisher-profile-org-name-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .publisher-profile-org small {
   color: var(--ink-soft);
   font-size: var(--fs-xs);
@@ -11539,13 +11708,20 @@ a.publisher-profile-detail:hover {
   text-decoration: none;
 }
 
-.publisher-profile-member span {
+.publisher-profile-member-copy {
   min-width: 0;
   display: grid;
   gap: 2px;
 }
 
-.publisher-profile-member strong,
+.publisher-profile-member-name {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.publisher-profile-member-name-text,
 .publisher-profile-member small {
   overflow: hidden;
   text-overflow: ellipsis;

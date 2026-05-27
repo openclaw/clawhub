@@ -30,7 +30,7 @@ import {
   cmdSetRole,
   cmdUnbanUser,
 } from "./commands/moderation.js";
-import { cmdCreateOrg } from "./commands/orgs.js";
+import { cmdCreateOrg, cmdRemoveOrgMember, cmdRepairScopedPackages } from "./commands/orgs.js";
 import {
   cmdBackfillPackageArtifacts,
   cmdDeletePackageTrustedPublisher,
@@ -351,12 +351,40 @@ function registerOrgCommands(command: Command) {
     .argument("<handle>", "Org publisher handle")
     .option("--display-name <name>", "Display name")
     .option("--member <handle>", "User handle to add to the org")
-    .option("--role <role>", "owner|admin|publisher for --member", "admin")
+    .option("--role <role>", "owner|admin|publisher for --member", "owner")
     .option("--trusted", "Mark org as trusted")
     .option("--json", "Output JSON")
     .action(async (handle, options) => {
       const opts = await resolveGlobalOpts();
       await cmdCreateOrg(opts, handle, options);
+    });
+
+  command
+    .command("remove-member")
+    .description("Remove a user from an org publisher")
+    .argument("<handle>", "Org publisher handle")
+    .argument("<member>", "User handle to remove")
+    .option("--json", "Output JSON")
+    .action(async (handle, member, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdRemoveOrgMember(opts, handle, member, options);
+    });
+
+  command
+    .command("repair-scoped-packages")
+    .description("Batch-create org publishers and transfer scoped packages from a CSV")
+    .argument("<csv>", "CSV with packageName,intendedOrg,legacyOwner[,orgDisplayName]")
+    .option("--apply", "Write changes; defaults to dry-run")
+    .option("--start <n>", "Start at zero-based CSV row offset", (value) =>
+      Number.parseInt(value, 10),
+    )
+    .option("--limit <n>", "Limit rows processed", (value) => Number.parseInt(value, 10))
+    .option("--reason <reason>", "Override audit reason for all rows")
+    .option("--result-file <path>", "Write JSON result report")
+    .option("--json", "Output JSON")
+    .action(async (csv, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdRepairScopedPackages(opts, csv, options);
     });
 }
 

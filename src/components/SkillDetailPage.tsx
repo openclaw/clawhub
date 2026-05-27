@@ -11,12 +11,14 @@ import { getUserFacingAuthError } from "../lib/authErrorMessage";
 import { getSkillCategoryForSkill } from "../lib/categories";
 import { getUserFacingConvexError } from "../lib/convexError";
 import { canManageSkill, isModerator } from "../lib/roles";
+import { skillCardLoadKey } from "../lib/skillCards";
 import type { SkillBySlugResult, SkillPageInitialData } from "../lib/skillPage";
 import { clearAuthError, setAuthError } from "../lib/useAuthError";
 import { useAuthStatus } from "../lib/useAuthStatus";
 import { ClientOnly } from "./ClientOnly";
 import { DetailBody, DetailPageShell } from "./DetailPageShell";
 import { DetailSecuritySummary } from "./DetailSecuritySummary";
+import { GenericNotFoundPage } from "./GenericNotFoundPage";
 import { SkillDetailSkeleton } from "./skeletons/SkillDetailSkeleton";
 import { SkillCommentsPanel } from "./SkillCommentsPanel";
 import { SkillDetailTabs, type DetailTab } from "./SkillDetailTabs";
@@ -44,12 +46,16 @@ type SkillDetailPageProps = {
 };
 
 type SkillFile = Doc<"skillVersions">["files"][number];
+type SkillDetailVersion = NonNullable<NonNullable<SkillBySlugResult>["latestVersion"]> & {
+  generatedSkillCard?: SkillFile | null;
+};
 
 const SHOW_SKILL_COMMENTS = false;
 
 function tabFromHash(hash: string): DetailTab {
   const normalized = hash.replace(/^#/, "").toLowerCase();
   if (normalized === "files") return "files";
+  if (normalized === "skill-card" || normalized === "card") return "skill-card";
   if (normalized === "compare") return "compare";
   if (normalized === "versions") return "versions";
   if (
@@ -183,6 +189,7 @@ export function SkillDetailPage({
     api.skills.updateLatestClawScanNoteAndRequestRescan,
   );
   const getReadme = useAction(api.skills.getReadme);
+  const getSkillCard = useAction(api.skills.getSkillCard);
   const myPublishers = useQuery(api.publishers.listMine) as
     | Array<{ publisher: { _id: Id<"publishers"> }; role: string }>
     | undefined;
@@ -192,6 +199,9 @@ export function SkillDetailPage({
   const [loadedReadmeVersionId, setLoadedReadmeVersionId] = useState<Id<"skillVersions"> | null>(
     initialResult?.latestVersion?._id ?? null,
   );
+  const [skillCard, setSkillCard] = useState<string | null>(null);
+  const [skillCardError, setSkillCardError] = useState<string | null>(null);
+  const [loadedSkillCardKey, setLoadedSkillCardKey] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<DetailTab>("readme");
   const [shouldPrefetchCompare, setShouldPrefetchCompare] = useState(false);
   const [isReportDialogOpen, setIsReportDialogOpen] = useState(false);
@@ -209,7 +219,7 @@ export function SkillDetailPage({
   const isLoadingSkill = isStaff ? staffResult === undefined : result === undefined;
   const skill = result?.skill;
   const owner = result?.owner ?? null;
-  const latestVersion = result?.latestVersion ?? null;
+  const latestVersion = (result?.latestVersion ?? null) as SkillDetailVersion | null;
   const relatedCategory = useMemo(() => (skill ? getSkillCategoryForSkill(skill) : null), [skill]);
   const shouldLoadRelatedSkills = Boolean(
     skill && relatedCategory && relatedCategory.keywords.length > 0,
@@ -380,6 +390,15 @@ export function SkillDetailPage({
     return stripFrontmatter(readme);
   }, [readme]);
   const latestFiles: SkillFile[] = latestVersion?.files ?? [];
+  const skillCardFile = useMemo(
+    () => latestVersion?.generatedSkillCard ?? null,
+    [latestVersion?.generatedSkillCard],
+  );
+  const hasSkillCard = Boolean(skillCardFile);
+  const currentSkillCardKey = useMemo(
+    () => skillCardLoadKey(latestVersionId, skillCardFile),
+    [latestVersionId, skillCardFile],
+  );
 
   useEffect(() => {
     if (!wantsCanonicalRedirect || !ownerParam || !redirectSlug) return;
@@ -417,12 +436,17 @@ export function SkillDetailPage({
   const validTabIds = useMemo<Set<DetailTab>>(() => {
     const installTabs = buildSkillInstallTabs({ clawdis, osLabels });
     const baseTabs: DetailTab[] = ["readme", "files", "versions"];
+    if (hasSkillCard) baseTabs.splice(1, 0, "skill-card");
     if ((versions?.length ?? 0) > 1) baseTabs.push("compare");
     return new Set([...baseTabs, ...installTabs.map((t) => t.id)]);
-  }, [clawdis, osLabels, versions]);
+  }, [clawdis, hasSkillCard, osLabels, versions]);
 
   useEffect(() => {
-    setActiveTab((prev) => (validTabIds.has(prev) ? prev : "readme"));
+    setActiveTab((prev) => {
+      const hashTab = typeof window === "undefined" ? "readme" : tabFromHash(window.location.hash);
+      if (hashTab !== "readme" && validTabIds.has(hashTab)) return hashTab;
+      return validTabIds.has(prev) ? prev : "readme";
+    });
   }, [validTabIds]);
 
   useEffect(() => {
@@ -453,6 +477,54 @@ export function SkillDetailPage({
       cancelled = true;
     };
   }, [getReadme, latestVersionId, loadedReadmeVersionId, readme, readmeError]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!latestVersionId || !hasSkillCard || !currentSkillCardKey) {
+      setSkillCard(null);
+      setSkillCardError(null);
+      setLoadedSkillCardKey(currentSkillCardKey);
+      return () => {
+        cancelled = true;
+      };
+    }
+    if (
+      loadedSkillCardKey === currentSkillCardKey &&
+      (skillCard !== null || skillCardError !== null)
+    ) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setSkillCard(null);
+    setSkillCardError(null);
+    setLoadedSkillCardKey(currentSkillCardKey);
+    void getSkillCard({ versionId: latestVersionId })
+      .then((data) => {
+        if (cancelled) return;
+        setSkillCard(data.text);
+        setLoadedSkillCardKey(currentSkillCardKey);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setSkillCardError(error instanceof Error ? error.message : "Failed to load Skill Card");
+        setSkillCard(null);
+        setLoadedSkillCardKey(currentSkillCardKey);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    getSkillCard,
+    currentSkillCardKey,
+    hasSkillCard,
+    latestVersionId,
+    loadedSkillCardKey,
+    skillCard,
+    skillCardError,
+  ]);
 
   useEffect(() => {
     if (!skill || !activeOptimisticStar) return;
@@ -585,11 +657,7 @@ export function SkillDetailPage({
   }
 
   if (result === null || !skill || !displayedSkill) {
-    return (
-      <main className="section detail-page-section">
-        <Card>Skill not found.</Card>
-      </main>
-    );
+    return <GenericNotFoundPage />;
   }
 
   const securitySummary = latestVersion ? (
@@ -599,7 +667,6 @@ export function SkillDetailPage({
       )}/security-audit`}
       vtAnalysis={latestVersion.vtAnalysis ?? null}
       llmAnalysis={latestVersion.llmAnalysis ?? null}
-      staticScan={latestVersion.staticScan ?? null}
       suppressScanResults={suppressVersionScanResults}
     />
   ) : null;
@@ -714,6 +781,9 @@ export function SkillDetailPage({
             onCompareIntent={() => setShouldPrefetchCompare(true)}
             readmeContent={readmeContent}
             readmeError={readmeError}
+            skillCardContent={skillCard}
+            skillCardError={skillCardError}
+            hasSkillCard={hasSkillCard}
             latestFiles={latestFiles}
             latestVersionId={latestVersion?._id ?? null}
             skill={skill as Doc<"skills">}

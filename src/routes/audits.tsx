@@ -8,7 +8,6 @@ import {
   getVirusTotalDisplayStatus,
   ScanResultBadge,
   type LlmAnalysis,
-  type StaticFinding,
   type VtAnalysis,
 } from "../components/SkillSecurityScanResults";
 import { convexHttp } from "../convex/client";
@@ -21,15 +20,6 @@ import { formatCompactStat } from "../lib/numberFormat";
 
 type AuditTarget = "skills" | "plugins";
 type AuditFeedStatus = "loading" | "idle" | "loadingMore" | "done";
-
-type StaticScan = {
-  status: string;
-  reasonCodes: string[];
-  findings: StaticFinding[];
-  summary: string;
-  engineVersion: string;
-  checkedAt: number;
-};
 
 type SkillAuditRow = {
   kind: "skill";
@@ -49,7 +39,6 @@ type SkillAuditRow = {
     version: string;
     vtAnalysis?: VtAnalysis | null;
     llmAnalysis?: LlmAnalysis | null;
-    staticScan?: StaticScan | null;
   } | null;
 };
 
@@ -76,7 +65,6 @@ type PluginAuditRow = {
     version: string;
     vtAnalysis?: VtAnalysis | null;
     llmAnalysis?: LlmAnalysis | null;
-    staticScan?: StaticScan | null;
   } | null;
 };
 
@@ -192,14 +180,6 @@ function useAuditFeed(type: AuditTarget) {
   };
 }
 
-function staticScanStatus(staticScan?: StaticScan | null) {
-  const status = staticScan?.status?.trim().toLowerCase();
-  if (status === "malicious") return "malicious";
-  if (status === "suspicious") return "review";
-  if (status === "clean" || status === "benign") return "benign";
-  return status || "pending";
-}
-
 function itemHref(row: AuditRow) {
   if (row.kind === "plugin") return `/plugins/${encodeURIComponent(row.package.name)}`;
   const owner = row.ownerHandle?.trim() || "unknown";
@@ -266,7 +246,6 @@ function AuditsPage() {
           <div className="audits-table-row audits-table-head" role="row">
             <div role="columnheader">{itemColumnLabel}</div>
             <div role="columnheader">ClawScan</div>
-            <div role="columnheader">Static analysis</div>
             <div role="columnheader">VirusTotal</div>
             <div role="columnheader" className="audits-downloads-header">
               Downloads
@@ -297,7 +276,6 @@ function AuditTableRow({ row }: { row: AuditRow }) {
   const latest = row.kind === "plugin" ? row.latestRelease : row.latestVersion;
   const clawScanStatus = getClawScanDisplayStatus(latest?.llmAnalysis ?? null);
   const vtStatus = getVirusTotalDisplayStatus(latest?.vtAnalysis ?? null);
-  const staticStatus = staticScanStatus(latest?.staticScan ?? null);
   const ownerHandle = row.kind === "plugin" ? row.package.ownerHandle : row.ownerHandle;
   const displayName = row.kind === "plugin" ? row.package.displayName : row.skill.displayName;
   const summary = row.kind === "plugin" ? row.package.summary : row.skill.summary;
@@ -316,7 +294,6 @@ function AuditTableRow({ row }: { row: AuditRow }) {
         </div>
       </div>
       <AuditSignalCell status={clawScanStatus} />
-      <AuditSignalCell status={staticStatus} />
       <AuditSignalCell status={vtStatus} />
       <div role="cell" className="audits-downloads-cell">
         {formatCompactStat(downloadsForRow(row))}
@@ -343,7 +320,6 @@ function AuditSkeletonRows({ count = 6 }: { count?: number }) {
             <span className="audits-skeleton-icon" />
             <span className="audits-skeleton-copy" />
           </div>
-          <span className="audits-skeleton-pill" />
           <span className="audits-skeleton-pill" />
           <span className="audits-skeleton-pill" />
           <span className="audits-skeleton-stat" />

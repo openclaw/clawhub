@@ -260,6 +260,122 @@ describe("devSeed local fixtures", () => {
     expect(tables.packages?.every((pkg) => pkg.ownerUserId === userId)).toBe(true);
   });
 
+  it("retires legacy @local-owner seed publishers so dev-auth users can claim the handle", async () => {
+    const { db, tables } = createDb();
+    const legacyUserId = (await db.insert("users", {
+      handle: "Local Owner",
+      displayName: "Local Owner",
+      role: "user",
+      createdAt: 1,
+      updatedAt: 1,
+    })) as Id<"users">;
+    const legacyPublisherId = (await db.insert("publishers", {
+      kind: "user",
+      handle: "local-owner",
+      displayName: "Local Owner",
+      linkedUserId: legacyUserId,
+      createdAt: 1,
+      updatedAt: 1,
+    })) as Id<"publishers">;
+    await db.patch(legacyUserId, { personalPublisherId: legacyPublisherId });
+    await db.insert("publisherMembers", {
+      publisherId: legacyPublisherId,
+      userId: legacyUserId,
+      role: "owner",
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    await db.insert("packages", {
+      name: "local-scanned-runtime-plugin",
+      normalizedName: "local-scanned-runtime-plugin",
+      ownerUserId: legacyUserId,
+      ownerPublisherId: legacyPublisherId,
+      softDeletedAt: undefined,
+      createdAt: 1,
+      updatedAt: 1,
+    });
+
+    await seedLocalModerationFixturesHandler(
+      createMutationCtx(db) as never,
+      {
+        flaggedSkillStorageId: "storage:skill",
+        flaggedSkillMd: "# Flagged skill",
+        scannedSkillStorageId: "storage:scanned-skill",
+        scannedSkillMd: "# Scanned skill",
+        flaggedPluginStorageId: "storage:plugin",
+        flaggedPluginReadme: "# Flagged plugin",
+        scannedPluginStorageId: "storage:scanned-plugin",
+        scannedPluginReadme: "# Scanned plugin",
+      } as never,
+    );
+
+    expect(tables.publishers?.some((publisher) => publisher.handle === "local-owner")).toBe(false);
+    expect(tables.publishers).toContainEqual(
+      expect.objectContaining({
+        _id: legacyPublisherId,
+        handle: expect.stringMatching(/^legacy-local-owner-/),
+        deactivatedAt: expect.any(Number),
+        deletedAt: expect.any(Number),
+      }),
+    );
+    expect(
+      tables.packages?.find((pkg) => pkg.name === "local-scanned-runtime-plugin")?.ownerPublisherId,
+    ).not.toBe(legacyPublisherId);
+  });
+
+  it("adopts a legacy @local publisher instead of creating a conflicting seed user", async () => {
+    const { db, tables } = createDb();
+    const legacyUserId = (await db.insert("users", {
+      handle: "Local Owner",
+      displayName: "Local Owner",
+      name: "Local Owner",
+      role: "user",
+      createdAt: 1,
+      updatedAt: 1,
+    })) as Id<"users">;
+    const legacyPublisherId = (await db.insert("publishers", {
+      kind: "user",
+      handle: "local",
+      displayName: "Local Owner",
+      linkedUserId: legacyUserId,
+      createdAt: 1,
+      updatedAt: 1,
+    })) as Id<"publishers">;
+    await db.patch(legacyUserId, { personalPublisherId: legacyPublisherId });
+    await db.insert("publisherMembers", {
+      publisherId: legacyPublisherId,
+      userId: legacyUserId,
+      role: "owner",
+      createdAt: 1,
+      updatedAt: 1,
+    });
+
+    await seedLocalModerationFixturesHandler(
+      createMutationCtx(db) as never,
+      {
+        flaggedSkillStorageId: "storage:skill",
+        flaggedSkillMd: "# Flagged skill",
+        scannedSkillStorageId: "storage:scanned-skill",
+        scannedSkillMd: "# Scanned skill",
+        flaggedPluginStorageId: "storage:plugin",
+        flaggedPluginReadme: "# Flagged plugin",
+        scannedPluginStorageId: "storage:scanned-plugin",
+        scannedPluginReadme: "# Scanned plugin",
+      } as never,
+    );
+
+    expect(tables.users).toHaveLength(1);
+    expect(tables.users?.[0]).toEqual(
+      expect.objectContaining({
+        _id: legacyUserId,
+        handle: "local",
+        role: "admin",
+        personalPublisherId: legacyPublisherId,
+      }),
+    );
+    expect(tables.publishers?.filter((publisher) => publisher.handle === "local")).toHaveLength(1);
+  });
+
   it("resets core skill fixtures without stale badges or embedding maps", async () => {
     const { db, tables } = createDb();
 

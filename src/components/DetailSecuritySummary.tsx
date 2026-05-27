@@ -1,9 +1,5 @@
 import { Info } from "lucide-react";
-import {
-  aggregateAuditVerdict,
-  SECURITY_AUDIT_SUBTEXT,
-  type StaticScanAnalysis,
-} from "./securityAuditModel";
+import { aggregateAuditVerdict, SECURITY_AUDIT_SUBTEXT } from "./securityAuditModel";
 import { getScanStatusInfo, type LlmAnalysis, type VtAnalysis } from "./SkillSecurityScanResults";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 
@@ -11,24 +7,23 @@ type DetailSecuritySummaryProps = {
   auditHref: string;
   vtAnalysis?: VtAnalysis | null;
   llmAnalysis?: LlmAnalysis | null;
-  staticScan?: StaticScanAnalysis | null;
   suppressScanResults?: boolean;
 };
 
 function auditVerdictMeterLevel(status: string) {
   switch (status.toLowerCase()) {
     case "malicious":
-      return 4;
+      return 1;
     case "warn":
     case "warning":
     case "suspicious":
-      return 3;
-    case "review":
       return 2;
+    case "review":
+      return 3;
     case "benign":
     case "clean":
     case "cleared":
-      return 1;
+      return 4;
     default:
       return 0;
   }
@@ -38,13 +33,11 @@ export function DetailSecuritySummary({
   auditHref,
   vtAnalysis,
   llmAnalysis,
-  staticScan,
   suppressScanResults = false,
 }: DetailSecuritySummaryProps) {
   const auditVerdict = aggregateAuditVerdict({
     vtAnalysis,
     llmAnalysis,
-    staticScan,
     suppressScanResults,
   });
   const auditVerdictInfo = getScanStatusInfo(auditVerdict);

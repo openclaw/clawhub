@@ -4,6 +4,17 @@
 
 ### Fixes
 
+- API/CLI: report Skill Card verification with flattened skill/version metadata, ClawScan verdict fields at `security.*`, and supporting scanner evidence under `security.signals`.
+
+## 0.18.0 - 2026-05-25
+
+### Changes
+
+- CLI/API: add Skill Card verification surfaces, including `clawhub skill verify <slug>` JSON output and `--card` Markdown retrieval (#2382).
+- Web/API: surface an "API key required" attribute on skills so listings, cards, and detail views show whether a skill needs an LLM API key, with publish-time inference from skill prompts and metadata (#2353) (thanks @momothemage).
+
+### Fixes
+
 - API: fix `GET /api/v1/skills` pagination so `cursor` advances to the next page instead of repeating the first page for supported non-trending sorts (#2275) (thanks @vyctorbrzezowski, @enerj).
 - Security/API: hide owned package/plugin catalog entries, revoke package publish tokens, and restore only matching ban-hidden packages on user unban (thanks @vyctorbrzezowski).
 

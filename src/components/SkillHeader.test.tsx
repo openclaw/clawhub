@@ -129,6 +129,18 @@ describe("SkillHeader", () => {
     ).toBeTruthy();
   });
 
+  it("shows the Official tag in the title for official owner skills", () => {
+    const { container } = renderHeader({
+      owner: {
+        ...owner,
+        official: true,
+      },
+    });
+
+    expect(screen.getByText("Official")).toBeTruthy();
+    expect(container.querySelector(".official-tag")).toBeTruthy();
+  });
+
   it("shows a New version action for managers above Settings", () => {
     renderHeader({
       canManage: true,

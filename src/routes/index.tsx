@@ -832,7 +832,7 @@ function SkillsHome() {
                 cursor: undefined,
                 family: undefined,
                 featured: true,
-                verified: undefined,
+                official: undefined,
                 executesCode: undefined,
               }}
               className="home-v2-section-link"
@@ -859,7 +859,7 @@ function SkillsHome() {
                 </div>
                 <div className="home-v2-trend-bottom">
                   <div className="home-v2-trend-signals">
-                    {plugin.isOfficial ? <span>Verified</span> : null}
+                    {plugin.isOfficial ? <span>Official</span> : null}
                     {plugin.latestVersion ? <span>v{plugin.latestVersion}</span> : null}
                   </div>
                   <span className="home-v2-trend-install">

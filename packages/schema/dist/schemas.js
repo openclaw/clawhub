@@ -368,6 +368,27 @@ export const ApiV1SkillResolveResponseSchema = type({
     match: type({ version: "string" }).or("null"),
     latestVersion: type({ version: "string" }).or("null"),
 });
+export const ApiV1SkillVerifyResponseSchema = type({
+    schema: '"clawhub.skill.verify.v1"',
+    ok: "boolean",
+    decision: '"pass"|"fail"',
+    reasons: "string[]",
+    slug: "string",
+    displayName: "string",
+    pageUrl: "string",
+    publisherHandle: "string|null",
+    publisherDisplayName: "string|null",
+    publisherProfileUrl: "string|null",
+    version: "string",
+    resolvedFrom: '"latest"|"version"|"tag"',
+    tag: "string|null",
+    createdAt: "number",
+    card: "unknown",
+    artifact: "unknown",
+    provenance: "unknown",
+    security: "unknown",
+    signature: "unknown",
+});
 export const ApiV1PublishResponseSchema = type({
     ok: "true",
     skillId: "string",

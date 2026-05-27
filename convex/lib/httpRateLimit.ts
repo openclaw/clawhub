@@ -11,6 +11,7 @@ export const RATE_LIMITS = {
   write: { ip: 300, key: 3000, adminKey: 30000 },
   trustedPublish: { ip: 3000, key: 12000, adminKey: 120000 },
   download: { ip: 1200, key: 6000, adminKey: 60000 },
+  export: { ip: 10, key: 60, adminKey: 60 },
 } as const;
 
 type RateLimitResult = {

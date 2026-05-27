@@ -2227,7 +2227,7 @@ export const placeUserUnderModerationInternal = internalMutation({
       targetType: "user",
       targetId: args.ownerUserId,
       metadata: {
-        trigger: "static.malicious",
+        trigger: "moderation.hold",
         slug: args.slug,
         reason: args.reason,
         hiddenSkills: hideSkillsResult.hiddenCount ?? 0,

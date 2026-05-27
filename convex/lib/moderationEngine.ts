@@ -1264,18 +1264,6 @@ function scanManifestFile(path: string, content: string, findings: ModerationFin
   }
 }
 
-function dedupeEvidence(evidence: ModerationFinding[]) {
-  const seen = new Set<string>();
-  const out: ModerationFinding[] = [];
-  for (const item of evidence) {
-    const key = `${item.code}:${item.file}:${item.line}:${item.message}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(item);
-  }
-  return out.slice(0, 40);
-}
-
 function normalizedSeverityRank(severity: string | undefined) {
   switch (severity?.trim().toLowerCase()) {
     case "critical":
@@ -1435,12 +1423,8 @@ export function buildModerationSnapshot(params: {
 }): ModerationSnapshot {
   const llmStatus = params.llmStatus ?? params.llmAnalysis?.status;
   const codexStatus = completedCodexStatus(llmStatus, params.llmAnalysis);
-  const staticCodes = codexStatus
-    ? []
-    : (params.staticScan?.reasonCodes ?? []).filter((code) => code.startsWith("malicious."));
-  const evidence = [...(params.staticScan?.findings ?? [])];
 
-  const reasonCodes = [...staticCodes];
+  const reasonCodes: string[] = [];
   addLlmStatusReason(reasonCodes, codexStatus, params.llmAnalysis);
 
   const normalizedCodes = normalizeReasonCodes(reasonCodes);
@@ -1448,7 +1432,7 @@ export function buildModerationSnapshot(params: {
   return {
     verdict,
     reasonCodes: normalizedCodes,
-    evidence: dedupeEvidence(evidence),
+    evidence: [],
     summary: summarizeReasonCodes(normalizedCodes),
     engineVersion: MODERATION_ENGINE_VERSION,
     evaluatedAt: Date.now(),

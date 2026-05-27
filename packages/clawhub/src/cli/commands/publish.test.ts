@@ -90,6 +90,42 @@ describe("cmdPublish", () => {
     }
   });
 
+  it("strips generated Skill Cards before publishing downloaded bundles", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "downloaded-skill");
+      await mkdir(folder, { recursive: true });
+      await writeFile(join(folder, "SKILL.md"), "# Skill\n", "utf8");
+      await writeFile(join(folder, "notes.md"), "notes\n", "utf8");
+      await writeFile(join(folder, "skill-card.md"), "# Generated card\n", "utf8");
+
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        skillId: "skill_1",
+        versionId: "ver_1",
+      });
+
+      await cmdPublish(makeOpts(workdir), "downloaded-skill", {
+        slug: "downloaded-skill",
+        name: "Downloaded Skill",
+        version: "1.0.0",
+        changelog: "",
+        tags: "latest",
+      });
+
+      const publishCall = httpMocks.apiRequestForm.mock.calls.find((call) => {
+        const req = call[1] as { path?: string } | undefined;
+        return req?.path === "/api/v1/skills";
+      });
+      if (!publishCall) throw new Error("Missing publish call");
+      const publishForm = (publishCall[1] as { form?: FormData }).form as FormData;
+      const files = publishForm.getAll("files") as Array<Blob & { name?: string }>;
+      expect(files.map((file) => file.name ?? "").sort()).toEqual(["SKILL.md", "notes.md"]);
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
   it("rejects oversized clawscan notes before uploading skill files", async () => {
     const workdir = await makeTmpWorkdir();
     try {

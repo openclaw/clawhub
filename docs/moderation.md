@@ -25,8 +25,9 @@ See also [Acceptable usage](./acceptable-usage.md).
 
 Signed-in users can report skills, plugins, packages, and comments.
 
-Good reports are specific and actionable. Useful reasons include:
+Use ClawHub reports only for unsafe marketplace content, such as:
 
+- malicious listings
 - misleading metadata
 - undeclared credentials or permission requirements
 - suspicious install instructions
@@ -34,7 +35,21 @@ Good reports are specific and actionable. Useful reasons include:
 - bad-faith registrations or trademark misuse
 - content that violates [Acceptable usage](./acceptable-usage.md)
 
-Abuse of reporting can itself lead to account action.
+Use the **Report skill** button on a skill page, or the package reporting
+command/API for packages.
+
+Do not use ClawHub reports for vulnerabilities in a third-party skill or
+plugin's own source code. Report those directly to the publisher or source
+repository linked from the listing. ClawHub does not maintain or patch
+third-party skill or plugin code.
+
+GitHub Security Advisories for `openclaw/clawhub` are for vulnerabilities in
+ClawHub itself. Examples include bugs in the website, API, CLI, registry, auth,
+scanning, moderation, or download/install trust boundaries. Do not use ClawHub
+advisories for vulnerabilities in third-party skills or plugins.
+
+Good reports are specific and actionable. Abuse of reporting can itself lead to
+account action.
 
 ## Moderation holds
 

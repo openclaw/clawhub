@@ -9,6 +9,7 @@ import {
   listPublishedPage,
   migrateLegacyPublisherHandleToOrgInternal,
   ensureOrgPublisherHandleInternal,
+  removeOrgPublisherMemberInternal,
   createOrg,
   removeMember,
   createOrgPublisherForUserInternal,
@@ -72,6 +73,23 @@ const ensureOrgPublisherHandleInternalHandler = (
       handle: string;
       created: boolean;
       member?: { userId: string; handle: string; role: "owner" | "admin" | "publisher" };
+    }
+  >
+)._handler;
+
+const removeOrgPublisherMemberInternalHandler = (
+  removeOrgPublisherMemberInternal as unknown as WrappedHandler<
+    {
+      actorUserId: string;
+      handle: string;
+      memberHandle: string;
+    },
+    {
+      ok: true;
+      publisherId: string;
+      handle: string;
+      removed: boolean;
+      member: { userId: string; handle: string; role: "owner" | "admin" | "publisher" };
     }
   >
 )._handler;
@@ -274,6 +292,9 @@ describe("publishers membership controls", () => {
               },
             };
             buildQuery(q);
+            if (table === "publishers" && indexName === "by_handle") {
+              return { unique: vi.fn(async () => null) };
+            }
             if (table === "publishers" && indexName === "by_active_total_downloads") {
               return {
                 order: vi.fn(() => ({ collect: vi.fn(async () => publisherRows) })),
@@ -352,6 +373,9 @@ describe("publishers membership controls", () => {
               },
             };
             buildQuery(q);
+            if (table === "publishers" && indexName === "by_handle") {
+              return { unique: vi.fn(async () => null) };
+            }
             if (table === "publishers" && indexName === "by_active_total_downloads") {
               return {
                 order: vi.fn(() => ({ collect: vi.fn(async () => publisherRows) })),
@@ -440,6 +464,9 @@ describe("publishers membership controls", () => {
               },
             };
             buildQuery(q);
+            if (table === "publishers" && indexName === "by_handle") {
+              return { unique: vi.fn(async () => null) };
+            }
             if (table === "publishers" && indexName === "by_active_kind_total_downloads") {
               return {
                 order: vi.fn(() => ({
@@ -577,6 +604,9 @@ describe("publishers membership controls", () => {
               },
             };
             buildQuery(q);
+            if (table === "publishers" && indexName === "by_handle") {
+              return { unique: vi.fn(async () => null) };
+            }
             if (table === "publishers" && indexName === "by_active_total_downloads") {
               return {
                 order: vi.fn(() => ({
@@ -647,6 +677,9 @@ describe("publishers membership controls", () => {
               },
             };
             buildQuery(q);
+            if (table === "publishers" && indexName === "by_handle") {
+              return { unique: vi.fn(async () => null) };
+            }
             if (table === "publishers" && indexName === "by_active_total_downloads") {
               return {
                 order: vi.fn(() => ({
@@ -1490,6 +1523,7 @@ describe("publisher bootstrap", () => {
           if (table === "publishers") {
             return {
               withIndex: vi.fn((indexName: string) => {
+                if (indexName === "by_handle") return { unique: vi.fn().mockResolvedValue(null) };
                 if (indexName !== "by_linked_user") {
                   throw new Error(`unexpected index ${indexName}`);
                 }
@@ -1533,6 +1567,7 @@ describe("publisher bootstrap", () => {
           if (table === "publishers") {
             return {
               withIndex: vi.fn((indexName: string) => {
+                if (indexName === "by_handle") return { unique: vi.fn().mockResolvedValue(null) };
                 if (indexName !== "by_linked_user") {
                   throw new Error(`unexpected index ${indexName}`);
                 }
@@ -1587,6 +1622,7 @@ describe("publisher bootstrap", () => {
           if (table === "publishers") {
             return {
               withIndex: vi.fn((indexName: string) => {
+                if (indexName === "by_handle") return { unique: vi.fn().mockResolvedValue(null) };
                 if (indexName !== "by_linked_user") {
                   throw new Error(`unexpected index ${indexName}`);
                 }
@@ -1998,7 +2034,7 @@ describe("self-serve org publisher creation", () => {
 });
 
 describe("legacy publisher migration", () => {
-  it("lets admins create a missing org publisher and add a legacy package owner as admin", async () => {
+  it("lets admins create a missing org publisher with only the legacy package owner as owner", async () => {
     vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
 
     const users = new Map<string, Record<string, unknown>>([
@@ -2131,7 +2167,7 @@ describe("legacy publisher migration", () => {
         handle: "opik",
         displayName: "Opik",
         memberHandle: "vincentkoc",
-        memberRole: "admin",
+        memberRole: "owner",
       },
     );
 
@@ -2142,25 +2178,237 @@ describe("legacy publisher migration", () => {
       member: {
         userId: "users:vincent",
         handle: "vincentkoc",
-        role: "admin",
+        role: "owner",
       },
     });
-    expect(inserts).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          table: "publishers",
-          value: expect.objectContaining({ kind: "org", handle: "opik", displayName: "Opik" }),
-        }),
-        expect.objectContaining({
-          table: "publisherMembers",
-          value: expect.objectContaining({
-            publisherId: result.publisherId,
-            userId: "users:vincent",
-            role: "admin",
-          }),
-        }),
-      ]),
+    expect(inserts).toContainEqual(
+      expect.objectContaining({
+        table: "publishers",
+        value: expect.objectContaining({ kind: "org", handle: "opik", displayName: "Opik" }),
+      }),
     );
+    const memberInserts = inserts.filter(
+      (entry) =>
+        entry.table === "publisherMembers" && entry.value.publisherId === result.publisherId,
+    );
+    expect(memberInserts).toEqual([
+      expect.objectContaining({
+        value: expect.objectContaining({
+          publisherId: result.publisherId,
+          userId: "users:vincent",
+          role: "owner",
+        }),
+      }),
+    ]);
+  });
+
+  it("lets an admin remove one org owner when another owner remains", async () => {
+    const publisherMembers = [
+      {
+        _id: "publisherMembers:patrick",
+        publisherId: "publishers:opik",
+        userId: "users:patrick",
+        role: "owner",
+      },
+      {
+        _id: "publisherMembers:vincent",
+        publisherId: "publishers:opik",
+        userId: "users:vincent",
+        role: "owner",
+      },
+    ];
+    const deleted: string[] = [];
+    const inserts: Array<{ table: string; value: Record<string, unknown> }> = [];
+    const query = vi.fn((table: string) => {
+      if (table === "users") {
+        return {
+          withIndex: vi.fn(
+            (
+              _indexName: string,
+              builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+            ) => {
+              let handle = "";
+              const q = {
+                eq: (field: string, value: string) => {
+                  if (field === "handle") handle = value;
+                  return q;
+                },
+              };
+              builder?.(q);
+              return {
+                unique: vi.fn(async () =>
+                  handle === "patrick-erichsen-2"
+                    ? { _id: "users:patrick", handle: "patrick-erichsen-2" }
+                    : null,
+                ),
+              };
+            },
+          ),
+        };
+      }
+      if (table === "publishers") {
+        return {
+          withIndex: vi.fn(
+            (
+              _indexName: string,
+              builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+            ) => {
+              let handle = "";
+              const q = {
+                eq: (field: string, value: string) => {
+                  if (field === "handle") handle = value;
+                  return q;
+                },
+              };
+              builder?.(q);
+              return {
+                unique: vi.fn(async () =>
+                  handle === "opik" ? { _id: "publishers:opik", kind: "org", handle } : null,
+                ),
+              };
+            },
+          ),
+        };
+      }
+      if (table === "publisherMembers") {
+        return {
+          withIndex: vi.fn(
+            (
+              indexName: string,
+              builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+            ) => {
+              let publisherId = "";
+              let userId = "";
+              const q = {
+                eq: (field: string, value: string) => {
+                  if (field === "publisherId") publisherId = value;
+                  if (field === "userId") userId = value;
+                  return q;
+                },
+              };
+              builder?.(q);
+              return {
+                unique: vi.fn(async () => {
+                  if (indexName !== "by_publisher_user") return null;
+                  return (
+                    publisherMembers.find(
+                      (member) => member.publisherId === publisherId && member.userId === userId,
+                    ) ?? null
+                  );
+                }),
+                collect: vi.fn(async () =>
+                  publisherMembers.filter((member) => member.publisherId === publisherId),
+                ),
+              };
+            },
+          ),
+        };
+      }
+      throw new Error(`unexpected table ${table}`);
+    });
+
+    const result = await removeOrgPublisherMemberInternalHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) =>
+            id === "users:admin" ? { _id: id, role: "admin" } : null,
+          ),
+          query,
+          insert: vi.fn(async (table: string, value: Record<string, unknown>) => {
+            inserts.push({ table, value });
+            return `${table}:audit`;
+          }),
+          patch: vi.fn(),
+          delete: vi.fn(async (id: string) => {
+            deleted.push(id);
+          }),
+          replace: vi.fn(),
+          normalizeId: vi.fn(),
+        },
+      } as never,
+      {
+        actorUserId: "users:admin",
+        handle: "opik",
+        memberHandle: "patrick-erichsen-2",
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      handle: "opik",
+      removed: true,
+      member: { handle: "patrick-erichsen-2", role: "owner" },
+    });
+    expect(deleted).toEqual(["publisherMembers:patrick"]);
+    expect(inserts).toContainEqual(
+      expect.objectContaining({
+        table: "auditLogs",
+        value: expect.objectContaining({
+          actorUserId: "users:admin",
+          action: "publisher.member.remove",
+          targetId: "publishers:opik",
+        }),
+      }),
+    );
+  });
+
+  it("rejects removing the last org owner", async () => {
+    const publisherMembers = [
+      {
+        _id: "publisherMembers:patrick",
+        publisherId: "publishers:opik",
+        userId: "users:patrick",
+        role: "owner",
+      },
+    ];
+    const query = vi.fn((table: string) => {
+      if (table === "users") {
+        return {
+          withIndex: vi.fn(() => ({
+            unique: vi.fn(async () => ({ _id: "users:patrick", handle: "patrick-erichsen-2" })),
+          })),
+        };
+      }
+      if (table === "publishers") {
+        return {
+          withIndex: vi.fn(() => ({
+            unique: vi.fn(async () => ({ _id: "publishers:opik", kind: "org", handle: "opik" })),
+          })),
+        };
+      }
+      if (table === "publisherMembers") {
+        return {
+          withIndex: vi.fn(() => ({
+            unique: vi.fn(async () => publisherMembers[0]),
+            collect: vi.fn(async () => publisherMembers),
+          })),
+        };
+      }
+      throw new Error(`unexpected table ${table}`);
+    });
+
+    await expect(
+      removeOrgPublisherMemberInternalHandler(
+        {
+          db: {
+            get: vi.fn(async (id: string) =>
+              id === "users:admin" ? { _id: id, role: "admin" } : null,
+            ),
+            query,
+            insert: vi.fn(),
+            patch: vi.fn(),
+            delete: vi.fn(),
+            replace: vi.fn(),
+            normalizeId: vi.fn(),
+          },
+        } as never,
+        {
+          actorUserId: "users:admin",
+          handle: "opik",
+          memberHandle: "patrick-erichsen-2",
+        },
+      ),
+    ).rejects.toThrow("Publisher must have at least one owner");
   });
 
   it("converts a legacy personal publisher into an org and rehomes package ownership", async () => {

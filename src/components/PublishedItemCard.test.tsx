@@ -1,4 +1,4 @@
-import { render } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { PublishedItemCard } from "../routes/user/$handle";
 
@@ -30,6 +30,7 @@ const baseSkill = {
   href: "/alice/test-skill",
   downloads: 42,
   stars: 7,
+  isOfficial: false,
   updatedAt: Date.now(),
 };
 
@@ -41,6 +42,7 @@ const basePlugin = {
   href: "/plugins/test-plugin",
   downloads: 10,
   stars: 2,
+  isOfficial: false,
   updatedAt: Date.now(),
 };
 
@@ -68,6 +70,14 @@ describe("PublishedItemCard", () => {
       render(<PublishedItemCard item={{ ...basePlugin, icon: null }} view="grid" />);
       expect(document.querySelector(".marketplace-icon-glyph")).toBeTruthy();
     });
+
+    it("renders the compact official mark for official published items", () => {
+      render(
+        <PublishedItemCard item={{ ...baseSkill, icon: null, isOfficial: true }} view="grid" />,
+      );
+      expect(screen.getByLabelText("Official")).toBeTruthy();
+      expect(screen.queryByText("Official")).toBeNull();
+    });
   });
 
   describe("list view", () => {
@@ -79,6 +89,14 @@ describe("PublishedItemCard", () => {
     it("falls back to the default kind icon when skill has no custom icon (F7)", () => {
       render(<PublishedItemCard item={{ ...baseSkill, icon: null }} view="list" />);
       expect(document.querySelector(".marketplace-icon-glyph")).toBeTruthy();
+    });
+
+    it("renders the compact official mark for official published rows", () => {
+      render(
+        <PublishedItemCard item={{ ...baseSkill, icon: null, isOfficial: true }} view="list" />,
+      );
+      expect(screen.getByLabelText("Official")).toBeTruthy();
+      expect(screen.queryByText("Official")).toBeNull();
     });
   });
 });

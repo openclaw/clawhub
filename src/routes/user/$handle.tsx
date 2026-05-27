@@ -16,6 +16,7 @@ import { api } from "../../../convex/_generated/api";
 import { EmptyState } from "../../components/EmptyState";
 import { Container } from "../../components/layout/Container";
 import { MarketplaceIcon } from "../../components/MarketplaceIcon";
+import { OfficialBadge, OfficialTag } from "../../components/OfficialBadge";
 import { SkillCardSkeletonGrid } from "../../components/skeletons/SkillCardSkeleton";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -63,6 +64,7 @@ type PublisherMemberResult = {
       handle: string | null;
       displayName: string | null;
       image: string | null;
+      official: boolean;
     };
   }>;
 };
@@ -190,7 +192,8 @@ function PublisherProfile() {
                 <span className="publisher-profile-handle">@{publisher.handle}</span>
                 <div className="publisher-profile-title-row">
                   <h1>{publisher.displayName}</h1>
-                  {publisher.kind === "org" ? <Badge variant="compact">Org</Badge> : null}
+                  {publisher.kind === "org" ? <Badge>Org</Badge> : null}
+                  {publisher.official ? <OfficialTag /> : null}
                   {publisher.kind === "user"
                     ? visibleAffiliations.map((entry) => (
                         <Link
@@ -291,7 +294,12 @@ function PublisherProfile() {
                           size="sm"
                         />
                         <span className="publisher-profile-org-copy">
-                          <strong>{entry.publisher.displayName}</strong>
+                          <strong className="publisher-profile-org-name">
+                            <span className="publisher-profile-org-name-text">
+                              {entry.publisher.displayName}
+                            </span>
+                            {entry.publisher.official ? <OfficialBadge /> : null}
+                          </strong>
                           <small>@{entry.publisher.handle}</small>
                         </span>
                         <span className="publisher-profile-org-role">{entry.role}</span>
@@ -319,8 +327,13 @@ function PublisherProfile() {
                             imageUrl={entry.user.image}
                             size="sm"
                           />
-                          <span>
-                            <strong>{entry.user.displayName ?? entry.user.handle ?? "User"}</strong>
+                          <span className="publisher-profile-member-copy">
+                            <strong className="publisher-profile-member-name">
+                              <span className="publisher-profile-member-name-text">
+                                {entry.user.displayName ?? entry.user.handle ?? "User"}
+                              </span>
+                              {entry.user.official ? <OfficialBadge /> : null}
+                            </strong>
                             {entry.user.handle ? <small>@{entry.user.handle}</small> : null}
                           </span>
                           <span
@@ -545,6 +558,7 @@ export function PublishedItemCard({
             size="md"
           />
           <h3 className="skill-card-title">{item.displayName}</h3>
+          {item.isOfficial ? <OfficialBadge /> : null}
         </div>
         <p className="skill-card-summary">
           {item.summary ?? `${item.kind === "plugin" ? "Plugin" : "Skill"} published on ClawHub.`}
@@ -577,6 +591,7 @@ export function PublishedItemCard({
           <span className="skill-list-item-owner">@{item.kind}</span>
           <span className="skill-list-item-sep">/</span>
           <span className="skill-list-item-name">{item.displayName}</span>
+          {item.isOfficial ? <OfficialBadge /> : null}
         </span>
         {item.summary ? <p className="skill-list-item-summary">{item.summary}</p> : null}
       </div>

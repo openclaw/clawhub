@@ -16,14 +16,6 @@ describe("DetailSecuritySummary", () => {
           guidance: "Install from publishers you trust.",
           checkedAt: 1,
         }}
-        staticScan={{
-          status: "clean",
-          reasonCodes: [],
-          findings: [],
-          summary: "Clean.",
-          engineVersion: "v1",
-          checkedAt: 1,
-        }}
       />,
     );
 
@@ -38,10 +30,9 @@ describe("DetailSecuritySummary", () => {
     expect(screen.queryByText("Install from publishers you trust.")).toBeNull();
     expect(screen.queryByRole("link", { name: /VirusTotal/i })).toBeNull();
     expect(
-      screen.queryByText(
-        "Security checks across static analysis, malware telemetry, and agentic risk",
-      ),
+      screen.queryByText("Security checks across malware telemetry and agentic risk"),
     ).toBeNull();
+    expect(document.querySelector(".security-audit-meter")?.getAttribute("data-level")).toBe("4");
     expect(document.querySelectorAll(".security-audit-meter span")).toHaveLength(4);
   });
 
@@ -51,23 +42,6 @@ describe("DetailSecuritySummary", () => {
         auditHref="/suka233/kmind-markdown-to-mindmap/security-audit"
         vtAnalysis={{ status: "suspicious", verdict: "suspicious", checkedAt: 1 }}
         llmAnalysis={{ status: "suspicious", verdict: "suspicious", checkedAt: 1 }}
-        staticScan={{
-          status: "suspicious",
-          reasonCodes: ["suspicious.dynamic_code_execution"],
-          findings: [
-            {
-              code: "suspicious.dynamic_code_execution",
-              severity: "critical",
-              file: "SKILL.md",
-              line: 1,
-              message: "dynamic execution",
-              evidence: "exec",
-            },
-          ],
-          summary: "Suspicious dynamic execution.",
-          engineVersion: "v2.4.5",
-          checkedAt: 1,
-        }}
         suppressScanResults
       />,
     );
@@ -104,14 +78,6 @@ describe("DetailSecuritySummary", () => {
             },
           ],
         }}
-        staticScan={{
-          status: "clean",
-          reasonCodes: [],
-          findings: [],
-          summary: "Clean.",
-          engineVersion: "v1",
-          checkedAt: 1,
-        }}
       />,
     );
 
@@ -144,14 +110,6 @@ describe("DetailSecuritySummary", () => {
             },
           ],
         }}
-        staticScan={{
-          status: "clean",
-          reasonCodes: [],
-          findings: [],
-          summary: "Clean.",
-          engineVersion: "v1",
-          checkedAt: 1,
-        }}
       />,
     );
 
@@ -165,19 +123,30 @@ describe("DetailSecuritySummary", () => {
         auditHref="/steipete/weather/security-audit"
         vtAnalysis={{ status: "clean", checkedAt: 1 }}
         llmAnalysis={{ status: "clean", summary: "No mismatches found.", checkedAt: 1 }}
-        staticScan={{
-          status: "clean",
-          reasonCodes: [],
-          findings: [],
-          summary: "Clean.",
-          engineVersion: "v1",
-          checkedAt: 1,
-        }}
       />,
     );
 
     expect(screen.getByText("Pass")).toBeTruthy();
     expect(screen.queryByText("Benign")).toBeNull();
+    expect(document.querySelector(".security-audit-meter")?.getAttribute("data-level")).toBe("4");
+  });
+
+  it("renders malicious ClawScan outcomes with the lowest safety meter level", () => {
+    render(
+      <DetailSecuritySummary
+        auditHref="/steipete/weather/security-audit"
+        vtAnalysis={{ status: "clean", checkedAt: 1 }}
+        llmAnalysis={{
+          status: "malicious",
+          verdict: "malicious",
+          summary: "External transfer.",
+          checkedAt: 1,
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Malicious")).toBeTruthy();
+    expect(document.querySelector(".security-audit-meter")?.getAttribute("data-level")).toBe("1");
   });
 
   it("keeps legacy non-engine VirusTotal fields neutral in the aggregate verdict", () => {
@@ -192,14 +161,6 @@ describe("DetailSecuritySummary", () => {
           checkedAt: 1,
         }}
         llmAnalysis={{ status: "clean", summary: "No ClawScan issues.", checkedAt: 1 }}
-        staticScan={{
-          status: "clean",
-          reasonCodes: [],
-          findings: [],
-          summary: "Clean.",
-          engineVersion: "v1",
-          checkedAt: 1,
-        }}
       />,
     );
 
@@ -220,14 +181,6 @@ describe("DetailSecuritySummary", () => {
           checkedAt: 1,
         }}
         llmAnalysis={{ status: "clean", checkedAt: 1 }}
-        staticScan={{
-          status: "clean",
-          reasonCodes: [],
-          findings: [],
-          summary: "Clean.",
-          engineVersion: "v1",
-          checkedAt: 1,
-        }}
       />,
     );
 
@@ -248,14 +201,6 @@ describe("DetailSecuritySummary", () => {
           checkedAt: 1,
         }}
         llmAnalysis={{ status: "clean", checkedAt: 1 }}
-        staticScan={{
-          status: "clean",
-          reasonCodes: [],
-          findings: [],
-          summary: "Clean.",
-          engineVersion: "v1",
-          checkedAt: 1,
-        }}
       />,
     );
 
@@ -263,45 +208,31 @@ describe("DetailSecuritySummary", () => {
     expect(screen.queryByText("undetected-only-fallback")).toBeNull();
   });
 
-  it("shows static suspicious as review without rolling it up to suspicious", () => {
+  it("keeps ClawScan clean summaries passing while static findings remain internal", () => {
     render(
       <DetailSecuritySummary
         auditHref="/steipete/weather/security-audit"
         vtAnalysis={{ status: "clean", checkedAt: 1 }}
         llmAnalysis={{ status: "clean", checkedAt: 1 }}
-        staticScan={{
-          status: "suspicious",
-          reasonCodes: ["suspicious.network_access"],
-          findings: [],
-          summary: "Static advisory finding.",
-          engineVersion: "v1",
-          checkedAt: 1,
-        }}
       />,
     );
 
-    expect(screen.getByText("Review")).toBeTruthy();
+    expect(screen.getByText("Pass")).toBeTruthy();
+    expect(screen.queryByText("Review")).toBeNull();
     expect(screen.queryByText("Warn")).toBeNull();
   });
 
-  it("does not aggregate scanner operational errors as malicious verdicts", () => {
+  it("does not let supporting scanner operational errors drive the compact verdict", () => {
     render(
       <DetailSecuritySummary
         auditHref="/steipete/weather/security-audit"
         vtAnalysis={{ status: "failed", checkedAt: 1 }}
         llmAnalysis={{ status: "clean", summary: "No ClawScan issues.", checkedAt: 1 }}
-        staticScan={{
-          status: "clean",
-          reasonCodes: [],
-          findings: [],
-          summary: "Clean.",
-          engineVersion: "v1",
-          checkedAt: 1,
-        }}
       />,
     );
 
-    expect(screen.getByText("Error")).toBeTruthy();
+    expect(screen.getByText("Pass")).toBeTruthy();
+    expect(screen.queryByText("Error")).toBeNull();
     expect(screen.queryByText("Malicious")).toBeNull();
   });
 });

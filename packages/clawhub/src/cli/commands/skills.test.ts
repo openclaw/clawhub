@@ -504,6 +504,40 @@ describe("cmdUpdate", () => {
       fingerprint: "hash",
     });
   });
+
+  it("treats an installed bundle fingerprint that includes skill-card.md as synced", async () => {
+    mockApiRequest
+      .mockResolvedValueOnce({
+        latestVersion: { version: "1.0.0" },
+        moderation: null,
+      })
+      .mockResolvedValueOnce({
+        match: { version: "1.0.0" },
+        latestVersion: { version: "1.0.0" },
+      });
+    vi.mocked(readLockfile).mockResolvedValue({
+      version: 1,
+      skills: { demo: { version: "1.0.0", installedAt: 123 } },
+    });
+    vi.mocked(readSkillOrigin).mockResolvedValue(null);
+    vi.mocked(listTextFiles).mockResolvedValue([
+      { relPath: "SKILL.md", bytes: new Uint8Array([1]) },
+      { relPath: "skill-card.md", bytes: new Uint8Array([2]) },
+    ]);
+    vi.mocked(hashSkillFiles).mockReturnValue({ fingerprint: "bundle-fingerprint", files: [] });
+    vi.mocked(stat).mockResolvedValue({} as unknown as Awaited<ReturnType<typeof stat>>);
+
+    await cmdUpdate(makeOpts(), "demo", {}, false);
+
+    const [, resolveArgs] = mockApiRequest.mock.calls[1] ?? [];
+    const url = new URL(String(resolveArgs?.url));
+    expect(url.pathname).toBe(ApiRoutes.resolve);
+    expect(url.searchParams.get("slug")).toBe("demo");
+    expect(url.searchParams.get("hash")).toBe("bundle-fingerprint");
+    expect(mockDownloadZip).not.toHaveBeenCalled();
+    expect(rm).not.toHaveBeenCalled();
+    expect(mockSpinner.succeed).toHaveBeenCalledWith("demo: up to date (1.0.0)");
+  });
 });
 
 describe("pin commands", () => {
