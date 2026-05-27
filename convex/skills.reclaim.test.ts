@@ -195,4 +195,56 @@ describe("skills reclaim ownership transfer", () => {
     expect(runAfter).not.toHaveBeenCalled();
     expect(patch).not.toHaveBeenCalled();
   });
+
+  it("rejects transferRootSlugOnly ownership moves for moderated skills", async () => {
+    const patch = vi.fn(async () => {});
+    const insert = vi.fn(async () => {});
+    const runAfter = vi.fn(async () => {});
+
+    const existingSkill = {
+      _id: "skills:1",
+      slug: "blocked-skill",
+      ownerUserId: "users:old",
+      moderationStatus: "active",
+      moderationReasonCodes: ["malicious.crypto_mining"],
+    };
+
+    const db = {
+      normalizeId: vi.fn(),
+      get: vi.fn(async (id: string) => {
+        if (id === "users:admin") return { _id: "users:admin", role: "admin" };
+        if (id === "users:new") return { _id: "users:new", role: "user" };
+        return null;
+      }),
+      query: vi.fn((table: string) => {
+        if (table === "skills") {
+          return {
+            withIndex: (name: string) => {
+              if (name !== "by_slug") throw new Error(`unexpected skills index ${name}`);
+              return { unique: async () => existingSkill };
+            },
+          };
+        }
+        throw new Error(`unexpected table ${table}`);
+      }),
+      patch,
+      insert,
+    };
+
+    await expect(
+      reclaimSlugInternalHandler(
+        { db, scheduler: { runAfter } } as never,
+        {
+          actorUserId: "users:admin",
+          slug: "blocked-skill",
+          rightfulOwnerUserId: "users:new",
+          transferRootSlugOnly: true,
+        } as never,
+      ),
+    ).rejects.toThrow("under moderation");
+
+    expect(runAfter).not.toHaveBeenCalled();
+    expect(patch).not.toHaveBeenCalledWith("skills:1", expect.anything());
+    expect(insert).not.toHaveBeenCalled();
+  });
 });
