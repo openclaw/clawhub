@@ -31,10 +31,15 @@ describe("http API v1 shared helpers", () => {
   it("resolves latest tags without reading version documents", async () => {
     const ctx = makeCtx();
     const versionId = "skillVersions:latest" as Id<"skillVersions">;
+    const skillId = "skills:demo" as Id<"skills">;
 
-    const result = await resolveVersionTagsBatch(ctx, [{ latest: versionId }], {} as never, [
-      { _id: versionId, version: "2.0.0" },
-    ]);
+    const result = await resolveVersionTagsBatch(
+      ctx,
+      [{ latest: versionId }],
+      {} as never,
+      [{ _id: versionId, skillId, version: "2.0.0" }],
+      [skillId],
+    );
 
     expect(result).toEqual([{ latest: "2.0.0" }]);
     expect(ctx.runQuery).not.toHaveBeenCalled();

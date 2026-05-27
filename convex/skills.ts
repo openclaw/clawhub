@@ -1709,7 +1709,7 @@ async function loadPublicSkillReference(ctx: QueryCtx, skillId: Id<"skills"> | n
 
 type PublicSkillListVersion = Pick<
   Doc<"skillVersions">,
-  "_id" | "_creationTime" | "version" | "createdAt" | "changelog" | "changelogSource"
+  "_id" | "_creationTime" | "skillId" | "version" | "createdAt" | "changelog" | "changelogSource"
 > & {
   parsed?: PublicSkillVersionParsed;
   // Mirrors `skillVersions.apiKeyRequired` of the latest version.
@@ -1883,7 +1883,7 @@ async function buildPublicSkillEntries(
       if (!publicSkill || !ownerInfo.owner) return null;
       const latestVersion =
         hasSummary && latestVersionDoc
-          ? toPublicSkillListVersionFromSummary(summary!, latestVersionDoc._id)
+          ? toPublicSkillListVersionFromSummary(summary!, latestVersionDoc._id, skill._id)
           : toPublicSkillListVersion(latestVersionDoc);
       return {
         skill: publicSkill,
@@ -1935,6 +1935,7 @@ function toPublicSkillListVersion(
   return {
     _id: version._id,
     _creationTime: version._creationTime,
+    skillId: version.skillId,
     version: version.version,
     createdAt: version.createdAt,
     changelog: version.changelog,
@@ -2040,10 +2041,12 @@ async function getGeneratedSkillCardPublicFile(
 function toPublicSkillListVersionFromSummary(
   summary: NonNullable<Doc<"skills">["latestVersionSummary"]>,
   latestVersionId: Id<"skillVersions"> | undefined,
+  skillId: Id<"skills">,
 ): PublicSkillListVersion | null {
   if (!latestVersionId) return null;
   return {
     _id: latestVersionId,
+    skillId,
     // Approximates _creationTime; both are set to `now` in the same transaction
     _creationTime: summary.createdAt,
     version: summary.version,
@@ -5118,7 +5121,11 @@ function toDigestLatestVersionForSkill(digest: Doc<"skillSearchDigest">) {
   if (digest.latestVersionSkillId !== digest.skillId) {
     return null;
   }
-  return toPublicSkillListVersionFromSummary(digest.latestVersionSummary, digest.latestVersionId);
+  return toPublicSkillListVersionFromSummary(
+    digest.latestVersionSummary,
+    digest.latestVersionId,
+    digest.skillId,
+  );
 }
 
 async function resolveDigestLatestVersionForSkill(
@@ -5131,7 +5138,11 @@ async function resolveDigestLatestVersionForSkill(
   if (digest.latestVersionSkillId === undefined) {
     const latestVersion = await loadPublicLatestVersionForDigest(ctx, digest);
     return latestVersion
-      ? toPublicSkillListVersionFromSummary(digest.latestVersionSummary, digest.latestVersionId)
+      ? toPublicSkillListVersionFromSummary(
+          digest.latestVersionSummary,
+          digest.latestVersionId,
+          digest.skillId,
+        )
       : null;
   }
   return toDigestLatestVersionForSkill(digest);
