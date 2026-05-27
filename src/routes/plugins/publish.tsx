@@ -265,7 +265,7 @@ export function PublishPluginRoute() {
               {search.name ? "Publish Plugin Release" : "Publish Plugin"}
             </h1>
             <p className="text-sm text-[color:var(--ink-soft)]">
-              Upload a plugin folder, zip, or tgz.
+              Drop or select a plugin folder, .zip, or .tgz
             </p>
             {search.name ? (
               <p className="text-sm text-[color:var(--ink-soft)]">

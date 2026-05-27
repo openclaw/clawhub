@@ -80,12 +80,17 @@ function SummarySettingsEditor({
         onChange={(event) => setValue(event.target.value)}
         placeholder="Enter a brief description..."
       />
-      <div className="publisher-note-settings-meta">
-        <span>{value.trim().length}/500</span>
+      <div className="publisher-note-settings-footer">
+        <span className="publisher-note-settings-meta">{value.trim().length}/500</span>
+        <Button
+          type="button"
+          variant="outline"
+          loading={isSaving}
+          onClick={() => void handleSave()}
+        >
+          {isSaving ? "Saving" : "Save"}
+        </Button>
       </div>
-      <Button type="button" variant="outline" loading={isSaving} onClick={() => void handleSave()}>
-        {isSaving ? "Saving" : "Save"}
-      </Button>
       {error ? <p className="publisher-note-settings-error">{error}</p> : null}
     </div>
   );
@@ -184,7 +189,7 @@ export function SkillOwnershipPanel({
 
         <SettingsActionRow
           title="Publisher note"
-          description="Optional context ClawScan can use when reviewing the latest release."
+          description="Help ClawScan understand unusual access or behavior."
         >
           {onSavePublisherNoteAndRescan ? (
             <PublisherNoteSettingsEditor

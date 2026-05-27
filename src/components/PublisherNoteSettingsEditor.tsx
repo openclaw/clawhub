@@ -45,21 +45,21 @@ export function PublisherNoteSettingsEditor({
         onChange={(event) => setValue(event.target.value)}
         placeholder="Optional context for ClawScan, e.g. why this version needs network access."
       />
-      <div className="publisher-note-settings-meta">
-        <span>
+      <div className="publisher-note-settings-footer">
+        <span className="publisher-note-settings-meta">
           {trimmedLength}/{MAX_CLAWSCAN_NOTE_CHARS}
         </span>
+        <Button
+          type="button"
+          variant="outline"
+          loading={isSaving}
+          disabled={Boolean(disabledReason)}
+          title={disabledReason ?? undefined}
+          onClick={() => void handleSave()}
+        >
+          {isSaving ? "Rescanning" : "Save & Rescan"}
+        </Button>
       </div>
-      <Button
-        type="button"
-        variant="outline"
-        loading={isSaving}
-        disabled={Boolean(disabledReason)}
-        title={disabledReason ?? undefined}
-        onClick={() => void handleSave()}
-      >
-        {isSaving ? "Rescanning" : "Save & Rescan"}
-      </Button>
       {error ? <p className="publisher-note-settings-error">{error}</p> : null}
     </div>
   );

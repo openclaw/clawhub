@@ -774,7 +774,7 @@ export function Upload() {
               Publish a {contentLabel}
             </h1>
             <p className="text-sm text-[color:var(--ink-soft)]">
-              Drop a folder with {requiredFileLabel} and text files. We will handle the rest.
+              Drop or select a {contentLabel} folder
             </p>
           </div>
           <Button asChild variant="outline" size="sm" className="w-fit">

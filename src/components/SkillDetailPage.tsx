@@ -706,15 +706,10 @@ export function SkillDetailPage({
             <div className="skill-settings-page-title-row">
               <h1 className="skill-settings-page-title">Skill settings</h1>
               {newVersionHref ? (
-                <Button
-                  asChild
-                  variant="outline"
-                  size="sm"
-                  className="skill-settings-new-version-button"
-                >
+                <Button asChild variant="outline" className="skill-settings-new-version-button">
                   <a href={newVersionHref}>
                     <Upload size={14} aria-hidden="true" />
-                    New version
+                    Update skill files
                   </a>
                 </Button>
               ) : null}
