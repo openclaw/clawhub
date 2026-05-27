@@ -664,6 +664,136 @@ describe("skills ownership", () => {
     expect(patch).not.toHaveBeenCalled();
   });
 
+  it("allows transfers into the actor's legacy no-link personal publisher", async () => {
+    const patch = vi.fn(async () => {});
+    const insert = vi.fn(async () => "auditLogs:1");
+    const skill = {
+      _id: "skills:source",
+      slug: "portable",
+      displayName: "Portable",
+      ownerUserId: "users:actor",
+      ownerPublisherId: "publishers:actor",
+      softDeletedAt: undefined,
+    };
+    const aliases = [
+      {
+        _id: "skillSlugAliases:old",
+        slug: "portable-old",
+        skillId: "skills:source",
+        ownerUserId: "users:actor",
+        ownerPublisherId: "publishers:actor",
+      },
+    ];
+
+    const result = await transferSkillOwnerForUserInternalHandler(
+      {
+        db: {
+          normalizeId: vi.fn(() => null),
+          get: vi.fn(async (id: string) => {
+            if (id === "users:actor") {
+              return {
+                _id: "users:actor",
+                role: "user",
+                personalPublisherId: "publishers:actor-legacy",
+              };
+            }
+            if (id === "publishers:actor") {
+              return {
+                _id: "publishers:actor",
+                kind: "user",
+                handle: "actor",
+                linkedUserId: "users:actor",
+              };
+            }
+            if (id === "publishers:actor-legacy") {
+              return {
+                _id: "publishers:actor-legacy",
+                kind: "user",
+                handle: "actor-legacy",
+                linkedUserId: undefined,
+                deletedAt: undefined,
+                deactivatedAt: undefined,
+              };
+            }
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table === "skills") {
+              return {
+                withIndex: (name: string, build: (q: ReturnType<typeof chainEq>) => unknown) => {
+                  const constraints: Record<string, unknown> = {};
+                  build(chainEq(constraints));
+                  if (name !== "by_slug") throw new Error(`unexpected skills index ${name}`);
+                  return { unique: async () => (constraints.slug === "portable" ? skill : null) };
+                },
+              };
+            }
+            if (table === "publishers") {
+              return {
+                withIndex: (name: string) => {
+                  if (name !== "by_handle") {
+                    throw new Error(`unexpected publishers index ${name}`);
+                  }
+                  return {
+                    unique: async () => ({
+                      _id: "publishers:actor-legacy",
+                      kind: "user",
+                      handle: "actor-legacy",
+                      linkedUserId: undefined,
+                      deletedAt: undefined,
+                      deactivatedAt: undefined,
+                    }),
+                  };
+                },
+              };
+            }
+            if (table === "skillSlugAliases") {
+              return {
+                withIndex: (name: string) => {
+                  if (name !== "by_skill") {
+                    throw new Error(`unexpected skillSlugAliases index ${name}`);
+                  }
+                  return { collect: async () => aliases };
+                },
+              };
+            }
+            if (table === "skillSearchDigest") {
+              return {
+                withIndex: (name: string) => {
+                  if (name !== "by_skill") {
+                    throw new Error(`unexpected skillSearchDigest index ${name}`);
+                  }
+                  return { unique: async () => ({ _id: "skillSearchDigest:source" }) };
+                },
+              };
+            }
+            throw new Error(`unexpected table ${table}`);
+          }),
+          patch,
+          insert,
+        },
+      } as never,
+      {
+        actorUserId: "users:actor",
+        slug: "portable",
+        toOwner: "actor-legacy",
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      transferred: true,
+      toPublisherHandle: "actor-legacy",
+    });
+    expect(patch).toHaveBeenCalledWith(
+      "skills:source",
+      expect.objectContaining({
+        ownerUserId: "users:actor",
+        ownerPublisherId: "publishers:actor-legacy",
+      }),
+    );
+  });
+
   it("rejects merges that would reserve too many historical slugs for one skill", async () => {
     const patch = vi.fn(async () => {});
     const insert = vi.fn(async () => "auditLogs:1");

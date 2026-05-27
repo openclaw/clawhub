@@ -9051,7 +9051,11 @@ async function canManagePublisherDestination(
   publisher: Doc<"publishers">,
 ) {
   if (actor.role === "admin") return true;
-  if (publisher.kind === "user") return publisher.linkedUserId === actor._id;
+  if (publisher.kind === "user") {
+    return publisher.linkedUserId
+      ? publisher.linkedUserId === actor._id
+      : actor.personalPublisherId === publisher._id;
+  }
   const membership = await getPublisherMembership(ctx, publisher._id, actor._id);
   return Boolean(membership && isPublisherRoleAllowed(membership.role, ["admin"]));
 }
