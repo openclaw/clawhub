@@ -18,7 +18,7 @@ const restoreUnbanHandler = (
 const applyBanHandler = (
   applyBanToOwnedSkillsBatchInternal as unknown as WrappedHandler<
     { ownerUserId: string; bannedAt: number; hiddenBy?: string; cursor?: string },
-    { hiddenCount: number; scheduled: boolean }
+    { hiddenCount: number; scheduled: boolean; aborted?: boolean }
   >
 )._handler;
 
@@ -238,6 +238,40 @@ describe("skills ban/unban batches", () => {
     });
 
     expect(patch).not.toHaveBeenCalledWith("skills:hidden", expect.anything());
+  });
+
+  it("aborts stale scheduled ban pages after the owner is unbanned", async () => {
+    const { ctx, patch, query, scheduler } = makeCtx({
+      user: { _id: "users:owner", deletedAt: undefined, deactivatedAt: undefined },
+      skills: [
+        {
+          _id: "skills:hidden",
+          ownerUserId: "users:owner",
+          softDeletedAt: 1_000,
+          moderationStatus: "hidden",
+          moderationReason: "user.banned",
+          hiddenAt: 1_000,
+        },
+      ],
+    });
+
+    await expect(
+      applyBanHandler(ctx, {
+        ownerUserId: "users:owner",
+        bannedAt: 2_000,
+        hiddenBy: "users:second-moderator",
+        cursor: "next-page",
+      }),
+    ).resolves.toEqual({
+      ok: true,
+      hiddenCount: 0,
+      scheduled: false,
+      aborted: true,
+    });
+
+    expect(query).not.toHaveBeenCalled();
+    expect(patch).not.toHaveBeenCalled();
+    expect(scheduler.runAfter).not.toHaveBeenCalled();
   });
 
   it("aborts stale unban restore pages when the owner was banned again", async () => {

@@ -6980,6 +6980,13 @@ export const applyBanToOwnedSkillsBatchInternal = internalMutation({
     cursor: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    if (args.cursor) {
+      const owner = await ctx.db.get(args.ownerUserId);
+      if (!owner || owner.deletedAt !== args.bannedAt || owner.deactivatedAt) {
+        return { ok: true as const, hiddenCount: 0, scheduled: false, aborted: true };
+      }
+    }
+
     const { page, isDone, continueCursor } = await ctx.db
       .query("skills")
       .withIndex("by_owner", (q) => q.eq("ownerUserId", args.ownerUserId))
