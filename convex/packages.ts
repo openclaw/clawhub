@@ -3528,6 +3528,7 @@ export const restoreOwnedPackagesForAutobanRemediationBatchInternal = internalMu
         softDeletedAt: undefined,
         softDeletedBy: undefined,
         softDeletedByRole: undefined,
+        softDeletedReason: undefined,
         tags: nextTags,
         latestReleaseId: nextLatest?._id,
         latestVersionSummary: nextLatest

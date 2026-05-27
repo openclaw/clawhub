@@ -1054,6 +1054,7 @@ describe("autoban remediation package restore", () => {
       "packages:demo",
       expect.objectContaining({
         softDeletedAt: undefined,
+        softDeletedReason: undefined,
         latestReleaseId: "packageReleases:good",
         tags: { latest: "packageReleases:good" },
       }),
