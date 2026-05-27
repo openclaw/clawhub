@@ -2910,9 +2910,9 @@ async function restorePackageDoc(
   const now = Date.now();
   const actorRole = params.actorRole ?? "user";
   const isPrivilegedActor = actorRole === "admin" || actorRole === "moderator";
-  const isPrivilegedRestorableDelete = isPrivilegedActor && pkg.softDeletedReason !== "user.banned";
-  const isUserRestorableDelete =
-    pkg.softDeletedByRole === "user" && pkg.softDeletedReason !== "user.banned";
+  const isDirectlyRestorableDelete = pkg.softDeletedReason === undefined;
+  const isPrivilegedRestorableDelete = isPrivilegedActor && isDirectlyRestorableDelete;
+  const isUserRestorableDelete = pkg.softDeletedByRole === "user" && isDirectlyRestorableDelete;
   const isUnbanBatchRestore =
     params.allowBanRestore === true && pkg.softDeletedReason === "user.banned";
   if (!isPrivilegedRestorableDelete && !isUserRestorableDelete && !isUnbanBatchRestore) {
@@ -3035,7 +3035,7 @@ async function revokePackagePublishTokensForPackage(
   const tokens = await ctx.db
     .query("packagePublishTokens")
     .withIndex("by_package_revoked_created", (q) =>
-      q.eq("packageId", packageId).eq("revokedAt", undefined),
+      q.eq("packageId", packageId).eq("revokedAt", undefined).lte("createdAt", revokedAt),
     )
     .order("desc")
     .take(PACKAGE_PUBLISH_TOKEN_REVOKE_BATCH_SIZE + 1);

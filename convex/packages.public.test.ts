@@ -32,6 +32,7 @@ import {
   updateReleaseStaticScanInternal,
   applyAccountDeletionToOwnedPackagesBatchInternal,
   applyBanToOwnedPackagesBatchInternal,
+  revokePackagePublishTokensForPackageBatchInternal,
   restoreOwnedPackagesForUnbanBatchInternal,
   softDeletePackageInternal,
   restorePackageInternal,
@@ -563,6 +564,12 @@ const applyBanToOwnedPackagesBatchInternalHandler = (
       scope?: "ownerUserId" | "personalPublisher";
     },
     { deletedCount: number; revokedTokenCount: number; scheduled: boolean }
+  >
+)._handler;
+const revokePackagePublishTokensForPackageBatchInternalHandler = (
+  revokePackagePublishTokensForPackageBatchInternal as unknown as WrappedHandler<
+    { packageId: string; revokedAt: number },
+    { ok: true; revokedCount: number; scheduled: boolean }
   >
 )._handler;
 const restoreOwnedPackagesForUnbanBatchInternalHandler = (
@@ -7661,11 +7668,38 @@ function makeOwnedPackageBatchCtx(options?: {
           }
           if (table === "packagePublishTokens") {
             return {
-              withIndex: vi.fn(() => ({
-                order: vi.fn(() => ({
-                  take: vi.fn(async (limit: number) => packageTokens.slice(0, limit)),
-                })),
-              })),
+              withIndex: vi.fn(
+                (
+                  _index: string,
+                  builder?: (q: {
+                    eq: (field: string, value: string | undefined) => unknown;
+                    lte: (field: string, value: number) => unknown;
+                  }) => unknown,
+                ) => {
+                  let maxCreatedAt = Number.POSITIVE_INFINITY;
+                  const queryBuilder = {
+                    eq: () => queryBuilder,
+                    lte: (field: string, value: number) => {
+                      if (field === "createdAt") maxCreatedAt = value;
+                      return queryBuilder;
+                    },
+                  };
+                  builder?.(queryBuilder);
+                  return {
+                    order: vi.fn(() => ({
+                      take: vi.fn(async (limit: number) =>
+                        packageTokens
+                          .filter(
+                            (token) =>
+                              typeof token.createdAt !== "number" ||
+                              token.createdAt <= maxCreatedAt,
+                          )
+                          .slice(0, limit),
+                      ),
+                    })),
+                  };
+                },
+              ),
             };
           }
           if (table === "packageReleases") {
@@ -7762,6 +7796,36 @@ describe("owned package sanction batches", () => {
       packageId: "packages:demo",
       revokedAt: 1_000,
     });
+  });
+
+  it("does not let stale token revocation batches revoke tokens minted after the ban marker", async () => {
+    const { ctx, patch } = makeOwnedPackageBatchCtx({
+      packageTokens: [
+        {
+          _id: "packagePublishTokens:before-ban",
+          packageId: "packages:demo",
+          version: "1.0.1",
+          revokedAt: undefined,
+          createdAt: 999,
+        },
+        {
+          _id: "packagePublishTokens:after-unban",
+          packageId: "packages:demo",
+          version: "1.0.2",
+          revokedAt: undefined,
+          createdAt: 1_001,
+        },
+      ],
+    });
+
+    const result = await revokePackagePublishTokensForPackageBatchInternalHandler(ctx as never, {
+      packageId: "packages:demo",
+      revokedAt: 1_000,
+    });
+
+    expect(result).toMatchObject({ revokedCount: 1, scheduled: false });
+    expect(patch).toHaveBeenCalledWith("packagePublishTokens:before-ban", { revokedAt: 1_000 });
+    expect(patch).not.toHaveBeenCalledWith("packagePublishTokens:after-unban", expect.anything());
   });
 
   it("soft-deletes packages owned through the user's personal publisher", async () => {
@@ -8538,6 +8602,27 @@ describe("restorePackageInternal", () => {
         softDeletedAt: 1_000,
         softDeletedReason: "user.banned",
         softDeletedByRole: "moderator",
+      }),
+    });
+
+    await expect(
+      restorePackageInternalHandler(ctx as never, {
+        userId: "users:owner",
+        name: "demo-plugin",
+      }),
+    ).rejects.toThrow("Forbidden");
+    expect(patch).not.toHaveBeenCalledWith("packages:demo", expect.anything());
+  });
+
+  it("does not let moderators directly restore packages hidden by account deletion", async () => {
+    const { ctx, patch } = makeSoftDeleteCtx({
+      actor: { _id: "users:owner", role: "moderator" },
+      pkg: makePackageDoc({
+        ownerUserId: "users:owner",
+        ownerPublisherId: "publishers:owner-personal",
+        softDeletedAt: 1_000,
+        softDeletedReason: "user.deactivated",
+        softDeletedByRole: "user",
       }),
     });
 

@@ -1251,6 +1251,65 @@ describe("autoban remediation package restore", () => {
     });
   });
 
+  it("does not count org-owned legacy package rows as autoban restore candidates", async () => {
+    const bannedAt = 1778569308754;
+    const result = await listPackageCandidatesHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "users:target") {
+              return { _id: id, personalPublisherId: "publishers:personal" };
+            }
+            if (id === "publishers:org") return { _id: id, kind: "org" };
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            expect(table).toBe("packages");
+            return {
+              withIndex: (name: string) => {
+                expect(name).toBe("by_owner");
+                return {
+                  order: () => ({
+                    paginate: vi.fn(async () => ({
+                      page: [
+                        {
+                          _id: "packages:org",
+                          ownerUserId: "users:target",
+                          ownerPublisherId: "publishers:org",
+                          softDeletedAt: bannedAt,
+                          scanStatus: "clean",
+                        },
+                        {
+                          _id: "packages:legacy-personal",
+                          ownerUserId: "users:target",
+                          ownerPublisherId: undefined,
+                          softDeletedAt: bannedAt,
+                          scanStatus: "clean",
+                        },
+                      ],
+                      isDone: true,
+                      continueCursor: null,
+                    })),
+                  }),
+                };
+              },
+            };
+          }),
+        },
+      } as never,
+      {
+        ownerUserId: "users:target",
+        bannedAt,
+      },
+    );
+
+    expect(result).toEqual({
+      packageIds: ["packages:legacy-personal"],
+      isDone: true,
+      continueCursor: null,
+    });
+  });
+
   it("lists linked legacy personal-publisher package candidates without users.personalPublisherId", async () => {
     const bannedAt = 1778569308754;
     const result = await listPackageCandidatesHandler(

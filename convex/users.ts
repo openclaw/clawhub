@@ -63,6 +63,19 @@ async function getAutobanPersonalPublisherId(
   }
   return undefined;
 }
+
+async function isOwnedPersonalAutobanPackage(
+  ctx: Pick<QueryCtx | MutationCtx, "db">,
+  pkg: Pick<Doc<"packages">, "ownerPublisherId">,
+  owner: Pick<Doc<"users">, "_id" | "personalPublisherId">,
+) {
+  if (!pkg.ownerPublisherId) return true;
+  if (owner.personalPublisherId && pkg.ownerPublisherId === owner.personalPublisherId) {
+    return true;
+  }
+  const ownerPublisher = await ctx.db.get(pkg.ownerPublisherId);
+  return ownerPublisher?.kind === "user" && ownerPublisher.linkedUserId === owner._id;
+}
 const autobanRemediationInternalRefs = internal as unknown as {
   users: {
     countRestorableAutobanSkillsPageInternal: unknown;
@@ -1506,6 +1519,9 @@ export const listRestorableAutobanPackageCandidatesPageInternal = internalQuery(
   },
   handler: async (ctx, args) => {
     const owner = await ctx.db.get(args.ownerUserId);
+    if (!owner) {
+      return { packageIds: [], isDone: true, continueCursor: null };
+    }
     const scope = args.scope ?? "ownerUserId";
     const personalPublisherId = await getAutobanPersonalPublisherId(ctx, owner);
     const packageQuery =
@@ -1521,15 +1537,16 @@ export const listRestorableAutobanPackageCandidatesPageInternal = internalQuery(
       numItems: AUTOBAN_REMEDIATION_COUNT_PAGE_SIZE,
     });
 
+    const packageIds: Array<Id<"packages">> = [];
+    for (const pkg of result.page) {
+      if (scope === "personalPublisher" && pkg.ownerUserId === args.ownerUserId) continue;
+      if (pkg.softDeletedAt !== args.bannedAt || pkg.scanStatus === "malicious") continue;
+      if (!(await isOwnedPersonalAutobanPackage(ctx, pkg, owner))) continue;
+      packageIds.push(pkg._id);
+    }
+
     return {
-      packageIds: result.page
-        .filter(
-          (pkg) =>
-            !(scope === "personalPublisher" && pkg.ownerUserId === args.ownerUserId) &&
-            pkg.softDeletedAt === args.bannedAt &&
-            pkg.scanStatus !== "malicious",
-        )
-        .map((pkg) => pkg._id),
+      packageIds,
       isDone: result.isDone,
       continueCursor: result.continueCursor,
     };
