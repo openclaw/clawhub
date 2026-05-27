@@ -5937,6 +5937,16 @@ export const insertReleaseInternal = internalMutation({
     ) {
       throw new ConvexError("Package owner publisher is unavailable");
     }
+    if (ownerPublisher?.kind === "user" && ownerPublisher.linkedUserId) {
+      const linkedPublisherUser = await ctx.db.get(ownerPublisher.linkedUserId);
+      if (
+        !linkedPublisherUser ||
+        linkedPublisherUser.deletedAt ||
+        linkedPublisherUser.deactivatedAt
+      ) {
+        throw new ConvexError("Package owner publisher is unavailable");
+      }
+    }
     if (args.publishActor?.kind === "user" && args.publishActor.userId !== args.actorUserId) {
       throw new ConvexError("Publish actor must match the authenticated actor");
     }

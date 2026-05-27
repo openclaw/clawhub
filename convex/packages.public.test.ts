@@ -3683,6 +3683,53 @@ describe("packages public queries", () => {
     expect(ctx.insert).not.toHaveBeenCalledWith("packageReleases", expect.anything());
   });
 
+  it("rejects final package publish inserts when a personal publisher owner was banned mid-publish", async () => {
+    const ctx = makeInsertReleaseCtx(
+      makePackageDoc({
+        ownerUserId: "users:publishing-actor",
+        ownerPublisherId: "publishers:personal",
+      }),
+      [],
+      {
+        "users:publishing-actor": {
+          _id: "users:publishing-actor",
+          role: "user",
+          trustedPublisher: false,
+        },
+        "users:owner": {
+          _id: "users:owner",
+          role: "user",
+          trustedPublisher: false,
+          deletedAt: 1_000,
+        },
+        "publishers:personal": {
+          _id: "publishers:personal",
+          kind: "user",
+          handle: "owner",
+          linkedUserId: "users:owner",
+        },
+      },
+    );
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:publishing-actor",
+        ownerUserId: "users:publishing-actor",
+        ownerPublisherId: "publishers:personal",
+        name: "demo-plugin",
+        displayName: "Demo Plugin",
+        family: "code-plugin",
+        version: "1.0.1",
+        changelog: "try banned publisher owner",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+      }),
+    ).rejects.toThrow("Package owner publisher is unavailable");
+    expect(ctx.insert).not.toHaveBeenCalledWith("packageReleases", expect.anything());
+  });
+
   it("rejects final user org package publish inserts when membership was removed mid-publish", async () => {
     const ctx = makeInsertReleaseCtx(null, [], {
       "users:member": { _id: "users:member", role: "user", trustedPublisher: false },
