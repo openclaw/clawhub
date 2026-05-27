@@ -4509,7 +4509,7 @@ export const listPublicPageV3 = query({
       if (!publicSkill) continue;
       const ownerInfo = digestToOwnerInfo(digest);
       if (!ownerInfo?.owner) continue;
-      const latestVersion = toDigestLatestVersionForSkill(digest);
+      const latestVersion = await resolveDigestLatestVersionForSkill(ctx, digest);
       items.push({
         skill: publicSkill,
         latestVersion,
@@ -4724,9 +4724,11 @@ export const listPublicPageV4 = query({
         schema,
       });
 
-      const items = result.page
-        .map((digest) => buildPublicSkillEntryFromDigest(digest))
-        .filter((item): item is PublicSkillEntry => item !== null);
+      const items: PublicSkillEntry[] = [];
+      for (const digest of result.page) {
+        const item = await buildPublicSkillEntryFromDigest(ctx, digest);
+        if (item) items.push(item);
+      }
       let nextCursor: string | null = null;
       if (result.hasMore && result.indexKeys.length > 0) {
         nextCursor = encodeIndexKey(indexName, result.indexKeys[result.indexKeys.length - 1]);
@@ -4777,7 +4779,7 @@ export const listPublicPageV4 = query({
             excludeCategoryKeywords,
           })
         ) {
-          const item = buildPublicSkillEntryFromDigest(digest);
+          const item = await buildPublicSkillEntryFromDigest(ctx, digest);
           if (item) items.push(item);
         }
         if (items.length >= numItems) {
@@ -4977,7 +4979,7 @@ export const listRelatedByCategory = query({
       if (isSkillSuspicious(hydratable)) continue;
       if (categorySlug && inferDigestSkillCategorySlug(digest) !== categorySlug) continue;
       if (!digestMatchesRelatedCategory(digest, keywords)) continue;
-      const item = buildPublicSkillEntryFromDigest(digest);
+      const item = await buildPublicSkillEntryFromDigest(ctx, digest);
       if (!item) continue;
       items.push(item);
       if (items.length >= limit) break;
@@ -5013,7 +5015,7 @@ export const listPublicTrendingPage = query({
         .unique();
       if (!digest) continue;
       if (args.nonSuspiciousOnly && digest.isSuspicious) continue;
-      const item = buildPublicSkillEntryFromDigest(digest);
+      const item = await buildPublicSkillEntryFromDigest(ctx, digest);
       if (!item) continue;
       items.push(item);
       if (items.length >= limit) break;
@@ -5037,7 +5039,7 @@ export const listAuditPage = query({
 
     const page = [];
     for (const digest of result.page) {
-      const entry = buildPublicSkillEntryFromDigest(digest);
+      const entry = await buildPublicSkillEntryFromDigest(ctx, digest);
       if (!entry) continue;
       const latestVersion = await loadPublicLatestVersionForDigest(ctx, digest);
       page.push({
@@ -5079,15 +5081,16 @@ export const listAuditPage = query({
   },
 });
 
-function buildPublicSkillEntryFromDigest(
+async function buildPublicSkillEntryFromDigest(
+  ctx: Pick<QueryCtx, "db">,
   digest: Doc<"skillSearchDigest">,
-): PublicSkillEntry | null {
+): Promise<PublicSkillEntry | null> {
   const hydratable = digestToHydratableSkill(digest);
   const publicSkill = toPublicSkill(hydratable);
   if (!publicSkill) return null;
   const ownerInfo = digestToOwnerInfo(digest);
   if (!ownerInfo?.owner) return null;
-  const latestVersion = toDigestLatestVersionForSkill(digest);
+  const latestVersion = await resolveDigestLatestVersionForSkill(ctx, digest);
   return {
     skill: publicSkill,
     latestVersion,
@@ -5118,12 +5121,31 @@ function toDigestLatestVersionForSkill(digest: Doc<"skillSearchDigest">) {
   return toPublicSkillListVersionFromSummary(digest.latestVersionSummary, digest.latestVersionId);
 }
 
-function buildPublicSkillApiListEntryFromDigest(digest: Doc<"skillSearchDigest">) {
+async function resolveDigestLatestVersionForSkill(
+  ctx: Pick<QueryCtx, "db">,
+  digest: Doc<"skillSearchDigest">,
+) {
+  if (!digest.latestVersionSummary || !digest.latestVersionId) {
+    return null;
+  }
+  if (digest.latestVersionSkillId === undefined) {
+    const latestVersion = await loadPublicLatestVersionForDigest(ctx, digest);
+    return latestVersion
+      ? toPublicSkillListVersionFromSummary(digest.latestVersionSummary, digest.latestVersionId)
+      : null;
+  }
+  return toDigestLatestVersionForSkill(digest);
+}
+
+async function buildPublicSkillApiListEntryFromDigest(
+  ctx: Pick<QueryCtx, "db">,
+  digest: Doc<"skillSearchDigest">,
+) {
   const publicSkill = toPublicSkill(digestToHydratableSkill(digest));
   if (!publicSkill) return null;
   const ownerInfo = digestToOwnerInfo(digest);
   if (!ownerInfo?.owner) return null;
-  const latestVersion = toDigestLatestVersionForSkill(digest);
+  const latestVersion = await resolveDigestLatestVersionForSkill(ctx, digest);
 
   return {
     skill: {
@@ -5185,9 +5207,11 @@ export const listPublicApiPageV1 = query({
       index: indexName,
       schema,
     });
-    const items = result.page
-      .map((digest) => buildPublicSkillApiListEntryFromDigest(digest))
-      .filter((item): item is NonNullable<typeof item> => item !== null);
+    const items = [];
+    for (const digest of result.page) {
+      const item = await buildPublicSkillApiListEntryFromDigest(ctx, digest);
+      if (item) items.push(item);
+    }
     const nextCursor =
       result.hasMore && result.indexKeys.length > 0
         ? encodeIndexKey(indexName, result.indexKeys[result.indexKeys.length - 1])
@@ -5283,8 +5307,12 @@ function skillCatalogMatchesFilters(
   return true;
 }
 
-function toPublicSkillCatalogItem(digest: Doc<"skillSearchDigest">): PublicSkillCatalogItem {
+async function toPublicSkillCatalogItem(
+  ctx: Pick<QueryCtx, "db">,
+  digest: Doc<"skillSearchDigest">,
+): Promise<PublicSkillCatalogItem> {
   const ownerInfo = digestToOwnerInfo(digest);
+  const latestVersion = await resolveDigestLatestVersionForSkill(ctx, digest);
   return {
     name: digest.slug,
     displayName: digest.displayName,
@@ -5296,7 +5324,7 @@ function toPublicSkillCatalogItem(digest: Doc<"skillSearchDigest">): PublicSkill
     ownerHandle: ownerInfo?.ownerHandle ?? null,
     createdAt: digest.createdAt,
     updatedAt: digest.updatedAt,
-    latestVersion: toDigestLatestVersionForSkill(digest)?.version ?? null,
+    latestVersion: latestVersion?.version ?? null,
     capabilityTags: digest.capabilityTags ?? [],
     executesCode: false,
     verificationTier: null,
@@ -5439,7 +5467,7 @@ export const listPackageCatalogPage = query({
       for (let index = offset; index < page.page.length; index += 1) {
         const digest = page.page[index];
         if (!skillCatalogMatchesFilters(digest, args)) continue;
-        collected.push(toPublicSkillCatalogItem(digest));
+        collected.push(await toPublicSkillCatalogItem(ctx, digest));
         if (collected.length >= targetCount) {
           const nextOffset = index + 1;
           if (nextOffset < page.page.length) {
@@ -5507,7 +5535,7 @@ async function searchPackageCatalogImpl(ctx: QueryCtx, args: SkillPackageCatalog
         seen.add(exactDigest.skillId);
         matches.push({
           ...match,
-          package: toPublicSkillCatalogItem(exactDigest),
+          package: await toPublicSkillCatalogItem(ctx, exactDigest),
         });
       }
     }
@@ -5528,7 +5556,7 @@ async function searchPackageCatalogImpl(ctx: QueryCtx, args: SkillPackageCatalog
       seen.add(digest.skillId);
       matches.push({
         ...match,
-        package: toPublicSkillCatalogItem(digest),
+        package: await toPublicSkillCatalogItem(ctx, digest),
       });
     }
   }
@@ -5646,10 +5674,11 @@ async function fetchHighlightedPage(
 
   const trimmed = digests.slice(0, opts.numItems);
 
-  // Build PublicSkillEntry[]
-  const items = trimmed
-    .map((digest) => buildPublicSkillEntryFromDigest(digest))
-    .filter((item): item is PublicSkillEntry => item !== null);
+  const items: PublicSkillEntry[] = [];
+  for (const digest of trimmed) {
+    const item = await buildPublicSkillEntryFromDigest(ctx, digest);
+    if (item) items.push(item);
+  }
 
   // Highlighted skills are few enough to return in one page — no cursor needed
   return { page: items, hasMore: false, nextCursor: null };
