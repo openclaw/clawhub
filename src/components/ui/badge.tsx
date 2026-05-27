@@ -2,6 +2,7 @@ import * as React from "react";
 import { cn } from "../../lib/utils";
 
 export interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
+  size?: "default" | "sm";
   variant?:
     | "default"
     | "accent"
@@ -15,7 +16,7 @@ export interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
 }
 
 const Badge = React.forwardRef<HTMLSpanElement, BadgeProps>(
-  ({ className, variant = "default", ...props }, ref) => (
+  ({ className, size = "default", variant = "default", ...props }, ref) => (
     <span
       ref={ref}
       className={cn(
@@ -37,6 +38,8 @@ const Badge = React.forwardRef<HTMLSpanElement, BadgeProps>(
           "bg-[color:color-mix(in_srgb,#6aa9ff_16%,transparent)] px-3 py-1 text-[#6aa9ff] border border-[color:color-mix(in_srgb,#6aa9ff_24%,var(--line))]",
         variant === "destructive" &&
           "bg-status-error-bg px-3 py-1 text-status-error-fg border border-line",
+        size === "sm" &&
+          "rounded-[var(--radius-pill)] px-2 py-0.5 text-[11px] font-medium leading-4",
         className,
       )}
       {...props}

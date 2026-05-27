@@ -251,7 +251,7 @@ describe("Upload route", () => {
     ).toBeGreaterThan(0);
     expect(screen.getByText("screenshot.png")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Remove unsupported files" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove unsupported" }));
 
     await waitFor(() => {
       expect(screen.queryByText("screenshot.png")).toBeNull();
@@ -265,7 +265,8 @@ describe("Upload route", () => {
     const input = screen.getByTestId("upload-input") as HTMLInputElement;
     fireEvent.change(input, { target: { files: [notes] } });
 
-    expect(await screen.findByText("SKILL.md is required.")).toBeTruthy();
+    expect(await screen.findByText("Missing")).toBeTruthy();
+    expect(screen.getAllByText("SKILL.md").length).toBeGreaterThan(0);
   });
 
   it("shows a validation error when a skill file exceeds 10MB", async () => {
@@ -442,7 +443,11 @@ describe("Upload route", () => {
     ).toBeGreaterThan(0);
     expect(screen.queryByText("Taken")).toBeNull();
     expect(screen.getByLabelText("Slug unavailable")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "/alice/taken-skill" })).toBeTruthy();
+    const existingSkillLink = screen.getByRole("link", {
+      name: "Open existing skill in a new tab",
+    });
+    expect(existingSkillLink).toBeTruthy();
+    expect(existingSkillLink.getAttribute("href")).toBe("/alice/taken-skill");
     expect(
       screen.getByRole("button", { name: /publish skill/i }).getAttribute("disabled"),
     ).not.toBeNull();

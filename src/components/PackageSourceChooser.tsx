@@ -9,8 +9,6 @@ import { UploadDropzoneDecor } from "./UploadDropzoneDecor";
 
 const PACKAGE_FILE_LIST_LIMIT = 8;
 export type PackagePickSource = "archive" | "folder";
-const PACKAGE_FILE_BADGE_CLASS =
-  "rounded-[var(--radius-sm)] px-2 py-0.5 text-[11px] font-medium leading-4";
 const PACKAGE_PATH_PRIORITY = new Map(
   [
     "package.json",
@@ -57,7 +55,7 @@ function getPackagePathBadges(
 
   if (lowerPath === "package.json") {
     badges.push(
-      <Badge key="package" variant="compact" className={PACKAGE_FILE_BADGE_CLASS}>
+      <Badge key="package" variant="compact" size="sm">
         Package manifest
       </Badge>,
     );
@@ -66,7 +64,7 @@ function getPackagePathBadges(
         <Badge
           key="metadata-missing"
           variant="destructive"
-          className={PACKAGE_FILE_BADGE_CLASS}
+          size="sm"
           title="Missing OpenClaw compatibility metadata"
         >
           Missing metadata
@@ -79,7 +77,7 @@ function getPackagePathBadges(
 
   if (lowerPath === "openclaw.plugin.json") {
     badges.push(
-      <Badge key="plugin" variant="compact" className={PACKAGE_FILE_BADGE_CLASS}>
+      <Badge key="plugin" variant="compact" size="sm">
         Plugin manifest
       </Badge>,
     );
@@ -91,7 +89,7 @@ function getPackagePathBadges(
     lowerPath === ".cursor-plugin/plugin.json"
   ) {
     badges.push(
-      <Badge key="agent" variant="compact" className={PACKAGE_FILE_BADGE_CLASS}>
+      <Badge key="agent" variant="compact" size="sm">
         Agent metadata
       </Badge>,
     );
@@ -99,7 +97,7 @@ function getPackagePathBadges(
 
   if (lowerPath === "readme.md" || lowerPath === "readme.mdx") {
     badges.push(
-      <Badge key="readme" variant="compact" className={PACKAGE_FILE_BADGE_CLASS}>
+      <Badge key="readme" variant="compact" size="sm">
         README
       </Badge>,
     );
@@ -138,6 +136,17 @@ export function PackageSourceChooser(props: {
   const replaceLabel = replaceSourceKind === "folder" ? "Replace folder" : "Replace package";
   const hasMetadataIssues =
     props.family === "code-plugin" && props.codePluginFieldIssues.length > 0;
+  const hasPackagePanelFooter = props.ignoredPaths.length > 0 || Boolean(props.validationError);
+  const selectedPackagePanelToneClass = isDragging
+    ? "border-[color:var(--accent)] bg-[rgba(255,107,74,0.06)]"
+    : isMetadataLocked
+      ? "border-[color:var(--line)] bg-[color:var(--surface-muted)]"
+      : "border-emerald-300/45 bg-emerald-50/80 dark:border-emerald-500/30 dark:bg-emerald-950/25";
+  const selectedPackagePanelBgClass = isDragging
+    ? "bg-[rgba(255,107,74,0.06)]"
+    : isMetadataLocked
+      ? "bg-[color:var(--surface-muted)]"
+      : "bg-emerald-50/80 dark:bg-emerald-950/25";
 
   const setDirectoryInputRef = (node: HTMLInputElement | null) => {
     directoryInputRef.current = node;
@@ -184,13 +193,7 @@ export function PackageSourceChooser(props: {
       />
       {hasSelectedPackage ? (
         <div
-          className={`mb-5 overflow-hidden rounded-[var(--radius-md)] border transition-colors ${
-            isDragging
-              ? "border-[color:var(--accent)] bg-[rgba(255,107,74,0.06)]"
-              : isMetadataLocked
-                ? "border-[color:var(--line)] bg-[color:var(--surface-muted)]"
-                : "border-emerald-300/45 bg-emerald-50/80 dark:border-emerald-500/30 dark:bg-emerald-950/25"
-          }`}
+          className={`mb-5 overflow-hidden rounded-[var(--radius-md)] border transition-colors ${selectedPackagePanelToneClass}`}
           onDragOver={(event) => {
             event.preventDefault();
             setIsDragging(true);
@@ -213,12 +216,6 @@ export function PackageSourceChooser(props: {
                   </strong>
                   <span className="text-xs text-[color:var(--ink-soft)]">{fileSummary}</span>
                 </div>
-                {props.ignoredPaths.length > 0 ? (
-                  <p className="mt-2 text-xs text-[color:var(--ink-soft)]">
-                    Ignored: {props.ignoredPaths.slice(0, 4).join(", ")}
-                    {props.ignoredPaths.length > 4 ? ", ..." : ""}
-                  </p>
-                ) : null}
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-4 md:justify-end">
@@ -247,8 +244,8 @@ export function PackageSourceChooser(props: {
               </button>
             </div>
           </div>
-          <div className="mt-2 rounded-t-[calc(var(--radius-md)+8px)] border-t border-[color:var(--line)] bg-[color:var(--surface)] p-3">
-            <div className="flex max-h-[300px] flex-col gap-1 overflow-y-auto">
+          <div className="mt-2 overflow-hidden rounded-t-[calc(var(--radius-md)+8px)] border-t border-[color:var(--line)] bg-[color:var(--surface)]">
+            <div className="flex max-h-[300px] flex-col gap-1 overflow-y-auto p-3">
               {visiblePackagePaths.map((path, index) => {
                 const badges = getPackagePathBadges(path, {
                   hasMetadataIssues,
@@ -273,9 +270,21 @@ export function PackageSourceChooser(props: {
                 </div>
               ) : null}
             </div>
-            {props.validationError ? (
-              <div className="mt-2">
-                <Badge variant="destructive">{props.validationError}</Badge>
+            {hasPackagePanelFooter ? (
+              <div
+                className={`border-t border-[color:var(--line)] px-3 py-2 text-xs text-[color:var(--ink-soft)] ${selectedPackagePanelBgClass}`}
+              >
+                <div className="flex flex-col gap-1">
+                  {props.ignoredPaths.length > 0 ? (
+                    <p>
+                      Ignored: {props.ignoredPaths.slice(0, 4).join(", ")}
+                      {props.ignoredPaths.length > 4 ? ", ..." : ""}
+                    </p>
+                  ) : null}
+                  {props.validationError ? (
+                    <p className="text-status-error-fg">{props.validationError}</p>
+                  ) : null}
+                </div>
               </div>
             ) : null}
           </div>

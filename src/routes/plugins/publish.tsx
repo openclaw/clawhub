@@ -99,6 +99,7 @@ export function PublishPluginRoute() {
   const [detectedPrefillFields, setDetectedPrefillFields] = useState<string[]>([]);
   const [codePluginFieldIssues, setCodePluginFieldIssues] = useState<string[]>([]);
   const [status, setStatus] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const clawScanNoteTouchedRef = useRef(false);
   const showChangelogField = Boolean(search.name);
@@ -134,7 +135,6 @@ export function PublishPluginRoute() {
       ? normalizeClawScanNote(clawScanNote)
       : undefined;
   const isMetadataLocked = files.length === 0;
-  const isSubmitting = status !== null;
   const metadataDisabled = isMetadataLocked || isSubmitting;
   const ownerScopeError = useMemo(() => {
     return getPackageScopeOwnerMismatch(name, ownerHandle)?.message ?? null;
@@ -196,6 +196,7 @@ export function PublishPluginRoute() {
     setPackageSourceKind(sourceKind);
     setIgnoredPaths(nextIgnoredPaths);
     setError(null);
+    setStatus(null);
     const prefill = await derivePluginPrefill(normalized);
     setDetectedPrefillFields(listPrefilledFields(prefill));
     setCodePluginFieldIssues(prefill.missingRequiredFields ?? []);
@@ -215,6 +216,7 @@ export function PublishPluginRoute() {
     setDetectedPrefillFields([]);
     setCodePluginFieldIssues([]);
     setError(null);
+    setStatus(null);
   };
 
   useEffect(() => {
@@ -560,6 +562,7 @@ export function PublishPluginRoute() {
                         );
                         return;
                       }
+                      setIsSubmitting(true);
                       setStatus("Uploading files...");
                       setError(null);
                       const uploaded = await buildPackageUploadEntries(files, {
@@ -614,6 +617,8 @@ export function PublishPluginRoute() {
                     } catch (publishError) {
                       toast.error(formatPublishError(publishError));
                       setStatus(null);
+                    } finally {
+                      setIsSubmitting(false);
                     }
                   })();
                 });

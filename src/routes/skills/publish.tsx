@@ -551,6 +551,7 @@ export function Upload() {
     if (issue.startsWith("Total file size")) return shouldShowFileIssues;
     return false;
   });
+  const hasFilePanelFooter = Boolean(ignoredLocalMetadataNote || visibleFileIssues.length > 0);
   const publishBlockerSummary =
     !validation.ready && !isSubmitting
       ? summarizePublishBlockers(validation.issues, requiredFileLabel)
@@ -793,164 +794,167 @@ export function Upload() {
           />
 
           {files.length > 0 ? (
-            <>
-              <div
-                className={`overflow-hidden rounded-[var(--radius-md)] border transition-colors ${
-                  isDragging
-                    ? "border-[color:var(--accent)] bg-[color:var(--accent)]/5"
-                    : "border-[color:var(--line)] bg-[color:var(--surface-muted)]"
-                }`}
-                onDragOver={(event) => {
-                  event.preventDefault();
-                  setIsDragging(true);
-                }}
-                onDragLeave={() => setIsDragging(false)}
-                onDrop={handleFilesDrop}
-              >
-                <div className="flex flex-col gap-4 px-4 pt-4 pb-2 md:flex-row md:items-center md:justify-between">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <div
-                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface)]"
-                      aria-hidden="true"
-                    >
-                      <FolderOpen className="h-4 w-4 text-[color:var(--ink-soft)]" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                        <strong className="text-sm text-[color:var(--ink)]">
-                          Skill folder selected
-                        </strong>
-                        <span className="text-xs text-[color:var(--ink-soft)]">
-                          {files.length} files · {sizeLabel}
-                        </span>
-                      </div>
-                      {unsupportedFileEntries.length > 0 ? (
-                        <div className="mt-3 flex flex-wrap gap-1.5">
-                          <Badge variant="warning">
-                            {unsupportedFileEntries.length} unsupported
-                          </Badge>
-                        </div>
-                      ) : null}
-                    </div>
+            <div
+              className={`overflow-hidden rounded-[var(--radius-md)] border transition-colors ${
+                isDragging
+                  ? "border-[color:var(--accent)] bg-[color:var(--accent)]/5"
+                  : "border-[color:var(--line)] bg-[color:var(--surface-muted)]"
+              }`}
+              onDragOver={(event) => {
+                event.preventDefault();
+                setIsDragging(true);
+              }}
+              onDragLeave={() => setIsDragging(false)}
+              onDrop={handleFilesDrop}
+            >
+              <div className="flex flex-col gap-4 px-4 pt-4 pb-2 md:flex-row md:items-center md:justify-between">
+                <div className="flex min-w-0 items-center gap-3">
+                  <div
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface)]"
+                    aria-hidden="true"
+                  >
+                    <FolderOpen className="h-4 w-4 text-[color:var(--ink-soft)]" />
                   </div>
-                  <div className="flex shrink-0 flex-wrap items-center gap-4 md:justify-end">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <strong className="text-sm text-[color:var(--ink)]">
+                        Skill folder selected
+                      </strong>
+                      <span className="text-xs text-[color:var(--ink-soft)]">
+                        {files.length} files · {sizeLabel}
+                      </span>
+                    </div>
                     {unsupportedFileEntries.length > 0 ? (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        type="button"
-                        onClick={removeUnsupportedFiles}
-                      >
-                        Remove unsupported
-                      </Button>
+                      <div className="mt-3 flex flex-wrap gap-1.5">
+                        <Badge variant="warning" size="sm">
+                          {unsupportedFileEntries.length} unsupported
+                        </Badge>
+                      </div>
                     ) : null}
+                  </div>
+                </div>
+                <div className="flex shrink-0 flex-wrap items-center gap-4 md:justify-end">
+                  {unsupportedFileEntries.length > 0 ? (
                     <Button
                       variant="outline"
                       size="sm"
                       type="button"
-                      onClick={() => fileInputRef.current?.click()}
+                      onClick={removeUnsupportedFiles}
                     >
-                      Replace folder
+                      Remove unsupported
                     </Button>
-                    <button
-                      type="button"
-                      className="cursor-pointer text-xs font-medium text-[color:var(--ink-soft)] transition-colors hover:text-[color:var(--ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent)]/35 focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--bg)]"
-                      onClick={clearSelectedFiles}
-                    >
-                      Clear files
-                    </button>
-                  </div>
+                  ) : null}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    Replace folder
+                  </Button>
+                  <button
+                    type="button"
+                    className="cursor-pointer text-xs font-medium text-[color:var(--ink-soft)] transition-colors hover:text-[color:var(--ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent)]/35 focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--bg)]"
+                    onClick={clearSelectedFiles}
+                  >
+                    Clear files
+                  </button>
                 </div>
-                <div className="mt-2 rounded-t-[calc(var(--radius-md)+8px)] border-t border-[color:var(--line)] bg-[color:var(--surface)] p-3">
-                  <div className="flex max-h-[300px] flex-col gap-1 overflow-y-auto">
-                    {!hasRequiredFile ? (
-                      <div className="flex items-center gap-2 rounded-[var(--radius-sm)] border border-status-error-fg/35 bg-status-error-bg px-3 py-1.5 text-sm text-status-error-fg">
-                        <span className="min-w-0 flex-1 truncate font-mono">
-                          {requiredFileLabel}
+              </div>
+              <div className="mt-2 overflow-hidden rounded-t-[calc(var(--radius-md)+8px)] border-t border-[color:var(--line)] bg-[color:var(--surface)]">
+                <div className="flex max-h-[300px] flex-col gap-1 overflow-y-auto p-3">
+                  {!hasRequiredFile ? (
+                    <div className="flex items-center gap-2 rounded-[var(--radius-sm)] border border-status-error-fg/35 bg-status-error-bg px-3 py-1.5 text-sm text-status-error-fg">
+                      <span className="min-w-0 flex-1 truncate font-mono">{requiredFileLabel}</span>
+                      <Badge variant="destructive" size="sm">
+                        Missing
+                      </Badge>
+                    </div>
+                  ) : null}
+                  {visibleFileEntries.map(({ file, index, path }) => {
+                    const isUnsupported = !isTextFile(file);
+                    const isConfirmingRemoval = pendingFileRemovalIndex === index;
+                    return (
+                      <div
+                        key={`${index}:${path}`}
+                        className={[
+                          "flex items-center gap-2 rounded-[var(--radius-sm)] px-3 py-1.5 text-sm bg-[color:var(--surface-muted)]",
+                          isUnsupported ? "text-status-error-fg" : "text-[color:var(--ink-soft)]",
+                        ].join(" ")}
+                      >
+                        <span className="min-w-0 flex-1 truncate font-mono" title={path}>
+                          {path}
                         </span>
-                        <Badge
-                          variant="destructive"
-                          className="rounded-[var(--radius-pill)] px-2 py-0.5 text-[11px] font-medium leading-4"
-                        >
-                          Missing
-                        </Badge>
-                      </div>
-                    ) : null}
-                    {visibleFileEntries.map(({ file, index, path }) => {
-                      const isUnsupported = !isTextFile(file);
-                      const isConfirmingRemoval = pendingFileRemovalIndex === index;
-                      return (
-                        <div
-                          key={`${index}:${path}`}
-                          className={[
-                            "flex items-center gap-2 rounded-[var(--radius-sm)] px-3 py-1.5 text-sm bg-[color:var(--surface-muted)]",
-                            isUnsupported ? "text-status-error-fg" : "text-[color:var(--ink-soft)]",
-                          ].join(" ")}
-                        >
-                          <span className="min-w-0 flex-1 truncate font-mono" title={path}>
-                            {path}
-                          </span>
-                          {isUnsupported ? <Badge variant="warning">Unsupported</Badge> : null}
-                          {isConfirmingRemoval ? (
-                            <div className="flex shrink-0 items-center gap-1">
-                              <span className="text-xs font-medium text-status-error-fg">
-                                Remove?
-                              </span>
-                              <Button
-                                aria-label={`Cancel removing ${path}`}
-                                title={`Cancel removing ${path}`}
-                                variant="ghost"
-                                size="icon-xs"
-                                type="button"
-                                className="hover:not-disabled:bg-[color:var(--surface)]"
-                                onClick={() => setPendingFileRemovalIndex(null)}
-                              >
-                                <X className="h-3.5 w-3.5" aria-hidden="true" />
-                              </Button>
-                              <Button
-                                aria-label={`Confirm removing ${path}`}
-                                title={`Confirm removing ${path}`}
-                                variant="ghost"
-                                size="icon-xs"
-                                type="button"
-                                className="text-status-error-fg hover:not-disabled:bg-status-error-bg hover:not-disabled:text-status-error-fg"
-                                onClick={() => removeFileAtIndex(index)}
-                              >
-                                <Check className="h-3.5 w-3.5" aria-hidden="true" />
-                              </Button>
-                            </div>
-                          ) : (
+                        {isUnsupported ? (
+                          <Badge variant="warning" size="sm">
+                            Unsupported
+                          </Badge>
+                        ) : null}
+                        {isConfirmingRemoval ? (
+                          <div className="flex shrink-0 items-center gap-1">
+                            <span className="text-xs font-medium text-status-error-fg">
+                              Remove?
+                            </span>
                             <Button
-                              aria-label={`Remove ${path}`}
-                              title={`Remove ${path}`}
+                              aria-label={`Cancel removing ${path}`}
+                              title={`Cancel removing ${path}`}
                               variant="ghost"
                               size="icon-xs"
                               type="button"
-                              onClick={() => setPendingFileRemovalIndex(index)}
+                              className="hover:not-disabled:bg-[color:var(--surface)]"
+                              onClick={() => setPendingFileRemovalIndex(null)}
                             >
                               <X className="h-3.5 w-3.5" aria-hidden="true" />
                             </Button>
-                          )}
-                        </div>
-                      );
-                    })}
+                            <Button
+                              aria-label={`Confirm removing ${path}`}
+                              title={`Confirm removing ${path}`}
+                              variant="ghost"
+                              size="icon-xs"
+                              type="button"
+                              className="text-status-error-fg hover:not-disabled:bg-status-error-bg hover:not-disabled:text-status-error-fg"
+                              onClick={() => removeFileAtIndex(index)}
+                            >
+                              <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <Button
+                            aria-label={`Remove ${path}`}
+                            title={`Remove ${path}`}
+                            variant="ghost"
+                            size="icon-xs"
+                            type="button"
+                            onClick={() => setPendingFileRemovalIndex(index)}
+                          >
+                            <X className="h-3.5 w-3.5" aria-hidden="true" />
+                          </Button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                {hasFilePanelFooter ? (
+                  <div className="border-t border-[color:var(--line)] bg-[color:var(--surface-muted)] px-3 py-2 text-xs text-[color:var(--ink-soft)]">
+                    <div className="flex flex-col gap-1">
+                      {ignoredLocalMetadataNote ? <p>{ignoredLocalMetadataNote}</p> : null}
+                      {visibleFileIssues.map((issue) => (
+                        <p
+                          key={issue}
+                          className={
+                            issue.startsWith("Remove unsupported files")
+                              ? "text-status-error-fg"
+                              : undefined
+                          }
+                        >
+                          {issue}
+                        </p>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                ) : null}
               </div>
-
-              {ignoredLocalMetadataNote ? (
-                <div className="text-sm text-[color:var(--ink-soft)]">
-                  {ignoredLocalMetadataNote}
-                </div>
-              ) : null}
-              {visibleFileIssues.length > 0 ? (
-                <ul className="flex flex-col gap-1 list-disc pl-5 text-sm text-[color:var(--ink-soft)]">
-                  {visibleFileIssues.map((issue) => (
-                    <li key={issue}>{issue}</li>
-                  ))}
-                </ul>
-              ) : null}
-            </>
+            </div>
           ) : (
             <Card>
               <CardContent>

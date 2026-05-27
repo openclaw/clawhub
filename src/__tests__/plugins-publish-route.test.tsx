@@ -634,5 +634,8 @@ describe("plugins publish route", () => {
     expect(
       await screen.findByText(/Pending security checks and verification before public listing\./i),
     ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Publish plugin" }).getAttribute("disabled"),
+    ).toBeNull();
   });
 });
