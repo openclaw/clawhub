@@ -1028,10 +1028,20 @@ async function listDashboardPackagesForOwnerPublisher(
 ) {
   const takeLimit = Math.min(limit * 5, 500);
   const ownerPublisher = await ctx.db.get(ownerPublisherId);
-  const isOwnDashboard = await canAccessPublisherOwnerScope(ctx, {
-    publisher: ownerPublisher,
-    userId: viewerUserId,
-  });
+  const owner =
+    ownerPublisher?.kind === "user" && !ownerPublisher.linkedUserId
+      ? await ctx.db.get(viewerUserId)
+      : null;
+  const isOwnDashboard =
+    (await canAccessPublisherOwnerScope(ctx, {
+      publisher: ownerPublisher,
+      userId: viewerUserId,
+    })) ||
+    Boolean(
+      ownerPublisher?.kind === "user" &&
+      !ownerPublisher.linkedUserId &&
+      owner?.personalPublisherId === ownerPublisherId,
+    );
   if (!isOwnDashboard) return [];
 
   const scopedEntries = await ctx.db

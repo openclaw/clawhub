@@ -5726,6 +5726,70 @@ describe("packages public queries", () => {
     ]);
   });
 
+  it("lists packages for the viewer's legacy no-link personal publisher dashboard", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
+    const result = await listHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "packageReleases:demo-1") return makeReleaseDoc({ version: "1.0.0" });
+            if (id === "users:owner") {
+              return {
+                _id: "users:owner",
+                handle: "owner",
+                personalPublisherId: "publishers:owner",
+              };
+            }
+            if (id === "publishers:owner") {
+              return {
+                _id: "publishers:owner",
+                kind: "user",
+                linkedUserId: undefined,
+              };
+            }
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table === "packages") {
+              return {
+                withIndex: vi.fn((indexName: string) => {
+                  if (indexName === "by_owner_publisher") {
+                    return {
+                      order: vi.fn(() => ({
+                        take: vi
+                          .fn()
+                          .mockResolvedValue([
+                            makePackageDoc({ ownerPublisherId: "publishers:owner" }),
+                          ]),
+                      })),
+                    };
+                  }
+                  throw new Error(`Unexpected index ${indexName}`);
+                }),
+              };
+            }
+            if (table === "publisherMembers") {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue(null),
+                })),
+              };
+            }
+            throw new Error(`Unexpected table ${table}`);
+          }),
+        },
+      } as never,
+      { ownerPublisherId: "publishers:owner", limit: 20 },
+    );
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        name: "demo-plugin",
+        ownerPublisherId: "publishers:owner",
+      }),
+    ]);
+  });
+
   it("returns no owner packages when the viewer lacks access", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:stranger" as never);
     const result = await listHandler(
