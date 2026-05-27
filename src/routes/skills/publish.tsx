@@ -108,7 +108,7 @@ export function Upload() {
   const [pendingFileRemovalIndex, setPendingFileRemovalIndex] = useState<number | null>(null);
   const [slug, setSlug] = useState(updateSlug ?? "");
   const [displayName, setDisplayName] = useState("");
-  const [touchedFields, setTouchedFields] = useState<Record<SkillPublishField, boolean>>({
+  const [dirtyFields, setDirtyFields] = useState<Record<SkillPublishField, boolean>>({
     slug: false,
     displayName: false,
     version: false,
@@ -168,8 +168,8 @@ export function Upload() {
   };
   const navigate = useNavigate();
 
-  function markFieldTouched(field: SkillPublishField) {
-    setTouchedFields((current) => {
+  function markFieldDirty(field: SkillPublishField) {
+    setDirtyFields((current) => {
       if (current[field]) return current;
       return { ...current, [field]: true };
     });
@@ -501,11 +501,11 @@ export function Upload() {
     existingOwnerHandle,
     ownerHandle,
   ]);
-  const shouldShowSlugIssue = hasAttempted || touchedFields.slug;
-  const shouldShowDisplayNameIssue = hasAttempted || touchedFields.displayName;
-  const shouldShowVersionIssue = hasAttempted || touchedFields.version;
-  const shouldShowTagsIssue = hasAttempted || touchedFields.tags;
-  const shouldShowClawScanIssue = hasAttempted || touchedFields.clawScanNote;
+  const shouldShowSlugIssue = hasAttempted || dirtyFields.slug || Boolean(trimmedSlug);
+  const shouldShowDisplayNameIssue = hasAttempted || dirtyFields.displayName;
+  const shouldShowVersionIssue = hasAttempted || dirtyFields.version;
+  const shouldShowTagsIssue = hasAttempted || dirtyFields.tags;
+  const shouldShowClawScanIssue = hasAttempted || dirtyFields.clawScanNote;
   const shouldShowFileIssues = hasAttempted || files.length > 0;
 
   const slugIssue = shouldShowSlugIssue
@@ -535,12 +535,12 @@ export function Upload() {
     : undefined;
   const ownerIssue = validation.issues.find((issue) => issue.startsWith("Confirm the ownership "));
   const visibleMetadataIssues = validation.issues.filter((issue) => {
-    if (issue.startsWith("Slug")) return shouldShowSlugIssue;
-    if (issue.startsWith("Display name")) return shouldShowDisplayNameIssue;
-    if (issue.startsWith("Version")) return shouldShowVersionIssue;
+    if (issue.startsWith("Slug")) return false;
+    if (issue.startsWith("Display name")) return false;
+    if (issue.startsWith("Version")) return false;
     if (issue.startsWith("At least one tag")) return shouldShowTagsIssue;
     if (issue.startsWith("ClawScan note")) return shouldShowClawScanIssue;
-    if (issue.includes("already exists")) return Boolean(trimmedSlug);
+    if (issue === effectiveSlugCollision?.message) return false;
     return false;
   });
   const visibleFileIssues = validation.issues.filter((issue) => {
@@ -595,11 +595,11 @@ export function Upload() {
     const nextSlug = slugFromFolderName(folderName);
     const nextDisplayName = displayNameFromFolderName(folderName);
     const prefilled: string[] = [];
-    if (nextSlug && !touchedFields.slug && !trimmedSlug) {
+    if (nextSlug && !dirtyFields.slug && !trimmedSlug) {
       setSlug(nextSlug);
       prefilled.push("slug");
     }
-    if (nextDisplayName && !touchedFields.displayName && !trimmedName) {
+    if (nextDisplayName && !dirtyFields.displayName && !trimmedName) {
       setDisplayName(nextDisplayName);
       prefilled.push("display name");
     }
@@ -1008,11 +1008,10 @@ export function Upload() {
                       displayNameIssue ? "display-name-validation-error" : undefined
                     }
                     onChange={(event) => {
-                      markFieldTouched("displayName");
+                      markFieldDirty("displayName");
                       setMetadataPrefillNote(null);
                       setDisplayName(event.target.value);
                     }}
-                    onBlur={() => markFieldTouched("displayName")}
                     placeholder={`My ${contentLabel}`}
                   />
                   <InlineValidationMessage
@@ -1031,11 +1030,10 @@ export function Upload() {
                       aria-describedby={slugIssue ? "slug-validation-error" : undefined}
                       className={showSlugStatusIcon ? "pr-10" : undefined}
                       onChange={(event) => {
-                        markFieldTouched("slug");
+                        markFieldDirty("slug");
                         setMetadataPrefillNote(null);
                         setSlug(event.target.value);
                       }}
-                      onBlur={() => markFieldTouched("slug")}
                       placeholder={`${contentLabel}-name`}
                     />
                     {showSlugAvailableIcon ? (
@@ -1141,10 +1139,9 @@ export function Upload() {
                   aria-invalid={Boolean(versionIssue)}
                   aria-describedby={versionIssue ? "version-validation-error" : undefined}
                   onValueChange={(nextVersion) => {
-                    markFieldTouched("version");
+                    markFieldDirty("version");
                     setVersion(nextVersion);
                   }}
-                  onBlur={() => markFieldTouched("version")}
                   placeholder="1.0.0"
                 />
                 <InlineValidationMessage id="version-validation-error" message={versionIssue} />
@@ -1156,10 +1153,9 @@ export function Upload() {
                   id="tags"
                   value={tags}
                   onChange={(event) => {
-                    markFieldTouched("tags");
+                    markFieldDirty("tags");
                     setTags(event.target.value);
                   }}
-                  onBlur={() => markFieldTouched("tags")}
                   placeholder="latest, stable"
                 />
               </div>
@@ -1173,11 +1169,10 @@ export function Upload() {
                     value={clawScanNote}
                     maxLength={MAX_CLAWSCAN_NOTE_CHARS + 1}
                     onChange={(event) => {
-                      markFieldTouched("clawScanNote");
+                      markFieldDirty("clawScanNote");
                       clawScanNoteTouchedRef.current = true;
                       setClawScanNote(event.target.value);
                     }}
-                    onBlur={() => markFieldTouched("clawScanNote")}
                     placeholder="Optional context for ClawScan, e.g. why this version needs network access."
                   />
                 </div>

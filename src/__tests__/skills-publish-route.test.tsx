@@ -87,7 +87,18 @@ describe("Upload route", () => {
   it("keeps required validation quiet before submit", async () => {
     render(<Upload />);
     const publishButton = screen.getByRole("button", { name: /publish/i });
+    const slugInput = screen.getByPlaceholderText("skill-name");
+    const displayNameInput = screen.getByPlaceholderText("My skill");
+
     expect(publishButton.getAttribute("disabled")).not.toBeNull();
+    expect(screen.queryByText(/Slug is required/i)).toBeNull();
+    expect(screen.queryByText(/Display name is required/i)).toBeNull();
+
+    fireEvent.focus(slugInput);
+    fireEvent.blur(slugInput);
+    fireEvent.focus(displayNameInput);
+    fireEvent.blur(displayNameInput);
+
     expect(screen.queryByText(/Slug is required/i)).toBeNull();
     expect(screen.queryByText(/Display name is required/i)).toBeNull();
 
@@ -95,6 +106,18 @@ describe("Upload route", () => {
 
     expect(await screen.findAllByText(/Slug is required/i)).not.toHaveLength(0);
     expect(await screen.findAllByText(/Display name is required/i)).not.toHaveLength(0);
+  });
+
+  it("does not duplicate inline required field errors in the metadata footer", () => {
+    render(<Upload />);
+    const displayNameInput = screen.getByPlaceholderText("My skill");
+
+    fireEvent.change(displayNameInput, { target: { value: "Temporary skill" } });
+    fireEvent.change(displayNameInput, { target: { value: "" } });
+
+    const messages = screen.getAllByText(/Display name is required\./i);
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.id).toBe("display-name-validation-error");
   });
 
   it("marks the input for folder uploads", async () => {
