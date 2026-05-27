@@ -2223,10 +2223,13 @@ export const getBySlug = query({
       ownerPublisherId: skill.ownerPublisherId,
       ownerUserId: skill.ownerUserId,
     });
+    const skillOwnerPublisher = skill.ownerPublisherId
+      ? await ctx.db.get(skill.ownerPublisherId)
+      : null;
     const publisherOwner =
-      userId && ownerPublisher
+      userId && skillOwnerPublisher
         ? await canAccessPublisherOwnerScope(ctx, {
-            publisher: ownerPublisher,
+            publisher: skillOwnerPublisher,
             userId,
             legacyOwnerUserId: skill.ownerUserId,
           })
@@ -3143,26 +3146,36 @@ export const list = query({
     if (ownerPublisherId) {
       const userId = await getOptionalActiveAuthUserId(ctx);
       const ownerPublisher = await ctx.db.get(ownerPublisherId);
+      const owner =
+        userId && ownerPublisher?.kind === "user" && !ownerPublisher.linkedUserId
+          ? await ctx.db.get(userId)
+          : null;
       const isOwnDashboard = Boolean(
         userId &&
-        (await canAccessPublisherOwnerScope(ctx, {
+        ((await canAccessPublisherOwnerScope(ctx, {
           publisher: ownerPublisher,
           userId,
-        })),
+        })) ||
+          (ownerPublisher?.kind === "user" &&
+            !ownerPublisher.linkedUserId &&
+            owner?.personalPublisherId === ownerPublisherId)),
       );
       const scopedEntries = await ctx.db
         .query("skills")
         .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", ownerPublisherId))
         .order("desc")
         .take(takeLimit);
-      const legacyEntries =
-        ownerPublisher?.kind === "user" && ownerPublisher.linkedUserId
-          ? await ctx.db
-              .query("skills")
-              .withIndex("by_owner", (q) => q.eq("ownerUserId", ownerPublisher.linkedUserId!))
-              .order("desc")
-              .take(takeLimit)
-          : [];
+      const legacyPersonalOwnerUserId =
+        isOwnDashboard && ownerPublisher?.kind === "user"
+          ? (ownerPublisher.linkedUserId ?? userId)
+          : undefined;
+      const legacyEntries = legacyPersonalOwnerUserId
+        ? await ctx.db
+            .query("skills")
+            .withIndex("by_owner", (q) => q.eq("ownerUserId", legacyPersonalOwnerUserId))
+            .order("desc")
+            .take(takeLimit)
+        : [];
       const combined = [...scopedEntries, ...legacyEntries].filter(
         (skill, index, all) =>
           !skill.softDeletedAt &&
@@ -3246,16 +3259,25 @@ export const listDashboardPaginated = query({
     if (ownerPublisherId) {
       const userId = await getOptionalActiveAuthUserId(ctx);
       const ownerPublisher = await ctx.db.get(ownerPublisherId);
+      const owner =
+        userId && ownerPublisher?.kind === "user" && !ownerPublisher.linkedUserId
+          ? await ctx.db.get(userId)
+          : null;
       const isOwnDashboard = Boolean(
         userId &&
-        (await canAccessPublisherOwnerScope(ctx, {
+        ((await canAccessPublisherOwnerScope(ctx, {
           publisher: ownerPublisher,
           userId,
-        })),
+        })) ||
+          (ownerPublisher?.kind === "user" &&
+            !ownerPublisher.linkedUserId &&
+            owner?.personalPublisherId === ownerPublisherId)),
       );
 
       const legacyPersonalOwnerUserId =
-        isOwnDashboard && ownerPublisher?.kind === "user" ? ownerPublisher.linkedUserId : undefined;
+        isOwnDashboard && ownerPublisher?.kind === "user"
+          ? (ownerPublisher.linkedUserId ?? userId)
+          : undefined;
       const shouldIncludeLegacyPersonalSkills = Boolean(legacyPersonalOwnerUserId);
       const paginateOwnerSkills = async (paginationOpts: typeof args.paginationOpts) =>
         shouldIncludeLegacyPersonalSkills

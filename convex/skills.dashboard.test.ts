@@ -84,14 +84,20 @@ function isPaginatedIndexPage(
 
 function makeCtx(
   indexPages: Record<string, IndexPage>,
-  options: { membership?: Record<string, unknown> | null } = {},
+  options: { membership?: Record<string, unknown> | null; legacyPersonalPublisher?: boolean } = {},
 ) {
   const indexCalls: string[] = [];
   const ctx = {
     db: {
       get: vi.fn(async (id: string) => {
         if (id === "users:owner") {
-          return { _id: "users:owner", _creationTime: 1, handle: "owner", displayName: "Owner" };
+          return {
+            _id: "users:owner",
+            _creationTime: 1,
+            handle: "owner",
+            displayName: "Owner",
+            personalPublisherId: options.legacyPersonalPublisher ? "publishers:self" : undefined,
+          };
         }
         if (id === "users:other") {
           return { _id: "users:other", _creationTime: 1, handle: "other", displayName: "Other" };
@@ -106,7 +112,7 @@ function makeCtx(
             kind: "user",
             handle: "owner",
             displayName: "Owner",
-            linkedUserId: "users:owner",
+            linkedUserId: options.legacyPersonalPublisher ? undefined : "users:owner",
           };
         }
         if (id === "publishers:org") {
@@ -199,6 +205,27 @@ describe("skills.listDashboardPaginated", () => {
     const { ctx, indexCalls } = makeCtx({
       by_owner_active_updated: [makeSkill("legacy-skill")],
     });
+
+    const result = await handler(
+      ctx as never,
+      {
+        ownerPublisherId: "publishers:self",
+        paginationOpts,
+      } as never,
+    );
+
+    expect(indexCalls).toContain("by_owner_active_updated");
+    expect(result.page).toEqual([expect.objectContaining({ slug: "legacy-skill" })]);
+  });
+
+  it("includes legacy no-link personal publisher skills when paginating", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
+    const { ctx, indexCalls } = makeCtx(
+      {
+        by_owner_active_updated: [makeSkill("legacy-skill")],
+      },
+      { legacyPersonalPublisher: true },
+    );
 
     const result = await handler(
       ctx as never,
@@ -413,5 +440,23 @@ describe("skills.listDashboardPaginated", () => {
 
     expect(indexCalls).toContain("by_owner_publisher");
     expect(result).toEqual([]);
+  });
+
+  it("includes legacy no-link personal publisher skills in the non-paginated list", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
+    const { ctx, indexCalls } = makeCtx(
+      {
+        by_owner: [makeSkill("legacy-skill")],
+      },
+      { legacyPersonalPublisher: true },
+    );
+
+    const result = await listHandler(
+      ctx as never,
+      { ownerPublisherId: "publishers:self", limit: 20 } as never,
+    );
+
+    expect(indexCalls).toContain("by_owner");
+    expect(result).toEqual([expect.objectContaining({ slug: "legacy-skill" })]);
   });
 });
