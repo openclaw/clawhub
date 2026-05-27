@@ -2065,7 +2065,11 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
       return json(result, 200, rate.headers);
     } catch (error) {
       if (error instanceof SyntaxError) return text("Invalid JSON", 400, rate.headers);
-      return text(error instanceof Error ? error.message : "Skill bulk rescan failed", 400, rate.headers);
+      return text(
+        error instanceof Error ? error.message : "Skill bulk rescan failed",
+        400,
+        rate.headers,
+      );
     }
   }
 

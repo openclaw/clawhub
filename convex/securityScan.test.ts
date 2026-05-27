@@ -388,20 +388,22 @@ function makeBulkRescanCtx(options: {
       if (table === "skills") {
         return {
           order: vi.fn(() => ({
-            paginate: vi.fn(async ({ cursor, numItems }: { cursor: string | null; numItems: number }) => {
-              expect(indexName).toBe("by_active_created");
-              const start = cursor ? Number.parseInt(cursor, 10) : 0;
-              const allSkills = options.skills.filter(
-                (skill) => skill.softDeletedAt === equals.get("softDeletedAt"),
-              );
-              const page = allSkills.slice(start, start + numItems);
-              const next = start + page.length;
-              return {
-                page,
-                isDone: next >= allSkills.length,
-                continueCursor: next >= allSkills.length ? "" : String(next),
-              };
-            }),
+            paginate: vi.fn(
+              async ({ cursor, numItems }: { cursor: string | null; numItems: number }) => {
+                expect(indexName).toBe("by_active_created");
+                const start = cursor ? Number.parseInt(cursor, 10) : 0;
+                const allSkills = options.skills.filter(
+                  (skill) => skill.softDeletedAt === equals.get("softDeletedAt"),
+                );
+                const page = allSkills.slice(start, start + numItems);
+                const next = start + page.length;
+                return {
+                  page,
+                  isDone: next >= allSkills.length,
+                  continueCursor: next >= allSkills.length ? "" : String(next),
+                };
+              },
+            ),
           })),
         };
       }
@@ -410,7 +412,10 @@ function makeBulkRescanCtx(options: {
         collect: vi.fn(async () => {
           if (table !== "securityScanJobs") return [];
           return (options.jobs ?? []).filter((job) => {
-            if (equals.has("skillVersionId") && job.skillVersionId !== equals.get("skillVersionId")) {
+            if (
+              equals.has("skillVersionId") &&
+              job.skillVersionId !== equals.get("skillVersionId")
+            ) {
               return false;
             }
             return true;
@@ -745,9 +750,7 @@ describe("securityScan", () => {
           latestVersionId: "skillVersions:active-1",
         },
       ],
-      versions: [
-        { _id: "skillVersions:active-1", skillId: "skills:active-1", version: "1.0.0" },
-      ],
+      versions: [{ _id: "skillVersions:active-1", skillId: "skills:active-1", version: "1.0.0" }],
       jobs: [
         makeScanJob({
           _id: "securityScanJobs:manual",
@@ -771,9 +774,7 @@ describe("securityScan", () => {
     });
     expect(patch).not.toHaveBeenCalled();
     expect(inserts).toEqual(
-      expect.not.arrayContaining([
-        expect.objectContaining({ table: "securityScanJobs" }),
-      ]),
+      expect.not.arrayContaining([expect.objectContaining({ table: "securityScanJobs" })]),
     );
   });
 
@@ -787,9 +788,7 @@ describe("securityScan", () => {
           latestVersionId: "skillVersions:active-1",
         },
       ],
-      versions: [
-        { _id: "skillVersions:active-1", skillId: "skills:active-1", version: "1.0.0" },
-      ],
+      versions: [{ _id: "skillVersions:active-1", skillId: "skills:active-1", version: "1.0.0" }],
     });
 
     const result = await enqueueBulkSkillRescanBatchForAdminInternalHandler(ctx, {
