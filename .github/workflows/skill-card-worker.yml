@@ -7,38 +7,41 @@ on:
   workflow_dispatch:
     inputs:
       batch-limit:
-        description: "Maximum Skill Card jobs to run in parallel per batch"
+        description: "Maximum Skill Card jobs to run in parallel per worker shard"
         required: true
-        default: "5"
+        default: "6"
       max-jobs:
-        description: "Optional total jobs cap for this run"
+        description: "Optional total jobs cap per worker shard"
         required: false
         default: ""
       max-runtime-minutes:
         description: "Stop claiming new batches after this many minutes"
         required: true
-        default: "30"
-
-concurrency:
-  group: skill-card-worker
-  cancel-in-progress: false
+        default: "40"
 
 permissions:
   contents: read
 
 jobs:
   skill-card-worker:
+    name: Skill Card worker shard ${{ matrix.shard }}
     runs-on: blacksmith-8vcpu-ubuntu-2404
-    timeout-minutes: 45
+    timeout-minutes: 60
     environment: Production
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
     env:
       CONVEX_URL: ${{ vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud' }}
       # Shared Convex worker credential used by security and Skill Card workers.
       SECURITY_SCAN_WORKER_TOKEN: ${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}
-      SKILL_CARD_WORKER_LIMIT: ${{ github.event.inputs['batch-limit'] || '5' }}
+      SKILL_CARD_WORKER_LIMIT: ${{ github.event.inputs['batch-limit'] || '6' }}
       SKILL_CARD_WORKER_MAX_JOBS: ${{ github.event.inputs['max-jobs'] || '' }}
-      SKILL_CARD_WORKER_MAX_RUNTIME_MINUTES: ${{ github.event.inputs['max-runtime-minutes'] || '30' }}
-      SKILL_CARD_WORKER_LEASE_MINUTES: "30"
+      SKILL_CARD_WORKER_MAX_RUNTIME_MINUTES: ${{ github.event.inputs['max-runtime-minutes'] || '40' }}
+      SKILL_CARD_WORKER_LEASE_MINUTES: "60"
+      SKILL_CARD_WORKER_SHARD: ${{ matrix.shard }}
+      SKILL_CARD_WORKER_ID: "github-actions:${{ github.run_id }}:${{ github.run_attempt }}:${{ matrix.shard }}"
       NVIDIA_TRUSTWORTHY_AI_DIR: ${{ github.workspace }}/.artifacts/nvidia-trustworthy-ai
     steps:
       - uses: actions/checkout@v6
