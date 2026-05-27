@@ -694,7 +694,7 @@ async function viewerCanAccessPackageOwner(
   if (!digest.ownerPublisherId) return digest.ownerUserId === viewerUserId;
 
   const ownerPublisherId = digest.ownerPublisherId;
-  const cacheKey = String(ownerPublisherId);
+  const cacheKey = `${ownerPublisherId}:${digest.ownerUserId}`;
   const cached = membershipCache?.get(cacheKey);
   if (cached) return await cached;
 
@@ -5300,9 +5300,7 @@ async function transferPackageOwnerForUser(
     destinationPublisher.kind === "user" &&
     (destinationPublisher.linkedUserId
       ? destinationPublisher.linkedUserId === actor._id
-      : Boolean(
-          destinationMembership && isPublisherRoleAllowed(destinationMembership.role, ["admin"]),
-        ));
+      : actor.personalPublisherId === destinationPublisher._id);
   const canManageDestination =
     actor.role === "admin" ||
     (destinationPublisher.kind === "user"

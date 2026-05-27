@@ -1751,6 +1751,47 @@ describe("packages public queries", () => {
     ]);
   });
 
+  it("does not reuse legacy no-link personal access across package owners", async () => {
+    const { ctx } = makeDigestCtx({
+      publisherDocs: {
+        "publishers:legacy-personal": {
+          _id: "publishers:legacy-personal",
+          kind: "user",
+          handle: "viewer",
+          linkedUserId: undefined,
+        },
+      },
+      pages: [
+        {
+          page: [
+            makeDigest("own-legacy-secret", {
+              channel: "private",
+              ownerKind: "user",
+              ownerUserId: "users:viewer",
+              ownerPublisherId: "publishers:legacy-personal",
+            }),
+            makeDigest("stale-legacy-secret", {
+              channel: "private",
+              ownerKind: "user",
+              ownerUserId: "users:other",
+              ownerPublisherId: "publishers:legacy-personal",
+            }),
+            makeDigest("public-plugin"),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await listPageForViewerInternalHandler(ctx, {
+      paginationOpts: { cursor: null, numItems: 10 },
+      viewerUserId: "users:viewer",
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual(["own-legacy-secret", "public-plugin"]);
+  });
+
   it("allows owners to filter to only their private packages", async () => {
     const { ctx, indexNames } = makeDigestCtx({
       pages: [
@@ -3489,6 +3530,26 @@ describe("packages public queries", () => {
         toOwner: "opik",
       }),
     ).rejects.toThrow("Forbidden");
+  });
+
+  it("rejects package transfer destinations through stale no-link personal memberships", async () => {
+    const { ctx } = makeUserTransferPackageOwnerCtx({
+      destinationPublisher: {
+        _id: "publishers:opik",
+        kind: "user",
+        handle: "opik",
+        linkedUserId: undefined,
+      },
+      destinationMembershipRole: "admin",
+    });
+
+    await expect(
+      transferPackageOwnerForUserInternalHandler(ctx, {
+        actorUserId: "users:vincent",
+        name: "@opik/opik-openclaw",
+        toOwner: "opik",
+      }),
+    ).rejects.toThrow('admin access for "@opik"');
   });
 
   it("rejects user package transfers without destination admin access", async () => {
