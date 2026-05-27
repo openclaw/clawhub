@@ -5733,6 +5733,13 @@ describe("packages public queries", () => {
         db: {
           get: vi.fn(async (id: string) => {
             if (id === "packageReleases:demo-1") return makeReleaseDoc({ version: "1.0.0" });
+            if (id === "packageReleases:legacy-1") {
+              return makeReleaseDoc({
+                _id: "packageReleases:legacy-1",
+                packageId: "packages:legacy-direct",
+                version: "1.0.0",
+              });
+            }
             if (id === "users:owner") {
               return {
                 _id: "users:owner",
@@ -5764,6 +5771,22 @@ describe("packages public queries", () => {
                       })),
                     };
                   }
+                  if (indexName === "by_owner") {
+                    return {
+                      order: vi.fn(() => ({
+                        take: vi.fn().mockResolvedValue([
+                          makePackageDoc({
+                            _id: "packages:legacy-direct",
+                            name: "legacy-direct-plugin",
+                            normalizedName: "legacy-direct-plugin",
+                            displayName: "Legacy Direct Plugin",
+                            ownerPublisherId: undefined,
+                            latestReleaseId: "packageReleases:legacy-1",
+                          }),
+                        ]),
+                      })),
+                    };
+                  }
                   throw new Error(`Unexpected index ${indexName}`);
                 }),
               };
@@ -5786,6 +5809,10 @@ describe("packages public queries", () => {
       expect.objectContaining({
         name: "demo-plugin",
         ownerPublisherId: "publishers:owner",
+      }),
+      expect.objectContaining({
+        name: "legacy-direct-plugin",
+        ownerPublisherId: undefined,
       }),
     ]);
   });

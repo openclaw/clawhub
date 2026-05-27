@@ -1047,14 +1047,17 @@ async function listDashboardPackagesForOwnerPublisher(
     .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", ownerPublisherId))
     .order("desc")
     .take(takeLimit);
-  const legacyEntries =
-    ownerPublisher?.kind === "user" && ownerPublisher.linkedUserId
-      ? await ctx.db
-          .query("packages")
-          .withIndex("by_owner", (q) => q.eq("ownerUserId", ownerPublisher.linkedUserId!))
-          .order("desc")
-          .take(takeLimit)
-      : [];
+  const legacyPersonalOwnerUserId =
+    ownerPublisher?.kind === "user"
+      ? (ownerPublisher.linkedUserId ?? (isOwnDashboard ? viewerUserId : undefined))
+      : undefined;
+  const legacyEntries = legacyPersonalOwnerUserId
+    ? await ctx.db
+        .query("packages")
+        .withIndex("by_owner", (q) => q.eq("ownerUserId", legacyPersonalOwnerUserId))
+        .order("desc")
+        .take(takeLimit)
+    : [];
 
   const combined = [...scopedEntries, ...legacyEntries].filter(
     (pkg, index, all) =>
