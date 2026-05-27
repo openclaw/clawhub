@@ -53,6 +53,10 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   API/CLI, including open report count, latest release moderation state, and
   download-block reasons. Reporter identities and report bodies remain moderator
   intake data.
+- Package publish actions may spend time validating and scanning before the
+  final release write. The final `insertReleaseInternal` mutation must re-read
+  the publish actor, owner user, and owner publisher and reject if any of those
+  principals are banned, deactivated, or deleted.
 - OpenClaw install clients can read the exact-release public trust endpoint at
   `GET /api/v1/packages/{name}/versions/{version}/security` without owner or
   moderator credentials. The endpoint returns only package identity, exact
