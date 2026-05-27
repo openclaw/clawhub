@@ -221,13 +221,38 @@ export function useSkillsBrowseModel({
 
   const baseItems = useMemo(() => {
     if (hasQuery) {
-      return searchResults.map((entry) => ({
-        skill: entry.skill,
-        latestVersion: entry.version,
-        ownerHandle: entry.ownerHandle ?? null,
-        owner: entry.owner ?? null,
-        searchScore: entry.score,
-      }));
+      return searchResults.map((entry) => {
+        // Search paths return `version: null`. Synthesize a minimal stub
+        // so consumers can still render the API-key-required badge.
+        const apiKeyRequired = entry.apiKeyRequired ?? entry.version?.apiKeyRequired;
+        const latestVersion =
+          entry.version != null
+            ? {
+                version: entry.version.version,
+                createdAt: entry.version.createdAt,
+                changelog: entry.version.changelog,
+                changelogSource: entry.version.changelogSource,
+                parsed: entry.version.parsed?.clawdis
+                  ? { clawdis: entry.version.parsed.clawdis }
+                  : undefined,
+                apiKeyRequired,
+              }
+            : apiKeyRequired !== undefined
+              ? {
+                  version: "",
+                  createdAt: 0,
+                  changelog: "",
+                  apiKeyRequired,
+                }
+              : null;
+        return {
+          skill: entry.skill,
+          latestVersion,
+          ownerHandle: entry.ownerHandle ?? null,
+          owner: entry.owner ?? null,
+          searchScore: entry.score,
+        };
+      });
     }
     return listResults;
   }, [hasQuery, listResults, searchResults]);

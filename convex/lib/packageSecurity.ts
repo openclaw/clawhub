@@ -47,10 +47,9 @@ export function resolvePackageReleaseScanStatus(
   }
 
   const staticStatus = normalizePackageScanStatus(release.staticScan?.status);
-  if (staticStatus === "malicious") return "malicious";
-
   const effectiveVerificationStatus =
-    verificationStatus === "suspicious" && staticStatus === "suspicious"
+    (verificationStatus === "suspicious" && staticStatus === "suspicious") ||
+    (verificationStatus === "malicious" && staticStatus === "malicious")
       ? undefined
       : verificationStatus;
   if (effectiveVerificationStatus === "malicious") return "malicious";
@@ -80,9 +79,6 @@ export function getPackageTrustReasons(
   const reasons: string[] = [];
   if (release.manualModeration?.state) reasons.push(`manual:${release.manualModeration.state}`);
   if (scanStatus !== "clean" && scanStatus !== "not-run") reasons.push(`scan:${scanStatus}`);
-  if (release.staticScan?.status === "malicious") {
-    reasons.push(`static:${release.staticScan.status}`);
-  }
   if (reportCount > 0) reasons.push(`reports:${reportCount}`);
   return [...new Set(reasons)];
 }

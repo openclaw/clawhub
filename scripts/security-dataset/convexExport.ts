@@ -6,6 +6,7 @@ import type {
   ExportFileInput,
   LlmAnalysisInput,
   ModerationConsensusInput,
+  SkillSpectorAnalysisInput,
   StaticScanInput,
   VtAnalysisInput,
 } from "./normalize";
@@ -132,6 +133,7 @@ function skillVersionToExportRow(
       packageExecutesCode: null,
       sourceRepoHost: null,
       vtAnalysis: vtAnalysisFromExport(version.vtAnalysis),
+      skillSpectorAnalysis: skillSpectorAnalysisFromExport(version.skillSpectorAnalysis),
       staticScan: staticScanFromExport(version.staticScan),
       llmAnalysis: llmAnalysisFromExport(version.llmAnalysis),
       moderationConsensus,
@@ -164,6 +166,7 @@ function packageReleaseToExportRow(
       packageExecutesCode: booleanOrNull(pkg.executesCode),
       sourceRepoHost: sourceRepoHost(stringOrNull(pkg.sourceRepo)),
       vtAnalysis: vtAnalysisFromExport(release.vtAnalysis),
+      skillSpectorAnalysis: skillSpectorAnalysisFromExport(release.skillSpectorAnalysis),
       staticScan: staticScanFromExport(release.staticScan),
       llmAnalysis: llmAnalysisFromExport(release.llmAnalysis),
       moderationConsensus: null,
@@ -212,6 +215,37 @@ function vtAnalysisFromExport(value: unknown): VtAnalysisInput | null {
     engineStats: engineStatsFromExport(value.engineStats),
     checkedAt: numberValue(value.checkedAt, "vtAnalysis.checkedAt"),
   };
+}
+
+function skillSpectorAnalysisFromExport(value: unknown): SkillSpectorAnalysisInput | null {
+  if (!isRecord(value)) return null;
+  return {
+    status: requiredString(value.status, "skillSpectorAnalysis.status"),
+    score: numberOrNull(value.score),
+    severity: stringOrNull(value.severity),
+    recommendation: stringOrNull(value.recommendation),
+    issueCount: numberValue(value.issueCount, "skillSpectorAnalysis.issueCount"),
+    issues: skillSpectorIssuesFromExport(value.issues),
+    scannerVersion: stringOrNull(value.scannerVersion),
+    summary: stringOrNull(value.summary),
+    error: stringOrNull(value.error),
+    checkedAt: numberValue(value.checkedAt, "skillSpectorAnalysis.checkedAt"),
+  };
+}
+
+function skillSpectorIssuesFromExport(value: unknown): SkillSpectorAnalysisInput["issues"] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((issue) => {
+    if (!isRecord(issue)) return [];
+    return [
+      {
+        issueId: requiredString(issue.issueId, "skillSpectorAnalysis.issue.issueId"),
+        severity: requiredString(issue.severity, "skillSpectorAnalysis.issue.severity"),
+        confidence: numberOrNull(issue.confidence),
+        explanation: requiredString(issue.explanation, "skillSpectorAnalysis.issue.explanation"),
+      },
+    ];
+  });
 }
 
 function staticScanFromExport(value: unknown): StaticScanInput | null {

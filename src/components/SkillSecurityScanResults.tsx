@@ -90,7 +90,35 @@ export type LlmAnalysis = {
   checkedAt: number;
 };
 
-export type StaticFinding = {
+export type SkillSpectorIssue = {
+  issueId: string;
+  category?: string;
+  pattern?: string;
+  severity: string;
+  confidence?: number;
+  file?: string;
+  startLine?: number;
+  endLine?: number;
+  explanation: string;
+  remediation?: string;
+  finding?: string;
+  codeSnippet?: string;
+};
+
+export type SkillSpectorAnalysis = {
+  status: string;
+  score?: number;
+  severity?: string;
+  recommendation?: string;
+  issueCount: number;
+  issues: SkillSpectorIssue[];
+  scannerVersion?: string;
+  summary?: string;
+  error?: string;
+  checkedAt: number;
+};
+
+type StaticFinding = {
   code: string;
   severity: string;
   file: string;
@@ -107,8 +135,6 @@ type SecurityScanResultsProps = {
   capabilityTags?: string[] | null;
   variant?: "panel" | "badge";
 };
-
-type ClawScanRiskLevel = "low" | "medium" | "high";
 
 function VirusTotalIcon({ className }: { className?: string }) {
   return (
@@ -219,20 +245,6 @@ export function getClawScanDisplayStatus(analysis?: LlmAnalysis | null) {
   return status;
 }
 
-export function getClawScanRiskLevel(analysis?: LlmAnalysis | null): ClawScanRiskLevel | null {
-  const status = (analysis?.verdict ?? analysis?.status)?.trim().toLowerCase();
-  if (!status || status === "pending" || status === "loading" || status === "not_found") {
-    return null;
-  }
-  if (status === "error" || status === "failed") return null;
-  if (status === "malicious") return "high";
-
-  const highestSeverity = highestVisibleFindingSeverityRank(analysis);
-  if (highestSeverity >= severityRank("high")) return "high";
-  if (highestSeverity >= severityRank("medium")) return "medium";
-  return "low";
-}
-
 function getVtEngineStats(analysis?: VtAnalysis | null) {
   return analysis?.engineStats ?? analysis?.metadata?.stats;
 }
@@ -258,6 +270,14 @@ export function getVirusTotalDisplayStatus(analysis?: VtAnalysis | null) {
   if (analysis?.verdict === "undetected-only-fallback") return "benign";
 
   return analysis?.verdict ?? analysis?.status ?? "pending";
+}
+
+export function getSkillSpectorDisplayStatus(analysis?: SkillSpectorAnalysis | null) {
+  const status = analysis?.status?.trim().toLowerCase();
+  if (!status) return "pending";
+  if (status === "clean" || status === "benign") return "benign";
+  if (status === "suspicious") return "review";
+  return status;
 }
 
 export function ScanResultBadge({
@@ -297,33 +317,6 @@ function getDimensionIcon(rating: string) {
   }
 }
 
-const RISK_LEVEL_BADGE_META: Record<
-  ClawScanRiskLevel,
-  { label: string; level: number; variant: BadgeProps["variant"] }
-> = {
-  low: { label: "Low", level: 1, variant: "success" },
-  medium: { label: "Medium", level: 2, variant: "warning" },
-  high: { label: "High", level: 3, variant: "destructive" },
-};
-
-export function RiskLevelBadge({ level }: { level: ClawScanRiskLevel }) {
-  const risk = RISK_LEVEL_BADGE_META[level];
-  return (
-    <Badge
-      variant={risk.variant}
-      className="scan-risk-level-badge rounded-[4px]"
-      data-level={risk.level}
-    >
-      <span className="scan-risk-level-bars" aria-hidden="true">
-        <span />
-        <span />
-        <span />
-      </span>
-      <span>{risk.label}</span>
-    </Badge>
-  );
-}
-
 function getVisibleAgenticRiskFindings(analysis?: LlmAnalysis | null) {
   return (analysis?.agenticRiskFindings ?? []).filter(isVisibleAgenticRiskFinding);
 }
@@ -360,15 +353,150 @@ function getFindingSeverityBadgeMeta(severity: string): {
   }
 }
 
-export function FindingSeverityBadge({ severity }: { severity: string }) {
+function FindingSeverityBadge({ severity }: { severity: string }) {
   const severityBadge = getFindingSeverityBadgeMeta(severity);
   return <Badge variant={severityBadge.variant}>{severityBadge.label}</Badge>;
 }
 
-function getOwaspAgenticSkillsHref(categoryId: string) {
-  const match = categoryId.match(/^(?:ASI|AST)(\d{2})$/i);
-  if (!match) return null;
-  return `https://owasp.org/www-project-agentic-skills-top-10/ast${match[1]}`;
+function formatSkillSpectorConfidence(confidence?: number) {
+  if (typeof confidence !== "number" || !Number.isFinite(confidence)) return null;
+  const percent = confidence <= 1 ? confidence * 100 : confidence;
+  return `${Math.round(percent)}% confidence`;
+}
+
+export function getSkillSpectorIssueCount(analysis?: SkillSpectorAnalysis | null) {
+  if (!analysis) return 0;
+  const reportedCount = Number.isFinite(analysis.issueCount) ? analysis.issueCount : 0;
+  return Math.max(reportedCount, analysis.issues.length);
+}
+
+export function hasSkillSpectorFindings(analysis?: SkillSpectorAnalysis | null) {
+  return getSkillSpectorIssueCount(analysis) > 0;
+}
+
+export function getSkillSpectorOverviewCopy(analysis?: SkillSpectorAnalysis | null) {
+  const count = getSkillSpectorIssueCount(analysis);
+  if (count > 0) return `SkillSpector found ${count} issue${count === 1 ? "" : "s"}.`;
+  const status = analysis?.status?.trim().toLowerCase();
+  if (status === "clean" || status === "benign") return "No SkillSpector findings.";
+  if (status === "error" || status === "failed") return "SkillSpector could not complete.";
+  return "SkillSpector findings are pending for this release.";
+}
+
+const SKILLSPECTOR_RULE_LABELS: Record<string, string> = {
+  P1: "Instruction Override",
+  P2: "Hidden Instructions",
+  P3: "Exfiltration Commands",
+  P4: "Behavior Manipulation",
+  P5: "Harmful Content",
+  P6: "Direct Prompt Leakage",
+  P7: "Indirect Prompt Extraction",
+  P8: "Tool-Based Prompt Exfiltration",
+  E1: "External Transmission",
+  E2: "Environment Variable Harvesting",
+  E3: "File System Enumeration",
+  E4: "Context Leakage",
+  PE1: "Excessive Permissions",
+  PE2: "Sudo/Root Execution",
+  PE3: "Credential Access",
+  SDI1: "Description-Behavior Mismatch",
+  SDI2: "Context-Inappropriate Capability",
+  SDI3: "Scope Creep",
+  SDI4: "Intent-Code Divergence",
+  SQP1: "Vague Triggers",
+  SQP2: "Missing User Warnings",
+  SQP3: "Natural-Language Policy Violations",
+};
+
+function normalizeSkillSpectorRuleId(ruleId: string) {
+  return ruleId
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
+}
+
+function formatFallbackSkillSpectorTitle(ruleId: string) {
+  return ruleId
+    .trim()
+    .split(/[-_.\s]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(" ");
+}
+
+function getSkillSpectorIssueTitle(issue: SkillSpectorIssue) {
+  const pattern = issue.pattern?.trim();
+  if (pattern) return pattern;
+  const normalized = normalizeSkillSpectorRuleId(issue.issueId);
+  return SKILLSPECTOR_RULE_LABELS[normalized] ?? formatFallbackSkillSpectorTitle(issue.issueId);
+}
+
+function SkillSpectorFindingCard({
+  contentSnippet,
+  issue,
+}: {
+  contentSnippet?: string | null;
+  issue: SkillSpectorIssue;
+}) {
+  const confidence = formatSkillSpectorConfidence(issue.confidence);
+  const trimmedSnippet = contentSnippet?.trim() || issue.codeSnippet?.trim();
+
+  return (
+    <article className="static-analysis-finding">
+      <div className="static-analysis-finding-header">
+        <h3 className="agentic-risk-finding-title">{getSkillSpectorIssueTitle(issue)}</h3>
+        <div className="agentic-risk-finding-badges">
+          <FindingSeverityBadge severity={issue.severity} />
+        </div>
+      </div>
+      <dl className="static-analysis-finding-details">
+        {issue.category ? (
+          <div>
+            <dt>Category</dt>
+            <dd>{issue.category}</dd>
+          </div>
+        ) : null}
+        {trimmedSnippet ? (
+          <div>
+            <dt>Content</dt>
+            <dd>
+              <pre className="agentic-risk-evidence-snippet">{trimmedSnippet}</pre>
+            </dd>
+          </div>
+        ) : null}
+        {confidence ? (
+          <div>
+            <dt>Confidence</dt>
+            <dd>{confidence}</dd>
+          </div>
+        ) : null}
+        <div>
+          <dt>Finding</dt>
+          <dd>{issue.finding || issue.explanation}</dd>
+        </div>
+      </dl>
+    </article>
+  );
+}
+
+export function SkillSpectorFindings({
+  analysis,
+  contentSnippets,
+}: {
+  analysis: SkillSpectorAnalysis;
+  contentSnippets?: Record<number, string>;
+}) {
+  return (
+    <div className="static-analysis-findings">
+      {analysis.issues.map((issue, index) => (
+        <SkillSpectorFindingCard
+          key={`${issue.issueId}-${index}`}
+          contentSnippet={contentSnippets?.[index]}
+          issue={issue}
+        />
+      ))}
+    </div>
+  );
 }
 
 function slugifyFindingAnchorPart(value: string) {
@@ -393,7 +521,6 @@ function AgenticRiskFindingCard({
 }) {
   const evidence = finding.evidence;
   if (!evidence) return null;
-  const categoryHref = getOwaspAgenticSkillsHref(finding.categoryId);
   const title = `${finding.categoryId}: ${finding.categoryLabel}`;
   const anchorId = getClawScanFindingAnchorId(finding, index);
 
@@ -412,18 +539,7 @@ function AgenticRiskFindingCard({
           >
             #
           </a>
-          {categoryHref ? (
-            <a
-              className="agentic-risk-finding-title"
-              href={categoryHref}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              {title}
-            </a>
-          ) : (
-            <div className="agentic-risk-finding-title">{title}</div>
-          )}
+          <div className="agentic-risk-finding-title">{title}</div>
         </div>
         <div className="agentic-risk-finding-badges">
           <FindingSeverityBadge severity={finding.severity} />
@@ -563,137 +679,15 @@ function LlmAnalysisDetail({ analysis }: { analysis: LlmAnalysis }) {
   );
 }
 
-function isCleanStatus(status?: string) {
-  if (!status) return false;
-  const s = status.toLowerCase();
-  return s === "clean" || s === "benign";
-}
-
-const EXTERNALLY_CLEARED_STATIC_CODES = new Set(["suspicious.env_credential_access"]);
-
-function areStaticFindingsExternallyCleared(
-  findings: StaticFinding[],
-  vtStatus?: string,
-  llmStatus?: string,
-) {
-  return (
-    findings.length > 0 &&
-    isCleanStatus(vtStatus) &&
-    isCleanStatus(llmStatus) &&
-    findings.every((finding) => EXTERNALLY_CLEARED_STATIC_CODES.has(finding.code))
-  );
-}
-
-function getStaticGuidance(findings: StaticFinding[], vtStatus?: string, llmStatus?: string) {
-  const hasMaliciousCode = findings.some((f) => f.code.startsWith("malicious."));
-  if (hasMaliciousCode) {
-    return {
-      className: "malicious",
-      label: "Critical security concern",
-      text: "These patterns indicate potentially dangerous behavior. Exercise extreme caution and review the code thoroughly before installing.",
-    };
-  }
-  const externallyCleared = areStaticFindingsExternallyCleared(findings, vtStatus, llmStatus);
-  if (externallyCleared) {
-    return {
-      className: "benign",
-      label: "Confirmed safe by external scanners",
-      text: "Static analysis detected API credential-access patterns, but both VirusTotal and ClawScan confirmed this skill is safe. These patterns are common in legitimate API integration skills.",
-    };
-  }
-  const hasCritical = findings.some((f) => f.severity === "critical");
-  if (hasCritical) {
-    return {
-      className: "suspicious",
-      label: "Patterns worth reviewing",
-      text: "These patterns may indicate risky behavior. Check the VirusTotal and ClawScan results above for context-aware analysis before installing.",
-    };
-  }
-  return {
-    className: "benign",
-    label: "About static analysis",
-    text: "These patterns were detected by automated regex scanning. They may be normal for skills that integrate with external APIs. Check the VirusTotal and ClawScan results above for context-aware analysis.",
-  };
-}
-
-function StaticAnalysisDetail({
-  findings,
-  vtStatus,
-  llmStatus,
-}: {
-  findings: StaticFinding[];
-  vtStatus?: string;
-  llmStatus?: string;
-}) {
-  const [isOpen, setIsOpen] = useState(false);
-  const guidance = getStaticGuidance(findings, vtStatus, llmStatus);
-
-  return (
-    <div className={`analysis-detail${isOpen ? " is-open" : ""}`}>
-      <button
-        type="button"
-        className="analysis-detail-header"
-        onClick={() => {
-          const selection = window.getSelection();
-          if (selection && !selection.isCollapsed) return;
-          setIsOpen((prev) => !prev);
-        }}
-        aria-expanded={isOpen}
-      >
-        <span className="analysis-summary-text">
-          Static analysis: {findings.length} pattern{findings.length !== 1 ? "s" : ""} detected
-        </span>
-        <span className="analysis-detail-toggle">
-          Details <span className="chevron">{"\u25BE"}</span>
-        </span>
-      </button>
-      <div className="analysis-body">
-        <div className="analysis-dimensions">
-          {findings.map((finding, i) => {
-            const icon =
-              finding.severity === "critical"
-                ? { className: "dimension-icon-danger", symbol: "\u2717" }
-                : { className: "dimension-icon-concern", symbol: "!" };
-            return (
-              <div key={`${finding.code}-${finding.file}-${i}`} className="dimension-row">
-                <div className={`dimension-icon ${icon.className}`}>{icon.symbol}</div>
-                <div className="dimension-content">
-                  <div className="dimension-label">
-                    {finding.file}:{finding.line}
-                  </div>
-                  <div className="dimension-detail">{finding.message}</div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-        <div className={`analysis-guidance ${guidance.className}`}>
-          <div className="analysis-guidance-label">{guidance.label}</div>
-          {guidance.text}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export function SecurityScanResults({
   sha256hash,
   vtAnalysis,
   llmAnalysis,
-  staticFindings,
   capabilityTags,
   variant = "panel",
 }: SecurityScanResultsProps) {
   const visibleCapabilityTags = (capabilityTags ?? []).filter(Boolean);
-  const blockingStaticFindings =
-    staticFindings?.filter((finding) => finding.code.startsWith("malicious.")) ?? [];
-  const hasBlockingStaticFindings = blockingStaticFindings.length > 0;
-  if (
-    !sha256hash &&
-    !llmAnalysis &&
-    !hasBlockingStaticFindings &&
-    visibleCapabilityTags.length === 0
-  ) {
+  if (!sha256hash && !llmAnalysis && visibleCapabilityTags.length === 0) {
     return null;
   }
 
@@ -702,7 +696,6 @@ export function SecurityScanResults({
   const llmVerdict = llmAnalysis?.verdict ?? llmAnalysis?.status;
   const llmDisplayStatus = getClawScanDisplayStatus(llmAnalysis);
   const llmStatusInfo = llmVerdict ? getScanStatusInfo(llmDisplayStatus) : null;
-  const llmRiskLevel = getClawScanRiskLevel(llmAnalysis);
 
   if (variant === "badge") {
     return (
@@ -780,11 +773,6 @@ export function SecurityScanResults({
               <span className="scan-result-scanner-name">ClawScan</span>
             </div>
             <ScanResultBadge status={llmDisplayStatus} tone="review" />
-            {llmRiskLevel ? (
-              <span className="scan-result-risk">
-                <RiskLevelBadge level={llmRiskLevel} />
-              </span>
-            ) : null}
           </div>
         ) : null}
         {llmAnalysis &&
@@ -792,26 +780,6 @@ export function SecurityScanResults({
         llmAnalysis.status !== "pending" &&
         llmAnalysis.summary ? (
           <LlmAnalysisDetail analysis={llmAnalysis} />
-        ) : null}
-        {hasBlockingStaticFindings ? (
-          <>
-            <div className="scan-result-row">
-              <div className="scan-result-scanner">
-                <span className="scan-result-scanner-name">Static analysis</span>
-              </div>
-              <ScanResultBadge
-                status="malicious"
-                label={`${blockingStaticFindings.length} blocking finding${
-                  blockingStaticFindings.length === 1 ? "" : "s"
-                }`}
-              />
-            </div>
-            <StaticAnalysisDetail
-              findings={blockingStaticFindings}
-              vtStatus={vtStatus}
-              llmStatus={llmVerdict}
-            />
-          </>
         ) : null}
       </div>
     </div>

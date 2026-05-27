@@ -219,25 +219,32 @@ export const importGitHubSkill = action({
     if (!displayName) throw new ConvexError("Display name required");
     if (!version || !semver.valid(version)) throw new ConvexError("Version must be valid semver");
 
+    const sourceProvenance = {
+      kind: "github" as const,
+      url: resolved.originalUrl,
+      repo: `${resolved.owner}/${resolved.repo}`,
+      ref: resolved.ref,
+      commit: resolved.commit,
+      path: candidate.path,
+      importedAt: Date.now(),
+    };
+
     let result: Awaited<ReturnType<typeof publishVersionForUser>>;
     try {
-      result = await publishVersionForUser(ctx, userId, {
-        slug: slugBase,
-        displayName,
-        version,
-        changelog: "",
-        tags,
-        files: storedFiles,
-        source: {
-          kind: "github",
-          url: resolved.originalUrl,
-          repo: `${resolved.owner}/${resolved.repo}`,
-          ref: resolved.ref,
-          commit: resolved.commit,
-          path: candidate.path,
-          importedAt: Date.now(),
+      result = await publishVersionForUser(
+        ctx,
+        userId,
+        {
+          slug: slugBase,
+          displayName,
+          version,
+          changelog: "",
+          tags,
+          files: storedFiles,
+          source: sourceProvenance,
         },
-      });
+        { sourceProvenance },
+      );
     } catch (error) {
       throw new ConvexError(buildPublishFailureMessage(error));
     }

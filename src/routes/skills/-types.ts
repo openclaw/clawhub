@@ -17,6 +17,8 @@ export type SkillListEntry = {
         };
       };
     };
+    /** Mirrors `skillVersions.apiKeyRequired` of the latest version. */
+    apiKeyRequired?: boolean;
   } | null;
   ownerHandle?: string | null;
   owner?: PublicPublisher | null;
@@ -26,6 +28,8 @@ export type SkillListEntry = {
 export type SkillSearchEntry = {
   skill: PublicSkill;
   version: Doc<"skillVersions"> | null;
+  /** Mirrors `skillVersions.apiKeyRequired` for the latest version. */
+  apiKeyRequired?: boolean;
   score: number;
   ownerHandle?: string | null;
   owner?: PublicPublisher | null;

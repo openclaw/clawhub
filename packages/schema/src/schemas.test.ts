@@ -8,6 +8,7 @@ import { getPackageScopeOwnerMismatch, inferPackageNameScope } from "./packages"
 import {
   ApiSearchResponseSchema,
   ApiV1SearchResponseSchema,
+  ApiV1SkillVerifyResponseSchema,
   CliPublishRequestSchema,
   CliSkillDeleteRequestSchema,
   LockfileSchema,
@@ -214,6 +215,37 @@ describe("clawhub-schema", () => {
 
     expect(parsed.results[0]?.ownerHandle).toBe("openclaw");
     expect(parsed.results[0]?.owner?.displayName).toBe("OpenClaw");
+  });
+
+  it("parses flattened skill verification envelopes", () => {
+    const parsed = parseArk(
+      ApiV1SkillVerifyResponseSchema,
+      {
+        schema: "clawhub.skill.verify.v1",
+        ok: true,
+        decision: "pass",
+        reasons: [],
+        slug: "demo",
+        displayName: "Demo",
+        pageUrl: "https://clawhub.ai/openclaw/demo",
+        publisherHandle: "openclaw",
+        publisherDisplayName: "OpenClaw",
+        publisherProfileUrl: "https://clawhub.ai/user/openclaw",
+        version: "1.0.0",
+        resolvedFrom: "latest",
+        tag: null,
+        createdAt: 1,
+        card: { available: true },
+        artifact: { sourceFingerprint: "source", bundleFingerprints: [], files: [] },
+        provenance: { source: "unavailable" },
+        security: { status: "clean", passed: true },
+        signature: { status: "unsigned" },
+      },
+      "Verify",
+    );
+
+    expect(parsed.slug).toBe("demo");
+    expect(parsed.version).toBe("1.0.0");
   });
 
   it("parses delete request payload", () => {

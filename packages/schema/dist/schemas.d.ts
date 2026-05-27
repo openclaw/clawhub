@@ -361,6 +361,16 @@ export declare const ApiV1SkillAppealResolveResponseSchema: import("arktype/inte
     actionTaken?: "none" | "restore" | undefined;
 }, {}>;
 export type ApiV1SkillAppealResolveResponse = (typeof ApiV1SkillAppealResolveResponseSchema)[inferred];
+export declare const ApiV1SkillRescanResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    slug: string;
+    version: string;
+    skillId: string;
+    skillVersionId: string;
+    jobId: string;
+    alreadyQueued: boolean;
+}, {}>;
+export type ApiV1SkillRescanResponse = (typeof ApiV1SkillRescanResponseSchema)[inferred];
 export declare const ApiV1SkillVersionListResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     items: {
         version: string;
@@ -403,6 +413,27 @@ export declare const ApiV1SkillResolveResponseSchema: import("arktype/internal/v
     latestVersion: {
         version: string;
     } | null;
+}, {}>;
+export declare const ApiV1SkillVerifyResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    schema: "clawhub.skill.verify.v1";
+    ok: boolean;
+    decision: "pass" | "fail";
+    reasons: string[];
+    slug: string;
+    displayName: string;
+    pageUrl: string;
+    publisherHandle: string | null;
+    publisherDisplayName: string | null;
+    publisherProfileUrl: string | null;
+    version: string;
+    resolvedFrom: "version" | "tag" | "latest";
+    tag: string | null;
+    createdAt: number;
+    card: unknown;
+    artifact: unknown;
+    provenance: unknown;
+    security: unknown;
+    signature: unknown;
 }, {}>;
 export declare const ApiV1PublishResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     ok: true;

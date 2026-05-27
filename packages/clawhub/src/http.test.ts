@@ -298,6 +298,24 @@ describe("node http client", () => {
     ).rejects.toThrow(/Package not found or not visible to this account/i);
   });
 
+  it("strips Convex transport wrappers from HTTP error bodies", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      headers: new Headers(),
+      text: async () =>
+        "[CONVEX A] [Request ID: abc] Server Error Called by client Uncaught ConvexError: Missing runtime",
+    });
+    const client = createNodeClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
+
+    await expect(
+      client.apiRequest("https://example.com", { method: "POST", path: "/publish" }),
+    ).rejects.toThrow("Missing runtime");
+    await expect(
+      client.apiRequest("https://example.com", { method: "POST", path: "/publish" }),
+    ).rejects.not.toThrow(/ConvexError|Request ID|Server Error/i);
+  });
+
   it("downloads zip bytes and does not retry non-retryable errors", async () => {
     const fetchImpl = vi
       .fn()

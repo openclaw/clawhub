@@ -66,6 +66,24 @@ describe("Convex export dataset ingestion", () => {
             model: "gpt-test",
             checkedAt: 3,
           },
+          skillSpectorAnalysis: {
+            status: "suspicious",
+            score: 55,
+            severity: "HIGH",
+            recommendation: "DO_NOT_INSTALL",
+            issueCount: 1,
+            scannerVersion: "skillspector-v2.0.0",
+            summary: "found deceptive metadata",
+            checkedAt: 6,
+            issues: [
+              {
+                issueId: "SDI-1",
+                severity: "HIGH",
+                confidence: 0.98,
+                explanation: "The skill body does not match the declaration.",
+              },
+            ],
+          },
         },
       ],
       packages: [
@@ -134,6 +152,11 @@ describe("Convex export dataset ingestion", () => {
         reasonCodes: ["network.exfiltration"],
       },
       llmAnalysis: { model: "gpt-test" },
+      skillSpectorAnalysis: {
+        status: "suspicious",
+        score: 55,
+        issues: [{ issueId: "SDI-1" }],
+      },
       skillMdContentRedacted: "Use this skill safely. [REDACTED_SECRET]",
     });
     expect(rows[1]?.llmAnalysis?.agenticRiskFindings).toMatchObject([

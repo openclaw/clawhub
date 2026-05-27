@@ -113,6 +113,32 @@ export const PackageVtAnalysisSchema = type({
     source: "string?",
     checkedAt: "number",
 });
+export const PackageSkillSpectorIssueSchema = type({
+    issueId: "string",
+    category: "string?",
+    pattern: "string?",
+    severity: "string",
+    confidence: "number?",
+    file: "string?",
+    startLine: "number?",
+    endLine: "number?",
+    explanation: "string",
+    remediation: "string?",
+    finding: "string?",
+    codeSnippet: "string?",
+});
+export const PackageSkillSpectorAnalysisSchema = type({
+    status: "string",
+    score: "number?",
+    severity: "string?",
+    recommendation: "string?",
+    issueCount: "number",
+    issues: PackageSkillSpectorIssueSchema.array(),
+    scannerVersion: "string?",
+    summary: "string?",
+    error: "string?",
+    checkedAt: "number",
+});
 export const PackageLlmAnalysisDimensionSchema = type({
     name: "string",
     label: "string",
@@ -222,6 +248,7 @@ export const ApiV1PackageResponseSchema = type({
         capabilities: PackageCapabilitySummarySchema.or("null").optional(),
         verification: PackageVerificationSummarySchema.or("null").optional(),
         artifact: PackageArtifactSummarySchema.or("null").optional(),
+        scanStatus: '"clean"|"suspicious"|"malicious"|"pending"|"not-run"?',
         stats: PackageStatsSchema.optional(),
     }).or("null"),
     owner: type({
@@ -257,6 +284,7 @@ export const ApiV1PackageVersionResponseSchema = type({
         artifact: PackageArtifactSummarySchema.or("null").optional(),
         sha256hash: "string|null?",
         vtAnalysis: PackageVtAnalysisSchema.or("null").optional(),
+        skillSpectorAnalysis: PackageSkillSpectorAnalysisSchema.or("null").optional(),
         llmAnalysis: PackageLlmAnalysisSchema.or("null").optional(),
         clawScanNote: "string|null?",
         clawScanNoteUpdatedAt: "number|null?",

@@ -142,7 +142,7 @@ export function validateOpenClawExternalCodePluginPackageContents(
     if (!packageFiles.has(normalized)) {
       validation.issues.push({
         fieldPath: "openclaw.runtimeExtensions",
-        message: `${name} runtime extension entry not found: ./${normalized}`,
+        message: `${name} declares openclaw.runtimeExtensions entry ./${normalized}, but that file is missing from the package. Build first and publish a local folder or .tgz, or include the runtime file in the GitHub ref.`,
       });
     }
   }

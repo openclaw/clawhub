@@ -85,10 +85,58 @@ describe("publisher stat maintenance", () => {
       totalInstalls: 8,
       totalDownloads: 18,
       totalStars: 3,
+      skillTotalInstalls: 5,
+      skillTotalDownloads: 11,
+      skillTotalStars: 2,
     });
   });
 
   it("uses deltas when publisher aggregates are already initialized", async () => {
+    const patch = vi.fn();
+    const ctx = {
+      db: {
+        get: vi.fn(async () => ({
+          _id: "publishers:alice",
+          kind: "user",
+          handle: "alice",
+          displayName: "Alice",
+          linkedUserId: "users:alice",
+          publishedSkills: 1,
+          publishedPackages: 1,
+          totalInstalls: 7,
+          totalDownloads: 17,
+          totalStars: 3,
+          skillTotalInstalls: 4,
+          skillTotalDownloads: 10,
+          skillTotalStars: 2,
+          createdAt: 1,
+          updatedAt: 1,
+        })),
+        patch,
+        query: vi.fn(),
+      },
+    };
+
+    await adjustPublisherStatsForSkillChange(
+      ctx as never,
+      makeSkill({ statsDownloads: 10, statsInstallsAllTime: 4 }),
+      makeSkill({ statsDownloads: 11, statsInstallsAllTime: 5 }),
+    );
+
+    expect(patch).toHaveBeenCalledWith("publishers:alice", {
+      publishedSkills: 1,
+      publishedPackages: 1,
+      totalInstalls: 8,
+      totalDownloads: 18,
+      totalStars: 3,
+      skillTotalInstalls: 5,
+      skillTotalDownloads: 11,
+      skillTotalStars: 2,
+    });
+    expect(ctx.db.query).not.toHaveBeenCalled();
+  });
+
+  it("keeps legacy aggregate updates bounded when skill-only aggregates are missing", async () => {
     const patch = vi.fn();
     const ctx = {
       db: {

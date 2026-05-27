@@ -24,6 +24,7 @@ describe("UserBadge", () => {
     kind: "org",
     handle: "openclaw",
     displayName: "OpenClaw",
+    official: true,
     image: undefined,
     bio: undefined,
     linkedUserId: undefined,
@@ -68,5 +69,13 @@ describe("UserBadge", () => {
     );
 
     expect(screen.getByText("Acme")).toBeTruthy();
+  });
+
+  it("shows a compact Official badge for official publishers", () => {
+    const { container } = renderBadge(orgPublisher);
+
+    expect(screen.getByLabelText("Official")).toBeTruthy();
+    expect(container.querySelector(".official-badge")).toBeTruthy();
+    expect(container.querySelector(".official-tag")).toBeFalsy();
   });
 });

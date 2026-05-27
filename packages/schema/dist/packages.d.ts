@@ -120,6 +120,47 @@ export declare const PackageVtAnalysisSchema: import("arktype/internal/variants/
     source?: string | undefined;
 }, {}>;
 export type PackageVtAnalysis = (typeof PackageVtAnalysisSchema)[inferred];
+export declare const PackageSkillSpectorIssueSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    issueId: string;
+    severity: string;
+    explanation: string;
+    category?: string | undefined;
+    pattern?: string | undefined;
+    confidence?: number | undefined;
+    file?: string | undefined;
+    startLine?: number | undefined;
+    endLine?: number | undefined;
+    remediation?: string | undefined;
+    finding?: string | undefined;
+    codeSnippet?: string | undefined;
+}, {}>;
+export type PackageSkillSpectorIssue = (typeof PackageSkillSpectorIssueSchema)[inferred];
+export declare const PackageSkillSpectorAnalysisSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    status: string;
+    issueCount: number;
+    issues: {
+        issueId: string;
+        severity: string;
+        explanation: string;
+        category?: string | undefined;
+        pattern?: string | undefined;
+        confidence?: number | undefined;
+        file?: string | undefined;
+        startLine?: number | undefined;
+        endLine?: number | undefined;
+        remediation?: string | undefined;
+        finding?: string | undefined;
+        codeSnippet?: string | undefined;
+    }[];
+    checkedAt: number;
+    score?: number | undefined;
+    severity?: string | undefined;
+    recommendation?: string | undefined;
+    scannerVersion?: string | undefined;
+    summary?: string | undefined;
+    error?: string | undefined;
+}, {}>;
+export type PackageSkillSpectorAnalysis = (typeof PackageSkillSpectorAnalysisSchema)[inferred];
 export declare const PackageLlmAnalysisDimensionSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     name: string;
     label: string;
@@ -359,6 +400,7 @@ export declare const ApiV1PackageResponseSchema: import("arktype/internal/varian
             packageName?: string | undefined;
             version?: string | undefined;
         } | null | undefined;
+        scanStatus?: "clean" | "suspicious" | "malicious" | "pending" | "not-run" | undefined;
         stats?: {
             downloads: number;
             installs: number;
@@ -455,6 +497,31 @@ export declare const ApiV1PackageVersionResponseSchema: import("arktype/internal
             verdict?: string | undefined;
             analysis?: string | undefined;
             source?: string | undefined;
+        } | null | undefined;
+        skillSpectorAnalysis?: {
+            status: string;
+            issueCount: number;
+            issues: {
+                issueId: string;
+                severity: string;
+                explanation: string;
+                category?: string | undefined;
+                pattern?: string | undefined;
+                confidence?: number | undefined;
+                file?: string | undefined;
+                startLine?: number | undefined;
+                endLine?: number | undefined;
+                remediation?: string | undefined;
+                finding?: string | undefined;
+                codeSnippet?: string | undefined;
+            }[];
+            checkedAt: number;
+            score?: number | undefined;
+            severity?: string | undefined;
+            recommendation?: string | undefined;
+            scannerVersion?: string | undefined;
+            summary?: string | undefined;
+            error?: string | undefined;
         } | null | undefined;
         llmAnalysis?: {
             status: string;

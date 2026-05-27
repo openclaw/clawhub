@@ -4,17 +4,20 @@ import { getSkillBadges } from "../lib/badges";
 import { formatCompactStat } from "../lib/numberFormat";
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
 import { timeAgo } from "../lib/timeAgo";
+import { ApiKeyRequiredBadge } from "./ApiKeyRequiredBadge";
 import { MarketplaceIcon } from "./MarketplaceIcon";
+import { OfficialBadge } from "./OfficialBadge";
 import { Badge } from "./ui/badge";
-import { VerifiedBadge } from "./VerifiedBadge";
 
 type SkillListItemProps = {
   skill: PublicSkill;
   ownerHandle?: string | null;
   owner?: PublicPublisher | null;
+  /** Mirrors `skillVersions.apiKeyRequired` of the latest version. */
+  apiKeyRequired?: boolean;
 };
 
-export function SkillListItem({ skill, ownerHandle, owner }: SkillListItemProps) {
+export function SkillListItem({ skill, ownerHandle, owner, apiKeyRequired }: SkillListItemProps) {
   const handle = ownerHandle ?? owner?.handle ?? null;
   const ownerSegment = handle?.trim() || String(skill.ownerPublisherId ?? skill.ownerUserId);
   const href = `/${encodeURIComponent(ownerSegment)}/${encodeURIComponent(skill.slug)}`;
@@ -33,14 +36,15 @@ export function SkillListItem({ skill, ownerHandle, owner }: SkillListItemProps)
           ) : null}
           <span className="skill-list-item-name">{skill.displayName}</span>
           {badges.map((b) =>
-            b === "Verified" ? (
-              <VerifiedBadge key={b} />
+            b === "Official" ? (
+              <OfficialBadge key={b} />
             ) : (
               <Badge key={b} variant="compact">
                 {b}
               </Badge>
             ),
           )}
+          <ApiKeyRequiredBadge apiKeyRequired={apiKeyRequired} />
         </div>
         {skill.summary ? <p className="skill-list-item-summary">{skill.summary}</p> : null}
         <div className="skill-list-item-meta">

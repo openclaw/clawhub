@@ -19,7 +19,7 @@ vi.mock("../../../clawhub/src/cli/registry.js", () => registryMocks.moduleFactor
 vi.mock("../../../clawhub/src/http.js", () => httpMocks.moduleFactory());
 vi.mock("../../../clawhub/src/cli/ui.js", () => uiMocks.moduleFactory());
 
-const { cmdRepairPackageName } = await import("./packages");
+const { cmdRepairPackageName, cmdTransferPackageOwner } = await import("./packages");
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -98,6 +98,55 @@ describe("cmdRepairPackageName", () => {
       cmdRepairPackageName(makeGlobalOpts(), "@openclaw/openviking", {
         nextName: "@openviking/openclaw-plugin",
       }),
+    ).rejects.toThrow(/--reason required/i);
+    expect(httpMocks.apiRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe("cmdTransferPackageOwner", () => {
+  it("transfers a package owner through the admin-preserving repair endpoint", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      dryRun: false,
+      source: { packageId: "packages:opik", name: "@opik/opik-openclaw" },
+      target: null,
+      retiredName: null,
+      operations: [
+        {
+          action: "transfer-owner",
+          packageId: "packages:opik",
+          owner: "opik",
+        },
+      ],
+    });
+
+    await cmdTransferPackageOwner(makeGlobalOpts(), "@opik/opik-openclaw", {
+      to: "opik",
+      reason: "Move legacy personal package into @opik",
+      apply: true,
+    });
+
+    expect(authTokenMocks.requireAuthToken).toHaveBeenCalled();
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({
+        method: "POST",
+        path: "/api/v1/packages/%40opik%2Fopik-openclaw/repair-name",
+        token: "tkn",
+        body: {
+          nextName: "@opik/opik-openclaw",
+          owner: "opik",
+          reason: "Move legacy personal package into @opik",
+          dryRun: false,
+        },
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("requires a reason for package transfers", async () => {
+    await expect(
+      cmdTransferPackageOwner(makeGlobalOpts(), "@opik/opik-openclaw", { to: "opik" }),
     ).rejects.toThrow(/--reason required/i);
     expect(httpMocks.apiRequest).not.toHaveBeenCalled();
   });

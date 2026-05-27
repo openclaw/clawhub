@@ -26,5 +26,6 @@ export const ApiRoutes = {
     souls: "/api/v1/souls",
     users: "/api/v1/users",
     whoami: "/api/v1/whoami",
+    skillsExport: "/api/v1/skills/export",
 };
 //# sourceMappingURL=routes.js.map

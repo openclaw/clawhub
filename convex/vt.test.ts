@@ -1,6 +1,7 @@
 /* @vitest-environment node */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { buildDeterministicZip } from "./lib/skillZip";
 import {
   __test,
   fetchResults,
@@ -149,6 +150,72 @@ describe("vt unavailable fallback", () => {
       source: "vt-update",
       waitForVtMs: 0,
     });
+  });
+});
+
+describe("skill VT scans", () => {
+  it("hashes and uploads source files without generated Skill Cards", async () => {
+    process.env.VT_API_KEY = "test-key";
+    const skillBytes = new TextEncoder().encode("# Demo Skill");
+    const cardBytes = new TextEncoder().encode("# Generated card");
+    const expectedZip = buildDeterministicZip([{ path: "SKILL.md", bytes: skillBytes }], {
+      ownerId: "users:owner",
+      slug: "demo-skill",
+      version: "1.0.0",
+      publishedAt: 123,
+    });
+    const expectedSha = await __test.sha256Hex(expectedZip);
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("", { status: 404 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: { id: "analysis" } })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const runMutation = vi.fn(async () => null);
+    await scanWithVirusTotalHandler(
+      {
+        runQuery: vi
+          .fn()
+          .mockResolvedValueOnce({
+            _id: "skillVersions:demo",
+            skillId: "skills:demo",
+            version: "1.0.0",
+            createdAt: 123,
+            files: [
+              { path: "SKILL.md", storageId: "storage:skill" },
+              { path: "skill-card.md", storageId: "storage:card" },
+            ],
+          })
+          .mockResolvedValueOnce({
+            _id: "skills:demo",
+            slug: "demo-skill",
+            ownerUserId: "users:owner",
+          })
+          .mockResolvedValueOnce([{ fingerprint: "bundle-fingerprint", kind: "generated-bundle" }]),
+        runMutation,
+        storage: {
+          get: vi.fn(async (storageId) => {
+            if (storageId === "storage:skill") return new Blob([skillBytes]);
+            if (storageId === "storage:card") return new Blob([cardBytes]);
+            return null;
+          }),
+        },
+      } as never,
+      { versionId: "skillVersions:demo" },
+    );
+
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        versionId: "skillVersions:demo",
+        sha256hash: expectedSha,
+      }),
+    );
+    const uploadedFile = (
+      fetchMock.mock.calls[1]?.[1] as { body?: FormData } | undefined
+    )?.body?.get("file") as File | null;
+    expect(uploadedFile?.name).toBe("skill.zip");
+    expect(new Uint8Array((await uploadedFile?.arrayBuffer()) ?? [])).toEqual(expectedZip);
   });
 });
 
