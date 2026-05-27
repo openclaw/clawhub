@@ -75,28 +75,62 @@ export async function signInAsLocalOwner(page: Page) {
   return await signInAsLocalPublisher(page, "owner");
 }
 
+function parseOwnerHandle(text: string) {
+  return text.match(/@([a-z0-9][a-z0-9-]*)/i)?.[1] ?? "";
+}
+
+async function isNativeOwnerSelect(page: Page, selector: string) {
+  const ownerControl = page.locator(selector);
+  await ownerControl.waitFor({ state: "attached" });
+  return await ownerControl.evaluate((node) => node.tagName.toLowerCase() === "select");
+}
+
+async function getSelectedOwnerHandle(page: Page, selector: string) {
+  const ownerControl = page.locator(selector);
+  if (await isNativeOwnerSelect(page, selector)) {
+    return await ownerControl.inputValue();
+  }
+  return parseOwnerHandle(await ownerControl.innerText());
+}
+
+export async function expectOwnerHandleSelected(page: Page, selector: string, ownerHandle: string) {
+  await expect
+    .poll(async () => await getSelectedOwnerHandle(page, selector), { timeout: 15_000 })
+    .toBe(ownerHandle);
+}
+
+export async function selectOwnerHandle(page: Page, selector: string, ownerHandle: string) {
+  const ownerControl = page.locator(selector);
+  if (await isNativeOwnerSelect(page, selector)) {
+    await ownerControl.selectOption(ownerHandle);
+  } else {
+    await ownerControl.click();
+    await page
+      .getByRole("option", {
+        name: new RegExp(`@${escapeRegExp(ownerHandle)}(?:\\b|\\s|·)`, "i"),
+      })
+      .click();
+  }
+  await expectOwnerHandleSelected(page, selector, ownerHandle);
+}
+
 export async function signInAsLocalPublisher(page: Page, persona: DevPersona) {
   await signInAsLocalPersona(page, persona);
   await page.goto("/skills/publish", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "Publish a skill" })).toBeVisible();
-  const ownerSelect = page.locator("#ownerHandle");
   await expect
     .poll(
       async () => {
-        const value = await ownerSelect.inputValue();
-        const optionValues = await ownerSelect
-          .locator("option")
-          .evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value));
-        const isCurrentOption = value ? optionValues.includes(value) : false;
+        const value = await getSelectedOwnerHandle(page, "#ownerHandle");
         // The owner persona can briefly render the user handle before the
         // personal publisher subscription reconciles to the publishable handle.
-        if (!isCurrentOption || (persona === "owner" && value === "local")) return "";
+        if (!value || (persona === "owner" && value === "local")) return "";
         return value;
       },
       { timeout: 15_000 },
     )
     .not.toBe("");
-  const ownerHandle = await ownerSelect.inputValue();
+  const ownerHandle = await getSelectedOwnerHandle(page, "#ownerHandle");
   expect(ownerHandle.toLowerCase()).toContain("local");
   return ownerHandle;
 }
@@ -125,19 +159,21 @@ export async function publishSkillVersion(
     "utf8",
   );
 
-  const ownerSelect = page.locator("#ownerHandle");
-  await ownerSelect.selectOption(args.ownerHandle);
-  await expect(ownerSelect).toHaveValue(args.ownerHandle);
+  await selectOwnerHandle(page, "#ownerHandle", args.ownerHandle);
   await page.locator("#slug").fill(args.slug);
   await page.locator("#displayName").fill(args.displayName);
   await page.locator("#version").fill(args.version);
   await page.locator("#tags").fill("latest, stable");
-  await page.locator("#changelog").fill(args.changelog);
-  await page.getByLabel(/i have the rights to this skill/i).check();
+  const changelog = page.locator("#changelog");
+  if ((await changelog.count()) > 0) {
+    await changelog.fill(args.changelog);
+  }
+  await page.getByLabel(/i have the rights to publish this skill/i).check();
   await page.getByTestId("upload-input").setInputFiles(skillDir);
 
-  await expect(page.getByText("All checks passed.")).toBeVisible();
-  await page.getByRole("button", { name: "Publish skill" }).click();
+  const publishButton = page.getByRole("button", { name: "Publish skill" });
+  await expect(publishButton).toBeEnabled();
+  await publishButton.click();
   await expect(page).toHaveURL(new RegExp(`/[^/]+/${escapeRegExp(args.slug)}$`), {
     timeout: 60_000,
   });

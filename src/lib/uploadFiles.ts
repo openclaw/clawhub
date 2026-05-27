@@ -20,7 +20,7 @@ const TEXT_TYPES = new Map([
 
 type ExpandFilesReport = {
   files: File[];
-  ignoredMacJunkPaths: string[];
+  ignoredLocalMetadataPaths: string[];
 };
 
 type ExpandFilesOptions = {
@@ -32,14 +32,14 @@ export async function expandFilesWithReport(
   options: ExpandFilesOptions = {},
 ): Promise<ExpandFilesReport> {
   const expanded: File[] = [];
-  const ignoredMacJunkPaths: string[] = [];
+  const ignoredLocalMetadataPaths: string[] = [];
   for (const file of selected) {
     const lower = file.name.toLowerCase();
     if (lower.endsWith(".zip")) {
       const entries = unzipSync(new Uint8Array(await readArrayBuffer(file)));
       pushArchiveEntries(
         expanded,
-        ignoredMacJunkPaths,
+        ignoredLocalMetadataPaths,
         Object.entries(entries).map(([path, data]) => ({ path, data })),
         options,
       );
@@ -47,28 +47,28 @@ export async function expandFilesWithReport(
     }
     if (lower.endsWith(".tar.gz") || lower.endsWith(".tgz")) {
       const unpacked = gunzipSync(new Uint8Array(await readArrayBuffer(file)));
-      pushArchiveEntries(expanded, ignoredMacJunkPaths, untar(unpacked), options);
+      pushArchiveEntries(expanded, ignoredLocalMetadataPaths, untar(unpacked), options);
       continue;
     }
     if (lower.endsWith(".gz")) {
       const unpacked = gunzipSync(new Uint8Array(await readArrayBuffer(file)));
       const name = file.name.replace(/\.gz$/i, "");
       const normalizedName = normalizePath(name);
-      if (isMacJunkPath(normalizedName)) {
-        ignoredMacJunkPaths.push(normalizedName || name);
+      if (isLocalMetadataPath(normalizedName)) {
+        ignoredLocalMetadataPaths.push(normalizedName || name);
         continue;
       }
       expanded.push(new File([toArrayBuffer(unpacked)], name, { type: guessContentType(name) }));
       continue;
     }
     const path = getFilePath(file);
-    if (path && isMacJunkPath(path)) {
-      ignoredMacJunkPaths.push(path);
+    if (path && isLocalMetadataPath(path)) {
+      ignoredLocalMetadataPaths.push(path);
       continue;
     }
     expanded.push(file);
   }
-  return { files: expanded, ignoredMacJunkPaths };
+  return { files: expanded, ignoredLocalMetadataPaths };
 }
 
 export async function expandFiles(selected: File[]) {
@@ -137,7 +137,7 @@ async function readAllEntries(reader: FileSystemDirectoryReader) {
 
 function pushArchiveEntries(
   target: File[],
-  ignoredMacJunkPaths: string[],
+  ignoredLocalMetadataPaths: string[],
   entries: Array<{ path: string; data: Uint8Array }>,
   options: ExpandFilesOptions = {},
 ) {
@@ -146,8 +146,8 @@ function pushArchiveEntries(
   for (const entry of entries) {
     const path = normalizePath(entry.path);
     if (!path || path.endsWith("/")) continue;
-    if (isMacJunkPath(path)) {
-      ignoredMacJunkPaths.push(path);
+    if (isLocalMetadataPath(path)) {
+      ignoredLocalMetadataPaths.push(path);
       continue;
     }
     if (!options.includeBinaryArchiveFiles && !isTextPath(path)) continue;
@@ -260,10 +260,11 @@ function unwrapSingleTopLevelFolder<T extends { path: string }>(entries: T[]) {
   }));
 }
 
-function isMacJunkPath(path: string) {
+function isLocalMetadataPath(path: string) {
   const normalized = normalizePath(path).toLowerCase();
   if (!normalized) return false;
   const segments = normalized.split("/").filter(Boolean);
+  if (segments.includes(".git")) return true;
   if (segments.includes("__macosx")) return true;
   const basename = segments.at(-1) ?? "";
   if (basename === ".ds_store") return true;

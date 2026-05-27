@@ -18,7 +18,7 @@ const SelectTrigger = React.forwardRef<
     data-size={size}
     className={cn(
       // Matches form input token styling
-      "flex w-full min-h-[44px] items-center justify-between rounded-[var(--radius-sm)] border px-3.5 py-space-3 text-sm text-[color:var(--ink)] transition-all duration-[180ms] ease-out",
+      "flex w-full min-h-[44px] cursor-pointer items-center justify-between rounded-[var(--radius-sm)] border px-3.5 py-space-3 text-sm text-[color:var(--ink)] transition-all duration-[180ms] ease-out",
       "data-[size=sm]:min-h-8 data-[size=sm]:px-2.5 data-[size=sm]:py-1 data-[size=sm]:text-xs",
       "border-input-border bg-input-bg",
       "placeholder:text-input-placeholder",
