@@ -1638,21 +1638,6 @@ async function banUserWithActor(
   const hiddenCount = banSkillsResult.hiddenCount ?? 0;
   const scheduledSkills = banSkillsResult.scheduled ?? false;
 
-  const banPackagesResult = ((await ctx.runMutation(
-    internal.packages.applyBanToOwnedPackagesBatchInternal,
-    {
-      ownerUserId: targetUserId,
-      bannedAt: now,
-      deletedBy: actor._id,
-      deletedByRole: actor.role === "admin" ? "admin" : "moderator",
-      cursor: undefined,
-      allowActiveOwnerBeforeCommit: true,
-    },
-  )) ?? {}) as { deletedCount?: number; revokedTokenCount?: number; scheduled?: boolean };
-  const deletedPackageCount = banPackagesResult.deletedCount ?? 0;
-  const revokedPackagePublishTokens = banPackagesResult.revokedTokenCount ?? 0;
-  const scheduledPackages = banPackagesResult.scheduled ?? false;
-
   const tokens = await ctx.db
     .query("apiTokens")
     .withIndex("by_user", (q) => q.eq("userId", targetUserId))
@@ -1675,6 +1660,20 @@ async function banUserWithActor(
     updatedAt: now,
     banReason: reason || undefined,
   });
+
+  const banPackagesResult = ((await ctx.runMutation(
+    internal.packages.applyBanToOwnedPackagesBatchInternal,
+    {
+      ownerUserId: targetUserId,
+      bannedAt: now,
+      deletedBy: actor._id,
+      deletedByRole: actor.role === "admin" ? "admin" : "moderator",
+      cursor: undefined,
+    },
+  )) ?? {}) as { deletedCount?: number; revokedTokenCount?: number; scheduled?: boolean };
+  const deletedPackageCount = banPackagesResult.deletedCount ?? 0;
+  const revokedPackagePublishTokens = banPackagesResult.revokedTokenCount ?? 0;
+  const scheduledPackages = banPackagesResult.scheduled ?? false;
 
   await ctx.runMutation(internal.telemetry.clearUserTelemetryInternal, { userId: targetUserId });
 
@@ -2099,21 +2098,6 @@ export const autobanMalwareAuthorInternal = internalMutation({
     const hiddenCount = banSkillsResult.hiddenCount ?? 0;
     const scheduledSkills = banSkillsResult.scheduled ?? false;
 
-    const banPackagesResult = ((await ctx.runMutation(
-      internal.packages.applyBanToOwnedPackagesBatchInternal,
-      {
-        ownerUserId: args.ownerUserId,
-        bannedAt: now,
-        deletedBy: args.ownerUserId,
-        deletedByRole: "user",
-        cursor: undefined,
-        allowActiveOwnerBeforeCommit: true,
-      },
-    )) ?? {}) as { deletedCount?: number; revokedTokenCount?: number; scheduled?: boolean };
-    const deletedPackageCount = banPackagesResult.deletedCount ?? 0;
-    const revokedPackagePublishTokens = banPackagesResult.revokedTokenCount ?? 0;
-    const scheduledPackages = banPackagesResult.scheduled ?? false;
-
     // Revoke all API tokens
     const tokens = await ctx.db
       .query("apiTokens")
@@ -2138,6 +2122,20 @@ export const autobanMalwareAuthorInternal = internalMutation({
       updatedAt: now,
       banReason: "malware auto-ban",
     });
+
+    const banPackagesResult = ((await ctx.runMutation(
+      internal.packages.applyBanToOwnedPackagesBatchInternal,
+      {
+        ownerUserId: args.ownerUserId,
+        bannedAt: now,
+        deletedBy: args.ownerUserId,
+        deletedByRole: "user",
+        cursor: undefined,
+      },
+    )) ?? {}) as { deletedCount?: number; revokedTokenCount?: number; scheduled?: boolean };
+    const deletedPackageCount = banPackagesResult.deletedCount ?? 0;
+    const revokedPackagePublishTokens = banPackagesResult.revokedTokenCount ?? 0;
+    const scheduledPackages = banPackagesResult.scheduled ?? false;
 
     await ctx.runMutation(internal.telemetry.clearUserTelemetryInternal, {
       userId: args.ownerUserId,

@@ -3044,24 +3044,11 @@ export const applyBanToOwnedPackagesBatchInternal = internalMutation({
     deletedBy: v.id("users"),
     deletedByRole: v.union(v.literal("admin"), v.literal("moderator"), v.literal("user")),
     cursor: v.optional(v.string()),
-    allowActiveOwnerBeforeCommit: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const owner = await ctx.db.get(args.ownerUserId);
     const ownerMatchesCurrentBan = owner?.deletedAt === args.bannedAt;
-    // Ban callers run the first package page before users.deletedAt is visible.
-    // Continuation pages must see the committed ban timestamp so a later unban
-    // cannot be treated as the same pre-commit window.
-    const ownerIsActiveBeforeBanCommit =
-      args.allowActiveOwnerBeforeCommit === true &&
-      args.cursor === undefined &&
-      owner?.deletedAt === undefined &&
-      !owner?.deactivatedAt;
-    if (
-      !owner ||
-      owner.deactivatedAt ||
-      (!ownerMatchesCurrentBan && !ownerIsActiveBeforeBanCommit)
-    ) {
+    if (!owner || owner.deactivatedAt || !ownerMatchesCurrentBan) {
       return {
         ok: true as const,
         deletedCount: 0,
@@ -3128,11 +3115,10 @@ export const applyBanToOwnedPackagesBatchInternal = internalMutation({
       deletedCount += 1;
     }
 
-    const { allowActiveOwnerBeforeCommit: _allowActiveOwnerBeforeCommit, ...nextArgs } = args;
     scheduleNextBatchIfNeeded(
       ctx.scheduler,
       internal.packages.applyBanToOwnedPackagesBatchInternal,
-      nextArgs,
+      args,
       isDone,
       continueCursor,
     );

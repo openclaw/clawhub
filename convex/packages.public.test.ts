@@ -560,7 +560,6 @@ const applyBanToOwnedPackagesBatchInternalHandler = (
       deletedBy: string;
       deletedByRole: "admin" | "moderator" | "user";
       cursor?: string;
-      allowActiveOwnerBeforeCommit?: boolean;
     },
     { deletedCount: number; revokedTokenCount: number; scheduled: boolean }
   >
@@ -7668,14 +7667,15 @@ function makeOwnedPackageBatchCtx(options?: {
 
 describe("owned package sanction batches", () => {
   it("soft-deletes owned packages with a ban reason and revokes package publish tokens", async () => {
-    const { ctx, patch } = makeOwnedPackageBatchCtx();
+    const { ctx, patch } = makeOwnedPackageBatchCtx({
+      owner: { _id: "users:owner", deletedAt: 1_000, deactivatedAt: undefined },
+    });
 
     const result = await applyBanToOwnedPackagesBatchInternalHandler(ctx as never, {
       ownerUserId: "users:owner",
       bannedAt: 1_000,
       deletedBy: "users:moderator",
       deletedByRole: "moderator",
-      allowActiveOwnerBeforeCommit: true,
     });
 
     expect(result).toMatchObject({ deletedCount: 1, revokedTokenCount: 1, scheduled: false });
@@ -7712,9 +7712,9 @@ describe("owned package sanction batches", () => {
     expect(patch).not.toHaveBeenCalledWith("packagePublishTokens:demo", expect.anything());
   });
 
-  it("does not carry the pre-commit package ban bypass to continuation pages", async () => {
+  it("continues committed package ban pages without a pre-commit bypass", async () => {
     const firstPage = makeOwnedPackageBatchCtx({
-      owner: { _id: "users:owner", deletedAt: undefined, deactivatedAt: undefined },
+      owner: { _id: "users:owner", deletedAt: 1_000, deactivatedAt: undefined },
       pkg: makePackageDoc({ _id: "packages:first", ownerUserId: "users:owner" }),
       packageTokens: [
         {
@@ -7733,7 +7733,6 @@ describe("owned package sanction batches", () => {
       bannedAt: 1_000,
       deletedBy: "users:moderator",
       deletedByRole: "moderator",
-      allowActiveOwnerBeforeCommit: true,
     });
 
     expect(firstResult).toMatchObject({ deletedCount: 1, revokedTokenCount: 1, scheduled: true });
@@ -7750,9 +7749,6 @@ describe("owned package sanction batches", () => {
       expect.objectContaining({
         cursor: "next-page",
       }),
-    );
-    expect(firstPage.runAfter.mock.calls[0]?.[2]).not.toEqual(
-      expect.objectContaining({ allowActiveOwnerBeforeCommit: true }),
     );
 
     const staleContinuationPage = makeOwnedPackageBatchCtx({
@@ -7776,7 +7772,6 @@ describe("owned package sanction batches", () => {
         deletedBy: "users:moderator",
         deletedByRole: "moderator",
         cursor: "next-page",
-        allowActiveOwnerBeforeCommit: true,
       },
     );
 
