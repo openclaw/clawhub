@@ -643,4 +643,114 @@ describe("plugins publish route", () => {
       screen.getByRole("button", { name: "Publish plugin" }).getAttribute("disabled"),
     ).not.toBeNull();
   });
+
+  it("warns when README references relative image paths but no source repo/commit is set", async () => {
+    renderPublishRoute();
+
+    const packageJson = withRelativePath(
+      new File(
+        [makeCodePluginPackageJson({ name: "demo-plugin", version: "1.0.0" })],
+        "package.json",
+        {
+          type: "application/json",
+        },
+      ),
+      "demo-plugin/package.json",
+    );
+    const manifest = withRelativePath(
+      new File(['{"id":"demo.plugin"}'], "openclaw.plugin.json", { type: "application/json" }),
+      "demo-plugin/openclaw.plugin.json",
+    );
+    const readme = withRelativePath(
+      new File(
+        ['# Demo Plugin\n\n![diagram](./images/foo.png)\n\n<img src="./images/bar.png" alt="x"/>'],
+        "README.md",
+        { type: "text/markdown" },
+      ),
+      "demo-plugin/README.md",
+    );
+
+    fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest, readme] } });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Your README references 2 relative image paths/i)).toBeTruthy();
+    });
+    expect(screen.getByText(/ClawHub does not\s+host package binary assets/i)).toBeTruthy();
+    expect(screen.getByText(/\.\/images\/foo\.png/)).toBeTruthy();
+    expect(screen.getByText(/\.\/images\/bar\.png/)).toBeTruthy();
+  });
+
+  it("hides the relative-README-image warning once Source repo and Source commit are filled", async () => {
+    renderPublishRoute();
+
+    const packageJson = withRelativePath(
+      new File(
+        [makeCodePluginPackageJson({ name: "demo-plugin", version: "1.0.0" })],
+        "package.json",
+        {
+          type: "application/json",
+        },
+      ),
+      "demo-plugin/package.json",
+    );
+    const manifest = withRelativePath(
+      new File(['{"id":"demo.plugin"}'], "openclaw.plugin.json", { type: "application/json" }),
+      "demo-plugin/openclaw.plugin.json",
+    );
+    const readme = withRelativePath(
+      new File(["# Demo\n\n![diagram](./images/foo.png)\n"], "README.md", {
+        type: "text/markdown",
+      }),
+      "demo-plugin/README.md",
+    );
+
+    fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest, readme] } });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Your README references a relative image path/i)).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText("Source repo (owner/repo)"), {
+      target: { value: "openclaw/demo-plugin" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Source commit"), {
+      target: { value: "abc123" },
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText(/Your README references/i)).toBeNull();
+    });
+  });
+
+  it("does not warn when README only uses absolute image URLs", async () => {
+    renderPublishRoute();
+
+    const packageJson = withRelativePath(
+      new File(
+        [makeCodePluginPackageJson({ name: "demo-plugin", version: "1.0.0" })],
+        "package.json",
+        {
+          type: "application/json",
+        },
+      ),
+      "demo-plugin/package.json",
+    );
+    const manifest = withRelativePath(
+      new File(['{"id":"demo.plugin"}'], "openclaw.plugin.json", { type: "application/json" }),
+      "demo-plugin/openclaw.plugin.json",
+    );
+    const readme = withRelativePath(
+      new File(["# Demo\n\n![ok](https://example.com/foo.png)\n"], "README.md", {
+        type: "text/markdown",
+      }),
+      "demo-plugin/README.md",
+    );
+
+    fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest, readme] } });
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("demo-plugin")).toBeTruthy();
+    });
+    expect(screen.queryByText(/Your README references/i)).toBeNull();
+  });
 });

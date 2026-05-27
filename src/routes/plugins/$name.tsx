@@ -37,6 +37,7 @@ import {
   buildPluginSecurityAuditHref,
   parseScopedPackageName,
 } from "../../lib/pluginRoutes";
+import { buildReadmeAssetBaseUrl } from "../../lib/readmeAssetBaseUrl";
 import { useAuthStatus } from "../../lib/useAuthStatus";
 
 type PluginDetailRateLimitState = {
@@ -416,6 +417,10 @@ export function PluginDetailPage({
   const capabilities = latestRelease?.capabilities ?? pkg.capabilities;
   const compatibility = latestRelease?.compatibility ?? pkg.compatibility;
   const verification = latestRelease?.verification ?? pkg.verification;
+  const readmeAssetBaseUrl = buildReadmeAssetBaseUrl(
+    verification?.sourceRepo,
+    verification?.sourceCommit,
+  );
   const artifact = latestRelease?.artifact ?? pkg.artifact ?? null;
   const downloadPath =
     pkg.latestVersion && latestRelease?.version && artifact?.kind === "npm-pack"
@@ -444,7 +449,7 @@ export function PluginDetailPage({
     ? Object.entries(compatibility).filter(([, v]) => v !== undefined && v !== null)
     : [];
   const readmePanel = readme ? (
-    <MarkdownPreview>{readme}</MarkdownPreview>
+    <MarkdownPreview assetBaseUrl={readmeAssetBaseUrl}>{readme}</MarkdownPreview>
   ) : (
     <div className="empty-state px-[var(--space-4)] py-[var(--space-6)]">
       <p className="empty-state-title">No README available</p>

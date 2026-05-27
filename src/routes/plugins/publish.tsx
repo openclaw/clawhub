@@ -27,6 +27,10 @@ import { Label } from "../../components/ui/label";
 import { Textarea } from "../../components/ui/textarea";
 import { VersionInput } from "../../components/VersionInput";
 import {
+  detectRelativeReadmeAssets,
+  type RelativeReadmeAssetReport,
+} from "../../lib/detectRelativeReadmeAssets";
+import {
   buildPackageUploadEntries,
   filterIgnoredPackageFiles,
   normalizePackageUploadFiles,
@@ -57,6 +61,42 @@ const apiRefs = api as unknown as {
 const SHOW_CLAWPACK_ONBOARDING_BANNER = false;
 const PLUGIN_PUBLISHING_GUIDE_URL = "https://docs.openclaw.ai/clawhub/publishing#plugins";
 
+function findReadmeFile(files: File[]): File | null {
+  // Match the same lookup the publish backend uses (readme.md / readme.mdx)
+  // by going through the shared upload-path normalizer so we see the exact
+  // path the server will see — including any shared-top-level-folder
+  // stripping. We pick the shallowest README so root-level READMEs win over
+  // ones nested in `examples/` etc.
+  const normalized = normalizePackageUploadFiles(files);
+  const candidates: Array<{ file: File; depth: number }> = [];
+  for (const entry of normalized) {
+    const lower = entry.path.toLowerCase();
+    if (lower === "readme.md" || lower === "readme.mdx") {
+      candidates.push({ file: entry.file, depth: 1 });
+      continue;
+    }
+    const segments = lower.split("/").filter(Boolean);
+    const last = segments[segments.length - 1];
+    if (last === "readme.md" || last === "readme.mdx") {
+      candidates.push({ file: entry.file, depth: segments.length });
+    }
+  }
+  if (candidates.length === 0) return null;
+  candidates.sort((a, b) => a.depth - b.depth);
+  return candidates[0]?.file ?? null;
+}
+
+async function scanReadmeRelativeAssets(files: File[]): Promise<RelativeReadmeAssetReport> {
+  const readme = findReadmeFile(files);
+  if (!readme) return { samples: [], total: 0 };
+  try {
+    const text = await readme.text();
+    return detectRelativeReadmeAssets(text);
+  } catch {
+    return { samples: [], total: 0 };
+  }
+}
+
 export function PublishPluginRoute() {
   const search = useSearch({ from: "/plugins/publish" });
   const { isAuthenticated, isLoading: isAuthLoading, me } = useAuthStatus();
@@ -83,6 +123,10 @@ export function PublishPluginRoute() {
   const [packageSourceKind, setPackageSourceKind] = useState<PackagePickSource | null>(null);
   const [ignoredPaths, setIgnoredPaths] = useState<string[]>([]);
   const [detectedPrefillFields, setDetectedPrefillFields] = useState<string[]>([]);
+  const [readmeAssetReport, setReadmeAssetReport] = useState<RelativeReadmeAssetReport>({
+    samples: [],
+    total: 0,
+  });
   const [codePluginFieldIssues, setCodePluginFieldIssues] = useState<string[]>([]);
   const [status, setStatus] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -163,6 +207,12 @@ export function PublishPluginRoute() {
     validationError,
   ]);
 
+  const readmeAssetWarning = useMemo(() => {
+    if (readmeAssetReport.total === 0) return null;
+    if (sourceRepo.trim() && sourceCommit.trim()) return null;
+    return readmeAssetReport;
+  }, [readmeAssetReport, sourceRepo, sourceCommit]);
+
   const onPickFiles = async (selected: File[], sourceKind: PackagePickSource) => {
     const expanded = await expandFilesWithReport(selected, {
       includeBinaryArchiveFiles: true,
@@ -177,6 +227,7 @@ export function PublishPluginRoute() {
     setIgnoredPaths(nextIgnoredPaths);
     setError(null);
     setStatus(null);
+    setReadmeAssetReport(await scanReadmeRelativeAssets(filtered.files));
     const prefill = await derivePluginPrefill(normalized);
     setDetectedPrefillFields(listPrefilledFields(prefill));
     setCodePluginFieldIssues(prefill.missingRequiredFields ?? []);
@@ -425,6 +476,22 @@ export function PublishPluginRoute() {
                     disabled={metadataDisabled}
                     onChange={(event) => setSourceCommit(event.target.value)}
                   />
+                  {readmeAssetWarning ? (
+                    <Badge variant="accent">
+                      <span>
+                        Your README references{" "}
+                        {readmeAssetWarning.total === 1
+                          ? "a relative image path"
+                          : `${readmeAssetWarning.total} relative image paths`}{" "}
+                        ({readmeAssetWarning.samples.slice(0, 3).join(", ")}
+                        {readmeAssetWarning.samples.length > 3 ? ", \u2026" : ""}). ClawHub does not
+                        host package binary assets, so these will fail to load on the plugin detail
+                        page. Either fill in GitHub repository + Commit SHA so the images can be
+                        served from your source host, or rewrite them to absolute URLs in the
+                        README.
+                      </span>
+                    </Badge>
+                  ) : null}
                 </div>
                 <div className="flex flex-col gap-2">
                   <FieldLabelWithHelp
