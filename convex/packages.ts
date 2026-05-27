@@ -2738,12 +2738,28 @@ async function softDeletePackageDoc(
     source: "cli" | "dashboard";
   },
 ) {
+  const now = params.deletedAt ?? Date.now();
   if (pkg.softDeletedAt) {
     if (params.actorRole === "admin" || params.actorRole === "moderator") {
-      await ctx.db.patch(pkg._id, {
+      const packagePatch: Partial<Doc<"packages">> = {
         softDeletedBy: params.actorUserId,
         softDeletedByRole: params.actorRole,
-        updatedAt: Date.now(),
+        updatedAt: now,
+      };
+      if (pkg.softDeletedReason === "user.banned" && params.reason !== "user.banned") {
+        packagePatch.softDeletedAt = now;
+        packagePatch.softDeletedReason = params.reason;
+      }
+      const nextPackage: Doc<"packages"> = { ...pkg, ...packagePatch };
+      await ctx.db.patch(pkg._id, packagePatch);
+      const deleteOwner = await getOwnerPublisher(ctx, {
+        ownerPublisherId: pkg.ownerPublisherId,
+        ownerUserId: pkg.ownerUserId,
+      });
+      await upsertPackageSearchDigest(ctx, {
+        ...extractPackageDigestFields(nextPackage),
+        ownerHandle: deleteOwner?.handle ?? "",
+        ownerKind: deleteOwner?.kind,
       });
     }
     return {
@@ -2754,7 +2770,6 @@ async function softDeletePackageDoc(
     };
   }
 
-  const now = params.deletedAt ?? Date.now();
   const releases = await ctx.db
     .query("packageReleases")
     .withIndex("by_package", (q) => q.eq("packageId", pkg._id))

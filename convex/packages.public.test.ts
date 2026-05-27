@@ -7440,6 +7440,7 @@ describe("package scan backfill", () => {
  */
 function makeSoftDeleteCtx(options?: {
   pkg?: Record<string, unknown>;
+  actor?: Record<string, unknown>;
   /** When true, no existing packageCapabilitySearchDigest rows exist (forces insert). */
   noCapabilityDigest?: boolean;
   /** Personal publisher linked to the owner user. */
@@ -7490,7 +7491,7 @@ function makeSoftDeleteCtx(options?: {
     ctx: {
       db: {
         get: vi.fn(async (id: string) => {
-          if (id === "users:owner") return { _id: id, role: "user" };
+          if (id === "users:owner") return options?.actor ?? { _id: id, role: "user" };
           if (id === "publishers:owner-personal") return personalPublisher;
           return null;
         }),
@@ -8085,6 +8086,37 @@ describe("softDeletePackageInternal", () => {
     expect(result).toMatchObject({ ok: true, alreadyDeleted: true, releaseCount: 0 });
     // No release patches should have been made.
     expect(patch).not.toHaveBeenCalledWith("packageReleases:demo-1", expect.anything());
+  });
+
+  it("keeps manually moderated ban-hidden packages out of unban restore scope", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(2_000);
+    const { ctx, patch } = makeSoftDeleteCtx({
+      actor: { _id: "users:owner", role: "moderator" },
+      pkg: makePackageDoc({
+        ownerUserId: "users:owner",
+        ownerPublisherId: "publishers:owner-personal",
+        softDeletedAt: 1_000,
+        softDeletedReason: "user.banned",
+        softDeletedBy: "users:first-moderator",
+        softDeletedByRole: "moderator",
+      }),
+    });
+
+    const result = await softDeletePackageInternalHandler(ctx as never, {
+      userId: "users:owner",
+      name: "demo-plugin",
+    });
+
+    expect(result).toMatchObject({ ok: true, alreadyDeleted: true });
+    expect(patch).toHaveBeenCalledWith(
+      "packages:demo",
+      expect.objectContaining({
+        softDeletedAt: 2_000,
+        softDeletedReason: undefined,
+        softDeletedBy: "users:owner",
+        softDeletedByRole: "moderator",
+      }),
+    );
   });
 });
 
