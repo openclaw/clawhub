@@ -1393,6 +1393,87 @@ export const ensureOrgPublisherHandleInternal = internalMutation({
   handler: async (ctx, args) => await ensureOrgPublisherHandleWithActor(ctx, args),
 });
 
+export const removeOrgPublisherMemberInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    handle: v.string(),
+    memberHandle: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    assertAdmin(actor);
+
+    const handle = normalizePublisherHandle(args.handle);
+    if (!handle || !PUBLISHER_HANDLE_PATTERN.test(handle)) {
+      throw new ConvexError("Handle must be lowercase, url-safe, and 2-40 characters");
+    }
+    const memberHandle = normalizePublisherHandle(args.memberHandle);
+    if (!memberHandle) throw new ConvexError("memberHandle is required");
+
+    const publisher = await getPublisherByHandle(ctx, handle);
+    if (!publisher || publisher.kind !== "org" || publisher.deletedAt || publisher.deactivatedAt) {
+      throw new ConvexError("Publisher not found");
+    }
+
+    const targetUser = await getActiveUserByHandleOrPersonalPublisher(ctx, memberHandle);
+    if (!targetUser) throw new ConvexError(`User "@${memberHandle}" not found`);
+
+    const targetMembership = await getPublisherMembership(ctx, publisher._id, targetUser._id);
+    const member = {
+      userId: targetUser._id,
+      handle: targetUser.handle ?? memberHandle,
+      role: targetMembership?.role ?? ("publisher" as const),
+    };
+    if (!targetMembership) {
+      return {
+        ok: true as const,
+        publisherId: publisher._id,
+        handle,
+        removed: false,
+        member,
+      };
+    }
+
+    if (targetMembership.role === "owner") {
+      const members = await ctx.db
+        .query("publisherMembers")
+        .withIndex("by_publisher", (q) => q.eq("publisherId", publisher._id))
+        .collect();
+      const remainingOwners = members.filter(
+        (publisherMember) =>
+          publisherMember.role === "owner" && publisherMember.userId !== targetUser._id,
+      );
+      if (remainingOwners.length === 0) {
+        throw new ConvexError("Publisher must have at least one owner");
+      }
+    }
+
+    await ctx.db.delete(targetMembership._id);
+    await ctx.db.insert("auditLogs", {
+      actorUserId: args.actorUserId,
+      action: "publisher.member.remove",
+      targetType: "publisher",
+      targetId: publisher._id,
+      metadata: {
+        memberUserId: targetUser._id,
+        memberHandle: targetUser.handle ?? memberHandle,
+        role: targetMembership.role,
+        source: "publisher.org.mod",
+      },
+      createdAt: Date.now(),
+    });
+
+    return {
+      ok: true as const,
+      publisherId: publisher._id,
+      handle,
+      removed: true,
+      member,
+    };
+  },
+});
+
 export const createOrgPublisherForUserInternal = internalMutation({
   args: {
     actorUserId: v.id("users"),

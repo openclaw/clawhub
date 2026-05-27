@@ -730,6 +730,50 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("users/publisher-member removes an org publisher member for admin", async () => {
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        ok: true,
+        publisherId: "publishers:opik",
+        handle: "opik",
+        removed: true,
+        member: {
+          userId: "users:patrick",
+          handle: "patrick-erichsen-2",
+          role: "owner",
+        },
+      };
+    });
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+
+    const response = await __handlers.usersPostRouterV1Handler(
+      makeCtx({ runQuery: vi.fn(), runAction: vi.fn(), runMutation }),
+      new Request("https://example.com/api/v1/users/publisher-member", {
+        method: "POST",
+        body: JSON.stringify({ handle: "Opik", memberHandle: "@patrick-erichsen-2" }),
+      }),
+    );
+    if (response.status !== 200) throw new Error(await response.text());
+
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      handle: "opik",
+      removed: true,
+    });
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        actorUserId: "users:admin",
+        handle: "opik",
+        memberHandle: "@patrick-erichsen-2",
+      }),
+    );
+  });
+
   it("publishers creates a self-serve org publisher for the authenticated user", async () => {
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();

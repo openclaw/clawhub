@@ -180,6 +180,20 @@ export const ApiV1PublisherEnsureResponseSchema = type({
 });
 export type ApiV1PublisherEnsureResponse = (typeof ApiV1PublisherEnsureResponseSchema)[inferred];
 
+export const ApiV1PublisherRemoveMemberResponseSchema = type({
+  ok: "true",
+  publisherId: "string",
+  handle: "string",
+  removed: "boolean",
+  member: type({
+    userId: "string",
+    handle: "string",
+    role: '"owner"|"admin"|"publisher"',
+  }),
+});
+export type ApiV1PublisherRemoveMemberResponse =
+  (typeof ApiV1PublisherRemoveMemberResponseSchema)[inferred];
+
 export const ApiV1SearchResponseSchema = type({
   results: type({
     slug: "string?",
