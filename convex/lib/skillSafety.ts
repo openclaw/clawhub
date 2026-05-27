@@ -31,12 +31,14 @@ export function isSkillTransferBlockedByModeration(
     | "moderationFlags"
     | "moderationReason"
     | "moderationReasonCodes"
+    | "softDeletedAt"
   >,
 ) {
   const moderationStatus = skill.moderationStatus ?? "active";
   const moderationVerdict =
     skill.moderationVerdict ?? verdictFromCodes(skill.moderationReasonCodes ?? []);
   return (
+    skill.softDeletedAt !== undefined ||
     moderationStatus !== "active" ||
     moderationVerdict === "suspicious" ||
     moderationVerdict === "malicious" ||

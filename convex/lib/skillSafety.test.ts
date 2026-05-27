@@ -54,6 +54,21 @@ describe("isSkillTransferBlockedByModeration", () => {
         moderationFlags: undefined,
         moderationReason: "scanner.vt.malicious",
         moderationReasonCodes: undefined,
+        softDeletedAt: undefined,
+      }),
+    ).toBe(true);
+  });
+
+  it("blocks legacy hidden skills that only have softDeletedAt", () => {
+    expect(
+      isSkillTransferBlockedByModeration({
+        moderationStatus: undefined,
+        moderationVerdict: undefined,
+        isSuspicious: false,
+        moderationFlags: undefined,
+        moderationReason: undefined,
+        moderationReasonCodes: undefined,
+        softDeletedAt: 123,
       }),
     ).toBe(true);
   });
