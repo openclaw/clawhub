@@ -3087,6 +3087,16 @@ export const applyBanToOwnedPackagesBatchInternal = internalMutation({
       revokedTokenCount += await revokePackagePublishTokensForPackage(ctx, pkg._id, args.bannedAt);
       if (pkg.softDeletedAt) {
         if (pkg.softDeletedReason === "user.banned" && pkg.softDeletedAt !== args.bannedAt) {
+          const previousBanHiddenAt = pkg.softDeletedAt;
+          const releases = await ctx.db
+            .query("packageReleases")
+            .withIndex("by_package", (q) => q.eq("packageId", pkg._id))
+            .collect();
+          for (const release of releases) {
+            if (release.softDeletedAt === previousBanHiddenAt) {
+              await ctx.db.patch(release._id, { softDeletedAt: args.bannedAt });
+            }
+          }
           const packagePatch: Partial<Doc<"packages">> = {
             softDeletedAt: args.bannedAt,
             softDeletedBy: args.deletedBy,

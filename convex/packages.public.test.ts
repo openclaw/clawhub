@@ -7554,6 +7554,16 @@ describe("owned package sanction batches", () => {
         softDeletedBy: "users:first-moderator",
         softDeletedByRole: "moderator",
       }),
+      releases: [
+        makeReleaseDoc({
+          _id: "packageReleases:ban-hidden",
+          softDeletedAt: 1_000,
+        }),
+        makeReleaseDoc({
+          _id: "packageReleases:moderation-hidden",
+          softDeletedAt: 500,
+        }),
+      ],
     });
 
     const result = await applyBanToOwnedPackagesBatchInternalHandler(ctx as never, {
@@ -7564,6 +7574,11 @@ describe("owned package sanction batches", () => {
     });
 
     expect(result).toMatchObject({ deletedCount: 0, revokedTokenCount: 1, scheduled: false });
+    expect(patch).toHaveBeenCalledWith(
+      "packageReleases:ban-hidden",
+      expect.objectContaining({ softDeletedAt: 2_000 }),
+    );
+    expect(patch).not.toHaveBeenCalledWith("packageReleases:moderation-hidden", expect.anything());
     expect(patch).toHaveBeenCalledWith(
       "packages:demo",
       expect.objectContaining({
