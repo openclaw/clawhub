@@ -1,4 +1,6 @@
 import {
+  ApiV1SkillBulkRescanBatchRequestSchema,
+  ApiV1SkillBulkRescanStatusRequestSchema,
   SkillAppealRequestSchema,
   SkillAppealResolveRequestSchema,
   SkillReportTriageRequestSchema,
@@ -36,6 +38,7 @@ import {
   parseMultipartPublish,
   parsePublishBody,
   publicApiOrigin,
+  requireAdminOrResponse,
   requireApiTokenUserOrResponse,
   resolveTagsBatch,
   safeTextFileResponse,
@@ -273,6 +276,8 @@ type SkillSecuritySnapshot = {
 
 const internalRefs = internal as unknown as {
   securityScan: {
+    enqueueBulkSkillRescanBatchForAdminInternal: unknown;
+    getBulkSkillRescanBatchStatusForAdminInternal: unknown;
     requestSkillRescanForUserInternal: unknown;
   };
   skills: {
@@ -2029,6 +2034,75 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
   const segments = getPathSegments(request, "/api/v1/skills/");
   const action = segments[1] ?? "";
   const slug = segments[0]?.trim().toLowerCase() ?? "";
+
+  if (segments[0] === "-" && segments[1] === "rescan-batch" && segments.length === 2) {
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+    const admin = requireAdminOrResponse(auth.user, rate.headers);
+    if (!admin.ok) return admin.response;
+    try {
+      const body = parseArk(
+        ApiV1SkillBulkRescanBatchRequestSchema,
+        await request.json(),
+        "Skill bulk rescan batch payload",
+      ) as {
+        mode?: "all-active-latest";
+        cursor?: string | null;
+        batchSize?: number;
+        dryRun?: boolean;
+      };
+      const result = await runMutationRef(
+        ctx,
+        internalRefs.securityScan.enqueueBulkSkillRescanBatchForAdminInternal,
+        {
+          actorUserId: auth.userId,
+          ...(body.mode ? { mode: body.mode } : {}),
+          cursor: body.cursor ?? null,
+          ...(body.batchSize !== undefined ? { batchSize: body.batchSize } : {}),
+          ...(body.dryRun !== undefined ? { dryRun: body.dryRun } : {}),
+        },
+      );
+      return json(result, 200, rate.headers);
+    } catch (error) {
+      if (error instanceof SyntaxError) return text("Invalid JSON", 400, rate.headers);
+      return text(error instanceof Error ? error.message : "Skill bulk rescan failed", 400, rate.headers);
+    }
+  }
+
+  if (
+    segments[0] === "-" &&
+    segments[1] === "rescan-batch" &&
+    segments[2] === "status" &&
+    segments.length === 3
+  ) {
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+    const admin = requireAdminOrResponse(auth.user, rate.headers);
+    if (!admin.ok) return admin.response;
+    try {
+      const body = parseArk(
+        ApiV1SkillBulkRescanStatusRequestSchema,
+        await request.json(),
+        "Skill bulk rescan status payload",
+      ) as { jobIds: string[] };
+      const result = await runQueryRef(
+        ctx,
+        internalRefs.securityScan.getBulkSkillRescanBatchStatusForAdminInternal,
+        {
+          actorUserId: auth.userId,
+          jobIds: body.jobIds,
+        },
+      );
+      return json(result, 200, rate.headers);
+    } catch (error) {
+      if (error instanceof SyntaxError) return text("Invalid JSON", 400, rate.headers);
+      return text(
+        error instanceof Error ? error.message : "Skill bulk rescan status failed",
+        400,
+        rate.headers,
+      );
+    }
+  }
 
   if (
     segments[0] === "-" &&
