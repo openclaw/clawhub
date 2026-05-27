@@ -8006,6 +8006,26 @@ describe("owned package sanction batches", () => {
     });
   });
 
+  it("processes the initial package ban batch before the user ban is visible", async () => {
+    const { ctx, patch } = makeOwnedPackageBatchCtx({
+      owner: { _id: "users:owner", deletedAt: undefined, deactivatedAt: undefined },
+    });
+
+    const result = await applyBanToOwnedPackagesBatchInternalHandler(ctx as never, {
+      ownerUserId: "users:owner",
+      bannedAt: 1_000,
+      deletedBy: "users:moderator",
+      deletedByRole: "moderator",
+    });
+
+    expect(result).toMatchObject({ deletedCount: 1, revokedTokenCount: 1, scheduled: false });
+    expect(patch).toHaveBeenCalledWith(
+      "packages:demo",
+      expect.objectContaining({ softDeletedAt: 1_000, softDeletedReason: "user.banned" }),
+    );
+    expect(patch).toHaveBeenCalledWith("packagePublishTokens:demo", { revokedAt: 1_000 });
+  });
+
   it("stops stale package ban pages when the owner has already been unbanned", async () => {
     const { ctx, patch } = makeOwnedPackageBatchCtx();
 

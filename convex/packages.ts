@@ -3156,8 +3156,10 @@ export const applyBanToOwnedPackagesBatchInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     const owner = await ctx.db.get(args.ownerUserId);
+    const scope = getOwnedPackageScanScope(args);
+    const isInitialOwnerUserIdBatch = !args.cursor && scope === "ownerUserId";
     const ownerMatchesCurrentBan = owner?.deletedAt === args.bannedAt;
-    if (!owner || owner.deactivatedAt || !ownerMatchesCurrentBan) {
+    if (!owner || owner.deactivatedAt || (!isInitialOwnerUserIdBatch && !ownerMatchesCurrentBan)) {
       return {
         ok: true as const,
         deletedCount: 0,
@@ -3167,7 +3169,6 @@ export const applyBanToOwnedPackagesBatchInternal = internalMutation({
       };
     }
 
-    const scope = getOwnedPackageScanScope(args);
     const personalPublisherId = await getOwnedPackagePersonalPublisherId(ctx, owner);
     const packageQuery =
       scope === "personalPublisher" && personalPublisherId
