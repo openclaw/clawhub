@@ -2199,6 +2199,13 @@ async function removeSkillBadge(ctx: MutationCtx, skillId: Id<"skills">, kind: B
   }
 }
 
+function isDirectSkillOwner(
+  skill: Pick<Doc<"skills">, "ownerUserId" | "ownerPublisherId">,
+  userId: Id<"users">,
+) {
+  return !skill.ownerPublisherId && skill.ownerUserId === userId;
+}
+
 export const getBySlug = query({
   args: { slug: v.string() },
   handler: async (ctx, args) => {
@@ -2213,9 +2220,13 @@ export const getBySlug = query({
     });
     const publisherOwner =
       userId && ownerPublisher
-        ? await canAccessPublisherOwnerScope(ctx, { publisher: ownerPublisher, userId })
+        ? await canAccessPublisherOwnerScope(ctx, {
+            publisher: ownerPublisher,
+            userId,
+            legacyOwnerUserId: skill.ownerUserId,
+          })
         : false;
-    const isOwner = Boolean(userId && (userId === skill.ownerUserId || publisherOwner));
+    const isOwner = Boolean(userId && (isDirectSkillOwner(skill, userId) || publisherOwner));
 
     const latestVersionDoc = skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null;
     const latestVersion = toPublicSkillVersion(latestVersionDoc);
@@ -3238,23 +3249,44 @@ export const listDashboardPaginated = query({
         })),
       );
 
-      const result =
-        isOwnDashboard && ownerPublisher?.kind === "user" && ownerPublisher.linkedUserId
+      const shouldIncludeLegacyPersonalSkills = Boolean(
+        isOwnDashboard && ownerPublisher?.kind === "user" && ownerPublisher.linkedUserId,
+      );
+      const paginateOwnerSkills = async (paginationOpts: typeof args.paginationOpts) =>
+        shouldIncludeLegacyPersonalSkills
           ? await ctx.db
               .query("skills")
               .withIndex("by_owner_active_updated", (q) =>
                 q.eq("ownerUserId", ownerPublisher.linkedUserId!).eq("softDeletedAt", undefined),
               )
               .order("desc")
-              .paginate(args.paginationOpts)
+              .paginate(paginationOpts)
           : await ctx.db
               .query("skills")
               .withIndex("by_owner_publisher_active_updated", (q) =>
                 q.eq("ownerPublisherId", ownerPublisherId).eq("softDeletedAt", undefined),
               )
               .order("desc")
-              .paginate(args.paginationOpts);
-      const page = await mapDashboardSkillPage(ctx, result.page, isOwnDashboard);
+              .paginate(paginationOpts);
+      let result = await paginateOwnerSkills(args.paginationOpts);
+      const scopePersonalDashboardPage = (page: Doc<"skills">[]) =>
+        shouldIncludeLegacyPersonalSkills
+          ? page.filter(
+              (skill) => !skill.ownerPublisherId || skill.ownerPublisherId === ownerPublisherId,
+            )
+          : page;
+      const scopedPage = scopePersonalDashboardPage(result.page);
+      if (shouldIncludeLegacyPersonalSkills) {
+        while (!result.isDone && scopedPage.length < args.paginationOpts.numItems) {
+          result = await paginateOwnerSkills({
+            ...args.paginationOpts,
+            cursor: result.continueCursor,
+            numItems: args.paginationOpts.numItems - scopedPage.length,
+          });
+          scopedPage.push(...scopePersonalDashboardPage(result.page));
+        }
+      }
+      const page = await mapDashboardSkillPage(ctx, scopedPage, isOwnDashboard);
       return { ...result, page };
     }
 
@@ -3976,10 +4008,14 @@ async function applySkillAppealFinalAction(
 }
 
 async function canUserAppealSkill(ctx: MutationCtx, skill: Doc<"skills">, userId: Id<"users">) {
-  if (skill.ownerUserId === userId) return true;
+  if (isDirectSkillOwner(skill, userId)) return true;
   if (!skill.ownerPublisherId) return false;
   const publisher = await ctx.db.get(skill.ownerPublisherId);
-  return await canAccessPublisherOwnerScope(ctx, { publisher, userId });
+  return await canAccessPublisherOwnerScope(ctx, {
+    publisher,
+    userId,
+    legacyOwnerUserId: skill.ownerUserId,
+  });
 }
 
 async function getActiveSkillVersionForAppeal(
@@ -8004,15 +8040,20 @@ async function canReadSkillVersionFiles(ctx: ActionCtx, version: Doc<"skillVersi
 
   const authUserId = await getOptionalActiveAuthUserIdFromAction(ctx);
   if (authUserId) {
-    if (authUserId === skill.ownerUserId && !skill.softDeletedAt && !version.softDeletedAt) {
+    if (isDirectSkillOwner(skill, authUserId) && !skill.softDeletedAt && !version.softDeletedAt) {
       return true;
     }
     if (skill.ownerPublisherId && !skill.softDeletedAt && !version.softDeletedAt) {
-      const memberRole = (await ctx.runQuery(internal.publishers.getMemberRoleInternal, {
-        publisherId: skill.ownerPublisherId,
-        userId: authUserId,
-      })) as "owner" | "admin" | "publisher" | null;
-      if (memberRole) {
+      const canAccessOwnerScope = (await ctx.runQuery(
+        internal.publishers.canAccessOwnerScopeInternal,
+        {
+          publisherId: skill.ownerPublisherId,
+          userId: authUserId,
+          allowedPublisherRoles: ["publisher"],
+          legacyOwnerUserId: skill.ownerUserId,
+        },
+      )) as boolean;
+      if (canAccessOwnerScope) {
         return true;
       }
     }

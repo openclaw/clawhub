@@ -48,6 +48,7 @@ function makeActionCtx(args: {
   version?: Record<string, unknown> | null;
   actor?: Record<string, unknown> | null;
   publisherMemberRole?: "owner" | "admin" | "publisher" | null;
+  publisherAccess?: boolean;
 }) {
   return {
     runQuery: vi.fn(async (_endpoint: unknown, payload: Record<string, unknown>) => {
@@ -55,6 +56,11 @@ function makeActionCtx(args: {
       if (payload.skillId && args.skill) return args.skill ?? null;
       if (payload.soulId && args.soul) return args.soul ?? null;
       if (payload.publisherId && payload.userId === args.actor?._id) {
+        if (Array.isArray(payload.allowedPublisherRoles)) {
+          if (args.publisherAccess !== undefined) return args.publisherAccess;
+          if (payload.legacyOwnerUserId) return payload.legacyOwnerUserId === args.actor?._id;
+          return Boolean(args.publisherMemberRole);
+        }
         return args.publisherMemberRole ?? null;
       }
       if (payload.userId === args.actor?._id) {
@@ -109,11 +115,35 @@ describe("version file access actions", () => {
     ).resolves.toEqual({ path: "SKILL.md", text: "# skill" });
   });
 
+  it("does not let stale ownerUserId read publisher-owned hidden skill versions", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
+    const ctx = makeActionCtx({
+      actor: { _id: "users:owner", role: "user" },
+      publisherMemberRole: null,
+      publisherAccess: false,
+      version: makeSkillVersion(),
+      skill: {
+        _id: "skills:1",
+        ownerUserId: "users:owner",
+        ownerPublisherId: "publishers:org",
+        softDeletedAt: undefined,
+        moderationStatus: "hidden",
+        moderationReason: "pending.scan",
+        moderationFlags: [],
+      },
+    });
+
+    await expect(
+      getSkillReadmeHandler._handler(ctx, { versionId: "skillVersions:1" } as never),
+    ).rejects.toThrow("Version not available");
+  });
+
   it("allows org collaborators to read hidden skill versions", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:member" as never);
     const ctx = makeActionCtx({
       actor: { _id: "users:member", role: "user" },
       publisherMemberRole: "publisher",
+      publisherAccess: true,
       version: makeSkillVersion(),
       skill: {
         _id: "skills:1",
@@ -129,6 +159,74 @@ describe("version file access actions", () => {
     await expect(
       getSkillReadmeHandler._handler(ctx, { versionId: "skillVersions:1" } as never),
     ).resolves.toEqual({ path: "SKILL.md", text: "# skill" });
+  });
+
+  it("allows linked personal publisher users to read hidden skill versions", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
+    const ctx = makeActionCtx({
+      actor: { _id: "users:owner", role: "user" },
+      publisherMemberRole: null,
+      publisherAccess: true,
+      version: makeSkillVersion(),
+      skill: {
+        _id: "skills:1",
+        ownerUserId: "users:legacy-owner",
+        ownerPublisherId: "publishers:owner",
+        softDeletedAt: undefined,
+        moderationStatus: "hidden",
+        moderationReason: "pending.scan",
+        moderationFlags: [],
+      },
+    });
+
+    await expect(
+      getSkillReadmeHandler._handler(ctx, { versionId: "skillVersions:1" } as never),
+    ).resolves.toEqual({ path: "SKILL.md", text: "# skill" });
+  });
+
+  it("allows legacy no-link personal publisher owners to read hidden skill versions", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
+    const ctx = makeActionCtx({
+      actor: { _id: "users:owner", role: "user" },
+      publisherMemberRole: null,
+      version: makeSkillVersion(),
+      skill: {
+        _id: "skills:1",
+        ownerUserId: "users:owner",
+        ownerPublisherId: "publishers:owner",
+        softDeletedAt: undefined,
+        moderationStatus: "hidden",
+        moderationReason: "pending.scan",
+        moderationFlags: [],
+      },
+    });
+
+    await expect(
+      getSkillReadmeHandler._handler(ctx, { versionId: "skillVersions:1" } as never),
+    ).resolves.toEqual({ path: "SKILL.md", text: "# skill" });
+  });
+
+  it("does not honor stale personal publisher memberships for hidden skill versions", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:friend" as never);
+    const ctx = makeActionCtx({
+      actor: { _id: "users:friend", role: "user" },
+      publisherMemberRole: "owner",
+      publisherAccess: false,
+      version: makeSkillVersion(),
+      skill: {
+        _id: "skills:1",
+        ownerUserId: "users:owner",
+        ownerPublisherId: "publishers:owner",
+        softDeletedAt: undefined,
+        moderationStatus: "hidden",
+        moderationReason: "pending.scan",
+        moderationFlags: [],
+      },
+    });
+
+    await expect(
+      getSkillReadmeHandler._handler(ctx, { versionId: "skillVersions:1" } as never),
+    ).rejects.toThrow("Version not available");
   });
 
   it("allows owners to read hidden skill files", async () => {

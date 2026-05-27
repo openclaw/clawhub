@@ -11,6 +11,7 @@ import {
   isReservedPublicOwnerHandle,
 } from "./lib/publicRouteReservations";
 import {
+  canAccessPublisherOwnerScope,
   ensurePersonalPublisherForUser,
   getActiveUserByHandleOrPersonalPublisher,
   getPublisherByHandle,
@@ -26,6 +27,11 @@ import { readCanonicalStat } from "./lib/skillStats";
 const PUBLISHER_HANDLE_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
 const MAX_PUBLIC_PUBLISHER_LIST_LIMIT = 500;
 const PUBLISHER_LIST_PREVIEW_LIMIT = 3;
+const publisherRoleValidator = v.union(
+  v.literal("owner"),
+  v.literal("admin"),
+  v.literal("publisher"),
+);
 
 type PublisherListStats = {
   skills: number;
@@ -894,6 +900,24 @@ export const getMemberRoleInternal = internalQuery({
     (await getPublisherMembership(ctx, args.publisherId, args.userId))?.role ?? null,
 });
 
+export const canAccessOwnerScopeInternal = internalQuery({
+  args: {
+    publisherId: v.id("publishers"),
+    userId: v.id("users"),
+    allowedPublisherRoles: v.optional(v.array(publisherRoleValidator)),
+    legacyOwnerUserId: v.optional(v.id("users")),
+  },
+  handler: async (ctx, args) => {
+    const publisher = await ctx.db.get(args.publisherId);
+    return await canAccessPublisherOwnerScope(ctx, {
+      publisher,
+      userId: args.userId,
+      allowedPublisherRoles: args.allowedPublisherRoles,
+      legacyOwnerUserId: args.legacyOwnerUserId,
+    });
+  },
+});
+
 export const ensurePersonalPublisherInternal = internalMutation({
   args: { userId: v.id("users") },
   handler: async (ctx, args) => {
@@ -990,11 +1014,17 @@ export const listMine = query({
     const publishers = await Promise.all(
       memberships.map(async (membership) => {
         const publisher = await ctx.db.get(membership.publisherId);
+        if (publisher?.kind === "user") {
+          const isLinkedPersonal = publisher.linkedUserId === userId;
+          const isLegacyPersonal =
+            !publisher.linkedUserId && user.personalPublisherId === publisher._id;
+          if (!isLinkedPersonal && !isLegacyPersonal) return null;
+        }
         const publicPublisher = await toPublicPublisherWithOfficial(ctx, publisher);
         if (!publicPublisher) return null;
         return {
           publisher: publicPublisher,
-          role: membership.role,
+          role: publisher?.kind === "user" ? "owner" : membership.role,
         };
       }),
     );

@@ -370,6 +370,51 @@ describe("skills.getBySlug", () => {
     expect(result).toBeNull();
   });
 
+  it("does not treat stale ownerUserId as owner for hidden publisher-owned skills", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:1" as never);
+    const ctx = makeCtx({
+      skill: makeSkill({
+        ownerPublisherId: "publishers:org",
+        moderationStatus: "hidden",
+        moderationReason: "manual.review",
+      }),
+      owner: makeOwner("users:1", "owner"),
+      ownerPublisher: {
+        _id: "publishers:org",
+        kind: "org",
+        handle: "team",
+        displayName: "Team",
+      },
+    });
+
+    const result = await getBySlugHandler(ctx, { slug: "demo" } as never);
+
+    expect(result).toBeNull();
+  });
+
+  it("keeps legacy no-link personal publisher owners authorized for hidden skill views", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:1" as never);
+    const ctx = makeCtx({
+      skill: makeSkill({
+        ownerPublisherId: "publishers:owner",
+        moderationStatus: "hidden",
+        moderationReason: "manual.review",
+      }),
+      owner: makeOwner("users:1", "owner"),
+      ownerPublisher: {
+        _id: "publishers:owner",
+        kind: "user",
+        handle: "owner",
+        displayName: "Owner",
+        linkedUserId: undefined,
+      },
+    });
+
+    const result = await getBySlugHandler(ctx, { slug: "demo" } as never);
+
+    expect(result?.skill).toMatchObject({ slug: "demo" });
+  });
+
   it("keeps org memberships authorized for hidden skill owner views", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:member" as never);
     const ctx = makeCtx({
@@ -714,6 +759,64 @@ describe("skill artifact moderation", () => {
         } as never,
         {
           actorUserId: "users:stranger",
+          slug: "demo",
+          message: "please review",
+        },
+      ),
+    ).rejects.toThrow("Unauthorized");
+  });
+
+  it("does not let stale ownerUserId submit skill appeals for publisher-owned skills", async () => {
+    const skill = makeSkill({
+      softDeletedAt: 123,
+      ownerPublisherId: "publishers:org",
+      moderationStatus: "hidden",
+      moderationReason: "scanner.llm.suspicious",
+      latestVersionId: undefined,
+    });
+
+    await expect(
+      submitSkillAppealForUserInternalHandler(
+        {
+          db: {
+            get: vi.fn(async (id: string) => {
+              if (id === "users:1") return makeOwner("users:1", "owner");
+              if (id === "publishers:org") {
+                return {
+                  _id: "publishers:org",
+                  kind: "org",
+                  handle: "team",
+                  displayName: "Team",
+                };
+              }
+              return null;
+            }),
+            query: vi.fn((table: string) => {
+              if (table === "skills") {
+                return {
+                  withIndex: vi.fn(() => ({
+                    unique: vi.fn().mockResolvedValue(skill),
+                  })),
+                };
+              }
+              if (table === "publisherMembers") {
+                return {
+                  withIndex: vi.fn(() => ({
+                    unique: vi.fn().mockResolvedValue(null),
+                  })),
+                };
+              }
+              throw new Error(`Unexpected query table: ${table}`);
+            }),
+            insert: vi.fn(),
+            patch: vi.fn(),
+            replace: vi.fn(),
+            delete: vi.fn(),
+            normalizeId: vi.fn(),
+          },
+        } as never,
+        {
+          actorUserId: "users:1",
           slug: "demo",
           message: "please review",
         },

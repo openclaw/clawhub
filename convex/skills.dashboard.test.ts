@@ -71,8 +71,19 @@ function makeSkill(slug: string, overrides: Record<string, unknown> = {}) {
   };
 }
 
+type SkillTestDoc = ReturnType<typeof makeSkill>;
+type IndexPage =
+  | SkillTestDoc[]
+  | Array<{ page: SkillTestDoc[]; isDone: boolean; continueCursor: string }>;
+
+function isPaginatedIndexPage(
+  page: IndexPage | undefined,
+): page is Array<{ page: SkillTestDoc[]; isDone: boolean; continueCursor: string }> {
+  return Array.isArray(page) && page.length > 0 && "page" in page[0];
+}
+
 function makeCtx(
-  indexPages: Record<string, ReturnType<typeof makeSkill>[]>,
+  indexPages: Record<string, IndexPage>,
   options: { membership?: Record<string, unknown> | null } = {},
 ) {
   const indexCalls: string[] = [];
@@ -128,13 +139,27 @@ function makeCtx(
           return {
             withIndex: vi.fn((indexName: string) => {
               indexCalls.push(indexName);
+              const indexPage = indexPages[indexName] ?? [];
+              const takeRows = isPaginatedIndexPage(indexPage)
+                ? indexPage.flatMap((entry) => entry.page)
+                : indexPage;
               return {
                 order: vi.fn(() => ({
-                  take: vi.fn().mockResolvedValue(indexPages[indexName] ?? []),
-                  paginate: vi.fn().mockResolvedValue({
-                    page: indexPages[indexName] ?? [],
-                    isDone: true,
-                    continueCursor: "",
+                  take: vi.fn().mockResolvedValue(takeRows),
+                  paginate: vi.fn((paginationOpts: { cursor: string | null }) => {
+                    if (isPaginatedIndexPage(indexPage)) {
+                      const pageIndex = paginationOpts.cursor
+                        ? Number(paginationOpts.cursor.replace("cursor:", ""))
+                        : 0;
+                      return Promise.resolve(
+                        indexPage[pageIndex] ?? { page: [], isDone: true, continueCursor: "" },
+                      );
+                    }
+                    return Promise.resolve({
+                      page: indexPage,
+                      isDone: true,
+                      continueCursor: "",
+                    });
                   }),
                 })),
               };
@@ -185,6 +210,72 @@ describe("skills.listDashboardPaginated", () => {
 
     expect(indexCalls).toContain("by_owner_active_updated");
     expect(result.page).toEqual([expect.objectContaining({ slug: "legacy-skill" })]);
+  });
+
+  it("excludes other publisher-owned skills from personal publisher dashboards", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
+    const { ctx, indexCalls } = makeCtx({
+      by_owner_active_updated: [
+        makeSkill("team-hidden", {
+          ownerPublisherId: "publishers:org",
+          moderationStatus: "hidden",
+        }),
+        makeSkill("personal-published", {
+          ownerPublisherId: "publishers:self",
+          moderationStatus: "hidden",
+        }),
+        makeSkill("legacy-skill"),
+      ],
+    });
+
+    const result = await handler(
+      ctx as never,
+      {
+        ownerPublisherId: "publishers:self",
+        paginationOpts,
+      } as never,
+    );
+
+    expect(indexCalls).toContain("by_owner_active_updated");
+    expect(result.page).toEqual([
+      expect.objectContaining({ slug: "personal-published" }),
+      expect.objectContaining({ slug: "legacy-skill" }),
+    ]);
+  });
+
+  it("continues personal dashboard pagination past other publisher-owned rows", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
+    const { ctx } = makeCtx({
+      by_owner_active_updated: [
+        {
+          page: [
+            makeSkill("team-hidden", {
+              ownerPublisherId: "publishers:org",
+              moderationStatus: "hidden",
+            }),
+          ],
+          isDone: false,
+          continueCursor: "cursor:1",
+        },
+        {
+          page: [makeSkill("legacy-skill")],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await handler(
+      ctx as never,
+      {
+        ownerPublisherId: "publishers:self",
+        paginationOpts: { cursor: null, numItems: 1 },
+      } as never,
+    );
+
+    expect(result.page).toEqual([expect.objectContaining({ slug: "legacy-skill" })]);
+    expect(result.isDone).toBe(true);
+    expect(result.continueCursor).toBe("");
   });
 
   it("keeps non-owner personal publisher reads scoped to publisher-owned skills", async () => {

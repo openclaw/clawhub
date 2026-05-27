@@ -128,7 +128,13 @@ export async function assertCanManageOwnedResource(
 
   const publisher = await ctx.db.get(params.ownerPublisherId);
   if (publisher?.kind === "user") {
-    if (publisher.linkedUserId === params.actor._id) return;
+    if (publisher.linkedUserId) {
+      if (publisher.linkedUserId === params.actor._id) return;
+      throw new ConvexError("Forbidden");
+    }
+    // Compatibility for legacy personal publishers created before linkedUserId.
+    // Only fall back to resource ownership while the publisher has no link.
+    if (params.ownerUserId === params.actor._id) return;
     throw new ConvexError("Forbidden");
   }
 
@@ -484,12 +490,14 @@ export async function canAccessPublisherOwnerScope(
     publisher: Doc<"publishers"> | null | undefined;
     userId: Id<"users">;
     allowedPublisherRoles?: PublisherRole[];
+    legacyOwnerUserId?: Id<"users">;
   },
 ) {
   const publisher = params.publisher;
   if (!publisher || !isPublisherActive(publisher)) return false;
   if (publisher.kind === "user") {
-    return publisher.linkedUserId === params.userId;
+    if (publisher.linkedUserId) return publisher.linkedUserId === params.userId;
+    return params.legacyOwnerUserId === params.userId;
   }
   const membership = await getPublisherMembership(ctx, publisher._id, params.userId);
   return Boolean(

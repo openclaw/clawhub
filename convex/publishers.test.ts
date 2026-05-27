@@ -1837,6 +1837,28 @@ describe("publisher-owned resource authorization", () => {
     ).resolves.toBeUndefined();
   });
 
+  it("keeps legacy personal publishers without linked users manageable by the resource owner", async () => {
+    const ctx = makeOwnerResourceCtx({
+      publisher: {
+        _id: "publishers:owner",
+        kind: "user",
+        handle: "vincentkoc",
+        linkedUserId: undefined,
+      },
+    });
+
+    await expect(
+      assertCanManageOwnedResource(
+        ctx as never,
+        {
+          actor: { _id: "users:vincent" },
+          ownerUserId: "users:vincent",
+          ownerPublisherId: "publishers:owner",
+        } as never,
+      ),
+    ).resolves.toBeUndefined();
+  });
+
   it("does not honor extra memberships on personal publishers", async () => {
     const ctx = makeOwnerResourceCtx({
       publisher: {
@@ -2086,6 +2108,127 @@ describe("publisher bootstrap", () => {
           handle: "user",
           kind: "user",
           linkedUserId: "users:symbols",
+        }),
+      }),
+    ]);
+  });
+
+  it("filters stale personal memberships from mine listings", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:friend" as never);
+    const memberships = [
+      {
+        _id: "publisherMembers:stale-personal",
+        publisherId: "publishers:owner",
+        userId: "users:friend",
+        role: "owner",
+      },
+      {
+        _id: "publisherMembers:own-personal",
+        publisherId: "publishers:friend",
+        userId: "users:friend",
+        role: "publisher",
+      },
+      {
+        _id: "publisherMembers:team",
+        publisherId: "publishers:team",
+        userId: "users:friend",
+        role: "admin",
+      },
+    ];
+    const publishers = {
+      "publishers:owner": {
+        _id: "publishers:owner",
+        _creationTime: 1,
+        kind: "user",
+        handle: "owner",
+        displayName: "Owner",
+        linkedUserId: "users:owner",
+        trustedPublisher: false,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      "publishers:friend": {
+        _id: "publishers:friend",
+        _creationTime: 1,
+        kind: "user",
+        handle: "friend",
+        displayName: "Friend",
+        linkedUserId: "users:friend",
+        trustedPublisher: false,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      "publishers:team": {
+        _id: "publishers:team",
+        _creationTime: 1,
+        kind: "org",
+        handle: "team",
+        displayName: "Team",
+        trustedPublisher: false,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    };
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:friend") {
+            return {
+              _id: id,
+              _creationTime: 1,
+              handle: "friend",
+              displayName: "Friend",
+              personalPublisherId: "publishers:friend",
+              trustedPublisher: false,
+              createdAt: 1,
+              updatedAt: 1,
+            };
+          }
+          return publishers[id as keyof typeof publishers] ?? null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table === "publisherMembers") {
+            return {
+              withIndex: vi.fn((indexName: string) => {
+                if (indexName !== "by_user") throw new Error(`unexpected index ${indexName}`);
+                return { collect: vi.fn().mockResolvedValue(memberships) };
+              }),
+            };
+          }
+          if (table === "publishers") {
+            return {
+              withIndex: vi.fn((indexName: string) => {
+                if (indexName === "by_handle") return { unique: vi.fn().mockResolvedValue(null) };
+                if (indexName !== "by_linked_user") {
+                  throw new Error(`unexpected index ${indexName}`);
+                }
+                return { unique: vi.fn().mockResolvedValue(null) };
+              }),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    const result = await listMineHandler(ctx as never, {} as never);
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        role: "owner",
+        publisher: expect.objectContaining({
+          _id: "publishers:friend",
+          handle: "friend",
+          kind: "user",
+          linkedUserId: "users:friend",
+        }),
+      }),
+      expect.objectContaining({
+        role: "admin",
+        publisher: expect.objectContaining({
+          _id: "publishers:team",
+          handle: "team",
+          kind: "org",
         }),
       }),
     ]);

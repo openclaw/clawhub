@@ -700,7 +700,11 @@ async function viewerCanAccessPackageOwner(
 
   const membershipPromise = (async () => {
     const ownerPublisher = await ctx.db.get(ownerPublisherId);
-    if (ownerPublisher?.kind === "user") return ownerPublisher.linkedUserId === viewerUserId;
+    if (ownerPublisher?.kind === "user") {
+      return ownerPublisher.linkedUserId
+        ? ownerPublisher.linkedUserId === viewerUserId
+        : digest.ownerUserId === viewerUserId;
+    }
     const membership = await getPublisherMembership(ctx, ownerPublisherId, viewerUserId);
     return Boolean(membership);
   })();
@@ -717,8 +721,11 @@ async function viewerCanManagePackageOwner(
   if (!digest.ownerPublisherId) return digest.ownerUserId === viewerUserId;
 
   const ownerPublisher = await ctx.db.get(digest.ownerPublisherId);
-  if (ownerPublisher?.kind === "user" && ownerPublisher.linkedUserId === viewerUserId) return true;
-  if (ownerPublisher?.kind === "user") return false;
+  if (ownerPublisher?.kind === "user") {
+    return ownerPublisher.linkedUserId
+      ? ownerPublisher.linkedUserId === viewerUserId
+      : digest.ownerUserId === viewerUserId;
+  }
 
   const membership = await getPublisherMembership(ctx, digest.ownerPublisherId, viewerUserId);
   return Boolean(membership && isPublisherRoleAllowed(membership.role, ["admin"]));
@@ -5250,10 +5257,15 @@ async function transferPackageOwnerForUser(
   if (pkg.ownerPublisherId) {
     const sourcePublisher = await ctx.db.get(pkg.ownerPublisherId);
     const sourceMembership = await getPublisherMembership(ctx, pkg.ownerPublisherId, actor._id);
+    const canManagePersonalSource =
+      sourcePublisher?.kind === "user" &&
+      (sourcePublisher.linkedUserId
+        ? sourcePublisher.linkedUserId === actor._id
+        : pkg.ownerUserId === actor._id);
     const canManageSource =
       actor.role === "admin" ||
       (sourcePublisher?.kind === "user"
-        ? sourcePublisher.linkedUserId === actor._id
+        ? canManagePersonalSource
         : Boolean(sourceMembership && isPublisherRoleAllowed(sourceMembership.role, ["admin"])));
     if (!canManageSource) {
       throw new ConvexError("Forbidden");
@@ -5284,10 +5296,17 @@ async function transferPackageOwnerForUser(
     destinationPublisher._id,
     actor._id,
   );
+  const canManagePersonalDestination =
+    destinationPublisher.kind === "user" &&
+    (destinationPublisher.linkedUserId
+      ? destinationPublisher.linkedUserId === actor._id
+      : Boolean(
+          destinationMembership && isPublisherRoleAllowed(destinationMembership.role, ["admin"]),
+        ));
   const canManageDestination =
     actor.role === "admin" ||
     (destinationPublisher.kind === "user"
-      ? destinationPublisher.linkedUserId === actor._id
+      ? canManagePersonalDestination
       : Boolean(
           destinationMembership && isPublisherRoleAllowed(destinationMembership.role, ["admin"]),
         ));

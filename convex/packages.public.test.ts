@@ -694,6 +694,7 @@ function makeDigestCtx(options: {
   }>;
   exactPackages?: Array<Record<string, unknown>>;
   exactDigests?: Array<Record<string, unknown>>;
+  publisherDocs?: Record<string, Record<string, unknown>>;
   publisherMemberships?: Record<string, "owner" | "admin" | "publisher">;
 }) {
   const pageByTable = new Map<
@@ -801,6 +802,7 @@ function makeDigestCtx(options: {
     ctx: {
       db: {
         get: vi.fn(async (id: string) => {
+          if (options.publisherDocs?.[id]) return options.publisherDocs[id];
           if (options.publisherMemberships?.[id]) return { _id: id, kind: "org" };
           return null;
         }),
@@ -1709,6 +1711,44 @@ describe("packages public queries", () => {
     });
 
     expect(result.page.map((entry) => entry.name)).toEqual(["public-plugin"]);
+  });
+
+  it("lets legacy no-link personal package owners list private package digests", async () => {
+    const { ctx } = makeDigestCtx({
+      publisherDocs: {
+        "publishers:legacy-personal": {
+          _id: "publishers:legacy-personal",
+          kind: "user",
+          handle: "viewer",
+          linkedUserId: undefined,
+        },
+      },
+      pages: [
+        {
+          page: [
+            makeDigest("legacy-personal-secret", {
+              channel: "private",
+              ownerKind: "user",
+              ownerUserId: "users:viewer",
+              ownerPublisherId: "publishers:legacy-personal",
+            }),
+            makeDigest("public-plugin"),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await listPageForViewerInternalHandler(ctx, {
+      paginationOpts: { cursor: null, numItems: 10 },
+      viewerUserId: "users:viewer",
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual([
+      "legacy-personal-secret",
+      "public-plugin",
+    ]);
   });
 
   it("allows owners to filter to only their private packages", async () => {
@@ -3385,6 +3425,58 @@ describe("packages public queries", () => {
         kind: "user",
         handle: "owner",
         linkedUserId: "users:owner",
+      },
+      sourceMembershipRole: "admin",
+      destinationMembershipRole: "owner",
+    });
+
+    await expect(
+      transferPackageOwnerForUserInternalHandler(ctx, {
+        actorUserId: "users:vincent",
+        name: "demo-plugin",
+        toOwner: "opik",
+      }),
+    ).rejects.toThrow("Forbidden");
+  });
+
+  it("lets owners transfer packages from legacy personal publishers without linked users", async () => {
+    const { ctx } = makeUserTransferPackageOwnerCtx({
+      sourcePublisher: {
+        _id: "publishers:vincent",
+        kind: "user",
+        handle: "vincentkoc",
+        linkedUserId: undefined,
+      },
+      sourceMembershipRole: null,
+      destinationMembershipRole: "owner",
+    });
+
+    await expect(
+      transferPackageOwnerForUserInternalHandler(ctx, {
+        actorUserId: "users:vincent",
+        name: "@opik/opik-openclaw",
+        toOwner: "opik",
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      ownerUserId: "users:vincent",
+      ownerPublisherId: "publishers:opik",
+    });
+  });
+
+  it("rejects package transfers through stale no-link personal memberships", async () => {
+    const { ctx } = makeUserTransferPackageOwnerCtx({
+      pkg: makePackageDoc({
+        name: "@owner/demo",
+        normalizedName: "@owner/demo",
+        ownerUserId: "users:owner",
+        ownerPublisherId: "publishers:vincent",
+      }),
+      sourcePublisher: {
+        _id: "publishers:vincent",
+        kind: "user",
+        handle: "owner",
+        linkedUserId: undefined,
       },
       sourceMembershipRole: "admin",
       destinationMembershipRole: "owner",
