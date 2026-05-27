@@ -85,3 +85,9 @@ bun run proof:publish -- --proof-dir .artifacts/clawhub-ui-proof/<timestamp> --t
 present, MP4s, `summary.json`, and `report.md` to the `qa-artifacts` branch,
 then upserts a marker-backed PR comment with inline screenshots/previews and
 linked MP4s. Use `--dry-run` first when drafting or checking the comment body.
+
+## Share In GitHub Issues
+
+When proof images or screenshots should appear in GitHub issues, share
+`here.now` links instead of uploading image attachments directly to GitHub.
+Include a short note about what the linked image proves.
