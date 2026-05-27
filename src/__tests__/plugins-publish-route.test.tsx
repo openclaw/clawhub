@@ -101,7 +101,7 @@ describe("plugins publish route", () => {
           handle: "vintageayu",
           displayName: "VintageAyu",
           kind: "user",
-          image: "https://example.com/vintageayu.png",
+          image: "/clawd-logo.png",
         },
         role: "owner",
       },
@@ -159,7 +159,7 @@ describe("plugins publish route", () => {
     expect(screen.getByPlaceholderText("Version").getAttribute("disabled")).not.toBeNull();
     expect(screen.queryByPlaceholderText("Describe what changed in this release...")).toBeNull();
     expect(screen.getByLabelText("Owner").textContent).toContain("@vintageayu · VintageAyu");
-    expect(document.querySelector('img[src="https://example.com/vintageayu.png"]')).toBeTruthy();
+    expect(document.querySelector('img[src="/clawd-logo.png"]')).toBeTruthy();
     expect(
       screen.getByRole("button", { name: "Publish plugin" }).getAttribute("disabled"),
     ).not.toBeNull();
