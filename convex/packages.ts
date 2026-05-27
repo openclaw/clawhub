@@ -1037,11 +1037,9 @@ async function listDashboardPackagesForOwnerPublisher(
       publisher: ownerPublisher,
       userId: viewerUserId,
     })) ||
-    Boolean(
-      ownerPublisher?.kind === "user" &&
+    (ownerPublisher?.kind === "user" &&
       !ownerPublisher.linkedUserId &&
-      owner?.personalPublisherId === ownerPublisherId,
-    );
+      owner?.personalPublisherId === ownerPublisherId);
   if (!isOwnDashboard) return [];
 
   const scopedEntries = await ctx.db
