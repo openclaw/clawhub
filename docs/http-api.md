@@ -584,6 +584,31 @@ Notes:
 - Browser UI sort controls for plugin search reorder the loaded relevance results,
   matching the current `/skills` browse behavior.
 
+### `GET /api/v1/plugins/{name}/verify`
+
+Returns a machine-readable verification envelope for a plugin release.
+
+Query params:
+
+- `version` (optional): specific package version.
+- `tag` (optional): resolve a tagged package release, for example `latest`.
+
+Notes:
+
+- `ok` is `true` only when the selected release is not blocked from download,
+  ClawScan verification is clean, and the release trust summary is not stale.
+- The response is an evidence surface, not an official endorsement. Community
+  packages remain `review.status: "unreviewed-community"` unless they are
+  already in the official channel.
+- `provenance` includes source-linked package metadata, npm/package provenance
+  availability, trusted publisher metadata when configured, and whether the
+  release is a trusted OpenClaw plugin.
+- `security` includes the compact install trust decision plus status-level
+  static analysis, VirusTotal, and SkillSpector signals when available.
+- This endpoint intentionally does not generate a `plugin-card.md` artifact yet.
+  It provides the version-scoped JSON surface needed by future plugin trust-card
+  or vetted-community review work.
+
 ### `GET /api/v1/packages/{name}`
 
 Returns package detail metadata.

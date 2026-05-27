@@ -427,6 +427,33 @@ export const ApiV1PackageSecurityResponseSchema = type({
 });
 export type ApiV1PackageSecurityResponse = (typeof ApiV1PackageSecurityResponseSchema)[inferred];
 
+export const ApiV1PluginVerifyResponseSchema = type({
+  schema: '"clawhub.plugin.verify.v1"',
+  ok: "boolean",
+  decision: '"pass"|"fail"',
+  reasons: "string[]",
+  name: "string",
+  displayName: "string",
+  family: PackageFamilySchema,
+  pageUrl: "string",
+  publisherHandle: "string|null",
+  publisherDisplayName: "string|null",
+  publisherProfileUrl: "string|null",
+  version: "string",
+  resolvedFrom: '"latest"|"version"|"tag"',
+  tag: "string|null",
+  createdAt: "number",
+  review: "unknown",
+  artifact: "unknown",
+  provenance: "unknown",
+  security: "unknown",
+  compatibility: "unknown",
+  capabilities: "unknown",
+  verificationUrl: "string",
+  signature: "unknown",
+});
+export type ApiV1PluginVerifyResponse = (typeof ApiV1PluginVerifyResponseSchema)[inferred];
+
 export const PackageReleaseModerationRequestSchema = type({
   state: PackageReleaseModerationStateSchema,
   reason: "string",

@@ -6656,6 +6656,167 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
+  it("plugin verify endpoint returns version-scoped trust and provenance evidence", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args && !("version" in args)) {
+        return {
+          package: {
+            _id: "packages:demo-plugin",
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            family: "code-plugin",
+            tags: { latest: "packageReleases:1" },
+            latestReleaseId: "packageReleases:1",
+            channel: "community",
+            isOfficial: false,
+            createdAt: 1,
+            updatedAt: 1,
+          },
+          latestRelease: null,
+          owner: { _id: "users:demo", handle: "demo", displayName: "Demo Publisher" },
+        };
+      }
+      if ("packageId" in args && "version" in args) {
+        return {
+          _id: "packageReleases:1",
+          packageId: "packages:demo-plugin",
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "Initial release",
+          distTags: ["latest"],
+          files: [
+            {
+              path: "openclaw.plugin.json",
+              size: 100,
+              sha256: "f".repeat(64),
+              storageId: "storage:manifest",
+              contentType: "application/json",
+            },
+          ],
+          artifactKind: "npm-pack",
+          clawpackSha256: "c".repeat(64),
+          clawpackSize: 123,
+          clawpackFormat: "tgz",
+          npmIntegrity: "sha512-demo",
+          npmShasum: "d".repeat(40),
+          npmTarballName: "demo-plugin-1.0.0.tgz",
+          verification: {
+            tier: "source-linked",
+            scope: "artifact-only",
+            sourceRepo: "demo/plugin",
+            sourceCommit: "abc123",
+            sourceTag: "v1.0.0",
+            hasProvenance: true,
+            scanStatus: "clean",
+          },
+          compatibility: {
+            pluginApiRange: ">=2026.3.24",
+            builtWithOpenClawVersion: "2026.5.24",
+          },
+          capabilities: {
+            executesCode: true,
+            hooks: ["before_dispatch"],
+            capabilityTags: ["security", "hook:before-dispatch"],
+          },
+          staticScan: {
+            status: "clean",
+            reasonCodes: [],
+            findings: [],
+            summary: "No static findings.",
+            engineVersion: "1",
+            checkedAt: 1,
+          },
+          vtAnalysis: {
+            status: "clean",
+            verdict: "benign",
+            checkedAt: 1,
+          },
+        };
+      }
+      if ("packageId" in args) {
+        return {
+          _id: "packageTrustedPublishers:1",
+          packageId: "packages:demo-plugin",
+          provider: "github-actions",
+          repository: "demo/plugin",
+          repositoryId: "123",
+          repositoryOwner: "demo",
+          repositoryOwnerId: "456",
+          workflowFilename: "publish.yml",
+          createdAt: 1,
+          updatedAt: 2,
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.pluginsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/plugins/demo-plugin/verify?version=1.0.0"),
+    );
+
+    if (response.status !== 200) throw new Error(await response.text());
+    await expect(response.json()).resolves.toMatchObject({
+      schema: "clawhub.plugin.verify.v1",
+      ok: true,
+      decision: "pass",
+      reasons: [],
+      name: "demo-plugin",
+      family: "code-plugin",
+      publisherHandle: "demo",
+      version: "1.0.0",
+      resolvedFrom: "version",
+      review: {
+        status: "unreviewed-community",
+        isOfficial: false,
+        channel: "community",
+      },
+      artifact: {
+        kind: "npm-pack",
+        sha256: "c".repeat(64),
+        npmIntegrity: "sha512-demo",
+        files: [{ path: "openclaw.plugin.json", sha256: "f".repeat(64) }],
+      },
+      provenance: {
+        tier: "source-linked",
+        scope: "artifact-only",
+        sourceRepo: "demo/plugin",
+        sourceCommit: "abc123",
+        hasProvenance: true,
+        source: "source-linked-release",
+        trustedPublisher: {
+          provider: "github-actions",
+          repository: "demo/plugin",
+          workflowFilename: "publish.yml",
+        },
+      },
+      security: {
+        status: "clean",
+        blockedFromDownload: false,
+        pending: false,
+        stale: false,
+        signals: {
+          staticScan: {
+            status: "clean",
+            engineVersion: "1",
+          },
+          virusTotal: {
+            status: "clean",
+            verdict: "benign",
+          },
+        },
+      },
+      compatibility: {
+        pluginApiRange: ">=2026.3.24",
+      },
+      capabilities: {
+        hooks: ["before_dispatch"],
+      },
+      verificationUrl: "https://example.com/api/v1/plugins/demo-plugin/verify?version=1.0.0",
+    });
+  });
+
   it("package security endpoint includes package-level public download blocks", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("name" in args && "version" in args) {
