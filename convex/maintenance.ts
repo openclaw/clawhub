@@ -2298,7 +2298,9 @@ export const backfillDigestVersionSummary = internalMutation({
       if (
         digest.latestVersionId === patch.latestVersionId &&
         digest.latestVersionSkillId === patch.latestVersionSkillId &&
-        JSON.stringify(digest.latestVersionSummary) === JSON.stringify(patch.latestVersionSummary)
+        JSON.stringify(digest.latestVersionSummary) ===
+          JSON.stringify(patch.latestVersionSummary) &&
+        JSON.stringify(digest.capabilityTags ?? []) === JSON.stringify(patch.capabilityTags ?? [])
       ) {
         continue;
       }
