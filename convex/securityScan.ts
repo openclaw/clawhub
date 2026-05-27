@@ -8,10 +8,12 @@ import { normalizePackageName } from "./lib/packageRegistry";
 import { assertCanManageOwnedResource } from "./lib/publishers";
 import { sourceSkillVersionFiles } from "./lib/skillCards";
 
-const MAX_PARALLEL_CODEX_SCANS = 64;
 const DEFAULT_VT_WAIT_MS = 10 * 60 * 1000;
 const DEFAULT_LEASE_MS = 60 * 60 * 1000;
 const MAX_ATTEMPTS = 3;
+const DEFAULT_CODEX_SCAN_CLAIM_LIMIT = 64;
+const MAX_CODEX_SCAN_CLAIM_LIMIT = 512;
+const MAX_EXPIRED_CODEX_SCAN_LEASE_REQUEUES = 512;
 const DEFAULT_CANCEL_SCAN_LIMIT = 1000;
 const DEFAULT_CANCEL_DELETE_LIMIT = 500;
 const MAX_CANCEL_SCAN_LIMIT = 5000;
@@ -373,10 +375,10 @@ function hasArtifactBackedLlmAnalysis(analysis: ExistingLlmAnalysis | undefined)
 }
 
 function normalizeLimit(limit: number | undefined) {
-  return Math.max(
-    1,
-    Math.min(Math.floor(limit ?? MAX_PARALLEL_CODEX_SCANS), MAX_PARALLEL_CODEX_SCANS),
-  );
+  const normalized = Number.isFinite(limit)
+    ? Math.floor(limit ?? DEFAULT_CODEX_SCAN_CLAIM_LIMIT)
+    : DEFAULT_CODEX_SCAN_CLAIM_LIMIT;
+  return Math.max(1, Math.min(normalized, MAX_CODEX_SCAN_CLAIM_LIMIT));
 }
 
 function normalizeBulkRescanBatchSize(batchSize: number | undefined) {
@@ -1095,25 +1097,23 @@ export const claimQueuedJobsInternal = internalMutation({
     const limit = normalizeLimit(args.limit);
     const leaseMs = Math.max(60_000, Math.min(args.leaseMs ?? DEFAULT_LEASE_MS, 60 * 60 * 1000));
 
-    const running = await ctx.db
+    const expiredRunning = await ctx.db
       .query("securityScanJobs")
-      .withIndex("by_status_and_lease_expires_at", (q) => q.eq("status", "running"))
-      .take(MAX_PARALLEL_CODEX_SCANS * 4);
-    for (const job of running) {
-      if ((job.leaseExpiresAt ?? 0) <= now) {
-        await ctx.db.patch(job._id, {
-          status: "queued",
-          leaseToken: undefined,
-          leaseExpiresAt: undefined,
-          workerId: undefined,
-          nextRunAt: now,
-          updatedAt: now,
-        });
-      }
+      .withIndex("by_status_and_lease_expires_at", (q) =>
+        q.eq("status", "running").lte("leaseExpiresAt", now),
+      )
+      .take(MAX_EXPIRED_CODEX_SCAN_LEASE_REQUEUES);
+    for (const job of expiredRunning) {
+      await ctx.db.patch(job._id, {
+        status: "queued",
+        leaseToken: undefined,
+        leaseExpiresAt: undefined,
+        workerId: undefined,
+        nextRunAt: now,
+        updatedAt: now,
+      });
     }
-    const activeRunning = running.filter((job) => (job.leaseExpiresAt ?? 0) > now).length;
-    const capacity = Math.max(0, Math.min(limit, MAX_PARALLEL_CODEX_SCANS - activeRunning));
-    if (capacity === 0) return [];
+    const capacity = limit;
 
     const ready: Doc<"securityScanJobs">[] = [];
     const claimedIds = new Set<Id<"securityScanJobs">>();
