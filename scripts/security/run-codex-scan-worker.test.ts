@@ -42,7 +42,9 @@ describe("run-codex-scan-worker diagnostics", () => {
 
     expect(prompt).toContain("Do your own security research");
     expect(prompt).toContain("Inspect workspace files when needed");
-    expect(prompt).toContain("SkillSpector findings are evidence, not the final verdict");
+    expect(prompt).toContain("SkillSpector findings are advisory research-preview evidence");
+    expect(prompt).toContain("not validated ground truth");
+    expect(prompt).toContain("artifact-backed evidence");
     expect(prompt).toContain("totality of evidence");
     expect(prompt).not.toContain("incomplete_artifact_inspection");
     expect(prompt).not.toContain("Return the required JSON object only after those reads complete");
