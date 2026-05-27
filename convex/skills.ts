@@ -3166,8 +3166,8 @@ export const list = query({
         .order("desc")
         .take(takeLimit);
       const legacyPersonalOwnerUserId =
-        isOwnDashboard && ownerPublisher?.kind === "user"
-          ? (ownerPublisher.linkedUserId ?? userId)
+        ownerPublisher?.kind === "user"
+          ? (ownerPublisher.linkedUserId ?? (isOwnDashboard ? userId : undefined))
           : undefined;
       const legacyEntries = legacyPersonalOwnerUserId
         ? await ctx.db
@@ -3275,8 +3275,8 @@ export const listDashboardPaginated = query({
       );
 
       const legacyPersonalOwnerUserId =
-        isOwnDashboard && ownerPublisher?.kind === "user"
-          ? (ownerPublisher.linkedUserId ?? userId)
+        ownerPublisher?.kind === "user"
+          ? (ownerPublisher.linkedUserId ?? (isOwnDashboard ? userId : undefined))
           : undefined;
       const shouldIncludeLegacyPersonalSkills = Boolean(legacyPersonalOwnerUserId);
       const paginateOwnerSkills = async (paginationOpts: typeof args.paginationOpts) =>

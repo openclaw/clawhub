@@ -305,11 +305,12 @@ describe("skills.listDashboardPaginated", () => {
     expect(result.continueCursor).toBe("");
   });
 
-  it("keeps non-owner personal publisher reads scoped to publisher-owned skills", async () => {
+  it("includes linked-user legacy skills in non-owner personal publisher reads", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:other" as never);
     const { ctx, indexCalls } = makeCtx({
-      by_owner_publisher_active_updated: [
+      by_owner_active_updated: [
         makeSkill("published-skill", { ownerPublisherId: "publishers:self" }),
+        makeSkill("legacy-skill"),
       ],
     });
 
@@ -321,9 +322,12 @@ describe("skills.listDashboardPaginated", () => {
       } as never,
     );
 
-    expect(indexCalls).toContain("by_owner_publisher_active_updated");
-    expect(indexCalls).not.toContain("by_owner_active_updated");
-    expect(result.page).toEqual([expect.objectContaining({ slug: "published-skill" })]);
+    expect(indexCalls).toContain("by_owner_active_updated");
+    expect(indexCalls).not.toContain("by_owner_publisher_active_updated");
+    expect(result.page).toEqual([
+      expect.objectContaining({ slug: "published-skill" }),
+      expect.objectContaining({ slug: "legacy-skill" }),
+    ]);
   });
 
   it("paginates org publisher skills through an active publisher index", async () => {
@@ -364,6 +368,7 @@ describe("skills.listDashboardPaginated", () => {
           userId: "users:other",
           role: "owner",
         },
+        legacyPersonalPublisher: true,
       },
     );
 
@@ -430,6 +435,7 @@ describe("skills.listDashboardPaginated", () => {
           userId: "users:other",
           role: "owner",
         },
+        legacyPersonalPublisher: true,
       },
     );
 
@@ -440,6 +446,21 @@ describe("skills.listDashboardPaginated", () => {
 
     expect(indexCalls).toContain("by_owner_publisher");
     expect(result).toEqual([]);
+  });
+
+  it("includes linked-user legacy personal skills in public non-paginated lists", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:other" as never);
+    const { ctx, indexCalls } = makeCtx({
+      by_owner: [makeSkill("legacy-skill")],
+    });
+
+    const result = await listHandler(
+      ctx as never,
+      { ownerPublisherId: "publishers:self", limit: 20 } as never,
+    );
+
+    expect(indexCalls).toContain("by_owner");
+    expect(result).toEqual([expect.objectContaining({ slug: "legacy-skill" })]);
   });
 
   it("includes legacy no-link personal publisher skills in the non-paginated list", async () => {

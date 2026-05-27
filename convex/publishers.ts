@@ -1597,16 +1597,21 @@ export const removeMember = mutation({
     userId: v.id("users"),
   },
   handler: async (ctx, args) => {
-    const { userId } = await requireUser(ctx);
+    const { user, userId } = await requireUser(ctx);
     const publisher = await ctx.db.get(args.publisherId);
     if (!publisher || publisher.deletedAt || publisher.deactivatedAt) {
       throw new ConvexError("Publisher not found");
     }
     if (publisher.kind === "user") {
-      if (publisher.linkedUserId !== userId) throw new ConvexError("Forbidden");
+      const actorMembership = await getPublisherMembership(ctx, publisher._id, userId);
+      const isPersonalOwner =
+        publisher.linkedUserId === userId ||
+        (!publisher.linkedUserId &&
+          (user.personalPublisherId === publisher._id || actorMembership?.role === "owner"));
+      if (!isPersonalOwner) throw new ConvexError("Forbidden");
       const targetMembership = await getPublisherMembership(ctx, publisher._id, args.userId);
       if (!targetMembership) return { ok: true };
-      if (args.userId === publisher.linkedUserId) {
+      if (args.userId === (publisher.linkedUserId ?? userId)) {
         throw new ConvexError("Personal publisher owner membership cannot be removed");
       }
       await ctx.db.delete(targetMembership._id);

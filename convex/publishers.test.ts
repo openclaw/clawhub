@@ -1266,6 +1266,148 @@ describe("publishers membership controls", () => {
     );
   });
 
+  it("lets legacy no-link personal owners remove stale members by personal publisher link", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
+    const memberships: Record<string, Record<string, unknown>> = {
+      "users:friend": {
+        _id: "publisherMembers:friend",
+        publisherId: "publishers:personal",
+        userId: "users:friend",
+        role: "admin",
+      },
+    };
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:owner") return { _id: id, personalPublisherId: "publishers:personal" };
+          if (id === "publishers:personal") {
+            return {
+              _id: id,
+              kind: "user",
+              handle: "owner",
+              displayName: "Owner",
+              linkedUserId: undefined,
+            };
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table === "publisherMembers") {
+            return {
+              withIndex: vi.fn(
+                (
+                  _indexName: string,
+                  builder: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+                ) => {
+                  let userId = "";
+                  const q = {
+                    eq: (field: string, value: string) => {
+                      if (field === "userId") userId = value;
+                      return q;
+                    },
+                  };
+                  builder(q);
+                  return {
+                    unique: vi.fn().mockResolvedValue(memberships[userId] ?? null),
+                  };
+                },
+              ),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+        delete: vi.fn(),
+        insert: vi.fn(),
+        patch: vi.fn(),
+        replace: vi.fn(),
+        normalizeId: vi.fn(),
+      },
+    };
+
+    await expect(
+      removeMemberHandler(
+        ctx as never,
+        { publisherId: "publishers:personal", userId: "users:friend" } as never,
+      ),
+    ).resolves.toEqual({ ok: true });
+
+    expect(ctx.db.delete).toHaveBeenCalledWith("publisherMembers:friend");
+  });
+
+  it("lets legacy no-link personal owners remove stale members by owner membership", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
+    const memberships: Record<string, Record<string, unknown>> = {
+      "users:owner": {
+        _id: "publisherMembers:owner",
+        publisherId: "publishers:personal",
+        userId: "users:owner",
+        role: "owner",
+      },
+      "users:friend": {
+        _id: "publisherMembers:friend",
+        publisherId: "publishers:personal",
+        userId: "users:friend",
+        role: "admin",
+      },
+    };
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:owner") return { _id: id };
+          if (id === "publishers:personal") {
+            return {
+              _id: id,
+              kind: "user",
+              handle: "owner",
+              displayName: "Owner",
+              linkedUserId: undefined,
+            };
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table === "publisherMembers") {
+            return {
+              withIndex: vi.fn(
+                (
+                  _indexName: string,
+                  builder: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+                ) => {
+                  let userId = "";
+                  const q = {
+                    eq: (field: string, value: string) => {
+                      if (field === "userId") userId = value;
+                      return q;
+                    },
+                  };
+                  builder(q);
+                  return {
+                    unique: vi.fn().mockResolvedValue(memberships[userId] ?? null),
+                  };
+                },
+              ),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+        delete: vi.fn(),
+        insert: vi.fn(),
+        patch: vi.fn(),
+        replace: vi.fn(),
+        normalizeId: vi.fn(),
+      },
+    };
+
+    await expect(
+      removeMemberHandler(
+        ctx as never,
+        { publisherId: "publishers:personal", userId: "users:friend" } as never,
+      ),
+    ).resolves.toEqual({ ok: true });
+
+    expect(ctx.db.delete).toHaveBeenCalledWith("publisherMembers:friend");
+  });
+
   it("prevents removing the linked owner from personal publishers", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
     const ctx = {
