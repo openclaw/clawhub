@@ -4879,6 +4879,125 @@ describe("httpApiV1 handlers", () => {
     expect(runMutation).toHaveBeenCalledTimes(1);
   });
 
+  it("bulk skill rescan batch requires admin role", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      throw new Error("should not enqueue");
+    });
+
+    const response = await __handlers.skillsPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/skills/-/rescan-batch", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({ batchSize: 25 }),
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.text()).resolves.toBe("Admin role required.");
+    expect(runMutation).toHaveBeenCalledTimes(1);
+  });
+
+  it("bulk skill rescan batch enqueues via admin API", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        ok: true,
+        mode: "all-active-latest",
+        queued: 2,
+        alreadyQueued: 1,
+        skipped: 0,
+        jobIds: ["securityScanJobs:1", "securityScanJobs:2", "securityScanJobs:3"],
+        nextCursor: "cursor-2",
+        done: false,
+        sampleSlugs: ["demo"],
+      };
+    });
+
+    const response = await __handlers.skillsPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/skills/-/rescan-batch", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({ batchSize: 25, cursor: null, dryRun: false }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      queued: 2,
+      alreadyQueued: 1,
+      nextCursor: "cursor-2",
+    });
+    expect(runMutation).toHaveBeenCalledWith(
+      (internal as unknown as { securityScan: Record<string, unknown> }).securityScan
+        .enqueueBulkSkillRescanBatchForAdminInternal,
+      {
+        actorUserId: "users:admin",
+        cursor: null,
+        batchSize: 25,
+        dryRun: false,
+      },
+    );
+  });
+
+  it("bulk skill rescan status aggregates via admin API", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        ok: true,
+        total: 2,
+        queued: 0,
+        running: 1,
+        succeeded: 1,
+        failed: 0,
+        missing: 0,
+        terminal: 1,
+        done: false,
+        failedJobIds: [],
+      };
+    });
+
+    const response = await __handlers.skillsPostRouterV1Handler(
+      makeCtx({ runQuery }),
+      new Request("https://example.com/api/v1/skills/-/rescan-batch/status", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({ jobIds: ["securityScanJobs:1", "securityScanJobs:2"] }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      total: 2,
+      running: 1,
+      done: false,
+    });
+    expect(runQuery).toHaveBeenCalledWith(
+      (internal as unknown as { securityScan: Record<string, unknown> }).securityScan
+        .getBulkSkillRescanBatchStatusForAdminInternal,
+      {
+        actorUserId: "users:admin",
+        jobIds: ["securityScanJobs:1", "securityScanJobs:2"],
+      },
+    );
+  });
+
   it("package rescan enqueues owner-authorized ClawScan jobs", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:1",

@@ -371,6 +371,42 @@ export declare const ApiV1SkillRescanResponseSchema: import("arktype/internal/va
     alreadyQueued: boolean;
 }, {}>;
 export type ApiV1SkillRescanResponse = (typeof ApiV1SkillRescanResponseSchema)[inferred];
+export declare const ApiV1SkillBulkRescanBatchRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    mode?: "all-active-latest" | undefined;
+    cursor?: string | null | undefined;
+    batchSize?: number | undefined;
+    dryRun?: boolean | undefined;
+}, {}>;
+export type ApiV1SkillBulkRescanBatchRequest = (typeof ApiV1SkillBulkRescanBatchRequestSchema)[inferred];
+export declare const ApiV1SkillBulkRescanBatchResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    mode: "all-active-latest";
+    queued: number;
+    alreadyQueued: number;
+    skipped: number;
+    jobIds: string[];
+    nextCursor: string | null;
+    done: boolean;
+    sampleSlugs: string[];
+}, {}>;
+export type ApiV1SkillBulkRescanBatchResponse = (typeof ApiV1SkillBulkRescanBatchResponseSchema)[inferred];
+export declare const ApiV1SkillBulkRescanStatusRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    jobIds: string[];
+}, {}>;
+export type ApiV1SkillBulkRescanStatusRequest = (typeof ApiV1SkillBulkRescanStatusRequestSchema)[inferred];
+export declare const ApiV1SkillBulkRescanStatusResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    total: number;
+    queued: number;
+    running: number;
+    succeeded: number;
+    failed: number;
+    missing: number;
+    terminal: number;
+    done: boolean;
+    failedJobIds: string[];
+}, {}>;
+export type ApiV1SkillBulkRescanStatusResponse = (typeof ApiV1SkillBulkRescanStatusResponseSchema)[inferred];
 export declare const ApiV1SkillVersionListResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     items: {
         version: string;

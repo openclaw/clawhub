@@ -424,6 +424,7 @@ const securityScanJobSourceValidator = v.union(
   v.literal("clawscan-note"),
   v.literal("vt-update"),
   v.literal("backfill"),
+  v.literal("bulk-rescan"),
   v.literal("manual"),
 );
 const skillCardGenerationJobStatusValidator = v.union(

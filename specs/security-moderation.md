@@ -16,6 +16,16 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - moderator: hide/restore skills, view hidden skills, unhide, soft-delete, ban users (except admins).
 - admin: all moderator actions + hard delete skills, change owners, change roles.
 
+## Ban + unban batches
+
+- Ban/unban skill batches are paginated and may continue after the mutation that
+  started them has committed.
+- Unban restore pages must re-read the owner before processing. If the owner is
+  missing, banned again, or deactivated, the stale page must abort without
+  restoring skills or scheduling another page.
+- Restore pages only clear the exact `softDeletedAt` timestamp from the ban
+  being lifted and only for skills hidden with `moderationReason = "user.banned"`.
+
 ## Reporting + auto-hide
 
 - Reports are unique per user + target (skill/comment/package).
@@ -208,11 +218,15 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 
 - Banning a user:
   - hard-deletes all owned skills
+  - retimestamps already ban-hidden owned skills to the current ban marker so
+    a later matching unban can restore them
   - soft-deletes all authored skill comments + soul comments
   - revokes API tokens
   - sets `deletedAt` on the user
 - Admins can manually unban (`deletedAt` + `banReason` cleared); revoked API tokens
   stay revoked and should be recreated by the user.
+- Stale unban restore batches must stop if the user was banned again before a
+  later page runs.
 - Optional ban reason is stored in `users.banReason` and audit logs.
 - Admins can reclassify an existing ban reason without unbanning or restoring
   content. This preserves the ban while removing users from remediation flows
