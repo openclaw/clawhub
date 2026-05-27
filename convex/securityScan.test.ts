@@ -107,6 +107,9 @@ type ScanJob = {
   waitForVtUntil: number;
   nextRunAt: number;
   attempts: number;
+  leaseToken?: string;
+  leaseExpiresAt?: number;
+  workerId?: string;
   createdAt: number;
   updatedAt: number;
 };
@@ -1348,9 +1351,9 @@ describe("securityScan", () => {
     ]);
   });
 
-  it("allows up to 64 active Codex scan claims", async () => {
+  it("caps each Codex scan claim request", async () => {
     const { ctx } = makeClaimCtx(
-      Array.from({ length: 70 }, (_, index) =>
+      Array.from({ length: 600 }, (_, index) =>
         makeScanJob({
           _id: `securityScanJobs:manual-${index}`,
           source: "manual",
@@ -1363,11 +1366,44 @@ describe("securityScan", () => {
 
     const claimed = await claimQueuedJobsInternalHandler(ctx, {
       workerId: "worker-1",
-      limit: 100,
+      limit: 10_000,
       leaseMs: 60_000,
     });
 
-    expect(claimed).toHaveLength(64);
+    expect(claimed).toHaveLength(512);
+  });
+
+  it("claims requested jobs even when many other scans are already active", async () => {
+    const activeJobs = Array.from({ length: 80 }, (_, index) =>
+      makeScanJob({
+        _id: `securityScanJobs:running-${index}`,
+        status: "running",
+        leaseExpiresAt: Date.now() + 60_000,
+        source: "bulk-rescan",
+      }),
+    );
+    const queuedJobs = Array.from({ length: 3 }, (_, index) =>
+      makeScanJob({
+        _id: `securityScanJobs:manual-${index}`,
+        source: "manual",
+        priority: 100,
+        createdAt: index,
+        nextRunAt: index,
+      }),
+    );
+    const { ctx } = makeClaimCtx([...activeJobs, ...queuedJobs]);
+
+    const claimed = await claimQueuedJobsInternalHandler(ctx, {
+      workerId: "worker-1",
+      limit: 3,
+      leaseMs: 60_000,
+    });
+
+    expect(claimed.map((job) => job._id)).toEqual([
+      "securityScanJobs:manual-0",
+      "securityScanJobs:manual-1",
+      "securityScanJobs:manual-2",
+    ]);
   });
 
   it("caps SkillSpector findings before storing completed scan results", async () => {

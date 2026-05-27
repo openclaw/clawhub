@@ -136,6 +136,10 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   hosted LLM call. Publishes enqueue a scan job that waits at most 10 minutes
   for VirusTotal telemetry, then Codex reviews the materialized artifact
   workspace with static and VT signals as context.
+- ClawScan worker concurrency is an operator-controlled compute concern. The
+  backend claim path must cap only a single worker claim size and must not impose
+  a global active-scan ceiling; horizontal capacity is controlled by worker
+  dispatch count, worker batch limit, provider quotas, and cost monitoring.
 - The Skill Card verification envelope exposes ClawScan as the top-level
   `security` verdict for install automation, with deterministic and third-party
   scanner evidence grouped under `security.signals`. Clients should key install
