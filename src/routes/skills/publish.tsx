@@ -55,6 +55,7 @@ import {
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const SKILL_PUBLISHING_GUIDE_URL = "https://docs.openclaw.ai/clawhub/skill-format";
+const SOUL_PUBLISHING_GUIDE_URL = "https://docs.openclaw.ai/clawhub/soul-format";
 
 type SkillPublishField = "slug" | "displayName" | "version" | "tags" | "clawScanNote" | "license";
 
@@ -73,6 +74,8 @@ export function Upload() {
   const isSoulMode = siteMode === "souls";
   const requiredFileLabel = isSoulMode ? "SOUL.md" : "SKILL.md";
   const contentLabel = isSoulMode ? "soul" : "skill";
+  const publishingGuideUrl = isSoulMode ? SOUL_PUBLISHING_GUIDE_URL : SKILL_PUBLISHING_GUIDE_URL;
+  const publishingGuideLabel = isSoulMode ? "Soul publishing guide" : "Skill publishing guide";
   const showChangelogField = Boolean(updateSlug);
 
   const generateUploadUrl = useMutation(api.uploads.generateUploadUrl);
@@ -778,8 +781,8 @@ export function Upload() {
             </p>
           </div>
           <Button asChild variant="outline" size="sm" className="w-fit">
-            <a href={SKILL_PUBLISHING_GUIDE_URL} target="_blank" rel="noreferrer">
-              Skill publishing guide
+            <a href={publishingGuideUrl} target="_blank" rel="noreferrer">
+              {publishingGuideLabel}
               <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
             </a>
           </Button>
