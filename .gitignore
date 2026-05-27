@@ -55,5 +55,6 @@ skills/*
 .codex/*
 !.codex/environments/
 !.codex/environments/environment.toml
+.crabbox/
 /.comux-hooks
 /.comux

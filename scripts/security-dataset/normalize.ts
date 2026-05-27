@@ -4,7 +4,7 @@ import { AGENTIC_RISK_CATEGORIES } from "../../convex/lib/securityPrompt.ts";
 export type SourceKind = "skill" | "package";
 export type DatasetLabel = "clean" | "suspicious" | "malicious" | "unknown";
 export type DatasetSplit = "train" | "validation" | "test" | "eval_holdout";
-export type ScannerName = "static" | "virustotal" | "llm" | "moderation_consensus";
+export type ScannerName = "static" | "virustotal" | "skillspector" | "llm" | "moderation_consensus";
 export type ClawScanRiskBucket =
   | "abnormal_behavior_control"
   | "permission_boundary"
@@ -47,6 +47,24 @@ export type StaticScanInput = {
   }>;
   summary: string;
   engineVersion: string;
+  checkedAt: number;
+};
+
+export type SkillSpectorAnalysisInput = {
+  status: string;
+  score: number | null;
+  severity: string | null;
+  recommendation: string | null;
+  issueCount: number;
+  issues: Array<{
+    issueId: string;
+    severity: string;
+    confidence: number | null;
+    explanation: string;
+  }>;
+  scannerVersion: string | null;
+  summary: string | null;
+  error: string | null;
   checkedAt: number;
 };
 
@@ -108,6 +126,7 @@ export type ArtifactExportInput = {
   packageExecutesCode: boolean | null;
   sourceRepoHost: string | null;
   vtAnalysis: VtAnalysisInput | null;
+  skillSpectorAnalysis: SkillSpectorAnalysisInput | null;
   staticScan: StaticScanInput | null;
   llmAnalysis: LlmAnalysisInput | null;
   moderationConsensus: ModerationConsensusInput | null;
@@ -137,6 +156,7 @@ export type ArtifactRow = {
   package_executes_code: boolean | null;
   source_repo_host: string | null;
   has_vt_scan: boolean;
+  has_skillspector_scan: boolean;
   has_static_scan: boolean;
   has_llm_scan: boolean;
 };
@@ -188,7 +208,7 @@ export type ClawScanFindingRow = {
 export type LabelRow = {
   artifact_id: string;
   label: DatasetLabel;
-  label_source: "static_scan" | "virustotal" | "llm_scan" | "moderation_consensus";
+  label_source: "static_scan" | "virustotal" | "skillspector" | "llm_scan" | "moderation_consensus";
   label_confidence: string;
   reason_codes: string[];
   scanner_agreement: number;
@@ -325,6 +345,7 @@ function buildArtifactRow(input: ArtifactExportInput, artifactId: string): Artif
     package_executes_code: input.packageExecutesCode,
     source_repo_host: input.sourceRepoHost,
     has_vt_scan: input.vtAnalysis !== null,
+    has_skillspector_scan: input.skillSpectorAnalysis !== null,
     has_static_scan: input.staticScan !== null,
     has_llm_scan: input.llmAnalysis !== null,
   };
@@ -362,6 +383,27 @@ function buildScanResultRows(input: ArtifactExportInput, artifactId: string): Sc
       reason_codes: [],
       engine_stats: input.vtAnalysis.engineStats,
       summary_redacted: redactText(input.vtAnalysis.analysis),
+      raw_status_family: label,
+    });
+  }
+  if (input.skillSpectorAnalysis) {
+    const label = labelFromSkillSpector(input.skillSpectorAnalysis);
+    rows.push({
+      artifact_id: artifactId,
+      scanner: "skillspector",
+      scanner_version: input.skillSpectorAnalysis.scannerVersion,
+      model: null,
+      status: input.skillSpectorAnalysis.status,
+      verdict: input.skillSpectorAnalysis.recommendation,
+      confidence: null,
+      checked_at: input.skillSpectorAnalysis.checkedAt,
+      reason_codes: input.skillSpectorAnalysis.issues
+        .map((issue) => issue.issueId)
+        .sort((a, b) => a.localeCompare(b)),
+      engine_stats: null,
+      summary_redacted: redactText(
+        input.skillSpectorAnalysis.summary ?? input.skillSpectorAnalysis.error,
+      ),
       raw_status_family: label,
     });
   }
@@ -488,6 +530,23 @@ function buildLabelRows(input: ArtifactExportInput, artifactId: string): LabelRo
       notes_redacted: redactText(input.vtAnalysis.analysis),
     });
   }
+  if (input.skillSpectorAnalysis) {
+    const label = labelFromSkillSpector(input.skillSpectorAnalysis);
+    scannerLabels.push(label);
+    rows.push({
+      artifact_id: artifactId,
+      label,
+      label_source: "skillspector",
+      label_confidence: "scanner",
+      reason_codes: input.skillSpectorAnalysis.issues
+        .map((issue) => issue.issueId)
+        .sort((a, b) => a.localeCompare(b)),
+      scanner_agreement: 0,
+      notes_redacted: redactText(
+        input.skillSpectorAnalysis.summary ?? input.skillSpectorAnalysis.error,
+      ),
+    });
+  }
   if (input.llmAnalysis) {
     const label = labelFromText(input.llmAnalysis.verdict ?? input.llmAnalysis.status);
     scannerLabels.push(label);
@@ -559,6 +618,18 @@ function labelFromVirusTotal(analysis: VtAnalysisInput): DatasetLabel {
   if ((analysis.engineStats?.malicious ?? 0) > 0) return "malicious";
   if ((analysis.engineStats?.suspicious ?? 0) > 0) return "suspicious";
   return labelFromText(analysis.verdict ?? analysis.status);
+}
+
+function labelFromSkillSpector(analysis: SkillSpectorAnalysisInput): DatasetLabel {
+  if (analysis.status === "error" || analysis.status === "failed") return "unknown";
+  const statusLabel = labelFromText(analysis.status);
+  if (statusLabel !== "unknown") return statusLabel;
+  const recommendation = analysis.recommendation?.toLowerCase() ?? "";
+  if (recommendation.includes("do not install") || recommendation.includes("caution")) {
+    return "suspicious";
+  }
+  if (analysis.issueCount > 0 || (analysis.score ?? 0) > 20) return "suspicious";
+  return "clean";
 }
 
 function labelFromText(value: string | null | undefined): DatasetLabel {

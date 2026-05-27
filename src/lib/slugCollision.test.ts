@@ -45,6 +45,24 @@ describe("getPublicSlugCollision", () => {
     });
   });
 
+  it("does not duplicate the conflicting skill URL in the public message", () => {
+    expect(
+      getPublicSlugCollision({
+        isSoulMode: false,
+        slug: "demo",
+        result: {
+          available: false,
+          reason: "taken",
+          message: "Slug is already taken. Choose a different slug. Existing skill: /alice/demo",
+          url: "/alice/demo",
+        },
+      }),
+    ).toEqual({
+      message: "Slug is already taken. Choose a different slug.",
+      url: "/alice/demo",
+    });
+  });
+
   it("returns generic collision message when backend message is empty", () => {
     expect(
       getPublicSlugCollision({

@@ -66,6 +66,31 @@ export type PackageVersionDetail = {
       source?: string;
       checkedAt: number;
     } | null;
+    skillSpectorAnalysis?: {
+      status: string;
+      score?: number;
+      severity?: string;
+      recommendation?: string;
+      issueCount: number;
+      issues: Array<{
+        issueId: string;
+        category?: string;
+        pattern?: string;
+        severity: string;
+        confidence?: number;
+        file?: string;
+        startLine?: number;
+        endLine?: number;
+        explanation: string;
+        remediation?: string;
+        finding?: string;
+        codeSnippet?: string;
+      }>;
+      scannerVersion?: string;
+      summary?: string;
+      error?: string;
+      checkedAt: number;
+    } | null;
     llmAnalysis?: {
       status: string;
       verdict?: string;

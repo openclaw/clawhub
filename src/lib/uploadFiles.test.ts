@@ -106,15 +106,20 @@ describe("expandFiles", () => {
     expect(report.files.map((file) => file.name)).toEqual(["package.json", "dist/module.wasm"]);
   });
 
-  it("filters mac junk files and reports ignored paths", async () => {
+  it("filters local metadata files and reports ignored paths", async () => {
     const report = await expandFilesWithReport([
       new File(["hello"], "SKILL.md", { type: "text/markdown" }),
       new File(["junk"], ".DS_Store", { type: "application/octet-stream" }),
       new File(["junk"], "._notes.md", { type: "text/plain" }),
+      new File(["junk"], "demo/.git/config", { type: "text/plain" }),
     ]);
 
     expect(report.files.map((file) => file.name)).toEqual(["SKILL.md"]);
-    expect(report.ignoredMacJunkPaths).toEqual([".DS_Store", "._notes.md"]);
+    expect(report.ignoredLocalMetadataPaths).toEqual([
+      ".DS_Store",
+      "._notes.md",
+      "demo/.git/config",
+    ]);
   });
 
   it("expands gzipped tar archives into files", async () => {

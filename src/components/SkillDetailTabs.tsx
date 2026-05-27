@@ -5,6 +5,7 @@ import remarkGfm from "remark-gfm";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { rehypeProxyImages } from "../lib/rehypeProxyImages";
 import { resolveSkillReadmeHref } from "../lib/skillReadmeLinks";
+import { MarkdownPreview } from "./MarkdownPreview";
 import { buildSkillInstallTabs, type SkillInstallTabId } from "./SkillInstallCard";
 import { SkillVersionsPanel } from "./SkillVersionsPanel";
 
@@ -20,7 +21,13 @@ const SkillFilesPanel = lazy(() =>
 
 type SkillFile = Doc<"skillVersions">["files"][number];
 
-export type DetailTab = "readme" | "files" | "compare" | "versions" | SkillInstallTabId;
+export type DetailTab =
+  | "readme"
+  | "skill-card"
+  | "files"
+  | "compare"
+  | "versions"
+  | SkillInstallTabId;
 
 type SkillDetailTabsProps = {
   activeTab: DetailTab;
@@ -28,6 +35,9 @@ type SkillDetailTabsProps = {
   onCompareIntent: () => void;
   readmeContent: string | null;
   readmeError: string | null;
+  skillCardContent: string | null;
+  skillCardError: string | null;
+  hasSkillCard: boolean;
   latestFiles: SkillFile[];
   latestVersionId: Id<"skillVersions"> | null;
   skill: Doc<"skills">;
@@ -46,6 +56,9 @@ export function SkillDetailTabs({
   onCompareIntent,
   readmeContent,
   readmeError,
+  skillCardContent,
+  skillCardError,
+  hasSkillCard,
   latestFiles,
   latestVersionId,
   skill,
@@ -83,6 +96,17 @@ export function SkillDetailTabs({
         >
           SKILL.md
         </button>
+        {hasSkillCard ? (
+          <button
+            className={`tab-button${activeTab === "skill-card" ? " is-active" : ""}`}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "skill-card"}
+            onClick={() => selectTab("skill-card")}
+          >
+            Skill Card
+          </button>
+        ) : null}
         <button
           className={`tab-button${activeTab === "files" ? " is-active" : ""}`}
           type="button"
@@ -157,6 +181,36 @@ export function SkillDetailTabs({
             </div>
           ) : (
             <div className="stat p-4">Loading README...</div>
+          )}
+        </div>
+      ) : null}
+
+      {activeTab === "skill-card" ? (
+        <div className="tab-body">
+          <p className="skill-card-info-callout">
+            Skill Cards follow{" "}
+            <a href="https://docs.nvidia.com/skills/skill-cards" target="_blank" rel="noreferrer">
+              NVIDIA&apos;s trust-card pattern for agent skills
+            </a>
+            , giving a compact release record of what a skill does, who published it, and what risks
+            or limits to review before use.
+          </p>
+          {skillCardContent ? (
+            <MarkdownPreview
+              highlight={false}
+              urlTransform={(url, key) =>
+                key === "href" ? resolveSkillReadmeHref(url, skill.slug) : defaultUrlTransform(url)
+              }
+            >
+              {skillCardContent}
+            </MarkdownPreview>
+          ) : skillCardError ? (
+            <div className="empty-state px-[var(--space-4)] py-[var(--space-6)]">
+              <p className="empty-state-title">No Skill Card available</p>
+              <p className="empty-state-body">The generated skill-card.md file is not available.</p>
+            </div>
+          ) : (
+            <div className="stat p-4">Loading Skill Card...</div>
           )}
         </div>
       ) : null}

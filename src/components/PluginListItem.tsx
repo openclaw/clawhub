@@ -2,8 +2,8 @@ import { Link } from "@tanstack/react-router";
 import type { PackageListItem } from "../lib/packageApi";
 import { familyLabel } from "../lib/packageLabels";
 import { MarketplaceIcon } from "./MarketplaceIcon";
+import { OfficialBadge } from "./OfficialBadge";
 import { Badge } from "./ui/badge";
-import { VerifiedBadge } from "./VerifiedBadge";
 
 type PluginListItemProps = {
   item: PackageListItem;
@@ -21,7 +21,7 @@ export function PluginListItem({ item, variant = "list" }: PluginListItemProps) 
       >
         <div className="skill-card-tags">
           <Badge variant="compact">{familyLabel(item.family)}</Badge>
-          {item.isOfficial ? <VerifiedBadge /> : null}
+          {item.isOfficial ? <OfficialBadge /> : null}
         </div>
         <div className="skill-card-header">
           <MarketplaceIcon kind="plugin" label={item.displayName} size="md" />
@@ -63,7 +63,7 @@ export function PluginListItem({ item, variant = "list" }: PluginListItemProps) 
           ) : null}
           <span className="skill-list-item-name">{item.displayName}</span>
           <Badge variant="compact">{familyLabel(item.family)}</Badge>
-          {item.isOfficial ? <VerifiedBadge /> : null}
+          {item.isOfficial ? <OfficialBadge /> : null}
         </div>
         <p className="skill-list-item-summary">
           {item.summary ?? "Plugin package for agent workflows."}

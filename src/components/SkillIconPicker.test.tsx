@@ -42,11 +42,11 @@ describe("SkillIconPicker", () => {
     expect(onChange).toHaveBeenCalledWith(null);
   });
 
-  it("shows a contextual hint that mirrors the current selection", () => {
+  it("does not duplicate the selected state in helper copy", () => {
     const { rerender } = render(<SkillIconPicker value={null} onChange={() => {}} />);
-    expect(screen.getByText(/Pick an icon shown on the skill card/i)).toBeTruthy();
+    expect(screen.queryByText(/Pick an icon shown on the skill card/i)).toBeNull();
 
     rerender(<SkillIconPicker value="Plug" onChange={() => {}} />);
-    expect(screen.getByText(/Selected: Plug/)).toBeTruthy();
+    expect(screen.queryByText(/Selected: Plug/)).toBeNull();
   });
 });

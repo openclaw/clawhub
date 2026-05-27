@@ -2,10 +2,13 @@ import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
-import { action, internalMutation, internalQuery } from "./functions";
-import { assertModerator } from "./lib/access";
+import { action, internalMutation, internalQuery, mutation } from "./functions";
+import { assertModerator, requireUser } from "./lib/access";
+import { normalizePackageName } from "./lib/packageRegistry";
+import { assertCanManageOwnedResource } from "./lib/publishers";
+import { sourceSkillVersionFiles } from "./lib/skillCards";
 
-const MAX_PARALLEL_CODEX_SCANS = 20;
+const MAX_PARALLEL_CODEX_SCANS = 64;
 const DEFAULT_VT_WAIT_MS = 10 * 60 * 1000;
 const DEFAULT_LEASE_MS = 60 * 60 * 1000;
 const MAX_ATTEMPTS = 3;
@@ -13,6 +16,9 @@ const DEFAULT_CANCEL_SCAN_LIMIT = 1000;
 const DEFAULT_CANCEL_DELETE_LIMIT = 500;
 const MAX_CANCEL_SCAN_LIMIT = 5000;
 const CANCEL_SAMPLE_LIMIT = 20;
+const MAX_STORED_SKILLSPECTOR_ISSUES = 25;
+const MAX_STORED_SKILLSPECTOR_TEXT_CHARS = 2_000;
+const MAX_STORED_SKILLSPECTOR_SHORT_TEXT_CHARS = 512;
 
 const finalLlmAnalysisStatuses = new Set(["clean", "suspicious", "malicious"]);
 const artifactBackedLlmAnalysisStatuses = new Set(["clean", "benign", "suspicious", "malicious"]);
@@ -40,6 +46,34 @@ type ExistingLlmAnalysis = {
   verdict?: string;
 };
 
+type SkillSpectorIssueForStorage = {
+  issueId: string;
+  category?: string;
+  pattern?: string;
+  severity: string;
+  confidence?: number;
+  file?: string;
+  startLine?: number;
+  endLine?: number;
+  explanation: string;
+  remediation?: string;
+  finding?: string;
+  codeSnippet?: string;
+};
+
+type SkillSpectorAnalysisForStorage = {
+  status: string;
+  score?: number;
+  severity?: string;
+  recommendation?: string;
+  issueCount: number;
+  issues: SkillSpectorIssueForStorage[];
+  scannerVersion?: string;
+  summary?: string;
+  error?: string;
+  checkedAt: number;
+};
+
 const jobSourceValidator = v.union(
   v.literal("publish"),
   v.literal("clawscan-note"),
@@ -48,9 +82,25 @@ const jobSourceValidator = v.union(
   v.literal("manual"),
 );
 
+type SecurityScanJobSource = "publish" | "clawscan-note" | "vt-update" | "backfill" | "manual";
+
+const CLAIM_SOURCE_ORDER: SecurityScanJobSource[] = [
+  "clawscan-note",
+  "backfill",
+  "publish",
+  "vt-update",
+];
+
 type EnqueueSkillVersionScanArgs = {
   versionId: Id<"skillVersions">;
-  source: "publish" | "clawscan-note" | "vt-update" | "backfill" | "manual";
+  source: SecurityScanJobSource;
+  priority?: number;
+  waitForVtMs?: number;
+};
+
+type EnqueuePackageReleaseScanArgs = {
+  releaseId: Id<"packageReleases">;
+  source: SecurityScanJobSource;
   priority?: number;
   waitForVtMs?: number;
 };
@@ -112,11 +162,41 @@ const llmAnalysisValidator = v.object({
   checkedAt: v.number(),
 });
 
+const skillSpectorIssueValidator = v.object({
+  issueId: v.string(),
+  category: v.optional(v.string()),
+  pattern: v.optional(v.string()),
+  severity: v.string(),
+  confidence: v.optional(v.number()),
+  file: v.optional(v.string()),
+  startLine: v.optional(v.number()),
+  endLine: v.optional(v.number()),
+  explanation: v.string(),
+  remediation: v.optional(v.string()),
+  finding: v.optional(v.string()),
+  codeSnippet: v.optional(v.string()),
+});
+
+const skillSpectorAnalysisValidator = v.object({
+  status: v.string(),
+  score: v.optional(v.number()),
+  severity: v.optional(v.string()),
+  recommendation: v.optional(v.string()),
+  issueCount: v.number(),
+  // Scanner/action boundaries cap this array before storage; Convex validators cannot express max length.
+  issues: v.array(skillSpectorIssueValidator),
+  scannerVersion: v.optional(v.string()),
+  summary: v.optional(v.string()),
+  error: v.optional(v.string()),
+  checkedAt: v.number(),
+});
+
 const internalRefs = internal as unknown as {
   packages: {
     getPackageByIdInternal: unknown;
     getReleaseByIdInternal: unknown;
     updateReleaseLlmAnalysisInternal: unknown;
+    updateReleaseSkillSpectorAnalysisInternal: unknown;
   };
   securityScan: {
     claimQueuedJobsInternal: unknown;
@@ -129,7 +209,12 @@ const internalRefs = internal as unknown as {
   skills: {
     getSkillByIdInternal: unknown;
     getVersionByIdInternal: unknown;
+    listVersionFingerprintsInternal: unknown;
     updateVersionLlmAnalysisInternal: unknown;
+    updateVersionSkillSpectorAnalysisInternal: unknown;
+  };
+  skillCards: {
+    enqueueForVersionInternal: unknown;
   };
 };
 
@@ -154,6 +239,14 @@ function assertWorkerToken(token: string) {
   if (!expected || token !== expected) throw new ConvexError("Unauthorized");
 }
 
+function defaultVtWaitMs() {
+  const raw = process.env.SECURITY_SCAN_DEFAULT_VT_WAIT_MS?.trim();
+  if (!raw) return DEFAULT_VT_WAIT_MS;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return DEFAULT_VT_WAIT_MS;
+  return Math.max(0, Math.min(parsed, DEFAULT_VT_WAIT_MS));
+}
+
 function publicWorkerErrorDetail(error: string) {
   return error
     .replace(/https?:\/\/[^\s"')<>]+/g, "[redacted-url]")
@@ -171,6 +264,76 @@ function publicWorkerErrorDetail(error: string) {
     )
     .replace(/\b[A-Za-z0-9_+/=-]{64,}\b/g, "[redacted-secret]")
     .slice(0, 500);
+}
+
+function truncateSkillSpectorStorageText(
+  value: string | undefined,
+  maxChars = MAX_STORED_SKILLSPECTOR_TEXT_CHARS,
+) {
+  if (value === undefined) return undefined;
+  if (value.length <= maxChars) return value;
+  return `${value.slice(0, maxChars)}\n...[truncated ${value.length - maxChars} chars]`;
+}
+
+function capSkillSpectorIssueForStorage(
+  issue: SkillSpectorIssueForStorage,
+): SkillSpectorIssueForStorage {
+  return {
+    issueId:
+      truncateSkillSpectorStorageText(issue.issueId, MAX_STORED_SKILLSPECTOR_SHORT_TEXT_CHARS) ??
+      "skillspector-issue",
+    category: truncateSkillSpectorStorageText(
+      issue.category,
+      MAX_STORED_SKILLSPECTOR_SHORT_TEXT_CHARS,
+    ),
+    pattern: truncateSkillSpectorStorageText(
+      issue.pattern,
+      MAX_STORED_SKILLSPECTOR_SHORT_TEXT_CHARS,
+    ),
+    severity:
+      truncateSkillSpectorStorageText(issue.severity, MAX_STORED_SKILLSPECTOR_SHORT_TEXT_CHARS) ??
+      "UNKNOWN",
+    confidence: issue.confidence,
+    file: truncateSkillSpectorStorageText(issue.file, MAX_STORED_SKILLSPECTOR_SHORT_TEXT_CHARS),
+    startLine: issue.startLine,
+    endLine: issue.endLine,
+    explanation:
+      truncateSkillSpectorStorageText(issue.explanation) ??
+      "SkillSpector reported this issue without additional explanation.",
+    remediation: truncateSkillSpectorStorageText(issue.remediation),
+    finding: truncateSkillSpectorStorageText(issue.finding),
+    codeSnippet: truncateSkillSpectorStorageText(issue.codeSnippet),
+  };
+}
+
+function capSkillSpectorAnalysisForStorage(
+  analysis: SkillSpectorAnalysisForStorage,
+): SkillSpectorAnalysisForStorage {
+  return {
+    status:
+      truncateSkillSpectorStorageText(analysis.status, MAX_STORED_SKILLSPECTOR_SHORT_TEXT_CHARS) ??
+      "error",
+    score: analysis.score,
+    severity: truncateSkillSpectorStorageText(
+      analysis.severity,
+      MAX_STORED_SKILLSPECTOR_SHORT_TEXT_CHARS,
+    ),
+    recommendation: truncateSkillSpectorStorageText(
+      analysis.recommendation,
+      MAX_STORED_SKILLSPECTOR_SHORT_TEXT_CHARS,
+    ),
+    issueCount: Math.max(analysis.issueCount, analysis.issues.length),
+    issues: analysis.issues
+      .slice(0, MAX_STORED_SKILLSPECTOR_ISSUES)
+      .map(capSkillSpectorIssueForStorage),
+    scannerVersion: truncateSkillSpectorStorageText(
+      analysis.scannerVersion,
+      MAX_STORED_SKILLSPECTOR_SHORT_TEXT_CHARS,
+    ),
+    summary: truncateSkillSpectorStorageText(analysis.summary),
+    error: truncateSkillSpectorStorageText(analysis.error),
+    checkedAt: analysis.checkedAt,
+  };
 }
 
 function buildWorkerFailureLlmAnalysis(error: string) {
@@ -311,13 +474,211 @@ export const enqueueSkillRescanForModeratorInternal = internalMutation({
   },
 });
 
+async function requestSkillRescanForActor(
+  ctx: MutationCtx,
+  args: {
+    actor: Doc<"users">;
+    skill: Doc<"skills">;
+    version?: string;
+  },
+) {
+  await assertCanManageOwnedResource(ctx, {
+    actor: args.actor,
+    ownerUserId: args.skill.ownerUserId,
+    ownerPublisherId: args.skill.ownerPublisherId,
+    allowPlatformModerator: true,
+  });
+
+  const requestedVersion = args.version?.trim();
+  const version = requestedVersion
+    ? await ctx.db
+        .query("skillVersions")
+        .withIndex("by_skill_version", (q) =>
+          q.eq("skillId", args.skill._id).eq("version", requestedVersion),
+        )
+        .unique()
+    : args.skill.latestVersionId
+      ? await ctx.db.get(args.skill.latestVersionId)
+      : null;
+  if (!version || version.softDeletedAt) throw new ConvexError("Skill version not found");
+
+  const queued = await enqueueSkillVersionScan(ctx, {
+    versionId: version._id,
+    source: "manual",
+    priority: 100,
+    waitForVtMs: 0,
+  });
+  if (!queued.jobId) throw new ConvexError("Skill version not found");
+
+  await ctx.db.insert("auditLogs", {
+    actorUserId: args.actor._id,
+    action: "skill.clawscan.rescan",
+    targetType: "skillVersion",
+    targetId: version._id,
+    metadata: {
+      skillId: args.skill._id,
+      slug: args.skill.slug,
+      version: version.version,
+      jobId: queued.jobId,
+      alreadyQueued: queued.alreadyQueued === true,
+    },
+    createdAt: Date.now(),
+  });
+
+  return {
+    ok: true as const,
+    slug: args.skill.slug,
+    version: version.version,
+    skillId: args.skill._id,
+    skillVersionId: version._id,
+    jobId: queued.jobId,
+    alreadyQueued: queued.alreadyQueued === true,
+  };
+}
+
+export const requestSkillRescanForUserInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    slug: v.string(),
+    version: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor) throw new ConvexError("Unauthorized");
+
+    const slug = args.slug.trim().toLowerCase();
+    if (!slug) throw new ConvexError("Slug required");
+    const skill = await ctx.db
+      .query("skills")
+      .withIndex("by_slug", (q) => q.eq("slug", slug))
+      .unique();
+    if (!skill || skill.softDeletedAt) throw new ConvexError("Skill not found");
+
+    return requestSkillRescanForActor(ctx, { actor, skill, version: args.version });
+  },
+});
+
+export const requestSkillRescan = mutation({
+  args: {
+    skillId: v.id("skills"),
+    version: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx);
+    const skill = await ctx.db.get(args.skillId);
+    if (!skill || skill.softDeletedAt) throw new ConvexError("Skill not found");
+
+    return requestSkillRescanForActor(ctx, { actor: user, skill, version: args.version });
+  },
+});
+
+async function requestPackageRescanForActor(
+  ctx: MutationCtx,
+  args: {
+    actor: Doc<"users">;
+    pkg: Doc<"packages">;
+    version?: string;
+  },
+) {
+  await assertCanManageOwnedResource(ctx, {
+    actor: args.actor,
+    ownerUserId: args.pkg.ownerUserId,
+    ownerPublisherId: args.pkg.ownerPublisherId,
+    allowPlatformModerator: true,
+  });
+
+  const requestedVersion = args.version?.trim();
+  const release = requestedVersion
+    ? await ctx.db
+        .query("packageReleases")
+        .withIndex("by_package_version", (q) =>
+          q.eq("packageId", args.pkg._id).eq("version", requestedVersion),
+        )
+        .unique()
+    : args.pkg.latestReleaseId
+      ? await ctx.db.get(args.pkg.latestReleaseId)
+      : null;
+  if (!release || release.softDeletedAt) throw new ConvexError("Package release not found");
+
+  const queued = await enqueuePackageReleaseScan(ctx, {
+    releaseId: release._id,
+    source: "manual",
+    priority: 100,
+    waitForVtMs: 0,
+  });
+  if (!queued.jobId) throw new ConvexError("Package release not found");
+
+  await ctx.db.insert("auditLogs", {
+    actorUserId: args.actor._id,
+    action: "package.clawscan.rescan",
+    targetType: "packageRelease",
+    targetId: release._id,
+    metadata: {
+      packageId: args.pkg._id,
+      name: args.pkg.name,
+      version: release.version,
+      jobId: queued.jobId,
+      alreadyQueued: queued.alreadyQueued === true,
+    },
+    createdAt: Date.now(),
+  });
+
+  return {
+    ok: true as const,
+    name: args.pkg.name,
+    version: release.version,
+    packageId: args.pkg._id,
+    packageReleaseId: release._id,
+    jobId: queued.jobId,
+    alreadyQueued: queued.alreadyQueued === true,
+  };
+}
+
+export const requestPackageRescanForUserInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    name: v.string(),
+    version: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor) throw new ConvexError("Unauthorized");
+
+    const normalizedName = normalizePackageName(args.name);
+    if (!normalizedName) throw new ConvexError("Package name required");
+    const pkg = await ctx.db
+      .query("packages")
+      .withIndex("by_name", (q) => q.eq("normalizedName", normalizedName))
+      .unique();
+    if (!pkg || pkg.softDeletedAt || pkg.family === "skill")
+      throw new ConvexError("Package not found");
+
+    return requestPackageRescanForActor(ctx, { actor, pkg, version: args.version });
+  },
+});
+
+export const requestPackageRescan = mutation({
+  args: {
+    packageId: v.id("packages"),
+    version: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx);
+    const pkg = await ctx.db.get(args.packageId);
+    if (!pkg || pkg.softDeletedAt || pkg.family === "skill")
+      throw new ConvexError("Package not found");
+
+    return requestPackageRescanForActor(ctx, { actor: user, pkg, version: args.version });
+  },
+});
+
 async function enqueueSkillVersionScan(ctx: MutationCtx, args: EnqueueSkillVersionScanArgs) {
   const version = await ctx.db.get(args.versionId);
   if (!version || version.softDeletedAt) return { ok: true as const, skipped: "missing" as const };
   const now = Date.now();
-  const waitForVtUntil = now + Math.max(0, args.waitForVtMs ?? DEFAULT_VT_WAIT_MS);
+  const waitForVtUntil = now + Math.max(0, args.waitForVtMs ?? defaultVtWaitMs());
   const nextRunAt = args.waitForVtMs === 0 || version.vtAnalysis ? now : waitForVtUntil;
-  const hasMaliciousSignal = version.staticScan?.status === "malicious";
+  const hasMaliciousSignal = false;
 
   const existing = await ctx.db
     .query("securityScanJobs")
@@ -328,7 +689,7 @@ async function enqueueSkillVersionScan(ctx: MutationCtx, args: EnqueueSkillVersi
     await ctx.db.patch(active._id, {
       source: args.source,
       priority: Math.max(active.priority, args.priority ?? 0),
-      hasMaliciousSignal: active.hasMaliciousSignal || hasMaliciousSignal,
+      hasMaliciousSignal,
       waitForVtUntil: Math.min(active.waitForVtUntil, waitForVtUntil),
       nextRunAt: Math.min(active.nextRunAt, nextRunAt),
       updatedAt: now,
@@ -341,7 +702,7 @@ async function enqueueSkillVersionScan(ctx: MutationCtx, args: EnqueueSkillVersi
     skillVersionId: args.versionId,
     status: "queued",
     source: args.source,
-    priority: args.priority ?? (hasMaliciousSignal ? 100 : 0),
+    priority: args.priority ?? 0,
     hasMaliciousSignal,
     waitForVtUntil,
     nextRunAt,
@@ -360,46 +721,50 @@ export const enqueuePackageReleaseScanInternal = internalMutation({
     waitForVtMs: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const release = await ctx.db.get(args.releaseId);
-    if (!release || release.softDeletedAt) return { ok: true as const, skipped: "missing" };
-    const now = Date.now();
-    const waitForVtUntil = now + Math.max(0, args.waitForVtMs ?? DEFAULT_VT_WAIT_MS);
-    const nextRunAt = args.waitForVtMs === 0 || release.vtAnalysis ? now : waitForVtUntil;
-    const hasMaliciousSignal = release.staticScan?.status === "malicious";
-
-    const existing = await ctx.db
-      .query("securityScanJobs")
-      .withIndex("by_package_release", (q) => q.eq("packageReleaseId", args.releaseId))
-      .collect();
-    const active = existing.find((job) => job.status === "queued" || job.status === "running");
-    if (active) {
-      await ctx.db.patch(active._id, {
-        source: args.source,
-        priority: Math.max(active.priority, args.priority ?? 0),
-        hasMaliciousSignal: active.hasMaliciousSignal || hasMaliciousSignal,
-        waitForVtUntil: Math.min(active.waitForVtUntil, waitForVtUntil),
-        nextRunAt: Math.min(active.nextRunAt, nextRunAt),
-        updatedAt: now,
-      });
-      return { ok: true as const, jobId: active._id };
-    }
-
-    const jobId = await ctx.db.insert("securityScanJobs", {
-      targetKind: "packageRelease",
-      packageReleaseId: args.releaseId,
-      status: "queued",
-      source: args.source,
-      priority: args.priority ?? (hasMaliciousSignal ? 100 : 0),
-      hasMaliciousSignal,
-      waitForVtUntil,
-      nextRunAt,
-      attempts: 0,
-      createdAt: now,
-      updatedAt: now,
-    });
-    return { ok: true as const, jobId };
+    return enqueuePackageReleaseScan(ctx, args);
   },
 });
+
+async function enqueuePackageReleaseScan(ctx: MutationCtx, args: EnqueuePackageReleaseScanArgs) {
+  const release = await ctx.db.get(args.releaseId);
+  if (!release || release.softDeletedAt) return { ok: true as const, skipped: "missing" as const };
+  const now = Date.now();
+  const waitForVtUntil = now + Math.max(0, args.waitForVtMs ?? DEFAULT_VT_WAIT_MS);
+  const nextRunAt = args.waitForVtMs === 0 || release.vtAnalysis ? now : waitForVtUntil;
+  const hasMaliciousSignal = false;
+
+  const existing = await ctx.db
+    .query("securityScanJobs")
+    .withIndex("by_package_release", (q) => q.eq("packageReleaseId", args.releaseId))
+    .collect();
+  const active = existing.find((job) => job.status === "queued" || job.status === "running");
+  if (active) {
+    await ctx.db.patch(active._id, {
+      source: args.source,
+      priority: Math.max(active.priority, args.priority ?? 0),
+      hasMaliciousSignal,
+      waitForVtUntil: Math.min(active.waitForVtUntil, waitForVtUntil),
+      nextRunAt: Math.min(active.nextRunAt, nextRunAt),
+      updatedAt: now,
+    });
+    return { ok: true as const, jobId: active._id, alreadyQueued: true as const };
+  }
+
+  const jobId = await ctx.db.insert("securityScanJobs", {
+    targetKind: "packageRelease",
+    packageReleaseId: args.releaseId,
+    status: "queued",
+    source: args.source,
+    priority: args.priority ?? 0,
+    hasMaliciousSignal,
+    waitForVtUntil,
+    nextRunAt,
+    attempts: 0,
+    createdAt: now,
+    updatedAt: now,
+  });
+  return { ok: true as const, jobId, alreadyQueued: false as const };
+}
 
 export const cancelQueuedVtUpdateJobsInternal = internalMutation({
   args: {
@@ -497,6 +862,45 @@ export const cancelQueuedVtUpdateJobsInternal = internalMutation({
   },
 });
 
+export const clearQueuedBackfillJobsForLocalDev = internalMutation({
+  args: {
+    dryRun: v.optional(v.boolean()),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const localDevEnabled =
+      process.env.DEV_AUTH_ENABLED === "1" ||
+      process.env.SECURITY_SCAN_WORKER_TOKEN === "local-dev-worker-token";
+    if (!localDevEnabled) {
+      throw new ConvexError("Refusing to clear backfill scan jobs outside local dev");
+    }
+
+    const limit = Math.max(1, Math.min(args.limit ?? 1000, MAX_CANCEL_SCAN_LIMIT));
+    const jobs = await ctx.db
+      .query("securityScanJobs")
+      .withIndex("by_status_source_created_at", (q) =>
+        q.eq("status", "queued").eq("source", "backfill"),
+      )
+      .order("asc")
+      .take(limit);
+
+    const sampleDeletedJobIds: string[] = [];
+    if (!args.dryRun) {
+      for (const job of jobs) {
+        await ctx.db.delete(job._id);
+        if (sampleDeletedJobIds.length < CANCEL_SAMPLE_LIMIT) sampleDeletedJobIds.push(job._id);
+      }
+    }
+
+    return {
+      dryRun: args.dryRun === true,
+      matched: jobs.length,
+      deleted: args.dryRun ? 0 : jobs.length,
+      sampleDeletedJobIds,
+    };
+  },
+});
+
 export const claimQueuedJobsInternal = internalMutation({
   args: {
     workerId: v.string(),
@@ -528,28 +932,46 @@ export const claimQueuedJobsInternal = internalMutation({
     const capacity = Math.max(0, Math.min(limit, MAX_PARALLEL_CODEX_SCANS - activeRunning));
     if (capacity === 0) return [];
 
-    const maliciousSignalReady = await ctx.db
-      .query("securityScanJobs")
-      .withIndex("by_status_malicious_signal_next_run_at", (q) =>
-        q.eq("status", "queued").eq("hasMaliciousSignal", true).lte("nextRunAt", now),
-      )
-      .order("asc")
-      .take(capacity);
-    const claimedIds = new Set(maliciousSignalReady.map((job) => job._id));
-    const remainingCapacity = capacity - maliciousSignalReady.length;
-    const queued = remainingCapacity
-      ? await ctx.db
+    const ready: Doc<"securityScanJobs">[] = [];
+    const claimedIds = new Set<Id<"securityScanJobs">>();
+    const remainingCapacity = () => capacity - ready.length;
+    const addReadyJobs = (jobs: Doc<"securityScanJobs">[]) => {
+      for (const job of jobs) {
+        if (remainingCapacity() === 0) break;
+        if (claimedIds.has(job._id) || job.nextRunAt > now) continue;
+        claimedIds.add(job._id);
+        ready.push(job);
+      }
+    };
+    const takeReadySourceJobs = async (source: SecurityScanJobSource) => {
+      if (remainingCapacity() === 0) return [];
+      return await ctx.db
+        .query("securityScanJobs")
+        .withIndex("by_status_source_next_run_at", (q) =>
+          q.eq("status", "queued").eq("source", source).lte("nextRunAt", now),
+        )
+        .order("asc")
+        .take(remainingCapacity());
+    };
+
+    addReadyJobs(await takeReadySourceJobs("manual"));
+
+    if (remainingCapacity() > 0) {
+      addReadyJobs(
+        await ctx.db
           .query("securityScanJobs")
-          .withIndex("by_status_and_next_run_at", (q) =>
-            q.eq("status", "queued").lte("nextRunAt", now),
+          .withIndex("by_status_malicious_signal_next_run_at", (q) =>
+            q.eq("status", "queued").eq("hasMaliciousSignal", true).lte("nextRunAt", now),
           )
           .order("asc")
-          .take(remainingCapacity * 4)
-      : [];
-    const ready = [...maliciousSignalReady, ...queued.filter((job) => !claimedIds.has(job._id))]
-      .filter((job) => job.nextRunAt <= now)
-      .sort((a, b) => b.priority - a.priority || a.createdAt - b.createdAt)
-      .slice(0, capacity);
+          .take(remainingCapacity()),
+      );
+    }
+
+    for (const source of CLAIM_SOURCE_ORDER) {
+      addReadyJobs(await takeReadySourceJobs(source));
+      if (remainingCapacity() === 0) break;
+    }
 
     const claimed = [];
     for (const job of ready) {
@@ -686,15 +1108,29 @@ export const claimCodexScanJobs = action({
         continue;
       }
 
-      const files = ((target.version as Doc<"skillVersions"> | undefined)?.files ??
-        (target.release as Doc<"packageReleases"> | undefined)?.files ??
-        []) as Array<{
+      const version = target.version as Doc<"skillVersions"> | undefined;
+      const release = target.release as Doc<"packageReleases"> | undefined;
+      let files: Array<{
         path: string;
         size: number;
         sha256: string;
         storageId: Id<"_storage">;
         contentType?: string;
-      }>;
+      }> = [];
+      if (version) {
+        const fingerprintEntries = await runQueryRef<
+          Array<{ fingerprint: string; kind?: "source" | "generated-bundle" }>
+        >(ctx, internalRefs.skills.listVersionFingerprintsInternal, {
+          skillVersionId: version._id,
+        });
+        files = sourceSkillVersionFiles(version.files, {
+          generatedBundleFingerprints: fingerprintEntries
+            .filter((entry) => entry.kind === "generated-bundle")
+            .map((entry) => entry.fingerprint),
+        });
+      } else if (release) {
+        files = release.files;
+      }
       const fileUrls = [];
       let missingStoragePath: string | null = null;
       for (const file of files) {
@@ -720,7 +1156,6 @@ export const claimCodexScanJobs = action({
         continue;
       }
 
-      const release = target.release as Doc<"packageReleases"> | undefined;
       const clawpackUrl = release?.clawpackStorageId
         ? await ctx.storage.getUrl(release.clawpackStorageId)
         : null;
@@ -751,6 +1186,7 @@ export const completeCodexScanJob = action({
     jobId: v.id("securityScanJobs"),
     leaseToken: v.string(),
     llmAnalysis: llmAnalysisValidator,
+    skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
     runId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -766,11 +1202,23 @@ export const completeCodexScanJob = action({
     if (target.job.leaseToken !== args.leaseToken) throw new ConvexError("Lease mismatch");
 
     if (target.job.targetKind === "skillVersion" && target.version) {
+      if (args.skillSpectorAnalysis) {
+        await runMutationRef(ctx, internalRefs.skills.updateVersionSkillSpectorAnalysisInternal, {
+          versionId: target.version._id,
+          skillSpectorAnalysis: capSkillSpectorAnalysisForStorage(args.skillSpectorAnalysis),
+        });
+      }
       await runMutationRef(ctx, internalRefs.skills.updateVersionLlmAnalysisInternal, {
         versionId: target.version._id,
         llmAnalysis: args.llmAnalysis,
       });
     } else if (target.job.targetKind === "packageRelease" && target.release) {
+      if (args.skillSpectorAnalysis) {
+        await runMutationRef(ctx, internalRefs.packages.updateReleaseSkillSpectorAnalysisInternal, {
+          releaseId: target.release._id,
+          skillSpectorAnalysis: capSkillSpectorAnalysisForStorage(args.skillSpectorAnalysis),
+        });
+      }
       await runMutationRef(ctx, internalRefs.packages.updateReleaseLlmAnalysisInternal, {
         releaseId: target.release._id,
         llmAnalysis: args.llmAnalysis,

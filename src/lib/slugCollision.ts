@@ -10,6 +10,14 @@ type PublicSlugCollision = {
   url: string | null;
 };
 
+const DEFAULT_COLLISION_MESSAGE = "Slug is already taken. Choose a different slug.";
+
+function publicCollisionMessage(message: string | null) {
+  const trimmed = message?.trim();
+  if (!trimmed) return DEFAULT_COLLISION_MESSAGE;
+  return trimmed.replace(/\s+Existing skill:\s+\S+\s*$/u, "");
+}
+
 export function getPublicSlugCollision(params: {
   isSoulMode: boolean;
   slug: string;
@@ -20,7 +28,7 @@ export function getPublicSlugCollision(params: {
   if (!normalizedSlug) return null;
   if (!params.result || params.result.available) return null;
   return {
-    message: params.result.message?.trim() || "Slug is already taken. Choose a different slug.",
+    message: publicCollisionMessage(params.result.message),
     url: params.result.url ?? null,
   };
 }

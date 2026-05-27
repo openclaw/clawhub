@@ -17,6 +17,7 @@ import { resolveLocalAuthRunnerConfig } from "./playwright-local-auth-config";
 
 const DEFAULT_CONVEX_DEPLOYMENT = "local:anonymous-agent";
 const DEFAULT_PLAYWRIGHT_PORT = 4173;
+const DEFAULT_E2E_WORKER_TOKEN = "local-e2e-worker-token";
 const START_TIMEOUT_MS = 120_000;
 const FUNCTION_READY_TIMEOUT_MS = 120_000;
 const POLL_MS = 500;
@@ -317,6 +318,8 @@ async function main() {
     DEV_AUTH_ENABLED: "1",
     JWKS: authKeys.JWKS,
     JWT_PRIVATE_KEY: authKeys.JWT_PRIVATE_KEY,
+    SECURITY_SCAN_DEFAULT_VT_WAIT_MS: "0",
+    SECURITY_SCAN_WORKER_TOKEN: process.env.SECURITY_SCAN_WORKER_TOKEN ?? DEFAULT_E2E_WORKER_TOKEN,
     SITE_URL: appUrl,
     VITE_CONVEX_SITE_URL: convexSiteUrl,
     VITE_CONVEX_URL: convexUrl,
@@ -335,6 +338,8 @@ async function main() {
       "DEV_AUTH_ENABLED=1",
       `JWKS=${authKeys.JWKS}`,
       `JWT_PRIVATE_KEY=${authKeys.JWT_PRIVATE_KEY}`,
+      "SECURITY_SCAN_DEFAULT_VT_WAIT_MS=0",
+      `SECURITY_SCAN_WORKER_TOKEN=${e2eEnv.SECURITY_SCAN_WORKER_TOKEN}`,
       `SITE_URL=${appUrl}`,
       `VITE_CONVEX_SITE_URL=${convexSiteUrl}`,
       `VITE_CONVEX_URL=${convexUrl}`,
@@ -371,6 +376,11 @@ async function main() {
     { name: "DEV_AUTH_ENABLED", value: "1" },
     { name: "JWKS", value: authKeys.JWKS },
     { name: "JWT_PRIVATE_KEY", value: authKeys.JWT_PRIVATE_KEY },
+    { name: "SECURITY_SCAN_DEFAULT_VT_WAIT_MS", value: "0" },
+    {
+      name: "SECURITY_SCAN_WORKER_TOKEN",
+      value: e2eEnv.SECURITY_SCAN_WORKER_TOKEN ?? DEFAULT_E2E_WORKER_TOKEN,
+    },
     { name: "SITE_URL", value: appUrl },
   ]);
 

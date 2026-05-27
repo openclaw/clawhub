@@ -66,7 +66,9 @@ export async function cmdPublish(
 
   const spinner = createSpinner(`Preparing ${slug}@${version}`);
   try {
-    const filesOnDisk = await ensureRootManifestFile(folder, await listTextFiles(folder));
+    const filesOnDisk = stripGeneratedSkillCards(
+      await ensureRootManifestFile(folder, await listTextFiles(folder)),
+    );
     if (filesOnDisk.length === 0) fail("No files found");
     if (
       !filesOnDisk.some((file) => {
@@ -114,6 +116,10 @@ export async function cmdPublish(
     spinner.fail(formatError(error));
     throw error;
   }
+}
+
+function stripGeneratedSkillCards(files: Awaited<ReturnType<typeof listTextFiles>>) {
+  return files.filter((file) => file.relPath.trim().toLowerCase() !== "skill-card.md");
 }
 
 async function ensureRootManifestFile(

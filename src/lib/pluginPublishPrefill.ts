@@ -125,8 +125,8 @@ export async function derivePluginPrefill(
       getString(pluginManifest?.id) ??
       getString(bundleManifest?.id),
     displayName:
-      getString(packageJson?.displayName) ??
       getString(pluginManifest?.name) ??
+      getString(packageJson?.displayName) ??
       getString(bundleManifest?.name),
     version: getString(packageJson?.version),
     sourceRepo: extractSourceRepo(packageJson),
@@ -155,17 +155,4 @@ export function listPrefilledFields(prefill: PluginPublishPrefill) {
   if (prefill.bundleFormat) fields.push("bundle format");
   if (prefill.hostTargets) fields.push("host targets");
   return fields;
-}
-
-export function formatPackageCompatibility(compatibility: PackageCompatibility) {
-  return [
-    compatibility.pluginApiRange ? `pluginApi=${compatibility.pluginApiRange}` : null,
-    compatibility.builtWithOpenClawVersion
-      ? `builtWith=${compatibility.builtWithOpenClawVersion}`
-      : null,
-    compatibility.pluginSdkVersion ? `sdk=${compatibility.pluginSdkVersion}` : null,
-    compatibility.minGatewayVersion ? `minGateway=${compatibility.minGatewayVersion}` : null,
-  ]
-    .filter(Boolean)
-    .join(", ");
 }

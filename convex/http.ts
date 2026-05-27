@@ -16,6 +16,7 @@ import {
   searchSkillsHttp,
 } from "./httpApi";
 import {
+  exportSkillsV1Http,
   listBundlePluginsV1Http,
   listCodePluginsV1Http,
   listPackagesV1Http,
@@ -34,6 +35,7 @@ import {
   publishSoulV1Http,
   resolveSkillVersionV1Http,
   searchSkillsV1Http,
+  skillSecurityVerdictsV1Http,
   skillsDeleteRouterV1Http,
   skillsGetRouterV1Http,
   skillsPostRouterV1Http,
@@ -70,6 +72,12 @@ http.route({
   path: ApiRoutes.resolve,
   method: "GET",
   handler: resolveSkillVersionV1Http,
+});
+
+http.route({
+  path: ApiRoutes.skillsExport,
+  method: "GET",
+  handler: exportSkillsV1Http,
 });
 
 http.route({
@@ -154,6 +162,12 @@ http.route({
   pathPrefix: `${ApiRoutes.packages}/`,
   method: "DELETE",
   handler: packagesDeleteRouterV1Http,
+});
+
+http.route({
+  path: `${ApiRoutes.skills}/-/security-verdicts`,
+  method: "POST",
+  handler: skillSecurityVerdictsV1Http,
 });
 
 http.route({

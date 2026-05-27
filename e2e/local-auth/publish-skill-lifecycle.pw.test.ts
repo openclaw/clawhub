@@ -1,11 +1,173 @@
-import { expect, test } from "@playwright/test";
-import { expectHealthyPage, trackRuntimeErrors } from "../helpers/runtimeErrors";
-import { publishSkillVersion, signInAsLocalOwner } from "./helpers";
+import { expect, type Page, test } from "@playwright/test";
+import convexBrowser from "convex/browser";
+import { api } from "../../convex/_generated/api";
+import type { Id } from "../../convex/_generated/dataModel";
+import { expectHealthyPage, trackRuntimeErrors, waitForHydration } from "../helpers/runtimeErrors";
+import { expectOwnerHandleSelected, publishSkillVersion, signInAsLocalPublisher } from "./helpers";
 
 test.skip(
   process.env.VITE_ENABLE_DEV_AUTH !== "1",
   "local-auth lifecycle tests require the local dev auth runner",
 );
+
+const WORKER_TOKEN = process.env.SECURITY_SCAN_WORKER_TOKEN ?? "local-e2e-worker-token";
+const { ConvexHttpClient } = convexBrowser;
+type ConvexHttpClientInstance = InstanceType<typeof ConvexHttpClient>;
+
+type ClaimedScanJob = {
+  job: { _id: Id<"securityScanJobs">; leaseToken: string };
+  target?: { skill?: { slug?: string }; version?: { version?: string } };
+};
+
+type ClaimedSkillCardJob = {
+  job: { _id: Id<"skillCardGenerationJobs">; leaseToken: string };
+  target?: { skill?: { slug?: string }; version?: { version?: string } };
+};
+
+function convexClient() {
+  const convexUrl = process.env.VITE_CONVEX_URL;
+  if (!convexUrl) throw new Error("VITE_CONVEX_URL is required");
+  return new ConvexHttpClient(convexUrl);
+}
+
+function convexSiteUrl() {
+  const url = process.env.VITE_CONVEX_SITE_URL;
+  if (!url) throw new Error("VITE_CONVEX_SITE_URL is required");
+  return url.replace(/\/$/u, "");
+}
+
+async function sleep(ms: number) {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForClaimedScanJob(client: ConvexHttpClientInstance, slug: string) {
+  const deadline = Date.now() + 20_000;
+  while (Date.now() < deadline) {
+    const jobs = (await client.action(api.securityScan.claimCodexScanJobs, {
+      token: WORKER_TOKEN,
+      workerId: `pw-skill-card-${slug}`,
+      limit: 20,
+      leaseMs: 60_000,
+    })) as ClaimedScanJob[];
+    const match = jobs.find((job) => job.target?.skill?.slug === slug);
+    if (match) return match;
+    await sleep(500);
+  }
+  throw new Error(`Timed out waiting for security scan job for ${slug}`);
+}
+
+async function waitForClaimedSkillCardJob(client: ConvexHttpClientInstance, slug: string) {
+  const deadline = Date.now() + 20_000;
+  while (Date.now() < deadline) {
+    const jobs = (await client.action(api.skillCards.claimSkillCardJobs, {
+      token: WORKER_TOKEN,
+      workerId: `pw-skill-card-${slug}`,
+      limit: 20,
+      leaseMs: 60_000,
+    })) as ClaimedSkillCardJob[];
+    const match = jobs.find((job) => job.target?.skill?.slug === slug);
+    if (match) return match;
+    await sleep(500);
+  }
+  throw new Error(`Timed out waiting for Skill Card generation job for ${slug}`);
+}
+
+async function waitForSkillCardEndpoint(page: Page, slug: string, markdown: string) {
+  const url = `${convexSiteUrl()}/api/v1/skills/${slug}/card`;
+  const deadline = Date.now() + 20_000;
+  let lastStatus = 0;
+  let lastText = "";
+  while (Date.now() < deadline) {
+    const response = await page.request.get(url);
+    lastStatus = response.status();
+    lastText = await response.text();
+    if (lastStatus === 200 && lastText === markdown) return response;
+    await sleep(500);
+  }
+  throw new Error(
+    `Timed out waiting for Skill Card endpoint for ${slug}; last status=${lastStatus} body=${lastText.slice(
+      0,
+      120,
+    )}`,
+  );
+}
+
+test("publishing a skill queues scan, queues skill-card generation, and shows the generated card", async ({
+  page,
+}, testInfo) => {
+  const errors = trackRuntimeErrors(page);
+  const client = convexClient();
+  const slug = `pw-card-${Date.now().toString(36)}`;
+  const displayName = "Playwright Skill Card Skill";
+
+  const ownerHandle = await signInAsLocalPublisher(page, "admin");
+  await publishSkillVersion(page, testInfo, {
+    ownerHandle,
+    slug,
+    displayName,
+    version: "1.0.0",
+    versionLabel: "skill card release",
+    changelog: "Initial release for the generated Skill Card lifecycle.",
+  });
+
+  const scanJob = await waitForClaimedScanJob(client, slug);
+  expect(scanJob.target?.version?.version).toBe("1.0.0");
+
+  await client.action(api.securityScan.completeCodexScanJob, {
+    token: WORKER_TOKEN,
+    jobId: scanJob.job._id,
+    leaseToken: scanJob.job.leaseToken,
+    runId: "playwright-local-auth",
+    llmAnalysis: {
+      status: "clean",
+      verdict: "benign",
+      confidence: "high",
+      summary: "No suspicious behavior in the local Playwright fixture.",
+      guidance: "Fixture is safe for local e2e validation.",
+      model: "mock-local-e2e",
+      checkedAt: Date.now(),
+    },
+  });
+
+  const cardJob = await waitForClaimedSkillCardJob(client, slug);
+  expect(cardJob.target?.version?.version).toBe("1.0.0");
+
+  const markdown = [
+    "# Skill Card",
+    "",
+    `Skill: ${displayName}`,
+    "",
+    "Generated by the local Playwright worker harness.",
+  ].join("\n");
+  await client.action(api.skillCards.completeSkillCardJob, {
+    token: WORKER_TOKEN,
+    jobId: cardJob.job._id,
+    leaseToken: cardJob.job.leaseToken,
+    runId: "playwright-local-auth",
+    markdown,
+  });
+
+  const cardResponse = await waitForSkillCardEndpoint(page, slug, markdown);
+
+  const detailUrl = page.url().split("#", 1)[0];
+  await page.goto(`${detailUrl}#skill-card`, { waitUntil: "domcontentloaded" });
+  await waitForHydration(page);
+  const skillCardTab = page.getByRole("tab", { name: "Skill Card" });
+  await expect(skillCardTab).toHaveAttribute("aria-selected", "true", {
+    timeout: 30_000,
+  });
+  const skillCardPanel = page.locator(".tab-body", {
+    hasText: "Skill Cards follow",
+  });
+  await expect(skillCardPanel).toContainText("Generated by the local Playwright worker harness.", {
+    timeout: 30_000,
+  });
+  await expect(skillCardPanel).toContainText("Skill Card");
+
+  expect(await cardResponse.text()).toBe(markdown);
+
+  await expectHealthyPage(page, errors);
+});
 
 test("skill publishers can create a skill and publish a new version", async ({
   page,
@@ -14,7 +176,7 @@ test("skill publishers can create a skill and publish a new version", async ({
   const slug = `pw-life-${Date.now().toString(36)}`;
   const displayName = "Playwright Lifecycle Skill";
 
-  let ownerHandle = await signInAsLocalOwner(page);
+  let ownerHandle = await signInAsLocalPublisher(page, "admin");
 
   ownerHandle = await publishSkillVersion(page, testInfo, {
     ownerHandle,
@@ -36,7 +198,7 @@ test("skill publishers can create a skill and publish a new version", async ({
   await expect(page.locator("#slug")).toHaveValue(slug);
   await expect(page.locator("#displayName")).toHaveValue(displayName);
   await expect(page.locator("#version")).toHaveValue("1.0.1");
-  await expect(page.locator("#ownerHandle")).toHaveValue(ownerHandle);
+  await expectOwnerHandleSelected(page, "#ownerHandle", ownerHandle);
 
   await publishSkillVersion(page, testInfo, {
     ownerHandle,

@@ -97,6 +97,15 @@ bun run mod -- unban-user <handleOrId>
 bun run mod -- set-role <handleOrId> <user|moderator|admin>
 ```
 
+Org publisher administration:
+
+```bash
+bun run mod -- org create <handle> --member <handle> [--display-name <name>] [--role owner|admin|publisher] [--trusted] [--json]
+```
+
+`org create` requires `--member` and defaults that member to `owner`; it does
+not add the moderator running the command as an org member.
+
 Package moderation and operations:
 
 ```bash
