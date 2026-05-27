@@ -12,8 +12,9 @@ import {
   sourceSkillVersionFiles,
 } from "./lib/skillCards";
 
-const DEFAULT_LEASE_MS = 30 * 60 * 1000;
-const MAX_PARALLEL_SKILL_CARD_JOBS = 10;
+const DEFAULT_LEASE_MS = 60 * 60 * 1000;
+const DEFAULT_SKILL_CARD_CLAIM_LIMIT = 6;
+const MAX_PARALLEL_SKILL_CARD_JOBS = 64;
 const MAX_ATTEMPTS = 3;
 
 const jobSourceValidator = v.union(v.literal("publish"), v.literal("scan"), v.literal("manual"));
@@ -63,7 +64,10 @@ function assertWorkerToken(token: string) {
 }
 
 function normalizeLimit(limit: number | undefined) {
-  return Math.max(1, Math.min(Math.floor(limit ?? 5), 25));
+  return Math.max(
+    1,
+    Math.min(Math.floor(limit ?? DEFAULT_SKILL_CARD_CLAIM_LIMIT), MAX_PARALLEL_SKILL_CARD_JOBS),
+  );
 }
 
 function generatedBundleFingerprints(
