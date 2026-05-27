@@ -3249,15 +3249,15 @@ export const listDashboardPaginated = query({
         })),
       );
 
-      const shouldIncludeLegacyPersonalSkills = Boolean(
-        isOwnDashboard && ownerPublisher?.kind === "user" && ownerPublisher.linkedUserId,
-      );
+      const legacyPersonalOwnerUserId =
+        isOwnDashboard && ownerPublisher?.kind === "user" ? ownerPublisher.linkedUserId : undefined;
+      const shouldIncludeLegacyPersonalSkills = Boolean(legacyPersonalOwnerUserId);
       const paginateOwnerSkills = async (paginationOpts: typeof args.paginationOpts) =>
         shouldIncludeLegacyPersonalSkills
           ? await ctx.db
               .query("skills")
               .withIndex("by_owner_active_updated", (q) =>
-                q.eq("ownerUserId", ownerPublisher.linkedUserId!).eq("softDeletedAt", undefined),
+                q.eq("ownerUserId", legacyPersonalOwnerUserId!).eq("softDeletedAt", undefined),
               )
               .order("desc")
               .paginate(paginationOpts)
