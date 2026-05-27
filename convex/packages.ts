@@ -2909,11 +2909,12 @@ async function restorePackageDoc(
   const now = Date.now();
   const actorRole = params.actorRole ?? "user";
   const isPrivilegedActor = actorRole === "admin" || actorRole === "moderator";
+  const isPrivilegedRestorableDelete = isPrivilegedActor && pkg.softDeletedReason !== "user.banned";
   const isUserRestorableDelete =
     pkg.softDeletedByRole === "user" && pkg.softDeletedReason !== "user.banned";
   const isUnbanBatchRestore =
     params.allowBanRestore === true && pkg.softDeletedReason === "user.banned";
-  if (!isPrivilegedActor && !isUserRestorableDelete && !isUnbanBatchRestore) {
+  if (!isPrivilegedRestorableDelete && !isUserRestorableDelete && !isUnbanBatchRestore) {
     throw new ConvexError(
       "Forbidden: This package was hidden by moderation and cannot be restored by the owner. Please contact a moderator.",
     );

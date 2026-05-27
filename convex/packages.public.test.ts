@@ -8418,4 +8418,25 @@ describe("restorePackageInternal", () => {
     ).rejects.toThrow("Forbidden");
     expect(patch).not.toHaveBeenCalledWith("packages:demo", expect.anything());
   });
+
+  it("does not let moderators directly restore packages hidden by a user ban", async () => {
+    const { ctx, patch } = makeSoftDeleteCtx({
+      actor: { _id: "users:owner", role: "moderator" },
+      pkg: makePackageDoc({
+        ownerUserId: "users:owner",
+        ownerPublisherId: "publishers:owner-personal",
+        softDeletedAt: 1_000,
+        softDeletedReason: "user.banned",
+        softDeletedByRole: "moderator",
+      }),
+    });
+
+    await expect(
+      restorePackageInternalHandler(ctx as never, {
+        userId: "users:owner",
+        name: "demo-plugin",
+      }),
+    ).rejects.toThrow("Forbidden");
+    expect(patch).not.toHaveBeenCalledWith("packages:demo", expect.anything());
+  });
 });
