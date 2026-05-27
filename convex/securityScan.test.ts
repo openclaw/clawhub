@@ -740,6 +740,37 @@ describe("securityScan", () => {
     );
   });
 
+  it("treats missing moderation status as active during bulk rescans", async () => {
+    const { ctx } = makeBulkRescanCtx({
+      skills: [
+        {
+          _id: "skills:legacy-active",
+          slug: "legacy-active",
+          latestVersionId: "skillVersions:legacy-active",
+        },
+      ],
+      versions: [
+        {
+          _id: "skillVersions:legacy-active",
+          skillId: "skills:legacy-active",
+          version: "1.0.0",
+        },
+      ],
+    });
+
+    const result = await enqueueBulkSkillRescanBatchForAdminInternalHandler(ctx, {
+      actorUserId: "users:admin",
+      batchSize: 1,
+    });
+
+    expect(result).toMatchObject({
+      queued: 1,
+      alreadyQueued: 0,
+      skipped: 0,
+      jobIds: ["securityScanJobs:1"],
+    });
+  });
+
   it("does not demote existing active jobs during bulk rescans", async () => {
     const { ctx, inserts, patch } = makeBulkRescanCtx({
       skills: [

@@ -498,7 +498,7 @@ export const enqueueBulkSkillRescanBatchForAdminInternal = internalMutation({
 
     for (const skill of page.page) {
       if (sampleSlugs.length < BULK_RESCAN_SAMPLE_LIMIT) sampleSlugs.push(skill.slug);
-      if (skill.moderationStatus !== "active" || !skill.latestVersionId) {
+      if ((skill.moderationStatus ?? "active") !== "active" || !skill.latestVersionId) {
         skipped += 1;
         continue;
       }
