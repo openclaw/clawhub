@@ -2463,9 +2463,10 @@ export async function exportSkillsV1Handler(ctx: ActionCtx, request: Request) {
         : Promise.resolve(null),
     );
     logContext.versionCount = versionDocs.filter(Boolean).length;
-    const exportableVersions: Array<Doc<"skillVersions"> | null> = new Array(
-      result.page.length,
-    ).fill(null);
+    const exportableVersions: Array<Doc<"skillVersions"> | null> = Array.from(
+      { length: result.page.length },
+      () => null,
+    );
 
     type BlobTask = { digestIndex: number; fileIndex: number; storageId: Id<"_storage"> };
     const blobTasks: BlobTask[] = [];
