@@ -6,6 +6,11 @@ function isScannerSuspiciousReason(reason: string | undefined) {
   return reason.startsWith("scanner.") && reason.endsWith(".suspicious");
 }
 
+function isScannerMaliciousReason(reason: string | undefined) {
+  if (!reason) return false;
+  return reason.startsWith("scanner.") && reason.endsWith(".malicious");
+}
+
 export function isSkillSuspicious(
   skill: Pick<Doc<"skills">, "moderationFlags" | "moderationReason">,
 ) {
@@ -38,7 +43,8 @@ export function isSkillTransferBlockedByModeration(
     skill.isSuspicious ||
     skill.moderationFlags?.includes("flagged.suspicious") ||
     isSkillBlockedByMalware(skill) ||
-    isSkillSuspicious(skill)
+    isSkillSuspicious(skill) ||
+    isScannerMaliciousReason(skill.moderationReason)
   );
 }
 

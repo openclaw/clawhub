@@ -604,6 +604,24 @@ describe("skills.insertVersion owner migration", () => {
     });
   });
 
+  it("rejects legacy publisher backfill for skills under moderation", async () => {
+    const fixture = createMigrationFixture({
+      skillSource: "caller-personal",
+      sourceMemberships: [],
+      skillOverrides: {
+        ownerPublisherId: undefined,
+        moderationReason: "scanner.vt.malicious",
+      },
+    });
+
+    await expect(
+      insertVersionHandler({ db: fixture.db } as never, buildPublishArgs() as never),
+    ).rejects.toThrow("under moderation");
+
+    const skillPatches = fixture.patchCalls.filter((p) => p.id === "skills:1");
+    expect(skillPatches).toHaveLength(0);
+  });
+
   it("refuses to migrate a skill out of SOMEONE ELSE'S personal publisher even if caller happens to be a member", async () => {
     // Defense-in-depth: addMember currently doesn't forbid adding extra
     // members to a user-kind publisher. We must still refuse to let the

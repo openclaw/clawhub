@@ -9615,11 +9615,13 @@ export const insertVersion = internalMutation({
         throw new ConvexError(slugTakenMessage);
       }
     } else if (skill && !skill.ownerPublisherId) {
-      await ctx.db.patch(skill._id, {
+      await transferSkillOwnershipAndEmbeddings(ctx, {
+        skill,
+        ownerUserId: userId,
         ownerPublisherId,
-        updatedAt: now,
+        now,
       });
-      skill = { ...skill, ownerPublisherId };
+      skill = { ...skill, ownerPublisherId, lastReviewedAt: now, updatedAt: now };
     }
 
     const qualityAssessment = args.qualityAssessment;
