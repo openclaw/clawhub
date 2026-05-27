@@ -69,6 +69,7 @@ import { toPublicPublisher } from "./lib/public";
 import {
   assertCanManageOwnedResource,
   getPublisherByHandle,
+  getPersonalPublisherForUser,
   getOwnerPublisher,
   getPublisherMembership,
   isPublisherRoleAllowed,
@@ -3067,6 +3068,22 @@ async function isPackageOwnedByPersonalUser(
   return ownerPublisher?.kind === "user" && ownerPublisher.linkedUserId === owner._id;
 }
 
+async function getOwnedPackagePersonalPublisherId(
+  ctx: Pick<MutationCtx, "db">,
+  owner: Pick<Doc<"users">, "_id" | "personalPublisherId">,
+) {
+  if (owner.personalPublisherId) return owner.personalPublisherId;
+  const linkedPublisher = await getPersonalPublisherForUser(ctx, owner._id);
+  if (
+    linkedPublisher?.kind === "user" &&
+    !linkedPublisher.deletedAt &&
+    !linkedPublisher.deactivatedAt
+  ) {
+    return linkedPublisher._id;
+  }
+  return undefined;
+}
+
 function getOwnedPackageScanScope(args: { scope?: OwnedPackageScanScope }) {
   return args.scope ?? "ownerUserId";
 }
@@ -3087,7 +3104,7 @@ function scheduleNextOwnedPackageScanBatch(
     string,
     unknown
   >,
-  owner: Pick<Doc<"users">, "personalPublisherId">,
+  personalPublisherId: Id<"publishers"> | undefined,
   isDone: boolean,
   continueCursor: string | null,
 ) {
@@ -3102,7 +3119,7 @@ function scheduleNextOwnedPackageScanBatch(
     );
     return true;
   }
-  if (getOwnedPackageScanScope(args) === "ownerUserId" && owner.personalPublisherId) {
+  if (getOwnedPackageScanScope(args) === "ownerUserId" && personalPublisherId) {
     void ctx.scheduler.runAfter(
       0,
       fn as never,
@@ -3151,13 +3168,12 @@ export const applyBanToOwnedPackagesBatchInternal = internalMutation({
     }
 
     const scope = getOwnedPackageScanScope(args);
+    const personalPublisherId = await getOwnedPackagePersonalPublisherId(ctx, owner);
     const packageQuery =
-      scope === "personalPublisher" && owner.personalPublisherId
+      scope === "personalPublisher" && personalPublisherId
         ? ctx.db
             .query("packages")
-            .withIndex("by_owner_publisher", (q) =>
-              q.eq("ownerPublisherId", owner.personalPublisherId),
-            )
+            .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", personalPublisherId))
         : ctx.db
             .query("packages")
             .withIndex("by_owner", (q) => q.eq("ownerUserId", args.ownerUserId));
@@ -3220,7 +3236,7 @@ export const applyBanToOwnedPackagesBatchInternal = internalMutation({
       ctx,
       internal.packages.applyBanToOwnedPackagesBatchInternal,
       args,
-      owner,
+      personalPublisherId,
       isDone,
       continueCursor,
     );
@@ -3248,13 +3264,12 @@ export const restoreOwnedPackagesForUnbanBatchInternal = internalMutation({
     }
 
     const scope = getOwnedPackageScanScope(args);
+    const personalPublisherId = await getOwnedPackagePersonalPublisherId(ctx, owner);
     const packageQuery =
-      scope === "personalPublisher" && owner.personalPublisherId
+      scope === "personalPublisher" && personalPublisherId
         ? ctx.db
             .query("packages")
-            .withIndex("by_owner_publisher", (q) =>
-              q.eq("ownerPublisherId", owner.personalPublisherId),
-            )
+            .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", personalPublisherId))
         : ctx.db
             .query("packages")
             .withIndex("by_owner", (q) => q.eq("ownerUserId", args.ownerUserId));
@@ -3289,7 +3304,7 @@ export const restoreOwnedPackagesForUnbanBatchInternal = internalMutation({
       ctx,
       internal.packages.restoreOwnedPackagesForUnbanBatchInternal,
       args,
-      owner,
+      personalPublisherId,
       isDone,
       continueCursor,
     );
@@ -3318,13 +3333,12 @@ export const applyAccountDeletionToOwnedPackagesBatchInternal = internalMutation
     }
 
     const scope = getOwnedPackageScanScope(args);
+    const personalPublisherId = await getOwnedPackagePersonalPublisherId(ctx, owner);
     const packageQuery =
-      scope === "personalPublisher" && owner.personalPublisherId
+      scope === "personalPublisher" && personalPublisherId
         ? ctx.db
             .query("packages")
-            .withIndex("by_owner_publisher", (q) =>
-              q.eq("ownerPublisherId", owner.personalPublisherId),
-            )
+            .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", personalPublisherId))
         : ctx.db
             .query("packages")
             .withIndex("by_owner", (q) => q.eq("ownerUserId", args.ownerUserId));
@@ -3356,7 +3370,7 @@ export const applyAccountDeletionToOwnedPackagesBatchInternal = internalMutation
       ctx,
       internal.packages.applyAccountDeletionToOwnedPackagesBatchInternal,
       args,
-      owner,
+      personalPublisherId,
       isDone,
       continueCursor,
     );
@@ -3455,13 +3469,12 @@ export const restoreOwnedPackagesForAutobanRemediationBatchInternal = internalMu
     }
 
     const scope = getOwnedPackageScanScope(args);
+    const personalPublisherId = await getOwnedPackagePersonalPublisherId(ctx, owner);
     const packageQuery =
-      scope === "personalPublisher" && owner.personalPublisherId
+      scope === "personalPublisher" && personalPublisherId
         ? ctx.db
             .query("packages")
-            .withIndex("by_owner_publisher", (q) =>
-              q.eq("ownerPublisherId", owner.personalPublisherId),
-            )
+            .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", personalPublisherId))
         : ctx.db
             .query("packages")
             .withIndex("by_owner", (q) => q.eq("ownerUserId", args.ownerUserId));
@@ -3590,7 +3603,7 @@ export const restoreOwnedPackagesForAutobanRemediationBatchInternal = internalMu
       packageAutobanRemediationInternalRefs.packages
         .restoreOwnedPackagesForAutobanRemediationBatchInternal,
       args,
-      owner,
+      personalPublisherId,
       isDone,
       continueCursor,
     );

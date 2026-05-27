@@ -17,6 +17,7 @@ import { isReservedPublicOwnerHandle } from "./lib/publicRouteReservations";
 import {
   ensurePersonalPublisherForUser,
   getActiveUserByHandleOrPersonalPublisher,
+  getPersonalPublisherForUser,
   getPublisherByHandle,
   getUserByHandleOrPersonalPublisher,
 } from "./lib/publishers";
@@ -45,6 +46,23 @@ const autobanPackageScanScopeValidator = v.optional(
   v.union(v.literal("ownerUserId"), v.literal("personalPublisher")),
 );
 type AutobanPackageScanScope = "ownerUserId" | "personalPublisher";
+
+async function getAutobanPersonalPublisherId(
+  ctx: Pick<QueryCtx | MutationCtx, "db">,
+  owner: Pick<Doc<"users">, "_id" | "personalPublisherId"> | null | undefined,
+) {
+  if (!owner) return undefined;
+  if (owner.personalPublisherId) return owner.personalPublisherId;
+  const linkedPublisher = await getPersonalPublisherForUser(ctx, owner._id);
+  if (
+    linkedPublisher?.kind === "user" &&
+    !linkedPublisher.deletedAt &&
+    !linkedPublisher.deactivatedAt
+  ) {
+    return linkedPublisher._id;
+  }
+  return undefined;
+}
 const autobanRemediationInternalRefs = internal as unknown as {
   users: {
     countRestorableAutobanSkillsPageInternal: unknown;
@@ -1392,7 +1410,8 @@ async function countRestorableAutobanPackages(
 ) {
   let count = 0;
   const owner = await ctx.db.get(ownerUserId);
-  const scopes: AutobanPackageScanScope[] = owner?.personalPublisherId
+  const personalPublisherId = await getAutobanPersonalPublisherId(ctx, owner);
+  const scopes: AutobanPackageScanScope[] = personalPublisherId
     ? ["ownerUserId", "personalPublisher"]
     : ["ownerUserId"];
 
@@ -1488,13 +1507,12 @@ export const listRestorableAutobanPackageCandidatesPageInternal = internalQuery(
   handler: async (ctx, args) => {
     const owner = await ctx.db.get(args.ownerUserId);
     const scope = args.scope ?? "ownerUserId";
+    const personalPublisherId = await getAutobanPersonalPublisherId(ctx, owner);
     const packageQuery =
-      scope === "personalPublisher" && owner?.personalPublisherId
+      scope === "personalPublisher" && personalPublisherId
         ? ctx.db
             .query("packages")
-            .withIndex("by_owner_publisher", (q) =>
-              q.eq("ownerPublisherId", owner.personalPublisherId),
-            )
+            .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", personalPublisherId))
         : ctx.db
             .query("packages")
             .withIndex("by_owner", (q) => q.eq("ownerUserId", args.ownerUserId));

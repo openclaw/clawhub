@@ -1251,6 +1251,82 @@ describe("autoban remediation package restore", () => {
     });
   });
 
+  it("lists linked legacy personal-publisher package candidates without users.personalPublisherId", async () => {
+    const bannedAt = 1778569308754;
+    const result = await listPackageCandidatesHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) =>
+            id === "users:target" ? { _id: id, personalPublisherId: undefined } : null,
+          ),
+          query: vi.fn((table: string) => {
+            if (table === "publishers") {
+              return {
+                withIndex: (
+                  name: string,
+                  cb: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+                ) => {
+                  expect(name).toBe("by_linked_user");
+                  let linkedUserId = "";
+                  cb({
+                    eq: (field: string, value: string) => {
+                      if (field === "linkedUserId") linkedUserId = value;
+                      return {};
+                    },
+                  });
+                  return {
+                    unique: vi.fn(async () =>
+                      linkedUserId === "users:target"
+                        ? {
+                            _id: "publishers:personal",
+                            kind: "user",
+                            linkedUserId: "users:target",
+                          }
+                        : null,
+                    ),
+                  };
+                },
+              };
+            }
+            expect(table).toBe("packages");
+            return {
+              withIndex: (name: string) => {
+                expect(name).toBe("by_owner_publisher");
+                return {
+                  order: () => ({
+                    paginate: vi.fn(async () => ({
+                      page: [
+                        {
+                          _id: "packages:personal",
+                          ownerUserId: "users:publishing-actor",
+                          softDeletedAt: bannedAt,
+                          scanStatus: "clean",
+                        },
+                      ],
+                      isDone: true,
+                      continueCursor: null,
+                    })),
+                  }),
+                };
+              },
+            };
+          }),
+        },
+      } as never,
+      {
+        ownerUserId: "users:target",
+        bannedAt,
+        scope: "personalPublisher",
+      },
+    );
+
+    expect(result).toEqual({
+      packageIds: ["packages:personal"],
+      isDone: true,
+      continueCursor: null,
+    });
+  });
+
   it("skips timestamp-matched packages when no non-malicious release can be selected", async () => {
     const bannedAt = 1778569308754;
     const patch = vi.fn();

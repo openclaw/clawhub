@@ -7631,6 +7631,34 @@ function makeOwnedPackageBatchCtx(options?: {
               })),
             };
           }
+          if (table === "publishers") {
+            return {
+              withIndex: vi.fn(
+                (
+                  index: string,
+                  cb: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+                ) => {
+                  expect(index).toBe("by_linked_user");
+                  let linkedUserId = "";
+                  cb({
+                    eq: (field: string, value: string) => {
+                      if (field === "linkedUserId") linkedUserId = value;
+                      return {};
+                    },
+                  });
+                  return {
+                    unique: vi.fn(
+                      async () =>
+                        Object.values(options?.publishers ?? {}).find(
+                          (publisher) =>
+                            publisher?.kind === "user" && publisher.linkedUserId === linkedUserId,
+                        ) ?? null,
+                    ),
+                  };
+                },
+              ),
+            };
+          }
           if (table === "packagePublishTokens") {
             return {
               withIndex: vi.fn(() => ({
@@ -7748,6 +7776,88 @@ describe("owned package sanction batches", () => {
         deletedAt: 1_000,
         deactivatedAt: undefined,
         personalPublisherId: "publishers:personal",
+      },
+      publisherPackages: [personalPublisherPackage],
+      packageTokens: [
+        {
+          _id: "packagePublishTokens:personal-publisher",
+          packageId: "packages:personal-publisher",
+          version: "1.0.1",
+          revokedAt: undefined,
+        },
+      ],
+      publishers: {
+        "publishers:personal": {
+          _id: "publishers:personal",
+          kind: "user",
+          linkedUserId: "users:owner",
+        },
+      },
+    });
+
+    const result = await applyBanToOwnedPackagesBatchInternalHandler(ctx as never, {
+      ownerUserId: "users:owner",
+      bannedAt: 1_000,
+      deletedBy: "users:moderator",
+      deletedByRole: "moderator",
+      scope: "personalPublisher",
+    });
+
+    expect(result).toMatchObject({ deletedCount: 1, revokedTokenCount: 1, scheduled: false });
+    expect(patch).toHaveBeenCalledWith(
+      "packages:personal-publisher",
+      expect.objectContaining({ softDeletedAt: 1_000, softDeletedReason: "user.banned" }),
+    );
+    expect(patch).toHaveBeenCalledWith("packagePublishTokens:personal-publisher", {
+      revokedAt: 1_000,
+    });
+  });
+
+  it("schedules linked legacy personal publisher scans when the user row lacks the publisher id", async () => {
+    const { ctx, runAfter } = makeOwnedPackageBatchCtx({
+      owner: {
+        _id: "users:owner",
+        deletedAt: 1_000,
+        deactivatedAt: undefined,
+      },
+      publishers: {
+        "publishers:personal": {
+          _id: "publishers:personal",
+          kind: "user",
+          linkedUserId: "users:owner",
+        },
+      },
+    });
+
+    const result = await applyBanToOwnedPackagesBatchInternalHandler(ctx as never, {
+      ownerUserId: "users:owner",
+      bannedAt: 1_000,
+      deletedBy: "users:moderator",
+      deletedByRole: "moderator",
+    });
+
+    expect(result).toMatchObject({ scheduled: true });
+    expect(runAfter).toHaveBeenCalledWith(
+      0,
+      expect.anything(),
+      expect.objectContaining({
+        scope: "personalPublisher",
+        cursor: undefined,
+      }),
+    );
+  });
+
+  it("soft-deletes linked legacy personal publisher packages without users.personalPublisherId", async () => {
+    const personalPublisherPackage = makePackageDoc({
+      _id: "packages:personal-publisher",
+      ownerUserId: "users:publishing-actor",
+      ownerPublisherId: "publishers:personal",
+    });
+    const { ctx, patch } = makeOwnedPackageBatchCtx({
+      owner: {
+        _id: "users:owner",
+        deletedAt: 1_000,
+        deactivatedAt: undefined,
       },
       publisherPackages: [personalPublisherPackage],
       packageTokens: [
