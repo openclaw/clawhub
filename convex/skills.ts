@@ -5112,9 +5112,7 @@ function toDigestLatestVersionForSkill(digest: Doc<"skillSearchDigest">) {
   if (!digest.latestVersionSummary || !digest.latestVersionId) {
     return null;
   }
-  // Legacy digest rows predate latestVersionSkillId. Keep markerless summaries
-  // until the backfill rewrites them so hot list/catalog paths stay denormalized.
-  if (digest.latestVersionSkillId !== undefined && digest.latestVersionSkillId !== digest.skillId) {
+  if (digest.latestVersionSkillId !== digest.skillId) {
     return null;
   }
   return toPublicSkillListVersionFromSummary(digest.latestVersionSummary, digest.latestVersionId);
