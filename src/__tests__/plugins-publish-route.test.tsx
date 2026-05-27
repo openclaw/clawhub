@@ -230,7 +230,7 @@ describe("plugins publish route", () => {
       expect(screen.getByDisplayValue("1.2.3")).toBeTruthy();
       expect(screen.getByDisplayValue("openclaw/demo-plugin")).toBeTruthy();
       expect(screen.getByPlaceholderText("Plugin name").getAttribute("disabled")).toBeNull();
-      expect(screen.getByText("Commit SHA is required.")).toBeTruthy();
+      expect(screen.getByText(/Complete commit SHA to publish/i)).toBeTruthy();
     });
 
     fireEvent.change(screen.getByPlaceholderText("Full commit SHA"), {
@@ -310,15 +310,12 @@ describe("plugins publish route", () => {
     fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest] } });
 
     await waitFor(() => {
-      expect(screen.getByText(/Missing required OpenClaw package metadata:/i)).toBeTruthy();
+      expect(screen.getByText(/Fix package metadata:/i)).toBeTruthy();
     });
 
     expect(screen.getByText(/openclaw\.compat\.pluginApi/i)).toBeTruthy();
     expect(screen.getByText(/openclaw\.build\.openclawVersion/i)).toBeTruthy();
-    const docsLink = screen.getByRole("link", { name: /Plugin Setup and Config/i });
-    expect(docsLink.getAttribute("href")).toBe(DocsLinks.openclaw.pluginPackageMetadata);
-    expect(docsLink.getAttribute("target")).toBe("_blank");
-    expect(docsLink.getAttribute("rel")).toBe("noopener noreferrer");
+    expect(screen.getByText("Missing metadata")).toBeTruthy();
     expect(
       screen.getByRole("button", { name: "Publish plugin" }).getAttribute("disabled"),
     ).not.toBeNull();
@@ -353,8 +350,9 @@ describe("plugins publish route", () => {
     await waitFor(() => {
       expect(screen.getByDisplayValue("@openclaw/dronzer")).toBeTruthy();
       expect(
-        screen.getByText(/Package scope "@openclaw" must match selected owner "@vintageayu"/i),
-      ).toBeTruthy();
+        screen.getAllByText(/Package scope "@openclaw" must match selected owner "@vintageayu"/i)
+          .length,
+      ).toBeGreaterThan(0);
     });
 
     const docsLink = screen.getByRole("link", { name: /Learn how publishing works/i });
@@ -377,10 +375,10 @@ describe("plugins publish route", () => {
     fireEvent.change(getFileInput(), { target: { files: [bigFile] } });
 
     await waitFor(() => {
-      expect(screen.getByText(/Each file must be 10MB or smaller/i)).toBeTruthy();
+      expect(screen.getAllByText(/Each file must be 10MB or smaller/i).length).toBeGreaterThan(0);
     });
 
-    const summaryBorders = document.querySelectorAll(".border-emerald-300\\/40");
+    const summaryBorders = document.querySelectorAll(".border-emerald-300\\/45");
     expect(summaryBorders.length).toBe(0);
   });
 
@@ -426,8 +424,8 @@ describe("plugins publish route", () => {
       expect(screen.queryByText("Bundle plugin")).toBeNull();
       expect(screen.getByText("Agent metadata")).toBeTruthy();
       expect(screen.queryByPlaceholderText("Bundle format")).toBeNull();
-      expect(screen.getByText(/Choose archive/i)).toBeTruthy();
-      expect(screen.getByText(/Choose folder/i)).toBeTruthy();
+      expect(screen.getByText(/Replace package/i)).toBeTruthy();
+      expect(screen.getByText(/Clear package/i)).toBeTruthy();
     });
     expect(publishRelease).not.toHaveBeenCalled();
   });
@@ -476,12 +474,8 @@ describe("plugins publish route", () => {
       expect(screen.getByDisplayValue("0.2.9")).toBeTruthy();
       expect(screen.getByDisplayValue("comet-ml/opik-openclaw")).toBeTruthy();
       expect(screen.getByText(/Package detected/i)).toBeTruthy();
-      expect(
-        screen.getByText(
-          /Autofilled: package type, plugin name, display name, version, source repo, compatibility\./i,
-        ),
-      ).toBeTruthy();
       expect(screen.queryByText(/^Compatibility:/i)).toBeNull();
+      expect(screen.queryByText("Compatibility")).toBeNull();
       expect(screen.getByText("Package manifest")).toBeTruthy();
       expect(screen.getByText("Plugin manifest")).toBeTruthy();
       expect(screen.queryByText("opik-openclaw-0.2.9/package.json")).toBeNull();
@@ -527,7 +521,7 @@ describe("plugins publish route", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText(/Ignored 1 package files/i)).toBeTruthy();
+      expect(screen.getByText(/Ignored: node_modules\/dep\/index\.js/i)).toBeTruthy();
     });
 
     fireEvent.change(screen.getByLabelText("ClawScan note"), {
@@ -592,7 +586,9 @@ describe("plugins publish route", () => {
     fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest, huge] } });
 
     await waitFor(() => {
-      expect(screen.getByText(/Each file must be 10MB or smaller: plugin\.wasm/i)).toBeTruthy();
+      expect(
+        screen.getAllByText(/Each file must be 10MB or smaller: plugin\.wasm/i).length,
+      ).toBeGreaterThan(0);
     });
     expect(
       screen.getByRole("button", { name: "Publish plugin" }).getAttribute("disabled"),

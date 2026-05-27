@@ -4,6 +4,7 @@ import type { ComponentType } from "react";
 type DecorIconProps = {
   icon: ComponentType<{ className?: string; strokeWidth?: number }>;
   className: string;
+  active: boolean;
 };
 
 const decorIconsByKind = {
@@ -21,7 +22,13 @@ const decorIconsByKind = {
   ],
 } as const;
 
-export function UploadDropzoneDecor({ kind = "skill" }: { kind?: keyof typeof decorIconsByKind }) {
+export function UploadDropzoneDecor({
+  active = false,
+  kind = "skill",
+}: {
+  active?: boolean;
+  kind?: keyof typeof decorIconsByKind;
+}) {
   const decorIcons = decorIconsByKind[kind];
 
   return (
@@ -37,16 +44,22 @@ export function UploadDropzoneDecor({ kind = "skill" }: { kind?: keyof typeof de
         }}
       />
       {decorIcons.map((item) => (
-        <DecorIcon key={item.className} icon={item.icon} className={item.className} />
+        <DecorIcon
+          key={item.className}
+          active={active}
+          icon={item.icon}
+          className={item.className}
+        />
       ))}
     </div>
   );
 }
 
-function DecorIcon({ icon: Icon, className }: DecorIconProps) {
+function DecorIcon({ active, icon: Icon, className }: DecorIconProps) {
   return (
     <span
-      className={`absolute hidden h-11 w-11 items-center justify-center rounded-[var(--radius-md)] border border-[color:var(--line)] bg-[color:var(--surface)]/70 text-[color:var(--ink-soft)] opacity-45 shadow-sm sm:flex ${className}`}
+      data-active={active ? "true" : undefined}
+      className={`absolute hidden h-11 w-11 items-center justify-center rounded-[var(--radius-md)] border border-[color:var(--line)] bg-[color:var(--surface)]/70 text-[color:var(--ink-soft)] opacity-45 shadow-sm data-[active=true]:animate-[upload-decor-jiggle_0.44s_ease-in-out_infinite] sm:flex ${className}`}
     >
       <Icon className="h-5 w-5" strokeWidth={1.8} />
     </span>

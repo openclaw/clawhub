@@ -7408,6 +7408,22 @@ code {
   }
 }
 
+@keyframes upload-decor-jiggle {
+  0%,
+  100% {
+    rotate: 0deg;
+  }
+  25% {
+    rotate: -3deg;
+  }
+  50% {
+    rotate: 3deg;
+  }
+  75% {
+    rotate: -2deg;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

@@ -12,6 +12,7 @@ import {
   CircleX,
   ExternalLink,
   FolderOpen,
+  Info,
   Lock,
   Upload as UploadIcon,
   X,
@@ -544,7 +545,7 @@ export function Upload() {
   });
   const visibleFileIssues = validation.issues.filter((issue) => {
     if (issue.startsWith("Add at least one file")) return hasAttempted;
-    if (issue === `${requiredFileLabel} is required.`) return shouldShowFileIssues;
+    if (issue === `${requiredFileLabel} is required.`) return false;
     if (issue.startsWith("Remove unsupported files")) return shouldShowFileIssues;
     if (issue.startsWith("Each file")) return shouldShowFileIssues;
     if (issue.startsWith("Total file size")) return shouldShowFileIssues;
@@ -778,130 +779,104 @@ export function Upload() {
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-6">
           {/* File upload panel */}
-          <Card>
-            <CardContent>
-              <input
-                ref={setFileInputRef}
-                className="sr-only"
-                id="upload-files"
-                data-testid="upload-input"
-                type="file"
-                multiple
-                onChange={(event) => {
-                  const picked = Array.from(event.target.files ?? []);
-                  void applyExpandedFiles(picked);
-                }}
-              />
+          <input
+            ref={setFileInputRef}
+            className="sr-only"
+            id="upload-files"
+            data-testid="upload-input"
+            type="file"
+            multiple
+            onChange={(event) => {
+              const picked = Array.from(event.target.files ?? []);
+              void applyExpandedFiles(picked);
+            }}
+          />
 
-              {files.length > 0 ? (
-                <div
-                  className={`rounded-[var(--radius-sm)] border px-4 py-4 transition-colors ${
-                    isDragging
-                      ? "border-[color:var(--accent)] bg-[color:var(--accent)]/5"
-                      : "border-[color:var(--line)] bg-[color:var(--surface-muted)]"
-                  }`}
-                  onDragOver={(event) => {
-                    event.preventDefault();
-                    setIsDragging(true);
-                  }}
-                  onDragLeave={() => setIsDragging(false)}
-                  onDrop={handleFilesDrop}
-                >
-                  <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                    <div className="flex min-w-0 gap-3">
-                      <div
-                        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface)]"
-                        aria-hidden="true"
-                      >
-                        <FolderOpen className="h-5 w-5 text-[color:var(--ink-soft)]" />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                          <strong className="text-sm text-[color:var(--ink)]">
-                            Skill folder selected
-                          </strong>
-                          <span className="text-xs text-[color:var(--ink-soft)]">
-                            {files.length} files · {sizeLabel}
-                          </span>
-                        </div>
-                        <p className="mt-1 text-sm text-[color:var(--ink-soft)]">
-                          Inner paths are preserved; the top-level folder is removed.
-                        </p>
-                        <div className="mt-3 flex flex-wrap gap-1.5">
-                          <Badge variant={hasRequiredFile ? "compact" : "warning"}>
-                            {hasRequiredFile ? requiredFileLabel : `Missing ${requiredFileLabel}`}
-                          </Badge>
-                          {unsupportedFileEntries.length > 0 ? (
-                            <Badge variant="warning">
-                              {unsupportedFileEntries.length} unsupported
-                            </Badge>
-                          ) : null}
-                        </div>
-                      </div>
+          {files.length > 0 ? (
+            <>
+              <div
+                className={`overflow-hidden rounded-[var(--radius-md)] border transition-colors ${
+                  isDragging
+                    ? "border-[color:var(--accent)] bg-[color:var(--accent)]/5"
+                    : "border-[color:var(--line)] bg-[color:var(--surface-muted)]"
+                }`}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  setIsDragging(true);
+                }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={handleFilesDrop}
+              >
+                <div className="flex flex-col gap-4 px-4 pt-4 pb-2 md:flex-row md:items-center md:justify-between">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface)]"
+                      aria-hidden="true"
+                    >
+                      <FolderOpen className="h-4 w-4 text-[color:var(--ink-soft)]" />
                     </div>
-                    <div className="flex shrink-0 flex-wrap gap-2 md:justify-end">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <strong className="text-sm text-[color:var(--ink)]">
+                          Skill folder selected
+                        </strong>
+                        <span className="text-xs text-[color:var(--ink-soft)]">
+                          {files.length} files · {sizeLabel}
+                        </span>
+                      </div>
                       {unsupportedFileEntries.length > 0 ? (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          type="button"
-                          onClick={removeUnsupportedFiles}
-                        >
-                          Remove unsupported
-                        </Button>
+                        <div className="mt-3 flex flex-wrap gap-1.5">
+                          <Badge variant="warning">
+                            {unsupportedFileEntries.length} unsupported
+                          </Badge>
+                        </div>
                       ) : null}
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 flex-wrap items-center gap-4 md:justify-end">
+                    {unsupportedFileEntries.length > 0 ? (
                       <Button
                         variant="outline"
                         size="sm"
                         type="button"
-                        onClick={() => fileInputRef.current?.click()}
+                        onClick={removeUnsupportedFiles}
                       >
-                        Replace folder
+                        Remove unsupported
                       </Button>
-                      <Button variant="ghost" size="sm" type="button" onClick={clearSelectedFiles}>
-                        Clear files
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div
-                  className={`relative flex flex-col items-center gap-3 overflow-hidden rounded-[var(--radius-md)] border-2 border-dashed p-8 transition-colors ${
-                    isDragging
-                      ? "border-[color:var(--accent)] bg-[color:var(--accent)]/5"
-                      : "border-[color:var(--line)] bg-[color:var(--surface-muted)]"
-                  }`}
-                  onDragOver={(event) => {
-                    event.preventDefault();
-                    setIsDragging(true);
-                  }}
-                  onDragLeave={() => setIsDragging(false)}
-                  onDrop={handleFilesDrop}
-                >
-                  <UploadDropzoneDecor kind="skill" />
-                  <div className="relative z-[1] flex flex-col items-center gap-2 text-center">
-                    <div className="flex items-center gap-3">
-                      <UploadIcon className="h-5 w-5 text-[color:var(--ink-soft)]" />
-                      <strong>Drop a skill folder</strong>
-                    </div>
-                    <span className="text-xs text-[color:var(--ink-soft)]">
-                      We keep inner paths and remove the top-level folder automatically.
-                    </span>
+                    ) : null}
                     <Button
                       variant="outline"
                       size="sm"
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
                     >
-                      Choose folder
+                      Replace folder
                     </Button>
+                    <button
+                      type="button"
+                      className="cursor-pointer text-xs font-medium text-[color:var(--ink-soft)] transition-colors hover:text-[color:var(--ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent)]/35 focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--bg)]"
+                      onClick={clearSelectedFiles}
+                    >
+                      Clear files
+                    </button>
                   </div>
                 </div>
-              )}
-
-              <div className="flex flex-col gap-1 max-h-[300px] overflow-y-auto">
-                {files.length > 0
-                  ? visibleFileEntries.map(({ file, index, path }) => {
+                <div className="mt-2 rounded-t-[calc(var(--radius-md)+8px)] border-t border-[color:var(--line)] bg-[color:var(--surface)] p-3">
+                  <div className="flex max-h-[300px] flex-col gap-1 overflow-y-auto">
+                    {!hasRequiredFile ? (
+                      <div className="flex items-center gap-2 rounded-[var(--radius-sm)] border border-status-error-fg/35 bg-status-error-bg px-3 py-1.5 text-sm text-status-error-fg">
+                        <span className="min-w-0 flex-1 truncate font-mono">
+                          {requiredFileLabel}
+                        </span>
+                        <Badge
+                          variant="destructive"
+                          className="rounded-[var(--radius-pill)] px-2 py-0.5 text-[11px] font-medium leading-4"
+                        >
+                          Missing
+                        </Badge>
+                      </div>
+                    ) : null}
+                    {visibleFileEntries.map(({ file, index, path }) => {
                       const isUnsupported = !isTextFile(file);
                       const isConfirmingRemoval = pendingFileRemovalIndex === index;
                       return (
@@ -927,6 +902,7 @@ export function Upload() {
                                 variant="ghost"
                                 size="icon-xs"
                                 type="button"
+                                className="hover:not-disabled:bg-[color:var(--surface)]"
                                 onClick={() => setPendingFileRemovalIndex(null)}
                               >
                                 <X className="h-3.5 w-3.5" aria-hidden="true" />
@@ -937,7 +913,7 @@ export function Upload() {
                                 variant="ghost"
                                 size="icon-xs"
                                 type="button"
-                                className="text-status-error-fg hover:not-disabled:bg-status-error-bg"
+                                className="text-status-error-fg hover:not-disabled:bg-status-error-bg hover:not-disabled:text-status-error-fg"
                                 onClick={() => removeFileAtIndex(index)}
                               >
                                 <Check className="h-3.5 w-3.5" aria-hidden="true" />
@@ -957,9 +933,11 @@ export function Upload() {
                           )}
                         </div>
                       );
-                    })
-                  : null}
+                    })}
+                  </div>
+                </div>
               </div>
+
               {ignoredLocalMetadataNote ? (
                 <div className="text-sm text-[color:var(--ink-soft)]">
                   {ignoredLocalMetadataNote}
@@ -972,13 +950,50 @@ export function Upload() {
                   ))}
                 </ul>
               ) : null}
-            </CardContent>
-          </Card>
+            </>
+          ) : (
+            <Card>
+              <CardContent>
+                <div
+                  className={`relative flex flex-col items-center gap-3 overflow-hidden rounded-[var(--radius-md)] border-2 border-dashed p-8 transition-colors ${
+                    isDragging
+                      ? "border-[color:var(--accent)] bg-[color:var(--accent)]/5"
+                      : "border-[color:var(--line)] bg-[color:var(--surface-muted)]"
+                  }`}
+                  onDragOver={(event) => {
+                    event.preventDefault();
+                    setIsDragging(true);
+                  }}
+                  onDragLeave={() => setIsDragging(false)}
+                  onDrop={handleFilesDrop}
+                >
+                  <UploadDropzoneDecor active={isDragging} kind="skill" />
+                  <div className="relative z-[1] flex flex-col items-center gap-2 text-center">
+                    <div className="flex items-center gap-3">
+                      <UploadIcon className="h-5 w-5 text-[color:var(--ink-soft)]" />
+                      <strong>Drop a skill folder</strong>
+                    </div>
+                    <span className="text-xs text-[color:var(--ink-soft)]">
+                      We keep inner paths and remove the top-level folder automatically.
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      Choose folder
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Metadata panel */}
           <Card>
-            <CardContent>
-              <div className="grid gap-x-4 gap-y-3 md:grid-cols-2">
+            <CardContent className="gap-5">
+              <div className="grid gap-x-4 gap-y-4 md:grid-cols-2">
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="displayName">Display name</Label>
                   <Input
@@ -1048,11 +1063,17 @@ export function Upload() {
                 </div>
               </div>
               {metadataPrefillNote ? (
-                <p className="text-sm text-[color:var(--ink-soft)]">{metadataPrefillNote}</p>
+                <p
+                  className="flex items-center gap-1.5 text-sm leading-5 text-[#1f6feb] dark:text-[#8fbdff]"
+                  role="status"
+                >
+                  <Info className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                  <span className="leading-5">{metadataPrefillNote}</span>
+                </p>
               ) : null}
 
               {!isSoulMode ? (
-                <>
+                <div className="flex flex-col gap-3">
                   {/* The picker is a custom radiogroup; the visible "Icon"
                       heading is decorative and does not need `htmlFor` —
                       `SkillIconPicker` exposes its own `aria-label`. */}
@@ -1068,11 +1089,11 @@ export function Upload() {
                       setIconName(next);
                     }}
                   />
-                </>
+                </div>
               ) : null}
 
               {!isSoulMode ? (
-                <>
+                <div className="flex flex-col gap-2">
                   <Label htmlFor="ownerHandle">Owner</Label>
                   <PublisherOwnerSelect
                     id="ownerHandle"
@@ -1105,38 +1126,42 @@ export function Upload() {
                     </label>
                   ) : null}
                   <InlineValidationMessage id="owner-validation-error" message={ownerIssue} />
-                </>
+                </div>
               ) : null}
 
-              <Label htmlFor="version">Version</Label>
-              <VersionInput
-                id="version"
-                value={version}
-                aria-invalid={Boolean(versionIssue)}
-                aria-describedby={versionIssue ? "version-validation-error" : undefined}
-                onValueChange={(nextVersion) => {
-                  markFieldTouched("version");
-                  setVersion(nextVersion);
-                }}
-                onBlur={() => markFieldTouched("version")}
-                placeholder="1.0.0"
-              />
-              <InlineValidationMessage id="version-validation-error" message={versionIssue} />
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="version">Version</Label>
+                <VersionInput
+                  id="version"
+                  value={version}
+                  aria-invalid={Boolean(versionIssue)}
+                  aria-describedby={versionIssue ? "version-validation-error" : undefined}
+                  onValueChange={(nextVersion) => {
+                    markFieldTouched("version");
+                    setVersion(nextVersion);
+                  }}
+                  onBlur={() => markFieldTouched("version")}
+                  placeholder="1.0.0"
+                />
+                <InlineValidationMessage id="version-validation-error" message={versionIssue} />
+              </div>
 
-              <Label htmlFor="tags">Tags</Label>
-              <Input
-                id="tags"
-                value={tags}
-                onChange={(event) => {
-                  markFieldTouched("tags");
-                  setTags(event.target.value);
-                }}
-                onBlur={() => markFieldTouched("tags")}
-                placeholder="latest, stable"
-              />
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="tags">Tags</Label>
+                <Input
+                  id="tags"
+                  value={tags}
+                  onChange={(event) => {
+                    markFieldTouched("tags");
+                    setTags(event.target.value);
+                  }}
+                  onBlur={() => markFieldTouched("tags")}
+                  placeholder="latest, stable"
+                />
+              </div>
 
               {!isSoulMode ? (
-                <>
+                <div className="flex flex-col gap-2">
                   <Label htmlFor="clawScanNote">ClawScan note</Label>
                   <Textarea
                     id="clawScanNote"
@@ -1151,7 +1176,7 @@ export function Upload() {
                     onBlur={() => markFieldTouched("clawScanNote")}
                     placeholder="Optional context for ClawScan, e.g. why this version needs network access."
                   />
-                </>
+                </div>
               ) : null}
               {visibleMetadataIssues.length > 0 ? (
                 <ul className="flex flex-col gap-1 list-disc pl-5 text-sm text-[color:var(--ink-soft)]">

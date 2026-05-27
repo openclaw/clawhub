@@ -14,7 +14,10 @@ import { api } from "../../../convex/_generated/api";
 import { MAX_PUBLISH_FILE_BYTES, MAX_PUBLISH_TOTAL_BYTES } from "../../../convex/lib/publishLimits";
 import { EmptyState } from "../../components/EmptyState";
 import { Container } from "../../components/layout/Container";
-import { PackageSourceChooser } from "../../components/PackageSourceChooser";
+import {
+  PackageSourceChooser,
+  type PackagePickSource,
+} from "../../components/PackageSourceChooser";
 import {
   PublisherOwnerSelect,
   type PublisherOwnerMembership,
@@ -91,6 +94,7 @@ export function PublishPluginRoute() {
   const [bundleFormat, setBundleFormat] = useState("");
   const [hostTargets, setHostTargets] = useState("");
   const [files, setFiles] = useState<File[]>([]);
+  const [packageSourceKind, setPackageSourceKind] = useState<PackagePickSource | null>(null);
   const [ignoredPaths, setIgnoredPaths] = useState<string[]>([]);
   const [detectedPrefillFields, setDetectedPrefillFields] = useState<string[]>([]);
   const [codePluginFieldIssues, setCodePluginFieldIssues] = useState<string[]>([]);
@@ -179,7 +183,7 @@ export function PublishPluginRoute() {
     validationError,
   ]);
 
-  const onPickFiles = async (selected: File[]) => {
+  const onPickFiles = async (selected: File[], sourceKind: PackagePickSource) => {
     const expanded = await expandFilesWithReport(selected, {
       includeBinaryArchiveFiles: true,
     });
@@ -189,6 +193,7 @@ export function PublishPluginRoute() {
       ...new Set([...expanded.ignoredLocalMetadataPaths, ...filtered.ignoredPaths]),
     ];
     setFiles(filtered.files);
+    setPackageSourceKind(sourceKind);
     setIgnoredPaths(nextIgnoredPaths);
     setError(null);
     const prefill = await derivePluginPrefill(normalized);
@@ -205,6 +210,7 @@ export function PublishPluginRoute() {
 
   const clearSelectedFiles = () => {
     setFiles([]);
+    setPackageSourceKind(null);
     setIgnoredPaths([]);
     setDetectedPrefillFields([]);
     setCodePluginFieldIssues([]);
@@ -252,10 +258,7 @@ export function PublishPluginRoute() {
             {search.name ? "Publish Plugin Release" : "Publish Plugin"}
           </h1>
           <p className="text-sm text-[color:var(--ink-soft)]">
-            Publish a native code plugin release.
-          </p>
-          <p className="text-sm text-[color:var(--ink-soft)]">
-            New releases stay private until automated security checks and verification finish.
+            Upload a plugin folder, zip, or tgz.
           </p>
           {search.name ? (
             <p className="text-sm text-[color:var(--ink-soft)]">
@@ -284,6 +287,7 @@ export function PublishPluginRoute() {
           totalBytes={totalBytes}
           normalizedPaths={normalizedPaths}
           normalizedPathSet={normalizedPathSet}
+          selectedSourceKind={packageSourceKind}
           ignoredPaths={ignoredPaths}
           detectedPrefillFields={detectedPrefillFields}
           family={family}
@@ -293,323 +297,344 @@ export function PublishPluginRoute() {
           onClearFiles={clearSelectedFiles}
         />
 
-        <Card
-          className={isMetadataLocked ? "pointer-events-none opacity-60" : ""}
-          aria-disabled={isMetadataLocked}
+        <div
+          className={
+            isMetadataLocked
+              ? "relative max-h-[540px] overflow-hidden md:max-h-[600px]"
+              : "contents"
+          }
         >
-          <div className="flex flex-col gap-3">
-            <div className="grid gap-x-4 gap-y-3 md:grid-cols-2">
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="pluginFamily">Package type</Label>
-                <div
-                  id="pluginFamily"
-                  className="min-h-[44px] w-full rounded-[var(--radius-sm)] border border-[rgba(29,59,78,0.22)] bg-[rgba(255,255,255,0.94)] px-3.5 py-[13px] text-sm text-[color:var(--ink)] dark:border-[rgba(255,255,255,0.12)] dark:bg-[rgba(14,28,37,0.84)]"
-                >
-                  {family === "code-plugin" ? "Code plugin" : "Bundle plugin"}
+          <Card
+            className={isMetadataLocked ? "pointer-events-none opacity-60" : ""}
+            aria-disabled={isMetadataLocked}
+          >
+            <div className="flex flex-col gap-5">
+              <div className="grid gap-x-4 gap-y-4 md:grid-cols-2">
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="pluginName">Plugin name</Label>
+                  <Input
+                    id="pluginName"
+                    placeholder="Plugin name"
+                    value={name}
+                    disabled={metadataDisabled}
+                    onChange={(event) => setName(event.target.value)}
+                  />
                 </div>
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="pluginName">Plugin name</Label>
-                <Input
-                  id="pluginName"
-                  placeholder="Plugin name"
-                  value={name}
-                  disabled={metadataDisabled}
-                  onChange={(event) => setName(event.target.value)}
-                />
-              </div>
-              {ownerScopeError ? (
-                <Badge variant="warning" className="md:col-span-2">
-                  <span>{ownerScopeError}</span>
-                  <a
-                    href={DocsLinks.clawhub.packageScopeFaq}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="underline underline-offset-2"
+                {ownerScopeError ? (
+                  <Badge variant="warning" className="md:col-span-2">
+                    <span>{ownerScopeError}</span>
+                    <a
+                      href={DocsLinks.clawhub.packageScopeFaq}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline underline-offset-2"
+                    >
+                      Learn how publishing works
+                    </a>
+                  </Badge>
+                ) : null}
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="pluginDisplayName">Display name</Label>
+                  <Input
+                    id="pluginDisplayName"
+                    placeholder="Display name"
+                    value={displayName}
+                    disabled={metadataDisabled}
+                    onChange={(event) => setDisplayName(event.target.value)}
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="pluginFamily">Package type</Label>
+                  <div
+                    id="pluginFamily"
+                    className="min-h-[44px] w-full rounded-[var(--radius-sm)] border border-[rgba(29,59,78,0.22)] bg-[rgba(255,255,255,0.94)] px-3.5 py-[13px] text-sm text-[color:var(--ink)] dark:border-[rgba(255,255,255,0.12)] dark:bg-[rgba(14,28,37,0.84)]"
                   >
-                    Learn how publishing works
-                  </a>
-                </Badge>
-              ) : null}
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="pluginDisplayName">Display name</Label>
-                <Input
-                  id="pluginDisplayName"
-                  placeholder="Display name"
-                  value={displayName}
-                  disabled={metadataDisabled}
-                  onChange={(event) => setDisplayName(event.target.value)}
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="pluginOwner">Owner</Label>
-                <PublisherOwnerSelect
-                  id="pluginOwner"
-                  value={ownerHandle}
-                  memberships={publishers}
-                  disabled={metadataDisabled}
-                  onValueChange={setOwnerHandle}
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="pluginVersion">Version</Label>
-                <VersionInput
-                  id="pluginVersion"
-                  placeholder="Version"
-                  value={version}
-                  disabled={metadataDisabled}
-                  onValueChange={setVersion}
-                />
-              </div>
-              <div className="flex flex-col gap-2 md:col-span-2">
-                <Label htmlFor="pluginClawScanNote">ClawScan note</Label>
-                <Textarea
-                  id="pluginClawScanNote"
-                  placeholder="Optional context for ClawScan, e.g. why this release needs native host access."
-                  rows={4}
-                  value={clawScanNote}
-                  maxLength={MAX_CLAWSCAN_NOTE_CHARS + 1}
-                  disabled={metadataDisabled}
-                  onChange={(event) => {
-                    clawScanNoteTouchedRef.current = true;
-                    setClawScanNote(event.target.value);
-                  }}
-                />
-              </div>
-              {family === "bundle-plugin" ? (
-                <>
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="pluginBundleFormat">Bundle format</Label>
-                    <Input
-                      id="pluginBundleFormat"
-                      placeholder="Bundle format"
-                      value={bundleFormat}
-                      disabled={metadataDisabled}
-                      onChange={(event) => setBundleFormat(event.target.value)}
-                    />
+                    {family === "code-plugin" ? "Code plugin" : "Bundle plugin"}
                   </div>
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="pluginHostTargets">Host targets</Label>
-                    <Input
-                      id="pluginHostTargets"
-                      placeholder="Host targets (comma separated)"
-                      value={hostTargets}
-                      disabled={metadataDisabled}
-                      onChange={(event) => setHostTargets(event.target.value)}
-                    />
-                  </div>
-                </>
-              ) : null}
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="pluginOwner">Owner</Label>
+                  <PublisherOwnerSelect
+                    id="pluginOwner"
+                    value={ownerHandle}
+                    memberships={publishers}
+                    disabled={metadataDisabled}
+                    onValueChange={setOwnerHandle}
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="pluginVersion">Version</Label>
+                  <VersionInput
+                    id="pluginVersion"
+                    placeholder="Version"
+                    value={version}
+                    disabled={metadataDisabled}
+                    onValueChange={setVersion}
+                  />
+                </div>
+                <div className="flex flex-col gap-2 md:col-span-2">
+                  <Label htmlFor="pluginClawScanNote">ClawScan note</Label>
+                  <Textarea
+                    id="pluginClawScanNote"
+                    placeholder="Optional context for ClawScan, e.g. why this release needs native host access."
+                    rows={4}
+                    value={clawScanNote}
+                    maxLength={MAX_CLAWSCAN_NOTE_CHARS + 1}
+                    disabled={metadataDisabled}
+                    onChange={(event) => {
+                      clawScanNoteTouchedRef.current = true;
+                      setClawScanNote(event.target.value);
+                    }}
+                  />
+                </div>
+                {family === "bundle-plugin" ? (
+                  <>
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="pluginBundleFormat">Bundle format</Label>
+                      <Input
+                        id="pluginBundleFormat"
+                        placeholder="Bundle format"
+                        value={bundleFormat}
+                        disabled={metadataDisabled}
+                        onChange={(event) => setBundleFormat(event.target.value)}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="pluginHostTargets">Host targets</Label>
+                      <Input
+                        id="pluginHostTargets"
+                        placeholder="Host targets (comma separated)"
+                        value={hostTargets}
+                        disabled={metadataDisabled}
+                        onChange={(event) => setHostTargets(event.target.value)}
+                      />
+                    </div>
+                  </>
+                ) : null}
+              </div>
             </div>
-          </div>
-        </Card>
+          </Card>
 
-        <Card
-          className={`mt-5 ${isMetadataLocked ? "pointer-events-none opacity-60" : ""}`}
-          aria-disabled={isMetadataLocked}
-        >
-          <div className="flex flex-col gap-3">
-            <div>
-              <h2 className="font-display text-lg font-bold leading-tight text-[color:var(--ink)]">
-                Source
-              </h2>
-              <p className="mt-1 text-sm text-[color:var(--ink-soft)]">
-                Required for code plugins: the GitHub repository and exact commit that produced this
-                upload.
-              </p>
-            </div>
-            <div className="grid gap-x-4 gap-y-3 md:grid-cols-2">
-              <div className="flex flex-col gap-2">
-                <FieldLabelWithHelp
-                  htmlFor="pluginSourceRepo"
-                  help="Use owner/repo, for example openclaw/demo-plugin."
-                >
-                  GitHub repository
-                </FieldLabelWithHelp>
-                <Input
-                  id="pluginSourceRepo"
-                  placeholder="owner/repo"
-                  value={sourceRepo}
-                  disabled={metadataDisabled}
-                  onChange={(event) => setSourceRepo(event.target.value)}
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <FieldLabelWithHelp
-                  htmlFor="pluginSourceCommit"
-                  help="Use the exact Git commit SHA for this release, preferably the full hash."
-                >
-                  Commit SHA
-                </FieldLabelWithHelp>
-                <Input
-                  id="pluginSourceCommit"
-                  placeholder="Full commit SHA"
-                  value={sourceCommit}
-                  disabled={metadataDisabled}
-                  onChange={(event) => setSourceCommit(event.target.value)}
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <FieldLabelWithHelp
-                  htmlFor="pluginSourceRef"
-                  help="Optional tag or branch that points at the release source."
-                >
-                  Tag or branch
-                </FieldLabelWithHelp>
-                <Input
-                  id="pluginSourceRef"
-                  placeholder="v1.0.0 or main"
-                  value={sourceRef}
-                  disabled={metadataDisabled}
-                  onChange={(event) => setSourceRef(event.target.value)}
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <FieldLabelWithHelp
-                  htmlFor="pluginSourcePath"
-                  help="Use . when the package is at the repo root; otherwise use its subfolder path."
-                >
-                  Package path
-                </FieldLabelWithHelp>
-                <Input
-                  id="pluginSourcePath"
-                  placeholder="."
-                  value={sourcePath}
-                  disabled={metadataDisabled}
-                  onChange={(event) => setSourcePath(event.target.value)}
-                />
-              </div>
-            </div>
-          </div>
-        </Card>
-
-        {showChangelogField ? (
           <Card
             className={`mt-5 ${isMetadataLocked ? "pointer-events-none opacity-60" : ""}`}
             aria-disabled={isMetadataLocked}
           >
-            <div>
-              <h2 className="font-display text-lg font-bold leading-tight text-[color:var(--ink)]">
-                Changelog
-              </h2>
-              <p className="mt-1 text-sm text-[color:var(--ink-soft)]">
-                Summarize what changed in this release.
-              </p>
+            <div className="flex flex-col gap-5">
+              <div>
+                <h2 className="font-display text-lg font-bold leading-tight text-[color:var(--ink)]">
+                  Source
+                </h2>
+              </div>
+              <div className="grid gap-x-4 gap-y-4 md:grid-cols-2">
+                <div className="flex flex-col gap-2">
+                  <FieldLabelWithHelp
+                    htmlFor="pluginSourceRepo"
+                    help="Use owner/repo, for example openclaw/demo-plugin."
+                  >
+                    GitHub repository
+                  </FieldLabelWithHelp>
+                  <Input
+                    id="pluginSourceRepo"
+                    placeholder="owner/repo"
+                    value={sourceRepo}
+                    disabled={metadataDisabled}
+                    onChange={(event) => setSourceRepo(event.target.value)}
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <FieldLabelWithHelp
+                    htmlFor="pluginSourceCommit"
+                    help="Use the exact Git commit SHA for this release, preferably the full hash."
+                  >
+                    Commit SHA
+                  </FieldLabelWithHelp>
+                  <Input
+                    id="pluginSourceCommit"
+                    placeholder="Full commit SHA"
+                    value={sourceCommit}
+                    disabled={metadataDisabled}
+                    onChange={(event) => setSourceCommit(event.target.value)}
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <FieldLabelWithHelp
+                    htmlFor="pluginSourceRef"
+                    help="Optional tag or branch that points at the release source."
+                  >
+                    Tag or branch
+                  </FieldLabelWithHelp>
+                  <Input
+                    id="pluginSourceRef"
+                    placeholder="v1.0.0 or main"
+                    value={sourceRef}
+                    disabled={metadataDisabled}
+                    onChange={(event) => setSourceRef(event.target.value)}
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <FieldLabelWithHelp
+                    htmlFor="pluginSourcePath"
+                    help="Use . when the package is at the repo root; otherwise use its subfolder path."
+                  >
+                    Package path
+                  </FieldLabelWithHelp>
+                  <Input
+                    id="pluginSourcePath"
+                    placeholder="."
+                    value={sourcePath}
+                    disabled={metadataDisabled}
+                    onChange={(event) => setSourcePath(event.target.value)}
+                  />
+                </div>
+              </div>
             </div>
-            <Label htmlFor="pluginChangelog" className="sr-only">
-              Changelog
-            </Label>
-            <Textarea
-              id="pluginChangelog"
-              placeholder="Describe what changed in this release..."
-              rows={4}
-              value={changelog}
-              disabled={metadataDisabled}
-              onChange={(event) => setChangelog(event.target.value)}
-            />
           </Card>
-        ) : null}
 
-        <div className="mt-5 flex items-center justify-between gap-4">
-          <div className="flex flex-col gap-2">
-            {error ? (
-              <div className="text-sm font-medium text-red-600 dark:text-red-400" role="alert">
-                {error}
+          {showChangelogField ? (
+            <Card
+              className={`mt-5 ${isMetadataLocked ? "pointer-events-none opacity-60" : ""}`}
+              aria-disabled={isMetadataLocked}
+            >
+              <div>
+                <h2 className="font-display text-lg font-bold leading-tight text-[color:var(--ink)]">
+                  Changelog
+                </h2>
+                <p className="mt-1 text-sm text-[color:var(--ink-soft)]">
+                  Summarize what changed in this release.
+                </p>
               </div>
-            ) : null}
-            {status ? <div className="text-sm text-[color:var(--ink-soft)]">{status}</div> : null}
-            {publishBlockerSummary ? (
-              <div className="text-sm font-medium text-status-error-fg">
-                {publishBlockerSummary}
-              </div>
-            ) : null}
-          </div>
-          <Button
-            variant="primary"
-            size="lg"
-            type="button"
-            disabled={isPublishDisabled}
-            loading={isSubmitting}
-            onClick={() => {
-              startTransition(() => {
-                void (async () => {
-                  try {
-                    if (validationError) {
-                      toast.error(validationError);
-                      return;
-                    }
-                    if (ownerScopeError) {
-                      toast.error(ownerScopeError);
-                      return;
-                    }
-                    if (family === "code-plugin" && codePluginFieldIssues.length > 0) {
-                      toast.error(
-                        `Missing required OpenClaw package metadata: ${codePluginFieldIssues.join(", ")}`,
+              <Label htmlFor="pluginChangelog" className="sr-only">
+                Changelog
+              </Label>
+              <Textarea
+                id="pluginChangelog"
+                placeholder="Describe what changed in this release..."
+                rows={4}
+                value={changelog}
+                disabled={metadataDisabled}
+                onChange={(event) => setChangelog(event.target.value)}
+              />
+            </Card>
+          ) : null}
+
+          <div className="mt-5 flex items-center justify-between gap-4">
+            <div className="flex flex-col gap-2">
+              {error ? (
+                <div className="text-sm font-medium text-red-600 dark:text-red-400" role="alert">
+                  {error}
+                </div>
+              ) : null}
+              {status ? <div className="text-sm text-[color:var(--ink-soft)]">{status}</div> : null}
+              {!status ? (
+                <div className="text-sm text-[color:var(--ink-soft)]">
+                  New releases stay private until automated security checks and verification finish.
+                </div>
+              ) : null}
+              {publishBlockerSummary ? (
+                <div className="text-sm font-medium text-status-error-fg">
+                  {publishBlockerSummary}
+                </div>
+              ) : null}
+            </div>
+            <Button
+              variant="primary"
+              size="lg"
+              type="button"
+              disabled={isPublishDisabled}
+              loading={isSubmitting}
+              onClick={() => {
+                startTransition(() => {
+                  void (async () => {
+                    try {
+                      if (validationError) {
+                        toast.error(validationError);
+                        return;
+                      }
+                      if (ownerScopeError) {
+                        toast.error(ownerScopeError);
+                        return;
+                      }
+                      if (family === "code-plugin" && codePluginFieldIssues.length > 0) {
+                        toast.error(
+                          `Missing required OpenClaw package metadata: ${codePluginFieldIssues.join(", ")}`,
+                        );
+                        return;
+                      }
+                      setStatus("Uploading files...");
+                      setError(null);
+                      const uploaded = await buildPackageUploadEntries(files, {
+                        generateUploadUrl,
+                        hashFile,
+                        uploadFile,
+                      });
+                      setStatus("Publishing release...");
+                      await publishRelease({
+                        payload: {
+                          name: name.trim(),
+                          displayName: displayName.trim() || undefined,
+                          ownerHandle: ownerHandle || undefined,
+                          family,
+                          version: version.trim(),
+                          changelog: changelog.trim(),
+                          ...(normalizedClawScanNote
+                            ? { clawScanNote: normalizedClawScanNote }
+                            : {}),
+                          ...(sourceRepo.trim() && sourceCommit.trim()
+                            ? {
+                                source: {
+                                  kind: "github" as const,
+                                  repo: sourceRepo.trim(),
+                                  url: sourceRepo.trim().startsWith("http")
+                                    ? sourceRepo.trim()
+                                    : `https://github.com/${sourceRepo.trim().replace(/^\/+|\/+$/g, "")}`,
+                                  ref: sourceRef.trim() || sourceCommit.trim(),
+                                  commit: sourceCommit.trim(),
+                                  path: sourcePath.trim() || ".",
+                                  importedAt: Date.now(),
+                                },
+                              }
+                            : {}),
+                          ...(family === "bundle-plugin"
+                            ? {
+                                bundle: {
+                                  format: bundleFormat.trim() || undefined,
+                                  hostTargets: hostTargets
+                                    .split(",")
+                                    .map((entry) => entry.trim())
+                                    .filter(Boolean),
+                                },
+                              }
+                            : {}),
+                          files: uploaded,
+                        },
+                      });
+                      setStatus(
+                        "Published. Pending security checks and verification before public listing.",
                       );
-                      return;
+                    } catch (publishError) {
+                      toast.error(formatPublishError(publishError));
+                      setStatus(null);
                     }
-                    setStatus("Uploading files...");
-                    setError(null);
-                    const uploaded = await buildPackageUploadEntries(files, {
-                      generateUploadUrl,
-                      hashFile,
-                      uploadFile,
-                    });
-                    setStatus("Publishing release...");
-                    await publishRelease({
-                      payload: {
-                        name: name.trim(),
-                        displayName: displayName.trim() || undefined,
-                        ownerHandle: ownerHandle || undefined,
-                        family,
-                        version: version.trim(),
-                        changelog: changelog.trim(),
-                        ...(normalizedClawScanNote ? { clawScanNote: normalizedClawScanNote } : {}),
-                        ...(sourceRepo.trim() && sourceCommit.trim()
-                          ? {
-                              source: {
-                                kind: "github" as const,
-                                repo: sourceRepo.trim(),
-                                url: sourceRepo.trim().startsWith("http")
-                                  ? sourceRepo.trim()
-                                  : `https://github.com/${sourceRepo.trim().replace(/^\/+|\/+$/g, "")}`,
-                                ref: sourceRef.trim() || sourceCommit.trim(),
-                                commit: sourceCommit.trim(),
-                                path: sourcePath.trim() || ".",
-                                importedAt: Date.now(),
-                              },
-                            }
-                          : {}),
-                        ...(family === "bundle-plugin"
-                          ? {
-                              bundle: {
-                                format: bundleFormat.trim() || undefined,
-                                hostTargets: hostTargets
-                                  .split(",")
-                                  .map((entry) => entry.trim())
-                                  .filter(Boolean),
-                              },
-                            }
-                          : {}),
-                        files: uploaded,
-                      },
-                    });
-                    setStatus(
-                      "Published. Pending security checks and verification before public listing.",
-                    );
-                  } catch (publishError) {
-                    toast.error(formatPublishError(publishError));
-                    setStatus(null);
-                  }
-                })();
-              });
-            }}
-          >
-            {isPublishDisabled && !isSubmitting ? (
-              <Lock className="h-4 w-4" aria-hidden="true" />
-            ) : null}
-            Publish plugin
-          </Button>
+                  })();
+                });
+              }}
+            >
+              {isPublishDisabled && !isSubmitting ? (
+                <Lock className="h-4 w-4" aria-hidden="true" />
+              ) : null}
+              Publish plugin
+            </Button>
+          </div>
+
+          {isMetadataLocked ? (
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-x-0 bottom-0 h-44"
+              style={{
+                background: "linear-gradient(to bottom, transparent, var(--bg) 88%)",
+              }}
+            />
+          ) : null}
         </div>
       </Container>
     </main>

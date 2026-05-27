@@ -69,8 +69,8 @@ export function PublisherOwnerSelect({
 function PublisherOwnerOption({ membership }: { membership: PublisherOwnerMembership }) {
   const { publisher, role } = membership;
   return (
-    <span className="flex min-w-0 items-center gap-2">
-      <span className="inline-flex h-6 w-6 shrink-0 overflow-hidden rounded-full">
+    <span className="flex min-w-0 items-center gap-2 leading-none">
+      <span className="inline-flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full">
         <MarketplaceIcon
           kind={publisher.kind}
           label={publisher.displayName || publisher.handle}
