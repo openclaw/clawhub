@@ -2874,6 +2874,7 @@ async function restorePackageDoc(
     actorUserId: Id<"users">;
     actorRole?: Doc<"users">["role"];
     allowBanRestore?: boolean;
+    releaseSoftDeletedAt?: number;
     source: "cli" | "dashboard";
   },
 ) {
@@ -2908,6 +2909,12 @@ async function restorePackageDoc(
   const activeReleases: Doc<"packageReleases">[] = [];
   for (const release of releases) {
     if (release.softDeletedAt) {
+      if (
+        params.releaseSoftDeletedAt !== undefined &&
+        release.softDeletedAt !== params.releaseSoftDeletedAt
+      ) {
+        continue;
+      }
       const restoredRelease = { ...release, softDeletedAt: undefined };
       await ctx.db.patch(release._id, { softDeletedAt: undefined });
       releaseCount += 1;
@@ -3042,10 +3049,12 @@ export const applyBanToOwnedPackagesBatchInternal = internalMutation({
   handler: async (ctx, args) => {
     const owner = await ctx.db.get(args.ownerUserId);
     const ownerMatchesCurrentBan = owner?.deletedAt === args.bannedAt;
-    // Ban callers run this before users.deletedAt is visible; keep the allow flag
-    // through scheduled pages so multi-page batches do not stale-stop mid-ban.
+    // Ban callers run the first package page before users.deletedAt is visible.
+    // Continuation pages must see the committed ban timestamp so a later unban
+    // cannot be treated as the same pre-commit window.
     const ownerIsActiveBeforeBanCommit =
       args.allowActiveOwnerBeforeCommit === true &&
+      args.cursor === undefined &&
       owner?.deletedAt === undefined &&
       !owner?.deactivatedAt;
     if (
@@ -3109,10 +3118,11 @@ export const applyBanToOwnedPackagesBatchInternal = internalMutation({
       deletedCount += 1;
     }
 
+    const { allowActiveOwnerBeforeCommit: _allowActiveOwnerBeforeCommit, ...nextArgs } = args;
     scheduleNextBatchIfNeeded(
       ctx.scheduler,
       internal.packages.applyBanToOwnedPackagesBatchInternal,
-      args,
+      nextArgs,
       isDone,
       continueCursor,
     );
@@ -3162,6 +3172,7 @@ export const restoreOwnedPackagesForUnbanBatchInternal = internalMutation({
         actorUserId: actor._id,
         actorRole: actor.role,
         allowBanRestore: true,
+        releaseSoftDeletedAt: args.bannedAt,
         source: "dashboard",
       });
       restoredCount += 1;

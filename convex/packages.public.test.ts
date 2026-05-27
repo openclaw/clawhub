@@ -7427,7 +7427,7 @@ describe("owned package sanction batches", () => {
     expect(patch).not.toHaveBeenCalledWith("packagePublishTokens:demo", expect.anything());
   });
 
-  it("continues in-flight package ban pages before the user ban commit is visible", async () => {
+  it("does not carry the pre-commit package ban bypass to continuation pages", async () => {
     const firstPage = makeOwnedPackageBatchCtx({
       owner: { _id: "users:owner", deletedAt: undefined, deactivatedAt: undefined },
       pkg: makePackageDoc({ _id: "packages:first", ownerUserId: "users:owner" }),
@@ -7464,11 +7464,13 @@ describe("owned package sanction batches", () => {
       expect.anything(),
       expect.objectContaining({
         cursor: "next-page",
-        allowActiveOwnerBeforeCommit: true,
       }),
     );
+    expect(firstPage.runAfter.mock.calls[0]?.[2]).not.toEqual(
+      expect.objectContaining({ allowActiveOwnerBeforeCommit: true }),
+    );
 
-    const secondPage = makeOwnedPackageBatchCtx({
+    const staleContinuationPage = makeOwnedPackageBatchCtx({
       owner: { _id: "users:owner", deletedAt: undefined, deactivatedAt: undefined },
       pkg: makePackageDoc({ _id: "packages:second", ownerUserId: "users:owner" }),
       packageTokens: [
@@ -7481,8 +7483,8 @@ describe("owned package sanction batches", () => {
       ],
     });
 
-    const secondResult = await applyBanToOwnedPackagesBatchInternalHandler(
-      secondPage.ctx as never,
+    const staleContinuationResult = await applyBanToOwnedPackagesBatchInternalHandler(
+      staleContinuationPage.ctx as never,
       {
         ownerUserId: "users:owner",
         bannedAt: 1_000,
@@ -7493,12 +7495,52 @@ describe("owned package sanction batches", () => {
       },
     );
 
-    expect(secondResult).toMatchObject({ deletedCount: 1, revokedTokenCount: 1, scheduled: false });
-    expect(secondPage.patch).toHaveBeenCalledWith(
+    expect(staleContinuationResult).toMatchObject({
+      stale: true,
+      deletedCount: 0,
+      revokedTokenCount: 0,
+      scheduled: false,
+    });
+    expect(staleContinuationPage.patch).not.toHaveBeenCalledWith("packages:second", expect.anything());
+    expect(staleContinuationPage.patch).not.toHaveBeenCalledWith(
+      "packagePublishTokens:second",
+      expect.anything(),
+    );
+
+    const committedContinuationPage = makeOwnedPackageBatchCtx({
+      owner: { _id: "users:owner", deletedAt: 1_000, deactivatedAt: undefined },
+      pkg: makePackageDoc({ _id: "packages:second", ownerUserId: "users:owner" }),
+      packageTokens: [
+        {
+          _id: "packagePublishTokens:second",
+          packageId: "packages:second",
+          version: "1.0.1",
+          revokedAt: undefined,
+        },
+      ],
+    });
+
+    const committedContinuationResult = await applyBanToOwnedPackagesBatchInternalHandler(
+      committedContinuationPage.ctx as never,
+      {
+        ownerUserId: "users:owner",
+        bannedAt: 1_000,
+        deletedBy: "users:moderator",
+        deletedByRole: "moderator",
+        cursor: "next-page",
+      },
+    );
+
+    expect(committedContinuationResult).toMatchObject({
+      deletedCount: 1,
+      revokedTokenCount: 1,
+      scheduled: false,
+    });
+    expect(committedContinuationPage.patch).toHaveBeenCalledWith(
       "packages:second",
       expect.objectContaining({ softDeletedAt: 1_000, softDeletedReason: "user.banned" }),
     );
-    expect(secondPage.patch).toHaveBeenCalledWith("packagePublishTokens:second", {
+    expect(committedContinuationPage.patch).toHaveBeenCalledWith("packagePublishTokens:second", {
       revokedAt: 1_000,
     });
   });
@@ -7581,6 +7623,16 @@ describe("owned package sanction batches", () => {
           capabilities: null,
           verification: null,
         }),
+        makeReleaseDoc({
+          _id: "packageReleases:malicious",
+          softDeletedAt: 500,
+          distTags: ["malicious"],
+          version: "0.9.0",
+          changelog: "",
+          compatibility: null,
+          capabilities: null,
+          verification: null,
+        }),
       ],
     });
 
@@ -7607,6 +7659,7 @@ describe("owned package sanction batches", () => {
         action: "package.undelete",
       }),
     );
+    expect(patch).not.toHaveBeenCalledWith("packageReleases:malicious", expect.anything());
   });
 
   it("stops stale package restore batches when the owner is banned again", async () => {
