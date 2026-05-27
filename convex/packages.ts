@@ -284,6 +284,7 @@ const packageAutobanRemediationInternalRefs = internal as unknown as {
 };
 type DbReaderCtx = Pick<QueryCtx | MutationCtx, "db">;
 const BAN_USER_PACKAGES_BATCH_SIZE = 25;
+const PACKAGE_PUBLISH_TOKEN_REVOKE_BATCH_SIZE = 25;
 type PackageSoftDeletedReason = "user.banned" | "user.deactivated";
 const ownedPackageScanScopeValidator = v.optional(
   v.union(v.literal("ownerUserId"), v.literal("personalPublisher")),
@@ -3025,21 +3026,31 @@ async function restorePackageDoc(
 }
 
 async function revokePackagePublishTokensForPackage(
-  ctx: Pick<MutationCtx, "db">,
+  ctx: Pick<MutationCtx, "db" | "scheduler">,
   packageId: Id<"packages">,
   revokedAt: number,
 ) {
   const tokens = await ctx.db
     .query("packagePublishTokens")
-    .withIndex("by_package", (q) => q.eq("packageId", packageId))
-    .collect();
+    .withIndex("by_package_revoked_created", (q) =>
+      q.eq("packageId", packageId).eq("revokedAt", undefined),
+    )
+    .order("desc")
+    .take(PACKAGE_PUBLISH_TOKEN_REVOKE_BATCH_SIZE + 1);
   let revokedCount = 0;
-  for (const token of tokens) {
-    if (token.revokedAt) continue;
+  for (const token of tokens.slice(0, PACKAGE_PUBLISH_TOKEN_REVOKE_BATCH_SIZE)) {
     await ctx.db.patch(token._id, { revokedAt });
     revokedCount += 1;
   }
-  return revokedCount;
+  const scheduled = tokens.length > PACKAGE_PUBLISH_TOKEN_REVOKE_BATCH_SIZE;
+  if (scheduled) {
+    void ctx.scheduler.runAfter(
+      0,
+      internal.packages.revokePackagePublishTokensForPackageBatchInternal,
+      { packageId, revokedAt },
+    );
+  }
+  return { revokedCount, scheduled };
 }
 
 async function isPackageOwnedByPersonalUser(
@@ -3105,6 +3116,17 @@ function scheduleNextOwnedPackageScanBatch(
   return false;
 }
 
+export const revokePackagePublishTokensForPackageBatchInternal = internalMutation({
+  args: {
+    packageId: v.id("packages"),
+    revokedAt: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const result = await revokePackagePublishTokensForPackage(ctx, args.packageId, args.revokedAt);
+    return { ok: true as const, ...result };
+  },
+});
+
 export const applyBanToOwnedPackagesBatchInternal = internalMutation({
   args: {
     ownerUserId: v.id("users"),
@@ -3148,7 +3170,8 @@ export const applyBanToOwnedPackagesBatchInternal = internalMutation({
     for (const pkg of page) {
       if (shouldSkipOwnedPackageScanRow(pkg, args)) continue;
       if (!(await isPackageOwnedByPersonalUser(ctx, pkg, owner))) continue;
-      revokedTokenCount += await revokePackagePublishTokensForPackage(ctx, pkg._id, args.bannedAt);
+      const revokeResult = await revokePackagePublishTokensForPackage(ctx, pkg._id, args.bannedAt);
+      revokedTokenCount += revokeResult.revokedCount;
       if (pkg.softDeletedAt) {
         if (pkg.softDeletedReason === "user.banned" && pkg.softDeletedAt !== args.bannedAt) {
           const previousBanHiddenAt = pkg.softDeletedAt;
@@ -3314,7 +3337,8 @@ export const applyAccountDeletionToOwnedPackagesBatchInternal = internalMutation
     for (const pkg of page) {
       if (shouldSkipOwnedPackageScanRow(pkg, args)) continue;
       if (!(await isPackageOwnedByPersonalUser(ctx, pkg, owner))) continue;
-      revokedTokenCount += await revokePackagePublishTokensForPackage(ctx, pkg._id, args.deletedAt);
+      const revokeResult = await revokePackagePublishTokensForPackage(ctx, pkg._id, args.deletedAt);
+      revokedTokenCount += revokeResult.revokedCount;
       if (pkg.softDeletedAt) continue;
 
       await softDeletePackageDoc(ctx, pkg, {

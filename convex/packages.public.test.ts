@@ -7623,9 +7623,7 @@ function makeOwnedPackageBatchCtx(options?: {
                 order: vi.fn(() => ({
                   paginate: vi.fn().mockResolvedValue({
                     page:
-                      index === "by_owner_publisher"
-                        ? (options?.publisherPackages ?? [])
-                        : [pkg],
+                      index === "by_owner_publisher" ? (options?.publisherPackages ?? []) : [pkg],
                     isDone: options?.isDone ?? true,
                     continueCursor: options?.continueCursor ?? "",
                   }),
@@ -7636,7 +7634,9 @@ function makeOwnedPackageBatchCtx(options?: {
           if (table === "packagePublishTokens") {
             return {
               withIndex: vi.fn(() => ({
-                collect: vi.fn().mockResolvedValue(packageTokens),
+                order: vi.fn(() => ({
+                  take: vi.fn(async (limit: number) => packageTokens.slice(0, limit)),
+                })),
               })),
             };
           }
@@ -7706,6 +7706,34 @@ describe("owned package sanction batches", () => {
       }),
     );
     expect(patch).toHaveBeenCalledWith("packagePublishTokens:demo", { revokedAt: 1_000 });
+  });
+
+  it("bounds package publish token revocation during owned package bans", async () => {
+    const packageTokens = Array.from({ length: 26 }, (_, index) => ({
+      _id: `packagePublishTokens:active-${index}`,
+      packageId: "packages:demo",
+      version: "1.0.1",
+      revokedAt: undefined,
+    }));
+    const { ctx, patch, runAfter } = makeOwnedPackageBatchCtx({
+      owner: { _id: "users:owner", deletedAt: 1_000, deactivatedAt: undefined },
+      packageTokens,
+    });
+
+    const result = await applyBanToOwnedPackagesBatchInternalHandler(ctx as never, {
+      ownerUserId: "users:owner",
+      bannedAt: 1_000,
+      deletedBy: "users:moderator",
+      deletedByRole: "moderator",
+    });
+
+    expect(result).toMatchObject({ deletedCount: 1, revokedTokenCount: 25, scheduled: false });
+    expect(patch).toHaveBeenCalledWith("packagePublishTokens:active-24", { revokedAt: 1_000 });
+    expect(patch).not.toHaveBeenCalledWith("packagePublishTokens:active-25", expect.anything());
+    expect(runAfter).toHaveBeenCalledWith(0, expect.anything(), {
+      packageId: "packages:demo",
+      revokedAt: 1_000,
+    });
   });
 
   it("soft-deletes packages owned through the user's personal publisher", async () => {
@@ -7847,7 +7875,10 @@ describe("owned package sanction batches", () => {
       revokedTokenCount: 0,
       scheduled: false,
     });
-    expect(staleContinuationPage.patch).not.toHaveBeenCalledWith("packages:second", expect.anything());
+    expect(staleContinuationPage.patch).not.toHaveBeenCalledWith(
+      "packages:second",
+      expect.anything(),
+    );
     expect(staleContinuationPage.patch).not.toHaveBeenCalledWith(
       "packagePublishTokens:second",
       expect.anything(),

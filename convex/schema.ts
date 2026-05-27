@@ -1203,7 +1203,8 @@ const packagePublishTokens = defineTable({
   createdAt: v.number(),
 })
   .index("by_hash", ["tokenHash"])
-  .index("by_package", ["packageId", "version", "createdAt"]);
+  .index("by_package", ["packageId", "version", "createdAt"])
+  .index("by_package_revoked_created", ["packageId", "revokedAt", "createdAt"]);
 
 const packageSearchDigest = defineTable({
   packageId: v.id("packages"),
