@@ -1036,6 +1036,16 @@ code {
   height: 18px;
 }
 
+.auth-loading-placeholder {
+  display: inline-flex;
+  width: 150px;
+  border: 1px solid var(--border-ui) !important;
+  border-radius: var(--r-btn);
+  background: var(--surface-muted) !important;
+  pointer-events: none;
+  opacity: 0.45;
+}
+
 .sign-in-full-copy {
   display: inline-block;
   white-space: nowrap;
@@ -7395,6 +7405,22 @@ code {
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes upload-decor-jiggle {
+  0%,
+  100% {
+    rotate: 0deg;
+  }
+  25% {
+    rotate: -3deg;
+  }
+  50% {
+    rotate: 3deg;
+  }
+  75% {
+    rotate: -2deg;
   }
 }
 

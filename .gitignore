@@ -41,8 +41,6 @@ skills-lock.json
 !.agents/skills/
 !.agents/skills/convex*/
 !.agents/skills/convex*/**
-!.agents/skills/crabbox/
-!.agents/skills/crabbox/**
 !.agents/skills/clawhub-ui-proof/
 !.agents/skills/clawhub-ui-proof/**
 !.agents/skills/clawhub-pr-maintainer/
