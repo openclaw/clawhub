@@ -1,11 +1,13 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
   authTables: {},
 }));
 
+import { getAuthUserId } from "@convex-dev/auth/server";
 import {
+  changeOwner,
   getSkillBySlugInternal,
   mergeOwnedSkillIntoCanonicalInternal,
   renameOwnedSkillInternal,
@@ -41,6 +43,16 @@ const transferSkillOwnerForUserInternalHandler = (
     reason?: string;
   }>
 )._handler;
+const changeOwnerHandler = (
+  changeOwner as unknown as WrappedHandler<{
+    skillId: string;
+    ownerUserId: string;
+  }>
+)._handler;
+
+afterEach(() => {
+  vi.mocked(getAuthUserId).mockReset();
+});
 
 function chainEq(constraints: Record<string, unknown>) {
   return {
@@ -416,6 +428,8 @@ describe("skills ownership", () => {
       ownerUserId: "users:actor",
       ownerPublisherId: "publishers:personal",
       softDeletedAt: undefined,
+      moderationVerdict: "clean",
+      moderationReasonCodes: ["suspicious.dynamic_code_execution"],
     };
     const aliases = [
       {
@@ -559,6 +573,190 @@ describe("skills ownership", () => {
         ownerKind: "org",
       }),
     );
+  });
+
+  it("rejects direct owner transfers for skills under moderation", async () => {
+    const moderationStates = [
+      { moderationStatus: "hidden" },
+      { moderationStatus: "removed" },
+      { moderationVerdict: "suspicious" },
+      { moderationVerdict: "malicious" },
+      { isSuspicious: true },
+      { moderationFlags: ["flagged.suspicious"] },
+      { moderationFlags: ["blocked.malware"] },
+      { moderationReason: "scanner.llm.suspicious" },
+      { moderationReasonCodes: ["suspicious.dynamic_code_execution"] },
+      { moderationReasonCodes: ["malicious.crypto_mining"] },
+    ];
+
+    for (const moderationState of moderationStates) {
+      const patch = vi.fn(async () => {});
+      const skill = {
+        _id: "skills:source",
+        slug: "portable",
+        displayName: "Portable",
+        ownerUserId: "users:actor",
+        ownerPublisherId: "publishers:personal",
+        softDeletedAt: undefined,
+        ...moderationState,
+      };
+
+      await expect(
+        transferSkillOwnerForUserInternalHandler(
+          {
+            db: {
+              normalizeId: vi.fn(() => null),
+              get: vi.fn(async (id: string) => {
+                if (id === "users:actor") return { _id: "users:actor", role: "user" };
+                if (id === "publishers:personal") {
+                  return {
+                    _id: "publishers:personal",
+                    kind: "user",
+                    handle: "actor",
+                    linkedUserId: "users:actor",
+                  };
+                }
+                return null;
+              }),
+              query: vi.fn((table: string) => {
+                if (table === "skills") {
+                  return {
+                    withIndex: (
+                      name: string,
+                      build: (q: ReturnType<typeof chainEq>) => unknown,
+                    ) => {
+                      const constraints: Record<string, unknown> = {};
+                      build(chainEq(constraints));
+                      if (name !== "by_slug") throw new Error(`unexpected skills index ${name}`);
+                      return {
+                        unique: async () => (constraints.slug === "portable" ? skill : null),
+                      };
+                    },
+                  };
+                }
+                throw new Error(`unexpected table ${table}`);
+              }),
+              patch,
+              insert: vi.fn(async () => "auditLogs:1"),
+            },
+          } as never,
+          {
+            actorUserId: "users:actor",
+            slug: "portable",
+            toOwner: "team",
+          },
+        ),
+      ).rejects.toThrow("under moderation");
+
+      expect(patch).not.toHaveBeenCalledWith("skills:source", expect.anything());
+    }
+  });
+
+  it("rejects admin owner changes for skills under moderation", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:admin" as never);
+    const patch = vi.fn(async () => {});
+
+    await expect(
+      changeOwnerHandler(
+        {
+          db: {
+            normalizeId: vi.fn(() => null),
+            system: {},
+            get: vi.fn(async (id: string) => {
+              if (id === "users:admin") return { _id: "users:admin", role: "admin" };
+              if (id === "users:next") return { _id: "users:next", role: "user" };
+              if (id === "skills:source") {
+                return {
+                  _id: "skills:source",
+                  slug: "portable",
+                  displayName: "Portable",
+                  ownerUserId: "users:owner",
+                  moderationReasonCodes: ["malicious.crypto_mining"],
+                };
+              }
+              return null;
+            }),
+            query: vi.fn(() => {
+              throw new Error("unexpected query");
+            }),
+            patch,
+            insert: vi.fn(async () => "auditLogs:1"),
+          },
+        } as never,
+        {
+          skillId: "skills:source",
+          ownerUserId: "users:next",
+        },
+      ),
+    ).rejects.toThrow("under moderation");
+
+    expect(patch).not.toHaveBeenCalledWith("skills:source", expect.anything());
+  });
+
+  it("checks direct transfer permissions before revealing moderation state", async () => {
+    const patch = vi.fn(async () => {});
+    const skill = {
+      _id: "skills:source",
+      slug: "portable",
+      displayName: "Portable",
+      ownerUserId: "users:owner",
+      ownerPublisherId: "publishers:personal",
+      softDeletedAt: undefined,
+      moderationStatus: "hidden",
+    };
+
+    await expect(
+      transferSkillOwnerForUserInternalHandler(
+        {
+          db: {
+            normalizeId: vi.fn(() => null),
+            get: vi.fn(async (id: string) => {
+              if (id === "users:actor") return { _id: "users:actor", role: "user" };
+              if (id === "publishers:personal") {
+                return {
+                  _id: "publishers:personal",
+                  kind: "user",
+                  handle: "owner",
+                  linkedUserId: "users:owner",
+                };
+              }
+              return null;
+            }),
+            query: vi.fn((table: string) => {
+              if (table === "skills") {
+                return {
+                  withIndex: (name: string, build: (q: ReturnType<typeof chainEq>) => unknown) => {
+                    const constraints: Record<string, unknown> = {};
+                    build(chainEq(constraints));
+                    if (name !== "by_slug") throw new Error(`unexpected skills index ${name}`);
+                    return {
+                      unique: async () => (constraints.slug === "portable" ? skill : null),
+                    };
+                  },
+                };
+              }
+              if (table === "publisherMembers") {
+                return {
+                  withIndex: () => ({
+                    unique: async () => null,
+                  }),
+                };
+              }
+              throw new Error(`unexpected table ${table}`);
+            }),
+            patch,
+            insert: vi.fn(async () => "auditLogs:1"),
+          },
+        } as never,
+        {
+          actorUserId: "users:actor",
+          slug: "portable",
+          toOwner: "team",
+        },
+      ),
+    ).rejects.toThrow("Forbidden");
+
+    expect(patch).not.toHaveBeenCalledWith("skills:source", expect.anything());
   });
 
   it("rejects merges that would reserve too many historical slugs for one skill", async () => {
