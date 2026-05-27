@@ -1918,6 +1918,33 @@ async function filterSkillsByActiveOwner(ctx: Pick<QueryCtx, "db">, skills: Doc<
   return filtered.filter((skill): skill is Doc<"skills"> => skill !== null);
 }
 
+async function skillBelongsToOwnerUserDashboardScope(
+  ctx: Pick<QueryCtx, "db">,
+  skill: Pick<Doc<"skills">, "ownerUserId" | "ownerPublisherId">,
+  ownerUserId: Id<"users">,
+) {
+  if (skill.ownerUserId !== ownerUserId) return false;
+  if (!skill.ownerPublisherId) return true;
+  const ownerPublisher = await ctx.db.get(skill.ownerPublisherId);
+  if (!ownerPublisher || !isPublisherActive(ownerPublisher) || ownerPublisher.kind !== "user") {
+    return false;
+  }
+  return ownerPublisher.linkedUserId ? ownerPublisher.linkedUserId === ownerUserId : true;
+}
+
+async function filterSkillsForOwnerUserDashboard(
+  ctx: Pick<QueryCtx, "db">,
+  skills: Doc<"skills">[],
+  ownerUserId: Id<"users">,
+) {
+  const scoped = await Promise.all(
+    skills.map(async (skill) =>
+      (await skillBelongsToOwnerUserDashboardScope(ctx, skill, ownerUserId)) ? skill : null,
+    ),
+  );
+  return scoped.filter((skill): skill is Doc<"skills"> => Boolean(skill));
+}
+
 function toPublicSkillListVersion(
   version: Doc<"skillVersions"> | null,
 ): PublicSkillListVersion | null {
@@ -3157,6 +3184,7 @@ export const list = query({
           userId,
         })) ||
           (ownerPublisher?.kind === "user" &&
+            isPublisherActive(ownerPublisher) &&
             !ownerPublisher.linkedUserId &&
             owner?.personalPublisherId === ownerPublisherId)),
       );
@@ -3205,7 +3233,8 @@ export const list = query({
         .withIndex("by_owner", (q) => q.eq("ownerUserId", ownerUserId))
         .order("desc")
         .take(takeLimit);
-      const filtered = entries.filter((skill) => !skill.softDeletedAt).slice(0, limit);
+      const scoped = await filterSkillsForOwnerUserDashboard(ctx, entries, ownerUserId);
+      const filtered = scoped.filter((skill) => !skill.softDeletedAt).slice(0, limit);
       const withBadges = await attachBadgesToSkills(ctx, filtered);
 
       if (isOwnDashboard) {
@@ -3270,6 +3299,7 @@ export const listDashboardPaginated = query({
           userId,
         })) ||
           (ownerPublisher?.kind === "user" &&
+            isPublisherActive(ownerPublisher) &&
             !ownerPublisher.linkedUserId &&
             owner?.personalPublisherId === ownerPublisherId)),
       );
@@ -3321,14 +3351,27 @@ export const listDashboardPaginated = query({
     if (ownerUserId) {
       const userId = await getOptionalActiveAuthUserId(ctx);
       const isOwnDashboard = Boolean(userId && userId === ownerUserId);
-      const result = await ctx.db
-        .query("skills")
-        .withIndex("by_owner_active_updated", (q) =>
-          q.eq("ownerUserId", ownerUserId).eq("softDeletedAt", undefined),
-        )
-        .order("desc")
-        .paginate(args.paginationOpts);
-      const page = await mapDashboardSkillPage(ctx, result.page, isOwnDashboard);
+      const paginateOwnerSkills = async (paginationOpts: typeof args.paginationOpts) =>
+        await ctx.db
+          .query("skills")
+          .withIndex("by_owner_active_updated", (q) =>
+            q.eq("ownerUserId", ownerUserId).eq("softDeletedAt", undefined),
+          )
+          .order("desc")
+          .paginate(paginationOpts);
+      let result = await paginateOwnerSkills(args.paginationOpts);
+      const scopedPage = await filterSkillsForOwnerUserDashboard(ctx, result.page, ownerUserId);
+      while (!result.isDone && scopedPage.length < args.paginationOpts.numItems) {
+        result = await paginateOwnerSkills({
+          ...args.paginationOpts,
+          cursor: result.continueCursor,
+          numItems: args.paginationOpts.numItems - scopedPage.length,
+        });
+        scopedPage.push(
+          ...(await filterSkillsForOwnerUserDashboard(ctx, result.page, ownerUserId)),
+        );
+      }
+      const page = await mapDashboardSkillPage(ctx, scopedPage, isOwnDashboard);
       return { ...result, page };
     }
 
@@ -9923,8 +9966,11 @@ export const insertVersion = internalMutation({
       const sourcePublisher = await ctx.db.get(skill.ownerPublisherId);
       const callerOwnsSourceViaPersonalLink =
         sourcePublisher?.kind === "user" &&
-        (sourcePublisher.linkedUserId === userId || skill.ownerUserId === userId);
-      const sourceIsOrg = sourcePublisher?.kind === "org";
+        isPublisherActive(sourcePublisher) &&
+        (sourcePublisher.linkedUserId
+          ? sourcePublisher.linkedUserId === userId
+          : skill.ownerUserId === userId);
+      const sourceIsOrg = sourcePublisher?.kind === "org" && isPublisherActive(sourcePublisher);
 
       const sourceMembership =
         callerExplicitlySpecifiedOwner && callerRequestedMigration && sourceIsOrg

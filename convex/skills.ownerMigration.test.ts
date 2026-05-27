@@ -363,6 +363,38 @@ describe("skills.insertVersion owner migration", () => {
     expect(migrationAudits).toHaveLength(0);
   });
 
+  it("rejects migration from a linked personal publisher when ownerUserId is stale", async () => {
+    const fixture = createMigrationFixture({
+      skillSource: "other-personal",
+      sourceMemberships: [
+        {
+          _id: "publisherMembers:orgAdminCaller",
+          publisherId: "publishers:org",
+          userId: "users:caller",
+          role: "admin",
+        },
+      ],
+      skillOverrides: {
+        ownerUserId: "users:caller",
+      },
+    });
+
+    await expect(
+      insertVersionHandler(
+        { db: fixture.db } as never,
+        buildPublishArgs({ migrateOwner: true }) as never,
+      ),
+    ).rejects.toThrow(/Slug is already taken/);
+
+    const skillPatches = fixture.patchCalls.filter((p) => p.id === "skills:1");
+    expect(skillPatches).toHaveLength(0);
+
+    const migrationAudits = fixture.insertCalls.filter(
+      (call) => call.table === "auditLogs" && call.value.action === "skill.ownership.migrate",
+    );
+    expect(migrationAudits).toHaveLength(0);
+  });
+
   it("rejects slug migration when caller is only a 'publisher' (not admin/owner) on the source org", async () => {
     // Regression guard for the privilege-escalation path: a plain publisher-role
     // member of the source org must NOT be able to walk skills out of that org

@@ -124,6 +124,16 @@ function makeCtx(
             displayName: "Team",
           };
         }
+        if (id === "publishers:other-personal") {
+          return {
+            _id: "publishers:other-personal",
+            _creationTime: 1,
+            kind: "user",
+            handle: "other",
+            displayName: "Other",
+            linkedUserId: "users:other",
+          };
+        }
         return null;
       }),
       query: vi.fn((table: string) => {
@@ -305,6 +315,45 @@ describe("skills.listDashboardPaginated", () => {
     expect(result.continueCursor).toBe("");
   });
 
+  it("continues owner-user dashboard pagination past stale publisher-owned rows", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
+    const { ctx } = makeCtx({
+      by_owner_active_updated: [
+        {
+          page: [
+            makeSkill("other-personal-hidden", {
+              ownerPublisherId: "publishers:other-personal",
+              moderationStatus: "hidden",
+            }),
+            makeSkill("org-hidden", {
+              ownerPublisherId: "publishers:org",
+              moderationStatus: "hidden",
+            }),
+          ],
+          isDone: false,
+          continueCursor: "cursor:1",
+        },
+        {
+          page: [makeSkill("legacy-skill", { moderationStatus: "hidden" })],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await handler(
+      ctx as never,
+      {
+        ownerUserId: "users:owner",
+        paginationOpts: { cursor: null, numItems: 1 },
+      } as never,
+    );
+
+    expect(result.page).toEqual([expect.objectContaining({ slug: "legacy-skill" })]);
+    expect(result.isDone).toBe(true);
+    expect(result.continueCursor).toBe("");
+  });
+
   it("includes linked-user legacy skills in non-owner personal publisher reads", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:other" as never);
     const { ctx, indexCalls } = makeCtx({
@@ -475,6 +524,31 @@ describe("skills.listDashboardPaginated", () => {
     const result = await listHandler(
       ctx as never,
       { ownerPublisherId: "publishers:self", limit: 20 } as never,
+    );
+
+    expect(indexCalls).toContain("by_owner");
+    expect(result).toEqual([expect.objectContaining({ slug: "legacy-skill" })]);
+  });
+
+  it("keeps stale publisher-owned rows out of owner-user non-paginated dashboards", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
+    const { ctx, indexCalls } = makeCtx({
+      by_owner: [
+        makeSkill("other-personal-hidden", {
+          ownerPublisherId: "publishers:other-personal",
+          moderationStatus: "hidden",
+        }),
+        makeSkill("org-hidden", {
+          ownerPublisherId: "publishers:org",
+          moderationStatus: "hidden",
+        }),
+        makeSkill("legacy-skill", { moderationStatus: "hidden" }),
+      ],
+    });
+
+    const result = await listHandler(
+      ctx as never,
+      { ownerUserId: "users:owner", limit: 20 } as never,
     );
 
     expect(indexCalls).toContain("by_owner");

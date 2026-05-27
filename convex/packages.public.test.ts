@@ -1751,6 +1751,42 @@ describe("packages public queries", () => {
     ]);
   });
 
+  it("does not let inactive no-link personal publishers expose private package digests", async () => {
+    const { ctx } = makeDigestCtx({
+      publisherDocs: {
+        "publishers:legacy-personal": {
+          _id: "publishers:legacy-personal",
+          kind: "user",
+          handle: "viewer",
+          linkedUserId: undefined,
+          deactivatedAt: 123,
+        },
+      },
+      pages: [
+        {
+          page: [
+            makeDigest("legacy-personal-secret", {
+              channel: "private",
+              ownerKind: "user",
+              ownerUserId: "users:viewer",
+              ownerPublisherId: "publishers:legacy-personal",
+            }),
+            makeDigest("public-plugin"),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await listPageForViewerInternalHandler(ctx, {
+      paginationOpts: { cursor: null, numItems: 10 },
+      viewerUserId: "users:viewer",
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual(["public-plugin"]);
+  });
+
   it("does not reuse legacy no-link personal access across package owners", async () => {
     const { ctx } = makeDigestCtx({
       publisherDocs: {
@@ -5815,6 +5851,76 @@ describe("packages public queries", () => {
         ownerPublisherId: undefined,
       }),
     ]);
+  });
+
+  it("keeps stale publisher-owned package rows out of owner-user dashboards", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
+    const result = await listHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "users:owner") {
+              return { _id: "users:owner", handle: "owner" };
+            }
+            if (id === "publishers:other-personal") {
+              return {
+                _id: "publishers:other-personal",
+                kind: "user",
+                linkedUserId: "users:other",
+              };
+            }
+            if (id === "publishers:org") {
+              return { _id: "publishers:org", kind: "org" };
+            }
+            if (id === "packageReleases:legacy-1") {
+              return makeReleaseDoc({
+                _id: "packageReleases:legacy-1",
+                packageId: "packages:legacy-direct",
+                version: "1.0.0",
+              });
+            }
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table === "packages") {
+              return {
+                withIndex: vi.fn((indexName: string) => {
+                  if (indexName !== "by_owner") throw new Error(`Unexpected index ${indexName}`);
+                  return {
+                    order: vi.fn(() => ({
+                      take: vi.fn().mockResolvedValue([
+                        makePackageDoc({
+                          _id: "packages:other-personal",
+                          name: "other-personal-plugin",
+                          ownerPublisherId: "publishers:other-personal",
+                        }),
+                        makePackageDoc({
+                          _id: "packages:org",
+                          name: "org-plugin",
+                          ownerPublisherId: "publishers:org",
+                        }),
+                        makePackageDoc({
+                          _id: "packages:legacy-direct",
+                          name: "legacy-direct-plugin",
+                          normalizedName: "legacy-direct-plugin",
+                          displayName: "Legacy Direct Plugin",
+                          ownerPublisherId: undefined,
+                          latestReleaseId: "packageReleases:legacy-1",
+                        }),
+                      ]),
+                    })),
+                  };
+                }),
+              };
+            }
+            throw new Error(`Unexpected table ${table}`);
+          }),
+        },
+      } as never,
+      { ownerUserId: "users:owner", limit: 20 },
+    );
+
+    expect(result.map((entry) => entry.name)).toEqual(["legacy-direct-plugin"]);
   });
 
   it("returns no owner packages when the viewer lacks access", async () => {

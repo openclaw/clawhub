@@ -73,6 +73,7 @@ import {
   getPublisherByHandle,
   getOwnerPublisher,
   getPublisherMembership,
+  isPublisherActive,
   isPublisherRoleAllowed,
   normalizePublisherHandle,
 } from "./lib/publishers";
@@ -700,13 +701,11 @@ async function viewerCanAccessPackageOwner(
 
   const membershipPromise = (async () => {
     const ownerPublisher = await ctx.db.get(ownerPublisherId);
-    if (ownerPublisher?.kind === "user") {
-      return ownerPublisher.linkedUserId
-        ? ownerPublisher.linkedUserId === viewerUserId
-        : digest.ownerUserId === viewerUserId;
-    }
-    const membership = await getPublisherMembership(ctx, ownerPublisherId, viewerUserId);
-    return Boolean(membership);
+    return await canAccessPublisherOwnerScope(ctx, {
+      publisher: ownerPublisher,
+      userId: viewerUserId,
+      legacyOwnerUserId: digest.ownerUserId,
+    });
   })();
   membershipCache?.set(cacheKey, membershipPromise);
   return await membershipPromise;
@@ -721,14 +720,12 @@ async function viewerCanManagePackageOwner(
   if (!digest.ownerPublisherId) return digest.ownerUserId === viewerUserId;
 
   const ownerPublisher = await ctx.db.get(digest.ownerPublisherId);
-  if (ownerPublisher?.kind === "user") {
-    return ownerPublisher.linkedUserId
-      ? ownerPublisher.linkedUserId === viewerUserId
-      : digest.ownerUserId === viewerUserId;
-  }
-
-  const membership = await getPublisherMembership(ctx, digest.ownerPublisherId, viewerUserId);
-  return Boolean(membership && isPublisherRoleAllowed(membership.role, ["admin"]));
+  return await canAccessPublisherOwnerScope(ctx, {
+    publisher: ownerPublisher,
+    userId: viewerUserId,
+    allowedPublisherRoles: ["admin"],
+    legacyOwnerUserId: digest.ownerUserId,
+  });
 }
 
 async function canViewerReadPackage(
@@ -1038,6 +1035,7 @@ async function listDashboardPackagesForOwnerPublisher(
       userId: viewerUserId,
     })) ||
     (ownerPublisher?.kind === "user" &&
+      isPublisherActive(ownerPublisher) &&
       !ownerPublisher.linkedUserId &&
       owner?.personalPublisherId === ownerPublisherId);
   if (!isOwnDashboard) return [];
@@ -1071,6 +1069,33 @@ async function listDashboardPackagesForOwnerPublisher(
   ).filter((pkg): pkg is DashboardPackageListItem => Boolean(pkg));
 }
 
+async function packageBelongsToOwnerUserDashboardScope(
+  ctx: Pick<QueryCtx, "db">,
+  pkg: Pick<Doc<"packages">, "ownerUserId" | "ownerPublisherId">,
+  ownerUserId: Id<"users">,
+) {
+  if (pkg.ownerUserId !== ownerUserId) return false;
+  if (!pkg.ownerPublisherId) return true;
+  const ownerPublisher = await ctx.db.get(pkg.ownerPublisherId);
+  if (!ownerPublisher || !isPublisherActive(ownerPublisher) || ownerPublisher.kind !== "user") {
+    return false;
+  }
+  return ownerPublisher.linkedUserId ? ownerPublisher.linkedUserId === ownerUserId : true;
+}
+
+async function filterPackagesForOwnerUserDashboard(
+  ctx: Pick<QueryCtx, "db">,
+  packages: Doc<"packages">[],
+  ownerUserId: Id<"users">,
+) {
+  const scoped = await Promise.all(
+    packages.map(async (pkg) =>
+      (await packageBelongsToOwnerUserDashboardScope(ctx, pkg, ownerUserId)) ? pkg : null,
+    ),
+  );
+  return scoped.filter((pkg): pkg is Doc<"packages"> => Boolean(pkg));
+}
+
 async function listDashboardPackagesForOwnerUser(
   ctx: QueryCtx,
   ownerUserId: Id<"users">,
@@ -1084,7 +1109,8 @@ async function listDashboardPackagesForOwnerUser(
     .withIndex("by_owner", (q) => q.eq("ownerUserId", ownerUserId))
     .order("desc")
     .take(takeLimit);
-  const filtered = entries.filter((pkg) => !pkg.softDeletedAt).slice(0, limit);
+  const scoped = await filterPackagesForOwnerUserDashboard(ctx, entries, ownerUserId);
+  const filtered = scoped.filter((pkg) => !pkg.softDeletedAt).slice(0, limit);
   return (
     await Promise.all(filtered.map(async (pkg) => await toDashboardPackageListItem(ctx, pkg)))
   ).filter((pkg): pkg is DashboardPackageListItem => Boolean(pkg));
