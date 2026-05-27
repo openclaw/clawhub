@@ -43,7 +43,6 @@ import {
   readArtifactReportStatus,
   appendPackageModerationEventLog,
 } from "./lib/artifactModeration";
-import { scheduleNextBatchIfNeeded } from "./lib/batching";
 import { normalizeClawScanNoteForWrite } from "./lib/clawScanNote";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
@@ -3064,7 +3063,9 @@ function shouldSkipOwnedPackageScanRow(
   pkg: Pick<Doc<"packages">, "ownerUserId">,
   args: { ownerUserId: Id<"users">; scope?: OwnedPackageScanScope },
 ) {
-  return getOwnedPackageScanScope(args) === "personalPublisher" && pkg.ownerUserId === args.ownerUserId;
+  return (
+    getOwnedPackageScanScope(args) === "personalPublisher" && pkg.ownerUserId === args.ownerUserId
+  );
 }
 
 function scheduleNextOwnedPackageScanBatch(
@@ -3079,18 +3080,26 @@ function scheduleNextOwnedPackageScanBatch(
   continueCursor: string | null,
 ) {
   if (!isDone) {
-    void ctx.scheduler.runAfter(0, fn as never, {
-      ...args,
-      cursor: continueCursor ?? undefined,
-    } as never);
+    void ctx.scheduler.runAfter(
+      0,
+      fn as never,
+      {
+        ...args,
+        cursor: continueCursor ?? undefined,
+      } as never,
+    );
     return true;
   }
   if (getOwnedPackageScanScope(args) === "ownerUserId" && owner.personalPublisherId) {
-    void ctx.scheduler.runAfter(0, fn as never, {
-      ...args,
-      scope: "personalPublisher",
-      cursor: undefined,
-    } as never);
+    void ctx.scheduler.runAfter(
+      0,
+      fn as never,
+      {
+        ...args,
+        scope: "personalPublisher",
+        cursor: undefined,
+      } as never,
+    );
     return true;
   }
   return false;
@@ -3126,7 +3135,9 @@ export const applyBanToOwnedPackagesBatchInternal = internalMutation({
             .withIndex("by_owner_publisher", (q) =>
               q.eq("ownerPublisherId", owner.personalPublisherId),
             )
-        : ctx.db.query("packages").withIndex("by_owner", (q) => q.eq("ownerUserId", args.ownerUserId));
+        : ctx.db
+            .query("packages")
+            .withIndex("by_owner", (q) => q.eq("ownerUserId", args.ownerUserId));
     const { page, isDone, continueCursor } = await packageQuery.order("desc").paginate({
       cursor: args.cursor ?? null,
       numItems: BAN_USER_PACKAGES_BATCH_SIZE,
@@ -3220,7 +3231,9 @@ export const restoreOwnedPackagesForUnbanBatchInternal = internalMutation({
             .withIndex("by_owner_publisher", (q) =>
               q.eq("ownerPublisherId", owner.personalPublisherId),
             )
-        : ctx.db.query("packages").withIndex("by_owner", (q) => q.eq("ownerUserId", args.ownerUserId));
+        : ctx.db
+            .query("packages")
+            .withIndex("by_owner", (q) => q.eq("ownerUserId", args.ownerUserId));
     const { page, isDone, continueCursor } = await packageQuery.order("desc").paginate({
       cursor: args.cursor ?? null,
       numItems: BAN_USER_PACKAGES_BATCH_SIZE,
@@ -3288,7 +3301,9 @@ export const applyAccountDeletionToOwnedPackagesBatchInternal = internalMutation
             .withIndex("by_owner_publisher", (q) =>
               q.eq("ownerPublisherId", owner.personalPublisherId),
             )
-        : ctx.db.query("packages").withIndex("by_owner", (q) => q.eq("ownerUserId", args.ownerUserId));
+        : ctx.db
+            .query("packages")
+            .withIndex("by_owner", (q) => q.eq("ownerUserId", args.ownerUserId));
     const { page, isDone, continueCursor } = await packageQuery.order("desc").paginate({
       cursor: args.cursor ?? null,
       numItems: BAN_USER_PACKAGES_BATCH_SIZE,
@@ -3399,6 +3414,7 @@ export const restoreOwnedPackagesForAutobanRemediationBatchInternal = internalMu
     ownerUserId: v.id("users"),
     bannedAt: v.number(),
     cursor: v.optional(v.string()),
+    scope: ownedPackageScanScopeValidator,
   },
   handler: async (ctx, args) => {
     const owner = await ctx.db.get(args.ownerUserId);
@@ -3413,19 +3429,28 @@ export const restoreOwnedPackagesForAutobanRemediationBatchInternal = internalMu
       };
     }
 
-    const { page, isDone, continueCursor } = await ctx.db
-      .query("packages")
-      .withIndex("by_owner", (q) => q.eq("ownerUserId", args.ownerUserId))
-      .order("desc")
-      .paginate({
-        cursor: args.cursor ?? null,
-        numItems: 25,
-      });
+    const scope = getOwnedPackageScanScope(args);
+    const packageQuery =
+      scope === "personalPublisher" && owner.personalPublisherId
+        ? ctx.db
+            .query("packages")
+            .withIndex("by_owner_publisher", (q) =>
+              q.eq("ownerPublisherId", owner.personalPublisherId),
+            )
+        : ctx.db
+            .query("packages")
+            .withIndex("by_owner", (q) => q.eq("ownerUserId", args.ownerUserId));
+    const { page, isDone, continueCursor } = await packageQuery.order("desc").paginate({
+      cursor: args.cursor ?? null,
+      numItems: BAN_USER_PACKAGES_BATCH_SIZE,
+    });
 
     let restoredCount = 0;
     let restoredReleases = 0;
     let skippedMalicious = 0;
     for (const pkg of page) {
+      if (shouldSkipOwnedPackageScanRow(pkg, args)) continue;
+      if (!(await isPackageOwnedByPersonalUser(ctx, pkg, owner))) continue;
       if (!pkg.softDeletedAt || pkg.softDeletedAt !== args.bannedAt) continue;
       if (pkg.scanStatus === "malicious") {
         skippedMalicious += 1;
@@ -3534,11 +3559,12 @@ export const restoreOwnedPackagesForAutobanRemediationBatchInternal = internalMu
       restoredCount += 1;
     }
 
-    scheduleNextBatchIfNeeded(
-      ctx.scheduler,
+    const scheduled = scheduleNextOwnedPackageScanBatch(
+      ctx,
       packageAutobanRemediationInternalRefs.packages
         .restoreOwnedPackagesForAutobanRemediationBatchInternal,
       args,
+      owner,
       isDone,
       continueCursor,
     );
@@ -3548,7 +3574,7 @@ export const restoreOwnedPackagesForAutobanRemediationBatchInternal = internalMu
       restoredCount,
       restoredReleases,
       skippedMalicious,
-      scheduled: !isDone,
+      scheduled,
     };
   },
 });

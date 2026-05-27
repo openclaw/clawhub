@@ -41,6 +41,10 @@ const DEFAULT_AUTOBAN_REMEDIATION_REASON =
 const MAX_AUTOBAN_REMEDIATION_LIMIT = 100;
 const AUTOBAN_AUDIT_MATCH_WINDOW_MS = 5_000;
 const AUTOBAN_REMEDIATION_COUNT_PAGE_SIZE = 100;
+const autobanPackageScanScopeValidator = v.optional(
+  v.union(v.literal("ownerUserId"), v.literal("personalPublisher")),
+);
+type AutobanPackageScanScope = "ownerUserId" | "personalPublisher";
 const autobanRemediationInternalRefs = internal as unknown as {
   users: {
     countRestorableAutobanSkillsPageInternal: unknown;
@@ -1387,24 +1391,32 @@ async function countRestorableAutobanPackages(
   bannedAt: number,
 ) {
   let count = 0;
-  let cursor: string | null = null;
-  let isDone = false;
+  const owner = await ctx.db.get(ownerUserId);
+  const scopes: AutobanPackageScanScope[] = owner?.personalPublisherId
+    ? ["ownerUserId", "personalPublisher"]
+    : ["ownerUserId"];
 
-  while (!isDone) {
-    const result: AutobanRemediationPackageCandidatePage = await runAutobanRemediationQueryRef(
-      ctx,
-      autobanRemediationInternalRefs.users.listRestorableAutobanPackageCandidatesPageInternal,
-      {
-        ownerUserId,
-        bannedAt,
-        cursor: cursor ?? undefined,
-      },
-    );
-    for (const packageId of result.packageIds) {
-      if (await hasRestorableAutobanPackageRelease(ctx, packageId, bannedAt)) count += 1;
+  for (const scope of scopes) {
+    let cursor: string | null = null;
+    let isDone = false;
+
+    while (!isDone) {
+      const result: AutobanRemediationPackageCandidatePage = await runAutobanRemediationQueryRef(
+        ctx,
+        autobanRemediationInternalRefs.users.listRestorableAutobanPackageCandidatesPageInternal,
+        {
+          ownerUserId,
+          bannedAt,
+          cursor: cursor ?? undefined,
+          scope,
+        },
+      );
+      for (const packageId of result.packageIds) {
+        if (await hasRestorableAutobanPackageRelease(ctx, packageId, bannedAt)) count += 1;
+      }
+      isDone = result.isDone;
+      cursor = result.continueCursor;
     }
-    isDone = result.isDone;
-    cursor = result.continueCursor;
   }
 
   return count;
@@ -1471,20 +1483,34 @@ export const listRestorableAutobanPackageCandidatesPageInternal = internalQuery(
     ownerUserId: v.id("users"),
     bannedAt: v.number(),
     cursor: v.optional(v.string()),
+    scope: autobanPackageScanScopeValidator,
   },
   handler: async (ctx, args) => {
-    const result = await ctx.db
-      .query("packages")
-      .withIndex("by_owner", (q) => q.eq("ownerUserId", args.ownerUserId))
-      .order("desc")
-      .paginate({
-        cursor: args.cursor ?? null,
-        numItems: AUTOBAN_REMEDIATION_COUNT_PAGE_SIZE,
-      });
+    const owner = await ctx.db.get(args.ownerUserId);
+    const scope = args.scope ?? "ownerUserId";
+    const packageQuery =
+      scope === "personalPublisher" && owner?.personalPublisherId
+        ? ctx.db
+            .query("packages")
+            .withIndex("by_owner_publisher", (q) =>
+              q.eq("ownerPublisherId", owner.personalPublisherId),
+            )
+        : ctx.db
+            .query("packages")
+            .withIndex("by_owner", (q) => q.eq("ownerUserId", args.ownerUserId));
+    const result = await packageQuery.order("desc").paginate({
+      cursor: args.cursor ?? null,
+      numItems: AUTOBAN_REMEDIATION_COUNT_PAGE_SIZE,
+    });
 
     return {
       packageIds: result.page
-        .filter((pkg) => pkg.softDeletedAt === args.bannedAt && pkg.scanStatus !== "malicious")
+        .filter(
+          (pkg) =>
+            !(scope === "personalPublisher" && pkg.ownerUserId === args.ownerUserId) &&
+            pkg.softDeletedAt === args.bannedAt &&
+            pkg.scanStatus !== "malicious",
+        )
         .map((pkg) => pkg._id),
       isDone: result.isDone,
       continueCursor: result.continueCursor,

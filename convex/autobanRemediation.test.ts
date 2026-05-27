@@ -18,7 +18,8 @@ const {
   recomputeLatestSkillModerationInternal,
   restoreOwnedSkillsForAutobanRemediationBatchInternal,
 } = await import("./skills");
-const { remediateAutobansInternal } = await import("./users");
+const { listRestorableAutobanPackageCandidatesPageInternal, remediateAutobansInternal } =
+  await import("./users");
 
 type WrappedHandler<TArgs, TResult = unknown> = {
   _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
@@ -44,7 +45,19 @@ const restorePackagesHandler = (
     ownerUserId: string;
     bannedAt: number;
     cursor?: string;
+    scope?: "ownerUserId" | "personalPublisher";
   }>
+)._handler;
+const listPackageCandidatesHandler = (
+  listRestorableAutobanPackageCandidatesPageInternal as unknown as WrappedHandler<
+    {
+      ownerUserId: string;
+      bannedAt: number;
+      cursor?: string;
+      scope?: "ownerUserId" | "personalPublisher";
+    },
+    { packageIds: string[]; isDone: boolean; continueCursor: string | null }
+  >
 )._handler;
 const remediateAutobansHandler = (
   remediateAutobansInternal as unknown as WrappedHandler<
@@ -1053,6 +1066,188 @@ describe("autoban remediation package restore", () => {
         targetId: "packages:demo",
       }),
     );
+  });
+
+  it("restores packages owned through the user's personal publisher", async () => {
+    const bannedAt = 1778569308754;
+    const patch = vi.fn();
+    const insert = vi.fn();
+    const scheduler = { runAfter: vi.fn() };
+    const query = vi.fn((table: string) => {
+      if (table === "packages") {
+        return {
+          withIndex: (name: string) => {
+            expect(name).toBe("by_owner_publisher");
+            return {
+              order: () => ({
+                paginate: vi.fn(async () => ({
+                  page: [
+                    {
+                      _id: "packages:personal",
+                      name: "@scope/personal",
+                      normalizedName: "@scope/personal",
+                      displayName: "@scope/personal",
+                      family: "external-code-plugin",
+                      ownerUserId: "users:publishing-actor",
+                      ownerPublisherId: "publishers:personal",
+                      softDeletedAt: bannedAt,
+                      scanStatus: "clean",
+                      tags: { latest: "packageReleases:good" },
+                      latestReleaseId: "packageReleases:good",
+                      stats: {},
+                      compatibility: {},
+                      capabilities: {},
+                      verification: {},
+                      isOfficial: false,
+                      createdAt: 1,
+                      updatedAt: 1,
+                    },
+                  ],
+                  isDone: true,
+                  continueCursor: null,
+                })),
+              }),
+            };
+          },
+        };
+      }
+      if (table === "packageReleases") {
+        return {
+          withIndex: (name: string) => {
+            expect(name).toBe("by_package");
+            return {
+              collect: vi.fn(async () => [
+                {
+                  _id: "packageReleases:good",
+                  packageId: "packages:personal",
+                  version: "1.0.0",
+                  changelog: "",
+                  integritySha256: "good-sha",
+                  compatibility: {},
+                  capabilities: {},
+                  verification: {},
+                  softDeletedAt: bannedAt,
+                  llmAnalysis: { status: "clean" },
+                  distTags: ["latest"],
+                  createdAt: 1,
+                },
+              ]),
+            };
+          },
+        };
+      }
+      if (
+        table === "packageSearchDigest" ||
+        table === "packageCapabilitySearchDigest" ||
+        table === "packagePluginCategorySearchDigest"
+      ) {
+        return {
+          withIndex: () => ({
+            unique: vi.fn(async () => null),
+            collect: vi.fn(async () => []),
+          }),
+        };
+      }
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    const result = (await restorePackagesHandler(
+      {
+        db: {
+          query,
+          patch,
+          insert,
+          get: vi.fn(async (id: string) => {
+            if (id === "users:target") {
+              return {
+                _id: "users:target",
+                role: "user",
+                personalPublisherId: "publishers:personal",
+              };
+            }
+            if (id === "publishers:personal") {
+              return { _id: id, kind: "user", linkedUserId: "users:target" };
+            }
+            return null;
+          }),
+          replace: vi.fn(),
+          delete: vi.fn(),
+          normalizeId: vi.fn(() => null),
+        },
+        scheduler,
+      } as never,
+      {
+        actorUserId: "users:admin",
+        ownerUserId: "users:target",
+        bannedAt,
+        scope: "personalPublisher",
+      },
+    )) as { restoredCount: number; restoredReleases: number; skippedMalicious: number };
+
+    expect(result).toMatchObject({
+      restoredCount: 1,
+      restoredReleases: 1,
+      skippedMalicious: 0,
+    });
+    expect(patch).toHaveBeenCalledWith("packageReleases:good", { softDeletedAt: undefined });
+    expect(patch).toHaveBeenCalledWith(
+      "packages:personal",
+      expect.objectContaining({ softDeletedAt: undefined }),
+    );
+  });
+
+  it("lists restorable personal-publisher package candidates for dry-run counts", async () => {
+    const bannedAt = 1778569308754;
+    const result = await listPackageCandidatesHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) =>
+            id === "users:target" ? { _id: id, personalPublisherId: "publishers:personal" } : null,
+          ),
+          query: vi.fn((table: string) => {
+            expect(table).toBe("packages");
+            return {
+              withIndex: (name: string) => {
+                expect(name).toBe("by_owner_publisher");
+                return {
+                  order: () => ({
+                    paginate: vi.fn(async () => ({
+                      page: [
+                        {
+                          _id: "packages:legacy-duplicate",
+                          ownerUserId: "users:target",
+                          softDeletedAt: bannedAt,
+                          scanStatus: "clean",
+                        },
+                        {
+                          _id: "packages:personal",
+                          ownerUserId: "users:publishing-actor",
+                          softDeletedAt: bannedAt,
+                          scanStatus: "clean",
+                        },
+                      ],
+                      isDone: true,
+                      continueCursor: null,
+                    })),
+                  }),
+                };
+              },
+            };
+          }),
+        },
+      } as never,
+      {
+        ownerUserId: "users:target",
+        bannedAt,
+        scope: "personalPublisher",
+      },
+    );
+
+    expect(result).toEqual({
+      packageIds: ["packages:personal"],
+      isDone: true,
+      continueCursor: null,
+    });
   });
 
   it("skips timestamp-matched packages when no non-malicious release can be selected", async () => {
