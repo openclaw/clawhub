@@ -6985,6 +6985,13 @@ export const applyBanToOwnedSkillsBatchInternal = internalMutation({
     cursor: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    if (args.cursor) {
+      const owner = await ctx.db.get(args.ownerUserId);
+      if (!owner || owner.deletedAt !== args.bannedAt || owner.deactivatedAt) {
+        return { ok: true as const, hiddenCount: 0, scheduled: false, aborted: true };
+      }
+    }
+
     const { page, isDone, continueCursor } = await ctx.db
       .query("skills")
       .withIndex("by_owner", (q) => q.eq("ownerUserId", args.ownerUserId))
@@ -6996,7 +7003,24 @@ export const applyBanToOwnedSkillsBatchInternal = internalMutation({
 
     let hiddenCount = 0;
     for (const skill of page) {
-      if (skill.softDeletedAt) continue;
+      if (skill.softDeletedAt) {
+        const isBanHiddenStatus =
+          skill.moderationStatus === "hidden" || skill.moderationStatus === undefined;
+        if (
+          isBanHiddenStatus &&
+          skill.moderationReason === "user.banned" &&
+          skill.softDeletedAt < args.bannedAt
+        ) {
+          await ctx.db.patch(skill._id, {
+            softDeletedAt: args.bannedAt,
+            hiddenAt: args.bannedAt,
+            hiddenBy: args.hiddenBy,
+            lastReviewedAt: args.bannedAt,
+            updatedAt: args.bannedAt,
+          });
+        }
+        continue;
+      }
 
       // Only overwrite moderation fields for active skills. Keep existing hidden/removed
       // moderation reasons intact.
@@ -7113,6 +7137,11 @@ export const restoreOwnedSkillsForUnbanBatchInternal = internalMutation({
     cursor: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const user = await ctx.db.get(args.ownerUserId);
+    if (!user || user.deletedAt || user.deactivatedAt) {
+      return { ok: true as const, restoredCount: 0, scheduled: false, aborted: true };
+    }
+
     const now = Date.now();
 
     const { page, isDone, continueCursor } = await ctx.db
@@ -7129,6 +7158,7 @@ export const restoreOwnedSkillsForUnbanBatchInternal = internalMutation({
       if (
         !skill.softDeletedAt ||
         skill.softDeletedAt !== args.bannedAt ||
+        skill.moderationStatus === "removed" ||
         skill.moderationReason !== "user.banned"
       ) {
         continue;
