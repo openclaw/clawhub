@@ -866,6 +866,7 @@ const skillSearchDigest = defineTable({
   canonicalSkillId: v.optional(v.id("skills")),
   forkOf: forkOfValidator,
   latestVersionId: v.optional(v.id("skillVersions")),
+  latestVersionSkillId: v.optional(v.id("skills")),
   latestVersionSummary: v.optional(
     v.object({
       version: v.string(),

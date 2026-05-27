@@ -47,6 +47,7 @@ import {
   MAX_CLAWPACK_BYTES,
   MAX_PUBLISH_FILE_BYTES,
 } from "../lib/publishLimits";
+import { getPublicSkillFileAccessBlock, isSkillVersionForSkill } from "../lib/skillFileAccess";
 import { isMacJunkPath, isTextFile } from "../lib/skills";
 import { buildDeterministicPackageZip } from "../lib/skillZip";
 import { generateToken, hashToken } from "../lib/tokens";
@@ -967,10 +968,11 @@ async function searchPackageCatalog(
 
 async function resolveSkillTags(
   ctx: ActionCtx,
+  skillId: Id<"skills">,
   tags: Record<string, Id<"skillVersions">>,
   latestVersion?: SkillVersionLike | null,
 ): Promise<Record<string, string>> {
-  const [resolved] = await resolveTagsBatch(ctx, [tags], [latestVersion]);
+  const [resolved] = await resolveTagsBatch(ctx, [tags], [latestVersion], [skillId]);
   return resolved ?? {};
 }
 
@@ -2295,6 +2297,12 @@ async function getSkillDetailForRequest(ctx: ActionCtx, slug: string) {
     skill: SkillPackageDocLike | null;
     latestVersion: SkillVersionLike | null;
     owner: { handle?: string; displayName?: string; image?: string } | null;
+    moderationInfo?: {
+      isPendingScan?: boolean | null;
+      isMalwareBlocked?: boolean | null;
+      isHiddenByMod?: boolean | null;
+      isRemoved?: boolean | null;
+    } | null;
   } | null;
 }
 
@@ -2308,23 +2316,30 @@ async function getSkillVersionForRequest(
   const tagParam = url.searchParams.get("tag")?.trim();
 
   if (versionParam) {
-    return (await runQueryRef(ctx, internalRefs.skills.getVersionBySkillAndVersionInternal, {
-      skillId: skill._id,
-      version: versionParam,
-    })) as SkillVersionLike | null;
+    const version = (await runQueryRef(
+      ctx,
+      internalRefs.skills.getVersionBySkillAndVersionInternal,
+      {
+        skillId: skill._id,
+        version: versionParam,
+      },
+    )) as SkillVersionLike | null;
+    return isSkillVersionForSkill(version, skill._id) ? version : null;
   }
   if (tagParam) {
     const versionId = skill.tags[tagParam];
     if (!versionId) return null;
-    return (await runQueryRef(ctx, internalRefs.skills.getVersionByIdInternal, {
+    const version = (await runQueryRef(ctx, internalRefs.skills.getVersionByIdInternal, {
       versionId,
     })) as SkillVersionLike | null;
+    return isSkillVersionForSkill(version, skill._id) ? version : null;
   }
   const latestVersionId = skill.latestVersionId ?? skill.tags.latest;
   if (!latestVersionId) return null;
-  return (await runQueryRef(ctx, internalRefs.skills.getVersionByIdInternal, {
+  const version = (await runQueryRef(ctx, internalRefs.skills.getVersionByIdInternal, {
     versionId: latestVersionId,
   })) as SkillVersionLike | null;
+  return isSkillVersionForSkill(version, skill._id) ? version : null;
 }
 
 async function searchPackages(
@@ -2662,7 +2677,12 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
           skillDetail.skill,
           skillDetail.latestVersion,
           skillDetail.owner,
-          await resolveSkillTags(ctx, skillDetail.skill.tags, skillDetail.latestVersion),
+          await resolveSkillTags(
+            ctx,
+            skillDetail.skill._id,
+            skillDetail.skill.tags,
+            skillDetail.latestVersion,
+          ),
         ),
         200,
         rate.headers,
@@ -2721,7 +2741,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
         items: Array<{ version: string; createdAt: number; changelog: string }>;
         nextCursor: string | null;
       };
-      const tags = await resolveSkillTags(ctx, skillDetail.skill.tags);
+      const tags = await resolveSkillTags(ctx, skillDetail.skill._id, skillDetail.skill.tags);
       return json(
         {
           items: result.items.map((version) => ({
@@ -2820,7 +2840,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
         },
       )) as SkillVersionLike | null;
       if (!version || version.softDeletedAt) return text("Version not found", 404, rate.headers);
-      const tags = await resolveSkillTags(ctx, skillDetail.skill.tags);
+      const tags = await resolveSkillTags(ctx, skillDetail.skill._id, skillDetail.skill.tags);
       return json(
         {
           package: {
@@ -2903,6 +2923,9 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     const path = new URL(request.url).searchParams.get("path")?.trim();
     if (!path) return text("Missing path", 400, rate.headers);
     if (skillDetail?.skill) {
+      const moderationBlock = getPublicSkillFileAccessBlock(skillDetail.moderationInfo);
+      if (moderationBlock)
+        return text(moderationBlock.message, moderationBlock.status, rate.headers);
       const version = await getSkillVersionForRequest(ctx, skillDetail.skill, request);
       if (!version || version.softDeletedAt) return text("Version not found", 404, rate.headers);
       const file = resolveSkillFilePath(version, path);

@@ -17,6 +17,7 @@ const { getSkillBadgeMap } = await import("./lib/badges");
 const {
   getBySlug,
   listSkillReportsInternal,
+  resolveVersionByHash,
   resolveSkillAppealForUserInternal,
   submitSkillAppealForUserInternal,
   triageSkillReportForUserInternal,
@@ -71,6 +72,19 @@ const getBySlugHandler = (
           userId: string | null;
         };
       } | null;
+    } | null
+  >
+)._handler;
+
+const resolveVersionByHashHandler = (
+  resolveVersionByHash as unknown as WrappedHandler<
+    {
+      slug: string;
+      hash: string;
+    },
+    {
+      match: { version: string } | null;
+      latestVersion: { version: string } | null;
     } | null
   >
 )._handler;
@@ -213,6 +227,39 @@ function makeSkill(overrides: Record<string, unknown> = {}) {
     softDeletedAt: undefined,
     ...overrides,
   };
+}
+
+function makeResolveCtx(args: {
+  skill: Record<string, unknown>;
+  latestVersion?: Record<string, unknown> | null;
+  matchVersion?: Record<string, unknown> | null;
+  fingerprintMatches?: Array<Record<string, unknown>>;
+}) {
+  const fingerprintMatches = args.fingerprintMatches ?? [
+    { versionId: "skillVersions:match", createdAt: 10 },
+  ];
+  const query = vi.fn((table: string) => {
+    if (table === "skills") {
+      return { withIndex: vi.fn(() => ({ unique: vi.fn().mockResolvedValue(args.skill) })) };
+    }
+    if (table === "skillVersionFingerprints") {
+      return { withIndex: vi.fn(() => ({ take: vi.fn().mockResolvedValue(fingerprintMatches) })) };
+    }
+    if (table === "skillVersions") {
+      return {
+        withIndex: vi.fn(() => ({
+          order: vi.fn(() => ({ take: vi.fn().mockResolvedValue([]) })),
+        })),
+      };
+    }
+    throw new Error(`Unexpected query table: ${table}`);
+  });
+  const get = vi.fn(async (id: string) => {
+    if (id === args.skill.latestVersionId) return args.latestVersion ?? null;
+    if (id === "skillVersions:match") return args.matchVersion ?? null;
+    return null;
+  });
+  return { db: { query, get } } as never;
 }
 
 describe("skills.getBySlug", () => {
@@ -502,6 +549,101 @@ describe("skills.getBySlug", () => {
         contentType: "application/typescript",
       }),
     ]);
+  });
+
+  it("does not expose a latest version that belongs to another skill", async () => {
+    const ctx = makeCtx({
+      skill: makeSkill({ latestVersionId: "skillVersions:other" }),
+      owner: makeOwner("users:1", "demo-owner"),
+      latestVersion: {
+        _id: "skillVersions:other",
+        _creationTime: 2,
+        skillId: "skills:other",
+        version: "9.9.9",
+        fingerprint: "abc",
+        changelog: "",
+        changelogSource: "user",
+        files: [],
+        createdBy: "users:2",
+        createdAt: 2,
+      },
+    });
+
+    const result = await getBySlugHandler(ctx, { slug: "demo" } as never);
+
+    expect(result?.skill).toMatchObject({ latestVersionId: "skillVersions:other" });
+    expect(result?.latestVersion).toBeNull();
+  });
+
+  it("does not expose a soft-deleted latest version", async () => {
+    const ctx = makeCtx({
+      skill: makeSkill({ latestVersionId: "skillVersions:deleted" }),
+      owner: makeOwner("users:1", "demo-owner"),
+      latestVersion: {
+        _id: "skillVersions:deleted",
+        _creationTime: 2,
+        skillId: "skills:1",
+        version: "2.0.0",
+        fingerprint: "abc",
+        changelog: "",
+        changelogSource: "user",
+        files: [],
+        createdBy: "users:1",
+        createdAt: 2,
+        softDeletedAt: 3,
+      },
+    });
+
+    const result = await getBySlugHandler(ctx, { slug: "demo" } as never);
+
+    expect(result?.latestVersion).toBeNull();
+  });
+});
+
+describe("skills.resolveVersionByHash", () => {
+  const hash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+  it("does not expose a soft-deleted latest version", async () => {
+    const ctx = makeResolveCtx({
+      skill: makeSkill({ latestVersionId: "skillVersions:deleted" }),
+      latestVersion: {
+        _id: "skillVersions:deleted",
+        skillId: "skills:1",
+        version: "2.0.0",
+        softDeletedAt: 3,
+      },
+      matchVersion: {
+        _id: "skillVersions:match",
+        skillId: "skills:1",
+        version: "1.0.0",
+        files: [],
+      },
+    });
+
+    const result = await resolveVersionByHashHandler(ctx, { slug: "demo", hash });
+
+    expect(result).toMatchObject({ match: { version: "1.0.0" }, latestVersion: null });
+  });
+
+  it("does not expose a latest version that belongs to another skill", async () => {
+    const ctx = makeResolveCtx({
+      skill: makeSkill({ latestVersionId: "skillVersions:other" }),
+      latestVersion: {
+        _id: "skillVersions:other",
+        skillId: "skills:other",
+        version: "9.9.9",
+      },
+      matchVersion: {
+        _id: "skillVersions:match",
+        skillId: "skills:1",
+        version: "1.0.0",
+        files: [],
+      },
+    });
+
+    const result = await resolveVersionByHashHandler(ctx, { slug: "demo", hash });
+
+    expect(result).toMatchObject({ match: { version: "1.0.0" }, latestVersion: null });
   });
 });
 

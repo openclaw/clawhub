@@ -109,6 +109,14 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   change, link, or membership events, not routine login refreshes.
 - Public queries hide non-active moderation statuses; moderators can still access via
   moderator-only queries and unhide/restore/delete/ban.
+- Public skill raw-file, README, package-compat file, and zip download reads must
+  honor the same malware/pending/hidden/removed download block. Metadata routes
+  may keep exposing malware-blocked skill summaries for transparency, but they
+  must not serve the blocked artifact payload to public callers.
+- Skill version tags and `latestVersionId` are only valid when the referenced
+  `skillVersions` row belongs to the same skill and is not soft-deleted. Writers
+  must reject cross-skill tag targets, and public readers should treat stale
+  cross-skill pointers as missing versions.
 - Legacy report rows with `status: "triaged"` are read as `confirmed` for
   compatibility while new writes store `confirmed`.
 - Skills directory supports an optional "Hide suspicious" filter to exclude

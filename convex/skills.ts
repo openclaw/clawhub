@@ -104,6 +104,7 @@ import {
   selectSkillCardFile,
   sourceSkillVersionFiles,
 } from "./lib/skillCards";
+import { isPublicSkillVersionAvailableForSkill } from "./lib/skillFileAccess";
 import { normalizeSkillIconValue } from "./lib/skillIcon";
 import {
   fetchText,
@@ -121,7 +122,7 @@ import {
 import {
   digestToHydratableSkill,
   digestToOwnerInfo,
-  extractDigestFields,
+  extractValidatedDigestFields,
   upsertSkillSearchDigest,
 } from "./lib/skillSearchDigest";
 import { assertValidSkillSlug, normalizeSkillSlug } from "./lib/skillSlugValidator";
@@ -1708,7 +1709,7 @@ async function loadPublicSkillReference(ctx: QueryCtx, skillId: Id<"skills"> | n
 
 type PublicSkillListVersion = Pick<
   Doc<"skillVersions">,
-  "_id" | "_creationTime" | "version" | "createdAt" | "changelog" | "changelogSource"
+  "_id" | "_creationTime" | "skillId" | "version" | "createdAt" | "changelog" | "changelogSource"
 > & {
   parsed?: PublicSkillVersionParsed;
   // Mirrors `skillVersions.apiKeyRequired` of the latest version.
@@ -1873,16 +1874,17 @@ async function buildPublicSkillEntries(
       const summary = skill.latestVersionSummary;
       const hasSummary = includeVersion && summary;
       const [latestVersionDoc, ownerInfo] = await Promise.all([
-        includeVersion && !hasSummary && skill.latestVersionId
-          ? ctx.db.get(skill.latestVersionId)
+        includeVersion && skill.latestVersionId
+          ? loadPublicLatestVersionForSkill(ctx, skill)
           : null,
         getOwnerInfo(skill._id, skill.ownerUserId, skill.ownerPublisherId),
       ]);
       const publicSkill = toPublicSkill(skill);
       if (!publicSkill || !ownerInfo.owner) return null;
-      const latestVersion = hasSummary
-        ? toPublicSkillListVersionFromSummary(summary!, skill.latestVersionId)
-        : toPublicSkillListVersion(latestVersionDoc);
+      const latestVersion =
+        hasSummary && latestVersionDoc
+          ? toPublicSkillListVersionFromSummary(summary!, latestVersionDoc._id, skill._id)
+          : toPublicSkillListVersion(latestVersionDoc);
       return {
         skill: publicSkill,
         latestVersion,
@@ -1917,6 +1919,15 @@ async function filterSkillsByActiveOwner(ctx: Pick<QueryCtx, "db">, skills: Doc<
   return filtered.filter((skill): skill is Doc<"skills"> => skill !== null);
 }
 
+async function loadPublicLatestVersionForSkill(
+  ctx: Pick<QueryCtx, "db">,
+  skill: Pick<Doc<"skills">, "_id" | "latestVersionId">,
+) {
+  if (!skill.latestVersionId) return null;
+  const version = await ctx.db.get(skill.latestVersionId);
+  return isPublicSkillVersionAvailableForSkill(version, skill._id) ? version : null;
+}
+
 function toPublicSkillListVersion(
   version: Doc<"skillVersions"> | null,
 ): PublicSkillListVersion | null {
@@ -1924,6 +1935,7 @@ function toPublicSkillListVersion(
   return {
     _id: version._id,
     _creationTime: version._creationTime,
+    skillId: version.skillId,
     version: version.version,
     createdAt: version.createdAt,
     changelog: version.changelog,
@@ -2029,10 +2041,12 @@ async function getGeneratedSkillCardPublicFile(
 function toPublicSkillListVersionFromSummary(
   summary: NonNullable<Doc<"skills">["latestVersionSummary"]>,
   latestVersionId: Id<"skillVersions"> | undefined,
+  skillId: Id<"skills">,
 ): PublicSkillListVersion | null {
   if (!latestVersionId) return null;
   return {
     _id: latestVersionId,
+    skillId,
     // Approximates _creationTime; both are set to `now` in the same transaction
     _creationTime: summary.createdAt,
     version: summary.version,
@@ -2227,8 +2241,14 @@ export const getBySlug = query({
     const isOwner = Boolean(userId && (userId === skill.ownerUserId || membership));
 
     const latestVersionDoc = skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null;
-    const latestVersion = toPublicSkillVersion(latestVersionDoc);
-    const generatedSkillCard = await getGeneratedSkillCardPublicFile(ctx, latestVersionDoc);
+    const publicLatestVersionDoc = isPublicSkillVersionAvailableForSkill(
+      latestVersionDoc,
+      skill._id,
+    )
+      ? latestVersionDoc
+      : null;
+    const latestVersion = toPublicSkillVersion(publicLatestVersionDoc);
+    const generatedSkillCard = await getGeneratedSkillCardPublicFile(ctx, publicLatestVersionDoc);
     if (latestVersion) latestVersion.generatedSkillCard = generatedSkillCard;
     const owner = toPublicPublisher(ownerPublisher);
     if (!owner) return null;
@@ -3340,12 +3360,13 @@ export const listWithLatest = query({
         : withBadges;
     const limited = ordered.slice(0, limit);
     const items = await Promise.all(
-      limited.map(async (skill) => ({
-        skill: toPublicSkill(skill),
-        latestVersion: toPublicSkillVersion(
-          skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null,
-        ),
-      })),
+      limited.map(async (skill) => {
+        const latestVersion = await loadPublicLatestVersionForSkill(ctx, skill);
+        return {
+          skill: toPublicSkill(skill),
+          latestVersion: toPublicSkillVersion(latestVersion),
+        };
+      }),
     );
     return items.filter(
       (
@@ -4491,9 +4512,7 @@ export const listPublicPageV3 = query({
       if (!publicSkill) continue;
       const ownerInfo = digestToOwnerInfo(digest);
       if (!ownerInfo?.owner) continue;
-      const latestVersion = digest.latestVersionSummary
-        ? toPublicSkillListVersionFromSummary(digest.latestVersionSummary, digest.latestVersionId)
-        : null;
+      const latestVersion = await resolveDigestLatestVersionForSkill(ctx, digest);
       items.push({
         skill: publicSkill,
         latestVersion,
@@ -4708,9 +4727,11 @@ export const listPublicPageV4 = query({
         schema,
       });
 
-      const items = result.page
-        .map((digest) => buildPublicSkillEntryFromDigest(digest))
-        .filter((item): item is PublicSkillEntry => item !== null);
+      const items: PublicSkillEntry[] = [];
+      for (const digest of result.page) {
+        const item = await buildPublicSkillEntryFromDigest(ctx, digest);
+        if (item) items.push(item);
+      }
       let nextCursor: string | null = null;
       if (result.hasMore && result.indexKeys.length > 0) {
         nextCursor = encodeIndexKey(indexName, result.indexKeys[result.indexKeys.length - 1]);
@@ -4761,7 +4782,7 @@ export const listPublicPageV4 = query({
             excludeCategoryKeywords,
           })
         ) {
-          const item = buildPublicSkillEntryFromDigest(digest);
+          const item = await buildPublicSkillEntryFromDigest(ctx, digest);
           if (item) items.push(item);
         }
         if (items.length >= numItems) {
@@ -4961,7 +4982,7 @@ export const listRelatedByCategory = query({
       if (isSkillSuspicious(hydratable)) continue;
       if (categorySlug && inferDigestSkillCategorySlug(digest) !== categorySlug) continue;
       if (!digestMatchesRelatedCategory(digest, keywords)) continue;
-      const item = buildPublicSkillEntryFromDigest(digest);
+      const item = await buildPublicSkillEntryFromDigest(ctx, digest);
       if (!item) continue;
       items.push(item);
       if (items.length >= limit) break;
@@ -4997,7 +5018,7 @@ export const listPublicTrendingPage = query({
         .unique();
       if (!digest) continue;
       if (args.nonSuspiciousOnly && digest.isSuspicious) continue;
-      const item = buildPublicSkillEntryFromDigest(digest);
+      const item = await buildPublicSkillEntryFromDigest(ctx, digest);
       if (!item) continue;
       items.push(item);
       if (items.length >= limit) break;
@@ -5021,11 +5042,9 @@ export const listAuditPage = query({
 
     const page = [];
     for (const digest of result.page) {
-      const entry = buildPublicSkillEntryFromDigest(digest);
+      const entry = await buildPublicSkillEntryFromDigest(ctx, digest);
       if (!entry) continue;
-      const latestVersion = digest.latestVersionId
-        ? await ctx.db.get(digest.latestVersionId)
-        : null;
+      const latestVersion = await loadPublicLatestVersionForDigest(ctx, digest);
       page.push({
         kind: "skill" as const,
         skill: entry.skill,
@@ -5065,17 +5084,16 @@ export const listAuditPage = query({
   },
 });
 
-function buildPublicSkillEntryFromDigest(
+async function buildPublicSkillEntryFromDigest(
+  ctx: Pick<QueryCtx, "db">,
   digest: Doc<"skillSearchDigest">,
-): PublicSkillEntry | null {
+): Promise<PublicSkillEntry | null> {
   const hydratable = digestToHydratableSkill(digest);
   const publicSkill = toPublicSkill(hydratable);
   if (!publicSkill) return null;
   const ownerInfo = digestToOwnerInfo(digest);
   if (!ownerInfo?.owner) return null;
-  const latestVersion = digest.latestVersionSummary
-    ? toPublicSkillListVersionFromSummary(digest.latestVersionSummary, digest.latestVersionId)
-    : null;
+  const latestVersion = await resolveDigestLatestVersionForSkill(ctx, digest);
   return {
     skill: publicSkill,
     latestVersion,
@@ -5084,15 +5102,61 @@ function buildPublicSkillEntryFromDigest(
   };
 }
 
-function buildPublicSkillApiListEntryFromDigest(digest: Doc<"skillSearchDigest">) {
+async function loadPublicLatestVersionForDigest(
+  ctx: Pick<QueryCtx, "db">,
+  digest: Pick<Doc<"skillSearchDigest">, "skillId" | "latestVersionId" | "latestVersionSkillId">,
+) {
+  if (!digest.latestVersionId) return null;
+  if (digest.latestVersionSkillId !== undefined && digest.latestVersionSkillId !== digest.skillId) {
+    return null;
+  }
+  const version = await ctx.db.get(digest.latestVersionId);
+  return isPublicSkillVersionAvailableForSkill(version, digest.skillId) ? version : null;
+}
+
+function toDigestLatestVersionForSkill(digest: Doc<"skillSearchDigest">) {
+  if (!digest.latestVersionSummary || !digest.latestVersionId) {
+    return null;
+  }
+  if (digest.latestVersionSkillId !== digest.skillId) {
+    return null;
+  }
+  return toPublicSkillListVersionFromSummary(
+    digest.latestVersionSummary,
+    digest.latestVersionId,
+    digest.skillId,
+  );
+}
+
+async function resolveDigestLatestVersionForSkill(
+  ctx: Pick<QueryCtx, "db">,
+  digest: Doc<"skillSearchDigest">,
+) {
+  if (!digest.latestVersionSummary || !digest.latestVersionId) {
+    return null;
+  }
+  if (digest.latestVersionSkillId === undefined) {
+    const latestVersion = await loadPublicLatestVersionForDigest(ctx, digest);
+    return latestVersion
+      ? toPublicSkillListVersionFromSummary(
+          digest.latestVersionSummary,
+          digest.latestVersionId,
+          digest.skillId,
+        )
+      : null;
+  }
+  return toDigestLatestVersionForSkill(digest);
+}
+
+async function buildPublicSkillApiListEntryFromDigest(
+  ctx: Pick<QueryCtx, "db">,
+  digest: Doc<"skillSearchDigest">,
+) {
   const publicSkill = toPublicSkill(digestToHydratableSkill(digest));
   if (!publicSkill) return null;
   const ownerInfo = digestToOwnerInfo(digest);
   if (!ownerInfo?.owner) return null;
-  const latestVersion =
-    digest.latestVersionSummary && digest.latestVersionId
-      ? toPublicSkillListVersionFromSummary(digest.latestVersionSummary, digest.latestVersionId)
-      : null;
+  const latestVersion = await resolveDigestLatestVersionForSkill(ctx, digest);
 
   return {
     skill: {
@@ -5154,9 +5218,11 @@ export const listPublicApiPageV1 = query({
       index: indexName,
       schema,
     });
-    const items = result.page
-      .map((digest) => buildPublicSkillApiListEntryFromDigest(digest))
-      .filter((item): item is NonNullable<typeof item> => item !== null);
+    const items = [];
+    for (const digest of result.page) {
+      const item = await buildPublicSkillApiListEntryFromDigest(ctx, digest);
+      if (item) items.push(item);
+    }
     const nextCursor =
       result.hasMore && result.indexKeys.length > 0
         ? encodeIndexKey(indexName, result.indexKeys[result.indexKeys.length - 1])
@@ -5252,8 +5318,12 @@ function skillCatalogMatchesFilters(
   return true;
 }
 
-function toPublicSkillCatalogItem(digest: Doc<"skillSearchDigest">): PublicSkillCatalogItem {
+async function toPublicSkillCatalogItem(
+  ctx: Pick<QueryCtx, "db">,
+  digest: Doc<"skillSearchDigest">,
+): Promise<PublicSkillCatalogItem> {
   const ownerInfo = digestToOwnerInfo(digest);
+  const latestVersion = await resolveDigestLatestVersionForSkill(ctx, digest);
   return {
     name: digest.slug,
     displayName: digest.displayName,
@@ -5265,7 +5335,7 @@ function toPublicSkillCatalogItem(digest: Doc<"skillSearchDigest">): PublicSkill
     ownerHandle: ownerInfo?.ownerHandle ?? null,
     createdAt: digest.createdAt,
     updatedAt: digest.updatedAt,
-    latestVersion: digest.latestVersionSummary?.version ?? null,
+    latestVersion: latestVersion?.version ?? null,
     capabilityTags: digest.capabilityTags ?? [],
     executesCode: false,
     verificationTier: null,
@@ -5408,7 +5478,7 @@ export const listPackageCatalogPage = query({
       for (let index = offset; index < page.page.length; index += 1) {
         const digest = page.page[index];
         if (!skillCatalogMatchesFilters(digest, args)) continue;
-        collected.push(toPublicSkillCatalogItem(digest));
+        collected.push(await toPublicSkillCatalogItem(ctx, digest));
         if (collected.length >= targetCount) {
           const nextOffset = index + 1;
           if (nextOffset < page.page.length) {
@@ -5476,7 +5546,7 @@ async function searchPackageCatalogImpl(ctx: QueryCtx, args: SkillPackageCatalog
         seen.add(exactDigest.skillId);
         matches.push({
           ...match,
-          package: toPublicSkillCatalogItem(exactDigest),
+          package: await toPublicSkillCatalogItem(ctx, exactDigest),
         });
       }
     }
@@ -5497,7 +5567,7 @@ async function searchPackageCatalogImpl(ctx: QueryCtx, args: SkillPackageCatalog
       seen.add(digest.skillId);
       matches.push({
         ...match,
-        package: toPublicSkillCatalogItem(digest),
+        package: await toPublicSkillCatalogItem(ctx, digest),
       });
     }
   }
@@ -5615,10 +5685,11 @@ async function fetchHighlightedPage(
 
   const trimmed = digests.slice(0, opts.numItems);
 
-  // Build PublicSkillEntry[]
-  const items = trimmed
-    .map((digest) => buildPublicSkillEntryFromDigest(digest))
-    .filter((item): item is PublicSkillEntry => item !== null);
+  const items: PublicSkillEntry[] = [];
+  for (const digest of trimmed) {
+    const item = await buildPublicSkillEntryFromDigest(ctx, digest);
+    if (item) items.push(item);
+  }
 
   // Highlighted skills are few enough to return in one page — no cursor needed
   return { page: items, hasMore: false, nextCursor: null };
@@ -8078,8 +8149,7 @@ async function canReadSkillVersionFiles(ctx: ActionCtx, version: Doc<"skillVersi
 
   if (skill.softDeletedAt || version.softDeletedAt) return false;
 
-  const isMalwareBlocked = skill.moderationFlags?.includes("blocked.malware") ?? false;
-  return Boolean(toPublicSkill(skill) || isMalwareBlocked);
+  return Boolean(toPublicSkill(skill));
 }
 
 export const getReadme: ReturnType<typeof action> = action({
@@ -8171,7 +8241,10 @@ export const resolveVersionByHash = query({
     const skill = resolved.skill;
     if (!skill) return null;
 
-    const latestVersion = skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null;
+    const latestVersionDoc = skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null;
+    const latestVersion = isPublicSkillVersionAvailableForSkill(latestVersionDoc, skill._id)
+      ? latestVersionDoc
+      : null;
 
     const fingerprintMatches = await ctx.db
       .query("skillVersionFingerprints")
@@ -8237,6 +8310,18 @@ export const updateTags = mutation({
       assertModerator(user);
     }
 
+    const versionsById = new Map<Id<"skillVersions">, Doc<"skillVersions">>();
+    for (const entry of args.tags) {
+      let version = versionsById.get(entry.versionId) ?? null;
+      if (!version) {
+        version = await ctx.db.get(entry.versionId);
+        if (version) versionsById.set(entry.versionId, version);
+      }
+      if (!isPublicSkillVersionAvailableForSkill(version, skill._id)) {
+        throw new Error("Version not found");
+      }
+    }
+
     const nextTags = { ...skill.tags };
     for (const entry of args.tags) {
       nextTags[entry.tag] = entry.versionId;
@@ -8252,18 +8337,16 @@ export const updateTags = mutation({
 
     // Keep latestVersionSummary in sync when the latest tag is repointed
     if (latestEntry && latestEntry.versionId !== skill.latestVersionId) {
-      const version = await ctx.db.get(latestEntry.versionId);
-      if (version) {
-        patch.latestVersionSummary = {
-          version: version.version,
-          createdAt: version.createdAt,
-          changelog: version.changelog,
-          changelogSource: version.changelogSource,
-          clawdis: version.parsed?.clawdis,
-          apiKeyRequired: version.apiKeyRequired,
-        };
-        patch.capabilityTags = version.capabilityTags;
-      }
+      const version = versionsById.get(latestEntry.versionId)!;
+      patch.latestVersionSummary = {
+        version: version.version,
+        createdAt: version.createdAt,
+        changelog: version.changelog,
+        changelogSource: version.changelogSource,
+        clawdis: version.parsed?.clawdis,
+        apiKeyRequired: version.apiKeyRequired,
+      };
+      patch.capabilityTags = version.capabilityTags;
     }
 
     await ctx.db.patch(skill._id, patch);
@@ -9040,7 +9123,7 @@ async function syncSkillSearchDigestForSkillDoc(ctx: MutationCtx, skill: Doc<"sk
     ownerUserId: skill.ownerUserId,
   });
   await upsertSkillSearchDigest(ctx, {
-    ...extractDigestFields(skill),
+    ...(await extractValidatedDigestFields(ctx, skill)),
     ownerHandle: owner?.handle ?? "",
     ownerKind: owner?.kind,
     ownerName: owner?.linkedUserId ? owner.handle : undefined,
@@ -9608,7 +9691,7 @@ export const setSkillCapabilityTags = mutation({
       ownerUserId: nextSkill.ownerUserId,
     });
     await upsertSkillSearchDigest(ctx, {
-      ...extractDigestFields(nextSkill),
+      ...(await extractValidatedDigestFields(ctx, nextSkill)),
       ownerHandle: owner?.handle ?? "",
       ownerKind: owner?.kind,
       ownerName: owner?.linkedUserId ? owner.handle : undefined,
