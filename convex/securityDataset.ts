@@ -4,13 +4,21 @@ import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import type { ActionCtx, QueryCtx } from "./_generated/server";
 import { internalAction, internalQuery } from "./functions";
+import { getOwnerPublisher } from "./lib/publishers";
 
 const MAX_EXPORT_PAGE_SIZE = 50;
 const MAX_EXPORT_BATCH_PAGES = 20;
 const REDACTION_POLICY_VERSION = "public-signals-v1";
 const SOURCE_TABLES = ["skillVersions", "packageReleases"] as const;
-const SCANNER_SOURCES = ["static", "virustotal", "llm", "moderation_consensus"] as const;
+const SCANNER_SOURCES = [
+  "static",
+  "virustotal",
+  "skillspector",
+  "llm",
+  "moderation_consensus",
+] as const;
 type StoredVtAnalysis = Doc<"skillVersions">["vtAnalysis"];
+type StoredSkillSpectorAnalysis = Doc<"skillVersions">["skillSpectorAnalysis"];
 type StoredLlmAnalysis = Doc<"skillVersions">["llmAnalysis"];
 type ArtifactExportRow =
   | Awaited<ReturnType<typeof skillVersionPageToExportRows>>[number]
@@ -205,11 +213,13 @@ async function skillVersionPageToExportRows(ctx: QueryCtx, versions: Array<Doc<"
   for (const version of versions) {
     const skill = await ctx.db.get(version.skillId);
     if (!skill || skill.softDeletedAt) continue;
+    const publicOwnerHandle = await getPublicOwnerHandle(ctx, skill);
     rows.push({
       sourceKind: "skill" as const,
       sourceDocId: version._id,
       parentDocId: skill._id,
       publicName: skill.displayName,
+      publicOwnerHandle,
       publicSlug: skill.slug,
       version: version.version,
       artifactSha256: version.sha256hash ?? null,
@@ -222,6 +232,7 @@ async function skillVersionPageToExportRows(ctx: QueryCtx, versions: Array<Doc<"
       packageExecutesCode: null,
       sourceRepoHost: null,
       vtAnalysis: normalizeVtAnalysis(version.vtAnalysis),
+      skillSpectorAnalysis: normalizeSkillSpectorAnalysis(version.skillSpectorAnalysis),
       staticScan: version.staticScan ?? null,
       llmAnalysis: normalizeLlmAnalysis(version.llmAnalysis),
       moderationConsensus:
@@ -247,11 +258,13 @@ async function packageReleasePageToExportRows(
   for (const release of releases) {
     const pkg = await ctx.db.get(release.packageId);
     if (!pkg || pkg.softDeletedAt || pkg.channel === "private") continue;
+    const publicOwnerHandle = await getPublicOwnerHandle(ctx, pkg);
     rows.push({
       sourceKind: "package" as const,
       sourceDocId: release._id,
       parentDocId: pkg._id,
       publicName: pkg.displayName,
+      publicOwnerHandle,
       publicSlug: pkg.name,
       version: release.version,
       artifactSha256: release.sha256hash ?? release.integritySha256,
@@ -264,6 +277,7 @@ async function packageReleasePageToExportRows(
       packageExecutesCode: pkg.executesCode ?? null,
       sourceRepoHost: sourceRepoHost(pkg.sourceRepo),
       vtAnalysis: normalizeVtAnalysis(release.vtAnalysis),
+      skillSpectorAnalysis: normalizeSkillSpectorAnalysis(release.skillSpectorAnalysis),
       staticScan: release.staticScan ?? null,
       llmAnalysis: normalizeLlmAnalysis(release.llmAnalysis),
       moderationConsensus: null,
@@ -335,6 +349,27 @@ function normalizeVtAnalysis(analysis: StoredVtAnalysis) {
   };
 }
 
+function normalizeSkillSpectorAnalysis(analysis: StoredSkillSpectorAnalysis) {
+  if (!analysis) return null;
+  return {
+    status: analysis.status,
+    score: analysis.score ?? null,
+    severity: analysis.severity ?? null,
+    recommendation: analysis.recommendation ?? null,
+    issueCount: analysis.issueCount,
+    issues: analysis.issues.map((issue) => ({
+      issueId: issue.issueId,
+      severity: issue.severity,
+      confidence: issue.confidence ?? null,
+      explanation: issue.explanation,
+    })),
+    scannerVersion: analysis.scannerVersion ?? null,
+    summary: analysis.summary ?? null,
+    error: analysis.error ?? null,
+    checkedAt: analysis.checkedAt,
+  };
+}
+
 function normalizeLlmAnalysis(analysis: StoredLlmAnalysis) {
   if (!analysis) return null;
   return {
@@ -349,6 +384,17 @@ function normalizeLlmAnalysis(analysis: StoredLlmAnalysis) {
     model: analysis.model ?? null,
     checkedAt: analysis.checkedAt,
   };
+}
+
+async function getPublicOwnerHandle(
+  ctx: QueryCtx,
+  source: Pick<Doc<"skills"> | Doc<"packages">, "ownerPublisherId" | "ownerUserId">,
+) {
+  const owner = await getOwnerPublisher(ctx, {
+    ownerPublisherId: source.ownerPublisherId,
+    ownerUserId: source.ownerUserId,
+  });
+  return owner?.handle ?? null;
 }
 
 function sourceRepoHost(sourceRepo: string | undefined) {

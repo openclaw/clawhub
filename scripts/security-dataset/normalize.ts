@@ -113,6 +113,7 @@ export type ArtifactExportInput = {
   sourceDocId: string;
   parentDocId: string;
   publicName: string;
+  publicOwnerHandle: string | null;
   publicSlug: string | null;
   version: string;
   artifactSha256: string | null;
@@ -139,7 +140,9 @@ export type ArtifactRow = {
   source_doc_id_hash: string;
   parent_doc_id_hash: string;
   public_name: string;
+  public_owner_handle: string | null;
   public_slug: string | null;
+  public_qualified_slug: string | null;
   version: string;
   artifact_sha256: string | null;
   skill_md_content_redacted?: string | null;
@@ -326,7 +329,9 @@ function buildArtifactRow(input: ArtifactExportInput, artifactId: string): Artif
     source_doc_id_hash: hashString(input.sourceDocId),
     parent_doc_id_hash: hashString(input.parentDocId),
     public_name: input.publicName,
+    public_owner_handle: input.publicOwnerHandle,
     public_slug: input.publicSlug,
+    public_qualified_slug: qualifiedPublicSlug(input),
     version: input.version,
     artifact_sha256: input.artifactSha256,
     ...(input.sourceKind === "skill" && input.skillMdContentRedacted
@@ -349,6 +354,12 @@ function buildArtifactRow(input: ArtifactExportInput, artifactId: string): Artif
     has_static_scan: input.staticScan !== null,
     has_llm_scan: input.llmAnalysis !== null,
   };
+}
+
+function qualifiedPublicSlug(input: ArtifactExportInput) {
+  if (input.sourceKind !== "skill") return null;
+  if (!input.publicOwnerHandle || !input.publicSlug) return null;
+  return `${input.publicOwnerHandle}/${input.publicSlug}`;
 }
 
 function buildScanResultRows(input: ArtifactExportInput, artifactId: string): ScanResultRow[] {
