@@ -210,32 +210,42 @@ const DIAGNOSTIC_CONTENT_KEY_PATTERN =
   /^(code[_-]?snippet|content|detail|evidence|explanation|finding|findings|guidance|match|message|note|notes|output|rawResult|recommendation|result|snippet|stderr|stdout|summary|text|userImpact|user_impact)$/i;
 const DIAGNOSTIC_SECRET_KEY_PATTERN =
   /(api[_-]?key|authorization|password|secret|token|webhook|credential)/i;
+const CODEX_EVENT_DIAGNOSTIC_TEXT_KEYS = new Set(["message", "text"]);
 
-function redactDiagnosticValue(value: unknown, key = ""): unknown {
+function redactDiagnosticValue(value: unknown, key = "", preserveDiagnosticText = false): unknown {
   if (DIAGNOSTIC_SECRET_KEY_PATTERN.test(key)) return "[redacted-secret]";
   if (typeof value === "string") {
     const redacted = redactDiagnosticText(value, 2_000);
+    if (preserveDiagnosticText && CODEX_EVENT_DIAGNOSTIC_TEXT_KEYS.has(key)) return redacted;
     if (!DIAGNOSTIC_CONTENT_KEY_PATTERN.test(key)) return redacted;
     return `[redacted ${redacted.length} chars]`;
   }
   if (Array.isArray(value)) {
     if (DIAGNOSTIC_CONTENT_KEY_PATTERN.test(key)) return `[redacted ${value.length} item(s)]`;
-    return value.map((item) => redactDiagnosticValue(item));
+    return value.map((item) => redactDiagnosticValue(item, "", preserveDiagnosticText));
   }
   if (!value || typeof value !== "object") return value;
   return Object.fromEntries(
     Object.entries(value as Record<string, unknown>).map(([entryKey, entryValue]) => [
       entryKey,
-      redactDiagnosticValue(entryValue, entryKey),
+      redactDiagnosticValue(entryValue, entryKey, preserveDiagnosticText),
     ]),
   );
 }
 
-function redactStructuredDiagnosticText(value: string) {
+function redactStructuredDiagnosticText(
+  value: string,
+  options?: { preserveDiagnosticText?: boolean },
+) {
   const trimmed = value.trim();
+  const preserveDiagnosticText = options?.preserveDiagnosticText === true;
   if (!trimmed) return "";
   try {
-    return JSON.stringify(redactDiagnosticValue(JSON.parse(trimmed)), null, 2);
+    return JSON.stringify(
+      redactDiagnosticValue(JSON.parse(trimmed), "", preserveDiagnosticText),
+      null,
+      2,
+    );
   } catch {
     // Codex --json writes JSONL. Redact parseable lines structurally, then fall back to text redaction.
     const lines = value.split("\n");
@@ -244,7 +254,9 @@ function redactStructuredDiagnosticText(value: string) {
         .map((line) => {
           if (!line.trim()) return line;
           try {
-            return JSON.stringify(redactDiagnosticValue(JSON.parse(line)));
+            return JSON.stringify(
+              redactDiagnosticValue(JSON.parse(line), "", preserveDiagnosticText),
+            );
           } catch {
             return redactDiagnosticText(line, 2_000);
           }
@@ -293,7 +305,9 @@ function sanitizedTargetForArtifactContext(target: ClaimedJob["target"]) {
 
 async function writeDiagnosticText(jobDir: string, fileName: string, value: string | undefined) {
   if (value === undefined) return undefined;
-  const redacted = redactStructuredDiagnosticText(value);
+  const redacted = redactStructuredDiagnosticText(value, {
+    preserveDiagnosticText: fileName === "codex.stdout.redacted.jsonl",
+  });
   await writeFile(join(jobDir, fileName), redacted.endsWith("\n") ? redacted : `${redacted}\n`);
   return fileName;
 }
