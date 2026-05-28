@@ -3,7 +3,7 @@ import { requireAuthToken } from "../../../clawhub/src/cli/authToken.js";
 import { getRegistry } from "../../../clawhub/src/cli/registry.js";
 import type { GlobalOpts } from "../../../clawhub/src/cli/types.js";
 import {
-  createSpinner,
+  createCrabLoader,
   fail,
   formatError,
   isInteractive,
@@ -55,7 +55,7 @@ export async function cmdBanUser(
     if (!ok) return undefined;
   }
 
-  const spinner = createSpinner(`Banning ${resolved.label}`);
+  const spinner = createCrabLoader(`Banning ${resolved.label}`);
   try {
     const result = await apiRequest(
       registry,
@@ -112,7 +112,7 @@ export async function cmdUnbanUser(
     if (!ok) return undefined;
   }
 
-  const spinner = createSpinner(`Unbanning ${resolved.label}`);
+  const spinner = createCrabLoader(`Unbanning ${resolved.label}`);
   try {
     const result = await apiRequest(
       registry,
@@ -169,7 +169,7 @@ export async function cmdSetRole(
     if (!ok) return undefined;
   }
 
-  const spinner = createSpinner(`Setting role for ${resolved.label}`);
+  const spinner = createCrabLoader(`Setting role for ${resolved.label}`);
   try {
     const result = await apiRequest(
       registry,
@@ -306,7 +306,7 @@ export async function cmdRescanSkill(
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = options.json ? null : createSpinner(`Queueing ClawScan rescan for ${slug}`);
+  const spinner = options.json ? null : createCrabLoader(`Queueing ClawScan rescan for ${slug}`);
   try {
     const result = await apiRequest(
       registry,
@@ -719,7 +719,7 @@ export async function cmdReclassifyBan(
 
   const spinner = options.json
     ? null
-    : createSpinner(
+    : createCrabLoader(
         `${dryRun ? "Planning" : "Applying"} ban reclassification for ${resolved.label}`,
       );
   try {

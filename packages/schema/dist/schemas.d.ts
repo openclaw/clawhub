@@ -217,6 +217,7 @@ export declare const ApiV1SearchResponseSchema: import("arktype/internal/variant
         displayName?: string | undefined;
         summary?: string | null | undefined;
         version?: string | null | undefined;
+        downloads?: number | undefined;
         updatedAt?: number | undefined;
         ownerHandle?: string | null | undefined;
         owner?: {

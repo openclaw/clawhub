@@ -8,7 +8,7 @@ import {
 import { requireAuthToken } from "../authToken.js";
 import { getRegistry } from "../registry.js";
 import type { GlobalOpts } from "../types.js";
-import { createSpinner, fail, formatError, isInteractive, promptConfirm } from "../ui.js";
+import { createCrabLoader, fail, formatError, isInteractive, promptConfirm } from "../ui.js";
 
 type ConfirmOptions = { yes?: boolean };
 
@@ -48,7 +48,7 @@ export async function cmdRenameSkill(
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = createSpinner(`Renaming ${slug} to ${newSlug}`);
+  const spinner = createCrabLoader(`Renaming ${slug} to ${newSlug}`);
 
   try {
     const result = await apiRequest(
@@ -90,7 +90,7 @@ export async function cmdMergeSkill(
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = createSpinner(`Merging ${sourceSlug} into ${targetSlug}`);
+  const spinner = createCrabLoader(`Merging ${sourceSlug} into ${targetSlug}`);
 
   try {
     const result = await apiRequest(

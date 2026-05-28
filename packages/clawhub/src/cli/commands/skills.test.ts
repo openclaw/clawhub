@@ -50,11 +50,12 @@ vi.mock("../../http.js", () => httpMocks.moduleFactory());
 vi.mock("../registry.js", () => registryMocks.moduleFactory());
 vi.mock("../authToken.js", () => authTokenMocks.moduleFactory());
 vi.mock("../ui.js", () => ({
-  createSpinner: vi.fn(() => mockSpinner),
+  createCrabLoader: vi.fn(() => mockSpinner),
   fail: (message: string) => uiMocks.fail(message),
   formatError: (error: unknown) => (error instanceof Error ? error.message : String(error)),
   isInteractive: mockIsInteractive,
   promptConfirm: mockPromptConfirm,
+  styleText: (value: string) => value,
 }));
 
 const extractZipToDirMock = vi.spyOn(skillStore, "extractZipToDir");
@@ -277,6 +278,7 @@ describe("cmdSearch", () => {
           displayName: "Demo Skill",
           version: "1.2.3",
           ownerHandle: "openclaw",
+          downloads: 1234,
           score: 0.9876,
         },
         {
@@ -284,6 +286,7 @@ describe("cmdSearch", () => {
           displayName: "Legacy Skill",
           version: null,
           owner: { displayName: "Legacy Owner" },
+          downloads: 1,
           score: 0.5,
         },
       ],
@@ -291,8 +294,10 @@ describe("cmdSearch", () => {
 
     await cmdSearch(makeOpts(), "demo");
 
-    expect(mockLog).toHaveBeenCalledWith("demo v1.2.3  @openclaw  Demo Skill  (0.988)");
-    expect(mockLog).toHaveBeenCalledWith("legacy  Legacy Owner  Legacy Skill  (0.500)");
+    expect(mockLog).toHaveBeenCalledWith(
+      "demo v1.2.3  @openclaw     Demo Skill    1,234 downloads",
+    );
+    expect(mockLog).toHaveBeenCalledWith("legacy       Legacy Owner  Legacy Skill  1 download");
   });
 });
 
@@ -817,7 +822,7 @@ describe("cmdUpdate", () => {
     expect(url.searchParams.get("hash")).toBe("bundle-fingerprint");
     expect(mockDownloadZip).not.toHaveBeenCalled();
     expect(rm).not.toHaveBeenCalled();
-    expect(mockSpinner.succeed).toHaveBeenCalledWith("demo: up to date (1.0.0)");
+    expect(mockSpinner.succeed).toHaveBeenCalledWith("demo up to date v1.0.0");
   });
 
   it("writes identical installedAt to origin and lockfile on update", async () => {

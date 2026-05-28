@@ -1,12 +1,11 @@
 import { isAbsolute, relative } from "node:path";
-import { intro, outro } from "@clack/prompts";
 import { hashSkillFiles, listTextFiles, readSkillOrigin } from "../../skills.js";
 import { getOptionalAuthToken, requireAuthToken } from "../authToken.js";
 import { resolveClawdbotSkillRoots } from "../clawdbotConfig.js";
 import { getRegistry } from "../registry.js";
 import { getFallbackSkillRoots } from "../scanSkills.js";
 import type { GlobalOpts } from "../types.js";
-import { createSpinner, fail, formatError, isInteractive } from "../ui.js";
+import { createCrabLoader, fail, formatError, isInteractive } from "../ui.js";
 import { normalizeGitHubRepo } from "./github.js";
 import { cmdPublish } from "./publish.js";
 import {
@@ -22,6 +21,8 @@ import {
   getRegistryWithAuth,
   mapWithConcurrency,
   normalizeConcurrency,
+  printSyncBanner,
+  printSyncOutro,
   printSection,
   resolvePublishMeta,
   scanRootsWithLabels,
@@ -32,7 +33,7 @@ import type { Candidate, LocalSkill, SyncOptions } from "./syncTypes.js";
 export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllowed: boolean) {
   const jsonMode = options.json === true;
   const allowPrompt = !jsonMode && isInteractive() && inputAllowed !== false;
-  if (!jsonMode) intro("ClawHub sync");
+  if (!jsonMode) printSyncBanner();
 
   const token = options.dryRun ? await getOptionalAuthToken() : await requireAuthToken();
 
@@ -49,7 +50,7 @@ export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllow
   );
   const concurrency = normalizeConcurrency(options.concurrency);
 
-  const spinner = jsonMode ? null : createSpinner("Scanning for local skills");
+  const spinner = jsonMode ? null : createCrabLoader("Scanning for local skills");
   const primaryScan = await scanRootsWithLabels(combinedRoots, clawdbotRoots.labels);
   let scan = primaryScan;
   let outputRoots = primaryScan.roots;
@@ -87,7 +88,7 @@ export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllow
   if (!jsonMode && deduped.duplicates.length > 0) {
     printSection("Skipped duplicate slugs", formatCommaList(deduped.duplicates, 16));
   }
-  const parsingSpinner = jsonMode ? null : createSpinner("Parsing local skills");
+  const parsingSpinner = jsonMode ? null : createCrabLoader("Parsing local skills");
   const locals: LocalSkill[] = [];
   try {
     let done = 0;
@@ -112,7 +113,7 @@ export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllow
     parsingSpinner?.stop();
   }
 
-  const candidatesSpinner = jsonMode ? null : createSpinner("Checking registry sync state");
+  const candidatesSpinner = jsonMode ? null : createCrabLoader("Checking registry sync state");
   const candidates: Candidate[] = [];
   const resolveSupport: { value: boolean | null } = { value: null };
   try {
@@ -160,7 +161,7 @@ export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllow
     if (synced.length > 0) {
       printSection("Already synced", formatCommaList(synced.map(formatSyncedSummary), 16));
     }
-    outro("Nothing to sync.");
+    printSyncOutro("Nothing to sync.");
     return;
   }
 
@@ -200,7 +201,7 @@ export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllow
       );
       return;
     }
-    outro("Nothing selected.");
+    printSyncOutro("Nothing selected.");
     return;
   }
 
@@ -237,7 +238,7 @@ export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllow
       );
       return;
     }
-    outro(`Dry run: would upload ${selected.length} skill(s).`);
+    printSyncOutro(`Dry run: would upload ${selected.length} skill(s).`);
     return;
   }
 
@@ -319,7 +320,9 @@ export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllow
         20,
       ),
     );
-    outro(`Uploaded ${uploaded} of ${selected.length} skill(s). ${failedUploads.length} failed.`);
+    printSyncOutro(
+      `Uploaded ${uploaded} of ${selected.length} skill(s). ${failedUploads.length} failed.`,
+    );
     process.exitCode = 1;
     return;
   }
@@ -342,7 +345,7 @@ export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllow
     return;
   }
 
-  outro(`Uploaded ${selected.length} skill(s).`);
+  printSyncOutro(`Uploaded ${selected.length} skill(s).`);
 }
 
 function normalizeRegistry(value: string) {

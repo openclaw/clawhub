@@ -3,7 +3,7 @@ import { ApiRoutes, ApiV1DeleteResponseSchema, parseArk } from "../../schema/ind
 import { requireAuthToken } from "../authToken.js";
 import { getRegistry } from "../registry.js";
 import type { GlobalOpts } from "../types.js";
-import { createSpinner, fail, formatError, isInteractive, promptConfirm } from "../ui.js";
+import { createCrabLoader, fail, formatError, isInteractive, promptConfirm } from "../ui.js";
 
 type SkillActionLabels = {
   verb: string;
@@ -66,7 +66,7 @@ export async function cmdDeleteSkill(
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = createSpinner(`${labels.progress} ${slug}`);
+  const spinner = createCrabLoader(`${labels.progress} ${slug}`);
   try {
     const result = await apiRequest(
       registry,
@@ -107,7 +107,7 @@ export async function cmdUndeleteSkill(
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = createSpinner(`${labels.progress} ${slug}`);
+  const spinner = createCrabLoader(`${labels.progress} ${slug}`);
   try {
     const result = await apiRequest(
       registry,

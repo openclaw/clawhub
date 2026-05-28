@@ -1690,7 +1690,13 @@ describe("httpApiV1 handlers", () => {
     const runAction = vi.fn().mockResolvedValue([
       {
         score: 1,
-        skill: { slug: "a", displayName: "A", summary: null, updatedAt: 1 },
+        skill: {
+          slug: "a",
+          displayName: "A",
+          summary: null,
+          updatedAt: 1,
+          stats: { downloads: 9 },
+        },
         version: { version: "1.0.0" },
       },
     ]);
@@ -1714,7 +1720,14 @@ describe("httpApiV1 handlers", () => {
     const runAction = vi.fn().mockResolvedValue([
       {
         score: 1,
-        skill: { slug: "demo", displayName: "Demo", summary: "Summary", updatedAt: 1 },
+        skill: {
+          slug: "demo",
+          displayName: "Demo",
+          summary: "Summary",
+          updatedAt: 1,
+          statsDownloads: 42,
+          stats: { downloads: 1 },
+        },
         version: { version: "1.0.0" },
         ownerHandle: "openclaw",
         owner: {
@@ -1741,6 +1754,7 @@ describe("httpApiV1 handlers", () => {
           displayName: "Demo",
           summary: "Summary",
           version: "1.0.0",
+          downloads: 42,
           updatedAt: 1,
           ownerHandle: "openclaw",
           owner: {

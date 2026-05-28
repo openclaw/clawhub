@@ -3,6 +3,7 @@ import { requireAuthToken } from "../../../clawhub/src/cli/authToken.js";
 import { getRegistry } from "../../../clawhub/src/cli/registry.js";
 import type { GlobalOpts } from "../../../clawhub/src/cli/types.js";
 import {
+  createCrabLoader,
   createSpinner,
   fail,
   formatError,
@@ -109,7 +110,7 @@ export async function cmdCreateOrg(opts: GlobalOpts, handle: string, options: Or
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = options.json ? null : createSpinner(`Creating @${orgHandle}`);
+  const spinner = options.json ? null : createCrabLoader(`Creating @${orgHandle}`);
   try {
     const result = await apiRequest(
       registry,
@@ -156,7 +157,7 @@ export async function cmdRemoveOrgMember(
   const registry = await getRegistry(opts, { cache: true });
   const spinner = options.json
     ? null
-    : createSpinner(`Removing @${normalizedMemberHandle} from @${orgHandle}`);
+    : createCrabLoader(`Removing @${normalizedMemberHandle} from @${orgHandle}`);
   try {
     const result = await apiRequest(
       registry,
@@ -387,7 +388,7 @@ export async function cmdRepairScopedPackages(
 
   const spinner = options.json
     ? null
-    : createSpinner(`${dryRun ? "Planning" : "Applying"} scoped package repairs`);
+    : createCrabLoader(`${dryRun ? "Planning" : "Applying"} scoped package repairs`);
 
   try {
     if (dryRun) {
