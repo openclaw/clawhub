@@ -6,7 +6,7 @@ import {
   normalizeClawScanNote,
 } from "clawhub-schema";
 import { useAction, useMutation, useQuery } from "convex/react";
-import { Info, Lock } from "lucide-react";
+import { ExternalLink, Info, Lock } from "lucide-react";
 import { type ReactNode, startTransition, useEffect, useMemo, useRef, useState } from "react";
 import semver from "semver";
 import { toast } from "sonner";
@@ -61,6 +61,8 @@ const apiRefs = api as unknown as {
 };
 
 const SHOW_CLAWPACK_ONBOARDING_BANNER = false;
+const PLUGIN_PUBLISHING_GUIDE_URL = "https://docs.openclaw.ai/clawhub/publishing#plugins";
+
 export function PublishPluginRoute() {
   const search = useSearch({ from: "/plugins/publish" });
   const { isAuthenticated, isLoading: isAuthLoading } = useAuthStatus();
@@ -257,21 +259,29 @@ export function PublishPluginRoute() {
   return (
     <main className="py-10">
       <Container size="narrow">
-        <header className="mb-6">
-          <h1 className="mb-2 font-display text-2xl font-bold text-[color:var(--ink)]">
-            {search.name ? "Publish Plugin Release" : "Publish Plugin"}
-          </h1>
-          <p className="text-sm text-[color:var(--ink-soft)]">
-            Upload a plugin folder, zip, or tgz.
-          </p>
-          {search.name ? (
+        <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="mb-2 font-display text-2xl font-bold text-[color:var(--ink)]">
+              {search.name ? "Publish Plugin Release" : "Publish Plugin"}
+            </h1>
             <p className="text-sm text-[color:var(--ink-soft)]">
-              Prefilled for {search.displayName ?? search.name}
-              {search.nextVersion && semver.valid(search.nextVersion)
-                ? ` \u00b7 suggested ${search.nextVersion}`
-                : ""}
+              Drop or select a plugin folder, .zip, or .tgz
             </p>
-          ) : null}
+            {search.name ? (
+              <p className="text-sm text-[color:var(--ink-soft)]">
+                Prefilled for {search.displayName ?? search.name}
+                {search.nextVersion && semver.valid(search.nextVersion)
+                  ? ` \u00b7 suggested ${search.nextVersion}`
+                  : ""}
+              </p>
+            ) : null}
+          </div>
+          <Button asChild variant="outline" size="sm" className="w-fit">
+            <a href={PLUGIN_PUBLISHING_GUIDE_URL} target="_blank" rel="noreferrer">
+              Plugin publishing guide
+              <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+            </a>
+          </Button>
         </header>
 
         {SHOW_CLAWPACK_ONBOARDING_BANNER ? (

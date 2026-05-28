@@ -3740,6 +3740,25 @@ code {
   line-height: 1.05;
 }
 
+.skill-settings-page-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.skill-settings-new-version-button {
+  width: fit-content;
+}
+
+.skill-settings-page-divider {
+  width: 100%;
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
 .skill-hero {
   display: grid;
   gap: 16px;
@@ -4028,7 +4047,7 @@ code {
   grid-template-columns: minmax(0, 1fr) minmax(320px, 50%);
   gap: clamp(32px, 5vw, 96px);
   align-items: start;
-  padding: 24px 0;
+  padding: 34px 0;
   border-bottom: 1px solid var(--line);
 }
 
@@ -4080,7 +4099,7 @@ code {
 
 .publisher-note-settings-editor {
   display: grid;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
   justify-self: end;
   width: 100%;
@@ -4090,17 +4109,17 @@ code {
   min-height: 96px;
 }
 
-.publisher-note-settings-meta {
+.publisher-note-settings-footer {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.publisher-note-settings-meta {
   color: var(--ink-muted);
   font-size: 0.78rem;
   line-height: 1.3;
-}
-
-.publisher-note-settings-editor > [data-slot="button"] {
-  justify-self: end;
-  margin-left: auto;
 }
 
 .publisher-note-settings-error {
@@ -4137,6 +4156,11 @@ code {
   .publisher-note-settings-editor {
     justify-self: stretch;
     width: 100%;
+  }
+
+  .publisher-note-settings-footer {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 

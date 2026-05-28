@@ -83,6 +83,17 @@ The scope must match the selected publish owner. If your package is named
 This prevents a package from claiming an org namespace that the publisher does
 not control.
 
+### Before Publishing a Plugin
+
+- Pick an owner that matches the package scope.
+- Include `openclaw.plugin.json`. Code plugins also need `package.json` with
+  `openclaw.compat.pluginApi` and `openclaw.build.openclawVersion`.
+- Include source repository and exact commit metadata, or use the CLI from a
+  GitHub-backed checkout so it can detect them.
+- Run `clawhub package publish <source> --dry-run` before creating a release.
+- Expect new releases to stay out of public install surfaces until automated
+  security checks and verification finish.
+
 ## Release Flow
 
 1. The UI, CLI, or GitHub workflow gathers package metadata and files.

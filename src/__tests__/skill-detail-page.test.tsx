@@ -1299,8 +1299,10 @@ describe("SkillDetailPage", () => {
     render(<SkillDetailPage slug="weather" mode="settings" />);
 
     expect(await screen.findByRole("heading", { name: /Skill settings/i })).toBeTruthy();
-    expect(screen.queryByText("Publish a new version")).toBeNull();
-    expect(screen.queryByRole("link", { name: "New Version" })).toBeNull();
+    const newVersionLink = screen.getByRole("link", { name: /Update skill files/i });
+    expect(newVersionLink.getAttribute("href")).toBe(
+      "/skills/publish?updateSlug=weather&ownerHandle=steipete",
+    );
     expect(screen.getByText("Rename slug")).toBeTruthy();
     expect(screen.getByText("Merge listing")).toBeTruthy();
   });
@@ -1349,6 +1351,7 @@ describe("SkillDetailPage", () => {
 
     render(<SkillDetailPage slug="weather" mode="settings" />);
     expect(await screen.findByRole("heading", { name: /Settings unavailable/i })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /Update skill files/i })).toBeNull();
   });
 
   it("does not render version tag cards on the simplified public detail surface", async () => {

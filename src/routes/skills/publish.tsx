@@ -54,6 +54,8 @@ import {
 } from "../upload/-utils";
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const SKILL_PUBLISHING_GUIDE_URL = "https://docs.openclaw.ai/clawhub/skill-format";
+const SOUL_PUBLISHING_GUIDE_URL = "https://docs.openclaw.ai/clawhub/soul-format";
 
 type SkillPublishField = "slug" | "displayName" | "version" | "tags" | "clawScanNote" | "license";
 
@@ -72,6 +74,8 @@ export function Upload() {
   const isSoulMode = siteMode === "souls";
   const requiredFileLabel = isSoulMode ? "SOUL.md" : "SKILL.md";
   const contentLabel = isSoulMode ? "soul" : "skill";
+  const publishingGuideUrl = isSoulMode ? SOUL_PUBLISHING_GUIDE_URL : SKILL_PUBLISHING_GUIDE_URL;
+  const publishingGuideLabel = isSoulMode ? "Soul publishing guide" : "Skill publishing guide";
   const showChangelogField = Boolean(updateSlug);
 
   const generateUploadUrl = useMutation(api.uploads.generateUploadUrl);
@@ -767,15 +771,21 @@ export function Upload() {
   return (
     <main className="py-10">
       <Container size="narrow">
-        <header className="flex flex-col gap-2 mb-6">
+        <header className="flex flex-col gap-3 mb-6 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="font-display text-2xl font-bold text-[color:var(--ink)]">
               Publish a {contentLabel}
             </h1>
             <p className="text-sm text-[color:var(--ink-soft)]">
-              Drop a folder with {requiredFileLabel} and text files. We will handle the rest.
+              Drop or select a {contentLabel} folder
             </p>
           </div>
+          <Button asChild variant="outline" size="sm" className="w-fit">
+            <a href={publishingGuideUrl} target="_blank" rel="noreferrer">
+              {publishingGuideLabel}
+              <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+            </a>
+          </Button>
         </header>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-6">
