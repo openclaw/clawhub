@@ -412,7 +412,6 @@ export async function parseMultipartPublish(
     ...(typeof payload.migrateOwner === "boolean" ? { migrateOwner: payload.migrateOwner } : {}),
     version: payload.version,
     changelog: typeof payload.changelog === "string" ? payload.changelog : "",
-    ...(typeof payload.clawScanNote === "string" ? { clawScanNote: payload.clawScanNote } : {}),
     ...(hasAcceptLicenseTerms ? { acceptLicenseTerms: payload.acceptLicenseTerms } : {}),
     tags: Array.isArray(payload.tags) ? payload.tags : undefined,
     ...(payload.source ? { source: payload.source } : {}),

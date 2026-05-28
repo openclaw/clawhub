@@ -89,17 +89,11 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   owner is deleted/deactivated or when the skill is malicious, hidden, or
   removed. The accept path is the final shared gate before ownership changes,
   so it must cancel the pending transfer before reporting the rejection.
-- `clawScanNote` is optional publisher-authored context stored directly on a
-  `skillVersions` or `packageReleases` row. It is not an appeal, has no
-  accepted/rejected state, does not imply staff response, and must not drive
-  moderation state transitions by itself.
-- CLI publishes only include `clawScanNote` when the publisher explicitly passes
-  it. UI publish flows may prefill the previous version/release note for
-  convenience. Owners/admins can also update the latest version/release note
-  from artifact settings and request a fresh ClawScan review without publishing
-  a new version. ClawScan must treat the field as untrusted publisher-provided
-  context rather than scanner instructions, and note updates must write an
-  `auditLogs` entry.
+- Publisher-authored scan notes are no longer part of the ClawScan input
+  contract. ClawScan decisions must be based on submitted artifacts, scanner
+  signals, and staff moderation state, not publisher-supplied explanatory text.
+  Legacy persisted note fields may exist on old rows for schema compatibility,
+  but publish, rescan, API, UI, and prompt paths must ignore them.
 - `auditLogs` remains the global compliance/security ledger. Product-facing
   moderation timelines live in `skillModerationEventLogs` and
   `packageModerationEventLogs`.

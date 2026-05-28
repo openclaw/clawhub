@@ -81,7 +81,6 @@
 
 ### Changes
 
-- Web: add publisher notes and unify ClawScan review pages (#2111).
 - Dev: auto-start services for Codex worktrees and add a local dev persona FAB (#2146, #2147).
 - Dev: add a local ClawScan dry-run helper script (#2143).
 

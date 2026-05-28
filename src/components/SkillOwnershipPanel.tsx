@@ -5,7 +5,6 @@ import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { getUserFacingConvexError } from "../lib/convexError";
-import { PublisherNoteSettingsEditor } from "./PublisherNoteSettingsEditor";
 import { SettingsActionRow } from "./settings/SettingsActionRow";
 import { Button } from "./ui/button";
 import {
@@ -34,8 +33,6 @@ type SkillOwnershipPanelProps = {
   ownedSkills: OwnedSkillOption[];
   summary?: string | null;
   onSaveSummary?: ((summary: string) => Promise<void>) | null;
-  clawScanNote?: string | null;
-  onSavePublisherNoteAndRescan?: ((note: string) => Promise<void>) | null;
 };
 
 function formatMutationError(error: unknown) {
@@ -71,7 +68,7 @@ function SummarySettingsEditor({
   }
 
   return (
-    <div className="publisher-note-settings-editor">
+    <div className="summary-settings-editor">
       <Textarea
         aria-label="Description"
         rows={3}
@@ -80,8 +77,8 @@ function SummarySettingsEditor({
         onChange={(event) => setValue(event.target.value)}
         placeholder="Enter a brief description..."
       />
-      <div className="publisher-note-settings-footer">
-        <span className="publisher-note-settings-meta">{value.trim().length}/500</span>
+      <div className="summary-settings-footer">
+        <span className="summary-settings-meta">{value.trim().length}/500</span>
         <Button
           type="button"
           variant="outline"
@@ -91,7 +88,7 @@ function SummarySettingsEditor({
           {isSaving ? "Saving" : "Save"}
         </Button>
       </div>
-      {error ? <p className="publisher-note-settings-error">{error}</p> : null}
+      {error ? <p className="summary-settings-error">{error}</p> : null}
     </div>
   );
 }
@@ -104,8 +101,6 @@ export function SkillOwnershipPanel({
   ownedSkills,
   summary,
   onSaveSummary,
-  clawScanNote,
-  onSavePublisherNoteAndRescan,
 }: SkillOwnershipPanelProps) {
   const navigate = useNavigate();
   const renameOwnedSkill = useMutation(api.skills.renameOwnedSkill);
@@ -184,18 +179,6 @@ export function SkillOwnershipPanel({
         >
           {onSaveSummary ? (
             <SummarySettingsEditor summary={summary} onSaveSummary={onSaveSummary} />
-          ) : null}
-        </SettingsActionRow>
-
-        <SettingsActionRow
-          title="Publisher note"
-          description="Help ClawScan understand unusual access or behavior."
-        >
-          {onSavePublisherNoteAndRescan ? (
-            <PublisherNoteSettingsEditor
-              note={clawScanNote}
-              onSaveAndRescan={onSavePublisherNoteAndRescan}
-            />
           ) : null}
         </SettingsActionRow>
 

@@ -433,8 +433,6 @@ type ReleaseLike = {
   vtAnalysis?: Doc<"packageReleases">["vtAnalysis"];
   skillSpectorAnalysis?: Doc<"packageReleases">["skillSpectorAnalysis"];
   llmAnalysis?: Doc<"packageReleases">["llmAnalysis"];
-  clawScanNote?: string;
-  clawScanNoteUpdatedAt?: number;
   staticScan?: Doc<"packageReleases">["staticScan"];
   manualModeration?: Doc<"packageReleases">["manualModeration"];
   integritySha256?: string;
@@ -1028,7 +1026,6 @@ function parsePackagePublishBody(body: unknown) {
     family: "skill" | "code-plugin" | "bundle-plugin";
     version: string;
     changelog: string;
-    clawScanNote?: string;
     manualOverrideReason?: string;
     channel?: "official" | "community" | "private";
     tags?: string[];
@@ -1062,7 +1059,6 @@ function parsePackagePublishBody(body: unknown) {
     family: parsed.family,
     version: parsed.version,
     changelog: parsed.changelog,
-    clawScanNote: parsed.clawScanNote?.trim() || undefined,
     manualOverrideReason: parsed.manualOverrideReason?.trim() || undefined,
     channel: parsed.channel ?? undefined,
     tags: parsed.tags?.filter(Boolean) ?? undefined,
@@ -2909,8 +2905,6 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
           vtAnalysis: result.version.vtAnalysis ?? null,
           skillSpectorAnalysis: result.version.skillSpectorAnalysis ?? null,
           llmAnalysis: result.version.llmAnalysis ?? null,
-          clawScanNote: result.version.clawScanNote ?? null,
-          clawScanNoteUpdatedAt: result.version.clawScanNoteUpdatedAt ?? null,
           staticScan: result.version.staticScan ?? null,
         },
       },

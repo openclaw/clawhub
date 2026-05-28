@@ -43,7 +43,6 @@ import {
   readArtifactReportStatus,
   appendPackageModerationEventLog,
 } from "./lib/artifactModeration";
-import { normalizeClawScanNoteForWrite } from "./lib/clawScanNote";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
 import { isOfficialPublisher } from "./lib/officialPublishers";
@@ -813,6 +812,15 @@ function toPublicPackage(
     createdAt: pkg.createdAt,
     updatedAt: pkg.updatedAt,
   };
+}
+
+function omitLegacyClawScanNoteFields(release: Doc<"packageReleases">) {
+  const {
+    clawScanNote: _legacyClawScanNote,
+    clawScanNoteUpdatedAt: _legacyClawScanNoteUpdatedAt,
+    ...publicRelease
+  } = release;
+  return publicRelease;
 }
 
 function packageArtifactSummary(
@@ -1898,13 +1906,16 @@ export const getByName = query({
     );
     return {
       package: publicPackage,
-      latestRelease: latestRelease && !latestRelease.softDeletedAt ? latestRelease : null,
+      latestRelease:
+        latestRelease && !latestRelease.softDeletedAt
+          ? omitLegacyClawScanNoteFields(latestRelease)
+          : null,
       owner,
     };
   },
 });
 
-export const getClawScanNoteSettings = query({
+export const getManageContext = query({
   args: {
     name: v.string(),
     candidateNames: v.optional(v.array(v.string())),
@@ -1938,7 +1949,7 @@ export const getClawScanNoteSettings = query({
 
     return {
       package: pkg,
-      latestRelease,
+      latestRelease: omitLegacyClawScanNoteFields(latestRelease),
     };
   },
 });
@@ -1966,7 +1977,10 @@ export const getByNameForStaff = query({
 
     return {
       package: pkg,
-      latestRelease: latestRelease && !latestRelease.softDeletedAt ? latestRelease : null,
+      latestRelease:
+        latestRelease && !latestRelease.softDeletedAt
+          ? omitLegacyClawScanNoteFields(latestRelease)
+          : null,
       owner,
       highlighted: highlighted
         ? {
@@ -1997,7 +2011,10 @@ export const getByNameForViewerInternal = internalQuery({
     );
     return {
       package: publicPackage,
-      latestRelease: latestRelease && !latestRelease.softDeletedAt ? latestRelease : null,
+      latestRelease:
+        latestRelease && !latestRelease.softDeletedAt
+          ? omitLegacyClawScanNoteFields(latestRelease)
+          : null,
       owner,
     };
   },
@@ -2012,13 +2029,17 @@ export const listVersions = query({
     const viewerUserId = await getOptionalViewerUserId(ctx);
     const pkg = await getReadablePackageByName(ctx, args.name, viewerUserId);
     if (!pkg) return { page: [], isDone: true, continueCursor: "" };
-    return await ctx.db
+    const result = await ctx.db
       .query("packageReleases")
       .withIndex("by_package_active_created", (q) =>
         q.eq("packageId", pkg._id).eq("softDeletedAt", undefined),
       )
       .order("desc")
       .paginate(args.paginationOpts);
+    return {
+      ...result,
+      page: result.page.map(omitLegacyClawScanNoteFields),
+    };
   },
 });
 
@@ -2031,13 +2052,17 @@ export const listVersionsForViewerInternal = internalQuery({
   handler: async (ctx, args) => {
     const pkg = await getReadablePackageByName(ctx, args.name, args.viewerUserId);
     if (!pkg) return { page: [], isDone: true, continueCursor: "" };
-    return await ctx.db
+    const result = await ctx.db
       .query("packageReleases")
       .withIndex("by_package_active_created", (q) =>
         q.eq("packageId", pkg._id).eq("softDeletedAt", undefined),
       )
       .order("desc")
       .paginate(args.paginationOpts);
+    return {
+      ...result,
+      page: result.page.map(omitLegacyClawScanNoteFields),
+    };
   },
 });
 
@@ -2067,7 +2092,7 @@ export const getVersionByName = query({
     if (!publicPackage) return null;
     return {
       package: publicPackage,
-      version: release,
+      version: omitLegacyClawScanNoteFields(release),
     };
   },
 });
@@ -2098,7 +2123,7 @@ export const getVersionByNameForViewerInternal = internalQuery({
     if (!publicPackage) return null;
     return {
       package: publicPackage,
-      version: release,
+      version: omitLegacyClawScanNoteFields(release),
     };
   },
 });
@@ -2135,7 +2160,7 @@ export const getVersionSecurityByNameForViewerInternal = internalQuery({
         ...publicPackage,
         publicDownloadBlocked,
       },
-      version: release,
+      version: omitLegacyClawScanNoteFields(release),
     };
   },
 });
@@ -5067,7 +5092,6 @@ async function publishPackageImpl(
   const family = payload.family;
   const name = normalizePackageName(payload.name);
   const version = assertPackageVersion(family, payload.version);
-  const clawScanNote = normalizeClawScanNoteForWrite(payload.clawScanNote);
   const existingPackage = await runQueryRef<Doc<"packages"> | null>(
     ctx,
     internalRefs.packages.getPackageByNameInternal,
@@ -5346,7 +5370,6 @@ async function publishPackageImpl(
     family,
     version,
     changelog: payload.changelog.trim(),
-    clawScanNote,
     tags: payload.tags?.map((tag: string) => tag.trim()).filter(Boolean) ?? ["latest"],
     summary,
     sourceRepo: effectiveSource?.repo || effectiveSource?.url,
@@ -5941,7 +5964,6 @@ export const insertReleaseInternal = internalMutation({
     family: v.union(v.literal("skill"), v.literal("code-plugin"), v.literal("bundle-plugin")),
     version: v.string(),
     changelog: v.string(),
-    clawScanNote: v.optional(v.string()),
     tags: v.array(v.string()),
     summary: v.string(),
     sourceRepo: v.optional(v.string()),
@@ -6154,13 +6176,10 @@ export const insertReleaseInternal = internalMutation({
       ? Array.from(new Set([...args.tags, "latest"]))
       : args.tags;
 
-    const clawScanNote = normalizeClawScanNoteForWrite(args.clawScanNote);
-
     const releaseId = await ctx.db.insert("packageReleases", {
       packageId: pkgId,
       version: args.version,
       changelog: args.changelog,
-      ...(clawScanNote ? { clawScanNote } : {}),
       summary: args.summary,
       distTags: effectiveTags,
       files: args.files,
@@ -6770,62 +6789,6 @@ export const backfillPackageReleaseScans = action({
     return await runActionRef(ctx, internalRefs.packages.backfillPackageReleaseScansInternal, {
       batchSize: args.batchSize,
     });
-  },
-});
-
-export const updateLatestClawScanNoteAndRequestRescan = mutation({
-  args: {
-    packageId: v.id("packages"),
-    clawScanNote: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const { user } = await requireUser(ctx);
-    const pkg = await ctx.db.get(args.packageId);
-    if (!pkg || pkg.softDeletedAt || pkg.family === "skill" || !pkg.latestReleaseId) {
-      throw new ConvexError("Plugin not found");
-    }
-
-    const release = await ctx.db.get(pkg.latestReleaseId);
-    if (!release || release.softDeletedAt) throw new ConvexError("Plugin release not found");
-
-    await assertCanManageOwnedResource(ctx, {
-      actor: user,
-      ownerUserId: pkg.ownerUserId,
-      ownerPublisherId: pkg.ownerPublisherId,
-      allowPlatformModerator: true,
-    });
-
-    const now = Date.now();
-    const previousNote = release.clawScanNote?.trim() || undefined;
-    const nextNote = normalizeClawScanNoteForWrite(args.clawScanNote);
-    await ctx.db.patch(release._id, {
-      clawScanNote: nextNote ?? "",
-      clawScanNoteUpdatedAt: now,
-    });
-    await ctx.db.insert("auditLogs", {
-      actorUserId: user._id,
-      action: "package.clawscan_note.update",
-      targetType: "packageRelease",
-      targetId: release._id,
-      metadata: {
-        packageId: pkg._id,
-        name: pkg.name,
-        version: release.version,
-        hadPreviousNote: Boolean(previousNote),
-        hasNextNote: Boolean(nextNote),
-        previousLength: previousNote?.length ?? 0,
-        nextLength: nextNote?.length ?? 0,
-      },
-      createdAt: now,
-    });
-
-    await runAfterRef(ctx, 0, internalRefs.securityScan.enqueuePackageReleaseScanInternal, {
-      releaseId: release._id,
-      source: "clawscan-note",
-      waitForVtMs: 0,
-    });
-
-    return { ok: true as const, packageReleaseId: release._id };
   },
 });
 

@@ -14,7 +14,7 @@ import {
   publishPackageForUserInternal,
   listPackageReportsInternal,
   getPackageModerationStatusForUserInternal,
-  getClawScanNoteSettings,
+  getManageContext,
   reportPackageForUserInternal,
   triagePackageReportForUserInternal,
   submitPackageAppealForUserInternal,
@@ -154,7 +154,6 @@ const insertReleaseInternalHandler = (
       family: "skill" | "code-plugin" | "bundle-plugin";
       version: string;
       changelog: string;
-      clawScanNote?: string;
       tags: string[];
       summary: string;
       files: Array<{
@@ -344,8 +343,8 @@ const getPackageModerationStatusForUserInternalHandler = (
     }
   >
 )._handler;
-const getClawScanNoteSettingsHandler = (
-  getClawScanNoteSettings as unknown as WrappedHandler<
+const getManageContextHandler = (
+  getManageContext as unknown as WrappedHandler<
     { name: string; candidateNames?: string[] },
     { package: { name: string }; latestRelease: { version: string } } | null
   >
@@ -4789,7 +4788,6 @@ describe("packages public queries", () => {
       family: "code-plugin",
       version: "1.0.0",
       changelog: "beta",
-      clawScanNote: "This release bundles a native helper but does not fetch remote code.",
       tags: ["beta"],
       summary: "demo",
       files: [],
@@ -4813,7 +4811,6 @@ describe("packages public queries", () => {
       "packageReleases",
       expect.objectContaining({
         distTags: ["beta"],
-        clawScanNote: "This release bundles a native helper but does not fetch remote code.",
         verification: expect.objectContaining({ scanStatus: "suspicious" }),
         staticScan: expect.objectContaining({ status: "suspicious" }),
       }),
@@ -4825,29 +4822,6 @@ describe("packages public queries", () => {
         tags: { beta: "packageReleases:new" },
       }),
     );
-  });
-
-  it("rejects package release clawScanNote values beyond the write-path limit", async () => {
-    const ctx = makeInsertReleaseCtx(makePackageDoc());
-
-    await expect(
-      insertReleaseInternalHandler(ctx, {
-        actorUserId: "users:owner",
-        ownerUserId: "users:owner",
-        name: "demo-plugin",
-        displayName: "Demo Plugin",
-        family: "code-plugin",
-        version: "1.0.0",
-        changelog: "release",
-        clawScanNote: "x".repeat(4001),
-        tags: ["latest"],
-        summary: "demo",
-        files: [],
-        integritySha256: "abc123",
-      }),
-    ).rejects.toThrow("ClawScan note must be at most 4000 characters.");
-
-    expect(ctx.insert).not.toHaveBeenCalledWith("packageReleases", expect.anything());
   });
 
   it("validates package publish payloads inside the action path", async () => {
@@ -6807,10 +6781,10 @@ describe("packages public queries", () => {
     expect(insert).not.toHaveBeenCalled();
   });
 
-  it("does not let stale personal-publisher memberships read owner-only scan settings", async () => {
+  it("does not let stale personal-publisher memberships read package manage context", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:stale-member" as never);
 
-    const result = await getClawScanNoteSettingsHandler(
+    const result = await getManageContextHandler(
       {
         db: {
           get: vi.fn(async (id: string) => {

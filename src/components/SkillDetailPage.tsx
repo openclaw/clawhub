@@ -186,9 +186,6 @@ export function SkillDetailPage({
   const toggleStar = useMutation(api.stars.toggle);
   const reportSkill = useMutation(api.skills.report);
   const updateSummary = useMutation(api.skills.updateSummary);
-  const updatePublisherNoteAndRequestRescan = useMutation(
-    api.skills.updateLatestClawScanNoteAndRequestRescan,
-  );
   const getReadme = useAction(api.skills.getReadme);
   const getSkillCard = useAction(api.skills.getSkillCard);
   const myPublishers = useQuery(api.publishers.listMine) as
@@ -592,20 +589,6 @@ export function SkillDetailPage({
     }
   };
 
-  const submitPublisherNoteAndRescan = async (clawScanNote: string) => {
-    if (!skill) return;
-    try {
-      await updatePublisherNoteAndRequestRescan({
-        skillId: skill._id,
-        clawScanNote,
-      });
-      toast.success("Publisher note saved. Rescan started; this may take a few minutes.");
-    } catch (error) {
-      toast.error(getUserFacingConvexError(error, "Could not save publisher note."));
-      throw error;
-    }
-  };
-
   const handleToggleStar = async () => {
     if (!skill) return;
     const activeStar = activeOptimisticStar;
@@ -687,8 +670,6 @@ export function SkillDetailPage({
         ownedSkills={(ownedSkills ?? []).filter((entry) => entry._id !== skill._id)}
         summary={skill.summary ?? ""}
         onSaveSummary={canAccessSettings ? submitSummary : null}
-        clawScanNote={latestVersion?.clawScanNote ?? null}
-        onSavePublisherNoteAndRescan={submitPublisherNoteAndRescan}
       />
     ) : null;
 

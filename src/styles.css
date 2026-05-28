@@ -1573,67 +1573,6 @@ code {
   padding-top: 12px;
 }
 
-.publisher-note-prompt {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 30px;
-  padding: 14px 16px;
-  border: 1px solid color-mix(in srgb, #6aa9ff 36%, var(--line));
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, #6aa9ff 14%, transparent);
-  color: #8fbdff;
-}
-
-.publisher-note-prompt > svg {
-  position: static;
-  flex: 0 0 auto;
-  color: #6aa9ff;
-}
-
-.publisher-note-prompt p {
-  flex: 1 1 auto;
-  min-width: 0;
-  padding-left: 0;
-  margin: 0;
-  font-size: 0.92rem;
-  line-height: 1.45;
-}
-
-.publisher-note-prompt a {
-  color: #cfe4ff;
-  font-weight: 700;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.publisher-note-prompt button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  flex: 0 0 auto;
-  border: 1px solid transparent;
-  border-radius: 999px;
-  background: transparent;
-  color: #8fbdff;
-  cursor: pointer;
-  transition:
-    border-color 0.16s ease,
-    background-color 0.16s ease,
-    color 0.16s ease;
-}
-
-.publisher-note-prompt button:hover,
-.publisher-note-prompt button:focus-visible {
-  border-color: color-mix(in srgb, #6aa9ff 42%, var(--line));
-  background: color-mix(in srgb, #6aa9ff 16%, transparent);
-  color: #cfe4ff;
-  outline: none;
-}
-
 .security-report-panel-body .clawscan-scope-note {
   display: none;
 }
@@ -4097,7 +4036,7 @@ code {
   justify-self: end;
 }
 
-.publisher-note-settings-editor {
+.summary-settings-editor {
   display: grid;
   gap: 8px;
   min-width: 0;
@@ -4105,24 +4044,24 @@ code {
   width: 100%;
 }
 
-.publisher-note-settings-editor textarea {
+.summary-settings-editor textarea {
   min-height: 96px;
 }
 
-.publisher-note-settings-footer {
+.summary-settings-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
 
-.publisher-note-settings-meta {
+.summary-settings-meta {
   color: var(--ink-muted);
   font-size: 0.78rem;
   line-height: 1.3;
 }
 
-.publisher-note-settings-error {
+.summary-settings-error {
   margin: 0;
   color: var(--status-error-fg);
   font-size: 0.86rem;
@@ -4153,12 +4092,12 @@ code {
     grid-template-columns: 1fr;
   }
 
-  .publisher-note-settings-editor {
+  .summary-settings-editor {
     justify-self: stretch;
     width: 100%;
   }
 
-  .publisher-note-settings-footer {
+  .summary-settings-footer {
     align-items: flex-start;
     flex-direction: column;
   }
@@ -4602,69 +4541,6 @@ code {
 
 .security-audit-meter[data-level="4"] span {
   background: #79e68e;
-}
-
-.publisher-clawscan-note {
-  display: grid;
-  gap: 20px;
-  min-width: 0;
-}
-
-.publisher-clawscan-note.security-report-panel-compact {
-  gap: 12px;
-}
-
-.publisher-clawscan-note-header {
-  min-width: 0;
-}
-
-.publisher-clawscan-note-title-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-
-.publisher-clawscan-note-body {
-  display: grid;
-  gap: 10px;
-  max-width: 980px;
-}
-
-.publisher-clawscan-note blockquote {
-  margin: 0;
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
-  color: var(--ink-soft);
-  font-size: 0.95rem;
-  line-height: 1.55;
-}
-
-.publisher-clawscan-note-text.is-clamped {
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 5;
-}
-
-.publisher-clawscan-note-toggle {
-  justify-self: start;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--ink);
-  font: inherit;
-  font-size: 0.86rem;
-  font-weight: 720;
-  line-height: 1.3;
-  cursor: pointer;
-}
-
-.publisher-clawscan-note-toggle:hover,
-.publisher-clawscan-note-toggle:focus-visible {
-  color: var(--ink);
-  text-decoration: underline;
-  text-underline-offset: 3px;
 }
 
 .skill-hero-sidebar-meta {

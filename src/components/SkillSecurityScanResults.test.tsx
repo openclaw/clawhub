@@ -423,7 +423,6 @@ describe("SecurityScanResults static guidance", () => {
           detailPath: "/local/todo-guard",
         }}
         llmAnalysis={clawScanAnalysis}
-        clawScanNote="Publisher says the Todoist token is required for task sync."
       />,
     );
 
@@ -439,7 +438,6 @@ describe("SecurityScanResults static guidance", () => {
     );
     expect(screen.queryByText(/Current verdict/i)).toBeNull();
     expect(screen.getByRole("heading", { name: "Overview" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Publisher note" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Risk analysis" })).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "ClawScan" })).toBeNull();
     expect(screen.getByText(/Collects workspace secrets/i)).toBeTruthy();
@@ -476,7 +474,7 @@ describe("SecurityScanResults static guidance", () => {
       Array.from(container.querySelectorAll(".security-report-main > section h2")).map((node) =>
         node.textContent?.trim(),
       ),
-    ).toEqual(["Overview", "Publisher note", "VirusTotal", "Risk analysis"]);
+    ).toEqual(["Overview", "VirusTotal", "Risk analysis"]);
   });
 
   it("renders SkillSpector findings as the agentic-risk finding source", () => {
@@ -735,7 +733,7 @@ describe("SecurityScanResults static guidance", () => {
     ).toBeTruthy();
   });
 
-  it("prompts publishers to add a note on review ClawScan reports without one", () => {
+  it("does not prompt publishers to add notes on review ClawScan reports", () => {
     render(
       <SecurityAuditPage
         entity={{
@@ -747,37 +745,11 @@ describe("SecurityScanResults static guidance", () => {
         }}
         llmAnalysis={clawScanAnalysis}
         canManageArtifact
-        settingsHref="/local/todo-guard/settings"
       />,
     );
 
-    const link = screen.getByRole("link", { name: "Add a publisher note" });
-    expect(link.getAttribute("href")).toBe("/local/todo-guard/settings");
-    expect(screen.getByText(/to give this audit context on these findings/i)).toBeTruthy();
-  });
-
-  it("hides the publisher note prompt for non-publishers and after dismissal", () => {
-    const props = {
-      entity: {
-        kind: "skill" as const,
-        title: "Todo Guard",
-        name: "todo-guard",
-        version: "1.0.0",
-        detailPath: "/local/todo-guard",
-      },
-      llmAnalysis: clawScanAnalysis,
-      settingsHref: "/local/todo-guard/settings",
-    };
-
-    const { rerender } = render(<SecurityAuditPage {...props} />);
     expect(screen.queryByRole("link", { name: "Add a publisher note" })).toBeNull();
-
-    rerender(<SecurityAuditPage {...props} canManageArtifact />);
-    fireEvent.click(screen.getByRole("button", { name: "Dismiss publisher note prompt" }));
-    expect(screen.queryByRole("link", { name: "Add a publisher note" })).toBeNull();
-
-    rerender(<SecurityAuditPage {...props} canManageArtifact />);
-    expect(screen.queryByRole("link", { name: "Add a publisher note" })).toBeNull();
+    expect(screen.queryByText(/to give this audit context on these findings/i)).toBeNull();
   });
 
   it("keeps plugin audit metadata focused while preserving hash links", () => {

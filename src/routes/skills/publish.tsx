@@ -1,5 +1,4 @@
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
-import { MAX_CLAWSCAN_NOTE_CHARS, normalizeClawScanNote } from "clawhub-schema";
 import {
   PLATFORM_SKILL_LICENSE,
   PLATFORM_SKILL_LICENSE_NAME,
@@ -57,7 +56,7 @@ const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const SKILL_PUBLISHING_GUIDE_URL = "https://docs.openclaw.ai/clawhub/skill-format";
 const SOUL_PUBLISHING_GUIDE_URL = "https://docs.openclaw.ai/clawhub/soul-format";
 
-type SkillPublishField = "slug" | "displayName" | "version" | "tags" | "clawScanNote" | "license";
+type SkillPublishField = "slug" | "displayName" | "version" | "tags" | "license";
 
 export const Route = createFileRoute("/skills/publish")({
   validateSearch: (search) => ({
@@ -97,7 +96,7 @@ export function Upload() {
     | {
         skill?: { slug: string; displayName: string; icon?: string | null };
         soul?: { slug: string; displayName: string };
-        latestVersion?: { version: string; clawScanNote?: string | null };
+        latestVersion?: { version: string };
         // Present on skills.getBySlug; absent on souls.getBySlug. Used to
         // default the Owner selector to the skill's current owner in update
         // mode so a New Version publish does not silently re-own the skill.
@@ -117,7 +116,6 @@ export function Upload() {
     displayName: false,
     version: false,
     tags: false,
-    clawScanNote: false,
     license: false,
   });
   const [metadataPrefillNote, setMetadataPrefillNote] = useState<string | null>(null);
@@ -132,9 +130,7 @@ export function Upload() {
     "idle",
   );
   const [changelogSource, setChangelogSource] = useState<"auto" | "user" | null>(null);
-  const [clawScanNote, setClawScanNote] = useState("");
   const changelogTouchedRef = useRef(false);
-  const clawScanNoteTouchedRef = useRef(false);
   // Tracks whether the publisher has interacted with the Skill icon picker
   // during this session. Used by the submit handler to honour the "key
   // omitted = leave existing alone" branch in skill mode: a routine New
@@ -255,13 +251,6 @@ export function Upload() {
   const trimmedSlug = slug.trim();
   const trimmedName = displayName.trim();
   const trimmedChangelog = changelog.trim();
-  const trimmedClawScanNote = clawScanNote.trim();
-  const normalizedClawScanNote =
-    !isSoulMode &&
-    trimmedClawScanNote.length > 0 &&
-    trimmedClawScanNote.length <= MAX_CLAWSCAN_NOTE_CHARS
-      ? normalizeClawScanNote(clawScanNote)
-      : undefined;
   const trimmedVersion = version.trim();
   const slugAvailability = useQuery(
     api.skills.checkSlugAvailability,
@@ -301,9 +290,6 @@ export function Upload() {
     }
     const nextVersion = semver.inc(existing.latestVersion.version, "patch");
     if (nextVersion) setVersion(nextVersion);
-    if (!isSoulMode && !clawScanNoteTouchedRef.current) {
-      setClawScanNote(existing.latestVersion.clawScanNote ?? "");
-    }
   }, [existing, isSoulMode]);
 
   useEffect(() => {
@@ -449,9 +435,6 @@ export function Upload() {
     if (!isSoulMode && !acceptedLicenseTerms) {
       issues.push("Accept the MIT-0 license terms to publish this skill.");
     }
-    if (!isSoulMode && trimmedClawScanNote.length > MAX_CLAWSCAN_NOTE_CHARS) {
-      issues.push(`ClawScan note must be at most ${MAX_CLAWSCAN_NOTE_CHARS} characters.`);
-    }
     if (files.length === 0) {
       issues.push("Add at least one file.");
     }
@@ -488,7 +471,6 @@ export function Upload() {
     trimmedSlug,
     trimmedName,
     trimmedVersion,
-    trimmedClawScanNote.length,
     parsedTags.length,
     acceptedLicenseTerms,
     files,
@@ -509,7 +491,6 @@ export function Upload() {
   const shouldShowDisplayNameIssue = hasAttempted || dirtyFields.displayName;
   const shouldShowVersionIssue = hasAttempted || dirtyFields.version;
   const shouldShowTagsIssue = hasAttempted || dirtyFields.tags;
-  const shouldShowClawScanIssue = hasAttempted || dirtyFields.clawScanNote;
   const shouldShowFileIssues = hasAttempted || files.length > 0;
 
   const slugIssue = shouldShowSlugIssue
@@ -543,7 +524,6 @@ export function Upload() {
     if (issue.startsWith("Display name")) return false;
     if (issue.startsWith("Version")) return false;
     if (issue.startsWith("At least one tag")) return shouldShowTagsIssue;
-    if (issue.startsWith("ClawScan note")) return shouldShowClawScanIssue;
     if (issue === effectiveSlugCollision?.message) return false;
     return false;
   });
@@ -743,7 +723,6 @@ export function Upload() {
         ...(iconPayload !== undefined ? { icon: iconPayload } : {}),
         version: trimmedVersion,
         changelog: trimmedChangelog,
-        ...(normalizedClawScanNote ? { clawScanNote: normalizedClawScanNote } : {}),
         acceptLicenseTerms: isSoulMode ? undefined : acceptedLicenseTerms,
         tags: parsedTags,
         files: uploaded,
@@ -1170,23 +1149,6 @@ export function Upload() {
                 />
               </div>
 
-              {!isSoulMode ? (
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="clawScanNote">ClawScan note</Label>
-                  <Textarea
-                    id="clawScanNote"
-                    rows={4}
-                    value={clawScanNote}
-                    maxLength={MAX_CLAWSCAN_NOTE_CHARS + 1}
-                    onChange={(event) => {
-                      markFieldDirty("clawScanNote");
-                      clawScanNoteTouchedRef.current = true;
-                      setClawScanNote(event.target.value);
-                    }}
-                    placeholder="Optional context for ClawScan, e.g. why this version needs network access."
-                  />
-                </div>
-              ) : null}
               {visibleMetadataIssues.length > 0 ? (
                 <ul className="flex flex-col gap-1 list-disc pl-5 text-sm text-[color:var(--ink-soft)]">
                   {visibleMetadataIssues.map((issue) => (

@@ -1,13 +1,8 @@
 import { createFileRoute, useSearch } from "@tanstack/react-router";
-import {
-  DocsLinks,
-  getPackageScopeOwnerMismatch,
-  MAX_CLAWSCAN_NOTE_CHARS,
-  normalizeClawScanNote,
-} from "clawhub-schema";
+import { DocsLinks, getPackageScopeOwnerMismatch } from "clawhub-schema";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { ExternalLink, Info, Lock } from "lucide-react";
-import { type ReactNode, startTransition, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, startTransition, useEffect, useMemo, useState } from "react";
 import semver from "semver";
 import { toast } from "sonner";
 import { api } from "../../../convex/_generated/api";
@@ -55,7 +50,6 @@ export const Route = createFileRoute("/plugins/publish")({
 
 const apiRefs = api as unknown as {
   packages: {
-    getByName: unknown;
     publishRelease: unknown;
   };
 };
@@ -69,15 +63,6 @@ export function PublishPluginRoute() {
   const publishers = useQuery(api.publishers.listMine) as
     | Array<PublisherOwnerMembership>
     | undefined;
-  const existingPackage = useQuery(
-    apiRefs.packages.getByName as never,
-    search.name ? ({ name: search.name } as never) : ("skip" as never),
-  ) as
-    | {
-        latestRelease?: { clawScanNote?: string | null } | null;
-      }
-    | null
-    | undefined;
   const generateUploadUrl = useMutation(api.uploads.generateUploadUrl);
   const publishRelease = useAction(apiRefs.packages.publishRelease as never) as unknown as (args: {
     payload: unknown;
@@ -88,7 +73,6 @@ export function PublishPluginRoute() {
   const [ownerHandle, setOwnerHandle] = useState(search.ownerHandle ?? "");
   const [version, setVersion] = useState(search.nextVersion ?? "0.1.0");
   const [changelog, setChangelog] = useState("");
-  const [clawScanNote, setClawScanNote] = useState("");
   const [sourceRepo, setSourceRepo] = useState(search.sourceRepo ?? "");
   const [sourceCommit, setSourceCommit] = useState("");
   const [sourceRef, setSourceRef] = useState("");
@@ -103,7 +87,6 @@ export function PublishPluginRoute() {
   const [status, setStatus] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const clawScanNoteTouchedRef = useRef(false);
   const showChangelogField = Boolean(search.name);
 
   const totalBytes = useMemo(() => files.reduce((sum, file) => sum + file.size, 0), [files]);
@@ -128,14 +111,7 @@ export function PublishPluginRoute() {
       ? `Each file must be 10MB or smaller: ${oversizedFileNames.join(", ")}`
       : totalBytes > MAX_PUBLISH_TOTAL_BYTES
         ? "Total file size exceeds 50MB."
-        : clawScanNote.trim().length > MAX_CLAWSCAN_NOTE_CHARS
-          ? `ClawScan note must be at most ${MAX_CLAWSCAN_NOTE_CHARS} characters.`
-          : null;
-  const trimmedClawScanNote = clawScanNote.trim();
-  const normalizedClawScanNote =
-    trimmedClawScanNote.length > 0 && trimmedClawScanNote.length <= MAX_CLAWSCAN_NOTE_CHARS
-      ? normalizeClawScanNote(clawScanNote)
-      : undefined;
+        : null;
   const isMetadataLocked = files.length === 0;
   const metadataDisabled = isMetadataLocked || isSubmitting;
   const ownerScopeError = useMemo(() => {
@@ -231,11 +207,6 @@ export function PublishPluginRoute() {
       setOwnerHandle(personal.publisher.handle);
     }
   }, [ownerHandle, publishers]);
-
-  useEffect(() => {
-    if (clawScanNoteTouchedRef.current) return;
-    setClawScanNote(existingPackage?.latestRelease?.clawScanNote ?? "");
-  }, [existingPackage?.latestRelease?.clawScanNote]);
 
   if (isAuthLoading) {
     return <PublishFormSkeleton />;
@@ -384,21 +355,6 @@ export function PublishPluginRoute() {
                     value={version}
                     disabled={metadataDisabled}
                     onValueChange={setVersion}
-                  />
-                </div>
-                <div className="flex flex-col gap-2 md:col-span-2">
-                  <Label htmlFor="pluginClawScanNote">ClawScan note</Label>
-                  <Textarea
-                    id="pluginClawScanNote"
-                    placeholder="Optional context for ClawScan, e.g. why this release needs native host access."
-                    rows={4}
-                    value={clawScanNote}
-                    maxLength={MAX_CLAWSCAN_NOTE_CHARS + 1}
-                    disabled={metadataDisabled}
-                    onChange={(event) => {
-                      clawScanNoteTouchedRef.current = true;
-                      setClawScanNote(event.target.value);
-                    }}
                   />
                 </div>
                 {family === "bundle-plugin" ? (
@@ -591,9 +547,6 @@ export function PublishPluginRoute() {
                           family,
                           version: version.trim(),
                           changelog: changelog.trim(),
-                          ...(normalizedClawScanNote
-                            ? { clawScanNote: normalizedClawScanNote }
-                            : {}),
                           ...(sourceRepo.trim() && sourceCommit.trim()
                             ? {
                                 source: {

@@ -34,7 +34,6 @@ import {
 import { getSkillBadgeMap, getSkillBadgeMaps, isSkillHighlighted } from "./lib/badges";
 import { scheduleNextBatchIfNeeded } from "./lib/batching";
 import { generateChangelogPreview as buildChangelogPreview } from "./lib/changelog";
-import { normalizeClawScanNoteForWrite } from "./lib/clawScanNote";
 import { mergeDepRegistryFinding } from "./lib/depRegistryScan";
 import { embeddingVisibilityFor } from "./lib/embeddingVisibility";
 import {
@@ -1768,7 +1767,6 @@ type PublicSkillVersion = {
     engineVersion: NonNullable<Doc<"skillVersions">["staticScan"]>["engineVersion"];
     checkedAt: NonNullable<Doc<"skillVersions">["staticScan"]>["checkedAt"];
   };
-  clawScanNote?: string;
   generatedSkillCard?: {
     path: string;
     size: number;
@@ -1782,6 +1780,15 @@ type ManagementSkillEntry = {
   latestVersion: Doc<"skillVersions"> | null;
   owner: Doc<"users"> | null;
 };
+
+function omitLegacyClawScanNoteFields(version: Doc<"skillVersions">) {
+  const {
+    clawScanNote: _legacyClawScanNote,
+    clawScanNoteUpdatedAt: _legacyClawScanNoteUpdatedAt,
+    ...publicVersion
+  } = version;
+  return publicVersion;
+}
 
 type DashboardSkillListItem = {
   _id: Id<"skills">;
@@ -2016,7 +2023,6 @@ function toPublicSkillVersion(
     skillSpectorAnalysis: version.skillSpectorAnalysis,
     llmAnalysis: version.llmAnalysis,
     apiKeyRequired: version.apiKeyRequired,
-    clawScanNote: version.clawScanNote,
     staticScan: version.staticScan
       ? {
           status: version.staticScan.status,
@@ -2108,7 +2114,11 @@ async function buildManagementSkillEntries(ctx: QueryCtx, skills: Doc<"skills">[
         getOwner(skill.ownerUserId),
       ]);
       const badges = badgeMapBySkillId.get(skill._id) ?? {};
-      return { skill: { ...skill, badges }, latestVersion, owner };
+      return {
+        skill: { ...skill, badges },
+        latestVersion: latestVersion ? omitLegacyClawScanNoteFields(latestVersion) : null,
+        owner,
+      };
     }),
   ) satisfies Promise<ManagementSkillEntry[]>;
 }
@@ -2662,7 +2672,9 @@ export const getBySlugForStaff = query({
       requestedSlug: resolved.requestedSlug,
       resolvedSlug: resolved.resolvedSlug,
       skill: { ...skill, badges },
-      latestVersion: latestVersion ? { ...latestVersion, generatedSkillCard } : null,
+      latestVersion: latestVersion
+        ? { ...omitLegacyClawScanNoteFields(latestVersion), generatedSkillCard }
+        : null,
       owner,
       overrideReviewer,
       auditLogs,
@@ -6833,62 +6845,6 @@ export const backfillSkillStaticScans: ReturnType<typeof action> = action({
   },
 });
 
-export const updateLatestClawScanNoteAndRequestRescan = mutation({
-  args: {
-    skillId: v.id("skills"),
-    clawScanNote: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const { user } = await requireUser(ctx);
-    const skill = await ctx.db.get(args.skillId);
-    if (!skill || skill.softDeletedAt || !skill.latestVersionId) {
-      throw new ConvexError("Skill not found");
-    }
-
-    const version = await ctx.db.get(skill.latestVersionId);
-    if (!version || version.softDeletedAt) throw new ConvexError("Skill version not found");
-
-    await assertCanManageOwnedResource(ctx, {
-      actor: user,
-      ownerUserId: skill.ownerUserId,
-      ownerPublisherId: skill.ownerPublisherId,
-      allowPlatformModerator: true,
-    });
-
-    const now = Date.now();
-    const previousNote = version.clawScanNote?.trim() || undefined;
-    const nextNote = normalizeClawScanNoteForWrite(args.clawScanNote);
-    await ctx.db.patch(version._id, {
-      clawScanNote: nextNote ?? "",
-      clawScanNoteUpdatedAt: now,
-    });
-    await ctx.db.insert("auditLogs", {
-      actorUserId: user._id,
-      action: "skill.clawscan_note.update",
-      targetType: "skillVersion",
-      targetId: version._id,
-      metadata: {
-        skillId: skill._id,
-        slug: skill.slug,
-        version: version.version,
-        hadPreviousNote: Boolean(previousNote),
-        hasNextNote: Boolean(nextNote),
-        previousLength: previousNote?.length ?? 0,
-        nextLength: nextNote?.length ?? 0,
-      },
-      createdAt: now,
-    });
-
-    await ctx.scheduler.runAfter(0, internal.securityScan.enqueueSkillVersionScanInternal, {
-      versionId: version._id,
-      source: "clawscan-note",
-      waitForVtMs: 0,
-    });
-
-    return { ok: true as const, skillVersionId: version._id };
-  },
-});
-
 /**
  * Emergency escalation by skillId for legacy rows without sha256hash.
  * Rebuilds the full moderation snapshot so legacy rows stay in sync with structured fields.
@@ -8148,7 +8104,6 @@ export const publishVersion: ReturnType<typeof action> = action({
     icon: v.optional(v.string()),
     version: v.string(),
     changelog: v.string(),
-    clawScanNote: v.optional(v.string()),
     acceptLicenseTerms: v.optional(v.boolean()),
     tags: v.optional(v.array(v.string())),
     forkOf: v.optional(
@@ -9847,7 +9802,6 @@ export const insertVersion = internalMutation({
     icon: v.optional(v.string()),
     version: v.string(),
     changelog: v.string(),
-    clawScanNote: v.optional(v.string()),
     changelogSource: v.optional(v.union(v.literal("auto"), v.literal("user"))),
     sourceProvenance: v.optional(
       v.object({
@@ -10347,15 +10301,12 @@ export const insertVersion = internalMutation({
       throw new ConvexError("Version already exists");
     }
 
-    const clawScanNote = normalizeClawScanNoteForWrite(args.clawScanNote);
-
     const versionId = await ctx.db.insert("skillVersions", {
       skillId: skill._id,
       version: args.version,
       fingerprint: args.fingerprint,
       sourceProvenance: args.sourceProvenance,
       changelog: args.changelog,
-      ...(clawScanNote ? { clawScanNote } : {}),
       changelogSource: args.changelogSource,
       files: args.files,
       parsed: args.parsed,

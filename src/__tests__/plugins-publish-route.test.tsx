@@ -534,9 +534,7 @@ describe("plugins publish route", () => {
       expect(screen.getByText(/Ignored: node_modules\/dep\/index\.js/i)).toBeTruthy();
     });
 
-    fireEvent.change(screen.getByLabelText("ClawScan note"), {
-      target: { value: "Native host access is limited to the OpenClaw extension bridge." },
-    });
+    expect(screen.queryByLabelText("ClawScan note")).toBeNull();
     fireEvent.change(screen.getByPlaceholderText("owner/repo"), {
       target: { value: "openclaw/demo-plugin" },
     });
@@ -553,7 +551,6 @@ describe("plugins publish route", () => {
     expect(generateUploadUrl).toHaveBeenCalledTimes(5);
     const payload = publishRelease.mock.calls[0]?.[0]?.payload as {
       files: Array<{ path: string }>;
-      clawScanNote?: string;
     };
     expect(payload.files.map((file) => file.path).sort()).toEqual([
       ".gitignore",
@@ -562,9 +559,7 @@ describe("plugins publish route", () => {
       "package.json",
       "src/index.js",
     ]);
-    expect(payload.clawScanNote).toBe(
-      "Native host access is limited to the OpenClaw extension bridge.",
-    );
+    expect(payload).not.toHaveProperty("clawScanNote");
   });
 
   it("blocks plugin publish when a file exceeds 10MB", async () => {

@@ -24,7 +24,6 @@ import {
   ApiV1PackageVersionListResponseSchema,
   ApiV1PackageVersionResponseSchema,
   ApiV1PublishTokenMintResponseSchema,
-  normalizeClawScanNote,
   normalizeOpenClawExternalPluginCompatibility,
   type PackageArtifactSummary,
   type PackageCapabilitySummary,
@@ -92,7 +91,6 @@ type PackagePublishOptions = {
   owner?: string;
   version?: string;
   changelog?: string;
-  clawscanNote?: string;
   manualOverrideReason?: string;
   tags?: string;
   bundleFormat?: string;
@@ -184,7 +182,6 @@ type PackagePublishPayload = {
   family: "code-plugin" | "bundle-plugin";
   version: string;
   changelog: string;
-  clawScanNote?: string;
   manualOverrideReason?: string;
   tags: string[];
   source?: NonNullable<PackagePublishSource>;
@@ -1734,12 +1731,6 @@ async function preparePackagePublishPlan(
     parsedClawpack?.packageVersion ||
     packageJsonString(packageJson, "version");
   const changelog = options.changelog ?? "";
-  let clawScanNote: string | undefined;
-  try {
-    clawScanNote = normalizeClawScanNote(options.clawscanNote);
-  } catch (error) {
-    fail(formatError(error));
-  }
   const tags = parseTags(options.tags ?? "latest");
   const source = buildSource(options, inferredSource);
 
@@ -1799,7 +1790,6 @@ async function preparePackagePublishPlan(
     family,
     version,
     changelog,
-    ...(clawScanNote ? { clawScanNote } : {}),
     ...(options.manualOverrideReason?.trim()
       ? { manualOverrideReason: options.manualOverrideReason.trim() }
       : {}),

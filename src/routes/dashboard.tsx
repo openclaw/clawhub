@@ -339,7 +339,6 @@ function SkillRow({ skill, ownerHandle }: { skill: DashboardSkill; ownerHandle: 
 function PackageRow({ pkg }: { pkg: DashboardPackage }) {
   const status = packageArtifactStatus(pkg);
   const detailHref = buildPluginDetailHref(pkg.name);
-  const settingsHref = `${detailHref}/settings`;
   const titleId = `dashboard-package-title-${pkg._id}`;
   const stats = [
     { label: "Downloads", value: formatCompactNumber(pkg.stats.downloads ?? 0) },
@@ -355,7 +354,6 @@ function PackageRow({ pkg }: { pkg: DashboardPackage }) {
       icon={<Package className="h-5 w-5" />}
       status={status}
       stats={stats}
-      actions={<SettingsLink href={settingsHref} label={`Open settings for ${pkg.displayName}`} />}
     />
   );
 }

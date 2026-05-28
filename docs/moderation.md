@@ -88,7 +88,6 @@ To reduce false positives and improve user trust:
 
 - keep names, summaries, tags, and changelogs accurate
 - declare required environment variables and permissions
-- explain unusual but intentional behavior in a ClawScan note
 - avoid obfuscated install commands
 - link to source when possible
 - use dry runs before publishing plugins
