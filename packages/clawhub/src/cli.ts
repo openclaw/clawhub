@@ -92,6 +92,55 @@ function registerCommandGroup(parent: Command, path: readonly string[]) {
   return parent.command(path.at(-1) ?? "");
 }
 
+function validateTopLevelCommand(args: string[]) {
+  if (hasTerminalGlobalFlag(args)) return;
+  const commandName = findFirstTopLevelOperand(args);
+  if (!commandName) return;
+  const knownCommands = new Set([
+    "help",
+    ...program.commands.flatMap((command) => [command.name(), ...command.aliases()]),
+  ]);
+  if (knownCommands.has(commandName)) return;
+  program.error(`error: unknown command '${commandName}'`, { code: "commander.unknownCommand" });
+}
+
+function hasTerminalGlobalFlag(args: string[]) {
+  return args.some(
+    (arg) => arg === "--help" || arg === "-h" || arg === "--cli-version" || arg === "-V",
+  );
+}
+
+function findFirstTopLevelOperand(args: string[]) {
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (!arg) continue;
+    if (arg === "--") return args[index + 1];
+    if (arg.startsWith("--")) {
+      if (arg === "--workdir" || arg === "--dir" || arg === "--site" || arg === "--registry") {
+        index += 1;
+        continue;
+      }
+      if (
+        arg.startsWith("--workdir=") ||
+        arg.startsWith("--dir=") ||
+        arg.startsWith("--site=") ||
+        arg.startsWith("--registry=")
+      ) {
+        continue;
+      }
+      if (arg === "--help" || arg === "--cli-version") return undefined;
+      if (arg === "--no-input") continue;
+      return undefined;
+    }
+    if (arg.startsWith("-")) {
+      if (arg === "-h" || arg === "-V") return undefined;
+      return undefined;
+    }
+    return arg;
+  }
+  return undefined;
+}
+
 async function resolveGlobalOpts(): Promise<GlobalOpts> {
   const raw = program.opts<{ workdir?: string; dir?: string; site?: string; registry?: string }>();
   const workdir = await resolveWorkdir(raw.workdir);
@@ -740,6 +789,8 @@ program.action(async () => {
   program.outputHelp();
   process.exitCode = 0;
 });
+
+validateTopLevelCommand(process.argv.slice(2));
 
 void program.parseAsync(process.argv).catch((error) => {
   const message = error instanceof Error ? error.message : String(error);
