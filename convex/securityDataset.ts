@@ -359,6 +359,7 @@ function normalizeSkillSpectorAnalysis(analysis: StoredSkillSpectorAnalysis) {
     issueCount: analysis.issueCount,
     issues: analysis.issues.map((issue) => ({
       issueId: issue.issueId,
+      category: issue.category ?? null,
       severity: issue.severity,
       confidence: issue.confidence ?? null,
       explanation: issue.explanation,

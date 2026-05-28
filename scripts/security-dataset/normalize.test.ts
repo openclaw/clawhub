@@ -61,9 +61,11 @@ const baseArtifact: ArtifactExportInput = {
     issues: [
       {
         issueId: "SDI-1",
+        category: "Sensitive Data Exposure",
         severity: "HIGH",
         confidence: 0.98,
-        explanation: "The skill body does not match the declared purpose.",
+        explanation:
+          "The skill body does not match the declared purpose and mentions token=supersecret123.",
       },
     ],
   },
@@ -175,7 +177,19 @@ describe("security dataset normalizer", () => {
       scanner_version: "skillspector-v2.0.0",
       status: "suspicious",
       verdict: "DO_NOT_INSTALL",
+      score: 55,
+      severity: "HIGH",
       reason_codes: ["SDI-1"],
+      issues: [
+        {
+          code: "SDI-1",
+          category: "Sensitive Data Exposure",
+          severity: "HIGH",
+          confidence: 0.98,
+          explanation_redacted:
+            "The skill body does not match the declared purpose and mentions [REDACTED_SECRET]",
+        },
+      ],
       raw_status_family: "suspicious",
     });
     expect(rows.staticFindings[0]).toMatchObject({

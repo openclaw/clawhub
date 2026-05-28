@@ -58,6 +58,7 @@ export type SkillSpectorAnalysisInput = {
   issueCount: number;
   issues: Array<{
     issueId: string;
+    category?: string | null;
     severity: string;
     confidence: number | null;
     explanation: string;
@@ -173,10 +174,19 @@ export type ScanResultRow = {
   verdict: string | null;
   confidence: string | null;
   checked_at: number | null;
+  score?: number | null;
+  severity?: string | null;
   reason_codes: string[];
   engine_stats: VtAnalysisInput["engineStats"];
   summary_redacted: string | null;
   raw_status_family: DatasetLabel;
+  issues?: Array<{
+    code: string;
+    category: string | null;
+    severity: string;
+    confidence: number | null;
+    explanation_redacted: string | null;
+  }>;
 };
 
 export type StaticFindingRow = {
@@ -408,9 +418,12 @@ function buildScanResultRows(input: ArtifactExportInput, artifactId: string): Sc
       verdict: input.skillSpectorAnalysis.recommendation,
       confidence: null,
       checked_at: input.skillSpectorAnalysis.checkedAt,
+      score: input.skillSpectorAnalysis.score,
+      severity: input.skillSpectorAnalysis.severity,
       reason_codes: input.skillSpectorAnalysis.issues
         .map((issue) => issue.issueId)
         .sort((a, b) => a.localeCompare(b)),
+      issues: normalizeSkillSpectorIssues(input.skillSpectorAnalysis.issues),
       engine_stats: null,
       summary_redacted: redactText(
         input.skillSpectorAnalysis.summary ?? input.skillSpectorAnalysis.error,
@@ -471,6 +484,18 @@ function buildStaticFindingRows(
     message: finding.message,
     evidence_redacted: redactText(finding.evidence) ?? "",
   }));
+}
+
+function normalizeSkillSpectorIssues(issues: SkillSpectorAnalysisInput["issues"]) {
+  return issues
+    .map((issue) => ({
+      code: issue.issueId,
+      category: issue.category ?? null,
+      severity: issue.severity,
+      confidence: issue.confidence ?? null,
+      explanation_redacted: redactText(issue.explanation),
+    }))
+    .sort((left, right) => left.code.localeCompare(right.code));
 }
 
 function buildClawScanFindingRows(
