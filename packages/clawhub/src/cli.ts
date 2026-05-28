@@ -52,20 +52,20 @@ import {
   cmdTransferRequest,
 } from "./cli/commands/transfer.js";
 import { cmdUnstarSkill } from "./cli/commands/unstar.js";
-import { configureCommanderHelp, styleEnvBlock, styleTitle } from "./cli/helpStyle.js";
+import { configureCommanderHelp, styleEnvBlock, styleError, styleTitle } from "./cli/helpStyle.js";
 import { DEFAULT_REGISTRY, DEFAULT_SITE } from "./cli/registry.js";
 import type { GlobalOpts } from "./cli/types.js";
 import { fail } from "./cli/ui.js";
 import { readGlobalConfig } from "./config.js";
 
+const CLI_HELP_HEADER = styleTitle(`🦞 ClawHub CLI ${getCliBuildLabel()}`);
+const HELP_DESCRIPTION = "Display help for command";
+
 const program = new Command()
   .name("clawhub")
-  .description(
-    `${styleTitle(`ClawHub CLI ${getCliBuildLabel()}`)}\n${styleEnvBlock(
-      "install, update, search, and publish skills plus OpenClaw packages.",
-    )}`,
-  )
+  .description(styleEnvBlock("install, update, search, and publish skills plus OpenClaw packages."))
   .version(getCliVersion(), "-V, --cli-version", "Show CLI version")
+  .helpOption("-h, --help", HELP_DESCRIPTION)
   .option("--workdir <dir>", "Working directory (default: cwd)")
   .option("--dir <dir>", "Skills directory (relative to workdir, default: skills)")
   .option("--site <url>", "Site base URL (for browser login)")
@@ -73,6 +73,7 @@ const program = new Command()
   .option("--no-input", "Disable prompts")
   .showHelpAfterError()
   .showSuggestionAfterError()
+  .addHelpCommand("help [command]", HELP_DESCRIPTION)
   .addHelpText(
     "after",
     styleEnvBlock(
@@ -81,13 +82,32 @@ const program = new Command()
   );
 
 configureCommanderHelp(program);
+addCliHelpHeader(program);
+program.configureOutput({
+  outputError: (message, write) => write(styleError(message)),
+});
+
+function addCliHelpHeader(command: Command) {
+  command.addHelpText("beforeAll", `${CLI_HELP_HEADER}\n`);
+}
 
 function registerCommand(parent: Command, path: readonly string[]) {
-  return parent.command(path.at(-1) ?? "");
+  const command = parent.command(path.at(-1) ?? "").helpOption("-h, --help", HELP_DESCRIPTION);
+  configureCommanderHelp(command);
+  return command;
 }
 
 function registerCommandGroup(parent: Command, path: readonly string[]) {
-  return parent.command(path.at(-1) ?? "");
+  const command = parent.command(path.at(-1) ?? "").helpOption("-h, --help", HELP_DESCRIPTION);
+  configureCommanderHelp(command);
+  return command;
+}
+
+function applyCommandHelpGroups(parent: Command, groups: Record<string, string>) {
+  for (const command of parent.commands) {
+    const group = groups[command.name()];
+    if (group) command.helpGroup(group);
+  }
 }
 
 function validateTopLevelCommand(args: string[]) {
@@ -823,6 +843,52 @@ registerCommand(program, ["sync"])
       isInputAllowed(),
     );
   });
+
+applyCommandHelpGroups(program, {
+  login: "Auth:",
+  logout: "Auth:",
+  whoami: "Auth:",
+  auth: "Auth:",
+  search: "Skills:",
+  install: "Skills:",
+  update: "Skills:",
+  uninstall: "Skills:",
+  list: "Skills:",
+  pin: "Skills:",
+  unpin: "Skills:",
+  explore: "Skills:",
+  inspect: "Skills:",
+  star: "Skills:",
+  unstar: "Skills:",
+  sync: "Skills:",
+  publish: "Publishing:",
+  skill: "Publishing:",
+  publisher: "Publishing:",
+  package: "Packages:",
+  delete: "Moderation:",
+  hide: "Moderation:",
+  undelete: "Moderation:",
+  unhide: "Moderation:",
+  transfer: "Moderation:",
+  help: "Help:",
+});
+
+applyCommandHelpGroups(packageCmd, {
+  explore: "Discovery:",
+  inspect: "Discovery:",
+  download: "Artifacts:",
+  verify: "Artifacts:",
+  pack: "Publishing:",
+  publish: "Publishing:",
+  "trusted-publisher": "Publishing:",
+  delete: "Moderation:",
+  undelete: "Moderation:",
+  transfer: "Moderation:",
+  report: "Moderation:",
+  "moderation-status": "Moderation:",
+  readiness: "Operations:",
+  "migration-status": "Operations:",
+});
 
 program.action(async () => {
   const opts = await resolveGlobalOpts();

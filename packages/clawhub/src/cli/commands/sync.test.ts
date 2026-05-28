@@ -48,11 +48,12 @@ vi.mock("../authToken.js", () => authTokenMocks.moduleFactory());
 vi.mock("../registry.js", () => registryMocks.moduleFactory());
 vi.mock("../../http.js", () => httpMocks.moduleFactory());
 vi.mock("../ui.js", () => ({
-  createSpinner: vi.fn(() => mockSpinner),
+  createCrabLoader: vi.fn(() => mockSpinner),
   fail: (message: string) => mockFail(message),
   formatError: (error: unknown) => (error instanceof Error ? error.message : String(error)),
   isInteractive: () => interactive,
   promptConfirm: uiMocks.promptConfirm,
+  styleText: (value: string) => value,
 }));
 
 vi.mock("../scanSkills.js", () => ({
@@ -146,8 +147,7 @@ describe("cmdSync", () => {
     expect(output).toMatch(/Already synced/);
     expect(output).toMatch(/synced-skill/);
 
-    const dryRunOutro = mockOutro.mock.calls.at(-1)?.[0];
-    expect(String(dryRunOutro)).toMatch(/Dry run: would upload 2 skill/);
+    expect(output).toMatch(/Dry run: would upload 2 skill/);
   });
 
   it("emits CI JSON dry-run without requiring auth", async () => {
@@ -257,10 +257,10 @@ describe("cmdSync", () => {
 
     const output = mockLog.mock.calls.map((call) => String(call[0])).join("\n");
     expect(output).toMatch(/To sync/);
-    expect(output).toMatch(/- new-skill/);
-    expect(output).toMatch(/- update-skill/);
+    expect(output).toMatch(/new-skill/);
+    expect(output).toMatch(/update-skill/);
     expect(output).toMatch(/Already synced/);
-    expect(output).toMatch(/- synced-skill/);
+    expect(output).toMatch(/synced-skill/);
 
     const lastCall = mockMultiselect.mock.calls.at(-1);
     const promptArgs = lastCall ? (lastCall[0] as { initialValues: string[] }) : undefined;
@@ -418,8 +418,7 @@ describe("cmdSync", () => {
     expect(output).toMatch(/synced-skill@1.0.0/);
     expect(output).not.toMatch(/\n-/);
 
-    const outro = mockOutro.mock.calls.at(-1)?.[0];
-    expect(String(outro)).toMatch(/Nothing to sync/);
+    expect(output).toMatch(/Nothing to sync/);
   });
 
   it("dedupes duplicate slugs before publishing", async () => {
@@ -615,8 +614,7 @@ describe("cmdSync", () => {
     expect(output).toMatch(/new-skill/);
     expect(output).toMatch(/Registry rejected upload/);
 
-    const outro = mockOutro.mock.calls.at(-1)?.[0];
-    expect(String(outro)).toMatch(/Uploaded 1 of 2 skill\(s\). 1 failed/);
+    expect(output).toMatch(/Uploaded 1 of 2 skill\(s\). 1 failed/);
     expect(process.exitCode).toBe(1);
   });
 
@@ -662,8 +660,7 @@ describe("cmdSync", () => {
     expect(output).toMatch(/Slug redirects to an existing skill/);
     expect(output).toMatch(/Existing skill: \/alice\/demo/);
 
-    const outro = mockOutro.mock.calls.at(-1)?.[0];
-    expect(String(outro)).toMatch(/Uploaded 1 of 2 skill\(s\). 1 failed/);
+    expect(output).toMatch(/Uploaded 1 of 2 skill\(s\). 1 failed/);
     expect(process.exitCode).toBe(1);
   });
 
@@ -708,8 +705,7 @@ describe("cmdSync", () => {
     expect(output).toMatch(/Failed to upload/);
     expect(output).toMatch(/This slug is locked to a deleted or banned account/);
 
-    const outro = mockOutro.mock.calls.at(-1)?.[0];
-    expect(String(outro)).toMatch(/Uploaded 1 of 2 skill\(s\). 1 failed/);
+    expect(output).toMatch(/Uploaded 1 of 2 skill\(s\). 1 failed/);
     expect(process.exitCode).toBe(1);
   });
 
@@ -747,8 +743,7 @@ describe("cmdSync", () => {
     expect(output).toMatch(/Failed to upload/);
     expect(output).toMatch(/new-skill: HTTP 500/);
 
-    const outro = mockOutro.mock.calls.at(-1)?.[0];
-    expect(String(outro)).toMatch(/Uploaded 1 of 2 skill\(s\). 1 failed/);
+    expect(output).toMatch(/Uploaded 1 of 2 skill\(s\). 1 failed/);
     expect(process.exitCode).toBe(1);
   });
 

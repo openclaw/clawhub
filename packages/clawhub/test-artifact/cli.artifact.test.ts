@@ -90,6 +90,19 @@ describe("built CLI artifact", () => {
     expect(versionResult.stdout).toMatch(/^\d+\.\d+\.\d+/);
   });
 
+  it("supports explicit help commands from the published bin entrypoint", async () => {
+    const rootHelp = runNode([binPath, "help"]);
+    const skillHelp = runNode([binPath, "help", "skill"]);
+
+    expect(rootHelp.status).toBe(0);
+    expect(rootHelp.stderr).toBe("");
+    expect(rootHelp.stdout).toContain("Auth:");
+    expect(rootHelp.stdout).toContain("Skills:");
+    expect(skillHelp.status).toBe(0);
+    expect(skillHelp.stderr).toBe("");
+    expect(skillHelp.stdout).toContain("Usage: clawhub skill");
+  });
+
   it("publishes a local code plugin in dry-run json mode from built output", async () => {
     const root = await makeTmpDir("clawhub-artifact-");
     const pluginDir = join(root, "demo-plugin");

@@ -5,7 +5,7 @@ import {
 } from "../../../clawhub/src/cli/commands/moderationPlan.js";
 import { getRegistry } from "../../../clawhub/src/cli/registry.js";
 import type { GlobalOpts } from "../../../clawhub/src/cli/types.js";
-import { createSpinner, fail, formatError } from "../../../clawhub/src/cli/ui.js";
+import { createCrabLoader, fail, formatError } from "../../../clawhub/src/cli/ui.js";
 import { apiRequest, registryUrl } from "../../../clawhub/src/http.js";
 import {
   ApiRoutes,
@@ -129,7 +129,7 @@ export async function cmdSetPackageTrustedPublisher(
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = createSpinner("Saving trusted publisher");
+  const spinner = createCrabLoader("Saving trusted publisher");
   try {
     const result = await apiRequest(
       registry,
@@ -168,7 +168,7 @@ export async function cmdDeletePackageTrustedPublisher(
   const trimmed = normalizePackageNameOrFail(packageName);
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = createSpinner("Deleting trusted publisher");
+  const spinner = createCrabLoader("Deleting trusted publisher");
   try {
     const result = await apiRequest<{ ok: boolean }>(registry, {
       method: "DELETE",
@@ -204,7 +204,7 @@ export async function cmdModeratePackageRelease(
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = options.json ? null : createSpinner(`Moderating ${trimmed}@${version}`);
+  const spinner = options.json ? null : createCrabLoader(`Moderating ${trimmed}@${version}`);
   try {
     const result = await apiRequest(
       registry,
@@ -309,7 +309,7 @@ export async function cmdTriagePackageReport(
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = options.json ? null : createSpinner(`Updating report ${trimmed}`);
+  const spinner = options.json ? null : createCrabLoader(`Updating report ${trimmed}`);
   try {
     const result = await apiRequest(
       registry,
@@ -472,7 +472,7 @@ export async function cmdRepairPackageName(
   const registry = await getRegistry(opts, { cache: true });
   const spinner = options.json
     ? null
-    : createSpinner(`${dryRun ? "Planning" : "Applying"} package name repair`);
+    : createCrabLoader(`${dryRun ? "Planning" : "Applying"} package name repair`);
   try {
     const result = await apiRequest(
       registry,
@@ -591,7 +591,7 @@ export async function cmdUpsertPackageMigration(
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = options.json ? null : createSpinner(`Updating migration ${trimmed}`);
+  const spinner = options.json ? null : createCrabLoader(`Updating migration ${trimmed}`);
   try {
     const result = await apiRequest(
       registry,
@@ -653,7 +653,7 @@ export async function cmdTransferPackageOwner(
   const registry = await getRegistry(opts, { cache: true });
   const spinner = options.json
     ? null
-    : createSpinner(`${dryRun ? "Planning" : "Applying"} package owner transfer`);
+    : createCrabLoader(`${dryRun ? "Planning" : "Applying"} package owner transfer`);
   try {
     const result = await apiRequest(
       registry,

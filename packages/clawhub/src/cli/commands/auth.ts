@@ -7,7 +7,7 @@ import { ApiRoutes, ApiV1WhoamiResponseSchema } from "../../schema/index.js";
 import { requireAuthToken } from "../authToken.js";
 import { getRegistry } from "../registry.js";
 import type { GlobalOpts } from "../types.js";
-import { createSpinner, fail, formatError, openInBrowser, promptHidden } from "../ui.js";
+import { createCrabLoader, fail, formatError, openInBrowser, promptHidden } from "../ui.js";
 
 export async function cmdLoginFlow(
   opts: GlobalOpts,
@@ -55,7 +55,7 @@ async function cmdLogin(opts: GlobalOpts, tokenFlag: string | undefined, inputAl
   if (!token) fail("Token required");
 
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = createSpinner("Verifying token");
+  const spinner = createCrabLoader("Verifying token");
   try {
     const whoami = await apiRequest(
       registry,
@@ -84,7 +84,7 @@ export async function cmdWhoami(opts: GlobalOpts) {
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
 
-  const spinner = createSpinner("Checking token");
+  const spinner = createCrabLoader("Checking token");
   try {
     const whoami = await apiRequest(
       registry,
@@ -112,7 +112,7 @@ export async function cmdDeviceLogin(opts: GlobalOpts) {
   const authBase = discovery?.authBase?.trim() || opts.site;
   const registry = await getRegistry(opts, { cache: true });
 
-  const spinner = createSpinner("Requesting device code");
+  const spinner = createCrabLoader("Requesting device code");
   let deviceCode;
   try {
     deviceCode = await requestDeviceCode({ apiUrl: registry, siteUrl: authBase });
@@ -132,7 +132,7 @@ export async function cmdDeviceLogin(opts: GlobalOpts) {
   console.log(`  Code expires in ${Math.floor(deviceCode.expires_in / 60)} minutes.`);
   console.log();
 
-  const pollSpinner = createSpinner("Waiting for authorization");
+  const pollSpinner = createCrabLoader("Waiting for authorization");
   try {
     const tokenResponse = await pollForDeviceToken(
       { apiUrl: registry, siteUrl: authBase },

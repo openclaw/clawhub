@@ -32,7 +32,14 @@ import {
 import { getOptionalAuthToken, requireAuthToken } from "../authToken.js";
 import { getRegistry } from "../registry.js";
 import type { GlobalOpts, ResolveResult } from "../types.js";
-import { createSpinner, fail, formatError, isInteractive, promptConfirm } from "../ui.js";
+import {
+  createCrabLoader,
+  fail,
+  formatError,
+  isInteractive,
+  promptConfirm,
+  styleText,
+} from "../ui.js";
 import { presentModerationPlan, reportModerationPlan } from "./moderationPlan.js";
 import { reportInstalledSkillsTelemetryIfEnabled } from "./syncHelpers.js";
 
@@ -112,7 +119,7 @@ export async function cmdSearch(opts: GlobalOpts, query: string, limit?: number)
 
   const token = await getOptionalAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = createSpinner("Searching");
+  const spinner = createCrabLoader("Searching");
   try {
     const url = registryUrl(ApiRoutes.search, registry);
     url.searchParams.set("q", query);
@@ -125,18 +132,42 @@ export async function cmdSearch(opts: GlobalOpts, query: string, limit?: number)
     );
 
     spinner.stop();
-    for (const entry of result.results) {
+    const rows = result.results.map((entry) => {
       const slug = entry.slug ?? "unknown";
-      const name = entry.displayName ?? slug;
-      const version = entry.version ? ` v${entry.version}` : "";
+      return {
+        slug: entry.version ? `${slug} v${entry.version}` : slug,
+        owner: formatSearchOwner(entry),
+        name: entry.displayName ?? slug,
+        metric: formatSearchMetric(entry),
+      };
+    });
+    const slugWidth = maxColumnWidth(rows.map((row) => row.slug));
+    const ownerWidth = maxColumnWidth(rows.map((row) => row.owner));
+    const nameWidth = maxColumnWidth(rows.map((row) => row.name));
+    for (const row of rows) {
       console.log(
-        `${slug}${version}  ${formatSearchOwner(entry)}  ${name}  (${entry.score.toFixed(3)})`,
+        `${styleText(row.slug.padEnd(slugWidth), "brand")}  ${styleText(
+          row.owner.padEnd(ownerWidth),
+          "muted",
+        )}  ${styleText(row.name.padEnd(nameWidth), "strong")}  ${styleText(row.metric, "muted")}`,
       );
     }
   } catch (error) {
     spinner.fail(formatError(error));
     throw error;
   }
+}
+
+function maxColumnWidth(values: string[]) {
+  return values.reduce((max, value) => Math.max(max, value.length), 0);
+}
+
+function formatSearchMetric(entry: { downloads?: number; score: number }) {
+  if (typeof entry.downloads === "number") {
+    const value = new Intl.NumberFormat("en-US").format(entry.downloads);
+    return `${value} ${entry.downloads === 1 ? "download" : "downloads"}`;
+  }
+  return `score ${entry.score.toFixed(3)}`;
 }
 
 export async function cmdInstall(
@@ -164,7 +195,7 @@ export async function cmdInstall(
     fail(`skill "${trimmed}" is pinned; run \`clawhub unpin ${trimmed}\` first`);
   }
 
-  const spinner = createSpinner(`Resolving ${trimmed}`);
+  const spinner = createCrabLoader(`Resolving ${trimmed}`);
   try {
     // Fetch skill metadata including moderation status
     const skillMeta = await apiRequest(
@@ -229,13 +260,13 @@ export async function cmdInstall(
     }
 
     if (githubInstall) {
-      spinner.text = `Downloading ${trimmed}@${formatGitHubVersion(githubInstall.github.commit)}`;
+      spinner.text = `Downloading ${trimmed} ${formatGitHubVersion(githubInstall.github.commit)}`;
       await installGitHubSkill(registry, githubInstall, target);
       resolvedVersion = githubInstall.github.commit;
     } else {
       const archiveVersion = resolvedVersion;
       if (!archiveVersion) fail("Could not resolve latest version");
-      spinner.text = `Downloading ${trimmed}@${archiveVersion}`;
+      spinner.text = `Downloading ${trimmed} v${archiveVersion}`;
       const zip = await downloadZip(registry, { slug: trimmed, version: archiveVersion, token });
       await extractZipToDir(zip, target);
     }
@@ -260,7 +291,12 @@ export async function cmdInstall(
       root: opts.dir,
       skills: lock.skills,
     });
-    spinner.succeed(`OK. Installed ${trimmed} -> ${target}`);
+    spinner.succeed(
+      `${styleText("Installed", "brand")} ${styleText(trimmed, "strong")} ${styleText(
+        githubInstall ? formatGitHubVersion(resolvedVersion!) : `v${resolvedVersion}`,
+        "muted",
+      )} -> ${styleText(target, "muted")}`,
+    );
   } catch (error) {
     spinner.fail(formatError(error));
     throw error;
@@ -308,7 +344,7 @@ export async function cmdUpdate(
   }
 
   for (const entry of slugs) {
-    const spinner = createSpinner(`Checking ${entry}`);
+    const spinner = createCrabLoader(`Checking ${entry}`);
     try {
       const target = join(opts.dir, entry);
       const exists = await fileExists(target);
@@ -490,11 +526,21 @@ export async function cmdUpdate(
       const targetVersion = options.version ?? latest;
       if (options.version) {
         if (matched && matched === targetVersion) {
-          spinner.succeed(`${entry}: already at ${matched}`);
+          spinner.succeed(
+            `${styleText(entry, "strong")} ${styleText("already at", "brand")} ${styleText(
+              `v${matched}`,
+              "muted",
+            )}`,
+          );
           continue;
         }
       } else if (matched && semver.valid(matched) && semver.gte(matched, targetVersion)) {
-        spinner.succeed(`${entry}: up to date (${matched})`);
+        spinner.succeed(
+          `${styleText(entry, "strong")} ${styleText("up to date", "brand")} ${styleText(
+            `v${matched}`,
+            "muted",
+          )}`,
+        );
         continue;
       }
 
@@ -520,7 +566,12 @@ export async function cmdUpdate(
       });
 
       lock.skills[entry] = withPinnedMetadata(targetVersion, Date.now(), lock.skills[entry]);
-      spinner.succeed(`${entry}: updated -> ${targetVersion}`);
+      spinner.succeed(
+        `${styleText("Updated", "brand")} ${styleText(entry, "strong")} -> ${styleText(
+          `v${targetVersion}`,
+          "muted",
+        )}`,
+      );
     } catch (error) {
       spinner.fail(formatError(error));
       throw error;
@@ -616,7 +667,7 @@ export async function cmdUninstall(
     }
   }
 
-  const spinner = createSpinner(`Uninstalling ${trimmed}`);
+  const spinner = createCrabLoader(`Uninstalling ${trimmed}`);
   try {
     const target = join(opts.dir, trimmed);
 
@@ -625,7 +676,7 @@ export async function cmdUninstall(
     delete lock.skills[trimmed];
     await writeLockfile(opts.workdir, lock);
 
-    spinner.succeed(`Uninstalled ${trimmed}`);
+    spinner.succeed(`${styleText("Uninstalled", "brand")} ${styleText(trimmed, "strong")}`);
   } catch (error) {
     spinner.fail(formatError(error));
     throw error;
@@ -648,7 +699,7 @@ export async function cmdExplore(
 ) {
   const token = await getOptionalAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = createSpinner("Fetching latest skills");
+  const spinner = createCrabLoader("Fetching latest skills");
   try {
     const url = registryUrl(ApiRoutes.skills, registry);
     const boundedLimit = clampLimit(options.limit ?? 25);
@@ -688,8 +739,11 @@ export function formatExploreLine(item: {
 }) {
   const version = item.latestVersion?.version ?? "?";
   const age = formatRelativeTime(item.updatedAt);
-  const summary = item.summary ? `  ${truncate(item.summary, 50)}` : "";
-  return `${item.slug}  v${version}  ${age}${summary}`;
+  const summary = item.summary ? `  ${styleText(truncate(item.summary, 50), "muted")}` : "";
+  return `${styleText(item.slug, "brand")}  ${styleText(`v${version}`, "muted")}  ${styleText(
+    age,
+    "muted",
+  )}${summary}`;
 }
 
 export function clampLimit(limit: number, fallback = 25) {
