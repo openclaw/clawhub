@@ -594,6 +594,156 @@ function toPackageReleaseSecurityResponse(params: {
   };
 }
 
+type PackageVerifyResolvedFrom = "latest" | "version" | "tag";
+
+function buildPackageVerifyUrl(request: Request, packageName: string, version: string) {
+  const packagePath = encodePackagePath(packageName);
+  const url = new URL(`/api/v1/plugins/${packagePath}/verify`, publicApiOrigin(request));
+  url.searchParams.set("version", version);
+  return url.toString();
+}
+
+function resolvePackageVerifySelection(request: Request) {
+  const url = new URL(request.url);
+  const versionParam = url.searchParams.get("version")?.trim();
+  const tagParam = url.searchParams.get("tag")?.trim();
+  if (versionParam && tagParam) return { error: "Use either version or tag" };
+  return {
+    versionParam,
+    tagParam,
+    resolvedFrom: (versionParam
+      ? "version"
+      : tagParam
+        ? "tag"
+        : "latest") as PackageVerifyResolvedFrom,
+  };
+}
+
+function buildPackageVerifyReasons(params: {
+  blockedFromDownload: boolean;
+  scanStatus: "clean" | "suspicious" | "malicious" | "pending" | "not-run";
+  stale: boolean;
+}) {
+  const reasons: string[] = [];
+  if (params.blockedFromDownload) reasons.push("security.blocked_from_download");
+  if (params.scanStatus !== "clean") reasons.push(`security.status_${params.scanStatus}`);
+  if (params.stale) reasons.push("security.stale");
+  return reasons;
+}
+
+function toPackageVerifyResponse(params: {
+  request: Request;
+  pkg: PublicPackageDocLike;
+  owner: { handle?: string; displayName?: string } | null;
+  release: ReleaseLike;
+  trustedPublisher: PackageTrustedPublisherLike | null;
+  resolvedFrom: PackageVerifyResolvedFrom;
+  tag: string | null;
+}) {
+  const scanStatus = resolvePackageReleaseScanStatus(params.release);
+  const trust = toPackageReleaseSecurityResponse({
+    pkg: params.pkg,
+    release: params.release,
+  }).trust;
+  const reasons = buildPackageVerifyReasons({
+    blockedFromDownload: trust.blockedFromDownload,
+    scanStatus,
+    stale: trust.stale,
+  });
+  const artifact = toReleaseArtifact(params.release, params.pkg.name);
+  const verification = params.release.verification ?? params.pkg.verification ?? null;
+  const ownerHandle = params.owner?.handle ?? null;
+  const sourceRepo = verification?.sourceRepo ?? null;
+  const sourceCommit = verification?.sourceCommit ?? null;
+  const hasProvenance = verification?.hasProvenance === true;
+
+  return {
+    schema: "clawhub.plugin.verify.v1",
+    ok: reasons.length === 0,
+    decision: reasons.length === 0 ? "pass" : "fail",
+    reasons,
+    name: params.pkg.name,
+    displayName: params.pkg.displayName,
+    family: params.pkg.family,
+    pageUrl: `https://clawhub.ai/plugins/${encodePackagePath(params.pkg.name)}`,
+    publisherHandle: ownerHandle,
+    publisherDisplayName: params.owner?.displayName ?? null,
+    publisherProfileUrl: ownerHandle ? `https://clawhub.ai/user/${ownerHandle}` : null,
+    version: params.release.version,
+    resolvedFrom: params.resolvedFrom,
+    tag: params.tag,
+    createdAt: params.release.createdAt,
+    review: {
+      status: params.pkg.isOfficial ? "official" : "unreviewed-community",
+      isOfficial: params.pkg.isOfficial,
+      channel: params.pkg.channel,
+    },
+    artifact: {
+      ...artifact,
+      files: params.release.files.map((file) => ({
+        path: file.path,
+        size: file.size,
+        sha256: file.sha256,
+        contentType: file.contentType ?? null,
+      })),
+    },
+    provenance: {
+      tier: verification?.tier ?? null,
+      scope: verification?.scope ?? null,
+      summary: verification?.summary ?? null,
+      sourceRepo,
+      sourceCommit,
+      sourceTag: verification?.sourceTag ?? null,
+      hasProvenance,
+      trustedOpenClawPlugin: verification?.trustedOpenClawPlugin === true,
+      trustedPublisher: toPublicTrustedPublisher(params.trustedPublisher),
+      source:
+        sourceRepo && sourceCommit
+          ? "source-linked-release"
+          : hasProvenance
+            ? "published-package-provenance"
+            : "unavailable",
+    },
+    security: {
+      status: scanStatus,
+      moderationState: params.release.manualModeration?.state ?? null,
+      blockedFromDownload: trust.blockedFromDownload,
+      pending: trust.pending,
+      stale: trust.stale,
+      reasons: trust.reasons,
+      signals: {
+        staticScan: params.release.staticScan
+          ? {
+              status: params.release.staticScan.status,
+              reasonCodes: params.release.staticScan.reasonCodes ?? [],
+              checkedAt: params.release.staticScan.checkedAt ?? null,
+              engineVersion: params.release.staticScan.engineVersion ?? null,
+            }
+          : null,
+        virusTotal: params.release.vtAnalysis
+          ? {
+              status: params.release.vtAnalysis.status ?? null,
+              verdict: params.release.vtAnalysis.verdict ?? null,
+              checkedAt: params.release.vtAnalysis.checkedAt ?? null,
+            }
+          : null,
+        skillSpector: params.release.skillSpectorAnalysis
+          ? {
+              status: params.release.skillSpectorAnalysis.status ?? null,
+              checkedAt: params.release.skillSpectorAnalysis.checkedAt ?? null,
+            }
+          : null,
+      },
+    },
+    compatibility: params.release.compatibility ?? params.pkg.compatibility ?? null,
+    capabilities: params.release.capabilities ?? params.pkg.capabilities ?? null,
+    verificationUrl: buildPackageVerifyUrl(params.request, params.pkg.name, params.release.version),
+    signature: {
+      status: "unsigned",
+    },
+  };
+}
+
 function encodePackagePath(name: string) {
   return name
     .split("/")
@@ -3194,6 +3344,54 @@ export async function pluginsGetRouterV1Handler(ctx: ActionCtx, request: Request
       pluginFamilies: ["code-plugin", "bundle-plugin"],
     });
   }
+
+  const route = parsePackagePathSegments(segments);
+  if (route?.rest[0] === "verify" && route.rest.length === 1) {
+    const rate = await applyRateLimit(ctx, request, "read");
+    if (!rate.ok) return rate.response;
+    const normalizedPackageName = tryNormalizePackageName(route.packageName);
+    if (!normalizedPackageName) return text("Plugin not found", 404, rate.headers);
+    const selection = resolvePackageVerifySelection(request);
+    if ("error" in selection)
+      return text(selection.error ?? "Invalid verify request", 400, rate.headers);
+
+    const viewerUserId = await getOptionalViewerUserIdForRequest(ctx, request);
+    const detail = (await runQueryRef(ctx, internalRefs.packages.getByNameForViewerInternal, {
+      name: normalizedPackageName,
+      viewerUserId: viewerUserId ?? undefined,
+    })) as {
+      package: PublicPackageDocLike | null;
+      latestRelease: ReleaseLike | null;
+      owner: { _id: Id<"users">; handle?: string; displayName?: string; image?: string } | null;
+    } | null;
+    if (!detail?.package) return text("Plugin not found", 404, rate.headers);
+    if (detail.package.family !== "code-plugin" && detail.package.family !== "bundle-plugin") {
+      return text("Package is not a plugin", 404, rate.headers);
+    }
+
+    const release = await getReleaseForRequest(ctx, detail.package, request);
+    if (!release) return text("Version not found", 404, rate.headers);
+    const trustedPublisher = await runQueryRef<PackageTrustedPublisherLike | null>(
+      ctx,
+      internalRefs.packages.getTrustedPublisherByPackageIdInternal,
+      { packageId: detail.package._id },
+    );
+
+    return json(
+      toPackageVerifyResponse({
+        request,
+        pkg: detail.package,
+        owner: detail.owner,
+        release,
+        trustedPublisher,
+        resolvedFrom: selection.resolvedFrom,
+        tag: selection.tagParam || null,
+      }),
+      200,
+      rate.headers,
+    );
+  }
+
   return text("Not found", 404);
 }
 

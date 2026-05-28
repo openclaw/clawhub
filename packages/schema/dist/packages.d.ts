@@ -615,6 +615,32 @@ export declare const ApiV1PackageSecurityResponseSchema: import("arktype/interna
     };
 }, {}>;
 export type ApiV1PackageSecurityResponse = (typeof ApiV1PackageSecurityResponseSchema)[inferred];
+export declare const ApiV1PluginVerifyResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    schema: "clawhub.plugin.verify.v1";
+    ok: boolean;
+    decision: "pass" | "fail";
+    reasons: string[];
+    name: string;
+    displayName: string;
+    family: "skill" | "code-plugin" | "bundle-plugin";
+    pageUrl: string;
+    publisherHandle: string | null;
+    publisherDisplayName: string | null;
+    publisherProfileUrl: string | null;
+    version: string;
+    resolvedFrom: "version" | "tag" | "latest";
+    tag: string | null;
+    createdAt: number;
+    review: unknown;
+    artifact: unknown;
+    provenance: unknown;
+    security: unknown;
+    compatibility: unknown;
+    capabilities: unknown;
+    verificationUrl: string;
+    signature: unknown;
+}, {}>;
+export type ApiV1PluginVerifyResponse = (typeof ApiV1PluginVerifyResponseSchema)[inferred];
 export declare const PackageReleaseModerationRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     state: "approved" | "quarantined" | "revoked";
     reason: string;
