@@ -1933,6 +1933,15 @@ code {
   font-weight: 600;
 }
 
+.skill-publish-share-list {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  min-width: 0;
+  padding-inline: 4px;
+}
+
 .publish-field-group {
   display: grid;
   gap: 8px;
