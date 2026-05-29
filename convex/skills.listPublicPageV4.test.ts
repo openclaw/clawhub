@@ -38,6 +38,7 @@ describe("skills.listPublicPageV4", () => {
   });
 
   it("forces Recommended ranking to descending for stale URLs", () => {
+    expect(__test.resolvePublicListDir("recommended", "asc")).toBe("desc");
     expect(__test.resolvePublicListDir("default", "asc")).toBe("desc");
   });
 

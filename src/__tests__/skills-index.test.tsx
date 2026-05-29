@@ -186,7 +186,7 @@ describe("SkillsIndex", () => {
     });
   });
 
-  it("switches browse default sorting back to relevance when entering search", async () => {
+  it("switches implicit recommended sorting back to relevance when entering search", async () => {
     searchMock = { sort: "downloads" };
     vi.useFakeTimers();
 
@@ -236,7 +236,7 @@ describe("SkillsIndex", () => {
     });
   });
 
-  it("clears stale default sort state when entering search", async () => {
+  it("clears stale recommended sort aliases when entering search", async () => {
     searchMock = { sort: "default", dir: "asc" };
     vi.useFakeTimers();
 
@@ -257,15 +257,15 @@ describe("SkillsIndex", () => {
     });
   });
 
-  it("does not reuse a stale default direction when choosing an explicit browse sort", async () => {
-    searchMock = { sort: "default", dir: "asc" };
+  it("does not reuse a stale recommended direction when choosing an explicit browse sort", async () => {
+    searchMock = { sort: "recommended", dir: "asc" };
     render(<SkillsIndex />);
 
     fireEvent.click(screen.getByRole("radio", { name: "Most downloaded" }));
 
     const lastCall = getLastNavigateCall();
     expect(lastCall.replace).toBe(true);
-    expect(lastCall.search({ sort: "default", dir: "asc" })).toEqual({
+    expect(lastCall.search({ sort: "recommended", dir: "asc" })).toEqual({
       sort: "downloads",
       dir: "desc",
     });

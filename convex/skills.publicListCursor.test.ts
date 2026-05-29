@@ -33,7 +33,15 @@ type WrappedHandler<TArgs, TResult> = {
 type PublicListArgs = {
   cursor?: string;
   numItems?: number;
-  sort?: "default" | "recommended" | "newest" | "updated" | "downloads" | "installs" | "stars" | "name";
+  sort?:
+    | "default"
+    | "recommended"
+    | "newest"
+    | "updated"
+    | "downloads"
+    | "installs"
+    | "stars"
+    | "name";
   dir?: "asc" | "desc";
   highlightedOnly?: boolean;
   nonSuspiciousOnly?: boolean;
@@ -368,7 +376,10 @@ describe("public skill list deterministic cursors", () => {
       indexKeys: [],
     });
 
-    const result = await listPublicApiPageV1Handler({} as never, { numItems: 10 });
+    const result = await listPublicApiPageV1Handler({} as never, {
+      numItems: 10,
+      sort: "updated",
+    });
 
     expect(result.items).toHaveLength(1);
     expect(result.items[0]).toMatchObject({ latestVersion: null });
@@ -400,7 +411,7 @@ describe("public skill list deterministic cursors", () => {
           ),
         },
       } as never,
-      { numItems: 10 },
+      { numItems: 10, sort: "updated" },
     );
 
     expect(result.items).toHaveLength(1);

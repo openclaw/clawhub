@@ -1046,7 +1046,7 @@ type SkillListSort =
 type PublicListSort = "recommended" | "newest" | "updated" | "downloads" | "stars" | "installs";
 
 function parseListSort(value: string | null): SkillListSort | null {
-  if (value === null) return "recommended";
+  if (value === null) return "updated";
   const normalized = value?.trim().toLowerCase();
   if (!normalized || normalized === "default" || normalized === "recommended") {
     return "recommended";

@@ -142,7 +142,7 @@ Query params:
 
 - `limit` (optional): integer (1–200)
 - `cursor` (optional): pagination cursor for any non-`trending` sort
-- `sort` (optional): `recommended` (default, alias: `default`), `updated`, `createdAt` (alias: `newest`), `downloads`, `stars` (alias: `rating`), `installsCurrent` (alias: `installs`), `installsAllTime`, `trending`
+- `sort` (optional): `updated` (default), `recommended` (alias: `default`), `createdAt` (alias: `newest`), `downloads`, `stars` (alias: `rating`), `installsCurrent` (alias: `installs`), `installsAllTime`, `trending`
 - `nonSuspiciousOnly` (optional): `true` to hide suspicious (`flagged.suspicious`) skills
 - `nonSuspicious` (optional): legacy alias for `nonSuspiciousOnly`
 

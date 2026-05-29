@@ -1174,10 +1174,10 @@ describe("httpApiV1 handlers", () => {
     expect(json.items[0].tags.latest).toBe("1.0.0");
   });
 
-  it("lists skills defaults to recommended ranking", async () => {
+  it("lists skills keeps the v1 no-sort default on updated ranking", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("cursor" in args || "numItems" in args) {
-        expect(args.sort).toBe("recommended");
+        expect(args.sort).toBe("updated");
         return { page: [], nextCursor: null };
       }
       return null;
