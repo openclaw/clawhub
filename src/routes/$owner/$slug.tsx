@@ -3,14 +3,33 @@ import {
   notFound,
   Outlet,
   redirect,
+  useNavigate,
   useRouterState,
 } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { SkillDetailPage } from "../../components/SkillDetailPage";
 import { buildSkillMeta } from "../../lib/og";
+import { consumePostPublishFlash } from "../../lib/postPublishFlash";
 import { fetchSkillPageData } from "../../lib/skillPage";
 import { resolveOpenClawPluginSlug } from "../../lib/slugRoute";
 
+function isPostPublishFlag(value: unknown) {
+  const normalized = typeof value === "string" ? value.trim().replace(/^"|"$/g, "") : value;
+  return normalized === "1" || normalized === "true" || normalized === 1 || normalized === true;
+}
+
+function hasPostPublishSearch(searchStr: string) {
+  return isPostPublishFlag(new URLSearchParams(searchStr).get("published"));
+}
+
 export const Route = createFileRoute("/$owner/$slug")({
+  validateSearch: (search) => {
+    const parsed: { published?: true } = {};
+    if (isPostPublishFlag(search.published)) {
+      parsed.published = true;
+    }
+    return parsed;
+  },
   beforeLoad: ({ params }) => {
     const isHandle = /^[a-zA-Z0-9_][a-zA-Z0-9_-]*$/.test(params.owner);
     const isScope = /^@[a-zA-Z0-9_][a-zA-Z0-9_-]*$/.test(params.owner);
@@ -89,8 +108,31 @@ export const Route = createFileRoute("/$owner/$slug")({
 
 function OwnerSkill() {
   const { owner, slug } = Route.useParams();
+  const search = Route.useSearch();
   const { initialData } = Route.useLoaderData();
+  const navigate = useNavigate({ from: "/$owner/$slug" });
   const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const searchStr = useRouterState({ select: (state) => state.location.searchStr });
+  const hasPublishedSearch = isPostPublishFlag(search.published) || hasPostPublishSearch(searchStr);
+  const [showPostPublishSuccess, setShowPostPublishSuccess] = useState(() =>
+    hasPublishedSearch ? true : consumePostPublishFlash(owner, slug),
+  );
+
+  useEffect(() => {
+    const hasFlash = consumePostPublishFlash(owner, slug);
+    if (hasPublishedSearch || hasFlash) {
+      setShowPostPublishSuccess(true);
+    }
+    if (hasPublishedSearch) {
+      void navigate({
+        to: "/$owner/$slug",
+        params: { owner, slug },
+        search: {},
+        replace: true,
+      });
+    }
+  }, [hasPublishedSearch, navigate, owner, slug]);
+
   if (
     pathname.includes(`/${encodeURIComponent(slug)}/security/`) ||
     pathname.endsWith(`/${encodeURIComponent(slug)}/security-audit`) ||
@@ -98,5 +140,21 @@ function OwnerSkill() {
   ) {
     return <Outlet />;
   }
-  return <SkillDetailPage slug={slug} canonicalOwner={owner} initialData={initialData} />;
+  return (
+    <SkillDetailPage
+      slug={slug}
+      canonicalOwner={owner}
+      initialData={initialData}
+      showPostPublishSuccess={showPostPublishSuccess}
+      onDismissPostPublish={() => {
+        setShowPostPublishSuccess(false);
+        void navigate({
+          to: "/$owner/$slug",
+          params: { owner, slug },
+          search: {},
+          replace: true,
+        });
+      }}
+    />
+  );
 }
