@@ -18,7 +18,14 @@ import {
   Rocket,
   Search,
 } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  type ReactNode,
+  type SVGProps,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import { copyText } from "../components/InstallCopyButton";
@@ -48,7 +55,7 @@ import {
   makeLucideIconValue,
 } from "../lib/skillIcon";
 import { getPublicSlugCollision } from "../lib/slugCollision";
-import { getSiteMode, getSiteName, getSiteUrlForMode } from "../lib/site";
+import { getClawHubSiteUrl, getSiteMode, getSiteName, getSiteUrlForMode } from "../lib/site";
 import { formatBytes } from "../lib/uploadUtils";
 import { useAuthStatus } from "../lib/useAuthStatus";
 
@@ -159,6 +166,27 @@ type PublishResultRow = {
   message?: string;
 };
 
+const OPENCLAW_SKILLS_DISCORD_URL =
+  "https://discord.com/channels/1456350064065904867/1456891440897724637";
+const PUBLIC_CLAWHUB_SITE_URL = "https://clawhub.ai";
+const LOCAL_SHARE_HOSTS = new Set(["localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]"]);
+const DEV_MOCK_SKILL_NAMES = [
+  "agent-release-notes",
+  "audit-brief",
+  "branch-cleanup",
+  "context-pack",
+  "daily-standup",
+  "deploy-smoke",
+  "docs-review",
+  "handoff-writer",
+  "issue-triage",
+  "launch-checklist",
+  "migration-plan",
+  "pr-comment-sweeper",
+  "release-captain",
+  "security-pass",
+  "test-designer",
+];
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 export function ImportGitHub() {
@@ -301,7 +329,7 @@ export function ImportGitHub() {
     setRepoListStatus(null);
     try {
       const result = await listOwnedRepos({ perPage: 10 });
-      const nextRepos = (result.repos ?? []) as OwnedGitHubRepo[];
+      const nextRepos = expandDevMockSkillRepos((result.repos ?? []) as OwnedGitHubRepo[]);
       const nextLogin =
         typeof result.account?.login === "string" && result.account.login.trim()
           ? result.account.login.trim()
@@ -587,7 +615,7 @@ export function ImportGitHub() {
                 </h1>
                 <p className="text-sm text-[color:var(--ink-soft)]">
                   {publishSucceeded
-                    ? "Published from GitHub"
+                    ? "Ready to share"
                     : isReviewing
                       ? "Review selected skills before publishing"
                       : "Select skills"}
@@ -595,7 +623,7 @@ export function ImportGitHub() {
               </div>
               <div className="w-full sm:max-w-[320px]">
                 <img
-                  src="/import-github-hat-v3.png"
+                  src="/github-import-hero-art.png"
                   alt=""
                   className="w-[220px] max-w-[70vw] select-none object-contain sm:ml-auto"
                   draggable={false}
@@ -676,7 +704,7 @@ export function ImportGitHub() {
                     aria-hidden="true"
                   />
                   <Input
-                    className="min-h-[46px] pl-10 text-sm"
+                    className="github-import-input min-h-[46px] pl-10 pr-10 text-sm"
                     value={repoSearch}
                     onChange={(e) => setRepoSearch(e.target.value)}
                     placeholder="Search..."
@@ -684,6 +712,16 @@ export function ImportGitHub() {
                     autoCorrect="off"
                     spellCheck={false}
                   />
+                  {repoSearch ? (
+                    <button
+                      type="button"
+                      className="absolute right-3 top-1/2 flex h-6 w-6 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full text-[color:var(--ink-soft)] transition-colors hover:bg-[color:var(--surface-muted)] hover:text-[color:var(--ink)]"
+                      aria-label="Clear search"
+                      onClick={() => setRepoSearch("")}
+                    >
+                      <CircleX className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                  ) : null}
                 </div>
               ) : null}
 
@@ -855,20 +893,7 @@ export function ImportGitHub() {
               </div>
 
               {publishResults.length > 0 ? (
-                <Card>
-                  <CardContent className="gap-2">
-                    {publishResults.map((result) => (
-                      <div
-                        key={result.key}
-                        className={result.ok ? "text-status-success-fg" : "text-status-error-fg"}
-                      >
-                        {result.ok
-                          ? `${result.name} published${result.slug ? ` as ${result.slug}` : ""}`
-                          : `${result.name} failed${result.message ? `: ${result.message}` : ""}`}
-                      </div>
-                    ))}
-                  </CardContent>
-                </Card>
+                <PublishResultList results={publishResults} />
               ) : null}
             </section>
           ) : null}
@@ -909,22 +934,19 @@ function PublishedImportSuccess({
   };
 
   return (
-    <section className="overflow-hidden rounded-[var(--radius-md)] border border-status-success-fg/30 bg-[radial-gradient(circle_at_14%_22%,color-mix(in_srgb,var(--status-success-fg)_12%,transparent),transparent_30%),linear-gradient(180deg,color-mix(in_srgb,var(--surface-muted)_76%,transparent),var(--surface))] p-5 shadow-[0_24px_80px_color-mix(in_srgb,var(--status-success-fg)_10%,transparent)] sm:p-7">
+    <section className="github-import-success-panel overflow-hidden rounded-[var(--radius-md)] p-5 sm:p-7">
       <div className="mb-6 flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex items-start gap-4">
-          <div className="relative flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-status-success-fg/35 bg-status-success-fg/10 text-status-success-fg shadow-[0_0_36px_color-mix(in_srgb,var(--status-success-fg)_22%,transparent)]">
-            <span className="absolute -right-1 -top-1 text-lg" aria-hidden="true">
-              🦞
-            </span>
+          <div className="github-import-success-mark relative flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-status-success-fg">
             <CheckCircle2 className="h-7 w-7" strokeWidth={1.8} aria-hidden="true" />
           </div>
           <div className="min-w-0">
             <h2 className="font-display text-2xl font-bold text-[color:var(--ink)]">
-              They're live
+              They're alive! <span aria-hidden="true">🦞</span>
             </h2>
             <p className="mt-1 text-sm text-[color:var(--ink-soft)]">
-              {publishedItems.length}{" "}
-              {publishedItems.length === 1 ? "skill is" : "skills are"} published on ClawHub.
+              {publishedItems.length} {publishedItems.length === 1 ? "skill" : "skills"} imported
+              and ready to share.
             </p>
           </div>
         </div>
@@ -956,7 +978,7 @@ function PublishedImportSuccess({
                 </div>
               </div>
               <div className="flex min-w-0 items-center gap-2 sm:justify-end">
-                <span className="min-w-0 truncate text-xs text-status-success-fg">{item.url}</span>
+                <span className="min-w-0 truncate text-xs text-white/80">{item.url}</span>
                 <Button
                   variant="ghost"
                   size="icon-sm"
@@ -980,7 +1002,78 @@ function PublishedImportSuccess({
           );
         })}
       </div>
+
+      <div className="mt-6">
+        <a
+          href={OPENCLAW_SKILLS_DISCORD_URL}
+          target="_blank"
+          rel="noreferrer"
+          className="github-import-share-action flex items-center justify-between gap-4 rounded-[var(--radius-sm)] px-2 py-3 text-sm font-medium text-[color:var(--ink)] transition-colors hover:text-white"
+        >
+          <span className="flex min-w-0 items-center gap-3">
+            <DiscordIcon className="h-4 w-4 shrink-0" />
+            <span>Share on Discord</span>
+            <span className="text-[color:var(--ink-soft)]">&middot;</span>
+            <span className="truncate text-[color:var(--ink-soft)]">
+              #skills / Friends of the Crustacean 🦞🤝
+            </span>
+          </span>
+          <ExternalLink className="h-4 w-4 shrink-0 text-[color:var(--ink-soft)]" aria-hidden="true" />
+        </a>
+        <a
+          href={buildXShareUrl(publishedItems)}
+          target="_blank"
+          rel="noreferrer"
+          className="github-import-share-action flex items-center justify-between gap-4 rounded-[var(--radius-sm)] px-2 py-3 text-sm font-medium text-[color:var(--ink)] transition-colors hover:text-white"
+        >
+          <span className="flex min-w-0 items-center gap-3">
+            <XIcon className="h-4 w-4 shrink-0" />
+            <span>Share on Twitter</span>
+          </span>
+          <ExternalLink className="h-4 w-4 shrink-0 text-[color:var(--ink-soft)]" aria-hidden="true" />
+        </a>
+      </div>
     </section>
+  );
+}
+
+function PublishResultList({ results }: { results: PublishResultRow[] }) {
+  return (
+    <div className="github-import-publish-results overflow-hidden rounded-[var(--radius-md)] border border-[color:var(--line)] bg-[color:var(--surface)]">
+      {results.map((result) => {
+        const Icon = result.ok ? CheckCircle2 : CircleX;
+        return (
+          <div key={result.key} className="github-import-publish-result-row">
+            <div
+              className={[
+                "mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border",
+                result.ok
+                  ? "border-status-success-fg/25 bg-status-success-bg text-status-success-fg"
+                  : "border-status-error-fg/25 bg-status-error-bg text-status-error-fg",
+              ].join(" ")}
+            >
+              <Icon className="h-4 w-4" strokeWidth={1.9} aria-hidden="true" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                <span className="font-medium text-[color:var(--ink)]">{result.name}</span>
+                {result.ok && result.slug ? (
+                  <span className="text-xs text-[color:var(--ink-soft)]">/{result.slug}</span>
+                ) : null}
+              </div>
+              <p
+                className={[
+                  "mt-1 text-sm leading-6",
+                  result.ok ? "text-[color:var(--ink-soft)]" : "text-status-error-fg",
+                ].join(" ")}
+              >
+                {result.ok ? "Published." : normalizePublishResultMessage(result.message)}
+              </p>
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -1410,6 +1503,29 @@ function getRepoKey(repo: OwnedGitHubRepo) {
   return `${repo.fullName}:${repo.skillPath}`;
 }
 
+function getDevMockSkillCount() {
+  if (!import.meta.env.DEV || typeof window === "undefined") return 0;
+  const value = new URLSearchParams(window.location.search).get("mockSkills");
+  const count = Number.parseInt(value ?? "", 10);
+  if (!Number.isFinite(count)) return 0;
+  return Math.max(0, Math.min(count, 50));
+}
+
+function expandDevMockSkillRepos(repos: OwnedGitHubRepo[]) {
+  const count = getDevMockSkillCount();
+  if (count <= repos.length || repos.length === 0) return repos;
+
+  return Array.from({ length: count }, (_, index) => {
+    const source = repos[index % repos.length] as OwnedGitHubRepo;
+    const mockName = DEV_MOCK_SKILL_NAMES[index] ?? `${source.name}-${index + 1}`;
+    return {
+      ...source,
+      name: mockName,
+      fullName: `${source.fullName}#mock-${index + 1}`,
+    };
+  });
+}
+
 function toSlugQueryKey(key: string) {
   return `slug_${key.replace(/[^a-zA-Z0-9_]/g, "_")}`;
 }
@@ -1419,10 +1535,46 @@ function buildSkillHref(ownerHandle: string | null | undefined, slug: string) {
   return `/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}`;
 }
 
+function getPublicClawHubSiteUrl() {
+  const configured = getClawHubSiteUrl();
+  try {
+    const hostname = new URL(configured).hostname;
+    if (LOCAL_SHARE_HOSTS.has(hostname)) return PUBLIC_CLAWHUB_SITE_URL;
+  } catch {
+    return PUBLIC_CLAWHUB_SITE_URL;
+  }
+  return configured;
+}
+
 function buildSkillUrl(ownerHandle: string | null | undefined, slug: string) {
   const href = buildSkillHref(ownerHandle, slug);
-  if (typeof window === "undefined") return href;
-  return new URL(href, window.location.origin).toString();
+  return new URL(href, getPublicClawHubSiteUrl()).toString();
+}
+
+function buildXShareUrl(items: Array<{ name: string; url: string }>) {
+  const firstItem = items[0];
+  const text =
+    items.length <= 1
+      ? `${firstItem?.name ?? "A skill"} is now live on ClawHub 🦞 Check it out: ${
+          firstItem?.url ?? getPublicClawHubSiteUrl()
+        }`
+      : `${firstItem?.name ?? "A skill"} + ${items.length - 1} more ${
+          items.length === 2 ? "skill" : "skills"
+        } are now live on ClawHub 🦞 Check them out: ${firstItem?.url ?? getPublicClawHubSiteUrl()}`;
+  const url = new URL("https://twitter.com/intent/tweet");
+  url.searchParams.set("text", text);
+  return url.toString();
+}
+
+function normalizePublishResultMessage(message: string | undefined) {
+  const cleaned = (message ?? "Import failed")
+    .replace(/^Import failed during publish:\s*/i, "")
+    .replace(/^Uncaught ConvexError:\s*/i, "")
+    .replace(/:\s*Uncaught ConvexError:\s*/i, ": ")
+    .replace(/\s+at\s+[A-Za-z_$./(][\s\S]*$/i, "")
+    .replace(/\s*Check skill format, slug availability, and try again\.?$/i, "")
+    .trim();
+  return cleaned || "Import failed";
 }
 
 function pickDefaultIconName(seed: string) {
@@ -1452,6 +1604,42 @@ function GitHubMark({ size }: { size: number }) {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" width={size} height={size} aria-hidden="true">
       <path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.1.79-.25.79-.56 0-.28-.01-1.02-.02-2-3.2.7-3.88-1.54-3.88-1.54-.52-1.33-1.28-1.69-1.28-1.69-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.25.45-2.28 1.18-3.08-.12-.29-.51-1.46.11-3.04 0 0 .97-.31 3.16 1.18.92-.26 1.9-.38 2.88-.39.98 0 1.96.13 2.88.39 2.19-1.49 3.15-1.18 3.15-1.18.63 1.58.24 2.75.12 3.04.74.8 1.18 1.83 1.18 3.08 0 4.42-2.69 5.39-5.25 5.67.42.36.78 1.07.78 2.15 0 1.55-.01 2.8-.01 3.18 0 .31.21.67.8.56A11.51 11.51 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z" />
+    </svg>
+  );
+}
+
+function DiscordIcon({ className, ...props }: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      role="img"
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      {...props}
+    >
+      <title>Discord</title>
+      <path
+        fill="currentColor"
+        d="M20.317 4.3698a19.7913 19.7913 0 0 0-4.8851-1.5152.0741.0741 0 0 0-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 0 0-.0785-.037 19.7363 19.7363 0 0 0-4.8852 1.515.0699.0699 0 0 0-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 0 0 .0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 0 0 .0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 0 0-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 0 1-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 0 1 .0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 0 1 .0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 0 1-.0066.1276 12.2986 12.2986 0 0 1-1.873.8914.0766.0766 0 0 0-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 0 0 .0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 0 0 .0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 0 0-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z"
+      />
+    </svg>
+  );
+}
+
+function XIcon({ className, ...props }: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      role="img"
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      {...props}
+    >
+      <title>X</title>
+      <path
+        fill="currentColor"
+        d="M14.234 10.162 22.977 0h-2.072l-7.591 8.824L7.251 0H.258l9.168 13.343L.258 24H2.33l8.016-9.318L16.749 24h6.993zm-2.837 3.299-.929-1.329L3.076 1.56h3.182l5.965 8.532.929 1.329 7.754 11.09h-3.182z"
+      />
     </svg>
   );
 }
