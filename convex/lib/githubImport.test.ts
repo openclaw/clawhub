@@ -77,6 +77,12 @@ describe("github import", () => {
     });
   });
 
+  it("rejects blob urls that do not point to SKILL.md", () => {
+    expect(() =>
+      parseGitHubImportUrl("https://github.com/a/b/blob/main/skills/foo/README.md"),
+    ).toThrow(/SKILL\.md/i);
+  });
+
   it("strips single top-level folder from GitHub zip entries", () => {
     const zip = buildGitHubZipForTests({
       "repo-1/skill/SKILL.md": "Body",
@@ -106,16 +112,17 @@ describe("github import", () => {
     expect(candidates[0]?.name).toBe("demo");
   });
 
-  it("detects multiple candidates and supports skills.md", () => {
+  it("detects only SKILL.md candidates", () => {
     const zip = buildGitHubZipForTests({
       "repo-1/alpha/SKILL.md": `---\nname: Alpha\n---\nBody`,
       "repo-1/beta/skills.md": `---\nname: Beta\n---\nBody`,
+      "repo-1/gamma/README.md": `---\nname: Gamma\n---\nBody`,
       "repo-1/readme.md": "x",
     });
     const stripped = stripGitHubZipRoot(unzipSync(zip));
     const candidates = detectGitHubImportCandidates(stripped);
-    expect(candidates.map((c) => c.path)).toEqual(["alpha", "beta"]);
-    expect(candidates.map((c) => c.name)).toEqual(["Alpha", "Beta"]);
+    expect(candidates.map((c) => c.path)).toEqual(["alpha"]);
+    expect(candidates.map((c) => c.name)).toEqual(["Alpha"]);
   });
 
   it("computes default selection via markdown references", () => {

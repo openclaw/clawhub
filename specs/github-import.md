@@ -6,7 +6,15 @@ read_when:
   - Implementing provenance + canonical-claim flows
 ---
 
-# GitHub import (public repos)
+# GitHub import (owned public repos)
+
+Import is restricted to public repositories owned by the signed-in user's
+current GitHub account. Server-side validation must compare the repository
+owner's immutable GitHub numeric id with the caller's GitHub
+`providerAccountId` before previewing candidates or downloading archives.
+
+Do not allow importing another user's public repository through the dashboard,
+repo picker, or manual `/import` URL path.
 
 ## CLI
 
@@ -26,7 +34,9 @@ clawhub package publish owner/repo --dry-run --json
 
 This keeps package metadata zero-config where possible and auto-populates GitHub provenance.
 
-Goal: paste a GitHub URL → auto-detect skill → preview files → publish (selective) → persist provenance.
+Goal: choose one detected `SKILL.md` candidate from the signed-in user's owned
+public GitHub repositories, then preview files → publish (selective) → persist
+provenance.
 
 Non-goal (v1): private repos (no OAuth/PAT support).
 
@@ -39,14 +49,35 @@ Related:
 
 Upload page: “Import from GitHub” mode.
 
+Use a functional picker, not a marketing landing page. The first viewport should
+make the GitHub import job obvious: account, search, detected skill rows, and
+the review state after selection. Design references can use hero-level presence,
+but the control surface remains the product.
+
 Flow:
 
-1. URL input
-2. Detect skill candidates (SKILL.md)
+1. Scan the signed-in user's owned public repos
+2. List only detected skill candidates (`SKILL.md`)
 3. If multiple candidates: choose one
 4. File picker: check/uncheck; smart-select referenced files
 5. Confirm slug/name/version/tags
 6. Import → publish
+
+Manual URL import is not part of the dashboard picker. Backend preview/import
+still accepts repo root, tree path, and blob path for internal/API callers, but
+only when the URL's repository is owned by the signed-in user's GitHub account.
+
+Picker details:
+
+- Search is the primary control.
+- Rows represent importable skill candidates, not raw repositories.
+- A root `SKILL.md` row uses the repo name.
+- A nested `SKILL.md` row uses the containing folder/project name.
+- Rows also show the source repository name.
+- Search only appears when there are more than 10 detected candidates.
+- Repos without `SKILL.md`, private repos, forks, repos owned by someone else,
+  archived repos, and disabled repos do not appear.
+- Do not show private repo prompts, org switchers, or OAuth permission upsells.
 
 ## Accepted URLs
 
@@ -72,6 +103,14 @@ Reject:
 
 ## Fetch strategy (public)
 
+Before archive download:
+
+- Resolve the caller's GitHub `providerAccountId` from `authAccounts`.
+- Fetch the current GitHub login by immutable numeric id.
+- Fetch repository metadata from `GET /repos/{owner}/{repo}`.
+- Reject unless `private === false`, `visibility === "public"` when present,
+  and `repo.owner.id === providerAccountId`.
+
 Download archive:
 
 - `https://github.com/<owner>/<repo>/archive/<ref>.zip`
@@ -81,7 +120,10 @@ Unzip server-side (Node or Convex node action). Scan for skill candidates.
 
 Skill candidate definition:
 
-- Any folder containing `SKILL.md` or `skill.md` (also accept `skills.md` for compatibility).
+- Any repo root or folder containing a real `SKILL.md` file.
+- A `blob/.../SKILL.md` URL targets that file's parent folder.
+- Do not treat README files, `skills.md`, package metadata, repository names, or
+  inferred project folders as importable candidates.
 - Treat repo root as a folder too.
 
 Multiple skills:
@@ -93,7 +135,7 @@ Multiple skills:
 
 Defaults:
 
-- Always select `SKILL.md` (or chosen readme file).
+- Always select `SKILL.md`.
 - Prefer selecting only within chosen skill folder; allow “include out-of-folder refs” if explicitly toggled.
 
 Referenced file expansion:
@@ -125,7 +167,7 @@ Server publishes using existing pipeline:
 
 - Text-only enforced (see `docs/skill-format.md`).
 - Total ≤ 50MB (selected set).
-- Must include `SKILL.md` (or accepted variant).
+- Must include `SKILL.md`.
 
 Suggested defaults (UI):
 

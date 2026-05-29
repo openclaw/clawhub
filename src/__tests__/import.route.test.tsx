@@ -9,18 +9,18 @@ vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => vi.fn(),
 }));
 
-const previewImport = vi.fn();
 const previewCandidate = vi.fn();
 const importSkill = vi.fn();
-const useQueryMock = vi.fn();
+const listOwnedRepos = vi.fn();
+const useQueriesMock = vi.fn();
 const useAuthStatusMock = vi.fn();
 let useActionCallCount = 0;
 
 vi.mock("convex/react", () => ({
   ConvexReactClient: class {},
-  useQuery: (...args: unknown[]) => useQueryMock(...args),
+  useQueries: (...args: unknown[]) => useQueriesMock(...args),
   useAction: () => {
-    const action = [previewImport, previewCandidate, importSkill][useActionCallCount % 3];
+    const action = [listOwnedRepos, previewCandidate, importSkill][useActionCallCount % 3];
     useActionCallCount += 1;
     return action;
   },
@@ -32,10 +32,10 @@ vi.mock("../lib/useAuthStatus", () => ({
 
 describe("Import route", () => {
   beforeEach(() => {
-    previewImport.mockReset();
+    listOwnedRepos.mockReset();
     previewCandidate.mockReset();
     importSkill.mockReset();
-    useQueryMock.mockReset();
+    useQueriesMock.mockReset();
     useAuthStatusMock.mockReset();
     useActionCallCount = 0;
 
@@ -45,18 +45,31 @@ describe("Import route", () => {
       me: { _id: "users:1", handle: "me" },
     });
 
-    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
-      if (args === "skip") return undefined;
-      return null;
-    });
+    useQueriesMock.mockReturnValue({});
 
-    previewImport.mockResolvedValue({
-      candidates: [
+    listOwnedRepos.mockResolvedValue({
+      account: { login: "me", avatarUrl: "https://avatars.githubusercontent.com/u/1?v=4" },
+      page: 1,
+      perPage: 50,
+      hasMore: false,
+      repos: [
         {
-          path: "skill",
-          readmePath: "skill/SKILL.md",
-          name: "Taken Skill",
-          description: null,
+          owner: "octo",
+          name: "repo",
+          repoName: "repo",
+          repoFullName: "octo/repo",
+          fullName: "octo/repo",
+          htmlUrl: "https://github.com/octo/repo",
+          candidatePath: "skill",
+          skillPath: "skill/SKILL.md",
+          pushedAt: "2026-05-27T00:00:00Z",
+          updatedAt: "2026-05-27T00:00:00Z",
+          language: "TypeScript",
+          fork: false,
+          archived: false,
+          disabled: false,
+          importable: true,
+          unavailableReason: null,
         },
       ],
     });
@@ -107,42 +120,41 @@ describe("Import route", () => {
     expect(screen.queryByText(/sign in to import/i)).toBeNull();
   });
 
-  it("blocks import preflight when slug availability reports a collision", async () => {
-    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
-      if (args === "skip") return undefined;
-      if (
-        args &&
-        typeof args === "object" &&
-        "slug" in (args as Record<string, unknown>) &&
-        (args as Record<string, unknown>).slug === "taken-skill"
-      ) {
-        return {
-          available: false,
-          reason: "taken",
-          message: "Slug is already taken. Choose a different slug.",
-          url: "/alice/taken-skill",
-        };
-      }
-      return null;
+  it("auto-appends a slug suffix when the default slug is unavailable", async () => {
+    useQueriesMock.mockImplementation((queries: Record<string, { args: { slug: string } }>) => {
+      return Object.fromEntries(
+        Object.entries(queries).map(([key, query]) => [
+          key,
+          query.args.slug === "taken-skill"
+            ? {
+                available: false,
+                reason: "taken",
+                message: "Slug is already taken. Choose a different slug.",
+                url: "/alice/taken-skill",
+              }
+            : {
+                available: true,
+                reason: "available",
+                message: null,
+                url: null,
+              },
+        ]),
+      );
     });
 
     render(<ImportGitHub />);
-    fireEvent.change(screen.getByPlaceholderText("https://github.com/owner/repo"), {
-      target: { value: "https://github.com/octo/repo" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: /detect/i }));
+    fireEvent.click(await screen.findByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: /review selected/i }));
 
     await waitFor(() => {
-      expect(previewImport).toHaveBeenCalled();
-      expect(previewCandidate).toHaveBeenCalled();
+      expect(previewCandidate).toHaveBeenCalledWith({
+        url: "https://github.com/octo/repo",
+        candidatePath: "skill",
+      });
     });
 
-    expect(
-      await screen.findByText(/Slug is already taken\. Choose a different slug\./i),
-    ).toBeTruthy();
-    expect(screen.getByRole("link", { name: "/alice/taken-skill" })).toBeTruthy();
-    expect(
-      screen.getByRole("button", { name: /import \+ publish/i }).getAttribute("disabled"),
-    ).not.toBeNull();
+    await waitFor(() => {
+      expect((screen.getByLabelText("Slug") as HTMLInputElement).value).toBe("taken-skill-2");
+    });
   });
 });
