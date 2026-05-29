@@ -1,6 +1,7 @@
 /* @vitest-environment jsdom */
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
+import { toast } from "sonner";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../../convex/_generated/api";
 import { Settings } from "./settings";
@@ -27,6 +28,13 @@ vi.mock("@tanstack/react-router", () => ({
   Link: ({ children, to }: { children: ReactNode; to: string }) => <a href={to}>{children}</a>,
   useNavigate: () => navigateMock,
   useSearch: () => searchMock(),
+}));
+
+vi.mock("sonner", () => ({
+  toast: {
+    error: vi.fn(),
+    success: vi.fn(),
+  },
 }));
 
 const signedInUser = {
@@ -95,6 +103,8 @@ describe("Settings", () => {
     searchMock.mockReset();
     searchMock.mockReturnValue({});
     useMutationMock.mockReturnValue(vi.fn());
+    vi.mocked(toast.error).mockReset();
+    vi.mocked(toast.success).mockReset();
     useAuthActionsMock.mockReturnValue({
       signIn: vi.fn(),
     });
@@ -162,6 +172,37 @@ describe("Settings", () => {
     expect(useQueryMock).toHaveBeenCalledWith(api.publishers.listMembers, {
       publisherHandle: "openclaw",
     });
+  });
+
+  it("shows create organization mutation errors to the user", async () => {
+    const createOrg = vi
+      .fn()
+      .mockRejectedValue(
+        new Error(
+          '[CONVEX M(publishers:createOrg)] [Request ID: test] Server Error Called by client ConvexError: Handle "@romneyda" is already used by a user or personal publisher',
+        ),
+      );
+    mockSignedInSettings({ search: { view: "organizations" }, memberships: [] });
+    useMutationMock.mockReturnValue(createOrg);
+
+    render(<Settings />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Create org" }));
+    fireEvent.change(screen.getByLabelText("Handle"), { target: { value: "romneyda" } });
+    fireEvent.change(screen.getByLabelText("Display name"), {
+      target: { value: "Dallin Romney @ OpenClaw" },
+    });
+    const createOrgButtons = screen.getAllByRole("button", { name: "Create org" });
+    fireEvent.click(createOrgButtons[createOrgButtons.length - 1]);
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert").textContent).toContain(
+        'Handle "@romneyda" is already used by a user or personal publisher',
+      );
+    });
+    expect(toast.error).toHaveBeenCalledWith(
+      'Handle "@romneyda" is already used by a user or personal publisher',
+    );
   });
 
   it("migrates legacy hash settings URLs to focused query params", () => {

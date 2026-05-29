@@ -51,6 +51,7 @@ import {
 import { Separator } from "../components/ui/separator";
 import { Textarea } from "../components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "../components/ui/toggle-group";
+import { getUserFacingConvexError } from "../lib/convexError";
 import { useThemeMode } from "../lib/theme";
 
 const settingsViews = ["account", "organizations", "tokens", "danger"] as const;
@@ -159,6 +160,8 @@ export function Settings() {
   const [newToken, setNewToken] = useState<string | null>(null);
   const [orgHandle, setOrgHandle] = useState("");
   const [orgDisplayName, setOrgDisplayName] = useState("");
+  const [createOrgError, setCreateOrgError] = useState<string | null>(null);
+  const [isCreatingOrg, setIsCreatingOrg] = useState(false);
   const [selectedOrgHandle, setSelectedOrgHandle] = useState("");
   const [selectedOrgDisplayName, setSelectedOrgDisplayName] = useState("");
   const [selectedOrgBio, setSelectedOrgBio] = useState("");
@@ -248,16 +251,27 @@ export function Settings() {
   }
 
   async function onCreateOrg() {
-    const result = await createOrg({
-      handle: orgHandle.trim(),
-      displayName: orgDisplayName.trim() || orgHandle.trim(),
-      bio: undefined,
-    });
-    if (result?.publisher?.handle) {
-      setSelectedOrgHandle(result.publisher.handle);
-      setOrgHandle("");
-      setOrgDisplayName("");
-      setCreateOrgDialogOpen(false);
+    setCreateOrgError(null);
+    setIsCreatingOrg(true);
+    try {
+      const result = await createOrg({
+        handle: orgHandle.trim(),
+        displayName: orgDisplayName.trim() || orgHandle.trim(),
+        bio: undefined,
+      });
+      if (result?.publisher?.handle) {
+        setSelectedOrgHandle(result.publisher.handle);
+        setOrgHandle("");
+        setOrgDisplayName("");
+        setCreateOrgDialogOpen(false);
+        toast.success("Organization created");
+      }
+    } catch (error) {
+      const message = getUserFacingConvexError(error, "Organization could not be created.");
+      setCreateOrgError(message);
+      toast.error(message);
+    } finally {
+      setIsCreatingOrg(false);
     }
   }
 
@@ -509,7 +523,13 @@ export function Settings() {
                           ))}
                         </SelectContent>
                       </Select>
-                      <Dialog open={createOrgDialogOpen} onOpenChange={setCreateOrgDialogOpen}>
+                      <Dialog
+                        open={createOrgDialogOpen}
+                        onOpenChange={(open) => {
+                          setCreateOrgDialogOpen(open);
+                          if (open) setCreateOrgError(null);
+                        }}
+                      >
                         <DialogTrigger asChild>
                           <Button variant="outline" type="button" className="h-12 sm:w-auto">
                             <Plus size={16} />
@@ -528,7 +548,10 @@ export function Settings() {
                               <Input
                                 id="settings-org-handle"
                                 value={orgHandle}
-                                onChange={(event) => setOrgHandle(event.target.value)}
+                                onChange={(event) => {
+                                  setOrgHandle(event.target.value);
+                                  setCreateOrgError(null);
+                                }}
                                 placeholder="openclaw"
                               />
                             </Field>
@@ -536,11 +559,22 @@ export function Settings() {
                               <Input
                                 id="settings-org-display-name"
                                 value={orgDisplayName}
-                                onChange={(event) => setOrgDisplayName(event.target.value)}
+                                onChange={(event) => {
+                                  setOrgDisplayName(event.target.value);
+                                  setCreateOrgError(null);
+                                }}
                                 placeholder="OpenClaw"
                               />
                             </Field>
                           </div>
+                          {createOrgError ? (
+                            <p
+                              className="text-sm font-medium text-red-600 dark:text-red-400"
+                              role="alert"
+                            >
+                              {createOrgError}
+                            </p>
+                          ) : null}
                           <DialogFooter>
                             <Button variant="ghost" onClick={() => setCreateOrgDialogOpen(false)}>
                               Cancel
@@ -548,11 +582,11 @@ export function Settings() {
                             <Button
                               variant="primary"
                               type="button"
-                              disabled={!orgHandle.trim()}
+                              disabled={!orgHandle.trim() || isCreatingOrg}
                               onClick={() => void onCreateOrg()}
                             >
                               <Building2 size={16} />
-                              Create org
+                              {isCreatingOrg ? "Creating..." : "Create org"}
                             </Button>
                           </DialogFooter>
                         </DialogContent>
@@ -826,7 +860,13 @@ export function Settings() {
                           </p>
                         </div>
                       </div>
-                      <Dialog open={createOrgDialogOpen} onOpenChange={setCreateOrgDialogOpen}>
+                      <Dialog
+                        open={createOrgDialogOpen}
+                        onOpenChange={(open) => {
+                          setCreateOrgDialogOpen(open);
+                          if (open) setCreateOrgError(null);
+                        }}
+                      >
                         <DialogTrigger asChild>
                           <Button variant="primary" type="button" className="lg:w-auto">
                             <Building2 size={16} />
@@ -845,7 +885,10 @@ export function Settings() {
                               <Input
                                 id="settings-org-handle-empty"
                                 value={orgHandle}
-                                onChange={(event) => setOrgHandle(event.target.value)}
+                                onChange={(event) => {
+                                  setOrgHandle(event.target.value);
+                                  setCreateOrgError(null);
+                                }}
                                 placeholder="openclaw"
                               />
                             </Field>
@@ -853,11 +896,22 @@ export function Settings() {
                               <Input
                                 id="settings-org-display-name-empty"
                                 value={orgDisplayName}
-                                onChange={(event) => setOrgDisplayName(event.target.value)}
+                                onChange={(event) => {
+                                  setOrgDisplayName(event.target.value);
+                                  setCreateOrgError(null);
+                                }}
                                 placeholder="OpenClaw"
                               />
                             </Field>
                           </div>
+                          {createOrgError ? (
+                            <p
+                              className="text-sm font-medium text-red-600 dark:text-red-400"
+                              role="alert"
+                            >
+                              {createOrgError}
+                            </p>
+                          ) : null}
                           <DialogFooter>
                             <Button variant="ghost" onClick={() => setCreateOrgDialogOpen(false)}>
                               Cancel
@@ -865,11 +919,11 @@ export function Settings() {
                             <Button
                               variant="primary"
                               type="button"
-                              disabled={!orgHandle.trim()}
+                              disabled={!orgHandle.trim() || isCreatingOrg}
                               onClick={() => void onCreateOrg()}
                             >
                               <Building2 size={16} />
-                              Create org
+                              {isCreatingOrg ? "Creating..." : "Create org"}
                             </Button>
                           </DialogFooter>
                         </DialogContent>

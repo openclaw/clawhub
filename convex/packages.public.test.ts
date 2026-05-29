@@ -2,6 +2,7 @@
 
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { MAX_PUBLISH_FILE_BYTES } from "./lib/publishLimits";
 import {
   backfillLatestPackageScanStatusInternal,
   backfillPackageReleaseScansInternal,
@@ -43,7 +44,6 @@ import {
   searchForViewerInternal,
   searchPublic,
 } from "./packages";
-import { MAX_PUBLISH_FILE_BYTES } from "./lib/publishLimits";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
