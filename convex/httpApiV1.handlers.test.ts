@@ -4999,6 +4999,75 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("VT pending repair requires admin role", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      throw new Error("should not repair");
+    });
+
+    const response = await __handlers.skillsPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/skills/-/repair-vt-pending", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({ batchSize: 25, dryRun: true }),
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.text()).resolves.toBe("Admin role required.");
+    expect(runMutation).toHaveBeenCalledTimes(1);
+  });
+
+  it("VT pending repair invokes the internal repair action via admin API", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runAction = vi.fn(async () => ({
+      dryRun: true,
+      total: 2,
+      wouldUpdate: 2,
+      updated: 0,
+      noResults: 0,
+      noDecisiveStats: 0,
+      errors: 0,
+      done: false,
+      cursor: "cursor-2",
+      statusCounts: { clean: 2 },
+      sampleUpdated: [{ slug: "demo", status: "clean" }],
+    }));
+
+    const response = await __handlers.skillsPostRouterV1Handler(
+      makeCtx({ runAction }),
+      new Request("https://example.com/api/v1/skills/-/repair-vt-pending", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({ batchSize: 25, cursor: null, dryRun: true }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      dryRun: true,
+      wouldUpdate: 2,
+      cursor: "cursor-2",
+    });
+    expect(runAction).toHaveBeenCalledWith(
+      (internal as unknown as { vt: Record<string, unknown> }).vt.repairPendingSkillVtAnalysis,
+      {
+        dryRun: true,
+        cursor: null,
+        batchSize: 25,
+      },
+    );
+  });
+
   it("package rescan enqueues owner-authorized ClawScan jobs", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:1",

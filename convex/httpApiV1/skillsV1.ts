@@ -1,6 +1,7 @@
 import {
   ApiV1SkillBulkRescanBatchRequestSchema,
   ApiV1SkillBulkRescanStatusRequestSchema,
+  ApiV1SkillRepairVtPendingRequestSchema,
   SkillAppealRequestSchema,
   SkillAppealResolveRequestSchema,
   SkillReportTriageRequestSchema,
@@ -282,6 +283,9 @@ const internalRefs = internal as unknown as {
     getBulkSkillRescanBatchStatusForAdminInternal: unknown;
     requestSkillRescanForUserInternal: unknown;
   };
+  vt: {
+    repairPendingSkillVtAnalysis: unknown;
+  };
   skills: {
     getSecurityVerdictTargetInternal: unknown;
     reportSkillForUserInternal: unknown;
@@ -299,6 +303,10 @@ async function runQueryRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): Prom
 
 async function runMutationRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): Promise<T> {
   return (await ctx.runMutation(ref as never, args as never)) as T;
+}
+
+async function runActionRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): Promise<T> {
+  return (await ctx.runAction(ref as never, args as never)) as T;
 }
 
 function isDefinitiveSecurityStatus(
@@ -2058,6 +2066,55 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
   const segments = getPathSegments(request, "/api/v1/skills/");
   const action = segments[1] ?? "";
   const slug = segments[0]?.trim().toLowerCase() ?? "";
+
+  if (segments[0] === "-" && segments[1] === "repair-vt-pending" && segments.length === 2) {
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+    const admin = requireAdminOrResponse(auth.user, rate.headers);
+    if (!admin.ok) return admin.response;
+    try {
+      const body = parseArk(
+        ApiV1SkillRepairVtPendingRequestSchema,
+        await request.json(),
+        "Skill VT pending repair payload",
+      ) as {
+        cursor?: string | null;
+        batchSize?: number;
+        concurrency?: number;
+        dryRun?: boolean;
+      };
+      const result = await runActionRef<
+        | {
+            dryRun: boolean;
+            total: number;
+            wouldUpdate: number;
+            updated: number;
+            noResults: number;
+            noDecisiveStats: number;
+            errors: number;
+            done: boolean;
+            cursor: string | null;
+            statusCounts: Record<string, number>;
+            sampleUpdated: Array<{ slug: string; status: string }>;
+          }
+        | { error: string }
+      >(ctx, internalRefs.vt.repairPendingSkillVtAnalysis, {
+        dryRun: body.dryRun !== false,
+        cursor: body.cursor ?? null,
+        ...(body.batchSize !== undefined ? { batchSize: body.batchSize } : {}),
+        ...(body.concurrency !== undefined ? { concurrency: body.concurrency } : {}),
+      });
+      if ("error" in result) return text(result.error, 400, rate.headers);
+      return json({ ok: true, ...result }, 200, rate.headers);
+    } catch (error) {
+      if (error instanceof SyntaxError) return text("Invalid JSON", 400, rate.headers);
+      return text(
+        error instanceof Error ? error.message : "Skill VT pending repair failed",
+        400,
+        rate.headers,
+      );
+    }
+  }
 
   if (segments[0] === "-" && segments[1] === "rescan-batch" && segments.length === 2) {
     const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);

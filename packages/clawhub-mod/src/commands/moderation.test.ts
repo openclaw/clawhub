@@ -23,6 +23,7 @@ const {
   cmdBanUser,
   cmdReclassifyBan,
   cmdRemediateAutobans,
+  cmdRepairVtPendingSkills,
   cmdRescanAllSkills,
   cmdRescanSkill,
   cmdSetRole,
@@ -405,6 +406,142 @@ describe("cmdRescanAllSkills", () => {
     await expect(
       cmdRescanAllSkills(makeGlobalOpts(), { yes: true, batchSize: 1, pollInterval: 0 }, false),
     ).rejects.toThrow(/failed job/i);
+  });
+});
+
+describe("cmdRepairVtPendingSkills", () => {
+  it("requires --yes for real runs when input is disabled", async () => {
+    await expect(cmdRepairVtPendingSkills(makeGlobalOpts(), {}, false)).rejects.toThrow(/--yes/i);
+    expect(httpMocks.apiRequest).not.toHaveBeenCalled();
+  });
+
+  it("pages dry-runs without confirmation", async () => {
+    httpMocks.apiRequest
+      .mockResolvedValueOnce({
+        ok: true,
+        dryRun: true,
+        total: 2,
+        wouldUpdate: 2,
+        updated: 0,
+        noResults: 0,
+        noDecisiveStats: 0,
+        errors: 0,
+        done: false,
+        cursor: "cursor-2",
+        statusCounts: { clean: 2 },
+        sampleUpdated: [{ slug: "one", status: "clean" }],
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        dryRun: true,
+        total: 1,
+        wouldUpdate: 1,
+        updated: 0,
+        noResults: 0,
+        noDecisiveStats: 0,
+        errors: 0,
+        done: true,
+        cursor: null,
+        statusCounts: { suspicious: 1 },
+        sampleUpdated: [{ slug: "two", status: "suspicious" }],
+      });
+
+    const result = await cmdRepairVtPendingSkills(
+      makeGlobalOpts(),
+      { dryRun: true, batchSize: 2, all: true },
+      false,
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      dryRun: true,
+      batches: 2,
+      total: 3,
+      wouldUpdate: 3,
+      updated: 0,
+      statusCounts: { clean: 2, suspicious: 1 },
+    });
+    expect(httpMocks.apiRequest).toHaveBeenNthCalledWith(
+      1,
+      "https://clawhub.ai",
+      expect.objectContaining({
+        method: "POST",
+        path: "/api/v1/skills/-/repair-vt-pending",
+        token: "tkn",
+        body: {
+          cursor: null,
+          batchSize: 2,
+          dryRun: true,
+        },
+      }),
+      expect.anything(),
+    );
+    expect(httpMocks.apiRequest).toHaveBeenNthCalledWith(
+      2,
+      "https://clawhub.ai",
+      expect.objectContaining({
+        method: "POST",
+        path: "/api/v1/skills/-/repair-vt-pending",
+        token: "tkn",
+        body: {
+          cursor: "cursor-2",
+          batchSize: 2,
+          dryRun: true,
+        },
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("writes one batch when confirmed", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      dryRun: false,
+      total: 2,
+      wouldUpdate: 2,
+      updated: 2,
+      noResults: 0,
+      noDecisiveStats: 0,
+      errors: 0,
+      done: false,
+      cursor: "cursor-2",
+      statusCounts: { clean: 1, malicious: 1 },
+      sampleUpdated: [
+        { slug: "one", status: "clean" },
+        { slug: "two", status: "malicious" },
+      ],
+    });
+
+    const result = await cmdRepairVtPendingSkills(
+      makeGlobalOpts(),
+      { yes: true, batchSize: 2 },
+      false,
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      dryRun: false,
+      batches: 1,
+      total: 2,
+      wouldUpdate: 2,
+      updated: 2,
+      nextCursor: "cursor-2",
+      done: false,
+    });
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({
+        method: "POST",
+        path: "/api/v1/skills/-/repair-vt-pending",
+        token: "tkn",
+        body: {
+          cursor: null,
+          batchSize: 2,
+          dryRun: false,
+        },
+      }),
+      expect.anything(),
+    );
   });
 });
 

@@ -406,6 +406,33 @@ export declare const ApiV1SkillBulkRescanStatusResponseSchema: import("arktype/i
     failedJobIds: string[];
 }, {}>;
 export type ApiV1SkillBulkRescanStatusResponse = (typeof ApiV1SkillBulkRescanStatusResponseSchema)[inferred];
+export declare const ApiV1SkillRepairVtPendingRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    cursor?: string | null | undefined;
+    batchSize?: number | undefined;
+    concurrency?: number | undefined;
+    dryRun?: boolean | undefined;
+}, {}>;
+export type ApiV1SkillRepairVtPendingRequest = (typeof ApiV1SkillRepairVtPendingRequestSchema)[inferred];
+export declare const ApiV1SkillRepairVtPendingResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    dryRun: boolean;
+    total: number;
+    wouldUpdate: number;
+    updated: number;
+    noResults: number;
+    noDecisiveStats: number;
+    errors: number;
+    done: boolean;
+    cursor: string | null;
+    statusCounts: {
+        [x: string]: number;
+    };
+    sampleUpdated: {
+        slug: string;
+        status: string;
+    }[];
+}, {}>;
+export type ApiV1SkillRepairVtPendingResponse = (typeof ApiV1SkillRepairVtPendingResponseSchema)[inferred];
 export declare const ApiV1SkillVersionListResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     items: {
         version: string;

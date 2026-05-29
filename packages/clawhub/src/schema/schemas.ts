@@ -470,6 +470,35 @@ export const ApiV1SkillBulkRescanStatusResponseSchema = type({
 export type ApiV1SkillBulkRescanStatusResponse =
   (typeof ApiV1SkillBulkRescanStatusResponseSchema)[inferred];
 
+export const ApiV1SkillRepairVtPendingRequestSchema = type({
+  cursor: "string|null?",
+  batchSize: "number?",
+  concurrency: "number?",
+  dryRun: "boolean?",
+});
+export type ApiV1SkillRepairVtPendingRequest =
+  (typeof ApiV1SkillRepairVtPendingRequestSchema)[inferred];
+
+export const ApiV1SkillRepairVtPendingResponseSchema = type({
+  ok: "true",
+  dryRun: "boolean",
+  total: "number",
+  wouldUpdate: "number",
+  updated: "number",
+  noResults: "number",
+  noDecisiveStats: "number",
+  errors: "number",
+  done: "boolean",
+  cursor: "string|null",
+  statusCounts: { "[string]": "number" },
+  sampleUpdated: type({
+    slug: "string",
+    status: "string",
+  }).array(),
+});
+export type ApiV1SkillRepairVtPendingResponse =
+  (typeof ApiV1SkillRepairVtPendingResponseSchema)[inferred];
+
 export const ApiV1SkillVersionListResponseSchema = type({
   items: type({
     version: "string",

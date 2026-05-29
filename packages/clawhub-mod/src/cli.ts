@@ -26,6 +26,7 @@ import {
   cmdBanUser,
   cmdReclassifyBan,
   cmdRemediateAutobans,
+  cmdRepairVtPendingSkills,
   cmdRescanAllSkills,
   cmdRescanSkill,
   cmdSetRole,
@@ -640,6 +641,27 @@ function registerSkillModerationCommands(command: Command) {
     .action(async (options) => {
       const opts = await resolveGlobalOpts();
       await cmdRescanAllSkills(opts, options, isInputAllowed());
+    });
+
+  command
+    .command("repair-vt-pending")
+    .description("Repair stale pending VirusTotal skill cache by rechecking hashes")
+    .option("--batch-size <n>", "Batch size; backend caps at 500", (value) =>
+      Number.parseInt(value, 10),
+    )
+    .option(
+      "--concurrency <n>",
+      "Per-batch VirusTotal lookup concurrency; backend caps at 32",
+      (value) => Number.parseInt(value, 10),
+    )
+    .option("--cursor <cursor>", "Resume from a backend pagination cursor")
+    .option("--dry-run", "Check pending rows without writing VT cache updates")
+    .option("--all", "Continue paging until the backend reports done")
+    .option("--yes", "Skip confirmation for write runs")
+    .option("--json", "Output JSON progress events")
+    .action(async (options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdRepairVtPendingSkills(opts, options, isInputAllowed());
     });
 
   command
