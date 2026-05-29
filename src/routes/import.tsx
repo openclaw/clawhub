@@ -938,6 +938,7 @@ function PublishedImportSuccess({
   ownerHandle?: string | null;
   results: PublishResultRow[];
 }) {
+  const [copiedAllLinks, setCopiedAllLinks] = useState(false);
   const successfulResults = results.filter((result) => result.ok && result.slug);
   const draftByKey = new Map(drafts.map((draft) => [getRepoKey(draft.repo), draft]));
   const publishedItems = successfulResults.map((result) => {
@@ -955,8 +956,13 @@ function PublishedImportSuccess({
   const copyAll = async () => {
     const text = publishedItems.map((item) => item.url).join("\n");
     const copied = await copyText(text);
-    if (copied) toast.success("Links copied");
-    else toast.error("Could not copy links");
+    if (copied) {
+      setCopiedAllLinks(true);
+      window.setTimeout(() => setCopiedAllLinks(false), 1800);
+      toast.success("Links copied");
+    } else {
+      toast.error("Could not copy links");
+    }
   };
 
   return (
@@ -977,8 +983,12 @@ function PublishedImportSuccess({
           </div>
         </div>
         <Button variant="outline" size="sm" onClick={() => void copyAll()}>
-          <Copy className="h-4 w-4" aria-hidden="true" />
-          Copy links
+          {copiedAllLinks ? (
+            <Check className="h-4 w-4" aria-hidden="true" />
+          ) : (
+            <Copy className="h-4 w-4" aria-hidden="true" />
+          )}
+          {copiedAllLinks ? "Copied" : "Copy links"}
         </Button>
       </div>
 
