@@ -3,9 +3,18 @@
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("./functions", () => ({
+  action: (def: { handler: unknown }) => ({ _handler: def.handler }),
   internalAction: (def: { handler: unknown }) => ({ _handler: def.handler }),
   internalMutation: (def: { handler: unknown }) => ({ _handler: def.handler }),
   internalQuery: (def: { handler: unknown }) => ({ _handler: def.handler }),
+  mutation: (def: { handler: unknown }) => ({ _handler: def.handler }),
+  query: (def: { handler: unknown }) => ({ _handler: def.handler }),
+}));
+
+vi.mock("./lib/access", () => ({
+  assertModerator: vi.fn(),
+  requireUser: vi.fn(),
+  requireUserFromAction: vi.fn(),
 }));
 
 vi.mock("./_generated/api", () => ({
@@ -72,16 +81,12 @@ const getOrStartHandler = (
 )._handler;
 
 describe("publisher abuse dry-run persistence", () => {
-  it("does not expose public admin API functions", () => {
+  it("exposes staff-only review API functions", () => {
     expect(
-      Object.prototype.hasOwnProperty.call(publisherAbuse, "startManualPublisherAbuseScoreRun"),
-    ).toBe(false);
-    expect(
-      Object.prototype.hasOwnProperty.call(publisherAbuse, "listPublisherAbuseReviewQueue"),
-    ).toBe(false);
-    expect(
-      Object.prototype.hasOwnProperty.call(publisherAbuse, "setPublisherAbuseReviewStatus"),
-    ).toBe(false);
+      Object.prototype.hasOwnProperty.call(publisherAbuse, "startPublisherAbuseScoreRun"),
+    ).toBe(true);
+    expect(Object.prototype.hasOwnProperty.call(publisherAbuse, "listReviewDashboard")).toBe(true);
+    expect(Object.prototype.hasOwnProperty.call(publisherAbuse, "setReviewStatus")).toBe(true);
   });
 
   it("collects score rows without patching enforcement tables", async () => {

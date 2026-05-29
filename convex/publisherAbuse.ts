@@ -1,8 +1,16 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import type { ActionCtx, MutationCtx } from "./_generated/server";
-import { internalAction, internalMutation, internalQuery } from "./functions";
+import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
+import {
+  action,
+  internalAction,
+  internalMutation,
+  internalQuery,
+  mutation,
+  query,
+} from "./functions";
+import { assertModerator, requireUser, requireUserFromAction } from "./lib/access";
 import {
   computePublisherAbuseRawScore,
   DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG,
@@ -25,6 +33,14 @@ type TriageStatus = Doc<"publisherAbuseReviewNominations">["status"];
 type ScoreRun = Doc<"publisherAbuseScoreRuns">;
 type ScoreDoc = Doc<"publisherAbuseScores">;
 type RunPhase = ScoreRun["phase"];
+
+const publisherAbuseTriageStatusArg = v.union(
+  v.literal("pending"),
+  v.literal("reviewed_no_action"),
+  v.literal("false_positive"),
+  v.literal("needs_policy_discussion"),
+  v.literal("candidate_for_future_action"),
+);
 
 type RunState = {
   runId: Id<"publisherAbuseScoreRuns">;
@@ -67,6 +83,145 @@ type PublisherSkillMetricsOptions =
 type ActiveSkillFallbackBudget = {
   remainingScans: number;
 };
+
+export const listReviewDashboard = query({
+  args: {
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx);
+    assertModerator(user);
+
+    const limit = clampInt(args.limit ?? 150, 1, 250);
+    const pendingItems = await getPublisherAbuseReviewItems(ctx, {
+      status: "pending",
+      limit,
+    });
+    const recentResolvedItems = await getRecentResolvedPublisherAbuseReviewItems(ctx, 30);
+    const latestRun = await ctx.db
+      .query("publisherAbuseScoreRuns")
+      .withIndex("by_started_at")
+      .order("desc")
+      .first();
+
+    return {
+      summary: {
+        pendingTotal: await countPublisherAbuseNominationsForStatus(ctx, "pending"),
+        potentialBanCandidate: await countPublisherAbuseNominationsForStatusAndLabel(
+          ctx,
+          "pending",
+          "potential_ban_candidate",
+        ),
+        review: await countPublisherAbuseNominationsForStatusAndLabel(ctx, "pending", "review"),
+        pass: await countPublisherAbuseNominationsForStatusAndLabel(ctx, "pending", "pass"),
+        reviewedNoAction: await countPublisherAbuseNominationsForStatus(ctx, "reviewed_no_action"),
+        falsePositive: await countPublisherAbuseNominationsForStatus(ctx, "false_positive"),
+        needsPolicyDiscussion: await countPublisherAbuseNominationsForStatus(
+          ctx,
+          "needs_policy_discussion",
+        ),
+        candidateForFutureAction: await countPublisherAbuseNominationsForStatus(
+          ctx,
+          "candidate_for_future_action",
+        ),
+      },
+      latestRun: latestRun ? summarizePublisherAbuseRun(latestRun) : null,
+      pendingItems,
+      recentResolvedItems,
+    };
+  },
+});
+
+export const getReviewNominationDetail = query({
+  args: {
+    nominationId: v.id("publisherAbuseReviewNominations"),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx);
+    assertModerator(user);
+
+    const nomination = await ctx.db.get(args.nominationId);
+    if (!nomination) return null;
+
+    const item = await summarizePublisherAbuseReviewNomination(ctx, nomination);
+    const scoreHistory = await ctx.db
+      .query("publisherAbuseScores")
+      .withIndex("by_owner_key_and_created_at", (q) => q.eq("ownerKey", nomination.ownerKey))
+      .order("desc")
+      .take(5);
+    const events = await ctx.db
+      .query("publisherAbuseReviewEvents")
+      .withIndex("by_nomination_and_created_at", (q) => q.eq("nominationId", nomination._id))
+      .order("desc")
+      .take(20);
+
+    return {
+      item,
+      scoreHistory: scoreHistory.map(summarizePublisherAbuseScore),
+      events: events.map(summarizePublisherAbuseReviewEvent),
+    };
+  },
+});
+
+export const setReviewStatus = mutation({
+  args: {
+    nominationId: v.id("publisherAbuseReviewNominations"),
+    status: publisherAbuseTriageStatusArg,
+    notes: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx);
+    assertModerator(user);
+
+    const nomination = await ctx.db.get(args.nominationId);
+    if (!nomination) throw new Error("Publisher abuse nomination not found");
+
+    const now = Date.now();
+    const notes = normalizeReviewNotes(args.notes);
+    await ctx.db.patch(args.nominationId, {
+      status: args.status,
+      reviewedByUserId: args.status === "pending" ? undefined : user._id,
+      reviewedAt: args.status === "pending" ? undefined : now,
+      notes,
+      updatedAt: now,
+    });
+    await ctx.db.insert("publisherAbuseReviewEvents", {
+      nominationId: nomination._id,
+      ownerKey: nomination.ownerKey,
+      actorUserId: user._id,
+      scoreId: nomination.latestScoreId,
+      eventType: "triage_status_changed",
+      previousStatus: nomination.status,
+      nextStatus: args.status,
+      notes,
+      createdAt: now,
+    });
+
+    return { ok: true, status: args.status };
+  },
+});
+
+export const startPublisherAbuseScoreRun = action({
+  args: {
+    forceNew: v.optional(v.boolean()),
+  },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
+    ok: true;
+    runId: Id<"publisherAbuseScoreRuns">;
+    pages: number;
+    isDone: boolean;
+  }> => {
+    const { user } = await requireUserFromAction(ctx);
+    assertModerator(user);
+    return await ctx.runAction(internal.publisherAbuse.runPublisherAbuseScoreRunInternal, {
+      trigger: "manual",
+      forceNew: args.forceNew ?? true,
+    });
+  },
+});
 
 export const getOrStartPublisherAbuseScoreRunInternal = internalMutation({
   args: {
@@ -712,6 +867,219 @@ function isPublisherAbuseLabelEscalation(
   nextLabel: PublisherAbuseLabel,
 ) {
   return publisherAbuseLabelSeverity(nextLabel) > publisherAbuseLabelSeverity(previousLabel);
+}
+
+async function getPublisherAbuseReviewItems(
+  ctx: QueryCtx,
+  args: { status: TriageStatus; limit: number },
+) {
+  const nominations = await ctx.db
+    .query("publisherAbuseReviewNominations")
+    .withIndex("by_status_and_last_scored_at", (q) => q.eq("status", args.status))
+    .order("desc")
+    .take(args.limit);
+  return await summarizePublisherAbuseReviewNominations(ctx, nominations);
+}
+
+async function getRecentResolvedPublisherAbuseReviewItems(ctx: QueryCtx, limit: number) {
+  const resolvedStatuses: TriageStatus[] = [
+    "reviewed_no_action",
+    "false_positive",
+    "needs_policy_discussion",
+    "candidate_for_future_action",
+  ];
+  const nominations: Doc<"publisherAbuseReviewNominations">[] = [];
+  for (const status of resolvedStatuses) {
+    const page = await ctx.db
+      .query("publisherAbuseReviewNominations")
+      .withIndex("by_status_and_last_scored_at", (q) => q.eq("status", status))
+      .order("desc")
+      .take(limit);
+    nominations.push(...page);
+  }
+  nominations.sort((left, right) => right.updatedAt - left.updatedAt);
+  return await summarizePublisherAbuseReviewNominations(ctx, nominations.slice(0, limit));
+}
+
+async function summarizePublisherAbuseReviewNominations(
+  ctx: QueryCtx,
+  nominations: Doc<"publisherAbuseReviewNominations">[],
+) {
+  const items = [];
+  for (const nomination of nominations) {
+    items.push(await summarizePublisherAbuseReviewNomination(ctx, nomination));
+  }
+  return items;
+}
+
+async function summarizePublisherAbuseReviewNomination(
+  ctx: QueryCtx,
+  nomination: Doc<"publisherAbuseReviewNominations">,
+) {
+  const score = await ctx.db.get(nomination.latestScoreId);
+  const publisher = nomination.ownerPublisherId
+    ? await ctx.db.get(nomination.ownerPublisherId)
+    : null;
+  const ownerUser = nomination.ownerUserId ? await ctx.db.get(nomination.ownerUserId) : null;
+  const openedByRun = await ctx.db.get(nomination.openedByRunId);
+
+  return {
+    nomination: summarizePublisherAbuseNomination(nomination),
+    latestScore: score ? summarizePublisherAbuseScore(score) : null,
+    publisher: publisher ? summarizePublisherForAbuseReview(publisher) : null,
+    ownerUser: ownerUser ? summarizeUserForAbuseReview(ownerUser) : null,
+    openedByRun: openedByRun ? summarizePublisherAbuseRun(openedByRun) : null,
+  };
+}
+
+async function countPublisherAbuseNominationsForStatus(ctx: QueryCtx, status: TriageStatus) {
+  const nominations = await ctx.db
+    .query("publisherAbuseReviewNominations")
+    .withIndex("by_status_and_last_scored_at", (q) => q.eq("status", status))
+    .collect();
+  return nominations.length;
+}
+
+async function countPublisherAbuseNominationsForStatusAndLabel(
+  ctx: QueryCtx,
+  status: TriageStatus,
+  label: PublisherAbuseLabel,
+) {
+  const nominations = await ctx.db
+    .query("publisherAbuseReviewNominations")
+    .withIndex("by_status_and_label_and_last_scored_at", (q) =>
+      q.eq("status", status).eq("label", label),
+    )
+    .collect();
+  return nominations.length;
+}
+
+function summarizePublisherAbuseNomination(nomination: Doc<"publisherAbuseReviewNominations">) {
+  return {
+    _id: nomination._id,
+    ownerKey: nomination.ownerKey,
+    ownerPublisherId: nomination.ownerPublisherId,
+    ownerUserId: nomination.ownerUserId,
+    handleSnapshot: nomination.handleSnapshot,
+    latestScoreId: nomination.latestScoreId,
+    modelVersion: nomination.modelVersion,
+    label: nomination.label,
+    status: nomination.status,
+    openedAt: nomination.openedAt,
+    openedByRunId: nomination.openedByRunId,
+    lastScoredAt: nomination.lastScoredAt,
+    reviewedByUserId: nomination.reviewedByUserId,
+    reviewedAt: nomination.reviewedAt,
+    notes: nomination.notes,
+    updatedAt: nomination.updatedAt,
+  };
+}
+
+function summarizePublisherAbuseScore(score: Doc<"publisherAbuseScores">) {
+  return {
+    _id: score._id,
+    runId: score.runId,
+    ownerKey: score.ownerKey,
+    ownerPublisherId: score.ownerPublisherId,
+    ownerUserId: score.ownerUserId,
+    handleSnapshot: score.handleSnapshot,
+    modelVersion: score.modelVersion,
+    label: score.label,
+    rank: score.rank,
+    pressure: score.pressure,
+    logPressure: score.logPressure,
+    zScore: score.zScore,
+    publishedSkills: score.publishedSkills,
+    totalInstalls: score.totalInstalls,
+    totalStars: score.totalStars,
+    totalDownloads: score.totalDownloads,
+    installsPerSkill: score.installsPerSkill,
+    starsPerSkill: score.starsPerSkill,
+    downloadsPerSkill: score.downloadsPerSkill,
+    reasonCodes: score.reasonCodes,
+    createdAt: score.createdAt,
+  };
+}
+
+function summarizePublisherAbuseRun(run: Doc<"publisherAbuseScoreRuns">) {
+  return {
+    _id: run._id,
+    modelVersion: run.modelVersion,
+    trigger: run.trigger,
+    status: run.status,
+    phase: run.phase,
+    startedAt: run.startedAt,
+    completedAt: run.completedAt,
+    updatedAt: run.updatedAt,
+    scannedPublishers: run.scannedPublishers,
+    scoredPublishers: run.scoredPublishers,
+    finalizedScores: run.finalizedScores,
+    nominatedPublishers: run.nominatedPublishers,
+    passCount: run.passCount,
+    reviewCount: run.reviewCount,
+    potentialBanCandidateCount: run.potentialBanCandidateCount,
+    meanLogPressure: run.meanLogPressure,
+    stdDevLogPressure: run.stdDevLogPressure,
+    errorMessage: run.errorMessage,
+  };
+}
+
+function summarizePublisherAbuseReviewEvent(event: Doc<"publisherAbuseReviewEvents">) {
+  return {
+    _id: event._id,
+    nominationId: event.nominationId,
+    ownerKey: event.ownerKey,
+    actorUserId: event.actorUserId,
+    runId: event.runId,
+    scoreId: event.scoreId,
+    eventType: event.eventType,
+    previousStatus: event.previousStatus,
+    nextStatus: event.nextStatus,
+    previousLabel: event.previousLabel,
+    nextLabel: event.nextLabel,
+    notes: event.notes,
+    createdAt: event.createdAt,
+  };
+}
+
+function summarizePublisherForAbuseReview(publisher: Doc<"publishers">) {
+  return {
+    _id: publisher._id,
+    handle: publisher.handle,
+    displayName: publisher.displayName,
+    kind: publisher.kind,
+    linkedUserId: publisher.linkedUserId,
+    publishedSkills: publisher.publishedSkills,
+    publishedPackages: publisher.publishedPackages,
+    totalInstalls: publisher.totalInstalls,
+    totalStars: publisher.totalStars,
+    totalDownloads: publisher.totalDownloads,
+    skillTotalInstalls: publisher.skillTotalInstalls,
+    skillTotalStars: publisher.skillTotalStars,
+    skillTotalDownloads: publisher.skillTotalDownloads,
+    deletedAt: publisher.deletedAt,
+    deactivatedAt: publisher.deactivatedAt,
+  };
+}
+
+function summarizeUserForAbuseReview(user: Doc<"users">) {
+  return {
+    _id: user._id,
+    handle: user.handle,
+    name: user.name,
+    displayName: user.displayName,
+    role: user.role,
+    image: user.image,
+    deletedAt: user.deletedAt,
+    deactivatedAt: user.deactivatedAt,
+    banReason: user.banReason,
+  };
+}
+
+function normalizeReviewNotes(rawNotes?: string) {
+  const notes = rawNotes?.trim();
+  if (!notes) return undefined;
+  return notes.slice(0, 1000);
 }
 
 function publisherAbuseLabelSeverity(label: PublisherAbuseLabel) {
