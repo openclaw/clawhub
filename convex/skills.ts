@@ -6640,8 +6640,7 @@ export const getSkillsWithStaleModerationReasonInternal = internalQuery({
 });
 
 /**
- * Get skills with scanner.vt.pending that need reanalysis.
- * Returns skills regardless of whether they have vtAnalysis cached.
+ * Get skill versions with pending VT cache rows that need reanalysis.
  */
 export const getPendingVTSkillsInternal = internalQuery({
   args: { limit: v.optional(v.number()), cursor: v.optional(v.union(v.string(), v.null())) },
@@ -6649,9 +6648,9 @@ export const getPendingVTSkillsInternal = internalQuery({
     const limit = args.limit ?? 100;
 
     const { page, continueCursor, isDone } = await ctx.db
-      .query("skills")
-      .withIndex("by_moderation", (q) =>
-        q.eq("moderationStatus", "active").eq("moderationReason", "scanner.vt.pending"),
+      .query("skillVersions")
+      .withIndex("by_active_vt_status_created", (q) =>
+        q.eq("softDeletedAt", undefined).eq("vtAnalysis.status", "pending"),
       )
       .paginate({ cursor: args.cursor ?? null, numItems: limit });
 
@@ -6660,18 +6659,20 @@ export const getPendingVTSkillsInternal = internalQuery({
       versionId: Id<"skillVersions">;
       slug: string;
       sha256hash: string;
+      isLatest: boolean;
     }> = [];
 
-    for (const skill of page) {
-      if (!skill.latestVersionId) continue;
-      const version = await ctx.db.get(skill.latestVersionId);
-      if (!version?.sha256hash) continue;
+    for (const version of page) {
+      if (!version.sha256hash) continue;
+      const skill = await ctx.db.get(version.skillId);
+      if (!skill || skill.softDeletedAt) continue;
 
       results.push({
         skillId: skill._id,
         versionId: version._id,
         slug: skill.slug,
         sha256hash: version.sha256hash,
+        isLatest: skill.latestVersionId === version._id,
       });
     }
 

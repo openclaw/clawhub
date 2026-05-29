@@ -307,6 +307,7 @@ type PendingVTSkill = {
   versionId: Id<"skillVersions">;
   sha256hash: string;
   slug: string;
+  isLatest?: boolean;
 };
 
 type NullModerationStatusSkill = {
@@ -1061,7 +1062,13 @@ export const repairPendingSkillVtAnalysis = internalAction({
     const statusCounts: Record<string, number> = {};
     const sampleUpdated: Array<{ slug: string; status: string }> = [];
 
-    async function repairSkill({ skillId, versionId, sha256hash, slug }: PendingVTSkill) {
+    async function repairSkill({
+      skillId,
+      versionId,
+      sha256hash,
+      slug,
+      isLatest = true,
+    }: PendingVTSkill) {
       try {
         const vtResult = await checkExistingFile(vtApiKey, sha256hash);
         if (!vtResult) {
@@ -1091,6 +1098,11 @@ export const repairPendingSkillVtAnalysis = internalAction({
             checkedAt: Date.now(),
           },
         });
+        if (!isLatest) {
+          updated++;
+          return;
+        }
+
         if (status === "malicious" || status === "suspicious") {
           await enqueueSkillCodexForVtSignal(ctx, versionId);
         } else {

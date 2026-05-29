@@ -729,6 +729,7 @@ const skillVersions = defineTable({
   .index("by_skill", ["skillId"])
   .index("by_skill_version", ["skillId", "version"])
   .index("by_active_created", ["softDeletedAt", "createdAt"])
+  .index("by_active_vt_status_created", ["softDeletedAt", "vtAnalysis.status", "createdAt"])
   .index("by_sha256hash", ["sha256hash"])
   .index("by_dep_registry_scan_status_and_created", ["depRegistryScanStatus", "createdAt"]);
 

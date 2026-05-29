@@ -1250,6 +1250,129 @@ describe("vt pending repair", () => {
     );
   });
 
+  it("repairs historical pending VT cache rows without recomputing latest moderation", async () => {
+    process.env.VT_API_KEY = "test-key";
+    const hash = "a".repeat(64);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          data: {
+            attributes: {
+              last_analysis_stats: {
+                malicious: 0,
+                suspicious: 0,
+                harmless: 2,
+                undetected: 64,
+              },
+            },
+          },
+        }),
+      }),
+    );
+
+    const runMutation = vi.fn(async () => null);
+    const result = await repairPendingSkillVtAnalysisHandler(
+      {
+        runQuery: vi.fn().mockResolvedValue({
+          skills: [
+            {
+              skillId: "skills:pending",
+              versionId: "skillVersions:historical",
+              slug: "pending-skill",
+              sha256hash: hash,
+              isLatest: false,
+            },
+          ],
+          cursor: null,
+          done: true,
+        }),
+        runMutation,
+      } as never,
+      { dryRun: false, batchSize: 100 },
+    );
+
+    expect(result).toMatchObject({
+      wouldUpdate: 1,
+      updated: 1,
+      statusCounts: { clean: 1 },
+    });
+    expect(mutationPayloads(runMutation)).toContainEqual(
+      expect.objectContaining({
+        versionId: "skillVersions:historical",
+        sha256hash: hash,
+        vtAnalysis: expect.objectContaining({ status: "clean" }),
+      }),
+    );
+    expect(mutationPayloads(runMutation)).not.toContainEqual(
+      expect.objectContaining({ skillId: "skills:pending" }),
+    );
+    expect(mutationPayloads(runMutation)).not.toContainEqual(
+      expect.objectContaining({ source: "vt-update" }),
+    );
+  });
+
+  it("does not enqueue ClawScan follow-up for suspicious historical VT cache rows", async () => {
+    process.env.VT_API_KEY = "test-key";
+    const hash = "b".repeat(64);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          data: {
+            attributes: {
+              last_analysis_stats: {
+                malicious: 0,
+                suspicious: 1,
+                harmless: 1,
+                undetected: 64,
+              },
+            },
+          },
+        }),
+      }),
+    );
+
+    const runMutation = vi.fn(async () => null);
+    const result = await repairPendingSkillVtAnalysisHandler(
+      {
+        runQuery: vi.fn().mockResolvedValue({
+          skills: [
+            {
+              skillId: "skills:pending",
+              versionId: "skillVersions:historical",
+              slug: "pending-skill",
+              sha256hash: hash,
+              isLatest: false,
+            },
+          ],
+          cursor: null,
+          done: true,
+        }),
+        runMutation,
+      } as never,
+      { dryRun: false, batchSize: 100 },
+    );
+
+    expect(result).toMatchObject({
+      wouldUpdate: 1,
+      updated: 1,
+      statusCounts: { suspicious: 1 },
+    });
+    expect(mutationPayloads(runMutation)).toContainEqual(
+      expect.objectContaining({
+        versionId: "skillVersions:historical",
+        sha256hash: hash,
+        vtAnalysis: expect.objectContaining({ status: "suspicious" }),
+      }),
+    );
+    expect(mutationPayloads(runMutation)).not.toContainEqual(
+      expect.objectContaining({ source: "vt-update" }),
+    );
+  });
+
   it("returns pagination cursor when unresolved pending VT rows are skipped", async () => {
     process.env.VT_API_KEY = "test-key";
     vi.stubGlobal(
