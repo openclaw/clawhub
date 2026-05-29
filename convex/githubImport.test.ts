@@ -1,5 +1,5 @@
 /* @vitest-environment node */
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { internal } from "./_generated/api";
 import { __test } from "./githubImport";
 import { buildGitHubZipForTests } from "./lib/githubImport";
@@ -15,7 +15,21 @@ vi.mock("./_generated/api", () => ({
   },
 }));
 
+const originalGitHubToken = process.env.GITHUB_TOKEN;
+
 describe("githubImport", () => {
+  beforeEach(() => {
+    delete process.env.GITHUB_TOKEN;
+  });
+
+  afterEach(() => {
+    if (originalGitHubToken) {
+      process.env.GITHUB_TOKEN = originalGitHubToken;
+    } else {
+      delete process.env.GITHUB_TOKEN;
+    }
+  });
+
   it("formats storage failure message with file context", () => {
     const message = __test.buildStoreFailureMessage("skill/SKILL.md", 123, new Error("disk full"));
     expect(message).toBe('Failed to store file "skill/SKILL.md" (123 bytes). disk full');
@@ -293,6 +307,158 @@ describe("githubImport", () => {
     expect(fetchMock).toHaveBeenNthCalledWith(
       4,
       "https://api.github.com/repos/vyctorbrzezowski/docs/git/trees/main?recursive=1",
+      expect.objectContaining({ headers: expect.any(Object) }),
+    );
+  });
+
+  it("uses GitHub code search for owned SKILL.md discovery when a token is configured", async () => {
+    process.env.GITHUB_TOKEN = "github-token";
+    const ctx = {
+      runQuery: vi.fn().mockResolvedValue("123"),
+    };
+    const ownedRepo = {
+      name: "skills",
+      full_name: "vyctorbrzezowski/skills",
+      html_url: "https://github.com/vyctorbrzezowski/skills",
+      default_branch: "main",
+      pushed_at: "2026-05-27T00:00:00Z",
+      updated_at: "2026-05-27T00:00:00Z",
+      fork: false,
+      archived: false,
+      disabled: false,
+      private: false,
+      visibility: "public",
+      owner: { id: 123, login: "vyctorbrzezowski" },
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: 123,
+          login: "vyctorbrzezowski",
+          avatar_url: "https://avatars.githubusercontent.com/u/123?v=4",
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          items: [
+            { path: "SKILL.md", repository: ownedRepo },
+            { path: "tools/review/SKILL.md", repository: ownedRepo },
+            { path: ".agents/skills/internal/SKILL.md", repository: ownedRepo },
+            {
+              path: "SKILL.md",
+              repository: {
+                ...ownedRepo,
+                name: "forked",
+                full_name: "vyctorbrzezowski/forked",
+                fork: true,
+              },
+            },
+            { path: "README.md", repository: ownedRepo },
+          ],
+        }),
+      });
+
+    const result = await __test.listOwnedPublicGitHubReposForUser(
+      ctx as never,
+      "users:1" as never,
+      { page: 1, perPage: 30 },
+      fetchMock as never,
+    );
+
+    expect(result.repos).toEqual([
+      expect.objectContaining({
+        name: "skills",
+        repoName: "skills",
+        candidatePath: "",
+        skillPath: "SKILL.md",
+      }),
+      expect.objectContaining({
+        name: "review",
+        repoName: "skills",
+        candidatePath: "tools/review",
+        skillPath: "tools/review/SKILL.md",
+      }),
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const searchUrl = new URL(fetchMock.mock.calls[1]?.[0] as string);
+    expect(searchUrl.pathname).toBe("/search/code");
+    expect(searchUrl.searchParams.get("q")).toBe("filename:SKILL.md user:vyctorbrzezowski");
+    expect(fetchMock.mock.calls[1]?.[1]).toEqual(
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer github-token" }),
+      }),
+    );
+  });
+
+  it("falls back to the repo archive when GitHub truncates the discovery tree", async () => {
+    const ctx = {
+      runQuery: vi.fn().mockResolvedValue("123"),
+    };
+    const zip = buildGitHubZipForTests({
+      "large-repo/tools/review/SKILL.md": "# Review",
+      "large-repo/tools/review/notes.md": "notes",
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: 123,
+          login: "vyctorbrzezowski",
+          avatar_url: "https://avatars.githubusercontent.com/u/123?v=4",
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => [
+          {
+            name: "large-repo",
+            full_name: "vyctorbrzezowski/large-repo",
+            html_url: "https://github.com/vyctorbrzezowski/large-repo",
+            default_branch: "main",
+            fork: false,
+            archived: false,
+            disabled: false,
+            private: false,
+            visibility: "public",
+            owner: { id: 123, login: "vyctorbrzezowski" },
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          truncated: true,
+          tree: [{ path: "README.md", type: "blob" }],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        headers: { get: () => null },
+        arrayBuffer: async () => zip.buffer.slice(zip.byteOffset, zip.byteOffset + zip.byteLength),
+      });
+
+    const result = await __test.listOwnedPublicGitHubReposForUser(
+      ctx as never,
+      "users:1" as never,
+      { page: 1, perPage: 30 },
+      fetchMock as never,
+    );
+
+    expect(result.repos).toEqual([
+      expect.objectContaining({
+        name: "review",
+        repoName: "large-repo",
+        candidatePath: "tools/review",
+        skillPath: "tools/review/SKILL.md",
+      }),
+    ]);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "https://codeload.github.com/vyctorbrzezowski/large-repo/zip/main",
       expect.objectContaining({ headers: expect.any(Object) }),
     );
   });

@@ -159,7 +159,7 @@ const OPENCLAW_SKILLS_DISCORD_URL =
 const PUBLIC_CLAWHUB_SITE_URL = "https://clawhub.ai";
 const LOCAL_SHARE_HOSTS = new Set(["localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]"]);
 const GITHUB_REPO_PAGE_SIZE = 100;
-const MAX_GITHUB_REPO_PAGES = 10;
+const MAX_GITHUB_REPO_PAGES = 1;
 const DEV_MOCK_SKILL_NAMES = [
   "agent-release-notes",
   "audit-brief",
@@ -323,11 +323,13 @@ export function ImportGitHub() {
       let hasMore = true;
       let accountLoginValue: string | null = null;
       let accountAvatarValue: string | null = null;
+      let scannedMatchLimit = 0;
 
       while (hasMore && page <= MAX_GITHUB_REPO_PAGES) {
         if (page > 1) setRepoListStatus("Scanning more repos...");
         const result = await listOwnedRepos({ page, perPage: GITHUB_REPO_PAGE_SIZE });
         scannedRepos.push(...((result.repos ?? []) as OwnedGitHubRepo[]));
+        scannedMatchLimit += result.perPage ?? GITHUB_REPO_PAGE_SIZE;
         if (page === 1) {
           accountLoginValue =
             typeof result.account?.login === "string" && result.account.login.trim()
@@ -359,7 +361,7 @@ export function ImportGitHub() {
       if (nextRepos.length === 0) {
         setRepoListStatus("No SKILL.md found.");
       } else {
-        setRepoListStatus(hasMore ? "Showing the first 1,000 scanned repos." : null);
+        setRepoListStatus(hasMore ? `Showing the first ${scannedMatchLimit} matches.` : null);
       }
     } catch (e) {
       setRepoListError(getUserFacingConvexError(e, "Could not load GitHub repos"));
