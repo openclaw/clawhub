@@ -518,7 +518,7 @@ export default function Header() {
                       signInRedirectTo ? { redirectTo: signInRedirectTo } : undefined,
                     )
                       .then((result) => {
-                        if (result?.signingIn === false) {
+                        if (result?.signingIn === false && !result.redirect) {
                           setAuthError("Sign in failed. Please try again.");
                         }
                       })

@@ -197,6 +197,7 @@ function compactHeaderCss() {
 
 describe("Header", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     authStatusMock.mockReturnValue({
       isAuthenticated: false,
       isLoading: false,
@@ -279,6 +280,23 @@ describe("Header", () => {
     await waitFor(() => {
       expect(setAuthError).toHaveBeenCalledWith("Sign in failed. Please try again.");
     });
+  });
+
+  it("does not show an auth error when GitHub sign-in starts a redirect", async () => {
+    const { setAuthError } = await import("../lib/useAuthError");
+    siteModeMock.mockReturnValue("skills");
+    signInMock.mockResolvedValue({
+      signingIn: false,
+      redirect: new URL("https://github.com/login/oauth/authorize"),
+    });
+
+    render(<Header />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Sign in with GitHub" }));
+
+    expect(signInMock).toHaveBeenCalledWith("github", { redirectTo: "/" });
+    await Promise.resolve();
+    expect(setAuthError).not.toHaveBeenCalled();
   });
 
   it("keeps inline search and moves content nav into the compact menu", () => {
