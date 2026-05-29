@@ -37,7 +37,7 @@ export type GitHubImportFileEntry = {
 const MAX_REDIRECTS = 6;
 const GITHUB_HOST = "github.com";
 const CODELOAD_HOST = "codeload.github.com";
-const SKILL_FILENAMES = ["skill.md", "skills.md"];
+const SKILL_FILENAME = "skill.md";
 
 export function parseGitHubImportUrl(input: string): GitHubImportUrl {
   const rawUrl = input.trim();
@@ -82,6 +82,9 @@ export function parseGitHubImportUrl(input: string): GitHubImportUrl {
   if (kind === "blob") {
     if (!rest) throw new Error("Missing path in GitHub URL");
     if (!normalizedRest) throw new Error("Invalid path in GitHub URL");
+    if ((normalizedRest.split("/").at(-1) ?? "").toLowerCase() !== SKILL_FILENAME) {
+      throw new Error("GitHub file URL must point to SKILL.md");
+    }
     const dir = normalizedRest.split("/").slice(0, -1).join("/");
     return { owner, repo, ref, path: dir || undefined, originalUrl };
   }
@@ -121,10 +124,7 @@ export async function resolveGitHubCommit(
 async function resolveRefCommit(parsed: GitHubImportUrl, ref: string, fetcher: typeof fetch) {
   const apiUrl = `https://api.github.com/repos/${parsed.owner}/${parsed.repo}/commits/${encodeURIComponent(ref)}`;
   const response = await fetcher(apiUrl, {
-    headers: {
-      Accept: "application/vnd.github+json",
-      "User-Agent": "clawhub/github-import",
-    },
+    headers: buildGitHubImportHeaders(),
   });
   if (!response.ok) throw new Error("GitHub ref not found");
   const body = (await response.json()) as { sha?: unknown };
@@ -136,7 +136,10 @@ async function resolveRefCommit(parsed: GitHubImportUrl, ref: string, fetcher: t
 async function resolveHeadCommit(parsed: GitHubImportUrl, fetcher: typeof fetch) {
   let url = `https://${GITHUB_HOST}/${parsed.owner}/${parsed.repo}/archive/HEAD.zip`;
   for (let i = 0; i < MAX_REDIRECTS; i += 1) {
-    const response = await fetcher(url, { redirect: "manual" });
+    const response = await fetcher(url, {
+      headers: buildGitHubImportHeaders(),
+      redirect: "manual",
+    });
     const location = response.headers.get("location");
     if (!location) break;
     const next = new URL(location, url);
@@ -161,7 +164,7 @@ export async function fetchGitHubZipBytes(
   const maxZipBytes = limits?.maxZipBytes ?? 25 * 1024 * 1024;
   const url = `https://${CODELOAD_HOST}/${resolved.owner}/${resolved.repo}/zip/${resolved.commit}`;
   const response = await fetcher(url, {
-    headers: { "User-Agent": "clawhub/github-import" },
+    headers: buildGitHubImportHeaders(),
   });
   if (!response.ok) throw new Error("GitHub archive download failed");
 
@@ -200,6 +203,16 @@ export async function fetchGitHubZipBytes(
   return out;
 }
 
+function buildGitHubImportHeaders() {
+  const headers: Record<string, string> = {
+    Accept: "application/vnd.github+json",
+    "User-Agent": "clawhub/github-import",
+  };
+  const token = process.env.GITHUB_TOKEN;
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return headers;
+}
+
 export type ZipEntryMap = Record<string, Uint8Array>;
 
 export function buildGitHubZipForTests(entries: Record<string, string>) {
@@ -231,7 +244,7 @@ export function detectGitHubImportCandidates(entries: ZipEntryMap): GitHubImport
   for (const path of Object.keys(entries)) {
     const normalized = normalizeRepoPath(path);
     const lower = normalized.toLowerCase();
-    const isSkill = SKILL_FILENAMES.some((name) => lower === name || lower.endsWith(`/${name}`));
+    const isSkill = lower === SKILL_FILENAME || lower.endsWith(`/${SKILL_FILENAME}`);
     if (!isSkill) continue;
     const dir = normalized.split("/").slice(0, -1).join("/");
     const readmePath = normalized;
