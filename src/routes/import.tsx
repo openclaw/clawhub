@@ -18,14 +18,7 @@ import {
   Rocket,
   Search,
 } from "lucide-react";
-import {
-  type ReactNode,
-  type SVGProps,
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import { type ReactNode, type SVGProps, useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import { copyText } from "../components/InstallCopyButton";
@@ -42,20 +35,15 @@ import {
 } from "../components/ui/dropdown-menu";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "../components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../components/ui/tooltip";
 import { getUserFacingConvexError } from "../lib/convexError";
+import { getClawHubSiteUrl, getSiteMode, getSiteName, getSiteUrlForMode } from "../lib/site";
 import {
   ALLOWED_LUCIDE_ICON_NAMES,
   ALLOWED_LUCIDE_ICONS,
   makeLucideIconValue,
 } from "../lib/skillIcon";
 import { getPublicSlugCollision } from "../lib/slugCollision";
-import { getClawHubSiteUrl, getSiteMode, getSiteName, getSiteUrlForMode } from "../lib/site";
 import { formatBytes } from "../lib/uploadUtils";
 import { useAuthStatus } from "../lib/useAuthStatus";
 
@@ -604,7 +592,9 @@ export function ImportGitHub() {
               <ImportStepper
                 current={isReviewing ? (publishResults.length > 0 ? 3 : 2) : 1}
                 onSelect={isReviewing && !isBusy ? cancelReview : undefined}
-                onReview={!isReviewing && selectedRepoItems.length > 0 && !isBusy ? startReview : undefined}
+                onReview={
+                  !isReviewing && selectedRepoItems.length > 0 && !isBusy ? startReview : undefined
+                }
                 onPublish={isReviewing && canPublish ? publishReviewed : undefined}
               />
             </div>
@@ -741,7 +731,7 @@ export function ImportGitHub() {
                   <div className="overflow-hidden rounded-[var(--radius-md)] border border-[color:var(--line)] bg-[color:var(--surface)]">
                     {visibleRepos.map((repo) => {
                       const rowKey = getRepoKey(repo);
-                      const checked = Boolean(selectedRepoKeys[rowKey]);
+                      const checked = selectedRepoKeys[rowKey];
                       return (
                         <label
                           key={rowKey}
@@ -816,7 +806,7 @@ export function ImportGitHub() {
                 const key = getRepoKey(draft.repo);
                 const issues = reviewIssuesByKey[key] ?? [];
                 const slugResult = slugResults[toSlugQueryKey(key)];
-                const isExpanded = Boolean(expandedDraftKeys[key] || issues.length > 0);
+                const isExpanded = expandedDraftKeys[key] || issues.length > 0;
                 return (
                   <ReviewSkillCard
                     key={key}
@@ -892,9 +882,7 @@ export function ImportGitHub() {
                 </Button>
               </div>
 
-              {publishResults.length > 0 ? (
-                <PublishResultList results={publishResults} />
-              ) : null}
+              {publishResults.length > 0 ? <PublishResultList results={publishResults} /> : null}
             </section>
           ) : null}
         </div>
@@ -972,9 +960,7 @@ function PublishedImportSuccess({
                   <div className="truncate text-sm font-semibold text-[color:var(--ink)]">
                     {item.name}
                   </div>
-                  <div className="truncate text-xs text-[color:var(--ink-soft)]">
-                    /{item.slug}
-                  </div>
+                  <div className="truncate text-xs text-[color:var(--ink-soft)]">/{item.slug}</div>
                 </div>
               </div>
               <div className="flex min-w-0 items-center gap-2 sm:justify-end">
@@ -1018,7 +1004,10 @@ function PublishedImportSuccess({
               #skills / Friends of the Crustacean 🦞🤝
             </span>
           </span>
-          <ExternalLink className="h-4 w-4 shrink-0 text-[color:var(--ink-soft)]" aria-hidden="true" />
+          <ExternalLink
+            className="h-4 w-4 shrink-0 text-[color:var(--ink-soft)]"
+            aria-hidden="true"
+          />
         </a>
         <a
           href={buildXShareUrl(publishedItems)}
@@ -1030,7 +1019,10 @@ function PublishedImportSuccess({
             <XIcon className="h-4 w-4 shrink-0" />
             <span>Share on Twitter</span>
           </span>
-          <ExternalLink className="h-4 w-4 shrink-0 text-[color:var(--ink-soft)]" aria-hidden="true" />
+          <ExternalLink
+            className="h-4 w-4 shrink-0 text-[color:var(--ink-soft)]"
+            aria-hidden="true"
+          />
         </a>
       </div>
     </section>
@@ -1393,8 +1385,7 @@ function ReviewSkillCard({
                   <input
                     type="checkbox"
                     checked={
-                      file.path === draft.preview.candidate.readmePath ||
-                      Boolean(draft.selected[file.path])
+                      file.path === draft.preview.candidate.readmePath || draft.selected[file.path]
                     }
                     onChange={() => onToggleFile(file.path)}
                     disabled={isBusy || file.path === draft.preview.candidate.readmePath}
