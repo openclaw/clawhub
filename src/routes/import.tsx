@@ -158,6 +158,8 @@ const OPENCLAW_SKILLS_DISCORD_URL =
   "https://discord.com/channels/1456350064065904867/1456891440897724637";
 const PUBLIC_CLAWHUB_SITE_URL = "https://clawhub.ai";
 const LOCAL_SHARE_HOSTS = new Set(["localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]"]);
+const GITHUB_REPO_PAGE_SIZE = 100;
+const MAX_GITHUB_REPO_PAGES = 10;
 const DEV_MOCK_SKILL_NAMES = [
   "agent-release-notes",
   "audit-brief",
@@ -316,26 +318,49 @@ export function ImportGitHub() {
     setRepoListError(null);
     setRepoListStatus(null);
     try {
-      const result = await listOwnedRepos({ perPage: 10 });
-      const nextRepos = expandDevMockSkillRepos((result.repos ?? []) as OwnedGitHubRepo[]);
-      const nextLogin =
-        typeof result.account?.login === "string" && result.account.login.trim()
-          ? result.account.login.trim()
-          : null;
-      const nextAvatarUrl =
-        typeof result.account?.avatarUrl === "string" && result.account.avatarUrl.trim()
-          ? result.account.avatarUrl.trim()
-          : null;
+      const scannedRepos: OwnedGitHubRepo[] = [];
+      let page = 1;
+      let hasMore = true;
+      let accountLoginValue: string | null = null;
+      let accountAvatarValue: string | null = null;
+
+      while (hasMore && page <= MAX_GITHUB_REPO_PAGES) {
+        if (page > 1) setRepoListStatus("Scanning more repos...");
+        const result = await listOwnedRepos({ page, perPage: GITHUB_REPO_PAGE_SIZE });
+        scannedRepos.push(...((result.repos ?? []) as OwnedGitHubRepo[]));
+        if (page === 1) {
+          accountLoginValue =
+            typeof result.account?.login === "string" && result.account.login.trim()
+              ? result.account.login.trim()
+              : null;
+          accountAvatarValue =
+            typeof result.account?.avatarUrl === "string" && result.account.avatarUrl.trim()
+              ? result.account.avatarUrl.trim()
+              : null;
+        }
+        hasMore = result.hasMore;
+        page += 1;
+      }
+
+      const nextRepos = expandDevMockSkillRepos(scannedRepos);
+      const nextLogin = accountLoginValue;
+      const nextAvatarUrl = accountAvatarValue;
       setAccountLogin(nextLogin);
       setAccountAvatarUrl(nextAvatarUrl);
       setRepos(nextRepos);
       setSelectedRepoKeys((current) => {
-        const validKeys = new Set(nextRepos.map((repo) => getRepoKey(repo)));
         return Object.fromEntries(
-          Object.entries(current).filter(([key, value]) => value && validKeys.has(key)),
+          nextRepos.map((repo) => {
+            const key = getRepoKey(repo);
+            return [key, current[key] ?? true];
+          }),
         );
       });
-      if (nextRepos.length === 0) setRepoListStatus("No SKILL.md found.");
+      if (nextRepos.length === 0) {
+        setRepoListStatus("No SKILL.md found.");
+      } else {
+        setRepoListStatus(hasMore ? "Showing the first 1,000 scanned repos." : null);
+      }
     } catch (e) {
       setRepoListError(getUserFacingConvexError(e, "Could not load GitHub repos"));
     } finally {
@@ -478,7 +503,7 @@ export function ImportGitHub() {
           candidatePath: repo.candidatePath,
         })) as CandidatePreview;
         const selected: Record<string, boolean> = {};
-        for (const file of result.files) selected[file.path] = true;
+        for (const file of result.files) selected[file.path] = file.defaultSelected;
         const slug = nextNumericSlug(result.defaults.slug, usedSlugs);
         usedSlugs.add(slug);
         drafts[getRepoKey(repo)] = {
@@ -496,6 +521,10 @@ export function ImportGitHub() {
       setReviewLoadStatus(null);
     } catch (e) {
       setError(getUserFacingConvexError(e, "Preview failed"));
+      setReviewQueue([]);
+      setReviewDrafts({});
+      setExpandedDraftKeys({});
+      setReviewLoadStatus(null);
     } finally {
       setIsBusy(false);
     }
@@ -541,16 +570,19 @@ export function ImportGitHub() {
     if (!canPublish) return;
     setIsBusy(true);
     setError(null);
-    setPublishResults([]);
-    const results: PublishResultRow[] = [];
+    const results = publishResults.filter((item) => item.ok && item.slug);
+    const publishedKeys = new Set(results.map((item) => item.key));
+    setPublishResults(results);
     try {
       for (let index = 0; index < orderedDrafts.length; index += 1) {
         const draft = orderedDrafts[index] as ReviewDraft;
         const key = getRepoKey(draft.repo);
+        if (publishedKeys.has(key)) continue;
         setStatus(`Publishing ${index + 1} of ${orderedDrafts.length}`);
         try {
           const result = await importDraft(draft);
           results.push({ key, name: draft.displayName, ok: true, slug: result.slug });
+          publishedKeys.add(key);
         } catch (e) {
           results.push({
             key,
@@ -718,6 +750,12 @@ export function ImportGitHub() {
               {repoListError ? (
                 <div className="rounded-[var(--radius-sm)] border border-red-300/40 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-950/50 dark:text-red-300">
                   {repoListError}
+                </div>
+              ) : null}
+
+              {error ? (
+                <div className="rounded-[var(--radius-sm)] border border-red-300/40 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-950/50 dark:text-red-300">
+                  {error}
                 </div>
               ) : null}
 
