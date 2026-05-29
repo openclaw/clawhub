@@ -51,8 +51,27 @@ describe("SkillsIndex", () => {
     render(<SkillsIndex />);
     await act(async () => {});
 
-    expect(convexHttpMock.query).toHaveBeenCalledWith(
-      expect.anything(),
+    const args = getLastListPageArgs();
+    expect(args).toEqual(
+      expect.objectContaining({
+        dir: "desc",
+        highlightedOnly: false,
+        cursor: undefined,
+        numItems: 25,
+      }),
+    );
+    expect(args).not.toHaveProperty("sort");
+    expect(screen.getByRole("radio", { name: "Recommended" }).getAttribute("aria-checked")).toBe(
+      "true",
+    );
+  });
+
+  it("keeps downloads as an explicit browse sort", async () => {
+    searchMock = { sort: "downloads", dir: "desc" };
+    render(<SkillsIndex />);
+    await act(async () => {});
+
+    expect(getLastListPageArgs()).toEqual(
       expect.objectContaining({
         sort: "downloads",
         dir: "desc",
@@ -217,6 +236,70 @@ describe("SkillsIndex", () => {
     });
   });
 
+  it("clears stale default sort state when entering search", async () => {
+    searchMock = { sort: "default", dir: "asc" };
+    vi.useFakeTimers();
+
+    render(<SkillsIndex />);
+
+    const input = screen.getByPlaceholderText("Search skills...");
+    await act(async () => {
+      fireEvent.change(input, { target: { value: "cli-design-framework" } });
+      await vi.runAllTimersAsync();
+    });
+
+    const lastCall = getLastNavigateCall();
+    expect(lastCall.replace).toBe(true);
+    expect(lastCall.search({ sort: "default", dir: "asc" })).toEqual({
+      q: "cli-design-framework",
+      sort: undefined,
+      dir: undefined,
+    });
+  });
+
+  it("does not reuse a stale default direction when choosing an explicit browse sort", async () => {
+    searchMock = { sort: "default", dir: "asc" };
+    render(<SkillsIndex />);
+
+    fireEvent.click(screen.getByRole("radio", { name: "Most downloaded" }));
+
+    const lastCall = getLastNavigateCall();
+    expect(lastCall.replace).toBe(true);
+    expect(lastCall.search({ sort: "default", dir: "asc" })).toEqual({
+      sort: "downloads",
+      dir: "desc",
+    });
+  });
+
+  it("does not reuse a stale relevance direction when choosing an explicit search sort", async () => {
+    searchMock = { q: "notion", sort: "relevance", dir: "asc" };
+    render(<SkillsIndex />);
+
+    fireEvent.click(screen.getByRole("radio", { name: "Most downloaded" }));
+
+    const lastCall = getLastNavigateCall();
+    expect(lastCall.replace).toBe(true);
+    expect(lastCall.search({ q: "notion", sort: "relevance", dir: "asc" })).toEqual({
+      q: "notion",
+      sort: "downloads",
+      dir: "desc",
+    });
+  });
+
+  it("clears direction when returning to recommended browse sort", async () => {
+    searchMock = { sort: "downloads", dir: "asc" };
+    render(<SkillsIndex />);
+
+    fireEvent.click(screen.getByRole("radio", { name: "Recommended" }));
+
+    const lastCall = getLastNavigateCall();
+    expect(lastCall.replace).toBe(true);
+    expect(lastCall.search({ sort: "downloads", dir: "asc" })).toEqual({
+      sort: "recommended",
+      dir: undefined,
+    });
+  });
+
   it("loads more results when search pagination is requested", async () => {
     searchMock = { q: "remind" };
     vi.stubGlobal("IntersectionObserver", undefined);
@@ -314,8 +397,8 @@ describe("SkillsIndex", () => {
     render(<SkillsIndex />);
     await act(async () => {});
 
-    expect(convexHttpMock.query).toHaveBeenCalledWith(
-      expect.anything(),
+    const args = getLastListPageArgs();
+    expect(args).toEqual(
       expect.objectContaining({
         categorySlug: "dev-tools",
         categoryKeywords: expect.arrayContaining(["dev"]),
@@ -344,14 +427,14 @@ describe("SkillsIndex", () => {
     render(<SkillsIndex />);
     await act(async () => {});
 
-    expect(convexHttpMock.query).toHaveBeenCalledWith(
-      expect.anything(),
+    const args = getLastListPageArgs();
+    expect(args).toEqual(
       expect.objectContaining({
-        sort: "downloads",
         dir: "desc",
         highlightedOnly: true,
       }),
     );
+    expect(args).not.toHaveProperty("sort");
   });
 
   it("shows load-more button when more results are available", async () => {
@@ -390,6 +473,48 @@ describe("SkillsIndex", () => {
     expect(screen.queryByText(/Loading/)).toBeNull();
   });
 });
+
+type NavigateSearchCall = {
+  replace?: boolean;
+  search: (prev: Record<string, unknown>) => Record<string, unknown>;
+};
+
+function getLastNavigateCall(): NavigateSearchCall {
+  const call = navigateMock.mock.calls.at(-1)?.[0];
+  if (!isNavigateSearchCall(call)) {
+    throw new Error("Expected a route navigation call with a search updater");
+  }
+  return call;
+}
+
+function isNavigateSearchCall(value: unknown): value is NavigateSearchCall {
+  if (!isRecord(value)) return false;
+  return typeof value.search === "function";
+}
+
+function getLastListPageArgs(): Record<string, unknown> {
+  let call: unknown[] | undefined;
+  for (let index = convexHttpMock.query.mock.calls.length - 1; index >= 0; index -= 1) {
+    const candidate = convexHttpMock.query.mock.calls[index];
+    const args = candidate[1];
+    if (isRecord(args) && "numItems" in args) {
+      call = candidate;
+      break;
+    }
+  }
+  if (!call) {
+    throw new Error("Expected a listPublicPageV4 query call");
+  }
+  const args = call[1];
+  if (!isRecord(args)) {
+    throw new Error("Expected listPublicPageV4 args to be an object");
+  }
+  return args;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 
 function makeListResult(
   slug: string,

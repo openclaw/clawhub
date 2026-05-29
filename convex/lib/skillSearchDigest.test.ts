@@ -95,6 +95,29 @@ describe("extractDigestFields", () => {
     expect(digest.updatedAt).toBe(2000);
   });
 
+  it("fills digest rank stats from legacy nested stats", () => {
+    const skill = makeSkillDoc({
+      statsDownloads: undefined,
+      statsStars: undefined,
+      statsInstallsCurrent: undefined,
+      statsInstallsAllTime: undefined,
+      stats: {
+        downloads: 42,
+        installsCurrent: 10,
+        installsAllTime: 100,
+        stars: 5,
+        versions: 3,
+        comments: 1,
+      },
+    });
+    const digest = extractDigestFields(skill as never);
+
+    expect(digest.statsDownloads).toBe(42);
+    expect(digest.statsStars).toBe(5);
+    expect(digest.statsInstallsCurrent).toBe(10);
+    expect(digest.statsInstallsAllTime).toBe(100);
+  });
+
   it("omits large fields not needed for search", () => {
     const skill = makeSkillDoc({
       moderationEvidence: [

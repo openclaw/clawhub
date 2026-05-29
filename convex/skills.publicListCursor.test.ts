@@ -33,7 +33,7 @@ type WrappedHandler<TArgs, TResult> = {
 type PublicListArgs = {
   cursor?: string;
   numItems?: number;
-  sort?: "newest" | "updated" | "downloads" | "installs" | "stars" | "name";
+  sort?: "default" | "recommended" | "newest" | "updated" | "downloads" | "installs" | "stars" | "name";
   dir?: "asc" | "desc";
   highlightedOnly?: boolean;
   nonSuspiciousOnly?: boolean;

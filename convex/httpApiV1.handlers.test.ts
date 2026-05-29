@@ -1174,6 +1174,23 @@ describe("httpApiV1 handlers", () => {
     expect(json.items[0].tags.latest).toBe("1.0.0");
   });
 
+  it("lists skills defaults to recommended ranking", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("cursor" in args || "numItems" in args) {
+        expect(args.sort).toBe("recommended");
+        return { page: [], nextCursor: null };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.listSkillsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills"),
+    );
+
+    expect(response.status).toBe(200);
+  });
+
   it("batches tag resolution across multiple skills into single query", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("cursor" in args || "numItems" in args) {
@@ -1432,6 +1449,8 @@ describe("httpApiV1 handlers", () => {
 
   it("lists skills supports sort aliases", async () => {
     const checks: Array<[string, string | null]> = [
+      ["default", "recommended"],
+      ["recommended", "recommended"],
       ["createdAt", "newest"],
       ["created-at", "newest"],
       ["newest", "newest"],
