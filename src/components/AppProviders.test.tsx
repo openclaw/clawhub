@@ -7,16 +7,27 @@ import {
   BANNED_SIGN_IN_MESSAGE,
   DELETED_SIGN_IN_MESSAGE,
 } from "../lib/authErrorMessage";
+import { markAuthRedirectAttempt } from "../lib/authRedirectAttempt";
 import { getAuthErrorSnapshot, clearAuthError } from "../lib/useAuthError";
-import { AuthCodeHandler, AuthErrorHandler } from "./AppProviders";
+import {
+  AUTH_REDIRECT_NO_CODE_MESSAGE,
+  AuthCodeHandler,
+  AuthErrorHandler,
+  AuthRedirectFallbackHandler,
+} from "./AppProviders";
 
 const signInMock = vi.fn();
+const useConvexAuthMock = vi.fn();
 
 vi.mock("@convex-dev/auth/react", () => ({
   ConvexAuthProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   useAuthActions: () => ({
     signIn: signInMock,
   }),
+}));
+
+vi.mock("convex/react", () => ({
+  useConvexAuth: () => useConvexAuthMock(),
 }));
 
 vi.mock("../convex/client", () => ({
@@ -92,6 +103,35 @@ describe("AuthCodeHandler", () => {
       expect(getAuthErrorSnapshot()).toBe(DELETED_SIGN_IN_MESSAGE);
     });
   });
+
+  it("does not consume initial CLI device codes as OAuth callback codes", async () => {
+    window.history.replaceState(null, "", "/cli/device?code=A8H8-GCLX");
+
+    render(<AuthCodeHandler />);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(signInMock).not.toHaveBeenCalled();
+    expect(getAuthErrorSnapshot()).toBeNull();
+    expect(window.location.pathname + window.location.search + window.location.hash).toBe(
+      "/cli/device?code=A8H8-GCLX",
+    );
+  });
+
+  it("consumes OAuth callback codes on CLI device redirects while preserving the user code", async () => {
+    signInMock.mockResolvedValue({ signingIn: true });
+    markAuthRedirectAttempt("github", "/cli/device?user_code=A8H8-GCLX");
+    window.history.replaceState(null, "", "/cli/device?user_code=A8H8-GCLX&code=oauth123");
+
+    render(<AuthCodeHandler />);
+
+    await waitFor(() => {
+      expect(signInMock).toHaveBeenCalledWith(undefined, { code: "oauth123" });
+    });
+    expect(window.location.pathname + window.location.search + window.location.hash).toBe(
+      "/cli/device?user_code=A8H8-GCLX",
+    );
+  });
 });
 
 describe("AuthErrorHandler", () => {
@@ -155,5 +195,110 @@ describe("AuthErrorHandler", () => {
     expect(`${window.location.pathname}${window.location.search}${window.location.hash}`).toBe(
       "/sign-in",
     );
+  });
+});
+
+describe("AuthRedirectFallbackHandler", () => {
+  beforeEach(() => {
+    clearAuthError();
+    window.sessionStorage.clear();
+    window.history.replaceState(
+      null,
+      "",
+      "/cli/auth?redirect_uri=http%3A%2F%2F127.0.0.1%3A43110%2Fcallback&state=state_123",
+    );
+    useConvexAuthMock.mockReturnValue({ isAuthenticated: false, isLoading: false });
+  });
+
+  afterEach(() => {
+    clearAuthError();
+    window.sessionStorage.clear();
+  });
+
+  it("surfaces callback failures that return without code, error, or session", async () => {
+    markAuthRedirectAttempt(
+      "github",
+      "/cli/auth?redirect_uri=http%3A%2F%2F127.0.0.1%3A43110%2Fcallback&state=state_123",
+    );
+
+    render(<AuthRedirectFallbackHandler />);
+
+    await waitFor(() => {
+      expect(getAuthErrorSnapshot()).toBe(AUTH_REDIRECT_NO_CODE_MESSAGE);
+    });
+  });
+
+  it("preserves provider errors while an OAuth error callback is being processed", async () => {
+    markAuthRedirectAttempt(
+      "github",
+      "/cli/auth?redirect_uri=http%3A%2F%2F127.0.0.1%3A43110%2Fcallback&state=state_123",
+    );
+    window.history.replaceState(
+      null,
+      "",
+      "/cli/auth?redirect_uri=http%3A%2F%2F127.0.0.1%3A43110%2Fcallback&state=state_123&error=access_denied",
+    );
+
+    render(
+      <>
+        <AuthErrorHandler />
+        <AuthRedirectFallbackHandler />
+      </>,
+    );
+
+    await waitFor(() => {
+      expect(getAuthErrorSnapshot()).toBe(ACCESS_DENIED_SIGN_IN_MESSAGE);
+    });
+  });
+
+  it("reports missing OAuth callback failures on CLI device pages without consuming the device code", async () => {
+    markAuthRedirectAttempt("github", "/cli/device?user_code=A8H8-GCLX");
+    window.history.replaceState(null, "", "/cli/device?user_code=A8H8-GCLX");
+
+    render(<AuthRedirectFallbackHandler />);
+
+    await waitFor(() => {
+      expect(getAuthErrorSnapshot()).toBe(AUTH_REDIRECT_NO_CODE_MESSAGE);
+    });
+    expect(window.location.pathname + window.location.search + window.location.hash).toBe(
+      "/cli/device?user_code=A8H8-GCLX",
+    );
+  });
+
+  it("does not report a missing-code failure while an auth code is being processed", async () => {
+    signInMock.mockReturnValue(new Promise(() => undefined));
+    markAuthRedirectAttempt(
+      "github",
+      "/cli/auth?redirect_uri=http%3A%2F%2F127.0.0.1%3A43110%2Fcallback&state=state_123",
+    );
+    window.history.replaceState(
+      null,
+      "",
+      "/cli/auth?redirect_uri=http%3A%2F%2F127.0.0.1%3A43110%2Fcallback&state=state_123&code=abc123",
+    );
+
+    render(
+      <>
+        <AuthCodeHandler />
+        <AuthRedirectFallbackHandler />
+      </>,
+    );
+
+    await waitFor(() => {
+      expect(signInMock).toHaveBeenCalledWith(undefined, { code: "abc123" });
+    });
+    expect(getAuthErrorSnapshot()).toBeNull();
+  });
+
+  it("clears the pending redirect marker after a successful session", () => {
+    useConvexAuthMock.mockReturnValue({ isAuthenticated: true, isLoading: false });
+    markAuthRedirectAttempt(
+      "github",
+      "/cli/auth?redirect_uri=http%3A%2F%2F127.0.0.1%3A43110%2Fcallback&state=state_123",
+    );
+
+    render(<AuthRedirectFallbackHandler />);
+
+    expect(getAuthErrorSnapshot()).toBeNull();
   });
 });

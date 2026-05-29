@@ -2,6 +2,7 @@
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { getActiveAuthRedirectAttempt } from "../lib/authRedirectAttempt";
 import { SignInButton } from "./SignInButton";
 
 const signInMock = vi.fn();
@@ -32,6 +33,7 @@ describe("SignInButton", () => {
     setAuthErrorMock.mockReset();
     getUserFacingAuthErrorMock.mockReset();
     getUserFacingAuthErrorMock.mockImplementation((_, fallback) => fallback);
+    window.sessionStorage.clear();
     window.history.replaceState(null, "", "/skills?q=test#top");
   });
 
@@ -54,7 +56,23 @@ describe("SignInButton", () => {
     expect(setAuthErrorMock).not.toHaveBeenCalled();
   });
 
-  it("surfaces a generic error when sign-in resolves without redirecting", async () => {
+  it("keeps the redirect marker when sign-in starts an OAuth redirect", async () => {
+    signInMock.mockResolvedValue({
+      signingIn: false,
+      redirect: new URL("https://github.com/login"),
+    });
+
+    render(<SignInButton />);
+
+    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+    await waitFor(() => {
+      expect(signInMock).toHaveBeenCalled();
+    });
+    expect(setAuthErrorMock).not.toHaveBeenCalled();
+    expect(getActiveAuthRedirectAttempt()?.redirectTo).toBe("/skills?q=test#top");
+  });
+
+  it("surfaces a generic error and clears the redirect marker when sign-in resolves without redirecting", async () => {
     signInMock.mockResolvedValue({ signingIn: false });
 
     render(<SignInButton />);
@@ -63,6 +81,7 @@ describe("SignInButton", () => {
     await waitFor(() => {
       expect(setAuthErrorMock).toHaveBeenCalledWith("Sign in failed. Please try again.");
     });
+    expect(getActiveAuthRedirectAttempt()).toBeNull();
   });
 
   it("surfaces user-facing auth errors when sign-in rejects", async () => {
@@ -80,5 +99,6 @@ describe("SignInButton", () => {
       );
       expect(setAuthErrorMock).toHaveBeenCalledWith("GitHub auth unavailable");
     });
+    expect(getActiveAuthRedirectAttempt()).toBeNull();
   });
 });

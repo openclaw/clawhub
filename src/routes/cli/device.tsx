@@ -14,9 +14,15 @@ export const Route = createFileRoute("/cli/device")({
   component: CliDeviceAuth,
 });
 
+function buildSignedOutRedirect(code: string) {
+  const trimmed = code.trim();
+  return trimmed ? `/cli/device?user_code=${encodeURIComponent(trimmed)}` : "/cli/device";
+}
+
 export function CliDeviceAuth() {
-  const search = Route.useSearch() as { code?: string };
-  const [code, setCode] = useState(search.code ?? "");
+  const search = Route.useSearch() as { code?: string; user_code?: string };
+  const initialCode = search.user_code ?? search.code ?? "";
+  const [code, setCode] = useState(initialCode);
   const [status, setStatus] = useState<string | null>(null);
   const { isAuthenticated, isLoading, me } = useAuthStatus();
   const approve = useMutation(api.cliDeviceAuth.approve);
@@ -62,7 +68,7 @@ export function CliDeviceAuth() {
                 <p className="text-sm text-[color:var(--ink-soft)]">
                   Sign in to authorize the CLI.
                 </p>
-                <SignInButton disabled={isLoading} />
+                <SignInButton redirectTo={buildSignedOutRedirect(code)} disabled={isLoading} />
               </>
             ) : (
               <>
