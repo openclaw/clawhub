@@ -45,6 +45,7 @@ const SHARED_KEYS = [
 /** Fields stored in the skillSearchDigest table. */
 export type SkillSearchDigestFields = Pick<Doc<"skills">, (typeof SHARED_KEYS)[number]> & {
   skillId: Id<"skills">;
+  latestVersionSkillId?: Id<"skills">;
   normalizedSlug?: string;
   normalizedSlugFirstToken?: string;
   normalizedDisplayName?: string;
@@ -66,6 +67,23 @@ export function extractDigestFields(skill: Doc<"skills">): SkillSearchDigestFiel
     normalizedDisplayName: normalizeSkillSearchText(skill.displayName),
     normalizedDisplayNameFirstToken: getFirstSearchToken(skill.displayName),
   };
+}
+
+export async function extractValidatedDigestFields(
+  ctx: Pick<MutationCtx, "db">,
+  skill: Doc<"skills">,
+): Promise<SkillSearchDigestFields> {
+  const fields = extractDigestFields(skill);
+  const version = skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null;
+  if (!version || version.softDeletedAt || version.skillId !== skill._id) {
+    return {
+      ...fields,
+      latestVersionId: undefined,
+      latestVersionSkillId: undefined,
+      latestVersionSummary: undefined,
+    };
+  }
+  return { ...fields, latestVersionSkillId: version.skillId };
 }
 
 export function normalizeSkillSearchText(value: string) {

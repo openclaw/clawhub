@@ -385,6 +385,74 @@ Notes:
 - `security.signals` contains supporting scanner evidence such as `staticScan`, `virusTotal`, `skillSpector`, and `dependencyRegistry`.
 - `provenance` is `server-resolved-github-import` only when ClawHub resolved and stored a GitHub repo/ref/commit/path during publish or import; otherwise it is `unavailable`.
 
+### `POST /api/v1/skills/-/security-verdicts`
+
+Returns current compact security verdicts for exact skill versions. This
+collection endpoint is intended for clients that already know which installed
+ClawHub skill versions they need to display, such as OpenClaw Control UI.
+
+Request:
+
+```json
+{
+  "items": [{ "slug": "gifgrep", "version": "1.2.3" }]
+}
+```
+
+Notes:
+
+- `items` must contain 1-100 unique `{ slug, version }` pairs.
+- Results are per item; one missing skill or version does not fail the whole response.
+- The response is security-only. It does not include Skill Card data, generated card status, artifact file lists, or detailed scanner payloads.
+- `security.signals` contains status-level supporting evidence only; use `/scan` or the ClawHub security-audit page for full scanner details.
+- Skill Card absence does not affect this endpoint's `ok`, `decision`, or `reasons`; clients should read installed `skill-card.md` locally when they need card content.
+- Use `/verify` when you need the single-skill Skill Card verification envelope, `/card` when you need generated card markdown, and `/scan` when you need detailed scanner data.
+
+Response:
+
+```json
+{
+  "schema": "clawhub.skill.security-verdicts.v1",
+  "items": [
+    {
+      "ok": true,
+      "decision": "pass",
+      "reasons": [],
+      "requestedSlug": "gifgrep",
+      "slug": "gifgrep",
+      "displayName": "GifGrep",
+      "publisherHandle": "steipete",
+      "publisherDisplayName": "Peter",
+      "requestedVersion": "1.2.3",
+      "version": "1.2.3",
+      "createdAt": 0,
+      "checkedAt": 0,
+      "skillUrl": "https://clawhub.ai/steipete/gifgrep",
+      "securityAuditUrl": "https://clawhub.ai/steipete/gifgrep/security-audit?version=1.2.3",
+      "security": {
+        "status": "clean",
+        "passed": true,
+        "signals": {
+          "staticScan": { "status": "clean", "reasonCodes": [] },
+          "virusTotal": null,
+          "skillSpector": null,
+          "dependencyRegistry": null
+        }
+      }
+    },
+    {
+      "ok": false,
+      "decision": "fail",
+      "reasons": ["version.not_found"],
+      "requestedSlug": "missing-version",
+      "requestedVersion": "1.0.0",
+      "error": { "code": "version_not_found", "message": "Version not found" },
+      "security": null
+    }
+  ]
+}
+```
+
 ### `GET /api/v1/skills/{slug}/file`
 
 Returns raw text content.
@@ -1206,9 +1274,11 @@ Status codes:
 
 Admin-only. Ensures an org publisher exists for a handle. If the handle still points at a
 legacy shared user/personal publisher, the endpoint migrates it into an org publisher first.
+For a newly-created org, provide `memberHandle`; the acting admin is not added as a member.
+`memberRole` defaults to `owner`.
 
-- Body: `{ "handle": "openclaw", "displayName": "OpenClaw", "trusted": true }`
-- Response: `{ "ok": true, "publisherId": "...", "handle": "openclaw", "created": true, "migrated": false, "trusted": true }`
+- Body: `{ "handle": "openclaw", "displayName": "OpenClaw", "memberHandle": "alice", "memberRole": "owner", "trusted": true }`
+- Response: `{ "ok": true, "publisherId": "...", "handle": "openclaw", "created": true, "migrated": false, "trusted": true, "member": { "userId": "...", "handle": "alice", "role": "owner" } }`
 
 ### `POST /api/v1/publishers`
 

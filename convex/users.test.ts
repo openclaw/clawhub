@@ -19,9 +19,11 @@ const { insertStatEvent } = await import("./skillStatEvents");
 const {
   ensureHandler,
   getByHandle,
+  getBanAppealContextByGitHubProviderAccountIdInternal,
   list,
   searchInternal,
   banUserInternal,
+  unbanUserForBanAppealServiceInternal,
   reclassifyBanInternal,
   me,
   placeUserUnderModerationInternal,
@@ -196,11 +198,12 @@ function makeListCtx(
   };
 }
 
-function makeBanCtx() {
+function makeBanCtx(options: { auditLogs?: Array<Record<string, unknown>> } = {}) {
   const patch = vi.fn();
   const insert = vi.fn();
   const get = vi.fn();
   const runMutation = vi.fn();
+  const auditLogs = options.auditLogs ?? [];
   const apiTokens = [{ _id: "apiTokens:1", revokedAt: undefined }];
   const userComments = [
     {
@@ -227,6 +230,9 @@ function makeBanCtx() {
 
   const query = vi.fn((table: string) => ({
     withIndex: (_index: string, _cb: unknown) => {
+      if (table === "auditLogs") {
+        return { order: vi.fn(() => ({ take: vi.fn().mockResolvedValue(auditLogs) })) };
+      }
       if (table === "apiTokens") return { collect: vi.fn().mockResolvedValue(apiTokens) };
       if (table === "comments") return { collect: vi.fn().mockResolvedValue(userComments) };
       if (table === "soulComments") return { collect: vi.fn().mockResolvedValue(soulComments) };
@@ -237,6 +243,88 @@ function makeBanCtx() {
   const ctx = { db: { patch, insert, get, query, normalizeId: vi.fn() }, runMutation } as never;
   return { ctx, patch, insert, get, runMutation };
 }
+
+function makeBanAppealContextCtx(options: {
+  accounts: Array<Record<string, unknown>>;
+  usersById: Record<string, Record<string, unknown>>;
+  auditLogs?: Array<Record<string, unknown>>;
+}) {
+  const get = vi.fn(async (id: string) => options.usersById[id] ?? null);
+  const query = vi.fn((table: string) => ({
+    withIndex: (_index: string, _cb: unknown) => {
+      if (table === "authAccounts") {
+        return { take: vi.fn().mockResolvedValue(options.accounts) };
+      }
+      if (table === "auditLogs") {
+        return {
+          order: vi.fn(() => ({ take: vi.fn().mockResolvedValue(options.auditLogs ?? []) })),
+        };
+      }
+      throw new Error(`Unexpected table ${table}`);
+    },
+  }));
+  return { ctx: { db: { query, get } } as never, query, get };
+}
+
+describe("users.getBanAppealContextByGitHubProviderAccountIdInternal", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("selects a currently banned user from duplicate GitHub auth accounts", async () => {
+    const { ctx } = makeBanAppealContextCtx({
+      accounts: [{ userId: "users:active" }, { userId: "users:banned" }],
+      usersById: {
+        "users:active": {
+          _id: "users:active",
+          handle: "active",
+          deletedAt: undefined,
+          deactivatedAt: undefined,
+        },
+        "users:banned": {
+          _id: "users:banned",
+          handle: "banned",
+          displayName: "Banned User",
+          deletedAt: 1_700_000_000_000,
+          deactivatedAt: undefined,
+          banReason: "policy",
+        },
+      },
+      auditLogs: [
+        {
+          _id: "auditLogs:ban",
+          action: "user.ban",
+          actorUserId: "users:admin",
+          targetType: "user",
+          targetId: "users:banned",
+          metadata: { reason: "audit policy" },
+          createdAt: 1_700_000_000_000,
+        },
+      ],
+    });
+
+    const handler = (
+      getBanAppealContextByGitHubProviderAccountIdInternal as unknown as WrappedHandler<
+        { providerAccountId: string },
+        unknown
+      >
+    )._handler;
+
+    const result = (await handler(ctx, { providerAccountId: "123456" })) as Record<string, unknown>;
+
+    expect(result).toMatchObject({
+      ok: true,
+      action: "banned",
+      userId: "users:banned",
+      handle: "banned",
+      displayName: "Banned User",
+      banReason: "policy",
+      bannedAt: 1_700_000_000_000,
+      auditAction: "user.ban",
+      auditActorUserId: "users:admin",
+    });
+  });
+});
 
 describe("ensureHandler", () => {
   afterEach(() => {
@@ -1933,11 +2021,148 @@ describe("users.banUserInternal", () => {
       deletedSkills: 0,
       deletedComments: { skillComments: 1, soulComments: 1 },
     });
-    expect(runMutation).not.toHaveBeenCalled();
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        ownerUserId: "users:target",
+        bannedAt: 1_600_000_000_000,
+        deletedBy: "users:actor",
+        deletedByRole: "moderator",
+      }),
+    );
     expect(patch).toHaveBeenCalledWith("comments:active", {
       softDeletedAt: 1_600_000_000_000,
       deletedBy: "users:actor",
     });
+  });
+});
+
+describe("users.unbanUserForBanAppealServiceInternal", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("restores ban-hidden skills and packages for accepted appeals", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_700_000_100_000);
+    const { ctx, get, patch, insert, runMutation } = makeBanCtx({
+      auditLogs: [
+        {
+          _id: "auditLogs:ban",
+          action: "user.ban",
+          targetType: "user",
+          targetId: "users:target",
+          createdAt: 1_700_000_000_000,
+        },
+      ],
+    });
+    get.mockImplementation(async (id: string) => {
+      if (id === "users:target") {
+        return {
+          _id: "users:target",
+          role: "user",
+          deletedAt: 1_700_000_000_000,
+          deactivatedAt: undefined,
+          banReason: "malware auto-ban",
+        };
+      }
+      return null;
+    });
+    runMutation
+      .mockResolvedValueOnce({ restoredCount: 5, scheduled: false })
+      .mockResolvedValueOnce({ restoredCount: 2, scheduled: true });
+
+    const handler = (
+      unbanUserForBanAppealServiceInternal as unknown as {
+        _handler: (
+          ctx: unknown,
+          args: { targetUserId: string; reason?: string; reviewerDiscordId: string },
+        ) => Promise<unknown>;
+      }
+    )._handler;
+
+    const result = await handler(ctx, {
+      targetUserId: "users:target",
+      reason: "appeal accepted",
+      reviewerDiscordId: "discord-reviewer-1",
+    });
+
+    expect(patch).toHaveBeenCalledWith("users:target", {
+      deletedAt: undefined,
+      banReason: undefined,
+      role: "user",
+      updatedAt: 1_700_000_100_000,
+    });
+    expect(runMutation).toHaveBeenNthCalledWith(1, expect.anything(), {
+      ownerUserId: "users:target",
+      bannedAt: 1_700_000_000_000,
+      cursor: undefined,
+    });
+    expect(runMutation).toHaveBeenNthCalledWith(2, expect.anything(), {
+      ownerUserId: "users:target",
+      bannedAt: 1_700_000_000_000,
+      cursor: undefined,
+    });
+    expect(insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({
+        action: "user.unban",
+        targetType: "user",
+        targetId: "users:target",
+        metadata: expect.objectContaining({
+          reason: "appeal accepted",
+          restoredSkills: 5,
+          restoredPackages: 2,
+          scheduledPackages: true,
+          source: "ban_appeal.service",
+          reviewerDiscordId: "discord-reviewer-1",
+        }),
+      }),
+    );
+    expect(result).toEqual({
+      ok: true,
+      alreadyUnbanned: false,
+      restoredSkills: 5,
+      scheduledSkills: false,
+      restoredPackages: 2,
+      scheduledPackages: true,
+    });
+  });
+
+  it("rejects deleted accounts without a matching ban audit", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_700_000_100_000);
+    const { ctx, get, patch, insert, runMutation } = makeBanCtx();
+    get.mockImplementation(async (id: string) => {
+      if (id === "users:target") {
+        return {
+          _id: "users:target",
+          role: "user",
+          deletedAt: 1_700_000_000_000,
+          deactivatedAt: undefined,
+        };
+      }
+      return null;
+    });
+
+    const handler = (
+      unbanUserForBanAppealServiceInternal as unknown as {
+        _handler: (
+          ctx: unknown,
+          args: { targetUserId: string; reason?: string; reviewerDiscordId: string },
+        ) => Promise<unknown>;
+      }
+    )._handler;
+
+    await expect(
+      handler(ctx, {
+        targetUserId: "users:target",
+        reason: "appeal accepted",
+        reviewerDiscordId: "discord-reviewer-1",
+      }),
+    ).rejects.toThrow("Cannot unban account without a matching ban record");
+
+    expect(patch).not.toHaveBeenCalled();
+    expect(runMutation).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
   });
 });
 

@@ -86,7 +86,6 @@ export const CliPublishRequestSchema = type({
   migrateOwner: "boolean?",
   version: "string",
   changelog: "string",
-  clawScanNote: "string?",
   acceptLicenseTerms: "boolean?",
   tags: "string[]?",
   source: PublishSourceSchema.optional(),
@@ -179,6 +178,20 @@ export const ApiV1PublisherEnsureResponseSchema = type({
   }),
 });
 export type ApiV1PublisherEnsureResponse = (typeof ApiV1PublisherEnsureResponseSchema)[inferred];
+
+export const ApiV1PublisherRemoveMemberResponseSchema = type({
+  ok: "true",
+  publisherId: "string",
+  handle: "string",
+  removed: "boolean",
+  member: type({
+    userId: "string",
+    handle: "string",
+    role: '"owner"|"admin"|"publisher"',
+  }),
+});
+export type ApiV1PublisherRemoveMemberResponse =
+  (typeof ApiV1PublisherRemoveMemberResponseSchema)[inferred];
 
 export const ApiV1SearchResponseSchema = type({
   results: type({
@@ -412,6 +425,50 @@ export const ApiV1SkillRescanResponseSchema = type({
   alreadyQueued: "boolean",
 });
 export type ApiV1SkillRescanResponse = (typeof ApiV1SkillRescanResponseSchema)[inferred];
+
+export const ApiV1SkillBulkRescanBatchRequestSchema = type({
+  mode: '"all-active-latest"?',
+  cursor: "string|null?",
+  batchSize: "number?",
+  dryRun: "boolean?",
+});
+export type ApiV1SkillBulkRescanBatchRequest =
+  (typeof ApiV1SkillBulkRescanBatchRequestSchema)[inferred];
+
+export const ApiV1SkillBulkRescanBatchResponseSchema = type({
+  ok: "true",
+  mode: '"all-active-latest"',
+  queued: "number",
+  alreadyQueued: "number",
+  skipped: "number",
+  jobIds: "string[]",
+  nextCursor: "string|null",
+  done: "boolean",
+  sampleSlugs: "string[]",
+});
+export type ApiV1SkillBulkRescanBatchResponse =
+  (typeof ApiV1SkillBulkRescanBatchResponseSchema)[inferred];
+
+export const ApiV1SkillBulkRescanStatusRequestSchema = type({
+  jobIds: "string[]",
+});
+export type ApiV1SkillBulkRescanStatusRequest =
+  (typeof ApiV1SkillBulkRescanStatusRequestSchema)[inferred];
+
+export const ApiV1SkillBulkRescanStatusResponseSchema = type({
+  ok: "true",
+  total: "number",
+  queued: "number",
+  running: "number",
+  succeeded: "number",
+  failed: "number",
+  missing: "number",
+  terminal: "number",
+  done: "boolean",
+  failedJobIds: "string[]",
+});
+export type ApiV1SkillBulkRescanStatusResponse =
+  (typeof ApiV1SkillBulkRescanStatusResponseSchema)[inferred];
 
 export const ApiV1SkillVersionListResponseSchema = type({
   items: type({

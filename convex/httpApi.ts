@@ -358,7 +358,6 @@ function parsePublishBody(body: unknown) {
     displayName: parsed.displayName,
     version: parsed.version,
     changelog: parsed.changelog,
-    clawScanNote: parsed.clawScanNote?.trim() || undefined,
     acceptLicenseTerms: parsed.acceptLicenseTerms,
     tags,
     source: parsed.source ?? undefined,

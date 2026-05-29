@@ -72,7 +72,6 @@ export const CliPublishRequestSchema = type({
     migrateOwner: "boolean?",
     version: "string",
     changelog: "string",
-    clawScanNote: "string?",
     acceptLicenseTerms: "boolean?",
     tags: "string[]?",
     source: PublishSourceSchema.optional(),
@@ -333,6 +332,38 @@ export const ApiV1SkillRescanResponseSchema = type({
     skillVersionId: "string",
     jobId: "string",
     alreadyQueued: "boolean",
+});
+export const ApiV1SkillBulkRescanBatchRequestSchema = type({
+    mode: '"all-active-latest"?',
+    cursor: "string|null?",
+    batchSize: "number?",
+    dryRun: "boolean?",
+});
+export const ApiV1SkillBulkRescanBatchResponseSchema = type({
+    ok: "true",
+    mode: '"all-active-latest"',
+    queued: "number",
+    alreadyQueued: "number",
+    skipped: "number",
+    jobIds: "string[]",
+    nextCursor: "string|null",
+    done: "boolean",
+    sampleSlugs: "string[]",
+});
+export const ApiV1SkillBulkRescanStatusRequestSchema = type({
+    jobIds: "string[]",
+});
+export const ApiV1SkillBulkRescanStatusResponseSchema = type({
+    ok: "true",
+    total: "number",
+    queued: "number",
+    running: "number",
+    succeeded: "number",
+    failed: "number",
+    missing: "number",
+    terminal: "number",
+    done: "boolean",
+    failedJobIds: "string[]",
 });
 export const ApiV1SkillVersionListResponseSchema = type({
     items: type({

@@ -6,7 +6,9 @@ import {
   clearQueuedBackfillJobsForLocalDev,
   claimQueuedJobsInternal,
   completeCodexScanJob,
+  enqueueBulkSkillRescanBatchForAdminInternal,
   failCodexScanJob,
+  getBulkSkillRescanBatchStatusForAdminInternal,
   requestPackageRescanForUserInternal,
   requestPackageRescan,
   requestSkillRescanForUserInternal,
@@ -105,6 +107,9 @@ type ScanJob = {
   waitForVtUntil: number;
   nextRunAt: number;
   attempts: number;
+  leaseToken?: string;
+  leaseExpiresAt?: number;
+  workerId?: string;
   createdAt: number;
   updatedAt: number;
 };
@@ -144,6 +149,46 @@ const requestPackageRescanForUserInternalHandler = (
   requestPackageRescanForUserInternal as unknown as WrappedHandler<
     { actorUserId: string; name: string; version?: string },
     { jobId: string; alreadyQueued: boolean; packageReleaseId: string }
+  >
+)._handler;
+
+const enqueueBulkSkillRescanBatchForAdminInternalHandler = (
+  enqueueBulkSkillRescanBatchForAdminInternal as unknown as WrappedHandler<
+    {
+      actorUserId: string;
+      mode?: "all-active-latest";
+      cursor?: string | null;
+      batchSize?: number;
+      dryRun?: boolean;
+    },
+    {
+      ok: true;
+      queued: number;
+      alreadyQueued: number;
+      skipped: number;
+      jobIds: string[];
+      nextCursor: string | null;
+      done: boolean;
+      sampleSlugs: string[];
+    }
+  >
+)._handler;
+
+const getBulkSkillRescanBatchStatusForAdminInternalHandler = (
+  getBulkSkillRescanBatchStatusForAdminInternal as unknown as WrappedHandler<
+    { actorUserId: string; jobIds: string[] },
+    {
+      ok: true;
+      total: number;
+      queued: number;
+      running: number;
+      succeeded: number;
+      failed: number;
+      missing: number;
+      terminal: number;
+      done: boolean;
+      failedJobIds: string[];
+    }
   >
 )._handler;
 
@@ -273,6 +318,111 @@ function makeRescanCtx(options: {
             );
           }
           return null;
+        }),
+      };
+    }),
+  }));
+
+  return {
+    ctx: {
+      db: {
+        get,
+        insert,
+        patch,
+        query,
+        replace: vi.fn(),
+        delete: vi.fn(),
+        normalizeId: vi.fn(() => null),
+        system: {},
+      },
+    },
+    inserts,
+    patches,
+    get,
+    insert,
+    patch,
+    query,
+  };
+}
+
+function makeBulkRescanCtx(options: {
+  actorId?: string;
+  actorRole?: "admin" | "moderator" | "user";
+  skills: Array<Record<string, unknown>>;
+  versions: Array<Record<string, unknown>>;
+  jobs?: Array<Record<string, unknown>>;
+}) {
+  const actorId = options.actorId ?? "users:admin";
+  const docs = new Map<string, Record<string, unknown>>([
+    [
+      actorId,
+      {
+        _id: actorId,
+        role: options.actorRole ?? "admin",
+      },
+    ],
+    ...options.skills.map((skill) => [String(skill._id), skill] as const),
+    ...options.versions.map((version) => [String(version._id), version] as const),
+    ...(options.jobs ?? []).map((job) => [String(job._id), job] as const),
+  ]);
+  const inserts: Array<{ table: string; doc: Record<string, unknown> }> = [];
+  const patches: Array<{ id: string; patch: Record<string, unknown> }> = [];
+  const get = vi.fn(async (id: string) => docs.get(id) ?? null);
+  const insert = vi.fn(async (table: string, doc: Record<string, unknown>) => {
+    const id = `${table}:${inserts.filter((entry) => entry.table === table).length + 1}`;
+    const inserted = { _id: id, _creationTime: Date.now(), ...doc };
+    docs.set(id, inserted);
+    inserts.push({ table, doc });
+    return id;
+  });
+  const patch = vi.fn(async (id: string, doc: Record<string, unknown>) => {
+    patches.push({ id, patch: doc });
+    docs.set(id, { ...(docs.get(id) ?? { _id: id }), ...doc });
+  });
+  const query = vi.fn((table: string) => ({
+    withIndex: vi.fn((indexName: string, buildRange: (q: { eq: typeof eq }) => unknown) => {
+      const equals = new Map<string, unknown>();
+      function eq(field: string, value: unknown) {
+        equals.set(field, value);
+        return { eq };
+      }
+      buildRange({ eq });
+
+      if (table === "skills") {
+        return {
+          order: vi.fn(() => ({
+            paginate: vi.fn(
+              async ({ cursor, numItems }: { cursor: string | null; numItems: number }) => {
+                expect(indexName).toBe("by_active_created");
+                const start = cursor ? Number.parseInt(cursor, 10) : 0;
+                const allSkills = options.skills.filter(
+                  (skill) => skill.softDeletedAt === equals.get("softDeletedAt"),
+                );
+                const page = allSkills.slice(start, start + numItems);
+                const next = start + page.length;
+                return {
+                  page,
+                  isDone: next >= allSkills.length,
+                  continueCursor: next >= allSkills.length ? "" : String(next),
+                };
+              },
+            ),
+          })),
+        };
+      }
+
+      return {
+        collect: vi.fn(async () => {
+          if (table !== "securityScanJobs") return [];
+          return (options.jobs ?? []).filter((job) => {
+            if (
+              equals.has("skillVersionId") &&
+              job.skillVersionId !== equals.get("skillVersionId")
+            ) {
+              return false;
+            }
+            return true;
+          });
         }),
       };
     }),
@@ -527,6 +677,199 @@ describe("securityScan", () => {
         }),
       ]),
     );
+  });
+
+  it("queues bulk rescans for active latest skill versions as low-priority jobs", async () => {
+    const { ctx, inserts } = makeBulkRescanCtx({
+      skills: [
+        {
+          _id: "skills:active-1",
+          slug: "active-one",
+          moderationStatus: "active",
+          latestVersionId: "skillVersions:active-1",
+        },
+        {
+          _id: "skills:hidden",
+          slug: "hidden-skill",
+          moderationStatus: "hidden",
+          latestVersionId: "skillVersions:hidden",
+        },
+        {
+          _id: "skills:active-2",
+          slug: "active-two",
+          moderationStatus: "active",
+          latestVersionId: "skillVersions:active-2",
+        },
+      ],
+      versions: [
+        { _id: "skillVersions:active-1", skillId: "skills:active-1", version: "1.0.0" },
+        { _id: "skillVersions:hidden", skillId: "skills:hidden", version: "1.0.0" },
+        { _id: "skillVersions:active-2", skillId: "skills:active-2", version: "1.0.0" },
+      ],
+    });
+
+    const result = await enqueueBulkSkillRescanBatchForAdminInternalHandler(ctx, {
+      actorUserId: "users:admin",
+      batchSize: 3,
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      queued: 2,
+      alreadyQueued: 0,
+      skipped: 1,
+      done: true,
+    });
+    expect(result.jobIds).toEqual(["securityScanJobs:1", "securityScanJobs:2"]);
+    expect(inserts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          table: "securityScanJobs",
+          doc: expect.objectContaining({
+            targetKind: "skillVersion",
+            skillVersionId: "skillVersions:active-1",
+            source: "bulk-rescan",
+            priority: 0,
+          }),
+        }),
+        expect.objectContaining({
+          table: "auditLogs",
+          doc: expect.objectContaining({
+            action: "skill.clawscan.bulk_rescan_batch",
+            targetType: "securityScanBatch",
+          }),
+        }),
+      ]),
+    );
+  });
+
+  it("treats missing moderation status as active during bulk rescans", async () => {
+    const { ctx } = makeBulkRescanCtx({
+      skills: [
+        {
+          _id: "skills:legacy-active",
+          slug: "legacy-active",
+          latestVersionId: "skillVersions:legacy-active",
+        },
+      ],
+      versions: [
+        {
+          _id: "skillVersions:legacy-active",
+          skillId: "skills:legacy-active",
+          version: "1.0.0",
+        },
+      ],
+    });
+
+    const result = await enqueueBulkSkillRescanBatchForAdminInternalHandler(ctx, {
+      actorUserId: "users:admin",
+      batchSize: 1,
+    });
+
+    expect(result).toMatchObject({
+      queued: 1,
+      alreadyQueued: 0,
+      skipped: 0,
+      jobIds: ["securityScanJobs:1"],
+    });
+  });
+
+  it("does not demote existing active jobs during bulk rescans", async () => {
+    const { ctx, inserts, patch } = makeBulkRescanCtx({
+      skills: [
+        {
+          _id: "skills:active-1",
+          slug: "active-one",
+          moderationStatus: "active",
+          latestVersionId: "skillVersions:active-1",
+        },
+      ],
+      versions: [{ _id: "skillVersions:active-1", skillId: "skills:active-1", version: "1.0.0" }],
+      jobs: [
+        makeScanJob({
+          _id: "securityScanJobs:manual",
+          skillVersionId: "skillVersions:active-1",
+          source: "manual",
+          priority: 100,
+        }),
+      ],
+    });
+
+    const result = await enqueueBulkSkillRescanBatchForAdminInternalHandler(ctx, {
+      actorUserId: "users:admin",
+      batchSize: 1,
+    });
+
+    expect(result).toMatchObject({
+      queued: 0,
+      alreadyQueued: 1,
+      skipped: 0,
+      jobIds: ["securityScanJobs:manual"],
+    });
+    expect(patch).not.toHaveBeenCalled();
+    expect(inserts).toEqual(
+      expect.not.arrayContaining([expect.objectContaining({ table: "securityScanJobs" })]),
+    );
+  });
+
+  it("dry-runs bulk rescans without inserting jobs", async () => {
+    const { ctx, inserts } = makeBulkRescanCtx({
+      skills: [
+        {
+          _id: "skills:active-1",
+          slug: "active-one",
+          moderationStatus: "active",
+          latestVersionId: "skillVersions:active-1",
+        },
+      ],
+      versions: [{ _id: "skillVersions:active-1", skillId: "skills:active-1", version: "1.0.0" }],
+    });
+
+    const result = await enqueueBulkSkillRescanBatchForAdminInternalHandler(ctx, {
+      actorUserId: "users:admin",
+      batchSize: 1,
+      dryRun: true,
+    });
+
+    expect(result).toMatchObject({ queued: 1, alreadyQueued: 0, skipped: 0, jobIds: [] });
+    expect(inserts).toEqual([]);
+  });
+
+  it("aggregates bulk rescan batch status", async () => {
+    const { ctx } = makeBulkRescanCtx({
+      skills: [],
+      versions: [],
+      jobs: [
+        makeScanJob({ _id: "securityScanJobs:queued", status: "queued" }),
+        makeScanJob({ _id: "securityScanJobs:running", status: "running" }),
+        makeScanJob({ _id: "securityScanJobs:succeeded", status: "succeeded" }),
+        makeScanJob({ _id: "securityScanJobs:failed", status: "failed" }),
+      ],
+    });
+
+    const result = await getBulkSkillRescanBatchStatusForAdminInternalHandler(ctx, {
+      actorUserId: "users:admin",
+      jobIds: [
+        "securityScanJobs:queued",
+        "securityScanJobs:running",
+        "securityScanJobs:succeeded",
+        "securityScanJobs:failed",
+        "securityScanJobs:missing",
+      ],
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      total: 5,
+      queued: 1,
+      running: 1,
+      succeeded: 1,
+      failed: 1,
+      missing: 1,
+      terminal: 3,
+      done: false,
+      failedJobIds: ["securityScanJobs:failed"],
+    });
   });
 
   it("lets platform moderators request package rescans", async () => {
@@ -951,9 +1294,66 @@ describe("securityScan", () => {
     expect(patches.map((entry) => entry.id)).toEqual(claimed.map((job) => job._id));
   });
 
-  it("allows up to 64 active Codex scan claims", async () => {
+  it("claims bulk rescans after every existing source", async () => {
+    const { ctx } = makeClaimCtx([
+      makeScanJob({
+        _id: "securityScanJobs:bulk-rescan",
+        source: "bulk-rescan",
+        createdAt: 1,
+        nextRunAt: 1,
+      }),
+      makeScanJob({
+        _id: "securityScanJobs:publish",
+        source: "publish",
+        createdAt: 20,
+        nextRunAt: 20,
+      }),
+      makeScanJob({
+        _id: "securityScanJobs:vt-update",
+        source: "vt-update",
+        createdAt: 30,
+        nextRunAt: 30,
+      }),
+      makeScanJob({
+        _id: "securityScanJobs:clawscan-note",
+        source: "clawscan-note",
+        createdAt: 40,
+        nextRunAt: 40,
+      }),
+      makeScanJob({
+        _id: "securityScanJobs:backfill",
+        source: "backfill",
+        createdAt: 50,
+        nextRunAt: 50,
+      }),
+      makeScanJob({
+        _id: "securityScanJobs:manual",
+        source: "manual",
+        priority: 100,
+        createdAt: 100,
+        nextRunAt: 100,
+      }),
+    ]);
+
+    const claimed = await claimQueuedJobsInternalHandler(ctx, {
+      workerId: "worker-1",
+      limit: 6,
+      leaseMs: 60_000,
+    });
+
+    expect(claimed.map((job) => job._id)).toEqual([
+      "securityScanJobs:manual",
+      "securityScanJobs:clawscan-note",
+      "securityScanJobs:backfill",
+      "securityScanJobs:publish",
+      "securityScanJobs:vt-update",
+      "securityScanJobs:bulk-rescan",
+    ]);
+  });
+
+  it("caps each Codex scan claim request", async () => {
     const { ctx } = makeClaimCtx(
-      Array.from({ length: 70 }, (_, index) =>
+      Array.from({ length: 600 }, (_, index) =>
         makeScanJob({
           _id: `securityScanJobs:manual-${index}`,
           source: "manual",
@@ -966,11 +1366,44 @@ describe("securityScan", () => {
 
     const claimed = await claimQueuedJobsInternalHandler(ctx, {
       workerId: "worker-1",
-      limit: 100,
+      limit: 10_000,
       leaseMs: 60_000,
     });
 
-    expect(claimed).toHaveLength(64);
+    expect(claimed).toHaveLength(512);
+  });
+
+  it("claims requested jobs even when many other scans are already active", async () => {
+    const activeJobs = Array.from({ length: 80 }, (_, index) =>
+      makeScanJob({
+        _id: `securityScanJobs:running-${index}`,
+        status: "running",
+        leaseExpiresAt: Date.now() + 60_000,
+        source: "bulk-rescan",
+      }),
+    );
+    const queuedJobs = Array.from({ length: 3 }, (_, index) =>
+      makeScanJob({
+        _id: `securityScanJobs:manual-${index}`,
+        source: "manual",
+        priority: 100,
+        createdAt: index,
+        nextRunAt: index,
+      }),
+    );
+    const { ctx } = makeClaimCtx([...activeJobs, ...queuedJobs]);
+
+    const claimed = await claimQueuedJobsInternalHandler(ctx, {
+      workerId: "worker-1",
+      limit: 3,
+      leaseMs: 60_000,
+    });
+
+    expect(claimed.map((job) => job._id)).toEqual([
+      "securityScanJobs:manual-0",
+      "securityScanJobs:manual-1",
+      "securityScanJobs:manual-2",
+    ]);
   });
 
   it("caps SkillSpector findings before storing completed scan results", async () => {

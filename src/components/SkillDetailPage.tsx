@@ -2,7 +2,7 @@ import { useAuthActions } from "@convex-dev/auth/react";
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import type { ClawdisSkillMetadata } from "clawhub-schema";
 import { useAction, useMutation, useQuery } from "convex/react";
-import { ArrowLeft, TriangleAlert } from "lucide-react";
+import { ArrowLeft, TriangleAlert, Upload } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
@@ -35,6 +35,7 @@ import { SkillOwnershipPanel } from "./SkillOwnershipPanel";
 import { SkillRelatedSection, type RelatedSkillEntry } from "./SkillRelatedSection";
 import { SkillReportDialog } from "./SkillReportDialog";
 import { Alert, AlertDescription } from "./ui/alert";
+import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 
 type SkillDetailPageProps = {
@@ -185,9 +186,6 @@ export function SkillDetailPage({
   const toggleStar = useMutation(api.stars.toggle);
   const reportSkill = useMutation(api.skills.report);
   const updateSummary = useMutation(api.skills.updateSummary);
-  const updatePublisherNoteAndRequestRescan = useMutation(
-    api.skills.updateLatestClawScanNoteAndRequestRescan,
-  );
   const getReadme = useAction(api.skills.getReadme);
   const getSkillCard = useAction(api.skills.getSkillCard);
   const myPublishers = useQuery(api.publishers.listMine) as
@@ -591,20 +589,6 @@ export function SkillDetailPage({
     }
   };
 
-  const submitPublisherNoteAndRescan = async (clawScanNote: string) => {
-    if (!skill) return;
-    try {
-      await updatePublisherNoteAndRequestRescan({
-        skillId: skill._id,
-        clawScanNote,
-      });
-      toast.success("Publisher note saved. Rescan started; this may take a few minutes.");
-    } catch (error) {
-      toast.error(getUserFacingConvexError(error, "Could not save publisher note."));
-      throw error;
-    }
-  };
-
   const handleToggleStar = async () => {
     if (!skill) return;
     const activeStar = activeOptimisticStar;
@@ -686,8 +670,6 @@ export function SkillDetailPage({
         ownedSkills={(ownedSkills ?? []).filter((entry) => entry._id !== skill._id)}
         summary={skill.summary ?? ""}
         onSaveSummary={canAccessSettings ? submitSummary : null}
-        clawScanNote={latestVersion?.clawScanNote ?? null}
-        onSavePublisherNoteAndRescan={submitPublisherNoteAndRescan}
       />
     ) : null;
 
@@ -702,9 +684,18 @@ export function SkillDetailPage({
               <ArrowLeft size={16} aria-hidden="true" />
               Back to {skill.displayName}
             </a>
-            <div>
+            <div className="skill-settings-page-title-row">
               <h1 className="skill-settings-page-title">Skill settings</h1>
+              {newVersionHref ? (
+                <Button asChild variant="outline" className="skill-settings-new-version-button">
+                  <a href={newVersionHref}>
+                    <Upload size={14} aria-hidden="true" />
+                    Update skill files
+                  </a>
+                </Button>
+              ) : null}
             </div>
+            <hr className="skill-settings-page-divider" />
           </div>
           <DetailBody>
             {settingsPanel ? (

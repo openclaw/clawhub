@@ -47,6 +47,7 @@ import {
   MAX_CLAWPACK_BYTES,
   MAX_PUBLISH_FILE_BYTES,
 } from "../lib/publishLimits";
+import { getPublicSkillFileAccessBlock, isSkillVersionForSkill } from "../lib/skillFileAccess";
 import { isMacJunkPath, isTextFile } from "../lib/skills";
 import { buildDeterministicPackageZip } from "../lib/skillZip";
 import { generateToken, hashToken } from "../lib/tokens";
@@ -54,6 +55,7 @@ import {
   MAX_RAW_FILE_BYTES,
   getPathSegments,
   json,
+  publicApiOrigin,
   resolveTagsBatch,
   requireApiTokenUserOrResponse,
   requireAdminOrResponse,
@@ -431,8 +433,6 @@ type ReleaseLike = {
   vtAnalysis?: Doc<"packageReleases">["vtAnalysis"];
   skillSpectorAnalysis?: Doc<"packageReleases">["skillSpectorAnalysis"];
   llmAnalysis?: Doc<"packageReleases">["llmAnalysis"];
-  clawScanNote?: string;
-  clawScanNoteUpdatedAt?: number;
   staticScan?: Doc<"packageReleases">["staticScan"];
   manualModeration?: Doc<"packageReleases">["manualModeration"];
   integritySha256?: string;
@@ -601,67 +601,6 @@ function encodePackagePath(name: string) {
         : encodeURIComponent(segment),
     )
     .join("/");
-}
-
-const DEFAULT_PUBLIC_SITE_URL = "https://clawhub.ai";
-
-function normalizeOrigin(value: string | null | undefined) {
-  const trimmed = value?.trim();
-  if (!trimmed) return null;
-  try {
-    return new URL(trimmed).origin;
-  } catch {
-    return null;
-  }
-}
-
-function firstForwardedValue(value: string | null) {
-  return value?.split(",")[0]?.trim() || null;
-}
-
-function isProductionDeployment() {
-  const deployment = process.env.CONVEX_DEPLOYMENT?.trim() ?? "";
-  return deployment.startsWith("prod:") || deployment.includes("production");
-}
-
-function isTrustedForwardedHost(value: string) {
-  try {
-    const hostname = new URL(`https://${value}`).hostname.toLowerCase();
-    return (
-      hostname === "clawhub.ai" ||
-      hostname === "www.clawhub.ai" ||
-      hostname === "localhost" ||
-      hostname === "127.0.0.1" ||
-      hostname === "0.0.0.0"
-    );
-  } catch {
-    return false;
-  }
-}
-
-function publicApiOrigin(request: Request) {
-  const configured = normalizeOrigin(process.env.SITE_URL ?? process.env.VITE_SITE_URL);
-  if (configured) return configured;
-
-  const forwardedHost = firstForwardedValue(request.headers.get("x-forwarded-host"));
-  if (
-    forwardedHost &&
-    !forwardedHost.endsWith(".convex.site") &&
-    isTrustedForwardedHost(forwardedHost)
-  ) {
-    const forwardedProto =
-      firstForwardedValue(request.headers.get("x-forwarded-proto")) ??
-      firstForwardedValue(request.headers.get("x-forwarded-protocol")) ??
-      "https";
-    const proto = forwardedProto === "http" ? "http" : "https";
-    return `${proto}://${forwardedHost}`;
-  }
-
-  const requestUrl = new URL(request.url);
-  if (isProductionDeployment() && requestUrl.hostname.endsWith(".convex.site")) {
-    return DEFAULT_PUBLIC_SITE_URL;
-  }
-  return requestUrl.origin;
 }
 
 function absoluteApiUrl(request: Request, path: string) {
@@ -1027,10 +966,11 @@ async function searchPackageCatalog(
 
 async function resolveSkillTags(
   ctx: ActionCtx,
+  skillId: Id<"skills">,
   tags: Record<string, Id<"skillVersions">>,
   latestVersion?: SkillVersionLike | null,
 ): Promise<Record<string, string>> {
-  const [resolved] = await resolveTagsBatch(ctx, [tags], [latestVersion]);
+  const [resolved] = await resolveTagsBatch(ctx, [tags], [latestVersion], [skillId]);
   return resolved ?? {};
 }
 
@@ -1086,7 +1026,6 @@ function parsePackagePublishBody(body: unknown) {
     family: "skill" | "code-plugin" | "bundle-plugin";
     version: string;
     changelog: string;
-    clawScanNote?: string;
     manualOverrideReason?: string;
     channel?: "official" | "community" | "private";
     tags?: string[];
@@ -1120,7 +1059,6 @@ function parsePackagePublishBody(body: unknown) {
     family: parsed.family,
     version: parsed.version,
     changelog: parsed.changelog,
-    clawScanNote: parsed.clawScanNote?.trim() || undefined,
     manualOverrideReason: parsed.manualOverrideReason?.trim() || undefined,
     channel: parsed.channel ?? undefined,
     tags: parsed.tags?.filter(Boolean) ?? undefined,
@@ -1159,9 +1097,8 @@ function bytesToArrayBuffer(bytes: Uint8Array) {
 }
 
 async function storeClawPackFile(ctx: ActionCtx, entry: { path: string; bytes: Uint8Array }) {
-  if (entry.bytes.byteLength > MAX_PUBLISH_FILE_BYTES) {
-    throw new Error(getPublishFileSizeError(entry.path));
-  }
+  // npm-pack artifacts are bounded by the tarball and total package limits; the
+  // legacy per-file cap only applies to raw file uploads.
   const contentType = inferStoredPackageContentType(entry.path);
   const storageId = await ctx.storage.store(
     new Blob([bytesToArrayBuffer(entry.bytes)], { type: contentType }),
@@ -1179,7 +1116,13 @@ async function storeClawPackFiles(
   ctx: ActionCtx,
   entries: Array<{ path: string; bytes: Uint8Array }>,
 ) {
-  return await Promise.all(entries.map((entry) => storeClawPackFile(ctx, entry)));
+  const files: Awaited<ReturnType<typeof storeClawPackFile>>[] = [];
+  // Convex HTTP actions have a tight memory ceiling; concurrent Blob/storage
+  // work can duplicate large npm-pack entries enough to OOM the action.
+  for (const entry of entries) {
+    files.push(await storeClawPackFile(ctx, entry));
+  }
+  return files;
 }
 
 async function parseMultipartPackagePublish(ctx: ActionCtx, request: Request) {
@@ -2355,6 +2298,12 @@ async function getSkillDetailForRequest(ctx: ActionCtx, slug: string) {
     skill: SkillPackageDocLike | null;
     latestVersion: SkillVersionLike | null;
     owner: { handle?: string; displayName?: string; image?: string } | null;
+    moderationInfo?: {
+      isPendingScan?: boolean | null;
+      isMalwareBlocked?: boolean | null;
+      isHiddenByMod?: boolean | null;
+      isRemoved?: boolean | null;
+    } | null;
   } | null;
 }
 
@@ -2368,23 +2317,30 @@ async function getSkillVersionForRequest(
   const tagParam = url.searchParams.get("tag")?.trim();
 
   if (versionParam) {
-    return (await runQueryRef(ctx, internalRefs.skills.getVersionBySkillAndVersionInternal, {
-      skillId: skill._id,
-      version: versionParam,
-    })) as SkillVersionLike | null;
+    const version = (await runQueryRef(
+      ctx,
+      internalRefs.skills.getVersionBySkillAndVersionInternal,
+      {
+        skillId: skill._id,
+        version: versionParam,
+      },
+    )) as SkillVersionLike | null;
+    return isSkillVersionForSkill(version, skill._id) ? version : null;
   }
   if (tagParam) {
     const versionId = skill.tags[tagParam];
     if (!versionId) return null;
-    return (await runQueryRef(ctx, internalRefs.skills.getVersionByIdInternal, {
+    const version = (await runQueryRef(ctx, internalRefs.skills.getVersionByIdInternal, {
       versionId,
     })) as SkillVersionLike | null;
+    return isSkillVersionForSkill(version, skill._id) ? version : null;
   }
   const latestVersionId = skill.latestVersionId ?? skill.tags.latest;
   if (!latestVersionId) return null;
-  return (await runQueryRef(ctx, internalRefs.skills.getVersionByIdInternal, {
+  const version = (await runQueryRef(ctx, internalRefs.skills.getVersionByIdInternal, {
     versionId: latestVersionId,
   })) as SkillVersionLike | null;
+  return isSkillVersionForSkill(version, skill._id) ? version : null;
 }
 
 async function searchPackages(
@@ -2722,7 +2678,12 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
           skillDetail.skill,
           skillDetail.latestVersion,
           skillDetail.owner,
-          await resolveSkillTags(ctx, skillDetail.skill.tags, skillDetail.latestVersion),
+          await resolveSkillTags(
+            ctx,
+            skillDetail.skill._id,
+            skillDetail.skill.tags,
+            skillDetail.latestVersion,
+          ),
         ),
         200,
         rate.headers,
@@ -2781,7 +2742,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
         items: Array<{ version: string; createdAt: number; changelog: string }>;
         nextCursor: string | null;
       };
-      const tags = await resolveSkillTags(ctx, skillDetail.skill.tags);
+      const tags = await resolveSkillTags(ctx, skillDetail.skill._id, skillDetail.skill.tags);
       return json(
         {
           items: result.items.map((version) => ({
@@ -2880,7 +2841,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
         },
       )) as SkillVersionLike | null;
       if (!version || version.softDeletedAt) return text("Version not found", 404, rate.headers);
-      const tags = await resolveSkillTags(ctx, skillDetail.skill.tags);
+      const tags = await resolveSkillTags(ctx, skillDetail.skill._id, skillDetail.skill.tags);
       return json(
         {
           package: {
@@ -2949,8 +2910,6 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
           vtAnalysis: result.version.vtAnalysis ?? null,
           skillSpectorAnalysis: result.version.skillSpectorAnalysis ?? null,
           llmAnalysis: result.version.llmAnalysis ?? null,
-          clawScanNote: result.version.clawScanNote ?? null,
-          clawScanNoteUpdatedAt: result.version.clawScanNoteUpdatedAt ?? null,
           staticScan: result.version.staticScan ?? null,
         },
       },
@@ -2963,6 +2922,9 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     const path = new URL(request.url).searchParams.get("path")?.trim();
     if (!path) return text("Missing path", 400, rate.headers);
     if (skillDetail?.skill) {
+      const moderationBlock = getPublicSkillFileAccessBlock(skillDetail.moderationInfo);
+      if (moderationBlock)
+        return text(moderationBlock.message, moderationBlock.status, rate.headers);
       const version = await getSkillVersionForRequest(ctx, skillDetail.skill, request);
       if (!version || version.softDeletedAt) return text("Version not found", 404, rate.headers);
       const file = resolveSkillFilePath(version, path);

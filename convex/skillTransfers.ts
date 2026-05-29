@@ -7,6 +7,7 @@ import {
   ensurePersonalPublisherForUser,
   getActiveUserByHandleOrPersonalPublisher,
 } from "./lib/publishers";
+import { isSkillTransferBlockedByModeration } from "./lib/skillSafety";
 const TRANSFER_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
 
 type TransferDoc = Doc<"skillOwnershipTransfers">;
@@ -190,11 +191,7 @@ export const acceptTransferInternal = internalMutation({
 
     const skill = await ctx.db.get(transfer.skillId);
     if (!skill || skill.softDeletedAt) throw new Error("Skill not found");
-    if (
-      skill.moderationVerdict === "malicious" ||
-      skill.moderationStatus === "hidden" ||
-      skill.moderationStatus === "removed"
-    ) {
+    if (isSkillTransferBlockedByModeration(skill)) {
       return await cancelTransfer("Skill is under moderation");
     }
     const requester = await ctx.db.get(transfer.fromUserId);
@@ -208,7 +205,6 @@ export const acceptTransferInternal = internalMutation({
         return await cancelTransfer("Transfer is no longer valid");
       }
     }
-
     const newPublisher = await ensurePersonalPublisherForUser(ctx, newOwner, {
       actorUserId: args.actorUserId,
       source: "skill.transfer.accept",

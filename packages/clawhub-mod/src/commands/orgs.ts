@@ -1,11 +1,15 @@
+import { readFile, writeFile } from "node:fs/promises";
 import { requireAuthToken } from "../../../clawhub/src/cli/authToken.js";
 import { getRegistry } from "../../../clawhub/src/cli/registry.js";
 import type { GlobalOpts } from "../../../clawhub/src/cli/types.js";
 import { createSpinner, fail, formatError } from "../../../clawhub/src/cli/ui.js";
 import { apiRequest } from "../../../clawhub/src/http.js";
+import type { ApiV1PackageRepairNameResponse } from "../../../clawhub/src/schema/index.js";
 import {
+  ApiV1PackageRepairNameResponseSchema,
   ApiRoutes,
   ApiV1PublisherEnsureResponseSchema,
+  ApiV1PublisherRemoveMemberResponseSchema,
 } from "../../../clawhub/src/schema/index.js";
 
 type OrgMemberRole = "owner" | "admin" | "publisher";
@@ -18,6 +22,44 @@ type OrgCreateOptions = {
   json?: boolean;
 };
 
+type OrgRemoveMemberOptions = {
+  json?: boolean;
+};
+
+type ScopedPackageRepairOptions = {
+  apply?: boolean;
+  json?: boolean;
+  limit?: number;
+  start?: number;
+  reason?: string;
+  resultFile?: string;
+};
+
+type ScopedPackageRepairRow = {
+  packageName: string;
+  intendedOrg: string;
+  legacyOwner: string;
+  orgDisplayName?: string;
+};
+
+type ScopedPackageRepairItemResult = {
+  packageName: string;
+  intendedOrg: string;
+  legacyOwner: string;
+  status: "planned" | "applied" | "failed";
+  error?: string;
+};
+
+type ScopedPackageRepairSummary = {
+  ok: boolean;
+  dryRun: boolean;
+  total: number;
+  planned: number;
+  applied: number;
+  failed: number;
+  items: ScopedPackageRepairItemResult[];
+};
+
 function normalizeHandleOrFail(handle: string, label: string) {
   const normalized = handle.trim().replace(/^@+/, "").toLowerCase();
   if (!normalized) fail(`${label} required`);
@@ -25,7 +67,7 @@ function normalizeHandleOrFail(handle: string, label: string) {
 }
 
 function normalizeRoleOrFail(role: string | undefined): OrgMemberRole {
-  const normalized = (role ?? "admin").trim().toLowerCase();
+  const normalized = (role ?? "owner").trim().toLowerCase();
   if (normalized === "owner" || normalized === "admin" || normalized === "publisher") {
     return normalized;
   }
@@ -36,7 +78,8 @@ export async function cmdCreateOrg(opts: GlobalOpts, handle: string, options: Or
   const orgHandle = normalizeHandleOrFail(handle, "Org handle");
   const displayName = options.displayName?.trim();
   const memberHandle = options.member ? normalizeHandleOrFail(options.member, "--member") : "";
-  const memberRole = memberHandle ? normalizeRoleOrFail(options.role) : undefined;
+  if (!memberHandle) fail("--member required");
+  const memberRole = normalizeRoleOrFail(options.role);
   const trusted = options.trusted === true ? true : undefined;
 
   const token = await requireAuthToken();
@@ -72,5 +115,270 @@ export async function cmdCreateOrg(opts: GlobalOpts, handle: string, options: Or
   } catch (error) {
     spinner?.fail(formatError(error));
     throw error;
+  }
+}
+
+export async function cmdRemoveOrgMember(
+  opts: GlobalOpts,
+  handle: string,
+  memberHandle: string,
+  options: OrgRemoveMemberOptions = {},
+) {
+  const orgHandle = normalizeHandleOrFail(handle, "Org handle");
+  const normalizedMemberHandle = normalizeHandleOrFail(memberHandle, "Member handle");
+
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const spinner = options.json
+    ? null
+    : createSpinner(`Removing @${normalizedMemberHandle} from @${orgHandle}`);
+  try {
+    const result = await apiRequest(
+      registry,
+      {
+        method: "POST",
+        path: `${ApiRoutes.users}/publisher-member`,
+        token,
+        body: {
+          handle: orgHandle,
+          memberHandle: normalizedMemberHandle,
+        },
+      },
+      ApiV1PublisherRemoveMemberResponseSchema,
+    );
+
+    spinner?.succeed(
+      result.removed
+        ? `Removed @${result.member.handle} from @${result.handle}`
+        : `@${result.member.handle} is not a member of @${result.handle}`,
+    );
+    if (options.json) {
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    }
+    return result;
+  } catch (error) {
+    spinner?.fail(formatError(error));
+    throw error;
+  }
+}
+
+export async function cmdRepairScopedPackages(
+  opts: GlobalOpts,
+  csvPath: string,
+  options: ScopedPackageRepairOptions = {},
+) {
+  const rows = parseScopedPackageRepairCsv(await readFile(csvPath, "utf8"));
+  const start = Math.max(0, options.start ?? 0);
+  const limit = options.limit && options.limit > 0 ? options.limit : rows.length;
+  const selectedRows = rows.slice(start, start + limit);
+  const dryRun = options.apply !== true;
+  const defaultReason = (intendedOrg: string) =>
+    `Move legacy personal package into @${intendedOrg}`;
+  const items: ScopedPackageRepairItemResult[] = [];
+
+  const spinner = options.json
+    ? null
+    : createSpinner(`${dryRun ? "Planning" : "Applying"} scoped package repairs`);
+
+  try {
+    if (dryRun) {
+      for (const row of selectedRows) {
+        items.push({
+          packageName: row.packageName,
+          intendedOrg: row.intendedOrg,
+          legacyOwner: row.legacyOwner,
+          status: "planned",
+        });
+      }
+    } else {
+      const token = await requireAuthToken();
+      const registry = await getRegistry(opts, { cache: true });
+      for (const row of selectedRows) {
+        try {
+          await apiRequest(
+            registry,
+            {
+              method: "POST",
+              path: `${ApiRoutes.users}/publisher`,
+              token,
+              body: {
+                handle: row.intendedOrg,
+                ...(row.orgDisplayName ? { displayName: row.orgDisplayName } : {}),
+                memberHandle: row.legacyOwner,
+                memberRole: "owner",
+              },
+            },
+            ApiV1PublisherEnsureResponseSchema,
+          );
+
+          const reason = options.reason?.trim() || defaultReason(row.intendedOrg);
+          const dryRunResult = await apiRequest(
+            registry,
+            {
+              method: "POST",
+              path: `${ApiRoutes.packages}/${encodeURIComponent(row.packageName)}/repair-name`,
+              token,
+              body: {
+                nextName: row.packageName,
+                owner: row.intendedOrg,
+                reason,
+                dryRun: true,
+              },
+            },
+            ApiV1PackageRepairNameResponseSchema,
+          );
+          assertSafeScopedPackageTransfer(row, dryRunResult);
+          await apiRequest(
+            registry,
+            {
+              method: "POST",
+              path: `${ApiRoutes.packages}/${encodeURIComponent(row.packageName)}/repair-name`,
+              token,
+              body: {
+                nextName: row.packageName,
+                owner: row.intendedOrg,
+                reason,
+                dryRun: false,
+              },
+            },
+            ApiV1PackageRepairNameResponseSchema,
+          );
+          items.push({
+            packageName: row.packageName,
+            intendedOrg: row.intendedOrg,
+            legacyOwner: row.legacyOwner,
+            status: "applied",
+          });
+        } catch (error) {
+          items.push({
+            packageName: row.packageName,
+            intendedOrg: row.intendedOrg,
+            legacyOwner: row.legacyOwner,
+            status: "failed",
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+    }
+
+    const summary = summarizeScopedPackageRepairs(dryRun, rows.length, items);
+    if (options.resultFile) {
+      await writeFile(options.resultFile, `${JSON.stringify(summary, null, 2)}\n`);
+    }
+    spinner?.succeed(
+      `${dryRun ? "Planned" : "Applied"} scoped package repairs: ${summary.planned || summary.applied} ok, ${summary.failed} failed`,
+    );
+    if (options.json) process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
+    return summary;
+  } catch (error) {
+    spinner?.fail(formatError(error));
+    throw error;
+  }
+}
+
+function summarizeScopedPackageRepairs(
+  dryRun: boolean,
+  total: number,
+  items: ScopedPackageRepairItemResult[],
+): ScopedPackageRepairSummary {
+  const planned = items.filter((item) => item.status === "planned").length;
+  const applied = items.filter((item) => item.status === "applied").length;
+  const failed = items.filter((item) => item.status === "failed").length;
+  return { ok: failed === 0, dryRun, total, planned, applied, failed, items };
+}
+
+function parseScopedPackageRepairCsv(content: string): ScopedPackageRepairRow[] {
+  const records = parseCsvRecords(content).filter((record) =>
+    record.some((cell) => cell.trim().length > 0),
+  );
+  const header = records.shift()?.map((cell) => cell.trim()) ?? [];
+  const required = ["packageName", "intendedOrg", "legacyOwner"];
+  for (const name of required) {
+    if (!header.includes(name)) fail(`CSV missing required column: ${name}`);
+  }
+  return records.map((record, index) => {
+    const row = Object.fromEntries(
+      header.map((name, columnIndex) => [name, record[columnIndex]?.trim() ?? ""]),
+    );
+    const packageName = row.packageName;
+    const intendedOrg = normalizeHandleOrFail(
+      row.intendedOrg ?? "",
+      `row ${index + 2} intendedOrg`,
+    );
+    const legacyOwner = normalizeHandleOrFail(
+      row.legacyOwner ?? "",
+      `row ${index + 2} legacyOwner`,
+    );
+    const scopedOrg = getScopedPackageOwner(packageName);
+    if (!scopedOrg) fail(`row ${index + 2} packageName must be scoped`);
+    if (scopedOrg !== intendedOrg) {
+      fail(`row ${index + 2} intendedOrg must match package scope @${scopedOrg}`);
+    }
+    if (legacyOwner === intendedOrg) {
+      fail(`row ${index + 2} legacyOwner already matches intendedOrg`);
+    }
+    return {
+      packageName,
+      intendedOrg,
+      legacyOwner,
+      orgDisplayName: row.orgDisplayName?.trim() || undefined,
+    };
+  });
+}
+
+function parseCsvRecords(content: string) {
+  const records: string[][] = [];
+  let current = "";
+  let row: string[] = [];
+  let quoted = false;
+  for (let index = 0; index < content.length; index += 1) {
+    const char = content[index];
+    const next = content[index + 1];
+    if (quoted && char === '"' && next === '"') {
+      current += '"';
+      index += 1;
+    } else if (char === '"') {
+      quoted = !quoted;
+    } else if (!quoted && char === ",") {
+      row.push(current);
+      current = "";
+    } else if (!quoted && (char === "\n" || char === "\r")) {
+      if (char === "\r" && next === "\n") index += 1;
+      row.push(current);
+      records.push(row);
+      row = [];
+      current = "";
+    } else {
+      current += char;
+    }
+  }
+  if (current.length > 0 || row.length > 0) {
+    row.push(current);
+    records.push(row);
+  }
+  return records;
+}
+
+function getScopedPackageOwner(packageName: string) {
+  const match = packageName.trim().match(/^@([^/]+)\//);
+  return match ? normalizeHandleOrFail(match[1] ?? "", "package scope") : undefined;
+}
+
+function assertSafeScopedPackageTransfer(
+  row: ScopedPackageRepairRow,
+  result: ApiV1PackageRepairNameResponse,
+) {
+  const operations = result.operations ?? [];
+  const operation = operations[0];
+  if (
+    !result.dryRun ||
+    result.retiredName ||
+    operations.length !== 1 ||
+    operation?.action !== "transfer-owner" ||
+    operation.owner !== row.intendedOrg ||
+    result.source.name !== row.packageName ||
+    result.target?.packageId !== result.source.packageId
+  ) {
+    throw new Error(`Unsafe transfer plan for ${row.packageName}`);
   }
 }

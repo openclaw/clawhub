@@ -27,7 +27,6 @@ type InspectOptions = {
 type VerifySkillOptions = {
   version?: string;
   tag?: string;
-  json?: boolean;
   card?: boolean;
 };
 

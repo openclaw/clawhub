@@ -34,6 +34,7 @@ function buildGitHubHeaders() {
 export async function requireGitHubAccountAge(ctx: GitHubAccountGateCtx, userId: Id<"users">) {
   const user = await ctx.runQuery(internal.users.getByIdInternal, { userId });
   if (!user || user.deletedAt || user.deactivatedAt) throw new ConvexError("User not found");
+  if (user.role === "admin") return;
 
   const now = Date.now();
   let createdAt = user.githubCreatedAt ?? null;

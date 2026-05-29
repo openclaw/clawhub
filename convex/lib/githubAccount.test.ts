@@ -55,6 +55,29 @@ describe("requireGitHubAccountAge", () => {
     );
   });
 
+  it("allows admins without GitHub account age lookup", async () => {
+    const runQuery = vi.fn().mockResolvedValue({
+      _id: "users:admin",
+      role: "admin",
+      githubCreatedAt: undefined,
+    });
+    const runMutation = vi.fn();
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await requireGitHubAccountAge({ runQuery, runMutation } as never, "users:admin" as never);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(runMutation).not.toHaveBeenCalled();
+    expect(runQuery).toHaveBeenCalledWith(internal.users.getByIdInternal, {
+      userId: "users:admin",
+    });
+    expect(runQuery).not.toHaveBeenCalledWith(
+      internal.githubIdentity.getGitHubProviderAccountIdInternal,
+      { userId: "users:admin" },
+    );
+  });
+
   it("rejects deactivated users", async () => {
     const runQuery = vi.fn().mockResolvedValue({
       _id: "users:1",

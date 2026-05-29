@@ -5,7 +5,7 @@ The real-ish catalog density comes from the committed public corpus fixture; the
 hand-authored fixtures remain for security and moderation states that need stable
 local reproduction.
 
-The fixtures exist so developers can exercise ClawHub moderation, scan, publisher-note, and artifact UI states without hand-editing Convex data. They are not production behavior and should not introduce appeal-specific flows.
+The fixtures exist so developers can exercise ClawHub moderation, scan, and artifact UI states without hand-editing Convex data. They are not production behavior and should not introduce appeal-specific flows.
 
 ## Seed Command
 
@@ -30,12 +30,12 @@ The seeded user is given an old `githubCreatedAt` timestamp so local UI publishe
 Seeded skill fixtures:
 
 - `local-flagged-wallet-sync`: intentionally malicious/hidden-style skill fixture.
-- `local-agentic-risk-demo`: intentionally suspicious/review-style skill fixture with ClawScan findings and a long publisher note.
+- `local-agentic-risk-demo`: intentionally suspicious/review-style skill fixture with ClawScan findings.
 
 Seeded plugin fixtures:
 
 - `local-flagged-runtime-plugin`: intentionally malicious plugin/package fixture.
-- `local-scanned-runtime-plugin`: intentionally suspicious/review-style plugin/package fixture with ClawScan findings and a long publisher note.
+- `local-scanned-runtime-plugin`: intentionally suspicious/review-style plugin/package fixture with ClawScan findings.
 
 The scanned fixtures should cover:
 
@@ -43,7 +43,6 @@ The scanned fixtures should cover:
 - security audit sidebar summaries
 - security audit pages
 - security audit clean, review, and malicious states
-- publisher note display
 - mobile and desktop security layout
 - report/moderation state previews
 
@@ -58,4 +57,4 @@ http://localhost:3000/plugins/local-scanned-runtime-plugin
 http://localhost:3000/plugins/local-scanned-runtime-plugin/security-audit
 ```
 
-The fixture pages should avoid appeal language. Publisher notes are untrusted publisher-provided context, not appeals, staff responses, or moderation decisions.
+The fixture pages should avoid appeal language; scanner evidence, staff responses, and moderation decisions are separate UI concepts.

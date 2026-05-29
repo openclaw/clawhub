@@ -3,7 +3,7 @@ import convexBrowser from "convex/browser";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { expectHealthyPage, trackRuntimeErrors, waitForHydration } from "../helpers/runtimeErrors";
-import { publishSkillVersion, signInAsLocalPublisher } from "./helpers";
+import { expectOwnerHandleSelected, publishSkillVersion, signInAsLocalPublisher } from "./helpers";
 
 test.skip(
   process.env.VITE_ENABLE_DEV_AUTH !== "1",
@@ -198,7 +198,7 @@ test("skill publishers can create a skill and publish a new version", async ({
   await expect(page.locator("#slug")).toHaveValue(slug);
   await expect(page.locator("#displayName")).toHaveValue(displayName);
   await expect(page.locator("#version")).toHaveValue("1.0.1");
-  await expect(page.locator("#ownerHandle")).toHaveValue(ownerHandle);
+  await expectOwnerHandleSelected(page, "#ownerHandle", ownerHandle);
 
   await publishSkillVersion(page, testInfo, {
     ownerHandle,

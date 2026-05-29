@@ -588,6 +588,19 @@ describe("clawhub e2e", () => {
     expect(result.stdout).toMatch(/--json/);
   });
 
+  it("skill verify help omits the redundant json flag", async () => {
+    const result = spawnSync("bun", ["clawhub", "skill", "verify", "--help"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toMatch(/--version/);
+    expect(result.stdout).toMatch(/--tag/);
+    expect(result.stdout).toMatch(/--card/);
+    expect(result.stdout).not.toMatch(/--json/);
+  });
+
   itIfLiveMutations(
     "publishes, deletes, and undeletes a skill (logged-in)",
     async () => {

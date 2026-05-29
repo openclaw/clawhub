@@ -1,14 +1,12 @@
-import { Check, Clock, ExternalLink, Info, RefreshCw, TriangleAlert, X } from "lucide-react";
+import { Check, Clock, ExternalLink, Info, RefreshCw, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { Id } from "../../convex/_generated/dataModel";
 import { getRuntimeEnv } from "../lib/runtimeEnv";
-import { PublisherClawScanNote } from "./PublisherClawScanNote";
 import {
   aggregateAuditVerdict,
   AUDIT_SCANNER_LABELS,
   SECURITY_AUDIT_SUBTEXT,
   getAuditScannerOrder,
-  getAuditScannerStatus,
   getLatestAuditCheckedAt,
   getSecurityAuditOverviewCopy,
   type AuditScannerKind,
@@ -27,7 +25,6 @@ import {
   type SkillSpectorIssue,
   type VtAnalysis,
 } from "./SkillSecurityScanResults";
-import { Alert, AlertDescription } from "./ui/alert";
 import { Button } from "./ui/button";
 import { Skeleton } from "./ui/skeleton";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
@@ -55,9 +52,7 @@ type SecurityAuditPageProps = {
   llmAnalysis?: LlmAnalysis | null;
   skillSpectorAnalysis?: SkillSpectorAnalysis | null;
   source?: Record<string, unknown> | null;
-  clawScanNote?: string | null;
   canManageArtifact?: boolean;
-  settingsHref?: string | null;
   onRequestRescan?: (() => Promise<unknown>) | null;
 };
 
@@ -388,46 +383,6 @@ function getVirusTotalOverviewCopy(analysis: VtAnalysis | null | undefined, enti
   return getVirusTotalEngineOverview(analysis, entity) ?? getVirusTotalPendingCopy(entity);
 }
 
-function isReviewStatus(status: string) {
-  const normalized = status.trim().toLowerCase();
-  return normalized === "review" || normalized === "warn" || normalized === "suspicious";
-}
-
-function PublisherNotePrompt({
-  storageKey,
-  settingsHref,
-}: {
-  storageKey: string;
-  settingsHref: string;
-}) {
-  const [dismissed, setDismissed] = useState(false);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    setDismissed(window.localStorage.getItem(storageKey) === "1");
-  }, [storageKey]);
-
-  if (dismissed) return null;
-
-  function dismiss() {
-    setDismissed(true);
-    if (typeof window !== "undefined") window.localStorage.setItem(storageKey, "1");
-  }
-
-  return (
-    <Alert variant="info" className="publisher-note-prompt" role="status">
-      <Info size={18} aria-hidden="true" />
-      <AlertDescription>
-        <a href={settingsHref}>Add a publisher note</a> to give this audit context on these
-        findings.
-      </AlertDescription>
-      <button type="button" onClick={dismiss} aria-label="Dismiss publisher note prompt">
-        <X size={16} aria-hidden="true" />
-      </button>
-    </Alert>
-  );
-}
-
 function SecurityAuditOverview(props: SecurityAuditPageProps) {
   const overviewCopy = getSecurityAuditOverviewCopy({ llmAnalysis: props.llmAnalysis });
   return (
@@ -460,32 +415,6 @@ function ClawScanSection(props: SecurityAuditPageProps) {
     <div className="security-report-panel-body security-report-panel-body-findings">
       <ClawScanRiskReview analysis={riskAnalysis} showTitle={false} />
     </div>
-  );
-}
-
-function PublisherNoteSection(props: SecurityAuditPageProps) {
-  const status = getAuditScannerStatus("clawscan", props);
-  const riskAnalysis =
-    props.llmAnalysis && hasClawScanRiskReview(props.llmAnalysis) ? props.llmAnalysis : null;
-  const showPublisherNotePrompt =
-    props.canManageArtifact &&
-    props.settingsHref &&
-    !props.clawScanNote?.trim() &&
-    isReviewStatus(status) &&
-    Boolean(riskAnalysis);
-  const publisherNotePromptHref = showPublisherNotePrompt ? props.settingsHref : null;
-  const publisherNotePromptStorageKey = `clawhub.publisher-note-prompt.${props.entity.kind}.${props.entity.name}.${props.entity.version ?? "latest"}`;
-
-  return (
-    <>
-      <PublisherClawScanNote note={props.clawScanNote} compact />
-      {publisherNotePromptHref ? (
-        <PublisherNotePrompt
-          storageKey={publisherNotePromptStorageKey}
-          settingsHref={publisherNotePromptHref}
-        />
-      ) : null}
-    </>
   );
 }
 
@@ -868,7 +797,6 @@ export function SecurityAuditPage(props: SecurityAuditPageProps) {
         <div className="security-report-layout">
           <div className="security-report-main">
             <SecurityAuditOverview {...props} />
-            <PublisherNoteSection {...props} />
             {orderedScanners.map((kind) => (
               <SecurityAuditScannerSection key={kind} kind={kind} props={props} />
             ))}

@@ -42,7 +42,9 @@ describe("run-codex-scan-worker diagnostics", () => {
 
     expect(prompt).toContain("Do your own security research");
     expect(prompt).toContain("Inspect workspace files when needed");
-    expect(prompt).toContain("SkillSpector findings are evidence, not the final verdict");
+    expect(prompt).toContain("SkillSpector findings are advisory research-preview evidence");
+    expect(prompt).toContain("not validated ground truth");
+    expect(prompt).toContain("artifact-backed evidence");
     expect(prompt).toContain("totality of evidence");
     expect(prompt).not.toContain("incomplete_artifact_inspection");
     expect(prompt).not.toContain("Return the required JSON object only after those reads complete");
@@ -251,7 +253,7 @@ describe("run-codex-scan-worker diagnostics", () => {
           '{"verdict":"benign","scan_findings_in_context":[{"ruleId":"x","expected_for_purpose":true,"note":"quoted artifact payload should not persist"}]}',
         stderr: "workspace read failed https://signed.example.invalid/file?token=secret",
         stdout:
-          '{"type":"tool_call","status":"failed","api_key":"sk-short-secret","output":"read https://signed.example.invalid/file?token=secret","content":["quoted array artifact payload should not persist"]}\n',
+          '{"type":"error","message":"Codex CLI provider returned HTTP 429 for https://signed.example.invalid/file?token=secret with api_key=sk-short-secret"}\n{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"I could not inspect the artifact because the provider returned a transient error."}}\n{"type":"tool_call","status":"failed","api_key":"sk-short-secret","output":"read https://signed.example.invalid/file?token=secret","content":["quoted array artifact payload should not persist"]}\n',
       },
       skillSpector: {
         args: ["scan", "artifact", "--format", "json"],
@@ -306,12 +308,16 @@ describe("run-codex-scan-worker diagnostics", () => {
     const jobDir = join(diagnosticsRoot, "job123");
     const stdoutText = await readFile(join(jobDir, "codex.stdout.redacted.jsonl"), "utf8");
     expect(stdoutText).toContain('"tool_call"');
+    expect(stdoutText).toContain("Codex CLI provider returned HTTP 429");
+    expect(stdoutText).toContain(
+      "I could not inspect the artifact because the provider returned a transient error.",
+    );
     expect(stdoutText).not.toContain("token=secret");
     expect(stdoutText).not.toContain("signed.example.invalid");
     expect(stdoutText).not.toContain("sk-short-secret");
     expect(stdoutText).not.toContain("quoted array artifact payload");
-    expect(stdoutText).toContain('"api_key": "[redacted-secret]"');
-    expect(stdoutText).toContain('"content": "[redacted 1 item(s)]"');
+    expect(stdoutText).toContain('"api_key":"[redacted-secret]"');
+    expect(stdoutText).toContain('"content":"[redacted 1 item(s)]"');
     await expect(readFile(join(jobDir, "codex.stderr.redacted.log"), "utf8")).resolves.toContain(
       "workspace read failed",
     );

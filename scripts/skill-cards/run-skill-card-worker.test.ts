@@ -7,8 +7,12 @@ import {
   applyServerPublisherToContext,
   assertPublicSkillCardMarkdown,
   buildPrompt,
+  DEFAULT_BATCH_LIMIT,
+  DEFAULT_LEASE_MS,
+  DEFAULT_MAX_RUNTIME_MS,
   neutralTemplatePath,
   prepareNvidiaSkillCardSkill,
+  skillCardWorkerId,
   trustedRendererPath,
 } from "./run-skill-card-worker";
 
@@ -25,6 +29,29 @@ async function tempDir() {
 }
 
 describe("run-skill-card-worker Codex skill setup", () => {
+  it("uses the same batch, runtime, and lease defaults as the security worker", () => {
+    expect(DEFAULT_BATCH_LIMIT).toBe(6);
+    expect(DEFAULT_MAX_RUNTIME_MS).toBe(40 * 60 * 1000);
+    expect(DEFAULT_LEASE_MS).toBe(60 * 60 * 1000);
+  });
+
+  it("builds shard-aware worker ids like the security scan worker", () => {
+    expect(
+      skillCardWorkerId({
+        GITHUB_RUN_ID: "123",
+        GITHUB_RUN_ATTEMPT: "2",
+        SKILL_CARD_WORKER_SHARD: "7",
+      } as NodeJS.ProcessEnv),
+    ).toBe("github-actions:123:2:7");
+    expect(
+      skillCardWorkerId({
+        SKILL_CARD_WORKER_ID: "custom-worker",
+        GITHUB_RUN_ID: "123",
+        SKILL_CARD_WORKER_SHARD: "7",
+      } as NodeJS.ProcessEnv),
+    ).toBe("custom-worker");
+  });
+
   it("wraps NVIDIA's automation folder as a project-local Codex skill", async () => {
     const workspace = await tempDir();
     const toolDir = await tempDir();

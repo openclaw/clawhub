@@ -424,6 +424,7 @@ const securityScanJobSourceValidator = v.union(
   v.literal("clawscan-note"),
   v.literal("vt-update"),
   v.literal("backfill"),
+  v.literal("bulk-rescan"),
   v.literal("manual"),
 );
 const skillCardGenerationJobStatusValidator = v.union(
@@ -865,6 +866,7 @@ const skillSearchDigest = defineTable({
   canonicalSkillId: v.optional(v.id("skills")),
   forkOf: forkOfValidator,
   latestVersionId: v.optional(v.id("skillVersions")),
+  latestVersionSkillId: v.optional(v.id("skills")),
   latestVersionSummary: v.optional(
     v.object({
       version: v.string(),
@@ -986,6 +988,7 @@ const packages = defineTable({
   reportCount: v.optional(v.number()),
   lastReportedAt: v.optional(v.number()),
   softDeletedAt: v.optional(v.number()),
+  softDeletedReason: v.optional(v.union(v.literal("user.banned"), v.literal("user.deactivated"))),
   softDeletedBy: v.optional(v.id("users")),
   softDeletedByRole: v.optional(
     v.union(v.literal("admin"), v.literal("moderator"), v.literal("user")),
@@ -1202,7 +1205,8 @@ const packagePublishTokens = defineTable({
   createdAt: v.number(),
 })
   .index("by_hash", ["tokenHash"])
-  .index("by_package", ["packageId", "version", "createdAt"]);
+  .index("by_package", ["packageId", "version", "createdAt"])
+  .index("by_package_revoked_created", ["packageId", "revokedAt", "createdAt"]);
 
 const packageSearchDigest = defineTable({
   packageId: v.id("packages"),
