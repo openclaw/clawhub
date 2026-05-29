@@ -26,6 +26,7 @@ const MAX_SELECTED_BYTES = 50 * 1024 * 1024;
 const MAX_UNZIPPED_BYTES = 80 * 1024 * 1024;
 const MAX_FILE_COUNT = 7_500;
 const MAX_SINGLE_FILE_BYTES = 10 * 1024 * 1024;
+const MAX_FALLBACK_DISCOVERY_REPOS_PER_PAGE = 30;
 const GITHUB_API = "https://api.github.com";
 const OWNED_PUBLIC_REPO_ONLY_ERROR =
   "You can only import public repositories owned by your GitHub account.";
@@ -58,6 +59,15 @@ type GitHubRepoPayload = {
 type GitHubTreePayload = {
   tree?: unknown;
   truncated?: unknown;
+};
+
+type GitHubCodeSearchPayload = {
+  items?: unknown;
+};
+
+type GitHubCodeSearchItemPayload = {
+  path?: unknown;
+  repository?: GitHubRepoPayload;
 };
 
 type GitHubTreeEntryPayload = {
@@ -345,11 +355,28 @@ async function listOwnedPublicGitHubReposForUser(
   const identity = await requireCurrentGitHubIdentity(ctx, userId, fetcher);
   const page = clampInteger(args.page ?? 1, 1, 100);
   const perPage = clampInteger(args.perPage ?? 30, 1, 100);
+  const query = normalizeRepoSearchQuery(args.query ?? "");
+
+  if (hasGitHubApiToken()) {
+    const searchResult = await listOwnedPublicSkillCandidatesWithCodeSearch(
+      identity,
+      { query, page, perPage },
+      fetcher,
+    );
+    return {
+      account: { login: identity.login, avatarUrl: identity.avatarUrl },
+      page,
+      perPage,
+      ...searchResult,
+    };
+  }
+
+  const fallbackPerPage = Math.min(perPage, MAX_FALLBACK_DISCOVERY_REPOS_PER_PAGE);
   const url = new URL(`${GITHUB_API}/users/${encodeURIComponent(identity.login)}/repos`);
   url.searchParams.set("type", "owner");
   url.searchParams.set("sort", "pushed");
   url.searchParams.set("direction", "desc");
-  url.searchParams.set("per_page", String(perPage));
+  url.searchParams.set("per_page", String(fallbackPerPage));
   url.searchParams.set("page", String(page));
 
   const response = await fetcher(url.toString(), { headers: buildGitHubHeaders() });
@@ -358,7 +385,6 @@ async function listOwnedPublicGitHubReposForUser(
   const payload = (await response.json()) as unknown;
   if (!Array.isArray(payload)) throw new ConvexError("GitHub repository lookup failed");
 
-  const query = normalizeRepoSearchQuery(args.query ?? "");
   const repos = payload
     .map((repo) => toOwnedPublicRepoListItem(repo as GitHubRepoPayload, identity))
     .filter((repo): repo is OwnedPublicRepoListItem => Boolean(repo))
@@ -383,8 +409,8 @@ async function listOwnedPublicGitHubReposForUser(
   return {
     account: { login: identity.login, avatarUrl: identity.avatarUrl },
     page,
-    perPage,
-    hasMore: payload.length === perPage,
+    perPage: fallbackPerPage,
+    hasMore: payload.length === fallbackPerPage,
     repos: filteredSkillCandidates,
   };
 }
@@ -528,14 +554,78 @@ function toOwnedPublicRepoListItem(
 async function listSkillCandidatesForRepo(repo: OwnedPublicRepoListItem, fetcher: typeof fetch) {
   if (!repo.defaultBranch) return [];
 
-  const tree = await fetchGitHubRepoTree(repo.owner, repo.name, repo.defaultBranch, fetcher);
+  const tree = await fetchGitHubRepoTreeResult(repo.owner, repo.name, repo.defaultBranch, fetcher);
   if (!tree) return [];
+  if (tree.truncated) return listSkillCandidatesFromArchive(repo, fetcher);
 
-  const skillPaths = tree
+  const skillPaths = tree.entries
     .map((entry) => normalizeSkillTreePath(entry))
     .filter((path): path is string => Boolean(path));
 
   return skillPaths.map((skillPath) => toOwnedPublicSkillCandidate(repo, skillPath));
+}
+
+async function listOwnedPublicSkillCandidatesWithCodeSearch(
+  identity: GitHubIdentityForImport,
+  args: { query: string; page: number; perPage: number },
+  fetcher: typeof fetch,
+) {
+  const url = new URL(`${GITHUB_API}/search/code`);
+  const searchParts = [`filename:SKILL.md`, `user:${identity.login}`];
+  if (args.query) searchParts.push(args.query);
+  url.searchParams.set("q", searchParts.join(" "));
+  url.searchParams.set("per_page", String(args.perPage));
+  url.searchParams.set("page", String(args.page));
+
+  const response = await fetcher(url.toString(), { headers: buildGitHubHeaders() });
+  if (!response.ok) throwGitHubApiError(response.status);
+
+  const payload = (await response.json()) as GitHubCodeSearchPayload;
+  const items = Array.isArray(payload.items) ? payload.items : [];
+  const candidates = items
+    .map((item) => toOwnedPublicSkillCandidateFromSearchItem(item, identity))
+    .filter((candidate): candidate is OwnedPublicRepoListItem => Boolean(candidate));
+
+  return {
+    hasMore: items.length === args.perPage,
+    repos: candidates,
+  };
+}
+
+function toOwnedPublicSkillCandidateFromSearchItem(
+  item: unknown,
+  identity: GitHubIdentityForImport,
+) {
+  const searchItem = item as GitHubCodeSearchItemPayload;
+  const skillPath = normalizeSkillTreePath({ path: searchItem.path, type: "blob" });
+  if (!skillPath || !searchItem.repository) return null;
+
+  const repo = toOwnedPublicRepoListItem(searchItem.repository, identity);
+  if (!repo?.importable) return null;
+  return toOwnedPublicSkillCandidate(repo, skillPath);
+}
+
+async function listSkillCandidatesFromArchive(
+  repo: OwnedPublicRepoListItem,
+  fetcher: typeof fetch,
+) {
+  if (!repo.defaultBranch) return [];
+  const zipBytes = await fetchGitHubZipBytes(
+    {
+      owner: repo.owner,
+      repo: repo.name,
+      ref: repo.defaultBranch,
+      commit: repo.defaultBranch,
+      path: "",
+      repoUrl: repo.htmlUrl,
+      originalUrl: repo.htmlUrl,
+    },
+    fetcher,
+  );
+  const entries = stripGitHubZipRoot(unzipToEntries(zipBytes));
+  return detectGitHubImportCandidates(entries).map((candidate) =>
+    toOwnedPublicSkillCandidate(repo, candidate.readmePath),
+  );
 }
 
 async function fetchResolvedGitHubEntries(
@@ -611,6 +701,17 @@ async function fetchGitHubRepoTree(
   defaultBranch: string,
   fetcher: typeof fetch,
 ): Promise<GitHubTreeEntryPayload[] | null> {
+  const result = await fetchGitHubRepoTreeResult(owner, repo, defaultBranch, fetcher);
+  if (!result || result.truncated) return null;
+  return result.entries;
+}
+
+async function fetchGitHubRepoTreeResult(
+  owner: string,
+  repo: string,
+  defaultBranch: string,
+  fetcher: typeof fetch,
+): Promise<{ entries: GitHubTreeEntryPayload[]; truncated: boolean } | null> {
   const url = new URL(
     `${GITHUB_API}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/trees/${encodeURIComponent(defaultBranch)}`,
   );
@@ -621,9 +722,12 @@ async function fetchGitHubRepoTree(
   if (!response.ok) throwGitHubApiError(response.status);
 
   const payload = (await response.json()) as GitHubTreePayload;
-  if (payload.truncated === true || !Array.isArray(payload.tree)) return null;
+  if (!Array.isArray(payload.tree)) return null;
 
-  return payload.tree as GitHubTreeEntryPayload[];
+  return {
+    entries: payload.tree as GitHubTreeEntryPayload[],
+    truncated: payload.truncated === true,
+  };
 }
 
 function normalizeSkillTreePath(entry: GitHubTreeEntryPayload) {
@@ -665,6 +769,10 @@ function buildGitHubHeaders() {
   const token = process.env.GITHUB_TOKEN;
   if (token) headers.Authorization = `Bearer ${token}`;
   return headers;
+}
+
+function hasGitHubApiToken() {
+  return Boolean(process.env.GITHUB_TOKEN?.trim());
 }
 
 function buildGitHubRawHeaders() {

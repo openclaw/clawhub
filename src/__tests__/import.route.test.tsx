@@ -339,47 +339,39 @@ describe("Import route", () => {
     });
   });
 
-  it("keeps scanning later GitHub repo pages before showing candidates", async () => {
-    listOwnedRepos
-      .mockResolvedValueOnce({
-        account: { login: "me", avatarUrl: null },
-        page: 1,
-        perPage: 100,
-        hasMore: true,
-        repos: [],
-      })
-      .mockResolvedValueOnce({
-        account: { login: "me", avatarUrl: null },
-        page: 2,
-        perPage: 100,
-        hasMore: false,
-        repos: [
-          {
-            owner: "octo",
-            name: "later-skill",
-            repoName: "later-skill",
-            repoFullName: "octo/later-skill",
-            fullName: "octo/later-skill",
-            htmlUrl: "https://github.com/octo/later-skill",
-            candidatePath: "",
-            skillPath: "SKILL.md",
-            pushedAt: null,
-            updatedAt: null,
-            language: null,
-            fork: false,
-            archived: false,
-            disabled: false,
-            importable: true,
-            unavailableReason: null,
-          },
-        ],
-      });
+  it("keeps initial GitHub discovery bounded when more matches exist", async () => {
+    listOwnedRepos.mockResolvedValueOnce({
+      account: { login: "me", avatarUrl: null },
+      page: 1,
+      perPage: 100,
+      hasMore: true,
+      repos: [
+        {
+          owner: "octo",
+          name: "bounded-skill",
+          repoName: "bounded-skill",
+          repoFullName: "octo/bounded-skill",
+          fullName: "octo/bounded-skill",
+          htmlUrl: "https://github.com/octo/bounded-skill",
+          candidatePath: "",
+          skillPath: "SKILL.md",
+          pushedAt: null,
+          updatedAt: null,
+          language: null,
+          fork: false,
+          archived: false,
+          disabled: false,
+          importable: true,
+          unavailableReason: null,
+        },
+      ],
+    });
 
     render(<ImportGitHub />);
 
-    expect(await screen.findByText("later-skill")).toBeTruthy();
+    expect(await screen.findByText("bounded-skill")).toBeTruthy();
     expect(listOwnedRepos).toHaveBeenNthCalledWith(1, { page: 1, perPage: 100 });
-    expect(listOwnedRepos).toHaveBeenNthCalledWith(2, { page: 2, perPage: 100 });
+    expect(listOwnedRepos).toHaveBeenCalledTimes(1);
     const checkbox = (await screen.findByRole("checkbox")) as HTMLInputElement;
     expect(checkbox.checked).toBe(true);
   });

@@ -103,7 +103,7 @@ Reject:
 
 ## Fetch strategy (public)
 
-Before archive download:
+Before archive download or preview:
 
 - Resolve the caller's GitHub `providerAccountId` from `authAccounts`.
 - Fetch the current GitHub login by immutable numeric id.
@@ -111,12 +111,25 @@ Before archive download:
 - Reject unless `private === false`, `visibility === "public"` when present,
   and `repo.owner.id === providerAccountId`.
 
-Download archive:
+Picker discovery:
+
+- When a server `GITHUB_TOKEN` is configured, discover candidates with GitHub
+  Code Search (`filename:SKILL.md user:<login>`) and filter every result through
+  the owned-public repo validation above.
+- Do not recursively scan every public repository on page load when Code Search
+  is available.
+- Without a token, use a bounded repo-page fallback and recursive tree scans only
+  for that bounded page.
+- If GitHub reports a truncated recursive tree, fall back to archive candidate
+  detection for that repository instead of silently omitting it.
+
+Preview/import archive:
 
 - `https://github.com/<owner>/<repo>/archive/<ref>.zip`
 - Follow redirects. Final redirect usually pins a commit via `codeload.github.com/.../zip/<sha-or-branch>`.
 
-Unzip server-side (Node or Convex node action). Scan for skill candidates.
+Unzip server-side (Node or Convex node action). Scan for skill candidates and
+selected files.
 
 Skill candidate definition:
 
@@ -208,13 +221,18 @@ Future: canonical-claim
 
 ## API sketch (internal actions)
 
-Two-step (recommended):
+Primary picker flow:
 
-- `previewGitHubImport(url)` → `{ commit, candidates:[...], files:[...], defaults:{...} }`
-- `importGitHubSkill({ url, commit, candidatePath, selectedPaths, slug, displayName, version, tags })`
+- `listOwnedPublicGitHubRepos({ page, perPage, query? })` → detected owned
+  public candidates.
+- `previewGitHubImportCandidate(...)` → commit, selected-file preview, and
+  suggested publish defaults.
+- `importGitHubSkill(...)` → publish the selected candidate from a pinned commit.
 
 Notes:
 
+- `previewGitHubImport(url)` remains available for internal/API callers, but the
+  dashboard picker must not expose arbitrary public URL import.
 - `importGitHubSkill` should re-fetch by pinned `commit` (not floating branch), to avoid TOCTOU.
 - Validate `selectedPaths` subset of fetched archive manifest.
 
