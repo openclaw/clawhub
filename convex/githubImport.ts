@@ -20,7 +20,7 @@ import {
   suggestVersion,
 } from "./lib/githubImport";
 import { publishVersionForUser } from "./lib/skillPublish";
-import { isMacJunkPath, sanitizePath } from "./lib/skills";
+import { isMacJunkPath, isTextFile, sanitizePath } from "./lib/skills";
 
 const MAX_SELECTED_BYTES = 50 * 1024 * 1024;
 const MAX_UNZIPPED_BYTES = 80 * 1024 * 1024;
@@ -602,11 +602,7 @@ async function fetchGitHubBlobBytes(
 }
 
 function isPreviewFetchableTextPath(path: string) {
-  const lower = path.toLowerCase();
-  if (lower.endsWith("/skill.md") || lower === "skill.md") return true;
-  return /\.(cjs|css|csv|env|example|html|js|json|jsx|md|mdx|mjs|py|sh|toml|ts|tsx|txt|xml|ya?ml)$/.test(
-    lower,
-  );
+  return isTextFile(path);
 }
 
 async function fetchGitHubRepoTree(
@@ -797,6 +793,7 @@ export const __test = {
   assertOwnedPublicGitHubRepoMetadata,
   buildPublishFailureMessage,
   buildStoreFailureMessage,
+  isPreviewFetchableTextPath,
   listOwnedPublicGitHubReposForUser,
   listSkillCandidatesForRepo,
   requireOwnedPublicGitHubRepoForImport,

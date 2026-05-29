@@ -143,7 +143,7 @@ describe("Import route", () => {
     });
 
     render(<ImportGitHub />);
-    fireEvent.click(await screen.findByRole("checkbox"));
+    await screen.findByRole("checkbox");
     fireEvent.click(screen.getByRole("button", { name: /review selected/i }));
 
     await waitFor(() => {
@@ -156,5 +156,116 @@ describe("Import route", () => {
     await waitFor(() => {
       expect((screen.getByLabelText("Slug") as HTMLInputElement).value).toBe("taken-skill-2");
     });
+  });
+
+  it("keeps scanning later GitHub repo pages before showing candidates", async () => {
+    listOwnedRepos
+      .mockResolvedValueOnce({
+        account: { login: "me", avatarUrl: null },
+        page: 1,
+        perPage: 100,
+        hasMore: true,
+        repos: [],
+      })
+      .mockResolvedValueOnce({
+        account: { login: "me", avatarUrl: null },
+        page: 2,
+        perPage: 100,
+        hasMore: false,
+        repos: [
+          {
+            owner: "octo",
+            name: "later-skill",
+            repoName: "later-skill",
+            repoFullName: "octo/later-skill",
+            fullName: "octo/later-skill",
+            htmlUrl: "https://github.com/octo/later-skill",
+            candidatePath: "",
+            skillPath: "SKILL.md",
+            pushedAt: null,
+            updatedAt: null,
+            language: null,
+            fork: false,
+            archived: false,
+            disabled: false,
+            importable: true,
+            unavailableReason: null,
+          },
+        ],
+      });
+
+    render(<ImportGitHub />);
+
+    expect(await screen.findByText("later-skill")).toBeTruthy();
+    expect(listOwnedRepos).toHaveBeenNthCalledWith(1, { page: 1, perPage: 100 });
+    expect(listOwnedRepos).toHaveBeenNthCalledWith(2, { page: 2, perPage: 100 });
+    const checkbox = (await screen.findByRole("checkbox")) as HTMLInputElement;
+    expect(checkbox.checked).toBe(true);
+  });
+
+  it("preserves backend default file selection when publishing", async () => {
+    useQueriesMock.mockImplementation((queries: Record<string, { args: { slug: string } }>) => {
+      return Object.fromEntries(
+        Object.entries(queries).map(([key]) => [
+          key,
+          { available: true, reason: "available", message: null, url: null },
+        ]),
+      );
+    });
+    previewCandidate.mockResolvedValueOnce({
+      resolved: {
+        owner: "octo",
+        repo: "repo",
+        ref: "main",
+        commit: "abcdef1234567890",
+        path: "skill",
+        repoUrl: "https://github.com/octo/repo",
+        originalUrl: "https://github.com/octo/repo",
+      },
+      candidate: {
+        path: "skill",
+        readmePath: "skill/SKILL.md",
+        name: "Default Skill",
+        description: null,
+      },
+      defaults: {
+        selectedPaths: ["skill/SKILL.md"],
+        slug: "default-skill",
+        displayName: "Default Skill",
+        version: "1.0.0",
+        tags: ["latest"],
+      },
+      files: [
+        { path: "skill/SKILL.md", size: 120, defaultSelected: true },
+        { path: "skill/extra.md", size: 80, defaultSelected: false },
+      ],
+    });
+    importSkill.mockResolvedValue({ slug: "default-skill" });
+
+    render(<ImportGitHub />);
+    await screen.findByRole("checkbox");
+    fireEvent.click(screen.getByRole("button", { name: /review selected/i }));
+    await screen.findByDisplayValue("default-skill");
+    fireEvent.click(screen.getByLabelText(/I have the rights/i));
+    fireEvent.click(screen.getByRole("button", { name: /publish selected/i }));
+
+    await waitFor(() => {
+      expect(importSkill).toHaveBeenCalledWith(
+        expect.objectContaining({
+          selectedPaths: ["skill/SKILL.md"],
+        }),
+      );
+    });
+  });
+
+  it("surfaces preview errors instead of staying in the loading state", async () => {
+    previewCandidate.mockRejectedValueOnce(new Error("GitHub tree is too large"));
+
+    render(<ImportGitHub />);
+    await screen.findByRole("checkbox");
+    fireEvent.click(screen.getByRole("button", { name: /review selected/i }));
+
+    expect(await screen.findByText(/GitHub tree is too large/i)).toBeTruthy();
+    expect(screen.queryByText(/Setting up your skills/i)).toBeNull();
   });
 });
