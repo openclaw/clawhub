@@ -19,6 +19,9 @@ function cleanupConvexMessage(message: string) {
     .replace(/\[Request ID:[^\]]*\]\s*/g, "")
     .replace(/^Server Error Called by client\s*/i, "")
     .replace(/^ConvexError:\s*/i, "")
+    .replace(/^Uncaught ConvexError:\s*/i, "")
+    .replace(/:\s*Uncaught ConvexError:\s*/i, ": ")
+    .replace(/\s+at\s+[A-Za-z_$./(][\s\S]*$/i, "")
     .trim();
 }
 

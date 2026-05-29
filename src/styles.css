@@ -7454,11 +7454,87 @@ code {
   );
 }
 
+.github-import-success-panel {
+  position: relative;
+  border: 1px solid color-mix(in srgb, var(--status-success-fg) 6%, var(--line));
+  background:
+    radial-gradient(
+      circle at 88% 16%,
+      color-mix(in srgb, var(--status-success-fg) 5%, transparent),
+      transparent 42%
+    ),
+    radial-gradient(
+      circle at 8% 76%,
+      color-mix(in srgb, var(--status-success-fg) 3%, transparent),
+      transparent 38%
+    ),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface-muted) 70%, transparent) 0%,
+      color-mix(in srgb, var(--surface) 96%, var(--bg)) 42%,
+      color-mix(in srgb, var(--surface) 72%, var(--bg)) 100%
+    );
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, white 2%, transparent) inset,
+    0 16px 44px color-mix(in srgb, black 22%, transparent);
+}
+
+.github-import-success-panel::before {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  content: "";
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--status-success-fg) 8%, transparent),
+    transparent
+  );
+  height: 1px;
+}
+
+.github-import-success-mark {
+  color: color-mix(in srgb, var(--status-success-fg) 74%, var(--ink));
+  border: 1px solid color-mix(in srgb, var(--status-success-fg) 18%, var(--line));
+  background:
+    radial-gradient(
+      circle at 50% 42%,
+      color-mix(in srgb, var(--status-success-fg) 5%, transparent),
+      transparent 56%
+    ),
+    color-mix(in srgb, var(--surface-muted) 86%, transparent);
+  box-shadow:
+    0 0 0 6px color-mix(in srgb, var(--status-success-fg) 1.5%, transparent),
+    0 10px 20px color-mix(in srgb, black 14%, transparent);
+}
+
+.github-import-publish-result-row {
+  display: flex;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.github-import-publish-result-row:last-child {
+  border-bottom: 0;
+}
+
 .github-import-input:focus,
 .github-import-input:focus-visible {
   border-color: var(--line) !important;
   box-shadow: none !important;
   outline: none !important;
+}
+
+.github-import-share-action,
+.github-import-share-action:hover,
+.github-import-share-action:focus-visible {
+  text-decoration: none;
+}
+
+.github-import-share-action:hover,
+.github-import-share-action:focus-visible {
+  background: color-mix(in srgb, white 4%, transparent);
 }
 
 @keyframes upload-decor-jiggle {
