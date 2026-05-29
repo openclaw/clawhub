@@ -1238,6 +1238,7 @@ function ReviewSkillCard({
   const hasOptionalFiles = draft.preview.files.some(
     (file) => file.path !== draft.preview.candidate.readmePath,
   );
+  const fieldIdPrefix = `github-import-${toSlugQueryKey(getRepoKey(draft.repo))}`;
 
   return (
     <Card className="github-import-review-card">
@@ -1277,13 +1278,13 @@ function ReviewSkillCard({
         <div className="flex items-end gap-3">
           <div className="flex min-w-0 flex-1 flex-col gap-1.5">
             <Label
-              htmlFor={`display-${draft.repo.skillPath}`}
+              htmlFor={`${fieldIdPrefix}-display`}
               className="text-xs font-semibold uppercase tracking-[0.14em] text-[color:var(--label-fg)]"
             >
               Display name
             </Label>
             <Input
-              id={`display-${draft.repo.skillPath}`}
+              id={`${fieldIdPrefix}-display`}
               className="github-import-input"
               value={draft.displayName}
               onChange={(event) => onChangeDraft({ displayName: event.target.value })}
@@ -1293,14 +1294,14 @@ function ReviewSkillCard({
           </div>
           <div className="flex min-w-0 flex-1 flex-col gap-1.5">
             <Label
-              htmlFor={`slug-${draft.repo.skillPath}`}
+              htmlFor={`${fieldIdPrefix}-slug`}
               className="text-xs font-semibold uppercase tracking-[0.14em] text-[color:var(--label-fg)]"
             >
               Slug
             </Label>
             <div className="relative">
               <Input
-                id={`slug-${draft.repo.skillPath}`}
+                id={`${fieldIdPrefix}-slug`}
                 className={[
                   "github-import-input",
                   showSlugAvailableIcon || showSlugUnavailableIcon || isSlugPending ? "pr-10" : "",
@@ -1335,7 +1336,7 @@ function ReviewSkillCard({
           </div>
           <div className="relative flex shrink-0 flex-col gap-1.5">
             <Label
-              htmlFor={`icon-${draft.repo.skillPath}`}
+              htmlFor={`${fieldIdPrefix}-icon`}
               className="text-xs font-semibold uppercase tracking-[0.14em] text-[color:var(--label-fg)]"
             >
               Icon
@@ -1343,7 +1344,7 @@ function ReviewSkillCard({
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
-                  id={`icon-${draft.repo.skillPath}`}
+                  id={`${fieldIdPrefix}-icon`}
                   type="button"
                   className="flex h-[48px] w-[56px] cursor-pointer items-center justify-center rounded-[var(--radius-sm)] border border-input-border bg-[linear-gradient(115deg,var(--input-bg)_0%,var(--input-bg)_62%,color-mix(in_srgb,white_8%,var(--input-bg))_100%)] text-[color:var(--ink)] transition-colors hover:border-input-focus-border disabled:cursor-not-allowed disabled:opacity-60"
                   aria-label="Choose icon"
@@ -1566,7 +1567,7 @@ function expandDevMockSkillRepos(repos: OwnedGitHubRepo[]) {
 }
 
 function toSlugQueryKey(key: string) {
-  return `slug_${key.replace(/[^a-zA-Z0-9_]/g, "_")}`;
+  return `slug_${encodeURIComponent(key)}`;
 }
 
 function buildSkillHref(ownerHandle: string | null | undefined, slug: string) {
@@ -1625,18 +1626,14 @@ function pickDefaultIconName(seed: string) {
 }
 
 function nextNumericSlug(value: string, used: Set<string>) {
-  const root = slugRoot(value.trim().toLowerCase());
+  const root = value.trim().toLowerCase() || "skill";
   let candidate = root;
   let suffix = 2;
   while (!candidate || used.has(candidate)) {
-    candidate = `${root || "skill"}-${suffix}`;
+    candidate = `${root}-${suffix}`;
     suffix += 1;
   }
   return candidate;
-}
-
-function slugRoot(value: string) {
-  return value.replace(/-\d+$/, "");
 }
 
 function GitHubMark({ size }: { size: number }) {
