@@ -527,6 +527,23 @@ describe("cmdSync", () => {
     expect(parsed.wouldPublish.map((entry) => entry.slug)).toEqual(["ci-skill"]);
   });
 
+  it("does not fall back to ambient roots when exact CI scans find no skills", async () => {
+    interactive = false;
+    const { findSkillFolders, getFallbackSkillRoots } = await import("../scanSkills.js");
+    mocked(findSkillFolders).mockImplementation(async () => []);
+
+    await expect(
+      cmdSync(
+        makeOpts(),
+        { root: ["/scan"], all: true, dryRun: true, json: true, clawdbotRoots: false },
+        false,
+      ),
+    ).rejects.toThrow("No skills found (checked configured roots)");
+
+    expect(mockResolveClawdbotSkillRoots).not.toHaveBeenCalled();
+    expect(getFallbackSkillRoots).not.toHaveBeenCalled();
+  });
+
   it("allows empty changelog for updates (interactive)", async () => {
     interactive = true;
     mockApiRequest.mockImplementation(async (_registry: string, args: { path: string }) => {

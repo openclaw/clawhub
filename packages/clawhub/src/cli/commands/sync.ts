@@ -56,6 +56,9 @@ export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllow
   let scan = primaryScan;
   let telemetryScan = primaryScan;
   if (primaryScan.skills.length === 0) {
+    if (!includeClawdbotRoots) {
+      fail("No skills found (checked configured roots)");
+    }
     const fallback = getFallbackSkillRoots(opts.workdir);
     const fallbackScan = await scanRootsWithLabels(fallback);
     spinner?.stop();
