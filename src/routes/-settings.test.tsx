@@ -1,5 +1,6 @@
 /* @vitest-environment jsdom */
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { getFunctionName } from "convex/server";
 import type { ReactNode } from "react";
 import { toast } from "sonner";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -9,6 +10,7 @@ import { Settings } from "./settings";
 const useQueryMock = vi.fn();
 const useMutationMock = vi.fn();
 const useAuthActionsMock = vi.fn();
+const useAuthStatusMock = vi.fn();
 const { navigateMock, searchMock } = vi.hoisted(() => ({
   navigateMock: vi.fn(),
   searchMock: vi.fn(() => ({})),
@@ -21,6 +23,10 @@ vi.mock("convex/react", () => ({
 
 vi.mock("@convex-dev/auth/react", () => ({
   useAuthActions: () => useAuthActionsMock(),
+}));
+
+vi.mock("../lib/useAuthStatus", () => ({
+  useAuthStatus: () => useAuthStatusMock(),
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -83,12 +89,18 @@ function mockSignedInSettings({
   memberships?: Array<typeof orgMembership>;
   members?: typeof orgMembers;
 } = {}) {
+  useAuthStatusMock.mockReturnValue({
+    isAuthenticated: true,
+    isLoading: false,
+    me: signedInUser,
+  });
   searchMock.mockReturnValue(search);
   useQueryMock.mockImplementation((query, args) => {
-    if (query === api.users.me) return signedInUser;
     if (args === "skip") return undefined;
-    if (args && typeof args === "object" && "publisherHandle" in args) return members;
-    if (args && typeof args === "object") return [];
+    const name = getFunctionName(query);
+    if (name === "tokens:listMine") return [];
+    if (name === "publishers:listMine") return memberships;
+    if (name === "publishers:listMembers") return members;
     return memberships;
   });
 }
@@ -99,6 +111,7 @@ describe("Settings", () => {
     useQueryMock.mockReset();
     useMutationMock.mockReset();
     useAuthActionsMock.mockReset();
+    useAuthStatusMock.mockReset();
     navigateMock.mockReset();
     searchMock.mockReset();
     searchMock.mockReturnValue({});
@@ -108,15 +121,25 @@ describe("Settings", () => {
     useAuthActionsMock.mockReturnValue({
       signIn: vi.fn(),
     });
+    useAuthStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: signedInUser,
+    });
   });
 
-  it("skips token loading until auth has resolved", () => {
+  it("shows the settings skeleton until auth has resolved", () => {
+    useAuthStatusMock.mockReturnValue({
+      isAuthenticated: false,
+      isLoading: true,
+      me: undefined,
+    });
     useQueryMock.mockImplementation(() => undefined);
 
     render(<Settings />);
 
-    expect(screen.getByRole("heading", { name: /sign in to access settings/i })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /sign in with github/i })).toBeTruthy();
+    expect(screen.getByLabelText(/loading settings/i)).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: /sign in to access settings/i })).toBeNull();
     expect(useQueryMock.mock.calls.some(([, args]) => args === "skip")).toBe(true);
   });
 

@@ -146,7 +146,7 @@ export function Upload() {
   const [status, setStatus] = useState<string | null>(null);
   const isSubmitting = status !== null;
   const [error, setError] = useState<string | null>(null);
-  const publisherMemberships = useQuery(api.publishers.listMine) as
+  const publisherMemberships = useQuery(api.publishers.listMine, me ? {} : "skip") as
     | PublisherOwnerMembership[]
     | undefined;
   const [ownerHandle, setOwnerHandle] = useState(searchOwnerHandle ?? "");
@@ -548,7 +548,7 @@ export function Upload() {
     return <PublishFormSkeleton />;
   }
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated || !me) {
     return (
       <main className="py-10">
         <Container size="narrow">

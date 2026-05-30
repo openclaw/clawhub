@@ -59,8 +59,8 @@ const PLUGIN_PUBLISHING_GUIDE_URL = "https://docs.openclaw.ai/clawhub/publishing
 
 export function PublishPluginRoute() {
   const search = useSearch({ from: "/plugins/publish" });
-  const { isAuthenticated, isLoading: isAuthLoading } = useAuthStatus();
-  const publishers = useQuery(api.publishers.listMine) as
+  const { isAuthenticated, isLoading: isAuthLoading, me } = useAuthStatus();
+  const publishers = useQuery(api.publishers.listMine, me ? {} : "skip") as
     | Array<PublisherOwnerMembership>
     | undefined;
   const generateUploadUrl = useMutation(api.uploads.generateUploadUrl);
@@ -212,7 +212,7 @@ export function PublishPluginRoute() {
     return <PublishFormSkeleton />;
   }
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated || !me) {
     return (
       <main className="py-10">
         <Container size="narrow">

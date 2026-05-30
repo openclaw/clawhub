@@ -94,6 +94,19 @@ describe("Import route", () => {
     });
   });
 
+  it("keeps the signed-out prompt hidden while auth is resolving", () => {
+    useAuthStatusMock.mockReturnValue({
+      isAuthenticated: false,
+      isLoading: true,
+      me: undefined,
+    });
+
+    render(<ImportGitHub />);
+
+    expect(screen.getByLabelText(/loading github import/i)).toBeTruthy();
+    expect(screen.queryByText(/sign in to import/i)).toBeNull();
+  });
+
   it("blocks import preflight when slug availability reports a collision", async () => {
     useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;

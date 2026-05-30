@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useConvexAuth, useMutation, useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { ArrowDownUp, LayoutGrid, List, Star } from "lucide-react";
 import { startTransition, useOptimistic } from "react";
 import { toast } from "sonner";
@@ -7,6 +7,7 @@ import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 import { EmptyState } from "../components/EmptyState";
 import { SignInPrompt } from "../components/SignInPrompt";
+import { StarsSkeleton } from "../components/skeletons/ProtectedPageSkeletons";
 import { SkillCard } from "../components/SkillCard";
 import { SkillListItem } from "../components/SkillListItem";
 import { SkillStatsTripletLine } from "../components/SkillStats";
@@ -21,6 +22,7 @@ import {
 import { Separator } from "../components/ui/separator";
 import { getSkillBadges } from "../lib/badges";
 import type { PublicSkill } from "../lib/publicUser";
+import { useAuthStatus } from "../lib/useAuthStatus";
 
 type StarsView = "grid" | "list";
 type StarsSort = "starred" | "updated" | "stars";
@@ -41,8 +43,7 @@ export const Route = createFileRoute("/stars")({
 });
 
 export function Stars() {
-  const { isAuthenticated, isLoading: isAuthLoading } = useConvexAuth();
-  const me = useQuery(api.users.me) as Doc<"users"> | null | undefined;
+  const { isAuthenticated, isLoading: isAuthLoading, me } = useAuthStatus();
 
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
@@ -51,7 +52,7 @@ export function Stars() {
 
   const skillsQuery = useQuery(
     api.stars.listByUser,
-    me ? { userId: me._id, limit: STARRED_SKILLS_LIMIT } : "skip",
+    me ? { userId: me._id as Doc<"users">["_id"], limit: STARRED_SKILLS_LIMIT } : "skip",
   ) as PublicSkill[] | undefined;
   const toggleStar = useMutation(api.stars.toggle);
 
@@ -87,25 +88,10 @@ export function Stars() {
   };
 
   if (isAuthLoading) {
-    return (
-      <main className="browse-page">
-        <div className="skeleton-list">
-          {Array.from({ length: 4 }, (_, i) => (
-            <div key={i} className="skeleton-row">
-              <div className="skeleton-icon" />
-              <div className="skeleton-row-body">
-                <div className="skeleton-bar skeleton-bar-lg" />
-                <div className="skeleton-bar skeleton-bar-sm" />
-                <div className="skeleton-bar skeleton-bar-xs" />
-              </div>
-            </div>
-          ))}
-        </div>
-      </main>
-    );
+    return <StarsSkeleton />;
   }
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated || !me) {
     return (
       <SignInPrompt
         icon={Star}
@@ -116,22 +102,7 @@ export function Stars() {
   }
 
   if (skillsQuery === undefined) {
-    return (
-      <main className="browse-page">
-        <div className="skeleton-list">
-          {Array.from({ length: 4 }, (_, i) => (
-            <div key={i} className="skeleton-row">
-              <div className="skeleton-icon" />
-              <div className="skeleton-row-body">
-                <div className="skeleton-bar skeleton-bar-lg" />
-                <div className="skeleton-bar skeleton-bar-sm" />
-                <div className="skeleton-bar skeleton-bar-xs" />
-              </div>
-            </div>
-          ))}
-        </div>
-      </main>
-    );
+    return <StarsSkeleton />;
   }
 
   return (

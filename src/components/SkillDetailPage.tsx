@@ -188,7 +188,7 @@ export function SkillDetailPage({
   const updateSummary = useMutation(api.skills.updateSummary);
   const getReadme = useAction(api.skills.getReadme);
   const getSkillCard = useAction(api.skills.getSkillCard);
-  const myPublishers = useQuery(api.publishers.listMine) as
+  const myPublishers = useQuery(api.publishers.listMine, me ? {} : "skip") as
     | Array<{ publisher: { _id: Id<"publishers"> }; role: string }>
     | undefined;
 

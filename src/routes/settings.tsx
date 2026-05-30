@@ -27,6 +27,7 @@ import { EmptyState } from "../components/EmptyState";
 import { copyText } from "../components/InstallCopyButton";
 import { MarketplaceIcon } from "../components/MarketplaceIcon";
 import { SignInPrompt } from "../components/SignInPrompt";
+import { SettingsSkeleton } from "../components/skeletons/ProtectedPageSkeletons";
 import { Avatar, AvatarFallback, AvatarImage } from "../components/ui/avatar";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -53,6 +54,7 @@ import { Textarea } from "../components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "../components/ui/toggle-group";
 import { getUserFacingConvexError } from "../lib/convexError";
 import { useThemeMode } from "../lib/theme";
+import { useAuthStatus } from "../lib/useAuthStatus";
 
 const settingsViews = ["account", "organizations", "tokens", "danger"] as const;
 type SettingsView = (typeof settingsViews)[number];
@@ -140,14 +142,14 @@ const themeToggleItemClass =
   "!h-20 min-w-0 flex-1 flex-col gap-2 !rounded-[var(--r-btn)] border border-[color:var(--line)] bg-[color:var(--surface)] px-3 text-sm font-semibold text-[color:var(--ink-soft)] opacity-70 hover:border-[color:var(--border-ui-hover)] hover:bg-[color:var(--surface-muted)] hover:text-[color:var(--ink)] hover:opacity-100 data-[state=on]:border-[color:var(--accent)] data-[state=on]:!bg-[color:var(--surface-muted)] data-[state=on]:text-[color:var(--ink)] data-[state=on]:opacity-100 sm:!w-28 sm:flex-none";
 
 export function Settings() {
-  const me = useQuery(api.users.me);
+  const { isAuthenticated, isLoading: isAuthLoading, me } = useAuthStatus();
   const updateProfile = useMutation(api.users.updateProfile);
   const deleteAccount = useMutation(api.users.deleteAccount);
   const { mode: themeMode, setMode: setThemeMode } = useThemeMode();
   const tokens = useQuery(api.tokens.listMine, me ? {} : "skip") as Array<ApiToken> | undefined;
   const createToken = useMutation(api.tokens.create);
   const revokeToken = useMutation(api.tokens.revoke);
-  const publisherMemberships = useQuery(api.publishers.listMine) as
+  const publisherMemberships = useQuery(api.publishers.listMine, me ? {} : "skip") as
     | Array<PublisherMembership>
     | undefined;
   const createOrg = useMutation(api.publishers.createOrg);
@@ -188,7 +190,7 @@ export function Settings() {
   const revokedTokens = (tokens ?? []).filter((token) => token.revokedAt);
   const orgMembers = useQuery(
     api.publishers.listMembers,
-    activeView === "organizations" && selectedOrg
+    activeView === "organizations" && selectedOrg && selectedOrg.role !== "publisher"
       ? { publisherHandle: selectedOrg.publisher.handle }
       : "skip",
   ) as OrgMembersResult | null | undefined;
@@ -218,13 +220,27 @@ export function Settings() {
     setSelectedOrgImage(selectedOrg.publisher.image ?? "");
   }, [selectedOrg]);
 
-  if (!me) {
+  if (isAuthLoading) {
+    return <SettingsSkeleton />;
+  }
+
+  if (!isAuthenticated || !me) {
     return (
       <SignInPrompt
         title="Sign in to access settings"
         description="Manage your profile, organizations, and API access."
       />
     );
+  }
+
+  const activeSectionLoading =
+    (activeView === "organizations" &&
+      (publisherMemberships === undefined ||
+        (selectedOrg && selectedOrg.role !== "publisher" && orgMembers === undefined))) ||
+    (activeView === "tokens" && tokens === undefined);
+
+  if (activeSectionLoading) {
+    return <SettingsSkeleton />;
   }
 
   const accountAvatar = me.image ?? undefined;
