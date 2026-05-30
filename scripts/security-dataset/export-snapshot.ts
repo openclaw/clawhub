@@ -376,7 +376,7 @@ function buildManifest(input: {
     },
     scannerVersions: Array.from(state.scannerVersions).sort(),
     modelNames: Array.from(state.modelNames).sort(),
-    redactionPolicyVersion: "public-signals-v2",
+    redactionPolicyVersion: "public-signals-v2-bundle-files",
     sourceTables: ["skillVersions", "packageReleases"],
     timeWindow: options.timeWindow,
   });

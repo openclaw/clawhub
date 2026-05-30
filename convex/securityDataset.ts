@@ -8,7 +8,10 @@ import { getOwnerPublisher } from "./lib/publishers";
 
 const MAX_EXPORT_PAGE_SIZE = 50;
 const MAX_EXPORT_BATCH_PAGES = 20;
-const REDACTION_POLICY_VERSION = "public-signals-v1";
+const MAX_REDACTED_BUNDLE_FILE_BYTES = 192 * 1024;
+const MAX_REDACTED_BUNDLE_BYTES_PER_ARTIFACT = 256 * 1024;
+const MAX_REDACTED_BUNDLE_BYTES_PER_RESPONSE = 256 * 1024;
+const REDACTION_POLICY_VERSION = "public-signals-v2-bundle-files";
 const SOURCE_TABLES = ["skillVersions", "packageReleases"] as const;
 const SCANNER_SOURCES = [
   "static",
@@ -297,17 +300,80 @@ function sanitizeFiles(files: Array<Doc<"skillVersions">["files"][number]>) {
 }
 
 async function enrichAndSanitizeArtifactRows(ctx: ActionCtx, rows: ArtifactExportRow[]) {
-  return await Promise.all(
-    rows.map(async (row) => {
-      const skillContent =
-        row.sourceKind === "skill" ? await readRedactedSkillMdContent(ctx, row.files) : null;
-      return {
-        ...row,
-        ...(skillContent ? { skillMdContentRedacted: skillContent } : {}),
-        files: row.files.map(({ storageId: _storageId, ...file }) => file),
-      };
-    }),
+  const enrichedRows = [];
+  let remainingBundleBytes = MAX_REDACTED_BUNDLE_BYTES_PER_RESPONSE;
+  for (const row of rows) {
+    const skillContent =
+      row.sourceKind === "skill" ? await readRedactedSkillMdContent(ctx, row.files) : null;
+    const bundleFiles =
+      row.sourceKind === "skill"
+        ? await readRedactedBundleFiles(ctx, row.files, remainingBundleBytes)
+        : [];
+    remainingBundleBytes -= totalBundleBytes(bundleFiles);
+    enrichedRows.push({
+      ...row,
+      ...(skillContent ? { skillMdContentRedacted: skillContent } : {}),
+      ...(bundleFiles.length > 0 ? { bundleFilesRedacted: bundleFiles } : {}),
+      files: row.files.map(({ storageId: _storageId, ...file }) => file),
+    });
+  }
+  return enrichedRows;
+}
+
+async function readRedactedBundleFiles(
+  ctx: Pick<ActionCtx, "storage">,
+  files: Array<{ path: string; size?: number; storageId?: unknown }>,
+  remainingResponseBytes: number,
+) {
+  const bundleFiles: Array<{ path: string; content: string }> = [];
+  let remainingArtifactBytes = Math.min(
+    remainingResponseBytes,
+    MAX_REDACTED_BUNDLE_BYTES_PER_ARTIFACT,
   );
+  for (const file of files) {
+    if (isExcludedSkillBundlePath(file.path) || typeof file.storageId !== "string") continue;
+    if (typeof file.size === "number" && file.size > MAX_REDACTED_BUNDLE_FILE_BYTES) continue;
+    if (remainingArtifactBytes <= 0) break;
+    const blob = await ctx.storage.get(file.storageId as never);
+    if (!blob) continue;
+    const content = redactBundleContent(await blob.text());
+    const contentBytes = utf8Bytes(content);
+    if (contentBytes > MAX_REDACTED_BUNDLE_FILE_BYTES || contentBytes > remainingArtifactBytes) {
+      continue;
+    }
+    bundleFiles.push({ path: file.path, content });
+    remainingArtifactBytes -= contentBytes;
+  }
+  return bundleFiles;
+}
+
+function isExcludedSkillBundlePath(path: string) {
+  return (
+    isPrimarySkillReadmePath(path) || normalizeBundlePathForComparison(path) === "skill-card.md"
+  );
+}
+
+function isPrimarySkillReadmePath(path: string) {
+  const normalized = normalizeBundlePathForComparison(path);
+  return normalized === "skill.md" || normalized === "skills.md";
+}
+
+function normalizeBundlePathForComparison(path: string) {
+  return path
+    .trim()
+    .replace(/^\/+/, "")
+    .split("/")
+    .filter((segment) => segment && segment !== ".")
+    .join("/")
+    .toLowerCase();
+}
+
+function totalBundleBytes(files: Array<{ content: string }>) {
+  return files.reduce((sum, file) => sum + utf8Bytes(file.content), 0);
+}
+
+function utf8Bytes(value: string) {
+  return new TextEncoder().encode(value).byteLength;
 }
 
 async function readRedactedSkillMdContent(
@@ -315,8 +381,7 @@ async function readRedactedSkillMdContent(
   files: Array<{ path: string; storageId?: unknown }>,
 ) {
   const skillFile = files.find((file) => {
-    const path = file.path.toLowerCase();
-    return path === "skill.md" || path.endsWith("/skill.md");
+    return isPrimarySkillReadmePath(file.path);
   });
   if (!skillFile || typeof skillFile.storageId !== "string") return null;
   const blob = await ctx.storage.get(skillFile.storageId as never);
@@ -334,6 +399,18 @@ function redactSkillContent(value: string) {
     redacted = redacted.replace(pattern, "[REDACTED_SECRET]");
   }
   return redacted.trim();
+}
+
+function redactBundleContent(value: string) {
+  let redacted = "";
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    redacted += code < 32 && code !== 9 && code !== 10 && code !== 13 ? " " : value.charAt(index);
+  }
+  for (const pattern of SECRET_PATTERNS) {
+    redacted = redacted.replace(pattern, "[REDACTED_SECRET]");
+  }
+  return redacted;
 }
 
 function normalizeVtAnalysis(analysis: StoredVtAnalysis) {

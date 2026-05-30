@@ -42,6 +42,34 @@ describe("Convex export dataset ingestion", () => {
               sha256: "file-sha",
               content: "Use this skill safely. password=supersecret123",
             },
+            {
+              path: "scripts/export.py",
+              size: 48,
+              sha256: "script-sha",
+              content: "import json\npassword=supersecret123\n",
+              contentType: "text/x-python",
+            },
+            {
+              path: "skill-card.md",
+              size: 16,
+              sha256: "card-sha",
+              content: "Generated card",
+              contentType: "text/markdown",
+            },
+            {
+              path: "references/skill-card.md",
+              size: 32,
+              sha256: "nested-card-sha",
+              content: "Author-authored card note",
+              contentType: "text/markdown",
+            },
+            {
+              path: "docs/SKILL.md",
+              size: 36,
+              sha256: "nested-skill-sha",
+              content: "Nested authored skill reference",
+              contentType: "text/markdown",
+            },
           ],
           llmAnalysis: {
             status: "suspicious",
@@ -167,6 +195,20 @@ describe("Convex export dataset ingestion", () => {
         issues: [{ issueId: "SDI-1" }],
       },
       skillMdContentRedacted: "Use this skill safely. [REDACTED_SECRET]",
+      bundleFilesRedacted: [
+        {
+          path: "scripts/export.py",
+          content: "import json\n[REDACTED_SECRET]\n",
+        },
+        {
+          path: "references/skill-card.md",
+          content: "Author-authored card note",
+        },
+        {
+          path: "docs/SKILL.md",
+          content: "Nested authored skill reference",
+        },
+      ],
     });
     expect(rows[1]?.llmAnalysis?.agenticRiskFindings).toMatchObject([
       {
@@ -215,6 +257,54 @@ describe("Convex export dataset ingestion", () => {
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
+  });
+
+  it("treats root skills.md as primary skill content", () => {
+    const rows = artifactInputsFromConvexExportTables({
+      skills: [
+        {
+          _id: "skills:1",
+          displayName: "Plural Readme Skill",
+          slug: "plural-readme-skill",
+          ownerUserId: "users:owner",
+        },
+      ],
+      skillVersions: [
+        {
+          _id: "skillVersions:1",
+          skillId: "skills:1",
+          version: "1.0.0",
+          createdAt: 1,
+          files: [
+            {
+              path: "docs/skills.md",
+              size: 24,
+              sha256: "nested-skills-sha",
+              content: "Nested authored plural readme",
+            },
+            {
+              path: "skills.md",
+              size: 12,
+              sha256: "skills-sha",
+              content: "Primary readme token=supersecret123",
+            },
+          ],
+        },
+      ],
+      packages: [],
+      packageReleases: [],
+      users: [{ _id: "users:owner", handle: "owner" }],
+    });
+
+    expect(rows[0]).toMatchObject({
+      skillMdContentRedacted: "Primary readme [REDACTED_SECRET]",
+      bundleFilesRedacted: [
+        {
+          path: "docs/skills.md",
+          content: "Nested authored plural readme",
+        },
+      ],
+    });
   });
 
   it("ignores inactive owner handles from Convex export tables", () => {

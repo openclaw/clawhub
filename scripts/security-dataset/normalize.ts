@@ -19,6 +19,11 @@ export type ExportFileInput = {
   contentType: string | null;
 };
 
+export type BundleFileInput = {
+  path: string;
+  content: string;
+};
+
 export type VtAnalysisInput = {
   status: string;
   verdict: string | null;
@@ -119,6 +124,7 @@ export type ArtifactExportInput = {
   version: string;
   artifactSha256: string | null;
   skillMdContentRedacted?: string | null;
+  bundleFilesRedacted?: BundleFileInput[] | null;
   createdAt: number;
   softDeletedAt: number | null;
   files: ExportFileInput[];
@@ -147,6 +153,12 @@ export type ArtifactRow = {
   version: string;
   artifact_sha256: string | null;
   skill_md_content_redacted?: string | null;
+  bundle_files_redacted?: Array<{
+    path: string;
+    content: string;
+    sha256: string;
+    size_bytes: number;
+  }>;
   created_at: number;
   created_month: string;
   soft_deleted: boolean;
@@ -247,6 +259,7 @@ export type NormalizedDatasetRows = {
 const SPLIT_VERSION = "sha256-v1";
 const MAX_REDACTED_TEXT_LENGTH = 240;
 const MAX_REDACTED_SKILL_CONTENT_LENGTH = 120_000;
+const MAX_REDACTED_BUNDLE_FILE_BYTES = 192 * 1024;
 const CLAWSCAN_SEVERITIES = new Set<ClawScanSeverity>([
   "none",
   "info",
@@ -332,6 +345,7 @@ export function assignSplit(splitKey: string): DatasetSplit {
 }
 
 function buildArtifactRow(input: ArtifactExportInput, artifactId: string): ArtifactRow {
+  const bundleFiles = buildBundleFileRows(input);
   return {
     artifact_id: artifactId,
     source_kind: input.sourceKind,
@@ -347,6 +361,7 @@ function buildArtifactRow(input: ArtifactExportInput, artifactId: string): Artif
     ...(input.sourceKind === "skill" && input.skillMdContentRedacted
       ? { skill_md_content_redacted: redactSkillContent(input.skillMdContentRedacted) }
       : {}),
+    ...(bundleFiles.length > 0 ? { bundle_files_redacted: bundleFiles } : {}),
     created_at: input.createdAt,
     created_month: createdMonth(input.createdAt),
     soft_deleted: input.softDeletedAt !== null,
@@ -364,6 +379,38 @@ function buildArtifactRow(input: ArtifactExportInput, artifactId: string): Artif
     has_static_scan: input.staticScan !== null,
     has_llm_scan: input.llmAnalysis !== null,
   };
+}
+
+function buildBundleFileRows(
+  input: ArtifactExportInput,
+): NonNullable<ArtifactRow["bundle_files_redacted"]> {
+  if (input.sourceKind !== "skill" || !Array.isArray(input.bundleFilesRedacted)) return [];
+  return input.bundleFilesRedacted.flatMap((file) => {
+    const path = file.path.trim();
+    if (!path || !file.content) return [];
+    const content = redactBundleContent(file.content);
+    if (Buffer.byteLength(content, "utf8") > MAX_REDACTED_BUNDLE_FILE_BYTES) return [];
+    return [
+      {
+        path,
+        content,
+        sha256: hashString(content),
+        size_bytes: Buffer.byteLength(content, "utf8"),
+      },
+    ];
+  });
+}
+
+export function redactBundleContent(value: string) {
+  let redacted = "";
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    redacted += code < 32 && code !== 9 && code !== 10 && code !== 13 ? " " : value.charAt(index);
+  }
+  for (const pattern of SECRET_PATTERNS) {
+    redacted = redacted.replace(pattern, "[REDACTED_SECRET]");
+  }
+  return redacted;
 }
 
 function qualifiedPublicSlug(input: ArtifactExportInput) {
