@@ -34,9 +34,9 @@ clawhub package publish owner/repo --dry-run --json
 
 This keeps package metadata zero-config where possible and auto-populates GitHub provenance.
 
-Goal: choose one detected `SKILL.md` candidate from the signed-in user's owned
-public GitHub repositories, then preview files → publish (selective) → persist
-provenance.
+Goal: choose one detected `SKILL.md` or legacy `skills.md` candidate from the
+signed-in user's owned public GitHub repositories, then preview files → publish
+(selective) → persist provenance.
 
 Non-goal (v1): private repos (no OAuth/PAT support).
 
@@ -57,28 +57,29 @@ but the control surface remains the product.
 Flow:
 
 1. Scan the signed-in user's owned public repos
-2. List only detected skill candidates (`SKILL.md`)
+2. List only detected skill candidates (`SKILL.md` or legacy `skills.md`)
 3. If multiple candidates: choose one
 4. File picker: check/uncheck; smart-select referenced files
 5. Confirm slug/name/version/tags
 6. Import → publish
 
 Manual URL import is not part of the dashboard picker. Backend preview/import
-still accepts repo root, tree path, and blob path for internal/API callers, but
-only when the URL's repository is owned by the signed-in user's GitHub account.
-This is an intentional compatibility break from the older arbitrary-public-URL
-import path.
+still accepts the older repo root, tree path, and blob path shapes for
+internal/API callers, but only when the URL's repository is owned by the
+signed-in user's GitHub account. Blocking third-party public repo imports is an
+intentional product/security boundary for new import attempts; it does not
+migrate or alter skills that were already published.
 
 Picker details:
 
 - Search is the primary control.
 - Rows represent importable skill candidates, not raw repositories.
-- A root `SKILL.md` row uses the repo name.
-- A nested `SKILL.md` row uses the containing folder/project name.
+- A root skill file row uses the repo name.
+- A nested skill file row uses the containing folder/project name.
 - Rows also show the source repository name.
 - Search only appears when there are more than 10 detected candidates.
-- Repos without `SKILL.md`, private repos, forks, repos owned by someone else,
-  archived repos, and disabled repos do not appear.
+- Repos without `SKILL.md` or legacy `skills.md`, private repos, forks, repos
+  owned by someone else, archived repos, and disabled repos do not appear.
 - Do not show private repo prompts, org switchers, or OAuth permission upsells.
 
 ## Accepted URLs
@@ -94,7 +95,7 @@ Supported shapes:
 Normalization:
 
 - Strip query/hash for fetch.
-- From `blob/.../SKILL.md` derive `path` as parent folder.
+- From `blob/.../SKILL.md` or `blob/.../skills.md` derive `path` as parent folder.
 - If `ref` missing: use `HEAD`.
 
 Reject:
@@ -116,8 +117,9 @@ Before archive download or preview:
 Picker discovery:
 
 - When a server `GITHUB_TOKEN` is configured, discover candidates with GitHub
-  Code Search (`filename:SKILL.md user:<login>`) and filter every result through
-  the owned-public repo validation above.
+  Code Search (`filename:SKILL.md user:<login>` and
+  `filename:skills.md user:<login>`) and filter every result through the
+  owned-public repo validation above.
 - Do not recursively scan every public repository on page load when Code Search
   is available.
 - Without a token, use a bounded repo-page fallback and recursive tree scans only
@@ -135,10 +137,12 @@ selected files.
 
 Skill candidate definition:
 
-- Any repo root or folder containing a real `SKILL.md` file.
-- A `blob/.../SKILL.md` URL targets that file's parent folder.
-- Do not treat README files, `skills.md`, package metadata, repository names, or
-  inferred project folders as importable candidates.
+- Any repo root or folder containing a real `SKILL.md` file or legacy
+  `skills.md` file.
+- A `blob/.../SKILL.md` or `blob/.../skills.md` URL targets that file's parent
+  folder.
+- Do not treat README files, package metadata, repository names, or inferred
+  project folders as importable candidates.
 - Treat repo root as a folder too.
 
 Multiple skills:
@@ -150,7 +154,7 @@ Multiple skills:
 
 Defaults:
 
-- Always select `SKILL.md`.
+- Always select the detected skill file.
 - Prefer selecting only within chosen skill folder; allow “include out-of-folder refs” if explicitly toggled.
 
 Referenced file expansion:
@@ -182,7 +186,7 @@ Server publishes using existing pipeline:
 
 - Text-only enforced (see `docs/skill-format.md`).
 - Total ≤ 50MB (selected set).
-- Must include `SKILL.md`.
+- Must include the detected skill file.
 
 Suggested defaults (UI):
 
@@ -260,7 +264,7 @@ Rate limits:
 
 Error UX:
 
-- “No SKILL.md found.”
+- “No SKILL.md or skills.md found.”
 - “Multiple skills found; pick one.”
 - “Repo too large / too many files.”
 - “Selected files exceed 50MB.”
@@ -268,8 +272,9 @@ Error UX:
 ## Manual test checklist
 
 - Repo root skill (`SKILL.md` at root).
-- Nested skill (`skills/foo/SKILL.md`).
-- Multi-skill repo (two SKILL.md).
-- SKILL.md references `docs/usage.md` + images; smart-select picks `.md` and referenced text files; ignores external links.
+- Legacy root skill (`skills.md` at root).
+- Nested skill (`skills/foo/SKILL.md` or `skills/foo/skills.md`).
+- Multi-skill repo (two skill files).
+- Skill file references `docs/usage.md` + images; smart-select picks `.md` and referenced text files; ignores external links.
 - Huge repo → clean “too large” error.
 - Redirect pinning → import stores commit sha in provenance.

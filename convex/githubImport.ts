@@ -11,6 +11,7 @@ import {
   computeDefaultSelectedPaths,
   detectGitHubImportCandidates,
   fetchGitHubZipBytes,
+  isGitHubSkillFilePath,
   listTextFilesUnderCandidate,
   normalizeRepoPath,
   parseGitHubImportUrl,
@@ -128,7 +129,8 @@ export const previewGitHubImport = action({
     const candidates = detectGitHubImportCandidates(entries).filter((candidate) =>
       isCandidateUnderResolvedPath(candidate.path, resolved.path),
     );
-    if (candidates.length === 0) throw new ConvexError("No SKILL.md found in this repo");
+    if (candidates.length === 0)
+      throw new ConvexError("No SKILL.md or skills.md found in this repo");
 
     return {
       resolved,
@@ -256,7 +258,7 @@ export const importGitHubSkill = action({
     const candidateRoot = candidate.path ? `${candidate.path}/` : "";
     const normalizedReadmePath = normalizeRepoPath(candidate.readmePath);
     if (!selected.includes(normalizedReadmePath)) {
-      throw new ConvexError("SKILL.md must be selected");
+      throw new ConvexError("The skill file must be selected");
     }
 
     let totalBytes = 0;
@@ -570,24 +572,33 @@ async function listOwnedPublicSkillCandidatesWithCodeSearch(
   args: { query: string; page: number; perPage: number },
   fetcher: typeof fetch,
 ) {
-  const url = new URL(`${GITHUB_API}/search/code`);
-  const searchParts = [`filename:SKILL.md`, `user:${identity.login}`];
-  if (args.query) searchParts.push(args.query);
-  url.searchParams.set("q", searchParts.join(" "));
-  url.searchParams.set("per_page", String(args.perPage));
-  url.searchParams.set("page", String(args.page));
+  const results = await Promise.all(
+    ["SKILL.md", "skills.md"].map(async (filename) => {
+      const url = new URL(`${GITHUB_API}/search/code`);
+      const searchParts = [`filename:${filename}`, `user:${identity.login}`];
+      if (args.query) searchParts.push(args.query);
+      url.searchParams.set("q", searchParts.join(" "));
+      url.searchParams.set("per_page", String(args.perPage));
+      url.searchParams.set("page", String(args.page));
 
-  const response = await fetcher(url.toString(), { headers: buildGitHubHeaders() });
-  if (!response.ok) throwGitHubApiError(response.status);
+      const response = await fetcher(url.toString(), { headers: buildGitHubHeaders() });
+      if (!response.ok) throwGitHubApiError(response.status);
 
-  const payload = (await response.json()) as GitHubCodeSearchPayload;
-  const items = Array.isArray(payload.items) ? payload.items : [];
-  const candidates = items
-    .map((item) => toOwnedPublicSkillCandidateFromSearchItem(item, identity))
-    .filter((candidate): candidate is OwnedPublicRepoListItem => Boolean(candidate));
+      const payload = (await response.json()) as GitHubCodeSearchPayload;
+      const items = Array.isArray(payload.items) ? payload.items : [];
+      return { items, hasMore: items.length === args.perPage };
+    }),
+  );
+
+  const candidates = dedupeOwnedPublicSkillCandidates(
+    results
+      .flatMap((result) => result.items)
+      .map((item) => toOwnedPublicSkillCandidateFromSearchItem(item, identity))
+      .filter((candidate): candidate is OwnedPublicRepoListItem => Boolean(candidate)),
+  );
 
   return {
-    hasMore: items.length === args.perPage,
+    hasMore: results.some((result) => result.hasMore),
     repos: candidates,
   };
 }
@@ -735,8 +746,19 @@ function normalizeSkillTreePath(entry: GitHubTreeEntryPayload) {
   const path = normalizeRepoPath(entry.path);
   if (!path) return null;
   if (path.split("/").some((segment) => segment.startsWith("."))) return null;
-  const filename = path.split("/").at(-1)?.toLowerCase();
-  return filename === "skill.md" ? path : null;
+  return isGitHubSkillFilePath(path) ? path : null;
+}
+
+function dedupeOwnedPublicSkillCandidates(candidates: OwnedPublicRepoListItem[]) {
+  const seen = new Set<string>();
+  const out: OwnedPublicRepoListItem[] = [];
+  for (const candidate of candidates) {
+    const key = `${candidate.repoFullName.toLowerCase()}::${candidate.skillPath.toLowerCase()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(candidate);
+  }
+  return out;
 }
 
 function toOwnedPublicSkillCandidate(repo: OwnedPublicRepoListItem, skillPath: string) {

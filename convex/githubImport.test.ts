@@ -155,7 +155,7 @@ describe("githubImport", () => {
     );
   });
 
-  it("lists only owned public SKILL.md candidates", async () => {
+  it("lists only owned public skill file candidates", async () => {
     const ctx = {
       runQuery: vi.fn().mockResolvedValue("123"),
     };
@@ -244,6 +244,7 @@ describe("githubImport", () => {
           tree: [
             { path: "SKILL.md", type: "blob" },
             { path: "skills/copilot/SKILL.md", type: "blob" },
+            { path: "legacy/skills.md", type: "blob" },
             { path: ".agents/skills/internal/SKILL.md", type: "blob" },
             { path: "README.md", type: "blob" },
             { path: "skill.md", type: "tree" },
@@ -293,6 +294,17 @@ describe("githubImport", () => {
         skillPath: "skills/copilot/SKILL.md",
         importable: true,
       }),
+      expect.objectContaining({
+        owner: "vyctorbrzezowski",
+        name: "legacy",
+        repoName: "clawhub",
+        repoFullName: "vyctorbrzezowski/clawhub",
+        fullName: "vyctorbrzezowski/clawhub/legacy",
+        htmlUrl: "https://github.com/vyctorbrzezowski/clawhub/tree/main/legacy",
+        candidatePath: "legacy",
+        skillPath: "legacy/skills.md",
+        importable: true,
+      }),
     ]);
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
@@ -311,7 +323,7 @@ describe("githubImport", () => {
     );
   });
 
-  it("uses GitHub code search for owned SKILL.md discovery when a token is configured", async () => {
+  it("uses GitHub code search for owned skill file discovery when a token is configured", async () => {
     process.env.GITHUB_TOKEN = "github-token";
     const ctx = {
       runQuery: vi.fn().mockResolvedValue("123"),
@@ -359,6 +371,12 @@ describe("githubImport", () => {
             { path: "README.md", repository: ownedRepo },
           ],
         }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          items: [{ path: "legacy/skills.md", repository: ownedRepo }],
+        }),
       });
 
     const result = await __test.listOwnedPublicGitHubReposForUser(
@@ -381,11 +399,20 @@ describe("githubImport", () => {
         candidatePath: "tools/review",
         skillPath: "tools/review/SKILL.md",
       }),
+      expect.objectContaining({
+        name: "legacy",
+        repoName: "skills",
+        candidatePath: "legacy",
+        skillPath: "legacy/skills.md",
+      }),
     ]);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
     const searchUrl = new URL(fetchMock.mock.calls[1]?.[0] as string);
     expect(searchUrl.pathname).toBe("/search/code");
     expect(searchUrl.searchParams.get("q")).toBe("filename:SKILL.md user:vyctorbrzezowski");
+    const legacySearchUrl = new URL(fetchMock.mock.calls[2]?.[0] as string);
+    expect(legacySearchUrl.pathname).toBe("/search/code");
+    expect(legacySearchUrl.searchParams.get("q")).toBe("filename:skills.md user:vyctorbrzezowski");
     expect(fetchMock.mock.calls[1]?.[1]).toEqual(
       expect.objectContaining({
         headers: expect.objectContaining({ Authorization: "Bearer github-token" }),
