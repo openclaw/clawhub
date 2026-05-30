@@ -1,5 +1,5 @@
 ---
-summary: "Feature spec: import a skill from a public GitHub URL (auto-detect SKILL.md, selective file upload, provenance)."
+summary: "Feature spec: import skills from owned public GitHub repos (auto-detect SKILL.md, selective file upload, provenance)."
 read_when:
   - Adding GitHub import (web + API)
   - Reviewing safety limits (SSRF/zip-bombs)
@@ -66,6 +66,8 @@ Flow:
 Manual URL import is not part of the dashboard picker. Backend preview/import
 still accepts repo root, tree path, and blob path for internal/API callers, but
 only when the URL's repository is owned by the signed-in user's GitHub account.
+This is an intentional compatibility break from the older arbitrary-public-URL
+import path.
 
 Picker details:
 

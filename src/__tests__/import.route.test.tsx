@@ -339,41 +339,148 @@ describe("Import route", () => {
     });
   });
 
-  it("keeps initial GitHub discovery bounded when more matches exist", async () => {
-    listOwnedRepos.mockResolvedValueOnce({
-      account: { login: "me", avatarUrl: null },
-      page: 1,
-      perPage: 100,
-      hasMore: true,
-      repos: [
-        {
-          owner: "octo",
-          name: "bounded-skill",
-          repoName: "bounded-skill",
-          repoFullName: "octo/bounded-skill",
-          fullName: "octo/bounded-skill",
-          htmlUrl: "https://github.com/octo/bounded-skill",
-          candidatePath: "",
-          skillPath: "SKILL.md",
-          pushedAt: null,
-          updatedAt: null,
-          language: null,
-          fork: false,
-          archived: false,
-          disabled: false,
-          importable: true,
-          unavailableReason: null,
-        },
-      ],
-    });
+  it("can load more GitHub discovery pages", async () => {
+    listOwnedRepos
+      .mockResolvedValueOnce({
+        account: { login: "me", avatarUrl: null },
+        page: 1,
+        perPage: 100,
+        hasMore: true,
+        repos: [
+          {
+            owner: "octo",
+            name: "bounded-skill",
+            repoName: "bounded-skill",
+            repoFullName: "octo/bounded-skill",
+            fullName: "octo/bounded-skill",
+            htmlUrl: "https://github.com/octo/bounded-skill",
+            candidatePath: "",
+            skillPath: "SKILL.md",
+            pushedAt: null,
+            updatedAt: null,
+            language: null,
+            fork: false,
+            archived: false,
+            disabled: false,
+            importable: true,
+            unavailableReason: null,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        account: { login: "me", avatarUrl: null },
+        page: 2,
+        perPage: 100,
+        hasMore: false,
+        repos: [
+          {
+            owner: "octo",
+            name: "later-skill",
+            repoName: "later-skill",
+            repoFullName: "octo/later-skill",
+            fullName: "octo/later-skill",
+            htmlUrl: "https://github.com/octo/later-skill",
+            candidatePath: "",
+            skillPath: "SKILL.md",
+            pushedAt: null,
+            updatedAt: null,
+            language: null,
+            fork: false,
+            archived: false,
+            disabled: false,
+            importable: true,
+            unavailableReason: null,
+          },
+        ],
+      });
 
     render(<ImportGitHub />);
 
     expect(await screen.findByText("bounded-skill")).toBeTruthy();
-    expect(listOwnedRepos).toHaveBeenNthCalledWith(1, { page: 1, perPage: 100 });
-    expect(listOwnedRepos).toHaveBeenCalledTimes(1);
-    const checkbox = (await screen.findByRole("checkbox")) as HTMLInputElement;
-    expect(checkbox.checked).toBe(true);
+    expect(listOwnedRepos).toHaveBeenNthCalledWith(1, {
+      page: 1,
+      perPage: 100,
+      query: undefined,
+    });
+    fireEvent.click(screen.getByRole("button", { name: /load more/i }));
+    expect(await screen.findByText("later-skill")).toBeTruthy();
+    expect(listOwnedRepos).toHaveBeenNthCalledWith(2, {
+      page: 2,
+      perPage: 100,
+      query: undefined,
+    });
+    const checkboxes = screen.getAllByRole("checkbox") as HTMLInputElement[];
+    expect(checkboxes.every((checkbox) => checkbox.checked)).toBe(true);
+  });
+
+  it("passes search text to GitHub discovery", async () => {
+    listOwnedRepos
+      .mockResolvedValueOnce({
+        account: { login: "me", avatarUrl: null },
+        page: 1,
+        perPage: 100,
+        hasMore: true,
+        repos: [
+          {
+            owner: "octo",
+            name: "first-skill",
+            repoName: "first-skill",
+            repoFullName: "octo/first-skill",
+            fullName: "octo/first-skill",
+            htmlUrl: "https://github.com/octo/first-skill",
+            candidatePath: "",
+            skillPath: "SKILL.md",
+            pushedAt: null,
+            updatedAt: null,
+            language: null,
+            fork: false,
+            archived: false,
+            disabled: false,
+            importable: true,
+            unavailableReason: null,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        account: { login: "me", avatarUrl: null },
+        page: 1,
+        perPage: 100,
+        hasMore: false,
+        repos: [
+          {
+            owner: "octo",
+            name: "later-skill",
+            repoName: "later-skill",
+            repoFullName: "octo/later-skill",
+            fullName: "octo/later-skill",
+            htmlUrl: "https://github.com/octo/later-skill",
+            candidatePath: "",
+            skillPath: "SKILL.md",
+            pushedAt: null,
+            updatedAt: null,
+            language: null,
+            fork: false,
+            archived: false,
+            disabled: false,
+            importable: true,
+            unavailableReason: null,
+          },
+        ],
+      });
+
+    render(<ImportGitHub />);
+
+    expect(await screen.findByText("first-skill")).toBeTruthy();
+    fireEvent.change(screen.getByPlaceholderText("Search..."), { target: { value: "later" } });
+
+    await waitFor(() => {
+      expect(listOwnedRepos).toHaveBeenNthCalledWith(2, {
+        page: 1,
+        perPage: 100,
+        query: "later",
+      });
+    });
+    expect(await screen.findByText("later-skill")).toBeTruthy();
   });
 
   it("preserves backend default file selection when publishing", async () => {
