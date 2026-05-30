@@ -184,6 +184,46 @@ Stores your API token + cached registry URL.
 clawhub skill publish ./my-skill --version 1.0.0
 ```
 
+#### GitHub Actions
+
+ClawHub ships an official reusable workflow at
+[`/.github/workflows/skill-publish.yml`](../.github/workflows/skill-publish.yml)
+for skill repos and catalog repos.
+
+Typical catalog setup:
+
+```yaml
+name: Skill Publish
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  dry-run:
+    if: github.event_name == 'pull_request'
+    uses: openclaw/clawhub/.github/workflows/skill-publish.yml@v1
+    with:
+      owner: nvidia
+      dry_run: true
+
+  publish:
+    if: github.event_name == 'workflow_dispatch'
+    uses: openclaw/clawhub/.github/workflows/skill-publish.yml@v1
+    with:
+      owner: nvidia
+      dry_run: false
+    secrets:
+      clawhub_token: ${{ secrets.CLAWHUB_TOKEN }}
+```
+
+Notes:
+
+- `root` defaults to `skills` for catalog repos.
+- Pass `skill_path: skills/review-helper` to process one skill folder.
+- `owner` maps to the CLI `--owner` flag; omit it to publish as the authenticated user.
+- V1 skill publishing uses `clawhub_token`; GitHub OIDC trusted publishing is package-only for now.
+
 ### `delete <slug>`
 
 - Soft-delete a skill (owner, moderator, or admin).
@@ -609,10 +649,13 @@ Notes:
   - `--root <dir...>` extra scan roots
   - `--all` upload without prompting
   - `--dry-run` show plan only
+  - `--json` machine-readable summary for CI
+  - `--owner <handle>` publish under a user or org publisher
   - `--bump patch|minor|major` (default: patch)
   - `--changelog <text>` (non-interactive)
   - `--tags a,b,c` (default: latest)
   - `--concurrency <n>` (default: 4)
+  - `--source-repo <repo>`, `--source-commit <sha>`, `--source-ref <ref>` for GitHub provenance
 
 Telemetry:
 

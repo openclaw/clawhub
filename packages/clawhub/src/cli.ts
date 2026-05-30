@@ -747,10 +747,16 @@ registerCommand(program, ["sync"])
   .option("--root <dir...>", "Extra scan roots (one or more)")
   .option("--all", "Upload all new/updated skills without prompting")
   .option("--dry-run", "Show what would be uploaded")
+  .option("--json", "Output JSON")
+  .option("--owner <handle>", "Publish under an org/user publisher handle")
   .option("--bump <type>", "Version bump for updates (patch|minor|major)", "patch")
   .option("--changelog <text>", "Changelog to use for updates (non-interactive)")
   .option("--tags <tags>", "Comma-separated tags", "latest")
   .option("--concurrency <n>", "Concurrent registry checks (default: 4)", "4")
+  .option("--no-clawdbot-roots", "Only scan the configured workdir/dir and --root values")
+  .option("--source-repo <repo>", "GitHub repo (owner/repo or URL)")
+  .option("--source-commit <sha>", "Git commit SHA")
+  .option("--source-ref <ref>", "Git ref/tag/branch")
   .action(async (options) => {
     const opts = await resolveGlobalOpts();
     const bump = String(options.bump ?? "patch") as "patch" | "minor" | "major";
@@ -764,10 +770,16 @@ registerCommand(program, ["sync"])
         root: options.root,
         all: options.all,
         dryRun: options.dryRun,
+        json: options.json,
+        owner: options.owner,
         bump,
         changelog: options.changelog,
         tags: options.tags,
         concurrency,
+        clawdbotRoots: options.clawdbotRoots,
+        sourceRepo: options.sourceRepo,
+        sourceCommit: options.sourceCommit,
+        sourceRef: options.sourceRef,
       },
       isInputAllowed(),
     );

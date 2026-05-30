@@ -116,7 +116,6 @@ afterEach(async () => {
 vi.spyOn(console, "log").mockImplementation((...args) => {
   mockLog(args.map(String).join(" "));
 });
-
 describe("cmdSync", () => {
   it("classifies skills as new/update/synced (dry-run, mocked HTTP)", async () => {
     interactive = false;
@@ -149,6 +148,84 @@ describe("cmdSync", () => {
 
     const dryRunOutro = mockOutro.mock.calls.at(-1)?.[0];
     expect(String(dryRunOutro)).toMatch(/Dry run: would upload 2 skill/);
+  });
+
+  it("emits CI JSON dry-run without requiring auth", async () => {
+    interactive = false;
+    const stdoutWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    mockApiRequest.mockImplementation(async (_registry: string, args: { path: string }) => {
+      if (args.path.startsWith("/api/v1/resolve?")) {
+        const u = new URL(`https://x.test${args.path}`);
+        const slug = u.searchParams.get("slug");
+        if (slug === "new-skill") {
+          throw new Error("Skill not found");
+        }
+        if (slug === "synced-skill") {
+          return { match: { version: "1.2.3" }, latestVersion: { version: "1.2.3" } };
+        }
+        if (slug === "update-skill") {
+          return { match: null, latestVersion: { version: "1.0.0" } };
+        }
+      }
+      throw new Error(`Unexpected apiRequest: ${args.path}`);
+    });
+
+    let output = "";
+    try {
+      await cmdSync(
+        makeOpts(),
+        {
+          root: ["/scan"],
+          all: true,
+          dryRun: true,
+          json: true,
+          owner: "nvidia",
+          sourceRepo: "NVIDIA/skills",
+          sourceCommit: "abc123",
+          sourceRef: "refs/heads/main",
+        },
+        false,
+      );
+      output = String(stdoutWrite.mock.calls.at(-1)?.[0] ?? "").trim();
+    } finally {
+      stdoutWrite.mockRestore();
+    }
+
+    expect(authTokenMocks.requireAuthToken).not.toHaveBeenCalled();
+    expect(mockCmdPublish).not.toHaveBeenCalled();
+    expect(mockLog).not.toHaveBeenCalled();
+    expect(mockIntro).not.toHaveBeenCalled();
+    expect(mockOutro).not.toHaveBeenCalled();
+
+    const parsed = JSON.parse(output) as {
+      ok: boolean;
+      dryRun: boolean;
+      owner?: string;
+      summary: { wouldPublish: number; alreadySynced: number; failed: number };
+      wouldPublish: Array<{
+        slug: string;
+        version: string;
+        status: string;
+        source?: { repo: string };
+      }>;
+      alreadySynced: Array<{ slug: string; version: string }>;
+      published: unknown[];
+      failed: unknown[];
+    };
+    expect(parsed.ok).toBe(true);
+    expect(parsed.dryRun).toBe(true);
+    expect(parsed.owner).toBe("nvidia");
+    expect(parsed.summary).toMatchObject({ wouldPublish: 2, alreadySynced: 1, failed: 0 });
+    expect(parsed.wouldPublish.map((entry) => [entry.slug, entry.version, entry.status])).toEqual([
+      ["new-skill", "1.0.0", "new"],
+      ["update-skill", "1.0.1", "update"],
+    ]);
+    expect(parsed.wouldPublish[0]?.source?.repo).toBe("NVIDIA/skills");
+    expect(parsed.alreadySynced).toEqual([
+      expect.objectContaining({ slug: "synced-skill", version: "1.2.3" }),
+    ]);
+    expect(parsed.published).toEqual([]);
+    expect(parsed.failed).toEqual([]);
   });
 
   it("prints bullet lists and selects all actionable by default", async () => {
@@ -189,6 +266,108 @@ describe("cmdSync", () => {
     const promptArgs = lastCall ? (lastCall[0] as { initialValues: string[] }) : undefined;
     expect(promptArgs?.initialValues.length).toBe(2);
     expect(mockCmdPublish).toHaveBeenCalledTimes(2);
+  });
+
+  it("passes owner and source provenance into real bulk publishes", async () => {
+    interactive = false;
+    const opts = makeGlobalOpts("/repo");
+    const { findSkillFolders } = await import("../scanSkills.js");
+    mocked(findSkillFolders).mockImplementation(async (root: string) => {
+      if (root !== "/repo/skills") return [];
+      return [
+        { folder: "/repo/skills/new-skill", slug: "new-skill", displayName: "New Skill" },
+        { folder: "/repo/skills/update-skill", slug: "update-skill", displayName: "Update Skill" },
+      ];
+    });
+    mockApiRequest.mockImplementation(async (_registry: string, args: { path: string }) => {
+      if (args.path === "/api/v1/whoami") return { user: { handle: "mikehollinger" } };
+      if (args.path === "/api/cli/telemetry/sync") return { ok: true };
+      if (args.path.startsWith("/api/v1/resolve?")) {
+        const u = new URL(`https://x.test${args.path}`);
+        const slug = u.searchParams.get("slug");
+        if (slug === "new-skill") throw new Error("Skill not found");
+        if (slug === "update-skill") {
+          return { match: null, latestVersion: { version: "1.0.0" } };
+        }
+      }
+      throw new Error(`Unexpected apiRequest: ${args.path}`);
+    });
+
+    await cmdSync(
+      opts,
+      {
+        root: ["/repo/skills"],
+        all: true,
+        dryRun: false,
+        owner: "nvidia",
+        tags: "latest,catalog",
+        sourceRepo: "https://github.com/NVIDIA/skills",
+        sourceCommit: "abc123",
+        sourceRef: "refs/heads/main",
+      },
+      false,
+    );
+
+    expect(mockCmdPublish).toHaveBeenCalledTimes(2);
+    expect(mockCmdPublish.mock.calls.map((call) => call[2])).toEqual([
+      expect.objectContaining({
+        slug: "new-skill",
+        owner: "nvidia",
+        version: "1.0.0",
+        tags: "latest,catalog",
+        sourceRepo: "https://github.com/NVIDIA/skills",
+        sourceCommit: "abc123",
+        sourceRef: "refs/heads/main",
+        sourcePath: "skills/new-skill",
+      }),
+      expect.objectContaining({
+        slug: "update-skill",
+        owner: "nvidia",
+        version: "1.0.1",
+        tags: "latest,catalog",
+        sourceRepo: "https://github.com/NVIDIA/skills",
+        sourceCommit: "abc123",
+        sourceRef: "refs/heads/main",
+        sourcePath: "skills/update-skill",
+      }),
+    ]);
+  });
+
+  it("uses dot source path for a root skill publish", async () => {
+    interactive = false;
+    const opts = makeGlobalOpts("/repo");
+    const { findSkillFolders } = await import("../scanSkills.js");
+    mocked(findSkillFolders).mockImplementation(async (root: string) => {
+      if (root !== "/repo") return [];
+      return [{ folder: "/repo", slug: "root-skill", displayName: "Root Skill" }];
+    });
+    mockApiRequest.mockImplementation(async (_registry: string, args: { path: string }) => {
+      if (args.path === "/api/v1/whoami") return { user: { handle: "mikehollinger" } };
+      if (args.path === "/api/cli/telemetry/sync") return { ok: true };
+      if (args.path.startsWith("/api/v1/resolve?")) {
+        throw new Error("Skill not found");
+      }
+      throw new Error(`Unexpected apiRequest: ${args.path}`);
+    });
+
+    await cmdSync(
+      opts,
+      {
+        all: true,
+        dryRun: false,
+        sourceRepo: "NVIDIA/root-skill",
+        sourceCommit: "abc123",
+      },
+      false,
+    );
+
+    expect(mockCmdPublish).toHaveBeenCalledTimes(1);
+    expect(mockCmdPublish.mock.calls[0]?.[2]).toEqual(
+      expect.objectContaining({
+        slug: "root-skill",
+        sourcePath: ".",
+      }),
+    );
   });
 
   it("labels unmatched local content as proposed publish versions, not registry updates", async () => {

@@ -9,6 +9,7 @@ import { getRegistry } from "../registry.js";
 import { sanitizeSlug, titleCase } from "../slug.js";
 import type { GlobalOpts } from "../types.js";
 import { createSpinner, fail, formatError } from "../ui.js";
+import { normalizeGitHubRepo } from "./github.js";
 
 export async function cmdPublish(
   opts: GlobalOpts,
@@ -22,6 +23,10 @@ export async function cmdPublish(
     tags?: string;
     forkOf?: string;
     migrateOwner?: boolean;
+    sourceRepo?: string;
+    sourceCommit?: string;
+    sourceRef?: string;
+    sourcePath?: string;
   },
 ) {
   const folder = folderArg ? resolve(opts.workdir, folderArg) : null;
@@ -48,6 +53,7 @@ export async function cmdPublish(
 
   const forkOfRaw = options.forkOf?.trim();
   const forkOf = forkOfRaw ? parseForkOf(forkOfRaw) : undefined;
+  const source = buildPublishSource(options);
 
   if (!slug) fail("--slug required");
   if (!displayName) fail("--name required");
@@ -80,6 +86,7 @@ export async function cmdPublish(
         changelog,
         acceptLicenseTerms: true,
         tags,
+        ...(source ? { source } : {}),
         ...(forkOf ? { forkOf } : {}),
       }),
     );
@@ -173,4 +180,35 @@ function parseForkOf(value: string) {
   const version = (versionRaw ?? "").trim();
   if (version && !semver.valid(version)) fail("--fork-of version must be valid semver");
   return { slug, version: version || undefined };
+}
+
+function buildPublishSource(options: {
+  sourceRepo?: string;
+  sourceCommit?: string;
+  sourceRef?: string;
+  sourcePath?: string;
+}) {
+  const rawRepo = options.sourceRepo?.trim();
+  const commit = options.sourceCommit?.trim();
+  const ref = options.sourceRef?.trim();
+  const path = normalizeSourcePath(options.sourcePath);
+  if (!rawRepo && !commit && !ref && !options.sourcePath?.trim()) return undefined;
+  if (!rawRepo || !commit) fail("--source-repo and --source-commit must be provided together");
+  const repo = normalizeGitHubRepo(rawRepo);
+  if (!repo) fail("--source-repo must be a GitHub repo or URL");
+  return {
+    kind: "github" as const,
+    url: `https://github.com/${repo}`,
+    repo,
+    ref: ref || commit,
+    commit,
+    path,
+    importedAt: Date.now(),
+  };
+}
+
+function normalizeSourcePath(value: string | undefined) {
+  const normalized = (value?.trim() || ".").replaceAll("\\", "/").replace(/^\.\/+/, "");
+  if (!normalized || normalized === ".") return ".";
+  return normalized.replace(/\/+$/, "") || ".";
 }

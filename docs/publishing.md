@@ -67,6 +67,26 @@ and the destination owner. It preserves the skill, version history, stats,
 comments, forks, aliases, and audit trail; old owner URLs continue through the
 alias/redirect path.
 
+### GitHub Actions for Skills
+
+Use the reusable skill workflow for catalog repos that keep many skills under a
+directory such as `skills/`. Pull requests should run dry-run previews, and real
+publishes should start with manual `workflow_dispatch` runs.
+
+```yaml
+jobs:
+  publish:
+    uses: openclaw/clawhub/.github/workflows/skill-publish.yml@v1
+    with:
+      owner: nvidia
+      dry_run: false
+    secrets:
+      clawhub_token: ${{ secrets.CLAWHUB_TOKEN }}
+```
+
+`root` defaults to `skills`. To publish or preview one folder, pass
+`skill_path`, for example `skill_path: skills/review-helper`.
+
 ## Plugins
 
 Plugins use npm-style package names. Scoped package names include the owner in

@@ -227,6 +227,54 @@ describe("cmdPublish", () => {
     }
   });
 
+  it("includes GitHub source provenance for CI publishes", async () => {
+    const workdir = await makeTmpWorkdir();
+    const dateSpy = vi.spyOn(Date, "now").mockReturnValue(123_456_789);
+    try {
+      const folder = join(workdir, "source-skill");
+      await mkdir(folder, { recursive: true });
+      await writeFile(join(folder, "SKILL.md"), "# Skill\n", "utf8");
+
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        skillId: "skill_1",
+        versionId: "ver_1",
+      });
+
+      await cmdPublish(makeOpts(workdir), "source-skill", {
+        slug: "source-skill",
+        name: "Source Skill",
+        version: "1.0.0",
+        sourceRepo: "https://github.com/NVIDIA/skills",
+        sourceCommit: "abc123",
+        sourceRef: "refs/heads/main",
+        sourcePath: "skills/source-skill",
+      });
+
+      const publishCall = httpMocks.apiRequestForm.mock.calls.find((call) => {
+        const req = call[1] as { path?: string } | undefined;
+        return req?.path === "/api/v1/skills";
+      });
+      if (!publishCall) throw new Error("Missing publish call");
+      const publishForm = (publishCall[1] as { form?: FormData }).form as FormData;
+      const payloadEntry = publishForm.get("payload");
+      if (typeof payloadEntry !== "string") throw new Error("Missing publish payload");
+      const payload = JSON.parse(payloadEntry);
+      expect(payload.source).toEqual({
+        kind: "github",
+        url: "https://github.com/NVIDIA/skills",
+        repo: "NVIDIA/skills",
+        ref: "refs/heads/main",
+        commit: "abc123",
+        path: "skills/source-skill",
+        importedAt: 123_456_789,
+      });
+      dateSpy.mockRestore();
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
   it('rejects plugin folders with guidance to use "clawhub package publish"', async () => {
     const workdir = await makeTmpWorkdir();
     try {
