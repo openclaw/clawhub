@@ -1,17 +1,17 @@
 # Official Publishers
 
-`official` is a ClawHub publisher policy flag derived from hard-coded
-`openclaw` organization membership.
+`official` is a ClawHub publisher policy flag derived from the ClawHub-managed
+official organization allowlist.
 
 For now, Official means:
 
-- the `openclaw` org publisher is Official
-- personal publishers for current `openclaw` org members are Official
+- org publishers on the official allowlist are Official
+- personal publishers for current members of an official org are Official
 
 Official must not be accepted from uploaded skill or package metadata.
-Membership in any org other than `openclaw` does not make a personal publisher
-Official. There is no generic admin endpoint for marking arbitrary publishers
-Official.
+Membership in any org outside the official allowlist does not make a personal
+publisher Official. There is no generic admin endpoint for marking arbitrary
+publishers Official.
 
 The same policy signal appears in two places:
 

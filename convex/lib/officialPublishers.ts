@@ -7,7 +7,8 @@ import {
   normalizePublisherHandle,
 } from "./publishers";
 
-const OFFICIAL_ORG_HANDLE = "openclaw";
+const OFFICIAL_ORG_HANDLES = ["openclaw", "nvidia"] as const;
+const OFFICIAL_ORG_HANDLE_SET = new Set<string>(OFFICIAL_ORG_HANDLES);
 
 type DbCtx = Pick<QueryCtx | MutationCtx, "db">;
 
@@ -31,15 +32,20 @@ export async function isOfficialPublisher(
 ): Promise<boolean> {
   if (!publisher || publisher.deletedAt || publisher.deactivatedAt) return false;
   if (publisher.kind === "org") {
-    return normalizePublisherHandle(publisher.handle) === OFFICIAL_ORG_HANDLE;
+    const handle = normalizePublisherHandle(publisher.handle);
+    return Boolean(handle && OFFICIAL_ORG_HANDLE_SET.has(handle));
   }
   if (!publisher.linkedUserId) return false;
 
-  const officialOrg = await getPublisherByHandle(ctx, OFFICIAL_ORG_HANDLE);
-  if (!officialOrg || officialOrg.deletedAt || officialOrg.deactivatedAt) return false;
+  for (const officialOrgHandle of OFFICIAL_ORG_HANDLES) {
+    const officialOrg = await getPublisherByHandle(ctx, officialOrgHandle);
+    if (!officialOrg || officialOrg.deletedAt || officialOrg.deactivatedAt) continue;
 
-  const membership = await getPublisherMembership(ctx, officialOrg._id, publisher.linkedUserId);
-  return Boolean(membership);
+    const membership = await getPublisherMembership(ctx, officialOrg._id, publisher.linkedUserId);
+    if (membership) return true;
+  }
+
+  return false;
 }
 
 export async function toPublicPublisherWithOfficial(

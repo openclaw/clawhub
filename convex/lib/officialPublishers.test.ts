@@ -26,6 +26,14 @@ describe("isOfficialPublisher", () => {
     ).resolves.toBe(true);
   });
 
+  it("treats the nvidia org publisher as official", async () => {
+    const ctx = { db: { query: vi.fn() } };
+
+    await expect(
+      isOfficialPublisher(ctx as never, makePublisher({ handle: "nvidia" })),
+    ).resolves.toBe(true);
+  });
+
   it("treats personal publishers for openclaw org members as official", async () => {
     const openclaw = makePublisher({ _id: "publishers:openclaw", handle: "openclaw" });
     const personal = makePublisher({
