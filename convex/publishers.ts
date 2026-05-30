@@ -1834,6 +1834,34 @@ export const getByHandle = query({
     await toPublicPublisherWithLinkedImage(ctx, await getPublisherByHandle(ctx, args.handle)),
 });
 
+export const getMyProfileHandle = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getOptionalActiveAuthUserId(ctx);
+    if (!userId) return null;
+    const user = await ctx.db.get(userId);
+    if (!user || user.deletedAt || user.deactivatedAt) return null;
+
+    if (user.personalPublisherId) {
+      const directPublisher = await ctx.db.get(user.personalPublisherId);
+      if (directPublisher?.kind === "user" && isPublisherActive(directPublisher)) {
+        if (directPublisher.linkedUserId === user._id) return directPublisher.handle;
+        if (!directPublisher.linkedUserId) {
+          const legacyMembership = await getPublisherMembership(ctx, directPublisher._id, user._id);
+          if (legacyMembership?.role === "owner") return directPublisher.handle;
+        }
+      }
+    }
+
+    const linkedPublisher = await getPersonalPublisherForUser(ctx, user._id);
+    if (linkedPublisher?.kind === "user" && isPublisherActive(linkedPublisher)) {
+      return linkedPublisher.handle;
+    }
+
+    return null;
+  },
+});
+
 export const getProfileByHandle = query({
   args: { handle: v.string() },
   handler: async (ctx, args) => {

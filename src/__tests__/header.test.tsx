@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { AriaAttributes, ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { api } from "../../convex/_generated/api";
 
 type HeaderAuthStatus = {
   isAuthenticated: boolean;
@@ -13,8 +14,9 @@ type HeaderAuthStatus = {
 };
 
 const navigateMock = vi.fn();
-const { signInMock, useUnifiedSearchMock } = vi.hoisted(() => ({
+const { signInMock, useQueryMock, useUnifiedSearchMock } = vi.hoisted(() => ({
   signInMock: vi.fn(),
+  useQueryMock: vi.fn(),
   useUnifiedSearchMock: vi.fn(),
 }));
 
@@ -64,11 +66,23 @@ const defaultUnifiedSearchResult = {
 };
 
 vi.mock("@tanstack/react-router", () => ({
-  Link: (props: { children: ReactNode; className?: string; hash?: string; to?: string }) => (
-    <a href={`${props.to ?? "/"}${props.hash ? `#${props.hash}` : ""}`} className={props.className}>
-      {props.children}
-    </a>
-  ),
+  Link: (props: {
+    children: ReactNode;
+    className?: string;
+    hash?: string;
+    params?: Record<string, string>;
+    to?: string;
+  }) => {
+    let href = props.to ?? "/";
+    for (const [key, value] of Object.entries(props.params ?? {})) {
+      href = href.replace(`$${key}`, encodeURIComponent(value));
+    }
+    return (
+      <a href={`${href}${props.hash ? `#${props.hash}` : ""}`} className={props.className}>
+        {props.children}
+      </a>
+    );
+  },
   useLocation: () => ({ pathname: "/" }),
   useNavigate: () => navigateMock,
 }));
@@ -78,6 +92,10 @@ vi.mock("@convex-dev/auth/react", () => ({
     signIn: signInMock,
     signOut: vi.fn(),
   }),
+}));
+
+vi.mock("convex/react", () => ({
+  useQuery: (...args: unknown[]) => useQueryMock(...args),
 }));
 
 const authStatusMock = vi.fn<() => HeaderAuthStatus>(() => ({
@@ -220,6 +238,7 @@ describe("Header", () => {
       me: null,
     });
     useUnifiedSearchMock.mockReturnValue(defaultUnifiedSearchResult);
+    useQueryMock.mockReturnValue(null);
     signInMock.mockReset();
     signInMock.mockResolvedValue({ signingIn: true });
   });
@@ -493,7 +512,8 @@ describe("Header", () => {
     expect(labels.slice(0, 4)).toEqual(["Home", "Skills", "Plugins", "Docs"]);
   });
 
-  it("links starred skills from the signed-in avatar menu", () => {
+  it("links account destinations from the signed-in avatar menu", () => {
+    useQueryMock.mockReturnValue("patrick-public");
     authStatusMock.mockReturnValue({
       isAuthenticated: true,
       isLoading: false,
@@ -508,6 +528,10 @@ describe("Header", () => {
 
     render(<Header />);
 
+    expect(useQueryMock).toHaveBeenCalledWith(api.publishers.getMyProfileHandle, {});
+    expect(screen.getByText("Profile").closest("a")?.getAttribute("href")).toBe(
+      "/user/patrick-public",
+    );
     expect(screen.getByText("Stars").closest("a")?.getAttribute("href")).toBe("/stars");
     expect(screen.getAllByText("Dashboard").length).toBeGreaterThan(0);
     expect(screen.getByText("Settings")).toBeTruthy();

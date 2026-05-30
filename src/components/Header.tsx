@@ -1,5 +1,6 @@
 import { useAuthActions } from "@convex-dev/auth/react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
+import { useQuery } from "convex/react";
 import {
   ArrowRight,
   ChevronDown,
@@ -11,8 +12,10 @@ import {
   Settings,
   Star,
   Sun,
+  User,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { api } from "../../convex/_generated/api";
 import {
   getUserFacingAuthError,
   isBannedAccountAuthError,
@@ -89,7 +92,12 @@ export default function Header() {
   const rawHandle = me?.handle ?? me?.displayName ?? "user";
   const handle = rawHandle.length > 25 ? `${rawHandle.slice(0, 25)}…` : rawHandle;
   const initial = (me?.displayName ?? me?.name ?? rawHandle).charAt(0).toUpperCase();
+  const hasResolvedUser = Boolean(me);
   const isAuthResolving = isLoading || (isAuthenticated && me === undefined);
+  const profileHandle = useQuery(
+    api.publishers.getMyProfileHandle,
+    hasResolvedUser ? {} : "skip",
+  ) as string | null | undefined;
   const signInRedirectTo = getCurrentRelativeUrl();
 
   const [navSearchQuery, setNavSearchQuery] = useState("");
@@ -411,6 +419,18 @@ export default function Header() {
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="user-dropdown-content">
+                  {profileHandle ? (
+                    <DropdownMenuItem asChild>
+                      <Link
+                        to="/user/$handle"
+                        params={{ handle: profileHandle }}
+                        className="flex items-center gap-2"
+                      >
+                        <User size={14} aria-hidden="true" />
+                        Profile
+                      </Link>
+                    </DropdownMenuItem>
+                  ) : null}
                   <DropdownMenuItem asChild>
                     <Link to="/dashboard" className="flex items-center gap-2">
                       <LayoutDashboard size={14} aria-hidden="true" />

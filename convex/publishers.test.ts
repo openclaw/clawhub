@@ -6,6 +6,7 @@ import {
   listPublicPage,
   listPublic,
   listMine,
+  getMyProfileHandle,
   getProfileByHandle,
   listMembers,
   listPublishedPage,
@@ -145,6 +146,10 @@ const recoverPersonalPublisherInternalHandler = (
 
 const listMineHandler = (
   listMine as unknown as WrappedHandler<Record<string, never>, Array<unknown>>
+)._handler;
+
+const getMyProfileHandleHandler = (
+  getMyProfileHandle as unknown as WrappedHandler<Record<string, never>, string | null>
 )._handler;
 
 const listPublicHandler = (
@@ -3644,6 +3649,150 @@ describe("publisher bootstrap", () => {
         }),
       }),
     ]);
+  });
+
+  it("returns the linked personal publisher handle instead of a stale user handle", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:owner") {
+            return {
+              _id: id,
+              handle: "stale-user-handle",
+              personalPublisherId: "publishers:stale",
+            };
+          }
+          if (id === "publishers:stale") {
+            return {
+              _id: id,
+              kind: "user",
+              handle: "old-profile",
+              linkedUserId: "users:previous-owner",
+            };
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table !== "publishers") throw new Error(`unexpected table ${table}`);
+          return {
+            withIndex: vi.fn((indexName: string, builder: (q: unknown) => unknown) => {
+              if (indexName !== "by_linked_user") throw new Error(`unexpected index ${indexName}`);
+              const values = new Map<string, unknown>();
+              builder({
+                eq: vi.fn((field: string, value: unknown) => {
+                  values.set(field, value);
+                  return {};
+                }),
+              });
+              return {
+                unique: vi.fn().mockResolvedValue(
+                  values.get("linkedUserId") === "users:owner"
+                    ? {
+                        _id: "publishers:current",
+                        kind: "user",
+                        handle: "real-profile",
+                        linkedUserId: "users:owner",
+                      }
+                    : null,
+                ),
+              };
+            }),
+          };
+        }),
+      },
+    };
+
+    await expect(getMyProfileHandleHandler(ctx as never, {})).resolves.toBe("real-profile");
+  });
+
+  it("keeps legacy personal publisher handles when the direct pointer is valid", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:legacy" as never);
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:legacy") {
+            return {
+              _id: id,
+              handle: "legacy-user",
+              personalPublisherId: "publishers:legacy-profile",
+            };
+          }
+          if (id === "publishers:legacy-profile") {
+            return {
+              _id: id,
+              kind: "user",
+              handle: "legacy-profile",
+              linkedUserId: undefined,
+            };
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table !== "publisherMembers") throw new Error(`unexpected table ${table}`);
+          return {
+            withIndex: vi.fn(() => ({
+              unique: vi.fn().mockResolvedValue({
+                publisherId: "publishers:legacy-profile",
+                userId: "users:legacy",
+                role: "owner",
+              }),
+            })),
+          };
+        }),
+      },
+    };
+
+    await expect(getMyProfileHandleHandler(ctx as never, {})).resolves.toBe("legacy-profile");
+  });
+
+  it("ignores stale legacy personal publisher pointers without owner membership", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:legacy" as never);
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:legacy") {
+            return {
+              _id: id,
+              personalPublisherId: "publishers:stale-legacy",
+            };
+          }
+          if (id === "publishers:stale-legacy") {
+            return {
+              _id: id,
+              kind: "user",
+              handle: "stale-legacy-profile",
+              linkedUserId: undefined,
+            };
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table === "publisherMembers") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue(null),
+              })),
+            };
+          }
+          if (table === "publishers") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue({
+                  _id: "publishers:linked",
+                  kind: "user",
+                  handle: "linked-profile",
+                  linkedUserId: "users:legacy",
+                }),
+              })),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await expect(getMyProfileHandleHandler(ctx as never, {})).resolves.toBe("linked-profile");
   });
 
   it("returns every published item for mine listings so deletion confirmations are complete", async () => {
