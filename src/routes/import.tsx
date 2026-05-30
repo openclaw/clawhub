@@ -61,7 +61,8 @@ export const Route = createFileRoute("/import")({
     const siteName = getSiteName(mode);
     const siteUrl = getSiteUrlForMode(mode);
     const title = `Import from GitHub | ${siteName}`;
-    const description = "Import SKILL.md files from your public GitHub repositories into ClawHub.";
+    const description =
+      "Import SKILL.md and skills.md files from your public GitHub repositories into ClawHub.";
 
     return {
       links: [
@@ -372,7 +373,7 @@ export function ImportGitHub() {
           );
         });
         if (nextRepos.length === 0) {
-          setRepoListStatus(query ? "No matching skills." : "No SKILL.md found.");
+          setRepoListStatus(query ? "No matching skills." : "No skills found.");
         } else {
           setRepoListStatus(null);
         }
@@ -1553,7 +1554,7 @@ function getDraftIssues({
     issues.push("Select at least one file.");
   }
   if (!draft.selected[draft.preview.candidate.readmePath]) {
-    issues.push("SKILL.md must stay selected.");
+    issues.push("The skill file must stay selected.");
   }
   return issues;
 }

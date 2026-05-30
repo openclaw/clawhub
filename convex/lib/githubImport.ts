@@ -37,7 +37,7 @@ export type GitHubImportFileEntry = {
 const MAX_REDIRECTS = 6;
 const GITHUB_HOST = "github.com";
 const CODELOAD_HOST = "codeload.github.com";
-const SKILL_FILENAME = "skill.md";
+const SKILL_FILENAMES = new Set(["skill.md", "skills.md"]);
 
 export function parseGitHubImportUrl(input: string): GitHubImportUrl {
   const rawUrl = input.trim();
@@ -82,8 +82,8 @@ export function parseGitHubImportUrl(input: string): GitHubImportUrl {
   if (kind === "blob") {
     if (!rest) throw new Error("Missing path in GitHub URL");
     if (!normalizedRest) throw new Error("Invalid path in GitHub URL");
-    if ((normalizedRest.split("/").at(-1) ?? "").toLowerCase() !== SKILL_FILENAME) {
-      throw new Error("GitHub file URL must point to SKILL.md");
+    if (!isGitHubSkillFilePath(normalizedRest)) {
+      throw new Error("GitHub file URL must point to SKILL.md or skills.md");
     }
     const dir = normalizedRest.split("/").slice(0, -1).join("/");
     return { owner, repo, ref, path: dir || undefined, originalUrl };
@@ -243,9 +243,7 @@ export function detectGitHubImportCandidates(entries: ZipEntryMap): GitHubImport
   const candidates: GitHubImportCandidate[] = [];
   for (const path of Object.keys(entries)) {
     const normalized = normalizeRepoPath(path);
-    const lower = normalized.toLowerCase();
-    const isSkill = lower === SKILL_FILENAME || lower.endsWith(`/${SKILL_FILENAME}`);
-    if (!isSkill) continue;
+    if (!isGitHubSkillFilePath(normalized)) continue;
     const dir = normalized.split("/").slice(0, -1).join("/");
     const readmePath = normalized;
     const raw = new TextDecoder().decode(entries[path] ?? new Uint8Array());
@@ -261,6 +259,12 @@ export function detectGitHubImportCandidates(entries: ZipEntryMap): GitHubImport
     });
   }
   return uniqCandidates(candidates);
+}
+
+export function isGitHubSkillFilePath(path: string) {
+  const normalized = normalizeRepoPath(path);
+  const filename = normalized.split("/").at(-1)?.toLowerCase() ?? "";
+  return SKILL_FILENAMES.has(filename);
 }
 
 function uniqCandidates(candidates: GitHubImportCandidate[]) {

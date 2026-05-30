@@ -77,10 +77,20 @@ describe("github import", () => {
     });
   });
 
-  it("rejects blob urls that do not point to SKILL.md", () => {
+  it("parses legacy skills.md blob urls and derives folder path", () => {
+    expect(parseGitHubImportUrl("https://github.com/a/b/blob/main/skills/foo/skills.md")).toEqual({
+      owner: "a",
+      repo: "b",
+      ref: "main",
+      path: "skills/foo",
+      originalUrl: "https://github.com/a/b/blob/main/skills/foo/skills.md",
+    });
+  });
+
+  it("rejects blob urls that do not point to a skill file", () => {
     expect(() =>
       parseGitHubImportUrl("https://github.com/a/b/blob/main/skills/foo/README.md"),
-    ).toThrow(/SKILL\.md/i);
+    ).toThrow(/SKILL\.md or skills\.md/i);
   });
 
   it("strips single top-level folder from GitHub zip entries", () => {
@@ -112,7 +122,7 @@ describe("github import", () => {
     expect(candidates[0]?.name).toBe("demo");
   });
 
-  it("detects only SKILL.md candidates", () => {
+  it("detects SKILL.md and legacy skills.md candidates", () => {
     const zip = buildGitHubZipForTests({
       "repo-1/alpha/SKILL.md": `---\nname: Alpha\n---\nBody`,
       "repo-1/beta/skills.md": `---\nname: Beta\n---\nBody`,
@@ -121,8 +131,8 @@ describe("github import", () => {
     });
     const stripped = stripGitHubZipRoot(unzipSync(zip));
     const candidates = detectGitHubImportCandidates(stripped);
-    expect(candidates.map((c) => c.path)).toEqual(["alpha"]);
-    expect(candidates.map((c) => c.name)).toEqual(["Alpha"]);
+    expect(candidates.map((c) => c.path)).toEqual(["alpha", "beta"]);
+    expect(candidates.map((c) => c.name)).toEqual(["Alpha", "Beta"]);
   });
 
   it("computes default selection via markdown references", () => {
