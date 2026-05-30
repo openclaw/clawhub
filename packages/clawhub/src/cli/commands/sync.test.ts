@@ -479,6 +479,54 @@ describe("cmdSync", () => {
     expect(output).toMatch(/Agent: Work/);
   });
 
+  it("can disable auto-discovered clawdbot roots for CI exact scans", async () => {
+    interactive = false;
+    const stdoutWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const scannedRoots: string[] = [];
+    const { findSkillFolders } = await import("../scanSkills.js");
+    mocked(findSkillFolders).mockImplementation(async (root: string) => {
+      scannedRoots.push(root);
+      if (root === "/scan") {
+        return [{ folder: "/scan/ci-skill", slug: "ci-skill", displayName: "CI Skill" }];
+      }
+      if (root === "/auto") {
+        return [{ folder: "/auto/auto-skill", slug: "auto-skill", displayName: "Auto Skill" }];
+      }
+      return [];
+    });
+    mockResolveClawdbotSkillRoots.mockResolvedValueOnce({
+      roots: ["/auto"],
+      labels: { "/auto": "Agent: Work" },
+    });
+    mockApiRequest.mockImplementation(async (_registry: string, args: { path: string }) => {
+      if (args.path.startsWith("/api/v1/resolve?")) {
+        throw new Error("Skill not found");
+      }
+      throw new Error(`Unexpected apiRequest: ${args.path}`);
+    });
+
+    let output = "";
+    try {
+      await cmdSync(
+        makeOpts(),
+        { root: ["/scan"], all: true, dryRun: true, json: true, clawdbotRoots: false },
+        false,
+      );
+      output = String(stdoutWrite.mock.calls.at(-1)?.[0] ?? "").trim();
+    } finally {
+      stdoutWrite.mockRestore();
+    }
+
+    expect(mockResolveClawdbotSkillRoots).not.toHaveBeenCalled();
+    expect(scannedRoots).not.toContain("/auto");
+    const parsed = JSON.parse(output) as {
+      roots: string[];
+      wouldPublish: Array<{ slug: string }>;
+    };
+    expect(parsed.roots).toEqual(["/work", "/work/skills", "/scan"]);
+    expect(parsed.wouldPublish.map((entry) => entry.slug)).toEqual(["ci-skill"]);
+  });
+
   it("allows empty changelog for updates (interactive)", async () => {
     interactive = true;
     mockApiRequest.mockImplementation(async (_registry: string, args: { path: string }) => {
