@@ -21,6 +21,13 @@ Optional:
 - `.clawhubignore` (ignore patterns for publish/sync, legacy `.clawdhubignore`)
 - `.gitignore` (also honored)
 
+## GitHub import
+
+The web GitHub importer is stricter than local publish/sync. It only discovers
+`SKILL.md` files in public, non-fork repositories owned by the signed-in GitHub
+account. It does not import private repos, forks, archived/disabled repos,
+third-party public repos, or legacy `skills.md` files.
+
 Local install metadata (written by the CLI):
 
 - `<skill>/.clawhub/origin.json` (legacy `.clawdhub`)

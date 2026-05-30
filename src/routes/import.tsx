@@ -18,7 +18,15 @@ import {
   Rocket,
   Search,
 } from "lucide-react";
-import { type ReactNode, type SVGProps, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  type ReactNode,
+  type SVGProps,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import { copyText } from "../components/InstallCopyButton";
@@ -159,7 +167,6 @@ const OPENCLAW_SKILLS_DISCORD_URL =
 const PUBLIC_CLAWHUB_SITE_URL = "https://clawhub.ai";
 const LOCAL_SHARE_HOSTS = new Set(["localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]"]);
 const GITHUB_REPO_PAGE_SIZE = 100;
-const MAX_GITHUB_REPO_PAGES = 1;
 const DEV_MOCK_SKILL_NAMES = [
   "agent-release-notes",
   "audit-brief",
@@ -195,6 +202,9 @@ export function ImportGitHub() {
   const [accountLogin, setAccountLogin] = useState<string | null>(null);
   const [accountAvatarUrl, setAccountAvatarUrl] = useState<string | null>(null);
   const [repoSearch, setRepoSearch] = useState("");
+  const [repoListPage, setRepoListPage] = useState(1);
+  const [repoListQuery, setRepoListQuery] = useState("");
+  const [hasMoreRepos, setHasMoreRepos] = useState(false);
   const [repoListStatus, setRepoListStatus] = useState<string | null>(null);
   const [repoListError, setRepoListError] = useState<string | null>(null);
   const [isRepoListBusy, setIsRepoListBusy] = useState(false);
@@ -202,6 +212,8 @@ export function ImportGitHub() {
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
+  const repoLoadSeq = useRef(0);
+  const reposRef = useRef<OwnedGitHubRepo[]>([]);
 
   const visibleRepos = useMemo(() => {
     const query = repoSearch.trim().toLowerCase();
@@ -215,7 +227,7 @@ export function ImportGitHub() {
       );
     });
   }, [repoSearch, repos]);
-  const showRepoSearch = repos.length > 10;
+  const showRepoSearch = repos.length > 10 || hasMoreRepos || repoSearch.trim().length > 0;
   const selectedRepoItems = useMemo(
     () => repos.filter((repo) => selectedRepoKeys[getRepoKey(repo)]),
     [repos, selectedRepoKeys],
@@ -313,75 +325,77 @@ export function ImportGitHub() {
     status,
   });
 
-  const loadRepos = useCallback(async () => {
-    setIsRepoListBusy(true);
-    setRepoListError(null);
-    setRepoListStatus(null);
-    try {
-      const scannedRepos: OwnedGitHubRepo[] = [];
-      let page = 1;
-      let hasMore = true;
-      let accountLoginValue: string | null = null;
-      let accountAvatarValue: string | null = null;
-      let scannedMatchLimit = 0;
+  const loadRepos = useCallback(
+    async (options?: { query?: string; page?: number; append?: boolean }) => {
+      const query = options?.query?.trim() ?? "";
+      const page = options?.page ?? 1;
+      const append = options?.append ?? false;
+      const requestId = repoLoadSeq.current + 1;
+      repoLoadSeq.current = requestId;
 
-      while (hasMore && page <= MAX_GITHUB_REPO_PAGES) {
-        if (page > 1) setRepoListStatus("Scanning more repos...");
-        const result = await listOwnedRepos({ page, perPage: GITHUB_REPO_PAGE_SIZE });
-        scannedRepos.push(...((result.repos ?? []) as OwnedGitHubRepo[]));
-        scannedMatchLimit += result.perPage ?? GITHUB_REPO_PAGE_SIZE;
-        if (page === 1) {
-          accountLoginValue =
-            typeof result.account?.login === "string" && result.account.login.trim()
-              ? result.account.login.trim()
-              : null;
-          accountAvatarValue =
-            typeof result.account?.avatarUrl === "string" && result.account.avatarUrl.trim()
-              ? result.account.avatarUrl.trim()
-              : null;
+      setIsRepoListBusy(true);
+      setRepoListError(null);
+      setRepoListStatus(null);
+      try {
+        const result = await listOwnedRepos({
+          page,
+          perPage: GITHUB_REPO_PAGE_SIZE,
+          query: query || undefined,
+        });
+        if (requestId !== repoLoadSeq.current) return;
+
+        const fetchedRepos = (result.repos ?? []) as OwnedGitHubRepo[];
+        const nextRepos = append
+          ? mergeRepoLists(reposRef.current, fetchedRepos)
+          : expandDevMockSkillRepos(fetchedRepos);
+        const accountLoginValue =
+          typeof result.account?.login === "string" && result.account.login.trim()
+            ? result.account.login.trim()
+            : null;
+        const accountAvatarValue =
+          typeof result.account?.avatarUrl === "string" && result.account.avatarUrl.trim()
+            ? result.account.avatarUrl.trim()
+            : null;
+        setAccountLogin(accountLoginValue);
+        setAccountAvatarUrl(accountAvatarValue);
+        reposRef.current = nextRepos;
+        setRepos(nextRepos);
+        setRepoListPage(page);
+        setRepoListQuery(query);
+        setHasMoreRepos(result.hasMore);
+        setSelectedRepoKeys((current) => {
+          return Object.fromEntries(
+            nextRepos.map((repo) => {
+              const key = getRepoKey(repo);
+              return [key, current[key] ?? true];
+            }),
+          );
+        });
+        if (nextRepos.length === 0) {
+          setRepoListStatus(query ? "No matching skills." : "No SKILL.md found.");
+        } else {
+          setRepoListStatus(null);
         }
-        hasMore = result.hasMore;
-        page += 1;
+      } catch (e) {
+        if (requestId !== repoLoadSeq.current) return;
+        setRepoListError(getUserFacingConvexError(e, "Could not load GitHub repos"));
+      } finally {
+        if (requestId === repoLoadSeq.current) setIsRepoListBusy(false);
       }
-
-      const nextRepos = expandDevMockSkillRepos(scannedRepos);
-      const nextLogin = accountLoginValue;
-      const nextAvatarUrl = accountAvatarValue;
-      setAccountLogin(nextLogin);
-      setAccountAvatarUrl(nextAvatarUrl);
-      setRepos(nextRepos);
-      setSelectedRepoKeys((current) => {
-        return Object.fromEntries(
-          nextRepos.map((repo) => {
-            const key = getRepoKey(repo);
-            return [key, current[key] ?? true];
-          }),
-        );
-      });
-      if (nextRepos.length === 0) {
-        setRepoListStatus("No SKILL.md found.");
-      } else {
-        setRepoListStatus(hasMore ? `Showing the first ${scannedMatchLimit} matches.` : null);
-      }
-    } catch (e) {
-      setRepoListError(getUserFacingConvexError(e, "Could not load GitHub repos"));
-    } finally {
-      setIsRepoListBusy(false);
-    }
-  }, [listOwnedRepos]);
+    },
+    [listOwnedRepos],
+  );
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      return undefined;
-    }
-    let cancelled = false;
-    void loadRepos().finally(() => {
-      if (cancelled) return;
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [isAuthenticated, loadRepos]);
+    if (!isAuthenticated) return undefined;
+    const timer = window.setTimeout(
+      () => {
+        void loadRepos({ query: repoSearch });
+      },
+      repoSearch.trim() ? 250 : 0,
+    );
+    return () => window.clearTimeout(timer);
+  }, [isAuthenticated, loadRepos, repoSearch]);
 
   useEffect(() => {
     if (orderedDrafts.length === 0) return;
@@ -691,7 +705,7 @@ export function ImportGitHub() {
                             size="icon"
                             className="h-8 w-8 shrink-0 border-transparent bg-transparent text-[color:var(--ink-soft)] hover:bg-transparent hover:text-[color:var(--ink)]"
                             aria-label="Update list"
-                            onClick={() => void loadRepos()}
+                            onClick={() => void loadRepos({ query: repoSearch })}
                           >
                             <RefreshCw className="h-4 w-4" aria-hidden="true" />
                           </Button>
@@ -802,7 +816,25 @@ export function ImportGitHub() {
                       );
                     })}
                   </div>
-                  <div className="flex items-center justify-end gap-4">
+                  <div className="flex items-center justify-between gap-4">
+                    {hasMoreRepos ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        disabled={isRepoListBusy}
+                        onClick={() =>
+                          void loadRepos({
+                            query: repoListQuery,
+                            page: repoListPage + 1,
+                            append: true,
+                          })
+                        }
+                      >
+                        Load more
+                      </Button>
+                    ) : (
+                      <span />
+                    )}
                     <Button
                       variant="primary"
                       disabled={selectedRepoItems.length === 0 || isBusy}
@@ -1543,6 +1575,12 @@ function formatRepoDate(value: string | null | undefined) {
 
 function getRepoKey(repo: OwnedGitHubRepo) {
   return `${repo.fullName}:${repo.skillPath}`;
+}
+
+function mergeRepoLists(current: OwnedGitHubRepo[], incoming: OwnedGitHubRepo[]) {
+  const byKey = new Map(current.map((repo) => [getRepoKey(repo), repo]));
+  for (const repo of incoming) byKey.set(getRepoKey(repo), repo);
+  return Array.from(byKey.values());
 }
 
 function getDevMockSkillCount() {
