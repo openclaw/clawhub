@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isSkillCardPath, sourceSkillVersionFiles } from "./skillCards";
+import { isSkillCardPath, selectTrustedSkillCardFile, sourceSkillVersionFiles } from "./skillCards";
 
 describe("skill card file helpers", () => {
   it("detects reserved Skill Card paths after upload-style dot prefixes", () => {
@@ -32,5 +32,17 @@ describe("skill card file helpers", () => {
       { path: "SKILL.md", sha256: "a" },
       { path: "references/guide.md", sha256: "b" },
     ]);
+  });
+
+  it("selects publisher-supplied Skill Cards only when explicitly trusted", async () => {
+    const files = [
+      { path: "SKILL.md", sha256: "a" },
+      { path: "skill-card.md", sha256: "publisher-authored" },
+    ];
+
+    await expect(selectTrustedSkillCardFile(files, [])).resolves.toBeNull();
+    await expect(
+      selectTrustedSkillCardFile(files, [], { allowPublisherSupplied: true }),
+    ).resolves.toEqual({ path: "skill-card.md", sha256: "publisher-authored" });
   });
 });

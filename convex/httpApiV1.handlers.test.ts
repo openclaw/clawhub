@@ -3301,6 +3301,66 @@ describe("httpApiV1 handlers", () => {
     expect(await response.text()).toBe("Skill Card not found");
   });
 
+  it("returns official org publisher-supplied skill-card.md from the Skill Card endpoint", async () => {
+    const internalVersion = {
+      _id: "skillVersions:1",
+      skillId: "skills:1",
+      version: "1.0.0",
+      createdAt: 1,
+      changelog: "c",
+      files: [
+        { path: "SKILL.md", size: 5, storageId: "storage:1", sha256: "source-sha" },
+        { path: "skill-card.md", size: 12, storageId: "storage:card", sha256: "card-sha" },
+      ],
+      softDeletedAt: undefined,
+    };
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "demo",
+            displayName: "Demo",
+            summary: "s",
+            tags: {},
+            stats: {},
+            createdAt: 1,
+            updatedAt: 2,
+            latestVersionId: "skillVersions:1",
+            ownerPublisherId: "publishers:openclaw",
+          },
+          latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
+          owner: null,
+        };
+      }
+      if ("skillVersionId" in args) {
+        return [{ fingerprint: "source-fingerprint", kind: "source", createdAt: 4 }];
+      }
+      if ("publisherId" in args) {
+        return {
+          _id: "publishers:openclaw",
+          kind: "org",
+          handle: "openclaw",
+          deletedAt: undefined,
+          deactivatedAt: undefined,
+        };
+      }
+      if ("versionId" in args) return internalVersion;
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const storage = { get: vi.fn(async () => new Blob(["# Official Skill Card\n"])) };
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation, storage }),
+      new Request("https://example.com/api/v1/skills/demo/card"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("# Official Skill Card\n");
+    expect(response.headers.get("X-Content-SHA256")).toBe("card-sha");
+  });
+
   it("returns bulk skill security verdicts without card data", async () => {
     const version = {
       _id: "skillVersions:1",
@@ -3978,6 +4038,87 @@ describe("httpApiV1 handlers", () => {
       size: null,
     });
     expect(json.artifact.bundleFingerprints).toEqual([]);
+  });
+
+  it("lets official org publisher-supplied skill-card.md satisfy verification", async () => {
+    const internalVersion = {
+      _id: "skillVersions:1",
+      skillId: "skills:1",
+      version: "1.0.0",
+      createdAt: 1,
+      changelog: "c",
+      fingerprint: "source-fingerprint",
+      files: [
+        { path: "SKILL.md", size: 5, storageId: "storage:1", sha256: "source-sha" },
+        { path: "skill-card.md", size: 12, storageId: "storage:card", sha256: "card-sha" },
+      ],
+      parsed: {},
+      staticScan: {
+        status: "clean",
+        reasonCodes: [],
+        findings: [],
+        summary: "Static scan clean.",
+        checkedAt: 2,
+      },
+      llmAnalysis: {
+        status: "clean",
+        verdict: "clean",
+        summary: "ClawScan clean.",
+        checkedAt: 3,
+      },
+      softDeletedAt: undefined,
+    };
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "demo",
+            displayName: "Demo",
+            summary: "s",
+            tags: {},
+            stats: {},
+            createdAt: 1,
+            updatedAt: 2,
+            latestVersionId: "skillVersions:1",
+            ownerPublisherId: "publishers:openclaw",
+          },
+          latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
+          owner: null,
+        };
+      }
+      if ("skillVersionId" in args) {
+        return [{ fingerprint: "source-fingerprint", kind: "source", createdAt: 4 }];
+      }
+      if ("publisherId" in args) {
+        return {
+          _id: "publishers:openclaw",
+          kind: "org",
+          handle: "openclaw",
+          deletedAt: undefined,
+          deactivatedAt: undefined,
+        };
+      }
+      if ("versionId" in args) return internalVersion;
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation, storage: { get: vi.fn() } }),
+      new Request("https://example.com/api/v1/skills/demo/verify"),
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.ok).toBe(true);
+    expect(json.reasons).toEqual([]);
+    expect(json.card).toMatchObject({
+      available: true,
+      path: "skill-card.md",
+      sha256: "card-sha",
+      size: 12,
+    });
   });
 
   it("fails verification when the skill is malware-blocked by moderation", async () => {

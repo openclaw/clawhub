@@ -11,6 +11,8 @@ import type { GlobalOpts } from "../types.js";
 import { createSpinner, fail, formatError } from "../ui.js";
 import { normalizeGitHubRepo } from "./github.js";
 
+const OFFICIAL_SKILL_CARD_OWNER_HANDLES = new Set(["openclaw", "nvidia"]);
+
 export async function cmdPublish(
   opts: GlobalOpts,
   folderArg: string,
@@ -63,6 +65,7 @@ export async function cmdPublish(
   try {
     const filesOnDisk = stripGeneratedSkillCards(
       await ensureRootManifestFile(folder, await listTextFiles(folder)),
+      { preserveRootSkillCard: shouldPreserveRootSkillCard(ownerHandle) },
     );
     if (filesOnDisk.length === 0) fail("No files found");
     if (
@@ -113,8 +116,16 @@ export async function cmdPublish(
   }
 }
 
-function stripGeneratedSkillCards(files: Awaited<ReturnType<typeof listTextFiles>>) {
+function stripGeneratedSkillCards(
+  files: Awaited<ReturnType<typeof listTextFiles>>,
+  options: { preserveRootSkillCard?: boolean } = {},
+) {
+  if (options.preserveRootSkillCard) return files;
   return files.filter((file) => file.relPath.trim().toLowerCase() !== "skill-card.md");
+}
+
+function shouldPreserveRootSkillCard(ownerHandle: string | undefined) {
+  return Boolean(ownerHandle && OFFICIAL_SKILL_CARD_OWNER_HANDLES.has(ownerHandle.toLowerCase()));
 }
 
 async function ensureRootManifestFile(

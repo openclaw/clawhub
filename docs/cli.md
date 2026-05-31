@@ -209,14 +209,14 @@ jobs:
     if: github.event_name == 'pull_request'
     uses: openclaw/clawhub/.github/workflows/skill-publish.yml@v1
     with:
-      owner: nvidia
+      owner: <owner>
       dry_run: true
 
   publish:
     if: github.event_name == 'workflow_dispatch'
     uses: openclaw/clawhub/.github/workflows/skill-publish.yml@v1
     with:
-      owner: nvidia
+      owner: <owner>
       dry_run: false
     secrets:
       clawhub_token: ${{ secrets.CLAWHUB_TOKEN }}

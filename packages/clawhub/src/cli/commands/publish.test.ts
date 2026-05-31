@@ -125,6 +125,78 @@ describe("cmdPublish", () => {
     }
   });
 
+  it("keeps root skill-card.md when publishing to an explicit owner", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "official-skill");
+      await mkdir(folder, { recursive: true });
+      await writeFile(join(folder, "SKILL.md"), "# Skill\n", "utf8");
+      await writeFile(join(folder, "skill-card.md"), "# Official card\n", "utf8");
+
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        skillId: "skill_1",
+        versionId: "ver_1",
+      });
+
+      await cmdPublish(makeOpts(workdir), "official-skill", {
+        owner: "@openclaw",
+        slug: "official-skill",
+        name: "Official Skill",
+        version: "1.0.0",
+        changelog: "",
+        tags: "latest",
+      });
+
+      const publishCall = httpMocks.apiRequestForm.mock.calls.find((call) => {
+        const req = call[1] as { path?: string } | undefined;
+        return req?.path === "/api/v1/skills";
+      });
+      if (!publishCall) throw new Error("Missing publish call");
+      const publishForm = (publishCall[1] as { form?: FormData }).form as FormData;
+      const files = publishForm.getAll("files") as Array<Blob & { name?: string }>;
+      expect(files.map((file) => file.name ?? "").sort()).toEqual(["SKILL.md", "skill-card.md"]);
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("still strips root skill-card.md for ordinary owner publishes", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "community-skill");
+      await mkdir(folder, { recursive: true });
+      await writeFile(join(folder, "SKILL.md"), "# Skill\n", "utf8");
+      await writeFile(join(folder, "skill-card.md"), "# Generated card\n", "utf8");
+
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        skillId: "skill_1",
+        versionId: "ver_1",
+      });
+
+      await cmdPublish(makeOpts(workdir), "community-skill", {
+        owner: "@community-org",
+        slug: "community-skill",
+        name: "Community Skill",
+        version: "1.0.0",
+        changelog: "",
+        tags: "latest",
+      });
+
+      const publishCall = httpMocks.apiRequestForm.mock.calls.find((call) => {
+        const req = call[1] as { path?: string } | undefined;
+        return req?.path === "/api/v1/skills";
+      });
+      if (!publishCall) throw new Error("Missing publish call");
+      const publishForm = (publishCall[1] as { form?: FormData }).form as FormData;
+      const files = publishForm.getAll("files") as Array<Blob & { name?: string }>;
+      expect(files.map((file) => file.name ?? "").sort()).toEqual(["SKILL.md"]);
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
   it("allows empty changelog when updating an existing skill", async () => {
     const workdir = await makeTmpWorkdir();
     try {
@@ -245,7 +317,7 @@ describe("cmdPublish", () => {
         slug: "source-skill",
         name: "Source Skill",
         version: "1.0.0",
-        sourceRepo: "https://github.com/NVIDIA/skills",
+        sourceRepo: "https://github.com/openclaw/skills",
         sourceCommit: "abc123",
         sourceRef: "refs/heads/main",
         sourcePath: "skills/source-skill",
@@ -262,8 +334,8 @@ describe("cmdPublish", () => {
       const payload = JSON.parse(payloadEntry);
       expect(payload.source).toEqual({
         kind: "github",
-        url: "https://github.com/NVIDIA/skills",
-        repo: "NVIDIA/skills",
+        url: "https://github.com/openclaw/skills",
+        repo: "openclaw/skills",
         ref: "refs/heads/main",
         commit: "abc123",
         path: "skills/source-skill",
