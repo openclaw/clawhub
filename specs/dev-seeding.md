@@ -24,30 +24,21 @@ action. Internal tooling may pass an `ownerUserId`, but that id must stay inside
 tooling rather than crossing a frontend boundary. Fixture slugs and package names must include a
 stable per-user seed key so multiple developers can use the same dev deployment without colliding.
 
-## Curated Public Corpus Skill Exception
+## Public Corpus Skill Publishing Boundary
 
-Owner-scoped publishing remains the normal path for skills. A skill intended as community or
-publisher-owned content must be uploaded through the authenticated `clawhub skill publish` flow,
-not added to repo fixtures.
+Owner-scoped publishing is the only normal path for community or publisher-owned skills. A skill
+intended for installation by real users must be uploaded through the authenticated
+`clawhub skill publish` flow, not added directly to repo fixtures.
 
-Maintainers may approve a curated public-corpus skill exception only when the skill is fixture
-content for local dev seeding, corpus validation, search/install-surface QA, or public dataset
-coverage rather than a claimed publisher release. The PR must make that exception explicit and must
-not present the seeded dummy owner as real publisher provenance.
+The committed public corpus is fixture data for local dev seeding, corpus validation, search and
+install-surface QA, and public dataset coverage. At seed time, the importer assigns deterministic
+faker-generated local owners so local databases can exercise owner-linked UI and queries. Those dummy
+owners are fixture scaffolding, not publisher provenance.
 
-Before merge, a curated public-corpus skill exception must include:
-
-- maintainer approval for the exception in the PR review/merge path
-- a readable source fixture for the full skill content, not only an opaque JSONL row
-- a sync check keeping the readable source fixture and corpus row identical
-- public-corpus validation, including owner identity, raw Convex id, secret-like text, and local path
-  rejection
-- a security/trust-impact note explaining why the fixture route is acceptable for this case and what
-  review replaces the normal publish-time trust checks
-- public or repo-native source/rationale for why the curated fixture belongs in the committed corpus
-
-Curated corpus fixtures are not a shortcut for authors who can publish normally. If the content has a
-real external owner, package, or publisher identity, route it through owner-scoped publishing instead.
+Do not add ad hoc skill content directly to `fixtures/public-corpus` as a substitute for publishing.
+Public-corpus refreshes should come from maintainer-prepared fixture snapshots with recorded source
+snapshot, redaction policy, row counts, and validation output. A PR that wants to change this trust
+boundary must first change the policy explicitly before any skill fixture content lands.
 
 Current-user fixture seeding is dev-only. It must reject production Convex deployments, and it
 should not be exposed as a first-run dashboard button unless the UX and ownership rules are
