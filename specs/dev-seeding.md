@@ -24,21 +24,21 @@ action. Internal tooling may pass an `ownerUserId`, but that id must stay inside
 tooling rather than crossing a frontend boundary. Fixture slugs and package names must include a
 stable per-user seed key so multiple developers can use the same dev deployment without colliding.
 
-## Public Corpus Skill Publishing Boundary
+## Public Corpus Skill Provenance Boundary
 
-Owner-scoped publishing is the only normal path for community or publisher-owned skills. A skill
-intended for installation by real users must be uploaded through the authenticated
-`clawhub skill publish` flow, not added directly to repo fixtures.
+Owner-scoped publishing is the canonical path for community or publisher-owned skills. A skill
+intended for installation by real users is uploaded through the authenticated
+`clawhub skill publish` flow.
 
 The committed public corpus is fixture data for local dev seeding, corpus validation, search and
 install-surface QA, and public dataset coverage. At seed time, the importer assigns deterministic
 faker-generated local owners so local databases can exercise owner-linked UI and queries. Those dummy
-owners are fixture scaffolding, not publisher provenance.
+owners are fixture scaffolding separate from publisher provenance.
 
-Do not add ad hoc skill content directly to `fixtures/public-corpus` as a substitute for publishing.
-Public-corpus refreshes should come from maintainer-prepared fixture snapshots with recorded source
-snapshot, redaction policy, row counts, and validation output. A PR that wants to change this trust
-boundary must first change the policy explicitly before any skill fixture content lands.
+Public-corpus refreshes are maintainer-prepared fixture snapshots with recorded source snapshot,
+redaction policy, row counts, and validation output. Treat corpus entries as imported fixture records
+for exercising product surfaces; treat publisher identity as coming from authenticated owner-scoped
+publishing.
 
 Current-user fixture seeding is dev-only. It must reject production Convex deployments, and it
 should not be exposed as a first-run dashboard button unless the UX and ownership rules are

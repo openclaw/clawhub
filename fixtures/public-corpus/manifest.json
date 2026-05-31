@@ -16,6 +16,6 @@
     "scan findings",
     "labels"
   ],
-  "ownership_policy": "Importer assigns deterministic faker-generated dummy local accounts at seed time; public-corpus fixture owners are not publisher provenance.",
+  "ownership_policy": "Importer assigns deterministic faker-generated dummy local accounts at seed time; public-corpus fixture owners are fixture scaffolding separate from publisher provenance.",
   "refresh_policy": "Maintainer-prepared fixture; ordinary developers do not need production or private export data access."
 }
