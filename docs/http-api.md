@@ -136,6 +136,131 @@ Publisher discoverability guidance:
 - Rename aliases preserve resolution for old URLs and installs that resolve through the registry, but search ranking is based on the canonical skill metadata after the rename has indexed. Existing stats stay with the skill.
 - If a skill is unexpectedly invisible, check moderation state first with `clawhub inspect <slug>` while logged in before changing ranking-related metadata.
 
+### `GET /api/v1/feeds`
+
+Lists the public ClawHub feed documents that clients can subscribe to.
+
+Response:
+
+```json
+{
+  "schemaVersion": 1,
+  "feeds": [
+    {
+      "id": "clawhub-reviewed",
+      "title": "Reviewed ClawHub catalog entries",
+      "description": "Public entries that meet ClawHub's current review criteria.",
+      "url": "https://clawhub.ai/api/v1/feeds/reviewed",
+      "types": ["skill", "plugin"],
+      "schemaVersion": 1,
+      "criteria": "clean scans or moderation signals plus available verification metadata where applicable",
+      "attestation": {
+        "algorithm": "sha256",
+        "required": true
+      }
+    }
+  ]
+}
+```
+
+Current root feeds:
+
+- `/api/v1/feeds/all`: all public ClawHub skills and installable plugins.
+- `/api/v1/feeds/official`: entries marked official by ClawHub/OpenClaw.
+- `/api/v1/feeds/community`: public non-official entries.
+- `/api/v1/feeds/reviewed`: public entries that meet ClawHub's current review criteria.
+
+### `GET /api/v1/feeds/{all|official|community|reviewed}`
+
+Returns a feed document that OpenClaw clients and enterprise catalog publishers
+can consume without using ClawHub-specific search APIs.
+
+Query params:
+
+- `type` (optional): `all`, `skill`, `skills`, `plugin`, or `plugins`.
+  Defaults to `all`.
+- `limit` (optional): positive integer. Defaults to 500 and is capped at 5000.
+
+Response:
+
+```json
+{
+  "schemaVersion": 1,
+  "feedId": "clawhub-reviewed",
+  "scope": {
+    "kind": "root"
+  },
+  "generatedAt": "2026-05-31T00:00:00Z",
+  "sourceRevision": "clawhub-digest:feed=clawhub-reviewed;limit=500;truncated=false",
+  "entries": [
+    {
+      "id": "@openclaw/calendar-helper",
+      "type": "plugin",
+      "version": "1.2.0",
+      "title": "Calendar Helper",
+      "description": "Calendar workflow helpers.",
+      "publisher": "openclaw",
+      "source": {
+        "registry": "clawhub",
+        "package": "@openclaw/calendar-helper",
+        "url": "/plugins/@openclaw/calendar-helper"
+      },
+      "updatedAt": "2026-05-31T00:00:00Z",
+      "metadata": {
+        "clawhub.channel": "official",
+        "clawhub.family": "code-plugin",
+        "clawhub.isOfficial": "true"
+      }
+    }
+  ],
+  "attestation": {
+    "algorithm": "sha256",
+    "hash": "..."
+  }
+}
+```
+
+Notes:
+
+- Feed entries use `type: "skill"` for skill cards and `type: "plugin"` for
+  installable code-plugin or bundle-plugin packages.
+- `attestation.hash` is computed over the canonical feed body before the
+  attestation field is attached. Clients can use it for drift detection and
+  OpenClaw feed source pinning.
+- `source.url` is a canonical ClawHub relative URL suitable for display or
+  linking back to the catalog entry.
+- Invalid `type` values return `400`. Unknown query parameters are ignored.
+- Responses are cacheable for five minutes.
+
+OpenClaw clients can subscribe to a ClawHub root feed by configuring the bundled
+Feeds plugin:
+
+```jsonc
+{
+  "plugins": {
+    "entries": {
+      "feeds": {
+        "enabled": true,
+        "config": {
+          "sources": [
+            {
+              "id": "clawhub-reviewed",
+              "url": "https://clawhub.ai/api/v1/feeds/reviewed?limit=5000",
+              "trust": "pinned",
+              "integrity": "sha256:...",
+            },
+          ],
+          "search": {
+            "default": true,
+            "sources": ["clawhub-reviewed"],
+          },
+        },
+      },
+    },
+  },
+}
+```
+
 ### `GET /api/v1/skills`
 
 Query params:
