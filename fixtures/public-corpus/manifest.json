@@ -4,8 +4,8 @@
   "source_snapshot": "clawhub-wry-manatee-359-20260513T165423Z-a1666bb1",
   "redaction_policy_version": "public-signals-v2",
   "row_counts": {
-    "total": 1250,
-    "skills": 1000,
+    "total": 1251,
+    "skills": 1001,
     "plugins": 250
   },
   "fields_dropped": [
