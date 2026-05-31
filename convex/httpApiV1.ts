@@ -1,6 +1,13 @@
 import { httpAction } from "./functions";
 import { verifyDocsSessionV1Handler } from "./httpApiV1/docsSessionV1";
 import {
+  allFeedV1Handler,
+  communityFeedV1Handler,
+  feedsIndexV1Handler,
+  officialFeedV1Handler,
+  reviewedFeedV1Handler,
+} from "./httpApiV1/feedsV1";
+import {
   listBundlePluginsV1Handler,
   listCodePluginsV1Handler,
   listPackagesV1Handler,
@@ -42,6 +49,11 @@ import {
 import { whoamiV1Handler } from "./httpApiV1/whoamiV1";
 
 export const listPackagesV1Http = httpAction(listPackagesV1Handler);
+export const feedsIndexV1Http = httpAction(feedsIndexV1Handler);
+export const allFeedV1Http = httpAction(allFeedV1Handler);
+export const officialFeedV1Http = httpAction(officialFeedV1Handler);
+export const communityFeedV1Http = httpAction(communityFeedV1Handler);
+export const reviewedFeedV1Http = httpAction(reviewedFeedV1Handler);
 export const listPluginsV1Http = httpAction(listPluginsV1Handler);
 export const packagesGetRouterV1Http = httpAction(packagesGetRouterV1Handler);
 export const packagesPostRouterV1Http = httpAction(packagesPostRouterV1Handler);
@@ -82,6 +94,11 @@ export const banAppealContextV1Http = httpAction(banAppealContextV1Handler);
 
 export const __handlers = {
   listPackagesV1Handler,
+  feedsIndexV1Handler,
+  allFeedV1Handler,
+  officialFeedV1Handler,
+  communityFeedV1Handler,
+  reviewedFeedV1Handler,
   listPluginsV1Handler,
   packagesGetRouterV1Handler,
   packagesPostRouterV1Handler,

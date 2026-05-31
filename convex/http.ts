@@ -16,7 +16,11 @@ import {
   searchSkillsHttp,
 } from "./httpApi";
 import {
+  allFeedV1Http,
+  communityFeedV1Http,
+  createPublisherV1Http,
   exportSkillsV1Http,
+  feedsIndexV1Http,
   listBundlePluginsV1Http,
   listCodePluginsV1Http,
   listPackagesV1Http,
@@ -25,15 +29,16 @@ import {
   listSoulsV1Http,
   mintPublishTokenV1Http,
   npmMirrorGetHttp,
+  officialFeedV1Http,
   packagesDeleteRouterV1Http,
   packagesGetRouterV1Http,
   packagesPostRouterV1Http,
   pluginsGetRouterV1Http,
-  createPublisherV1Http,
   publishPackageV1Http,
   publishSkillV1Http,
   publishSoulV1Http,
   resolveSkillVersionV1Http,
+  reviewedFeedV1Http,
   searchSkillsV1Http,
   skillSecurityVerdictsV1Http,
   skillsDeleteRouterV1Http,
@@ -91,6 +96,36 @@ http.route({
   path: ApiRoutes.packages,
   method: "GET",
   handler: listPackagesV1Http,
+});
+
+http.route({
+  path: ApiRoutes.feeds,
+  method: "GET",
+  handler: feedsIndexV1Http,
+});
+
+http.route({
+  path: ApiRoutes.feedsAll,
+  method: "GET",
+  handler: allFeedV1Http,
+});
+
+http.route({
+  path: ApiRoutes.feedsOfficial,
+  method: "GET",
+  handler: officialFeedV1Http,
+});
+
+http.route({
+  path: ApiRoutes.feedsCommunity,
+  method: "GET",
+  handler: communityFeedV1Http,
+});
+
+http.route({
+  path: ApiRoutes.feedsReviewed,
+  method: "GET",
+  handler: reviewedFeedV1Http,
 });
 
 http.route({
