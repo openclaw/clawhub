@@ -8,57 +8,42 @@ read_when:
 
 # Publishing
 
-ClawHub publishing is owner-scoped: every publish targets a publisher, and the
-server decides whether the signed-in user is allowed to publish there.
+Publishing sends a skill folder or plugin package to ClawHub under the owner you
+choose. ClawHub checks that your token can publish for that owner, validates the
+metadata, name, version, files, and source information, then stores the release
+and starts automated security checks.
 
-## Owners
-
-An owner is a ClawHub publisher handle, such as `@alice` or `@openclaw`.
-Personal owners are created for users. Org owners can have multiple members.
-
-When you publish, you either use your personal owner or choose an org owner
-where you have publisher access.
+If validation fails, nothing is published. New releases may also stay out of
+normal install and download surfaces until review finishes.
 
 ## Skills
-
-For a catalog repo, keep skills in folders under `skills/`:
-
-```text
-skills/
-  review-helper/
-    SKILL.md
-  rag-blueprint/
-    SKILL.md
-```
 
 The simplest publishing path is the CLI. Sign in, preview the sync plan, then
 publish the new or changed skills:
 
 ```bash
 clawhub login
-clawhub sync --dry-run --owner nvidia --no-clawdbot-roots
-clawhub sync --all --owner nvidia --no-clawdbot-roots
+clawhub sync --dry-run --owner <owner>
+clawhub sync --all --owner <owner>
 ```
 
-`sync` scans for folders containing `SKILL.md`, compares them with ClawHub, and
-publishes anything new or changed. Use `--dry-run` first to see the plan without
-uploading. Use `--owner <handle>` when publishing to an org owner; omit it to
-publish as the authenticated user. `--no-clawdbot-roots` keeps the scan limited
-to the current repo and explicit roots, which is usually what CI and catalog
-repos want.
+`sync` scans for folders containing `SKILL.md` and compares them with ClawHub.
+When you run it without `--dry-run`, it publishes anything new or changed.
 
-The public page for a published skill is:
+Use `--dry-run` first to see the plan without uploading.
 
-```text
-https://clawhub.ai/<owner>/<slug>
-```
+Use `--owner <handle>` when publishing to an org owner. Omit it to publish as
+the authenticated user.
 
 ### GitHub Actions for Skills
 
-If you want to run skill publishing from CI, call ClawHub's reusable skill
-workflow from a small workflow in your repo. The example below is shaped for a
-catalog repo: operators choose whether to preview the full catalog, publish one
-skill folder, or publish the whole catalog.
+If you want to run skill publishing from CI, call ClawHub's reusable
+[`skill-publish.yml` workflow](https://github.com/openclaw/clawhub/blob/main/.github/workflows/skill-publish.yml)
+from a small workflow in your repo.
+
+The example below is shaped for a catalog repo: operators choose whether to
+preview the full catalog, publish one skill folder, or publish the whole
+catalog.
 
 ```yaml
 name: Publish Skills to ClawHub
@@ -76,7 +61,7 @@ on:
           - publish-single
           - publish-catalog
       skill_path:
-        description: Skill folder for publish-single, for example skills/review-helper.
+        description: Skill folder for publish-single, for example skills/<slug>.
         type: string
         required: false
         default: ""
@@ -102,7 +87,7 @@ jobs:
           case "${SKILL_PATH}" in
             skills/*) ;;
             *)
-              echo "::error::skill_path must point under skills/, for example skills/review-helper."
+              echo "::error::skill_path must point under skills/, for example skills/<slug>."
               exit 1
               ;;
           esac
@@ -111,7 +96,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && inputs.mode == 'dry-run'
     uses: openclaw/clawhub/.github/workflows/skill-publish.yml@main
     with:
-      owner: nvidia
+      owner: <owner>
       dry_run: true
     secrets:
       clawhub_token: ${{ secrets.CLAWHUB_TOKEN }}
@@ -121,7 +106,7 @@ jobs:
     needs: validate-single
     uses: openclaw/clawhub/.github/workflows/skill-publish.yml@main
     with:
-      owner: nvidia
+      owner: <owner>
       skill_path: ${{ inputs.skill_path }}
       dry_run: false
     secrets:
@@ -131,17 +116,18 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && inputs.mode == 'publish-catalog'
     uses: openclaw/clawhub/.github/workflows/skill-publish.yml@main
     with:
-      owner: nvidia
+      owner: <owner>
       dry_run: false
     secrets:
       clawhub_token: ${{ secrets.CLAWHUB_TOKEN }}
 ```
 
-Replace `nvidia` with your ClawHub owner handle. The called workflow defaults to
+Replace `<owner>` with your ClawHub owner handle. The called workflow defaults to
 scanning `skills/`; pass `skill_path` only when you want to process one folder.
 
-Before running a real publish, add a `CLAWHUB_TOKEN` repository secret. The token
-must belong to a ClawHub user that can publish to the selected owner.
+Before running a real publish, sign in as a ClawHub user that can publish to the
+selected owner, then store the current CLI token as a `CLAWHUB_TOKEN` repository
+secret:
 
 ```bash
 clawhub login --label "Skills GitHub Actions"
@@ -179,18 +165,6 @@ not control.
 - Run `clawhub package publish <source> --dry-run` before creating a release.
 - Expect new releases to stay out of public install surfaces until automated
   security checks and verification finish.
-
-## Release Flow
-
-1. The UI, CLI, or GitHub workflow gathers package metadata and files.
-2. The publish request is sent to ClawHub with the selected owner.
-3. The server validates owner permissions, package scope, package name, version,
-   file limits, and source metadata.
-4. ClawHub stores the release and starts automated security checks.
-5. New releases are hidden from normal install/download surfaces until review
-   and verification finish.
-
-If validation fails, the release is not created.
 
 ## FAQ
 
