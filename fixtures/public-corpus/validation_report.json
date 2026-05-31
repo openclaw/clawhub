@@ -1,10 +1,10 @@
 {
   "ok": true,
-  "generated_at": "2026-05-31T00:50:00.000Z",
+  "generated_at": "2026-05-14T18:43:58.463Z",
   "validation_summary": {
     "ok": true,
-    "rowCount": 1251,
-    "skillCount": 1001,
+    "rowCount": 1250,
+    "skillCount": 1000,
     "pluginCount": 250,
     "findings": []
   },

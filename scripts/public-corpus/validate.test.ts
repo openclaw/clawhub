@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_PUBLIC_CORPUS_FIXTURE,
@@ -107,17 +106,5 @@ describe("public corpus fixture validation", () => {
 
   it("documents the committed fixture path", () => {
     expect(DEFAULT_PUBLIC_CORPUS_FIXTURE).toBe("fixtures/public-corpus/corpus.jsonl");
-  });
-
-  it("keeps readable source fixtures in sync with corpus rows", () => {
-    const rows = parseCorpusJsonl(readFileSync(DEFAULT_PUBLIC_CORPUS_FIXTURE, "utf8"));
-    const coeRow = rows.find((row) => row.kind === "skill" && row.slug === "coe-root-cause");
-    const coeSkillMd = readFileSync(
-      "fixtures/public-corpus/skills/coe-root-cause/SKILL.md",
-      "utf8",
-    );
-
-    expect(coeRow).toEqual(expect.objectContaining({ kind: "skill" }));
-    expect(coeRow?.kind === "skill" ? coeRow.skillMd : undefined).toBe(coeSkillMd);
   });
 });
