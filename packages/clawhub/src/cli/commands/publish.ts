@@ -2,17 +2,14 @@ import { readFile, readdir, stat } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import semver from "semver";
 import { apiRequestForm } from "../../http.js";
-import {
-  ApiRoutes,
-  ApiV1PublishResponseSchema,
-  normalizeClawScanNote,
-} from "../../schema/index.js";
+import { ApiRoutes, ApiV1PublishResponseSchema } from "../../schema/index.js";
 import { listTextFiles } from "../../skills.js";
 import { requireAuthToken } from "../authToken.js";
 import { getRegistry } from "../registry.js";
 import { sanitizeSlug, titleCase } from "../slug.js";
 import type { GlobalOpts } from "../types.js";
 import { createSpinner, fail, formatError } from "../ui.js";
+import { normalizeGitHubRepo } from "./github.js";
 
 export async function cmdPublish(
   opts: GlobalOpts,
@@ -25,8 +22,11 @@ export async function cmdPublish(
     changelog?: string;
     tags?: string;
     forkOf?: string;
-    clawscanNote?: string;
     migrateOwner?: boolean;
+    sourceRepo?: string;
+    sourceCommit?: string;
+    sourceRef?: string;
+    sourcePath?: string;
   },
 ) {
   const folder = folderArg ? resolve(opts.workdir, folderArg) : null;
@@ -45,12 +45,6 @@ export async function cmdPublish(
   const ownerHandle = options.owner?.trim().replace(/^@+/, "");
   const version = options.version;
   const changelog = options.changelog ?? "";
-  let clawScanNote: string | undefined;
-  try {
-    clawScanNote = normalizeClawScanNote(options.clawscanNote);
-  } catch (error) {
-    fail(formatError(error));
-  }
   const tagsValue = options.tags ?? "latest";
   const tags = tagsValue
     .split(",")
@@ -59,6 +53,7 @@ export async function cmdPublish(
 
   const forkOfRaw = options.forkOf?.trim();
   const forkOf = forkOfRaw ? parseForkOf(forkOfRaw) : undefined;
+  const source = buildPublishSource(options);
 
   if (!slug) fail("--slug required");
   if (!displayName) fail("--name required");
@@ -66,7 +61,9 @@ export async function cmdPublish(
 
   const spinner = createSpinner(`Preparing ${slug}@${version}`);
   try {
-    const filesOnDisk = await ensureRootManifestFile(folder, await listTextFiles(folder));
+    const filesOnDisk = stripGeneratedSkillCards(
+      await ensureRootManifestFile(folder, await listTextFiles(folder)),
+    );
     if (filesOnDisk.length === 0) fail("No files found");
     if (
       !filesOnDisk.some((file) => {
@@ -87,9 +84,9 @@ export async function cmdPublish(
         ...(options.migrateOwner ? { migrateOwner: true } : {}),
         version,
         changelog,
-        ...(clawScanNote ? { clawScanNote } : {}),
         acceptLicenseTerms: true,
         tags,
+        ...(source ? { source } : {}),
         ...(forkOf ? { forkOf } : {}),
       }),
     );
@@ -114,6 +111,10 @@ export async function cmdPublish(
     spinner.fail(formatError(error));
     throw error;
   }
+}
+
+function stripGeneratedSkillCards(files: Awaited<ReturnType<typeof listTextFiles>>) {
+  return files.filter((file) => file.relPath.trim().toLowerCase() !== "skill-card.md");
 }
 
 async function ensureRootManifestFile(
@@ -179,4 +180,35 @@ function parseForkOf(value: string) {
   const version = (versionRaw ?? "").trim();
   if (version && !semver.valid(version)) fail("--fork-of version must be valid semver");
   return { slug, version: version || undefined };
+}
+
+function buildPublishSource(options: {
+  sourceRepo?: string;
+  sourceCommit?: string;
+  sourceRef?: string;
+  sourcePath?: string;
+}) {
+  const rawRepo = options.sourceRepo?.trim();
+  const commit = options.sourceCommit?.trim();
+  const ref = options.sourceRef?.trim();
+  const path = normalizeSourcePath(options.sourcePath);
+  if (!rawRepo && !commit && !ref && !options.sourcePath?.trim()) return undefined;
+  if (!rawRepo || !commit) fail("--source-repo and --source-commit must be provided together");
+  const repo = normalizeGitHubRepo(rawRepo);
+  if (!repo) fail("--source-repo must be a GitHub repo or URL");
+  return {
+    kind: "github" as const,
+    url: `https://github.com/${repo}`,
+    repo,
+    ref: ref || commit,
+    commit,
+    path,
+    importedAt: Date.now(),
+  };
+}
+
+function normalizeSourcePath(value: string | undefined) {
+  const normalized = (value?.trim() || ".").replaceAll("\\", "/").replace(/^\.\/+/, "");
+  if (!normalized || normalized === ".") return ".";
+  return normalized.replace(/\/+$/, "") || ".";
 }

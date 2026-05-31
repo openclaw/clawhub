@@ -112,7 +112,7 @@ export function PluginSecurityAuditPage({
   const pkg = detail.package;
   const release = version?.version ?? null;
   const requestPackageRescan = useMutation(api.securityScan.requestPackageRescan);
-  const settings = useQuery(api.packages.getClawScanNoteSettings, {
+  const manageContext = useQuery(api.packages.getManageContext, {
     name: resolvedName,
     candidateNames: getOpenClawPackageCandidateNames(name),
   });
@@ -149,14 +149,14 @@ export function PluginSecurityAuditPage({
       vtAnalysis={release.vtAnalysis ?? null}
       llmAnalysis={release.llmAnalysis ?? null}
       skillSpectorAnalysis={release.skillSpectorAnalysis ?? null}
-      staticScan={release.staticScan ?? null}
-      clawScanNote={release.clawScanNote ?? null}
-      canManageArtifact={Boolean(settings)}
-      settingsHref={settings ? `${buildPluginDetailHref(resolvedName)}/settings` : null}
+      canManageArtifact={Boolean(manageContext)}
       onRequestRescan={
-        settings
+        manageContext
           ? () =>
-              requestPackageRescan({ packageId: settings.package._id, version: release.version })
+              requestPackageRescan({
+                packageId: manageContext.package._id,
+                version: release.version,
+              })
           : null
       }
     />

@@ -126,6 +126,18 @@ clawhub sync --all --dry-run
 clawhub sync --all
 ```
 
+For catalog repos, ClawHub also provides a reusable GitHub workflow. By
+default it scans `skills/`; pass `skill_path` to process one folder.
+
+```yaml
+jobs:
+  dry-run:
+    uses: openclaw/clawhub/.github/workflows/skill-publish.yml@v1
+    with:
+      owner: nvidia
+      dry_run: true
+```
+
 When you are signed in, `sync` may also send a minimal install snapshot for
 aggregate install counts. See [Telemetry](./telemetry.md) for what is reported
 and how to opt out.

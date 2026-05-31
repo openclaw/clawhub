@@ -20,6 +20,7 @@ const generateChangelogPreview = vi.fn();
 const fetchMock = vi.fn();
 const useQueryMock = vi.fn();
 const useAuthStatusMock = vi.fn();
+const getSiteModeMock = vi.fn();
 // Allows individual test cases to drive the value `useSearch` returns.
 // The `updateSlug` search param triggers the form's "update existing"
 // branch and is required by the F1 regression cases below.
@@ -40,6 +41,10 @@ vi.mock("../lib/useAuthStatus", () => ({
   useAuthStatus: () => useAuthStatusMock(),
 }));
 
+vi.mock("../lib/site", () => ({
+  getSiteMode: () => getSiteModeMock(),
+}));
+
 describe("Upload route", () => {
   beforeEach(() => {
     generateUploadUrl.mockReset();
@@ -48,6 +53,8 @@ describe("Upload route", () => {
     fetchMock.mockReset();
     useQueryMock.mockReset();
     useAuthStatusMock.mockReset();
+    getSiteModeMock.mockReset();
+    getSiteModeMock.mockReturnValue("skills");
     useSearchMock.mockReset();
     useSearchMock.mockReturnValue({ updateSlug: undefined, ownerHandle: undefined });
     useActionCallCount = 0;
@@ -84,12 +91,59 @@ describe("Upload route", () => {
     vi.unstubAllGlobals();
   });
 
-  it("shows validation issues before submit", async () => {
+  it("links to the skill publishing guide", () => {
+    render(<Upload />);
+
+    const guideLink = screen.getByRole("link", { name: /Skill publishing guide/i });
+    expect(guideLink.getAttribute("href")).toBe("https://docs.openclaw.ai/clawhub/skill-format");
+    expect(guideLink.getAttribute("target")).toBe("_blank");
+  });
+
+  it("links to the soul publishing guide in SoulHub mode", () => {
+    getSiteModeMock.mockReturnValue("souls");
+    render(<Upload />);
+
+    expect(screen.getByRole("heading", { name: /Publish a soul/i })).toBeTruthy();
+    expect(screen.getByText("Drop or select a soul folder")).toBeTruthy();
+    const guideLink = screen.getByRole("link", { name: /Soul publishing guide/i });
+    expect(guideLink.getAttribute("href")).toBe("https://docs.openclaw.ai/clawhub/soul-format");
+    expect(guideLink.getAttribute("target")).toBe("_blank");
+  });
+
+  it("keeps required validation quiet before submit", async () => {
     render(<Upload />);
     const publishButton = screen.getByRole("button", { name: /publish/i });
+    const slugInput = screen.getByPlaceholderText("skill-name");
+    const displayNameInput = screen.getByPlaceholderText("My skill");
+
     expect(publishButton.getAttribute("disabled")).not.toBeNull();
-    expect(screen.getAllByText(/Slug is required/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/Display name is required/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Slug is required/i)).toBeNull();
+    expect(screen.queryByText(/Display name is required/i)).toBeNull();
+
+    fireEvent.focus(slugInput);
+    fireEvent.blur(slugInput);
+    fireEvent.focus(displayNameInput);
+    fireEvent.blur(displayNameInput);
+
+    expect(screen.queryByText(/Slug is required/i)).toBeNull();
+    expect(screen.queryByText(/Display name is required/i)).toBeNull();
+
+    fireEvent.submit(publishButton.closest("form") as HTMLFormElement);
+
+    expect(await screen.findAllByText(/Slug is required/i)).not.toHaveLength(0);
+    expect(await screen.findAllByText(/Display name is required/i)).not.toHaveLength(0);
+  });
+
+  it("does not duplicate inline required field errors in the metadata footer", () => {
+    render(<Upload />);
+    const displayNameInput = screen.getByPlaceholderText("My skill");
+
+    fireEvent.change(displayNameInput, { target: { value: "Temporary skill" } });
+    fireEvent.change(displayNameInput, { target: { value: "" } });
+
+    const messages = screen.getAllByText(/Display name is required\./i);
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.id).toBe("display-name-validation-error");
   });
 
   it("marks the input for folder uploads", async () => {
@@ -120,13 +174,14 @@ describe("Upload route", () => {
     fireEvent.change(input, { target: { files: [file] } });
     fireEvent.click(
       screen.getByRole("checkbox", {
-        name: /i have the rights to this skill and agree to publish it under mit-0/i,
+        name: /i have the rights to publish this skill under mit-0/i,
       }),
     );
 
     const publishButton = screen.getByRole("button", { name: /publish/i }) as HTMLButtonElement;
-    expect(await screen.findByText(/All checks passed/i)).toBeTruthy();
-    expect(publishButton.getAttribute("disabled")).toBeNull();
+    await waitFor(() => {
+      expect(publishButton.getAttribute("disabled")).toBeNull();
+    });
   });
 
   it("extracts zip uploads and unwraps top-level folders", async () => {
@@ -155,13 +210,15 @@ describe("Upload route", () => {
     fireEvent.change(input, { target: { files: [zipFile] } });
     fireEvent.click(
       screen.getByRole("checkbox", {
-        name: /i have the rights to this skill and agree to publish it under mit-0/i,
+        name: /i have the rights to publish this skill under mit-0/i,
       }),
     );
 
     expect(await screen.findByText("notes.txt", {}, { timeout: 3000 })).toBeTruthy();
     expect(screen.getByText("SKILL.md")).toBeTruthy();
-    expect(await screen.findByText(/All checks passed/i, {}, { timeout: 3000 })).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /publish/i }).getAttribute("disabled")).toBeNull();
+    });
   });
 
   it("unwraps folder uploads so SKILL.md can be at the top-level", async () => {
@@ -180,9 +237,7 @@ describe("Upload route", () => {
     fireEvent.change(screen.getByPlaceholderText("latest, stable"), {
       target: { value: "latest" },
     });
-    fireEvent.change(screen.getByLabelText("ClawScan note"), {
-      target: { value: "Needs network access to call the user-configured YNAB API." },
-    });
+    expect(screen.queryByLabelText("ClawScan note")).toBeNull();
 
     const file = new File(["hello"], "SKILL.md", { type: "text/markdown" });
     Object.defineProperty(file, "webkitRelativePath", { value: "ynab/SKILL.md" });
@@ -191,12 +246,14 @@ describe("Upload route", () => {
     fireEvent.change(input, { target: { files: [file] } });
     fireEvent.click(
       screen.getByRole("checkbox", {
-        name: /i have the rights to this skill and agree to publish it under mit-0/i,
+        name: /i have the rights to publish this skill under mit-0/i,
       }),
     );
 
     expect(await screen.findByText("SKILL.md")).toBeTruthy();
-    expect(await screen.findByText(/All checks passed/i)).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /publish/i }).getAttribute("disabled")).toBeNull();
+    });
 
     fireEvent.click(screen.getByRole("button", { name: /publish/i }));
     await waitFor(() => {
@@ -207,10 +264,10 @@ describe("Upload route", () => {
       ).toBe(true);
     });
     const args = publishVersion.mock.calls
-      .map((call) => call[0] as { files?: Array<{ path: string }>; clawScanNote?: string })
+      .map((call) => call[0] as { files?: Array<{ path: string }> })
       .find((call) => Array.isArray(call.files));
     expect(args?.files?.[0]?.path).toBe("SKILL.md");
-    expect(args?.clawScanNote).toBe("Needs network access to call the user-configured YNAB API.");
+    expect(args).not.toHaveProperty("clawScanNote");
   });
 
   it("blocks non-text folder uploads (png)", async () => {
@@ -236,11 +293,16 @@ describe("Upload route", () => {
     fireEvent.change(input, { target: { files: [skill, png] } });
 
     expect(await screen.findByText("screenshot.png")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /publish/i }));
     expect(
-      (await screen.findAllByText(/Remove non-text files: screenshot\.png/i)).length,
+      (await screen.findAllByText(/Remove unsupported files: screenshot\.png/i)).length,
     ).toBeGreaterThan(0);
     expect(screen.getByText("screenshot.png")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove unsupported" }));
+
+    await waitFor(() => {
+      expect(screen.queryByText("screenshot.png")).toBeNull();
+    });
   });
 
   it("surfaces file validation next to the upload input", async () => {
@@ -250,7 +312,8 @@ describe("Upload route", () => {
     const input = screen.getByTestId("upload-input") as HTMLInputElement;
     fireEvent.change(input, { target: { files: [notes] } });
 
-    expect(await screen.findByText("SKILL.md is required.")).toBeTruthy();
+    expect(await screen.findByText("Missing")).toBeTruthy();
+    expect(screen.getAllByText("SKILL.md").length).toBeGreaterThan(0);
   });
 
   it("shows a validation error when a skill file exceeds 10MB", async () => {
@@ -286,7 +349,7 @@ describe("Upload route", () => {
     ).not.toBeNull();
   });
 
-  it("shows an informational note when mac junk files are ignored", async () => {
+  it("shows an informational note when local metadata files are ignored", async () => {
     render(<Upload />);
     fireEvent.change(screen.getByPlaceholderText("skill-name"), {
       target: { value: "cool-skill" },
@@ -307,14 +370,38 @@ describe("Upload route", () => {
     fireEvent.change(input, { target: { files: [skill, junk] } });
     fireEvent.click(
       screen.getByRole("checkbox", {
-        name: /i have the rights to this skill and agree to publish it under mit-0/i,
+        name: /i have the rights to publish this skill under mit-0/i,
       }),
     );
 
     expect(await screen.findByText("SKILL.md")).toBeTruthy();
     expect(screen.queryByText(".DS_Store")).toBeNull();
-    expect(await screen.findByText(/Ignored 1 macOS junk file/i)).toBeTruthy();
-    expect(await screen.findByText(/All checks passed/i)).toBeTruthy();
+    expect(await screen.findByText(/Ignored 1 local metadata file/i)).toBeTruthy();
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /publish skill/i }).getAttribute("disabled"),
+      ).toBeNull();
+    });
+  });
+
+  it("ignores git metadata from dropped skill folders", async () => {
+    render(<Upload />);
+
+    const skill = new File(["hello"], "SKILL.md", { type: "text/markdown" });
+    Object.defineProperty(skill, "webkitRelativePath", {
+      value: "codex-run-to-completion/SKILL.md",
+    });
+    const gitConfig = new File(["[core]\n"], "config", { type: "text/plain" });
+    Object.defineProperty(gitConfig, "webkitRelativePath", {
+      value: "codex-run-to-completion/.git/config",
+    });
+    const input = screen.getByTestId("upload-input") as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [skill, gitConfig] } });
+
+    expect(await screen.findByDisplayValue("codex-run-to-completion")).toBeTruthy();
+    expect(await screen.findByDisplayValue("Codex Run To Completion")).toBeTruthy();
+    expect(screen.queryByText(/\.git\/config/i)).toBeNull();
+    expect(await screen.findByText(/Ignored 1 local metadata file/i)).toBeTruthy();
   });
 
   it("surfaces publish errors and stays on page", async () => {
@@ -333,19 +420,18 @@ describe("Upload route", () => {
     fireEvent.change(screen.getByPlaceholderText("latest, stable"), {
       target: { value: "latest" },
     });
-    fireEvent.change(screen.getByPlaceholderText("Describe what changed in this skill..."), {
-      target: { value: "Initial drop." },
-    });
     const file = new File(["hello"], "SKILL.md", { type: "text/markdown" });
     const input = screen.getByTestId("upload-input") as HTMLInputElement;
     fireEvent.change(input, { target: { files: [file] } });
     fireEvent.click(
       screen.getByRole("checkbox", {
-        name: /i have the rights to this skill and agree to publish it under mit-0/i,
+        name: /i have the rights to publish this skill under mit-0/i,
       }),
     );
     const publishButton = screen.getByRole("button", { name: /publish/i }) as HTMLButtonElement;
-    await screen.findByText(/All checks passed/i);
+    await waitFor(() => {
+      expect(publishButton.getAttribute("disabled")).toBeNull();
+    });
     fireEvent.click(publishButton);
     expect(await screen.findByText(/Changelog is required/i)).toBeTruthy();
   });
@@ -395,9 +481,6 @@ describe("Upload route", () => {
     fireEvent.change(screen.getByPlaceholderText("latest, stable"), {
       target: { value: "latest" },
     });
-    fireEvent.change(screen.getByPlaceholderText("Describe what changed in this skill..."), {
-      target: { value: "Initial drop." },
-    });
     const file = new File(["hello"], "SKILL.md", { type: "text/markdown" });
     const input = screen.getByTestId("upload-input") as HTMLInputElement;
     fireEvent.change(input, { target: { files: [file] } });
@@ -405,7 +488,13 @@ describe("Upload route", () => {
     expect(
       (await screen.findAllByText(/Slug is already taken\. Choose a different slug\./i)).length,
     ).toBeGreaterThan(0);
-    expect(screen.getByRole("link", { name: "/alice/taken-skill" })).toBeTruthy();
+    expect(screen.queryByText("Taken")).toBeNull();
+    expect(screen.getByLabelText("Slug unavailable")).toBeTruthy();
+    const existingSkillLink = screen.getByRole("link", {
+      name: "Open existing skill in a new tab",
+    });
+    expect(existingSkillLink).toBeTruthy();
+    expect(existingSkillLink.getAttribute("href")).toBe("/alice/taken-skill");
     expect(
       screen.getByRole("button", { name: /publish skill/i }).getAttribute("disabled"),
     ).not.toBeNull();
@@ -435,6 +524,7 @@ describe("Upload route", () => {
             handle: "clawkit",
             displayName: "ClawKit",
             kind: "org",
+            image: "https://example.com/clawkit.png",
           },
           role: "admin",
         },
@@ -446,7 +536,10 @@ describe("Upload route", () => {
       target: { value: "org-skill" },
     });
 
-    expect((screen.getByLabelText("Owner") as HTMLSelectElement).value).toBe("clawkit");
+    expect(screen.getByLabelText("Owner").textContent).toContain("@clawkit · ClawKit · admin");
+    expect(document.querySelector('img[src="https://example.com/clawkit.png"]')).toBeTruthy();
+    expect(screen.queryByText("Available")).toBeNull();
+    expect(await screen.findByLabelText("Slug available")).toBeTruthy();
     await waitFor(() => {
       expect(useQueryMock).toHaveBeenCalledWith(expect.anything(), {
         slug: "org-skill",
@@ -485,7 +578,7 @@ describe("Upload route", () => {
     const { rerender } = render(<Upload />);
 
     await waitFor(() => {
-      expect((screen.getByLabelText("Owner") as HTMLSelectElement).value).toBe("local");
+      expect(screen.getByLabelText("Owner").textContent).toContain("@local");
     });
 
     memberships = [
@@ -502,7 +595,7 @@ describe("Upload route", () => {
     rerender(<Upload />);
 
     await waitFor(() => {
-      expect((screen.getByLabelText("Owner") as HTMLSelectElement).value).toBe("local-owner");
+      expect(screen.getByLabelText("Owner").textContent).toContain("@local-owner");
     });
 
     fireEvent.change(screen.getByPlaceholderText("skill-name"), {
@@ -545,12 +638,15 @@ describe("Upload route", () => {
     fireEvent.change(input, { target: { files: [file] } });
     fireEvent.click(
       screen.getByRole("checkbox", {
-        name: /i have the rights to this skill and agree to publish it under mit-0/i,
+        name: /i have the rights to publish this skill under mit-0/i,
       }),
     );
 
-    await screen.findByText(/All checks passed/i);
-    fireEvent.click(screen.getByRole("button", { name: /publish skill/i }));
+    const publishButton = screen.getByRole("button", { name: /publish skill/i });
+    await waitFor(() => {
+      expect(publishButton.getAttribute("disabled")).toBeNull();
+    });
+    fireEvent.click(publishButton);
 
     await waitFor(() => {
       expect(
@@ -592,12 +688,15 @@ describe("Upload route", () => {
     fireEvent.change(input, { target: { files: [file] } });
     fireEvent.click(
       screen.getByRole("checkbox", {
-        name: /i have the rights to this skill and agree to publish it under mit-0/i,
+        name: /i have the rights to publish this skill under mit-0/i,
       }),
     );
 
-    await screen.findByText(/All checks passed/i);
-    fireEvent.click(screen.getByRole("button", { name: /publish skill/i }));
+    const publishButton = screen.getByRole("button", { name: /publish skill/i });
+    await waitFor(() => {
+      expect(publishButton.getAttribute("disabled")).toBeNull();
+    });
+    fireEvent.click(publishButton);
 
     await waitFor(() => {
       expect(
@@ -634,7 +733,7 @@ describe("Upload route", () => {
             displayName: "With Icon",
             icon: "lucide:Plug",
           },
-          latestVersion: { version: "1.0.0", clawScanNote: null },
+          latestVersion: { version: "1.0.0" },
           owner: { handle: "alice", displayName: "Alice" },
         };
       }
@@ -667,12 +766,15 @@ describe("Upload route", () => {
     fireEvent.change(input, { target: { files: [file] } });
     fireEvent.click(
       screen.getByRole("checkbox", {
-        name: /i have the rights to this skill and agree to publish it under mit-0/i,
+        name: /i have the rights to publish this skill under mit-0/i,
       }),
     );
 
-    await screen.findByText(/All checks passed/i);
-    fireEvent.click(screen.getByRole("button", { name: /publish skill/i }));
+    const publishButton = screen.getByRole("button", { name: /publish skill/i });
+    await waitFor(() => {
+      expect(publishButton.getAttribute("disabled")).toBeNull();
+    });
+    fireEvent.click(publishButton);
 
     await waitFor(() => {
       expect(
@@ -708,7 +810,7 @@ describe("Upload route", () => {
             displayName: "Stale Icon",
             icon: "lucide:NoLongerAllowedGlyph",
           },
-          latestVersion: { version: "1.0.0", clawScanNote: null },
+          latestVersion: { version: "1.0.0" },
           owner: { handle: "alice", displayName: "Alice" },
         };
       }
@@ -740,12 +842,15 @@ describe("Upload route", () => {
     fireEvent.change(input, { target: { files: [file] } });
     fireEvent.click(
       screen.getByRole("checkbox", {
-        name: /i have the rights to this skill and agree to publish it under mit-0/i,
+        name: /i have the rights to publish this skill under mit-0/i,
       }),
     );
 
-    await screen.findByText(/All checks passed/i);
-    fireEvent.click(screen.getByRole("button", { name: /publish skill/i }));
+    const publishButton = screen.getByRole("button", { name: /publish skill/i });
+    await waitFor(() => {
+      expect(publishButton.getAttribute("disabled")).toBeNull();
+    });
+    fireEvent.click(publishButton);
 
     await waitFor(() => {
       expect(

@@ -23,7 +23,7 @@ export function SignInButton({ redirectTo, children = "Sign In", ...props }: Sig
         const next = redirectTo ?? getCurrentRelativeUrl();
         void signIn("github", next ? { redirectTo: next } : undefined)
           .then((result) => {
-            if (result?.signingIn === false) {
+            if (result?.signingIn === false && !result.redirect) {
               setAuthError("Sign in failed. Please try again.");
             }
           })

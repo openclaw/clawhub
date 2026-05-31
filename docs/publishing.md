@@ -8,47 +8,136 @@ read_when:
 
 # Publishing
 
-ClawHub publishing is owner-scoped: every publish targets a publisher, and the
-server decides whether the signed-in user is allowed to publish there.
+Publishing sends a skill folder or plugin package to ClawHub under the owner you
+choose. ClawHub checks that your token can publish for that owner, validates the
+metadata, name, version, files, and source information, then stores the release
+and starts automated security checks.
 
-## Owners
-
-An owner is a ClawHub publisher handle, such as `@alice` or `@openclaw`.
-Personal owners are created for users. Org owners can have multiple members.
-
-When you publish, you either use your personal owner or choose an org owner
-where you have publisher access.
+If validation fails, nothing is published. New releases may also stay out of
+normal install and download surfaces until review finishes.
 
 ## Skills
 
-Skills are published from a skill folder. The public page is:
+The simplest publishing path is the CLI. Sign in, preview the sync plan, then
+publish the new or changed skills:
 
-```text
-https://clawhub.ai/<owner>/<slug>
+```bash
+clawhub login
+clawhub sync --dry-run --owner <owner>
+clawhub sync --all --owner <owner>
 ```
 
-Example:
+`sync` scans for folders containing `SKILL.md` and compares them with ClawHub.
+When you run it without `--dry-run`, it publishes anything new or changed.
 
-```text
-https://clawhub.ai/alice/review-helper
+Use `--dry-run` first to see the plan without uploading.
+
+Use `--owner <handle>` when publishing to an org owner. Omit it to publish as
+the authenticated user.
+
+### GitHub Actions for Skills
+
+If you want to run skill publishing from CI, call ClawHub's reusable
+[`skill-publish.yml` workflow](https://github.com/openclaw/clawhub/blob/main/.github/workflows/skill-publish.yml)
+from a small workflow in your repo.
+
+The example below is shaped for a catalog repo: operators choose whether to
+preview the full catalog, publish one skill folder, or publish the whole
+catalog.
+
+```yaml
+name: Publish Skills to ClawHub
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: What to run.
+        type: choice
+        required: true
+        default: dry-run
+        options:
+          - dry-run
+          - publish-single
+          - publish-catalog
+      skill_path:
+        description: Skill folder for publish-single, for example skills/<slug>.
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  validate-single:
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'publish-single'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate single-skill input
+        env:
+          SKILL_PATH: ${{ inputs.skill_path }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${SKILL_PATH}" ]]; then
+            echo "::error::skill_path is required when mode is publish-single."
+            exit 1
+          fi
+          case "${SKILL_PATH}" in
+            skills/*) ;;
+            *)
+              echo "::error::skill_path must point under skills/, for example skills/<slug>."
+              exit 1
+              ;;
+          esac
+
+  dry-run:
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'dry-run'
+    uses: openclaw/clawhub/.github/workflows/skill-publish.yml@main
+    with:
+      owner: <owner>
+      dry_run: true
+    secrets:
+      clawhub_token: ${{ secrets.CLAWHUB_TOKEN }}
+
+  publish-single:
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'publish-single'
+    needs: validate-single
+    uses: openclaw/clawhub/.github/workflows/skill-publish.yml@main
+    with:
+      owner: <owner>
+      skill_path: ${{ inputs.skill_path }}
+      dry_run: false
+    secrets:
+      clawhub_token: ${{ secrets.CLAWHUB_TOKEN }}
+
+  publish-catalog:
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'publish-catalog'
+    uses: openclaw/clawhub/.github/workflows/skill-publish.yml@main
+    with:
+      owner: <owner>
+      dry_run: false
+    secrets:
+      clawhub_token: ${{ secrets.CLAWHUB_TOKEN }}
 ```
 
-The publish request includes the selected owner, slug, version, changelog, and
-files. The server verifies that the actor can publish as that owner before it
-creates the release.
+Replace `<owner>` with your ClawHub owner handle. The called workflow defaults to
+scanning `skills/`; pass `skill_path` only when you want to process one folder.
 
-To move an existing skill to another owner while publishing a new version, choose
-the new owner and explicitly confirm the ownership move. In the CLI/API, pass the
-target owner plus the migration opt-in:
+Before running a real publish, sign in as a ClawHub user that can publish to the
+selected owner, then store the current CLI token as a `CLAWHUB_TOKEN` repository
+secret:
 
-```sh
-clawhub skill publish ./review-helper --owner openclaw --migrate-owner --version 1.2.0
+```bash
+clawhub login --label "Skills GitHub Actions"
+gh secret set CLAWHUB_TOKEN \
+  --repo OWNER/REPO \
+  --body "$(clawhub token)"
 ```
 
-Skill owner migration requires admin or owner access on both the current owner
-and the destination owner. It preserves the skill, version history, stats,
-comments, forks, aliases, and audit trail; old owner URLs continue through the
-alias/redirect path.
+Start with `dry-run`, then publish one skill with `publish-single`, and only then
+use `publish-catalog` for the full catalog.
 
 ## Plugins
 
@@ -66,17 +155,16 @@ The scope must match the selected publish owner. If your package is named
 This prevents a package from claiming an org namespace that the publisher does
 not control.
 
-## Release Flow
+### Before Publishing a Plugin
 
-1. The UI, CLI, or GitHub workflow gathers package metadata and files.
-2. The publish request is sent to ClawHub with the selected owner.
-3. The server validates owner permissions, package scope, package name, version,
-   file limits, and source metadata.
-4. ClawHub stores the release and starts automated security checks.
-5. New releases are hidden from normal install/download surfaces until review
-   and verification finish.
-
-If validation fails, the release is not created.
+- Pick an owner that matches the package scope.
+- Include `openclaw.plugin.json`. Code plugins also need `package.json` with
+  `openclaw.compat.pluginApi` and `openclaw.build.openclawVersion`.
+- Include source repository and exact commit metadata, or use the CLI from a
+  GitHub-backed checkout so it can detect them.
+- Run `clawhub package publish <source> --dry-run` before creating a release.
+- Expect new releases to stay out of public install surfaces until automated
+  security checks and verification finish.
 
 ## FAQ
 

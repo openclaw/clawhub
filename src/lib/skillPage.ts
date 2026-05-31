@@ -3,11 +3,20 @@ import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { convexHttp } from "../convex/client";
 import type { PublicPublisher, PublicSkill } from "./publicUser";
 
+type GeneratedSkillCardFile = {
+  path: string;
+  size: number;
+  sha256: string;
+  contentType?: string;
+};
+
 export type SkillBySlugResult = {
   requestedSlug?: string | null;
   resolvedSlug?: string | null;
   skill: Doc<"skills"> | PublicSkill;
-  latestVersion: Doc<"skillVersions"> | null;
+  latestVersion:
+    | (Doc<"skillVersions"> & { generatedSkillCard?: GeneratedSkillCardFile | null })
+    | null;
   owner: PublicPublisher | null;
   pendingReview?: boolean;
   moderationInfo?: {

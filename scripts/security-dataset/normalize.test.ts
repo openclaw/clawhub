@@ -12,6 +12,7 @@ const baseArtifact: ArtifactExportInput = {
   sourceDocId: "skillVersionDoc123",
   parentDocId: "skillDoc123",
   publicName: "Suspicious Demo",
+  publicOwnerHandle: "openclaw",
   publicSlug: "suspicious-demo",
   version: "1.0.0",
   artifactSha256: "a".repeat(64),
@@ -60,9 +61,11 @@ const baseArtifact: ArtifactExportInput = {
     issues: [
       {
         issueId: "SDI-1",
+        category: "Sensitive Data Exposure",
         severity: "HIGH",
         confidence: 0.98,
-        explanation: "The skill body does not match the declared purpose.",
+        explanation:
+          "The skill body does not match the declared purpose and mentions token=supersecret123.",
       },
     ],
   },
@@ -149,7 +152,9 @@ describe("security dataset normalizer", () => {
       artifact_id: `skill:${"a".repeat(64)}`,
       source_kind: "skill",
       source_table: "skillVersions",
+      public_owner_handle: "openclaw",
       public_slug: "suspicious-demo",
+      public_qualified_slug: "openclaw/suspicious-demo",
       skill_md_content_redacted:
         "# Suspicious Demo Use this skill to inspect shell scripts. Contact [REDACTED_SECRET] with [REDACTED_SECRET]",
       created_month: "2026-04",
@@ -172,7 +177,19 @@ describe("security dataset normalizer", () => {
       scanner_version: "skillspector-v2.0.0",
       status: "suspicious",
       verdict: "DO_NOT_INSTALL",
+      score: 55,
+      severity: "HIGH",
       reason_codes: ["SDI-1"],
+      issues: [
+        {
+          code: "SDI-1",
+          category: "Sensitive Data Exposure",
+          severity: "HIGH",
+          confidence: 0.98,
+          explanation_redacted:
+            "The skill body does not match the declared purpose and mentions [REDACTED_SECRET]",
+        },
+      ],
       raw_status_family: "suspicious",
     });
     expect(rows.staticFindings[0]).toMatchObject({
@@ -230,5 +247,44 @@ describe("security dataset normalizer", () => {
       "abcdefghijklmnopqrstuvwxyz123456",
     );
     expect(rows.artifacts[0]?.skill_md_content_redacted).not.toContain("PRIVATE KEY");
+  });
+
+  it("emits redacted authored bundle files with content hashes and sizes", () => {
+    const rows = normalizeArtifactExport([
+      {
+        ...baseArtifact,
+        bundleFilesRedacted: [
+          {
+            path: "scripts/export.py",
+            content: "import json\npassword=[REDACTED_SECRET]\n",
+          },
+        ],
+      },
+    ]);
+
+    expect(rows.artifacts[0]?.bundle_files_redacted).toEqual([
+      {
+        path: "scripts/export.py",
+        content: "import json\n[REDACTED_SECRET]\n",
+        sha256: hashString("import json\n[REDACTED_SECRET]\n"),
+        size_bytes: Buffer.byteLength("import json\n[REDACTED_SECRET]\n", "utf8"),
+      },
+    ]);
+  });
+
+  it("omits oversized redacted bundle files", () => {
+    const rows = normalizeArtifactExport([
+      {
+        ...baseArtifact,
+        bundleFilesRedacted: [
+          {
+            path: "scripts/large.py",
+            content: "x".repeat(600 * 1024),
+          },
+        ],
+      },
+    ]);
+
+    expect(rows.artifacts[0]?.bundle_files_redacted).toBeUndefined();
   });
 });

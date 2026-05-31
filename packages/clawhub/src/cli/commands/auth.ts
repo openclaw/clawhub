@@ -98,6 +98,11 @@ export async function cmdWhoami(opts: GlobalOpts) {
   }
 }
 
+export async function cmdToken() {
+  const token = await requireAuthToken();
+  console.log(token);
+}
+
 /**
  * Device Flow login for headless environments.
  * Requests a device code, displays it to the user, then polls until authorized.

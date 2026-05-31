@@ -57,6 +57,13 @@ crons.interval(
   {},
 );
 
+crons.interval(
+  "publisher-abuse-score-refresh",
+  { hours: 24 },
+  internal.publisherAbuse.runPublisherAbuseScoreRunInternal,
+  { batchSize: 250, maxPages: 5, trigger: "cron" },
+);
+
 crons.interval("vt-pending-scans", { minutes: 5 }, internal.vt.pollPendingScans, {
   batchSize: 100,
 });

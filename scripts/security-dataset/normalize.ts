@@ -19,6 +19,11 @@ export type ExportFileInput = {
   contentType: string | null;
 };
 
+export type BundleFileInput = {
+  path: string;
+  content: string;
+};
+
 export type VtAnalysisInput = {
   status: string;
   verdict: string | null;
@@ -58,6 +63,7 @@ export type SkillSpectorAnalysisInput = {
   issueCount: number;
   issues: Array<{
     issueId: string;
+    category?: string | null;
     severity: string;
     confidence: number | null;
     explanation: string;
@@ -113,10 +119,12 @@ export type ArtifactExportInput = {
   sourceDocId: string;
   parentDocId: string;
   publicName: string;
+  publicOwnerHandle: string | null;
   publicSlug: string | null;
   version: string;
   artifactSha256: string | null;
   skillMdContentRedacted?: string | null;
+  bundleFilesRedacted?: BundleFileInput[] | null;
   createdAt: number;
   softDeletedAt: number | null;
   files: ExportFileInput[];
@@ -139,10 +147,18 @@ export type ArtifactRow = {
   source_doc_id_hash: string;
   parent_doc_id_hash: string;
   public_name: string;
+  public_owner_handle: string | null;
   public_slug: string | null;
+  public_qualified_slug: string | null;
   version: string;
   artifact_sha256: string | null;
   skill_md_content_redacted?: string | null;
+  bundle_files_redacted?: Array<{
+    path: string;
+    content: string;
+    sha256: string;
+    size_bytes: number;
+  }>;
   created_at: number;
   created_month: string;
   soft_deleted: boolean;
@@ -170,10 +186,19 @@ export type ScanResultRow = {
   verdict: string | null;
   confidence: string | null;
   checked_at: number | null;
+  score?: number | null;
+  severity?: string | null;
   reason_codes: string[];
   engine_stats: VtAnalysisInput["engineStats"];
   summary_redacted: string | null;
   raw_status_family: DatasetLabel;
+  issues?: Array<{
+    code: string;
+    category: string | null;
+    severity: string;
+    confidence: number | null;
+    explanation_redacted: string | null;
+  }>;
 };
 
 export type StaticFindingRow = {
@@ -234,6 +259,7 @@ export type NormalizedDatasetRows = {
 const SPLIT_VERSION = "sha256-v1";
 const MAX_REDACTED_TEXT_LENGTH = 240;
 const MAX_REDACTED_SKILL_CONTENT_LENGTH = 120_000;
+const MAX_REDACTED_BUNDLE_FILE_BYTES = 192 * 1024;
 const CLAWSCAN_SEVERITIES = new Set<ClawScanSeverity>([
   "none",
   "info",
@@ -319,6 +345,7 @@ export function assignSplit(splitKey: string): DatasetSplit {
 }
 
 function buildArtifactRow(input: ArtifactExportInput, artifactId: string): ArtifactRow {
+  const bundleFiles = buildBundleFileRows(input);
   return {
     artifact_id: artifactId,
     source_kind: input.sourceKind,
@@ -326,12 +353,15 @@ function buildArtifactRow(input: ArtifactExportInput, artifactId: string): Artif
     source_doc_id_hash: hashString(input.sourceDocId),
     parent_doc_id_hash: hashString(input.parentDocId),
     public_name: input.publicName,
+    public_owner_handle: input.publicOwnerHandle,
     public_slug: input.publicSlug,
+    public_qualified_slug: qualifiedPublicSlug(input),
     version: input.version,
     artifact_sha256: input.artifactSha256,
     ...(input.sourceKind === "skill" && input.skillMdContentRedacted
       ? { skill_md_content_redacted: redactSkillContent(input.skillMdContentRedacted) }
       : {}),
+    ...(bundleFiles.length > 0 ? { bundle_files_redacted: bundleFiles } : {}),
     created_at: input.createdAt,
     created_month: createdMonth(input.createdAt),
     soft_deleted: input.softDeletedAt !== null,
@@ -349,6 +379,44 @@ function buildArtifactRow(input: ArtifactExportInput, artifactId: string): Artif
     has_static_scan: input.staticScan !== null,
     has_llm_scan: input.llmAnalysis !== null,
   };
+}
+
+function buildBundleFileRows(
+  input: ArtifactExportInput,
+): NonNullable<ArtifactRow["bundle_files_redacted"]> {
+  if (input.sourceKind !== "skill" || !Array.isArray(input.bundleFilesRedacted)) return [];
+  return input.bundleFilesRedacted.flatMap((file) => {
+    const path = file.path.trim();
+    if (!path || !file.content) return [];
+    const content = redactBundleContent(file.content);
+    if (Buffer.byteLength(content, "utf8") > MAX_REDACTED_BUNDLE_FILE_BYTES) return [];
+    return [
+      {
+        path,
+        content,
+        sha256: hashString(content),
+        size_bytes: Buffer.byteLength(content, "utf8"),
+      },
+    ];
+  });
+}
+
+export function redactBundleContent(value: string) {
+  let redacted = "";
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    redacted += code < 32 && code !== 9 && code !== 10 && code !== 13 ? " " : value.charAt(index);
+  }
+  for (const pattern of SECRET_PATTERNS) {
+    redacted = redacted.replace(pattern, "[REDACTED_SECRET]");
+  }
+  return redacted;
+}
+
+function qualifiedPublicSlug(input: ArtifactExportInput) {
+  if (input.sourceKind !== "skill") return null;
+  if (!input.publicOwnerHandle || !input.publicSlug) return null;
+  return `${input.publicOwnerHandle}/${input.publicSlug}`;
 }
 
 function buildScanResultRows(input: ArtifactExportInput, artifactId: string): ScanResultRow[] {
@@ -397,9 +465,12 @@ function buildScanResultRows(input: ArtifactExportInput, artifactId: string): Sc
       verdict: input.skillSpectorAnalysis.recommendation,
       confidence: null,
       checked_at: input.skillSpectorAnalysis.checkedAt,
+      score: input.skillSpectorAnalysis.score,
+      severity: input.skillSpectorAnalysis.severity,
       reason_codes: input.skillSpectorAnalysis.issues
         .map((issue) => issue.issueId)
         .sort((a, b) => a.localeCompare(b)),
+      issues: normalizeSkillSpectorIssues(input.skillSpectorAnalysis.issues),
       engine_stats: null,
       summary_redacted: redactText(
         input.skillSpectorAnalysis.summary ?? input.skillSpectorAnalysis.error,
@@ -460,6 +531,18 @@ function buildStaticFindingRows(
     message: finding.message,
     evidence_redacted: redactText(finding.evidence) ?? "",
   }));
+}
+
+function normalizeSkillSpectorIssues(issues: SkillSpectorAnalysisInput["issues"]) {
+  return issues
+    .map((issue) => ({
+      code: issue.issueId,
+      category: issue.category ?? null,
+      severity: issue.severity,
+      confidence: issue.confidence ?? null,
+      explanation_redacted: redactText(issue.explanation),
+    }))
+    .sort((left, right) => left.code.localeCompare(right.code));
 }
 
 function buildClawScanFindingRows(

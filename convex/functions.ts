@@ -24,7 +24,7 @@ import {
   adjustPublisherStatsForPackageChange,
   adjustPublisherStatsForSkillChange,
 } from "./lib/publisherStats";
-import { extractDigestFields, upsertSkillSearchDigest } from "./lib/skillSearchDigest";
+import { extractValidatedDigestFields, upsertSkillSearchDigest } from "./lib/skillSearchDigest";
 
 const triggers = new Triggers<DataModel>();
 
@@ -207,7 +207,7 @@ async function syncSkillSearchDigestForSkill(
   skill: Doc<"skills"> | null | undefined,
 ) {
   if (!skill) return;
-  const fields = extractDigestFields(skill);
+  const fields = await extractValidatedDigestFields(ctx, skill);
   const owner = await getOwnerPublisher(ctx, {
     ownerPublisherId: skill.ownerPublisherId,
     ownerUserId: skill.ownerUserId,

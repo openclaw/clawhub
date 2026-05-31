@@ -3,6 +3,7 @@ import { Download } from "lucide-react";
 import { formatCompactStat } from "../lib/numberFormat";
 import type { PublicPublisherListItem, PublicPublisherPublishedItem } from "../lib/publicUser";
 import { MarketplaceIcon } from "./MarketplaceIcon";
+import { OfficialBadge } from "./OfficialBadge";
 
 type PublisherListItemProps = {
   publisher: PublicPublisherListItem;
@@ -50,6 +51,7 @@ export function PublisherListItem({ publisher, variant = "list" }: PublisherList
         <div className="publisher-card-copy">
           <span className="publisher-card-title-row">
             <span className="publisher-card-name">{publisher.displayName}</span>
+            {publisher.official ? <OfficialBadge /> : null}
             {variant === "list" ? <span className="publisher-card-handle">@{handle}</span> : null}
             {publisher.kind === "org" ? <span className="publisher-card-kind">Org</span> : null}
           </span>

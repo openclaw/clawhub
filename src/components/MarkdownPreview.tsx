@@ -1,6 +1,6 @@
 import rehypeShikiFromHighlighter from "@shikijs/rehype/core";
 import { useEffect, useMemo, useState } from "react";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type UrlTransform } from "react-markdown";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
@@ -13,6 +13,7 @@ interface MarkdownPreviewProps {
   className?: string;
   /** Enable Shiki syntax highlighting for fenced code blocks. Default: true. */
   highlight?: boolean;
+  urlTransform?: UrlTransform;
 }
 
 const schema = {
@@ -71,7 +72,12 @@ function loadHighlighter(): Promise<unknown> {
   return highlighterPromise;
 }
 
-export function MarkdownPreview({ children, className, highlight = true }: MarkdownPreviewProps) {
+export function MarkdownPreview({
+  children,
+  className,
+  highlight = true,
+  urlTransform,
+}: MarkdownPreviewProps) {
   const [highlighter, setHighlighter] = useState<unknown>(null);
 
   useEffect(() => {
@@ -99,7 +105,11 @@ export function MarkdownPreview({ children, className, highlight = true }: Markd
 
   return (
     <div className={cn("markdown", className)}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={rehypePlugins}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={rehypePlugins}
+        urlTransform={urlTransform}
+      >
         {children}
       </ReactMarkdown>
     </div>

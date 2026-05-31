@@ -17,6 +17,7 @@ import { isReservedPublicOwnerHandle } from "./lib/publicRouteReservations";
 import {
   ensurePersonalPublisherForUser,
   getActiveUserByHandleOrPersonalPublisher,
+  getPersonalPublisherForUser,
   getPublisherByHandle,
   getUserByHandleOrPersonalPublisher,
 } from "./lib/publishers";
@@ -40,7 +41,43 @@ const DEFAULT_AUTOBAN_REMEDIATION_REASON =
   "Autoban remediation: current scanner verdict is non-malicious";
 const MAX_AUTOBAN_REMEDIATION_LIMIT = 100;
 const AUTOBAN_AUDIT_MATCH_WINDOW_MS = 5_000;
+const BAN_AUDIT_ACTIONS = new Set(["user.ban", "user.autoban.malware"]);
+const BAN_APPEAL_AUTH_ACCOUNT_MATCH_LIMIT = 20;
 const AUTOBAN_REMEDIATION_COUNT_PAGE_SIZE = 100;
+const autobanPackageScanScopeValidator = v.optional(
+  v.union(v.literal("ownerUserId"), v.literal("personalPublisher")),
+);
+type AutobanPackageScanScope = "ownerUserId" | "personalPublisher";
+
+async function getAutobanPersonalPublisherId(
+  ctx: Pick<QueryCtx | MutationCtx, "db">,
+  owner: Pick<Doc<"users">, "_id" | "personalPublisherId"> | null | undefined,
+) {
+  if (!owner) return undefined;
+  if (owner.personalPublisherId) return owner.personalPublisherId;
+  const linkedPublisher = await getPersonalPublisherForUser(ctx, owner._id);
+  if (
+    linkedPublisher?.kind === "user" &&
+    !linkedPublisher.deletedAt &&
+    !linkedPublisher.deactivatedAt
+  ) {
+    return linkedPublisher._id;
+  }
+  return undefined;
+}
+
+async function isOwnedPersonalAutobanPackage(
+  ctx: Pick<QueryCtx | MutationCtx, "db">,
+  pkg: Pick<Doc<"packages">, "ownerPublisherId">,
+  owner: Pick<Doc<"users">, "_id" | "personalPublisherId">,
+) {
+  if (!pkg.ownerPublisherId) return true;
+  if (owner.personalPublisherId && pkg.ownerPublisherId === owner.personalPublisherId) {
+    return true;
+  }
+  const ownerPublisher = await ctx.db.get(pkg.ownerPublisherId);
+  return ownerPublisher?.kind === "user" && ownerPublisher.linkedUserId === owner._id;
+}
 const autobanRemediationInternalRefs = internal as unknown as {
   users: {
     countRestorableAutobanSkillsPageInternal: unknown;
@@ -148,6 +185,76 @@ export const getByHandleInternal = internalQuery({
     return await getUserByHandleOrPersonalPublisher(ctx, args.handle);
   },
 });
+
+export const getBanAppealContextByGitHubProviderAccountIdInternal = internalQuery({
+  args: { providerAccountId: v.string() },
+  handler: async (ctx, args) => {
+    const providerAccountId = args.providerAccountId.trim();
+    if (!/^\d+$/.test(providerAccountId)) {
+      return { ok: true as const, action: "moderated" as const, userId: null };
+    }
+
+    const accounts = await ctx.db
+      .query("authAccounts")
+      .withIndex("providerAndAccountId", (q) =>
+        q.eq("provider", "github").eq("providerAccountId", providerAccountId),
+      )
+      .take(BAN_APPEAL_AUTH_ACCOUNT_MATCH_LIMIT);
+    if (accounts.length === 0) {
+      return { ok: true as const, action: "moderated" as const, userId: null };
+    }
+
+    let fallbackUser: Doc<"users"> | null = null;
+    for (const account of accounts) {
+      const user = await ctx.db.get(account.userId);
+      if (!user) continue;
+      fallbackUser ??= user;
+      if (!user.deletedAt || user.deactivatedAt) continue;
+
+      const banLog = await getCurrentBanAuditLog(ctx, user._id, user.deletedAt);
+      if (banLog) return toBanAppealContextResult(user, banLog);
+    }
+
+    if (!fallbackUser) return { ok: true as const, action: "moderated" as const, userId: null };
+    return toBanAppealContextResult(fallbackUser, null);
+  },
+});
+
+function toBanAppealContextResult(user: Doc<"users">, banLog: Doc<"auditLogs"> | null) {
+  const banned = Boolean(user.deletedAt && !user.deactivatedAt && banLog);
+  const metadata = banLog?.metadata as { reason?: string } | undefined;
+
+  return {
+    ok: true as const,
+    action: banned ? ("banned" as const) : ("moderated" as const),
+    userId: user._id,
+    handle: user.handle ?? null,
+    displayName: user.displayName ?? user.name ?? null,
+    banReason: banned ? (user.banReason ?? metadata?.reason ?? null) : null,
+    bannedAt: banned ? (user.deletedAt ?? null) : null,
+    auditAction: banLog?.action ?? null,
+    auditActorUserId: banLog?.actorUserId ?? null,
+  };
+}
+
+async function getCurrentBanAuditLog(
+  ctx: Pick<QueryCtx | MutationCtx, "db">,
+  userId: Id<"users">,
+  bannedAt: number,
+) {
+  const logs = await ctx.db
+    .query("auditLogs")
+    .withIndex("by_target_createdAt", (q) =>
+      q
+        .eq("targetType", "user")
+        .eq("targetId", userId.toString())
+        .gte("createdAt", bannedAt - AUTOBAN_AUDIT_MATCH_WINDOW_MS)
+        .lte("createdAt", bannedAt + AUTOBAN_AUDIT_MATCH_WINDOW_MS),
+    )
+    .order("desc")
+    .take(20);
+  return logs.find((log) => BAN_AUDIT_ACTIONS.has(log.action)) ?? null;
+}
 
 export const searchInternal = internalQuery({
   args: {
@@ -520,6 +627,12 @@ export const deleteAccount = mutation({
       }
     }
 
+    await ctx.runMutation(internal.packages.applyAccountDeletionToOwnedPackagesBatchInternal, {
+      ownerUserId: userId,
+      deletedAt: now,
+      cursor: undefined,
+    });
+
     const user = await ctx.db.get(userId);
     await ctx.db.patch(userId, {
       deactivatedAt: now,
@@ -833,6 +946,17 @@ export const unbanUserInternal = internalMutation({
     const actor = await ctx.db.get(args.actorUserId);
     if (!actor || actor.deletedAt || actor.deactivatedAt) throw new Error("User not found");
     return unbanUserWithActor(ctx, actor, args.targetUserId, args.reason);
+  },
+});
+
+export const unbanUserForBanAppealServiceInternal = internalMutation({
+  args: {
+    targetUserId: v.id("users"),
+    reason: v.optional(v.string()),
+    reviewerDiscordId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    return unbanUserForBanAppealService(ctx, args);
   },
 });
 
@@ -1381,24 +1505,33 @@ async function countRestorableAutobanPackages(
   bannedAt: number,
 ) {
   let count = 0;
-  let cursor: string | null = null;
-  let isDone = false;
+  const owner = await ctx.db.get(ownerUserId);
+  const personalPublisherId = await getAutobanPersonalPublisherId(ctx, owner);
+  const scopes: AutobanPackageScanScope[] = personalPublisherId
+    ? ["ownerUserId", "personalPublisher"]
+    : ["ownerUserId"];
 
-  while (!isDone) {
-    const result: AutobanRemediationPackageCandidatePage = await runAutobanRemediationQueryRef(
-      ctx,
-      autobanRemediationInternalRefs.users.listRestorableAutobanPackageCandidatesPageInternal,
-      {
-        ownerUserId,
-        bannedAt,
-        cursor: cursor ?? undefined,
-      },
-    );
-    for (const packageId of result.packageIds) {
-      if (await hasRestorableAutobanPackageRelease(ctx, packageId, bannedAt)) count += 1;
+  for (const scope of scopes) {
+    let cursor: string | null = null;
+    let isDone = false;
+
+    while (!isDone) {
+      const result: AutobanRemediationPackageCandidatePage = await runAutobanRemediationQueryRef(
+        ctx,
+        autobanRemediationInternalRefs.users.listRestorableAutobanPackageCandidatesPageInternal,
+        {
+          ownerUserId,
+          bannedAt,
+          cursor: cursor ?? undefined,
+          scope,
+        },
+      );
+      for (const packageId of result.packageIds) {
+        if (await hasRestorableAutobanPackageRelease(ctx, packageId, bannedAt)) count += 1;
+      }
+      isDone = result.isDone;
+      cursor = result.continueCursor;
     }
-    isDone = result.isDone;
-    cursor = result.continueCursor;
   }
 
   return count;
@@ -1465,21 +1598,38 @@ export const listRestorableAutobanPackageCandidatesPageInternal = internalQuery(
     ownerUserId: v.id("users"),
     bannedAt: v.number(),
     cursor: v.optional(v.string()),
+    scope: autobanPackageScanScopeValidator,
   },
   handler: async (ctx, args) => {
-    const result = await ctx.db
-      .query("packages")
-      .withIndex("by_owner", (q) => q.eq("ownerUserId", args.ownerUserId))
-      .order("desc")
-      .paginate({
-        cursor: args.cursor ?? null,
-        numItems: AUTOBAN_REMEDIATION_COUNT_PAGE_SIZE,
-      });
+    const owner = await ctx.db.get(args.ownerUserId);
+    if (!owner) {
+      return { packageIds: [], isDone: true, continueCursor: null };
+    }
+    const scope = args.scope ?? "ownerUserId";
+    const personalPublisherId = await getAutobanPersonalPublisherId(ctx, owner);
+    const packageQuery =
+      scope === "personalPublisher" && personalPublisherId
+        ? ctx.db
+            .query("packages")
+            .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", personalPublisherId))
+        : ctx.db
+            .query("packages")
+            .withIndex("by_owner", (q) => q.eq("ownerUserId", args.ownerUserId));
+    const result = await packageQuery.order("desc").paginate({
+      cursor: args.cursor ?? null,
+      numItems: AUTOBAN_REMEDIATION_COUNT_PAGE_SIZE,
+    });
+
+    const packageIds: Array<Id<"packages">> = [];
+    for (const pkg of result.page) {
+      if (scope === "personalPublisher" && pkg.ownerUserId === args.ownerUserId) continue;
+      if (pkg.softDeletedAt !== args.bannedAt || pkg.scanStatus === "malicious") continue;
+      if (!(await isOwnedPersonalAutobanPackage(ctx, pkg, owner))) continue;
+      packageIds.push(pkg._id);
+    }
 
     return {
-      packageIds: result.page
-        .filter((pkg) => pkg.softDeletedAt === args.bannedAt && pkg.scanStatus !== "malicious")
-        .map((pkg) => pkg._id),
+      packageIds,
       isDone: result.isDone,
       continueCursor: result.continueCursor,
     };
@@ -1600,12 +1750,24 @@ async function banUserWithActor(
     };
   }
   if (target.deletedAt) {
+    await ctx.runMutation(internal.packages.applyBanToOwnedPackagesBatchInternal, {
+      ownerUserId: targetUserId,
+      bannedAt: target.deletedAt,
+      deletedBy: actor._id,
+      deletedByRole: actor.role === "admin" ? "admin" : "moderator",
+      cursor: undefined,
+    });
     const deletedComments = await softDeleteUserCommentsForBan(ctx, {
       userId: targetUserId,
       deletedBy: actor._id,
       deletedAt: target.deletedAt,
     });
-    return { ok: true as const, alreadyBanned: true, deletedSkills: 0, deletedComments };
+    return {
+      ok: true as const,
+      alreadyBanned: true,
+      deletedSkills: 0,
+      deletedComments,
+    };
   }
 
   const banSkillsResult = (await ctx.runMutation(
@@ -1643,6 +1805,20 @@ async function banUserWithActor(
     banReason: reason || undefined,
   });
 
+  const banPackagesResult = ((await ctx.runMutation(
+    internal.packages.applyBanToOwnedPackagesBatchInternal,
+    {
+      ownerUserId: targetUserId,
+      bannedAt: now,
+      deletedBy: actor._id,
+      deletedByRole: actor.role === "admin" ? "admin" : "moderator",
+      cursor: undefined,
+    },
+  )) ?? {}) as { deletedCount?: number; revokedTokenCount?: number; scheduled?: boolean };
+  const deletedPackageCount = banPackagesResult.deletedCount ?? 0;
+  const revokedPackagePublishTokens = banPackagesResult.revokedTokenCount ?? 0;
+  const scheduledPackages = banPackagesResult.scheduled ?? false;
+
   await ctx.runMutation(internal.telemetry.clearUserTelemetryInternal, { userId: targetUserId });
 
   await ctx.db.insert("auditLogs", {
@@ -1652,6 +1828,9 @@ async function banUserWithActor(
     targetId: targetUserId,
     metadata: {
       hiddenSkills: hiddenCount,
+      deletedPackages: deletedPackageCount,
+      revokedPackagePublishTokens,
+      scheduledPackages,
       deletedSkillComments: deletedComments.skillComments,
       deletedSoulComments: deletedComments.soulComments,
       reason: reason || undefined,
@@ -1665,6 +1844,85 @@ async function banUserWithActor(
     deletedSkills: hiddenCount,
     deletedComments,
     scheduledSkills,
+  };
+}
+
+async function unbanUserForBanAppealService(
+  ctx: MutationCtx,
+  args: { targetUserId: Id<"users">; reason?: string; reviewerDiscordId: string },
+) {
+  const target = await ctx.db.get(args.targetUserId);
+  if (!target) throw new Error("User not found");
+  if (target.deactivatedAt) {
+    throw new Error("Cannot unban a permanently deleted account");
+  }
+  if (!target.deletedAt) {
+    return { ok: true as const, alreadyUnbanned: true };
+  }
+
+  const reason = args.reason?.trim();
+  if (reason && reason.length > 500) {
+    throw new Error("Reason too long (max 500 chars)");
+  }
+
+  const now = Date.now();
+  const bannedAt = target.deletedAt;
+  const banLog = await getCurrentBanAuditLog(ctx, args.targetUserId, bannedAt);
+  if (!banLog) {
+    throw new Error("Cannot unban account without a matching ban record");
+  }
+
+  await ctx.db.patch(args.targetUserId, {
+    deletedAt: undefined,
+    banReason: undefined,
+    role: "user",
+    updatedAt: now,
+  });
+
+  const restoreSkillsResult = (await ctx.runMutation(
+    internal.skills.restoreOwnedSkillsForUnbanBatchInternal,
+    {
+      ownerUserId: args.targetUserId,
+      bannedAt,
+      cursor: undefined,
+    },
+  )) as { restoredCount?: number; scheduled?: boolean };
+  const restoredSkillCount = restoreSkillsResult.restoredCount ?? 0;
+  const scheduledSkills = restoreSkillsResult.scheduled ?? false;
+
+  const restorePackagesResult = ((await ctx.runMutation(
+    internal.packages.restoreOwnedPackagesForUnbanBatchInternal,
+    {
+      ownerUserId: args.targetUserId,
+      bannedAt,
+      cursor: undefined,
+    },
+  )) ?? {}) as { restoredCount?: number; scheduled?: boolean };
+  const restoredPackageCount = restorePackagesResult.restoredCount ?? 0;
+  const scheduledPackages = restorePackagesResult.scheduled ?? false;
+
+  await ctx.db.insert("auditLogs", {
+    action: "user.unban",
+    targetType: "user",
+    targetId: args.targetUserId,
+    metadata: {
+      reason: reason || undefined,
+      restoredSkills: restoredSkillCount,
+      restoredPackages: restoredPackageCount,
+      scheduledPackages,
+      source: "ban_appeal.service",
+      reviewerDiscordId: args.reviewerDiscordId,
+    },
+    createdAt: now,
+  });
+
+  return {
+    ok: true as const,
+    alreadyUnbanned: false,
+    restoredSkills: restoredSkillCount,
+    scheduledSkills,
+    restoredPackages: restoredPackageCount,
+    scheduledPackages,
   };
 }
 
@@ -1711,12 +1969,29 @@ async function unbanUserWithActor(
   const restoredCount = restoreSkillsResult.restoredCount ?? 0;
   const scheduledSkills = restoreSkillsResult.scheduled ?? false;
 
+  const restorePackagesResult = ((await ctx.runMutation(
+    internal.packages.restoreOwnedPackagesForUnbanBatchInternal,
+    {
+      actorUserId: actor._id,
+      ownerUserId: targetUserId,
+      bannedAt,
+      cursor: undefined,
+    },
+  )) ?? {}) as { restoredCount?: number; scheduled?: boolean };
+  const restoredPackageCount = restorePackagesResult.restoredCount ?? 0;
+  const scheduledPackages = restorePackagesResult.scheduled ?? false;
+
   await ctx.db.insert("auditLogs", {
     actorUserId: actor._id,
     action: "user.unban",
     targetType: "user",
     targetId: targetUserId,
-    metadata: { reason: reason || undefined, restoredSkills: restoredCount },
+    metadata: {
+      reason: reason || undefined,
+      restoredSkills: restoredCount,
+      restoredPackages: restoredPackageCount,
+      scheduledPackages,
+    },
     createdAt: now,
   });
 
@@ -2071,6 +2346,20 @@ export const autobanMalwareAuthorInternal = internalMutation({
       banReason: "malware auto-ban",
     });
 
+    const banPackagesResult = ((await ctx.runMutation(
+      internal.packages.applyBanToOwnedPackagesBatchInternal,
+      {
+        ownerUserId: args.ownerUserId,
+        bannedAt: now,
+        deletedBy: args.ownerUserId,
+        deletedByRole: "user",
+        cursor: undefined,
+      },
+    )) ?? {}) as { deletedCount?: number; revokedTokenCount?: number; scheduled?: boolean };
+    const deletedPackageCount = banPackagesResult.deletedCount ?? 0;
+    const revokedPackagePublishTokens = banPackagesResult.revokedTokenCount ?? 0;
+    const scheduledPackages = banPackagesResult.scheduled ?? false;
+
     await ctx.runMutation(internal.telemetry.clearUserTelemetryInternal, {
       userId: args.ownerUserId,
     });
@@ -2079,6 +2368,9 @@ export const autobanMalwareAuthorInternal = internalMutation({
       trigger: args.trigger?.trim() || "scanner.malicious",
       slug: args.slug,
       hiddenSkills: hiddenCount,
+      deletedPackages: deletedPackageCount,
+      revokedPackagePublishTokens,
+      scheduledPackages,
       deletedSkillComments: deletedComments.skillComments,
       deletedSoulComments: deletedComments.soulComments,
     };
@@ -2156,7 +2448,7 @@ export const placeUserUnderModerationInternal = internalMutation({
       targetType: "user",
       targetId: args.ownerUserId,
       metadata: {
-        trigger: "static.malicious",
+        trigger: "moderation.hold",
         slug: args.slug,
         reason: args.reason,
         hiddenSkills: hideSkillsResult.hiddenCount ?? 0,

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { isSkillReviewFlagged, isSkillSuspicious } from "./skillSafety";
+import {
+  isSkillReviewFlagged,
+  isSkillSuspicious,
+  isSkillTransferBlockedByModeration,
+} from "./skillSafety";
 
 describe("isSkillSuspicious", () => {
   it("returns true when suspicious flag is present", () => {
@@ -37,5 +41,35 @@ describe("isSkillSuspicious", () => {
 
     expect(isSkillSuspicious(skill)).toBe(false);
     expect(isSkillReviewFlagged(skill)).toBe(true);
+  });
+});
+
+describe("isSkillTransferBlockedByModeration", () => {
+  it("blocks scanner malicious reasons even when verdict fields are missing", () => {
+    expect(
+      isSkillTransferBlockedByModeration({
+        moderationStatus: "active",
+        moderationVerdict: undefined,
+        isSuspicious: false,
+        moderationFlags: undefined,
+        moderationReason: "scanner.vt.malicious",
+        moderationReasonCodes: undefined,
+        softDeletedAt: undefined,
+      }),
+    ).toBe(true);
+  });
+
+  it("blocks legacy hidden skills that only have softDeletedAt", () => {
+    expect(
+      isSkillTransferBlockedByModeration({
+        moderationStatus: undefined,
+        moderationVerdict: undefined,
+        isSuspicious: false,
+        moderationFlags: undefined,
+        moderationReason: undefined,
+        moderationReasonCodes: undefined,
+        softDeletedAt: 123,
+      }),
+    ).toBe(true);
   });
 });

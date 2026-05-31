@@ -13,10 +13,15 @@ import {
 } from "./shared";
 
 const usersV1InternalRefs = internal as unknown as {
+  publishers: {
+    removeOrgPublisherMemberInternal: unknown;
+  };
   users: {
+    getBanAppealContextByGitHubProviderAccountIdInternal: unknown;
     getByHandleInternal: unknown;
     remediateAutobansInternal: unknown;
     reclassifyBanInternal: unknown;
+    unbanUserForBanAppealServiceInternal: unknown;
   };
 };
 
@@ -36,6 +41,29 @@ async function runUsersV1MutationRef<T>(
   return (await ctx.runMutation(ref as never, args as never)) as T;
 }
 
+function getBanAppealsServiceToken() {
+  return process.env.CLAWHUB_BAN_APPEALS_TOKEN?.trim() || "";
+}
+
+function readBearerToken(request: Request) {
+  return (
+    request.headers
+      .get("authorization")
+      ?.match(/^Bearer\s+(.+)$/i)?.[1]
+      ?.trim() ?? ""
+  );
+}
+
+function requireBanAppealsServiceOrResponse(request: Request, headers: HeadersInit) {
+  const expected = getBanAppealsServiceToken();
+  if (!expected)
+    return { ok: false as const, response: text("Ban appeals service unavailable", 503, headers) };
+  if (readBearerToken(request) !== expected) {
+    return { ok: false as const, response: text("Unauthorized", 401, headers) };
+  }
+  return { ok: true as const };
+}
+
 export async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request) {
   const rate = await applyRateLimit(ctx, request, "write");
   if (!rate.ok) return rate.response;
@@ -52,9 +80,11 @@ export async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request)
     action !== "restore" &&
     action !== "remediate-autobans" &&
     action !== "reclassify-ban" &&
+    action !== "ban-appeal-unban" &&
     action !== "reclaim" &&
     action !== "reserve" &&
-    action !== "publisher"
+    action !== "publisher" &&
+    action !== "publisher-member"
   ) {
     return text("Not found", 404, rate.headers);
   }
@@ -62,6 +92,10 @@ export async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request)
   const payloadResult = await parseJsonPayload(request, rate.headers);
   if (!payloadResult.ok) return payloadResult.response;
   const payload = payloadResult.payload;
+
+  if (action === "ban-appeal-unban") {
+    return handleBanAppealUnban(ctx, request, payload, rate.headers);
+  }
 
   const authResult = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
   if (!authResult.ok) return authResult.response;
@@ -103,6 +137,12 @@ export async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request)
     const admin = requireAdminOrResponse(actorUser, rate.headers);
     if (!admin.ok) return admin.response;
     return handleAdminEnsurePublisher(ctx, payload, actorUserId, rate.headers);
+  }
+
+  if (action === "publisher-member") {
+    const admin = requireAdminOrResponse(actorUser, rate.headers);
+    if (!admin.ok) return admin.response;
+    return handleAdminRemovePublisherMember(ctx, payload, actorUserId, rate.headers);
   }
 
   const handleRaw = typeof payload.handle === "string" ? payload.handle.trim() : "";
@@ -528,6 +568,104 @@ async function handleAdminEnsurePublisher(
     return json(result, 200, headers);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Publisher ensure failed";
+    if (message.toLowerCase().includes("forbidden")) {
+      return text("Forbidden", 403, headers);
+    }
+    if (message.toLowerCase().includes("not found")) {
+      return text(message, 404, headers);
+    }
+    return text(message, 400, headers);
+  }
+}
+
+async function handleBanAppealUnban(
+  ctx: ActionCtx,
+  request: Request,
+  payload: Record<string, unknown>,
+  headers: HeadersInit,
+) {
+  const service = requireBanAppealsServiceOrResponse(request, headers);
+  if (!service.ok) return service.response;
+
+  const targetUserIdRaw = typeof payload.userId === "string" ? payload.userId.trim() : "";
+  if (!targetUserIdRaw) return text("Missing userId", 400, headers);
+
+  const reasonRaw = typeof payload.reason === "string" ? payload.reason.trim() : "";
+  const reviewerDiscordId =
+    typeof payload.reviewerDiscordId === "string" ? payload.reviewerDiscordId.trim() : "";
+  const reason = reasonRaw || "Ban appeal accepted";
+  if (reason.length > 500) return text("Reason too long (max 500 chars)", 400, headers);
+  if (!reviewerDiscordId) return text("Missing reviewerDiscordId", 400, headers);
+
+  try {
+    const result = await runUsersV1MutationRef(
+      ctx,
+      usersV1InternalRefs.users.unbanUserForBanAppealServiceInternal,
+      {
+        targetUserId: targetUserIdRaw as Id<"users">,
+        reason,
+        reviewerDiscordId,
+      },
+    );
+    return json(result, 200, headers);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Ban appeal unban failed";
+    if (message.toLowerCase().includes("forbidden")) return text("Forbidden", 403, headers);
+    if (message.toLowerCase().includes("not found")) return text(message, 404, headers);
+    return text(message, 400, headers);
+  }
+}
+
+export async function banAppealContextV1Handler(ctx: ActionCtx, request: Request) {
+  const rate = await applyRateLimit(ctx, request, "read");
+  if (!rate.ok) return rate.response;
+
+  const service = requireBanAppealsServiceOrResponse(request, rate.headers);
+  if (!service.ok) return service.response;
+
+  const providerAccountId = new URL(request.url).searchParams
+    .get("githubProviderAccountId")
+    ?.trim();
+  if (!providerAccountId) return text("Missing githubProviderAccountId", 400, rate.headers);
+
+  try {
+    const result = await runUsersV1QueryRef(
+      ctx,
+      usersV1InternalRefs.users.getBanAppealContextByGitHubProviderAccountIdInternal,
+      { providerAccountId },
+    );
+    return json(result, 200, rate.headers);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Ban appeal context failed";
+    return text(message, 400, rate.headers);
+  }
+}
+
+async function handleAdminRemovePublisherMember(
+  ctx: ActionCtx,
+  payload: Record<string, unknown>,
+  actorUserId: Id<"users">,
+  headers: HeadersInit,
+) {
+  const handle = typeof payload.handle === "string" ? payload.handle.trim().toLowerCase() : "";
+  const memberHandle =
+    typeof payload.memberHandle === "string" ? payload.memberHandle.trim().toLowerCase() : "";
+  if (!handle) return text("Missing handle", 400, headers);
+  if (!memberHandle) return text("Missing memberHandle", 400, headers);
+
+  try {
+    const result = await runUsersV1MutationRef(
+      ctx,
+      usersV1InternalRefs.publishers.removeOrgPublisherMemberInternal,
+      {
+        actorUserId,
+        handle,
+        memberHandle,
+      },
+    );
+    return json(result, 200, headers);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Publisher member removal failed";
     if (message.toLowerCase().includes("forbidden")) {
       return text("Forbidden", 403, headers);
     }

@@ -1,4 +1,5 @@
 import { Check } from "lucide-react";
+import type { ReactNode } from "react";
 import { ALLOWED_LUCIDE_ICON_NAMES, ALLOWED_LUCIDE_ICONS } from "../lib/skillIcon";
 
 type SkillIconPickerProps = {
@@ -37,11 +38,6 @@ export function SkillIconPicker({ value, onChange }: SkillIconPickerProps) {
           );
         })}
       </div>
-      <p className="text-xs text-[color:var(--ink-soft)]">
-        {value
-          ? `Selected: ${value}. Click again to change, or pick "None" to use the default icon.`
-          : "Optional. Pick an icon shown on the skill card and listings."}
-      </p>
     </div>
   );
 }
@@ -55,7 +51,7 @@ function IconButton({
   label: string;
   isSelected: boolean;
   onSelect: () => void;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <button
@@ -66,7 +62,7 @@ function IconButton({
       title={label}
       onClick={onSelect}
       className={[
-        "relative flex h-11 w-11 items-center justify-center rounded-[var(--radius-sm)] border transition-all",
+        "relative flex h-11 w-11 cursor-pointer items-center justify-center rounded-[var(--radius-sm)] border transition-all",
         isSelected
           ? "border-[color:var(--accent)] bg-[color:var(--accent)]/10 shadow-[0_0_0_2px_color-mix(in_srgb,var(--accent)_30%,transparent)]"
           : "border-[rgba(29,59,78,0.18)] bg-[rgba(255,255,255,0.94)] hover:border-[color:var(--accent)]/60 dark:border-[rgba(255,255,255,0.12)] dark:bg-[rgba(14,28,37,0.84)]",

@@ -24,6 +24,9 @@ clawhub login --device
 
 # or (token paste / headless)
 clawhub login --token clh_...
+
+# print the stored token for CI setup
+clawhub token
 ```
 
 Notes:

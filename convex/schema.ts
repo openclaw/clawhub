@@ -159,6 +159,9 @@ const publishers = defineTable({
   totalInstalls: v.optional(v.number()),
   totalDownloads: v.optional(v.number()),
   totalStars: v.optional(v.number()),
+  skillTotalInstalls: v.optional(v.number()),
+  skillTotalDownloads: v.optional(v.number()),
+  skillTotalStars: v.optional(v.number()),
   deactivatedAt: v.optional(v.number()),
   deletedAt: v.optional(v.number()),
   createdAt: v.number(),
@@ -265,6 +268,37 @@ const packageVerificationScopeValidator = v.union(
   v.literal("artifact-only"),
   v.literal("dependency-graph-aware"),
 );
+
+const publisherAbuseDryRunLabelValidator = v.union(
+  v.literal("pass"),
+  v.literal("review"),
+  v.literal("potential_ban_candidate"),
+);
+
+const publisherAbuseTriageStatusValidator = v.union(
+  v.literal("pending"),
+  v.literal("reviewed_no_action"),
+  v.literal("false_positive"),
+  v.literal("needs_policy_discussion"),
+  v.literal("candidate_for_future_action"),
+);
+
+const publisherAbuseModelConfigValidator = v.object({
+  modelVersion: v.string(),
+  skillPivot: v.number(),
+  installsPerSkillPivot: v.number(),
+  starsPerSkillPivot: v.number(),
+  downloadsPerSkillPivot: v.number(),
+  outputElasticity: v.number(),
+  installTrustElasticity: v.number(),
+  starTrustElasticity: v.number(),
+  downloadDemandElasticity: v.number(),
+  minInstallsPerSkill: v.number(),
+  minStarsPerSkill: v.number(),
+  minDownloadsPerSkill: v.number(),
+  reviewZThreshold: v.number(),
+  potentialBanCandidateZThreshold: v.number(),
+});
 
 const packageStatsValidator = v.object({
   downloads: v.number(),
@@ -390,6 +424,18 @@ const securityScanJobSourceValidator = v.union(
   v.literal("clawscan-note"),
   v.literal("vt-update"),
   v.literal("backfill"),
+  v.literal("bulk-rescan"),
+  v.literal("manual"),
+);
+const skillCardGenerationJobStatusValidator = v.union(
+  v.literal("queued"),
+  v.literal("running"),
+  v.literal("succeeded"),
+  v.literal("failed"),
+);
+const skillCardGenerationJobSourceValidator = v.union(
+  v.literal("publish"),
+  v.literal("scan"),
   v.literal("manual"),
 );
 
@@ -587,6 +633,17 @@ const skillVersions = defineTable({
   skillId: v.id("skills"),
   version: v.string(),
   fingerprint: v.optional(v.string()),
+  sourceProvenance: v.optional(
+    v.object({
+      kind: v.literal("github"),
+      url: v.string(),
+      repo: v.string(),
+      ref: v.string(),
+      commit: v.string(),
+      path: v.optional(v.string()),
+      importedAt: v.number(),
+    }),
+  ),
   changelog: v.string(),
   changelogSource: v.optional(v.union(v.literal("auto"), v.literal("user"))),
   files: v.array(
@@ -672,6 +729,7 @@ const skillVersions = defineTable({
   .index("by_skill", ["skillId"])
   .index("by_skill_version", ["skillId", "version"])
   .index("by_active_created", ["softDeletedAt", "createdAt"])
+  .index("by_active_vt_status_created", ["softDeletedAt", "vtAnalysis.status", "createdAt"])
   .index("by_sha256hash", ["sha256hash"])
   .index("by_dep_registry_scan_status_and_created", ["depRegistryScanStatus", "createdAt"]);
 
@@ -809,6 +867,7 @@ const skillSearchDigest = defineTable({
   canonicalSkillId: v.optional(v.id("skills")),
   forkOf: forkOfValidator,
   latestVersionId: v.optional(v.id("skillVersions")),
+  latestVersionSkillId: v.optional(v.id("skills")),
   latestVersionSummary: v.optional(
     v.object({
       version: v.string(),
@@ -930,6 +989,7 @@ const packages = defineTable({
   reportCount: v.optional(v.number()),
   lastReportedAt: v.optional(v.number()),
   softDeletedAt: v.optional(v.number()),
+  softDeletedReason: v.optional(v.union(v.literal("user.banned"), v.literal("user.deactivated"))),
   softDeletedBy: v.optional(v.id("users")),
   softDeletedByRole: v.optional(
     v.union(v.literal("admin"), v.literal("moderator"), v.literal("user")),
@@ -1074,6 +1134,29 @@ const securityScanJobs = defineTable({
   .index("by_skill_version", ["skillVersionId"])
   .index("by_package_release", ["packageReleaseId"]);
 
+const skillCardGenerationJobs = defineTable({
+  skillId: v.id("skills"),
+  skillVersionId: v.id("skillVersions"),
+  status: skillCardGenerationJobStatusValidator,
+  source: skillCardGenerationJobSourceValidator,
+  priority: v.number(),
+  nextRunAt: v.number(),
+  attempts: v.number(),
+  leaseToken: v.optional(v.string()),
+  leaseExpiresAt: v.optional(v.number()),
+  workerId: v.optional(v.string()),
+  lastError: v.optional(v.string()),
+  runId: v.optional(v.string()),
+  completedAt: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_status_and_next_run_at", ["status", "nextRunAt"])
+  .index("by_status_and_lease_expires_at", ["status", "leaseExpiresAt"])
+  .index("by_skill", ["skillId"])
+  .index("by_skill_version_status", ["skillVersionId", "status"])
+  .index("by_skill_version", ["skillVersionId"]);
+
 const packageStatEvents = defineTable({
   packageId: v.id("packages"),
   kind: v.union(v.literal("download"), v.literal("install")),
@@ -1123,7 +1206,8 @@ const packagePublishTokens = defineTable({
   createdAt: v.number(),
 })
   .index("by_hash", ["tokenHash"])
-  .index("by_package", ["packageId", "version", "createdAt"]);
+  .index("by_package", ["packageId", "version", "createdAt"])
+  .index("by_package_revoked_created", ["packageId", "revokedAt", "createdAt"]);
 
 const packageSearchDigest = defineTable({
   packageId: v.id("packages"),
@@ -1741,7 +1825,7 @@ const soulStars = defineTable({
   .index("by_soul_user", ["soulId", "userId"]);
 
 const auditLogs = defineTable({
-  actorUserId: v.id("users"),
+  actorUserId: v.optional(v.id("users")),
   action: v.string(),
   targetType: v.string(),
   targetId: v.string(),
@@ -1751,6 +1835,107 @@ const auditLogs = defineTable({
   .index("by_actor", ["actorUserId"])
   .index("by_target", ["targetType", "targetId"])
   .index("by_target_createdAt", ["targetType", "targetId", "createdAt"]);
+
+const publisherAbuseScoreRuns = defineTable({
+  modelVersion: v.string(),
+  modelConfig: publisherAbuseModelConfigValidator,
+  trigger: v.union(v.literal("cron"), v.literal("manual")),
+  actorUserId: v.optional(v.id("users")),
+  status: v.union(v.literal("running"), v.literal("completed"), v.literal("failed")),
+  phase: v.union(v.literal("collecting"), v.literal("finalizing"), v.literal("completed")),
+  collectCursor: v.optional(v.string()),
+  finalizeCursor: v.optional(v.string()),
+  startedAt: v.number(),
+  completedAt: v.optional(v.number()),
+  updatedAt: v.number(),
+  scannedPublishers: v.number(),
+  scoredPublishers: v.number(),
+  finalizedScores: v.number(),
+  nominatedPublishers: v.number(),
+  passCount: v.number(),
+  reviewCount: v.number(),
+  potentialBanCandidateCount: v.number(),
+  sumLogPressure: v.number(),
+  sumSquaredLogPressure: v.number(),
+  meanLogPressure: v.optional(v.number()),
+  stdDevLogPressure: v.optional(v.number()),
+  errorMessage: v.optional(v.string()),
+})
+  .index("by_status_and_updated_at", ["status", "updatedAt"])
+  .index("by_started_at", ["startedAt"]);
+
+const publisherAbuseScores = defineTable({
+  runId: v.id("publisherAbuseScoreRuns"),
+  ownerKey: v.string(),
+  ownerPublisherId: v.optional(v.id("publishers")),
+  ownerUserId: v.optional(v.id("users")),
+  handleSnapshot: v.string(),
+  modelVersion: v.string(),
+  label: publisherAbuseDryRunLabelValidator,
+  rank: v.number(),
+  pressure: v.number(),
+  logPressure: v.number(),
+  zScore: v.number(),
+  publishedSkills: v.number(),
+  totalInstalls: v.number(),
+  totalStars: v.number(),
+  totalDownloads: v.number(),
+  installsPerSkill: v.number(),
+  starsPerSkill: v.number(),
+  downloadsPerSkill: v.number(),
+  reasonCodes: v.array(v.string()),
+  createdAt: v.number(),
+})
+  .index("by_run_and_rank", ["runId", "rank"])
+  .index("by_run_and_pressure", ["runId", "pressure"])
+  .index("by_owner_key_and_created_at", ["ownerKey", "createdAt"])
+  .index("by_owner_key_and_model_version", ["ownerKey", "modelVersion"])
+  .index("by_label_and_z_score", ["label", "zScore"]);
+
+const publisherAbuseReviewNominations = defineTable({
+  ownerKey: v.string(),
+  ownerPublisherId: v.optional(v.id("publishers")),
+  ownerUserId: v.optional(v.id("users")),
+  handleSnapshot: v.string(),
+  latestScoreId: v.id("publisherAbuseScores"),
+  modelVersion: v.string(),
+  label: publisherAbuseDryRunLabelValidator,
+  status: publisherAbuseTriageStatusValidator,
+  openedAt: v.number(),
+  openedByRunId: v.id("publisherAbuseScoreRuns"),
+  lastScoredAt: v.number(),
+  reviewedByUserId: v.optional(v.id("users")),
+  reviewedAt: v.optional(v.number()),
+  notes: v.optional(v.string()),
+  updatedAt: v.number(),
+})
+  .index("by_owner_key_and_model_version", ["ownerKey", "modelVersion"])
+  .index("by_status_and_last_scored_at", ["status", "lastScoredAt"])
+  .index("by_status_and_label_and_last_scored_at", ["status", "label", "lastScoredAt"])
+  .index("by_label_and_status_and_last_scored_at", ["label", "status", "lastScoredAt"])
+  .index("by_last_scored_at", ["lastScoredAt"]);
+
+const publisherAbuseReviewEvents = defineTable({
+  nominationId: v.id("publisherAbuseReviewNominations"),
+  ownerKey: v.string(),
+  actorUserId: v.optional(v.id("users")),
+  runId: v.optional(v.id("publisherAbuseScoreRuns")),
+  scoreId: v.optional(v.id("publisherAbuseScores")),
+  eventType: v.union(
+    v.literal("nomination_opened"),
+    v.literal("nomination_score_updated"),
+    v.literal("triage_status_changed"),
+  ),
+  previousStatus: v.optional(publisherAbuseTriageStatusValidator),
+  nextStatus: v.optional(publisherAbuseTriageStatusValidator),
+  previousLabel: v.optional(publisherAbuseDryRunLabelValidator),
+  nextLabel: v.optional(publisherAbuseDryRunLabelValidator),
+  notes: v.optional(v.string()),
+  createdAt: v.number(),
+})
+  .index("by_nomination_and_created_at", ["nominationId", "createdAt"])
+  .index("by_owner_key_and_created_at", ["ownerKey", "createdAt"])
+  .index("by_actor_and_created_at", ["actorUserId", "createdAt"]);
 
 const vtScanLogs = defineTable({
   type: v.union(v.literal("daily_rescan"), v.literal("backfill"), v.literal("pending_poll")),
@@ -1940,6 +2125,7 @@ export default defineSchema({
   packages,
   packageReleases,
   securityScanJobs,
+  skillCardGenerationJobs,
   packageStatEvents,
   packageTrustedPublishers,
   packagePublishTokens,
@@ -1977,6 +2163,10 @@ export default defineSchema({
   stars,
   soulStars,
   auditLogs,
+  publisherAbuseScoreRuns,
+  publisherAbuseScores,
+  publisherAbuseReviewNominations,
+  publisherAbuseReviewEvents,
   vtScanLogs,
   apiTokens,
   cliDeviceCodes,

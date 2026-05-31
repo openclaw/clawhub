@@ -9,6 +9,7 @@ import { getPublishFileSizeError, MAX_PUBLISH_FILE_BYTES } from "../lib/publishL
 import { isMacJunkPath } from "../lib/skills";
 
 export const MAX_RAW_FILE_BYTES = 200 * 1024;
+const DEFAULT_PUBLIC_SITE_URL = "https://clawhub.ai";
 
 const SAFE_TEXT_FILE_CSP =
   "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
@@ -88,6 +89,65 @@ export async function parseJsonPayload(request: Request, headers: HeadersInit) {
   }
 }
 
+function normalizeOrigin(value: string | null | undefined) {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  try {
+    return new URL(trimmed).origin;
+  } catch {
+    return null;
+  }
+}
+
+function firstForwardedValue(value: string | null) {
+  return value?.split(",")[0]?.trim() || null;
+}
+
+function isProductionDeployment() {
+  const deployment = process.env.CONVEX_DEPLOYMENT?.trim() ?? "";
+  return deployment.startsWith("prod:") || deployment.includes("production");
+}
+
+function isTrustedForwardedHost(value: string) {
+  try {
+    const hostname = new URL(`https://${value}`).hostname.toLowerCase();
+    return (
+      hostname === "clawhub.ai" ||
+      hostname === "www.clawhub.ai" ||
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname === "0.0.0.0"
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function publicApiOrigin(request: Request) {
+  const configured = normalizeOrigin(process.env.SITE_URL ?? process.env.VITE_SITE_URL);
+  if (configured) return configured;
+
+  const forwardedHost = firstForwardedValue(request.headers.get("x-forwarded-host"));
+  if (
+    forwardedHost &&
+    !forwardedHost.endsWith(".convex.site") &&
+    isTrustedForwardedHost(forwardedHost)
+  ) {
+    const forwardedProto =
+      firstForwardedValue(request.headers.get("x-forwarded-proto")) ??
+      firstForwardedValue(request.headers.get("x-forwarded-protocol")) ??
+      "https";
+    const proto = forwardedProto === "http" ? "http" : "https";
+    return `${proto}://${forwardedHost}`;
+  }
+
+  const requestUrl = new URL(request.url);
+  if (isProductionDeployment() && requestUrl.hostname.endsWith(".convex.site")) {
+    return DEFAULT_PUBLIC_SITE_URL;
+  }
+  return requestUrl.origin;
+}
+
 export async function requireApiTokenUserOrResponse(
   ctx: ActionCtx,
   request: Request,
@@ -161,12 +221,14 @@ export async function resolveTagsBatch(
   ctx: ActionCtx,
   tagsList: Array<Record<string, Id<"skillVersions">>>,
   latestVersions?: Array<LatestVersionTag<"skillVersions">>,
+  skillIds?: Array<Id<"skills"> | undefined>,
 ): Promise<Array<Record<string, string>>> {
   return resolveVersionTagsBatch(
     ctx,
     tagsList,
     internal.skills.getVersionsByIdsInternal,
     latestVersions,
+    skillIds,
   );
 }
 
@@ -175,9 +237,27 @@ type LatestVersionTag<TTable extends "skillVersions" | "soulVersions"> =
       _id: Id<TTable>;
       version?: string;
       softDeletedAt?: unknown;
+      skillId?: Id<"skills">;
+      soulId?: Id<"souls">;
     }
   | null
   | undefined;
+
+type TagResourceId = Id<"skills"> | Id<"souls">;
+
+function versionBelongsToResource(
+  version:
+    | {
+        skillId?: Id<"skills">;
+        soulId?: Id<"souls">;
+      }
+    | null
+    | undefined,
+  resourceId: TagResourceId | undefined,
+) {
+  if (!resourceId) return true;
+  return version?.skillId === resourceId || version?.soulId === resourceId;
+}
 
 /**
  * Batch resolve version tags to version strings.
@@ -192,13 +272,20 @@ export async function resolveVersionTagsBatch<TTable extends "skillVersions" | "
   tagsList: Array<Record<string, Id<TTable>>>,
   getVersionsByIdsQuery: unknown,
   latestVersions?: Array<LatestVersionTag<TTable>>,
+  resourceIds?: Array<TagResourceId | undefined>,
 ): Promise<Array<Record<string, string>>> {
   const allVersionIds = new Set<Id<TTable>>();
   const preResolvedTags = tagsList.map((tags, idx) => {
     const resolved: Record<string, string> = {};
     const latest = latestVersions?.[idx];
+    const resourceId = resourceIds?.[idx];
     for (const [tag, versionId] of Object.entries(tags)) {
-      if (latest?._id === versionId && latest.version && !latest.softDeletedAt) {
+      if (
+        latest?._id === versionId &&
+        latest.version &&
+        !latest.softDeletedAt &&
+        versionBelongsToResource(latest, resourceId)
+      ) {
         resolved[tag] = latest.version;
       } else {
         allVersionIds.add(versionId);
@@ -217,19 +304,30 @@ export async function resolveVersionTagsBatch<TTable extends "skillVersions" | "
       _id: Id<TTable>;
       version: string;
       softDeletedAt?: unknown;
+      skillId?: Id<"skills">;
+      soulId?: Id<"souls">;
     }> | null) ?? [];
 
-  const versionMap = new Map<Id<TTable>, string>();
+  const versionMap = new Map<
+    Id<TTable>,
+    {
+      version: string;
+      skillId?: Id<"skills">;
+      soulId?: Id<"souls">;
+    }
+  >();
   for (const v of versions) {
-    if (!v?.softDeletedAt) versionMap.set(v._id, v.version);
+    if (!v?.softDeletedAt)
+      versionMap.set(v._id, { version: v.version, skillId: v.skillId, soulId: v.soulId });
   }
 
   return tagsList.map((tags, idx) => {
     const resolved = { ...preResolvedTags[idx] };
+    const resourceId = resourceIds?.[idx];
     for (const [tag, versionId] of Object.entries(tags)) {
       if (resolved[tag]) continue;
       const version = versionMap.get(versionId);
-      if (version) resolved[tag] = version;
+      if (version && versionBelongsToResource(version, resourceId)) resolved[tag] = version.version;
     }
     return resolved;
   });
@@ -314,7 +412,6 @@ export async function parseMultipartPublish(
     ...(typeof payload.migrateOwner === "boolean" ? { migrateOwner: payload.migrateOwner } : {}),
     version: payload.version,
     changelog: typeof payload.changelog === "string" ? payload.changelog : "",
-    ...(typeof payload.clawScanNote === "string" ? { clawScanNote: payload.clawScanNote } : {}),
     ...(hasAcceptLicenseTerms ? { acceptLicenseTerms: payload.acceptLicenseTerms } : {}),
     tags: Array.isArray(payload.tags) ? payload.tags : undefined,
     ...(payload.source ? { source: payload.source } : {}),

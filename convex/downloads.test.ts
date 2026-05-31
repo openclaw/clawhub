@@ -91,6 +91,7 @@ describe("downloads helpers", () => {
       if ("versionId" in args) {
         return {
           _id: "skillVersions:1",
+          skillId: "skills:1",
           version: "1.0.0",
           createdAt: 3,
           files: [{ path: "SKILL.md", storageId: "_storage:1" }],
@@ -140,5 +141,65 @@ describe("downloads helpers", () => {
       identityHash: expect.any(String),
       hourStart: expect.any(Number),
     });
+  });
+
+  it("does not serve a tag that points at another skill's version", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            ownerUserId: "users:1",
+            slug: "demo",
+            tags: { old: "skillVersions:other" },
+            latestVersionId: "skillVersions:1",
+          },
+          moderationInfo: null,
+        };
+      }
+      if (args.versionId === "skillVersions:1") {
+        return {
+          _id: "skillVersions:1",
+          skillId: "skills:1",
+          version: "1.0.0",
+          createdAt: 3,
+          files: [],
+          softDeletedAt: undefined,
+        };
+      }
+      if (args.versionId === "skillVersions:other") {
+        return {
+          _id: "skillVersions:other",
+          skillId: "skills:other",
+          version: "9.9.9",
+          createdAt: 4,
+          files: [{ path: "SKILL.md", storageId: "_storage:other" }],
+          softDeletedAt: undefined,
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return null;
+    });
+    const storageGet = vi.fn();
+
+    const response = await downloadZipHandler(
+      {
+        runQuery,
+        runMutation,
+        scheduler: { runAfter: vi.fn() },
+        storage: { get: storageGet },
+      } as unknown as ActionCtx,
+      new Request("https://example.com/api/v1/download?slug=demo&tag=old", {
+        headers: { "cf-connecting-ip": "1.2.3.4" },
+      }),
+    );
+
+    expect(response.status).toBe(404);
+    expect(await response.text()).toBe("Version not found");
+    expect(storageGet).not.toHaveBeenCalled();
   });
 });

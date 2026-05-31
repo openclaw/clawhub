@@ -72,7 +72,6 @@ export const CliPublishRequestSchema = type({
     migrateOwner: "boolean?",
     version: "string",
     changelog: "string",
-    clawScanNote: "string?",
     acceptLicenseTerms: "boolean?",
     tags: "string[]?",
     source: PublishSourceSchema.optional(),
@@ -334,6 +333,61 @@ export const ApiV1SkillRescanResponseSchema = type({
     jobId: "string",
     alreadyQueued: "boolean",
 });
+export const ApiV1SkillBulkRescanBatchRequestSchema = type({
+    mode: '"all-active-latest"?',
+    cursor: "string|null?",
+    batchSize: "number?",
+    dryRun: "boolean?",
+});
+export const ApiV1SkillBulkRescanBatchResponseSchema = type({
+    ok: "true",
+    mode: '"all-active-latest"',
+    queued: "number",
+    alreadyQueued: "number",
+    skipped: "number",
+    jobIds: "string[]",
+    nextCursor: "string|null",
+    done: "boolean",
+    sampleSlugs: "string[]",
+});
+export const ApiV1SkillBulkRescanStatusRequestSchema = type({
+    jobIds: "string[]",
+});
+export const ApiV1SkillBulkRescanStatusResponseSchema = type({
+    ok: "true",
+    total: "number",
+    queued: "number",
+    running: "number",
+    succeeded: "number",
+    failed: "number",
+    missing: "number",
+    terminal: "number",
+    done: "boolean",
+    failedJobIds: "string[]",
+});
+export const ApiV1SkillRepairVtPendingRequestSchema = type({
+    cursor: "string|null?",
+    batchSize: "number?",
+    concurrency: "number?",
+    dryRun: "boolean?",
+});
+export const ApiV1SkillRepairVtPendingResponseSchema = type({
+    ok: "true",
+    dryRun: "boolean",
+    total: "number",
+    wouldUpdate: "number",
+    updated: "number",
+    noResults: "number",
+    noDecisiveStats: "number",
+    errors: "number",
+    done: "boolean",
+    cursor: "string|null",
+    statusCounts: { "[string]": "number" },
+    sampleUpdated: type({
+        slug: "string",
+        status: "string",
+    }).array(),
+});
 export const ApiV1SkillVersionListResponseSchema = type({
     items: type({
         version: "string",
@@ -367,6 +421,27 @@ export const ApiV1SkillVersionResponseSchema = type({
 export const ApiV1SkillResolveResponseSchema = type({
     match: type({ version: "string" }).or("null"),
     latestVersion: type({ version: "string" }).or("null"),
+});
+export const ApiV1SkillVerifyResponseSchema = type({
+    schema: '"clawhub.skill.verify.v1"',
+    ok: "boolean",
+    decision: '"pass"|"fail"',
+    reasons: "string[]",
+    slug: "string",
+    displayName: "string",
+    pageUrl: "string",
+    publisherHandle: "string|null",
+    publisherDisplayName: "string|null",
+    publisherProfileUrl: "string|null",
+    version: "string",
+    resolvedFrom: '"latest"|"version"|"tag"',
+    tag: "string|null",
+    createdAt: "number",
+    card: "unknown",
+    artifact: "unknown",
+    provenance: "unknown",
+    security: "unknown",
+    signature: "unknown",
 });
 export const ApiV1PublishResponseSchema = type({
     ok: "true",

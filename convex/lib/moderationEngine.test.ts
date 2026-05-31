@@ -1872,7 +1872,7 @@ describe("moderationEngine", () => {
     expect(snapshot.reasonCodes).toEqual([]);
   });
 
-  it("keeps static suspicious findings as evidence while VT and LLM decide the verdict", () => {
+  it("keeps static suspicious findings out of top-level moderation snapshots", () => {
     const snapshot = buildModerationSnapshot({
       staticScan: {
         status: "suspicious",
@@ -1897,7 +1897,7 @@ describe("moderationEngine", () => {
 
     expect(snapshot.verdict).toBe("clean");
     expect(snapshot.reasonCodes).toEqual([]);
-    expect(snapshot.evidence.length).toBe(1);
+    expect(snapshot.evidence).toEqual([]);
   });
 
   it("does not let static suspicious findings alone drive the aggregate verdict", () => {
@@ -1925,7 +1925,7 @@ describe("moderationEngine", () => {
 
     expect(snapshot.verdict).toBe("clean");
     expect(snapshot.reasonCodes).toEqual([]);
-    expect(snapshot.evidence.length).toBe(1);
+    expect(snapshot.evidence).toEqual([]);
   });
 
   it("lets Codex clear static malicious findings", () => {
@@ -1948,7 +1948,7 @@ describe("moderationEngine", () => {
     expect(snapshot.evidence).toEqual([]);
   });
 
-  it("keeps static malicious findings when Codex has no completed verdict", () => {
+  it("keeps static malicious findings internal when Codex has no completed verdict", () => {
     const snapshot = buildModerationSnapshot({
       staticScan: {
         status: "malicious",
@@ -1962,8 +1962,9 @@ describe("moderationEngine", () => {
       llmStatus: "error",
     });
 
-    expect(snapshot.verdict).toBe("malicious");
-    expect(snapshot.reasonCodes).toContain("malicious.crypto_mining");
+    expect(snapshot.verdict).toBe("clean");
+    expect(snapshot.reasonCodes).toEqual([]);
+    expect(snapshot.evidence).toEqual([]);
   });
 
   it("lets legacy completed benign Codex verdicts clear static malicious findings", () => {

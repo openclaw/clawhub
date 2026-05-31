@@ -4,14 +4,14 @@ import { join, resolve } from "node:path";
 import { Command } from "commander";
 import { getCliBuildLabel, getCliVersion } from "./cli/buildInfo.js";
 import { resolveClawdbotDefaultWorkspace } from "./cli/clawdbotConfig.js";
-import { cmdLoginFlow, cmdLogout, cmdWhoami } from "./cli/commands/auth.js";
+import { cmdLoginFlow, cmdLogout, cmdToken, cmdWhoami } from "./cli/commands/auth.js";
 import {
   cmdDeleteSkill,
   cmdHideSkill,
   cmdUndeleteSkill,
   cmdUnhideSkill,
 } from "./cli/commands/delete.js";
-import { cmdInspect } from "./cli/commands/inspect.js";
+import { cmdInspect, cmdVerifySkill } from "./cli/commands/inspect.js";
 import { cmdMergeSkill, cmdRenameSkill } from "./cli/commands/ownership.js";
 import {
   cmdDeletePackage,
@@ -57,9 +57,6 @@ import type { GlobalOpts } from "./cli/types.js";
 import { fail } from "./cli/ui.js";
 import { readGlobalConfig } from "./config.js";
 
-const CLAWSCAN_NOTE_HELP =
-  "This note gives ClawScan context for behavior that may otherwise look unusual, such as network access, native host access, or provider-specific credentials.";
-
 const program = new Command()
   .name("clawhub")
   .description(
@@ -90,6 +87,55 @@ function registerCommand(parent: Command, path: readonly string[]) {
 
 function registerCommandGroup(parent: Command, path: readonly string[]) {
   return parent.command(path.at(-1) ?? "");
+}
+
+function validateTopLevelCommand(args: string[]) {
+  if (hasTerminalGlobalFlag(args)) return;
+  const commandName = findFirstTopLevelOperand(args);
+  if (!commandName) return;
+  const knownCommands = new Set([
+    "help",
+    ...program.commands.flatMap((command) => [command.name(), ...command.aliases()]),
+  ]);
+  if (knownCommands.has(commandName)) return;
+  program.error(`error: unknown command '${commandName}'`, { code: "commander.unknownCommand" });
+}
+
+function hasTerminalGlobalFlag(args: string[]) {
+  return args.some(
+    (arg) => arg === "--help" || arg === "-h" || arg === "--cli-version" || arg === "-V",
+  );
+}
+
+function findFirstTopLevelOperand(args: string[]) {
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (!arg) continue;
+    if (arg === "--") return args[index + 1];
+    if (arg.startsWith("--")) {
+      if (arg === "--workdir" || arg === "--dir" || arg === "--site" || arg === "--registry") {
+        index += 1;
+        continue;
+      }
+      if (
+        arg.startsWith("--workdir=") ||
+        arg.startsWith("--dir=") ||
+        arg.startsWith("--site=") ||
+        arg.startsWith("--registry=")
+      ) {
+        continue;
+      }
+      if (arg === "--help" || arg === "--cli-version") return undefined;
+      if (arg === "--no-input") continue;
+      return undefined;
+    }
+    if (arg.startsWith("-")) {
+      if (arg === "-h" || arg === "-V") return undefined;
+      return undefined;
+    }
+    return arg;
+  }
+  return undefined;
 }
 
 async function resolveGlobalOpts(): Promise<GlobalOpts> {
@@ -171,6 +217,12 @@ registerCommand(program, ["whoami"])
   .action(async () => {
     const opts = await resolveGlobalOpts();
     await cmdWhoami(opts);
+  });
+
+registerCommand(program, ["token"])
+  .description("Print stored API token")
+  .action(async () => {
+    await cmdToken();
   });
 
 const auth = registerCommandGroup(program, ["auth"])
@@ -313,7 +365,6 @@ registerCommand(program, ["publish"])
   .option("--version <version>", "Version (semver)")
   .option("--fork-of <slug[@version]>", "Mark as a fork of an existing skill")
   .option("--changelog <text>", "Changelog text")
-  .option("--clawscan-note <text>", CLAWSCAN_NOTE_HELP)
   .option("--tags <tags>", "Comma-separated tags", "latest")
   .action(async (folder, options) => {
     const opts = await resolveGlobalOpts();
@@ -375,11 +426,21 @@ registerCommand(skill, ["skill", "publish"])
   .option("--version <version>", "Version (semver)")
   .option("--fork-of <slug[@version]>", "Mark as a fork of an existing skill")
   .option("--changelog <text>", "Changelog text")
-  .option("--clawscan-note <text>", CLAWSCAN_NOTE_HELP)
   .option("--tags <tags>", "Comma-separated tags", "latest")
   .action(async (folder, options) => {
     const opts = await resolveGlobalOpts();
     await cmdPublish(opts, folder, options);
+  });
+
+registerCommand(skill, ["skill", "verify"])
+  .description("Verify a published skill using ClawHub security evidence")
+  .argument("<slug>", "Skill slug")
+  .option("--version <version>", "Version to verify")
+  .option("--tag <tag>", "Tag to verify")
+  .option("--card", "Output generated skill-card.md Markdown")
+  .action(async (slug, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdVerifySkill(opts, slug, options);
   });
 
 const publisherCmd = registerCommandGroup(program, ["publisher"])
@@ -567,7 +628,6 @@ registerCommand(packageCmd, ["package", "publish"])
   .option("--owner <handle>", "Publish under this owner/publisher handle")
   .option("--version <version>", "Version")
   .option("--changelog <text>", "Changelog text")
-  .option("--clawscan-note <text>", CLAWSCAN_NOTE_HELP)
   .option(
     "--manual-override-reason <reason>",
     "Required for manual publish when trusted publisher config exists",
@@ -693,10 +753,16 @@ registerCommand(program, ["sync"])
   .option("--root <dir...>", "Extra scan roots (one or more)")
   .option("--all", "Upload all new/updated skills without prompting")
   .option("--dry-run", "Show what would be uploaded")
+  .option("--json", "Output JSON")
+  .option("--owner <handle>", "Publish under an org/user publisher handle")
   .option("--bump <type>", "Version bump for updates (patch|minor|major)", "patch")
   .option("--changelog <text>", "Changelog to use for updates (non-interactive)")
   .option("--tags <tags>", "Comma-separated tags", "latest")
   .option("--concurrency <n>", "Concurrent registry checks (default: 4)", "4")
+  .option("--no-clawdbot-roots", "Only scan the configured workdir/dir and --root values")
+  .option("--source-repo <repo>", "GitHub repo (owner/repo or URL)")
+  .option("--source-commit <sha>", "Git commit SHA")
+  .option("--source-ref <ref>", "Git ref/tag/branch")
   .action(async (options) => {
     const opts = await resolveGlobalOpts();
     const bump = String(options.bump ?? "patch") as "patch" | "minor" | "major";
@@ -710,10 +776,16 @@ registerCommand(program, ["sync"])
         root: options.root,
         all: options.all,
         dryRun: options.dryRun,
+        json: options.json,
+        owner: options.owner,
         bump,
         changelog: options.changelog,
         tags: options.tags,
         concurrency,
+        clawdbotRoots: options.clawdbotRoots,
+        sourceRepo: options.sourceRepo,
+        sourceCommit: options.sourceCommit,
+        sourceRef: options.sourceRef,
       },
       isInputAllowed(),
     );
@@ -729,6 +801,8 @@ program.action(async () => {
   program.outputHelp();
   process.exitCode = 0;
 });
+
+validateTopLevelCommand(process.argv.slice(2));
 
 void program.parseAsync(process.argv).catch((error) => {
   const message = error instanceof Error ? error.message : String(error);

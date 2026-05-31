@@ -6,7 +6,7 @@ vi.mock("@convex-dev/auth/server", () => ({
 }));
 
 const { getAuthUserId } = await import("@convex-dev/auth/server");
-const { deleteTags, updateSummary } = await import("./skills");
+const { deleteTags, updateSummary, updateTags } = await import("./skills");
 
 type WrappedHandler<TArgs, TResult = unknown> = {
   _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
@@ -22,6 +22,12 @@ const updateSummaryHandler = (
   updateSummary as unknown as WrappedHandler<{
     skillId: string;
     summary: string;
+  }>
+)._handler;
+const updateTagsHandler = (
+  updateTags as unknown as WrappedHandler<{
+    skillId: string;
+    tags: Array<{ tag: string; versionId: string }>;
   }>
 )._handler;
 
@@ -48,6 +54,7 @@ function makeCtx(params: {
   skill: Record<string, unknown> | null;
   publisher?: Record<string, unknown> | null;
   membership?: Record<string, unknown> | null;
+  versionsById?: Record<string, Record<string, unknown>>;
 }) {
   vi.mocked(getAuthUserId).mockResolvedValue(params.user._id as never);
   const patch = vi.fn(async (_id: string, value: Record<string, unknown>) => value);
@@ -55,6 +62,7 @@ function makeCtx(params: {
     get: vi.fn(async (id: string) => {
       if (id === params.user._id) return params.user;
       if (params.skill && id === params.skill._id) return params.skill;
+      if (params.versionsById?.[id]) return params.versionsById[id];
       if (params.publisher && id === params.publisher._id) return params.publisher;
       return null;
     }),
@@ -67,6 +75,13 @@ function makeCtx(params: {
         return {
           withIndex: () => ({
             unique: async () => params.membership ?? null,
+          }),
+        };
+      }
+      if (table === "skillEmbeddings") {
+        return {
+          withIndex: () => ({
+            collect: async () => [],
           }),
         };
       }
@@ -200,6 +215,98 @@ describe("deleteTags", () => {
         { skillId: "skills:missing", tags: ["stable"] } as never,
       ),
     ).rejects.toThrow("Skill not found");
+  });
+});
+
+describe("updateTags", () => {
+  beforeEach(() => {
+    vi.mocked(getAuthUserId).mockReset();
+  });
+
+  it("updates tags only to versions that belong to the skill", async () => {
+    const { db, auth, patch } = makeCtx({
+      user: ownerUser,
+      skill: baseSkill,
+      versionsById: {
+        "versions:2": {
+          _id: "versions:2",
+          skillId: "skills:1",
+          version: "1.0.0",
+          createdAt: 10,
+          changelog: "stable",
+          changelogSource: "user",
+          parsed: { clawdis: { os: ["macos"] } },
+          capabilityTags: ["posts-externally"],
+          softDeletedAt: undefined,
+        },
+      },
+    });
+
+    await updateTagsHandler(
+      { db, auth } as never,
+      { skillId: "skills:1", tags: [{ tag: "stable", versionId: "versions:2" }] } as never,
+    );
+
+    expect(patch).toHaveBeenCalledOnce();
+    expect(patch.mock.calls[0][1]).toMatchObject({
+      tags: expect.objectContaining({ stable: "versions:2" }),
+    });
+  });
+
+  it("rejects tag updates to another skill's version", async () => {
+    const { db, auth, patch } = makeCtx({
+      user: ownerUser,
+      skill: baseSkill,
+      versionsById: {
+        "versions:other": {
+          _id: "versions:other",
+          skillId: "skills:other",
+          version: "9.9.9",
+          createdAt: 10,
+          changelog: "other",
+          softDeletedAt: undefined,
+        },
+      },
+    });
+
+    await expect(
+      updateTagsHandler(
+        { db, auth } as never,
+        {
+          skillId: "skills:1",
+          tags: [{ tag: "stable", versionId: "versions:other" }],
+        } as never,
+      ),
+    ).rejects.toThrow("Version not found");
+    expect(patch).not.toHaveBeenCalled();
+  });
+
+  it("rejects tag updates to soft-deleted versions", async () => {
+    const { db, auth, patch } = makeCtx({
+      user: ownerUser,
+      skill: baseSkill,
+      versionsById: {
+        "versions:deleted": {
+          _id: "versions:deleted",
+          skillId: "skills:1",
+          version: "0.9.0",
+          createdAt: 9,
+          changelog: "deleted",
+          softDeletedAt: 123,
+        },
+      },
+    });
+
+    await expect(
+      updateTagsHandler(
+        { db, auth } as never,
+        {
+          skillId: "skills:1",
+          tags: [{ tag: "stable", versionId: "versions:deleted" }],
+        } as never,
+      ),
+    ).rejects.toThrow("Version not found");
+    expect(patch).not.toHaveBeenCalled();
   });
 });
 

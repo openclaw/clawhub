@@ -2,6 +2,8 @@
   <img src="public/clawd-logo.png" alt="ClawHub" width="120">
 </p>
 
+![ClawHub banner](docs/assets/readme-banner.jpg)
+
 <h1 align="center">ClawHub</h1>
 
 <p align="center">
@@ -201,7 +203,7 @@ metadata: { "clawdbot": { "cliHelp": "padel --help\\nUsage: padel [command]\\n" 
 
 ## Skill metadata
 
-Skills declare their runtime requirements (env vars, binaries, install specs) in the `SKILL.md` frontmatter. ClawHub's security analysis checks these declarations against actual skill behavior; purpose-aligned ClawScan notes stay as guidance, medium review findings stay visible, and the suspicious filter is reserved for high-impact or malicious concerns.
+Skills declare their runtime requirements (env vars, binaries, install specs) in the `SKILL.md` frontmatter. ClawHub's security analysis checks these declarations against actual skill behavior; medium review findings stay visible, and the suspicious filter is reserved for high-impact or malicious concerns.
 
 Full reference: [`docs/skill-format.md`](docs/skill-format.md#frontmatter-metadata)
 

@@ -2,12 +2,12 @@
 
 import { describe, expect, it } from "vitest";
 import { parseArk } from "./ark";
-import { MAX_CLAWSCAN_NOTE_CHARS, normalizeClawScanNote } from "./clawScanNote";
 import { DocsLinks, openClawDocsUrl } from "./docsLinks";
 import { getPackageScopeOwnerMismatch, inferPackageNameScope } from "./packages";
 import {
   ApiSearchResponseSchema,
   ApiV1SearchResponseSchema,
+  ApiV1SkillVerifyResponseSchema,
   CliPublishRequestSchema,
   CliSkillDeleteRequestSchema,
   LockfileSchema,
@@ -92,14 +92,6 @@ describe("clawhub-schema", () => {
     );
     expect(payload.ownerHandle).toBe("openclaw");
     expect(payload.migrateOwner).toBe(true);
-  });
-
-  it("normalizes ClawScan notes at the shared input boundary", () => {
-    expect(normalizeClawScanNote("  reviewer context  ")).toBe("reviewer context");
-    expect(normalizeClawScanNote("   ")).toBeUndefined();
-    expect(() => normalizeClawScanNote("x".repeat(MAX_CLAWSCAN_NOTE_CHARS + 1))).toThrow(
-      `ClawScan note must be at most ${MAX_CLAWSCAN_NOTE_CHARS} characters.`,
-    );
   });
 
   it("reports scoped package names that do not match the selected owner", () => {
@@ -214,6 +206,37 @@ describe("clawhub-schema", () => {
 
     expect(parsed.results[0]?.ownerHandle).toBe("openclaw");
     expect(parsed.results[0]?.owner?.displayName).toBe("OpenClaw");
+  });
+
+  it("parses flattened skill verification envelopes", () => {
+    const parsed = parseArk(
+      ApiV1SkillVerifyResponseSchema,
+      {
+        schema: "clawhub.skill.verify.v1",
+        ok: true,
+        decision: "pass",
+        reasons: [],
+        slug: "demo",
+        displayName: "Demo",
+        pageUrl: "https://clawhub.ai/openclaw/demo",
+        publisherHandle: "openclaw",
+        publisherDisplayName: "OpenClaw",
+        publisherProfileUrl: "https://clawhub.ai/user/openclaw",
+        version: "1.0.0",
+        resolvedFrom: "latest",
+        tag: null,
+        createdAt: 1,
+        card: { available: true },
+        artifact: { sourceFingerprint: "source", bundleFingerprints: [], files: [] },
+        provenance: { source: "unavailable" },
+        security: { status: "clean", passed: true },
+        signature: { status: "unsigned" },
+      },
+      "Verify",
+    );
+
+    expect(parsed.slug).toBe("demo");
+    expect(parsed.version).toBe("1.0.0");
   });
 
   it("parses delete request payload", () => {

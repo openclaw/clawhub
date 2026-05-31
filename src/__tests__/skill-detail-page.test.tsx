@@ -169,6 +169,198 @@ describe("SkillDetailPage", () => {
     expect(screen.queryByRole("button", { name: "Compare" })).toBeNull();
   });
 
+  it("does not show a Skill Card tab for publisher-supplied card files", async () => {
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      return undefined;
+    });
+
+    render(
+      <SkillDetailPage
+        slug="weather"
+        initialData={{
+          result: {
+            skill: {
+              _id: skillId,
+              _creationTime: 0,
+              slug: "weather",
+              displayName: "Weather",
+              summary: "Get current weather.",
+              ownerUserId: ownerId,
+              ownerPublisherId,
+              tags: {},
+              badges: {},
+              stats: {
+                stars: 12,
+                downloads: 34,
+                installsCurrent: 5,
+                installsAllTime: 8,
+                versions: 1,
+                comments: 0,
+              },
+              createdAt: 0,
+              updatedAt: 0,
+            },
+            owner: {
+              _id: ownerPublisherId,
+              _creationTime: 0,
+              kind: "user",
+              handle: "steipete",
+              displayName: "Peter",
+              linkedUserId: ownerId,
+            },
+            latestVersion: {
+              _id: versionId,
+              _creationTime: 0,
+              skillId,
+              version: "1.0.0",
+              fingerprint: "abc",
+              changelog: "Initial release",
+              parsed: { license: "MIT-0", frontmatter: {} },
+              files: [
+                {
+                  path: "SKILL.md",
+                  size: 10,
+                  storageId,
+                  sha256: "abc",
+                  contentType: "text/markdown",
+                },
+                {
+                  path: "skill-card.md",
+                  size: 10,
+                  storageId,
+                  sha256: "def",
+                  contentType: "text/markdown",
+                },
+              ],
+              createdBy: ownerId,
+              createdAt: 0,
+            },
+            forkOf: null,
+            canonical: null,
+          },
+          readme: "# Weather",
+          readmeError: null,
+        }}
+      />,
+    );
+
+    expect(await screen.findByRole("tab", { name: "Files" })).toBeTruthy();
+    expect(screen.queryByRole("tab", { name: "Skill Card" })).toBeNull();
+  });
+
+  it("restores the hash-selected Skill Card tab once the generated card is available", async () => {
+    window.history.replaceState(null, "", "/steipete/weather#skill-card");
+    getReadmeMock.mockResolvedValue({ text: "# Skill Card\n\nGenerated from worker." });
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      return undefined;
+    });
+
+    const baseInitialData = {
+      result: {
+        skill: {
+          _id: skillId,
+          _creationTime: 0,
+          slug: "weather",
+          displayName: "Weather",
+          summary: "Get current weather.",
+          ownerUserId: ownerId,
+          ownerPublisherId,
+          tags: {},
+          badges: {},
+          stats: {
+            stars: 12,
+            downloads: 34,
+            installsCurrent: 5,
+            installsAllTime: 8,
+            versions: 1,
+            comments: 0,
+          },
+          createdAt: 0,
+          updatedAt: 0,
+        },
+        owner: {
+          _id: ownerPublisherId,
+          _creationTime: 0,
+          kind: "user" as const,
+          handle: "steipete",
+          displayName: "Peter",
+          linkedUserId: ownerId,
+        },
+        latestVersion: {
+          _id: versionId,
+          _creationTime: 0,
+          skillId,
+          version: "1.0.0",
+          fingerprint: "abc",
+          changelog: "Initial release",
+          parsed: { license: "MIT-0" as const, frontmatter: {} },
+          files: [
+            {
+              path: "SKILL.md",
+              size: 10,
+              storageId,
+              sha256: "abc",
+              contentType: "text/markdown",
+            },
+          ],
+          createdBy: ownerId,
+          createdAt: 0,
+        },
+        forkOf: null,
+        canonical: null,
+      },
+      readme: "# Weather",
+      readmeError: null,
+    };
+
+    const { rerender } = render(<SkillDetailPage slug="weather" initialData={baseInitialData} />);
+
+    expect(await screen.findByRole("tab", { name: "Files" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "SKILL.md" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+
+    rerender(
+      <SkillDetailPage
+        slug="weather"
+        initialData={{
+          ...baseInitialData,
+          result: {
+            ...baseInitialData.result,
+            latestVersion: {
+              ...baseInitialData.result.latestVersion,
+              files: [
+                ...baseInitialData.result.latestVersion.files,
+                {
+                  path: "skill-card.md",
+                  size: 32,
+                  storageId,
+                  sha256: "def",
+                  contentType: "text/markdown",
+                },
+              ],
+              generatedSkillCard: {
+                path: "skill-card.md",
+                size: 32,
+                sha256: "def",
+                contentType: "text/markdown",
+              },
+            },
+          },
+        }}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("tab", { name: "Skill Card" }).getAttribute("aria-selected")).toBe(
+        "true",
+      );
+    });
+    expect(await screen.findByText("Generated from worker.")).toBeTruthy();
+  });
+
   it("renders related skills from the inferred category with a browse link", async () => {
     useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;
@@ -375,7 +567,7 @@ describe("SkillDetailPage", () => {
     expect(securityAuditLabelIndex).toBe(sidebarLabels.indexOf("Owner") + 1);
     expect(
       screen.getByRole("button", {
-        name: "Security checks across static analysis, malware telemetry, and agentic risk",
+        name: "Security checks across malware telemetry and agentic risk",
       }),
     ).toBeTruthy();
     expect(screen.queryByText("No risk analysis has been recorded yet.")).toBeNull();
@@ -1107,8 +1299,10 @@ describe("SkillDetailPage", () => {
     render(<SkillDetailPage slug="weather" mode="settings" />);
 
     expect(await screen.findByRole("heading", { name: /Skill settings/i })).toBeTruthy();
-    expect(screen.queryByText("Publish a new version")).toBeNull();
-    expect(screen.queryByRole("link", { name: "New Version" })).toBeNull();
+    const newVersionLink = screen.getByRole("link", { name: /Update skill files/i });
+    expect(newVersionLink.getAttribute("href")).toBe(
+      "/skills/publish?updateSlug=weather&ownerHandle=steipete",
+    );
     expect(screen.getByText("Rename slug")).toBeTruthy();
     expect(screen.getByText("Merge listing")).toBeTruthy();
   });
@@ -1157,6 +1351,7 @@ describe("SkillDetailPage", () => {
 
     render(<SkillDetailPage slug="weather" mode="settings" />);
     expect(await screen.findByRole("heading", { name: /Settings unavailable/i })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /Update skill files/i })).toBeNull();
   });
 
   it("does not render version tag cards on the simplified public detail surface", async () => {

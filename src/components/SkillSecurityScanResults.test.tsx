@@ -423,7 +423,6 @@ describe("SecurityScanResults static guidance", () => {
           detailPath: "/local/todo-guard",
         }}
         llmAnalysis={clawScanAnalysis}
-        clawScanNote="Publisher says the Todoist token is required for task sync."
       />,
     );
 
@@ -432,16 +431,13 @@ describe("SecurityScanResults static guidance", () => {
     expect(screen.queryByText("Risk")).toBeNull();
     expect(screen.queryByText("ClawScan risk")).toBeNull();
     expect(
-      screen.getByText(
-        "Security checks across static analysis, malware telemetry, and agentic risk",
-      ),
+      screen.getByText("Security checks across malware telemetry and agentic risk"),
     ).toBeTruthy();
     expect(container.querySelector(".security-scan-hero-subtext")?.textContent).not.toContain(
       "Warn",
     );
     expect(screen.queryByText(/Current verdict/i)).toBeNull();
     expect(screen.getByRole("heading", { name: "Overview" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Publisher note" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Risk analysis" })).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "ClawScan" })).toBeNull();
     expect(screen.getByText(/Collects workspace secrets/i)).toBeTruthy();
@@ -457,7 +453,7 @@ describe("SecurityScanResults static guidance", () => {
     expect(
       screen
         .getByRole("button", {
-          name: "ClawHub reviews SkillSpector, VirusTotal, static analysis, and artifact evidence before producing the final verdict.",
+          name: "ClawHub reviews SkillSpector, VirusTotal, and artifact evidence before producing the final verdict.",
         })
         .tagName.toLowerCase(),
     ).toBe("button");
@@ -478,7 +474,7 @@ describe("SecurityScanResults static guidance", () => {
       Array.from(container.querySelectorAll(".security-report-main > section h2")).map((node) =>
         node.textContent?.trim(),
       ),
-    ).toEqual(["Overview", "Publisher note", "Static analysis", "VirusTotal", "Risk analysis"]);
+    ).toEqual(["Overview", "VirusTotal", "Risk analysis"]);
   });
 
   it("renders SkillSpector findings as the agentic-risk finding source", () => {
@@ -502,7 +498,7 @@ describe("SecurityScanResults static guidance", () => {
       />,
     );
 
-    expect(screen.getByRole("heading", { name: "SkillSpector (1)" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "SkillSpector" })).toBeTruthy();
     expect(screen.getByText("By NVIDIA")).toBeTruthy();
     expect(screen.queryByText("SkillSpector found 1 issue.")).toBeNull();
     expect(screen.getByRole("heading", { name: "Description-Behavior Mismatch" })).toBeTruthy();
@@ -514,11 +510,83 @@ describe("SecurityScanResults static guidance", () => {
     expect(screen.getByText(/generic security benchmark skill/i)).toBeTruthy();
     expect(screen.queryByText(/Make the manifest and body accurately describe/i)).toBeNull();
     expect(screen.queryByText(/OWASP Agentic Skills Top 10/i)).toBeNull();
+    expect(screen.queryByText("SkillSpector found 1 issue.")).toBeNull();
+    expect(screen.getByText("Findings (1)")).toBeTruthy();
+    expect(screen.getByText("Vulnerability Patterns")).toBeTruthy();
+    expect(screen.getByText("Prompt Injection")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Show 11 more" })).toBeTruthy();
+    const pageText = container.textContent ?? "";
+    expect(pageText.indexOf("Vulnerability Patterns")).toBeLessThan(
+      pageText.indexOf("Description-Behavior Mismatch"),
+    );
+    expect(
+      container.querySelector(".skillspector-check-row .skillspector-check-category")?.textContent,
+    ).toBe("MCP Tool Poisoning");
+    expect(container.querySelector(".skillspector-check-row-flagged")).toBeTruthy();
     expect(
       Array.from(container.querySelectorAll(".security-report-main > section h2")).map((node) =>
         node.textContent?.trim(),
       ),
-    ).toEqual(["Overview", "SkillSpector (1)", "Static analysis", "VirusTotal"]);
+    ).toEqual(["Overview", "SkillSpector", "VirusTotal"]);
+  });
+
+  it("uses ClawScan only for the security audit outcome", () => {
+    const { container } = render(
+      <SecurityAuditPage
+        entity={{
+          kind: "skill",
+          title: "Discrawl",
+          name: "discrawl",
+          version: "1.0.0",
+          detailPath: "/openclaw/discrawl",
+        }}
+        llmAnalysis={{
+          status: "clean",
+          verdict: "benign",
+          summary: "Discrawl is purpose-aligned.",
+          guidance: "Use least-privilege credentials.",
+          checkedAt: Date.now(),
+        }}
+        skillSpectorAnalysis={{
+          status: "clean",
+          score: 0,
+          severity: "LOW",
+          recommendation: "SAFE",
+          issueCount: 0,
+          scannerVersion: "2.0.0",
+          checkedAt: Date.now(),
+          issues: [],
+        }}
+        vtAnalysis={{ status: "pending", checkedAt: Date.now() }}
+      />,
+    );
+
+    const outcomeRow = Array.from(
+      container.querySelectorAll(".security-report-sidebar .sidebar-metadata-row"),
+    ).find(
+      (row) => row.querySelector(".sidebar-metadata-label")?.textContent?.trim() === "Outcome",
+    );
+    expect(outcomeRow?.textContent).toContain("Pass");
+    expect(outcomeRow?.textContent).not.toContain("Pending");
+    expect(outcomeRow?.textContent).not.toContain("Malicious");
+    expect(
+      screen.getByText("VirusTotal findings are pending for this skill version."),
+    ).toBeTruthy();
+    expect(screen.queryByText("No SkillSpector findings.")).toBeNull();
+    expect(screen.getByText("Vulnerability Patterns")).toBeTruthy();
+    expect(screen.getByText("Prompt Injection")).toBeTruthy();
+    expect(
+      container.querySelector(".skillspector-check-row .skillspector-check-category")?.textContent,
+    ).toBe("Prompt Injection");
+    expect(container.querySelector(".skillspector-check-row-flagged")).toBeNull();
+    expect(
+      screen.getByText("Instruction Override, Hidden Instructions, Exfiltration Commands"),
+    ).toBeTruthy();
+    expect(screen.queryByText("Output Handling")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Show 11 more" }));
+    expect(screen.getByText("Output Handling")).toBeTruthy();
+    expect(screen.getByText("MCP Tool Poisoning")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Show less" })).toBeTruthy();
   });
 
   it("uses the full SkillSpector issue count when stored findings are capped", () => {
@@ -530,7 +598,7 @@ describe("SecurityScanResults static guidance", () => {
 
     expect(getSkillSpectorIssueCount(cappedSkillSpectorAnalysis)).toBe(30);
 
-    render(
+    const { container } = render(
       <SecurityAuditPage
         entity={{
           kind: "skill",
@@ -543,7 +611,76 @@ describe("SecurityScanResults static guidance", () => {
       />,
     );
 
-    expect(screen.getByRole("heading", { name: "SkillSpector (30)" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "SkillSpector" })).toBeTruthy();
+    expect(screen.getByText("Findings (30)")).toBeTruthy();
+    expect(
+      container.querySelector(".skillspector-check-row .skillspector-check-category")?.textContent,
+    ).toBe("MCP Tool Poisoning");
+    expect(container.querySelector(".skillspector-check-row-unknown")).toBeTruthy();
+    expect(container.querySelector(".skillspector-check-icon-unknown")).toBeTruthy();
+  });
+
+  it("prioritizes SkillSpector rule IDs over overlapping pattern labels", () => {
+    const overlappingPatternAnalysis: SkillSpectorAnalysis = {
+      ...skillSpectorAnalysis,
+      issues: [
+        {
+          ...skillSpectorAnalysis.issues[0],
+          issueId: "TP1",
+          category: "MCP Tool Poisoning",
+          pattern: "Hidden Instructions",
+        },
+      ],
+    };
+
+    const { container } = render(
+      <SecurityAuditPage
+        entity={{
+          kind: "skill",
+          title: "Benchmark Guard",
+          name: "benchmark-guard",
+          version: "1.0.0",
+          detailPath: "/local/benchmark-guard",
+        }}
+        skillSpectorAnalysis={overlappingPatternAnalysis}
+      />,
+    );
+
+    expect(
+      container.querySelector(".skillspector-check-row .skillspector-check-category")?.textContent,
+    ).toBe("MCP Tool Poisoning");
+    expect(screen.getByRole("heading", { name: "Hidden Instructions" })).toBeTruthy();
+  });
+
+  it("flags Data Exfiltration from unstructured SkillSpector finding text", () => {
+    const unstructuredFindingAnalysis: SkillSpectorAnalysis = {
+      ...skillSpectorAnalysis,
+      issues: [
+        {
+          ...skillSpectorAnalysis.issues[0],
+          issueId: "UNKNOWN-1",
+          explanation:
+            "The skill performs session exfiltration to an external endpoint without clear purpose alignment.",
+        },
+      ],
+    };
+
+    const { container } = render(
+      <SecurityAuditPage
+        entity={{
+          kind: "skill",
+          title: "Benchmark Guard",
+          name: "benchmark-guard",
+          version: "1.0.0",
+          detailPath: "/local/benchmark-guard",
+        }}
+        skillSpectorAnalysis={unstructuredFindingAnalysis}
+      />,
+    );
+
+    expect(
+      container.querySelector(".skillspector-check-row .skillspector-check-category")?.textContent,
+    ).toBe("Data Exfiltration");
   });
 
   it("prefers SkillSpector findings over legacy ClawScan agentic findings during rollout", () => {
@@ -596,7 +733,7 @@ describe("SecurityScanResults static guidance", () => {
     ).toBeTruthy();
   });
 
-  it("prompts publishers to add a note on review ClawScan reports without one", () => {
+  it("does not prompt publishers to add notes on review ClawScan reports", () => {
     render(
       <SecurityAuditPage
         entity={{
@@ -608,37 +745,11 @@ describe("SecurityScanResults static guidance", () => {
         }}
         llmAnalysis={clawScanAnalysis}
         canManageArtifact
-        settingsHref="/local/todo-guard/settings"
       />,
     );
 
-    const link = screen.getByRole("link", { name: "Add a publisher note" });
-    expect(link.getAttribute("href")).toBe("/local/todo-guard/settings");
-    expect(screen.getByText(/to give this audit context on these findings/i)).toBeTruthy();
-  });
-
-  it("hides the publisher note prompt for non-publishers and after dismissal", () => {
-    const props = {
-      entity: {
-        kind: "skill" as const,
-        title: "Todo Guard",
-        name: "todo-guard",
-        version: "1.0.0",
-        detailPath: "/local/todo-guard",
-      },
-      llmAnalysis: clawScanAnalysis,
-      settingsHref: "/local/todo-guard/settings",
-    };
-
-    const { rerender } = render(<SecurityAuditPage {...props} />);
     expect(screen.queryByRole("link", { name: "Add a publisher note" })).toBeNull();
-
-    rerender(<SecurityAuditPage {...props} canManageArtifact />);
-    fireEvent.click(screen.getByRole("button", { name: "Dismiss publisher note prompt" }));
-    expect(screen.queryByRole("link", { name: "Add a publisher note" })).toBeNull();
-
-    rerender(<SecurityAuditPage {...props} canManageArtifact />);
-    expect(screen.queryByRole("link", { name: "Add a publisher note" })).toBeNull();
+    expect(screen.queryByText(/to give this audit context on these findings/i)).toBeNull();
   });
 
   it("keeps plugin audit metadata focused while preserving hash links", () => {
@@ -692,9 +803,7 @@ describe("SecurityScanResults static guidance", () => {
 
     expect(screen.getByRole("heading", { name: "Hash Guard" })).toBeTruthy();
     expect(
-      screen.getByText(
-        "Security checks across static analysis, malware telemetry, and agentic risk",
-      ),
+      screen.getByText("Security checks across malware telemetry and agentic risk"),
     ).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Overview" })).toBeTruthy();
     expect(screen.getByText("62/62 vendors flagged this skill as clean.")).toBeTruthy();
@@ -711,7 +820,7 @@ describe("SecurityScanResults static guidance", () => {
       Array.from(container.querySelectorAll(".security-report-main > section h2")).map((node) =>
         node.textContent?.trim(),
       ),
-    ).toEqual(["Overview", "SkillSpector", "Static analysis", "VirusTotal"]);
+    ).toEqual(["Overview", "SkillSpector", "VirusTotal"]);
   });
 
   it("summarizes completed engine-only VirusTotal scans", () => {
@@ -839,14 +948,6 @@ describe("SecurityScanResults static guidance", () => {
           checkedAt: Date.now(),
         }}
         llmAnalysis={{ status: "clean", summary: "No ClawScan issues.", checkedAt: 1 }}
-        staticScan={{
-          status: "clean",
-          reasonCodes: [],
-          findings: [],
-          summary: "Clean.",
-          engineVersion: "v1",
-          checkedAt: 1,
-        }}
       />,
     );
 
@@ -877,9 +978,7 @@ describe("SecurityScanResults static guidance", () => {
     );
 
     expect(
-      screen.getByText(
-        "Security checks across static analysis, malware telemetry, and agentic risk",
-      ),
+      screen.getByText("Security checks across malware telemetry and agentic risk"),
     ).toBeTruthy();
     expect(screen.queryByText("Pass")).toBeNull();
     expect(screen.getByRole("heading", { name: "Overview" })).toBeTruthy();
@@ -889,7 +988,7 @@ describe("SecurityScanResults static guidance", () => {
     expect(screen.getByText("No VirusTotal findings")).toBeTruthy();
   });
 
-  it("shows static analysis reports in the shared scanner report shell", () => {
+  it("keeps static analysis reports out of the public scanner report shell", () => {
     const { container } = render(
       <SecurityAuditPage
         entity={{
@@ -899,42 +998,24 @@ describe("SecurityScanResults static guidance", () => {
           version: "1.2.3",
           detailPath: "/local/pattern-guard",
         }}
-        staticScan={{
-          status: "suspicious",
-          reasonCodes: ["network_access"],
-          summary: "Pattern checks found a network request.",
-          engineVersion: "static-dev",
-          checkedAt: Date.now(),
-          findings: [
-            {
-              code: "suspicious.network_access",
-              severity: "warn",
-              file: "SKILL.md",
-              line: 12,
-              message: "Network access found in skill instructions.",
-              evidence: "curl https://example.test",
-            },
-          ],
-        }}
       />,
     );
 
     expect(screen.getByRole("heading", { name: "Pattern Guard" })).toBeTruthy();
     expect(
-      screen.getByText(
-        "Security checks across static analysis, malware telemetry, and agentic risk",
-      ),
+      screen.getByText("Security checks across malware telemetry and agentic risk"),
     ).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Overview" })).toBeTruthy();
+    expect(screen.queryByText("Static analysis")).toBeNull();
     expect(screen.queryByText("Pattern checks found a network request.")).toBeNull();
     expect(screen.queryByRole("heading", { name: "Findings (1)" })).toBeNull();
-    expect(screen.getByRole("heading", { name: "Network access" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Network access" })).toBeNull();
     expect(screen.queryByText("suspicious.network_access")).toBeNull();
-    expect(screen.getByText("Network access found in skill instructions.")).toBeTruthy();
+    expect(screen.queryByText("Network access found in skill instructions.")).toBeNull();
     expect(screen.queryByText("Location")).toBeNull();
     expect(screen.queryByText("SKILL.md:12")).toBeNull();
-    expect(screen.getByText("Content")).toBeTruthy();
-    expect(screen.getByText("curl https://example.test")).toBeTruthy();
+    expect(screen.queryByText("Content")).toBeNull();
+    expect(screen.queryByText("curl https://example.test")).toBeNull();
     expect(screen.getByRole("heading", { name: "Security Audit Metadata" })).toBeTruthy();
     expect(screen.queryByText("Scanner verdict")).toBeNull();
     expect(screen.queryByText("Artifact")).toBeNull();
@@ -942,7 +1023,7 @@ describe("SecurityScanResults static guidance", () => {
       Array.from(container.querySelectorAll(".security-report-main > section h2")).map((node) =>
         node.textContent?.trim(),
       ),
-    ).toEqual(["Overview", "SkillSpector", "Static analysis", "VirusTotal"]);
+    ).toEqual(["Overview", "SkillSpector", "VirusTotal"]);
   });
 
   it("shows plugins with legacy ClawScan analysis in the new ClawScan report shell", () => {
@@ -961,9 +1042,7 @@ describe("SecurityScanResults static guidance", () => {
 
     expect(screen.getByRole("heading", { name: "Plugin Guard" })).toBeTruthy();
     expect(
-      screen.getByText(
-        "Security checks across static analysis, malware telemetry, and agentic risk",
-      ),
+      screen.getByText("Security checks across malware telemetry and agentic risk"),
     ).toBeTruthy();
     expect(screen.getByText("Legacy plugin analysis summary.")).toBeTruthy();
     expect(screen.getByText("Legacy plugin guidance.")).toBeTruthy();
@@ -990,9 +1069,7 @@ describe("SecurityScanResults static guidance", () => {
 
     expect(screen.getByRole("heading", { name: "Legacy Skill" })).toBeTruthy();
     expect(
-      screen.getByText(
-        "Security checks across static analysis, malware telemetry, and agentic risk",
-      ),
+      screen.getByText("Security checks across malware telemetry and agentic risk"),
     ).toBeTruthy();
     expect(screen.getByText("Legacy plugin analysis summary.")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Overview" })).toBeTruthy();
@@ -1019,16 +1096,15 @@ describe("SecurityScanResults static guidance", () => {
 
     expect(screen.getByRole("heading", { name: "Pending Skill" })).toBeTruthy();
     expect(
-      screen.getByText(
-        "Security checks across static analysis, malware telemetry, and agentic risk",
-      ),
+      screen.getByText("Security checks across malware telemetry and agentic risk"),
     ).toBeTruthy();
     expect(screen.getAllByText("Pending").length).toBeGreaterThan(0);
     expect(screen.getByText("No risk analysis has been recorded yet.")).toBeTruthy();
     expect(
       screen.getByText("VirusTotal findings are pending for this skill version."),
     ).toBeTruthy();
-    expect(screen.getByText("Static analysis findings are pending for this release.")).toBeTruthy();
+    expect(screen.queryByText("Static analysis")).toBeNull();
+    expect(screen.queryByText("Static analysis findings are pending for this release.")).toBeNull();
     expect(screen.queryByText("No VirusTotal findings")).toBeNull();
     expect(
       screen.queryByText("No static analysis findings were reported for this release."),
@@ -1037,6 +1113,7 @@ describe("SecurityScanResults static guidance", () => {
     expect(screen.getByRole("heading", { name: "Overview" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "SkillSpector" })).toBeTruthy();
     expect(screen.getByText("SkillSpector findings are pending for this release.")).toBeTruthy();
+    expect(screen.queryByText("Prompt Injection")).toBeNull();
     expect(screen.queryByRole("heading", { name: "Risk analysis" })).toBeNull();
     expect(
       screen.queryByText("No visible risk-analysis findings were reported for this release."),
@@ -1067,7 +1144,7 @@ describe("SecurityScanResults static guidance", () => {
       Array.from(container.querySelectorAll(".security-report-main > section h2")).map((node) =>
         node.textContent?.trim(),
       ),
-    ).toEqual(["Overview", "Static analysis", "VirusTotal", "Risk analysis"]);
+    ).toEqual(["Overview", "VirusTotal", "Risk analysis"]);
   });
 
   it("lets skill managers enqueue a security rescan from the audit sidebar", async () => {

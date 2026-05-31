@@ -82,7 +82,6 @@ export declare const CliPublishRequestSchema: import("arktype/internal/variants/
     }[];
     ownerHandle?: string | undefined;
     migrateOwner?: boolean | undefined;
-    clawScanNote?: string | undefined;
     acceptLicenseTerms?: boolean | undefined;
     tags?: string[] | undefined;
     source?: {
@@ -371,6 +370,69 @@ export declare const ApiV1SkillRescanResponseSchema: import("arktype/internal/va
     alreadyQueued: boolean;
 }, {}>;
 export type ApiV1SkillRescanResponse = (typeof ApiV1SkillRescanResponseSchema)[inferred];
+export declare const ApiV1SkillBulkRescanBatchRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    mode?: "all-active-latest" | undefined;
+    cursor?: string | null | undefined;
+    batchSize?: number | undefined;
+    dryRun?: boolean | undefined;
+}, {}>;
+export type ApiV1SkillBulkRescanBatchRequest = (typeof ApiV1SkillBulkRescanBatchRequestSchema)[inferred];
+export declare const ApiV1SkillBulkRescanBatchResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    mode: "all-active-latest";
+    queued: number;
+    alreadyQueued: number;
+    skipped: number;
+    jobIds: string[];
+    nextCursor: string | null;
+    done: boolean;
+    sampleSlugs: string[];
+}, {}>;
+export type ApiV1SkillBulkRescanBatchResponse = (typeof ApiV1SkillBulkRescanBatchResponseSchema)[inferred];
+export declare const ApiV1SkillBulkRescanStatusRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    jobIds: string[];
+}, {}>;
+export type ApiV1SkillBulkRescanStatusRequest = (typeof ApiV1SkillBulkRescanStatusRequestSchema)[inferred];
+export declare const ApiV1SkillBulkRescanStatusResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    total: number;
+    queued: number;
+    running: number;
+    succeeded: number;
+    failed: number;
+    missing: number;
+    terminal: number;
+    done: boolean;
+    failedJobIds: string[];
+}, {}>;
+export type ApiV1SkillBulkRescanStatusResponse = (typeof ApiV1SkillBulkRescanStatusResponseSchema)[inferred];
+export declare const ApiV1SkillRepairVtPendingRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    cursor?: string | null | undefined;
+    batchSize?: number | undefined;
+    concurrency?: number | undefined;
+    dryRun?: boolean | undefined;
+}, {}>;
+export type ApiV1SkillRepairVtPendingRequest = (typeof ApiV1SkillRepairVtPendingRequestSchema)[inferred];
+export declare const ApiV1SkillRepairVtPendingResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    dryRun: boolean;
+    total: number;
+    wouldUpdate: number;
+    updated: number;
+    noResults: number;
+    noDecisiveStats: number;
+    errors: number;
+    done: boolean;
+    cursor: string | null;
+    statusCounts: {
+        [x: string]: number;
+    };
+    sampleUpdated: {
+        slug: string;
+        status: string;
+    }[];
+}, {}>;
+export type ApiV1SkillRepairVtPendingResponse = (typeof ApiV1SkillRepairVtPendingResponseSchema)[inferred];
 export declare const ApiV1SkillVersionListResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     items: {
         version: string;
@@ -413,6 +475,27 @@ export declare const ApiV1SkillResolveResponseSchema: import("arktype/internal/v
     latestVersion: {
         version: string;
     } | null;
+}, {}>;
+export declare const ApiV1SkillVerifyResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    schema: "clawhub.skill.verify.v1";
+    ok: boolean;
+    decision: "pass" | "fail";
+    reasons: string[];
+    slug: string;
+    displayName: string;
+    pageUrl: string;
+    publisherHandle: string | null;
+    publisherDisplayName: string | null;
+    publisherProfileUrl: string | null;
+    version: string;
+    resolvedFrom: "version" | "tag" | "latest";
+    tag: string | null;
+    createdAt: number;
+    card: unknown;
+    artifact: unknown;
+    provenance: unknown;
+    security: unknown;
+    signature: unknown;
 }, {}>;
 export declare const ApiV1PublishResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     ok: true;

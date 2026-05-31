@@ -3,8 +3,8 @@ import type { ReactNode } from "react";
 import type { PublicSkill } from "../lib/publicUser";
 import { ApiKeyRequiredBadge } from "./ApiKeyRequiredBadge";
 import { MarketplaceIcon } from "./MarketplaceIcon";
+import { OfficialBadge } from "./OfficialBadge";
 import { Badge } from "./ui/badge";
-import { VerifiedBadge } from "./VerifiedBadge";
 
 type SkillCardProps = {
   skill: PublicSkill;
@@ -41,8 +41,8 @@ export function SkillCard({
       {hasTags ? (
         <div className="skill-card-tags">
           {badges.map((label) =>
-            label === "Verified" ? (
-              <VerifiedBadge key={label} />
+            label === "Official" ? (
+              <OfficialBadge key={label} />
             ) : (
               <Badge key={label}>{label}</Badge>
             ),

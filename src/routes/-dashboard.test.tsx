@@ -295,8 +295,8 @@ describe("Dashboard rows", () => {
       screen.getByRole("link", { name: "Open settings for Local Flagged Skill" }),
     ).toBeTruthy();
     expect(
-      screen.getByRole("link", { name: "Open settings for Local Flagged Runtime Plugin" }),
-    ).toBeTruthy();
+      screen.queryByRole("link", { name: "Open settings for Local Flagged Runtime Plugin" }),
+    ).toBeNull();
   });
 
   it("shows a publisher selector and loads org packages when switching publishers", async () => {
@@ -457,16 +457,14 @@ describe("Dashboard rows", () => {
     );
   });
 
-  it("links directly to plugin settings from the row action", () => {
+  it("does not show plugin settings from the row action", () => {
     arrangeDashboard({ packages: [createPackage({ scanStatus: "clean" })] });
 
     renderDashboard();
 
     expect(
-      screen
-        .getByRole("link", { name: "Open settings for Local Flagged Runtime Plugin" })
-        .getAttribute("href"),
-    ).toBe("/plugins/local-flagged-runtime-plugin/settings");
+      screen.queryByRole("link", { name: "Open settings for Local Flagged Runtime Plugin" }),
+    ).toBeNull();
     expect(screen.queryByRole("button", { name: /open actions/i })).toBeNull();
     expect(screen.queryByRole("menuitem", { name: /delete plugin/i })).toBeNull();
   });

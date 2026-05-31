@@ -28,7 +28,6 @@ Before installing, review:
 - the overall audit status
 - the risk level
 - any listed findings
-- the publisher note, when present
 - required credentials, permissions, or environment variables
 - owner, source, version, changelog, downloads, stars, and other trust signals
 
@@ -95,7 +94,6 @@ ClawHub audits submitted release artifacts, including:
 - install instructions and package metadata
 - included files and file manifests
 - compatibility and capability metadata
-- optional publisher notes explaining unusual behavior
 
 The main question is coherence: do the name, summary, metadata, requested
 authority, and actual content line up with what users would reasonably expect?
@@ -112,18 +110,9 @@ Artifact pages link to the full audit at:
 
 The audit page combines:
 
-1. Static analysis
+1. SkillSpector
 2. VirusTotal
 3. Risk analysis
-
-## Static analysis
-
-Static analysis checks the submitted artifact for deterministic patterns such as
-credential access, unexpected external transfer instructions, unsafe execution,
-or other content that should be reviewed.
-
-Static findings are shown as concrete findings with the relevant artifact
-content when ClawHub can surface it.
 
 ## VirusTotal
 
@@ -161,7 +150,9 @@ risk analysis.
 Risk analysis is powered internally by ClawScan, ClawHub's own security audit
 system. It reviews each release as an agent-facing artifact: instructions,
 metadata, declared permissions, files, capability signals, static scan signals,
-VirusTotal telemetry, and publisher-provided context.
+SkillSpector findings, VirusTotal telemetry, and publisher-provided context.
+Static scan signals are internal context for this review; they are not a
+standalone public audit section or install-blocking verdict.
 
 Risk analysis uses the
 [OWASP Agentic Skills Top 10](https://owasp.org/www-project-agentic-skills-top-10/)
@@ -171,15 +162,3 @@ unsafe execution, memory or context poisoning, and excessive agency.
 ClawScan does not treat a scary-looking capability as automatically malicious.
 It asks whether the capability is disclosed, purpose-aligned, and supported by
 the release's stated use case.
-
-## Publisher notes
-
-Publishers can add a note when publishing a skill or plugin. On the Security
-audit page, the publisher note appears after the overview so you can read the
-publisher's explanation before reviewing scanner-specific sections.
-
-Publisher notes can explain behavior that may otherwise look unusual, such as
-network access, native host access, credentials, or broad provider APIs.
-
-Publisher notes help reduce false positives, but they are not trusted proof.
-ClawHub treats them as context and still checks the submitted artifacts.

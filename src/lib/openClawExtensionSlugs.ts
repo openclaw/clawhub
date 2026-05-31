@@ -42,6 +42,7 @@ const OPENCLAW_EXTENSION_SLUG_TO_PACKAGE = {
   "diagnostics-otel": "@openclaw/diagnostics-otel",
   "diagnostics-prometheus": "@openclaw/diagnostics-prometheus",
   diffs: "@openclaw/diffs",
+  "diffs-language-pack": "@openclaw/diffs-language-pack",
   discord: "@openclaw/discord",
   "document-extract": "@openclaw/document-extract-plugin",
   "document-extract-plugin": "@openclaw/document-extract-plugin",

@@ -1,6 +1,5 @@
-import { createFileRoute, notFound } from "@tanstack/react-router";
-import { PluginSettingsPage } from "../../$name/settings";
-import { packageNameFromScopedRoute } from "../../../../lib/pluginRoutes";
+import { createFileRoute, notFound, redirect } from "@tanstack/react-router";
+import { packageNameFromScopedRoute, buildPluginDetailHref } from "../../../../lib/pluginRoutes";
 
 function packageNameFromParams(params: { scope: string; name: string }) {
   const packageName = packageNameFromScopedRoute(params.scope, params.name);
@@ -9,9 +8,10 @@ function packageNameFromParams(params: { scope: string; name: string }) {
 }
 
 export const Route = createFileRoute("/plugins/$scope/$name/settings")({
-  component: ScopedPluginSettingsRoute,
+  beforeLoad: ({ params }) => {
+    throw redirect({
+      href: buildPluginDetailHref(packageNameFromParams(params)),
+      statusCode: 308,
+    });
+  },
 });
-
-function ScopedPluginSettingsRoute() {
-  return <PluginSettingsPage name={packageNameFromParams(Route.useParams())} />;
-}

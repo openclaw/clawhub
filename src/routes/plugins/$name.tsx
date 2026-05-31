@@ -1,6 +1,6 @@
 import { createFileRoute, Link, Outlet, redirect, useRouterState } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
-import { AlertTriangle, Download, Settings, Upload } from "lucide-react";
+import { AlertTriangle, Download, Upload } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { api } from "../../../convex/_generated/api";
 import { DetailHero, DetailPageShell } from "../../components/DetailPageShell";
@@ -12,6 +12,7 @@ import { EmptyState } from "../../components/EmptyState";
 import { InstallCopyButton } from "../../components/InstallCopyButton";
 import { Container } from "../../components/layout/Container";
 import { MarkdownPreview } from "../../components/MarkdownPreview";
+import { OfficialTag } from "../../components/OfficialBadge";
 import { SidebarMetadata } from "../../components/SidebarMetadata";
 import { SkillDetailSkeleton } from "../../components/skeletons/SkillDetailSkeleton";
 import { Badge } from "../../components/ui/badge";
@@ -347,15 +348,13 @@ export function PluginDetailPage({
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const { me } = useAuthStatus();
   const isNestedPluginRoute =
-    pathname.includes("/security/") ||
-    pathname.endsWith("/security-audit") ||
-    pathname.endsWith("/settings");
-  const settingsCandidateNames = getOpenClawPackageCandidateNames(name);
-  const settingsLookupName = detail.package?.name ?? settingsCandidateNames[0] ?? name;
-  const settings = useQuery(
-    api.packages.getClawScanNoteSettings,
+    pathname.includes("/security/") || pathname.endsWith("/security-audit");
+  const manageCandidateNames = getOpenClawPackageCandidateNames(name);
+  const manageLookupName = detail.package?.name ?? manageCandidateNames[0] ?? name;
+  const manageContext = useQuery(
+    api.packages.getManageContext,
     me && !isNestedPluginRoute && detail.package
-      ? { name: settingsLookupName, candidateNames: settingsCandidateNames }
+      ? { name: manageLookupName, candidateNames: manageCandidateNames }
       : "skip",
   );
   const [activeTab, setActiveTab] = useState<PluginDetailTab>(() => {
@@ -406,8 +405,7 @@ export function PluginDetailPage({
   const owner = detail.owner;
   const latestRelease = version?.version ?? null;
   const isDownloadBlocked =
-    pkg.verification?.scanStatus === "malicious" ||
-    latestRelease?.verification?.scanStatus === "malicious";
+    pkg.scanStatus === "malicious" || latestRelease?.verification?.scanStatus === "malicious";
   const installSnippet =
     pkg.family === "code-plugin"
       ? `openclaw plugins install clawhub:${pkg.name}`
@@ -423,8 +421,7 @@ export function PluginDetailPage({
     pkg.latestVersion && latestRelease?.version && artifact?.kind === "npm-pack"
       ? getPackageArtifactDownloadPath(pkg.name, latestRelease.version)
       : getPackageDownloadPath(pkg.name, pkg.latestVersion);
-  const settingsHref = settings ? `${buildPluginDetailHref(pkg.name)}/settings` : null;
-  const newVersionHref = settings
+  const newVersionHref = manageContext
     ? `/plugins/publish?${new URLSearchParams({
         ...(owner?.handle ? { ownerHandle: owner.handle } : {}),
         name: pkg.name,
@@ -628,7 +625,6 @@ export function PluginDetailPage({
       auditHref={buildPluginSecurityAuditHref(name)}
       vtAnalysis={latestRelease.vtAnalysis ?? null}
       llmAnalysis={latestRelease.llmAnalysis ?? null}
-      staticScan={latestRelease.staticScan ?? null}
     />
   ) : null;
 
@@ -651,6 +647,11 @@ export function PluginDetailPage({
               </nav>
               <div className="skill-hero-title-row">
                 <h1 className="skill-page-title">{pkg.displayName}</h1>
+                {pkg.isOfficial ? (
+                  <div className="skill-title-badges">
+                    <OfficialTag />
+                  </div>
+                ) : null}
                 {isDownloadBlocked ? (
                   <div className="skill-title-actions">
                     <Badge variant="destructive">Download blocked</Badge>
@@ -697,7 +698,7 @@ export function PluginDetailPage({
                 />
               ) : null}
 
-              {(pkg.latestVersion && !isDownloadBlocked) || newVersionHref || settingsHref ? (
+              {(pkg.latestVersion && !isDownloadBlocked) || newVersionHref ? (
                 <div className="skill-sidebar-actions">
                   {pkg.latestVersion && !isDownloadBlocked ? (
                     <Button asChild variant="outline" className="skill-sidebar-action-button">
@@ -712,14 +713,6 @@ export function PluginDetailPage({
                       <a href={newVersionHref}>
                         <Upload size={14} aria-hidden="true" />
                         New version
-                      </a>
-                    </Button>
-                  ) : null}
-                  {settingsHref ? (
-                    <Button asChild variant="outline" className="skill-sidebar-action-button">
-                      <a href={settingsHref}>
-                        <Settings size={14} aria-hidden="true" />
-                        Settings
                       </a>
                     </Button>
                   ) : null}

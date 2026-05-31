@@ -195,7 +195,6 @@ export const PackagePublishRequestSchema = type({
     family: PackageFamilySchema,
     version: "string",
     changelog: "string",
-    clawScanNote: "string?",
     manualOverrideReason: "string?",
     channel: PackageChannelSchema.optional(),
     tags: "string[]?",
@@ -248,6 +247,7 @@ export const ApiV1PackageResponseSchema = type({
         capabilities: PackageCapabilitySummarySchema.or("null").optional(),
         verification: PackageVerificationSummarySchema.or("null").optional(),
         artifact: PackageArtifactSummarySchema.or("null").optional(),
+        scanStatus: '"clean"|"suspicious"|"malicious"|"pending"|"not-run"?',
         stats: PackageStatsSchema.optional(),
     }).or("null"),
     owner: type({
@@ -285,8 +285,6 @@ export const ApiV1PackageVersionResponseSchema = type({
         vtAnalysis: PackageVtAnalysisSchema.or("null").optional(),
         skillSpectorAnalysis: PackageSkillSpectorAnalysisSchema.or("null").optional(),
         llmAnalysis: PackageLlmAnalysisSchema.or("null").optional(),
-        clawScanNote: "string|null?",
-        clawScanNoteUpdatedAt: "number|null?",
         staticScan: PackageStaticScanSchema.or("null").optional(),
     }).or("null"),
 });

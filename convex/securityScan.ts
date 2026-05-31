@@ -1,20 +1,27 @@
 import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import type { MutationCtx } from "./_generated/server";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { action, internalMutation, internalQuery, mutation } from "./functions";
-import { assertModerator, requireUser } from "./lib/access";
+import { assertAdmin, assertModerator, requireUser } from "./lib/access";
 import { normalizePackageName } from "./lib/packageRegistry";
 import { assertCanManageOwnedResource } from "./lib/publishers";
+import { sourceSkillVersionFiles } from "./lib/skillCards";
 
-const MAX_PARALLEL_CODEX_SCANS = 64;
 const DEFAULT_VT_WAIT_MS = 10 * 60 * 1000;
 const DEFAULT_LEASE_MS = 60 * 60 * 1000;
 const MAX_ATTEMPTS = 3;
+const DEFAULT_CODEX_SCAN_CLAIM_LIMIT = 64;
+const MAX_CODEX_SCAN_CLAIM_LIMIT = 512;
+const MAX_EXPIRED_CODEX_SCAN_LEASE_REQUEUES = 512;
 const DEFAULT_CANCEL_SCAN_LIMIT = 1000;
 const DEFAULT_CANCEL_DELETE_LIMIT = 500;
 const MAX_CANCEL_SCAN_LIMIT = 5000;
 const CANCEL_SAMPLE_LIMIT = 20;
+const DEFAULT_BULK_RESCAN_BATCH_SIZE = 50;
+const MAX_BULK_RESCAN_BATCH_SIZE = 100;
+const MAX_BULK_RESCAN_STATUS_JOB_IDS = 200;
+const BULK_RESCAN_SAMPLE_LIMIT = 10;
 const MAX_STORED_SKILLSPECTOR_ISSUES = 25;
 const MAX_STORED_SKILLSPECTOR_TEXT_CHARS = 2_000;
 const MAX_STORED_SKILLSPECTOR_SHORT_TEXT_CHARS = 512;
@@ -78,16 +85,24 @@ const jobSourceValidator = v.union(
   v.literal("clawscan-note"),
   v.literal("vt-update"),
   v.literal("backfill"),
+  v.literal("bulk-rescan"),
   v.literal("manual"),
 );
 
-type SecurityScanJobSource = "publish" | "clawscan-note" | "vt-update" | "backfill" | "manual";
+type SecurityScanJobSource =
+  | "publish"
+  | "clawscan-note"
+  | "vt-update"
+  | "backfill"
+  | "bulk-rescan"
+  | "manual";
 
 const CLAIM_SOURCE_ORDER: SecurityScanJobSource[] = [
   "clawscan-note",
   "backfill",
   "publish",
   "vt-update",
+  "bulk-rescan",
 ];
 
 type EnqueueSkillVersionScanArgs = {
@@ -95,6 +110,7 @@ type EnqueueSkillVersionScanArgs = {
   source: SecurityScanJobSource;
   priority?: number;
   waitForVtMs?: number;
+  preserveActiveJob?: boolean;
 };
 
 type EnqueuePackageReleaseScanArgs = {
@@ -208,8 +224,12 @@ const internalRefs = internal as unknown as {
   skills: {
     getSkillByIdInternal: unknown;
     getVersionByIdInternal: unknown;
+    listVersionFingerprintsInternal: unknown;
     updateVersionLlmAnalysisInternal: unknown;
     updateVersionSkillSpectorAnalysisInternal: unknown;
+  };
+  skillCards: {
+    enqueueForVersionInternal: unknown;
   };
 };
 
@@ -232,6 +252,14 @@ async function runMutationRef<T>(
 function assertWorkerToken(token: string) {
   const expected = process.env.SECURITY_SCAN_WORKER_TOKEN;
   if (!expected || token !== expected) throw new ConvexError("Unauthorized");
+}
+
+function defaultVtWaitMs() {
+  const raw = process.env.SECURITY_SCAN_DEFAULT_VT_WAIT_MS?.trim();
+  if (!raw) return DEFAULT_VT_WAIT_MS;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return DEFAULT_VT_WAIT_MS;
+  return Math.max(0, Math.min(parsed, DEFAULT_VT_WAIT_MS));
 }
 
 function publicWorkerErrorDetail(error: string) {
@@ -347,10 +375,55 @@ function hasArtifactBackedLlmAnalysis(analysis: ExistingLlmAnalysis | undefined)
 }
 
 function normalizeLimit(limit: number | undefined) {
-  return Math.max(
-    1,
-    Math.min(Math.floor(limit ?? MAX_PARALLEL_CODEX_SCANS), MAX_PARALLEL_CODEX_SCANS),
-  );
+  const normalized = Number.isFinite(limit)
+    ? Math.floor(limit ?? DEFAULT_CODEX_SCAN_CLAIM_LIMIT)
+    : DEFAULT_CODEX_SCAN_CLAIM_LIMIT;
+  return Math.max(1, Math.min(normalized, MAX_CODEX_SCAN_CLAIM_LIMIT));
+}
+
+function normalizeBulkRescanBatchSize(batchSize: number | undefined) {
+  const normalized = Number.isFinite(batchSize)
+    ? Math.floor(batchSize ?? DEFAULT_BULK_RESCAN_BATCH_SIZE)
+    : DEFAULT_BULK_RESCAN_BATCH_SIZE;
+  return Math.max(1, Math.min(normalized, MAX_BULK_RESCAN_BATCH_SIZE));
+}
+
+async function getBulkSkillRescanBatchStatus(ctx: QueryCtx, jobIds: Id<"securityScanJobs">[]) {
+  let queued = 0;
+  let running = 0;
+  let succeeded = 0;
+  let failed = 0;
+  let missing = 0;
+  const failedJobIds: Id<"securityScanJobs">[] = [];
+
+  for (const jobId of jobIds) {
+    const job = await ctx.db.get(jobId);
+    if (!job) {
+      missing += 1;
+      continue;
+    }
+    if (job.status === "queued") queued += 1;
+    else if (job.status === "running") running += 1;
+    else if (job.status === "succeeded") succeeded += 1;
+    else if (job.status === "failed") {
+      failed += 1;
+      failedJobIds.push(job._id);
+    }
+  }
+
+  const terminal = succeeded + failed + missing;
+  return {
+    ok: true as const,
+    total: jobIds.length,
+    queued,
+    running,
+    succeeded,
+    failed,
+    missing,
+    terminal,
+    done: queued + running === 0,
+    failedJobIds,
+  };
 }
 
 function normalizeMaintenanceScanLimit(limit: number | undefined) {
@@ -391,6 +464,128 @@ export const enqueueSkillVersionScanInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     return enqueueSkillVersionScan(ctx, args);
+  },
+});
+
+export const enqueueBulkSkillRescanBatchForAdminInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    mode: v.optional(v.literal("all-active-latest")),
+    cursor: v.optional(v.union(v.string(), v.null())),
+    batchSize: v.optional(v.number()),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor) throw new ConvexError("Unauthorized");
+    assertAdmin(actor);
+
+    const mode = args.mode ?? "all-active-latest";
+    const batchSize = normalizeBulkRescanBatchSize(args.batchSize);
+    const dryRun = args.dryRun === true;
+    const page = await ctx.db
+      .query("skills")
+      .withIndex("by_active_created", (q) => q.eq("softDeletedAt", undefined))
+      .order("asc")
+      .paginate({
+        cursor: args.cursor ?? null,
+        numItems: batchSize,
+      });
+
+    let queued = 0;
+    let alreadyQueued = 0;
+    let skipped = 0;
+    const jobIds: Id<"securityScanJobs">[] = [];
+    const sampleSlugs: string[] = [];
+
+    for (const skill of page.page) {
+      if (sampleSlugs.length < BULK_RESCAN_SAMPLE_LIMIT) sampleSlugs.push(skill.slug);
+      if ((skill.moderationStatus ?? "active") !== "active" || !skill.latestVersionId) {
+        skipped += 1;
+        continue;
+      }
+
+      const version = await ctx.db.get(skill.latestVersionId);
+      if (!version || version.softDeletedAt) {
+        skipped += 1;
+        continue;
+      }
+
+      if (dryRun) {
+        const existing = await ctx.db
+          .query("securityScanJobs")
+          .withIndex("by_skill_version", (q) => q.eq("skillVersionId", version._id))
+          .collect();
+        const active = existing.find((job) => job.status === "queued" || job.status === "running");
+        if (active) alreadyQueued += 1;
+        else queued += 1;
+        continue;
+      }
+
+      const result = await enqueueSkillVersionScan(ctx, {
+        versionId: version._id,
+        source: "bulk-rescan",
+        priority: 0,
+        waitForVtMs: 0,
+        preserveActiveJob: true,
+      });
+      if (!result.jobId) {
+        skipped += 1;
+        continue;
+      }
+      jobIds.push(result.jobId);
+      if (result.alreadyQueued) alreadyQueued += 1;
+      else queued += 1;
+    }
+
+    const nextCursor = page.isDone ? null : page.continueCursor;
+
+    if (!dryRun) {
+      const now = Date.now();
+      await ctx.db.insert("auditLogs", {
+        actorUserId: actor._id,
+        action: "skill.clawscan.bulk_rescan_batch",
+        targetType: "securityScanBatch",
+        targetId: `bulk-rescan:${now}`,
+        metadata: {
+          mode,
+          batchSize,
+          queued,
+          alreadyQueued,
+          skipped,
+          cursor: args.cursor ?? null,
+          nextCursor,
+          sampleSlugs,
+        },
+        createdAt: now,
+      });
+    }
+
+    return {
+      ok: true as const,
+      mode,
+      queued,
+      alreadyQueued,
+      skipped,
+      jobIds,
+      nextCursor,
+      done: page.isDone,
+      sampleSlugs,
+    };
+  },
+});
+
+export const getBulkSkillRescanBatchStatusForAdminInternal = internalQuery({
+  args: {
+    actorUserId: v.id("users"),
+    jobIds: v.array(v.id("securityScanJobs")),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor) throw new ConvexError("Unauthorized");
+    assertAdmin(actor);
+
+    return getBulkSkillRescanBatchStatus(ctx, args.jobIds.slice(0, MAX_BULK_RESCAN_STATUS_JOB_IDS));
   },
 });
 
@@ -663,9 +858,9 @@ async function enqueueSkillVersionScan(ctx: MutationCtx, args: EnqueueSkillVersi
   const version = await ctx.db.get(args.versionId);
   if (!version || version.softDeletedAt) return { ok: true as const, skipped: "missing" as const };
   const now = Date.now();
-  const waitForVtUntil = now + Math.max(0, args.waitForVtMs ?? DEFAULT_VT_WAIT_MS);
+  const waitForVtUntil = now + Math.max(0, args.waitForVtMs ?? defaultVtWaitMs());
   const nextRunAt = args.waitForVtMs === 0 || version.vtAnalysis ? now : waitForVtUntil;
-  const hasMaliciousSignal = version.staticScan?.status === "malicious";
+  const hasMaliciousSignal = false;
 
   const existing = await ctx.db
     .query("securityScanJobs")
@@ -673,10 +868,13 @@ async function enqueueSkillVersionScan(ctx: MutationCtx, args: EnqueueSkillVersi
     .collect();
   const active = existing.find((job) => job.status === "queued" || job.status === "running");
   if (active) {
+    if (args.preserveActiveJob) {
+      return { ok: true as const, jobId: active._id, alreadyQueued: true as const };
+    }
     await ctx.db.patch(active._id, {
       source: args.source,
       priority: Math.max(active.priority, args.priority ?? 0),
-      hasMaliciousSignal: active.hasMaliciousSignal || hasMaliciousSignal,
+      hasMaliciousSignal,
       waitForVtUntil: Math.min(active.waitForVtUntil, waitForVtUntil),
       nextRunAt: Math.min(active.nextRunAt, nextRunAt),
       updatedAt: now,
@@ -689,7 +887,7 @@ async function enqueueSkillVersionScan(ctx: MutationCtx, args: EnqueueSkillVersi
     skillVersionId: args.versionId,
     status: "queued",
     source: args.source,
-    priority: args.priority ?? (hasMaliciousSignal ? 100 : 0),
+    priority: args.priority ?? 0,
     hasMaliciousSignal,
     waitForVtUntil,
     nextRunAt,
@@ -718,7 +916,7 @@ async function enqueuePackageReleaseScan(ctx: MutationCtx, args: EnqueuePackageR
   const now = Date.now();
   const waitForVtUntil = now + Math.max(0, args.waitForVtMs ?? DEFAULT_VT_WAIT_MS);
   const nextRunAt = args.waitForVtMs === 0 || release.vtAnalysis ? now : waitForVtUntil;
-  const hasMaliciousSignal = release.staticScan?.status === "malicious";
+  const hasMaliciousSignal = false;
 
   const existing = await ctx.db
     .query("securityScanJobs")
@@ -729,7 +927,7 @@ async function enqueuePackageReleaseScan(ctx: MutationCtx, args: EnqueuePackageR
     await ctx.db.patch(active._id, {
       source: args.source,
       priority: Math.max(active.priority, args.priority ?? 0),
-      hasMaliciousSignal: active.hasMaliciousSignal || hasMaliciousSignal,
+      hasMaliciousSignal,
       waitForVtUntil: Math.min(active.waitForVtUntil, waitForVtUntil),
       nextRunAt: Math.min(active.nextRunAt, nextRunAt),
       updatedAt: now,
@@ -742,7 +940,7 @@ async function enqueuePackageReleaseScan(ctx: MutationCtx, args: EnqueuePackageR
     packageReleaseId: args.releaseId,
     status: "queued",
     source: args.source,
-    priority: args.priority ?? (hasMaliciousSignal ? 100 : 0),
+    priority: args.priority ?? 0,
     hasMaliciousSignal,
     waitForVtUntil,
     nextRunAt,
@@ -849,6 +1047,45 @@ export const cancelQueuedVtUpdateJobsInternal = internalMutation({
   },
 });
 
+export const clearQueuedBackfillJobsForLocalDev = internalMutation({
+  args: {
+    dryRun: v.optional(v.boolean()),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const localDevEnabled =
+      process.env.DEV_AUTH_ENABLED === "1" ||
+      process.env.SECURITY_SCAN_WORKER_TOKEN === "local-dev-worker-token";
+    if (!localDevEnabled) {
+      throw new ConvexError("Refusing to clear backfill scan jobs outside local dev");
+    }
+
+    const limit = Math.max(1, Math.min(args.limit ?? 1000, MAX_CANCEL_SCAN_LIMIT));
+    const jobs = await ctx.db
+      .query("securityScanJobs")
+      .withIndex("by_status_source_created_at", (q) =>
+        q.eq("status", "queued").eq("source", "backfill"),
+      )
+      .order("asc")
+      .take(limit);
+
+    const sampleDeletedJobIds: string[] = [];
+    if (!args.dryRun) {
+      for (const job of jobs) {
+        await ctx.db.delete(job._id);
+        if (sampleDeletedJobIds.length < CANCEL_SAMPLE_LIMIT) sampleDeletedJobIds.push(job._id);
+      }
+    }
+
+    return {
+      dryRun: args.dryRun === true,
+      matched: jobs.length,
+      deleted: args.dryRun ? 0 : jobs.length,
+      sampleDeletedJobIds,
+    };
+  },
+});
+
 export const claimQueuedJobsInternal = internalMutation({
   args: {
     workerId: v.string(),
@@ -860,25 +1097,23 @@ export const claimQueuedJobsInternal = internalMutation({
     const limit = normalizeLimit(args.limit);
     const leaseMs = Math.max(60_000, Math.min(args.leaseMs ?? DEFAULT_LEASE_MS, 60 * 60 * 1000));
 
-    const running = await ctx.db
+    const expiredRunning = await ctx.db
       .query("securityScanJobs")
-      .withIndex("by_status_and_lease_expires_at", (q) => q.eq("status", "running"))
-      .take(MAX_PARALLEL_CODEX_SCANS * 4);
-    for (const job of running) {
-      if ((job.leaseExpiresAt ?? 0) <= now) {
-        await ctx.db.patch(job._id, {
-          status: "queued",
-          leaseToken: undefined,
-          leaseExpiresAt: undefined,
-          workerId: undefined,
-          nextRunAt: now,
-          updatedAt: now,
-        });
-      }
+      .withIndex("by_status_and_lease_expires_at", (q) =>
+        q.eq("status", "running").lte("leaseExpiresAt", now),
+      )
+      .take(MAX_EXPIRED_CODEX_SCAN_LEASE_REQUEUES);
+    for (const job of expiredRunning) {
+      await ctx.db.patch(job._id, {
+        status: "queued",
+        leaseToken: undefined,
+        leaseExpiresAt: undefined,
+        workerId: undefined,
+        nextRunAt: now,
+        updatedAt: now,
+      });
     }
-    const activeRunning = running.filter((job) => (job.leaseExpiresAt ?? 0) > now).length;
-    const capacity = Math.max(0, Math.min(limit, MAX_PARALLEL_CODEX_SCANS - activeRunning));
-    if (capacity === 0) return [];
+    const capacity = limit;
 
     const ready: Doc<"securityScanJobs">[] = [];
     const claimedIds = new Set<Id<"securityScanJobs">>();
@@ -1056,15 +1291,29 @@ export const claimCodexScanJobs = action({
         continue;
       }
 
-      const files = ((target.version as Doc<"skillVersions"> | undefined)?.files ??
-        (target.release as Doc<"packageReleases"> | undefined)?.files ??
-        []) as Array<{
+      const version = target.version as Doc<"skillVersions"> | undefined;
+      const release = target.release as Doc<"packageReleases"> | undefined;
+      let files: Array<{
         path: string;
         size: number;
         sha256: string;
         storageId: Id<"_storage">;
         contentType?: string;
-      }>;
+      }> = [];
+      if (version) {
+        const fingerprintEntries = await runQueryRef<
+          Array<{ fingerprint: string; kind?: "source" | "generated-bundle" }>
+        >(ctx, internalRefs.skills.listVersionFingerprintsInternal, {
+          skillVersionId: version._id,
+        });
+        files = sourceSkillVersionFiles(version.files, {
+          generatedBundleFingerprints: fingerprintEntries
+            .filter((entry) => entry.kind === "generated-bundle")
+            .map((entry) => entry.fingerprint),
+        });
+      } else if (release) {
+        files = release.files;
+      }
       const fileUrls = [];
       let missingStoragePath: string | null = null;
       for (const file of files) {
@@ -1090,7 +1339,6 @@ export const claimCodexScanJobs = action({
         continue;
       }
 
-      const release = target.release as Doc<"packageReleases"> | undefined;
       const clawpackUrl = release?.clawpackStorageId
         ? await ctx.storage.getUrl(release.clawpackStorageId)
         : null;

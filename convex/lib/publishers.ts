@@ -127,7 +127,16 @@ export async function assertCanManageOwnedResource(
   }
 
   const publisher = await ctx.db.get(params.ownerPublisherId);
-  if (publisher?.kind === "user" && publisher.linkedUserId === params.actor._id) return;
+  if (publisher?.kind === "user") {
+    if (publisher.linkedUserId) {
+      if (publisher.linkedUserId === params.actor._id) return;
+      throw new ConvexError("Forbidden");
+    }
+    // Compatibility for legacy personal publishers created before linkedUserId.
+    // Only fall back to resource ownership while the publisher has no link.
+    if (params.ownerUserId === params.actor._id) return;
+    throw new ConvexError("Forbidden");
+  }
 
   const membership = await getPublisherMembership(ctx, params.ownerPublisherId, params.actor._id);
   if (
@@ -475,6 +484,28 @@ export async function getPublisherMembership(
   }
 }
 
+export async function canAccessPublisherOwnerScope(
+  ctx: DbCtx,
+  params: {
+    publisher: Doc<"publishers"> | null | undefined;
+    userId: Id<"users">;
+    allowedPublisherRoles?: PublisherRole[];
+    legacyOwnerUserId?: Id<"users">;
+  },
+) {
+  const publisher = params.publisher;
+  if (!publisher || !isPublisherActive(publisher)) return false;
+  if (publisher.kind === "user") {
+    if (publisher.linkedUserId) return publisher.linkedUserId === params.userId;
+    return params.legacyOwnerUserId === params.userId;
+  }
+  const membership = await getPublisherMembership(ctx, publisher._id, params.userId);
+  return Boolean(
+    membership &&
+    isPublisherRoleAllowed(membership.role, params.allowedPublisherRoles ?? ["publisher"]),
+  );
+}
+
 export async function requirePublisherRole(
   ctx: DbCtx,
   params: {
@@ -484,7 +515,14 @@ export async function requirePublisherRole(
   },
 ) {
   const publisher = await ctx.db.get(params.publisherId);
-  if (!isPublisherActive(publisher)) throw new ConvexError("Publisher not found");
+  if (!publisher || !isPublisherActive(publisher)) throw new ConvexError("Publisher not found");
+  if (publisher.kind === "user") {
+    if (publisher.linkedUserId !== params.userId) {
+      throw new ConvexError("Forbidden");
+    }
+    const membership = await getPublisherMembership(ctx, params.publisherId, params.userId);
+    return { publisher, membership };
+  }
   const membership = await getPublisherMembership(ctx, params.publisherId, params.userId);
   if (!membership || !isPublisherRoleAllowed(membership.role, params.allowed)) {
     throw new ConvexError("Forbidden");
@@ -513,6 +551,10 @@ export async function resolvePublisherForActor(
   const publisher = await getPublisherByHandle(ctx, requestedHandle);
   if (!publisher || !isPublisherActive(publisher)) {
     throw new ConvexError(`Publisher "@${requestedHandle}" not found`);
+  }
+  if (publisher.kind === "user") {
+    if (publisher.linkedUserId === params.actor._id) return publisher;
+    throw new ConvexError(`You do not have publish access for "@${requestedHandle}"`);
   }
   const membership = await getPublisherMembership(ctx, publisher._id, params.actor._id);
   if (!membership || !isPublisherRoleAllowed(membership.role, params.allowed)) {

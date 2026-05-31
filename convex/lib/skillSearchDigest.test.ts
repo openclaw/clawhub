@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   digestToHydratableSkill,
   extractDigestFields,
+  extractValidatedDigestFields,
   digestToOwnerInfo,
 } from "./skillSearchDigest";
 
@@ -152,6 +153,38 @@ describe("extractDigestFields", () => {
     const hydratable = digestToHydratableSkill(digest as never);
 
     expect(hydratable.isSuspicious).toBe(true);
+  });
+});
+
+describe("extractValidatedDigestFields", () => {
+  it("records latest-version ownership when the version belongs to the skill", async () => {
+    const digest = await extractValidatedDigestFields(
+      {
+        db: {
+          get: async () => ({ skillId: "skills:abc", softDeletedAt: undefined }),
+        },
+      } as never,
+      makeSkillDoc() as never,
+    );
+
+    expect(digest.latestVersionId).toBe("skillVersions:v1");
+    expect(digest.latestVersionSkillId).toBe("skills:abc");
+    expect(digest.latestVersionSummary).toMatchObject({ version: "1.0.0" });
+  });
+
+  it("clears stale latest-version metadata when the version belongs to another skill", async () => {
+    const digest = await extractValidatedDigestFields(
+      {
+        db: {
+          get: async () => ({ skillId: "skills:other", softDeletedAt: undefined }),
+        },
+      } as never,
+      makeSkillDoc() as never,
+    );
+
+    expect(digest.latestVersionId).toBeUndefined();
+    expect(digest.latestVersionSkillId).toBeUndefined();
+    expect(digest.latestVersionSummary).toBeUndefined();
   });
 });
 

@@ -72,6 +72,12 @@ Override the path with:
 export CLAWHUB_CONFIG_PATH=/path/to/config.json
 ```
 
+Print the stored token for CI setup with:
+
+```bash
+clawhub token
+```
+
 ## Revocation
 
 You can revoke API tokens in the ClawHub web UI.

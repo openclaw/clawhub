@@ -38,6 +38,7 @@ import {
   parseLlmEvalResponse,
   SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT,
 } from "./lib/securityPrompt";
+import { sourceSkillVersionFiles } from "./lib/skillCards";
 
 const internalRefs = internal as unknown as {
   packages: {
@@ -263,8 +264,16 @@ export const evaluateWithLlm = internalAction({
       return;
     }
 
+    const fingerprintEntries = await ctx.runQuery(internal.skills.listVersionFingerprintsInternal, {
+      skillVersionId: version._id,
+    });
+    const generatedBundleFingerprints = fingerprintEntries
+      .filter((entry) => entry.kind === "generated-bundle")
+      .map((entry) => entry.fingerprint);
+
     // 3. Read SKILL.md content
-    const skillMdFile = version.files.find((f) => {
+    const sourceFiles = sourceSkillVersionFiles(version.files, { generatedBundleFingerprints });
+    const skillMdFile = sourceFiles.find((f) => {
       const lower = f.path.toLowerCase();
       return lower === "skill.md" || lower === "skills.md";
     });
@@ -284,7 +293,7 @@ export const evaluateWithLlm = internalAction({
 
     // 4. Read all file contents
     const fileContents: Array<{ path: string; content: string }> = [];
-    for (const f of version.files) {
+    for (const f of sourceFiles) {
       const lower = f.path.toLowerCase();
       if (lower === "skill.md" || lower === "skills.md") continue;
       try {
@@ -298,11 +307,7 @@ export const evaluateWithLlm = internalAction({
     }
 
     // 5. Detect injection patterns across ALL content
-    const allContent = [
-      skillMdContent,
-      version.clawScanNote ?? "",
-      ...fileContents.map((f) => f.content),
-    ].join("\n");
+    const allContent = [skillMdContent, ...fileContents.map((f) => f.content)].join("\n");
     const injectionSignals = detectInjectionPatterns(allContent);
 
     // 6. Build eval context
@@ -325,9 +330,8 @@ export const evaluateWithLlm = internalAction({
         (clawdisLinks.homepage as string | undefined) ??
         undefined,
       parsed,
-      files: version.files.map((f) => ({ path: f.path, size: f.size })),
+      files: sourceFiles.map((f) => ({ path: f.path, size: f.size })),
       skillMdContent,
-      clawScanNote: version.clawScanNote,
       fileContents,
       injectionSignals,
       staticScan: version.staticScan,
@@ -511,11 +515,7 @@ export const evaluatePackageReleaseWithLlm = internalAction({
         packageJsonText ?? `# ${pkg.displayName}\n\n${release.summary ?? pkg.summary ?? pkg.name}`;
     }
 
-    const allContent = [
-      readmeContent,
-      release.clawScanNote ?? "",
-      ...fileContents.map((f) => f.content),
-    ].join("\n");
+    const allContent = [readmeContent, ...fileContents.map((f) => f.content)].join("\n");
     const injectionSignals = detectInjectionPatterns(allContent);
     const packageOpenClawMetadata = packageOpenClawEnvironmentForPrompt(
       release.extractedPackageJson,
@@ -542,7 +542,6 @@ export const evaluatePackageReleaseWithLlm = internalAction({
       },
       files: release.files.map((f) => ({ path: f.path, size: f.size })),
       skillMdContent: readmeContent,
-      clawScanNote: release.clawScanNote,
       fileContents,
       injectionSignals,
       staticScan: release.staticScan,

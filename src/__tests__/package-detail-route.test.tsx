@@ -193,6 +193,28 @@ describe("plugin detail route", () => {
     ).toBeTruthy();
   });
 
+  it("labels official packages as Official", async () => {
+    loaderDataMock = {
+      ...loaderDataMock,
+      detail: {
+        package: {
+          ...loaderDataMock.detail.package!,
+          channel: "official",
+          isOfficial: true,
+        },
+        owner: { handle: "openclaw", displayName: "OpenClaw", image: null },
+      },
+    };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(screen.getAllByText("Official").length).toBeGreaterThan(0);
+    expect(screen.getByLabelText("Official")).toBeTruthy();
+    expect(screen.queryByText("Verified")).toBeNull();
+  });
+
   it("shows plugin settings when the viewer can manage the plugin", async () => {
     useAuthStatusMock.mockReturnValue({
       isAuthenticated: true,
@@ -242,19 +264,12 @@ describe("plugin detail route", () => {
 
     const downloadLink = screen.getByRole("link", { name: /download/i });
     const newVersionLink = screen.getByRole("link", { name: "New version" });
-    const settingsLink = screen.getByRole("link", { name: /settings/i });
     expect(newVersionLink.getAttribute("href")).toBe(
       "/plugins/publish?ownerHandle=demo-owner&name=demo-plugin&displayName=Demo+Plugin",
     );
-    expect(settingsLink.getAttribute("href")).toBe("/plugins/demo-plugin/settings");
+    expect(screen.queryByRole("link", { name: /settings/i })).toBeNull();
     expect(
       downloadLink.compareDocumentPosition(newVersionLink) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-    expect(
-      newVersionLink.compareDocumentPosition(settingsLink) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-    expect(
-      downloadLink.compareDocumentPosition(settingsLink) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(useQueryMock).toHaveBeenCalledWith(expect.anything(), {
       name: "demo-plugin",
@@ -310,7 +325,7 @@ describe("plugin detail route", () => {
       candidateNames: ["@openclaw/demo-plugin", "demo-plugin"],
     });
     expect(screen.getByRole("link", { name: "New version" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: /settings/i })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /settings/i })).toBeNull();
   });
 
   it("renders package security scan results when scan data is present", async () => {
@@ -326,7 +341,6 @@ describe("plugin detail route", () => {
           version: "1.0.0",
           createdAt: 1,
           changelog: "Initial release",
-          clawScanNote: "Native host access is limited to the OpenClaw extension bridge.",
           distTags: ["latest"],
           files: [],
           compatibility: null,
@@ -369,7 +383,7 @@ describe("plugin detail route", () => {
     );
     expect(
       screen.getByRole("button", {
-        name: "Security checks across static analysis, malware telemetry, and agentic risk",
+        name: "Security checks across malware telemetry and agentic risk",
       }),
     ).toBeTruthy();
     expect(screen.queryByText("Looks safe.")).toBeNull();

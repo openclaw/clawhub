@@ -23,7 +23,7 @@ type PluginSearchState = {
   cursor?: string;
   family?: undefined;
   featured?: boolean;
-  verified?: boolean;
+  official?: boolean;
   executesCode?: boolean;
   sort?: PluginSort;
   view?: LegacyPluginView;
@@ -119,8 +119,13 @@ export const Route = createFileRoute("/plugins/")({
       search.featured === true || search.featured === "true" || search.featured === "1"
         ? true
         : undefined,
-    verified:
-      search.verified === true || search.verified === "true" || search.verified === "1"
+    official:
+      search.official === true ||
+      search.official === "true" ||
+      search.official === "1" ||
+      search.verified === true ||
+      search.verified === "true" ||
+      search.verified === "1"
         ? true
         : undefined,
     executesCode:
@@ -153,7 +158,7 @@ export const Route = createFileRoute("/plugins/")({
     category: search.category,
     cursor: search.cursor,
     featured: search.featured,
-    verified: search.verified,
+    official: search.official,
     executesCode: search.executesCode,
   }),
   loader: async ({ deps }): Promise<PluginsLoaderData> => {
@@ -163,7 +168,7 @@ export const Route = createFileRoute("/plugins/")({
         category: deps.category,
         cursor: deps.q ? undefined : deps.cursor,
         featured: deps.featured,
-        isOfficial: deps.verified,
+        isOfficial: deps.official,
         executesCode: deps.executesCode,
         limit: PLUGINS_PAGE_SIZE,
       });
@@ -223,7 +228,7 @@ function PluginsIndexPending() {
           activeSort="updated"
           onSortChange={() => {}}
           filters={[
-            { key: "verified", label: "Verified only", active: false },
+            { key: "official", label: "Official only", active: false },
             { key: "executesCode", label: "Executes code", active: false },
           ]}
           onFilterToggle={() => {}}
@@ -301,12 +306,12 @@ function PluginsIndex() {
   }, [hasQuery]);
 
   const handleFilterToggle = (key: string) => {
-    if (key === "verified") {
+    if (key === "official") {
       void navigate({
         search: (prev: PluginSearchState) => ({
           ...prev,
           cursor: undefined,
-          verified: prev.verified ? undefined : true,
+          official: prev.official ? undefined : true,
         }),
       });
     } else if (key === "executesCode") {
@@ -408,7 +413,7 @@ function PluginsIndex() {
         family: undefined,
         q: undefined,
         category: undefined,
-        verified: undefined,
+        official: undefined,
         executesCode: undefined,
         featured: undefined,
         sort: undefined,
@@ -451,7 +456,7 @@ function PluginsIndex() {
           activeSort={activeSort}
           onSortChange={handleSortChange}
           filters={[
-            { key: "verified", label: "Verified only", active: search.verified ?? false },
+            { key: "official", label: "Official only", active: search.official ?? false },
             { key: "executesCode", label: "Executes code", active: search.executesCode ?? false },
           ]}
           onFilterToggle={handleFilterToggle}
@@ -462,7 +467,7 @@ function PluginsIndex() {
               {resultsCount}
               {hasQuery ||
               search.category ||
-              search.verified ||
+              search.official ||
               search.executesCode ||
               search.featured ? (
                 <button className="browse-clear-btn" type="button" onClick={handleClear}>

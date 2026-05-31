@@ -106,7 +106,7 @@ describe("plugins route", () => {
       q: "demo",
       cursor: undefined,
       featured: undefined,
-      verified: undefined,
+      official: undefined,
       executesCode: undefined,
       sort: undefined,
       view: undefined,
@@ -123,7 +123,25 @@ describe("plugins route", () => {
       q: "demo",
       cursor: undefined,
       featured: undefined,
-      verified: undefined,
+      official: undefined,
+      executesCode: undefined,
+      sort: undefined,
+      view: undefined,
+    });
+  });
+
+  it("keeps legacy verified search params as official browse", async () => {
+    const route = await loadRoute();
+    const validateSearch = route.__config.validateSearch as (
+      search: Record<string, unknown>,
+    ) => Record<string, unknown>;
+
+    expect(validateSearch({ verified: "1" })).toEqual({
+      q: undefined,
+      category: undefined,
+      cursor: undefined,
+      featured: undefined,
+      official: true,
       executesCode: undefined,
       sort: undefined,
       view: undefined,
@@ -499,7 +517,7 @@ describe("plugins route", () => {
     expect(result.items).toHaveLength(2);
   });
 
-  it("uses plugin-only catalog fetching for verified browse", async () => {
+  it("uses plugin-only catalog fetching for official browse", async () => {
     fetchPluginCatalogMock.mockResolvedValue({ items: [], nextCursor: null });
     const route = await loadRoute();
     const loader = route.__config.loader as (args: {
@@ -508,7 +526,7 @@ describe("plugins route", () => {
 
     await loader({
       deps: {
-        verified: true,
+        official: true,
       },
     });
 

@@ -242,7 +242,6 @@ export declare const PackagePublishRequestSchema: import("arktype/internal/varia
     }[];
     displayName?: string | undefined;
     ownerHandle?: string | undefined;
-    clawScanNote?: string | undefined;
     manualOverrideReason?: string | undefined;
     channel?: "official" | "community" | "private" | undefined;
     tags?: string[] | undefined;
@@ -400,6 +399,7 @@ export declare const ApiV1PackageResponseSchema: import("arktype/internal/varian
             packageName?: string | undefined;
             version?: string | undefined;
         } | null | undefined;
+        scanStatus?: "clean" | "suspicious" | "malicious" | "pending" | "not-run" | undefined;
         stats?: {
             downloads: number;
             installs: number;
@@ -540,8 +540,6 @@ export declare const ApiV1PackageVersionResponseSchema: import("arktype/internal
             riskSummary?: unknown;
             model?: string | undefined;
         } | null | undefined;
-        clawScanNote?: string | null | undefined;
-        clawScanNoteUpdatedAt?: number | null | undefined;
         staticScan?: {
             status: string;
             reasonCodes: string[];

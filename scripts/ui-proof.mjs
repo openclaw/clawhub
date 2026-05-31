@@ -14,19 +14,24 @@ const DEFAULT_IDLE_TIMEOUT = "60m";
 const DEFAULT_TTL = "120m";
 const DEFAULT_VIDEO_DURATION = "60";
 const DEFAULT_PORTS = {
-  baseline: 4317,
-  candidate: 4318,
+  baseline: {
+    convexCloud: 4417,
+    convexSite: 4517,
+    frontend: 4317,
+  },
+  candidate: {
+    convexCloud: 4418,
+    convexSite: 4518,
+    frontend: 4318,
+  },
 };
-const DEFAULT_PUBLIC_ENV = {
-  VITE_CONVEX_SITE_URL: "https://wry-manatee-359.convex.site",
-  VITE_CONVEX_URL: "https://wry-manatee-359.convex.cloud",
-};
-
 export function parseProofUiArgs(argv = []) {
   const opts = {
     baseline: DEFAULT_BASELINE,
     candidate: DEFAULT_CANDIDATE,
+    devAuth: false,
     dryRun: false,
+    env: {},
     idleTimeout: DEFAULT_IDLE_TIMEOUT,
     keepLease: false,
     machineClass: DEFAULT_CLASS,
@@ -57,6 +62,15 @@ export function parseProofUiArgs(argv = []) {
       index += 1;
     } else if (arg === "--dry-run") {
       opts.dryRun = true;
+    } else if (arg === "--dev-auth") {
+      opts.devAuth = true;
+    } else if (arg === "--env") {
+      const [key, value] = parseEnvAssignment(requireValue(arg, next), arg);
+      opts.env[key] = value;
+      index += 1;
+    } else if (arg.startsWith("--env=")) {
+      const [key, value] = parseEnvAssignment(arg.slice("--env=".length), "--env");
+      opts.env[key] = value;
     } else if (arg === "--idle-timeout") {
       opts.idleTimeout = requireValue(arg, next);
       index += 1;
@@ -76,6 +90,9 @@ export function parseProofUiArgs(argv = []) {
       index += 1;
     } else if (arg === "--scenario") {
       opts.scenario = requireValue(arg, next);
+      index += 1;
+    } else if (arg === "--seed-command") {
+      opts.seedCommand = requireValue(arg, next);
       index += 1;
     } else if (arg === "--skip-install") {
       opts.skipInstall = true;
@@ -105,8 +122,32 @@ function requireValue(flag, value) {
   return value;
 }
 
+function parseEnvAssignment(raw, flag) {
+  const separator = raw.indexOf("=");
+  if (separator <= 0) {
+    throw new Error(`${flag} requires KEY=VALUE`);
+  }
+  const key = raw.slice(0, separator);
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/u.test(key)) {
+    throw new Error(`${flag} has invalid environment variable name: ${key}`);
+  }
+  return [key, raw.slice(separator + 1)];
+}
+
 function timestamp(now) {
   return now().toISOString().replace(/[:.]/gu, "-");
+}
+
+function buildLane({ name, outputDir, ref }) {
+  const ports = DEFAULT_PORTS[name];
+  return {
+    convexCloudPort: ports.convexCloud,
+    convexSitePort: ports.convexSite,
+    name,
+    outputDir,
+    port: ports.frontend,
+    ref,
+  };
 }
 
 export function buildProofUiPlan({ now = () => new Date(), opts, repoRoot }) {
@@ -114,22 +155,20 @@ export function buildProofUiPlan({ now = () => new Date(), opts, repoRoot }) {
     repoRoot,
     opts.outputDir ?? path.join(".artifacts", "clawhub-ui-proof", timestamp(now)),
   );
-  const candidateLane = {
+  const candidateLane = buildLane({
     name: "candidate",
     outputDir: path.join(outputDir, "candidate"),
-    port: DEFAULT_PORTS.candidate,
     ref: opts.candidate,
-  };
+  });
   const lanes =
     opts.mode === "feature"
       ? [candidateLane]
       : [
-          {
+          buildLane({
             name: "baseline",
             outputDir: path.join(outputDir, "baseline"),
-            port: DEFAULT_PORTS.baseline,
             ref: opts.baseline,
-          },
+          }),
           candidateLane,
         ];
   return {
@@ -202,6 +241,100 @@ function shellQuote(value) {
   return `'${String(value).replaceAll("'", "'\\''")}'`;
 }
 
+function renderExportEnv(env) {
+  return Object.entries(env)
+    .map(([key, value]) => `export ${key}=${shellQuote(value)}`)
+    .join("\n");
+}
+
+function laneLocalConvexEnv(lane, opts) {
+  const appUrl = `http://127.0.0.1:${lane.port}`;
+  const convexUrl = `http://127.0.0.1:${lane.convexCloudPort}`;
+  const convexSiteUrl = `http://127.0.0.1:${lane.convexSitePort}`;
+  const deployment = `local:anonymous-clawhub-ui-proof-${lane.name}`;
+  return {
+    CONVEX_DEPLOYMENT: deployment,
+    CONVEX_SITE_URL: convexSiteUrl,
+    SITE_URL: appUrl,
+    VITE_CONVEX_SITE_URL: convexSiteUrl,
+    VITE_CONVEX_URL: convexUrl,
+    VITE_SITE_URL: appUrl,
+    ...(opts.devAuth
+      ? {
+          DEV_AUTH_CONVEX_DEPLOYMENT: deployment,
+          DEV_AUTH_ENABLED: "1",
+          VITE_ENABLE_DEV_AUTH: "1",
+        }
+      : {}),
+    ...opts.env,
+  };
+}
+
+function renderWaitForUrl(url, label) {
+  return `bun -e ${shellQuote(`const url = ${JSON.stringify(url)};
+const label = ${JSON.stringify(label)};
+const started = Date.now();
+async function tick() {
+  try {
+    const res = await fetch(url);
+    if (res.status < 500) process.exit(0);
+  } catch {}
+  if (Date.now() - started > 60000) {
+    console.error(label + " did not become ready: " + url);
+    process.exit(1);
+  }
+  setTimeout(tick, 500);
+}
+tick();`)}`;
+}
+
+function renderLocalConvexSetup({ lane, opts }) {
+  const env = laneLocalConvexEnv(lane, opts);
+  const envFileLines = Object.entries(env)
+    .map(([key, value]) => `${key}=${value}`)
+    .join("\n");
+  const convexUrl = env.VITE_CONVEX_URL;
+  const devAuthDeploymentExport = opts.devAuth
+    ? `export DEV_AUTH_CONVEX_DEPLOYMENT="$CONVEX_DEPLOYMENT"`
+    : "";
+  const seedCommand = opts.seedCommand
+    ? `(cd "$app_root" && ${opts.seedCommand} > "$remote_out/seed.log" 2>&1)`
+    : `: > "$remote_out/seed.log"`;
+  return `
+lane_env_file="$remote_out/.env.local"
+cat > "$lane_env_file" <<'CLAWHUB_UI_PROOF_ENV'
+${envFileLines}
+CLAWHUB_UI_PROOF_ENV
+rm -rf "$app_root/.convex/local/default"
+(cd "$app_root" && bunx convex dev --local --env-file "$lane_env_file" --typecheck disable --codegen disable --local-cloud-port ${lane.convexCloudPort} --local-site-port ${lane.convexSitePort} > "$remote_out/convex.log" 2>&1 & echo $! > "$remote_out/convex.pid")
+convex_pid="$(cat "$remote_out/convex.pid")"
+${renderWaitForUrl(convexUrl, "local Convex")}
+for _ in $(seq 1 120); do
+  if [ -f "$app_root/.env.local" ] && grep -q '^CONVEX_DEPLOYMENT=' "$app_root/.env.local"; then
+    break
+  fi
+  sleep 0.5
+done
+if [ ! -f "$app_root/.env.local" ] || ! grep -q '^CONVEX_DEPLOYMENT=' "$app_root/.env.local"; then
+  echo "local Convex did not write $app_root/.env.local" >&2
+  exit 1
+fi
+if [ -f "$app_root/.env.local" ]; then
+  set -a
+  . "$app_root/.env.local"
+  set +a
+fi
+export CONVEX_SITE_URL=${shellQuote(env.CONVEX_SITE_URL)}
+export SITE_URL=${shellQuote(env.SITE_URL)}
+export VITE_CONVEX_SITE_URL=${shellQuote(env.VITE_CONVEX_SITE_URL)}
+export VITE_CONVEX_URL=${shellQuote(env.VITE_CONVEX_URL)}
+export VITE_SITE_URL=${shellQuote(env.VITE_SITE_URL)}
+${devAuthDeploymentExport}
+(cd "$app_root" && bunx convex run --push --typecheck disable --codegen disable appMeta:getDeploymentInfo '{}' >> "$remote_out/convex.log" 2>&1)
+${seedCommand}
+`;
+}
+
 export function renderRemoteLaneScript({ lane, opts, plan, scenarioText }) {
   const scenarioB64 = Buffer.from(scenarioText, "utf8").toString("base64");
   const runtimePath = path.join("scripts", "ui-proof-runtime.mjs");
@@ -216,9 +349,8 @@ export function renderRemoteLaneScript({ lane, opts, plan, scenarioText }) {
           `app_root="$PWD/.artifacts/clawhub-ui-proof/worktrees/${lane.name}"`,
         ].join("\n")
       : `app_root="$PWD"`;
-  const envExports = Object.entries(DEFAULT_PUBLIC_ENV)
-    .map(([key, value]) => `export ${key}=${shellQuote(value)}`)
-    .join("\n");
+  const envExports = renderExportEnv(laneLocalConvexEnv(lane, opts));
+  const localConvexSetup = renderLocalConvexSetup({ lane, opts });
 
   return `set -euo pipefail
 export DISPLAY="\${DISPLAY:-:99}"
@@ -226,6 +358,7 @@ remote_out="$PWD/${laneRemoteDir}"
 rm -rf "$remote_out"
 mkdir -p "$remote_out"
 echo "__CLAWHUB_UI_PROOF_REMOTE_OUTPUT__=$remote_out"
+convex_pid=""
 video_pid=""
 cleanup_proof_processes() {
   if [ -n "$video_pid" ]; then
@@ -236,6 +369,14 @@ cleanup_proof_processes() {
   if [ -f "$remote_out/preview.pid" ]; then
     kill "$(cat "$remote_out/preview.pid")" >/dev/null 2>&1 || true
     rm -f "$remote_out/preview.pid"
+  fi
+  if [ -n "$convex_pid" ]; then
+    kill "$convex_pid" >/dev/null 2>&1 || true
+    wait "$convex_pid" >/dev/null 2>&1 || true
+    convex_pid=""
+  elif [ -f "$remote_out/convex.pid" ]; then
+    kill "$(cat "$remote_out/convex.pid")" >/dev/null 2>&1 || true
+    rm -f "$remote_out/convex.pid"
   fi
   return 0
 }
@@ -276,22 +417,10 @@ if [ ${opts.skipInstall ? "1" : "0"} -ne 1 ]; then
   fi
   bunx playwright install chromium > "$remote_out/playwright-install.log" 2>&1
 fi
+${localConvexSetup}
 (cd "$app_root" && bun run build > "$remote_out/build.log" 2>&1)
 (cd "$app_root" && bun run preview -- --host 127.0.0.1 --port ${lane.port} > "$remote_out/preview.log" 2>&1 & echo $! > "$remote_out/preview.pid")
-bun -e ${shellQuote(`const url = "http://127.0.0.1:${lane.port}";
-const started = Date.now();
-async function tick() {
-  try {
-    const res = await fetch(url);
-    if (res.status < 500) process.exit(0);
-  } catch {}
-  if (Date.now() - started > 60000) {
-    console.error("preview did not become ready: " + url);
-    process.exit(1);
-  }
-  setTimeout(tick, 500);
-}
-tick();`)}
+${renderWaitForUrl(`http://127.0.0.1:${lane.port}`, "preview")}
 if command -v ffmpeg >/dev/null 2>&1; then
   display_input="$DISPLAY"
   case "$display_input" in
@@ -328,6 +457,11 @@ fi
 if [ -f "$remote_out/preview.pid" ]; then
   kill "$(cat "$remote_out/preview.pid")" >/dev/null 2>&1 || true
   rm -f "$remote_out/preview.pid"
+fi
+if [ -n "$convex_pid" ]; then
+  kill "$convex_pid" >/dev/null 2>&1 || true
+  wait "$convex_pid" >/dev/null 2>&1 || true
+  convex_pid=""
 fi
 cat > "$remote_out/lane-summary.json" <<CLAWHUB_UI_PROOF_SUMMARY
 {

@@ -16,6 +16,9 @@ import {
   ApiV1ReclassifyBanResponseSchema,
   ApiV1RemediateAutobansResponseSchema,
   ApiV1SetRoleResponseSchema,
+  ApiV1SkillBulkRescanBatchResponseSchema,
+  ApiV1SkillBulkRescanStatusResponseSchema,
+  ApiV1SkillRepairVtPendingResponseSchema,
   ApiV1SkillRescanResponseSchema,
   ApiV1UnbanUserResponseSchema,
   ApiV1UserSearchResponseSchema,
@@ -232,6 +235,340 @@ export async function cmdRescanSkill(
     spinner?.fail(formatError(error));
     throw error;
   }
+}
+
+export async function cmdRescanAllSkills(
+  opts: GlobalOpts,
+  options: {
+    batchSize?: number;
+    pollInterval?: number;
+    cursor?: string;
+    maxSkills?: number;
+    dryRun?: boolean;
+    yes?: boolean;
+    json?: boolean;
+    failFast?: boolean;
+  },
+  inputAllowed: boolean,
+) {
+  const batchSize = normalizePositiveInt(options.batchSize, 50);
+  const pollIntervalMs = normalizeNonNegativeInt(options.pollInterval, 30) * 1000;
+  const maxSkills =
+    options.maxSkills === undefined ? undefined : normalizePositiveInt(options.maxSkills, 1);
+  const allowPrompt = isInteractive() && inputAllowed !== false;
+
+  if (!options.dryRun && !options.yes) {
+    if (!allowPrompt) fail("Pass --yes (no input)");
+    const ok = await promptConfirm(
+      `Queue bulk ClawScan rescans for active latest skills in batches of ${batchSize}? (admin)`,
+    );
+    if (!ok) return undefined;
+  }
+
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  let cursor = options.cursor?.trim() || null;
+  let processed = 0;
+  let batches = 0;
+  let totalQueued = 0;
+  let totalAlreadyQueued = 0;
+  let totalSkipped = 0;
+  let totalFailed = 0;
+
+  while (true) {
+    const remaining = maxSkills === undefined ? batchSize : Math.max(0, maxSkills - processed);
+    if (remaining === 0) break;
+    const effectiveBatchSize = Math.min(batchSize, remaining);
+    const result = await apiRequest(
+      registry,
+      {
+        method: "POST",
+        path: `${ApiRoutes.skills}/-/rescan-batch`,
+        token,
+        body: {
+          mode: "all-active-latest",
+          cursor,
+          batchSize: effectiveBatchSize,
+          dryRun: options.dryRun === true,
+        },
+      },
+      ApiV1SkillBulkRescanBatchResponseSchema,
+    );
+    const batch = parseArk(
+      ApiV1SkillBulkRescanBatchResponseSchema,
+      result,
+      "Bulk skill rescan batch response",
+    );
+    batches += 1;
+    totalQueued += batch.queued;
+    totalAlreadyQueued += batch.alreadyQueued;
+    totalSkipped += batch.skipped;
+    processed += batch.queued + batch.alreadyQueued + batch.skipped;
+    emitBulkRescanProgress(options, {
+      type: "batch",
+      batch: batches,
+      cursor,
+      nextCursor: batch.nextCursor,
+      queued: batch.queued,
+      alreadyQueued: batch.alreadyQueued,
+      skipped: batch.skipped,
+      done: batch.done,
+      sampleSlugs: batch.sampleSlugs,
+    });
+
+    if (!options.dryRun && batch.jobIds.length > 0) {
+      const status = await pollBulkRescanStatus(registry, token, batch.jobIds, {
+        pollIntervalMs,
+        json: options.json,
+        batch: batches,
+      });
+      totalFailed += status.failed;
+      if (status.failed > 0 && options.failFast) {
+        fail(`Bulk rescan batch ${batches} finished with ${status.failed} failed job(s)`);
+      }
+    }
+
+    cursor = batch.nextCursor;
+    if (batch.done || !cursor) break;
+  }
+
+  const summary = {
+    ok: totalFailed === 0,
+    batches,
+    queued: totalQueued,
+    alreadyQueued: totalAlreadyQueued,
+    skipped: totalSkipped,
+    failed: totalFailed,
+    cursor,
+    dryRun: options.dryRun === true,
+  };
+  emitBulkRescanProgress(options, { type: "summary", ...summary });
+  if (totalFailed > 0) fail(`Bulk rescan finished with ${totalFailed} failed job(s)`);
+  return summary;
+}
+
+export async function cmdRepairVtPendingSkills(
+  opts: GlobalOpts,
+  options: {
+    batchSize?: number;
+    concurrency?: number;
+    cursor?: string;
+    dryRun?: boolean;
+    all?: boolean;
+    yes?: boolean;
+    json?: boolean;
+  },
+  inputAllowed: boolean,
+) {
+  const batchSize = normalizePositiveInt(options.batchSize, 500);
+  const concurrency =
+    options.concurrency === undefined ? undefined : normalizePositiveInt(options.concurrency, 16);
+  const dryRun = options.dryRun === true;
+  const allowPrompt = isInteractive() && inputAllowed !== false;
+
+  if (!dryRun && !options.yes) {
+    if (!allowPrompt) fail("Pass --yes (no input)");
+    const ok = await promptConfirm(
+      `Repair pending VirusTotal cache in batches of ${batchSize} with concurrency ${concurrency ?? 16}? (admin)`,
+    );
+    if (!ok) return undefined;
+  }
+
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  let cursor = options.cursor?.trim() || null;
+  let batches = 0;
+  let total = 0;
+  let wouldUpdate = 0;
+  let updated = 0;
+  let noResults = 0;
+  let noDecisiveStats = 0;
+  let errors = 0;
+  const statusCounts: Record<string, number> = {};
+  const sampleUpdated: Array<{ slug: string; status: string }> = [];
+  let done = false;
+
+  while (!done) {
+    const result = await apiRequest(
+      registry,
+      {
+        method: "POST",
+        path: `${ApiRoutes.skills}/-/repair-vt-pending`,
+        token,
+        body: {
+          cursor,
+          batchSize,
+          ...(concurrency !== undefined ? { concurrency } : {}),
+          dryRun,
+        },
+      },
+      ApiV1SkillRepairVtPendingResponseSchema,
+    );
+    const batch = parseArk(
+      ApiV1SkillRepairVtPendingResponseSchema,
+      result,
+      "Skill VT pending repair response",
+    );
+    batches++;
+    total += batch.total;
+    wouldUpdate += batch.wouldUpdate;
+    updated += batch.updated;
+    noResults += batch.noResults;
+    noDecisiveStats += batch.noDecisiveStats;
+    errors += batch.errors;
+    for (const [status, count] of Object.entries(batch.statusCounts)) {
+      statusCounts[status] = (statusCounts[status] ?? 0) + count;
+    }
+    for (const sample of batch.sampleUpdated) {
+      if (sampleUpdated.length < 20) sampleUpdated.push(sample);
+    }
+    done = batch.done;
+    emitVtRepairProgress(options, {
+      type: "batch",
+      batch: batches,
+      cursor,
+      nextCursor: batch.cursor,
+      total: batch.total,
+      wouldUpdate: batch.wouldUpdate,
+      updated: batch.updated,
+      noResults: batch.noResults,
+      noDecisiveStats: batch.noDecisiveStats,
+      errors: batch.errors,
+      statusCounts: batch.statusCounts,
+      done: batch.done,
+      dryRun,
+    });
+    cursor = batch.cursor;
+    if (!options.all || !cursor) break;
+  }
+
+  const summary = {
+    ok: errors === 0,
+    dryRun,
+    batches,
+    total,
+    wouldUpdate,
+    updated,
+    noResults,
+    noDecisiveStats,
+    errors,
+    statusCounts,
+    sampleUpdated,
+    nextCursor: cursor,
+    done,
+  };
+  emitVtRepairProgress(options, { type: "summary", ...summary });
+  if (errors > 0) fail(`VT pending repair finished with ${errors} error(s)`);
+  return summary;
+}
+
+async function pollBulkRescanStatus(
+  registry: string,
+  token: string,
+  jobIds: string[],
+  options: { pollIntervalMs: number; json?: boolean; batch: number },
+) {
+  while (true) {
+    const result = await apiRequest(
+      registry,
+      {
+        method: "POST",
+        path: `${ApiRoutes.skills}/-/rescan-batch/status`,
+        token,
+        body: { jobIds },
+      },
+      ApiV1SkillBulkRescanStatusResponseSchema,
+    );
+    const status = parseArk(
+      ApiV1SkillBulkRescanStatusResponseSchema,
+      result,
+      "Bulk skill rescan status response",
+    );
+    emitBulkRescanProgress(
+      { json: options.json },
+      { type: "status", batch: options.batch, ...status },
+    );
+    if (status.done) return status;
+    if (options.pollIntervalMs > 0) await sleep(options.pollIntervalMs);
+  }
+}
+
+function emitBulkRescanProgress(options: { json?: boolean }, event: Record<string, unknown>) {
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify(event)}\n`);
+    return;
+  }
+
+  if (event.type === "batch") {
+    const nextCursor = typeof event.nextCursor === "string" ? event.nextCursor : null;
+    const suffix = nextCursor ? ` Next cursor: ${nextCursor}.` : "";
+    console.log(
+      `Batch ${readEventNumber(event, "batch")}: queued ${readEventNumber(event, "queued")}, already queued ${readEventNumber(event, "alreadyQueued")}, skipped ${readEventNumber(event, "skipped")}.${suffix}`,
+    );
+    return;
+  }
+
+  if (event.type === "status") {
+    console.log(
+      `Batch ${readEventNumber(event, "batch")} status: ${readEventNumber(event, "succeeded")} succeeded, ${readEventNumber(event, "failed")} failed, ${readEventNumber(event, "running")} running, ${readEventNumber(event, "queued")} queued.`,
+    );
+    return;
+  }
+
+  if (event.type === "summary") {
+    const label = event.dryRun ? "Bulk rescan dry run" : "Bulk rescan";
+    console.log(
+      `${label} finished: ${readEventNumber(event, "batches")} batch(es), ${readEventNumber(event, "queued")} queued, ${readEventNumber(event, "alreadyQueued")} already queued, ${readEventNumber(event, "skipped")} skipped, ${readEventNumber(event, "failed")} failed.`,
+    );
+    if (typeof event.cursor === "string" && event.cursor) {
+      console.log(`Resume cursor: ${event.cursor}`);
+    }
+  }
+}
+
+function emitVtRepairProgress(options: { json?: boolean }, event: Record<string, unknown>) {
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify(event)}\n`);
+    return;
+  }
+
+  if (event.type === "batch") {
+    const nextCursor = typeof event.nextCursor === "string" ? event.nextCursor : null;
+    const suffix = nextCursor ? ` Next cursor: ${nextCursor}.` : "";
+    console.log(
+      `VT repair batch ${readEventNumber(event, "batch")}: scanned ${readEventNumber(event, "total")}, ${event.dryRun ? "would update" : "updated"} ${readEventNumber(event, event.dryRun ? "wouldUpdate" : "updated")}, no results ${readEventNumber(event, "noResults")}, errors ${readEventNumber(event, "errors")}.${suffix}`,
+    );
+    return;
+  }
+
+  if (event.type === "summary") {
+    const label = event.dryRun ? "VT repair dry run" : "VT repair";
+    console.log(
+      `${label} finished: ${readEventNumber(event, "batches")} batch(es), scanned ${readEventNumber(event, "total")}, ${event.dryRun ? "would update" : "updated"} ${readEventNumber(event, event.dryRun ? "wouldUpdate" : "updated")}, no results ${readEventNumber(event, "noResults")}, errors ${readEventNumber(event, "errors")}.`,
+    );
+    if (typeof event.nextCursor === "string" && event.nextCursor) {
+      console.log(`Resume cursor: ${event.nextCursor}`);
+    }
+  }
+}
+
+function readEventNumber(event: Record<string, unknown>, key: string) {
+  const value = event[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function normalizePositiveInt(value: number | undefined, fallback: number) {
+  const normalized = Number.isFinite(value) ? Math.floor(value ?? fallback) : fallback;
+  return Math.max(1, normalized);
+}
+
+function normalizeNonNegativeInt(value: number | undefined, fallback: number) {
+  const normalized = Number.isFinite(value) ? Math.floor(value ?? fallback) : fallback;
+  return Math.max(0, normalized);
 }
 
 export async function cmdReclassifyBan(

@@ -8,6 +8,9 @@ import type { ActionCtx } from "./_generated/server";
 import { internalAction } from "./functions";
 
 const MAX_EXPORT_BATCH_PAGES = 20;
+const MAX_REDACTED_BUNDLE_FILE_BYTES = 192 * 1024;
+const MAX_REDACTED_BUNDLE_BYTES_PER_ARTIFACT = 256 * 1024;
+const MAX_REDACTED_BUNDLE_BYTES_PER_RESPONSE = 256 * 1024;
 
 type ArtifactExportPage = {
   page: unknown[];
@@ -75,30 +78,102 @@ export const listArtifactExportBatchCompressedInternal = internalAction({
 });
 
 async function enrichAndSanitizeArtifactRows(ctx: ActionCtx, rows: unknown[]) {
-  return await Promise.all(
-    rows.map(async (row) => {
-      if (!isRecord(row)) return row;
-      const files = Array.isArray(row.files) ? row.files : [];
-      const skillContent =
-        row.sourceKind === "skill" ? await readRedactedSkillMdContent(ctx, files) : null;
-      return {
-        ...row,
-        ...(skillContent ? { skillMdContentRedacted: skillContent } : {}),
-        files: files.map((file) => {
-          if (!isRecord(file)) return file;
-          const { storageId: _storageId, ...rest } = file;
-          return rest;
-        }),
-      };
-    }),
+  const enrichedRows = [];
+  let remainingBundleBytes = MAX_REDACTED_BUNDLE_BYTES_PER_RESPONSE;
+  for (const row of rows) {
+    if (!isRecord(row)) {
+      enrichedRows.push(row);
+      continue;
+    }
+    const files = Array.isArray(row.files) ? row.files : [];
+    const skillContent =
+      row.sourceKind === "skill" ? await readRedactedSkillMdContent(ctx, files) : null;
+    const bundleFiles =
+      row.sourceKind === "skill"
+        ? await readRedactedBundleFiles(ctx, files, remainingBundleBytes)
+        : [];
+    remainingBundleBytes -= totalBundleBytes(bundleFiles);
+    enrichedRows.push({
+      ...row,
+      ...(skillContent ? { skillMdContentRedacted: skillContent } : {}),
+      ...(bundleFiles.length > 0 ? { bundleFilesRedacted: bundleFiles } : {}),
+      files: files.map((file) => {
+        if (!isRecord(file)) return file;
+        const { storageId: _storageId, ...rest } = file;
+        return rest;
+      }),
+    });
+  }
+  return enrichedRows;
+}
+
+async function readRedactedBundleFiles(
+  ctx: Pick<ActionCtx, "storage">,
+  files: unknown[],
+  remainingResponseBytes: number,
+) {
+  const bundleFiles: Array<{ path: string; content: string }> = [];
+  let remainingArtifactBytes = Math.min(
+    remainingResponseBytes,
+    MAX_REDACTED_BUNDLE_BYTES_PER_ARTIFACT,
   );
+  for (const file of files) {
+    if (
+      !isRecord(file) ||
+      typeof file.path !== "string" ||
+      typeof file.storageId !== "string" ||
+      isExcludedSkillBundlePath(file.path)
+    ) {
+      continue;
+    }
+    if (typeof file.size === "number" && file.size > MAX_REDACTED_BUNDLE_FILE_BYTES) continue;
+    if (remainingArtifactBytes <= 0) break;
+    const blob = await ctx.storage.get(file.storageId as never);
+    if (!blob) continue;
+    const content = redactBundleContent(await blob.text());
+    const contentBytes = utf8Bytes(content);
+    if (contentBytes > MAX_REDACTED_BUNDLE_FILE_BYTES || contentBytes > remainingArtifactBytes) {
+      continue;
+    }
+    bundleFiles.push({ path: file.path, content });
+    remainingArtifactBytes -= contentBytes;
+  }
+  return bundleFiles;
+}
+
+function isExcludedSkillBundlePath(path: string) {
+  return (
+    isPrimarySkillReadmePath(path) || normalizeBundlePathForComparison(path) === "skill-card.md"
+  );
+}
+
+function isPrimarySkillReadmePath(path: string) {
+  const normalized = normalizeBundlePathForComparison(path);
+  return normalized === "skill.md" || normalized === "skills.md";
+}
+
+function normalizeBundlePathForComparison(path: string) {
+  return path
+    .trim()
+    .replace(/^\/+/, "")
+    .split("/")
+    .filter((segment) => segment && segment !== ".")
+    .join("/")
+    .toLowerCase();
+}
+
+function totalBundleBytes(files: Array<{ content: string }>) {
+  return files.reduce((sum, file) => sum + utf8Bytes(file.content), 0);
+}
+
+function utf8Bytes(value: string) {
+  return new TextEncoder().encode(value).byteLength;
 }
 
 async function readRedactedSkillMdContent(ctx: Pick<ActionCtx, "storage">, files: unknown[]) {
   const skillFile = files.find((file) => {
     if (!isRecord(file) || typeof file.path !== "string") return false;
-    const path = file.path.toLowerCase();
-    return path === "skill.md" || path.endsWith("/skill.md");
+    return isPrimarySkillReadmePath(file.path);
   });
   if (!isRecord(skillFile) || typeof skillFile.storageId !== "string") return null;
   const blob = await ctx.storage.get(skillFile.storageId as never);
@@ -116,6 +191,18 @@ function redactSkillContent(value: string) {
     redacted = redacted.replace(pattern, "[REDACTED_SECRET]");
   }
   return redacted.trim();
+}
+
+function redactBundleContent(value: string) {
+  let redacted = "";
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    redacted += code < 32 && code !== 9 && code !== 10 && code !== 13 ? " " : value.charAt(index);
+  }
+  for (const pattern of SECRET_PATTERNS) {
+    redacted = redacted.replace(pattern, "[REDACTED_SECRET]");
+  }
+  return redacted;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -2,7 +2,9 @@
 
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { MAX_PUBLISH_FILE_BYTES } from "./lib/publishLimits";
 import {
+  backfillLatestPackageScanStatusInternal,
   backfillPackageReleaseScansInternal,
   backfillPackageArtifactKindsInternal,
   getPackageReleaseScanBackfillBatchInternal,
@@ -13,6 +15,7 @@ import {
   publishPackageForUserInternal,
   listPackageReportsInternal,
   getPackageModerationStatusForUserInternal,
+  getManageContext,
   reportPackageForUserInternal,
   triagePackageReportForUserInternal,
   submitPackageAppealForUserInternal,
@@ -29,6 +32,10 @@ import {
   listPageForViewerInternal,
   listVersions,
   updateReleaseStaticScanInternal,
+  applyAccountDeletionToOwnedPackagesBatchInternal,
+  applyBanToOwnedPackagesBatchInternal,
+  revokePackagePublishTokensForPackageBatchInternal,
+  restoreOwnedPackagesForUnbanBatchInternal,
   softDeletePackageInternal,
   restorePackageInternal,
   transferPackageOwnerForUserInternal,
@@ -76,7 +83,7 @@ const listHandler = (
 const getVersionByNameHandler = (
   getVersionByName as unknown as WrappedHandler<
     { name: string; version: string },
-    { package: { name: string }; version: { version: string } } | null
+    { package: { name: string; scanStatus?: string }; version: { version: string } } | null
   >
 )._handler;
 const getVersionSecurityByNameForViewerInternalHandler = (
@@ -133,12 +140,21 @@ const insertReleaseInternalHandler = (
       actorUserId: string;
       ownerUserId: string;
       ownerPublisherId?: string;
+      publishActor?:
+        | { kind: "user"; userId: string }
+        | {
+            kind: "github-actions";
+            repository: string;
+            workflow: string;
+            runId: string;
+            runAttempt: string;
+            sha: string;
+          };
       name: string;
       displayName: string;
       family: "skill" | "code-plugin" | "bundle-plugin";
       version: string;
       changelog: string;
-      clawScanNote?: string;
       tags: string[];
       summary: string;
       files: Array<{
@@ -328,6 +344,12 @@ const getPackageModerationStatusForUserInternalHandler = (
     }
   >
 )._handler;
+const getManageContextHandler = (
+  getManageContext as unknown as WrappedHandler<
+    { name: string; candidateNames?: string[] },
+    { package: { name: string }; latestRelease: { version: string } } | null
+  >
+)._handler;
 const submitPackageAppealForUserInternalHandler = (
   submitPackageAppealForUserInternal as unknown as WrappedHandler<
     {
@@ -398,6 +420,19 @@ const getPackageReleaseScanBackfillBatchInternalHandler = (
       }>;
       nextCursor: number;
       done: boolean;
+    }
+  >
+)._handler;
+const backfillLatestPackageScanStatusInternalHandler = (
+  backfillLatestPackageScanStatusInternal as unknown as WrappedHandler<
+    {
+      cursor?: string | null;
+      batchSize?: number;
+    },
+    {
+      patched: number;
+      isDone: boolean;
+      scanned: number;
     }
   >
 )._handler;
@@ -523,6 +558,48 @@ const softDeletePackageInternalHandler = (
       releaseCount: number;
       alreadyDeleted: boolean;
     }
+  >
+)._handler;
+const applyBanToOwnedPackagesBatchInternalHandler = (
+  applyBanToOwnedPackagesBatchInternal as unknown as WrappedHandler<
+    {
+      ownerUserId: string;
+      bannedAt: number;
+      deletedBy: string;
+      deletedByRole: "admin" | "moderator" | "user";
+      cursor?: string;
+      scope?: "ownerUserId" | "personalPublisher";
+    },
+    { deletedCount: number; revokedTokenCount: number; scheduled: boolean }
+  >
+)._handler;
+const revokePackagePublishTokensForPackageBatchInternalHandler = (
+  revokePackagePublishTokensForPackageBatchInternal as unknown as WrappedHandler<
+    { packageId: string; revokedAt: number },
+    { ok: true; revokedCount: number; scheduled: boolean }
+  >
+)._handler;
+const restoreOwnedPackagesForUnbanBatchInternalHandler = (
+  restoreOwnedPackagesForUnbanBatchInternal as unknown as WrappedHandler<
+    {
+      actorUserId?: string;
+      ownerUserId: string;
+      bannedAt: number;
+      cursor?: string;
+      scope?: "ownerUserId" | "personalPublisher";
+    },
+    { restoredCount: number; scheduled: boolean; stale?: true }
+  >
+)._handler;
+const applyAccountDeletionToOwnedPackagesBatchInternalHandler = (
+  applyAccountDeletionToOwnedPackagesBatchInternal as unknown as WrappedHandler<
+    {
+      ownerUserId: string;
+      deletedAt: number;
+      cursor?: string;
+      scope?: "ownerUserId" | "personalPublisher";
+    },
+    { deletedCount: number; revokedTokenCount: number; scheduled: boolean }
   >
 )._handler;
 const restorePackageInternalHandler = (
@@ -663,6 +740,7 @@ function makeDigestCtx(options: {
   }>;
   exactPackages?: Array<Record<string, unknown>>;
   exactDigests?: Array<Record<string, unknown>>;
+  publisherDocs?: Record<string, Record<string, unknown>>;
   publisherMemberships?: Record<string, "owner" | "admin" | "publisher">;
 }) {
   const pageByTable = new Map<
@@ -769,6 +847,11 @@ function makeDigestCtx(options: {
     take,
     ctx: {
       db: {
+        get: vi.fn(async (id: string) => {
+          if (options.publisherDocs?.[id]) return options.publisherDocs[id];
+          if (options.publisherMemberships?.[id]) return { _id: id, kind: "org" };
+          return null;
+        }),
         query: vi.fn((table: string) => {
           if (table === "packages") {
             return {
@@ -935,6 +1018,7 @@ function makeInsertReleaseCtx(
   priorReleases: Array<Record<string, unknown>> = [],
   recordsById: Record<string, Record<string, unknown>> = {},
   runtimePackages: Array<Record<string, unknown>> = [],
+  finalPublisherMembershipRole?: "owner" | "admin" | "publisher" | null,
 ) {
   const patch = vi.fn();
   let insertedPackage: Record<string, unknown> | null = null;
@@ -1029,6 +1113,39 @@ function makeInsertReleaseCtx(
                 }
                 return {
                   unique: vi.fn().mockResolvedValue(null),
+                };
+              },
+            ),
+          };
+        }
+        if (table === "publisherMembers") {
+          return {
+            withIndex: vi.fn(
+              (
+                _indexName: string,
+                buildQuery?: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+              ) => {
+                const filters = new Map<string, unknown>();
+                const query = {
+                  eq(field: string, value: unknown) {
+                    filters.set(field, value);
+                    return query;
+                  },
+                };
+                buildQuery?.(query);
+                const membership =
+                  finalPublisherMembershipRole &&
+                  filters.get("publisherId") === "publishers:org" &&
+                  filters.get("userId") === "users:member"
+                    ? {
+                        _id: "publisherMembers:org-member",
+                        publisherId: "publishers:org",
+                        userId: "users:member",
+                        role: finalPublisherMembershipRole,
+                      }
+                    : null;
+                return {
+                  unique: vi.fn().mockResolvedValue(membership),
                 };
               },
             ),
@@ -1173,6 +1290,7 @@ function makeTransferPackageOwnerCtx(options?: {
 function makeUserTransferPackageOwnerCtx(options?: {
   pkg?: Record<string, unknown> | null;
   actor?: Record<string, unknown> | null;
+  sourcePublisher?: Record<string, unknown> | null;
   destinationPublisher?: Record<string, unknown> | null;
   sourceMembershipRole?: "owner" | "admin" | "publisher" | null;
   destinationMembershipRole?: "owner" | "admin" | "publisher" | null;
@@ -1211,6 +1329,7 @@ function makeUserTransferPackageOwnerCtx(options?: {
         get: vi.fn(async (id: string) => {
           if (id === "users:vincent") return actor;
           if (id === "publishers:vincent") {
+            if (options?.sourcePublisher !== undefined) return options.sourcePublisher;
             return {
               _id: id,
               kind: "user",
@@ -1611,6 +1730,148 @@ describe("packages public queries", () => {
     });
 
     expect(result.page.map((entry) => entry.name)).toEqual(["secret-plugin", "public-plugin"]);
+  });
+
+  it("does not let stale personal ownerUserId expose private package digests", async () => {
+    const { ctx } = makeDigestCtx({
+      pages: [
+        {
+          page: [
+            makeDigest("stale-personal-secret", {
+              channel: "private",
+              ownerKind: "user",
+              ownerUserId: "users:viewer",
+              ownerPublisherId: "publishers:other-personal",
+            }),
+            makeDigest("public-plugin"),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await listPageForViewerInternalHandler(ctx, {
+      paginationOpts: { cursor: null, numItems: 10 },
+      viewerUserId: "users:viewer",
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual(["public-plugin"]);
+  });
+
+  it("lets legacy no-link personal package owners list private package digests", async () => {
+    const { ctx } = makeDigestCtx({
+      publisherDocs: {
+        "publishers:legacy-personal": {
+          _id: "publishers:legacy-personal",
+          kind: "user",
+          handle: "viewer",
+          linkedUserId: undefined,
+        },
+      },
+      pages: [
+        {
+          page: [
+            makeDigest("legacy-personal-secret", {
+              channel: "private",
+              ownerKind: "user",
+              ownerUserId: "users:viewer",
+              ownerPublisherId: "publishers:legacy-personal",
+            }),
+            makeDigest("public-plugin"),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await listPageForViewerInternalHandler(ctx, {
+      paginationOpts: { cursor: null, numItems: 10 },
+      viewerUserId: "users:viewer",
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual([
+      "legacy-personal-secret",
+      "public-plugin",
+    ]);
+  });
+
+  it("does not let inactive no-link personal publishers expose private package digests", async () => {
+    const { ctx } = makeDigestCtx({
+      publisherDocs: {
+        "publishers:legacy-personal": {
+          _id: "publishers:legacy-personal",
+          kind: "user",
+          handle: "viewer",
+          linkedUserId: undefined,
+          deactivatedAt: 123,
+        },
+      },
+      pages: [
+        {
+          page: [
+            makeDigest("legacy-personal-secret", {
+              channel: "private",
+              ownerKind: "user",
+              ownerUserId: "users:viewer",
+              ownerPublisherId: "publishers:legacy-personal",
+            }),
+            makeDigest("public-plugin"),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await listPageForViewerInternalHandler(ctx, {
+      paginationOpts: { cursor: null, numItems: 10 },
+      viewerUserId: "users:viewer",
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual(["public-plugin"]);
+  });
+
+  it("does not reuse legacy no-link personal access across package owners", async () => {
+    const { ctx } = makeDigestCtx({
+      publisherDocs: {
+        "publishers:legacy-personal": {
+          _id: "publishers:legacy-personal",
+          kind: "user",
+          handle: "viewer",
+          linkedUserId: undefined,
+        },
+      },
+      pages: [
+        {
+          page: [
+            makeDigest("own-legacy-secret", {
+              channel: "private",
+              ownerKind: "user",
+              ownerUserId: "users:viewer",
+              ownerPublisherId: "publishers:legacy-personal",
+            }),
+            makeDigest("stale-legacy-secret", {
+              channel: "private",
+              ownerKind: "user",
+              ownerUserId: "users:other",
+              ownerPublisherId: "publishers:legacy-personal",
+            }),
+            makeDigest("public-plugin"),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await listPageForViewerInternalHandler(ctx, {
+      paginationOpts: { cursor: null, numItems: 10 },
+      viewerUserId: "users:viewer",
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual(["own-legacy-secret", "public-plugin"]);
   });
 
   it("allows owners to filter to only their private packages", async () => {
@@ -2491,6 +2752,80 @@ describe("packages public queries", () => {
     });
   });
 
+  it("normalizes legacy static-only package blocks through latest ClawScan state", async () => {
+    const verification = {
+      tier: "source-linked",
+      scope: "artifact-only",
+      scanStatus: "malicious",
+    };
+    const latestRelease = makeReleaseDoc({
+      sha256hash: "a".repeat(64),
+      verification,
+      staticScan: {
+        status: "malicious",
+        reasonCodes: ["malicious.static_fixture"],
+        findings: [],
+        summary: "Static fixture only.",
+        engineVersion: "test",
+        checkedAt: 1,
+      },
+      llmAnalysis: {
+        status: "clean",
+        verdict: "clean",
+        checkedAt: 2,
+      },
+    });
+    const { ctx } = makePackageCtx({
+      pkg: makePackageDoc({
+        channel: "community",
+        scanStatus: "malicious",
+        verification,
+        latestVersionSummary: {
+          version: "1.0.0",
+          verification,
+        },
+      }),
+      latestRelease,
+    });
+
+    await expect(
+      getByNameHandler(ctx, {
+        name: "demo-plugin",
+      }),
+    ).resolves.toMatchObject({
+      package: {
+        name: "demo-plugin",
+        scanStatus: "clean",
+        verification: { scanStatus: "clean" },
+      },
+    });
+    await expect(
+      getVersionByNameHandler(ctx, {
+        name: "demo-plugin",
+        version: "1.0.0",
+      }),
+    ).resolves.toMatchObject({
+      package: {
+        name: "demo-plugin",
+        scanStatus: "clean",
+      },
+      version: { version: "1.0.0" },
+    });
+    await expect(
+      getVersionSecurityByNameForViewerInternalHandler(ctx, {
+        name: "demo-plugin",
+        version: "1.0.0",
+      }),
+    ).resolves.toMatchObject({
+      package: {
+        name: "demo-plugin",
+        scanStatus: "clean",
+        publicDownloadBlocked: false,
+      },
+      version: { version: "1.0.0" },
+    });
+  });
+
   it("does not mark owner-readable blocked public packages as public download blocked", async () => {
     const { ctx } = makePackageCtx({
       pkg: makePackageDoc({
@@ -3065,7 +3400,7 @@ describe("packages public queries", () => {
     ).rejects.toThrow("Package already exists and belongs to another publisher");
   });
 
-  it("lets admins transfer a package to a trusted publisher and make it official", async () => {
+  it("lets admins transfer a package to the OpenClaw publisher and make it official", async () => {
     const { ctx, patch, insert } = makeTransferPackageOwnerCtx();
 
     await expect(
@@ -3200,6 +3535,105 @@ describe("packages public queries", () => {
     ).rejects.toThrow("Forbidden");
   });
 
+  it("rejects user package transfers through stale personal-publisher memberships", async () => {
+    const { ctx } = makeUserTransferPackageOwnerCtx({
+      pkg: makePackageDoc({
+        name: "@owner/demo",
+        normalizedName: "@owner/demo",
+        ownerUserId: "users:owner",
+        ownerPublisherId: "publishers:vincent",
+      }),
+      sourcePublisher: {
+        _id: "publishers:vincent",
+        kind: "user",
+        handle: "owner",
+        linkedUserId: "users:owner",
+      },
+      sourceMembershipRole: "admin",
+      destinationMembershipRole: "owner",
+    });
+
+    await expect(
+      transferPackageOwnerForUserInternalHandler(ctx, {
+        actorUserId: "users:vincent",
+        name: "demo-plugin",
+        toOwner: "opik",
+      }),
+    ).rejects.toThrow("Forbidden");
+  });
+
+  it("lets owners transfer packages from legacy personal publishers without linked users", async () => {
+    const { ctx } = makeUserTransferPackageOwnerCtx({
+      sourcePublisher: {
+        _id: "publishers:vincent",
+        kind: "user",
+        handle: "vincentkoc",
+        linkedUserId: undefined,
+      },
+      sourceMembershipRole: null,
+      destinationMembershipRole: "owner",
+    });
+
+    await expect(
+      transferPackageOwnerForUserInternalHandler(ctx, {
+        actorUserId: "users:vincent",
+        name: "@opik/opik-openclaw",
+        toOwner: "opik",
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      ownerUserId: "users:vincent",
+      ownerPublisherId: "publishers:opik",
+    });
+  });
+
+  it("rejects package transfers through stale no-link personal memberships", async () => {
+    const { ctx } = makeUserTransferPackageOwnerCtx({
+      pkg: makePackageDoc({
+        name: "@owner/demo",
+        normalizedName: "@owner/demo",
+        ownerUserId: "users:owner",
+        ownerPublisherId: "publishers:vincent",
+      }),
+      sourcePublisher: {
+        _id: "publishers:vincent",
+        kind: "user",
+        handle: "owner",
+        linkedUserId: undefined,
+      },
+      sourceMembershipRole: "admin",
+      destinationMembershipRole: "owner",
+    });
+
+    await expect(
+      transferPackageOwnerForUserInternalHandler(ctx, {
+        actorUserId: "users:vincent",
+        name: "demo-plugin",
+        toOwner: "opik",
+      }),
+    ).rejects.toThrow("Forbidden");
+  });
+
+  it("rejects package transfer destinations through stale no-link personal memberships", async () => {
+    const { ctx } = makeUserTransferPackageOwnerCtx({
+      destinationPublisher: {
+        _id: "publishers:opik",
+        kind: "user",
+        handle: "opik",
+        linkedUserId: undefined,
+      },
+      destinationMembershipRole: "admin",
+    });
+
+    await expect(
+      transferPackageOwnerForUserInternalHandler(ctx, {
+        actorUserId: "users:vincent",
+        name: "@opik/opik-openclaw",
+        toOwner: "opik",
+      }),
+    ).rejects.toThrow('admin access for "@opik"');
+  });
+
   it("rejects user package transfers without destination admin access", async () => {
     const { ctx } = makeUserTransferPackageOwnerCtx({ destinationMembershipRole: "publisher" });
 
@@ -3292,14 +3726,13 @@ describe("packages public queries", () => {
     );
   });
 
-  it("rejects official package transfers to untrusted publishers", async () => {
+  it("rejects official package transfers to non-OpenClaw publishers", async () => {
     const { ctx } = makeTransferPackageOwnerCtx({
       ownerPublisher: {
         _id: "publishers:openclaw",
         kind: "org",
-        handle: "openclaw",
-        displayName: "OpenClaw",
-        trustedPublisher: false,
+        handle: "other",
+        displayName: "Other",
       },
     });
 
@@ -3311,7 +3744,7 @@ describe("packages public queries", () => {
         ownerPublisherId: "publishers:openclaw",
         channel: "official",
       }),
-    ).rejects.toThrow("Only trusted publishers may own official packages");
+    ).rejects.toThrow("Only official publishers may own official packages");
   });
 
   it("lets owners publish real releases into reserved package placeholders", async () => {
@@ -3417,6 +3850,294 @@ describe("packages public queries", () => {
         integritySha256: "abc123",
       }),
     ).rejects.toThrow("Restore it before publishing another release");
+  });
+
+  it("rejects final package publish inserts when the actor was banned mid-publish", async () => {
+    const ctx = makeInsertReleaseCtx(makePackageDoc(), [], {
+      "users:owner": {
+        _id: "users:owner",
+        role: "user",
+        trustedPublisher: false,
+        deletedAt: 123,
+      },
+    });
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:owner",
+        ownerUserId: "users:owner",
+        name: "demo-plugin",
+        displayName: "Demo Plugin",
+        family: "code-plugin",
+        version: "1.0.1",
+        changelog: "try banned owner",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+      }),
+    ).rejects.toThrow("Unauthorized");
+    expect(ctx.insert).not.toHaveBeenCalledWith("packageReleases", expect.anything());
+  });
+
+  it("rejects final package publish inserts when the requested owner was banned mid-publish", async () => {
+    const ctx = makeInsertReleaseCtx(makePackageDoc(), [], {
+      "users:admin": { _id: "users:admin", role: "admin", trustedPublisher: false },
+      "users:owner": {
+        _id: "users:owner",
+        role: "user",
+        trustedPublisher: false,
+        deletedAt: 123,
+      },
+    });
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:admin",
+        ownerUserId: "users:owner",
+        name: "demo-plugin",
+        displayName: "Demo Plugin",
+        family: "code-plugin",
+        version: "1.0.1",
+        changelog: "try banned owner",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+      }),
+    ).rejects.toThrow("Package owner is unavailable");
+    expect(ctx.insert).not.toHaveBeenCalledWith("packageReleases", expect.anything());
+  });
+
+  it("rejects final package publish inserts when the owner publisher was deleted mid-publish", async () => {
+    const ctx = makeInsertReleaseCtx(makePackageDoc(), [], {
+      "users:owner": { _id: "users:owner", role: "user", trustedPublisher: false },
+      "publishers:org": {
+        _id: "publishers:org",
+        kind: "org",
+        handle: "org",
+        deletedAt: 123,
+      },
+    });
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:owner",
+        ownerUserId: "users:owner",
+        ownerPublisherId: "publishers:org",
+        name: "demo-plugin",
+        displayName: "Demo Plugin",
+        family: "code-plugin",
+        version: "1.0.1",
+        changelog: "try deleted publisher",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+      }),
+    ).rejects.toThrow("Package owner publisher is unavailable");
+    expect(ctx.insert).not.toHaveBeenCalledWith("packageReleases", expect.anything());
+  });
+
+  it("rejects final package publish inserts when a personal publisher owner was banned mid-publish", async () => {
+    const ctx = makeInsertReleaseCtx(
+      makePackageDoc({
+        ownerUserId: "users:publishing-actor",
+        ownerPublisherId: "publishers:personal",
+      }),
+      [],
+      {
+        "users:publishing-actor": {
+          _id: "users:publishing-actor",
+          role: "user",
+          trustedPublisher: false,
+        },
+        "users:owner": {
+          _id: "users:owner",
+          role: "user",
+          trustedPublisher: false,
+          deletedAt: 1_000,
+        },
+        "publishers:personal": {
+          _id: "publishers:personal",
+          kind: "user",
+          handle: "owner",
+          linkedUserId: "users:owner",
+        },
+      },
+    );
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:publishing-actor",
+        ownerUserId: "users:publishing-actor",
+        ownerPublisherId: "publishers:personal",
+        name: "demo-plugin",
+        displayName: "Demo Plugin",
+        family: "code-plugin",
+        version: "1.0.1",
+        changelog: "try banned publisher owner",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+      }),
+    ).rejects.toThrow("Package owner publisher is unavailable");
+    expect(ctx.insert).not.toHaveBeenCalledWith("packageReleases", expect.anything());
+  });
+
+  it("rejects final user org package publish inserts when membership was removed mid-publish", async () => {
+    const ctx = makeInsertReleaseCtx(null, [], {
+      "users:member": { _id: "users:member", role: "user", trustedPublisher: false },
+      "publishers:org": {
+        _id: "publishers:org",
+        kind: "org",
+        handle: "org",
+        trustedPublisher: false,
+      },
+    });
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:member",
+        ownerUserId: "users:member",
+        ownerPublisherId: "publishers:org",
+        publishActor: { kind: "user", userId: "users:member" },
+        name: "@org/demo-plugin",
+        displayName: "Demo Plugin",
+        family: "bundle-plugin",
+        version: "1.0.0",
+        changelog: "init",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+      }),
+    ).rejects.toThrow('publish access for "@org"');
+    expect(ctx.insert).not.toHaveBeenCalledWith("packages", expect.anything());
+    expect(ctx.insert).not.toHaveBeenCalledWith("packageReleases", expect.anything());
+  });
+
+  it("rejects final user org package publish inserts when publish actor drifts from actor user", async () => {
+    const ctx = makeInsertReleaseCtx(
+      null,
+      [],
+      {
+        "users:member": { _id: "users:member", role: "user", trustedPublisher: false },
+        "publishers:org": {
+          _id: "publishers:org",
+          kind: "org",
+          handle: "org",
+          trustedPublisher: false,
+        },
+      },
+      [],
+      "publisher",
+    );
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:member",
+        ownerUserId: "users:member",
+        ownerPublisherId: "publishers:org",
+        publishActor: { kind: "user", userId: "users:other" },
+        name: "@org/demo-plugin",
+        displayName: "Demo Plugin",
+        family: "bundle-plugin",
+        version: "1.0.0",
+        changelog: "init",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+      }),
+    ).rejects.toThrow("Publish actor must match the authenticated actor");
+    expect(ctx.insert).not.toHaveBeenCalledWith("packages", expect.anything());
+    expect(ctx.insert).not.toHaveBeenCalledWith("packageReleases", expect.anything());
+  });
+
+  it("keeps final user org package publishes working when membership remains valid", async () => {
+    const ctx = makeInsertReleaseCtx(
+      null,
+      [],
+      {
+        "users:member": { _id: "users:member", role: "user", trustedPublisher: false },
+        "publishers:org": {
+          _id: "publishers:org",
+          kind: "org",
+          handle: "org",
+          trustedPublisher: false,
+        },
+      },
+      [],
+      "publisher",
+    );
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:member",
+        ownerUserId: "users:member",
+        ownerPublisherId: "publishers:org",
+        publishActor: { kind: "user", userId: "users:member" },
+        name: "@org/demo-plugin",
+        displayName: "Demo Plugin",
+        family: "bundle-plugin",
+        version: "1.0.0",
+        changelog: "init",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+      }),
+    ).resolves.toMatchObject({ ok: true, packageId: "packages:new" });
+    expect(ctx.insert).toHaveBeenCalledWith("packageReleases", expect.anything());
+  });
+
+  it("preserves trusted GitHub Actions package publishes without org membership", async () => {
+    const ctx = makeInsertReleaseCtx(
+      makePackageDoc({
+        name: "@org/demo-plugin",
+        normalizedName: "@org/demo-plugin",
+        ownerUserId: "users:member",
+        ownerPublisherId: "publishers:org",
+      }),
+      [],
+      {
+        "users:member": { _id: "users:member", role: "user", trustedPublisher: false },
+        "publishers:org": {
+          _id: "publishers:org",
+          kind: "org",
+          handle: "org",
+          trustedPublisher: false,
+        },
+      },
+    );
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:member",
+        ownerUserId: "users:member",
+        ownerPublisherId: "publishers:org",
+        publishActor: {
+          kind: "github-actions",
+          repository: "org/demo-plugin",
+          workflow: "publish.yml",
+          runId: "1",
+          runAttempt: "1",
+          sha: "abc123",
+        },
+        name: "@org/demo-plugin",
+        displayName: "Demo Plugin",
+        family: "code-plugin",
+        version: "1.0.1",
+        changelog: "trusted publish",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+      }),
+    ).resolves.toMatchObject({ ok: true, packageId: "packages:demo" });
+    expect(ctx.insert).toHaveBeenCalledWith("packageReleases", expect.anything());
   });
 
   it("rejects package scopes that do not match the selected owner handle", async () => {
@@ -3565,22 +4286,32 @@ describe("packages public queries", () => {
     ).resolves.toMatchObject({ ok: true, packageId: "packages:new" });
   });
 
-  it("promotes existing packages to official when publisher becomes trusted", async () => {
+  it("promotes existing packages to official when owner is the OpenClaw publisher", async () => {
     const ctx = makeInsertReleaseCtx(
       makePackageDoc({
+        ownerUserId: "users:openclaw",
+        ownerPublisherId: "publishers:openclaw",
         channel: "community",
         isOfficial: false,
         stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
       }),
+      [],
+      {
+        "users:owner": { _id: "users:owner", role: "admin" },
+        "users:openclaw": { _id: "users:openclaw", role: "user" },
+        "publishers:openclaw": {
+          _id: "publishers:openclaw",
+          kind: "org",
+          handle: "openclaw",
+          displayName: "OpenClaw",
+        },
+      },
     );
-    ctx.db.get.mockImplementation(async (id: string) => {
-      if (id === "users:owner") return { _id: id, trustedPublisher: true };
-      return null;
-    });
 
     await insertReleaseInternalHandler(ctx, {
       actorUserId: "users:owner",
-      ownerUserId: "users:owner",
+      ownerUserId: "users:openclaw",
+      ownerPublisherId: "publishers:openclaw",
       name: "demo-plugin",
       displayName: "Demo Plugin",
       family: "code-plugin",
@@ -3606,6 +4337,7 @@ describe("packages public queries", () => {
     const ctx = makeInsertReleaseCtx(
       makePackageDoc({
         ownerUserId: "users:openclaw",
+        ownerPublisherId: "publishers:openclaw",
         channel: "official",
         isOfficial: true,
         stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
@@ -3620,7 +4352,12 @@ describe("packages public queries", () => {
         "users:openclaw": {
           _id: "users:openclaw",
           role: "user",
-          trustedPublisher: true,
+        },
+        "publishers:openclaw": {
+          _id: "publishers:openclaw",
+          kind: "org",
+          handle: "openclaw",
+          displayName: "OpenClaw",
         },
       },
     );
@@ -3628,6 +4365,7 @@ describe("packages public queries", () => {
     await insertReleaseInternalHandler(ctx, {
       actorUserId: "users:admin",
       ownerUserId: "users:openclaw",
+      ownerPublisherId: "publishers:openclaw",
       name: "demo-plugin",
       displayName: "Demo Plugin",
       family: "code-plugin",
@@ -4051,7 +4789,6 @@ describe("packages public queries", () => {
       family: "code-plugin",
       version: "1.0.0",
       changelog: "beta",
-      clawScanNote: "This release bundles a native helper but does not fetch remote code.",
       tags: ["beta"],
       summary: "demo",
       files: [],
@@ -4075,7 +4812,6 @@ describe("packages public queries", () => {
       "packageReleases",
       expect.objectContaining({
         distTags: ["beta"],
-        clawScanNote: "This release bundles a native helper but does not fetch remote code.",
         verification: expect.objectContaining({ scanStatus: "suspicious" }),
         staticScan: expect.objectContaining({ status: "suspicious" }),
       }),
@@ -4087,29 +4823,6 @@ describe("packages public queries", () => {
         tags: { beta: "packageReleases:new" },
       }),
     );
-  });
-
-  it("rejects package release clawScanNote values beyond the write-path limit", async () => {
-    const ctx = makeInsertReleaseCtx(makePackageDoc());
-
-    await expect(
-      insertReleaseInternalHandler(ctx, {
-        actorUserId: "users:owner",
-        ownerUserId: "users:owner",
-        name: "demo-plugin",
-        displayName: "Demo Plugin",
-        family: "code-plugin",
-        version: "1.0.0",
-        changelog: "release",
-        clawScanNote: "x".repeat(4001),
-        tags: ["latest"],
-        summary: "demo",
-        files: [],
-        integritySha256: "abc123",
-      }),
-    ).rejects.toThrow("ClawScan note must be at most 4000 characters.");
-
-    expect(ctx.insert).not.toHaveBeenCalledWith("packageReleases", expect.anything());
   });
 
   it("validates package publish payloads inside the action path", async () => {
@@ -4141,6 +4854,175 @@ describe("packages public queries", () => {
         },
       }),
     ).rejects.toThrow("Skill packages must use the skills publish flow");
+  });
+
+  it("keeps raw package publishes behind the per-file size limit", async () => {
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          _id: "users:owner",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        })
+        .mockResolvedValueOnce({
+          _id: "users:owner",
+          role: "user",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        })
+        .mockResolvedValueOnce(null),
+      runMutation: vi.fn(),
+    };
+
+    await expect(
+      publishPackageForUserInternalHandler(ctx as never, {
+        actorUserId: "users:owner",
+        payload: {
+          name: "demo-plugin",
+          family: "bundle-plugin",
+          version: "1.0.0",
+          changelog: "init",
+          bundle: { hostTargets: ["desktop"] },
+          files: [
+            {
+              path: "assets/viewer-runtime.js",
+              size: MAX_PUBLISH_FILE_BYTES + 1,
+              storageId: "storage:large",
+              sha256: "large",
+            },
+          ],
+        },
+      }),
+    ).rejects.toThrow('File "assets/viewer-runtime.js" exceeds 10MB limit');
+  });
+
+  it("allows large files inside ClawPack npm package artifacts", async () => {
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if (args.name === "demo-plugin" && args.version === "1.0.0") {
+        return { ok: true, packageId: "packages:demo", releaseId: "releases:demo-1" };
+      }
+      return null;
+    });
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          _id: "users:owner",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        })
+        .mockResolvedValueOnce({
+          _id: "users:owner",
+          role: "user",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        })
+        .mockResolvedValueOnce(null),
+      runMutation,
+      scheduler: {
+        runAfter: vi.fn(),
+      },
+      storage: {
+        get: vi.fn(async (storageId: string) => {
+          const files = new Map<string, string>([
+            [
+              "storage:package",
+              JSON.stringify({
+                name: "demo-plugin",
+                version: "1.0.0",
+                openclaw: {
+                  extensions: ["./dist/index.js"],
+                  compat: { pluginApi: "^1.0.0" },
+                  build: { openclawVersion: "2026.5.28" },
+                  configSchema: { type: "object", additionalProperties: false },
+                },
+              }),
+            ],
+            ["storage:manifest", JSON.stringify({ id: "demo-plugin" })],
+            ["storage:runtime", "export {};"],
+            ["storage:large", "/* bundled viewer runtime */"],
+          ]);
+          const content = files.get(storageId);
+          return content ? new Blob([content]) : null;
+        }),
+      },
+    };
+
+    await expect(
+      publishPackageForUserInternalHandler(ctx as never, {
+        actorUserId: "users:owner",
+        payload: {
+          name: "demo-plugin",
+          displayName: "Demo Plugin",
+          family: "code-plugin",
+          version: "1.0.0",
+          changelog: "init",
+          source: {
+            kind: "github",
+            url: "https://github.com/openclaw/demo-plugin",
+            repo: "openclaw/demo-plugin",
+            ref: "refs/tags/v1.0.0",
+            commit: "abc123",
+            path: ".",
+            importedAt: Date.now(),
+          },
+          files: [
+            {
+              path: "package.json",
+              size: 1,
+              storageId: "storage:package",
+              sha256: "package",
+              contentType: "application/json",
+            },
+            {
+              path: "openclaw.plugin.json",
+              size: 1,
+              storageId: "storage:manifest",
+              sha256: "manifest",
+              contentType: "application/json",
+            },
+            {
+              path: "dist/index.js",
+              size: 1,
+              storageId: "storage:runtime",
+              sha256: "runtime",
+              contentType: "application/javascript",
+            },
+            {
+              path: "assets/viewer-runtime.js",
+              size: MAX_PUBLISH_FILE_BYTES + 1,
+              storageId: "storage:large",
+              sha256: "large",
+              contentType: "application/javascript",
+            },
+          ],
+          artifact: {
+            kind: "npm-pack",
+            storageId: "storage:clawpack",
+            sha256: "clawpack",
+            size: MAX_PUBLISH_FILE_BYTES + 1,
+            format: "tgz",
+            npmIntegrity: "sha512-test",
+            npmShasum: "shasum",
+            npmTarballName: "demo-plugin-1.0.0.tgz",
+            npmUnpackedSize: MAX_PUBLISH_FILE_BYTES + 1,
+            npmFileCount: 4,
+          },
+        },
+      }),
+    ).resolves.toEqual({ ok: true, packageId: "packages:demo", releaseId: "releases:demo-1" });
+
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        artifactKind: "npm-pack",
+        files: expect.arrayContaining([
+          expect.objectContaining({
+            path: "assets/viewer-runtime.js",
+            size: MAX_PUBLISH_FILE_BYTES + 1,
+          }),
+        ]),
+      }),
+    );
   });
 
   it("rejects trusted publish tokens after trusted publisher rotation or deletion", async () => {
@@ -5117,12 +5999,176 @@ describe("packages public queries", () => {
     ]);
   });
 
+  it("lists packages for the viewer's legacy no-link personal publisher dashboard", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
+    const result = await listHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "packageReleases:demo-1") return makeReleaseDoc({ version: "1.0.0" });
+            if (id === "packageReleases:legacy-1") {
+              return makeReleaseDoc({
+                _id: "packageReleases:legacy-1",
+                packageId: "packages:legacy-direct",
+                version: "1.0.0",
+              });
+            }
+            if (id === "users:owner") {
+              return {
+                _id: "users:owner",
+                handle: "owner",
+                personalPublisherId: "publishers:owner",
+              };
+            }
+            if (id === "publishers:owner") {
+              return {
+                _id: "publishers:owner",
+                kind: "user",
+                linkedUserId: undefined,
+              };
+            }
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table === "packages") {
+              return {
+                withIndex: vi.fn((indexName: string) => {
+                  if (indexName === "by_owner_publisher") {
+                    return {
+                      order: vi.fn(() => ({
+                        take: vi
+                          .fn()
+                          .mockResolvedValue([
+                            makePackageDoc({ ownerPublisherId: "publishers:owner" }),
+                          ]),
+                      })),
+                    };
+                  }
+                  if (indexName === "by_owner") {
+                    return {
+                      order: vi.fn(() => ({
+                        take: vi.fn().mockResolvedValue([
+                          makePackageDoc({
+                            _id: "packages:legacy-direct",
+                            name: "legacy-direct-plugin",
+                            normalizedName: "legacy-direct-plugin",
+                            displayName: "Legacy Direct Plugin",
+                            ownerPublisherId: undefined,
+                            latestReleaseId: "packageReleases:legacy-1",
+                          }),
+                        ]),
+                      })),
+                    };
+                  }
+                  throw new Error(`Unexpected index ${indexName}`);
+                }),
+              };
+            }
+            if (table === "publisherMembers") {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue(null),
+                })),
+              };
+            }
+            throw new Error(`Unexpected table ${table}`);
+          }),
+        },
+      } as never,
+      { ownerPublisherId: "publishers:owner", limit: 20 },
+    );
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        name: "demo-plugin",
+        ownerPublisherId: "publishers:owner",
+      }),
+      expect.objectContaining({
+        name: "legacy-direct-plugin",
+        ownerPublisherId: undefined,
+      }),
+    ]);
+  });
+
+  it("keeps stale publisher-owned package rows out of owner-user dashboards", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
+    const result = await listHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "users:owner") {
+              return { _id: "users:owner", handle: "owner" };
+            }
+            if (id === "publishers:other-personal") {
+              return {
+                _id: "publishers:other-personal",
+                kind: "user",
+                linkedUserId: "users:other",
+              };
+            }
+            if (id === "publishers:org") {
+              return { _id: "publishers:org", kind: "org" };
+            }
+            if (id === "packageReleases:legacy-1") {
+              return makeReleaseDoc({
+                _id: "packageReleases:legacy-1",
+                packageId: "packages:legacy-direct",
+                version: "1.0.0",
+              });
+            }
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table === "packages") {
+              return {
+                withIndex: vi.fn((indexName: string) => {
+                  if (indexName !== "by_owner") throw new Error(`Unexpected index ${indexName}`);
+                  return {
+                    order: vi.fn(() => ({
+                      take: vi.fn().mockResolvedValue([
+                        makePackageDoc({
+                          _id: "packages:other-personal",
+                          name: "other-personal-plugin",
+                          ownerPublisherId: "publishers:other-personal",
+                        }),
+                        makePackageDoc({
+                          _id: "packages:org",
+                          name: "org-plugin",
+                          ownerPublisherId: "publishers:org",
+                        }),
+                        makePackageDoc({
+                          _id: "packages:legacy-direct",
+                          name: "legacy-direct-plugin",
+                          normalizedName: "legacy-direct-plugin",
+                          displayName: "Legacy Direct Plugin",
+                          ownerPublisherId: undefined,
+                          latestReleaseId: "packageReleases:legacy-1",
+                        }),
+                      ]),
+                    })),
+                  };
+                }),
+              };
+            }
+            throw new Error(`Unexpected table ${table}`);
+          }),
+        },
+      } as never,
+      { ownerUserId: "users:owner", limit: 20 },
+    );
+
+    expect(result.map((entry) => entry.name)).toEqual(["legacy-direct-plugin"]);
+  });
+
   it("returns no owner packages when the viewer lacks access", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:stranger" as never);
     const result = await listHandler(
       {
         db: {
           get: vi.fn(async (id: string) => {
+            if (id === "users:stranger") {
+              return { _id: "users:stranger", handle: "stranger", displayName: "Stranger" };
+            }
             if (id === "publishers:owner") {
               return {
                 _id: "publishers:owner",
@@ -5148,6 +6194,110 @@ describe("packages public queries", () => {
     );
 
     expect(result).toEqual([]);
+  });
+
+  it("ignores stale personal memberships for package dashboards", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:stranger" as never);
+    const result = await listHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "publishers:owner") {
+              return {
+                _id: "publishers:owner",
+                kind: "user",
+                linkedUserId: "users:owner",
+              };
+            }
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table === "packages") {
+              return {
+                withIndex: vi.fn(() => ({
+                  order: vi.fn(() => ({
+                    take: vi
+                      .fn()
+                      .mockResolvedValue([
+                        makePackageDoc({ ownerPublisherId: "publishers:owner" }),
+                      ]),
+                  })),
+                })),
+              };
+            }
+            if (table === "publisherMembers") {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue({
+                    _id: "publisherMembers:stale",
+                    publisherId: "publishers:owner",
+                    userId: "users:stranger",
+                    role: "owner",
+                  }),
+                })),
+              };
+            }
+            throw new Error(`Unexpected table ${table}`);
+          }),
+        },
+      } as never,
+      { ownerPublisherId: "publishers:owner", limit: 20 },
+    );
+
+    expect(result).toEqual([]);
+  });
+
+  it("keeps org memberships authorized for package dashboards", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:member" as never);
+    const result = await listHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "users:member") {
+              return { _id: "users:member", handle: "member", displayName: "Member" };
+            }
+            if (id === "publishers:org") {
+              return {
+                _id: "publishers:org",
+                kind: "org",
+                handle: "team",
+                displayName: "Team",
+              };
+            }
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table === "packages") {
+              return {
+                withIndex: vi.fn(() => ({
+                  order: vi.fn(() => ({
+                    take: vi
+                      .fn()
+                      .mockResolvedValue([makePackageDoc({ ownerPublisherId: "publishers:org" })]),
+                  })),
+                })),
+              };
+            }
+            if (table === "publisherMembers") {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue({
+                    _id: "publisherMembers:member",
+                    publisherId: "publishers:org",
+                    userId: "users:member",
+                    role: "publisher",
+                  }),
+                })),
+              };
+            }
+            throw new Error(`Unexpected table ${table}`);
+          }),
+        },
+      } as never,
+      { ownerPublisherId: "publishers:org", limit: 20 },
+    );
+
+    expect(result).toEqual([expect.objectContaining({ name: "demo-plugin" })]);
   });
 
   it("requires auth inside the public publish action", async () => {
@@ -5391,7 +6541,29 @@ describe("packages public queries", () => {
           }),
           patch,
           insert,
-          query: vi.fn(),
+          query: vi.fn((table: string) => {
+            if (table === "packageSearchDigest") {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue({
+                    _id: "packageSearchDigest:demo",
+                    packageId: "packages:demo",
+                  }),
+                })),
+              };
+            }
+            if (
+              table === "packageCapabilitySearchDigest" ||
+              table === "packagePluginCategorySearchDigest"
+            ) {
+              return {
+                withIndex: vi.fn(() => ({
+                  collect: vi.fn().mockResolvedValue([]),
+                })),
+              };
+            }
+            throw new Error(`Unexpected table ${table}`);
+          }),
           replace: vi.fn(),
           delete: vi.fn(),
           normalizeId: vi.fn(),
@@ -5461,7 +6633,29 @@ describe("packages public queries", () => {
           }),
           patch,
           insert,
-          query: vi.fn(),
+          query: vi.fn((table: string) => {
+            if (table === "packageSearchDigest") {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue({
+                    _id: "packageSearchDigest:demo",
+                    packageId: "packages:demo",
+                  }),
+                })),
+              };
+            }
+            if (
+              table === "packageCapabilitySearchDigest" ||
+              table === "packagePluginCategorySearchDigest"
+            ) {
+              return {
+                withIndex: vi.fn(() => ({
+                  collect: vi.fn().mockResolvedValue([]),
+                })),
+              };
+            }
+            throw new Error(`Unexpected table ${table}`);
+          }),
           replace: vi.fn(),
           delete: vi.fn(),
           normalizeId: vi.fn(),
@@ -5559,6 +6753,46 @@ describe("packages public queries", () => {
     });
   });
 
+  it("does not let stale personal ownerUserId read package moderation status", async () => {
+    await expect(
+      getPackageModerationStatusForUserInternalHandler(
+        {
+          db: {
+            get: vi.fn(async (id: string) => {
+              if (id === "users:viewer") return { _id: id, role: "user" };
+              return null;
+            }),
+            query: vi.fn((table: string) => {
+              if (table === "packages") {
+                return {
+                  withIndex: vi.fn(() => ({
+                    unique: vi.fn().mockResolvedValue(
+                      makePackageDoc({
+                        name: "@scope/demo",
+                        ownerKind: "user",
+                        ownerUserId: "users:viewer",
+                        ownerPublisherId: "publishers:other-personal",
+                      }),
+                    ),
+                  })),
+                };
+              }
+              if (table === "publisherMembers") {
+                return {
+                  withIndex: vi.fn(() => ({
+                    unique: vi.fn().mockResolvedValue(null),
+                  })),
+                };
+              }
+              throw new Error(`Unexpected table ${table}`);
+            }),
+          },
+        } as never,
+        { actorUserId: "users:viewer", name: "@scope/demo" },
+      ),
+    ).rejects.toThrow("Unauthorized");
+  });
+
   it("submits owner appeals for quarantined package releases", async () => {
     const insert = vi.fn(async (table: string) =>
       table === "packageAppeals" ? "packageAppeals:1" : "auditLogs:1",
@@ -5651,6 +6885,126 @@ describe("packages public queries", () => {
     );
   });
 
+  it("does not let stale personal-publisher memberships submit package appeals", async () => {
+    const insert = vi.fn();
+
+    await expect(
+      submitPackageAppealForUserInternalHandler(
+        {
+          db: {
+            get: vi.fn(async (id: string) => {
+              if (id === "users:stale-member") return { _id: id, role: "user" };
+              if (id === "publishers:owner") {
+                return {
+                  _id: id,
+                  kind: "user",
+                  handle: "owner",
+                  linkedUserId: "users:owner",
+                };
+              }
+              return null;
+            }),
+            query: vi.fn((table: string) => {
+              if (table === "packages") {
+                return {
+                  withIndex: vi.fn(() => ({
+                    unique: vi.fn().mockResolvedValue(
+                      makePackageDoc({
+                        name: "@scope/demo",
+                        ownerUserId: "users:owner",
+                        ownerPublisherId: "publishers:owner",
+                      }),
+                    ),
+                  })),
+                };
+              }
+              if (table === "publisherMembers") {
+                return {
+                  withIndex: vi.fn(() => ({
+                    unique: vi.fn().mockResolvedValue({
+                      _id: "publisherMembers:stale",
+                      publisherId: "publishers:owner",
+                      userId: "users:stale-member",
+                      role: "admin",
+                    }),
+                  })),
+                };
+              }
+              throw new Error(`Unexpected table ${table}`);
+            }),
+            insert,
+            patch: vi.fn(),
+            replace: vi.fn(),
+            delete: vi.fn(),
+            normalizeId: vi.fn(),
+          },
+        } as never,
+        {
+          actorUserId: "users:stale-member",
+          name: "@scope/demo",
+          version: "1.2.3",
+          message: "please review",
+        },
+      ),
+    ).rejects.toThrow("Unauthorized");
+
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("does not let stale personal-publisher memberships read package manage context", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:stale-member" as never);
+
+    const result = await getManageContextHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "users:stale-member") return { _id: id, role: "user" };
+            if (id === "publishers:owner") {
+              return {
+                _id: id,
+                kind: "user",
+                handle: "owner",
+                linkedUserId: "users:owner",
+              };
+            }
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table === "packages") {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue(
+                    makePackageDoc({
+                      name: "@scope/demo",
+                      ownerUserId: "users:owner",
+                      ownerPublisherId: "publishers:owner",
+                    }),
+                  ),
+                })),
+              };
+            }
+            if (table === "publisherMembers") {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue({
+                    _id: "publisherMembers:stale",
+                    publisherId: "publishers:owner",
+                    userId: "users:stale-member",
+                    role: "admin",
+                  }),
+                })),
+              };
+            }
+            throw new Error(`Unexpected table ${table}`);
+          }),
+        },
+      } as never,
+      { name: "@scope/demo" },
+    );
+
+    expect(result).toBeNull();
+  });
+
   it("lists package appeals for moderators", async () => {
     const result = await listPackageAppealsInternalHandler(
       {
@@ -5733,7 +7087,29 @@ describe("packages public queries", () => {
           }),
           patch,
           insert,
-          query: vi.fn(),
+          query: vi.fn((table: string) => {
+            if (table === "packageSearchDigest") {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue({
+                    _id: "packageSearchDigest:demo",
+                    packageId: "packages:demo",
+                  }),
+                })),
+              };
+            }
+            if (
+              table === "packageCapabilitySearchDigest" ||
+              table === "packagePluginCategorySearchDigest"
+            ) {
+              return {
+                withIndex: vi.fn(() => ({
+                  collect: vi.fn().mockResolvedValue([]),
+                })),
+              };
+            }
+            throw new Error(`Unexpected table ${table}`);
+          }),
           replace: vi.fn(),
           delete: vi.fn(),
           normalizeId: vi.fn(),
@@ -5808,7 +7184,29 @@ describe("packages public queries", () => {
           }),
           patch,
           insert,
-          query: vi.fn(),
+          query: vi.fn((table: string) => {
+            if (table === "packageSearchDigest") {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue({
+                    _id: "packageSearchDigest:demo",
+                    packageId: "packages:demo",
+                  }),
+                })),
+              };
+            }
+            if (
+              table === "packageCapabilitySearchDigest" ||
+              table === "packagePluginCategorySearchDigest"
+            ) {
+              return {
+                withIndex: vi.fn(() => ({
+                  collect: vi.fn().mockResolvedValue([]),
+                })),
+              };
+            }
+            throw new Error(`Unexpected table ${table}`);
+          }),
           replace: vi.fn(),
           delete: vi.fn(),
           normalizeId: vi.fn(),
@@ -6073,7 +7471,7 @@ describe("package scan backfill", () => {
           moderationReason: "manual review",
           sourceRepo: "openclaw/demo",
           sourceCommit: "abc123",
-          reasons: ["manual:quarantined", "scan:malicious", "static:malicious"],
+          reasons: ["manual:quarantined", "scan:malicious"],
         }),
       ],
       nextCursor: null,
@@ -6596,7 +7994,227 @@ describe("package scan backfill", () => {
     }
   });
 
-  it("promotes latest package scan status when a static rescan finds malware", async () => {
+  it("backfills legacy static-only package scan status into the package search digest", async () => {
+    const verification = {
+      tier: "source-linked",
+      scope: "artifact-only",
+      scanStatus: "malicious",
+    };
+    const pkg = makePackageDoc({
+      scanStatus: "malicious",
+      verification,
+      latestVersionSummary: {
+        version: "1.0.0",
+        verification,
+      },
+    });
+    const release = makeReleaseDoc({
+      sha256hash: "a".repeat(64),
+      verification,
+      staticScan: {
+        status: "malicious",
+        reasonCodes: ["malicious.static_fixture"],
+        findings: [],
+        summary: "Static fixture only.",
+        engineVersion: "test",
+        checkedAt: 1,
+      },
+      llmAnalysis: {
+        status: "clean",
+        verdict: "clean",
+        checkedAt: 2,
+      },
+    });
+    const patch = vi.fn();
+
+    const result = await backfillLatestPackageScanStatusInternalHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "packageReleases:demo-1") return release;
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table === "packages") {
+              return {
+                paginate: vi.fn().mockResolvedValue({
+                  page: [pkg],
+                  continueCursor: null,
+                  isDone: true,
+                }),
+              };
+            }
+            if (table === "packageSearchDigest") {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue({
+                    _id: "packageSearchDigest:demo",
+                    packageId: "packages:demo",
+                    scanStatus: "malicious",
+                  }),
+                })),
+              };
+            }
+            if (
+              table === "packageCapabilitySearchDigest" ||
+              table === "packagePluginCategorySearchDigest"
+            ) {
+              return {
+                withIndex: vi.fn(() => ({
+                  collect: vi.fn().mockResolvedValue([]),
+                })),
+              };
+            }
+            throw new Error(`Unexpected table ${table}`);
+          }),
+          patch,
+          insert: vi.fn(),
+          replace: vi.fn(),
+          delete: vi.fn(),
+          normalizeId: vi.fn(),
+        },
+        scheduler: { runAfter: vi.fn() },
+      } as never,
+      { batchSize: 10 },
+    );
+
+    expect(result).toEqual({ patched: 1, isDone: true, scanned: 1 });
+    expect(patch).toHaveBeenCalledWith(
+      "packageReleases:demo-1",
+      expect.objectContaining({
+        verification: expect.objectContaining({ scanStatus: "clean" }),
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "packages:demo",
+      expect.objectContaining({
+        scanStatus: "clean",
+        verification: expect.objectContaining({ scanStatus: "clean" }),
+        latestVersionSummary: expect.objectContaining({
+          verification: expect.objectContaining({ scanStatus: "clean" }),
+        }),
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "packageSearchDigest:demo",
+      expect.objectContaining({ scanStatus: "clean" }),
+    );
+  });
+
+  it("repairs stale package search digests even when package scan status is already current", async () => {
+    const verification = {
+      tier: "source-linked",
+      scope: "artifact-only",
+      scanStatus: "clean",
+    };
+    const pkg = makePackageDoc({
+      ownerPublisherId: "publishers:owner",
+      capabilityTags: ["read-files"],
+      scanStatus: "clean",
+      verification,
+      latestVersionSummary: {
+        version: "1.0.0",
+        verification,
+      },
+    });
+    const release = makeReleaseDoc({
+      verification,
+      llmAnalysis: {
+        status: "clean",
+        verdict: "clean",
+        checkedAt: 2,
+      },
+    });
+    const patch = vi.fn();
+
+    const result = await backfillLatestPackageScanStatusInternalHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "packageReleases:demo-1") return release;
+            if (id === "publishers:owner") {
+              return {
+                _id: "publishers:owner",
+                kind: "user",
+                handle: "tongfei11",
+                linkedUserId: "users:owner",
+              };
+            }
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table === "packages") {
+              return {
+                paginate: vi.fn().mockResolvedValue({
+                  page: [pkg],
+                  continueCursor: null,
+                  isDone: true,
+                }),
+              };
+            }
+            if (table === "packageSearchDigest") {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue({
+                    _id: "packageSearchDigest:demo",
+                    packageId: "packages:demo",
+                    scanStatus: "malicious",
+                  }),
+                })),
+              };
+            }
+            if (table === "packageCapabilitySearchDigest") {
+              return {
+                withIndex: vi.fn(() => ({
+                  collect: vi.fn().mockResolvedValue([
+                    {
+                      _id: "packageCapabilitySearchDigest:demo-read-files",
+                      packageId: "packages:demo",
+                      capabilityTag: "read-files",
+                      scanStatus: "malicious",
+                      ownerHandle: undefined,
+                    },
+                  ]),
+                })),
+              };
+            }
+            if (table === "packagePluginCategorySearchDigest") {
+              return {
+                withIndex: vi.fn(() => ({
+                  collect: vi.fn().mockResolvedValue([]),
+                })),
+              };
+            }
+            throw new Error(`Unexpected table ${table}`);
+          }),
+          patch,
+          insert: vi.fn(),
+          replace: vi.fn(),
+          delete: vi.fn(),
+          normalizeId: vi.fn(),
+        },
+        scheduler: { runAfter: vi.fn() },
+      } as never,
+      { batchSize: 10 },
+    );
+
+    expect(result).toEqual({ patched: 0, isDone: true, scanned: 1 });
+    expect(patch).not.toHaveBeenCalledWith("packages:demo", expect.anything());
+    expect(patch).toHaveBeenCalledWith(
+      "packageSearchDigest:demo",
+      expect.objectContaining({ scanStatus: "clean" }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "packageCapabilitySearchDigest:demo-read-files",
+      expect.objectContaining({
+        scanStatus: "clean",
+        ownerHandle: "tongfei11",
+        ownerKind: "user",
+      }),
+    );
+  });
+
+  it("stores static package scan results without promoting malware status", async () => {
     const patch = vi.fn().mockResolvedValue(undefined);
     const release = {
       _id: "packageReleases:demo-1",
@@ -6636,6 +8254,27 @@ describe("package scan backfill", () => {
             return null;
           }),
           query: vi.fn((table: string) => {
+            if (table === "packageSearchDigest") {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue({
+                    _id: "packageSearchDigest:demo",
+                    packageId: "packages:demo",
+                    scanStatus: "pending",
+                  }),
+                })),
+              };
+            }
+            if (
+              table === "packageCapabilitySearchDigest" ||
+              table === "packagePluginCategorySearchDigest"
+            ) {
+              return {
+                withIndex: vi.fn(() => ({
+                  collect: vi.fn().mockResolvedValue([]),
+                })),
+              };
+            }
             throw new Error(`Unexpected query table: ${table}`);
           }),
           insert: vi.fn(),
@@ -6663,19 +8302,23 @@ describe("package scan backfill", () => {
       "packageReleases:demo-1",
       expect.objectContaining({
         staticScan: expect.objectContaining({ status: "malicious" }),
-        verification: expect.objectContaining({ scanStatus: "malicious" }),
+        verification: expect.objectContaining({ scanStatus: "pending" }),
       }),
     );
     expect(patch).toHaveBeenNthCalledWith(
       2,
       "packages:demo",
       expect.objectContaining({
-        scanStatus: "malicious",
-        verification: expect.objectContaining({ scanStatus: "malicious" }),
+        scanStatus: "pending",
+        verification: expect.objectContaining({ scanStatus: "pending" }),
         latestVersionSummary: expect.objectContaining({
-          verification: expect.objectContaining({ scanStatus: "malicious" }),
+          verification: expect.objectContaining({ scanStatus: "pending" }),
         }),
       }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "packageSearchDigest:demo",
+      expect.objectContaining({ scanStatus: "pending" }),
     );
   });
 });
@@ -6691,6 +8334,7 @@ describe("package scan backfill", () => {
  */
 function makeSoftDeleteCtx(options?: {
   pkg?: Record<string, unknown>;
+  actor?: Record<string, unknown>;
   /** When true, no existing packageCapabilitySearchDigest rows exist (forces insert). */
   noCapabilityDigest?: boolean;
   /** Personal publisher linked to the owner user. */
@@ -6741,7 +8385,7 @@ function makeSoftDeleteCtx(options?: {
     ctx: {
       db: {
         get: vi.fn(async (id: string) => {
-          if (id === "users:owner") return { _id: id, role: "user" };
+          if (id === "users:owner") return options?.actor ?? { _id: id, role: "user" };
           if (id === "publishers:owner-personal") return personalPublisher;
           return null;
         }),
@@ -6801,6 +8445,894 @@ function makeSoftDeleteCtx(options?: {
     },
   };
 }
+
+function makeOwnedPackageBatchCtx(options?: {
+  pkg?: Record<string, unknown>;
+  owner?: Record<string, unknown> | null;
+  packageTokens?: Array<Record<string, unknown>>;
+  releases?: Array<Record<string, unknown>>;
+  publisherPackages?: Array<Record<string, unknown>>;
+  publishers?: Record<string, Record<string, unknown> | null>;
+  isDone?: boolean;
+  continueCursor?: string;
+}) {
+  const pkg = options?.pkg ?? makePackageDoc({ ownerUserId: "users:owner" });
+  const releases = options?.releases ?? [
+    makeReleaseDoc({ _id: "packageReleases:demo-1", packageId: pkg._id }),
+  ];
+  const packageTokens = options?.packageTokens ?? [
+    {
+      _id: "packagePublishTokens:demo",
+      packageId: pkg._id,
+      version: "1.0.1",
+      revokedAt: undefined,
+    },
+  ];
+  const patch = vi.fn();
+  const insert = vi.fn().mockResolvedValue("auditLogs:1");
+  const runAfter = vi.fn();
+
+  return {
+    patch,
+    insert,
+    runAfter,
+    ctx: {
+      scheduler: { runAfter },
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:admin") {
+            return {
+              _id: "users:admin",
+              role: "admin",
+              deletedAt: undefined,
+              deactivatedAt: undefined,
+            };
+          }
+          if (id === "users:owner") {
+            return options?.owner === undefined
+              ? { _id: "users:owner", deletedAt: undefined, deactivatedAt: undefined }
+              : options.owner;
+          }
+          if (options?.publishers && id in options.publishers) {
+            return options.publishers[id];
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table === "packages") {
+            return {
+              withIndex: vi.fn((index: string) => ({
+                order: vi.fn(() => ({
+                  paginate: vi.fn().mockResolvedValue({
+                    page:
+                      index === "by_owner_publisher" ? (options?.publisherPackages ?? []) : [pkg],
+                    isDone: options?.isDone ?? true,
+                    continueCursor: options?.continueCursor ?? "",
+                  }),
+                })),
+              })),
+            };
+          }
+          if (table === "publishers") {
+            return {
+              withIndex: vi.fn(
+                (
+                  index: string,
+                  cb: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+                ) => {
+                  expect(index).toBe("by_linked_user");
+                  let linkedUserId = "";
+                  cb({
+                    eq: (field: string, value: string) => {
+                      if (field === "linkedUserId") linkedUserId = value;
+                      return {};
+                    },
+                  });
+                  return {
+                    unique: vi.fn(
+                      async () =>
+                        Object.values(options?.publishers ?? {}).find(
+                          (publisher) =>
+                            publisher?.kind === "user" && publisher.linkedUserId === linkedUserId,
+                        ) ?? null,
+                    ),
+                  };
+                },
+              ),
+            };
+          }
+          if (table === "packagePublishTokens") {
+            return {
+              withIndex: vi.fn(
+                (
+                  _index: string,
+                  builder?: (q: {
+                    eq: (field: string, value: string | undefined) => unknown;
+                    lte: (field: string, value: number) => unknown;
+                  }) => unknown,
+                ) => {
+                  let maxCreatedAt = Number.POSITIVE_INFINITY;
+                  const queryBuilder = {
+                    eq: () => queryBuilder,
+                    lte: (field: string, value: number) => {
+                      if (field === "createdAt") maxCreatedAt = value;
+                      return queryBuilder;
+                    },
+                  };
+                  builder?.(queryBuilder);
+                  return {
+                    order: vi.fn(() => ({
+                      take: vi.fn(async (limit: number) =>
+                        packageTokens
+                          .filter(
+                            (token) =>
+                              typeof token.createdAt !== "number" ||
+                              token.createdAt <= maxCreatedAt,
+                          )
+                          .slice(0, limit),
+                      ),
+                    })),
+                  };
+                },
+              ),
+            };
+          }
+          if (table === "packageReleases") {
+            return {
+              withIndex: vi.fn(() => ({
+                collect: vi.fn().mockResolvedValue(releases),
+              })),
+            };
+          }
+          if (table === "packageSearchDigest") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi
+                  .fn()
+                  .mockResolvedValue({ _id: "packageSearchDigest:demo", packageId: pkg._id }),
+              })),
+            };
+          }
+          if (table === "packageCapabilitySearchDigest") {
+            return {
+              withIndex: vi.fn(() => ({
+                collect: vi.fn().mockResolvedValue([]),
+              })),
+            };
+          }
+          if (table === "packagePluginCategorySearchDigest") {
+            return {
+              withIndex: vi.fn(() => ({
+                collect: vi.fn().mockResolvedValue([]),
+              })),
+            };
+          }
+          throw new Error(`Unexpected table: ${table}`);
+        }),
+        insert,
+        patch,
+        replace: vi.fn(),
+        delete: vi.fn(),
+        normalizeId: vi.fn(),
+      },
+    },
+  };
+}
+
+describe("owned package sanction batches", () => {
+  it("soft-deletes owned packages with a ban reason and revokes package publish tokens", async () => {
+    const { ctx, patch } = makeOwnedPackageBatchCtx({
+      owner: { _id: "users:owner", deletedAt: 1_000, deactivatedAt: undefined },
+    });
+
+    const result = await applyBanToOwnedPackagesBatchInternalHandler(ctx as never, {
+      ownerUserId: "users:owner",
+      bannedAt: 1_000,
+      deletedBy: "users:moderator",
+      deletedByRole: "moderator",
+    });
+
+    expect(result).toMatchObject({ deletedCount: 1, revokedTokenCount: 1, scheduled: false });
+    expect(patch).toHaveBeenCalledWith(
+      "packages:demo",
+      expect.objectContaining({
+        softDeletedAt: 1_000,
+        softDeletedReason: "user.banned",
+        softDeletedBy: "users:moderator",
+        softDeletedByRole: "moderator",
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith("packagePublishTokens:demo", { revokedAt: 1_000 });
+  });
+
+  it("bounds package publish token revocation during owned package bans", async () => {
+    const packageTokens = Array.from({ length: 26 }, (_, index) => ({
+      _id: `packagePublishTokens:active-${index}`,
+      packageId: "packages:demo",
+      version: "1.0.1",
+      revokedAt: undefined,
+    }));
+    const { ctx, patch, runAfter } = makeOwnedPackageBatchCtx({
+      owner: { _id: "users:owner", deletedAt: 1_000, deactivatedAt: undefined },
+      packageTokens,
+    });
+
+    const result = await applyBanToOwnedPackagesBatchInternalHandler(ctx as never, {
+      ownerUserId: "users:owner",
+      bannedAt: 1_000,
+      deletedBy: "users:moderator",
+      deletedByRole: "moderator",
+    });
+
+    expect(result).toMatchObject({ deletedCount: 1, revokedTokenCount: 25, scheduled: false });
+    expect(patch).toHaveBeenCalledWith("packagePublishTokens:active-24", { revokedAt: 1_000 });
+    expect(patch).not.toHaveBeenCalledWith("packagePublishTokens:active-25", expect.anything());
+    expect(runAfter).toHaveBeenCalledWith(0, expect.anything(), {
+      packageId: "packages:demo",
+      revokedAt: 1_000,
+    });
+  });
+
+  it("does not let stale token revocation batches revoke tokens minted after the ban marker", async () => {
+    const { ctx, patch } = makeOwnedPackageBatchCtx({
+      packageTokens: [
+        {
+          _id: "packagePublishTokens:before-ban",
+          packageId: "packages:demo",
+          version: "1.0.1",
+          revokedAt: undefined,
+          createdAt: 999,
+        },
+        {
+          _id: "packagePublishTokens:after-unban",
+          packageId: "packages:demo",
+          version: "1.0.2",
+          revokedAt: undefined,
+          createdAt: 1_001,
+        },
+      ],
+    });
+
+    const result = await revokePackagePublishTokensForPackageBatchInternalHandler(ctx as never, {
+      packageId: "packages:demo",
+      revokedAt: 1_000,
+    });
+
+    expect(result).toMatchObject({ revokedCount: 1, scheduled: false });
+    expect(patch).toHaveBeenCalledWith("packagePublishTokens:before-ban", { revokedAt: 1_000 });
+    expect(patch).not.toHaveBeenCalledWith("packagePublishTokens:after-unban", expect.anything());
+  });
+
+  it("soft-deletes packages owned through the user's personal publisher", async () => {
+    const personalPublisherPackage = makePackageDoc({
+      _id: "packages:personal-publisher",
+      ownerUserId: "users:publishing-actor",
+      ownerPublisherId: "publishers:personal",
+    });
+    const { ctx, patch } = makeOwnedPackageBatchCtx({
+      owner: {
+        _id: "users:owner",
+        deletedAt: 1_000,
+        deactivatedAt: undefined,
+        personalPublisherId: "publishers:personal",
+      },
+      publisherPackages: [personalPublisherPackage],
+      packageTokens: [
+        {
+          _id: "packagePublishTokens:personal-publisher",
+          packageId: "packages:personal-publisher",
+          version: "1.0.1",
+          revokedAt: undefined,
+        },
+      ],
+      publishers: {
+        "publishers:personal": {
+          _id: "publishers:personal",
+          kind: "user",
+          linkedUserId: "users:owner",
+        },
+      },
+    });
+
+    const result = await applyBanToOwnedPackagesBatchInternalHandler(ctx as never, {
+      ownerUserId: "users:owner",
+      bannedAt: 1_000,
+      deletedBy: "users:moderator",
+      deletedByRole: "moderator",
+      scope: "personalPublisher",
+    });
+
+    expect(result).toMatchObject({ deletedCount: 1, revokedTokenCount: 1, scheduled: false });
+    expect(patch).toHaveBeenCalledWith(
+      "packages:personal-publisher",
+      expect.objectContaining({ softDeletedAt: 1_000, softDeletedReason: "user.banned" }),
+    );
+    expect(patch).toHaveBeenCalledWith("packagePublishTokens:personal-publisher", {
+      revokedAt: 1_000,
+    });
+  });
+
+  it("schedules linked legacy personal publisher scans when the user row lacks the publisher id", async () => {
+    const { ctx, runAfter } = makeOwnedPackageBatchCtx({
+      owner: {
+        _id: "users:owner",
+        deletedAt: 1_000,
+        deactivatedAt: undefined,
+      },
+      publishers: {
+        "publishers:personal": {
+          _id: "publishers:personal",
+          kind: "user",
+          linkedUserId: "users:owner",
+        },
+      },
+    });
+
+    const result = await applyBanToOwnedPackagesBatchInternalHandler(ctx as never, {
+      ownerUserId: "users:owner",
+      bannedAt: 1_000,
+      deletedBy: "users:moderator",
+      deletedByRole: "moderator",
+    });
+
+    expect(result).toMatchObject({ scheduled: true });
+    expect(runAfter).toHaveBeenCalledWith(
+      0,
+      expect.anything(),
+      expect.objectContaining({
+        scope: "personalPublisher",
+        cursor: undefined,
+      }),
+    );
+  });
+
+  it("soft-deletes linked legacy personal publisher packages without users.personalPublisherId", async () => {
+    const personalPublisherPackage = makePackageDoc({
+      _id: "packages:personal-publisher",
+      ownerUserId: "users:publishing-actor",
+      ownerPublisherId: "publishers:personal",
+    });
+    const { ctx, patch } = makeOwnedPackageBatchCtx({
+      owner: {
+        _id: "users:owner",
+        deletedAt: 1_000,
+        deactivatedAt: undefined,
+      },
+      publisherPackages: [personalPublisherPackage],
+      packageTokens: [
+        {
+          _id: "packagePublishTokens:personal-publisher",
+          packageId: "packages:personal-publisher",
+          version: "1.0.1",
+          revokedAt: undefined,
+        },
+      ],
+      publishers: {
+        "publishers:personal": {
+          _id: "publishers:personal",
+          kind: "user",
+          linkedUserId: "users:owner",
+        },
+      },
+    });
+
+    const result = await applyBanToOwnedPackagesBatchInternalHandler(ctx as never, {
+      ownerUserId: "users:owner",
+      bannedAt: 1_000,
+      deletedBy: "users:moderator",
+      deletedByRole: "moderator",
+      scope: "personalPublisher",
+    });
+
+    expect(result).toMatchObject({ deletedCount: 1, revokedTokenCount: 1, scheduled: false });
+    expect(patch).toHaveBeenCalledWith(
+      "packages:personal-publisher",
+      expect.objectContaining({ softDeletedAt: 1_000, softDeletedReason: "user.banned" }),
+    );
+    expect(patch).toHaveBeenCalledWith("packagePublishTokens:personal-publisher", {
+      revokedAt: 1_000,
+    });
+  });
+
+  it("processes the initial package ban batch before the user ban is visible", async () => {
+    const { ctx, patch } = makeOwnedPackageBatchCtx({
+      owner: { _id: "users:owner", deletedAt: undefined, deactivatedAt: undefined },
+    });
+
+    const result = await applyBanToOwnedPackagesBatchInternalHandler(ctx as never, {
+      ownerUserId: "users:owner",
+      bannedAt: 1_000,
+      deletedBy: "users:moderator",
+      deletedByRole: "moderator",
+    });
+
+    expect(result).toMatchObject({ deletedCount: 1, revokedTokenCount: 1, scheduled: false });
+    expect(patch).toHaveBeenCalledWith(
+      "packages:demo",
+      expect.objectContaining({ softDeletedAt: 1_000, softDeletedReason: "user.banned" }),
+    );
+    expect(patch).toHaveBeenCalledWith("packagePublishTokens:demo", { revokedAt: 1_000 });
+  });
+
+  it("stops stale package ban pages when the owner has already been unbanned", async () => {
+    const { ctx, patch } = makeOwnedPackageBatchCtx();
+
+    const result = await applyBanToOwnedPackagesBatchInternalHandler(ctx as never, {
+      ownerUserId: "users:owner",
+      bannedAt: 1_000,
+      deletedBy: "users:moderator",
+      deletedByRole: "moderator",
+      cursor: "next-page",
+    });
+
+    expect(result).toMatchObject({
+      stale: true,
+      deletedCount: 0,
+      revokedTokenCount: 0,
+      scheduled: false,
+    });
+    expect(patch).not.toHaveBeenCalledWith("packages:demo", expect.anything());
+    expect(patch).not.toHaveBeenCalledWith("packagePublishTokens:demo", expect.anything());
+  });
+
+  it("continues committed package ban pages without a pre-commit bypass", async () => {
+    const firstPage = makeOwnedPackageBatchCtx({
+      owner: { _id: "users:owner", deletedAt: 1_000, deactivatedAt: undefined },
+      pkg: makePackageDoc({ _id: "packages:first", ownerUserId: "users:owner" }),
+      packageTokens: [
+        {
+          _id: "packagePublishTokens:first",
+          packageId: "packages:first",
+          version: "1.0.1",
+          revokedAt: undefined,
+        },
+      ],
+      isDone: false,
+      continueCursor: "next-page",
+    });
+
+    const firstResult = await applyBanToOwnedPackagesBatchInternalHandler(firstPage.ctx as never, {
+      ownerUserId: "users:owner",
+      bannedAt: 1_000,
+      deletedBy: "users:moderator",
+      deletedByRole: "moderator",
+    });
+
+    expect(firstResult).toMatchObject({ deletedCount: 1, revokedTokenCount: 1, scheduled: true });
+    expect(firstPage.patch).toHaveBeenCalledWith(
+      "packages:first",
+      expect.objectContaining({ softDeletedAt: 1_000, softDeletedReason: "user.banned" }),
+    );
+    expect(firstPage.patch).toHaveBeenCalledWith("packagePublishTokens:first", {
+      revokedAt: 1_000,
+    });
+    expect(firstPage.runAfter).toHaveBeenCalledWith(
+      0,
+      expect.anything(),
+      expect.objectContaining({
+        cursor: "next-page",
+      }),
+    );
+
+    const staleContinuationPage = makeOwnedPackageBatchCtx({
+      owner: { _id: "users:owner", deletedAt: undefined, deactivatedAt: undefined },
+      pkg: makePackageDoc({ _id: "packages:second", ownerUserId: "users:owner" }),
+      packageTokens: [
+        {
+          _id: "packagePublishTokens:second",
+          packageId: "packages:second",
+          version: "1.0.1",
+          revokedAt: undefined,
+        },
+      ],
+    });
+
+    const staleContinuationResult = await applyBanToOwnedPackagesBatchInternalHandler(
+      staleContinuationPage.ctx as never,
+      {
+        ownerUserId: "users:owner",
+        bannedAt: 1_000,
+        deletedBy: "users:moderator",
+        deletedByRole: "moderator",
+        cursor: "next-page",
+      },
+    );
+
+    expect(staleContinuationResult).toMatchObject({
+      stale: true,
+      deletedCount: 0,
+      revokedTokenCount: 0,
+      scheduled: false,
+    });
+    expect(staleContinuationPage.patch).not.toHaveBeenCalledWith(
+      "packages:second",
+      expect.anything(),
+    );
+    expect(staleContinuationPage.patch).not.toHaveBeenCalledWith(
+      "packagePublishTokens:second",
+      expect.anything(),
+    );
+
+    const committedContinuationPage = makeOwnedPackageBatchCtx({
+      owner: { _id: "users:owner", deletedAt: 1_000, deactivatedAt: undefined },
+      pkg: makePackageDoc({ _id: "packages:second", ownerUserId: "users:owner" }),
+      packageTokens: [
+        {
+          _id: "packagePublishTokens:second",
+          packageId: "packages:second",
+          version: "1.0.1",
+          revokedAt: undefined,
+        },
+      ],
+    });
+
+    const committedContinuationResult = await applyBanToOwnedPackagesBatchInternalHandler(
+      committedContinuationPage.ctx as never,
+      {
+        ownerUserId: "users:owner",
+        bannedAt: 1_000,
+        deletedBy: "users:moderator",
+        deletedByRole: "moderator",
+        cursor: "next-page",
+      },
+    );
+
+    expect(committedContinuationResult).toMatchObject({
+      deletedCount: 1,
+      revokedTokenCount: 1,
+      scheduled: false,
+    });
+    expect(committedContinuationPage.patch).toHaveBeenCalledWith(
+      "packages:second",
+      expect.objectContaining({ softDeletedAt: 1_000, softDeletedReason: "user.banned" }),
+    );
+    expect(committedContinuationPage.patch).toHaveBeenCalledWith("packagePublishTokens:second", {
+      revokedAt: 1_000,
+    });
+  });
+
+  it("retimestamps earlier ban-hidden packages during a later ban", async () => {
+    const { ctx, patch } = makeOwnedPackageBatchCtx({
+      owner: { _id: "users:owner", deletedAt: 2_000, deactivatedAt: undefined },
+      pkg: makePackageDoc({
+        softDeletedAt: 1_000,
+        softDeletedReason: "user.banned",
+        softDeletedBy: "users:first-moderator",
+        softDeletedByRole: "moderator",
+      }),
+      releases: [
+        makeReleaseDoc({
+          _id: "packageReleases:ban-hidden",
+          softDeletedAt: 1_000,
+        }),
+        makeReleaseDoc({
+          _id: "packageReleases:moderation-hidden",
+          softDeletedAt: 500,
+        }),
+      ],
+    });
+
+    const result = await applyBanToOwnedPackagesBatchInternalHandler(ctx as never, {
+      ownerUserId: "users:owner",
+      bannedAt: 2_000,
+      deletedBy: "users:second-moderator",
+      deletedByRole: "admin",
+    });
+
+    expect(result).toMatchObject({ deletedCount: 0, revokedTokenCount: 1, scheduled: false });
+    expect(patch).toHaveBeenCalledWith(
+      "packageReleases:ban-hidden",
+      expect.objectContaining({ softDeletedAt: 2_000 }),
+    );
+    expect(patch).not.toHaveBeenCalledWith("packageReleases:moderation-hidden", expect.anything());
+    expect(patch).toHaveBeenCalledWith(
+      "packages:demo",
+      expect.objectContaining({
+        softDeletedAt: 2_000,
+        softDeletedBy: "users:second-moderator",
+        softDeletedByRole: "admin",
+        updatedAt: 2_000,
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith("packagePublishTokens:demo", { revokedAt: 2_000 });
+  });
+
+  it("does not hide org-owned packages when banning a member in the legacy owner field", async () => {
+    const { ctx, patch } = makeOwnedPackageBatchCtx({
+      owner: {
+        _id: "users:owner",
+        deletedAt: 1_000,
+        deactivatedAt: undefined,
+        personalPublisherId: "publishers:personal",
+      },
+      pkg: makePackageDoc({
+        ownerUserId: "users:owner",
+        ownerPublisherId: "publishers:org",
+      }),
+      publishers: {
+        "publishers:org": { _id: "publishers:org", kind: "org" },
+      },
+    });
+
+    const result = await applyBanToOwnedPackagesBatchInternalHandler(ctx as never, {
+      ownerUserId: "users:owner",
+      bannedAt: 1_000,
+      deletedBy: "users:moderator",
+      deletedByRole: "moderator",
+    });
+
+    expect(result).toMatchObject({ deletedCount: 0, revokedTokenCount: 0, scheduled: true });
+    expect(patch).not.toHaveBeenCalledWith("packages:demo", expect.anything());
+    expect(patch).not.toHaveBeenCalledWith("packagePublishTokens:demo", expect.anything());
+  });
+
+  it("restores only packages that were hidden by the matching ban batch", async () => {
+    const { ctx, patch, insert } = makeOwnedPackageBatchCtx({
+      pkg: makePackageDoc({
+        softDeletedAt: 1_000,
+        softDeletedReason: "user.banned",
+        softDeletedByRole: "moderator",
+      }),
+      releases: [
+        makeReleaseDoc({
+          _id: "packageReleases:demo-1",
+          softDeletedAt: 1_000,
+          distTags: ["latest"],
+          version: "1.0.0",
+          changelog: "",
+          compatibility: null,
+          capabilities: null,
+          verification: null,
+        }),
+        makeReleaseDoc({
+          _id: "packageReleases:malicious",
+          softDeletedAt: 500,
+          distTags: ["malicious"],
+          version: "0.9.0",
+          changelog: "",
+          compatibility: null,
+          capabilities: null,
+          verification: null,
+        }),
+      ],
+    });
+
+    const result = await restoreOwnedPackagesForUnbanBatchInternalHandler(ctx as never, {
+      actorUserId: "users:admin",
+      ownerUserId: "users:owner",
+      bannedAt: 1_000,
+    });
+
+    expect(result).toMatchObject({ restoredCount: 1, scheduled: false });
+    expect(patch).toHaveBeenCalledWith(
+      "packages:demo",
+      expect.objectContaining({
+        softDeletedAt: undefined,
+        softDeletedReason: undefined,
+        softDeletedBy: undefined,
+        softDeletedByRole: undefined,
+      }),
+    );
+    expect(insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({
+        actorUserId: "users:admin",
+        action: "package.undelete",
+      }),
+    );
+    expect(patch).not.toHaveBeenCalledWith("packageReleases:malicious", expect.anything());
+  });
+
+  it("restores appeal-service packages without attributing package audit to the target user", async () => {
+    const { ctx, insert } = makeOwnedPackageBatchCtx({
+      pkg: makePackageDoc({
+        softDeletedAt: 1_000,
+        softDeletedReason: "user.banned",
+        softDeletedByRole: "moderator",
+      }),
+      releases: [
+        makeReleaseDoc({
+          _id: "packageReleases:demo-1",
+          softDeletedAt: 1_000,
+          distTags: ["latest"],
+          version: "1.0.0",
+          changelog: "",
+          compatibility: null,
+          capabilities: null,
+          verification: null,
+        }),
+      ],
+    });
+
+    const result = await restoreOwnedPackagesForUnbanBatchInternalHandler(ctx as never, {
+      ownerUserId: "users:owner",
+      bannedAt: 1_000,
+    });
+
+    expect(result).toMatchObject({ restoredCount: 1, scheduled: false });
+    expect(insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({
+        action: "package.undelete",
+        metadata: expect.objectContaining({ source: "service" }),
+      }),
+    );
+    const packageAudit = insert.mock.calls.find(
+      ([table, doc]) => table === "auditLogs" && doc.action === "package.undelete",
+    )?.[1];
+    expect(packageAudit).not.toHaveProperty("actorUserId");
+  });
+
+  it("restores ban-hidden packages owned through the user's personal publisher", async () => {
+    const personalPublisherPackage = makePackageDoc({
+      _id: "packages:personal-publisher",
+      ownerUserId: "users:publishing-actor",
+      ownerPublisherId: "publishers:personal",
+      softDeletedAt: 1_000,
+      softDeletedReason: "user.banned",
+      softDeletedByRole: "moderator",
+      latestReleaseId: "packageReleases:personal-publisher-1",
+      tags: { latest: "packageReleases:personal-publisher-1" },
+    });
+    const { ctx, patch } = makeOwnedPackageBatchCtx({
+      owner: {
+        _id: "users:owner",
+        deletedAt: undefined,
+        deactivatedAt: undefined,
+        personalPublisherId: "publishers:personal",
+      },
+      publisherPackages: [personalPublisherPackage],
+      publishers: {
+        "publishers:personal": {
+          _id: "publishers:personal",
+          kind: "user",
+          linkedUserId: "users:owner",
+        },
+      },
+      releases: [
+        makeReleaseDoc({
+          _id: "packageReleases:personal-publisher-1",
+          packageId: "packages:personal-publisher",
+          softDeletedAt: 1_000,
+          distTags: ["latest"],
+          version: "1.0.0",
+          changelog: "",
+          compatibility: null,
+          capabilities: null,
+          verification: null,
+        }),
+      ],
+    });
+
+    const result = await restoreOwnedPackagesForUnbanBatchInternalHandler(ctx as never, {
+      actorUserId: "users:admin",
+      ownerUserId: "users:owner",
+      bannedAt: 1_000,
+      scope: "personalPublisher",
+    });
+
+    expect(result).toMatchObject({ restoredCount: 1, scheduled: false });
+    expect(patch).toHaveBeenCalledWith(
+      "packages:personal-publisher",
+      expect.objectContaining({
+        softDeletedAt: undefined,
+        softDeletedReason: undefined,
+      }),
+    );
+  });
+
+  it("stops stale package restore batches when the owner is banned again", async () => {
+    const { ctx, patch } = makeOwnedPackageBatchCtx({
+      owner: { _id: "users:owner", deletedAt: 2_000, deactivatedAt: undefined },
+      pkg: makePackageDoc({
+        softDeletedAt: 1_000,
+        softDeletedReason: "user.banned",
+      }),
+    });
+
+    const result = await restoreOwnedPackagesForUnbanBatchInternalHandler(ctx as never, {
+      actorUserId: "users:admin",
+      ownerUserId: "users:owner",
+      bannedAt: 1_000,
+    });
+
+    expect(result).toMatchObject({ stale: true, restoredCount: 0, scheduled: false });
+    expect(patch).not.toHaveBeenCalledWith("packages:demo", expect.anything());
+  });
+
+  it("marks account-deleted packages separately from ban-restorable packages", async () => {
+    const { ctx, patch } = makeOwnedPackageBatchCtx();
+
+    const result = await applyAccountDeletionToOwnedPackagesBatchInternalHandler(ctx as never, {
+      ownerUserId: "users:owner",
+      deletedAt: 3_000,
+    });
+
+    expect(result).toMatchObject({ deletedCount: 1, revokedTokenCount: 1, scheduled: false });
+    expect(patch).toHaveBeenCalledWith(
+      "packages:demo",
+      expect.objectContaining({
+        softDeletedAt: 3_000,
+        softDeletedReason: "user.deactivated",
+        softDeletedBy: "users:owner",
+        softDeletedByRole: "user",
+      }),
+    );
+  });
+
+  it("marks account-deleted packages owned through the user's personal publisher", async () => {
+    const personalPublisherPackage = makePackageDoc({
+      _id: "packages:personal-publisher",
+      ownerUserId: "users:publishing-actor",
+      ownerPublisherId: "publishers:personal",
+    });
+    const { ctx, patch } = makeOwnedPackageBatchCtx({
+      owner: {
+        _id: "users:owner",
+        deactivatedAt: 3_000,
+        personalPublisherId: "publishers:personal",
+      },
+      publisherPackages: [personalPublisherPackage],
+      packageTokens: [
+        {
+          _id: "packagePublishTokens:personal-publisher",
+          packageId: "packages:personal-publisher",
+          version: "1.0.1",
+          revokedAt: undefined,
+        },
+      ],
+      publishers: {
+        "publishers:personal": {
+          _id: "publishers:personal",
+          kind: "user",
+          linkedUserId: "users:owner",
+        },
+      },
+    });
+
+    const result = await applyAccountDeletionToOwnedPackagesBatchInternalHandler(ctx as never, {
+      ownerUserId: "users:owner",
+      deletedAt: 3_000,
+      scope: "personalPublisher",
+    });
+
+    expect(result).toMatchObject({ deletedCount: 1, revokedTokenCount: 1, scheduled: false });
+    expect(patch).toHaveBeenCalledWith(
+      "packages:personal-publisher",
+      expect.objectContaining({
+        softDeletedAt: 3_000,
+        softDeletedReason: "user.deactivated",
+      }),
+    );
+  });
+
+  it("does not delete org-owned packages when deleting a member account", async () => {
+    const { ctx, patch } = makeOwnedPackageBatchCtx({
+      owner: {
+        _id: "users:owner",
+        deletedAt: undefined,
+        deactivatedAt: 3_000,
+        personalPublisherId: "publishers:personal",
+      },
+      pkg: makePackageDoc({
+        ownerUserId: "users:owner",
+        ownerPublisherId: "publishers:org",
+      }),
+      publishers: {
+        "publishers:org": { _id: "publishers:org", kind: "org" },
+      },
+    });
+
+    const result = await applyAccountDeletionToOwnedPackagesBatchInternalHandler(ctx as never, {
+      ownerUserId: "users:owner",
+      deletedAt: 3_000,
+    });
+
+    expect(result).toMatchObject({ deletedCount: 0, revokedTokenCount: 0, scheduled: true });
+    expect(patch).not.toHaveBeenCalledWith("packages:demo", expect.anything());
+    expect(patch).not.toHaveBeenCalledWith("packagePublishTokens:demo", expect.anything());
+  });
+});
 
 describe("softDeletePackageInternal", () => {
   it("soft-deletes a package owned by a personal publisher and writes ownerHandle to the search digest", async () => {
@@ -6863,6 +9395,37 @@ describe("softDeletePackageInternal", () => {
     expect(result).toMatchObject({ ok: true, alreadyDeleted: true, releaseCount: 0 });
     // No release patches should have been made.
     expect(patch).not.toHaveBeenCalledWith("packageReleases:demo-1", expect.anything());
+  });
+
+  it("keeps manually moderated ban-hidden packages out of unban restore scope", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(2_000);
+    const { ctx, patch } = makeSoftDeleteCtx({
+      actor: { _id: "users:owner", role: "moderator" },
+      pkg: makePackageDoc({
+        ownerUserId: "users:owner",
+        ownerPublisherId: "publishers:owner-personal",
+        softDeletedAt: 1_000,
+        softDeletedReason: "user.banned",
+        softDeletedBy: "users:first-moderator",
+        softDeletedByRole: "moderator",
+      }),
+    });
+
+    const result = await softDeletePackageInternalHandler(ctx as never, {
+      userId: "users:owner",
+      name: "demo-plugin",
+    });
+
+    expect(result).toMatchObject({ ok: true, alreadyDeleted: true });
+    expect(patch).toHaveBeenCalledWith(
+      "packages:demo",
+      expect.objectContaining({
+        softDeletedAt: 2_000,
+        softDeletedReason: undefined,
+        softDeletedBy: "users:owner",
+        softDeletedByRole: "moderator",
+      }),
+    );
   });
 });
 
@@ -6942,6 +9505,68 @@ describe("restorePackageInternal", () => {
     });
 
     expect(result).toMatchObject({ ok: true, alreadyRestored: true, releaseCount: 0 });
+    expect(patch).not.toHaveBeenCalledWith("packages:demo", expect.anything());
+  });
+
+  it("does not let package owners directly restore packages hidden by a user ban", async () => {
+    const { ctx, patch } = makeSoftDeleteCtx({
+      pkg: makePackageDoc({
+        ownerUserId: "users:owner",
+        ownerPublisherId: "publishers:owner-personal",
+        softDeletedAt: 1_000,
+        softDeletedReason: "user.banned",
+        softDeletedByRole: "moderator",
+      }),
+    });
+
+    await expect(
+      restorePackageInternalHandler(ctx as never, {
+        userId: "users:owner",
+        name: "demo-plugin",
+      }),
+    ).rejects.toThrow("Forbidden");
+    expect(patch).not.toHaveBeenCalledWith("packages:demo", expect.anything());
+  });
+
+  it("does not let moderators directly restore packages hidden by a user ban", async () => {
+    const { ctx, patch } = makeSoftDeleteCtx({
+      actor: { _id: "users:owner", role: "moderator" },
+      pkg: makePackageDoc({
+        ownerUserId: "users:owner",
+        ownerPublisherId: "publishers:owner-personal",
+        softDeletedAt: 1_000,
+        softDeletedReason: "user.banned",
+        softDeletedByRole: "moderator",
+      }),
+    });
+
+    await expect(
+      restorePackageInternalHandler(ctx as never, {
+        userId: "users:owner",
+        name: "demo-plugin",
+      }),
+    ).rejects.toThrow("Forbidden");
+    expect(patch).not.toHaveBeenCalledWith("packages:demo", expect.anything());
+  });
+
+  it("does not let moderators directly restore packages hidden by account deletion", async () => {
+    const { ctx, patch } = makeSoftDeleteCtx({
+      actor: { _id: "users:owner", role: "moderator" },
+      pkg: makePackageDoc({
+        ownerUserId: "users:owner",
+        ownerPublisherId: "publishers:owner-personal",
+        softDeletedAt: 1_000,
+        softDeletedReason: "user.deactivated",
+        softDeletedByRole: "user",
+      }),
+    });
+
+    await expect(
+      restorePackageInternalHandler(ctx as never, {
+        userId: "users:owner",
+        name: "demo-plugin",
+      }),
+    ).rejects.toThrow("Forbidden");
     expect(patch).not.toHaveBeenCalledWith("packages:demo", expect.anything());
   });
 });

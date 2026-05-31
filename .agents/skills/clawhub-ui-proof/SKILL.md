@@ -15,6 +15,12 @@ temporary scenario for the feature instead of manually clicking through the UI.
   default and runs baseline `origin/main` plus the candidate worktree.
 - Use `--mode feature` for new pages, new workflows, or new UI states that do
   not exist on main. This runs only the candidate lane.
+- Every proof lane runs full-stack by default: the lane's Git checkout starts
+  its own local Convex backend, pushes that lane's functions/schema, and builds
+  the frontend against that lane-local Convex URL. Add
+  `--seed-command '<command>'` when the scenario needs fixtures.
+- Dev auth is opt-in. Use `--dev-auth` or explicit `--env KEY=VALUE` entries
+  only for scenarios that need development auth controls.
 - Do not use `proof:ui` to inspect contributor-provided screenshots, videos, or
   logs. Review those artifacts directly and cite what they prove or fail to
   prove.
@@ -55,6 +61,12 @@ Run real desktop proof on a Crabbox-owned provider:
 bun run proof:ui -- --mode before-after --scenario .artifacts/proof-scenarios/my-fix.pw.ts --provider hetzner
 ```
 
+Run proof with seeded lane-local Convex fixtures:
+
+```sh
+bun run proof:ui -- --mode before-after --seed-command 'bunx convex run --no-push devSeed:seedNixSkills' --scenario .artifacts/proof-scenarios/my-fix.pw.ts --provider hetzner
+```
+
 Artifacts are written under `.artifacts/clawhub-ui-proof/<timestamp>/` with
 screenshots, videos when available, `summary.json`, and `report.md`. Feature
 mode has only candidate artifacts. Promote only broadly useful scenarios into
@@ -73,3 +85,9 @@ bun run proof:publish -- --proof-dir .artifacts/clawhub-ui-proof/<timestamp> --t
 present, MP4s, `summary.json`, and `report.md` to the `qa-artifacts` branch,
 then upserts a marker-backed PR comment with inline screenshots/previews and
 linked MP4s. Use `--dry-run` first when drafting or checking the comment body.
+
+## Share In GitHub Issues
+
+When proof images or screenshots should appear in GitHub issues, share
+`here.now` links instead of uploading image attachments directly to GitHub.
+Include a short note about what the linked image proves.
