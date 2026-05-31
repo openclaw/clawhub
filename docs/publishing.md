@@ -19,64 +19,117 @@ Personal owners are created for users. Org owners can have multiple members.
 When you publish, you either use your personal owner or choose an org owner
 where you have publisher access.
 
-## Official
-
-Official is a ClawHub policy flag derived from the hard-coded `openclaw`
-organization. The `openclaw` org publisher is Official, and personal publishers
-for `openclaw` org members are Official while that membership exists.
-
-Official does not come from uploaded skill or package metadata, and org
-membership outside the `openclaw` org does not make a personal publisher
-Official.
-
-The same policy shows as an `Official` badge on publisher/profile UI. New
-public packages from an Official publisher use the `official` channel; private
-packages stay private.
-
-`trustedPublisher` is an internal automated-publish permission. It does not make
-a publisher or package Official.
-
 ## Skills
 
-Skills are published from a skill folder. The public page is:
+For a catalog repo, keep skills in folders under `skills/`:
+
+```text
+skills/
+  review-helper/
+    SKILL.md
+  rag-blueprint/
+    SKILL.md
+```
+
+The simplest publishing path is the CLI. Sign in, preview the sync plan, then
+publish the new or changed skills:
+
+```bash
+clawhub login
+clawhub sync --dry-run --owner nvidia --no-clawdbot-roots
+clawhub sync --all --owner nvidia --no-clawdbot-roots
+```
+
+`sync` scans for folders containing `SKILL.md`, compares them with ClawHub, and
+publishes anything new or changed. Use `--dry-run` first to see the plan without
+uploading. Use `--owner <handle>` when publishing to an org owner; omit it to
+publish as the authenticated user. `--no-clawdbot-roots` keeps the scan limited
+to the current repo and explicit roots, which is usually what CI and catalog
+repos want.
+
+The public page for a published skill is:
 
 ```text
 https://clawhub.ai/<owner>/<slug>
 ```
 
-Example:
-
-```text
-https://clawhub.ai/alice/review-helper
-```
-
-The publish request includes the selected owner, slug, version, changelog, and
-files. The server verifies that the actor can publish as that owner before it
-creates the release.
-
-To move an existing skill to another owner while publishing a new version, choose
-the new owner and explicitly confirm the ownership move. In the CLI/API, pass the
-target owner plus the migration opt-in:
-
-```sh
-clawhub skill publish ./review-helper --owner openclaw --migrate-owner --version 1.2.0
-```
-
-Skill owner migration requires admin or owner access on both the current owner
-and the destination owner. It preserves the skill, version history, stats,
-comments, forks, aliases, and audit trail; old owner URLs continue through the
-alias/redirect path.
-
 ### GitHub Actions for Skills
 
-Use the reusable skill workflow for catalog repos that keep many skills under a
-directory such as `skills/`. Pull requests should run dry-run previews, and real
-publishes should start with manual `workflow_dispatch` runs.
+If you want to run skill publishing from CI, call ClawHub's reusable skill
+workflow from a small workflow in your repo. The example below is shaped for a
+catalog repo: operators choose whether to preview the full catalog, publish one
+skill folder, or publish the whole catalog.
 
 ```yaml
+name: Publish Skills to ClawHub
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: What to run.
+        type: choice
+        required: true
+        default: dry-run
+        options:
+          - dry-run
+          - publish-single
+          - publish-catalog
+      skill_path:
+        description: Skill folder for publish-single, for example skills/review-helper.
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
-  publish:
-    uses: openclaw/clawhub/.github/workflows/skill-publish.yml@v1
+  validate-single:
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'publish-single'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate single-skill input
+        env:
+          SKILL_PATH: ${{ inputs.skill_path }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${SKILL_PATH}" ]]; then
+            echo "::error::skill_path is required when mode is publish-single."
+            exit 1
+          fi
+          case "${SKILL_PATH}" in
+            skills/*) ;;
+            *)
+              echo "::error::skill_path must point under skills/, for example skills/review-helper."
+              exit 1
+              ;;
+          esac
+
+  dry-run:
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'dry-run'
+    uses: openclaw/clawhub/.github/workflows/skill-publish.yml@main
+    with:
+      owner: nvidia
+      dry_run: true
+    secrets:
+      clawhub_token: ${{ secrets.CLAWHUB_TOKEN }}
+
+  publish-single:
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'publish-single'
+    needs: validate-single
+    uses: openclaw/clawhub/.github/workflows/skill-publish.yml@main
+    with:
+      owner: nvidia
+      skill_path: ${{ inputs.skill_path }}
+      dry_run: false
+    secrets:
+      clawhub_token: ${{ secrets.CLAWHUB_TOKEN }}
+
+  publish-catalog:
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'publish-catalog'
+    uses: openclaw/clawhub/.github/workflows/skill-publish.yml@main
     with:
       owner: nvidia
       dry_run: false
@@ -84,8 +137,21 @@ jobs:
       clawhub_token: ${{ secrets.CLAWHUB_TOKEN }}
 ```
 
-`root` defaults to `skills`. To publish or preview one folder, pass
-`skill_path`, for example `skill_path: skills/review-helper`.
+Replace `nvidia` with your ClawHub owner handle. The called workflow defaults to
+scanning `skills/`; pass `skill_path` only when you want to process one folder.
+
+Before running a real publish, add a `CLAWHUB_TOKEN` repository secret. The token
+must belong to a ClawHub user that can publish to the selected owner.
+
+```bash
+clawhub login --label "Skills GitHub Actions"
+gh secret set CLAWHUB_TOKEN \
+  --repo OWNER/REPO \
+  --body "$(clawhub token)"
+```
+
+Start with `dry-run`, then publish one skill with `publish-single`, and only then
+use `publish-catalog` for the full catalog.
 
 ## Plugins
 
