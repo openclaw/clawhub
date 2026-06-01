@@ -3064,6 +3064,8 @@
             "schema": {
               "type": "string",
               "enum": [
+                "recommended",
+                "default",
                 "updated",
                 "createdAt",
                 "newest",
