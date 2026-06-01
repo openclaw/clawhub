@@ -152,12 +152,75 @@ function extractLastJsonObject(output: string) {
   throw new Error(`No JSON object in convex run output:\n${output}`);
 }
 
-export async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit) {
+export async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+  timeoutMs: number = REQUEST_TIMEOUT_MS,
+) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(new Error("Timeout")), REQUEST_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(new Error("Timeout")), timeoutMs);
   try {
     return await fetch(input, { ...init, signal: controller.signal });
   } finally {
     clearTimeout(timeout);
   }
+}
+
+const MAX_RATE_LIMIT_WAIT_MS = 15_000;
+const TRANSIENT_RETRY_DELAY_MS = 1_000;
+
+function parsePositiveNumber(value: string | null) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function getRetryDelayMs(response: Response) {
+  const retryAfterSeconds = parsePositiveNumber(response.headers.get("Retry-After"));
+  if (retryAfterSeconds !== null) {
+    return Math.min(retryAfterSeconds * 1000, MAX_RATE_LIMIT_WAIT_MS);
+  }
+  const relativeResetSeconds = parsePositiveNumber(response.headers.get("RateLimit-Reset"));
+  if (relativeResetSeconds !== null) {
+    return Math.min(relativeResetSeconds * 1000, MAX_RATE_LIMIT_WAIT_MS);
+  }
+  const absoluteResetSeconds = parsePositiveNumber(response.headers.get("X-RateLimit-Reset"));
+  if (absoluteResetSeconds !== null) {
+    return Math.min(Math.max(absoluteResetSeconds * 1000 - Date.now(), 0), MAX_RATE_LIMIT_WAIT_MS);
+  }
+  return TRANSIENT_RETRY_DELAY_MS;
+}
+
+/**
+ * Fetch with timeout, retrying on transient failures (network abort/timeout,
+ * 429, and 5xx). Used for read-only verification calls against a real registry
+ * where occasional cold starts or rate-limit hits would otherwise flake the
+ * test. Non-transient HTTP responses (e.g. 401/403/404) are returned as-is.
+ */
+export async function fetchWithRetry(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+  options: { maxAttempts?: number; timeoutMs?: number } = {},
+) {
+  const maxAttempts = options.maxAttempts ?? 3;
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const response = await fetchWithTimeout(input, init, options.timeoutMs);
+      if (attempt >= maxAttempts) return response;
+      if (response.status === 429) {
+        await new Promise((resolve) => setTimeout(resolve, getRetryDelayMs(response)));
+        continue;
+      }
+      if (response.status >= 500) {
+        await new Promise((resolve) => setTimeout(resolve, TRANSIENT_RETRY_DELAY_MS * attempt));
+        continue;
+      }
+      return response;
+    } catch (error) {
+      lastError = error;
+      if (attempt >= maxAttempts) throw error;
+      await new Promise((resolve) => setTimeout(resolve, TRANSIENT_RETRY_DELAY_MS * attempt));
+    }
+  }
+  throw lastError ?? new Error("fetchWithRetry exhausted attempts");
 }

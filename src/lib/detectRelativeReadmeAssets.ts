@@ -12,11 +12,20 @@
  * fill in source metadata or rewrite their README to absolute URLs before
  * shipping.
  *
- * Definition of "relative" here is intentionally narrow: anything that is not
- * an absolute http(s) URL, a protocol-relative URL, a data:/mailto:/tel: URI,
- * or a fragment. Root-absolute paths like `/foo.png` are also flagged because
- * on the plugin detail page the browser resolves them against clawhub.ai
- * itself, which is just as broken as `./foo.png`.
+ * Two flavors of "broken on the detail page" exist and the report distinguishes
+ * them, because the publish form needs to behave differently:
+ *
+ *   - **Resolvable**: package-relative paths like `./images/foo.png` or
+ *     `images/foo.png`. These can be rewritten at render time to
+ *     `raw.githubusercontent.com/<repo>/<commit>/<sourcePath>/...` once the
+ *     publisher fills in Source repo + Commit SHA, so the warning may be
+ *     dismissed by completing those fields.
+ *   - **Unresolvable**: root-absolute paths like `/static/logo.png`. The
+ *     renderer (rehypeProxyImages) intentionally never rewrites these — there
+ *     is no safe base URL that wouldn't accidentally pull random repo-root
+ *     files — so they will 404 on the plugin detail page even if source
+ *     metadata is provided. The only fixes are to rewrite them in the README
+ *     to a real absolute URL, or to make them package-relative.
  */
 
 const MARKDOWN_IMAGE = /!\[[^\]]*\]\(\s*([^)\s]+)(?:\s+"[^"]*")?\s*\)/g;
@@ -27,13 +36,18 @@ const PROTOCOL_RELATIVE = /^\/\//;
 
 const MAX_REPORTED = 5;
 
-function isRelativeAsset(rawSrc: string): boolean {
+function classifyRelativeAsset(rawSrc: string): "package-relative" | "root-absolute" | null {
   const src = rawSrc.trim();
-  if (!src) return false;
-  if (src.startsWith("#")) return false;
-  if (PROTOCOL_RELATIVE.test(src)) return false;
-  if (ABSOLUTE_URL.test(src)) return false;
-  return true;
+  if (!src) return null;
+  if (src.startsWith("#")) return null;
+  if (PROTOCOL_RELATIVE.test(src)) return null;
+  if (ABSOLUTE_URL.test(src)) return null;
+  // Single leading slash (we already excluded `//...` above) means the browser
+  // resolves against the page origin, not the package — and the markdown
+  // renderer deliberately never rewrites these. Mark them out so the publish
+  // form can warn even when source repo + commit are both filled in.
+  if (src.startsWith("/")) return "root-absolute";
+  return "package-relative";
 }
 
 export interface RelativeReadmeAssetReport {
@@ -41,22 +55,42 @@ export interface RelativeReadmeAssetReport {
   samples: string[];
   /** Total number of relative references detected (may exceed samples.length). */
   total: number;
+  /**
+   * Subset of `samples` that are root-absolute (e.g. `/static/logo.png`).
+   * These cannot be salvaged by Source repo + Commit SHA because the README
+   * renderer never rewrites root-absolute paths.
+   */
+  unresolvableSamples: string[];
+  /** Total number of root-absolute references detected. */
+  unresolvableTotal: number;
 }
 
 export function detectRelativeReadmeAssets(readmeText: string): RelativeReadmeAssetReport {
-  if (!readmeText) return { samples: [], total: 0 };
+  if (!readmeText) {
+    return { samples: [], total: 0, unresolvableSamples: [], unresolvableTotal: 0 };
+  }
 
   const seen = new Set<string>();
   const samples: string[] = [];
+  const unresolvableSeen = new Set<string>();
+  const unresolvableSamples: string[] = [];
   let total = 0;
+  let unresolvableTotal = 0;
 
   const record = (src: string | undefined) => {
     if (!src) return;
-    if (!isRelativeAsset(src)) return;
+    const kind = classifyRelativeAsset(src);
+    if (!kind) return;
     total += 1;
-    if (seen.has(src)) return;
-    seen.add(src);
-    if (samples.length < MAX_REPORTED) samples.push(src);
+    if (kind === "root-absolute") unresolvableTotal += 1;
+    if (!seen.has(src)) {
+      seen.add(src);
+      if (samples.length < MAX_REPORTED) samples.push(src);
+    }
+    if (kind === "root-absolute" && !unresolvableSeen.has(src)) {
+      unresolvableSeen.add(src);
+      if (unresolvableSamples.length < MAX_REPORTED) unresolvableSamples.push(src);
+    }
   };
 
   MARKDOWN_IMAGE.lastIndex = 0;
@@ -73,5 +107,5 @@ export function detectRelativeReadmeAssets(readmeText: string): RelativeReadmeAs
     record(match[1] ?? match[2]);
   }
 
-  return { samples, total };
+  return { samples, total, unresolvableSamples, unresolvableTotal };
 }

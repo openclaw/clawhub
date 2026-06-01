@@ -88,12 +88,18 @@ function findReadmeFile(files: File[]): File | null {
 
 async function scanReadmeRelativeAssets(files: File[]): Promise<RelativeReadmeAssetReport> {
   const readme = findReadmeFile(files);
-  if (!readme) return { samples: [], total: 0 };
+  const empty: RelativeReadmeAssetReport = {
+    samples: [],
+    total: 0,
+    unresolvableSamples: [],
+    unresolvableTotal: 0,
+  };
+  if (!readme) return empty;
   try {
     const text = await readme.text();
     return detectRelativeReadmeAssets(text);
   } catch {
-    return { samples: [], total: 0 };
+    return empty;
   }
 }
 
@@ -208,9 +214,29 @@ export function PublishPluginRoute() {
   ]);
 
   const readmeAssetWarning = useMemo(() => {
-    if (readmeAssetReport.total === 0) return null;
-    if (sourceRepo.trim() && sourceCommit.trim()) return null;
-    return readmeAssetReport;
+    const { total, unresolvableTotal, samples, unresolvableSamples } = readmeAssetReport;
+    if (total === 0) return null;
+    const hasSource = Boolean(sourceRepo.trim() && sourceCommit.trim());
+    const resolvableTotal = total - unresolvableTotal;
+    // Resolvable references (e.g. `./images/foo.png`) are silenced once Source
+    // repo + Commit SHA are filled — those let the renderer rewrite them to a
+    // raw.githubusercontent.com URL. Root-absolute references (e.g.
+    // `/static/logo.png`) are never rewritten by the renderer, so they keep
+    // warning regardless of source metadata.
+    const showResolvable = resolvableTotal > 0 && !hasSource;
+    const showUnresolvable = unresolvableTotal > 0;
+    if (!showResolvable && !showUnresolvable) return null;
+    const resolvableSamples = samples.filter((sample) => !unresolvableSamples.includes(sample));
+    return {
+      total,
+      samples,
+      resolvableTotal,
+      resolvableSamples,
+      unresolvableTotal,
+      unresolvableSamples,
+      showResolvable,
+      showUnresolvable,
+    };
   }, [readmeAssetReport, sourceRepo, sourceCommit]);
 
   const onPickFiles = async (selected: File[], sourceKind: PackagePickSource) => {
@@ -479,16 +505,37 @@ export function PublishPluginRoute() {
                   {readmeAssetWarning ? (
                     <Badge variant="accent">
                       <span>
-                        Your README references{" "}
-                        {readmeAssetWarning.total === 1
-                          ? "a relative image path"
-                          : `${readmeAssetWarning.total} relative image paths`}{" "}
-                        ({readmeAssetWarning.samples.slice(0, 3).join(", ")}
-                        {readmeAssetWarning.samples.length > 3 ? ", \u2026" : ""}). ClawHub does not
-                        host package binary assets, so these will fail to load on the plugin detail
-                        page. Either fill in GitHub repository + Commit SHA so the images can be
-                        served from your source host, or rewrite them to absolute URLs in the
-                        README.
+                        {readmeAssetWarning.showResolvable ? (
+                          <>
+                            Your README references{" "}
+                            {readmeAssetWarning.resolvableTotal === 1
+                              ? "a package-relative image path"
+                              : `${readmeAssetWarning.resolvableTotal} package-relative image paths`}{" "}
+                            ({readmeAssetWarning.resolvableSamples.slice(0, 3).join(", ")}
+                            {readmeAssetWarning.resolvableSamples.length > 3 ? ", \u2026" : ""}).
+                            Without Source repo + Commit SHA the plugin detail page can't resolve
+                            them to your source host, so they will 404. Fill in GitHub repository +
+                            Commit SHA (and Package path if the package isn't at the repo root) to
+                            serve them from raw.githubusercontent.com, or rewrite them to absolute
+                            URLs in the README.
+                          </>
+                        ) : null}
+                        {readmeAssetWarning.showResolvable && readmeAssetWarning.showUnresolvable
+                          ? " "
+                          : null}
+                        {readmeAssetWarning.showUnresolvable ? (
+                          <>
+                            Your README also references{" "}
+                            {readmeAssetWarning.unresolvableTotal === 1
+                              ? "a root-absolute image path"
+                              : `${readmeAssetWarning.unresolvableTotal} root-absolute image paths`}{" "}
+                            ({readmeAssetWarning.unresolvableSamples.slice(0, 3).join(", ")}
+                            {readmeAssetWarning.unresolvableSamples.length > 3 ? ", \u2026" : ""}).
+                            These start with "/" and are resolved against the page origin, not the
+                            package, so Source repo + Commit SHA cannot rewrite them — please
+                            replace them with absolute URLs or package-relative paths in the README.
+                          </>
+                        ) : null}
                       </span>
                     </Badge>
                   ) : null}

@@ -673,9 +673,9 @@ describe("plugins publish route", () => {
     fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest, readme] } });
 
     await waitFor(() => {
-      expect(screen.getByText(/Your README references 2 relative image paths/i)).toBeTruthy();
+      expect(screen.getByText(/2 package-relative image paths/i)).toBeTruthy();
     });
-    expect(screen.getByText(/ClawHub does not\s+host package binary assets/i)).toBeTruthy();
+    expect(screen.getByText(/can't resolve them to your source host/i)).toBeTruthy();
     expect(screen.getByText(/\.\/images\/foo\.png/)).toBeTruthy();
     expect(screen.getByText(/\.\/images\/bar\.png/)).toBeTruthy();
   });
@@ -707,19 +707,62 @@ describe("plugins publish route", () => {
     fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest, readme] } });
 
     await waitFor(() => {
-      expect(screen.getByText(/Your README references a relative image path/i)).toBeTruthy();
+      expect(screen.getByText(/a package-relative image path/i)).toBeTruthy();
     });
 
-    fireEvent.change(screen.getByPlaceholderText("Source repo (owner/repo)"), {
+    fireEvent.change(screen.getByPlaceholderText("owner/repo"), {
       target: { value: "openclaw/demo-plugin" },
     });
-    fireEvent.change(screen.getByPlaceholderText("Source commit"), {
+    fireEvent.change(screen.getByPlaceholderText("Full commit SHA"), {
       target: { value: "abc123" },
     });
 
     await waitFor(() => {
       expect(screen.queryByText(/Your README references/i)).toBeNull();
     });
+  });
+
+  it("keeps warning about root-absolute README image paths even when Source repo and Source commit are filled", async () => {
+    renderPublishRoute();
+
+    const packageJson = withRelativePath(
+      new File(
+        [makeCodePluginPackageJson({ name: "demo-plugin", version: "1.0.0" })],
+        "package.json",
+        {
+          type: "application/json",
+        },
+      ),
+      "demo-plugin/package.json",
+    );
+    const manifest = withRelativePath(
+      new File(['{"id":"demo.plugin"}'], "openclaw.plugin.json", { type: "application/json" }),
+      "demo-plugin/openclaw.plugin.json",
+    );
+    const readme = withRelativePath(
+      new File(["# Demo\n\n![logo](/static/logo.png)\n"], "README.md", {
+        type: "text/markdown",
+      }),
+      "demo-plugin/README.md",
+    );
+
+    fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest, readme] } });
+
+    await waitFor(() => {
+      expect(screen.getByText(/a root-absolute image path/i)).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText("owner/repo"), {
+      target: { value: "openclaw/demo-plugin" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Full commit SHA"), {
+      target: { value: "abc123" },
+    });
+
+    // Filling in source metadata must not silence the unresolvable warning,
+    // because root-absolute paths are never rewritten by the renderer.
+    expect(screen.getByText(/a root-absolute image path/i)).toBeTruthy();
+    expect(screen.getByText(/\/static\/logo\.png/)).toBeTruthy();
   });
 
   it("does not warn when README only uses absolute image URLs", async () => {

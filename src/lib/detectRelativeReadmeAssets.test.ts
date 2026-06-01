@@ -5,13 +5,20 @@ import { detectRelativeReadmeAssets } from "./detectRelativeReadmeAssets";
 
 describe("detectRelativeReadmeAssets", () => {
   it("returns nothing for empty input", () => {
-    expect(detectRelativeReadmeAssets("")).toEqual({ samples: [], total: 0 });
+    expect(detectRelativeReadmeAssets("")).toEqual({
+      samples: [],
+      total: 0,
+      unresolvableSamples: [],
+      unresolvableTotal: 0,
+    });
   });
 
   it("flags a relative markdown image reference", () => {
     const report = detectRelativeReadmeAssets("![diagram](./images/foo.png)");
     expect(report.samples).toEqual(["./images/foo.png"]);
     expect(report.total).toBe(1);
+    expect(report.unresolvableSamples).toEqual([]);
+    expect(report.unresolvableTotal).toBe(0);
   });
 
   it("flags relative <img src> references in raw HTML", () => {
@@ -20,18 +27,27 @@ describe("detectRelativeReadmeAssets", () => {
     );
     expect(report.samples).toEqual(["images/foo.png", "./bar.svg"]);
     expect(report.total).toBe(2);
+    expect(report.unresolvableSamples).toEqual([]);
   });
 
-  it("flags root-absolute paths because they break on the plugin detail page", () => {
+  it("flags root-absolute paths separately as unresolvable", () => {
     const report = detectRelativeReadmeAssets("![logo](/static/logo.png)");
     expect(report.samples).toEqual(["/static/logo.png"]);
+    expect(report.total).toBe(1);
+    expect(report.unresolvableSamples).toEqual(["/static/logo.png"]);
+    expect(report.unresolvableTotal).toBe(1);
   });
 
   it("ignores absolute http(s) URLs", () => {
     const report = detectRelativeReadmeAssets(
       '![ok](https://example.com/foo.png)\n<img src="http://example.com/x.png"/>',
     );
-    expect(report).toEqual({ samples: [], total: 0 });
+    expect(report).toEqual({
+      samples: [],
+      total: 0,
+      unresolvableSamples: [],
+      unresolvableTotal: 0,
+    });
   });
 
   it("ignores protocol-relative URLs, data:, mailto:, tel:, and fragment hrefs", () => {
@@ -43,7 +59,12 @@ describe("detectRelativeReadmeAssets", () => {
         '<img src="mailto:x@y"/>',
       ].join("\n"),
     );
-    expect(report).toEqual({ samples: [], total: 0 });
+    expect(report).toEqual({
+      samples: [],
+      total: 0,
+      unresolvableSamples: [],
+      unresolvableTotal: 0,
+    });
   });
 
   it("deduplicates samples but counts each occurrence in total", () => {
@@ -52,6 +73,16 @@ describe("detectRelativeReadmeAssets", () => {
     );
     expect(report.samples).toEqual(["./x.png", "./y.png"]);
     expect(report.total).toBe(4);
+  });
+
+  it("counts unresolvable references in total but separates them in unresolvableSamples", () => {
+    const report = detectRelativeReadmeAssets(
+      '![rel](./images/foo.png)\n![bad](/static/logo.png)\n![bad](/static/logo.png)\n<img src="/icons/x.svg"/>',
+    );
+    expect(report.samples).toEqual(["./images/foo.png", "/static/logo.png", "/icons/x.svg"]);
+    expect(report.total).toBe(4);
+    expect(report.unresolvableSamples).toEqual(["/static/logo.png", "/icons/x.svg"]);
+    expect(report.unresolvableTotal).toBe(3);
   });
 
   it("caps samples at 5 distinct paths but keeps counting in total", () => {
