@@ -123,7 +123,7 @@ export function getPublicSkillVersionFileAccessBlock(
     if (moderationBlock) return moderationBlock;
   }
 
-  return getVersionSecurityAccessBlock(version, moderationInfo, "served");
+  return getVersionSecurityAccessBlock(version, "served");
 }
 
 export function getPublicSkillVersionDownloadBlock(
@@ -138,18 +138,16 @@ export function getPublicSkillVersionDownloadBlock(
   );
   if (moderationBlock) return moderationBlock;
 
-  return getVersionSecurityAccessBlock(version, moderationInfo, "downloaded");
+  return getVersionSecurityAccessBlock(version, "downloaded");
 }
 
 function getVersionSecurityAccessBlock(
   version: SkillVersionSecurityInfo | null | undefined,
-  moderationInfo?: SkillFileModerationInfo | null,
   action: "downloaded" | "served" = "served",
 ): SkillFileAccessBlock | null {
   if (version?.softDeletedAt) {
     return { status: 410, message: "Version not available" };
   }
-  if (isClearedByManualOverride(moderationInfo)) return null;
   if (hasVersionSecurityStatus(version, "malicious")) {
     return {
       status: 403,
@@ -165,17 +163,6 @@ function getVersionSecurityAccessBlock(
     };
   }
   return null;
-}
-
-function isClearedByManualOverride(moderationInfo: SkillFileModerationInfo | null | undefined) {
-  return (
-    moderationInfo?.overrideActive === true &&
-    moderationInfo.verdict?.trim().toLowerCase() === "clean" &&
-    !moderationInfo.isMalwareBlocked &&
-    !moderationInfo.isPendingScan &&
-    !moderationInfo.isHiddenByMod &&
-    !moderationInfo.isRemoved
-  );
 }
 
 export function isSkillVersionForSkill(
@@ -199,7 +186,7 @@ export function isPublicSkillVersionAvailableForSkill(
 }
 
 function hasVersionSecurityStatus(
-  version: Omit<SkillVersionSecuritySource, "_id"> | null | undefined,
+  version: SkillVersionSecurityInfo | null | undefined,
   status: "malicious" | "pending",
 ) {
   if (!version) return false;

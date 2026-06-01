@@ -210,7 +210,7 @@ describe("downloads helpers", () => {
     expect(storageGet).not.toHaveBeenCalled();
   });
 
-  it("blocks the exact requested skill version when its ClawScan verdict is malicious", async () => {
+  it("blocks explicit downloads of a malicious historical version even when the skill is staff-cleared", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       if ("slug" in args) {
@@ -227,6 +227,8 @@ describe("downloads helpers", () => {
             isPendingScan: false,
             isHiddenByMod: false,
             isRemoved: false,
+            overrideActive: true,
+            verdict: "clean",
           },
         };
       }
