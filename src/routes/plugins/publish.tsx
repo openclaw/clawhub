@@ -1,12 +1,18 @@
+import { useAuthToken } from "@convex-dev/auth/react";
 import { createFileRoute, useSearch } from "@tanstack/react-router";
-import { DocsLinks, getPackageScopeOwnerMismatch } from "clawhub-schema";
-import { useAction, useMutation, useQuery } from "convex/react";
+import { ApiRoutes, DocsLinks, getPackageScopeOwnerMismatch } from "clawhub-schema";
+import { useQuery } from "convex/react";
 import { ExternalLink, Info, Lock } from "lucide-react";
 import { type ReactNode, startTransition, useEffect, useMemo, useState } from "react";
 import semver from "semver";
 import { toast } from "sonner";
 import { api } from "../../../convex/_generated/api";
-import { MAX_PUBLISH_FILE_BYTES, MAX_PUBLISH_TOTAL_BYTES } from "../../../convex/lib/publishLimits";
+import {
+  getPackageMultipartSizeError,
+  isPackageMultipartUploadTooLarge,
+  MAX_PACKAGE_MULTIPART_BYTES,
+  MAX_PUBLISH_FILE_BYTES,
+} from "../../../convex/lib/publishLimits";
 import { EmptyState } from "../../components/EmptyState";
 import { Container } from "../../components/layout/Container";
 import {
@@ -26,15 +32,16 @@ import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { Textarea } from "../../components/ui/textarea";
 import { VersionInput } from "../../components/VersionInput";
+import { packageApiWriteUrl } from "../../lib/packageApi";
 import {
-  buildPackageUploadEntries,
+  appendPackageUploadFiles,
   filterIgnoredPackageFiles,
   normalizePackageUploadFiles,
 } from "../../lib/packageUpload";
 import { derivePluginPrefill, listPrefilledFields } from "../../lib/pluginPublishPrefill";
-import { expandFilesWithReport } from "../../lib/uploadFiles";
+import { expandFilesWithReport, isNpmPackTarball } from "../../lib/uploadFiles";
 import { useAuthStatus } from "../../lib/useAuthStatus";
-import { formatPublishError, hashFile, uploadFile } from "../upload/-utils";
+import { formatPublishError } from "../upload/-utils";
 
 export const Route = createFileRoute("/plugins/publish")({
   validateSearch: (search) => ({
@@ -48,26 +55,25 @@ export const Route = createFileRoute("/plugins/publish")({
   component: PublishPluginRoute,
 });
 
-const apiRefs = api as unknown as {
-  packages: {
-    publishRelease: unknown;
-  };
-};
+type PluginPublishFamily = "code-plugin" | "bundle-plugin";
 
-const SHOW_CLAWPACK_ONBOARDING_BANNER = false;
 const PLUGIN_PUBLISHING_GUIDE_URL = "https://docs.openclaw.ai/clawhub/publishing#plugins";
+
+async function getSelectedTarball(selected: File[]) {
+  if (selected.length !== 1) return null;
+  const [file] = selected;
+  if (!file) return null;
+  return (await isNpmPackTarball(file)) ? file : null;
+}
 
 export function PublishPluginRoute() {
   const search = useSearch({ from: "/plugins/publish" });
   const { isAuthenticated, isLoading: isAuthLoading, me } = useAuthStatus();
+  const authToken = useAuthToken();
   const publishers = useQuery(api.publishers.listMine, me ? {} : "skip") as
     | Array<PublisherOwnerMembership>
     | undefined;
-  const generateUploadUrl = useMutation(api.uploads.generateUploadUrl);
-  const publishRelease = useAction(apiRefs.packages.publishRelease as never) as unknown as (args: {
-    payload: unknown;
-  }) => Promise<unknown>;
-  const [family, setFamily] = useState<"code-plugin" | "bundle-plugin">("code-plugin");
+  const [family, setFamily] = useState<PluginPublishFamily>("code-plugin");
   const [name, setName] = useState(search.name ?? "");
   const [displayName, setDisplayName] = useState(search.displayName ?? "");
   const [ownerHandle, setOwnerHandle] = useState(search.ownerHandle ?? "");
@@ -81,6 +87,7 @@ export function PublishPluginRoute() {
   const [hostTargets, setHostTargets] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [packageSourceKind, setPackageSourceKind] = useState<PackagePickSource | null>(null);
+  const [publishTarball, setPublishTarball] = useState<File | null>(null);
   const [ignoredPaths, setIgnoredPaths] = useState<string[]>([]);
   const [detectedPrefillFields, setDetectedPrefillFields] = useState<string[]>([]);
   const [codePluginFieldIssues, setCodePluginFieldIssues] = useState<string[]>([]);
@@ -89,7 +96,10 @@ export function PublishPluginRoute() {
   const [error, setError] = useState<string | null>(null);
   const showChangelogField = Boolean(search.name);
 
-  const totalBytes = useMemo(() => files.reduce((sum, file) => sum + file.size, 0), [files]);
+  const totalBytes = useMemo(
+    () => publishTarball?.size ?? files.reduce((sum, file) => sum + file.size, 0),
+    [files, publishTarball],
+  );
   const normalizedPaths = useMemo(
     () => normalizePackageUploadFiles(files).map((entry) => entry.path),
     [files],
@@ -99,8 +109,8 @@ export function PublishPluginRoute() {
     [normalizedPaths],
   );
   const oversizedFiles = useMemo(
-    () => files.filter((file) => file.size > MAX_PUBLISH_FILE_BYTES),
-    [files],
+    () => (publishTarball ? [] : files.filter((file) => file.size > MAX_PUBLISH_FILE_BYTES)),
+    [files, publishTarball],
   );
   const oversizedFileNames = useMemo(
     () => oversizedFiles.slice(0, 3).map((file) => file.name),
@@ -109,8 +119,8 @@ export function PublishPluginRoute() {
   const validationError =
     oversizedFiles.length > 0
       ? `Each file must be 10MB or smaller: ${oversizedFileNames.join(", ")}`
-      : totalBytes > MAX_PUBLISH_TOTAL_BYTES
-        ? "Total file size exceeds 50MB."
+      : totalBytes > MAX_PACKAGE_MULTIPART_BYTES
+        ? "Total file size exceeds 18MB for package uploads."
         : null;
   const isMetadataLocked = files.length === 0;
   const metadataDisabled = isMetadataLocked || isSubmitting;
@@ -133,6 +143,7 @@ export function PublishPluginRoute() {
   const hasPublished = status?.startsWith("Published.") ?? false;
   const isPublishDisabled =
     !isAuthenticated ||
+    !authToken ||
     isMetadataLocked ||
     hasPackageBlocker ||
     submitBlockers.length > 0 ||
@@ -140,7 +151,7 @@ export function PublishPluginRoute() {
     hasPublished;
   const publishBlockerSummary = useMemo(() => {
     if (isSubmitting) return null;
-    if (!isAuthenticated) return "Sign in to publish.";
+    if (!isAuthenticated || !authToken) return "Sign in to publish.";
     if (isMetadataLocked) return "Complete plugin files to publish.";
     if (validationError) return `Fix: ${validationError}`;
     if (ownerScopeError) return `Fix: ${ownerScopeError}`;
@@ -155,6 +166,7 @@ export function PublishPluginRoute() {
     return null;
   }, [
     codePluginFieldIssues,
+    authToken,
     isAuthenticated,
     isMetadataLocked,
     isSubmitting,
@@ -164,15 +176,19 @@ export function PublishPluginRoute() {
   ]);
 
   const onPickFiles = async (selected: File[], sourceKind: PackagePickSource) => {
+    const selectedTarball = await getSelectedTarball(selected);
     const expanded = await expandFilesWithReport(selected, {
       includeBinaryArchiveFiles: true,
     });
-    const filtered = await filterIgnoredPackageFiles(expanded.files);
-    const normalized = normalizePackageUploadFiles(filtered.files);
+    const uploadFiles = selectedTarball
+      ? { files: expanded.files, ignoredPaths: [] }
+      : await filterIgnoredPackageFiles(expanded.files);
+    const normalized = normalizePackageUploadFiles(uploadFiles.files);
     const nextIgnoredPaths = [
-      ...new Set([...expanded.ignoredLocalMetadataPaths, ...filtered.ignoredPaths]),
+      ...new Set([...expanded.ignoredLocalMetadataPaths, ...uploadFiles.ignoredPaths]),
     ];
-    setFiles(filtered.files);
+    setFiles(uploadFiles.files);
+    setPublishTarball(selectedTarball);
     setPackageSourceKind(sourceKind);
     setIgnoredPaths(nextIgnoredPaths);
     setError(null);
@@ -191,6 +207,7 @@ export function PublishPluginRoute() {
 
   const clearSelectedFiles = () => {
     setFiles([]);
+    setPublishTarball(null);
     setPackageSourceKind(null);
     setIgnoredPaths([]);
     setDetectedPrefillFields([]);
@@ -254,18 +271,6 @@ export function PublishPluginRoute() {
             </a>
           </Button>
         </header>
-
-        {SHOW_CLAWPACK_ONBOARDING_BANNER ? (
-          <Card className="mb-5 border-[rgba(255,107,74,0.3)] bg-[rgba(255,107,74,0.06)]">
-            <p className="text-sm font-medium text-[color:var(--ink)]">
-              ClawPack publishing is moving to npm-pack .tgz uploads.
-            </p>
-            <p className="mt-1 text-sm text-[color:var(--ink-soft)]">
-              Use the CLI for exact ClawPack bytes while the web uploader remains on the legacy
-              compatibility path.
-            </p>
-          </Card>
-        ) : null}
 
         <PackageSourceChooser
           files={files}
@@ -530,56 +535,89 @@ export function PublishPluginRoute() {
                         );
                         return;
                       }
+                      const payload = {
+                        name: name.trim(),
+                        displayName: displayName.trim() || undefined,
+                        ownerHandle: ownerHandle || undefined,
+                        family,
+                        version: version.trim(),
+                        changelog: changelog.trim(),
+                        ...(sourceRepo.trim() && sourceCommit.trim()
+                          ? {
+                              source: {
+                                kind: "github" as const,
+                                repo: sourceRepo.trim(),
+                                url: sourceRepo.trim().startsWith("http")
+                                  ? sourceRepo.trim()
+                                  : `https://github.com/${sourceRepo.trim().replace(/^\/+|\/+$/g, "")}`,
+                                ref: sourceRef.trim() || sourceCommit.trim(),
+                                commit: sourceCommit.trim(),
+                                path: sourcePath.trim() || ".",
+                                importedAt: Date.now(),
+                              },
+                            }
+                          : {}),
+                        ...(family === "bundle-plugin"
+                          ? {
+                              bundle: {
+                                format: bundleFormat.trim() || undefined,
+                                hostTargets: hostTargets
+                                  .split(",")
+                                  .map((entry) => entry.trim())
+                                  .filter(Boolean),
+                              },
+                            }
+                          : {}),
+                      };
+                      const payloadJson = JSON.stringify(payload);
+                      const uploadTooLarge = publishTarball
+                        ? isPackageMultipartUploadTooLarge({
+                            payloadJson,
+                            fileFieldName: "clawpack",
+                            files: [
+                              {
+                                name: publishTarball.name,
+                                size: publishTarball.size,
+                                type: publishTarball.type,
+                              },
+                            ],
+                          })
+                        : isPackageMultipartUploadTooLarge({
+                            payloadJson,
+                            fileFieldName: "files",
+                            files: normalizePackageUploadFiles(files).map(({ file, path }) => ({
+                              name: path,
+                              size: file.size,
+                              type: file.type,
+                            })),
+                          });
+                      if (uploadTooLarge) {
+                        toast.error(getPackageMultipartSizeError());
+                        return;
+                      }
                       setIsSubmitting(true);
-                      setStatus("Uploading files...");
-                      setError(null);
-                      const uploaded = await buildPackageUploadEntries(files, {
-                        generateUploadUrl,
-                        hashFile,
-                        uploadFile,
-                      });
                       setStatus("Publishing release...");
-                      await publishRelease({
-                        payload: {
-                          name: name.trim(),
-                          displayName: displayName.trim() || undefined,
-                          ownerHandle: ownerHandle || undefined,
-                          family,
-                          version: version.trim(),
-                          changelog: changelog.trim(),
-                          ...(sourceRepo.trim() && sourceCommit.trim()
-                            ? {
-                                source: {
-                                  kind: "github" as const,
-                                  repo: sourceRepo.trim(),
-                                  url: sourceRepo.trim().startsWith("http")
-                                    ? sourceRepo.trim()
-                                    : `https://github.com/${sourceRepo.trim().replace(/^\/+|\/+$/g, "")}`,
-                                  ref: sourceRef.trim() || sourceCommit.trim(),
-                                  commit: sourceCommit.trim(),
-                                  path: sourcePath.trim() || ".",
-                                  importedAt: Date.now(),
-                                },
-                              }
-                            : {}),
-                          ...(family === "bundle-plugin"
-                            ? {
-                                bundle: {
-                                  format: bundleFormat.trim() || undefined,
-                                  hostTargets: hostTargets
-                                    .split(",")
-                                    .map((entry) => entry.trim())
-                                    .filter(Boolean),
-                                },
-                              }
-                            : {}),
-                          files: uploaded,
-                        },
+                      setError(null);
+                      const form = new FormData();
+                      form.set("payload", payloadJson);
+                      if (publishTarball) {
+                        form.set("clawpack", publishTarball, publishTarball.name);
+                      } else {
+                        appendPackageUploadFiles(form, files);
+                      }
+                      const response = await fetch(packageApiWriteUrl(ApiRoutes.packages), {
+                        method: "POST",
+                        headers: { Authorization: `Bearer ${authToken}` },
+                        body: form,
                       });
+                      if (!response.ok) {
+                        throw new Error(await response.text());
+                      }
                       setStatus(
                         "Published. Pending security checks and verification before public listing.",
                       );
                     } catch (publishError) {
+                      setError(formatPublishError(publishError));
                       toast.error(formatPublishError(publishError));
                       setStatus(null);
                     } finally {

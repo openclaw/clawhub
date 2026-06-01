@@ -2,6 +2,7 @@
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { DocsLinks } from "clawhub-schema";
+import { gzipSync, strToU8 } from "fflate";
 import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -22,10 +23,9 @@ vi.mock("@tanstack/react-router", () => ({
 
 vi.mock("@convex-dev/auth/react", () => ({
   useAuthActions: () => ({ signIn: vi.fn() }),
+  useAuthToken: () => "clh_test",
 }));
 
-const generateUploadUrl = vi.fn();
-const publishRelease = vi.fn();
 const fetchMock = vi.fn();
 const useAuthStatusMock = vi.fn();
 const useQueryMock = vi.fn();
@@ -33,8 +33,6 @@ const originalFetch = globalThis.fetch;
 
 vi.mock("convex/react", () => ({
   ConvexReactClient: class {},
-  useMutation: () => generateUploadUrl,
-  useAction: () => publishRelease,
   useQuery: () => useQueryMock(),
 }));
 
@@ -81,10 +79,99 @@ function getFileInputs() {
   return Array.from(document.querySelectorAll('input[type="file"]')) as HTMLInputElement[];
 }
 
+function getPublishForm() {
+  const call = fetchMock.mock.calls.find(([, init]) => {
+    const request = init as RequestInit | undefined;
+    return request?.method === "POST" && request.body instanceof FormData;
+  });
+  if (!call) throw new Error("Missing package publish request");
+  return call[1]?.body as FormData;
+}
+
+function getPublishUrl() {
+  const call = fetchMock.mock.calls.find(([, init]) => {
+    const request = init as RequestInit | undefined;
+    return request?.method === "POST" && request.body instanceof FormData;
+  });
+  if (!call) throw new Error("Missing package publish request");
+  return call[0].toString();
+}
+
+function getPublishPayload() {
+  const payload = getPublishForm().get("payload");
+  if (typeof payload !== "string") throw new Error("Missing publish payload");
+  return JSON.parse(payload) as Record<string, unknown>;
+}
+
+function expectUploadMetadataNotInPayload() {
+  const payload = getPublishPayload();
+  expect(payload).not.toHaveProperty("files");
+  expect(payload).not.toHaveProperty("artifact");
+  expect(JSON.stringify(payload)).not.toContain("storageId");
+}
+
+function getUploadedFileNames() {
+  return getPublishForm()
+    .getAll("files")
+    .map((entry) => (entry as File).name)
+    .sort();
+}
+
+function getUploadedTarballNames() {
+  return getPublishForm()
+    .getAll("clawpack")
+    .map((entry) => {
+      if (!(entry instanceof File)) throw new Error("Expected tarball upload to be a file");
+      return entry.name;
+    })
+    .sort();
+}
+
+function buildTar(entries: Array<{ name: string; content: string | Uint8Array }>) {
+  const blocks: Uint8Array[] = [];
+  for (const entry of entries) {
+    const content = entry.content instanceof Uint8Array ? entry.content : strToU8(entry.content);
+    const header = new Uint8Array(512);
+    writeString(header, entry.name, 0, 100);
+    writeString(header, "0000777", 100, 8);
+    writeString(header, "0000000", 108, 8);
+    writeString(header, "0000000", 116, 8);
+    writeString(header, content.length.toString(8).padStart(11, "0"), 124, 12);
+    writeString(header, "00000000000", 136, 12);
+    header[156] = "0".charCodeAt(0);
+    writeString(header, "ustar", 257, 6);
+    for (let index = 148; index < 156; index += 1) {
+      header[index] = 32;
+    }
+    let sum = 0;
+    for (const byte of header) sum += byte;
+    writeString(header, sum.toString(8).padStart(6, "0"), 148, 6);
+    header[154] = 0;
+    header[155] = 32;
+    blocks.push(header);
+    blocks.push(content);
+    const pad = (512 - (content.length % 512)) % 512;
+    if (pad) blocks.push(new Uint8Array(pad));
+  }
+  blocks.push(new Uint8Array(1024));
+  const total = blocks.reduce((sum, block) => sum + block.length, 0);
+  const buffer = new Uint8Array(total);
+  let offset = 0;
+  for (const block of blocks) {
+    buffer.set(block, offset);
+    offset += block.length;
+  }
+  return buffer;
+}
+
+function writeString(target: Uint8Array, value: string, start: number, length: number) {
+  const bytes = strToU8(value);
+  target.set(bytes.subarray(0, length), start);
+}
+
 describe("plugins publish route", () => {
   beforeEach(() => {
-    generateUploadUrl.mockReset();
-    publishRelease.mockReset();
+    vi.unstubAllEnvs();
     fetchMock.mockReset();
     useAuthStatusMock.mockReset();
     useQueryMock.mockReset();
@@ -106,13 +193,11 @@ describe("plugins publish route", () => {
         role: "owner",
       },
     ]);
-    generateUploadUrl.mockResolvedValue("https://upload.local");
-    publishRelease.mockResolvedValue({ ok: true, packageId: "pkg:1", releaseId: "rel:1" });
-    fetchMock.mockImplementation(async (_url: string, init?: RequestInit) => ({
+    vi.stubEnv("VITE_CONVEX_SITE_URL", "https://registry.example");
+    fetchMock.mockImplementation(async (_url: string, _init?: RequestInit) => ({
       ok: true,
-      json: async () => ({
-        storageId: `storage:${((init?.body as File | undefined)?.name ?? "unknown").replaceAll("/", "_")}`,
-      }),
+      text: async () => "",
+      json: async () => ({ ok: true, packageId: "pkg:1", releaseId: "rel:1" }),
     }));
     Object.defineProperty(globalThis, "fetch", {
       value: fetchMock,
@@ -253,33 +338,93 @@ describe("plugins publish route", () => {
     fireEvent.click(screen.getByRole("button", { name: "Publish plugin" }));
 
     await waitFor(() => {
-      expect(publishRelease).toHaveBeenCalledTimes(1);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
-    expect(generateUploadUrl).toHaveBeenCalledTimes(3);
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(publishRelease).toHaveBeenCalledWith({
-      payload: expect.objectContaining({
+    expect(getPublishUrl()).toBe("https://registry.example/api/v1/packages");
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+      method: "POST",
+      headers: { Authorization: "Bearer clh_test" },
+    });
+    expect(getPublishPayload()).toMatchObject({
+      name: "demo-plugin",
+      displayName: "Demo Plugin",
+      family: "code-plugin",
+      version: "1.2.3",
+      changelog: "",
+      source: expect.objectContaining({
+        kind: "github",
+        repo: "openclaw/demo-plugin",
+        url: "https://github.com/openclaw/demo-plugin",
+        ref: "refs/tags/v1.2.3",
+        commit: "abc123",
+        path: ".",
+      }),
+    });
+    expect(getUploadedFileNames()).toEqual([
+      "dist/index.js",
+      "openclaw.plugin.json",
+      "package.json",
+    ]);
+    expect(getUploadedTarballNames()).toEqual([]);
+    expectUploadMetadataNotInPayload();
+  });
+
+  it("publishes a selected ClawPack as the tarball part", async () => {
+    renderPublishRoute();
+
+    const packBytes = gzipSync(
+      buildTar([
+        {
+          name: "package/package.json",
+          content: makeCodePluginPackageJson({
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            version: "1.2.3",
+            repository: "https://github.com/openclaw/demo-plugin.git",
+          }),
+        },
+        { name: "package/openclaw.plugin.json", content: '{"id":"demo.plugin"}' },
+        { name: "package/.clawhubignore", content: "package.json\ndist/\n" },
+        { name: "package/dist/index.js", content: "export const demo = true;\n" },
+      ]),
+    );
+    const pack = new File([Uint8Array.from(packBytes).buffer], "demo-plugin-1.2.3.tgz", {
+      type: "application/gzip",
+    });
+
+    fireEvent.change(getFileInput(), { target: { files: [pack] } });
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("demo-plugin")).toBeTruthy();
+      expect(screen.getByDisplayValue("Demo Plugin")).toBeTruthy();
+      expect(screen.getByDisplayValue("1.2.3")).toBeTruthy();
+      expect(screen.getByDisplayValue("openclaw/demo-plugin")).toBeTruthy();
+      expect(screen.getByText("Package manifest")).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText("Full commit SHA"), {
+      target: { value: "abc123" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Publish plugin" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    expect(getPublishPayload()).toEqual(
+      expect.objectContaining({
         name: "demo-plugin",
         displayName: "Demo Plugin",
         family: "code-plugin",
         version: "1.2.3",
         changelog: "",
-        source: expect.objectContaining({
-          kind: "github",
-          repo: "openclaw/demo-plugin",
-          url: "https://github.com/openclaw/demo-plugin",
-          ref: "refs/tags/v1.2.3",
-          commit: "abc123",
-          path: ".",
-        }),
-        files: expect.arrayContaining([
-          expect.objectContaining({ path: "package.json" }),
-          expect.objectContaining({ path: "openclaw.plugin.json" }),
-          expect.objectContaining({ path: "dist/index.js" }),
-        ]),
       }),
-    });
+    );
+    expect(getUploadedTarballNames()).toEqual(["demo-plugin-1.2.3.tgz"]);
+    expect(getUploadedFileNames()).toEqual([]);
+    expectUploadMetadataNotInPayload();
   });
 
   it("surfaces missing OpenClaw compatibility metadata before publish", async () => {
@@ -329,7 +474,7 @@ describe("plugins publish route", () => {
     expect(
       screen.getByRole("button", { name: "Publish plugin" }).getAttribute("disabled"),
     ).not.toBeNull();
-    expect(publishRelease).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("blocks scoped package names that do not match the selected owner", async () => {
@@ -372,7 +517,7 @@ describe("plugins publish route", () => {
     expect(
       screen.getByRole("button", { name: "Publish plugin" }).getAttribute("disabled"),
     ).not.toBeNull();
-    expect(publishRelease).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("does not mark the upload summary ready while validation errors are present", async () => {
@@ -437,7 +582,7 @@ describe("plugins publish route", () => {
       expect(screen.getByText(/Replace package/i)).toBeTruthy();
       expect(screen.getByText(/Clear package/i)).toBeTruthy();
     });
-    expect(publishRelease).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("prefills metadata from a wrapped GitHub release package", async () => {
@@ -534,7 +679,6 @@ describe("plugins publish route", () => {
       expect(screen.getByText(/Ignored: node_modules\/dep\/index\.js/i)).toBeTruthy();
     });
 
-    expect(screen.queryByLabelText("ClawScan note")).toBeNull();
     fireEvent.change(screen.getByPlaceholderText("owner/repo"), {
       target: { value: "openclaw/demo-plugin" },
     });
@@ -545,21 +689,18 @@ describe("plugins publish route", () => {
     fireEvent.click(screen.getByRole("button", { name: "Publish plugin" }));
 
     await waitFor(() => {
-      expect(publishRelease).toHaveBeenCalledTimes(1);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
-    expect(generateUploadUrl).toHaveBeenCalledTimes(5);
-    const payload = publishRelease.mock.calls[0]?.[0]?.payload as {
-      files: Array<{ path: string }>;
-    };
-    expect(payload.files.map((file) => file.path).sort()).toEqual([
+    expect(getUploadedFileNames()).toEqual([
       ".gitignore",
       "dist/index.js",
       "openclaw.plugin.json",
       "package.json",
       "src/index.js",
     ]);
-    expect(payload).not.toHaveProperty("clawScanNote");
+    expect(getUploadedTarballNames()).toEqual([]);
+    expectUploadMetadataNotInPayload();
   });
 
   it("blocks plugin publish when a file exceeds 10MB", async () => {
@@ -598,7 +739,7 @@ describe("plugins publish route", () => {
     expect(
       screen.getByRole("button", { name: "Publish plugin" }).getAttribute("disabled"),
     ).not.toBeNull();
-    expect(publishRelease).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("shows pending verification messaging after plugin publish", async () => {

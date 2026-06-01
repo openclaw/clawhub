@@ -10,7 +10,6 @@ import {
   getPackageReleaseScanBackfillBatchInternal,
   getByName,
   list,
-  publishPackage,
   publishPackageForTrustedPublisherInternal,
   publishPackageForUserInternal,
   listPackageReportsInternal,
@@ -235,14 +234,6 @@ const searchForViewerInternalHandler = (
       viewerUserId?: string;
     },
     Array<{ package: { name: string } }>
-  >
-)._handler;
-const publishPackageHandler = (
-  publishPackage as unknown as WrappedHandler<
-    {
-      payload: unknown;
-    },
-    unknown
   >
 )._handler;
 const publishPackageForUserInternalHandler = (
@@ -6298,20 +6289,6 @@ describe("packages public queries", () => {
     );
 
     expect(result).toEqual([expect.objectContaining({ name: "demo-plugin" })]);
-  });
-
-  it("requires auth inside the public publish action", async () => {
-    await expect(
-      publishPackageHandler({ runQuery: vi.fn(), runMutation: vi.fn() } as never, {
-        payload: {
-          name: "demo-plugin",
-          family: "bundle-plugin",
-          version: "1.0.0",
-          changelog: "init",
-          files: [],
-        },
-      }),
-    ).rejects.toThrow("Unauthorized");
   });
 
   it("records package reports for moderation", async () => {

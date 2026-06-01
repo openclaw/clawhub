@@ -1224,8 +1224,12 @@ Publishes a new version.
 Publishes a code-plugin or bundle-plugin release.
 
 - Requires Bearer token auth.
-- Preferred: `multipart/form-data` with `payload` JSON + `files[]` blobs.
-- JSON body with `files` (storageId-based) is also accepted.
+- Requires `multipart/form-data`.
+- Allowed form fields are `payload`, repeated `files` blobs, or one `clawpack`
+  `.tgz` blob.
+- Use either `files` or `clawpack`, never both in the same request.
+- JSON bodies and caller-supplied `payload.files` / `payload.artifact`
+  metadata are rejected.
 - Optional payload field: `ownerHandle`. When present, only admins may publish on behalf of that owner.
 
 Validation highlights:

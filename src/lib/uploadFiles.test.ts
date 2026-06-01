@@ -1,7 +1,7 @@
 /* @vitest-environment node */
 import { gzipSync, strToU8, zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
-import { expandFiles, expandFilesWithReport } from "./uploadFiles";
+import { expandFiles, expandFilesWithReport, isNpmPackTarball } from "./uploadFiles";
 
 if (typeof File === "undefined") {
   class NodeFile extends Blob {
@@ -23,7 +23,8 @@ function buildTar(entries: Array<{ name: string; content: string }>) {
   for (const entry of entries) {
     const content = strToU8(entry.content);
     const header = new Uint8Array(512);
-    writeString(header, entry.name, 0, 100);
+    const path = splitTarPath(entry.name);
+    writeString(header, path.name, 0, 100);
     writeString(header, "0000777", 100, 8);
     writeString(header, "0000000", 108, 8);
     writeString(header, "0000000", 116, 8);
@@ -31,6 +32,7 @@ function buildTar(entries: Array<{ name: string; content: string }>) {
     writeString(header, "00000000000", 136, 12);
     header[156] = "0".charCodeAt(0);
     writeString(header, "ustar", 257, 6);
+    if (path.prefix) writeString(header, path.prefix, 345, 155);
     for (let i = 148; i < 156; i += 1) {
       header[i] = 32;
     }
@@ -53,6 +55,16 @@ function buildTar(entries: Array<{ name: string; content: string }>) {
     offset += block.length;
   }
   return buffer;
+}
+
+function splitTarPath(path: string) {
+  if (strToU8(path).length <= 100) return { name: path, prefix: "" };
+  const splitAt = path.lastIndexOf("/");
+  if (splitAt <= 0) return { name: path, prefix: "" };
+  return {
+    name: path.slice(splitAt + 1),
+    prefix: path.slice(0, splitAt),
+  };
 }
 
 function writeString(target: Uint8Array, value: string, start: number, length: number) {
@@ -164,6 +176,27 @@ describe("expandFiles", () => {
     expect(report.files.map((file) => file.name)).toEqual(["package.json", "dist/loader.node"]);
   });
 
+  it("preserves ustar prefixes in tar.gz archive paths", async () => {
+    const tar = buildTar([
+      { name: "skill-folder/SKILL.md", content: "hi" },
+      {
+        name: `skill-folder/docs/${"deep/".repeat(18)}runtime.md`,
+        content: "runtime notes",
+      },
+    ]);
+    const tgz = gzipSync(tar);
+    const tgzFile = new File([Uint8Array.from(tgz).buffer], "bundle.tgz", {
+      type: "application/gzip",
+    });
+
+    const result = await expandFiles([tgzFile]);
+
+    expect(result.map((file) => file.name)).toEqual([
+      "SKILL.md",
+      `docs/${"deep/".repeat(18)}runtime.md`,
+    ]);
+  });
+
   it("expands .gz single files", async () => {
     const gz = gzipSync(strToU8("content"));
     const gzFile = new File([Uint8Array.from(gz).buffer], "skill.md.gz", {
@@ -171,5 +204,24 @@ describe("expandFiles", () => {
     });
     const result = await expandFiles([gzFile]);
     expect(result.map((file) => file.name)).toEqual(["skill.md"]);
+  });
+});
+
+describe("isNpmPackTarball", () => {
+  it("detects npm pack tarballs with ustar-prefixed paths", async () => {
+    const tar = buildTar([
+      { name: "package/package.json", content: '{"name":"demo","version":"1.0.0"}' },
+      { name: "package/openclaw.plugin.json", content: '{"id":"demo.plugin"}' },
+      {
+        name: `package/dist/${"deep/".repeat(18)}index.js`,
+        content: "export {};\n",
+      },
+    ]);
+    const tgz = gzipSync(tar);
+    const tgzFile = new File([Uint8Array.from(tgz).buffer], "demo-1.0.0.tgz", {
+      type: "application/gzip",
+    });
+
+    await expect(isNpmPackTarball(tgzFile)).resolves.toBe(true);
   });
 });

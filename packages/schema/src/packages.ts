@@ -253,7 +253,80 @@ export const PackageTrustedPublisherSchema = type({
 });
 export type PackageTrustedPublisher = (typeof PackageTrustedPublisherSchema)[inferred];
 
-export const PackagePublishRequestSchema = type({
+export const MAX_PACKAGE_MULTIPART_BYTES = 18 * 1024 * 1024;
+const PACKAGE_MULTIPART_FIXED_OVERHEAD_BYTES = 4096;
+const PACKAGE_MULTIPART_PART_OVERHEAD_BYTES = 1024;
+
+export type PackageMultipartUploadField = "files" | "clawpack";
+export type PackageMultipartUploadPart = {
+  name: string;
+  size: number;
+  type?: string;
+};
+export type PackageMultipartUploadSizeInput = {
+  payloadJson: string;
+  fileFieldName: PackageMultipartUploadField;
+  files: readonly PackageMultipartUploadPart[];
+};
+
+export function estimatePackageMultipartUploadBytes(
+  input: PackageMultipartUploadSizeInput,
+): number {
+  return (
+    PACKAGE_MULTIPART_FIXED_OVERHEAD_BYTES +
+    estimateMultipartStringPartBytes("payload", input.payloadJson) +
+    input.files.reduce(
+      (sum, file) => sum + estimateMultipartFilePartBytes(input.fileFieldName, file),
+      0,
+    )
+  );
+}
+
+export function isPackageMultipartUploadTooLarge(input: PackageMultipartUploadSizeInput): boolean {
+  return estimatePackageMultipartUploadBytes(input) > MAX_PACKAGE_MULTIPART_BYTES;
+}
+
+export function getPackageMultipartSizeError(): string {
+  return "Package upload exceeds 18MB multipart upload limit";
+}
+
+function estimateMultipartStringPartBytes(fieldName: string, value: string): number {
+  return PACKAGE_MULTIPART_PART_OVERHEAD_BYTES + utf8ByteLength(fieldName) + utf8ByteLength(value);
+}
+
+function estimateMultipartFilePartBytes(
+  fieldName: PackageMultipartUploadField,
+  file: PackageMultipartUploadPart,
+): number {
+  return (
+    file.size +
+    PACKAGE_MULTIPART_PART_OVERHEAD_BYTES +
+    utf8ByteLength(fieldName) +
+    utf8ByteLength(file.name) +
+    utf8ByteLength(file.type ?? "")
+  );
+}
+
+function utf8ByteLength(value: string): number {
+  let bytes = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    const codePoint = value.codePointAt(index);
+    if (codePoint === undefined) continue;
+    if (codePoint > 0xffff) index += 1;
+    if (codePoint <= 0x7f) {
+      bytes += 1;
+    } else if (codePoint <= 0x7ff) {
+      bytes += 2;
+    } else if (codePoint <= 0xffff) {
+      bytes += 3;
+    } else {
+      bytes += 4;
+    }
+  }
+  return bytes;
+}
+
+const PackagePublishMetadataFields = {
   name: "string",
   displayName: "string?",
   ownerHandle: "string?",
@@ -265,10 +338,21 @@ export const PackagePublishRequestSchema = type({
   tags: "string[]?",
   source: PublishSourceSchema.optional(),
   bundle: BundlePublishMetadataSchema.optional(),
+} as const;
+
+export const PackagePublishMetadataSchema = type({
+  "+": "reject",
+  ...PackagePublishMetadataFields,
+});
+export type PackagePublishMetadata = (typeof PackagePublishMetadataSchema)[inferred];
+
+export const ServerPackagePublishRequestSchema = type({
+  "+": "reject",
+  ...PackagePublishMetadataFields,
   artifact: PackagePublishArtifactSchema.optional(),
   files: CliPublishFileSchema.array(),
 });
-export type PackagePublishRequest = (typeof PackagePublishRequestSchema)[inferred];
+export type ServerPackagePublishRequest = (typeof ServerPackagePublishRequestSchema)[inferred];
 
 export const PackageListItemSchema = type({
   name: "string",

@@ -5,6 +5,7 @@ import {
   getPublishFileSizeError,
   getPublishTotalSizeError,
   MAX_CLAWPACK_BYTES,
+  MAX_PACKAGE_MULTIPART_BYTES,
   MAX_PUBLISH_FILE_BYTES,
 } from "./publishLimits";
 
@@ -27,12 +28,12 @@ describe("publishLimits", () => {
     );
     expect(getPublishTotalSizeError("package")).toBe("Package exceeds 50MB limit");
     expect(getClawPackSizeError("demo-1.0.0.tgz")).toBe(
-      'ClawPack "demo-1.0.0.tgz" exceeds 120MB limit',
+      'ClawPack "demo-1.0.0.tgz" exceeds 18MB multipart upload limit',
     );
   });
 
-  it("keeps the ClawPack tarball limit separate from legacy file limits", () => {
-    expect(MAX_CLAWPACK_BYTES).toBe(120 * 1024 * 1024);
+  it("uses the multipart upload budget for ClawPack tarballs", () => {
+    expect(MAX_CLAWPACK_BYTES).toBe(MAX_PACKAGE_MULTIPART_BYTES);
     expect(MAX_CLAWPACK_BYTES).toBeGreaterThan(MAX_PUBLISH_FILE_BYTES);
   });
 });

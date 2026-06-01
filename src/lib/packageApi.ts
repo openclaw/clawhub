@@ -244,6 +244,17 @@ async function packageApiUrl(path: string) {
   return new URL(normalizedPath, base);
 }
 
+export function packageApiWriteUrl(path: string) {
+  const base = resolveAbsoluteBaseUrl(
+    getRuntimeEnv("VITE_CONVEX_SITE_URL"),
+    getRuntimeEnv("CONVEX_SITE_URL"),
+  );
+  if (!base) {
+    throw new Error("Missing required environment variable: VITE_CONVEX_SITE_URL");
+  }
+  return new URL(normalizeApiPath(path), base);
+}
+
 export function getPackageDownloadPath(name: string, version?: string | null) {
   const path = normalizeApiPath(`${ApiRoutes.packages}/${encodeURIComponent(name)}/download`);
   if (!version) return path;

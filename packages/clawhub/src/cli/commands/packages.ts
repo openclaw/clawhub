@@ -24,6 +24,9 @@ import {
   ApiV1PackageVersionListResponseSchema,
   ApiV1PackageVersionResponseSchema,
   ApiV1PublishTokenMintResponseSchema,
+  estimatePackageMultipartUploadBytes,
+  getPackageMultipartSizeError,
+  MAX_PACKAGE_MULTIPART_BYTES,
   normalizeOpenClawExternalPluginCompatibility,
   type PackageArtifactSummary,
   type PackageCapabilitySummary,
@@ -50,7 +53,6 @@ const DOT_DIR = ".clawhub";
 const LEGACY_DOT_DIR = ".clawdhub";
 const DOT_IGNORE = ".clawhubignore";
 const LEGACY_DOT_IGNORE = ".clawdhubignore";
-const MAX_CLAWPACK_BYTES = 120 * 1024 * 1024;
 const PACKAGE_PUBLISH_RETRY_COUNT = 5;
 
 type PackageInspectOptions = {
@@ -598,7 +600,6 @@ async function createClawPackFromFolder(options: {
 
   const packPath = resolve(options.packDestination, filename);
   const bytes = new Uint8Array(await readFile(packPath));
-  assertClawPackSize(bytes.byteLength, basename(packPath));
   const parsed = parseClawPack(bytes);
   return {
     path: packPath,
@@ -1551,9 +1552,22 @@ function packageJsonString(value: Record<string, unknown> | null, key: string): 
   return typeof candidate === "string" && candidate.trim() ? candidate.trim() : undefined;
 }
 
-function assertClawPackSize(size: number, label: string) {
-  if (size > MAX_CLAWPACK_BYTES) {
-    fail(`ClawPack "${label}" exceeds 120MB limit`);
+function assertPackageMultipartSize(
+  payloadJson: string,
+  fileFieldName: "files" | "clawpack",
+  files: PackageFile[],
+) {
+  const bytes = estimatePackageMultipartUploadBytes({
+    payloadJson,
+    fileFieldName,
+    files: files.map((file) => ({
+      name: file.relPath,
+      size: file.bytes.byteLength,
+      type: file.contentType,
+    })),
+  });
+  if (bytes > MAX_PACKAGE_MULTIPART_BYTES) {
+    fail(getPackageMultipartSizeError());
   }
 }
 
@@ -1666,11 +1680,13 @@ async function preparePackagePublishPlan(
     }
   } else {
     const folderStat = await stat(folder).catch(() => null);
-    if (!folderStat) fail("Path must be a folder or ClawPack .tgz");
+    if (!folderStat) fail("Path must be a folder or package tarball .tgz");
     if (folderStat.isFile()) {
-      if (!folder.endsWith(".tgz")) fail("ClawPack publish files must end in .tgz");
+      if (!folder.endsWith(".tgz")) fail("Package publish files must end in .tgz");
       const bytes = new Uint8Array(await readFile(folder));
-      assertClawPackSize(bytes.byteLength, basename(folder));
+      if (bytes.byteLength > MAX_PACKAGE_MULTIPART_BYTES) {
+        fail(getPackageMultipartSizeError());
+      }
       parsedClawpack = parseClawPack(bytes);
       clawpackOnDisk = {
         relPath: basename(folder),
@@ -1678,7 +1694,7 @@ async function preparePackagePublishPlan(
         contentType: "application/octet-stream",
       };
     } else if (!folderStat.isDirectory()) {
-      fail("Path must be a folder or ClawPack .tgz");
+      fail("Path must be a folder or package tarball .tgz");
     }
 
     const localGitInfo = folderStat.isDirectory() ? resolveLocalGitInfo(folder) : null;
@@ -1782,7 +1798,9 @@ async function preparePackagePublishPlan(
       contentType: mime.getType(entry.path) ?? "application/octet-stream",
     }));
   }
-
+  const totalBytes = clawpackOnDisk
+    ? clawpackOnDisk.bytes.byteLength
+    : filesOnDisk.reduce((sum, file) => sum + file.bytes.byteLength, 0);
   const payload: PackagePublishPayload = {
     name,
     displayName,
@@ -1804,6 +1822,16 @@ async function preparePackagePublishPlan(
         }
       : {}),
   };
+  try {
+    assertPackageMultipartSize(
+      JSON.stringify(payload),
+      clawpackOnDisk ? "clawpack" : "files",
+      clawpackOnDisk ? [clawpackOnDisk] : filesOnDisk,
+    );
+  } catch (error) {
+    await cleanup?.();
+    throw error;
+  }
   const sourceLabel = describePublishSource(sourceForFetch, source, folder);
 
   return {
@@ -1826,9 +1854,7 @@ async function preparePackagePublishPlan(
       version,
       ...(source?.commit ? { commit: source.commit } : {}),
       files: filesOnDisk.length,
-      totalBytes: clawpackOnDisk
-        ? clawpackOnDisk.bytes.byteLength
-        : filesOnDisk.reduce((sum, file) => sum + file.bytes.byteLength, 0),
+      totalBytes,
     },
   };
 }

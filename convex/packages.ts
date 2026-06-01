@@ -1,5 +1,5 @@
 import {
-  PackagePublishRequestSchema,
+  ServerPackagePublishRequestSchema,
   getPackageScopeOwnerMismatch,
   isPluginCategorySlug,
   parseArk,
@@ -11,7 +11,7 @@ import {
   type PackageModerationQueueStatus,
   type PackageOfficialMigrationListPhase,
   type PackageOfficialMigrationPhase,
-  type PackagePublishRequest,
+  type ServerPackagePublishRequest,
   type PackageVerificationTier,
 } from "clawhub-schema";
 import { paginationOptsValidator } from "convex/server";
@@ -33,7 +33,6 @@ import {
   assertModerator,
   getOptionalActiveAuthUserId,
   requireUser,
-  requireUserFromAction,
 } from "./lib/access";
 import {
   assertArtifactAppealFinalAction,
@@ -5027,9 +5026,9 @@ function buildGitHubActionsPublishActor(
 }
 
 function resolveTrustedPublishSource(
-  payload: PackagePublishRequest,
+  payload: ServerPackagePublishRequest,
   publishToken: Doc<"packagePublishTokens">,
-): PackagePublishRequest["source"] {
+): ServerPackagePublishRequest["source"] {
   const source = payload.source;
   if (source && source.kind !== "github") {
     throw new ConvexError("Trusted publishes only support GitHub source metadata");
@@ -5081,11 +5080,11 @@ async function publishPackageImpl(
   auth: PackagePublishAuthContext,
   rawPayload: unknown,
 ) {
-  const payload = parseArk(
-    PackagePublishRequestSchema,
+  const payload = parseArk<ServerPackagePublishRequest>(
+    ServerPackagePublishRequestSchema,
     rawPayload,
     "Package publish payload",
-  ) as PackagePublishRequest;
+  );
   if (payload.family === "skill") {
     throw new ConvexError("Skill packages must use the skills publish flow");
   }
@@ -5204,7 +5203,7 @@ async function publishPackageImpl(
   }
 
   const displayName = payload.displayName?.trim() || name;
-  const files = normalizePublishFiles(payload.files as never);
+  const files = normalizePublishFiles(payload.files);
   if (payload.artifact?.kind !== "npm-pack") {
     const oversizedFile = findOversizedPublishFile(files);
     if (oversizedFile) {
@@ -5459,14 +5458,6 @@ async function publishPackageImpl(
   return publishResult;
 }
 
-export const publishPackage = action({
-  args: { payload: v.any() },
-  handler: async (ctx, args) => {
-    const { userId } = await requireUserFromAction(ctx);
-    return await publishPackageImpl(ctx, { kind: "user", actorUserId: userId }, args.payload);
-  },
-});
-
 export const publishPackageForUserInternal = internalAction({
   args: {
     actorUserId: v.id("users"),
@@ -5506,14 +5497,6 @@ export const publishPackageForTrustedPublisherInternal = internalAction({
       );
     }
     return await publishPackageImpl(ctx, { kind: "github-actions", publishToken }, args.payload);
-  },
-});
-
-export const publishRelease = action({
-  args: { payload: v.any() },
-  handler: async (ctx, args) => {
-    const { userId } = await requireUserFromAction(ctx);
-    return await publishPackageImpl(ctx, { kind: "user", actorUserId: userId }, args.payload);
   },
 });
 

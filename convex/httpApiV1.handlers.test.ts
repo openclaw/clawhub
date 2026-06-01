@@ -99,8 +99,8 @@ function writeTarString(target: Uint8Array, offset: number, width: number, value
   target.set(encoded.subarray(0, width), offset);
 }
 
-function tarFile(path: string, content: string) {
-  const bytes = new TextEncoder().encode(content);
+function tarFile(path: string, content: string | Uint8Array) {
+  const bytes = typeof content === "string" ? new TextEncoder().encode(content) : content;
   const header = new Uint8Array(TAR_BLOCK_SIZE);
   writeTarString(header, 0, 100, path);
   writeTarString(header, 100, 8, tarOctal(0o644, 8));
@@ -123,7 +123,7 @@ function tarFile(path: string, content: string) {
   return [header, body];
 }
 
-function npmPackFixture(files: Record<string, string>) {
+function npmPackFixture(files: Record<string, string | Uint8Array>) {
   const parts: Uint8Array[] = [];
   for (const [path, content] of Object.entries(files)) {
     parts.push(...tarFile(path, content));
@@ -145,13 +145,35 @@ function bytesToArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   return copy.buffer;
 }
 
+function packagePublishMetadata(overrides: Record<string, unknown> = {}) {
+  return {
+    name: "demo-plugin",
+    family: "bundle-plugin",
+    version: "1.0.0",
+    changelog: "init",
+    ...overrides,
+  };
+}
+
+function packagePublishForm(payload: Record<string, unknown>) {
+  const form = new FormData();
+  form.set("payload", JSON.stringify(payload));
+  return form;
+}
+
 function makeCtx(partial: Record<string, unknown>) {
+  const rateLimitStatus =
+    typeof partial.rateLimitStatus === "function"
+      ? (partial.rateLimitStatus as (args: RateLimitArgs) => unknown)
+      : null;
   const partialRunQuery =
     typeof partial.runQuery === "function"
       ? (partial.runQuery as (query: unknown, args: Record<string, unknown>) => unknown)
       : null;
   const runQuery = vi.fn(async (query: unknown, args: Record<string, unknown>) => {
-    if (isRateLimitArgs(args)) return { ...okRate(), limit: args.limit };
+    if (isRateLimitArgs(args)) {
+      return rateLimitStatus?.(args) ?? { ...okRate(), limit: args.limit };
+    }
     return partialRunQuery ? await partialRunQuery(query, args) : null;
   });
   const runMutation =
@@ -9464,37 +9486,26 @@ describe("httpApiV1 handlers", () => {
     const runAction = vi
       .fn()
       .mockResolvedValue({ ok: true, packageId: "pkg:1", releaseId: "rel:1" });
+    const form = packagePublishForm(
+      packagePublishMetadata({
+        ownerHandle: "openclaw",
+        bundle: { hostTargets: ["desktop"] },
+      }),
+    );
+    form.append("files", new File(["{}"], "openclaw.plugin.json", { type: "application/json" }));
 
     const response = await __handlers.publishPackageV1Handler(
-      makeCtx({ runAction, runMutation }),
+      makeCtx({
+        runAction,
+        runMutation,
+        storage: {
+          store: vi.fn(async (entry: File) => `storage:${entry.name}`),
+        },
+      }),
       new Request("https://example.com/api/v1/packages", {
         method: "POST",
-        headers: {
-          Authorization: "Bearer clh_test",
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          name: "demo-plugin",
-          ownerHandle: "openclaw",
-          family: "bundle-plugin",
-          version: "1.0.0",
-          changelog: "init",
-          bundle: { hostTargets: ["desktop"] },
-          files: [
-            {
-              path: "openclaw.plugin.json",
-              size: 2,
-              storageId: "storage:1",
-              sha256: "a".repeat(64),
-            },
-            {
-              path: ".codex-plugin/plugin.json",
-              size: 2,
-              storageId: "storage:1",
-              sha256: "a".repeat(64),
-            },
-          ],
-        }),
+        headers: { Authorization: "Bearer clh_test" },
+        body: form,
       }),
     );
 
@@ -9532,6 +9543,53 @@ describe("httpApiV1 handlers", () => {
           'Documents read from or written to the "publishers" table changed while this mutation was being run and on every subsequent retry.',
         ),
       );
+    const form = packagePublishForm(
+      packagePublishMetadata({
+        ownerHandle: "openclaw",
+        bundle: { hostTargets: ["desktop"] },
+      }),
+    );
+    const pack = npmPackFixture({
+      "package/package.json": JSON.stringify({ name: "demo-plugin", version: "1.0.0" }),
+      "package/openclaw.plugin.json": JSON.stringify({ id: "demo.plugin" }),
+      "package/dist/index.js": "export const demo = true;\n",
+    });
+    form.append(
+      "clawpack",
+      new File([bytesToArrayBuffer(pack)], "demo-plugin-1.0.0.tgz", {
+        type: "application/octet-stream",
+      }),
+    );
+
+    const response = await __handlers.publishPackageV1Handler(
+      makeCtx({
+        runAction,
+        runMutation,
+        storage: { store: vi.fn(async (_entry: Blob) => "storage:1") },
+      }),
+      new Request("https://example.com/api/v1/packages", {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer clh_test",
+        },
+        body: form,
+      }),
+    );
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get("Retry-After")).toBe("1");
+    await expect(response.text()).resolves.toContain("Transient ClawHub write contention");
+  });
+
+  it("package publish rejects JSON request bodies before publish actions run", async () => {
+    vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
+    vi.mocked(requirePackagePublishAuth).mockResolvedValue({
+      kind: "user",
+      userId: "users:1",
+      user: { _id: "users:1", handle: "p" },
+    } as never);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runAction = vi.fn();
 
     const response = await __handlers.publishPackageV1Handler(
       makeCtx({ runAction, runMutation }),
@@ -9541,34 +9599,59 @@ describe("httpApiV1 handlers", () => {
           Authorization: "Bearer clh_test",
           "content-type": "application/json",
         },
-        body: JSON.stringify({
-          name: "demo-plugin",
-          ownerHandle: "openclaw",
-          family: "bundle-plugin",
-          version: "1.0.0",
-          changelog: "init",
-          bundle: { hostTargets: ["desktop"] },
+        body: JSON.stringify(packagePublishMetadata()),
+      }),
+    );
+
+    expect(response.status).toBe(415);
+    expect(await response.text()).toBe("Package publish requires multipart/form-data");
+    expect(runAction).not.toHaveBeenCalled();
+  });
+
+  it("package publish accepts browser session auth when token auth is not an API token", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:session" as never);
+    vi.mocked(requirePackagePublishAuth).mockRejectedValue(new Error("Unauthorized"));
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) =>
+      args.userId === "users:session"
+        ? { _id: "users:session", handle: "publisher", role: "user" }
+        : null,
+    );
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runAction = vi
+      .fn()
+      .mockResolvedValue({ ok: true, packageId: "pkg:1", releaseId: "rel:1" });
+    const form = packagePublishForm(packagePublishMetadata());
+    form.append("files", new File(["{}"], "openclaw.plugin.json", { type: "application/json" }));
+
+    const response = await __handlers.publishPackageV1Handler(
+      makeCtx({
+        runAction,
+        runMutation,
+        runQuery,
+        storage: { store: vi.fn(async () => "storage:plugin") },
+      }),
+      new Request("https://example.com/api/v1/packages", {
+        method: "POST",
+        headers: { Authorization: "Bearer convex-session-token" },
+        body: form,
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runAction).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        actorUserId: "users:session",
+        payload: expect.objectContaining({
           files: [
-            {
+            expect.objectContaining({
               path: "openclaw.plugin.json",
-              size: 2,
-              storageId: "storage:1",
-              sha256: "a".repeat(64),
-            },
-            {
-              path: ".codex-plugin/plugin.json",
-              size: 2,
-              storageId: "storage:1",
-              sha256: "a".repeat(64),
-            },
+              storageId: "storage:plugin",
+            }),
           ],
         }),
       }),
     );
-
-    expect(response.status).toBe(503);
-    expect(response.headers.get("Retry-After")).toBe("1");
-    await expect(response.text()).resolves.toContain("Transient ClawHub write contention");
   });
 
   it("multipart package publish ignores macOS junk files", async () => {
@@ -9582,6 +9665,7 @@ describe("httpApiV1 handlers", () => {
     const runAction = vi
       .fn()
       .mockResolvedValue({ ok: true, packageId: "pkg:1", releaseId: "rel:1" });
+    const storageStore = vi.fn(async () => "storage:plugin");
     const form = new FormData();
     form.set(
       "payload",
@@ -9600,9 +9684,7 @@ describe("httpApiV1 handlers", () => {
       makeCtx({
         runAction,
         runMutation,
-        storage: {
-          store: vi.fn(async (entry: File) => `storage:${entry.name}`),
-        },
+        storage: { store: storageStore },
       }),
       new Request("https://example.com/api/v1/packages", {
         method: "POST",
@@ -9612,16 +9694,28 @@ describe("httpApiV1 handlers", () => {
     );
 
     expect(response.status).toBe(200);
+    expect(storageStore).toHaveBeenCalledTimes(1);
     expect(runAction).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
         payload: expect.objectContaining({
           files: [
-            expect.objectContaining({
+            {
               path: "openclaw.plugin.json",
-            }),
+              size: 2,
+              storageId: "storage:plugin",
+              sha256: "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+              contentType: "application/json",
+            },
           ],
         }),
+      }),
+    );
+    const actionCall = runAction.mock.calls[0];
+    expect(actionCall).toBeTruthy();
+    expect(actionCall[1]).toEqual(
+      expect.objectContaining({
+        payload: expect.not.objectContaining({ artifact: expect.anything() }),
       }),
     );
   });
@@ -9705,6 +9799,128 @@ describe("httpApiV1 handlers", () => {
     expect(payload?.files?.map((file) => file.path)).toContain("dist/index.js");
   });
 
+  it("multipart package publish rejects files and tarball together", async () => {
+    vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
+    vi.mocked(requirePackagePublishAuth).mockResolvedValue({
+      kind: "user",
+      userId: "users:1",
+      user: { _id: "users:1", handle: "p" },
+    } as never);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runAction = vi.fn();
+    const pack = npmPackFixture({
+      "package/package.json": JSON.stringify({ name: "demo-plugin", version: "1.0.0" }),
+      "package/openclaw.plugin.json": JSON.stringify({ id: "demo.plugin" }),
+    });
+    const form = packagePublishForm(packagePublishMetadata({ family: "code-plugin" }));
+    form.append("files", new File(["{}"], "openclaw.plugin.json", { type: "application/json" }));
+    form.append(
+      "clawpack",
+      new File([bytesToArrayBuffer(pack)], "demo-plugin-1.0.0.tgz", {
+        type: "application/octet-stream",
+      }),
+    );
+
+    const response = await __handlers.publishPackageV1Handler(
+      makeCtx({ runAction, runMutation, storage: { store: vi.fn() } }),
+      new Request("https://example.com/api/v1/packages", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: form,
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toBe(
+      "Upload either a package tarball or individual files, not both",
+    );
+    expect(runAction).not.toHaveBeenCalled();
+  });
+
+  it.each(["files[]", "tarball", "artifact", "extraMetadata"])(
+    "multipart package publish rejects unsupported field %s",
+    async (field) => {
+      vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
+      vi.mocked(requirePackagePublishAuth).mockResolvedValue({
+        kind: "user",
+        userId: "users:1",
+        user: { _id: "users:1", handle: "p" },
+      } as never);
+      const runMutation = vi.fn().mockResolvedValue(okRate());
+      const runAction = vi.fn();
+      const form = packagePublishForm(packagePublishMetadata());
+      form.append("files", new File(["{}"], "openclaw.plugin.json", { type: "application/json" }));
+      form.append(field, new File(["{}"], "ignored.json", { type: "application/json" }));
+
+      const response = await __handlers.publishPackageV1Handler(
+        makeCtx({ runAction, runMutation, storage: { store: vi.fn() } }),
+        new Request("https://example.com/api/v1/packages", {
+          method: "POST",
+          headers: { Authorization: "Bearer clh_test" },
+          body: form,
+        }),
+      );
+
+      expect(response.status).toBe(400);
+      expect(await response.text()).toBe(`Unsupported package publish form field: ${field}`);
+      expect(runAction).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["files", "artifact"])(
+    "multipart package publish rejects caller-supplied %s metadata",
+    async (field) => {
+      vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
+      vi.mocked(requirePackagePublishAuth).mockResolvedValue({
+        kind: "user",
+        userId: "users:1",
+        user: { _id: "users:1", handle: "p" },
+      } as never);
+      const runMutation = vi.fn().mockResolvedValue(okRate());
+      const runAction = vi.fn();
+      const form = packagePublishForm(
+        packagePublishMetadata({
+          [field]:
+            field === "files"
+              ? [
+                  {
+                    path: "openclaw.plugin.json",
+                    size: 2,
+                    storageId: "storage:attacker",
+                    sha256: "a".repeat(64),
+                  },
+                ]
+              : {
+                  kind: "npm-pack",
+                  storageId: "storage:attacker",
+                  sha256: "a".repeat(64),
+                  size: 2,
+                  format: "tgz",
+                  npmIntegrity: "sha512-attacker",
+                  npmShasum: "a".repeat(40),
+                  npmTarballName: "demo-plugin-1.0.0.tgz",
+                  npmUnpackedSize: 2,
+                  npmFileCount: 1,
+                },
+        }),
+      );
+      form.append("files", new File(["{}"], "openclaw.plugin.json", { type: "application/json" }));
+
+      const response = await __handlers.publishPackageV1Handler(
+        makeCtx({ runAction, runMutation, storage: { store: vi.fn() } }),
+        new Request("https://example.com/api/v1/packages", {
+          method: "POST",
+          headers: { Authorization: "Bearer clh_test" },
+          body: form,
+        }),
+      );
+
+      expect(response.status).toBe(400);
+      expect(await response.text()).toContain(`Package publish payload: ${field}`);
+      expect(runAction).not.toHaveBeenCalled();
+    },
+  );
+
   it("package publish routes GitHub Actions auth through the trusted publisher action", async () => {
     vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
     vi.mocked(requirePackagePublishAuth).mockResolvedValue({
@@ -9715,36 +9931,35 @@ describe("httpApiV1 handlers", () => {
     const runAction = vi
       .fn()
       .mockResolvedValue({ ok: true, packageId: "pkg:1", releaseId: "rel:1" });
+    const form = packagePublishForm(
+      packagePublishMetadata({
+        bundle: { hostTargets: ["desktop"] },
+      }),
+    );
+    const pack = npmPackFixture({
+      "package/package.json": JSON.stringify({ name: "demo-plugin", version: "1.0.0" }),
+      "package/openclaw.plugin.json": JSON.stringify({ id: "demo.plugin" }),
+      "package/dist/index.js": "export const demo = true;\n",
+    });
+    form.append(
+      "clawpack",
+      new File([bytesToArrayBuffer(pack)], "demo-plugin-1.0.0.tgz", {
+        type: "application/octet-stream",
+      }),
+    );
 
     const response = await __handlers.publishPackageV1Handler(
-      makeCtx({ runAction, runMutation }),
+      makeCtx({
+        runAction,
+        runMutation,
+        storage: { store: vi.fn(async (_entry: Blob) => "storage:1") },
+      }),
       new Request("https://example.com/api/v1/packages", {
         method: "POST",
         headers: {
           Authorization: "Bearer clh_publish",
-          "content-type": "application/json",
         },
-        body: JSON.stringify({
-          name: "demo-plugin",
-          family: "bundle-plugin",
-          version: "1.0.0",
-          changelog: "init",
-          bundle: { hostTargets: ["desktop"] },
-          files: [
-            {
-              path: "openclaw.plugin.json",
-              size: 2,
-              storageId: "storage:1",
-              sha256: "a".repeat(64),
-            },
-            {
-              path: ".codex-plugin/plugin.json",
-              size: 2,
-              storageId: "storage:1",
-              sha256: "a".repeat(64),
-            },
-          ],
-        }),
+        body: form,
       }),
     );
 

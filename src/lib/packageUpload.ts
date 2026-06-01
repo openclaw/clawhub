@@ -115,34 +115,16 @@ export async function filterIgnoredPackageFiles<
   return { files: kept, ignoredPaths };
 }
 
-export async function buildPackageUploadEntries<TFile extends UploadablePackageFile>(
-  files: TFile[],
-  options: {
-    generateUploadUrl: () => Promise<string>;
-    hashFile: (file: TFile) => Promise<string>;
-    uploadFile: (uploadUrl: string, file: TFile) => Promise<string>;
-  },
+export function appendPackageUploadFiles(
+  form: FormData,
+  files: Array<UploadablePackageFile & Blob>,
 ) {
-  const uploaded: Array<{
-    path: string;
-    size: number;
-    storageId: string;
-    sha256: string;
-    contentType?: string;
-  }> = [];
-
   for (const { file, path } of normalizePackageUploadFiles(files)) {
-    const sha256 = await options.hashFile(file);
-    const uploadUrl = await options.generateUploadUrl();
-    const storageId = await options.uploadFile(uploadUrl, file);
-    uploaded.push({
-      path,
-      size: file.size,
-      storageId,
-      sha256,
-      contentType: normalizeTextContentType(path, file.type) ?? file.type ?? undefined,
-    });
+    const contentType = normalizeTextContentType(path, file.type) ?? file.type;
+    const uploadFile =
+      contentType && contentType !== file.type
+        ? new File([file], file.name, { type: contentType })
+        : file;
+    form.append("files", uploadFile, path);
   }
-
-  return uploaded;
 }

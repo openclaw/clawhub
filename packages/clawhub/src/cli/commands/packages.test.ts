@@ -1,8 +1,8 @@
 /* @vitest-environment node */
 
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createHash, randomBytes } from "node:crypto";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gzipSync, zipSync } from "fflate";
@@ -65,6 +65,10 @@ function makeOpts(workdir = "/work") {
 
 async function makeTmpWorkdir() {
   return await mkdtemp(join(tmpdir(), "clawhub-package-"));
+}
+
+async function listClawPackTempDirs() {
+  return new Set((await readdir(tmpdir())).filter((name) => name.startsWith("clawhub-clawpack-")));
 }
 
 function runGit(cwd: string, args: string[]) {
@@ -1274,6 +1278,23 @@ describe("package commands", () => {
     }
   });
 
+  it("rejects oversized ClawPack tarballs before parsing", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      await writeFile(join(workdir, "oversized-plugin-1.0.0.tgz"), randomBytes(19 * 1024 * 1024));
+
+      await expect(
+        cmdPublishPackage(makeOpts(workdir), "oversized-plugin-1.0.0.tgz", {
+          sourceRepo: "openclaw/oversized-plugin",
+          sourceCommit: "abc123",
+        }),
+      ).rejects.toThrow("Package upload exceeds 18MB multipart upload limit");
+      expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
   it("packs a plugin folder through npm pack and validates the ClawPack", async () => {
     const workdir = await makeTmpWorkdir();
     try {
@@ -1310,6 +1331,81 @@ describe("package commands", () => {
       expect(uiMocks.spinner.succeed).toHaveBeenCalledWith(
         `Packed @scope/demo-plugin@1.0.0 -> ${packPath}`,
       );
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("packs local ClawPacks over the multipart publish upload budget", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "demo-heavy-plugin");
+      await mkdir(join(folder, "dist"), { recursive: true });
+      await mkdir(join(workdir, "packs"), { recursive: true });
+      await writeFile(
+        join(folder, "package.json"),
+        makeCodePluginPackageJson({
+          name: "demo-heavy-plugin",
+          displayName: "Demo Heavy Plugin",
+          version: "1.0.0",
+        }),
+        "utf8",
+      );
+      await writeFile(
+        join(folder, "openclaw.plugin.json"),
+        JSON.stringify({ id: "demo.heavy.plugin" }),
+        "utf8",
+      );
+      await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
+      await writeFile(join(folder, "dist", "model.bin"), randomBytes(19 * 1024 * 1024));
+
+      await cmdPackPackage(makeOpts(workdir), "demo-heavy-plugin", {
+        packDestination: "packs",
+      });
+
+      const packPath = join(workdir, "packs", "demo-heavy-plugin-1.0.0.tgz");
+      const packed = await readFile(packPath);
+      expect(packed.byteLength).toBeGreaterThan(18 * 1024 * 1024);
+      expect(parseClawPack(new Uint8Array(packed)).packageName).toBe("demo-heavy-plugin");
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("cleans generated ClawPack temp dirs after multipart size rejection", async () => {
+    const workdir = await makeTmpWorkdir();
+    const beforeTempDirs = await listClawPackTempDirs();
+    try {
+      const folder = join(workdir, "demo-heavy-plugin");
+      await mkdir(join(folder, "dist"), { recursive: true });
+      await writeFile(
+        join(folder, "package.json"),
+        makeCodePluginPackageJson({
+          name: "demo-heavy-plugin",
+          displayName: "Demo Heavy Plugin",
+          version: "1.0.0",
+          repository: "https://github.com/openclaw/demo-heavy-plugin.git",
+        }),
+        "utf8",
+      );
+      await writeFile(
+        join(folder, "openclaw.plugin.json"),
+        JSON.stringify({ id: "demo.heavy.plugin" }),
+        "utf8",
+      );
+      await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
+      await writeFile(join(folder, "dist", "model.bin"), randomBytes(19 * 1024 * 1024));
+
+      await expect(
+        cmdPublishPackage(makeOpts(workdir), "demo-heavy-plugin", {
+          sourceRepo: "openclaw/demo-heavy-plugin",
+          sourceCommit: "abc123",
+        }),
+      ).rejects.toThrow("Package upload exceeds 18MB multipart upload limit");
+      expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
+
+      const afterTempDirs = await listClawPackTempDirs();
+      expect([...afterTempDirs].filter((name) => !beforeTempDirs.has(name))).toEqual([]);
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }
