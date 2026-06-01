@@ -79,6 +79,31 @@ This gate is intentionally a rollout/discoverability gate, not the durable
 authorization boundary. Backend GitHub sync functions must continue to enforce
 the target publisher admin role themselves.
 
+## Runtime Proof Before Wide Release
+
+Before removing the internal UI rollout gate or treating the feature as broadly
+available, capture redacted proof from a real configured GitHub App install:
+
+1. Start setup from an eligible ClawHub org publisher and record the generated
+   GitHub App install URL with the signed `state` value redacted.
+2. Complete an org installation and confirm the callback succeeds only after the
+   matching signed installation webhook claim is received.
+3. Confirm newly discovered repositories are present but disabled by default.
+4. Enable one repository, configure branch/roots, and queue a manual sync.
+5. Push a commit to the configured ref and confirm GitHub webhook delivery
+   queues or coalesces the repository sync job.
+6. Confirm the sync creates or updates the expected source-managed skill version
+   through the normal publish/scanner pipeline.
+7. Attempt a manual publish to the active source-managed skill and confirm it is
+   rejected until the source link is disabled.
+8. Remove or suspend repository access and confirm affected repository/source
+   links are disabled while unrelated manual org skills remain untouched.
+
+Acceptable PR proof is redacted terminal output, Convex logs, GitHub webhook
+delivery screenshots, ClawHub UI screenshots, or a short recording that covers
+the install, webhook claim, repository enablement, sync publish, and manual
+publish blocking path.
+
 ## Webhook Trust Boundary
 
 - Verify `X-Hub-Signature-256` for every GitHub webhook.
