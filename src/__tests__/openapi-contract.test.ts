@@ -20,6 +20,19 @@ describe("OpenAPI contract", () => {
       : undefined;
     const sortValues = property(property(sortParameter, "schema"), "enum");
 
-    expect(sortValues).toEqual(expect.arrayContaining(["recommended", "default"]));
+    expect(sortValues).toEqual([
+      "recommended",
+      "default",
+      "updated",
+      "createdAt",
+      "newest",
+      "downloads",
+      "stars",
+      "rating",
+      "installsCurrent",
+      "installs",
+      "installsAllTime",
+      "trending",
+    ]);
   });
 });

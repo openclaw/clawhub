@@ -44,6 +44,7 @@ const {
   applySkillCapabilityTagsInternal,
   backfillDigestVersionSummary,
   backfillLatestVersionSummaryInternal,
+  backfillSkillSearchDigestInternal,
   backfillSkillFingerprintsInternalHandler,
   backfillSkillSummariesInternalHandler,
   backfillUserStatsInternalHandler,
@@ -59,6 +60,113 @@ function makeBlob(text: string) {
 }
 
 describe("maintenance backfill", () => {
+  it("patches stale skill search digest rank stats from legacy skill stats", async () => {
+    const existingDigest = {
+      _id: "skillSearchDigest:1",
+      skillId: "skills:1",
+      slug: "demo",
+      displayName: "Demo",
+      summary: "Old summary",
+      ownerUserId: "users:owner",
+      tags: {},
+      stats: {
+        downloads: 3,
+        stars: 2,
+        installsCurrent: 4,
+        installsAllTime: 5,
+        versions: 1,
+        comments: 0,
+      },
+      softDeletedAt: undefined,
+      createdAt: 100,
+      updatedAt: 200,
+    };
+    const skill = {
+      _id: "skills:1",
+      slug: "demo",
+      displayName: "Demo",
+      summary: "New summary",
+      ownerUserId: "users:owner",
+      tags: {},
+      stats: {
+        downloads: 42,
+        stars: 7,
+        installsCurrent: 9,
+        installsAllTime: 100,
+        versions: 1,
+        comments: 0,
+      },
+      softDeletedAt: undefined,
+      createdAt: 100,
+      updatedAt: 300,
+    };
+    const paginate = vi.fn().mockResolvedValue({
+      page: [skill],
+      continueCursor: null,
+      isDone: true,
+    });
+    const unique = vi.fn().mockResolvedValue(existingDigest);
+    class TestEqBuilder {
+      eq(_field: string, _value: unknown) {
+        return this;
+      }
+    }
+    const withIndex = vi.fn((_indexName: string, build: (q: TestEqBuilder) => unknown) => {
+      build(new TestEqBuilder());
+      return { unique };
+    });
+    const query = vi.fn((table: string) => {
+      if (table === "skills") return { paginate };
+      if (table === "skillSearchDigest") return { withIndex };
+      throw new Error(`unexpected table ${table}`);
+    });
+    const patch = vi.fn().mockResolvedValue(undefined);
+    const insert = vi.fn().mockResolvedValue("skillSearchDigest:inserted");
+    const replace = vi.fn().mockResolvedValue(undefined);
+    const deleteDoc = vi.fn().mockResolvedValue(undefined);
+
+    const result = await (
+      backfillSkillSearchDigestInternal as unknown as { _handler: Function }
+    )._handler(
+      {
+        db: {
+          get: vi.fn(),
+          query,
+          patch,
+          insert,
+          replace,
+          delete: deleteDoc,
+          normalizeId: vi.fn(),
+        },
+        scheduler: {
+          runAfter: vi.fn(),
+        },
+      } as never,
+      { batchSize: 10 },
+    );
+
+    expect(result).toEqual({ upserted: 1, isDone: true, scanned: 1 });
+    expect(paginate).toHaveBeenCalledWith({ cursor: null, numItems: 10 });
+    expect(withIndex).toHaveBeenCalledWith("by_skill", expect.any(Function));
+    expect(insert).not.toHaveBeenCalled();
+    expect(patch).toHaveBeenCalledWith(
+      "skillSearchDigest:1",
+      expect.objectContaining({
+        summary: "New summary",
+        statsDownloads: 42,
+        statsStars: 7,
+        statsInstallsCurrent: 9,
+        statsInstallsAllTime: 100,
+        stats: expect.objectContaining({
+          downloads: 42,
+          stars: 7,
+          installsCurrent: 9,
+          installsAllTime: 100,
+        }),
+      }),
+    );
+  });
+
   it("repairs summary + parsed by reparsing SKILL.md", async () => {
     const runQuery = vi.fn().mockResolvedValue({
       items: [
