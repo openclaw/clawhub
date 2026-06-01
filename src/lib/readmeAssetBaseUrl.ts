@@ -7,6 +7,12 @@
  * Using the commit SHA — not a branch like `main` — keeps each published
  * package page stable even if the source branch later moves.
  *
+ * When a `sourcePath` is supplied (the package directory inside the source
+ * repo, e.g. `examples/openclaw-plugin`), it is appended after the commit
+ * SHA so that relative README images resolve against the package
+ * subdirectory rather than the repo root. This matters for monorepo
+ * publishes where the README references `./images/...` next to itself.
+ *
  * Returns `undefined` when we can't construct a safe, stable base URL; in
  * that case MarkdownPreview falls back to its legacy behavior of leaving
  * relative sources untouched.
@@ -17,10 +23,18 @@
  * raw.githubusercontent.com is the only host this URL pattern is valid for
  * and the only host beyond GitHub already in vercel.json's image
  * remotePatterns allow-list relevant to this rewrite.
+ *
+ * `sourcePath` is path-segmented and per-segment validated against a
+ * conservative `[A-Za-z0-9._-]` whitelist. `..` segments and any
+ * disallowed character cause the path to be silently dropped and the URL
+ * to fall back to the repo-root base (rather than failing the whole
+ * README), since that matches today's behavior for legacy releases that
+ * never carried a path at all.
  */
 
 const COMMIT_SHA = /^[0-9a-f]{40}$/i;
 const GITHUB_OWNER_REPO = /^([A-Za-z0-9](?:[A-Za-z0-9-]{0,38}[A-Za-z0-9])?)\/([A-Za-z0-9._-]+)$/;
+const PATH_SEGMENT = /^[A-Za-z0-9._-]+$/;
 
 function normalizeOwnerRepo(input: string | undefined | null): string | null {
   if (!input) return null;
@@ -48,15 +62,38 @@ function normalizeOwnerRepo(input: string | undefined | null): string | null {
   }
 }
 
+function normalizeSourcePath(input: string | undefined | null): string | null {
+  if (!input) return null;
+  const trimmed = input.trim();
+  if (!trimmed || trimmed === ".") return null;
+  // Reject anything that doesn't look like a forward-slash relative path —
+  // no protocol-like contents, no backslashes, no whitespace. Leading and
+  // trailing slashes are tolerated because `split("/").filter(Boolean)`
+  // collapses them; only segment-level shapes need strict validation.
+  if (/[\\\s]/.test(trimmed)) return null;
+  if (trimmed.includes("://")) return null;
+  const segments = trimmed.split("/").filter(Boolean);
+  if (segments.length === 0) return null;
+  for (const segment of segments) {
+    if (segment === "." || segment === "..") return null;
+    if (!PATH_SEGMENT.test(segment)) return null;
+  }
+  return segments.join("/");
+}
+
 export function buildReadmeAssetBaseUrl(
   sourceRepo: string | undefined | null,
   sourceCommit: string | undefined | null,
+  sourcePath?: string | null,
 ): string | undefined {
   const ownerRepo = normalizeOwnerRepo(sourceRepo);
   if (!ownerRepo) return undefined;
   const commit = sourceCommit?.trim();
   if (!commit || !COMMIT_SHA.test(commit)) return undefined;
+  const path = normalizeSourcePath(sourcePath);
   // Trailing slash is required so `new URL("./images/foo.png", base)`
   // resolves as a directory rather than dropping the last path segment.
-  return `https://raw.githubusercontent.com/${ownerRepo}/${commit}/`;
+  return path
+    ? `https://raw.githubusercontent.com/${ownerRepo}/${commit}/${path}/`
+    : `https://raw.githubusercontent.com/${ownerRepo}/${commit}/`;
 }

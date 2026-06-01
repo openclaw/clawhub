@@ -50,6 +50,7 @@ export declare const PackageVerificationSummarySchema: import("arktype/internal/
     sourceRepo?: string | undefined;
     sourceCommit?: string | undefined;
     sourceTag?: string | undefined;
+    sourcePath?: string | undefined;
     hasProvenance?: boolean | undefined;
     trustedOpenClawPlugin?: boolean | undefined;
     scanStatus?: "clean" | "suspicious" | "malicious" | "pending" | "not-run" | undefined;
@@ -421,6 +422,7 @@ export declare const ApiV1PackageResponseSchema: import("arktype/internal/varian
             sourceRepo?: string | undefined;
             sourceCommit?: string | undefined;
             sourceTag?: string | undefined;
+            sourcePath?: string | undefined;
             hasProvenance?: boolean | undefined;
             trustedOpenClawPlugin?: boolean | undefined;
             scanStatus?: "clean" | "suspicious" | "malicious" | "pending" | "not-run" | undefined;
@@ -511,6 +513,7 @@ export declare const ApiV1PackageVersionResponseSchema: import("arktype/internal
             sourceRepo?: string | undefined;
             sourceCommit?: string | undefined;
             sourceTag?: string | undefined;
+            sourcePath?: string | undefined;
             hasProvenance?: boolean | undefined;
             trustedOpenClawPlugin?: boolean | undefined;
             scanStatus?: "clean" | "suspicious" | "malicious" | "pending" | "not-run" | undefined;

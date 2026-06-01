@@ -5,7 +5,7 @@ type HastElementLike = {
   properties?: Record<string, unknown>;
 };
 
-export interface RehypeProxyImagesOptions {
+interface RehypeProxyImagesOptions {
   /**
    * Base URL used to resolve relative <img src> values (e.g. `./images/foo.png`).
    * When set, relative sources are resolved against this base into an absolute

@@ -52,6 +52,12 @@ export const PackageVerificationSummarySchema = type({
   sourceRepo: "string?",
   sourceCommit: "string?",
   sourceTag: "string?",
+  // Path of the package directory inside the source repo (e.g.
+  // "examples/openclaw-plugin"). Forward slash separated, no leading or
+  // trailing slash. Used when resolving relative README asset URLs against
+  // raw.githubusercontent.com so that subdirectory packages render correctly.
+  // Absent or "." means the package lives at the repo root.
+  sourcePath: "string?",
   hasProvenance: "boolean?",
   scanStatus: '"clean"|"suspicious"|"malicious"|"pending"|"not-run"?',
 });

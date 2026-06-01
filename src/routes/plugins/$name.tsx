@@ -420,6 +420,7 @@ export function PluginDetailPage({
   const readmeAssetBaseUrl = buildReadmeAssetBaseUrl(
     verification?.sourceRepo,
     verification?.sourceCommit,
+    verification?.sourcePath,
   );
   const artifact = latestRelease?.artifact ?? pkg.artifact ?? null;
   const downloadPath =

@@ -361,6 +361,7 @@ const packageVerificationValidator = v.optional(
     sourceRepo: v.optional(v.string()),
     sourceCommit: v.optional(v.string()),
     sourceTag: v.optional(v.string()),
+    sourcePath: v.optional(v.string()),
     hasProvenance: v.optional(v.boolean()),
     trustedOpenClawPlugin: v.optional(v.boolean()),
     scanStatus: v.optional(
