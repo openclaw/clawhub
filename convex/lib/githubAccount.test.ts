@@ -183,6 +183,56 @@ describe("requireGitHubAccountAge", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("fetches githubCreatedAt when providerAccountId is a plain alphanumeric username", async () => {
+    vi.useFakeTimers();
+    const now = new Date("2026-02-02T12:00:00Z");
+    vi.setSystemTime(now);
+
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce({
+        _id: "users:1",
+        githubCreatedAt: undefined,
+      })
+      .mockResolvedValueOnce("octocat");
+    const runMutation = vi.fn();
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        created_at: "2020-01-01T00:00:00Z",
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await requireGitHubAccountAge({ runQuery, runMutation } as never, "users:1" as never);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.github.com/users/octocat",
+      expect.objectContaining({
+        headers: expect.objectContaining({ "User-Agent": "clawhub" }),
+      }),
+    );
+  });
+
+  it("rejects when providerAccountId is a username ending with a hyphen", async () => {
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce({
+        _id: "users:1",
+        githubCreatedAt: undefined,
+      })
+      .mockResolvedValueOnce("invalid-");
+    const runMutation = vi.fn();
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      requireGitHubAccountAge({ runQuery, runMutation } as never, "users:1" as never),
+    ).rejects.toThrow(/GitHub account lookup failed/i);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("fetches githubCreatedAt when providerAccountId is a username (non-numeric)", async () => {
     vi.useFakeTimers();
     const now = new Date("2026-02-02T12:00:00Z");

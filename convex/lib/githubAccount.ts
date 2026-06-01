@@ -33,7 +33,7 @@ function buildGitHubUserUrl(providerAccountId: string): string {
   if (/^[0-9]+$/.test(providerAccountId)) {
     return `${GITHUB_API}/user/${providerAccountId}`;
   }
-  if (/^[a-zA-Z0-9][a-zA-Z0-9-]*$/.test(providerAccountId)) {
+  if (/^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$/.test(providerAccountId)) {
     return `${GITHUB_API}/users/${providerAccountId}`;
   }
   throw new ConvexError("GitHub account lookup failed");
