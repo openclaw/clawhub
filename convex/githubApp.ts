@@ -48,6 +48,7 @@ const MAX_FILE_COUNT = 7_500;
 const MAX_SINGLE_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_SELECTED_BYTES = 50 * 1024 * 1024;
 const MAX_CANDIDATES_PER_SYNC = 100;
+const REPOSITORY_UPSERT_BATCH_SIZE = 50;
 const SYNC_JOB_RETRY_DELAY_MS = 30 * 1000;
 const SYNC_JOB_RUNNING_STALE_MS = 20 * 60 * 1000;
 
@@ -140,7 +141,11 @@ export const completePublisherInstall: ReturnType<typeof action> = action({
       requestedByUserId: userId,
       nonce: payload.nonce,
       consume: false,
-    })) as { publisherId: Id<"publishers">; requestedByUserId: Id<"users"> };
+    })) as {
+      publisherId: Id<"publishers">;
+      requestedByUserId: Id<"users">;
+      createdAt: number;
+    };
 
     const appJwt = await createAppJwt();
     const installation = await fetchGitHubInstallation(args.installationId, appJwt);
@@ -162,8 +167,14 @@ export const completePublisherInstall: ReturnType<typeof action> = action({
       targetAccountId: payload.targetAccountId,
       callerGitHubAccountId,
       installationClaim,
+      setupCreatedAt: setup.createdAt,
     });
     const repositories = await fetchGitHubInstallationRepositories(args.installationId, appJwt);
+    const normalizedRepositories = repositories.map((repo) => ({
+      repoFullName: requireString(repo.full_name, "repository full_name"),
+      repoId: normalizeIdString(repo.id, "repository id"),
+      defaultBranch: requireString(repo.default_branch, "repository default_branch"),
+    }));
 
     await ctx.runMutation(internal.githubApp.consumeSetupStateInternal, {
       stateHash,
@@ -187,14 +198,26 @@ export const completePublisherInstall: ReturnType<typeof action> = action({
       accountLogin: requireString(installation.account?.login, "installation account login"),
       accountId: installationAccountId,
       accountType: installationAccountType,
-      repositories: repositories.map((repo) => ({
-        repoFullName: requireString(repo.full_name, "repository full_name"),
-        repoId: normalizeIdString(repo.id, "repository id"),
-        defaultBranch: requireString(repo.default_branch, "repository default_branch"),
-      })),
+      repositoryCount: normalizedRepositories.length,
     });
 
-    return result;
+    const linkedRepositories: Array<{
+      repositoryId: Id<"publisherGitHubRepositories">;
+      repoFullName: string;
+    }> = [];
+    for (const batch of chunkArray(normalizedRepositories, REPOSITORY_UPSERT_BATCH_SIZE)) {
+      const batchResult = (await ctx.runMutation(
+        internal.githubApp.upsertPublisherInstallationRepositoriesInternal,
+        {
+          publisherId: setup.publisherId,
+          installationId: result.installationId,
+          repositories: batch,
+        },
+      )) as { repositories: typeof linkedRepositories };
+      linkedRepositories.push(...batchResult.repositories);
+    }
+
+    return { ...result, repositories: linkedRepositories };
   },
 });
 
@@ -595,6 +618,7 @@ export const consumeSetupStateInternal = internalMutation({
     return {
       publisherId: state.publisherId,
       requestedByUserId: state.requestedByUserId,
+      createdAt: state.createdAt,
     };
   },
 });
@@ -607,13 +631,7 @@ export const upsertPublisherInstallationInternal = internalMutation({
     accountLogin: v.string(),
     accountId: v.string(),
     accountType: v.union(v.literal("User"), v.literal("Organization")),
-    repositories: v.array(
-      v.object({
-        repoFullName: v.string(),
-        repoId: v.string(),
-        defaultBranch: v.string(),
-      }),
-    ),
+    repositoryCount: v.number(),
   },
   handler: async (ctx, args) => {
     await requirePublisherRole(ctx, {
@@ -675,60 +693,6 @@ export const upsertPublisherInstallationInternal = internalMutation({
     }
     if (!link) throw new ConvexError("GitHub link could not be stored");
 
-    const repos = [];
-    for (const repo of args.repositories) {
-      const normalizedName = normalizeGitHubRepoFullName(repo.repoFullName);
-      if (!normalizedName) continue;
-      const existingRepos = await ctx.db
-        .query("publisherGitHubRepositories")
-        .withIndex("by_installation_repo_id", (q) =>
-          q.eq("installationId", args.installationId).eq("repoId", repo.repoId),
-        )
-        .collect();
-      const existing = existingRepos.find(
-        (candidate) => candidate.publisherId === args.publisherId,
-      );
-      if (
-        existingRepos.some(
-          (candidate) => candidate.publisherId !== args.publisherId && !candidate.deletedAt,
-        )
-      ) {
-        throw new ConvexError("GitHub repository is already linked to another publisher");
-      }
-      const fields = {
-        publisherId: args.publisherId,
-        githubLinkId: link._id,
-        installationId: args.installationId,
-        repoFullName: normalizedName,
-        repoId: repo.repoId,
-        defaultBranch: repo.defaultBranch,
-        updatedAt: now,
-      };
-      if (existing) {
-        await ctx.db.patch(existing._id, {
-          ...fields,
-          deletedAt: undefined,
-        });
-        await syncSourceLinkRepoFullName(ctx, {
-          repositoryId: existing._id,
-          repoFullName: normalizedName,
-          now,
-        });
-        repos.push({ repositoryId: existing._id, repoFullName: normalizedName });
-      } else {
-        const repositoryId = await ctx.db.insert("publisherGitHubRepositories", {
-          ...fields,
-          syncRef: repo.defaultBranch,
-          syncRoots: [""],
-          mode: "discover",
-          enabled: false,
-          lastSyncStatus: "idle",
-          createdAt: now,
-        });
-        repos.push({ repositoryId, repoFullName: normalizedName });
-      }
-    }
-
     await ctx.db.insert("auditLogs", {
       actorUserId: args.linkedByUserId,
       action: "github_app.installation.link",
@@ -737,7 +701,7 @@ export const upsertPublisherInstallationInternal = internalMutation({
       metadata: {
         installationId: args.installationId,
         accountLogin: args.accountLogin,
-        repositories: repos.length,
+        repositories: args.repositoryCount,
       },
       createdAt: now,
     });
@@ -746,8 +710,39 @@ export const upsertPublisherInstallationInternal = internalMutation({
       ok: true,
       publisherId: args.publisherId,
       installationId: args.installationId,
-      repositories: repos,
+      repositories: [],
     };
+  },
+});
+
+export const upsertPublisherInstallationRepositoriesInternal = internalMutation({
+  args: {
+    publisherId: v.id("publishers"),
+    installationId: v.string(),
+    repositories: v.array(
+      v.object({
+        repoFullName: v.string(),
+        repoId: v.string(),
+        defaultBranch: v.string(),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const link = await ctx.db
+      .query("publisherGitHubLinks")
+      .withIndex("by_publisher_installation_id", (q) =>
+        q.eq("publisherId", args.publisherId).eq("installationId", args.installationId),
+      )
+      .unique();
+    if (!link || link.deletedAt) throw new ConvexError("GitHub link not found");
+    const repositories = await upsertRepositoriesForLink(ctx, {
+      link,
+      installationId: args.installationId,
+      repositories: args.repositories,
+      now: Date.now(),
+      onConflict: "skip",
+    });
+    return { repositories };
   },
 });
 
@@ -773,57 +768,14 @@ export const upsertInstallationRepositoriesInternal = internalMutation({
     let upserted = 0;
 
     for (const link of activeLinks) {
-      for (const repo of args.repositories) {
-        const normalizedName = normalizeGitHubRepoFullName(repo.repoFullName);
-        if (!normalizedName) continue;
-        const existingRepos = await ctx.db
-          .query("publisherGitHubRepositories")
-          .withIndex("by_installation_repo_id", (q) =>
-            q.eq("installationId", args.installationId).eq("repoId", repo.repoId),
-          )
-          .collect();
-        const existing = existingRepos.find(
-          (candidate) => candidate.publisherId === link.publisherId,
-        );
-        if (
-          existingRepos.some(
-            (candidate) => candidate.publisherId !== link.publisherId && !candidate.deletedAt,
-          )
-        ) {
-          continue;
-        }
-        const fields = {
-          publisherId: link.publisherId,
-          githubLinkId: link._id,
-          installationId: args.installationId,
-          repoFullName: normalizedName,
-          repoId: repo.repoId,
-          defaultBranch: repo.defaultBranch,
-          updatedAt: now,
-        };
-        if (existing) {
-          await ctx.db.patch(existing._id, {
-            ...fields,
-            deletedAt: undefined,
-          });
-          await syncSourceLinkRepoFullName(ctx, {
-            repositoryId: existing._id,
-            repoFullName: normalizedName,
-            now,
-          });
-        } else {
-          await ctx.db.insert("publisherGitHubRepositories", {
-            ...fields,
-            syncRef: repo.defaultBranch,
-            syncRoots: [""],
-            mode: "discover",
-            enabled: false,
-            lastSyncStatus: "idle",
-            createdAt: now,
-          });
-        }
-        upserted += 1;
-      }
+      const repositories = await upsertRepositoriesForLink(ctx, {
+        link,
+        installationId: args.installationId,
+        repositories: args.repositories,
+        now,
+        onConflict: "skip",
+      });
+      upserted += repositories.length;
     }
     return { upserted };
   },
@@ -1663,6 +1615,76 @@ async function syncSourceLinkRepoFullName(
   }
 }
 
+async function upsertRepositoriesForLink(
+  ctx: Pick<MutationCtx, "db">,
+  args: {
+    link: Doc<"publisherGitHubLinks">;
+    installationId: string;
+    repositories: Array<{ repoFullName: string; repoId: string; defaultBranch: string }>;
+    now: number;
+    onConflict: "throw" | "skip";
+  },
+) {
+  const repos: Array<{ repositoryId: Id<"publisherGitHubRepositories">; repoFullName: string }> =
+    [];
+  for (const repo of args.repositories) {
+    const normalizedName = normalizeGitHubRepoFullName(repo.repoFullName);
+    if (!normalizedName) continue;
+    const existingRepos = await ctx.db
+      .query("publisherGitHubRepositories")
+      .withIndex("by_installation_repo_id", (q) =>
+        q.eq("installationId", args.installationId).eq("repoId", repo.repoId),
+      )
+      .collect();
+    const existing = existingRepos.find(
+      (candidate) => candidate.publisherId === args.link.publisherId,
+    );
+    if (
+      existingRepos.some(
+        (candidate) => candidate.publisherId !== args.link.publisherId && !candidate.deletedAt,
+      )
+    ) {
+      if (args.onConflict === "throw") {
+        throw new ConvexError("GitHub repository is already linked to another publisher");
+      }
+      continue;
+    }
+    const fields = {
+      publisherId: args.link.publisherId,
+      githubLinkId: args.link._id,
+      installationId: args.installationId,
+      repoFullName: normalizedName,
+      repoId: repo.repoId,
+      defaultBranch: repo.defaultBranch,
+      updatedAt: args.now,
+    };
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        ...fields,
+        deletedAt: undefined,
+      });
+      await syncSourceLinkRepoFullName(ctx, {
+        repositoryId: existing._id,
+        repoFullName: normalizedName,
+        now: args.now,
+      });
+      repos.push({ repositoryId: existing._id, repoFullName: normalizedName });
+    } else {
+      const repositoryId = await ctx.db.insert("publisherGitHubRepositories", {
+        ...fields,
+        syncRef: repo.defaultBranch,
+        syncRoots: [""],
+        mode: "discover",
+        enabled: false,
+        lastSyncStatus: "idle",
+        createdAt: args.now,
+      });
+      repos.push({ repositoryId, repoFullName: normalizedName });
+    }
+  }
+  return repos;
+}
+
 async function queueRepositorySyncInternal(
   ctx: Pick<MutationCtx, "db" | "scheduler">,
   args: {
@@ -1961,6 +1983,14 @@ function concatUint8Arrays(chunks: Uint8Array[]) {
   return out;
 }
 
+function chunkArray<T>(items: T[], size: number) {
+  const out: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    out.push(items.slice(index, index + size));
+  }
+  return out;
+}
+
 function githubJsonHeaders(token: string) {
   return {
     Accept: "application/vnd.github+json",
@@ -1996,6 +2026,7 @@ function assertInstallationMatchesSetup(params: {
   targetAccountId?: string;
   callerGitHubAccountId: string | null;
   installationClaim: Doc<"githubAppInstallationClaims"> | null;
+  setupCreatedAt: number;
 }) {
   const targetAccountId = params.targetAccountId?.trim();
   if (targetAccountId && params.installationAccountId !== targetAccountId) {
@@ -2009,7 +2040,7 @@ function assertInstallationMatchesSetup(params: {
     return;
   }
   if (params.installationAccountType === "Organization" && targetAccountId) {
-    if (!params.installationClaim) {
+    if (!params.installationClaim || params.installationClaim.updatedAt < params.setupCreatedAt) {
       throw new ConvexError(
         "GitHub installation confirmation is still pending. Please retry in a moment.",
       );
