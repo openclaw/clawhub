@@ -49,6 +49,7 @@ const MAX_SINGLE_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_SELECTED_BYTES = 50 * 1024 * 1024;
 const MAX_CANDIDATES_PER_SYNC = 100;
 const REPOSITORY_UPSERT_BATCH_SIZE = 50;
+const MAX_INSTALLATION_REPOSITORY_PAGES = 100;
 const SYNC_JOB_RETRY_DELAY_MS = 30 * 1000;
 const SYNC_JOB_RUNNING_STALE_MS = 20 * 60 * 1000;
 
@@ -1918,7 +1919,7 @@ async function fetchGitHubInstallationRepositories(installationId: string, appJw
   const token = await createInstallationTokenWithJwt(installationId, appJwt);
   const repos: GitHubInstallationRepository[] = [];
   let page = 1;
-  while (true) {
+  while (page <= MAX_INSTALLATION_REPOSITORY_PAGES) {
     const response = await fetch(
       `https://api.github.com/installation/repositories?per_page=100&page=${page}`,
       { headers: githubJsonHeaders(token) },
@@ -1928,6 +1929,9 @@ async function fetchGitHubInstallationRepositories(installationId: string, appJw
     repos.push(...(body.repositories ?? []));
     if ((body.repositories ?? []).length < 100) break;
     page += 1;
+  }
+  if (page > MAX_INSTALLATION_REPOSITORY_PAGES) {
+    throw new ConvexError("GitHub repository list exceeded pagination limit");
   }
   return repos;
 }
