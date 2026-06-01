@@ -680,7 +680,7 @@ describe("plugins publish route", () => {
     expect(screen.getByText(/\.\/images\/bar\.png/)).toBeTruthy();
   });
 
-  it("hides the relative-README-image warning once Source repo and Source commit are filled", async () => {
+  it("swaps the missing-source warning for a Package-path reminder once Source repo and Source commit are filled", async () => {
     renderPublishRoute();
 
     const packageJson = withRelativePath(
@@ -709,6 +709,8 @@ describe("plugins publish route", () => {
     await waitFor(() => {
       expect(screen.getByText(/a package-relative image path/i)).toBeTruthy();
     });
+    // Before source is filled, the missing-source copy is shown.
+    expect(screen.getByText(/Without Source repo \+ Commit SHA/i)).toBeTruthy();
 
     fireEvent.change(screen.getByPlaceholderText("owner/repo"), {
       target: { value: "openclaw/demo-plugin" },
@@ -717,9 +719,56 @@ describe("plugins publish route", () => {
       target: { value: "abc123" },
     });
 
+    // After source is filled, the missing-source copy disappears but a softer
+    // reminder remains, prompting the publisher to verify Package path against
+    // the constructed raw.githubusercontent.com URL preview.
     await waitFor(() => {
-      expect(screen.queryByText(/Your README references/i)).toBeNull();
+      expect(screen.queryByText(/Without Source repo \+ Commit SHA/i)).toBeNull();
     });
+    expect(screen.getByText(/make sure Package path matches/i)).toBeTruthy();
+    expect(
+      screen.getByText(/raw\.githubusercontent\.com\/openclaw\/demo-plugin\/abc123\/\.\//i),
+    ).toBeTruthy();
+  });
+
+  it("stops nudging about Package path once source is filled and the README has no relative images", async () => {
+    renderPublishRoute();
+
+    const packageJson = withRelativePath(
+      new File(
+        [makeCodePluginPackageJson({ name: "demo-plugin", version: "1.0.0" })],
+        "package.json",
+        {
+          type: "application/json",
+        },
+      ),
+      "demo-plugin/package.json",
+    );
+    const manifest = withRelativePath(
+      new File(['{"id":"demo.plugin"}'], "openclaw.plugin.json", { type: "application/json" }),
+      "demo-plugin/openclaw.plugin.json",
+    );
+    const readme = withRelativePath(
+      new File(["# Demo\n\n![ok](https://example.com/foo.png)\n"], "README.md", {
+        type: "text/markdown",
+      }),
+      "demo-plugin/README.md",
+    );
+
+    fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest, readme] } });
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("demo-plugin")).toBeTruthy();
+    });
+    fireEvent.change(screen.getByPlaceholderText("owner/repo"), {
+      target: { value: "openclaw/demo-plugin" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Full commit SHA"), {
+      target: { value: "abc123" },
+    });
+
+    expect(screen.queryByText(/Your README references/i)).toBeNull();
+    expect(screen.queryByText(/make sure Package path matches/i)).toBeNull();
   });
 
   it("keeps warning about root-absolute README image paths even when Source repo and Source commit are filled", async () => {

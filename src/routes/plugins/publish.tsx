@@ -132,6 +132,8 @@ export function PublishPluginRoute() {
   const [readmeAssetReport, setReadmeAssetReport] = useState<RelativeReadmeAssetReport>({
     samples: [],
     total: 0,
+    unresolvableSamples: [],
+    unresolvableTotal: 0,
   });
   const [codePluginFieldIssues, setCodePluginFieldIssues] = useState<string[]>([]);
   const [status, setStatus] = useState<string | null>(null);
@@ -220,12 +222,19 @@ export function PublishPluginRoute() {
     const resolvableTotal = total - unresolvableTotal;
     // Resolvable references (e.g. `./images/foo.png`) are silenced once Source
     // repo + Commit SHA are filled — those let the renderer rewrite them to a
-    // raw.githubusercontent.com URL. Root-absolute references (e.g.
-    // `/static/logo.png`) are never rewritten by the renderer, so they keep
-    // warning regardless of source metadata.
-    const showResolvable = resolvableTotal > 0 && !hasSource;
+    // raw.githubusercontent.com URL. We deliberately don't gate on Package
+    // path here: its default "." is a legitimate value (package at repo root),
+    // so we can't distinguish "user didn't touch it" from "user confirmed the
+    // root". Instead, when source is filled but resolvable refs exist, we show
+    // a softer reminder telling the publisher to double-check Package path.
+    // Root-absolute references (e.g. `/static/logo.png`) are never rewritten
+    // by the renderer, so they keep warning regardless of source metadata.
+    const showResolvableMissingSource = resolvableTotal > 0 && !hasSource;
+    const showSourcePathReminder = resolvableTotal > 0 && hasSource;
     const showUnresolvable = unresolvableTotal > 0;
-    if (!showResolvable && !showUnresolvable) return null;
+    if (!showResolvableMissingSource && !showSourcePathReminder && !showUnresolvable) {
+      return null;
+    }
     const resolvableSamples = samples.filter((sample) => !unresolvableSamples.includes(sample));
     return {
       total,
@@ -234,7 +243,8 @@ export function PublishPluginRoute() {
       resolvableSamples,
       unresolvableTotal,
       unresolvableSamples,
-      showResolvable,
+      showResolvableMissingSource,
+      showSourcePathReminder,
       showUnresolvable,
     };
   }, [readmeAssetReport, sourceRepo, sourceCommit]);
@@ -505,7 +515,7 @@ export function PublishPluginRoute() {
                   {readmeAssetWarning ? (
                     <Badge variant="accent">
                       <span>
-                        {readmeAssetWarning.showResolvable ? (
+                        {readmeAssetWarning.showResolvableMissingSource ? (
                           <>
                             Your README references{" "}
                             {readmeAssetWarning.resolvableTotal === 1
@@ -520,7 +530,24 @@ export function PublishPluginRoute() {
                             URLs in the README.
                           </>
                         ) : null}
-                        {readmeAssetWarning.showResolvable && readmeAssetWarning.showUnresolvable
+                        {readmeAssetWarning.showSourcePathReminder ? (
+                          <>
+                            Your README references{" "}
+                            {readmeAssetWarning.resolvableTotal === 1
+                              ? "a package-relative image path"
+                              : `${readmeAssetWarning.resolvableTotal} package-relative image paths`}{" "}
+                            ({readmeAssetWarning.resolvableSamples.slice(0, 3).join(", ")}
+                            {readmeAssetWarning.resolvableSamples.length > 3 ? ", \u2026" : ""}).
+                            They will be served from
+                            {" raw.githubusercontent.com/"}
+                            {sourceRepo.trim()}/{sourceCommit.trim()}/{sourcePath.trim() || "."}/ —
+                            make sure Package path matches where this package lives in the repo, or
+                            the images will 404.
+                          </>
+                        ) : null}
+                        {(readmeAssetWarning.showResolvableMissingSource ||
+                          readmeAssetWarning.showSourcePathReminder) &&
+                        readmeAssetWarning.showUnresolvable
                           ? " "
                           : null}
                         {readmeAssetWarning.showUnresolvable ? (
