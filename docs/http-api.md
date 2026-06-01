@@ -123,10 +123,10 @@ Response:
 
 Notes:
 
-- Results are returned in relevance order (embedding similarity + exact slug/name token boosts + popularity prior from downloads).
+- Results are returned in relevance order (embedding similarity + exact slug/name token boosts + a small popularity prior from stars, all-time installs, and downloads).
 - Relevance is stronger than popularity. A precise slug or display-name token match can outrank a looser match with many more downloads.
 - ASCII text is tokenized on word and punctuation boundaries. For example, `personal-map` contains a standalone `map` token, while `amap-jsapi-skill` contains `amap`, `jsapi`, and `skill`; searching for `map` therefore gives `personal-map` a stronger lexical match than `amap-jsapi-skill`.
-- Downloads are used as a small log-scaled prior and tie-breaker, not as the primary ranking signal. High-download skills can rank lower when the query text is a weaker match.
+- Popularity is log-scaled and capped. Stars carry the strongest weight, all-time installs carry a smaller weight, and downloads are only a tiny fallback signal. High-download skills can rank lower when the query text is a weaker match.
 - Suspicious or hidden moderation state can remove a skill from public search depending on caller filters and current moderation status.
 
 Publisher discoverability guidance:
@@ -142,7 +142,7 @@ Query params:
 
 - `limit` (optional): integer (1–200)
 - `cursor` (optional): pagination cursor for any non-`trending` sort
-- `sort` (optional): `updated` (default), `createdAt` (alias: `newest`), `downloads`, `stars` (alias: `rating`), `installsCurrent` (alias: `installs`), `installsAllTime`, `trending`
+- `sort` (optional): `updated` (default), `recommended` (alias: `default`), `createdAt` (alias: `newest`), `downloads`, `stars` (alias: `rating`), `installsCurrent` (alias: `installs`), `installsAllTime`, `trending`
 - `nonSuspiciousOnly` (optional): `true` to hide suspicious (`flagged.suspicious`) skills
 - `nonSuspicious` (optional): legacy alias for `nonSuspiciousOnly`
 
@@ -150,6 +150,7 @@ Invalid `sort` values return `400`.
 
 Notes:
 
+- `recommended` ranks by stars, then all-time installs, then downloads, then `updatedAt`.
 - `trending` ranks by installs in the last 7 days (telemetry-based).
 - `createdAt` is stable for new-skill crawls; `updated` changes when existing skills are republished.
 - When `nonSuspiciousOnly=true`, cursor-based sorts may return fewer than `limit` items on a page because suspicious skills are filtered after page retrieval.

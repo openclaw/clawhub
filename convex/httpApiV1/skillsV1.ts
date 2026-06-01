@@ -1034,6 +1034,7 @@ export async function resolveSkillVersionV1Handler(ctx: ActionCtx, request: Requ
 }
 
 type SkillListSort =
+  | "recommended"
   | "createdAt"
   | "updated"
   | "downloads"
@@ -1042,11 +1043,14 @@ type SkillListSort =
   | "installsAllTime"
   | "trending";
 
-type PublicListSort = "newest" | "updated" | "downloads" | "stars" | "installs";
+type PublicListSort = "recommended" | "newest" | "updated" | "downloads" | "stars" | "installs";
 
 function parseListSort(value: string | null): SkillListSort | null {
   if (value === null) return "updated";
-  const normalized = value?.trim().toLowerCase();
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "default" || normalized === "recommended") {
+    return "recommended";
+  }
   if (normalized === "createdat" || normalized === "created-at" || normalized === "newest") {
     return "createdAt";
   }
@@ -1069,6 +1073,7 @@ function parseListSort(value: string | null): SkillListSort | null {
 }
 
 function toPublicListSort(sort: Exclude<SkillListSort, "trending">): PublicListSort {
+  if (sort === "recommended") return "recommended";
   if (sort === "createdAt") return "newest";
   if (sort === "updated") return "updated";
   if (sort === "downloads" || sort === "stars") return sort;

@@ -178,7 +178,7 @@ describe("home route", () => {
     expect(scrollByMock).toHaveBeenNthCalledWith(2, { left: -336, behavior: "smooth" });
   });
 
-  it("falls back to public skill cards when no highlighted carousel cards exist", async () => {
+  it("falls back to recommended public skill cards when no highlighted carousel cards exist", async () => {
     convexQueryMock.mockImplementation((queryName: string) => {
       if (queryName === "skills:listHighlightedPublic") return Promise.resolve([]);
       if (queryName === "skills:listPublicPageV4") {
@@ -213,17 +213,17 @@ describe("home route", () => {
       "popular",
     );
     expect(document.querySelectorAll(".home-v2-carousel-track .home-v2-c-card")).toHaveLength(2);
-    expect(convexQueryMock).toHaveBeenCalledWith(
-      "skills:listPublicPageV4",
+    const listArgs = getListPublicPageArgs();
+    expect(listArgs).toEqual(
       expect.objectContaining({
         numItems: 6,
-        sort: "downloads",
         dir: "desc",
       }),
     );
+    expect(listArgs).not.toHaveProperty("sort");
   });
 
-  it("restores the Trending Now skill grid from the public downloads feed", async () => {
+  it("restores the Trending Now skill grid from the recommended public feed", async () => {
     const trendingEntries = Array.from({ length: 6 }, (_, index) => ({
       skill: {
         _id: `skill-trending-${index}`,
@@ -328,3 +328,18 @@ describe("home route", () => {
     expect(document.querySelector(".home-v2-hack-lobster")).toBeTruthy();
   });
 });
+
+function getListPublicPageArgs(): Record<string, unknown> {
+  const call = convexQueryMock.mock.calls.find((candidate: unknown[]) => {
+    return candidate[0] === "skills:listPublicPageV4";
+  });
+  const args = call?.[1];
+  if (!isRecord(args)) {
+    throw new Error("Expected listPublicPageV4 args to be an object");
+  }
+  return args;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}

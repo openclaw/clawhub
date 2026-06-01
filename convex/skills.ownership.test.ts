@@ -63,6 +63,15 @@ function chainEq(constraints: Record<string, unknown>) {
   };
 }
 
+const defaultSkillStats = {
+  downloads: 0,
+  stars: 0,
+  installsCurrent: 0,
+  installsAllTime: 0,
+  versions: 1,
+  comments: 0,
+};
+
 describe("skills ownership", () => {
   it("resolves alias slugs to the live target skill", async () => {
     const result = await getSkillBySlugInternalHandler(
@@ -430,6 +439,7 @@ describe("skills ownership", () => {
       softDeletedAt: undefined,
       moderationVerdict: "clean",
       moderationReasonCodes: ["suspicious.dynamic_code_execution"],
+      stats: defaultSkillStats,
     };
     const aliases = [
       {
@@ -688,6 +698,7 @@ describe("skills ownership", () => {
       ownerUserId: "users:actor",
       ownerPublisherId: "publishers:actor",
       softDeletedAt: undefined,
+      stats: defaultSkillStats,
     };
     const aliases = [
       {

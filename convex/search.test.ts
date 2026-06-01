@@ -544,6 +544,8 @@ describe("search helpers", () => {
           slug: "antigravity-image-generator",
           displayName: "Antigravity Image Generator",
           downloads: 1_000_000_000,
+          installsAllTime: 1_000,
+          stars: 100,
         }),
         version: null,
         ownerHandle: "owner",
@@ -563,7 +565,7 @@ describe("search helpers", () => {
         vectorSearch: vi.fn().mockResolvedValue(
           vectorEntries.map((entry, index) => ({
             _id: entry.embeddingId,
-            _score: 0.5 - index * 0.001,
+            _score: 0.05 - index * 0.001,
           })),
         ),
         runQuery,
@@ -1142,8 +1144,16 @@ describe("search helpers", () => {
 
   it("boosts exact slug/name matches over loose matches", () => {
     const queryTokens = tokenize("notion");
-    const exactScore = __test.scoreSkillResult(queryTokens, 0.4, "Notion Sync", "notion-sync", 5);
-    const looseScore = __test.scoreSkillResult(queryTokens, 0.6, "Notes Sync", "notes-sync", 500);
+    const exactScore = __test.scoreSkillResult(queryTokens, 0.4, "Notion Sync", "notion-sync", {
+      downloads: 5,
+      installsAllTime: 0,
+      stars: 0,
+    });
+    const looseScore = __test.scoreSkillResult(queryTokens, 0.6, "Notes Sync", "notes-sync", {
+      downloads: 500,
+      installsAllTime: 100,
+      stars: 20,
+    });
     expect(exactScore).toBeGreaterThan(looseScore);
   });
 
@@ -1154,35 +1164,114 @@ describe("search helpers", () => {
       0.5,
       "Self Improving Agent",
       "self-improving-agent",
-      10,
+      { downloads: 10, installsAllTime: 0, stars: 0 },
     );
     const containingScore = __test.scoreSkillResult(
       queryTokens,
       0.6,
       "Self Improving Agent",
       "xiucheng-self-improving-agent",
-      100,
+      { downloads: 100, installsAllTime: 50, stars: 10 },
     );
     expect(exactScore).toBeGreaterThan(containingScore);
   });
 
-  it("adds a popularity prior for equally relevant matches", () => {
+  it("keeps extreme popularity below direct lexical relevance", () => {
+    const queryTokens = tokenize("needle");
+    const exactScore = __test.scoreSkillResult(queryTokens, 0, "Unrelated Name", "needle", {
+      downloads: 0,
+      installsAllTime: 0,
+      stars: 0,
+    });
+    const popularLooseScore = __test.scoreSkillResult(
+      queryTokens,
+      0.9,
+      "Different Tool",
+      "different-tool",
+      { downloads: 1_000_000, installsAllTime: 25_000, stars: 25_000 },
+    );
+    expect(exactScore).toBeGreaterThan(popularLooseScore);
+  });
+
+  it("keeps popularity from flipping a strong name match", () => {
     const queryTokens = tokenize("notion");
-    const lowDownloads = __test.scoreSkillResult(
+    const nameMatchScore = __test.scoreSkillResult(queryTokens, 0, "Notion Helper", "helper", {
+      downloads: 0,
+      installsAllTime: 0,
+      stars: 0,
+    });
+    const popularVectorScore = __test.scoreSkillResult(
+      queryTokens,
+      1,
+      "Different Tool",
+      "different-tool",
+      { downloads: 1_000_000, installsAllTime: 25_000, stars: 25_000 },
+    );
+    expect(nameMatchScore).toBeGreaterThan(popularVectorScore);
+  });
+
+  it("adds a stars and installs popularity prior for equally relevant matches", () => {
+    const queryTokens = tokenize("notion");
+    const highDownloadsOnly = __test.scoreSkillResult(
       queryTokens,
       0.5,
       "Notion Helper",
       "notion-helper",
-      0,
+      { downloads: 1000, installsAllTime: 0, stars: 0 },
     );
-    const highDownloads = __test.scoreSkillResult(
+    const trustedUsage = __test.scoreSkillResult(
       queryTokens,
       0.5,
       "Notion Helper",
       "notion-helper",
-      1000,
+      { downloads: 0, installsAllTime: 20, stars: 5 },
     );
-    expect(highDownloads).toBeGreaterThan(lowDownloads);
+    expect(trustedUsage).toBeGreaterThan(highDownloadsOnly);
+  });
+
+  it("breaks capped popularity ties by stars and installs before downloads", async () => {
+    generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
+    const trustedUsage = {
+      skill: makePublicSkill({
+        id: "skills:trusted",
+        slug: "tool-trusted",
+        displayName: "Tool",
+        downloads: 0,
+        installsAllTime: 1_000,
+        stars: 1_000,
+      }),
+      version: null,
+      ownerHandle: "owner",
+      owner: null,
+    };
+    const downloadedOnly = {
+      skill: makePublicSkill({
+        id: "skills:downloaded",
+        slug: "tool-downloaded",
+        displayName: "Tool",
+        downloads: 1_000_000_000,
+        installsAllTime: 0,
+        stars: 0,
+      }),
+      version: null,
+      ownerHandle: "owner",
+      owner: null,
+    };
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce(null) // getExactSkillSlugMatch
+      .mockResolvedValueOnce([]) // directPrefixSkillMatches
+      .mockResolvedValueOnce([downloadedOnly, trustedUsage]); // lexicalFallbackSkills
+
+    const result = await searchSkillsHandler(
+      {
+        vectorSearch: vi.fn().mockResolvedValue([]),
+        runQuery,
+      },
+      { query: "tool", limit: 2 },
+    );
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["tool-trusted", "tool-downloaded"]);
   });
 
   it("uses digest doc instead of full skill doc in hydrateResults but revalidates the owner", async () => {
@@ -1532,6 +1621,8 @@ function makePublicSkill(params: {
   slug: string;
   displayName: string;
   downloads?: number;
+  installsAllTime?: number;
+  stars?: number;
   capabilityTags?: string[];
 }) {
   return {
@@ -1550,8 +1641,8 @@ function makePublicSkill(params: {
     stats: {
       downloads: params.downloads ?? 0,
       installsCurrent: 0,
-      installsAllTime: 0,
-      stars: 0,
+      installsAllTime: params.installsAllTime ?? 0,
+      stars: params.stars ?? 0,
       versions: 1,
       comments: 0,
     },

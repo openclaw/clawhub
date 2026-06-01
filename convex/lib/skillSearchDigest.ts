@@ -2,6 +2,7 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import type { HydratableSkill, PublicPublisher } from "./public";
 import { tokenize } from "./searchText";
+import { readCanonicalStat } from "./skillStats";
 
 function pick<T extends Record<string, unknown>, K extends keyof T>(obj: T, keys: K[]): Pick<T, K> {
   return Object.fromEntries(keys.map((k) => [k, obj[k]])) as Pick<T, K>;
@@ -61,6 +62,10 @@ export type SkillSearchDigestFields = Pick<Doc<"skills">, (typeof SHARED_KEYS)[n
 export function extractDigestFields(skill: Doc<"skills">): SkillSearchDigestFields {
   return {
     ...pick(skill, [...SHARED_KEYS]),
+    statsDownloads: readCanonicalStat(skill, "downloads"),
+    statsStars: readCanonicalStat(skill, "stars"),
+    statsInstallsCurrent: readCanonicalStat(skill, "installsCurrent"),
+    statsInstallsAllTime: readCanonicalStat(skill, "installsAllTime"),
     skillId: skill._id,
     normalizedSlug: normalizeSkillSearchText(skill.slug),
     normalizedSlugFirstToken: getFirstSearchToken(skill.slug),
