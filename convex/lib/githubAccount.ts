@@ -10,16 +10,22 @@ const MIN_ACCOUNT_AGE_MS = 14 * 24 * 60 * 60 * 1000;
 type GitHubAccountGateCtx = Pick<ActionCtx, "runQuery" | "runMutation">;
 
 type GitHubUser = {
+  id?: number;
   login?: string;
   name?: string;
   avatar_url?: string;
   created_at?: string;
 };
 
-function assertGitHubNumericId(providerAccountId: string) {
-  if (!/^[0-9]+$/.test(providerAccountId)) {
-    throw new ConvexError("GitHub account lookup failed");
+// Numeric IDs use the immutable /user/:id endpoint; username-format IDs (stored by some OAuth flows) fall back to /users/:login.
+function buildGitHubUserUrl(providerAccountId: string): string {
+  if (/^[0-9]+$/.test(providerAccountId)) {
+    return `${GITHUB_API}/user/${providerAccountId}`;
   }
+  if (/^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$/.test(providerAccountId)) {
+    return `${GITHUB_API}/users/${providerAccountId}`;
+  }
+  throw new ConvexError("GitHub account lookup failed");
 }
 
 function buildGitHubHeaders() {
@@ -48,10 +54,9 @@ export async function requireGitHubAccountAge(ctx: GitHubAccountGateCtx, userId:
       // Invariant: GitHub is our only auth provider, so this should never happen.
       throw new ConvexError("GitHub account required");
     }
-    assertGitHubNumericId(providerAccountId);
+    const url = buildGitHubUserUrl(providerAccountId);
 
-    // Fetch by immutable GitHub numeric ID to avoid username swap attacks entirely.
-    const response = await fetch(`${GITHUB_API}/user/${providerAccountId}`, {
+    const response = await fetch(url, {
       headers: buildGitHubHeaders(),
     });
     if (!response.ok) {
@@ -105,9 +110,9 @@ export async function syncGitHubProfile(ctx: ActionCtx, userId: Id<"users">) {
   );
   if (!providerAccountId) return;
 
-  assertGitHubNumericId(providerAccountId);
+  const url = buildGitHubUserUrl(providerAccountId);
 
-  const response = await fetch(`${GITHUB_API}/user/${providerAccountId}`, {
+  const response = await fetch(url, {
     headers: buildGitHubHeaders(),
   });
   if (!response.ok) {
