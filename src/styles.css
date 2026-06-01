@@ -3195,9 +3195,7 @@ code {
 }
 
 .skill-card-spaced-footer .skill-card-footer {
-  display: flex;
-  flex: 1;
-  margin-top: 0;
+  margin-top: auto;
 }
 
 .skill-card-footer-inline {
@@ -3216,8 +3214,8 @@ code {
 
 .skill-card-spaced-footer .skill-card-footer-rows {
   display: flex;
-  flex: 1;
   flex-direction: column;
+  gap: 8px;
 }
 
 .skill-card-footer-rows .stat {
@@ -3226,8 +3224,8 @@ code {
 
 .skill-card-spaced-footer .skill-card-footer-rows .stat {
   align-self: stretch;
-  margin-top: auto;
-  padding-top: 8px;
+  margin-top: 0;
+  padding-top: 0;
 }
 
 .skill-card-statline,
