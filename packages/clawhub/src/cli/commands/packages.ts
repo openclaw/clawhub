@@ -682,13 +682,14 @@ export async function cmdPublishPackage(
 
       if (plan.clawpackOnDisk) {
         if (isPackageMultipartTooLarge(payloadJson, "clawpack", [plan.clawpackOnDisk])) {
-          const storageId = await uploadClawPackToStorage(
+          const staged = await uploadClawPackToStorage(
             registry,
             publishToken,
             plan.clawpackOnDisk,
             spinner,
           );
-          form.set("clawpack", storageId);
+          form.set("clawpack", staged.storageId);
+          form.set("clawpackUploadTicket", staged.uploadTicket);
         } else {
           if (spinner) spinner.text = `Uploading ${plan.clawpackOnDisk.relPath}`;
           const blob = new Blob([Buffer.from(plan.clawpackOnDisk.bytes)], {
@@ -1613,7 +1614,7 @@ async function uploadClawPackToStorage(
   spinner: ReturnType<typeof createSpinner> | null,
 ) {
   if (spinner) spinner.text = `Uploading ${file.relPath}`;
-  const { uploadUrl } = await apiRequest(
+  const { uploadUrl, uploadTicket } = await apiRequest(
     registry,
     {
       method: "POST",
@@ -1631,7 +1632,7 @@ async function uploadClawPackToStorage(
     },
     ApiUploadFileResponseSchema,
   );
-  return result.storageId;
+  return { storageId: result.storageId, uploadTicket };
 }
 
 const REAL_BUNDLE_MANIFESTS = [

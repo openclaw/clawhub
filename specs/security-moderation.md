@@ -126,7 +126,10 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   staged ClawPack blob.
 - Package publish accepts either multipart `files` uploads or one `clawpack`
   tarball reference, never both in the same request. `clawpack` may be a direct
-  `.tgz` file part or a Convex storage id created by the upload-url flow.
+  `.tgz` file part or a Convex storage id created by the upload-url flow. The
+  storage-id path must include the matching `clawpackUploadTicket`, and the
+  server must reject tickets from a different auth context, expired or used
+  tickets, and storage blobs created before the ticket.
 - Direct package publish multipart bytes are capped at 18MB so callers get a
   clear ClawHub validation error before hitting Convex's 20MB HTTP action body
   cap. ClawPack tarballs keep the 120MB package tarball cap through staged

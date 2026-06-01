@@ -45,6 +45,7 @@ export const ApiSkillMetaResponseSchema = type({
 });
 export const ApiCliUploadUrlResponseSchema = type({
     uploadUrl: "string",
+    uploadTicket: "string",
 });
 export const ApiUploadFileResponseSchema = type({
     storageId: "string",

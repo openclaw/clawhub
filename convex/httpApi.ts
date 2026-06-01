@@ -149,13 +149,15 @@ export const cliWhoamiHttp = httpAction(cliWhoamiHandler);
 async function cliUploadUrlHandler(ctx: ActionCtx, request: Request) {
   try {
     const auth = await requirePackagePublishAuth(ctx, request);
-    const uploadUrl =
+    const upload =
       auth.kind === "user"
-        ? await ctx.runMutation(internal.uploads.generateUploadUrlForUserInternal, {
+        ? await ctx.runMutation(internal.uploads.createPackagePublishUploadForUserInternal, {
             userId: auth.userId,
           })
-        : await ctx.storage.generateUploadUrl();
-    return json({ uploadUrl });
+        : await ctx.runMutation(internal.uploads.createPackagePublishUploadForTokenInternal, {
+            publishTokenId: auth.publishToken._id,
+          });
+    return json(upload);
   } catch (error) {
     return text(formatAuthFailure(error), 401);
   }

@@ -1294,7 +1294,10 @@ describe("package commands", () => {
       });
       expect(packBytes.byteLength).toBeGreaterThan(18 * 1024 * 1024);
       await writeFile(join(workdir, packName), packBytes);
-      httpMocks.apiRequest.mockResolvedValueOnce({ uploadUrl: "https://upload.local" });
+      httpMocks.apiRequest.mockResolvedValueOnce({
+        uploadUrl: "https://upload.local",
+        uploadTicket: "uploadTickets:clawpack",
+      });
       httpMocks.uploadBinary.mockResolvedValueOnce({ storageId: "storage:clawpack" });
       httpMocks.apiRequestForm.mockResolvedValueOnce({
         ok: true,
@@ -1326,6 +1329,7 @@ describe("package commands", () => {
         expect.anything(),
       );
       expect(getPublishForm().get("clawpack")).toBe("storage:clawpack");
+      expect(getPublishForm().get("clawpackUploadTicket")).toBe("uploadTickets:clawpack");
       expect(getPublishPayload()).not.toHaveProperty("artifact");
       expect(getPublishPayload()).not.toHaveProperty("files");
     } finally {
@@ -1433,7 +1437,10 @@ describe("package commands", () => {
       );
       await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
       await writeFile(join(folder, "dist", "model.bin"), randomBytes(24 * 1024 * 1024));
-      httpMocks.apiRequest.mockResolvedValueOnce({ uploadUrl: "https://upload.local" });
+      httpMocks.apiRequest.mockResolvedValueOnce({
+        uploadUrl: "https://upload.local",
+        uploadTicket: "uploadTickets:clawpack",
+      });
       httpMocks.uploadBinary.mockResolvedValueOnce({ storageId: "storage:clawpack" });
       httpMocks.apiRequestForm.mockRejectedValueOnce(new Error("Registry rejected upload"));
 
@@ -1444,6 +1451,7 @@ describe("package commands", () => {
         }),
       ).rejects.toThrow("Registry rejected upload");
       expect(getPublishForm().get("clawpack")).toBe("storage:clawpack");
+      expect(getPublishForm().get("clawpackUploadTicket")).toBe("uploadTickets:clawpack");
 
       const afterTempDirs = await listClawPackTempDirs();
       expect([...afterTempDirs].filter((name) => !beforeTempDirs.has(name))).toEqual([]);

@@ -451,13 +451,19 @@ describe("httpApi handlers", () => {
       kind: "user",
       userId: "user1",
     } as never);
-    const runMutation = vi.fn().mockResolvedValue("https://upload.local");
+    const runMutation = vi.fn().mockResolvedValue({
+      uploadUrl: "https://upload.local",
+      uploadTicket: "packagePublishUploadTickets:1",
+    });
     const response = await __handlers.cliUploadUrlHandler(
       makeCtx({ runMutation }),
       new Request("https://x/api/cli/upload-url", { method: "POST" }),
     );
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ uploadUrl: "https://upload.local" });
+    expect(await response.json()).toEqual({
+      uploadUrl: "https://upload.local",
+      uploadTicket: "packagePublishUploadTickets:1",
+    });
   });
 
   it("cliUploadUrlHttp accepts package publish tokens", async () => {
@@ -465,14 +471,23 @@ describe("httpApi handlers", () => {
       kind: "github-actions",
       publishToken: { _id: "packagePublishTokens:1" },
     } as never);
-    const generateUploadUrl = vi.fn().mockResolvedValue("https://upload.local/package");
+    const runMutation = vi.fn().mockResolvedValue({
+      uploadUrl: "https://upload.local/package",
+      uploadTicket: "packagePublishUploadTickets:2",
+    });
     const response = await __handlers.cliUploadUrlHandler(
-      makeCtx({ storage: { generateUploadUrl } }),
+      makeCtx({ runMutation }),
       new Request("https://x/api/cli/upload-url", { method: "POST" }),
     );
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ uploadUrl: "https://upload.local/package" });
-    expect(generateUploadUrl).toHaveBeenCalled();
+    expect(await response.json()).toEqual({
+      uploadUrl: "https://upload.local/package",
+      uploadTicket: "packagePublishUploadTickets:2",
+    });
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ publishTokenId: "packagePublishTokens:1" }),
+    );
   });
 
   it("cliUploadUrlHttp returns 401 when unauthorized", async () => {

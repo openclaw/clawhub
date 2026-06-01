@@ -47,6 +47,7 @@ export declare const ApiSkillMetaResponseSchema: import("arktype/internal/varian
 }, {}>;
 export declare const ApiCliUploadUrlResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     uploadUrl: string;
+    uploadTicket: string;
 }, {}>;
 export declare const ApiUploadFileResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     storageId: string;

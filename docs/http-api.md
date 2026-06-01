@@ -1227,7 +1227,8 @@ Publishes a code-plugin or bundle-plugin release.
 - Requires `multipart/form-data`.
 - Allowed form fields are `payload`, repeated `files` blobs, or one `clawpack`
   tarball reference. `clawpack` may be a `.tgz` blob or a storage id returned by
-  the upload-url flow.
+  the upload-url flow. Staged storage-id publishes must also include the
+  `clawpackUploadTicket` returned with that upload URL.
 - Use either `files` or `clawpack`, never both in the same request.
 - JSON bodies and caller-supplied `payload.files` / `payload.artifact`
   metadata are rejected.
@@ -1484,6 +1485,10 @@ Still supported for older CLI versions:
 - `POST /api/cli/skill/undelete`
 
 See `DEPRECATIONS.md` for removal plan.
+
+`POST /api/cli/upload-url` returns `uploadUrl` and `uploadTicket`. Package
+publishes that stage a ClawPack tarball must send the resulting storage id as
+`clawpack` and the returned ticket as `clawpackUploadTicket`.
 
 ## Registry discovery (`/.well-known/clawhub.json`)
 

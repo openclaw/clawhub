@@ -126,6 +126,9 @@ const internalRefs = internal as unknown as {
   packagePublishTokens: {
     createInternal: unknown;
   };
+  uploads: {
+    consumePackagePublishUploadTicketInternal: unknown;
+  };
   skills: {
     getSkillBySlugInternal: unknown;
     searchPackageCatalogForHttpInternal: unknown;
@@ -1027,9 +1030,16 @@ function skillVersionTags(tags: Record<string, string>, version: string) {
 type StoredPackagePublishFile = ServerPackagePublishRequest["files"][number];
 type PackagePublishTarballArtifact = NonNullable<ServerPackagePublishRequest["artifact"]>;
 type ParsedPackageClawPack = Awaited<ReturnType<typeof parseClawPack>>;
+type PackagePublishAuth =
+  | { kind: "user"; userId: Id<"users"> }
+  | { kind: "github-actions"; publishToken: Doc<"packagePublishTokens"> };
 type PackagePublishTarballPart =
   | { kind: "file"; file: File }
-  | { kind: "storage"; storageId: Id<"_storage"> };
+  | {
+      kind: "storage";
+      storageId: Id<"_storage">;
+      uploadTicket: Id<"packagePublishUploadTickets">;
+    };
 
 function inferStoredPackageContentType(path: string) {
   const lower = path.toLowerCase();
@@ -1108,13 +1118,49 @@ function getFileParts(form: FormData, fields: readonly string[], stringPartError
 function getTarballPart(form: FormData): PackagePublishTarballPart | null {
   const parts = form.getAll("clawpack");
   if (parts.length > 1) throw new Error("Upload one package tarball");
+  const ticketParts = form.getAll("clawpackUploadTicket");
+  if (ticketParts.length > 1) throw new Error("Upload one package tarball ticket");
+  const ticketPart = ticketParts[0];
+  if (ticketPart && typeof ticketPart !== "string") {
+    throw new Error("Package tarball upload ticket must be a string");
+  }
   const part = parts[0];
-  if (!part) return null;
-  if (typeof part !== "string") return { kind: "file", file: part };
+  if (!part) {
+    if (ticketPart) throw new Error("Package tarball upload ticket requires a staged ClawPack");
+    return null;
+  }
+  if (typeof part !== "string") {
+    if (ticketPart) throw new Error("Package tarball upload ticket requires a staged ClawPack");
+    return { kind: "file", file: part };
+  }
 
   const storageId = part.trim();
   if (!storageId) throw new Error("Package tarball storage id required");
-  return { kind: "storage", storageId: storageId as Id<"_storage"> };
+  const uploadTicket = ticketPart?.trim();
+  if (!uploadTicket) throw new Error("Package tarball upload ticket required");
+  return {
+    kind: "storage",
+    storageId: storageId as Id<"_storage">,
+    uploadTicket: uploadTicket as Id<"packagePublishUploadTickets">,
+  };
+}
+
+async function consumePackageTarballUploadTicket(
+  ctx: ActionCtx,
+  auth: PackagePublishAuth,
+  part: Extract<PackagePublishTarballPart, { kind: "storage" }>,
+) {
+  await ctx.runMutation(
+    internalRefs.uploads.consumePackagePublishUploadTicketInternal as never,
+    {
+      uploadTicket: part.uploadTicket,
+      storageId: part.storageId,
+      auth:
+        auth.kind === "user"
+          ? { kind: "user", userId: auth.userId }
+          : { kind: "github-actions", publishTokenId: auth.publishToken._id },
+    } as never,
+  );
 }
 
 async function readStoredPackageTarball(ctx: ActionCtx, storageId: Id<"_storage">) {
@@ -1158,6 +1204,7 @@ const PACKAGE_PUBLISH_FORM_FIELDS = new Set([
   "payload",
   ...PACKAGE_PUBLISH_FILE_FIELDS,
   ...PACKAGE_PUBLISH_TARBALL_FIELDS,
+  "clawpackUploadTicket",
 ]);
 
 function multipartUploadPart(file: File) {
@@ -1170,6 +1217,7 @@ function multipartUploadPart(file: File) {
 
 async function parseMultipartPackagePublish(
   ctx: ActionCtx,
+  auth: PackagePublishAuth,
   request: Request,
 ): Promise<ServerPackagePublishRequest> {
   const form = await request.formData();
@@ -1203,6 +1251,7 @@ async function parseMultipartPackagePublish(
       throw new Error("Upload either a package tarball or individual files, not both");
     }
     if (tarballPart.kind === "storage") {
+      await consumePackageTarballUploadTicket(ctx, auth, tarballPart);
       const artifactBytes = await readStoredPackageTarball(ctx, tarballPart.storageId);
       const parsed = await parseClawPack(artifactBytes);
       return await buildPackagePublishRequestFromClawPack(
@@ -1540,7 +1589,7 @@ export async function publishPackageV1Handler(ctx: ActionCtx, request: Request) 
     if (!contentType.includes("multipart/form-data")) {
       return text("Package publish requires multipart/form-data", 415, rate.headers);
     }
-    const payload = await parseMultipartPackagePublish(ctx, request);
+    const payload = await parseMultipartPackagePublish(ctx, auth.auth, request);
     const result =
       auth.auth.kind === "user"
         ? await runActionRef(ctx, internalRefs.packages.publishPackageForUserInternal, {

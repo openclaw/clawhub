@@ -9807,6 +9807,7 @@ describe("httpApiV1 handlers", () => {
       }),
     );
     form.set("clawpack", "storage:clawpack");
+    form.set("clawpackUploadTicket", "packagePublishUploadTickets:1");
 
     const response = await __handlers.publishPackageV1Handler(
       makeCtx({
@@ -9822,6 +9823,14 @@ describe("httpApiV1 handlers", () => {
     );
 
     expect(response.status).toBe(200);
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        uploadTicket: "packagePublishUploadTickets:1",
+        storageId: "storage:clawpack",
+        auth: { kind: "user", userId: "users:1" },
+      }),
+    );
     expect(storageGet).toHaveBeenCalledWith("storage:clawpack");
     expect(storageStore).toHaveBeenCalledTimes(3);
     expect(runAction).toHaveBeenCalledWith(
@@ -9842,6 +9851,38 @@ describe("httpApiV1 handlers", () => {
         }),
       }),
     );
+  });
+
+  it("staged ClawPack publish rejects storage ids without upload tickets", async () => {
+    vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
+    vi.mocked(requirePackagePublishAuth).mockResolvedValue({
+      kind: "user",
+      userId: "users:1",
+      user: { _id: "users:1", handle: "p" },
+    } as never);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runAction = vi.fn();
+    const storageGet = vi.fn();
+    const form = packagePublishForm(packagePublishMetadata({ family: "code-plugin" }));
+    form.set("clawpack", "storage:clawpack");
+
+    const response = await __handlers.publishPackageV1Handler(
+      makeCtx({
+        runAction,
+        runMutation,
+        storage: { get: storageGet, store: vi.fn() },
+      }),
+      new Request("https://example.com/api/v1/packages", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: form,
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toBe("Package tarball upload ticket required");
+    expect(storageGet).not.toHaveBeenCalled();
+    expect(runAction).not.toHaveBeenCalled();
   });
 
   it("multipart package publish rejects files and tarball together", async () => {
