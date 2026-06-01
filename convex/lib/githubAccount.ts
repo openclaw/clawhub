@@ -17,18 +17,7 @@ type GitHubUser = {
   created_at?: string;
 };
 
-/**
- * Build the GitHub API URL for a user lookup from a providerAccountId.
- *
- * Most accounts store a numeric GitHub user ID, which lets us use the
- * immutable `/user/:id` endpoint (immune to username-swap attacks).
- * Some OAuth flows store the GitHub login (username) instead. In that case
- * we fall back to `/users/:login`, which still resolves the correct account
- * as long as the login matches the one originally linked.
- *
- * Throws ConvexError for values that are neither a numeric ID nor a
- * valid GitHub login.
- */
+// Numeric IDs use the immutable /user/:id endpoint; username-format IDs (stored by some OAuth flows) fall back to /users/:login.
 function buildGitHubUserUrl(providerAccountId: string): string {
   if (/^[0-9]+$/.test(providerAccountId)) {
     return `${GITHUB_API}/user/${providerAccountId}`;
