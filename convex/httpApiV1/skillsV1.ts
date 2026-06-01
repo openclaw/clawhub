@@ -1047,8 +1047,8 @@ type PublicListSort = "recommended" | "newest" | "updated" | "downloads" | "star
 
 function parseListSort(value: string | null): SkillListSort | null {
   if (value === null) return "updated";
-  const normalized = value?.trim().toLowerCase();
-  if (!normalized || normalized === "default" || normalized === "recommended") {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "default" || normalized === "recommended") {
     return "recommended";
   }
   if (normalized === "createdat" || normalized === "created-at" || normalized === "newest") {

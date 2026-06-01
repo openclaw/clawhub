@@ -1495,6 +1495,18 @@ describe("httpApiV1 handlers", () => {
     expect(runQuery).not.toHaveBeenCalled();
   });
 
+  it("lists skills rejects empty sort", async () => {
+    const runQuery = vi.fn();
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.listSkillsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills?sort="),
+    );
+    expect(response.status).toBe(400);
+    expect(await response.text()).toBe("Invalid sort query parameter");
+    expect(runQuery).not.toHaveBeenCalled();
+  });
+
   it("lists skills forwards nonSuspiciousOnly", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("sort" in args || "cursor" in args || "numItems" in args) {
