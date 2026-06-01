@@ -1997,6 +1997,10 @@ function assertInstallationMatchesSetup(params: {
   callerGitHubAccountId: string | null;
   installationClaim: Doc<"githubAppInstallationClaims"> | null;
 }) {
+  const targetAccountId = params.targetAccountId?.trim();
+  if (targetAccountId && params.installationAccountId !== targetAccountId) {
+    throw new ConvexError("GitHub installation account does not match setup state");
+  }
   if (
     params.installationAccountType === "User" &&
     params.callerGitHubAccountId &&
@@ -2004,14 +2008,13 @@ function assertInstallationMatchesSetup(params: {
   ) {
     return;
   }
-  if (params.installationAccountType === "Organization" && params.targetAccountId) {
+  if (params.installationAccountType === "Organization" && targetAccountId) {
     if (!params.installationClaim) {
       throw new ConvexError(
         "GitHub installation confirmation is still pending. Please retry in a moment.",
       );
     }
     if (
-      params.installationAccountId !== params.targetAccountId.trim() ||
       params.installationClaim.accountId !== params.installationAccountId ||
       params.installationClaim.senderAccountId !== params.callerGitHubAccountId
     ) {
