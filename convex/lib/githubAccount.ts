@@ -10,16 +10,33 @@ const MIN_ACCOUNT_AGE_MS = 14 * 24 * 60 * 60 * 1000;
 type GitHubAccountGateCtx = Pick<ActionCtx, "runQuery" | "runMutation">;
 
 type GitHubUser = {
+  id?: number;
   login?: string;
   name?: string;
   avatar_url?: string;
   created_at?: string;
 };
 
-function assertGitHubNumericId(providerAccountId: string) {
-  if (!/^[0-9]+$/.test(providerAccountId)) {
-    throw new ConvexError("GitHub account lookup failed");
+/**
+ * Build the GitHub API URL for a user lookup from a providerAccountId.
+ *
+ * Most accounts store a numeric GitHub user ID, which lets us use the
+ * immutable `/user/:id` endpoint (immune to username-swap attacks).
+ * Some OAuth flows store the GitHub login (username) instead. In that case
+ * we fall back to `/users/:login`, which still resolves the correct account
+ * as long as the login matches the one originally linked.
+ *
+ * Throws ConvexError for values that are neither a numeric ID nor a
+ * valid GitHub login.
+ */
+function buildGitHubUserUrl(providerAccountId: string): string {
+  if (/^[0-9]+$/.test(providerAccountId)) {
+    return `${GITHUB_API}/user/${providerAccountId}`;
   }
+  if (/^[a-zA-Z0-9][a-zA-Z0-9-]*$/.test(providerAccountId)) {
+    return `${GITHUB_API}/users/${providerAccountId}`;
+  }
+  throw new ConvexError("GitHub account lookup failed");
 }
 
 function buildGitHubHeaders() {
@@ -48,10 +65,9 @@ export async function requireGitHubAccountAge(ctx: GitHubAccountGateCtx, userId:
       // Invariant: GitHub is our only auth provider, so this should never happen.
       throw new ConvexError("GitHub account required");
     }
-    assertGitHubNumericId(providerAccountId);
+    const url = buildGitHubUserUrl(providerAccountId);
 
-    // Fetch by immutable GitHub numeric ID to avoid username swap attacks entirely.
-    const response = await fetch(`${GITHUB_API}/user/${providerAccountId}`, {
+    const response = await fetch(url, {
       headers: buildGitHubHeaders(),
     });
     if (!response.ok) {
@@ -105,9 +121,9 @@ export async function syncGitHubProfile(ctx: ActionCtx, userId: Id<"users">) {
   );
   if (!providerAccountId) return;
 
-  assertGitHubNumericId(providerAccountId);
+  const url = buildGitHubUserUrl(providerAccountId);
 
-  const response = await fetch(`${GITHUB_API}/user/${providerAccountId}`, {
+  const response = await fetch(url, {
     headers: buildGitHubHeaders(),
   });
   if (!response.ok) {

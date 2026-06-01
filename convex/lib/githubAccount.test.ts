@@ -164,14 +164,14 @@ describe("requireGitHubAccountAge", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("rejects when providerAccountId is invalid", async () => {
+  it("rejects when providerAccountId is invalid (contains disallowed characters)", async () => {
     const runQuery = vi
       .fn()
       .mockResolvedValueOnce({
         _id: "users:1",
         githubCreatedAt: undefined,
       })
-      .mockResolvedValueOnce("abc123");
+      .mockResolvedValueOnce("@invalid!");
     const runMutation = vi.fn();
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
@@ -181,6 +181,41 @@ describe("requireGitHubAccountAge", () => {
     ).rejects.toThrow(/GitHub account lookup failed/i);
 
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("fetches githubCreatedAt when providerAccountId is a username (non-numeric)", async () => {
+    vi.useFakeTimers();
+    const now = new Date("2026-02-02T12:00:00Z");
+    vi.setSystemTime(now);
+
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce({
+        _id: "users:1",
+        githubCreatedAt: undefined,
+      })
+      .mockResolvedValueOnce("stokkan-6ith");
+    const runMutation = vi.fn();
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        created_at: "2020-01-01T00:00:00Z",
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await requireGitHubAccountAge({ runQuery, runMutation } as never, "users:1" as never);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.github.com/users/stokkan-6ith",
+      expect.objectContaining({
+        headers: expect.objectContaining({ "User-Agent": "clawhub" }),
+      }),
+    );
+    expect(runMutation).toHaveBeenCalledWith(internal.users.setGitHubCreatedAtInternal, {
+      userId: "users:1",
+      githubCreatedAt: Date.parse("2020-01-01T00:00:00Z"),
+    });
   });
 
   it("throws when GitHub lookup fails", async () => {
@@ -422,6 +457,45 @@ describe("syncGitHubProfile", () => {
       name: "same",
       image: "https://avatars.githubusercontent.com/u/1?v=1",
       profileName: "Real Name",
+      syncedAt: now.getTime(),
+    });
+  });
+
+  it("syncs profile when providerAccountId is a username (non-numeric)", async () => {
+    vi.useFakeTimers();
+    const now = new Date("2026-02-02T12:00:00Z");
+    vi.setSystemTime(now);
+
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce({
+        _id: "users:1",
+        name: "stokkan-6ith",
+        githubProfileSyncedAt: now.getTime() - 10 * ONE_DAY_MS,
+      })
+      .mockResolvedValueOnce("stokkan-6ith");
+    const runMutation = vi.fn();
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        login: "stokkan-6ith",
+        avatar_url: "https://avatars.githubusercontent.com/u/282699917?v=4",
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await syncGitHubProfile({ runQuery, runMutation } as never, "users:1" as never);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.github.com/users/stokkan-6ith",
+      expect.objectContaining({
+        headers: expect.objectContaining({ "User-Agent": "clawhub" }),
+      }),
+    );
+    expect(runMutation).toHaveBeenCalledWith(internal.users.syncGitHubProfileInternal, {
+      userId: "users:1",
+      name: "stokkan-6ith",
+      image: "https://avatars.githubusercontent.com/u/282699917?v=4",
       syncedAt: now.getTime(),
     });
   });
