@@ -1084,28 +1084,36 @@ export const runRepositorySyncInternal = internalAction({
       const allCandidates = detectGitHubImportCandidates(entries).filter((candidate) =>
         isPathUnderAnyRoot(candidate.path, repo.syncRoots),
       );
-      const candidates = allCandidates.slice(0, MAX_CANDIDATES_PER_SYNC);
+      const candidateOffset = job.candidateOffset ?? 0;
+      const candidates = allCandidates.slice(
+        candidateOffset,
+        candidateOffset + MAX_CANDIDATES_PER_SYNC,
+      );
+      const nextCandidateOffset = candidateOffset + candidates.length;
+      const hasMoreCandidates = nextCandidateOffset < allCandidates.length;
       counts.discovered = allCandidates.length;
 
-      const activeBefore = (await ctx.runMutation(
-        internal.githubApp.markMissingSourceLinksInternal,
-        {
-          repositoryId: repo._id,
-          discoveredPaths: allCandidates.map((candidate) => candidate.path),
-        },
-      )) as { missing: number };
-      counts.missing = activeBefore.missing;
+      if (candidateOffset === 0) {
+        const activeBefore = (await ctx.runMutation(
+          internal.githubApp.markMissingSourceLinksInternal,
+          {
+            repositoryId: repo._id,
+            discoveredPaths: allCandidates.map((candidate) => candidate.path),
+          },
+        )) as { missing: number };
+        counts.missing = activeBefore.missing;
+      }
 
-      const sourceLinks = (await ctx.runMutation(
-        internal.githubApp.prepareSourceLinksForSyncInternal,
-        {
+      let sourceLinks: Array<Doc<"skillSourceLinks">> = [];
+      if (candidates.length > 0) {
+        sourceLinks = (await ctx.runMutation(internal.githubApp.prepareSourceLinksForSyncInternal, {
           repositoryId: repo._id,
           candidates: candidates.map((candidate) => ({
             path: candidate.path,
             readmePath: candidate.readmePath,
           })),
-        },
-      )) as Array<Doc<"skillSourceLinks">>;
+        })) as Array<Doc<"skillSourceLinks">>;
+      }
       const linksByPath = new Map(sourceLinks.map((link) => [link.path, link]));
 
       for (const candidate of candidates) {
@@ -1222,7 +1230,20 @@ export const runRepositorySyncInternal = internalAction({
         status: "succeeded",
         counts,
         commit,
+        completed: !hasMoreCandidates,
       });
+      if (hasMoreCandidates) {
+        const nextJobId = (await ctx.runMutation(internal.githubApp.queueSyncContinuationInternal, {
+          jobId: job._id,
+          commit,
+          candidateOffset: nextCandidateOffset,
+        })) as Id<"githubSkillSyncJobs"> | null;
+        if (nextJobId) {
+          await ctx.scheduler.runAfter(0, internal.githubApp.runRepositorySyncInternal, {
+            jobId: nextJobId,
+          });
+        }
+      }
       return { ok: true, counts };
     } catch (error) {
       await ctx.runMutation(internal.githubApp.finishSyncJobInternal, {
@@ -1573,6 +1594,7 @@ export const finishSyncJobInternal = internalMutation({
     }),
     commit: v.optional(v.string()),
     error: v.optional(v.string()),
+    completed: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const job = await ctx.db.get(args.jobId);
@@ -1590,11 +1612,46 @@ export const finishSyncJobInternal = internalMutation({
       lastSyncError: args.error,
       updatedAt: Date.now(),
     };
-    if (args.status === "succeeded") {
+    if (args.status === "succeeded" && args.completed !== false) {
       repoPatch.lastSyncedCommit = args.commit ?? job.commit;
       repoPatch.lastSyncedAt = Date.now();
     }
     await ctx.db.patch(job.repositoryId, repoPatch);
+  },
+});
+
+export const queueSyncContinuationInternal = internalMutation({
+  args: {
+    jobId: v.id("githubSkillSyncJobs"),
+    commit: v.string(),
+    candidateOffset: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const job = await ctx.db.get(args.jobId);
+    if (!job || job.status !== "succeeded") return null;
+    const repo = await ctx.db.get(job.repositoryId);
+    if (!repo || repo.deletedAt || !repo.enabled) return null;
+    const now = Date.now();
+    const nextJobId = await ctx.db.insert("githubSkillSyncJobs", {
+      publisherId: job.publisherId,
+      repositoryId: job.repositoryId,
+      repoFullName: job.repoFullName,
+      ref: job.ref,
+      commit: args.commit.toLowerCase(),
+      status: "queued",
+      reason: job.reason,
+      candidateOffset: args.candidateOffset,
+      requestedByUserId: job.requestedByUserId,
+      counts: { discovered: 0, published: 0, skipped: 0, conflicted: 0, missing: 0 },
+      createdAt: now,
+      updatedAt: now,
+    });
+    await ctx.db.patch(job.repositoryId, {
+      lastSyncStatus: "queued",
+      lastSyncError: undefined,
+      updatedAt: now,
+    });
+    return nextJobId;
   },
 });
 

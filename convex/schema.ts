@@ -2525,6 +2525,7 @@ const githubSkillSyncJobs = defineTable({
     v.literal("repository_linked"),
     v.literal("backfill"),
   ),
+  candidateOffset: v.optional(v.number()),
   requestedByUserId: v.optional(v.id("users")),
   startedAt: v.optional(v.number()),
   finishedAt: v.optional(v.number()),
