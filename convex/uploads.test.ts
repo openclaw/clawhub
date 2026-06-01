@@ -66,6 +66,30 @@ describe("package publish upload tickets", () => {
     });
   });
 
+  it("allows retrying a used upload ticket for the same user and storage id", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(3_000);
+    const ctx = makeCtx(
+      {
+        _id: "packagePublishUploadTickets:1",
+        kind: "user",
+        userId: "users:1",
+        createdAt: 1_000,
+        expiresAt: 10_000,
+        usedAt: 2_000,
+        storageId: "storage:1",
+      },
+      { _id: "storage:1", _creationTime: 1_500 },
+    );
+
+    await consumeHandler(ctx, {
+      uploadTicket: "packagePublishUploadTickets:1",
+      storageId: "storage:1",
+      auth: { kind: "user", userId: "users:1" },
+    });
+
+    expect(ctx.db.patch).not.toHaveBeenCalled();
+  });
+
   it("rejects upload tickets from another auth context", async () => {
     vi.spyOn(Date, "now").mockReturnValue(2_000);
     const ctx = makeCtx(

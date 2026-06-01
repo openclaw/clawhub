@@ -63,7 +63,7 @@ export const consumePackagePublishUploadTicketInternal = internalMutation({
   handler: async (ctx, args) => {
     const ticket = await ctx.db.get(args.uploadTicket);
     const now = Date.now();
-    if (!ticket || ticket.expiresAt <= now || ticket.usedAt) {
+    if (!ticket || ticket.expiresAt <= now) {
       throw new Error("Package tarball upload ticket is missing or expired");
     }
     if (
@@ -72,6 +72,10 @@ export const consumePackagePublishUploadTicketInternal = internalMutation({
         : ticket.kind !== "github-actions" || ticket.publishTokenId !== args.auth.publishTokenId
     ) {
       throw new Error("Package tarball upload ticket does not match this publish token");
+    }
+    if (ticket.usedAt) {
+      if (ticket.storageId === args.storageId) return;
+      throw new Error("Package tarball upload ticket was already used");
     }
 
     const metadata = await ctx.db.system.get("_storage", args.storageId);
