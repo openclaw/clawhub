@@ -1,4 +1,4 @@
-import { MAX_PACKAGE_MULTIPART_BYTES } from "clawhub-schema";
+import { MAX_PACKAGE_CLAWPACK_BYTES } from "clawhub-schema";
 
 export {
   estimatePackageMultipartUploadBytes,
@@ -11,7 +11,7 @@ export {
 
 export const MAX_PUBLISH_TOTAL_BYTES = 50 * 1024 * 1024;
 export const MAX_PUBLISH_FILE_BYTES = 10 * 1024 * 1024;
-export const MAX_CLAWPACK_BYTES = MAX_PACKAGE_MULTIPART_BYTES;
+export const MAX_CLAWPACK_BYTES = MAX_PACKAGE_CLAWPACK_BYTES;
 
 type SizedPathLike = {
   path: string;
@@ -31,5 +31,5 @@ export function getPublishTotalSizeError(target: "skill bundle" | "package") {
 }
 
 export function getClawPackSizeError(path: string) {
-  return `ClawPack "${path}" exceeds 18MB multipart upload limit`;
+  return `ClawPack "${path}" exceeds 120MB limit`;
 }

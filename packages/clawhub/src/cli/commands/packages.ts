@@ -7,10 +7,20 @@ import ignore from "ignore";
 import mime from "mime";
 import semver from "semver";
 import { parseClawPack } from "../../clawpack.js";
-import { apiRequest, apiRequestForm, fetchBinary, fetchText, registryUrl } from "../../http.js";
 import {
+  apiRequest,
+  apiRequestForm,
+  fetchBinary,
+  fetchText,
+  registryUrl,
+  uploadBinary,
+} from "../../http.js";
+import {
+  ApiCliUploadUrlResponseSchema,
   ApiRoutes,
+  LegacyApiRoutes,
   ApiV1DeleteResponseSchema,
+  ApiUploadFileResponseSchema,
   ApiV1PackageArtifactResponseSchema,
   ApiV1PackageListResponseSchema,
   ApiV1PackageModerationStatusResponseSchema,
@@ -26,6 +36,7 @@ import {
   ApiV1PublishTokenMintResponseSchema,
   estimatePackageMultipartUploadBytes,
   getPackageMultipartSizeError,
+  MAX_PACKAGE_CLAWPACK_BYTES,
   MAX_PACKAGE_MULTIPART_BYTES,
   normalizeOpenClawExternalPluginCompatibility,
   type PackageArtifactSummary,
@@ -666,14 +677,25 @@ export async function cmdPublishPackage(
         spinner,
       });
       const form = new FormData();
-      form.set("payload", JSON.stringify(plan.payload));
+      const payloadJson = JSON.stringify(plan.payload);
+      form.set("payload", payloadJson);
 
       if (plan.clawpackOnDisk) {
-        if (spinner) spinner.text = `Uploading ${plan.clawpackOnDisk.relPath}`;
-        const blob = new Blob([Buffer.from(plan.clawpackOnDisk.bytes)], {
-          type: "application/octet-stream",
-        });
-        form.append("clawpack", blob, plan.clawpackOnDisk.relPath);
+        if (isPackageMultipartTooLarge(payloadJson, "clawpack", [plan.clawpackOnDisk])) {
+          const storageId = await uploadClawPackToStorage(
+            registry,
+            publishToken,
+            plan.clawpackOnDisk,
+            spinner,
+          );
+          form.set("clawpack", storageId);
+        } else {
+          if (spinner) spinner.text = `Uploading ${plan.clawpackOnDisk.relPath}`;
+          const blob = new Blob([Buffer.from(plan.clawpackOnDisk.bytes)], {
+            type: "application/octet-stream",
+          });
+          form.append("clawpack", blob, plan.clawpackOnDisk.relPath);
+        }
       } else {
         let index = 0;
         for (const file of plan.filesOnDisk) {
@@ -1557,18 +1579,59 @@ function assertPackageMultipartSize(
   fileFieldName: "files" | "clawpack",
   files: PackageFile[],
 ) {
-  const bytes = estimatePackageMultipartUploadBytes({
-    payloadJson,
-    fileFieldName,
-    files: files.map((file) => ({
-      name: file.relPath,
-      size: file.bytes.byteLength,
-      type: file.contentType,
-    })),
-  });
-  if (bytes > MAX_PACKAGE_MULTIPART_BYTES) {
+  if (isPackageMultipartTooLarge(payloadJson, fileFieldName, files)) {
     fail(getPackageMultipartSizeError());
   }
+}
+
+function getClawPackSizeError(path: string) {
+  return `ClawPack "${path}" exceeds 120MB limit`;
+}
+
+function isPackageMultipartTooLarge(
+  payloadJson: string,
+  fileFieldName: "files" | "clawpack",
+  files: PackageFile[],
+) {
+  return (
+    estimatePackageMultipartUploadBytes({
+      payloadJson,
+      fileFieldName,
+      files: files.map((file) => ({
+        name: file.relPath,
+        size: file.bytes.byteLength,
+        type: file.contentType,
+      })),
+    }) > MAX_PACKAGE_MULTIPART_BYTES
+  );
+}
+
+async function uploadClawPackToStorage(
+  registry: string,
+  publishToken: string,
+  file: PackageFile,
+  spinner: ReturnType<typeof createSpinner> | null,
+) {
+  if (spinner) spinner.text = `Uploading ${file.relPath}`;
+  const { uploadUrl } = await apiRequest(
+    registry,
+    {
+      method: "POST",
+      path: LegacyApiRoutes.cliUploadUrl,
+      token: publishToken,
+    },
+    ApiCliUploadUrlResponseSchema,
+  );
+  const result = await uploadBinary(
+    {
+      url: uploadUrl,
+      bytes: file.bytes,
+      contentType: file.contentType ?? "application/octet-stream",
+      retryCount: PACKAGE_PUBLISH_RETRY_COUNT,
+    },
+    ApiUploadFileResponseSchema,
+  );
+  return result.storageId;
 }
 
 const REAL_BUNDLE_MANIFESTS = [
@@ -1684,8 +1747,8 @@ async function preparePackagePublishPlan(
     if (folderStat.isFile()) {
       if (!folder.endsWith(".tgz")) fail("Package publish files must end in .tgz");
       const bytes = new Uint8Array(await readFile(folder));
-      if (bytes.byteLength > MAX_PACKAGE_MULTIPART_BYTES) {
-        fail(getPackageMultipartSizeError());
+      if (bytes.byteLength > MAX_PACKAGE_CLAWPACK_BYTES) {
+        fail(getClawPackSizeError(basename(folder)));
       }
       parsedClawpack = parseClawPack(bytes);
       clawpackOnDisk = {
@@ -1823,11 +1886,13 @@ async function preparePackagePublishPlan(
       : {}),
   };
   try {
-    assertPackageMultipartSize(
-      JSON.stringify(payload),
-      clawpackOnDisk ? "clawpack" : "files",
-      clawpackOnDisk ? [clawpackOnDisk] : filesOnDisk,
-    );
+    if (clawpackOnDisk) {
+      if (clawpackOnDisk.bytes.byteLength > MAX_PACKAGE_CLAWPACK_BYTES) {
+        fail(getClawPackSizeError(clawpackOnDisk.relPath));
+      }
+    } else {
+      assertPackageMultipartSize(JSON.stringify(payload), "files", filesOnDisk);
+    }
   } catch (error) {
     await cleanup?.();
     throw error;

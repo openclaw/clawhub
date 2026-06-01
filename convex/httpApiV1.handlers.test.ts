@@ -9799,6 +9799,71 @@ describe("httpApiV1 handlers", () => {
     expect(payload?.files?.map((file) => file.path)).toContain("dist/index.js");
   });
 
+  it("staged ClawPack publish derives artifact metadata from stored bytes", async () => {
+    vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
+    vi.mocked(requirePackagePublishAuth).mockResolvedValue({
+      kind: "user",
+      userId: "users:1",
+      user: { _id: "users:1", handle: "p" },
+    } as never);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runAction = vi
+      .fn()
+      .mockResolvedValue({ ok: true, packageId: "pkg:1", releaseId: "rel:1" });
+    const pack = npmPackFixture({
+      "package/package.json": JSON.stringify({ name: "demo-plugin", version: "1.0.0" }),
+      "package/openclaw.plugin.json": JSON.stringify({ id: "demo.plugin" }),
+      "package/dist/index.js": "export const demo = true;\n",
+    });
+    const storageGet = vi.fn(async (storageId: string) =>
+      storageId === "storage:clawpack"
+        ? new Blob([bytesToArrayBuffer(pack)], { type: "application/octet-stream" })
+        : null,
+    );
+    const storageStore = vi.fn(async (_entry: Blob) => `storage:${storageStore.mock.calls.length}`);
+    const form = packagePublishForm(
+      packagePublishMetadata({
+        family: "code-plugin",
+      }),
+    );
+    form.set("clawpack", "storage:clawpack");
+
+    const response = await __handlers.publishPackageV1Handler(
+      makeCtx({
+        runAction,
+        runMutation,
+        storage: { get: storageGet, store: storageStore },
+      }),
+      new Request("https://example.com/api/v1/packages", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: form,
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(storageGet).toHaveBeenCalledWith("storage:clawpack");
+    expect(storageStore).toHaveBeenCalledTimes(3);
+    expect(runAction).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          artifact: expect.objectContaining({
+            kind: "npm-pack",
+            storageId: "storage:clawpack",
+            size: pack.byteLength,
+            npmFileCount: 3,
+          }),
+          files: [
+            expect.objectContaining({ path: "package.json", storageId: "storage:1" }),
+            expect.objectContaining({ path: "openclaw.plugin.json", storageId: "storage:2" }),
+            expect.objectContaining({ path: "dist/index.js", storageId: "storage:3" }),
+          ],
+        }),
+      }),
+    );
+  });
+
   it("multipart package publish rejects files and tarball together", async () => {
     vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
     vi.mocked(requirePackagePublishAuth).mockResolvedValue({

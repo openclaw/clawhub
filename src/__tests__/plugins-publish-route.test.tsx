@@ -28,11 +28,14 @@ vi.mock("@convex-dev/auth/react", () => ({
 
 const fetchMock = vi.fn();
 const useAuthStatusMock = vi.fn();
+const useMutationMock = vi.fn();
 const useQueryMock = vi.fn();
+const generateUploadUrlMock = vi.fn();
 const originalFetch = globalThis.fetch;
 
 vi.mock("convex/react", () => ({
   ConvexReactClient: class {},
+  useMutation: () => useMutationMock(),
   useQuery: () => useQueryMock(),
 }));
 
@@ -174,7 +177,9 @@ describe("plugins publish route", () => {
     vi.unstubAllEnvs();
     fetchMock.mockReset();
     useAuthStatusMock.mockReset();
+    useMutationMock.mockReset();
     useQueryMock.mockReset();
+    generateUploadUrlMock.mockReset();
 
     useAuthStatusMock.mockReturnValue({
       isAuthenticated: true,
@@ -193,6 +198,8 @@ describe("plugins publish route", () => {
         role: "owner",
       },
     ]);
+    generateUploadUrlMock.mockResolvedValue("https://upload.local");
+    useMutationMock.mockReturnValue(generateUploadUrlMock);
     vi.stubEnv("VITE_CONVEX_SITE_URL", "https://registry.example");
     fetchMock.mockImplementation(async (_url: string, _init?: RequestInit) => ({
       ok: true,
@@ -424,6 +431,68 @@ describe("plugins publish route", () => {
     );
     expect(getUploadedTarballNames()).toEqual(["demo-plugin-1.2.3.tgz"]);
     expect(getUploadedFileNames()).toEqual([]);
+    expectUploadMetadataNotInPayload();
+  });
+
+  it("stages a selected ClawPack when it is over the multipart budget", async () => {
+    fetchMock.mockImplementation(async (url: string, _init?: RequestInit) => {
+      if (url === "https://upload.local") {
+        return {
+          ok: true,
+          text: async () => "",
+          json: async () => ({ storageId: "storage:clawpack" }),
+        };
+      }
+      return {
+        ok: true,
+        text: async () => "",
+        json: async () => ({ ok: true, packageId: "pkg:1", releaseId: "rel:1" }),
+      };
+    });
+    renderPublishRoute();
+
+    const packBytes = gzipSync(
+      buildTar([
+        {
+          name: "package/package.json",
+          content: makeCodePluginPackageJson({
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            version: "1.2.3",
+            repository: "https://github.com/openclaw/demo-plugin.git",
+          }),
+        },
+        { name: "package/openclaw.plugin.json", content: '{"id":"demo.plugin"}' },
+        { name: "package/dist/index.js", content: "export const demo = true;\n" },
+      ]),
+    );
+    const pack = new File([Uint8Array.from(packBytes).buffer], "demo-plugin-1.2.3.tgz", {
+      type: "application/gzip",
+    });
+    Object.defineProperty(pack, "size", {
+      value: 19 * 1024 * 1024,
+      configurable: true,
+    });
+
+    fireEvent.change(getFileInput(), { target: { files: [pack] } });
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("demo-plugin")).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText("Full commit SHA"), {
+      target: { value: "abc123" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Publish plugin" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    expect(generateUploadUrlMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://upload.local");
+    expect(getPublishForm().get("clawpack")).toBe("storage:clawpack");
     expectUploadMetadataNotInPayload();
   });
 

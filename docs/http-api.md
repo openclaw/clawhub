@@ -1226,10 +1226,13 @@ Publishes a code-plugin or bundle-plugin release.
 - Requires Bearer token auth.
 - Requires `multipart/form-data`.
 - Allowed form fields are `payload`, repeated `files` blobs, or one `clawpack`
-  `.tgz` blob.
+  tarball reference. `clawpack` may be a `.tgz` blob or a storage id returned by
+  the upload-url flow.
 - Use either `files` or `clawpack`, never both in the same request.
 - JSON bodies and caller-supplied `payload.files` / `payload.artifact`
   metadata are rejected.
+- Direct multipart publish requests are capped at 18MB. ClawPack tarballs may
+  use the upload-url flow up to the 120MB tarball cap.
 - Optional payload field: `ownerHandle`. When present, only admins may publish on behalf of that owner.
 
 Validation highlights:

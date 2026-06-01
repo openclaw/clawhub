@@ -52,6 +52,12 @@ type FormRequestArgs =
   | { method: "POST"; url: string; token?: string; form: FormData; retryCount?: number };
 
 type TextRequestArgs = { path: string; token?: string } | { url: string; token?: string };
+type BinaryUploadArgs = {
+  url: string;
+  bytes: Uint8Array;
+  contentType?: string;
+  retryCount?: number;
+};
 
 type HeaderSource = Headers | Record<string, string> | null | undefined;
 
@@ -91,6 +97,7 @@ type HttpClient = {
   apiRequestForm<T>(registry: string, args: FormRequestArgs, schema: ArkValidator<T>): Promise<T>;
   fetchText(registry: string, args: TextRequestArgs): Promise<string>;
   fetchBinary(registry: string, args: TextRequestArgs): Promise<Uint8Array>;
+  uploadBinary<T>(args: BinaryUploadArgs, schema?: ArkValidator<T>): Promise<T>;
   downloadZip(
     registry: string,
     args: { slug: string; version?: string; token?: string },
@@ -264,6 +271,41 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
     });
   }
 
+  async function uploadBinaryRequest<T>(
+    args: BinaryUploadArgs,
+    schema?: ArkValidator<T>,
+  ): Promise<T> {
+    const json = await runWithRetries(async () => {
+      if (deps.runtime === "bun") {
+        return await uploadBinaryViaCurl(deps, args);
+      }
+
+      const headers: Record<string, string> = {};
+      if (args.contentType) headers["Content-Type"] = args.contentType;
+      const response = await fetchWithTimeout(
+        deps,
+        args.url,
+        {
+          method: "POST",
+          headers,
+          body: bytesToArrayBuffer(args.bytes),
+        },
+        UPLOAD_TIMEOUT_MS,
+      );
+      if (!response.ok) {
+        throwHttpStatusError(
+          response.status,
+          await readResponseTextSafe(response),
+          response.headers,
+          deps.now,
+        );
+      }
+      return (await response.json()) as unknown;
+    }, args.retryCount);
+    if (schema) return parseArk(schema, json, "API response");
+    return json as T;
+  }
+
   async function downloadZipRequest(
     registry: string,
     args: { slug: string; version?: string; token?: string },
@@ -296,6 +338,7 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
     apiRequestForm,
     fetchText: fetchTextRequest,
     fetchBinary: fetchBinaryRequest,
+    uploadBinary: uploadBinaryRequest,
     downloadZip: downloadZipRequest,
   };
 }
@@ -361,6 +404,15 @@ export async function fetchBinary(registry: string, args: TextRequestArgs): Prom
   return await defaultHttpClient.fetchBinary(registry, args);
 }
 
+export async function uploadBinary<T>(args: BinaryUploadArgs): Promise<T>;
+export async function uploadBinary<T>(args: BinaryUploadArgs, schema: ArkValidator<T>): Promise<T>;
+export async function uploadBinary<T>(
+  args: BinaryUploadArgs,
+  schema?: ArkValidator<T>,
+): Promise<T> {
+  return await defaultHttpClient.uploadBinary<T>(args, schema);
+}
+
 export async function downloadZip(
   registry: string,
   args: { slug: string; version?: string; token?: string },
@@ -386,6 +438,12 @@ function createRetryRunner(deps: Pick<HttpClientDeps, "setTimeoutImpl" | "random
       },
     });
   };
+}
+
+function bytesToArrayBuffer(bytes: Uint8Array) {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy.buffer;
 }
 
 async function fetchWithTimeout(
@@ -684,6 +742,45 @@ async function fetchJsonFormViaCurl(
       ...formArgs,
       url,
     ];
+
+    const result = deps.spawnSyncImpl("curl", curlArgs, { encoding: "utf8" });
+    if (result.status !== 0) {
+      throw new Error(result.stderr || "curl failed");
+    }
+    const { body, status, headers: responseHeaders } = parseCurlBodyAndMeta(result.stdout ?? "");
+    if (status < 200 || status >= 300) {
+      throwHttpStatusError(status, body, responseHeaders, deps.now);
+    }
+    return JSON.parse(body || "null") as unknown;
+  } finally {
+    await deps.rmImpl(tempDir, { recursive: true, force: true });
+  }
+}
+
+async function uploadBinaryViaCurl(
+  deps: Pick<
+    HttpClientDeps,
+    "spawnSyncImpl" | "mkdtempImpl" | "writeFileImpl" | "rmImpl" | "tmpdirPath" | "now"
+  >,
+  args: BinaryUploadArgs,
+) {
+  const tempDir = await deps.mkdtempImpl(join(deps.tmpdirPath, "clawhub-upload-"));
+  try {
+    const filePath = join(tempDir, "upload.bin");
+    await deps.writeFileImpl(filePath, args.bytes);
+    const curlArgs = [
+      "--silent",
+      "--show-error",
+      "--location",
+      "--max-time",
+      String(UPLOAD_TIMEOUT_SECONDS),
+      "--write-out",
+      CURL_WRITE_OUT_FORMAT,
+      "-X",
+      "POST",
+    ];
+    if (args.contentType) curlArgs.push("-H", `Content-Type: ${args.contentType}`);
+    curlArgs.push("--data-binary", `@${filePath}`, args.url);
 
     const result = deps.spawnSyncImpl("curl", curlArgs, { encoding: "utf8" });
     if (result.status !== 0) {

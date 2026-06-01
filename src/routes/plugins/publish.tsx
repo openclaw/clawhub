@@ -1,7 +1,7 @@
 import { useAuthToken } from "@convex-dev/auth/react";
 import { createFileRoute, useSearch } from "@tanstack/react-router";
 import { ApiRoutes, DocsLinks, getPackageScopeOwnerMismatch } from "clawhub-schema";
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { ExternalLink, Info, Lock } from "lucide-react";
 import { type ReactNode, startTransition, useEffect, useMemo, useState } from "react";
 import semver from "semver";
@@ -10,6 +10,7 @@ import { api } from "../../../convex/_generated/api";
 import {
   getPackageMultipartSizeError,
   isPackageMultipartUploadTooLarge,
+  MAX_CLAWPACK_BYTES,
   MAX_PACKAGE_MULTIPART_BYTES,
   MAX_PUBLISH_FILE_BYTES,
 } from "../../../convex/lib/publishLimits";
@@ -41,7 +42,7 @@ import {
 import { derivePluginPrefill, listPrefilledFields } from "../../lib/pluginPublishPrefill";
 import { expandFilesWithReport, isNpmPackTarball } from "../../lib/uploadFiles";
 import { useAuthStatus } from "../../lib/useAuthStatus";
-import { formatPublishError } from "../upload/-utils";
+import { formatPublishError, uploadFile } from "../upload/-utils";
 
 export const Route = createFileRoute("/plugins/publish")({
   validateSearch: (search) => ({
@@ -70,6 +71,7 @@ export function PublishPluginRoute() {
   const search = useSearch({ from: "/plugins/publish" });
   const { isAuthenticated, isLoading: isAuthLoading, me } = useAuthStatus();
   const authToken = useAuthToken();
+  const generateUploadUrl = useMutation(api.uploads.generateUploadUrl);
   const publishers = useQuery(api.publishers.listMine, me ? {} : "skip") as
     | Array<PublisherOwnerMembership>
     | undefined;
@@ -119,9 +121,11 @@ export function PublishPluginRoute() {
   const validationError =
     oversizedFiles.length > 0
       ? `Each file must be 10MB or smaller: ${oversizedFileNames.join(", ")}`
-      : totalBytes > MAX_PACKAGE_MULTIPART_BYTES
-        ? "Total file size exceeds 18MB for package uploads."
-        : null;
+      : publishTarball && totalBytes > MAX_CLAWPACK_BYTES
+        ? "ClawPack exceeds 120MB limit."
+        : !publishTarball && totalBytes > MAX_PACKAGE_MULTIPART_BYTES
+          ? "Total file size exceeds 18MB for package uploads."
+          : null;
   const isMetadataLocked = files.length === 0;
   const metadataDisabled = isMetadataLocked || isSubmitting;
   const ownerScopeError = useMemo(() => {
@@ -570,7 +574,7 @@ export function PublishPluginRoute() {
                           : {}),
                       };
                       const payloadJson = JSON.stringify(payload);
-                      const uploadTooLarge = publishTarball
+                      const tarballUploadTooLarge = publishTarball
                         ? isPackageMultipartUploadTooLarge({
                             payloadJson,
                             fileFieldName: "clawpack",
@@ -582,16 +586,19 @@ export function PublishPluginRoute() {
                               },
                             ],
                           })
-                        : isPackageMultipartUploadTooLarge({
-                            payloadJson,
-                            fileFieldName: "files",
-                            files: normalizePackageUploadFiles(files).map(({ file, path }) => ({
-                              name: path,
-                              size: file.size,
-                              type: file.type,
-                            })),
-                          });
-                      if (uploadTooLarge) {
+                        : false;
+                      const fileUploadTooLarge =
+                        !publishTarball &&
+                        isPackageMultipartUploadTooLarge({
+                          payloadJson,
+                          fileFieldName: "files",
+                          files: normalizePackageUploadFiles(files).map(({ file, path }) => ({
+                            name: path,
+                            size: file.size,
+                            type: file.type,
+                          })),
+                        });
+                      if (fileUploadTooLarge) {
                         toast.error(getPackageMultipartSizeError());
                         return;
                       }
@@ -601,7 +608,14 @@ export function PublishPluginRoute() {
                       const form = new FormData();
                       form.set("payload", payloadJson);
                       if (publishTarball) {
-                        form.set("clawpack", publishTarball, publishTarball.name);
+                        if (tarballUploadTooLarge) {
+                          setStatus("Uploading package artifact...");
+                          const uploadUrl = await generateUploadUrl();
+                          const storageId = await uploadFile(uploadUrl, publishTarball);
+                          form.set("clawpack", storageId);
+                        } else {
+                          form.set("clawpack", publishTarball, publishTarball.name);
+                        }
                       } else {
                         appendPackageUploadFiles(form, files);
                       }

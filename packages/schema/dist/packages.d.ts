@@ -229,6 +229,7 @@ export declare const PackageTrustedPublisherSchema: import("arktype/internal/var
 }, {}>;
 export type PackageTrustedPublisher = (typeof PackageTrustedPublisherSchema)[inferred];
 export declare const MAX_PACKAGE_MULTIPART_BYTES: number;
+export declare const MAX_PACKAGE_CLAWPACK_BYTES: number;
 export type PackageMultipartUploadField = "files" | "clawpack";
 export type PackageMultipartUploadPart = {
     name: string;

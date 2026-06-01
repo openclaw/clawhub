@@ -189,6 +189,7 @@ export const PackageTrustedPublisherSchema = type({
     environment: "string?",
 });
 export const MAX_PACKAGE_MULTIPART_BYTES = 18 * 1024 * 1024;
+export const MAX_PACKAGE_CLAWPACK_BYTES = 120 * 1024 * 1024;
 const PACKAGE_MULTIPART_FIXED_OVERHEAD_BYTES = 4096;
 const PACKAGE_MULTIPART_PART_OVERHEAD_BYTES = 1024;
 export function estimatePackageMultipartUploadBytes(input) {
