@@ -10,6 +10,7 @@ const MIN_ACCOUNT_AGE_MS = 14 * 24 * 60 * 60 * 1000;
 type GitHubAccountGateCtx = Pick<ActionCtx, "runQuery" | "runMutation">;
 
 type GitHubUser = {
+  id?: number;
   login?: string;
   name?: string;
   avatar_url?: string;
