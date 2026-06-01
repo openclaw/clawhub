@@ -86,20 +86,21 @@ function findReadmeFile(files: File[]): File | null {
   return candidates[0]?.file ?? null;
 }
 
+const EMPTY_README_ASSET_REPORT: RelativeReadmeAssetReport = {
+  samples: [],
+  total: 0,
+  unresolvableSamples: [],
+  unresolvableTotal: 0,
+};
+
 async function scanReadmeRelativeAssets(files: File[]): Promise<RelativeReadmeAssetReport> {
   const readme = findReadmeFile(files);
-  const empty: RelativeReadmeAssetReport = {
-    samples: [],
-    total: 0,
-    unresolvableSamples: [],
-    unresolvableTotal: 0,
-  };
-  if (!readme) return empty;
+  if (!readme) return EMPTY_README_ASSET_REPORT;
   try {
     const text = await readme.text();
     return detectRelativeReadmeAssets(text);
   } catch {
-    return empty;
+    return EMPTY_README_ASSET_REPORT;
   }
 }
 
@@ -129,12 +130,8 @@ export function PublishPluginRoute() {
   const [packageSourceKind, setPackageSourceKind] = useState<PackagePickSource | null>(null);
   const [ignoredPaths, setIgnoredPaths] = useState<string[]>([]);
   const [detectedPrefillFields, setDetectedPrefillFields] = useState<string[]>([]);
-  const [readmeAssetReport, setReadmeAssetReport] = useState<RelativeReadmeAssetReport>({
-    samples: [],
-    total: 0,
-    unresolvableSamples: [],
-    unresolvableTotal: 0,
-  });
+  const [readmeAssetReport, setReadmeAssetReport] =
+    useState<RelativeReadmeAssetReport>(EMPTY_README_ASSET_REPORT);
   const [codePluginFieldIssues, setCodePluginFieldIssues] = useState<string[]>([]);
   const [status, setStatus] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -282,6 +279,12 @@ export function PublishPluginRoute() {
     setIgnoredPaths([]);
     setDetectedPrefillFields([]);
     setCodePluginFieldIssues([]);
+    // Without this reset the README warning Badge keeps showing the previous
+    // package's relative-asset findings until the next pick's async scan
+    // finishes — which is misleading both while no package is selected and
+    // during the brief window between setFiles() and setReadmeAssetReport()
+    // inside onPickFiles().
+    setReadmeAssetReport(EMPTY_README_ASSET_REPORT);
     setError(null);
     setStatus(null);
   };

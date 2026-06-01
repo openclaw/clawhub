@@ -845,4 +845,44 @@ describe("plugins publish route", () => {
     });
     expect(screen.queryByText(/Your README references/i)).toBeNull();
   });
+
+  it("clears the README relative-asset warning when the user clears the selected package", async () => {
+    renderPublishRoute();
+
+    const packageJson = withRelativePath(
+      new File(
+        [makeCodePluginPackageJson({ name: "demo-plugin", version: "1.0.0" })],
+        "package.json",
+        {
+          type: "application/json",
+        },
+      ),
+      "demo-plugin/package.json",
+    );
+    const manifest = withRelativePath(
+      new File(['{"id":"demo.plugin"}'], "openclaw.plugin.json", { type: "application/json" }),
+      "demo-plugin/openclaw.plugin.json",
+    );
+    const readme = withRelativePath(
+      new File(["# Demo\n\n![diagram](./images/foo.png)\n"], "README.md", {
+        type: "text/markdown",
+      }),
+      "demo-plugin/README.md",
+    );
+
+    fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest, readme] } });
+
+    await waitFor(() => {
+      expect(screen.getByText(/a package-relative image path/i)).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Clear package/i }));
+
+    // The Badge must not keep parroting the previous package's findings once
+    // the user has cleared the selection — otherwise the next pick window
+    // briefly shows stale warnings.
+    await waitFor(() => {
+      expect(screen.queryByText(/Your README references/i)).toBeNull();
+    });
+  });
 });
