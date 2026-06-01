@@ -73,8 +73,8 @@ describe("github app sync helpers", () => {
 
   it("creates app JWTs from PKCS#8 and GitHub-style PKCS#1 RSA private keys", async () => {
     const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
-    const pkcs8Pem = privateKey.export({ type: "pkcs8", format: "pem" }).toString();
-    const pkcs1Pem = privateKey.export({ type: "pkcs1", format: "pem" }).toString();
+    const pkcs8Pem = privateKey.export({ type: "pkcs8", format: "pem" });
+    const pkcs1Pem = privateKey.export({ type: "pkcs1", format: "pem" });
 
     await expect(
       createGitHubAppJwt({ appId: "12345", privateKeyPem: pkcs8Pem, now: 1_700_000_000_000 }),

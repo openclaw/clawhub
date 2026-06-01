@@ -139,6 +139,7 @@ export const completePublisherInstall: ReturnType<typeof action> = action({
       publisherId: payload.publisherId as Id<"publishers">,
       requestedByUserId: userId,
       nonce: payload.nonce,
+      consume: false,
     })) as { publisherId: Id<"publishers">; requestedByUserId: Id<"users"> };
 
     const appJwt = await createAppJwt();
@@ -163,6 +164,13 @@ export const completePublisherInstall: ReturnType<typeof action> = action({
       installationClaim,
     });
     const repositories = await fetchGitHubInstallationRepositories(args.installationId, appJwt);
+
+    await ctx.runMutation(internal.githubApp.consumeSetupStateInternal, {
+      stateHash,
+      publisherId: setup.publisherId,
+      requestedByUserId: setup.requestedByUserId,
+      nonce: payload.nonce,
+    });
 
     const result: {
       ok: boolean;
@@ -451,17 +459,45 @@ export const githubWebhookHttp = httpAction(async (ctx, req) => {
         senderAccountId: senderAccountId ?? "",
         event,
       });
-      const action = typeof payload.action === "string" ? payload.action : "";
+      const webhookAction = typeof payload.action === "string" ? payload.action : "";
+      const addedRepoIds = Array.isArray(payload.added_repositories)
+        ? payload.added_repositories
+            .map((added) => normalizeOptionalId((added as { id?: unknown }).id))
+            .filter((id): id is string => Boolean(id))
+        : [];
       const removedRepoIds = Array.isArray(payload.removed_repositories)
         ? payload.removed_repositories
             .map((removed) => normalizeOptionalId((removed as { id?: unknown }).id))
             .filter((id): id is string => Boolean(id))
         : [];
-      if (event === "installation" && (action === "deleted" || action === "suspend")) {
+      if (addedRepoIds.length > 0 && installationId) {
+        const appJwt = await createAppJwt();
+        const repositories = await fetchGitHubInstallationRepositories(installationId, appJwt);
+        const addedRepoIdSet = new Set(addedRepoIds);
+        await ctx.runMutation(internal.githubApp.upsertInstallationRepositoriesInternal, {
+          installationId,
+          repositories: repositories
+            .filter((addedRepo) => {
+              const id = normalizeOptionalId(addedRepo.id);
+              return id ? addedRepoIdSet.has(id) : false;
+            })
+            .map((addedRepo) => ({
+              repoFullName: requireString(addedRepo.full_name, "repository full_name"),
+              repoId: normalizeIdString(addedRepo.id, "repository id"),
+              defaultBranch: requireString(addedRepo.default_branch, "repository default_branch"),
+            })),
+        });
+      }
+      if (
+        event === "installation" &&
+        (webhookAction === "deleted" ||
+          webhookAction === "suspend" ||
+          webhookAction === "suspended")
+      ) {
         await ctx.runMutation(internal.githubApp.disableInstallationRepositoriesInternal, {
           installationId: installationId ?? "",
           repoIds: [],
-          reason: `installation.${action}`,
+          reason: `installation.${webhookAction}`,
         });
       } else if (removedRepoIds.length > 0) {
         await ctx.runMutation(internal.githubApp.disableInstallationRepositoriesInternal, {
@@ -524,6 +560,7 @@ export const consumeSetupStateInternal = internalMutation({
     publisherId: v.id("publishers"),
     requestedByUserId: v.id("users"),
     nonce: v.string(),
+    consume: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const state = await ctx.db
@@ -544,7 +581,9 @@ export const consumeSetupStateInternal = internalMutation({
       userId: state.requestedByUserId,
       allowed: ["admin"],
     });
-    await ctx.db.patch(state._id, { consumedAt: Date.now() });
+    if (args.consume !== false) {
+      await ctx.db.patch(state._id, { consumedAt: Date.now() });
+    }
     return {
       publisherId: state.publisherId,
       requestedByUserId: state.requestedByUserId,
@@ -701,6 +740,84 @@ export const upsertPublisherInstallationInternal = internalMutation({
       installationId: args.installationId,
       repositories: repos,
     };
+  },
+});
+
+export const upsertInstallationRepositoriesInternal = internalMutation({
+  args: {
+    installationId: v.string(),
+    repositories: v.array(
+      v.object({
+        repoFullName: v.string(),
+        repoId: v.string(),
+        defaultBranch: v.string(),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    if (!args.installationId) return { upserted: 0 };
+    const links = await ctx.db
+      .query("publisherGitHubLinks")
+      .withIndex("by_installation_id", (q) => q.eq("installationId", args.installationId))
+      .collect();
+    const activeLinks = links.filter((link) => !link.deletedAt);
+    const now = Date.now();
+    let upserted = 0;
+
+    for (const link of activeLinks) {
+      for (const repo of args.repositories) {
+        const normalizedName = normalizeGitHubRepoFullName(repo.repoFullName);
+        if (!normalizedName) continue;
+        const existingRepos = await ctx.db
+          .query("publisherGitHubRepositories")
+          .withIndex("by_installation_repo_id", (q) =>
+            q.eq("installationId", args.installationId).eq("repoId", repo.repoId),
+          )
+          .collect();
+        const existing = existingRepos.find(
+          (candidate) => candidate.publisherId === link.publisherId,
+        );
+        if (
+          existingRepos.some(
+            (candidate) => candidate.publisherId !== link.publisherId && !candidate.deletedAt,
+          )
+        ) {
+          continue;
+        }
+        const fields = {
+          publisherId: link.publisherId,
+          githubLinkId: link._id,
+          installationId: args.installationId,
+          repoFullName: normalizedName,
+          repoId: repo.repoId,
+          defaultBranch: repo.defaultBranch,
+          updatedAt: now,
+        };
+        if (existing) {
+          await ctx.db.patch(existing._id, {
+            ...fields,
+            deletedAt: undefined,
+          });
+          await syncSourceLinkRepoFullName(ctx, {
+            repositoryId: existing._id,
+            repoFullName: normalizedName,
+            now,
+          });
+        } else {
+          await ctx.db.insert("publisherGitHubRepositories", {
+            ...fields,
+            syncRef: repo.defaultBranch,
+            syncRoots: [""],
+            mode: "discover",
+            enabled: false,
+            lastSyncStatus: "idle",
+            createdAt: now,
+          });
+        }
+        upserted += 1;
+      }
+    }
+    return { upserted };
   },
 });
 
@@ -1696,7 +1813,7 @@ async function fetchGitHubInstallationRepositories(installationId: string, appJw
   const token = await createInstallationTokenWithJwt(installationId, appJwt);
   const repos: GitHubInstallationRepository[] = [];
   let page = 1;
-  while (page <= 10) {
+  while (true) {
     const response = await fetch(
       `https://api.github.com/installation/repositories?per_page=100&page=${page}`,
       { headers: githubJsonHeaders(token) },
