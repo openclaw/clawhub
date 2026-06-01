@@ -76,23 +76,6 @@ export async function expandFiles(selected: File[]) {
   return report.files;
 }
 
-export async function isNpmPackTarball(file: File) {
-  const lower = file.name.toLowerCase();
-  if (!lower.endsWith(".tar.gz") && !lower.endsWith(".tgz")) return false;
-  try {
-    const unpacked = gunzipSync(new Uint8Array(await readArrayBuffer(file)));
-    const paths = untar(unpacked).map((entry) => normalizePath(entry.path));
-    return (
-      paths.length > 0 &&
-      paths.every((path) => path.startsWith("package/")) &&
-      paths.includes("package/package.json") &&
-      paths.includes("package/openclaw.plugin.json")
-    );
-  } catch {
-    return false;
-  }
-}
-
 export async function expandDroppedItems(items: DataTransferItemList | null) {
   if (!items || items.length === 0) return [];
   const dropped: File[] = [];
@@ -239,15 +222,13 @@ function untar(bytes: Uint8Array) {
     const header = bytes.subarray(offset, offset + 512);
     if (header.every((byte) => byte === 0)) break;
     const name = readString(header.subarray(0, 100));
-    const prefix = readString(header.subarray(345, 500));
-    const path = prefix ? `${prefix}/${name}` : name;
     const size = readOctal(header.subarray(124, 136));
     const typeflag = header[156];
     offset += 512;
     const data = bytes.subarray(offset, offset + size);
     offset += Math.ceil(size / 512) * 512;
-    if (!path || typeflag === 53) continue;
-    entries.push({ path, data });
+    if (!name || typeflag === 53) continue;
+    entries.push({ path: name, data });
   }
   return entries;
 }

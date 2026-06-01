@@ -9608,18 +9608,11 @@ describe("httpApiV1 handlers", () => {
     expect(runAction).not.toHaveBeenCalled();
   });
 
-  it("package publish accepts browser session auth when token auth is not an API token", async () => {
+  it("package publish rejects browser session auth when token auth is not an API token", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:session" as never);
     vi.mocked(requirePackagePublishAuth).mockRejectedValue(new Error("Unauthorized"));
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) =>
-      args.userId === "users:session"
-        ? { _id: "users:session", handle: "publisher", role: "user" }
-        : null,
-    );
     const runMutation = vi.fn().mockResolvedValue(okRate());
-    const runAction = vi
-      .fn()
-      .mockResolvedValue({ ok: true, packageId: "pkg:1", releaseId: "rel:1" });
+    const runAction = vi.fn();
     const form = packagePublishForm(packagePublishMetadata());
     form.append("files", new File(["{}"], "openclaw.plugin.json", { type: "application/json" }));
 
@@ -9627,7 +9620,6 @@ describe("httpApiV1 handlers", () => {
       makeCtx({
         runAction,
         runMutation,
-        runQuery,
         storage: { store: vi.fn(async () => "storage:plugin") },
       }),
       new Request("https://example.com/api/v1/packages", {
@@ -9637,21 +9629,9 @@ describe("httpApiV1 handlers", () => {
       }),
     );
 
-    expect(response.status).toBe(200);
-    expect(runAction).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        actorUserId: "users:session",
-        payload: expect.objectContaining({
-          files: [
-            expect.objectContaining({
-              path: "openclaw.plugin.json",
-              storageId: "storage:plugin",
-            }),
-          ],
-        }),
-      }),
-    );
+    expect(response.status).toBe(401);
+    expect(await response.text()).toBe("Unauthorized");
+    expect(runAction).not.toHaveBeenCalled();
   });
 
   it("multipart package publish ignores macOS junk files", async () => {

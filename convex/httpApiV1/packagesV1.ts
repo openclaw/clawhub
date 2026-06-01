@@ -1528,37 +1528,11 @@ export async function listBundlePluginsV1Handler(ctx: ActionCtx, request: Reques
   return await listPackages(ctx, request, "bundle-plugin");
 }
 
-type PackagePublishHttpAuth =
-  | { kind: "user"; userId: Id<"users"> }
-  | { kind: "github-actions"; publishToken: Doc<"packagePublishTokens"> };
-
-async function requirePackagePublishHttpAuthOrResponse(
-  ctx: ActionCtx,
-  request: Request,
-  headers: HeadersInit,
-): Promise<{ ok: true; auth: PackagePublishHttpAuth } | { ok: false; response: Response }> {
-  const tokenAuth = await requirePackagePublishAuthOrResponse(ctx, request, headers);
-  if (tokenAuth.ok) {
-    const auth =
-      tokenAuth.auth.kind === "user"
-        ? { kind: "user" as const, userId: tokenAuth.auth.userId }
-        : tokenAuth.auth;
-    return { ok: true, auth };
-  }
-
-  const sessionUserId = await getOptionalActiveAuthUserIdFromAction(ctx);
-  if (sessionUserId) {
-    return { ok: true, auth: { kind: "user", userId: sessionUserId } };
-  }
-
-  return tokenAuth;
-}
-
 export async function publishPackageV1Handler(ctx: ActionCtx, request: Request) {
   const rate = await applyRateLimit(ctx, request, "write");
   if (!rate.ok) return rate.response;
 
-  const auth = await requirePackagePublishHttpAuthOrResponse(ctx, request, rate.headers);
+  const auth = await requirePackagePublishAuthOrResponse(ctx, request, rate.headers);
   if (!auth.ok) return auth.response;
 
   try {

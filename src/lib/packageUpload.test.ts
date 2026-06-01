@@ -1,8 +1,8 @@
 /* @vitest-environment node */
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
-  appendPackageUploadFiles,
+  buildPackageUploadEntries,
   filterIgnoredPackageFiles,
   normalizePackageUploadPath,
 } from "./packageUpload";
@@ -26,7 +26,7 @@ describe("normalizePackageUploadPath", () => {
   });
 });
 
-describe("package upload files", () => {
+describe("buildPackageUploadEntries", () => {
   it("filters builtin and package-ignore-file paths before upload", async () => {
     const filtered = await filterIgnoredPackageFiles([
       new File(["{}"], "demo-plugin/package.json", { type: "application/json" }),
@@ -68,68 +68,111 @@ describe("package upload files", () => {
     expect(filtered.ignoredPaths).toEqual([]);
   });
 
-  it("appends package files with normalized paths", () => {
+  it("requests a fresh upload url for each file", async () => {
     const files = [
-      withRelativePath(
-        new File(["{}"], "package.json", { type: "application/json" }),
-        "demo-plugin/package.json",
-      ),
-      withRelativePath(
-        new File(["export {}"], "index.js", { type: "text/javascript" }),
-        "demo-plugin/dist/index.js",
-      ),
+      {
+        name: "package.json",
+        size: 10,
+        type: "application/json",
+        webkitRelativePath: "demo-plugin/package.json",
+      },
+      {
+        name: "dist/index.js",
+        size: 20,
+        type: "text/javascript",
+        webkitRelativePath: "demo-plugin/dist/index.js",
+      },
     ];
-    const form = new FormData();
+    const generateUploadUrl = vi
+      .fn()
+      .mockResolvedValueOnce("upload-1")
+      .mockResolvedValueOnce("upload-2");
+    const hashFile = vi.fn(async (file: (typeof files)[number]) => `sha:${file.name}`);
+    const uploadFile = vi
+      .fn()
+      .mockResolvedValueOnce("storage:1")
+      .mockResolvedValueOnce("storage:2");
 
-    appendPackageUploadFiles(form, files);
+    const uploaded = await buildPackageUploadEntries(files, {
+      generateUploadUrl,
+      hashFile,
+      uploadFile,
+    });
 
-    expect(form.getAll("files").map((entry) => (entry as File).name)).toEqual([
-      "package.json",
-      "dist/index.js",
-    ]);
+    expect(generateUploadUrl).toHaveBeenCalledTimes(2);
+    expect(uploadFile).toHaveBeenNthCalledWith(1, "upload-1", files[0]);
+    expect(uploadFile).toHaveBeenNthCalledWith(2, "upload-2", files[1]);
+    expect(uploaded.map((entry) => entry.path)).toEqual(["package.json", "dist/index.js"]);
   });
 
-  it("normalizes misleading text MIME types in form data", () => {
-    const form = new FormData();
+  it("normalizes misleading text MIME types in upload entries", async () => {
+    const uploaded = await buildPackageUploadEntries(
+      [
+        {
+          name: "src/index.ts",
+          size: 20,
+          type: "video/mp2t",
+        },
+      ],
+      {
+        generateUploadUrl: async () => "upload-1",
+        hashFile: async () => "sha:1",
+        uploadFile: async () => "storage:1",
+      },
+    );
 
-    appendPackageUploadFiles(form, [
-      new File(["export {}"], "src/index.ts", { type: "video/mp2t" }),
-    ]);
-
-    expect((form.get("files") as File).type).toBe("application/typescript");
+    expect(uploaded[0]?.contentType).toBe("application/typescript");
   });
 
-  it("keeps nested archive paths when files do not have webkitRelativePath", () => {
-    const form = new FormData();
+  it("keeps nested archive paths when files do not have webkitRelativePath", async () => {
+    const uploaded = await buildPackageUploadEntries(
+      [
+        {
+          name: "dist/index.js",
+          size: 20,
+          type: "text/javascript",
+        },
+      ],
+      {
+        generateUploadUrl: async () => "upload-1",
+        hashFile: async () => "sha:1",
+        uploadFile: async () => "storage:1",
+      },
+    );
 
-    appendPackageUploadFiles(form, [
-      new File(["export {}"], "dist/index.js", { type: "text/javascript" }),
-    ]);
-
-    expect((form.get("files") as File).name).toBe("dist/index.js");
+    expect(uploaded[0]?.path).toBe("dist/index.js");
   });
 
-  it("strips the shared root for dropped folders without webkitRelativePath", () => {
-    const form = new FormData();
+  it("strips the shared root for dropped folders without webkitRelativePath", async () => {
+    const uploaded = await buildPackageUploadEntries(
+      [
+        {
+          name: "demo-plugin/package.json",
+          size: 10,
+          type: "application/json",
+        },
+        {
+          name: "demo-plugin/openclaw.plugin.json",
+          size: 20,
+          type: "application/json",
+        },
+        {
+          name: "demo-plugin/dist/index.js",
+          size: 30,
+          type: "text/javascript",
+        },
+      ],
+      {
+        generateUploadUrl: async () => "upload-1",
+        hashFile: async () => "sha:1",
+        uploadFile: async () => "storage:1",
+      },
+    );
 
-    appendPackageUploadFiles(form, [
-      new File(["{}"], "demo-plugin/package.json", { type: "application/json" }),
-      new File(["{}"], "demo-plugin/openclaw.plugin.json", { type: "application/json" }),
-      new File(["export {}"], "demo-plugin/dist/index.js", { type: "text/javascript" }),
-    ]);
-
-    expect(form.getAll("files").map((entry) => (entry as File).name)).toEqual([
+    expect(uploaded.map((entry) => entry.path)).toEqual([
       "package.json",
       "openclaw.plugin.json",
       "dist/index.js",
     ]);
   });
 });
-
-function withRelativePath(file: File, path: string) {
-  Object.defineProperty(file, "webkitRelativePath", {
-    value: path,
-    configurable: true,
-  });
-  return file;
-}
