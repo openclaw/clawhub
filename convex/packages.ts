@@ -764,13 +764,29 @@ function resolvePublicPackageScanStatus(
   return pkg.scanStatus;
 }
 
+function normalizePublicPackageSourcePath(sourcePath: unknown) {
+  if (typeof sourcePath !== "string") return undefined;
+  const trimmed = sourcePath.trim();
+  if (!trimmed || trimmed === ".") return undefined;
+  return trimmed.replace(/^\/+/, "").replace(/\/+$/, "") || undefined;
+}
+
+function getReleaseSourcePath(release?: Pick<Doc<"packageReleases">, "source"> | null) {
+  const source = release?.source;
+  if (!source || typeof source !== "object" || Array.isArray(source)) return undefined;
+  return normalizePublicPackageSourcePath((source as { path?: unknown }).path);
+}
+
 function resolvePublicPackageVerification(
   pkg: Pick<Doc<"packages">, "verification" | "latestVersionSummary" | "scanStatus">,
   latestRelease?: Doc<"packageReleases"> | null,
 ) {
   const scanStatus = resolvePublicPackageScanStatus(pkg, latestRelease);
   const source = pkg.verification ?? pkg.latestVersionSummary?.verification;
-  return source && scanStatus ? { ...source, scanStatus } : source;
+  if (!source) return source;
+  const sourcePath = source.sourcePath ?? getReleaseSourcePath(latestRelease);
+  const verification = sourcePath ? { ...source, sourcePath } : source;
+  return scanStatus ? { ...verification, scanStatus } : verification;
 }
 
 function toPublicPackage(
@@ -820,6 +836,19 @@ function omitLegacyClawScanNoteFields(release: Doc<"packageReleases">) {
     ...publicRelease
   } = release;
   return publicRelease;
+}
+
+function toPublicPackageRelease(release: Doc<"packageReleases">) {
+  const publicRelease = omitLegacyClawScanNoteFields(release);
+  const sourcePath = release.verification?.sourcePath ?? getReleaseSourcePath(release);
+  if (!release.verification || !sourcePath) return publicRelease;
+  return {
+    ...publicRelease,
+    verification: {
+      ...release.verification,
+      sourcePath,
+    },
+  };
 }
 
 function packageArtifactSummary(
@@ -1907,7 +1936,7 @@ export const getByName = query({
       package: publicPackage,
       latestRelease:
         latestRelease && !latestRelease.softDeletedAt
-          ? omitLegacyClawScanNoteFields(latestRelease)
+          ? toPublicPackageRelease(latestRelease)
           : null,
       owner,
     };
@@ -1948,7 +1977,7 @@ export const getManageContext = query({
 
     return {
       package: pkg,
-      latestRelease: omitLegacyClawScanNoteFields(latestRelease),
+      latestRelease: toPublicPackageRelease(latestRelease),
     };
   },
 });
@@ -1978,7 +2007,7 @@ export const getByNameForStaff = query({
       package: pkg,
       latestRelease:
         latestRelease && !latestRelease.softDeletedAt
-          ? omitLegacyClawScanNoteFields(latestRelease)
+          ? toPublicPackageRelease(latestRelease)
           : null,
       owner,
       highlighted: highlighted
@@ -2012,7 +2041,7 @@ export const getByNameForViewerInternal = internalQuery({
       package: publicPackage,
       latestRelease:
         latestRelease && !latestRelease.softDeletedAt
-          ? omitLegacyClawScanNoteFields(latestRelease)
+          ? toPublicPackageRelease(latestRelease)
           : null,
       owner,
     };
@@ -2091,7 +2120,7 @@ export const getVersionByName = query({
     if (!publicPackage) return null;
     return {
       package: publicPackage,
-      version: omitLegacyClawScanNoteFields(release),
+      version: toPublicPackageRelease(release),
     };
   },
 });
@@ -2122,7 +2151,7 @@ export const getVersionByNameForViewerInternal = internalQuery({
     if (!publicPackage) return null;
     return {
       package: publicPackage,
-      version: omitLegacyClawScanNoteFields(release),
+      version: toPublicPackageRelease(release),
     };
   },
 });
@@ -2159,7 +2188,7 @@ export const getVersionSecurityByNameForViewerInternal = internalQuery({
         ...publicPackage,
         publicDownloadBlocked,
       },
-      version: omitLegacyClawScanNoteFields(release),
+      version: toPublicPackageRelease(release),
     };
   },
 });

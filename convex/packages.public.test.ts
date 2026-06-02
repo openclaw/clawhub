@@ -2817,6 +2817,62 @@ describe("packages public queries", () => {
     });
   });
 
+  it("derives missing public verification source paths from legacy release provenance", async () => {
+    const verification = {
+      tier: "source-linked",
+      scope: "artifact-only",
+      sourceRepo: "OpenViking/OpenViking",
+      sourceCommit: "abcdef0123456789abcdef0123456789abcdef01",
+      scanStatus: "clean",
+    };
+    const latestRelease = makeReleaseDoc({
+      verification,
+      source: {
+        kind: "github",
+        repo: "OpenViking/OpenViking",
+        path: "openclaw-plugin",
+      },
+    });
+    const { ctx } = makePackageCtx({
+      pkg: makePackageDoc({
+        name: "@openviking/openclaw-plugin",
+        normalizedName: "@openviking/openclaw-plugin",
+        verification,
+        latestVersionSummary: {
+          version: "1.0.0",
+          verification,
+        },
+      }),
+      latestRelease,
+    });
+
+    await expect(
+      getByNameHandler(ctx, {
+        name: "@openviking/openclaw-plugin",
+      }),
+    ).resolves.toMatchObject({
+      package: {
+        verification: { sourcePath: "openclaw-plugin" },
+      },
+      latestRelease: {
+        verification: { sourcePath: "openclaw-plugin" },
+      },
+    });
+    await expect(
+      getVersionByNameHandler(ctx, {
+        name: "@openviking/openclaw-plugin",
+        version: "1.0.0",
+      }),
+    ).resolves.toMatchObject({
+      package: {
+        verification: { sourcePath: "openclaw-plugin" },
+      },
+      version: {
+        verification: { sourcePath: "openclaw-plugin" },
+      },
+    });
+  });
+
   it("does not mark owner-readable blocked public packages as public download blocked", async () => {
     const { ctx } = makePackageCtx({
       pkg: makePackageDoc({
