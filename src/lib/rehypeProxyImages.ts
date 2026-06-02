@@ -23,6 +23,7 @@ interface RehypeProxyImagesOptions {
 
 const DATA_OR_FRAGMENT = /^(?:data:|#|mailto:|tel:)/i;
 const ABSOLUTE_HTTP = /^https?:\/\//i;
+const EXPLICIT_SCHEME = /^[a-z][a-z0-9+\-.]*:/i;
 const PROTOCOL_RELATIVE = /^\/\//;
 
 function resolveRelativeSrc(src: string, assetBaseUrl: string | undefined): string | null {
@@ -31,6 +32,7 @@ function resolveRelativeSrc(src: string, assetBaseUrl: string | undefined): stri
   if (ABSOLUTE_HTTP.test(src)) return null;
   if (PROTOCOL_RELATIVE.test(src)) return null;
   if (DATA_OR_FRAGMENT.test(src)) return null;
+  if (EXPLICIT_SCHEME.test(src)) return null;
   // Absolute site paths (e.g. "/foo.png") are NOT package-relative — leaving
   // them alone matches how npmjs.com treats them and avoids accidentally
   // pulling random repo-root files.
