@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { isCodexWorkerExecutionAllowed, localCodexWorkerOptInReason } from "./codex-worker-guard";
 
 type DevWorkerId = "security-scan" | "skill-card";
 
@@ -13,6 +14,7 @@ type WorkerDefinition = {
   script: string;
   requiredEnv: string[];
   requiredAnyEnv?: string[];
+  requiresCodexCli: boolean;
   productionWorkflow: string;
 };
 
@@ -36,6 +38,7 @@ export const WORKERS: WorkerDefinition[] = [
     script: "scripts/security/run-codex-scan-worker.ts",
     // Shared Convex worker credential used by security and Skill Card workers.
     requiredEnv: ["CONVEX_URL", "SECURITY_SCAN_WORKER_TOKEN"],
+    requiresCodexCli: true,
     productionWorkflow: ".github/workflows/security-scan-codex.yml",
   },
   {
@@ -44,6 +47,7 @@ export const WORKERS: WorkerDefinition[] = [
     script: "scripts/skill-cards/run-skill-card-worker.ts",
     // Shared Convex worker credential used by security and Skill Card workers.
     requiredEnv: ["CONVEX_URL", "SECURITY_SCAN_WORKER_TOKEN"],
+    requiresCodexCli: true,
     productionWorkflow: ".github/workflows/skill-card-worker.yml",
   },
 ];
@@ -204,6 +208,13 @@ export function resolveRunnableWorkers(
   const runnable: WorkerDefinition[] = [];
   const skipped: Array<{ workerId: DevWorkerId; reason: string }> = [];
   for (const worker of workers) {
+    if (worker.requiresCodexCli && !isCodexWorkerExecutionAllowed(context.env)) {
+      skipped.push({
+        workerId: worker.id,
+        reason: localCodexWorkerOptInReason(),
+      });
+      continue;
+    }
     if (worker.id !== "skill-card" || hasNvidiaSkillCardTooling(options, context)) {
       runnable.push(worker);
       continue;

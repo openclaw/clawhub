@@ -65,6 +65,14 @@ The copy step is best effort. If `.convex` is already a symlink to the source wo
 
 Use `wt --yes stop` before removing or recreating a worktree. If a stale pid blocks startup, stop the service and inspect the runtime log before deleting files by hand.
 
+Local worktree startup must not consume the developer's Codex account
+implicitly. Workers that invoke Codex CLI, including ClawScan and Skill Card
+generation, are disabled in local dev unless the process has
+`CLAWHUB_ALLOW_LOCAL_CODEX_SCAN=1`; GitHub Actions workers remain allowed. When
+local Codex workers are explicitly enabled, they must default to an ignored
+worktree-local `CODEX_HOME` under `.codex/runtime/codex-workers/` unless the
+operator provides `CODEX_HOME`.
+
 ## Seeding Contract
 
 `bun run seed:dev` uses the same worktree setup helper and the same local Convex readiness checks as the detached dev server. It must remain the documented default seed command. Lower-level Convex calls and `seed:public-corpus` are recovery or fixture-authoring tools, not the first-run path.
