@@ -26,6 +26,20 @@ const ABSOLUTE_HTTP = /^https?:\/\//i;
 const EXPLICIT_SCHEME = /^[a-z][a-z0-9+\-.]*:/i;
 const PROTOCOL_RELATIVE = /^\/\//;
 
+function getRawGitHubCommitRoot(assetBaseUrl: string): URL | null {
+  try {
+    const baseUrl = new URL(assetBaseUrl);
+    if (baseUrl.protocol !== "https:" || baseUrl.hostname !== "raw.githubusercontent.com") {
+      return null;
+    }
+    const [owner, repo, commit] = baseUrl.pathname.split("/").filter(Boolean);
+    if (!owner || !repo || !commit) return null;
+    return new URL(`/${owner}/${repo}/${commit}/`, baseUrl.origin);
+  } catch {
+    return null;
+  }
+}
+
 function resolveRelativeSrc(src: string, assetBaseUrl: string | undefined): string | null {
   if (!assetBaseUrl) return null;
   if (!src) return null;
@@ -38,7 +52,12 @@ function resolveRelativeSrc(src: string, assetBaseUrl: string | undefined): stri
   // pulling random repo-root files.
   if (src.startsWith("/")) return null;
   try {
-    return new URL(src, assetBaseUrl).toString();
+    const resolved = new URL(src, assetBaseUrl);
+    const commitRoot = getRawGitHubCommitRoot(assetBaseUrl);
+    if (!commitRoot) return null;
+    if (resolved.origin !== commitRoot.origin) return null;
+    if (!resolved.pathname.startsWith(commitRoot.pathname)) return null;
+    return resolved.toString();
   } catch {
     return null;
   }

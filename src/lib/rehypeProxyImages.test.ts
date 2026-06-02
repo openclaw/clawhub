@@ -30,6 +30,26 @@ function rewriteImgSrc(src: string, assetBaseUrl?: string) {
 }
 
 describe("rehypeProxyImages", () => {
+  it("allows relative README assets to reference parent folders inside the same commit tree", () => {
+    expect(
+      rewriteImgSrc(
+        "../shared/logo.png",
+        "https://raw.githubusercontent.com/owner/repo/abcdef/sub/",
+      ),
+    ).toBe(
+      "/_vercel/image?url=https%3A%2F%2Fraw.githubusercontent.com%2Fowner%2Frepo%2Fabcdef%2Fshared%2Flogo.png&w=1024&q=75",
+    );
+  });
+
+  it("does not rewrite relative README assets that escape above the commit root", () => {
+    expect(
+      rewriteImgSrc(
+        "../../../outside.png",
+        "https://raw.githubusercontent.com/owner/repo/abcdef/sub/dir/",
+      ),
+    ).toBe("../../../outside.png");
+  });
+
   it("does not treat explicit non-http schemes as relative README assets", () => {
     expect(
       rewriteImgSrc("javascript:alert(1)", "https://raw.githubusercontent.com/owner/repo/abcdef/"),
