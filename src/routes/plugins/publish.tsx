@@ -36,6 +36,7 @@ import {
   normalizePackageUploadFiles,
 } from "../../lib/packageUpload";
 import { derivePluginPrefill, listPrefilledFields } from "../../lib/pluginPublishPrefill";
+import { buildReadmeAssetBaseUrl } from "../../lib/readmeAssetBaseUrl";
 import { expandFilesWithReport } from "../../lib/uploadFiles";
 import { useAuthStatus } from "../../lib/useAuthStatus";
 import { formatPublishError, hashFile, uploadFile } from "../upload/-utils";
@@ -215,17 +216,19 @@ export function PublishPluginRoute() {
   const readmeAssetWarning = useMemo(() => {
     const { total, unresolvableTotal, samples, unresolvableSamples } = readmeAssetReport;
     if (total === 0) return null;
-    const hasSource = Boolean(sourceRepo.trim() && sourceCommit.trim());
     const resolvableTotal = total - unresolvableTotal;
-    // Resolvable references (e.g. `./images/foo.png`) are silenced once Source
-    // repo + Commit SHA are filled — those let the renderer rewrite them to a
-    // raw.githubusercontent.com URL. We deliberately don't gate on Package
-    // path here: its default "." is a legitimate value (package at repo root),
-    // so we can't distinguish "user didn't touch it" from "user confirmed the
-    // root". Instead, when source is filled but resolvable refs exist, we show
-    // a softer reminder telling the publisher to double-check Package path.
-    // Root-absolute references (e.g. `/static/logo.png`) are never rewritten
-    // by the renderer, so they keep warning regardless of source metadata.
+    // Single source of truth: only treat the source metadata as "filled" when
+    // buildReadmeAssetBaseUrl — the same function the renderer uses — accepts
+    // it and produces a real raw.githubusercontent.com URL. This catches the
+    // silent-drop trap where the form previously accepted any non-empty Commit
+    // SHA (e.g. a 7-char short SHA, a tag like `v1.0.0`, a non-GitHub URL, or
+    // a `..`-laden Package path) and reassured the publisher their relative
+    // images would be served, while at render time COMMIT_SHA / owner-repo /
+    // path validation would silently drop the base URL and the detail page
+    // would 404. By gating on resolvedBaseUrl we keep the form's promise and
+    // the renderer's behavior in lock-step.
+    const resolvedBaseUrl = buildReadmeAssetBaseUrl(sourceRepo, sourceCommit, sourcePath);
+    const hasSource = Boolean(resolvedBaseUrl);
     const showResolvableMissingSource = resolvableTotal > 0 && !hasSource;
     const showSourcePathReminder = resolvableTotal > 0 && hasSource;
     const showUnresolvable = unresolvableTotal > 0;
@@ -240,11 +243,12 @@ export function PublishPluginRoute() {
       resolvableSamples,
       unresolvableTotal,
       unresolvableSamples,
+      resolvedBaseUrl,
       showResolvableMissingSource,
       showSourcePathReminder,
       showUnresolvable,
     };
-  }, [readmeAssetReport, sourceRepo, sourceCommit]);
+  }, [readmeAssetReport, sourceRepo, sourceCommit, sourcePath]);
 
   const onPickFiles = async (selected: File[], sourceKind: PackagePickSource) => {
     const expanded = await expandFilesWithReport(selected, {
@@ -533,7 +537,8 @@ export function PublishPluginRoute() {
                             URLs in the README.
                           </>
                         ) : null}
-                        {readmeAssetWarning.showSourcePathReminder ? (
+                        {readmeAssetWarning.showSourcePathReminder &&
+                        readmeAssetWarning.resolvedBaseUrl ? (
                           <>
                             Your README references{" "}
                             {readmeAssetWarning.resolvableTotal === 1
@@ -541,11 +546,9 @@ export function PublishPluginRoute() {
                               : `${readmeAssetWarning.resolvableTotal} package-relative image paths`}{" "}
                             ({readmeAssetWarning.resolvableSamples.slice(0, 3).join(", ")}
                             {readmeAssetWarning.resolvableSamples.length > 3 ? ", \u2026" : ""}).
-                            They will be served from
-                            {" raw.githubusercontent.com/"}
-                            {sourceRepo.trim()}/{sourceCommit.trim()}/{sourcePath.trim() || "."}/ —
-                            make sure Package path matches where this package lives in the repo, or
-                            the images will 404.
+                            They will be served from {readmeAssetWarning.resolvedBaseUrl} — make
+                            sure Package path matches where this package lives in the repo, or the
+                            images will 404.
                           </>
                         ) : null}
                         {(readmeAssetWarning.showResolvableMissingSource ||

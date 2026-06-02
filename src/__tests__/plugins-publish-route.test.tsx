@@ -680,7 +680,7 @@ describe("plugins publish route", () => {
     expect(screen.getByText(/\.\/images\/bar\.png/)).toBeTruthy();
   });
 
-  it("swaps the missing-source warning for a Package-path reminder once Source repo and Source commit are filled", async () => {
+  it("swaps the missing-source warning for a Package-path reminder once Source repo and a valid 40-hex Source commit are filled", async () => {
     renderPublishRoute();
 
     const packageJson = withRelativePath(
@@ -715,8 +715,11 @@ describe("plugins publish route", () => {
     fireEvent.change(screen.getByPlaceholderText("owner/repo"), {
       target: { value: "openclaw/demo-plugin" },
     });
+    // Use a real 40-hex SHA so buildReadmeAssetBaseUrl actually accepts it
+    // and the publish form's promise lines up with the renderer's behavior.
+    const validSha = "abc1234567890abcdef1234567890abcdef12345";
     fireEvent.change(screen.getByPlaceholderText("Full commit SHA"), {
-      target: { value: "abc123" },
+      target: { value: validSha },
     });
 
     // After source is filled, the missing-source copy disappears but a softer
@@ -727,8 +730,67 @@ describe("plugins publish route", () => {
     });
     expect(screen.getByText(/make sure Package path matches/i)).toBeTruthy();
     expect(
-      screen.getByText(/raw\.githubusercontent\.com\/openclaw\/demo-plugin\/abc123\/\.\//i),
+      screen.getByText(
+        new RegExp(`raw\\.githubusercontent\\.com/openclaw/demo-plugin/${validSha}/`, "i"),
+      ),
     ).toBeTruthy();
+  });
+
+  it("keeps the missing-source warning when Source commit is not a valid 40-hex SHA, because the renderer would silently drop the rewrite", async () => {
+    // Regression: the form previously accepted any non-empty Commit SHA and
+    // promised relative README images would be served from raw.githubusercontent.com,
+    // but buildReadmeAssetBaseUrl (used at render time) requires a 40-hex SHA
+    // and silently returns undefined for shorter or otherwise malformed input.
+    // The result: the publisher saw a green-light reminder, shipped, and the
+    // detail page 404'd. The form must now hold the renderer's validation line.
+    renderPublishRoute();
+
+    const packageJson = withRelativePath(
+      new File(
+        [makeCodePluginPackageJson({ name: "demo-plugin", version: "1.0.0" })],
+        "package.json",
+        {
+          type: "application/json",
+        },
+      ),
+      "demo-plugin/package.json",
+    );
+    const manifest = withRelativePath(
+      new File(['{"id":"demo.plugin"}'], "openclaw.plugin.json", { type: "application/json" }),
+      "demo-plugin/openclaw.plugin.json",
+    );
+    const readme = withRelativePath(
+      new File(["# Demo\n\n![diagram](./images/foo.png)\n"], "README.md", {
+        type: "text/markdown",
+      }),
+      "demo-plugin/README.md",
+    );
+
+    fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest, readme] } });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Without Source repo \+ Commit SHA/i)).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText("owner/repo"), {
+      target: { value: "openclaw/demo-plugin" },
+    });
+    // 7-char short SHA: GitHub itself would resolve this, but our render-time
+    // base-URL builder rejects anything that isn't 40 hex chars, so the form
+    // must keep showing the missing-source copy rather than the "will be
+    // served from raw.githubusercontent.com" reminder.
+    fireEvent.change(screen.getByPlaceholderText("Full commit SHA"), {
+      target: { value: "abc1234" },
+    });
+
+    // Give React a tick to recompute the warning useMemo.
+    await waitFor(() => {
+      expect(screen.getByText(/Without Source repo \+ Commit SHA/i)).toBeTruthy();
+    });
+    expect(screen.queryByText(/make sure Package path matches/i)).toBeNull();
+    expect(
+      screen.queryByText(/raw\.githubusercontent\.com\/openclaw\/demo-plugin\/abc1234/i),
+    ).toBeNull();
   });
 
   it("stops nudging about Package path once source is filled and the README has no relative images", async () => {
@@ -764,7 +826,7 @@ describe("plugins publish route", () => {
       target: { value: "openclaw/demo-plugin" },
     });
     fireEvent.change(screen.getByPlaceholderText("Full commit SHA"), {
-      target: { value: "abc123" },
+      target: { value: "abc1234567890abcdef1234567890abcdef12345" },
     });
 
     expect(screen.queryByText(/Your README references/i)).toBeNull();
@@ -805,7 +867,7 @@ describe("plugins publish route", () => {
       target: { value: "openclaw/demo-plugin" },
     });
     fireEvent.change(screen.getByPlaceholderText("Full commit SHA"), {
-      target: { value: "abc123" },
+      target: { value: "abc1234567890abcdef1234567890abcdef12345" },
     });
 
     // Filling in source metadata must not silence the unresolvable warning,
