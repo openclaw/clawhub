@@ -88,12 +88,13 @@ export function rehypeProxyImages(options: RehypeProxyImagesOptions = {}) {
       if (element.tagName !== "img") return;
       const src = element.properties?.src;
       if (typeof src !== "string") return;
+      const normalizedSrc = src.trim();
 
       let absoluteSrc: string | null = null;
-      if (ABSOLUTE_HTTP.test(src)) {
-        absoluteSrc = src;
+      if (ABSOLUTE_HTTP.test(normalizedSrc)) {
+        absoluteSrc = normalizedSrc;
       } else {
-        absoluteSrc = resolveRelativeSrc(src, assetBaseUrl);
+        absoluteSrc = resolveRelativeSrc(normalizedSrc, assetBaseUrl);
       }
       if (!absoluteSrc) return;
 

@@ -103,4 +103,12 @@ describe("detectRelativeReadmeAssets", () => {
     const report = detectRelativeReadmeAssets(`![alt](./images/foo.png "title text")`);
     expect(report.samples).toEqual(["./images/foo.png"]);
   });
+
+  it("normalizes whitespace around raw HTML image src values", () => {
+    const report = detectRelativeReadmeAssets(
+      `<img src=" ./images/foo.png "/><img src=' /static/logo.png '/>`,
+    );
+    expect(report.samples).toEqual(["./images/foo.png", "/static/logo.png"]);
+    expect(report.unresolvableSamples).toEqual(["/static/logo.png"]);
+  });
 });

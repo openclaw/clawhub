@@ -58,4 +58,15 @@ describe("rehypeProxyImages", () => {
       rewriteImgSrc("ftp://example.com/image.png", "https://raw.githubusercontent.com/x/y/z/"),
     ).toBe("ftp://example.com/image.png");
   });
+
+  it("trims incidental whitespace before resolving relative README assets", () => {
+    expect(
+      rewriteImgSrc(
+        " ./images/foo.png ",
+        "https://raw.githubusercontent.com/owner/repo/abcdef/sub/",
+      ),
+    ).toBe(
+      "/_vercel/image?url=https%3A%2F%2Fraw.githubusercontent.com%2Fowner%2Frepo%2Fabcdef%2Fsub%2Fimages%2Ffoo.png&w=1024&q=75",
+    );
+  });
 });

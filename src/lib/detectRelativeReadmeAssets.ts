@@ -79,17 +79,18 @@ export function detectRelativeReadmeAssets(readmeText: string): RelativeReadmeAs
 
   const record = (src: string | undefined) => {
     if (!src) return;
-    const kind = classifyRelativeAsset(src);
+    const normalizedSrc = src.trim();
+    const kind = classifyRelativeAsset(normalizedSrc);
     if (!kind) return;
     total += 1;
     if (kind === "root-absolute") unresolvableTotal += 1;
-    if (!seen.has(src)) {
-      seen.add(src);
-      if (samples.length < MAX_REPORTED) samples.push(src);
+    if (!seen.has(normalizedSrc)) {
+      seen.add(normalizedSrc);
+      if (samples.length < MAX_REPORTED) samples.push(normalizedSrc);
     }
-    if (kind === "root-absolute" && !unresolvableSeen.has(src)) {
-      unresolvableSeen.add(src);
-      if (unresolvableSamples.length < MAX_REPORTED) unresolvableSamples.push(src);
+    if (kind === "root-absolute" && !unresolvableSeen.has(normalizedSrc)) {
+      unresolvableSeen.add(normalizedSrc);
+      if (unresolvableSamples.length < MAX_REPORTED) unresolvableSamples.push(normalizedSrc);
     }
   };
 
