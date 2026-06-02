@@ -90,11 +90,16 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
     ConvexCredentials({
       id: "dev-persona",
       authorize: async (credentials, ctx) => {
-        if (!isLocalDevAuthEnabled()) throw new Error("Dev auth is disabled");
+        const devAuthSecret =
+          typeof credentials.devAuthSecret === "string" ? credentials.devAuthSecret : undefined;
+        if (!isLocalDevAuthEnabled(process.env, devAuthSecret)) {
+          throw new Error("Dev auth is disabled");
+        }
         const persona = typeof credentials.persona === "string" ? credentials.persona : "";
         if (!DEV_PERSONAS.has(persona)) throw new Error("Unknown dev persona");
         const userId: Id<"users"> = await ctx.runMutation(internal.users.upsertDevPersonaInternal, {
           persona: persona as "owner" | "user" | "admin",
+          devAuthSecret,
         });
         return { userId };
       },

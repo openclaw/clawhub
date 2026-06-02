@@ -9,6 +9,7 @@ import { DevPersonaFab } from "./DevPersonaFab";
 const signInMock = vi.fn();
 const signOutMock = vi.fn();
 const authStatusMock = vi.fn();
+const fetchMock = vi.fn();
 
 vi.mock("@convex-dev/auth/react", () => ({
   useAuthActions: () => ({
@@ -27,6 +28,7 @@ vi.mock("sonner", () => ({
 vi.mock("../lib/runtimeEnv", () => ({
   getRuntimeEnv: (name: string) => {
     if (name === "VITE_ENABLE_DEV_AUTH") return process.env.VITE_ENABLE_DEV_AUTH;
+    if (name === "VITE_DEV_AUTH_SECRET") return process.env.VITE_DEV_AUTH_SECRET;
     return undefined;
   },
 }));
@@ -90,7 +92,11 @@ describe("DevPersonaFab", () => {
       isLoading: false,
       me: null,
     });
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValue({ ok: false });
+    vi.stubGlobal("fetch", fetchMock);
     process.env.VITE_ENABLE_DEV_AUTH = "1";
+    delete process.env.VITE_DEV_AUTH_SECRET;
     setHostname("localhost");
   });
 
@@ -121,6 +127,40 @@ describe("DevPersonaFab", () => {
 
     await waitFor(() => {
       expect(signInMock).toHaveBeenCalledWith("dev-persona", { persona });
+    });
+  });
+
+  it("passes a localhost server-provided auth secret when configured", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ devAuthSecret: "dev-auth-secret-with-enough-entropy-123" }),
+    });
+
+    render(<DevPersonaFab />);
+
+    fireEvent.click(screen.getByRole("button", { name: /use admin/i }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/dev-auth/secret", {
+        cache: "no-store",
+        credentials: "same-origin",
+      });
+      expect(signInMock).toHaveBeenCalledWith("dev-persona", {
+        persona: "admin",
+        devAuthSecret: "dev-auth-secret-with-enough-entropy-123",
+      });
+    });
+  });
+
+  it("does not pass browser-exposed auth secrets to the dev persona provider", async () => {
+    process.env.VITE_DEV_AUTH_SECRET = "dev-auth-secret-with-enough-entropy-123";
+
+    render(<DevPersonaFab />);
+
+    fireEvent.click(screen.getByRole("button", { name: /use admin/i }));
+
+    await waitFor(() => {
+      expect(signInMock).toHaveBeenCalledWith("dev-persona", { persona: "admin" });
     });
   });
 

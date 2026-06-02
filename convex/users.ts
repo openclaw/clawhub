@@ -141,9 +141,14 @@ export const getByIdInternal = internalQuery({
 });
 
 export const upsertDevPersonaInternal = internalMutation({
-  args: { persona: v.union(v.literal("owner"), v.literal("user"), v.literal("admin")) },
+  args: {
+    persona: v.union(v.literal("owner"), v.literal("user"), v.literal("admin")),
+    devAuthSecret: v.optional(v.string()),
+  },
   handler: async (ctx, args): Promise<Id<"users">> => {
-    if (!isLocalDevAuthEnabled()) throw new Error("Dev auth is disabled");
+    if (!isLocalDevAuthEnabled(process.env, args.devAuthSecret)) {
+      throw new Error("Dev auth is disabled");
+    }
 
     const persona = DEV_PERSONAS[args.persona as DevPersona];
     const now = Date.now();

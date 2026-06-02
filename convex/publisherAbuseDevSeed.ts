@@ -1,10 +1,11 @@
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
+import type { MutationCtx } from "./_generated/server";
 // DEV-ONLY seed: use the un-wrapped mutation builder (not convex/functions.ts) so
 // inserting/deleting demo rows does NOT fire table triggers. The users digest-sync
 // trigger runs a paginated query, and Convex allows only one paginated query per
 // mutation, so deleting several linked demo users through the wrapped builder fails.
 // Demo rows have no real packages/skills, so skipping digest sync is correct here.
-import { mutation } from "./_generated/server";
+import { internalMutation } from "./_generated/server";
 import {
   computePublisherAbuseRawScore,
   DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG,
@@ -19,6 +20,7 @@ import {
 
 const DEMO_HANDLE_PREFIX = "demo-abuse-pub-";
 const DEMO_OWNER_KEY_PREFIX = "user:demo-";
+const CLEAR_SEED_BATCH_SIZE = 100;
 
 type TriageStatus =
   | "pending"
@@ -43,134 +45,45 @@ type SeedPublisher = {
   linkUser?: boolean;
 };
 
-// 4 ban candidates (pending, high zScore), 5 review (pending), 3 resolved.
-const SEED_PUBLISHERS: SeedPublisher[] = [
+// Prod-scale synthetic distribution so every dashboard tab renders with realistic
+// volume: 15 potential-ban candidates and 124 review nominations (both pending),
+// plus a small resolved/pass set for the Resolved tab. Counts mirror the reported
+// production review queue. Rows are deterministic (no randomness) so tests can
+// assert the distribution and clearSeed stays reproducible.
+const BAN_CANDIDATE_COUNT = 15;
+const REVIEW_PENDING_COUNT = 124;
+
+const BAN_CANDIDATE_REASON_CODES = [
+  "high_catalog_volume",
+  "extreme_volume_low_engagement",
+  "low_installs_per_skill",
+  "low_stars_per_skill",
+  "low_downloads_per_skill",
+];
+
+const REVIEW_REASON_VARIANTS: string[][] = [
+  ["high_catalog_volume", "low_installs_per_skill", "low_stars_per_skill"],
+  ["high_catalog_volume", "low_installs_per_skill"],
+  ["high_catalog_volume", "low_stars_per_skill", "low_downloads_per_skill"],
+  ["high_catalog_volume", "low_installs_per_skill", "low_downloads_per_skill"],
+];
+
+// Resolved + pass anchors keep the Resolved tab populated and exercise the
+// inspector's notes rendering. None link a demo user, so the only seeded demo
+// users are the 15 pending ban candidates.
+const RESOLVED_AND_PASS_PUBLISHERS: Array<Omit<SeedPublisher, "index">> = [
   {
-    index: 1,
     label: "potential_ban_candidate",
-    status: "pending",
-    zScore: 3.9,
-    publishedSkills: 4200,
-    totalInstalls: 168,
-    totalStars: 21,
-    totalDownloads: 9800,
-    reasonCodes: [
-      "high_catalog_volume",
-      "extreme_volume_low_engagement",
-      "low_installs_per_skill",
-      "low_stars_per_skill",
-      "low_downloads_per_skill",
-    ],
-    linkUser: true,
+    status: "needs_policy_discussion",
+    zScore: 2.75,
+    publishedSkills: 2600,
+    totalInstalls: 210,
+    totalStars: 28,
+    totalDownloads: 6400,
+    reasonCodes: BAN_CANDIDATE_REASON_CODES,
+    notes: "Escalated to policy: borderline catalog-stuffing pattern, awaiting decision.",
   },
   {
-    index: 2,
-    label: "potential_ban_candidate",
-    status: "pending",
-    zScore: 3.4,
-    publishedSkills: 3100,
-    totalInstalls: 142,
-    totalStars: 18,
-    totalDownloads: 7400,
-    reasonCodes: [
-      "high_catalog_volume",
-      "extreme_volume_low_engagement",
-      "low_installs_per_skill",
-      "low_stars_per_skill",
-      "low_downloads_per_skill",
-    ],
-  },
-  {
-    index: 3,
-    label: "potential_ban_candidate",
-    status: "pending",
-    zScore: 2.9,
-    publishedSkills: 2400,
-    totalInstalls: 190,
-    totalStars: 26,
-    totalDownloads: 6100,
-    reasonCodes: [
-      "high_catalog_volume",
-      "extreme_volume_low_engagement",
-      "low_installs_per_skill",
-      "low_stars_per_skill",
-      "low_downloads_per_skill",
-    ],
-  },
-  {
-    index: 4,
-    label: "potential_ban_candidate",
-    status: "pending",
-    zScore: 2.6,
-    publishedSkills: 1800,
-    totalInstalls: 160,
-    totalStars: 24,
-    totalDownloads: 5200,
-    reasonCodes: [
-      "high_catalog_volume",
-      "extreme_volume_low_engagement",
-      "low_installs_per_skill",
-      "low_stars_per_skill",
-      "low_downloads_per_skill",
-    ],
-  },
-  {
-    index: 5,
-    label: "review",
-    status: "pending",
-    zScore: 2.3,
-    publishedSkills: 640,
-    totalInstalls: 410,
-    totalStars: 18,
-    totalDownloads: 38000,
-    reasonCodes: ["high_catalog_volume", "low_installs_per_skill", "low_stars_per_skill"],
-  },
-  {
-    index: 6,
-    label: "review",
-    status: "pending",
-    zScore: 2.1,
-    publishedSkills: 520,
-    totalInstalls: 380,
-    totalStars: 15,
-    totalDownloads: 32000,
-    reasonCodes: ["high_catalog_volume", "low_installs_per_skill", "low_stars_per_skill"],
-  },
-  {
-    index: 7,
-    label: "review",
-    status: "pending",
-    zScore: 1.9,
-    publishedSkills: 410,
-    totalInstalls: 520,
-    totalStars: 22,
-    totalDownloads: 41000,
-    reasonCodes: ["high_catalog_volume", "low_installs_per_skill", "low_stars_per_skill"],
-  },
-  {
-    index: 8,
-    label: "review",
-    status: "pending",
-    zScore: 1.7,
-    publishedSkills: 300,
-    totalInstalls: 480,
-    totalStars: 26,
-    totalDownloads: 36000,
-    reasonCodes: ["high_catalog_volume", "low_installs_per_skill", "low_stars_per_skill"],
-  },
-  {
-    index: 9,
-    label: "review",
-    status: "pending",
-    zScore: 1.6,
-    publishedSkills: 260,
-    totalInstalls: 460,
-    totalStars: 30,
-    totalDownloads: 33000,
-    reasonCodes: ["high_catalog_volume", "low_installs_per_skill"],
-  },
-  {
-    index: 10,
     label: "review",
     status: "false_positive",
     zScore: 1.8,
@@ -182,7 +95,28 @@ const SEED_PUBLISHERS: SeedPublisher[] = [
     notes: "Confirmed legitimate bulk publisher; cleared after manual spot-check.",
   },
   {
-    index: 11,
+    label: "review",
+    status: "candidate_for_future_action",
+    zScore: 2.0,
+    publishedSkills: 480,
+    totalInstalls: 360,
+    totalStars: 17,
+    totalDownloads: 29000,
+    reasonCodes: ["high_catalog_volume", "low_installs_per_skill", "low_stars_per_skill"],
+    notes: "Watchlist: revisit if catalog keeps growing without engagement.",
+  },
+  {
+    label: "review",
+    status: "reviewed_no_action",
+    zScore: 1.6,
+    publishedSkills: 290,
+    totalInstalls: 470,
+    totalStars: 33,
+    totalDownloads: 31000,
+    reasonCodes: ["high_catalog_volume", "low_installs_per_skill"],
+    notes: "Reviewed: engagement within acceptable range for catalog size.",
+  },
+  {
     label: "pass",
     status: "reviewed_no_action",
     zScore: 0.4,
@@ -194,18 +128,71 @@ const SEED_PUBLISHERS: SeedPublisher[] = [
     notes: "Healthy engagement per skill; no action needed.",
   },
   {
-    index: 12,
-    label: "review",
-    status: "candidate_for_future_action",
-    zScore: 2.0,
-    publishedSkills: 480,
-    totalInstalls: 360,
-    totalStars: 17,
-    totalDownloads: 29000,
-    reasonCodes: ["high_catalog_volume", "low_installs_per_skill", "low_stars_per_skill"],
-    notes: "Watchlist: revisit if catalog keeps growing without engagement.",
+    label: "pass",
+    status: "reviewed_no_action",
+    zScore: 0.2,
+    publishedSkills: 64,
+    totalInstalls: 7200,
+    totalStars: 410,
+    totalDownloads: 150000,
+    reasonCodes: [],
+    notes: "Strong installs and stars per skill; clearly legitimate.",
   },
 ];
+
+function roundToTwo(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+// Ban candidates carry the highest z-scores (3.9 → 2.55) and link demo users so
+// the inspector ban action is exercisable; review nominations span the "on the
+// brink" band (2.4 → 1.3). Metrics vary per row so the inspector looks realistic.
+function buildSeedPublishers(): SeedPublisher[] {
+  const publishers: SeedPublisher[] = [];
+  let index = 1;
+
+  for (let i = 0; i < BAN_CANDIDATE_COUNT; i += 1) {
+    const fraction = i / (BAN_CANDIDATE_COUNT - 1);
+    publishers.push({
+      index,
+      label: "potential_ban_candidate",
+      status: "pending",
+      zScore: roundToTwo(3.9 - fraction * 1.35),
+      publishedSkills: 4200 - i * 170,
+      totalInstalls: 130 + (i % 6) * 16,
+      totalStars: 15 + (i % 8) * 2,
+      totalDownloads: 9800 - i * 300,
+      reasonCodes: BAN_CANDIDATE_REASON_CODES,
+      linkUser: true,
+    });
+    index += 1;
+  }
+
+  for (let i = 0; i < REVIEW_PENDING_COUNT; i += 1) {
+    const fraction = i / (REVIEW_PENDING_COUNT - 1);
+    publishers.push({
+      index,
+      label: "review",
+      status: "pending",
+      zScore: roundToTwo(2.4 - fraction * 1.1),
+      publishedSkills: 650 - i * 3,
+      totalInstalls: 300 + (i % 9) * 30,
+      totalStars: 14 + (i % 11) * 3,
+      totalDownloads: 26000 + (i % 13) * 1500,
+      reasonCodes: REVIEW_REASON_VARIANTS[i % REVIEW_REASON_VARIANTS.length],
+    });
+    index += 1;
+  }
+
+  for (const publisher of RESOLVED_AND_PASS_PUBLISHERS) {
+    publishers.push({ index, ...publisher });
+    index += 1;
+  }
+
+  return publishers;
+}
+
+const SEED_PUBLISHERS: SeedPublisher[] = buildSeedPublishers();
 
 const SCANNED_PUBLISHERS = 194_083;
 const SCORED_PUBLISHERS = 10_349;
@@ -225,9 +212,52 @@ function isDemoOwnerKey(ownerKey: string): boolean {
   return ownerKey.startsWith(DEMO_OWNER_KEY_PREFIX);
 }
 
-export const seed = mutation({
+function demoHandle(index: number): string {
+  return `${DEMO_HANDLE_PREFIX}${paddedIndex(index)}`;
+}
+
+function demoOwnerKey(index: number): string {
+  return `${DEMO_OWNER_KEY_PREFIX}${paddedIndex(index)}`;
+}
+
+const DEMO_HANDLES = SEED_PUBLISHERS.map((publisher) => demoHandle(publisher.index));
+const DEMO_OWNER_KEYS = SEED_PUBLISHERS.map((publisher) => demoOwnerKey(publisher.index));
+
+function assertDevSeedAllowed(): void {
+  const deployment =
+    process.env.CONVEX_DEPLOYMENT?.trim() || process.env.DEV_AUTH_CONVEX_DEPLOYMENT?.trim() || "";
+  if (
+    deployment.startsWith("dev:") ||
+    deployment.startsWith("local:") ||
+    deployment.startsWith("anonymous:")
+  ) {
+    return;
+  }
+  if (
+    !deployment &&
+    (process.env.DEV_AUTH_ENABLED === "1" || process.env.CLAW_HUB_ENABLE_DEV_IMPERSONATION === "1")
+  ) {
+    return;
+  }
+  throw new Error("Publisher abuse dev seed is disabled outside local/dev deployments");
+}
+
+type ClearSeedCtx = Pick<MutationCtx, "db">;
+type ClearSeedResult = {
+  runs: number;
+  scores: number;
+  nominations: number;
+  events: number;
+  users: number;
+  hasMore: boolean;
+};
+
+export const seed = internalMutation({
   args: {},
   handler: async (ctx): Promise<{ runId: Id<"publisherAbuseScoreRuns">; inserted: number }> => {
+    assertDevSeedAllowed();
+    await clearDemoRows(ctx);
+
     const now = Date.now();
     const startedAt = now - 2 * HOUR_MS;
     const completedAt = now - HOUR_MS;
@@ -244,8 +274,8 @@ export const seed = mutation({
       labelCounts[publisher.label] += 1;
       if (publisher.label !== "pass") nominatedPublishers += 1;
       const raw = computePublisherAbuseRawScore({
-        ownerKey: `${DEMO_OWNER_KEY_PREFIX}${paddedIndex(publisher.index)}`,
-        handleSnapshot: `${DEMO_HANDLE_PREFIX}${paddedIndex(publisher.index)}`,
+        ownerKey: demoOwnerKey(publisher.index),
+        handleSnapshot: demoHandle(publisher.index),
         publishedSkills: publisher.publishedSkills,
         totalInstalls: publisher.totalInstalls,
         totalStars: publisher.totalStars,
@@ -286,8 +316,8 @@ export const seed = mutation({
 
     let rank = 1;
     for (const publisher of SEED_PUBLISHERS) {
-      const handle = `${DEMO_HANDLE_PREFIX}${paddedIndex(publisher.index)}`;
-      const ownerKey = `${DEMO_OWNER_KEY_PREFIX}${paddedIndex(publisher.index)}`;
+      const handle = demoHandle(publisher.index);
+      const ownerKey = demoOwnerKey(publisher.index);
       const raw = computePublisherAbuseRawScore({
         ownerKey,
         handleSnapshot: handle,
@@ -360,27 +390,38 @@ export const seed = mutation({
   },
 });
 
-export const clearSeed = mutation({
+export const clearSeed = internalMutation({
   args: {},
-  handler: async (
-    ctx,
-  ): Promise<{ runs: number; scores: number; nominations: number; users: number }> => {
-    let runs = 0;
-    let scores = 0;
-    let nominations = 0;
-    let users = 0;
+  handler: async (ctx): Promise<ClearSeedResult> => {
+    assertDevSeedAllowed();
+    return await clearDemoRows(ctx);
+  },
+});
 
-    const scoreDocs = await ctx.db.query("publisherAbuseScores").collect();
-    const demoRunIds = new Set<Id<"publisherAbuseScoreRuns">>();
-    for (const score of scoreDocs) {
+async function clearDemoRows(ctx: ClearSeedCtx): Promise<ClearSeedResult> {
+  let runs = 0;
+  let scores = 0;
+  let nominations = 0;
+  let events = 0;
+  let users = 0;
+  let hasMore = false;
+
+  const demoRunIds = new Set<Id<"publisherAbuseScoreRuns">>();
+  for (const ownerKey of DEMO_OWNER_KEYS) {
+    const page = await queryDemoScoresPage(ctx, ownerKey);
+    hasMore ||= !page.isDone;
+    for (const score of page.page) {
       if (!isDemoOwnerKey(score.ownerKey) && !isDemoHandle(score.handleSnapshot)) continue;
       demoRunIds.add(score.runId);
       await ctx.db.delete(score._id);
       scores += 1;
     }
+  }
 
-    const nominationDocs = await ctx.db.query("publisherAbuseReviewNominations").collect();
-    for (const nomination of nominationDocs) {
+  for (const ownerKey of DEMO_OWNER_KEYS) {
+    const page = await queryDemoNominationsPage(ctx, ownerKey);
+    hasMore ||= !page.isDone;
+    for (const nomination of page.page) {
       if (!isDemoOwnerKey(nomination.ownerKey) && !isDemoHandle(nomination.handleSnapshot)) {
         continue;
       }
@@ -388,21 +429,90 @@ export const clearSeed = mutation({
       await ctx.db.delete(nomination._id);
       nominations += 1;
     }
+  }
 
-    for (const runId of demoRunIds) {
-      const run = await ctx.db.get(runId);
-      if (!run) continue;
-      await ctx.db.delete(runId);
-      runs += 1;
+  for (const ownerKey of DEMO_OWNER_KEYS) {
+    const page = await queryDemoEventsPage(ctx, ownerKey);
+    hasMore ||= !page.isDone;
+    for (const event of page.page) {
+      if (!isDemoOwnerKey(event.ownerKey)) continue;
+      await ctx.db.delete(event._id);
+      events += 1;
     }
+  }
 
-    const userDocs = await ctx.db.query("users").collect();
-    for (const user of userDocs) {
+  for (const runId of demoRunIds) {
+    const run = await ctx.db.get(runId);
+    if (!run) continue;
+    await ctx.db.delete(runId);
+    runs += 1;
+  }
+
+  for (const handle of DEMO_HANDLES) {
+    const page = await queryDemoUsersPage(ctx, handle);
+    hasMore ||= !page.isDone;
+    for (const user of page.page) {
       if (!user.handle || !isDemoHandle(user.handle)) continue;
       await ctx.db.delete(user._id);
       users += 1;
     }
+  }
 
-    return { runs, scores, nominations, users };
-  },
-});
+  return { runs, scores, nominations, events, users, hasMore };
+}
+
+async function queryDemoScoresPage(
+  ctx: ClearSeedCtx,
+  ownerKey: string,
+): Promise<{ page: Doc<"publisherAbuseScores">[]; isDone: boolean }> {
+  const rows = await ctx.db
+    .query("publisherAbuseScores")
+    .withIndex("by_owner_key_and_created_at", (q) => q.eq("ownerKey", ownerKey))
+    .take(CLEAR_SEED_BATCH_SIZE + 1);
+  return {
+    page: rows.slice(0, CLEAR_SEED_BATCH_SIZE),
+    isDone: rows.length <= CLEAR_SEED_BATCH_SIZE,
+  };
+}
+
+async function queryDemoNominationsPage(
+  ctx: ClearSeedCtx,
+  ownerKey: string,
+): Promise<{ page: Doc<"publisherAbuseReviewNominations">[]; isDone: boolean }> {
+  const rows = await ctx.db
+    .query("publisherAbuseReviewNominations")
+    .withIndex("by_owner_key_and_model_version", (q) => q.eq("ownerKey", ownerKey))
+    .take(CLEAR_SEED_BATCH_SIZE + 1);
+  return {
+    page: rows.slice(0, CLEAR_SEED_BATCH_SIZE),
+    isDone: rows.length <= CLEAR_SEED_BATCH_SIZE,
+  };
+}
+
+async function queryDemoEventsPage(
+  ctx: ClearSeedCtx,
+  ownerKey: string,
+): Promise<{ page: Doc<"publisherAbuseReviewEvents">[]; isDone: boolean }> {
+  const rows = await ctx.db
+    .query("publisherAbuseReviewEvents")
+    .withIndex("by_owner_key_and_created_at", (q) => q.eq("ownerKey", ownerKey))
+    .take(CLEAR_SEED_BATCH_SIZE + 1);
+  return {
+    page: rows.slice(0, CLEAR_SEED_BATCH_SIZE),
+    isDone: rows.length <= CLEAR_SEED_BATCH_SIZE,
+  };
+}
+
+async function queryDemoUsersPage(
+  ctx: ClearSeedCtx,
+  handle: string,
+): Promise<{ page: Doc<"users">[]; isDone: boolean }> {
+  const rows = await ctx.db
+    .query("users")
+    .withIndex("handle", (q) => q.eq("handle", handle))
+    .take(CLEAR_SEED_BATCH_SIZE + 1);
+  return {
+    page: rows.slice(0, CLEAR_SEED_BATCH_SIZE),
+    isDone: rows.length <= CLEAR_SEED_BATCH_SIZE,
+  };
+}

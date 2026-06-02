@@ -5,19 +5,19 @@ import { getRuntimeEnv } from "./runtimeEnv";
 
 export function useAuthStatus() {
   const auth = useConvexAuth();
-  const shouldLoadUser =
-    !auth.isLoading && (auth.isAuthenticated || getRuntimeEnv("VITE_ENABLE_DEV_AUTH") === "1");
+  const devAuthEnabled = getRuntimeEnv("VITE_ENABLE_DEV_AUTH") === "1";
+  const shouldLoadUser = auth.isAuthenticated || devAuthEnabled;
   const userResult = useQuery(api.users.me, shouldLoadUser ? {} : "skip") as
     | Doc<"users">
     | null
     | undefined;
   const isUserLoading = shouldLoadUser && userResult === undefined;
   const me = shouldLoadUser ? userResult : auth.isLoading ? undefined : null;
-  const hasResolvedUser = Boolean(me);
+  const hasActiveUser = Boolean(me);
 
   return {
     me,
-    isLoading: auth.isLoading || isUserLoading,
-    isAuthenticated: auth.isAuthenticated || hasResolvedUser,
+    isAuthenticated: auth.isAuthenticated || hasActiveUser,
+    isLoading: hasActiveUser ? false : auth.isLoading || isUserLoading,
   };
 }

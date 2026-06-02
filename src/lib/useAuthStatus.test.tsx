@@ -107,4 +107,25 @@ describe("useAuthStatus", () => {
       screen.getByText(JSON.stringify({ isAuthenticated: true, isLoading: false, me })),
     ).toBeTruthy();
   });
+
+  it("treats a resolved dev profile as an authenticated user", () => {
+    process.env.VITE_ENABLE_DEV_AUTH = "1";
+    useConvexAuthMock.mockReturnValue({
+      isAuthenticated: false,
+      isLoading: true,
+    });
+    useQueryMock.mockReturnValue({
+      _id: "users:local-admin",
+      handle: "local-admin",
+      role: "admin",
+    });
+
+    render(<Probe />);
+
+    expect(
+      screen.getByText(
+        '{"isAuthenticated":true,"isLoading":false,"me":{"_id":"users:local-admin","handle":"local-admin","role":"admin"}}',
+      ),
+    ).toBeTruthy();
+  });
 });

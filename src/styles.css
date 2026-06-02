@@ -7922,6 +7922,12 @@ code {
   min-height: 220px;
 }
 
+/* Management views render their title + content directly on the console (like the
+   abuse view) instead of inside an outer card. */
+.management-view {
+  min-width: 0;
+}
+
 /* Publisher abuse review — native ClawHub styling (theme tokens + Card/Badge/Button). */
 .pa {
   display: grid;
@@ -8034,6 +8040,28 @@ code {
   font-variant-numeric: tabular-nums;
 }
 
+/* Loading placeholder for a count that hasn't resolved yet — a pulsing pill,
+   so an unloaded tab reads as "loading" rather than "0". */
+.pa-count-loading {
+  display: inline-block;
+  width: 1.6em;
+  height: 0.85em;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink-soft) 30%, transparent);
+  vertical-align: baseline;
+  animation: pa-count-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pa-count-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+
 .pa-tab.is-active .pa-tab-count {
   color: var(--accent-deep);
 }
@@ -8130,6 +8158,23 @@ code {
 .pa-handle {
   display: grid;
   gap: 2px;
+}
+
+.pa-row-button {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-align: left;
+}
+
+.pa-row-button:focus-visible {
+  border-radius: 6px;
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .pa-handle strong {
@@ -8401,6 +8446,12 @@ code {
   width: 100%;
 }
 
+.pa-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
 .pa-hint {
   margin: 0;
   color: var(--ink-soft);
@@ -8460,28 +8511,90 @@ code {
   }
 }
 
+/* Match the publisher-abuse console: one bordered panel with dense,
+   divided rows instead of floating cards. */
 .management-list {
   display: grid;
-  gap: 8px;
+  gap: 0;
   margin-top: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  overflow: hidden;
 }
 
 .management-item {
   display: grid;
   gap: 12px;
-  padding: 12px 14px;
-  border-radius: 12px;
-  border: 1px solid var(--line);
-  background: var(--surface);
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
+  transition: background 120ms ease;
+}
+
+.management-item:last-child {
+  border-bottom: 0;
+}
+
+.management-item:hover {
+  background: var(--hover-bg);
+}
+
+/* Duplicate-candidate row: a single-column stack (skill header + indented
+   matches) instead of the 2-column grid, so action buttons don't float. */
+.management-dupe {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  align-items: stretch;
+}
+
+.management-dupe:hover {
+  background: transparent;
+}
+
+.management-dupe-head,
+.management-dupe-match {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.management-dupe-matches {
+  display: grid;
+  gap: 8px;
+  padding-left: 12px;
+  border-left: 1px solid var(--line);
+}
+
+.management-dupe-label {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.management-fingerprint {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--ink-soft);
 }
 
 .management-empty {
-  padding: 28px 16px;
+  padding: var(--space-7) var(--space-4);
   text-align: center;
   color: var(--ink-soft);
   font-size: 0.9rem;
+}
+
+.management-empty strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--ink);
+  font-size: var(--fs-md);
 }
 
 .management-confirm-field {
@@ -8520,6 +8633,7 @@ code {
   flex-wrap: wrap;
   gap: 10px;
   align-items: center;
+  margin-top: 12px;
 }
 
 .management-control {
@@ -8552,11 +8666,31 @@ code {
   min-width: 0;
 }
 
+/* Search control styled as the abuse console's bordered search pill. */
+.management-control.management-search {
+  flex: 1;
+  flex-wrap: nowrap;
+  min-width: min(280px, 100%);
+  min-height: 40px;
+  gap: 8px;
+  padding: 0 12px;
+  border: 1px solid var(--input-border);
+  border-radius: var(--r-md);
+  background: var(--input-bg);
+}
+
 .management-search input {
-  min-width: min(240px, 100%);
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  outline: none;
 }
 
 .management-count {
+  margin-left: auto;
   font-size: 0.85rem;
   color: var(--ink-soft);
 }

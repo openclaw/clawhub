@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { isLocalDevAuthEnabled } from "./devAuth";
 
+const CLOUD_DEV_AUTH_SECRET = "dev-auth-secret-with-enough-entropy-123";
+
 describe("isLocalDevAuthEnabled", () => {
   it("requires the explicit dev auth flag", () => {
     expect(
@@ -41,24 +43,75 @@ describe("isLocalDevAuthEnabled", () => {
     ).toBe(true);
   });
 
-  it("allows cloud dev deployments with an explicit localhost dev auth site", () => {
+  it("allows cloud dev deployments with an explicit localhost site and matching secret", () => {
+    expect(
+      isLocalDevAuthEnabled(
+        {
+          CONVEX_SITE_URL: "https://clever-rabbit-123.convex.cloud",
+          DEV_AUTH_CONVEX_DEPLOYMENT: "dev:clever-rabbit-123",
+          DEV_AUTH_ENABLED: "1",
+          DEV_AUTH_SECRET: CLOUD_DEV_AUTH_SECRET,
+          DEV_AUTH_SITE_URL: "http://127.0.0.1:3211",
+        },
+        CLOUD_DEV_AUTH_SECRET,
+      ),
+    ).toBe(true);
+  });
+
+  it("allows cloud dev deployments from the fallback marker when Convex deployment is blank", () => {
+    expect(
+      isLocalDevAuthEnabled(
+        {
+          CONVEX_DEPLOYMENT: "",
+          CONVEX_SITE_URL: "https://clever-rabbit-123.convex.cloud",
+          DEV_AUTH_CONVEX_DEPLOYMENT: "dev:clever-rabbit-123",
+          DEV_AUTH_ENABLED: "1",
+          DEV_AUTH_SECRET: CLOUD_DEV_AUTH_SECRET,
+          DEV_AUTH_SITE_URL: "http://127.0.0.1:3211",
+        },
+        CLOUD_DEV_AUTH_SECRET,
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects cloud dev deployments when the secret is missing", () => {
     expect(
       isLocalDevAuthEnabled({
         CONVEX_SITE_URL: "https://clever-rabbit-123.convex.cloud",
         DEV_AUTH_CONVEX_DEPLOYMENT: "dev:clever-rabbit-123",
         DEV_AUTH_ENABLED: "1",
+        DEV_AUTH_SECRET: CLOUD_DEV_AUTH_SECRET,
         DEV_AUTH_SITE_URL: "http://127.0.0.1:3211",
       }),
-    ).toBe(true);
+    ).toBe(false);
+  });
+
+  it("rejects cloud dev deployments when the configured secret is too short", () => {
+    expect(
+      isLocalDevAuthEnabled(
+        {
+          CONVEX_SITE_URL: "https://clever-rabbit-123.convex.cloud",
+          DEV_AUTH_CONVEX_DEPLOYMENT: "dev:clever-rabbit-123",
+          DEV_AUTH_ENABLED: "1",
+          DEV_AUTH_SECRET: "short",
+          DEV_AUTH_SITE_URL: "http://127.0.0.1:3211",
+        },
+        "short",
+      ),
+    ).toBe(false);
   });
 
   it("rejects cloud dev deployments without an explicit localhost dev auth site", () => {
     expect(
-      isLocalDevAuthEnabled({
-        CONVEX_SITE_URL: "http://127.0.0.1:3211",
-        DEV_AUTH_ENABLED: "1",
-        CONVEX_DEPLOYMENT: "dev:clever-rabbit-123",
-      }),
+      isLocalDevAuthEnabled(
+        {
+          CONVEX_SITE_URL: "http://127.0.0.1:3211",
+          DEV_AUTH_ENABLED: "1",
+          DEV_AUTH_SECRET: CLOUD_DEV_AUTH_SECRET,
+          CONVEX_DEPLOYMENT: "dev:clever-rabbit-123",
+        },
+        CLOUD_DEV_AUTH_SECRET,
+      ),
     ).toBe(false);
   });
 

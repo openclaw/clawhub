@@ -648,14 +648,16 @@ const NONSUSPICIOUS_SORT_INDEXES = {
 const MAX_FILTERED_PUBLIC_LIST_SCAN_PAGES = 12;
 const MAX_FILTERED_PUBLIC_LIST_SCAN_ROWS = 500;
 
+// Convex document IDs are opaque strings (e.g. "r97c0xws..."), not "table:id" —
+// so just confirm the schema-typed id is actually present before ctx.db.get.
 function isSkillVersionId(
   value: Id<"skillVersions"> | null | undefined,
 ): value is Id<"skillVersions"> {
-  return typeof value === "string" && value.startsWith("skillVersions:");
+  return typeof value === "string" && value.length > 0;
 }
 
 function isUserId(value: Id<"users"> | null | undefined): value is Id<"users"> {
-  return typeof value === "string" && value.startsWith("users:");
+  return typeof value === "string" && value.length > 0;
 }
 
 type OwnerTrustSignals = {

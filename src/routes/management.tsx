@@ -16,12 +16,12 @@ import {
   UserRound,
   Wrench,
 } from "lucide-react";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { ManagementSkeleton } from "../components/skeletons/ProtectedPageSkeletons";
-import { Badge } from "../components/ui/badge";
+import { Badge, type BadgeProps } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import {
@@ -39,7 +39,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../components/ui/select";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "../components/ui/sheet";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "../components/ui/sheet";
 import { Textarea } from "../components/ui/textarea";
 import {
   getSkillBadges,
@@ -54,6 +60,7 @@ import { isAdmin, isModerator } from "../lib/roles";
 import { useAuthStatus } from "../lib/useAuthStatus";
 
 const SKILL_AUDIT_LOG_LIMIT = 10;
+const USER_BAN_REASON_MAX_LENGTH = 500;
 
 type ManagementUserSummary = {
   _id: Id<"users">;
@@ -61,6 +68,8 @@ type ManagementUserSummary = {
   name?: string | null;
   displayName?: string | null;
 };
+
+type ManagementUserListResult = { items: Doc<"users">[]; total: number };
 
 type SkillAuditLogEntry = {
   _id: Id<"auditLogs">;
@@ -128,7 +137,7 @@ type PublisherAbuseReviewDetail = FunctionReturnType<
 >;
 type PublisherAbuseReviewItem = PublisherAbuseReviewDashboard["pendingItems"][number];
 type PublisherAbuseReviewScore = NonNullable<PublisherAbuseReviewItem["latestScore"]>;
-type PublisherAbuseTab = "potential_ban_candidate" | "review" | "all_pending";
+type PublisherAbuseTab = "potential_ban_candidate" | "review" | "all_pending" | "resolved";
 type ManagementView =
   | "overview"
   | "abuse"
@@ -170,9 +179,23 @@ type ManagementConfirmRequest = {
   body?: string;
   confirmLabel: string;
   destructive?: boolean;
-  reason?: { label: string; placeholder?: string; required?: boolean };
+  reason?: {
+    label: string;
+    placeholder?: string;
+    required?: boolean;
+    maxLength?: number;
+  };
   onConfirm: (reason: string | undefined) => void;
 };
+
+// Convex `useQuery` returns undefined while a new query (e.g. a changed search arg)
+// is in flight. Keep the previous result visible during that window so search-driven
+// lists do not blank out to a loading state on every keystroke.
+function useStableQuery<T>(value: T | undefined): T | undefined {
+  const ref = useRef<T | undefined>(value);
+  if (value !== undefined) ref.current = value;
+  return ref.current;
+}
 
 function ManagementConfirmDialog({
   request,
@@ -208,6 +231,7 @@ function ManagementConfirmDialog({
             <Textarea
               autoFocus
               rows={3}
+              maxLength={request.reason.maxLength}
               placeholder={request.reason.placeholder}
               value={reason}
               onChange={(event) => setReason(event.target.value)}
@@ -237,7 +261,11 @@ function ManagementConfirmDialog({
 
 export const Route = createFileRoute("/management")({
   validateSearch: (search) => {
-    const validated: { skill?: string; plugin?: string; view?: ManagementView } = {};
+    const validated: {
+      skill?: string;
+      plugin?: string;
+      view?: ManagementView;
+    } = {};
     if (typeof search.skill === "string" && search.skill.trim()) {
       validated.skill = search.skill;
     }
@@ -262,6 +290,7 @@ export function Management() {
   const selectedSlug = search.skill?.trim();
   const selectedPluginName = search.plugin?.trim();
   const activeView = resolveManagementView(search.view, selectedSlug, selectedPluginName);
+  const abuseViewActive = activeView === "abuse";
   const selectedSkill = useQuery(
     api.skills.getBySlugForStaff,
     staff && selectedSlug ? { slug: selectedSlug, auditLogLimit: SKILL_AUDIT_LOG_LIMIT } : "skip",
@@ -283,7 +312,7 @@ export function Management() {
   ) as DuplicateCandidateEntry[] | undefined;
   const publisherAbuseDashboard = useQuery(
     api.publisherAbuse.listReviewDashboard,
-    staff ? { limit: 150 } : "skip",
+    staff && abuseViewActive ? { limit: 150 } : "skip",
   );
 
   const setRole = useMutation(api.users.setRole);
@@ -299,6 +328,7 @@ export function Management() {
   const setDeprecatedBadge = useMutation(api.skills.setDeprecatedBadge);
   const setSkillManualOverride = useMutation(api.skills.setSkillManualOverride);
   const clearSkillManualOverride = useMutation(api.skills.clearSkillManualOverride);
+  const banPublisherAbuseOwnerMutation = useMutation(api.publisherAbuse.banPublisherAbuseOwner);
   const startPublisherAbuseScoreRun = useAction(api.publisherAbuse.startPublisherAbuseScoreRun);
 
   const [selectedDuplicate, setSelectedDuplicate] = useState("");
@@ -307,6 +337,8 @@ export function Management() {
   const [reportSearchDebounced, setReportSearchDebounced] = useState("");
   const [userSearch, setUserSearch] = useState("");
   const [userSearchDebounced, setUserSearchDebounced] = useState("");
+  const [ownerSearch, setOwnerSearch] = useState("");
+  const [ownerSearchDebounced, setOwnerSearchDebounced] = useState("");
   const [pluginSearch, setPluginSearch] = useState(selectedPluginName ?? "");
   const [skillSearch, setSkillSearch] = useState(selectedSlug ?? "");
   const [skillOverrideNote, setSkillOverrideNote] = useState("");
@@ -319,13 +351,22 @@ export function Management() {
     useState<Id<"publisherAbuseReviewNominations"> | null>(null);
 
   const userQuery = userSearchDebounced.trim();
-  const userResult = useQuery(
-    api.users.list,
-    admin ? { limit: 200, search: userQuery || undefined } : "skip",
-  ) as { items: Doc<"users">[]; total: number } | undefined;
+  const userResult = useStableQuery(
+    useQuery(
+      api.users.list,
+      admin && activeView === "users" ? { limit: 200, search: userQuery || undefined } : "skip",
+    ) as ManagementUserListResult | undefined,
+  );
+  const ownerQuery = ownerSearchDebounced.trim();
+  const ownerResult = useStableQuery(
+    useQuery(
+      api.users.list,
+      admin && activeView === "skills" ? { limit: 200, search: ownerQuery || undefined } : "skip",
+    ) as ManagementUserListResult | undefined,
+  );
   const selectedPublisherAbuseDetail = useQuery(
     api.publisherAbuse.getReviewNominationDetail,
-    staff && selectedPublisherAbuseNominationId
+    staff && abuseViewActive && selectedPublisherAbuseNominationId
       ? { nominationId: selectedPublisherAbuseNominationId }
       : "skip",
   );
@@ -339,15 +380,13 @@ export function Management() {
         : [],
     [publisherAbuseDashboard, publisherAbuseTab],
   );
-  const filteredPublisherAbuseItems = useMemo(
-    () =>
-      filterPublisherAbuseItems(publisherAbuseItemsForTab, publisherAbuseSearch).sort(
-        comparePublisherAbuseItems,
-      ),
-    [publisherAbuseItemsForTab, publisherAbuseSearch],
-  );
+  const filteredPublisherAbuseItems = useMemo(() => {
+    const filtered = filterPublisherAbuseItems(publisherAbuseItemsForTab, publisherAbuseSearch);
+    if (publisherAbuseTab === "resolved") return filtered;
+    return filtered.sort(comparePublisherAbuseItems);
+  }, [publisherAbuseItemsForTab, publisherAbuseSearch, publisherAbuseTab]);
   const fallbackSelectedPublisherAbuseItem =
-    publisherAbuseDashboard?.pendingItems.find(
+    publisherAbuseItemsForTab.find(
       (item) => item.nomination._id === selectedPublisherAbuseNominationId,
     ) ?? null;
   const selectedPublisherAbuseItem =
@@ -381,15 +420,24 @@ export function Management() {
     return () => clearTimeout(handle);
   }, [userSearch]);
 
+  useEffect(() => {
+    const handle = setTimeout(() => setOwnerSearchDebounced(ownerSearch), 250);
+    return () => clearTimeout(handle);
+  }, [ownerSearch]);
+
   // Detail opens in a drawer on row click. If the selected nomination leaves the
   // current tab/filter, close the drawer rather than auto-opening another one.
   useEffect(() => {
     if (!selectedPublisherAbuseNominationId) return;
-    const stillVisible = publisherAbuseItemsForTab.some(
+    const stillVisible = filteredPublisherAbuseItems.some(
       (item) => item.nomination._id === selectedPublisherAbuseNominationId,
     );
     if (!stillVisible) setSelectedPublisherAbuseNominationId(null);
-  }, [publisherAbuseItemsForTab, selectedPublisherAbuseNominationId]);
+  }, [filteredPublisherAbuseItems, selectedPublisherAbuseNominationId]);
+
+  useEffect(() => {
+    setPublisherAbuseNotes("");
+  }, [selectedPublisherAbuseNominationId]);
 
   if (isAuthLoading) {
     return <ManagementSkeleton />;
@@ -403,43 +451,49 @@ export function Management() {
     );
   }
 
-  if (!recentVersions || !reportedSkills || !duplicateCandidates) {
-    return <ManagementSkeleton />;
-  }
-
   const reportQuery = reportSearchDebounced.trim().toLowerCase();
-  const filteredReportedSkills = reportQuery
-    ? reportedSkills.filter((entry) => {
-        const reportReasons = (entry.reports ?? []).map((report) => report.reason).join(" ");
-        const reporterHandles = (entry.reports ?? [])
-          .map((report) => report.reporterHandle)
-          .filter(Boolean)
-          .join(" ");
-        const haystack = [
-          entry.skill.displayName,
-          entry.skill.slug,
-          entry.owner?.handle,
-          entry.owner?.name,
-          reportReasons,
-          reporterHandles,
-        ]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase();
-        return haystack.includes(reportQuery);
-      })
-    : reportedSkills;
+  const filteredReportedSkills = reportedSkills?.filter((entry) => {
+    if (!reportQuery) return true;
+    const reportReasons = (entry.reports ?? []).map((report) => report.reason).join(" ");
+    const reporterHandles = (entry.reports ?? [])
+      .map((report) => report.reporterHandle)
+      .filter(Boolean)
+      .join(" ");
+    const haystack = [
+      entry.skill.displayName,
+      entry.skill.slug,
+      entry.owner?.handle,
+      entry.owner?.name,
+      reportReasons,
+      reporterHandles,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return haystack.includes(reportQuery);
+  });
   const reportCountLabel =
-    filteredReportedSkills.length === 0 && reportedSkills.length > 0
+    filteredReportedSkills?.length === 0 && (reportedSkills?.length ?? 0) > 0
       ? "No matching reports."
       : "No reports yet.";
-  const reportSummary = `Showing ${filteredReportedSkills.length} of ${reportedSkills.length}`;
+  const reportSummary = reportedSkills
+    ? `Showing ${filteredReportedSkills?.length ?? 0} of ${reportedSkills.length}`
+    : "Loading reports…";
 
   const filteredUsers = userResult?.items ?? [];
   const userTotal = userResult?.total ?? 0;
   const userSummary = userResult
     ? `Showing ${filteredUsers.length} of ${userTotal}`
     : "Loading users…";
+  const selectedOwnerUser = selectedSkill?.owner ?? null;
+  const ownerUsers = ownerResult?.items ?? [];
+  const ownerOptions =
+    selectedOwnerUser && !ownerUsers.some((user) => user._id === selectedOwnerUser._id)
+      ? [selectedOwnerUser, ...ownerUsers]
+      : ownerUsers;
+  const ownerSummary = ownerResult
+    ? `Showing ${ownerOptions.length} of ${Math.max(ownerResult.total, ownerOptions.length)}`
+    : "Loading owners…";
   const userEmptyLabel = userResult
     ? filteredUsers.length === 0
       ? userQuery
@@ -496,7 +550,11 @@ export function Management() {
       body: "Hides their skills and personal package/plugin resources, and revokes package publish tokens.",
       confirmLabel: "Ban user",
       destructive: true,
-      reason: { label: "Reason (optional)", placeholder: "Why are you banning this user?" },
+      reason: {
+        label: "Reason (optional)",
+        placeholder: "Why are you banning this user?",
+        maxLength: USER_BAN_REASON_MAX_LENGTH,
+      },
       onConfirm: (reason) => {
         void banUser({ userId, reason })
           .then(() => toast.success(`Banned ${label}.`))
@@ -510,7 +568,11 @@ export function Management() {
       title: `Unban ${label}?`,
       body: "Restores eligible skills and ban-hidden personal package/plugin resources.",
       confirmLabel: "Unban user",
-      reason: { label: "Reason (optional)", placeholder: "Why are you unbanning this user?" },
+      reason: {
+        label: "Reason (optional)",
+        placeholder: "Why are you unbanning this user?",
+        maxLength: USER_BAN_REASON_MAX_LENGTH,
+      },
       onConfirm: (reason) => {
         void unbanUser({ userId, reason })
           .then(() => toast.success(`Unbanned ${label}.`))
@@ -531,7 +593,11 @@ export function Management() {
         required: true,
       },
       onConfirm: (reason) => {
-        void setSoftDeleted({ skillId: skill._id, deleted: hide, reason: reason ?? "" })
+        void setSoftDeleted({
+          skillId: skill._id,
+          deleted: hide,
+          reason: reason ?? "",
+        })
           .then(() => toast.success(hide ? "Skill hidden." : "Skill restored."))
           .catch((error) => toast.error(formatMutationError(error)));
       },
@@ -554,8 +620,7 @@ export function Management() {
 
   const banPublisherAbuseOwner = (item: PublisherAbuseReviewItem) => {
     const ownerUser = item.ownerUser;
-    if (!ownerUser?._id || ownerUser._id === me?._id) return;
-    const userId = ownerUser._id;
+    if (!ownerUser || !canBanPublisherAbuseOwner(item, me?._id ?? null, admin)) return;
     const label = `@${ownerUser.handle ?? ownerUser.name ?? item.nomination.handleSnapshot}`;
     // The review notes box above the Ban button is the ban reason — no separate prompt.
     const reason = publisherAbuseNotes.trim() || undefined;
@@ -565,10 +630,16 @@ export function Management() {
       confirmLabel: "Ban user",
       destructive: true,
       onConfirm: () => {
-        void banUser({ userId, reason })
+        void banPublisherAbuseOwnerMutation({
+          nominationId: item.nomination._id,
+          expectedLatestScoreId: item.nomination.latestScoreId,
+          expectedUpdatedAt: item.nomination.updatedAt,
+          reason,
+        })
           .then(() => {
             toast.success(`Banned ${label}.`);
             setPublisherAbuseNotes("");
+            setSelectedPublisherAbuseNominationId(null);
           })
           .catch((error) => toast.error(formatMutationError(error)));
       },
@@ -582,13 +653,13 @@ export function Management() {
         admin={admin}
         abuseCount={
           publisherAbuseDashboard
-            ? publisherAbuseDashboard.pendingItems.filter(isVisiblePublisherAbuseItem).length
+            ? getPublisherAbuseVisiblePendingItems(publisherAbuseDashboard).length
             : undefined
         }
-        duplicateCount={duplicateCandidates.length}
-        recentCount={recentVersions.length}
-        reportCount={reportedSkills.length}
-        userCount={userTotal}
+        duplicateCount={duplicateCandidates?.length}
+        recentCount={recentVersions?.length}
+        reportCount={reportedSkills?.length}
+        userCount={userResult ? userTotal : undefined}
       />
       <section className="management-main">
         <div className="management-breadcrumb">
@@ -599,6 +670,8 @@ export function Management() {
 
         {activeView === "abuse" ? (
           <PublisherAbuseReviewPanel
+            admin={admin}
+            currentUserId={me?._id ?? null}
             dashboard={publisherAbuseDashboard}
             detail={selectedPublisherAbuseDetail}
             items={filteredPublisherAbuseItems}
@@ -617,7 +690,7 @@ export function Management() {
                 body: "Re-scores every publisher in the catalog against the latest model. This normally runs automatically every few days; a manual run can take a while.",
                 confirmLabel: "Run scan",
                 onConfirm: () => {
-                  void startPublisherAbuseScoreRun({ forceNew: false })
+                  void startPublisherAbuseScoreRun({})
                     .then(() => toast.success("Scan started."))
                     .catch((error) => toast.error(formatMutationError(error)));
                 },
@@ -629,8 +702,11 @@ export function Management() {
         ) : null}
 
         {activeView === "reports" ? (
-          <Card>
+          <div className="management-view">
             <h2 className="section-title text-[1.2rem] m-0">Reported skills</h2>
+            <p className="section-subtitle m-0 mt-1">
+              Skills the community has flagged. Review each report and take action.
+            </p>
             <div className="management-controls">
               <div className="management-control management-search">
                 <span className="mono">Filter</span>
@@ -644,7 +720,9 @@ export function Management() {
               <div className="management-count">{reportSummary}</div>
             </div>
             <div className="management-list">
-              {filteredReportedSkills.length === 0 ? (
+              {!filteredReportedSkills ? (
+                <div className="management-empty">Loading reports…</div>
+              ) : filteredReportedSkills.length === 0 ? (
                 <div className="management-empty">{reportCountLabel}</div>
               ) : (
                 filteredReportedSkills.map((entry) => {
@@ -691,7 +769,11 @@ export function Management() {
                         <Button asChild>
                           <Link
                             to="/management"
-                            search={{ view: "skills", skill: skill.slug, plugin: undefined }}
+                            search={{
+                              view: "skills",
+                              skill: skill.slug,
+                              plugin: undefined,
+                            }}
                           >
                             Manage
                           </Link>
@@ -714,12 +796,15 @@ export function Management() {
                 })
               )}
             </div>
-          </Card>
+          </div>
         ) : null}
 
         {activeView === "skills" ? (
-          <Card>
+          <div className="management-view">
             <h2 className="section-title text-[1.2rem] m-0">Skill tools</h2>
+            <p className="section-subtitle m-0 mt-1">
+              Look up a skill by slug to manage moderation overrides and view its audit history.
+            </p>
             <div className="management-controls">
               <div className="management-control management-search">
                 <span className="mono">Skill</span>
@@ -745,7 +830,11 @@ export function Management() {
                 Managing "{selectedSlug}" ·{" "}
                 <Link
                   to="/management"
-                  search={{ view: "skills", skill: undefined, plugin: undefined }}
+                  search={{
+                    view: "skills",
+                    skill: undefined,
+                    plugin: undefined,
+                  }}
                 >
                   Clear selection
                 </Link>
@@ -928,13 +1017,24 @@ export function Management() {
                           {admin ? (
                             <>
                               <label className="management-control management-control-stack">
+                                <span className="mono">owner search</span>
+                                <input
+                                  className="management-field"
+                                  type="search"
+                                  placeholder="Search users by handle"
+                                  value={ownerSearch}
+                                  onChange={(event) => setOwnerSearch(event.target.value)}
+                                />
+                                <span className="management-count">{ownerSummary}</span>
+                              </label>
+                              <label className="management-control management-control-stack">
                                 <span className="mono">owner</span>
                                 <Select value={selectedOwner} onValueChange={setSelectedOwner}>
                                   <SelectTrigger className="management-field">
                                     <SelectValue />
                                   </SelectTrigger>
                                   <SelectContent>
-                                    {filteredUsers.map((user) => (
+                                    {ownerOptions.map((user) => (
                                       <SelectItem key={user._id} value={user._id}>
                                         @{user.handle ?? user.name ?? "user"}
                                       </SelectItem>
@@ -1044,12 +1144,15 @@ export function Management() {
                 })()
               )}
             </div>
-          </Card>
+          </div>
         ) : null}
 
         {activeView === "plugins" ? (
-          <Card>
+          <div className="management-view">
             <h2 className="section-title text-[1.2rem] m-0">Plugin tools</h2>
+            <p className="section-subtitle m-0 mt-1">
+              Look up a plugin package to open its moderation tooling.
+            </p>
             <div className="management-controls">
               <div className="management-control management-search">
                 <span className="mono">Package</span>
@@ -1075,7 +1178,11 @@ export function Management() {
                 Managing "{selectedPluginName}" ·{" "}
                 <Link
                   to="/management"
-                  search={{ view: "plugins", skill: undefined, plugin: undefined }}
+                  search={{
+                    view: "plugins",
+                    skill: undefined,
+                    plugin: undefined,
+                  }}
                 >
                   Clear selection
                 </Link>
@@ -1159,79 +1266,26 @@ export function Management() {
                 })()
               )}
             </div>
-          </Card>
+          </div>
         ) : null}
 
         {activeView === "duplicates" ? (
-          <Card>
+          <div className="management-view">
             <h2 className="section-title text-[1.2rem] m-0">Duplicate candidates</h2>
+            <p className="section-subtitle m-0 mt-1">
+              Skills whose code fingerprint matches another publisher's — possible copies. Pick the
+              canonical original.
+            </p>
             <div className="management-list">
-              {duplicateCandidates.length === 0 ? (
+              {!duplicateCandidates ? (
+                <div className="management-empty">Loading duplicate candidates…</div>
+              ) : duplicateCandidates.length === 0 ? (
                 <div className="management-empty">No duplicate candidates.</div>
               ) : (
                 duplicateCandidates.map((entry) => (
-                  <div key={entry.skill._id} className="management-item">
-                    <div className="management-item-main">
-                      <Link
-                        to="/$owner/$slug"
-                        params={{
-                          owner: resolveOwnerParam(
-                            entry.owner?.handle ?? null,
-                            entry.owner?._id ?? entry.skill.ownerUserId,
-                          ),
-                          slug: entry.skill.slug,
-                        }}
-                      >
-                        {entry.skill.displayName}
-                      </Link>
-                      <div className="section-subtitle m-0">
-                        @{entry.owner?.handle ?? entry.owner?.name ?? "user"} · v
-                        {entry.latestVersion?.version ?? "—"} · fingerprint{" "}
-                        {entry.fingerprint?.slice(0, 8)}
-                      </div>
-                      <div className="management-sublist">
-                        {entry.matches.map((match) => (
-                          <div key={match.skill._id} className="management-subitem">
-                            <div>
-                              <strong>{match.skill.displayName}</strong>
-                              <div className="section-subtitle m-0">
-                                @{match.owner?.handle ?? match.owner?.name ?? "user"} ·{" "}
-                                {match.skill.slug}
-                              </div>
-                            </div>
-                            <div className="management-actions">
-                              <Button asChild>
-                                <Link
-                                  to="/$owner/$slug"
-                                  params={{
-                                    owner: resolveOwnerParam(
-                                      match.owner?.handle ?? null,
-                                      match.owner?._id ?? match.skill.ownerUserId,
-                                    ),
-                                    slug: match.skill.slug,
-                                  }}
-                                >
-                                  View
-                                </Link>
-                              </Button>
-                              <Button
-                                type="button"
-                                onClick={() =>
-                                  void setDuplicate({
-                                    skillId: entry.skill._id,
-                                    canonicalSlug: match.skill.slug,
-                                  })
-                                }
-                              >
-                                Mark duplicate
-                              </Button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="management-actions">
-                      <Button asChild>
+                  <div key={entry.skill._id} className="management-item management-dupe">
+                    <div className="management-dupe-head">
+                      <div className="management-item-main">
                         <Link
                           to="/$owner/$slug"
                           params={{
@@ -1242,22 +1296,95 @@ export function Management() {
                             slug: entry.skill.slug,
                           }}
                         >
-                          View
+                          {entry.skill.displayName}
                         </Link>
-                      </Button>
+                        <div className="section-subtitle m-0">
+                          @{entry.owner?.handle ?? entry.owner?.name ?? "user"} · v
+                          {entry.latestVersion?.version ?? "—"} ·{" "}
+                          <span className="management-fingerprint">
+                            {entry.fingerprint ? entry.fingerprint.slice(0, 8) : "—"}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="management-actions">
+                        <Button asChild>
+                          <Link
+                            to="/$owner/$slug"
+                            params={{
+                              owner: resolveOwnerParam(
+                                entry.owner?.handle ?? null,
+                                entry.owner?._id ?? entry.skill.ownerUserId,
+                              ),
+                              slug: entry.skill.slug,
+                            }}
+                          >
+                            View
+                          </Link>
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="management-dupe-matches">
+                      <div className="management-dupe-label">
+                        {entry.matches.length === 1
+                          ? "Possible duplicate of"
+                          : "Possible duplicates of"}
+                      </div>
+                      {entry.matches.map((match) => (
+                        <div key={match.skill._id} className="management-dupe-match">
+                          <div className="management-item-main">
+                            <strong>{match.skill.displayName}</strong>
+                            <div className="section-subtitle m-0">
+                              @{match.owner?.handle ?? match.owner?.name ?? "user"} ·{" "}
+                              {match.skill.slug}
+                            </div>
+                          </div>
+                          <div className="management-actions">
+                            <Button asChild>
+                              <Link
+                                to="/$owner/$slug"
+                                params={{
+                                  owner: resolveOwnerParam(
+                                    match.owner?.handle ?? null,
+                                    match.owner?._id ?? match.skill.ownerUserId,
+                                  ),
+                                  slug: match.skill.slug,
+                                }}
+                              >
+                                View
+                              </Link>
+                            </Button>
+                            <Button
+                              type="button"
+                              onClick={() =>
+                                void setDuplicate({
+                                  skillId: entry.skill._id,
+                                  canonicalSlug: match.skill.slug,
+                                })
+                              }
+                            >
+                              Mark duplicate
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 ))
               )}
             </div>
-          </Card>
+          </div>
         ) : null}
 
         {activeView === "recent" ? (
-          <Card>
+          <div className="management-view">
             <h2 className="section-title text-[1.2rem] m-0">Recent pushes</h2>
+            <p className="section-subtitle m-0 mt-1">
+              The latest skill versions published across ClawHub.
+            </p>
             <div className="management-list">
-              {recentVersions.length === 0 ? (
+              {!recentVersions ? (
+                <div className="management-empty">Loading recent pushes…</div>
+              ) : recentVersions.length === 0 ? (
                 <div className="management-empty">No recent versions.</div>
               ) : (
                 recentVersions.map((entry) => (
@@ -1275,7 +1402,11 @@ export function Management() {
                         <Button asChild>
                           <Link
                             to="/management"
-                            search={{ view: "skills", skill: entry.skill.slug, plugin: undefined }}
+                            search={{
+                              view: "skills",
+                              skill: entry.skill.slug,
+                              plugin: undefined,
+                            }}
                           >
                             Manage
                           </Link>
@@ -1302,12 +1433,15 @@ export function Management() {
                 ))
               )}
             </div>
-          </Card>
+          </div>
         ) : null}
 
         {admin && activeView === "users" ? (
-          <Card>
+          <div className="management-view">
             <h2 className="section-title text-[1.2rem] m-0">Users</h2>
+            <p className="section-subtitle m-0 mt-1">
+              Staff and member accounts. Search by handle, change a role, or ban an account.
+            </p>
             <div className="management-controls">
               <div className="management-control management-search">
                 <span className="mono">Filter</span>
@@ -1386,7 +1520,13 @@ export function Management() {
                 })
               )}
             </div>
-          </Card>
+          </div>
+        ) : null}
+        {!admin && activeView === "users" ? (
+          <ManagementPlaceholder
+            title="Users"
+            description="User administration is available to admins."
+          />
         ) : null}
         {activeView === "overview" ? (
           <ManagementPlaceholder
@@ -1445,10 +1585,10 @@ function ManagementSidebar({
   abuseCount?: number;
   activeView: ManagementView;
   admin: boolean;
-  duplicateCount: number;
-  recentCount: number;
-  reportCount: number;
-  userCount: number;
+  duplicateCount?: number;
+  recentCount?: number;
+  reportCount?: number;
+  userCount?: number;
 }) {
   return (
     <aside className="management-sidebar">
@@ -1492,13 +1632,15 @@ function ManagementSidebar({
 
         <div className="management-sidebar-section-title">Staff tools</div>
         <div className="management-sidebar-group">
-          <ManagementSidebarLink
-            active={activeView === "users"}
-            badge={admin ? formatWholeNumber(userCount) : undefined}
-            icon={<UserRound size={15} />}
-            label="Users"
-            view="users"
-          />
+          {admin ? (
+            <ManagementSidebarLink
+              active={activeView === "users"}
+              badge={userCount === undefined ? undefined : formatWholeNumber(userCount)}
+              icon={<UserRound size={15} />}
+              label="Users"
+              view="users"
+            />
+          ) : null}
           <ManagementSidebarLink
             active={activeView === "skills"}
             icon={<Wrench size={15} />}
@@ -1550,6 +1692,8 @@ function publisherAbuseLabelVariant(label: string) {
 }
 
 function PublisherAbuseReviewPanel({
+  admin,
+  currentUserId,
   dashboard,
   detail,
   items,
@@ -1566,6 +1710,8 @@ function PublisherAbuseReviewPanel({
   onRefresh,
   onSelect,
 }: {
+  admin: boolean;
+  currentUserId: Id<"users"> | null;
   dashboard: PublisherAbuseReviewDashboard | undefined;
   detail: PublisherAbuseReviewDetail | undefined;
   items: PublisherAbuseReviewItem[];
@@ -1585,15 +1731,24 @@ function PublisherAbuseReviewPanel({
   const latestRun = dashboard?.latestRun ?? null;
   const selectedScore = selectedItem?.latestScore ?? null;
   const selectedPublisher = selectedItem?.publisher ?? null;
-  const selectedUser = selectedItem?.ownerUser ?? null;
+  const canBanSelectedUser = canBanPublisherAbuseOwner(selectedItem, currentUserId, admin);
   // Counts reflect what's actually shown: pass-labelled and already-banned
   // publishers are hidden, so derive from the visible pending set.
-  const visiblePending = (dashboard?.pendingItems ?? []).filter(isVisiblePublisherAbuseItem);
+  const visiblePending = dashboard ? getPublisherAbuseVisiblePendingItems(dashboard) : [];
   const totalPending = visiblePending.length;
   const potentialBan = visiblePending.filter(
     (item) => item.nomination.label === "potential_ban_candidate",
   ).length;
   const review = visiblePending.filter((item) => item.nomination.label === "review").length;
+  const resolved = dashboard?.recentResolvedItems.length ?? 0;
+  const totalForTab =
+    tab === "potential_ban_candidate"
+      ? potentialBan
+      : tab === "review"
+        ? review
+        : tab === "resolved"
+          ? resolved
+          : totalPending;
   const loaded = dashboard !== undefined;
 
   return (
@@ -1620,7 +1775,11 @@ function PublisherAbuseReviewPanel({
                       : undefined
                 }
               >
-                {latestRun ? formatPublisherAbuseRunStatus(latestRun.status) : "Loading"}
+                {latestRun
+                  ? formatPublisherAbuseRunStatus(latestRun.status)
+                  : loaded
+                    ? "No scans yet"
+                    : "Loading"}
               </dd>
             </div>
             <div>
@@ -1645,21 +1804,27 @@ function PublisherAbuseReviewPanel({
       <div className="pa-tabs" role="tablist" aria-label="Publisher abuse queue">
         <PublisherAbuseTabButton
           active={tab === "potential_ban_candidate"}
-          count={potentialBan}
+          count={loaded ? potentialBan : undefined}
           label="Potential ban"
           onClick={() => onChangeTab("potential_ban_candidate")}
         />
         <PublisherAbuseTabButton
           active={tab === "review"}
-          count={review}
+          count={loaded ? review : undefined}
           label="On the brink"
           onClick={() => onChangeTab("review")}
         />
         <PublisherAbuseTabButton
           active={tab === "all_pending"}
-          count={totalPending}
+          count={loaded ? totalPending : undefined}
           label="All flagged"
           onClick={() => onChangeTab("all_pending")}
+        />
+        <PublisherAbuseTabButton
+          active={tab === "resolved"}
+          count={loaded ? resolved : undefined}
+          label="Resolved"
+          onClick={() => onChangeTab("resolved")}
         />
       </div>
 
@@ -1715,10 +1880,23 @@ function PublisherAbuseReviewPanel({
                         </Badge>
                       </td>
                       <td>
-                        <div className="pa-handle">
+                        <button
+                          type="button"
+                          className="pa-handle pa-row-button"
+                          aria-label={`Open details for ${item.nomination.handleSnapshot}`}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onSelect(item.nomination._id);
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key !== "Enter" && event.key !== " ") return;
+                            event.preventDefault();
+                            event.currentTarget.click();
+                          }}
+                        >
                           <strong>{item.nomination.handleSnapshot}</strong>
                           <span>{compactIdentifier(item.nomination.ownerKey)}</span>
-                        </div>
+                        </button>
                       </td>
                       <td className={`pa-num ${score ? zScoreClass(score.zScore) : ""}`}>
                         {score ? formatScore(score.zScore) : "—"}
@@ -1747,7 +1925,9 @@ function PublisherAbuseReviewPanel({
           </table>
         </div>
         <div className="pa-foot">
-          Showing {formatWholeNumber(items.length)} of {formatWholeNumber(totalPending)} nominations
+          {loaded
+            ? `Showing ${formatWholeNumber(items.length)} of ${formatWholeNumber(totalForTab)} nominations`
+            : "Loading…"}
         </div>
       </Card>
 
@@ -1762,6 +1942,10 @@ function PublisherAbuseReviewPanel({
             <>
               <SheetHeader className="pa-sheet-head">
                 <SheetTitle>{selectedItem.nomination.handleSnapshot}</SheetTitle>
+                <SheetDescription className="sr-only">
+                  Publisher abuse score details, owner identifiers, signal metrics, and available
+                  moderation action.
+                </SheetDescription>
                 <div className="pa-pills">
                   <Badge
                     variant={publisherAbuseLabelVariant(selectedItem.nomination.label)}
@@ -1887,38 +2071,54 @@ function PublisherAbuseReviewPanel({
                   </section>
                 ) : null}
 
-                {selectedItem.nomination.label === "potential_ban_candidate" ? (
+                {selectedItem.nomination.status !== "pending" ? (
                   <section className="pa-zone pa-review">
-                    <div className="pa-section-label">Ban reason</div>
+                    <div className="pa-section-label">Resolution</div>
+                    <div className="pa-actions">
+                      <Badge variant={publisherAbuseStatusVariant(selectedItem.nomination.status)}>
+                        {formatPublisherAbuseStatus(selectedItem.nomination.status)}
+                      </Badge>
+                      <span className="pa-muted">
+                        Reviewed{" "}
+                        {formatShortTimestamp(
+                          selectedItem.nomination.reviewedAt ?? selectedItem.nomination.updatedAt,
+                        )}
+                      </span>
+                    </div>
+                    <p className="pa-hint">
+                      {selectedItem.nomination.notes?.trim() ||
+                        "This nomination is no longer in the pending queue."}
+                    </p>
+                  </section>
+                ) : selectedItem.nomination.label === "potential_ban_candidate" ? (
+                  <section className="pa-zone pa-review">
+                    <div className="pa-section-label">Triage note</div>
                     <Textarea
-                      maxLength={1000}
-                      placeholder="Why are you banning this publisher? (optional)"
+                      maxLength={USER_BAN_REASON_MAX_LENGTH}
+                      placeholder="Why are you taking this action? (optional)"
                       value={notes}
                       onChange={(event) => onChangeNotes(event.target.value)}
                     />
-                    <Button
-                      type="button"
-                      variant="destructive"
-                      size="sm"
-                      className="pa-ban"
-                      disabled={!selectedUser?._id}
-                      onClick={() => onBanOwner(selectedItem)}
-                    >
-                      <Ban size={14} />
-                      Ban user
-                    </Button>
-                    <p className="pa-hint">
-                      {selectedUser?._id
-                        ? "The note above is recorded as the ban reason. Ban affects the linked user account."
-                        : "No linked user account — nothing to ban."}
-                    </p>
+                    <div className="pa-actions">
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="sm"
+                        className="pa-ban"
+                        disabled={!canBanSelectedUser}
+                        onClick={() => onBanOwner(selectedItem)}
+                      >
+                        <Ban size={14} />
+                        Ban user
+                      </Button>
+                    </div>
                   </section>
                 ) : (
-                  <section className="pa-zone">
-                    <div className="pa-section-label">On the brink</div>
+                  <section className="pa-zone pa-review">
+                    <div className="pa-section-label">Calibration signal</div>
                     <p className="pa-hint">
-                      Close to the ban threshold but not over it. No action needed yet — it becomes
-                      a ban candidate if a future scan pushes it over.
+                      This publisher is close to the ban line, but is not a ban candidate. Leave it
+                      here so we can tune the scoring gap.
                     </p>
                   </section>
                 )}
@@ -1938,7 +2138,7 @@ function PublisherAbuseTabButton({
   onClick,
 }: {
   active: boolean;
-  count: number;
+  count: number | undefined;
   label: string;
   onClick: () => void;
 }) {
@@ -1950,7 +2150,12 @@ function PublisherAbuseTabButton({
       className={active ? "pa-tab is-active" : "pa-tab"}
       onClick={onClick}
     >
-      {label} <span className="pa-tab-count">{formatWholeNumber(count)}</span>
+      {label}{" "}
+      {count === undefined ? (
+        <span className="pa-tab-count pa-count-loading" aria-label="Loading" />
+      ) : (
+        <span className="pa-tab-count">{formatWholeNumber(count)}</span>
+      )}
     </button>
   );
 }
@@ -1992,16 +2197,43 @@ function PublisherAbuseMetric({
 // A publisher only belongs in the queue while it is actively flagged and not yet
 // banned. `pass` (the scorer cleared them) and already-banned owners drop out.
 function isVisiblePublisherAbuseItem(item: PublisherAbuseReviewItem) {
-  return item.nomination.label !== "pass" && !item.ownerUser?.deletedAt;
+  return (
+    item.nomination.label !== "pass" &&
+    !item.ownerUser?.deletedAt &&
+    !item.ownerUser?.deactivatedAt &&
+    !item.publisher?.deletedAt &&
+    !item.publisher?.deactivatedAt
+  );
+}
+
+function canBanPublisherAbuseOwner(
+  item: PublisherAbuseReviewItem | null,
+  currentUserId: Id<"users"> | null,
+  admin: boolean,
+) {
+  const ownerUser = item?.ownerUser;
+  if (!ownerUser?._id) return false;
+  if (ownerUser._id === currentUserId) return false;
+  if (ownerUser.role === "admin" && !admin) return false;
+  return true;
+}
+
+function getPublisherAbuseVisiblePendingItems(dashboard: PublisherAbuseReviewDashboard) {
+  return [...dashboard.pendingPotentialBanCandidateItems, ...dashboard.pendingReviewItems].filter(
+    isVisiblePublisherAbuseItem,
+  );
 }
 
 function getPublisherAbuseItemsForTab(
   dashboard: PublisherAbuseReviewDashboard,
   tab: PublisherAbuseTab,
 ) {
-  const visible = dashboard.pendingItems.filter(isVisiblePublisherAbuseItem);
-  if (tab === "all_pending") return visible;
-  return visible.filter((item) => item.nomination.label === tab);
+  if (tab === "potential_ban_candidate") {
+    return dashboard.pendingPotentialBanCandidateItems.filter(isVisiblePublisherAbuseItem);
+  }
+  if (tab === "review") return dashboard.pendingReviewItems.filter(isVisiblePublisherAbuseItem);
+  if (tab === "resolved") return dashboard.recentResolvedItems;
+  return getPublisherAbuseVisiblePendingItems(dashboard);
 }
 
 function resolveManagementView(
@@ -2078,7 +2310,11 @@ function latestRunScoredCount(
   detail: PublisherAbuseReviewDetail | undefined,
   dashboard: PublisherAbuseReviewDashboard | undefined,
 ) {
-  return detail?.item.openedByRun?.scoredPublishers ?? dashboard?.latestRun?.scoredPublishers;
+  return (
+    detail?.latestScoreRun?.scoredPublishers ??
+    detail?.item.openedByRun?.scoredPublishers ??
+    dashboard?.latestRun?.scoredPublishers
+  );
 }
 
 function formatTimestamp(value: number) {
@@ -2126,6 +2362,25 @@ function formatPublisherAbuseLabel(label: string) {
   if (label === "review") return "On the brink";
   if (label === "pass") return "Pass";
   return label;
+}
+
+function formatPublisherAbuseStatus(status: string) {
+  if (status === "pending") return "Pending";
+  if (status === "banned") return "Banned";
+  if (status === "reviewed_no_action") return "Reviewed";
+  if (status === "false_positive") return "False positive";
+  if (status === "needs_policy_discussion") return "Needs discussion";
+  if (status === "candidate_for_future_action") return "Future action";
+  return status;
+}
+
+function publisherAbuseStatusVariant(status: string): NonNullable<BadgeProps["variant"]> {
+  if (status === "banned") return "destructive";
+  if (status === "false_positive" || status === "reviewed_no_action") return "success";
+  if (status === "needs_policy_discussion" || status === "candidate_for_future_action") {
+    return "warning";
+  }
+  return "default";
 }
 
 function formatReasonCode(reason: string) {

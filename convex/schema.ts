@@ -277,6 +277,7 @@ const publisherAbuseDryRunLabelValidator = v.union(
 
 const publisherAbuseTriageStatusValidator = v.union(
   v.literal("pending"),
+  v.literal("banned"),
   v.literal("reviewed_no_action"),
   v.literal("false_positive"),
   v.literal("needs_policy_discussion"),
@@ -1913,6 +1914,7 @@ const publisherAbuseScores = defineTable({
   createdAt: v.number(),
 })
   .index("by_run_and_rank", ["runId", "rank"])
+  .index("by_run_and_label_and_rank", ["runId", "label", "rank"])
   .index("by_run_and_pressure", ["runId", "pressure"])
   .index("by_owner_key_and_created_at", ["ownerKey", "createdAt"])
   .index("by_owner_key_and_model_version", ["ownerKey", "modelVersion"])
@@ -1937,6 +1939,8 @@ const publisherAbuseReviewNominations = defineTable({
 })
   .index("by_owner_key_and_model_version", ["ownerKey", "modelVersion"])
   .index("by_status_and_last_scored_at", ["status", "lastScoredAt"])
+  .index("by_status_and_updated_at", ["status", "updatedAt"])
+  .index("by_status_and_reviewed_at", ["status", "reviewedAt"])
   .index("by_status_and_label_and_last_scored_at", ["status", "label", "lastScoredAt"])
   .index("by_label_and_status_and_last_scored_at", ["label", "status", "lastScoredAt"])
   .index("by_last_scored_at", ["lastScoredAt"]);
