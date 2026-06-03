@@ -26,10 +26,9 @@
  *
  * `sourcePath` is path-segmented and per-segment validated against a
  * conservative `[A-Za-z0-9._-]` whitelist. `..` segments and any
- * disallowed character cause the path to be silently dropped and the URL
- * to fall back to the repo-root base (rather than failing the whole
- * README), since that matches today's behavior for legacy releases that
- * never carried a path at all.
+ * disallowed character cause the base URL to be rejected so the publish
+ * form does not promise that README images will render from the wrong
+ * source directory. Missing, empty, or "." source paths still mean repo root.
  */
 
 const COMMIT_SHA = /^[0-9a-f]{40}$/i;
@@ -62,10 +61,10 @@ function normalizeOwnerRepo(input: string | undefined | null): string | null {
   }
 }
 
-function normalizeSourcePath(input: string | undefined | null): string | null {
-  if (!input) return null;
+function normalizeSourcePath(input: string | undefined | null): string | null | undefined {
+  if (!input) return undefined;
   const trimmed = input.trim();
-  if (!trimmed || trimmed === ".") return null;
+  if (!trimmed || trimmed === ".") return undefined;
   // Reject anything that doesn't look like a forward-slash relative path —
   // no protocol-like contents, no backslashes, no whitespace. Leading and
   // trailing slashes are tolerated because `split("/").filter(Boolean)`
@@ -73,7 +72,7 @@ function normalizeSourcePath(input: string | undefined | null): string | null {
   if (/[\\\s]/.test(trimmed)) return null;
   if (trimmed.includes("://")) return null;
   const segments = trimmed.split("/").filter(Boolean);
-  if (segments.length === 0) return null;
+  if (segments.length === 0) return undefined;
   for (const segment of segments) {
     if (segment === "." || segment === "..") return null;
     if (!PATH_SEGMENT.test(segment)) return null;
@@ -91,6 +90,7 @@ export function buildReadmeAssetBaseUrl(
   const commit = sourceCommit?.trim();
   if (!commit || !COMMIT_SHA.test(commit)) return undefined;
   const path = normalizeSourcePath(sourcePath);
+  if (path === null) return undefined;
   // Trailing slash is required so `new URL("./images/foo.png", base)`
   // resolves as a directory rather than dropping the last path segment.
   return path

@@ -71,19 +71,11 @@ describe("buildReadmeAssetBaseUrl", () => {
       );
     });
 
-    it("falls back to repo root when sourcePath contains '..' or other unsafe segments", () => {
-      expect(buildReadmeAssetBaseUrl("openclaw/demo", SHA, "../etc/passwd")).toBe(
-        `https://raw.githubusercontent.com/openclaw/demo/${SHA}/`,
-      );
-      expect(buildReadmeAssetBaseUrl("openclaw/demo", SHA, "pkg/../escape")).toBe(
-        `https://raw.githubusercontent.com/openclaw/demo/${SHA}/`,
-      );
-      expect(buildReadmeAssetBaseUrl("openclaw/demo", SHA, "pkg/with space")).toBe(
-        `https://raw.githubusercontent.com/openclaw/demo/${SHA}/`,
-      );
-      expect(buildReadmeAssetBaseUrl("openclaw/demo", SHA, "pkg\\windows")).toBe(
-        `https://raw.githubusercontent.com/openclaw/demo/${SHA}/`,
-      );
+    it("returns undefined when sourcePath contains '..' or other unsafe segments", () => {
+      expect(buildReadmeAssetBaseUrl("openclaw/demo", SHA, "../etc/passwd")).toBeUndefined();
+      expect(buildReadmeAssetBaseUrl("openclaw/demo", SHA, "pkg/../escape")).toBeUndefined();
+      expect(buildReadmeAssetBaseUrl("openclaw/demo", SHA, "pkg/with space")).toBeUndefined();
+      expect(buildReadmeAssetBaseUrl("openclaw/demo", SHA, "pkg\\windows")).toBeUndefined();
     });
 
     it("ignores sourcePath when sourceRepo or sourceCommit is invalid", () => {

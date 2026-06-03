@@ -793,6 +793,53 @@ describe("plugins publish route", () => {
     ).toBeNull();
   });
 
+  it("keeps the missing-source warning when Package path cannot be resolved safely", async () => {
+    renderPublishRoute();
+
+    const packageJson = withRelativePath(
+      new File(
+        [makeCodePluginPackageJson({ name: "demo-plugin", version: "1.0.0" })],
+        "package.json",
+        {
+          type: "application/json",
+        },
+      ),
+      "demo-plugin/package.json",
+    );
+    const manifest = withRelativePath(
+      new File(['{"id":"demo.plugin"}'], "openclaw.plugin.json", { type: "application/json" }),
+      "demo-plugin/openclaw.plugin.json",
+    );
+    const readme = withRelativePath(
+      new File(["# Demo\n\n![diagram](./images/foo.png)\n"], "README.md", {
+        type: "text/markdown",
+      }),
+      "demo-plugin/README.md",
+    );
+
+    fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest, readme] } });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Without Source repo \+ Commit SHA/i)).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText("owner/repo"), {
+      target: { value: "openclaw/demo-plugin" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Full commit SHA"), {
+      target: { value: "abc1234567890abcdef1234567890abcdef12345" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("."), {
+      target: { value: "../demo-plugin" },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Without Source repo \+ Commit SHA/i)).toBeTruthy();
+    });
+    expect(screen.queryByText(/make sure Package path matches/i)).toBeNull();
+    expect(screen.queryByText(/raw\.githubusercontent\.com\/openclaw\/demo-plugin/i)).toBeNull();
+  });
+
   it("stops nudging about Package path once source is filled and the README has no relative images", async () => {
     renderPublishRoute();
 
