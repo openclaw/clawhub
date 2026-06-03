@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { api, internal } from "./_generated/api";
 import { httpAction, internalMutation } from "./functions";
+import { ambiguousSkillSlugResponse } from "./httpApiV1/shared";
 import { getOptionalApiTokenUserId } from "./lib/apiTokenAuth";
 import { corsHeaders, mergeHeaders } from "./lib/httpHeaders";
 import { applyRateLimit, getClientIp } from "./lib/httpRateLimit";
@@ -43,6 +44,13 @@ export async function downloadZipHandler(
     ...(ownerHandle ? { ownerHandle } : {}),
   });
   if (!skillResult?.skill) {
+    if (skillResult?.ambiguous) {
+      return ambiguousSkillSlugResponse(
+        slug,
+        `/api/v1/download?slug=${encodeURIComponent(slug)}&ownerHandle=<owner>`,
+        mergeHeaders(rate.headers, corsHeaders()),
+      );
+    }
     return new Response("Skill not found", {
       status: 404,
       headers: mergeHeaders(rate.headers, corsHeaders()),

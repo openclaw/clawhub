@@ -5,7 +5,7 @@ vi.mock("@convex-dev/auth/server", () => ({
   authTables: {},
 }));
 
-import { insertVersion } from "./skills";
+import { getSkillForPublishPreflightInternal, insertVersion } from "./skills";
 
 type WrappedHandler<TArgs> = {
   _handler: (ctx: unknown, args: TArgs) => Promise<unknown>;
@@ -13,6 +13,9 @@ type WrappedHandler<TArgs> = {
 
 const insertVersionHandler = (insertVersion as unknown as WrappedHandler<Record<string, unknown>>)
   ._handler;
+const getSkillForPublishPreflightHandler = (
+  getSkillForPublishPreflightInternal as unknown as WrappedHandler<Record<string, unknown>>
+)._handler;
 
 const SENTINEL_BAIL_MESSAGE = "__owner_migration_sentinel_stop__";
 
@@ -83,6 +86,7 @@ function createMigrationFixture(params: {
   skillSource?: SkillSourceMode;
   sourcePersonalLinkedUserId?: string | null;
   duplicateGlobalSlug?: boolean;
+  destinationDuplicateSkill?: boolean;
   skillOverrides?: Record<string, unknown>;
 }): OrgMigrationFixture {
   const now = Date.now();
@@ -278,28 +282,39 @@ function createMigrationFixture(params: {
                 ownerUserId: "users:duplicate",
                 ownerPublisherId: "publishers:duplicate",
               };
-              const skillMatches =
-                constraints.slug === undefined || constraints.slug === skill.slug;
-              const ownerPublisherMatches =
-                constraints.ownerPublisherId === undefined ||
-                constraints.ownerPublisherId === skill.ownerPublisherId;
-              const ownerUserMatches =
-                constraints.ownerUserId === undefined ||
-                constraints.ownerUserId === skill.ownerUserId;
+              const destinationDuplicateSkill = {
+                ...skill,
+                _id: "skills:destination",
+                ownerUserId: "users:caller",
+                ownerPublisherId: "publishers:org",
+              };
+              const candidates = [
+                skill,
+                ...(params.destinationDuplicateSkill ? [destinationDuplicateSkill] : []),
+              ];
+              const matches = candidates.filter((candidate) => {
+                const skillMatches =
+                  constraints.slug === undefined || constraints.slug === candidate.slug;
+                const ownerPublisherMatches =
+                  constraints.ownerPublisherId === undefined ||
+                  constraints.ownerPublisherId === candidate.ownerPublisherId;
+                const ownerUserMatches =
+                  constraints.ownerUserId === undefined ||
+                  constraints.ownerUserId === candidate.ownerUserId;
+                return skillMatches && ownerPublisherMatches && ownerUserMatches;
+              });
               return {
-                unique: async () =>
-                  skillMatches && ownerPublisherMatches && ownerUserMatches ? skill : null,
+                unique: async () => matches[0] ?? null,
                 take: async () => {
-                  if (!(skillMatches && ownerPublisherMatches && ownerUserMatches)) return [];
                   if (
                     params.duplicateGlobalSlug &&
                     name === "by_slug" &&
                     constraints.ownerPublisherId === undefined &&
                     constraints.ownerUserId === undefined
                   ) {
-                    return [skill, unrelatedDuplicateSkill];
+                    return [...matches, unrelatedDuplicateSkill];
                   }
-                  return [skill];
+                  return matches;
                 },
               };
             }
@@ -705,6 +720,87 @@ describe("skills.insertVersion owner migration", () => {
     expect(skillPatches[0]?.value).toMatchObject({
       ownerPublisherId: "publishers:org",
       ownerUserId: "users:caller",
+    });
+  });
+
+  it("rejects explicit migration when the destination owner already has the slug", async () => {
+    const fixture = createMigrationFixture({
+      skillSource: "caller-personal",
+      destinationDuplicateSkill: true,
+      sourceMemberships: [
+        {
+          _id: "publisherMembers:orgAdminCaller",
+          publisherId: "publishers:org",
+          userId: "users:caller",
+          role: "admin",
+        },
+      ],
+    });
+
+    await expect(
+      insertVersionHandler(
+        { db: fixture.db } as never,
+        buildPublishArgs({
+          migrateOwner: true,
+          sourceOwnerPublisherId: "publishers:personalCaller",
+        }) as never,
+      ),
+    ).rejects.toThrow(
+      'Destination owner @casualsecurityinc already has skill "nano". Choose a different slug or publish without migrating ownership.',
+    );
+
+    expect(fixture.patchCalls.filter((p) => p.id === "skills:1")).toHaveLength(0);
+    expect(fixture.patchCalls.filter((p) => p.id === "skills:destination")).toHaveLength(0);
+    expect(fixture.insertCalls).not.toContainEqual(
+      expect.objectContaining({
+        table: "skillVersions",
+      }),
+    );
+  });
+
+  it("classifies explicit migrations as blocked when preflight sees a destination slug collision", async () => {
+    const fixture = createMigrationFixture({
+      skillSource: "caller-personal",
+      destinationDuplicateSkill: true,
+      sourceMemberships: [],
+    });
+
+    await expect(
+      getSkillForPublishPreflightHandler(
+        { db: fixture.db } as never,
+        {
+          userId: "users:caller",
+          slug: "nano",
+          ownerPublisherId: "publishers:org",
+          sourceOwnerPublisherId: "publishers:personalCaller",
+          migrateOwner: true,
+        } as never,
+      ),
+    ).rejects.toThrow(
+      'Destination owner @casualsecurityinc already has skill "nano". Choose a different slug or publish without migrating ownership.',
+    );
+  });
+
+  it("classifies default personal publishes as existing legacy personal rows", async () => {
+    const fixture = createMigrationFixture({
+      skillSource: "caller-personal",
+      sourceMemberships: [],
+      skillOverrides: { ownerPublisherId: undefined },
+    });
+
+    const result = await getSkillForPublishPreflightHandler(
+      { db: fixture.db } as never,
+      {
+        userId: "users:caller",
+        slug: "nano",
+        ownerPublisherId: "publishers:personalCaller",
+      } as never,
+    );
+
+    expect(result).toMatchObject({
+      _id: "skills:1",
+      ownerUserId: "users:caller",
+      ownerPublisherId: undefined,
     });
   });
 

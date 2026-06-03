@@ -53,6 +53,26 @@ describe("ownership commands", () => {
     expect(requestArgs.body).toEqual({ newSlug: "demo-new" });
   });
 
+  it("rename accepts owner-qualified refs", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      slug: "demo-new",
+      previousSlug: "demo",
+    });
+
+    await cmdRenameSkill(makeGlobalOpts(), "@Alice/Demo", "Demo-New", { yes: true }, false);
+
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        method: "POST",
+        path: "/api/v1/skills/demo/rename",
+        body: { newSlug: "demo-new", ownerHandle: "alice" },
+      }),
+      expect.anything(),
+    );
+  });
+
   it("merge calls merge endpoint", async () => {
     httpMocks.apiRequest.mockResolvedValueOnce({
       ok: true,
@@ -72,5 +92,48 @@ describe("ownership commands", () => {
     );
     const requestArgs = httpMocks.apiRequest.mock.calls[0]?.[1] as { body?: unknown };
     expect(requestArgs.body).toEqual({ targetSlug: "demo" });
+  });
+
+  it("merge accepts owner-qualified refs", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      sourceSlug: "demo-old",
+      targetSlug: "demo",
+    });
+
+    await cmdMergeSkill(makeGlobalOpts(), "@Alice/Demo-Old", "@Alice/Demo", { yes: true }, false);
+
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        method: "POST",
+        path: "/api/v1/skills/demo-old/merge",
+        body: {
+          targetSlug: "demo",
+          ownerHandle: "alice",
+          sourceOwnerHandle: "alice",
+          targetOwnerHandle: "alice",
+        },
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("defaults an unqualified merge target to the source owner namespace", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      sourceSlug: "demo-old",
+      targetSlug: "demo",
+    });
+
+    await cmdMergeSkill(makeGlobalOpts(), "@Alice/Demo-Old", "Demo", { yes: true }, false);
+
+    const requestArgs = httpMocks.apiRequest.mock.calls[0]?.[1] as { body?: unknown };
+    expect(requestArgs.body).toEqual({
+      targetSlug: "demo",
+      ownerHandle: "alice",
+      sourceOwnerHandle: "alice",
+      targetOwnerHandle: "alice",
+    });
   });
 });

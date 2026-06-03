@@ -95,6 +95,7 @@ export const CliPublishRequestSchema = type({
   source: PublishSourceSchema.optional(),
   forkOf: type({
     slug: "string",
+    ownerHandle: "string?",
     version: "string?",
   }).optional(),
   files: CliPublishFileSchema.array(),
@@ -129,6 +130,7 @@ export const CliTelemetrySyncRequestSchema = type({
     label: "string",
     skills: type({
       slug: "string",
+      ownerHandle: "string?",
       version: "string|null?",
     }).array(),
   }).array(),
@@ -206,7 +208,6 @@ export const ApiV1SearchResponseSchema = type({
     version: "string|null?",
     score: "number",
     updatedAt: "number?",
-    ownerHandle: "string|null?",
     owner: type({
       handle: "string|null?",
       displayName: "string|null?",

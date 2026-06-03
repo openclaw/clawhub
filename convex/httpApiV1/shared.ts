@@ -80,6 +80,44 @@ export function text(value: string, status: number, headers?: HeadersInit) {
   });
 }
 
+export type AmbiguousSkillSlugChoice = {
+  ownerHandle: string;
+  slug: string;
+  ref: string;
+  url: string;
+};
+
+export function ambiguousSkillSlugMessage(slug: string, examplePath?: string) {
+  if (!examplePath) {
+    return `Found multiple skills with the slug "${slug}"; specify which one you want to install:`;
+  }
+  return (
+    `Ambiguous skill slug "${slug}". Multiple publishers use this slug. ` +
+    `Retry with ownerHandle, for example: ${examplePath}.`
+  );
+}
+
+export function ambiguousSkillSlugResponse(
+  slug: string,
+  examplePath: string,
+  headers?: HeadersInit,
+  choices?: AmbiguousSkillSlugChoice[],
+) {
+  if (choices && choices.length > 0) {
+    return json(
+      {
+        code: "AMBIGUOUS_SKILL_SLUG",
+        message: ambiguousSkillSlugMessage(slug),
+        slug,
+        matches: choices,
+      },
+      409,
+      headers,
+    );
+  }
+  return text(ambiguousSkillSlugMessage(slug, examplePath), 409, headers);
+}
+
 export async function parseJsonPayload(request: Request, headers: HeadersInit) {
   try {
     const payload = (await request.json()) as Record<string, unknown>;
@@ -444,6 +482,7 @@ export function parsePublishBody(body: unknown) {
     forkOf: parsed.forkOf
       ? {
           slug: parsed.forkOf.slug,
+          ownerHandle: parsed.forkOf.ownerHandle?.trim().replace(/^@+/, "") || undefined,
           version: parsed.forkOf.version ?? undefined,
         }
       : undefined,
@@ -468,6 +507,9 @@ export function softDeleteErrorToResponse(
     return text(formatAuthzMessage(error, "Forbidden"), 403, headers);
   if (lower.includes("not found")) return text(message, 404, headers);
   if (lower.includes("slug required")) return text("Slug required", 400, headers);
+  if (lower.includes("multiple publishers") || lower.includes("owner-qualified")) {
+    return text(message, 409, headers);
+  }
 
   // Unknown: server-side failure. Keep body generic.
   return text("Internal Server Error", 500, headers);

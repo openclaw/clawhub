@@ -99,6 +99,7 @@ export declare const CliPublishRequestSchema: import("arktype/internal/variants/
     } | undefined;
     forkOf?: {
         slug: string;
+        ownerHandle?: string | undefined;
         version?: string | undefined;
     } | undefined;
 }, {}>;
@@ -131,6 +132,7 @@ export declare const CliTelemetrySyncRequestSchema: import("arktype/internal/var
         label: string;
         skills: {
             slug: string;
+            ownerHandle?: string | undefined;
             version?: string | null | undefined;
         }[];
     }[];
@@ -174,7 +176,6 @@ export declare const ApiV1SearchResponseSchema: import("arktype/internal/variant
         summary?: string | null | undefined;
         version?: string | null | undefined;
         updatedAt?: number | undefined;
-        ownerHandle?: string | null | undefined;
         owner?: {
             handle?: string | null | undefined;
             displayName?: string | null | undefined;

@@ -1,7 +1,9 @@
 import type { Doc, Id } from "../../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../../_generated/server";
+import { isPublicSkillDoc } from "../globalStats";
 import {
   getActiveUserByHandleOrPersonalPublisher,
+  getOwnerPublisher,
   getPersonalPublisherForUserOrFallback,
   getPublisherByHandle,
   normalizePublisherHandle,
@@ -17,6 +19,11 @@ type LegacyResultQuery<T> = {
   unique?: () => Promise<T | null>;
 };
 
+export type LegacyAmbiguousSkillMatch = {
+  slug: string;
+  ownerHandle: string | null;
+};
+
 export function normalizeSkillSlugKey(slug: string) {
   return normalizeSkillSlug(slug);
 }
@@ -27,14 +34,14 @@ export async function resolvePublisherByOwnerHandle(
 ) {
   const requestedOwner = ownerHandle?.trim().replace(/^@+/, "");
   if (requestedOwner?.startsWith("publishers:")) {
-    const publisher = await ctx.db.get(requestedOwner as Id<"publishers">);
+    const publisher = await safeGetById(ctx, requestedOwner as Id<"publishers">);
     return {
       requestedHandle: requestedOwner,
       publisher: publisher && !publisher.deletedAt && !publisher.deactivatedAt ? publisher : null,
     };
   }
   if (requestedOwner?.startsWith("users:")) {
-    const user = await ctx.db.get(requestedOwner as Id<"users">);
+    const user = await safeGetById(ctx, requestedOwner as Id<"users">);
     const publisher =
       user && !user.deletedAt && !user.deactivatedAt
         ? await getPersonalPublisherForUserOrFallback(ctx, user)
@@ -52,7 +59,13 @@ export async function resolvePublisherByOwnerHandle(
 
   const materializedPublisher = await getPublisherByHandle(ctx, requestedHandle);
   if (materializedPublisher) {
-    return { requestedHandle, publisher: materializedPublisher };
+    return {
+      requestedHandle,
+      publisher:
+        materializedPublisher.deletedAt || materializedPublisher.deactivatedAt
+          ? null
+          : materializedPublisher,
+    };
   }
 
   const user = await getActiveUserByHandleOrPersonalPublisher(ctx, requestedHandle);
@@ -61,6 +74,23 @@ export async function resolvePublisherByOwnerHandle(
     requestedHandle,
     publisher: fallbackPublisher?.handle === requestedHandle ? fallbackPublisher : null,
   };
+}
+
+async function safeGetById<TableName extends "publishers" | "users">(
+  ctx: DbCtx,
+  id: Id<TableName>,
+) {
+  try {
+    return await ctx.db.get(id);
+  } catch (error) {
+    if (isInvalidConvexIdError(error)) return null;
+    throw error;
+  }
+}
+
+function isInvalidConvexIdError(error: unknown) {
+  if (!(error instanceof Error)) return false;
+  return /invalid.*id|id.*invalid|not a valid id/i.test(error.message);
 }
 
 export async function getSkillBySlugForPublisher(
@@ -76,8 +106,8 @@ export async function getSkillBySlugForPublisher(
     .unique();
   if (scopedSkill) return scopedSkill;
 
-  const linkedUserId = publisher.linkedUserId;
-  if (publisher.kind !== "user" || !linkedUserId) return null;
+  const linkedUserId = await getPublisherLegacyOwnerUserId(ctx, publisher);
+  if (!linkedUserId) return null;
 
   const legacySkills = await takeQueryResults<Doc<"skills">>(
     ctx.db
@@ -105,8 +135,8 @@ export async function getSkillSlugAliasBySlugForPublisher(
     .unique();
   if (scopedAlias) return scopedAlias;
 
-  const linkedUserId = publisher.linkedUserId;
-  if (publisher.kind !== "user" || !linkedUserId) return null;
+  const linkedUserId = await getPublisherLegacyOwnerUserId(ctx, publisher);
+  if (!linkedUserId) return null;
 
   const legacyAliases = await takeQueryResults<Doc<"skillSlugAliases">>(
     ctx.db
@@ -119,6 +149,17 @@ export async function getSkillSlugAliasBySlugForPublisher(
   );
   if (!legacyAlias) return null;
   return legacyAlias;
+}
+
+async function getPublisherLegacyOwnerUserId(ctx: DbCtx, publisher: Doc<"publishers">) {
+  if (publisher.kind !== "user") return null;
+  if (publisher.linkedUserId) return publisher.linkedUserId;
+
+  // Compatibility for early personal publisher rows that were materialized
+  // before linkedUserId existed. Owner-qualified routes still need to find the
+  // ownerUserId-only skill rows those handles represented.
+  const user = await getActiveUserByHandleOrPersonalPublisher(ctx, publisher.handle);
+  return user?._id ?? null;
 }
 
 export async function getSkillSlugAliasBySlugScoped(
@@ -160,6 +201,7 @@ export async function resolveLegacySkillBySlugOrAlias(
     skill: null,
     alias: null,
     ambiguous: false,
+    ambiguousMatches: [] as LegacyAmbiguousSkillMatch[],
   };
   if (!normalizedSlug) return emptyResult;
 
@@ -170,19 +212,6 @@ export async function resolveLegacySkillBySlugOrAlias(
   const directSkills = options.includeSoftDeleted
     ? directCandidates
     : directCandidates.filter((skill) => !skill.softDeletedAt);
-  const directSkill = await selectLegacySkillMatch(ctx, directSkills);
-  if (directSkill === "ambiguous") {
-    return { ...emptyResult, ambiguous: true };
-  }
-  if (directSkill) {
-    return {
-      requestedSlug: normalizedSlug,
-      resolvedSlug: directSkill.slug,
-      skill: directSkill,
-      alias: null,
-      ambiguous: false,
-    };
-  }
 
   const aliases = await takeQueryResults<Doc<"skillSlugAliases">>(
     ctx.db.query("skillSlugAliases").withIndex("by_slug", (q) => q.eq("slug", normalizedSlug)),
@@ -199,37 +228,62 @@ export async function resolveLegacySkillBySlugOrAlias(
   ).filter(
     (entry): entry is { alias: Doc<"skillSlugAliases">; skill: Doc<"skills"> } => entry !== null,
   );
-  const selectedAliasSkill = await selectLegacySkillMatch(
-    ctx,
-    aliasMatches.map((entry) => entry.skill),
-  );
-  if (selectedAliasSkill === "ambiguous") {
-    return { ...emptyResult, ambiguous: true };
-  }
-  if (!selectedAliasSkill) return emptyResult;
-  const alias = aliasMatches.find((entry) => entry.skill._id === selectedAliasSkill._id)?.alias;
-  if (!alias) {
+  const candidateSkills = options.includeSoftDeleted
+    ? uniqueSkills([...directSkills, ...aliasMatches.map((entry) => entry.skill)])
+    : uniqueSkills([...directSkills, ...aliasMatches.map((entry) => entry.skill)]);
+  const selectedSkill = await selectLegacySkillMatch(ctx, candidateSkills, options);
+  if (selectedSkill === "ambiguous") {
+    const ambiguousMatches = await buildLegacyAmbiguousSkillMatches(ctx, candidateSkills);
+    if (ambiguousMatches.length === 0) return emptyResult;
     return {
-      requestedSlug: normalizedSlug,
-      resolvedSlug: null,
-      skill: selectedAliasSkill,
-      alias: null,
-      ambiguous: false,
+      ...emptyResult,
+      ambiguous: true,
+      ambiguousMatches,
     };
   }
+  if (!selectedSkill) return emptyResult;
+  const directSkill = directSkills.find((skill) => skill._id === selectedSkill._id);
+  if (directSkill) {
+    return {
+      requestedSlug: normalizedSlug,
+      resolvedSlug: directSkill.slug,
+      skill: directSkill,
+      alias: null,
+      ambiguous: false,
+      ambiguousMatches: [] as LegacyAmbiguousSkillMatch[],
+    };
+  }
+  const alias = aliasMatches.find((entry) => entry.skill._id === selectedSkill._id)?.alias;
+  if (!alias) return emptyResult;
 
   return {
     requestedSlug: normalizedSlug,
-    resolvedSlug: selectedAliasSkill.slug,
-    skill: selectedAliasSkill,
+    resolvedSlug: selectedSkill.slug,
+    skill: selectedSkill,
     alias,
     ambiguous: false,
+    ambiguousMatches: [] as LegacyAmbiguousSkillMatch[],
   };
 }
 
-async function selectLegacySkillMatch(ctx: DbCtx, skills: Doc<"skills">[]) {
+function uniqueSkills(skills: Doc<"skills">[]) {
+  const byId = new Map<Id<"skills">, Doc<"skills">>();
+  for (const skill of skills) byId.set(skill._id, skill);
+  return Array.from(byId.values());
+}
+
+async function selectLegacySkillMatch(
+  ctx: DbCtx,
+  skills: Doc<"skills">[],
+  options: { includeSoftDeleted?: boolean } = {},
+) {
   if (skills.length <= 1) return skills[0] ?? null;
-  const preferred = await findPreferredPublisherSkill(ctx, skills);
+  const selectableSkills = options.includeSoftDeleted
+    ? skills
+    : skills.filter((skill) => isPublicSkillDoc(skill));
+  const preferred = await findPreferredPublisherSkill(ctx, selectableSkills);
+  if (preferred) return preferred;
+  if (selectableSkills.length === 1) return selectableSkills[0];
   return preferred ?? "ambiguous";
 }
 
@@ -254,4 +308,25 @@ async function findPreferredPublisherSkill(ctx: DbCtx, skills: Doc<"skills">[]) 
     }
   }
   return matches.length === 1 ? matches[0] : null;
+}
+
+async function buildLegacyAmbiguousSkillMatches(
+  ctx: DbCtx,
+  skills: Doc<"skills">[],
+): Promise<LegacyAmbiguousSkillMatch[]> {
+  const matches: LegacyAmbiguousSkillMatch[] = [];
+  const seen = new Set<string>();
+  for (const skill of skills) {
+    if (!isPublicSkillDoc(skill)) continue;
+    const owner = await getOwnerPublisher(ctx, {
+      ownerPublisherId: skill.ownerPublisherId,
+      ownerUserId: skill.ownerUserId,
+    });
+    const ownerHandle = owner?.handle ?? null;
+    const key = `${ownerHandle ?? ""}/${skill.slug}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    matches.push({ slug: skill.slug, ownerHandle });
+  }
+  return matches;
 }

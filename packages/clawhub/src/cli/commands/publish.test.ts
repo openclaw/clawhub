@@ -94,6 +94,48 @@ describe("cmdPublish", () => {
     }
   });
 
+  it("sends owner-scoped fork provenance when --fork-of is owner-qualified", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "demo-fork");
+      await mkdir(folder, { recursive: true });
+      await writeFile(join(folder, "SKILL.md"), "# Skill\n", "utf8");
+
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        skillId: "skill_1",
+        versionId: "ver_1",
+      });
+      httpMocks.apiRequest.mockResolvedValueOnce({
+        user: { handle: "me" },
+      });
+
+      await cmdPublish(makeOpts(workdir), "demo-fork", {
+        slug: "demo-fork",
+        name: "Demo Fork",
+        version: "1.0.0",
+        changelog: "",
+        forkOf: "@openclaw/demo@1.2.3",
+      });
+
+      const publishCall = httpMocks.apiRequestForm.mock.calls.find((call) => {
+        const req = call[1] as { path?: string } | undefined;
+        return req?.path === "/api/v1/skills";
+      });
+      if (!publishCall) throw new Error("Missing publish call");
+      const publishForm = (publishCall[1] as { form?: FormData }).form as FormData;
+      const payloadEntry = publishForm.get("payload");
+      if (typeof payloadEntry !== "string") throw new Error("Missing publish payload");
+      expect(JSON.parse(payloadEntry).forkOf).toEqual({
+        slug: "demo",
+        ownerHandle: "openclaw",
+        version: "1.2.3",
+      });
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
   it("strips generated Skill Cards before publishing downloaded bundles", async () => {
     const workdir = await makeTmpWorkdir();
     try {
@@ -107,6 +149,9 @@ describe("cmdPublish", () => {
         ok: true,
         skillId: "skill_1",
         versionId: "ver_1",
+      });
+      httpMocks.apiRequest.mockResolvedValueOnce({
+        user: { handle: "me" },
       });
 
       await cmdPublish(makeOpts(workdir), "downloaded-skill", {

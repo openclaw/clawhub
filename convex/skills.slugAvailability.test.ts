@@ -758,6 +758,20 @@ describe("skills.checkSlugAvailability", () => {
     const result = (await checkSlugAvailabilityHandler(
       createCtx({
         skill: null,
+        owner: {
+          _id: "users:owner",
+          handle: "owner",
+          deletedAt: undefined,
+          deactivatedAt: undefined,
+        },
+        publisher: {
+          _id: "publishers:owner",
+          handle: "owner",
+          kind: "user",
+          linkedUserId: "users:owner",
+          deletedAt: undefined,
+          deactivatedAt: undefined,
+        },
         reservation: {
           _id: "reservedSlugs:1",
           slug: "taken-skill",
@@ -767,7 +781,7 @@ describe("skills.checkSlugAvailability", () => {
           releasedAt: undefined,
         },
       }) as never,
-      { slug: "taken-skill", ownerHandle: "caller" } as never,
+      { slug: "taken-skill", ownerHandle: "owner" } as never,
     )) as {
       available: boolean;
       reason: string;
@@ -791,6 +805,20 @@ describe("skills.checkSlugAvailability", () => {
     const result = (await checkSlugAvailabilityHandler(
       createCtx({
         skill: null,
+        owner: {
+          _id: "users:owner",
+          handle: "owner",
+          deletedAt: undefined,
+          deactivatedAt: undefined,
+        },
+        publisher: {
+          _id: "publishers:owner",
+          handle: "owner",
+          kind: "user",
+          linkedUserId: "users:owner",
+          deletedAt: undefined,
+          deactivatedAt: undefined,
+        },
         reservation: {
           _id: "reservedSlugs:1",
           slug: "taken-skill",
@@ -800,7 +828,7 @@ describe("skills.checkSlugAvailability", () => {
           releasedAt: undefined,
         },
       }) as never,
-      { slug: "taken-skill", ownerHandle: "caller" } as never,
+      { slug: "taken-skill", ownerHandle: "owner" } as never,
     )) as {
       available: boolean;
       reason: string;

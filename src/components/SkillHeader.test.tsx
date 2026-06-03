@@ -250,9 +250,12 @@ describe("SkillHeader", () => {
       },
     });
 
-    expect(screen.getByRole("link", { name: "Download" }).getAttribute("href")).toBe(
-      "https://clawhub.ai/api/v1/download?slug=demo&ownerHandle=local",
-    );
+    const href = screen.getByRole("link", { name: "Download" }).getAttribute("href");
+    expect(href).not.toBeNull();
+    const url = new URL(href ?? "");
+    expect(url.pathname).toBe("/api/v1/download");
+    expect(url.searchParams.get("slug")).toBe("demo");
+    expect(url.searchParams.get("ownerHandle")).toBe("local");
   });
 
   it("falls back to legacy parsed frontmatter description when present", () => {

@@ -4,6 +4,11 @@ import type { Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { internalMutation, mutation, query } from "./functions";
 import { requireUser } from "./lib/access";
+import {
+  getSkillBySlugForPublisher,
+  resolveLegacySkillBySlugOrAlias,
+  resolvePublisherByOwnerHandle,
+} from "./lib/skills/slugResolution";
 import { insertStatEvent } from "./skillStatEvents";
 
 const TELEMETRY_STALE_MS = 120 * 24 * 60 * 60 * 1000;
@@ -11,7 +16,7 @@ const TELEMETRY_STALE_MS = 120 * 24 * 60 * 60 * 1000;
 type RootPayload = {
   rootId: string;
   label: string;
-  skills: Array<{ slug: string; version?: string | null }>;
+  skills: Array<{ slug: string; ownerHandle?: string | null; version?: string | null }>;
 };
 
 export const reportCliSyncInternal = internalMutation({
@@ -24,6 +29,7 @@ export const reportCliSyncInternal = internalMutation({
         skills: v.array(
           v.object({
             slug: v.string(),
+            ownerHandle: v.optional(v.string()),
             version: v.optional(v.string()),
           }),
         ),
@@ -37,14 +43,14 @@ export const reportCliSyncInternal = internalMutation({
     await expireStaleRoots(ctx, { userId: args.userId, stalenessCutoff, now });
 
     const roots = normalizeRoots(args.roots);
-    const skillsBySlug = await resolveSkillsBySlug(ctx, roots);
+    const skillsByRef = await resolveSkillsByRef(ctx, roots);
 
     for (const root of roots) {
       await upsertRoot(ctx, { userId: args.userId, rootId: root.rootId, now, label: root.label });
       await applyRootReport(ctx, {
         userId: args.userId,
         root,
-        skillsBySlug,
+        skillsByRef,
         now,
       });
     }
@@ -213,6 +219,7 @@ function normalizeRoots(roots: RootPayload[]): RootPayload[] {
       skills: root.skills
         .map((skill) => ({
           slug: skill.slug.trim().toLowerCase(),
+          ownerHandle: skill.ownerHandle?.trim().replace(/^@+/, "").toLowerCase() || undefined,
           version: skill.version ?? null,
         }))
         .filter((skill) => Boolean(skill.slug)),
@@ -252,14 +259,14 @@ async function applyRootReport(
   params: {
     userId: Id<"users">;
     root: RootPayload;
-    skillsBySlug: Map<string, { skillId: Id<"skills"> }>;
+    skillsByRef: Map<string, { skillId: Id<"skills"> }>;
     now: number;
   },
 ) {
   const expected = new Set<Id<"skills">>();
   const versionsBySkill = new Map<Id<"skills">, string | undefined>();
   for (const entry of params.root.skills) {
-    const resolved = params.skillsBySlug.get(entry.slug);
+    const resolved = params.skillsByRef.get(telemetrySkillRefKey(entry));
     if (!resolved) continue;
     expected.add(resolved.skillId);
     const version = entry.version?.trim() || undefined;
@@ -425,18 +432,45 @@ async function expireStaleRoots(
   }
 }
 
-async function resolveSkillsBySlug(ctx: QueryCtx | MutationCtx, roots: RootPayload[]) {
-  const slugs = new Set<string>();
+async function resolveSkillsByRef(ctx: QueryCtx | MutationCtx, roots: RootPayload[]) {
+  const refs = new Map<string, { slug: string; ownerHandle?: string }>();
   for (const root of roots) {
-    for (const entry of root.skills) slugs.add(entry.slug);
+    for (const entry of root.skills) {
+      const slug = entry.slug.trim().toLowerCase();
+      if (!slug) continue;
+      const ownerHandle = entry.ownerHandle?.trim().replace(/^@+/, "") || undefined;
+      refs.set(telemetrySkillRefKey({ slug, ownerHandle }), { slug, ownerHandle });
+    }
   }
   const map = new Map<string, { skillId: Id<"skills"> }>();
-  for (const slug of slugs) {
-    const skill = await ctx.db
-      .query("skills")
-      .withIndex("by_slug", (q) => q.eq("slug", slug))
-      .unique();
-    if (skill && !skill.softDeletedAt) map.set(slug, { skillId: skill._id });
+  for (const { slug, ownerHandle } of refs.values()) {
+    const skill = ownerHandle
+      ? await resolveTelemetrySkillByOwner(ctx, slug, ownerHandle)
+      : await resolveTelemetrySkillByLegacySlug(ctx, slug);
+    if (skill && !skill.softDeletedAt) {
+      map.set(telemetrySkillRefKey({ slug, ownerHandle }), { skillId: skill._id });
+    }
   }
   return map;
+}
+
+function telemetrySkillRefKey(ref: { slug: string; ownerHandle?: string | null }) {
+  const slug = ref.slug.trim().toLowerCase();
+  const ownerHandle = ref.ownerHandle?.trim().replace(/^@+/, "").toLowerCase();
+  return ownerHandle ? `${ownerHandle}/${slug}` : slug;
+}
+
+async function resolveTelemetrySkillByOwner(
+  ctx: QueryCtx | MutationCtx,
+  slug: string,
+  ownerHandle: string,
+) {
+  const { publisher } = await resolvePublisherByOwnerHandle(ctx, ownerHandle);
+  if (!publisher) return null;
+  return await getSkillBySlugForPublisher(ctx, slug, publisher);
+}
+
+async function resolveTelemetrySkillByLegacySlug(ctx: QueryCtx | MutationCtx, slug: string) {
+  const resolved = await resolveLegacySkillBySlugOrAlias(ctx, slug);
+  return resolved.ambiguous ? null : resolved.skill;
 }

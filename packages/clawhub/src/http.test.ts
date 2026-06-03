@@ -165,6 +165,54 @@ describe("node http client", () => {
     expect(clearTimeoutImpl).toHaveBeenCalledTimes(3);
   });
 
+  it("formats ambiguous skill slug errors with install choices", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 409,
+      headers: new Headers({ "Content-Type": "application/json" }),
+      text: async () =>
+        JSON.stringify({
+          code: "AMBIGUOUS_SKILL_SLUG",
+          message:
+            'Found multiple skills with the slug "discrawl"; specify which one you want to install:',
+          slug: "discrawl",
+          matches: [
+            {
+              ownerHandle: "openclaw",
+              slug: "discrawl",
+              ref: "@openclaw/discrawl",
+              url: "https://clawhub.ai/openclaw/discrawl",
+            },
+            {
+              ownerHandle: "patrick",
+              slug: "discrawl",
+              ref: "@patrick/discrawl",
+              url: "https://clawhub.ai/patrick/discrawl",
+            },
+          ],
+        }),
+    });
+    const client = createNodeClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
+
+    await expect(
+      client.apiRequest("https://clawhub.ai", { method: "GET", path: "/api/v1/skills/discrawl" }),
+    ).rejects.toThrow(
+      [
+        'Found multiple skills with the slug "discrawl"; specify which one you want to install:',
+        "",
+        "  1.",
+        "     Skill: openclaw/discrawl",
+        "     Page:  https://clawhub.ai/openclaw/discrawl",
+        "     Run:   clawhub install @openclaw/discrawl",
+        "",
+        "  2.",
+        "     Skill: patrick/discrawl",
+        "     Page:  https://clawhub.ai/patrick/discrawl",
+        "     Run:   clawhub install @patrick/discrawl",
+      ].join("\n"),
+    );
+  });
+
   it("interprets legacy epoch Retry-After values as reset delays", async () => {
     const { setTimeoutImpl, clearTimeoutImpl } = createImmediateTimeouts();
     const fetchImpl = vi.fn().mockResolvedValue({

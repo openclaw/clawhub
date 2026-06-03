@@ -883,7 +883,7 @@ export function Management() {
                             onClick={() =>
                               void setDuplicate({
                                 skillId: entry.skill._id,
-                                canonicalSlug: match.skill.slug,
+                                canonicalSkillId: match.skill._id,
                               })
                             }
                           >

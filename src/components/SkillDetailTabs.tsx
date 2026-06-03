@@ -201,7 +201,9 @@ export function SkillDetailTabs({
             <MarkdownPreview
               highlight={false}
               urlTransform={(url, key) =>
-                key === "href" ? resolveSkillReadmeHref(url, skill.slug) : defaultUrlTransform(url)
+                key === "href"
+                  ? resolveSkillReadmeHref(url, skill.slug, ownerHandle)
+                  : defaultUrlTransform(url)
               }
             >
               {skillCardContent}

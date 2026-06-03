@@ -78,6 +78,13 @@ function normalizeSkillSlugOrFail(raw: string) {
   return slug;
 }
 
+function normalizeSkillSlugForRemote(raw: unknown) {
+  if (typeof raw !== "string") return undefined;
+  const slug = raw.trim();
+  if (!isSafeSkillSlug(slug)) return undefined;
+  return slug;
+}
+
 function parseSkillRefOrFail(raw: string): SkillRef {
   const ref = raw.trim();
   if (!ref) fail("Slug required");
@@ -163,6 +170,15 @@ function formatPinnedDetails(entry?: { pinReason?: string }) {
   return entry?.pinReason ? ` (${entry.pinReason})` : "";
 }
 
+function formatSearchOwner(entry: {
+  ownerHandle?: string | null;
+  owner?: { handle?: string | null; displayName?: string | null } | null;
+}) {
+  const handle = entry.ownerHandle ?? entry.owner?.handle;
+  if (handle) return `@${handle}`;
+  return entry.owner?.displayName ?? "unknown owner";
+}
+
 export async function cmdSearch(opts: GlobalOpts, query: string, limit?: number) {
   if (!query) fail("Query required");
 
@@ -183,11 +199,11 @@ export async function cmdSearch(opts: GlobalOpts, query: string, limit?: number)
     spinner.stop();
     for (const entry of result.results) {
       const slug = entry.slug ?? "unknown";
-      const ownerHandle = entry.ownerHandle ?? entry.owner?.handle;
-      const ref = ownerHandle ? `@${ownerHandle}/${slug}` : slug;
       const name = entry.displayName ?? slug;
       const version = entry.version ? ` v${entry.version}` : "";
-      console.log(`${ref}${version}  ${name}  (${entry.score.toFixed(3)})`);
+      console.log(
+        `${slug}${version}  ${formatSearchOwner(entry)}  ${name}  (${entry.score.toFixed(3)})`,
+      );
     }
   } catch (error) {
     spinner.fail(formatError(error));
@@ -229,8 +245,10 @@ export async function cmdInstall(
       ApiV1SkillResponseSchema,
     );
     const resolvedOwnerHandle = normalizeOwnerHandle(
-      skillMeta.owner?.handle ?? requested.ownerHandle,
+      requested.ownerHandle ?? skillMeta.owner?.handle,
     );
+    const resolvedSlug = normalizeSkillSlugForRemote(skillMeta.skill?.slug) ?? trimmed;
+    const remoteSlug = requested.ownerHandle ? trimmed : resolvedSlug;
 
     // Check moderation status before proceeding
     if (skillMeta.moderation?.isMalwareBlocked) {
@@ -260,7 +278,7 @@ export async function cmdInstall(
     if (versionFlag) {
       await apiRequest(
         registry,
-        skillVersionRequestArgs(registry, trimmed, resolvedVersion, resolvedOwnerHandle, token),
+        skillVersionRequestArgs(registry, remoteSlug, resolvedVersion, resolvedOwnerHandle, token),
         ApiV1SkillVersionResponseSchema,
       );
     }
@@ -271,7 +289,7 @@ export async function cmdInstall(
 
     spinner.text = `Downloading ${trimmed}@${resolvedVersion}`;
     const zip = await downloadZip(registry, {
-      slug: trimmed,
+      slug: remoteSlug,
       ...(resolvedOwnerHandle ? { ownerHandle: resolvedOwnerHandle } : {}),
       version: resolvedVersion,
       token,
@@ -284,7 +302,7 @@ export async function cmdInstall(
     await writeSkillOrigin(target, {
       version: 1,
       registry,
-      slug: trimmed,
+      slug: remoteSlug,
       ...(resolvedOwnerHandle ? { ownerHandle: resolvedOwnerHandle } : {}),
       installedVersion: resolvedVersion,
       installedAt: Date.now(),
@@ -314,9 +332,9 @@ export async function cmdUpdate(
   const requestedRef = slugArg ? parseSkillRefOrFail(slugArg) : null;
   const slug = requestedRef?.slug;
   const all = Boolean(options.all);
-  if (!slug && !all) fail("Provide <slug> or --all");
-  if (slug && all) fail("Use either <slug> or --all");
-  if (options.version && !slug) fail("--version requires a single <slug>");
+  if (!slug && !all) fail("Provide <skill> or --all");
+  if (slug && all) fail("Use either <skill> or --all");
+  if (options.version && !slug) fail("--version requires a single <skill>");
   if (options.version && !semver.valid(options.version)) fail("--version must be valid semver");
   const lock = await readLockfile(opts.workdir);
   if (slug && isPinnedSkillEntry(lock.skills[slug])) {
@@ -363,8 +381,10 @@ export async function cmdUpdate(
         ApiV1SkillResponseSchema,
       );
       const resolvedOwnerHandle = normalizeOwnerHandle(
-        skillMeta.owner?.handle ?? requestedOwnerHandle,
+        requestedOwnerHandle ?? skillMeta.owner?.handle,
       );
+      const resolvedSlug = normalizeSkillSlugForRemote(skillMeta.skill?.slug) ?? entry;
+      const remoteSlug = existingOrigin?.slug ?? (requestedOwnerHandle ? entry : resolvedSlug);
 
       // Check moderation status before proceeding
       if (skillMeta.moderation?.isMalwareBlocked) {
@@ -405,7 +425,7 @@ export async function cmdUpdate(
       if (localFingerprint) {
         resolveResult = await resolveSkillVersion(
           registry,
-          entry,
+          remoteSlug,
           localFingerprint,
           resolvedOwnerHandle,
           token,
@@ -423,12 +443,16 @@ export async function cmdUpdate(
         resolveResult.match?.version ??
         (localFingerprint &&
         existingOrigin?.fingerprint === localFingerprint &&
-        existingOrigin.slug === entry &&
+        existingOrigin.slug === remoteSlug &&
         originOwnerMatches
           ? existingOrigin.installedVersion
           : null);
 
-      if (matched && lock.skills[entry]?.version !== matched) {
+      if (
+        matched &&
+        (lock.skills[entry]?.version !== matched ||
+          (resolvedOwnerHandle && lock.skills[entry]?.ownerHandle !== resolvedOwnerHandle))
+      ) {
         lock.skills[entry] = withOwnerMetadata(
           matched,
           lock.skills[entry]?.installedAt ?? Date.now(),
@@ -476,7 +500,7 @@ export async function cmdUpdate(
       }
       await rm(target, { recursive: true, force: true });
       const zip = await downloadZip(registry, {
-        slug: entry,
+        slug: remoteSlug,
         ...(resolvedOwnerHandle ? { ownerHandle: resolvedOwnerHandle } : {}),
         version: targetVersion,
         token,
@@ -489,7 +513,7 @@ export async function cmdUpdate(
       await writeSkillOrigin(target, {
         version: 1,
         registry: existingOrigin?.registry ?? registry,
-        slug: existingOrigin?.slug ?? entry,
+        slug: remoteSlug,
         ...(resolvedOwnerHandle ? { ownerHandle: resolvedOwnerHandle } : {}),
         installedVersion: targetVersion,
         installedAt: existingOrigin?.installedAt ?? Date.now(),
@@ -570,6 +594,7 @@ export async function cmdUnpin(opts: GlobalOpts, slug: string) {
   lock.skills[trimmed] = {
     version: existing.version,
     installedAt: existing.installedAt,
+    ...(existing.ownerHandle ? { ownerHandle: existing.ownerHandle } : {}),
   };
   await writeLockfile(opts.workdir, lock);
   console.log(`Unpinned ${trimmed}`);

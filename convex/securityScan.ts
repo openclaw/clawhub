@@ -7,6 +7,11 @@ import { assertAdmin, assertModerator, requireUser } from "./lib/access";
 import { normalizePackageName } from "./lib/packageRegistry";
 import { assertCanManageOwnedResource } from "./lib/publishers";
 import { sourceSkillVersionFiles } from "./lib/skillCards";
+import {
+  getSkillBySlugForPublisher,
+  resolveLegacySkillBySlugOrAlias,
+  resolvePublisherByOwnerHandle,
+} from "./lib/skills/slugResolution";
 
 const DEFAULT_VT_WAIT_MS = 10 * 60 * 1000;
 const DEFAULT_LEASE_MS = 60 * 60 * 1000;
@@ -79,6 +84,25 @@ type SkillSpectorAnalysisForStorage = {
   error?: string;
   checkedAt: number;
 };
+
+async function resolveSkillForRescan(ctx: MutationCtx, slug: string, ownerHandle?: string) {
+  const normalizedSlug = slug.trim().toLowerCase();
+  if (!normalizedSlug) throw new ConvexError("Slug required");
+
+  if (ownerHandle) {
+    const { requestedHandle, publisher } = await resolvePublisherByOwnerHandle(ctx, ownerHandle);
+    if (!publisher) throw new ConvexError(`Owner @${requestedHandle ?? ownerHandle} was not found`);
+    return await getSkillBySlugForPublisher(ctx, normalizedSlug, publisher);
+  }
+
+  const resolved = await resolveLegacySkillBySlugOrAlias(ctx, normalizedSlug);
+  if (resolved.ambiguous) {
+    throw new ConvexError(
+      "Slug is used by multiple publishers. Use ownerHandle to rescan a specific skill.",
+    );
+  }
+  return resolved.skill;
+}
 
 const jobSourceValidator = v.union(
   v.literal("publish"),
@@ -593,6 +617,7 @@ export const enqueueSkillRescanForModeratorInternal = internalMutation({
   args: {
     actorUserId: v.id("users"),
     slug: v.string(),
+    ownerHandle: v.optional(v.string()),
     version: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -600,12 +625,7 @@ export const enqueueSkillRescanForModeratorInternal = internalMutation({
     if (!actor) throw new ConvexError("Unauthorized");
     assertModerator(actor);
 
-    const slug = args.slug.trim().toLowerCase();
-    if (!slug) throw new ConvexError("Slug required");
-    const skill = await ctx.db
-      .query("skills")
-      .withIndex("by_slug", (q) => q.eq("slug", slug))
-      .unique();
+    const skill = await resolveSkillForRescan(ctx, args.slug, args.ownerHandle);
     if (!skill || skill.softDeletedAt) throw new ConvexError("Skill not found");
 
     const requestedVersion = args.version?.trim();
@@ -722,18 +742,14 @@ export const requestSkillRescanForUserInternal = internalMutation({
   args: {
     actorUserId: v.id("users"),
     slug: v.string(),
+    ownerHandle: v.optional(v.string()),
     version: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const actor = await ctx.db.get(args.actorUserId);
     if (!actor) throw new ConvexError("Unauthorized");
 
-    const slug = args.slug.trim().toLowerCase();
-    if (!slug) throw new ConvexError("Slug required");
-    const skill = await ctx.db
-      .query("skills")
-      .withIndex("by_slug", (q) => q.eq("slug", slug))
-      .unique();
+    const skill = await resolveSkillForRescan(ctx, args.slug, args.ownerHandle);
     if (!skill || skill.softDeletedAt) throw new ConvexError("Skill not found");
 
     return requestSkillRescanForActor(ctx, { actor, skill, version: args.version });

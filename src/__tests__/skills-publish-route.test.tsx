@@ -552,7 +552,7 @@ describe("Upload route", () => {
   });
 
   it("loads update metadata in the owner namespace when ownerHandle is present", async () => {
-    routeSearch = { updateSlug: "shared-skill", ownerHandle: "clawkit" };
+    useSearchMock.mockReturnValue({ updateSlug: "shared-skill", ownerHandle: "clawkit" });
     useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;
       if (args === undefined) {

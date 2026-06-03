@@ -214,8 +214,8 @@ registerCommand(program, ["search"])
   });
 
 registerCommand(program, ["install"])
-  .description("Install into <dir>/<slug>")
-  .argument("<slug>", "Skill slug or @owner/slug")
+  .description("Install a skill into <dir>")
+  .argument("<skill>", "Skill to install, e.g. @openclaw/demo")
   .option("--version <version>", "Version to install")
   .option("--force", "Overwrite existing folder")
   .action(async (slug, options) => {
@@ -225,7 +225,7 @@ registerCommand(program, ["install"])
 
 registerCommand(program, ["update"])
   .description("Update installed skills")
-  .argument("[slug]", "Skill slug or @owner/slug")
+  .argument("[skill]", "Skill to update, e.g. @openclaw/demo")
   .option("--all", "Update all installed skills")
   .option("--version <version>", "Update to specific version (single slug only)")
   .option("--force", "Overwrite when local files do not match any version")
@@ -236,7 +236,7 @@ registerCommand(program, ["update"])
 
 registerCommand(program, ["uninstall"])
   .description("Uninstall a skill")
-  .argument("<slug>", "Skill slug")
+  .argument("<skill>", "Installed skill to remove")
   .option("--yes", "Skip confirmation")
   .action(async (slug, options) => {
     const opts = await resolveGlobalOpts();
@@ -252,7 +252,7 @@ registerCommand(program, ["list"])
 
 registerCommand(program, ["pin"])
   .description("Pin an installed skill so update commands skip it")
-  .argument("<slug>", "Skill slug")
+  .argument("<skill>", "Installed skill to pin")
   .option("--reason <text>", "Optional pin reason")
   .action(async (slug, options) => {
     const opts = await resolveGlobalOpts();
@@ -261,7 +261,7 @@ registerCommand(program, ["pin"])
 
 registerCommand(program, ["unpin"])
   .description("Remove a skill pin so updates can change it again")
-  .argument("<slug>", "Skill slug")
+  .argument("<skill>", "Installed skill to unpin")
   .action(async (slug) => {
     const opts = await resolveGlobalOpts();
     await cmdUnpin(opts, slug);
@@ -290,7 +290,7 @@ registerCommand(program, ["explore"])
 
 registerCommand(program, ["inspect"])
   .description("Fetch skill metadata and files without installing")
-  .argument("<slug>", "Skill slug")
+  .argument("<skill>", "Skill to inspect, e.g. @openclaw/demo")
   .option("--version <version>", "Version to inspect")
   .option("--tag <tag>", "Tag to inspect (default: latest)")
   .option("--versions", "List version history (first page)")
@@ -306,7 +306,7 @@ registerCommand(program, ["inspect"])
 registerCommand(program, ["publish"])
   .description("Legacy alias: publish a skill from folder")
   .argument("<path>", "Skill folder path")
-  .option("--slug <slug>", "Skill slug")
+  .option("--slug <slug>", "Published skill URL name")
   .option("--name <name>", "Display name")
   .option("--owner <handle>", "Publish under an org/user publisher handle")
   .option("--source-owner <handle>", "Source owner handle when migrating an existing skill")
@@ -323,7 +323,7 @@ registerCommand(program, ["publish"])
 
 registerCommand(program, ["delete"])
   .description("Soft-delete one of your skills")
-  .argument("<slug>", "Skill slug")
+  .argument("<skill>", "Skill to delete")
   .option("--reason <text>", "Moderation note/reason")
   .option("--note <text>", "Alias for --reason")
   .option("--yes", "Skip confirmation")
@@ -334,7 +334,7 @@ registerCommand(program, ["delete"])
 
 registerCommand(program, ["hide"])
   .description("Hide one of your skills")
-  .argument("<slug>", "Skill slug")
+  .argument("<skill>", "Skill to hide")
   .option("--reason <text>", "Moderation note/reason")
   .option("--note <text>", "Alias for --reason")
   .option("--yes", "Skip confirmation")
@@ -345,7 +345,7 @@ registerCommand(program, ["hide"])
 
 registerCommand(program, ["undelete"])
   .description("Restore one of your hidden skills")
-  .argument("<slug>", "Skill slug")
+  .argument("<skill>", "Skill to restore")
   .option("--reason <text>", "Moderation note/reason")
   .option("--note <text>", "Alias for --reason")
   .option("--yes", "Skip confirmation")
@@ -356,7 +356,7 @@ registerCommand(program, ["undelete"])
 
 registerCommand(program, ["unhide"])
   .description("Unhide one of your skills")
-  .argument("<slug>", "Skill slug")
+  .argument("<skill>", "Skill to unhide")
   .option("--reason <text>", "Moderation note/reason")
   .option("--note <text>", "Alias for --reason")
   .option("--yes", "Skip confirmation")
@@ -369,7 +369,7 @@ const skill = registerCommandGroup(program, ["skill"]).description("Manage publi
 registerCommand(skill, ["skill", "publish"])
   .description("Publish a skill from folder")
   .argument("<path>", "Skill folder path")
-  .option("--slug <slug>", "Skill slug")
+  .option("--slug <slug>", "Published skill URL name")
   .option("--name <name>", "Display name")
   .option("--owner <handle>", "Publish under an org/user publisher handle")
   .option("--source-owner <handle>", "Source owner handle when migrating an existing skill")
@@ -615,7 +615,7 @@ registerCommand(trustedPublisherCmd, ["package", "trusted-publisher", "get"])
 
 registerCommand(skill, ["skill", "rename"])
   .description("Rename a published skill and keep the old slug as a redirect")
-  .argument("<slug>", "Current skill slug")
+  .argument("<skill>", "Current skill")
   .argument("<new-slug>", "New canonical slug")
   .option("--yes", "Skip confirmation")
   .action(async (slug, newSlug, options) => {
@@ -625,8 +625,8 @@ registerCommand(skill, ["skill", "rename"])
 
 registerCommand(skill, ["skill", "merge"])
   .description("Merge one owned skill into another and redirect the old slug")
-  .argument("<source-slug>", "Source skill slug")
-  .argument("<target-slug>", "Target canonical slug")
+  .argument("<source>", "Source skill")
+  .argument("<target>", "Target skill")
   .option("--yes", "Skip confirmation")
   .action(async (sourceSlug, targetSlug, options) => {
     const opts = await resolveGlobalOpts();
@@ -639,7 +639,7 @@ const transfer = registerCommandGroup(program, ["transfer"]).description(
 
 registerCommand(transfer, ["transfer", "request"])
   .description("Request skill transfer to another user")
-  .argument("<slug>", "Skill slug")
+  .argument("<skill>", "Skill to transfer")
   .argument("<handle>", "Recipient handle (e.g., @username)")
   .option("--message <text>", "Optional message for recipient")
   .option("--yes", "Skip confirmation")
@@ -658,7 +658,7 @@ registerCommand(transfer, ["transfer", "list"])
 
 registerCommand(transfer, ["transfer", "accept"])
   .description("Accept incoming transfer for a skill")
-  .argument("<slug>", "Skill slug")
+  .argument("<skill>", "Skill to accept")
   .option("--yes", "Skip confirmation")
   .action(async (slug, options) => {
     const opts = await resolveGlobalOpts();
@@ -667,7 +667,7 @@ registerCommand(transfer, ["transfer", "accept"])
 
 registerCommand(transfer, ["transfer", "reject"])
   .description("Reject incoming transfer for a skill")
-  .argument("<slug>", "Skill slug")
+  .argument("<skill>", "Skill to reject")
   .option("--yes", "Skip confirmation")
   .action(async (slug, options) => {
     const opts = await resolveGlobalOpts();
@@ -676,7 +676,7 @@ registerCommand(transfer, ["transfer", "reject"])
 
 registerCommand(transfer, ["transfer", "cancel"])
   .description("Cancel outgoing transfer for a skill")
-  .argument("<slug>", "Skill slug")
+  .argument("<skill>", "Skill to cancel")
   .option("--yes", "Skip confirmation")
   .action(async (slug, options) => {
     const opts = await resolveGlobalOpts();
@@ -685,7 +685,7 @@ registerCommand(transfer, ["transfer", "cancel"])
 
 registerCommand(program, ["star"])
   .description("Add a skill to your highlights")
-  .argument("<slug>", "Skill slug")
+  .argument("<skill>", "Skill to highlight")
   .option("--yes", "Skip confirmation")
   .action(async (slug, options) => {
     const opts = await resolveGlobalOpts();
@@ -694,7 +694,7 @@ registerCommand(program, ["star"])
 
 registerCommand(program, ["unstar"])
   .description("Remove a skill from your highlights")
-  .argument("<slug>", "Skill slug")
+  .argument("<skill>", "Skill to remove from highlights")
   .option("--yes", "Skip confirmation")
   .action(async (slug, options) => {
     const opts = await resolveGlobalOpts();

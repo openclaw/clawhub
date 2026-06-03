@@ -252,4 +252,32 @@ describe("downloads helpers", () => {
     expect(await response.text()).toBe("Version not found");
     expect(storageGet).not.toHaveBeenCalled();
   });
+
+  it("returns ownerHandle guidance when a slug-only download is ambiguous", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      if ("slug" in args) return { skill: null, ambiguous: true };
+      return null;
+    });
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return null;
+    });
+
+    const response = await downloadZipHandler(
+      {
+        runQuery,
+        runMutation,
+        scheduler: { runAfter: vi.fn() },
+        storage: { get: vi.fn() },
+      } as unknown as ActionCtx,
+      new Request("https://example.com/api/v1/download?slug=demo"),
+    );
+
+    expect(response.status).toBe(409);
+    expect(response.headers.get("access-control-allow-origin")).toBe("*");
+    const body = await response.text();
+    expect(body).toContain('Ambiguous skill slug "demo"');
+    expect(body).toContain("/api/v1/download?slug=demo&ownerHandle=<owner>");
+  });
 });

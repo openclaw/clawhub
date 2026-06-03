@@ -28,8 +28,11 @@ export async function reportTelemetryIfEnabled(params: {
 }) {
   if (isTelemetryDisabled()) return;
   const versionBySlug = new Map<string, string | null>();
+  const ownerHandleBySlug = new Map<string, string>();
   for (const candidate of params.candidates) {
     versionBySlug.set(candidate.slug, candidate.matchVersion ?? null);
+    const ownerHandle = candidate.origin?.ownerHandle?.trim().replace(/^@+/, "");
+    if (ownerHandle) ownerHandleBySlug.set(candidate.slug, ownerHandle);
   }
 
   const roots = params.scan.roots.map((root) => ({
@@ -37,6 +40,9 @@ export async function reportTelemetryIfEnabled(params: {
     label: formatRootLabel(root),
     skills: (params.scan.skillsByRoot[root] ?? []).map((skill) => ({
       slug: skill.slug,
+      ...(ownerHandleBySlug.get(skill.slug)
+        ? { ownerHandle: ownerHandleBySlug.get(skill.slug) }
+        : {}),
       version: versionBySlug.get(skill.slug) ?? null,
     })),
   }));
@@ -102,7 +108,14 @@ export async function checkRegistrySyncState(
   resolveSupport: { value: boolean | null },
   token?: string,
 ): Promise<Candidate> {
-  const ownerHandle = skill.origin?.ownerHandle?.trim().replace(/^@+/, "") || undefined;
+  const sameRegistryOrigin =
+    skill.origin && normalizeRegistry(skill.origin.registry) === normalizeRegistry(registry)
+      ? skill.origin
+      : null;
+  const ownerHandle =
+    sameRegistryOrigin?.slug === skill.slug
+      ? sameRegistryOrigin.ownerHandle?.trim().replace(/^@+/, "") || undefined
+      : undefined;
   if (resolveSupport.value !== false) {
     try {
       const resolveUrl = new URL(ApiRoutes.resolve, "https://clawhub.local");
@@ -197,6 +210,10 @@ function ownerScopedSkillUrl(registry: string, slug: string, ownerHandle: string
   const url = registryUrl(`${ApiRoutes.skills}/${encodeURIComponent(slug)}`, registry);
   url.searchParams.set("ownerHandle", ownerHandle);
   return url.toString();
+}
+
+function normalizeRegistry(value: string) {
+  return value.trim().replace(/\/+$/, "").toLowerCase();
 }
 
 export async function scanRootsWithLabels(roots: string[], labels?: Record<string, string>) {

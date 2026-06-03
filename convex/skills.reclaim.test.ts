@@ -76,6 +76,7 @@ describe("skills reclaim ownership transfer", () => {
         if (table === "skillSlugAliases") {
           return {
             withIndex: (name: string) => {
+              if (name === "by_slug") return { take: async () => [] };
               if (name !== "by_skill") throw new Error(`unexpected aliases index ${name}`);
               return {
                 collect: async () => [
@@ -140,12 +141,7 @@ describe("skills reclaim ownership transfer", () => {
         ownerId: "users:new",
       }),
     );
-    expect(patch).toHaveBeenCalledWith(
-      "skillSlugAliases:1",
-      expect.objectContaining({
-        ownerUserId: "users:new",
-      }),
-    );
+    expect(patch).not.toHaveBeenCalledWith("skillSlugAliases:1", expect.anything());
     expect(patch).toHaveBeenCalledWith(
       "reservedSlugs:1",
       expect.objectContaining({
@@ -238,6 +234,14 @@ describe("skills reclaim ownership transfer", () => {
             },
           };
         }
+        if (table === "skillSlugAliases") {
+          return {
+            withIndex: (name: string) => {
+              if (name !== "by_slug") throw new Error(`unexpected aliases index ${name}`);
+              return { take: async () => [] };
+            },
+          };
+        }
         throw new Error(`unexpected table ${table}`);
       }),
       patch,
@@ -286,7 +290,15 @@ describe("skills reclaim ownership transfer", () => {
           return {
             withIndex: (name: string) => {
               if (name !== "by_slug") throw new Error(`unexpected skills index ${name}`);
-              return { unique: async () => existingSkill };
+              return { unique: async () => existingSkill, take: async () => [existingSkill] };
+            },
+          };
+        }
+        if (table === "skillSlugAliases") {
+          return {
+            withIndex: (name: string) => {
+              if (name !== "by_slug") throw new Error(`unexpected aliases index ${name}`);
+              return { take: async () => [] };
             },
           };
         }

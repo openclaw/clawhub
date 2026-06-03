@@ -204,10 +204,33 @@ async function looksLikePluginFolder(folder: string) {
 
 function parseForkOf(value: string) {
   const trimmed = value.trim();
-  const [slugRaw, versionRaw] = trimmed.split("@");
+  const ref = parseOwnerQualifiedSkillRef(trimmed);
+  const [slugRaw, versionRaw] = splitForkSlugAndVersion(ref.slugAndVersion);
   const slug = (slugRaw ?? "").trim().toLowerCase();
   if (!slug) fail("--fork-of must be <slug> or <slug@version>");
   const version = (versionRaw ?? "").trim();
   if (version && !semver.valid(version)) fail("--fork-of version must be valid semver");
-  return { slug, version: version || undefined };
+  return {
+    slug,
+    ...(ref.ownerHandle ? { ownerHandle: ref.ownerHandle } : {}),
+    version: version || undefined,
+  };
+}
+
+function parseOwnerQualifiedSkillRef(value: string) {
+  if (!value.startsWith("@")) return { slugAndVersion: value };
+  const slashIndex = value.indexOf("/");
+  if (slashIndex < 0) fail("--fork-of must be <slug>, <slug@version>, or @<owner>/<slug@version>");
+  const ownerHandle = value.slice(1, slashIndex).trim().replace(/^@+/, "");
+  const slugAndVersion = value.slice(slashIndex + 1).trim();
+  if (!ownerHandle || !slugAndVersion) {
+    fail("--fork-of must be <slug>, <slug@version>, or @<owner>/<slug@version>");
+  }
+  return { ownerHandle, slugAndVersion };
+}
+
+function splitForkSlugAndVersion(value: string) {
+  const atIndex = value.lastIndexOf("@");
+  if (atIndex <= 0) return [value, ""] as const;
+  return [value.slice(0, atIndex), value.slice(atIndex + 1)] as const;
 }

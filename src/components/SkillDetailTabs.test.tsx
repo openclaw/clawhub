@@ -39,6 +39,9 @@ function renderReadmeForOwner(readmeContent: string) {
       setActiveTab={vi.fn()}
       readmeContent={readmeContent}
       readmeError={null}
+      skillCardContent={null}
+      skillCardError={null}
+      hasSkillCard={false}
       latestFiles={[]}
       latestVersionId={null}
       skill={{ slug: "api-gateway" } as Doc<"skills">}
@@ -97,6 +100,36 @@ describe("SkillDetailTabs README links", () => {
     );
   });
 
+  it("keeps relative Skill Card links in the viewed owner namespace", () => {
+    render(
+      <SkillDetailTabs
+        activeTab="skill-card"
+        setActiveTab={vi.fn()}
+        readmeContent="# API Gateway"
+        readmeError={null}
+        skillCardContent="[Evidence](reports/card.md)"
+        skillCardError={null}
+        hasSkillCard={true}
+        latestFiles={[]}
+        latestVersionId={null}
+        skill={{ slug: "api-gateway" } as Doc<"skills">}
+        ownerHandle="clawkit"
+        onCompareIntent={vi.fn()}
+        diffVersions={undefined}
+        versions={undefined}
+        nixPlugin={false}
+        suppressVersionScanResults={false}
+        scanResultsSuppressedMessage={null}
+        clawdis={undefined}
+        osLabels={[]}
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: "Evidence" }).getAttribute("href")).toBe(
+      "/api/v1/skills/api-gateway/file?path=reports%2Fcard.md&ownerHandle=clawkit",
+    );
+  });
+
   it("keeps version download links in the viewed owner namespace", () => {
     render(
       <SkillDetailTabs
@@ -104,6 +137,9 @@ describe("SkillDetailTabs README links", () => {
         setActiveTab={vi.fn()}
         readmeContent="# API Gateway"
         readmeError={null}
+        skillCardContent={null}
+        skillCardError={null}
+        hasSkillCard={false}
         latestFiles={[]}
         latestVersionId={null}
         skill={{ slug: "api-gateway" } as Doc<"skills">}
@@ -130,9 +166,12 @@ describe("SkillDetailTabs README links", () => {
       />,
     );
 
-    expect(screen.getByRole("link", { name: "Zip" }).getAttribute("href")).toBe(
-      "https://clawhub.ai/api/v1/download?slug=api-gateway&ownerHandle=clawkit&version=1.0.0",
-    );
+    const href = screen.getByRole("link", { name: "Zip" }).getAttribute("href");
+    const url = new URL(href ?? "");
+    expect(url.pathname).toBe("/api/v1/download");
+    expect(url.searchParams.get("slug")).toBe("api-gateway");
+    expect(url.searchParams.get("ownerHandle")).toBe("clawkit");
+    expect(url.searchParams.get("version")).toBe("1.0.0");
   });
 
   it("adds Clawdis metadata to the existing skill detail tabs", () => {

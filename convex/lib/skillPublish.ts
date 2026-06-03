@@ -63,7 +63,7 @@ export type PublishVersionArgs = {
   changelog: string;
   clawScanNote?: string;
   tags?: string[];
-  forkOf?: { slug: string; version?: string };
+  forkOf?: { slug: string; ownerHandle?: string; version?: string };
   source?: {
     kind: "github";
     url: string;
@@ -336,6 +336,7 @@ export async function publishVersionForUser(
     forkOf: args.forkOf
       ? {
           slug: args.forkOf.slug.trim().toLowerCase(),
+          ownerHandle: args.forkOf.ownerHandle?.trim().replace(/^@+/, "") || undefined,
           version: args.forkOf.version?.trim() || undefined,
         }
       : undefined,
