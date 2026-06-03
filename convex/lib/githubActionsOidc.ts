@@ -1,3 +1,5 @@
+import { buildGitHubApiHeaders } from "./githubAuth";
+
 type JwtHeader = {
   alg?: unknown;
   kid?: unknown;
@@ -217,7 +219,7 @@ export async function fetchGitHubRepositoryIdentity(
     throw new Error(`Invalid GitHub repository: ${repository}`);
   }
   const response = await fetchImpl(`https://api.github.com/repos/${normalizedRepository}`, {
-    headers: buildGitHubRepositoryLookupHeaders(),
+    headers: await buildGitHubRepositoryLookupHeaders(fetchImpl),
   });
   if (!response.ok) {
     throw new Error(
@@ -239,16 +241,16 @@ export async function fetchGitHubRepositoryIdentity(
   };
 }
 
-function buildGitHubRepositoryLookupHeaders() {
-  const headers: Record<string, string> = {
-    Accept: "application/vnd.github+json",
-    "User-Agent": "clawhub/package-trusted-publisher",
-  };
-  const token = process.env.GITHUB_TOKEN?.trim();
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
-  return headers;
+async function buildGitHubRepositoryLookupHeaders(fetchImpl: typeof fetch) {
+  return await buildGitHubApiHeaders({
+    accept: "application/vnd.github+json",
+    fetchImpl,
+    userAgent: "clawhub/package-trusted-publisher",
+    // This lookup accepts arbitrary public repositories. GitHub App installation
+    // tokens only see repositories where the App is installed, so prefer PAT or
+    // anonymous auth here.
+    useGitHubApp: false,
+  });
 }
 
 export function normalizeGitHubRepository(repository: string) {

@@ -296,10 +296,15 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Gate applies to web uploads, CLI publish, GitHub import, and comments.
 - If GitHub responds `403` or `429`, publish fails with:
   - `GitHub API rate limit exceeded — please try again in a few minutes`
-- To reduce rate-limit failures, set `GITHUB_TOKEN` in Convex env for authenticated
-  GitHub API requests. The same token is used for trusted-publisher repository
-  identity lookups.
-- If a configured `GITHUB_TOKEN` is rejected with `401`, retry the account-age
+- To reduce rate-limit failures, configure the ClawHub GitHub App in Convex env:
+  `GITHUB_APP_ID`, `GITHUB_APP_INSTALLATION_ID`, and `GITHUB_APP_PRIVATE_KEY`.
+  Account-age/profile lookups prefer short-lived GitHub App installation
+  tokens, then fall back to `GITHUB_TOKEN`, then to unauthenticated public
+  requests where safe. Trusted-publisher repository identity lookups avoid
+  GitHub App installation tokens because users may configure repositories
+  outside the App installation; they use `GITHUB_TOKEN` or unauthenticated
+  public requests instead.
+- If configured GitHub API auth is rejected with `401`, retry the account-age
   lookup without auth before failing. Never fall back to mutable GitHub usernames
   for this gate; use the operator backfill to cache missing ages for existing users.
 

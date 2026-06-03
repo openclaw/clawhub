@@ -59,6 +59,7 @@ import type * as lib_embeddingVisibility from "../lib/embeddingVisibility.js";
 import type * as lib_embeddings from "../lib/embeddings.js";
 import type * as lib_githubAccount from "../lib/githubAccount.js";
 import type * as lib_githubActionsOidc from "../lib/githubActionsOidc.js";
+import type * as lib_githubAuth from "../lib/githubAuth.js";
 import type * as lib_githubBackup from "../lib/githubBackup.js";
 import type * as lib_githubIdentity from "../lib/githubIdentity.js";
 import type * as lib_githubImport from "../lib/githubImport.js";
@@ -200,6 +201,7 @@ declare const fullApi: ApiFromModules<{
   "lib/embeddings": typeof lib_embeddings;
   "lib/githubAccount": typeof lib_githubAccount;
   "lib/githubActionsOidc": typeof lib_githubActionsOidc;
+  "lib/githubAuth": typeof lib_githubAuth;
   "lib/githubBackup": typeof lib_githubBackup;
   "lib/githubIdentity": typeof lib_githubIdentity;
   "lib/githubImport": typeof lib_githubImport;

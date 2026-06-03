@@ -282,10 +282,10 @@ describe("requireGitHubAccountAge", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       "https://api.github.com/user/12345",
       expect.objectContaining({
-        headers: {
+        headers: expect.objectContaining({
           "User-Agent": "clawhub",
           Authorization: "Bearer ghp_test123",
-        },
+        }),
       }),
     );
   });
@@ -318,9 +318,10 @@ describe("requireGitHubAccountAge", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       "https://api.github.com/user/12345",
       expect.objectContaining({
-        headers: { "User-Agent": "clawhub" },
+        headers: expect.objectContaining({ "User-Agent": "clawhub" }),
       }),
     );
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).not.toHaveProperty("Authorization");
   });
 
   it("retries without Authorization when GITHUB_TOKEN is rejected", async () => {
@@ -356,10 +357,10 @@ describe("requireGitHubAccountAge", () => {
       1,
       "https://api.github.com/user/12345",
       expect.objectContaining({
-        headers: {
+        headers: expect.objectContaining({
           "User-Agent": "clawhub",
           Authorization: "Bearer ghp_expired",
-        },
+        }),
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
@@ -374,7 +375,7 @@ describe("requireGitHubAccountAge", () => {
       githubCreatedAt: Date.parse("2020-01-01T00:00:00Z"),
     });
     expect(warnSpy).toHaveBeenCalledWith(
-      "[githubAccount] GITHUB_TOKEN was rejected; retrying lookup without auth",
+      "[githubAccount] GitHub API auth was rejected; retrying lookup without auth",
     );
   });
 
@@ -398,9 +399,10 @@ describe("requireGitHubAccountAge", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       "https://api.github.com/user/12345",
       expect.objectContaining({
-        headers: { "User-Agent": "clawhub" },
+        headers: expect.objectContaining({ "User-Agent": "clawhub" }),
       }),
     );
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).not.toHaveProperty("Authorization");
   });
 });
 

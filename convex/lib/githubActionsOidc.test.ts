@@ -76,6 +76,34 @@ describe("fetchGitHubRepositoryIdentity", () => {
     );
   });
 
+  it("does not use GitHub App auth for arbitrary repository lookup", async () => {
+    vi.stubEnv("GITHUB_APP_ID", "123");
+    vi.stubEnv("GITHUB_APP_INSTALLATION_ID", "456");
+    vi.stubEnv("GITHUB_APP_PRIVATE_KEY", "not-needed-for-this-test");
+    vi.stubEnv("GITHUB_TOKEN", "ghs_test_token");
+    const fetchMock = vi.fn(async () =>
+      Response.json({
+        id: 123,
+        full_name: "openclaw/clawhub",
+        owner: { login: "openclaw", id: 456 },
+      }),
+    );
+
+    await fetchGitHubRepositoryIdentity("openclaw/clawhub", fetchMock);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.github.com/repos/openclaw/clawhub",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Accept: "application/vnd.github+json",
+          Authorization: "Bearer ghs_test_token",
+          "User-Agent": "clawhub/package-trusted-publisher",
+        }),
+      }),
+    );
+  });
+
   it("omits Authorization for repository lookup when GITHUB_TOKEN is blank", async () => {
     vi.stubEnv("GITHUB_TOKEN", "   ");
     const fetchMock = vi.fn(async () =>

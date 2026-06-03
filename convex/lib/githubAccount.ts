@@ -2,6 +2,7 @@ import { ConvexError } from "convex/values";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
+import { buildGitHubApiHeaders } from "./githubAuth";
 import { GITHUB_PROFILE_SYNC_WINDOW_MS } from "./githubProfileSync";
 
 const GITHUB_API = "https://api.github.com";
@@ -22,24 +23,16 @@ function assertGitHubNumericId(providerAccountId: string) {
   }
 }
 
-function buildGitHubHeaders() {
-  const headers: Record<string, string> = { "User-Agent": "clawhub" };
-  const token = process.env.GITHUB_TOKEN?.trim();
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
-  return headers;
-}
-
 async function fetchGitHubUserByNumericId(providerAccountId: string) {
   assertGitHubNumericId(providerAccountId);
   const url = `${GITHUB_API}/user/${providerAccountId}`;
+  const headers = await buildGitHubApiHeaders({ userAgent: "clawhub" });
   const response = await fetch(url, {
-    headers: buildGitHubHeaders(),
+    headers,
   });
-  if (response.status !== 401 || !process.env.GITHUB_TOKEN?.trim()) return response;
+  if (response.status !== 401 || !headers.Authorization) return response;
 
-  console.warn("[githubAccount] GITHUB_TOKEN was rejected; retrying lookup without auth");
+  console.warn("[githubAccount] GitHub API auth was rejected; retrying lookup without auth");
   return await fetch(url, {
     headers: { "User-Agent": "clawhub" },
   });
