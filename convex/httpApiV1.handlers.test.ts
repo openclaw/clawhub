@@ -64,6 +64,15 @@ function hasPackageNameArgs(args: unknown): args is { name: string } {
   return typeof value.name === "string";
 }
 
+function hasPackageDownloadMetricTarget(args: unknown, packageId: string) {
+  if (!args || typeof args !== "object") return false;
+  const value = args as Record<string, unknown>;
+  const target = value.target;
+  if (!target || typeof target !== "object") return false;
+  const targetValue = target as Record<string, unknown>;
+  return targetValue.kind === "package" && targetValue.id === packageId;
+}
+
 function findRateLimitCallArgs(mock: ReturnType<typeof vi.fn>) {
   return mock.mock.calls.map(([, args]) => args).find(isRateLimitArgs);
 }
@@ -8743,7 +8752,7 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
-  it("npm mirror tarball downloads record package installs", async () => {
+  it("npm mirror tarball downloads record package installs and download metrics", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("name" in args && !("paginationOpts" in args)) {
         return {
@@ -8798,13 +8807,25 @@ describe("httpApiV1 handlers", () => {
           get: vi.fn(async () => new Blob(["tarball"], { type: "application/octet-stream" })),
         },
       }),
-      new Request("https://example.com/api/npm/demo-plugin/-/demo-plugin-1.0.0.tgz"),
+      new Request("https://example.com/api/npm/demo-plugin/-/demo-plugin-1.0.0.tgz", {
+        headers: { "cf-connecting-ip": "203.0.113.10" },
+      }),
     );
 
     expect(response.status).toBe(200);
     expect(runMutation).toHaveBeenCalledWith(internal.packages.recordPackageInstallInternal, {
       packageId: "packages:demo-plugin",
     });
+    expect(runMutation).toHaveBeenCalledWith(
+      internal.downloadMetrics.recordDownloadMetricInternal,
+      expect.objectContaining({
+        target: { kind: "package", id: "packages:demo-plugin" },
+        identityKind: "ip",
+        identityHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+        dayStart: expect.any(Number),
+        occurredAt: expect.any(Number),
+      }),
+    );
   });
 
   it("npm mirror returns not found for invalid package lookup names", async () => {
@@ -9202,7 +9223,9 @@ describe("httpApiV1 handlers", () => {
           }),
         },
       }),
-      new Request("https://example.com/api/v1/packages/demo-plugin/download"),
+      new Request("https://example.com/api/v1/packages/demo-plugin/download", {
+        headers: { "cf-connecting-ip": "203.0.113.20" },
+      }),
     );
 
     const zipEntries = unzipSync(new Uint8Array(await response.arrayBuffer()));
@@ -9211,9 +9234,147 @@ describe("httpApiV1 handlers", () => {
       "package/package.json",
     ]);
     expect(zipEntries["_meta.json"]).toBeUndefined();
-    expect(runMutation).toHaveBeenCalledWith(internal.packages.recordPackageDownloadInternal, {
-      packageId: "packages:1",
+    expect(runMutation).toHaveBeenCalledWith(
+      internal.downloadMetrics.recordDownloadMetricInternal,
+      {
+        target: { kind: "package", id: "packages:1" },
+        identityKind: "ip",
+        identityHash: expect.any(String),
+        dayStart: expect.any(Number),
+        occurredAt: expect.any(Number),
+      },
+    );
+  });
+
+  it("package download metrics prefer API token user identity over IP", async () => {
+    vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:viewer" as never);
+
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args) {
+        return {
+          package: {
+            _id: "packages:1",
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            family: "code-plugin",
+            tags: {},
+            latestReleaseId: "packageReleases:1",
+            channel: "community",
+            isOfficial: false,
+            createdAt: 1,
+            updatedAt: 1,
+          },
+          latestRelease: null,
+          owner: { _id: "users:owner", handle: "owner" },
+        };
+      }
+      if ("releaseId" in args) {
+        return {
+          _id: "packageReleases:1",
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "init",
+          files: [
+            {
+              path: "package.json",
+              size: 2,
+              sha256: "a".repeat(64),
+              storageId: "storage:1",
+              contentType: "application/json",
+            },
+          ],
+        };
+      }
+      return null;
     });
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({
+        runQuery,
+        runMutation,
+        storage: {
+          get: vi.fn(async () => new Blob(["{}"], { type: "application/json" })),
+        },
+      }),
+      new Request("https://example.com/api/v1/packages/demo-plugin/download", {
+        headers: {
+          authorization: "Bearer clh_test",
+          "cf-connecting-ip": "203.0.113.20",
+        },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runMutation).toHaveBeenCalledWith(
+      internal.downloadMetrics.recordDownloadMetricInternal,
+      expect.objectContaining({
+        target: { kind: "package", id: "packages:1" },
+        identityKind: "user",
+        identityHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      }),
+    );
+  });
+
+  it("package downloads succeed and record download metrics", async () => {
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args) {
+        return {
+          package: {
+            _id: "packages:1",
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            family: "code-plugin",
+            tags: {},
+            latestReleaseId: "packageReleases:1",
+            channel: "community",
+            isOfficial: false,
+            createdAt: 1,
+            updatedAt: 1,
+          },
+          latestRelease: null,
+          owner: { _id: "users:owner", handle: "owner" },
+        };
+      }
+      if ("releaseId" in args) {
+        return {
+          _id: "packageReleases:1",
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "init",
+          files: [
+            {
+              path: "package.json",
+              size: 2,
+              sha256: "a".repeat(64),
+              storageId: "storage:1",
+              contentType: "application/json",
+            },
+          ],
+        };
+      }
+      return null;
+    });
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({
+        runQuery,
+        runMutation,
+        storage: {
+          get: vi.fn(async () => new Blob(["{}"], { type: "application/json" })),
+        },
+      }),
+      new Request("https://example.com/api/v1/packages/demo-plugin/download", {
+        headers: { "cf-connecting-ip": "203.0.113.20" },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    const mutationArgs = runMutation.mock.calls.map(([, args]) => args);
+    expect(
+      mutationArgs.filter((args) => hasPackageDownloadMetricTarget(args, "packages:1")),
+    ).toHaveLength(1);
   });
 
   it("package download fails when any stored file is missing", async () => {

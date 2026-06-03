@@ -93,4 +93,11 @@ crons.interval(
   {},
 );
 
+crons.interval(
+  "download-metric-dedupe-prune",
+  { hours: 24 },
+  internal.downloadMetrics.pruneDownloadMetricDedupesInternal,
+  {},
+);
+
 export default crons;
