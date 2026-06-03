@@ -40,7 +40,7 @@ const schema = {
 // Order matters: rehype-sanitize runs BEFORE rehype-shiki so sanitize only
 // sees user-authored HTML; shiki's trusted styled output flows through after.
 // rehypeProxyImages rewrites after sanitize so we rewrite only already-safe
-// <img src="..."> nodes (sanitize strips event handlers, javascript: URLs).
+// image URLs (sanitize strips event handlers, javascript: URLs).
 function buildBaseRehype(assetBaseUrl: string | undefined): PluggableList {
   return [rehypeRaw, [rehypeSanitize, schema], [rehypeProxyImages, { assetBaseUrl }]];
 }

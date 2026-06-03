@@ -25,6 +25,12 @@ const DATA_OR_FRAGMENT = /^(?:data:|#|mailto:|tel:)/i;
 const ABSOLUTE_HTTP = /^https?:\/\//i;
 const EXPLICIT_SCHEME = /^[a-z][a-z0-9+\-.]*:/i;
 const PROTOCOL_RELATIVE = /^\/\//;
+const IMAGE_PROXY_WIDTH = 1024;
+
+type SrcsetCandidate = {
+  url: string;
+  descriptors: string;
+};
 
 function getRawGitHubCommitRoot(assetBaseUrl: string): URL | null {
   try {
@@ -63,8 +69,93 @@ function resolveRelativeSrc(src: string, assetBaseUrl: string | undefined): stri
   }
 }
 
+function proxyImageSrc(src: string): string {
+  return `/_vercel/image?url=${encodeURIComponent(src)}&w=${IMAGE_PROXY_WIDTH}&q=75`;
+}
+
+function rewriteImageSrc(src: string, assetBaseUrl: string | undefined): string | null {
+  const normalizedSrc = src.trim();
+  let absoluteSrc: string | null = null;
+  if (ABSOLUTE_HTTP.test(normalizedSrc)) {
+    absoluteSrc = normalizedSrc;
+  } else {
+    absoluteSrc = resolveRelativeSrc(normalizedSrc, assetBaseUrl);
+  }
+  if (!absoluteSrc) return null;
+  return proxyImageSrc(absoluteSrc);
+}
+
+function isAsciiWhitespace(char: string): boolean {
+  return char === " " || char === "\n" || char === "\t" || char === "\r" || char === "\f";
+}
+
+function parseSrcset(srcset: string): SrcsetCandidate[] {
+  const candidates: SrcsetCandidate[] = [];
+  let index = 0;
+
+  while (index < srcset.length) {
+    while (index < srcset.length) {
+      const char = srcset[index];
+      if (isAsciiWhitespace(char) || char === ",") {
+        index += 1;
+        continue;
+      }
+      break;
+    }
+    if (index >= srcset.length) break;
+
+    const urlStart = index;
+    while (index < srcset.length && !isAsciiWhitespace(srcset[index])) {
+      index += 1;
+    }
+    let url = srcset.slice(urlStart, index);
+    const endedWithComma = url.endsWith(",");
+    if (endedWithComma) {
+      url = url.slice(0, -1);
+    }
+
+    while (index < srcset.length && isAsciiWhitespace(srcset[index])) {
+      index += 1;
+    }
+
+    let descriptors = "";
+    if (!endedWithComma) {
+      const descriptorsStart = index;
+      while (index < srcset.length && srcset[index] !== ",") {
+        index += 1;
+      }
+      descriptors = srcset.slice(descriptorsStart, index).trim();
+    }
+
+    candidates.push({ url, descriptors });
+
+    if (srcset[index] === ",") {
+      index += 1;
+    }
+  }
+
+  return candidates;
+}
+
+function rewriteSrcset(srcset: string, assetBaseUrl: string | undefined): string | null {
+  const candidates = parseSrcset(srcset);
+  if (candidates.length === 0) return null;
+
+  let didRewrite = false;
+  const rewritten = candidates.map((candidate) => {
+    const rewrittenUrl = rewriteImageSrc(candidate.url, assetBaseUrl);
+    if (!rewrittenUrl) {
+      return candidate.descriptors ? `${candidate.url} ${candidate.descriptors}` : candidate.url;
+    }
+    didRewrite = true;
+    return candidate.descriptors ? `${rewrittenUrl} ${candidate.descriptors}` : rewrittenUrl;
+  });
+
+  return didRewrite ? rewritten.join(", ") : null;
+}
+
 /**
- * Routes external http(s) <img> sources through Vercel's image optimizer at
+ * Routes external http(s) image sources through Vercel's image optimizer at
  * /_vercel/image, which enforces the allow-list, SVG rejection, and caching
  * declared in vercel.json. Local paths, relative paths, and data: URIs pass
  * through unchanged — only external schemes are treated as untrusted.
@@ -73,8 +164,8 @@ function resolveRelativeSrc(src: string, assetBaseUrl: string | undefined): stri
  * that base (typically a `raw.githubusercontent.com/<repo>/<commit>/<dir>/`
  * URL derived from the package release source metadata) and then routed
  * through the same proxy. This fixes README images authored with relative
- * paths like `./images/foo.png`, which would otherwise 404 under the
- * ClawHub route.
+ * paths like `./images/foo.png` or `<source srcset="./dark.png 1x">`, which
+ * would otherwise 404 under the ClawHub route.
  *
  * `w` is required by the optimizer and must match a value in the `sizes`
  * array in vercel.json, so we always pass 1024. The <img width="..."> HTML
@@ -85,23 +176,32 @@ export function rehypeProxyImages(options: RehypeProxyImagesOptions = {}) {
   return (tree: Parameters<typeof visit>[0]) => {
     visit(tree, "element", (node) => {
       const element = node as HastElementLike;
-      if (element.tagName !== "img") return;
-      const src = element.properties?.src;
-      if (typeof src !== "string") return;
-      const normalizedSrc = src.trim();
-
-      let absoluteSrc: string | null = null;
-      if (ABSOLUTE_HTTP.test(normalizedSrc)) {
-        absoluteSrc = normalizedSrc;
-      } else {
-        absoluteSrc = resolveRelativeSrc(normalizedSrc, assetBaseUrl);
+      if (element.tagName === "img") {
+        const src = element.properties?.src;
+        if (typeof src === "string") {
+          const rewrittenSrc = rewriteImageSrc(src, assetBaseUrl);
+          if (rewrittenSrc) {
+            element.properties = {
+              ...element.properties,
+              src: rewrittenSrc,
+            };
+          }
+        }
       }
-      if (!absoluteSrc) return;
 
-      element.properties = {
-        ...element.properties,
-        src: `/_vercel/image?url=${encodeURIComponent(absoluteSrc)}&w=1024&q=75`,
-      };
+      if (element.tagName === "source") {
+        const srcsetKey = typeof element.properties?.srcSet === "string" ? "srcSet" : "srcset";
+        const srcset = element.properties?.[srcsetKey];
+        if (typeof srcset === "string") {
+          const rewrittenSrcset = rewriteSrcset(srcset, assetBaseUrl);
+          if (rewrittenSrcset) {
+            element.properties = {
+              ...element.properties,
+              [srcsetKey]: rewrittenSrcset,
+            };
+          }
+        }
+      }
     });
   };
 }

@@ -99,6 +99,23 @@ describe("MarkdownPreview — raw HTML passthrough", () => {
     );
   });
 
+  it("resolves relative <source srcset> in raw HTML picture markup against assetBaseUrl", () => {
+    const { container } = render(
+      <MarkdownPreview
+        highlight={false}
+        assetBaseUrl="https://raw.githubusercontent.com/owner/repo/abc123/docs/"
+      >{`<picture><source media="(prefers-color-scheme: dark)" srcset="./dark.png 1x, ./dark@2x.png 2x"/><img alt="Logo" src="./light.png"/></picture>`}</MarkdownPreview>,
+    );
+    const source = container.querySelector("picture source");
+    const img = container.querySelector("picture img");
+    expect(source?.getAttribute("srcset")).toBe(
+      "/_vercel/image?url=https%3A%2F%2Fraw.githubusercontent.com%2Fowner%2Frepo%2Fabc123%2Fdocs%2Fdark.png&w=1024&q=75 1x, /_vercel/image?url=https%3A%2F%2Fraw.githubusercontent.com%2Fowner%2Frepo%2Fabc123%2Fdocs%2Fdark%402x.png&w=1024&q=75 2x",
+    );
+    expect(img?.getAttribute("src")).toBe(
+      "/_vercel/image?url=https%3A%2F%2Fraw.githubusercontent.com%2Fowner%2Frepo%2Fabc123%2Fdocs%2Flight.png&w=1024&q=75",
+    );
+  });
+
   it("does not rewrite root-absolute paths even when assetBaseUrl is set", () => {
     const { container } = render(
       <MarkdownPreview
