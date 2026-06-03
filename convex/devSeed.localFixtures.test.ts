@@ -5,6 +5,7 @@ import {
   currentUserSeedSkillSlug,
   seedFeaturedPluginPackagesMutation,
   seedGitHubBackedSkillSourceMutation,
+  seedLocalFixtures,
   seedLocalModerationFixturesHandler,
   seedSkillMutation,
 } from "./devSeed";
@@ -21,6 +22,9 @@ const seedFeaturedPluginPackagesHandler = (
 )._handler;
 const seedGitHubBackedSkillSourceHandler = (
   seedGitHubBackedSkillSourceMutation as unknown as WrappedHandler<Record<string, unknown>>
+)._handler;
+const seedLocalFixturesHandler = (
+  seedLocalFixtures as unknown as WrappedHandler<{ reset?: boolean }>
 )._handler;
 
 function chainEq(constraints: Record<string, unknown>) {
@@ -150,6 +154,54 @@ function seedSkillArgs(storageId: string) {
 }
 
 describe("devSeed local fixtures", () => {
+  it("includes a GitHub-backed NVIDIA manifest fixture in the local seed action", async () => {
+    const mutationCalls: Array<{ args: Record<string, unknown> }> = [];
+    let storageCounter = 0;
+    const ctx = {
+      storage: {
+        store: async () => `storage:${++storageCounter}`,
+      },
+      runMutation: async (_ref: unknown, args: Record<string, unknown>) => {
+        mutationCalls.push({ args });
+        if (args.repo === "NVIDIA/skills") {
+          return {
+            ok: true,
+            seeded: ["aiq-deploy", "isaac-sim-helper", "vision-helper"],
+            skipped: [],
+          };
+        }
+        return { ok: true, seeded: ["local-moderation-fixtures"], skipped: [] };
+      },
+    };
+
+    const result = await seedLocalFixturesHandler(ctx as never, { reset: true });
+
+    expect(mutationCalls).toHaveLength(2);
+    expect(mutationCalls[1]?.args).toMatchObject({
+      reset: true,
+      repo: "NVIDIA/skills",
+      defaultBranch: "main",
+      displayManifestKind: "skills.sh",
+      displayManifestStatus: "ok",
+      displayManifest: {
+        notGrouped: "bottom",
+        groupings: expect.arrayContaining([
+          expect.objectContaining({ title: "Agentic AI" }),
+          expect.objectContaining({ title: "Physical AI" }),
+          expect.objectContaining({ title: "Vision AI" }),
+        ]),
+      },
+    });
+    expect(result).toEqual(
+      expect.objectContaining({
+        ok: true,
+        results: expect.arrayContaining([
+          expect.objectContaining({ slug: "nvidia-github-backed-skills" }),
+        ]),
+      }),
+    );
+  });
+
   it("seeds core skill fixtures for an explicit local user without creating @local", async () => {
     const { db, tables } = createDb();
     const userId = (await db.insert("users", {

@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { PublishedItemCard } from "../routes/user/$handle";
+import { PublishedCatalogSections, PublishedItemCard } from "../routes/user/$handle";
 
 // PublishedItemCard uses <Link> from TanStack Router; stub it to a plain <a>.
 vi.mock("@tanstack/react-router", () => ({
@@ -78,6 +78,22 @@ describe("PublishedItemCard", () => {
       expect(screen.getByLabelText("Official")).toBeTruthy();
       expect(screen.queryByText("Official")).toBeNull();
     });
+
+    it("marks GitHub-backed skill cards as source-backed", () => {
+      render(
+        <PublishedItemCard
+          item={{
+            ...baseSkill,
+            icon: null,
+            sourceBacked: true,
+            sourceRepo: "NVIDIA/skills",
+          }}
+          view="grid"
+        />,
+      );
+
+      expect(screen.getByText("Source-backed")).toBeTruthy();
+    });
   });
 
   describe("list view", () => {
@@ -98,5 +114,62 @@ describe("PublishedItemCard", () => {
       expect(screen.getByLabelText("Official")).toBeTruthy();
       expect(screen.queryByText("Official")).toBeNull();
     });
+  });
+});
+
+describe("PublishedCatalogSections", () => {
+  it("renders manifest groups with source-backed catalog copy", () => {
+    render(
+      <PublishedCatalogSections
+        view="list"
+        display={{
+          mode: "grouped",
+          sourceRepos: ["NVIDIA/skills"],
+          sections: [
+            {
+              key: "agentic",
+              title: "Agentic AI",
+              description: "Agentic AI skills.",
+              sourceRepo: "NVIDIA/skills",
+              items: [
+                {
+                  ...baseSkill,
+                  _id: "skills:aiq-deploy",
+                  displayName: "AIQ Deploy",
+                  href: "/nvidia/aiq-deploy",
+                  icon: null,
+                  sourceBacked: true,
+                  sourceRepo: "NVIDIA/skills",
+                },
+              ],
+            },
+            {
+              key: "other",
+              title: "Other skills",
+              description: null,
+              sourceRepo: null,
+              items: [
+                {
+                  ...baseSkill,
+                  _id: "skills:other",
+                  displayName: "Other Skill",
+                  href: "/nvidia/other",
+                  icon: null,
+                  sourceBacked: true,
+                  sourceRepo: "NVIDIA/skills",
+                },
+              ],
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Source-backed from NVIDIA/skills")).toBeTruthy();
+    expect(screen.getByText(/install bytes stay in github/i)).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Agentic AI" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Other skills" })).toBeTruthy();
+    expect(screen.getByText("AIQ Deploy")).toBeTruthy();
+    expect(screen.getByText("Other Skill")).toBeTruthy();
   });
 });

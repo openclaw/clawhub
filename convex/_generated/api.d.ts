@@ -83,6 +83,7 @@ import type * as lib_public from "../lib/public.js";
 import type * as lib_publicRouteReservations from "../lib/publicRouteReservations.js";
 import type * as lib_publishLimits from "../lib/publishLimits.js";
 import type * as lib_publisherAbuseScoring from "../lib/publisherAbuseScoring.js";
+import type * as lib_publisherCatalogDisplay from "../lib/publisherCatalogDisplay.js";
 import type * as lib_publisherStats from "../lib/publisherStats.js";
 import type * as lib_publishers from "../lib/publishers.js";
 import type * as lib_reporting from "../lib/reporting.js";
@@ -223,6 +224,7 @@ declare const fullApi: ApiFromModules<{
   "lib/publicRouteReservations": typeof lib_publicRouteReservations;
   "lib/publishLimits": typeof lib_publishLimits;
   "lib/publisherAbuseScoring": typeof lib_publisherAbuseScoring;
+  "lib/publisherCatalogDisplay": typeof lib_publisherCatalogDisplay;
   "lib/publisherStats": typeof lib_publisherStats;
   "lib/publishers": typeof lib_publishers;
   "lib/reporting": typeof lib_reporting;

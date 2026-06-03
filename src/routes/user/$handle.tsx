@@ -26,6 +26,7 @@ import { formatCompactStat } from "../../lib/numberFormat";
 import { buildPublisherMeta } from "../../lib/og";
 import type {
   PublicPublisher,
+  PublicPublisherCatalogDisplay,
   PublicPublisherCatalogItem,
   PublicPublisherListItem,
 } from "../../lib/publicUser";
@@ -101,6 +102,10 @@ function PublisherProfile() {
     | PublicPublisherListItem
     | null
     | undefined;
+  const publishedDisplay = useQuery(
+    api.publishers.getPublishedDisplayManifest,
+    publishedQueryArgs,
+  ) as PublicPublisherCatalogDisplay | null | undefined;
   const members = useQuery(api.publishers.listMembers, { publisherHandle: handle }) as
     | PublisherMemberResult
     | null
@@ -171,6 +176,7 @@ function PublisherProfile() {
   const activeItems = activeCatalogTab === "starred" ? starredItems : publishedItems;
   const activeStatus = activeCatalogTab === "starred" ? starredStatus : publishedStatus;
   const activeLoadMore = activeCatalogTab === "starred" ? loadMoreStarred : loadMore;
+  const activePublishedDisplay = activeCatalogTab === "published" ? publishedDisplay : null;
   const isLoadingCatalog = activeStatus === "LoadingFirstPage";
   const showPublishedKindFilters = activeCatalogTab === "published" && publishedCount > 0;
 
@@ -446,6 +452,8 @@ function PublisherProfile() {
 
               {isLoadingCatalog ? (
                 <SkillCardSkeletonGrid count={6} />
+              ) : activePublishedDisplay ? (
+                <PublishedCatalogSections display={activePublishedDisplay} view={publishedView} />
               ) : activeItems.length > 0 ? (
                 <>
                   <div
@@ -540,6 +548,44 @@ function ProfileDetail({
 // Exported for unit testing. The publisher profile route is the only
 // production consumer; tests assert that custom skill icons forwarded via
 // `item.icon` reach `MarketplaceIcon`.
+export function PublishedCatalogSections({
+  display,
+  view,
+}: {
+  display: PublicPublisherCatalogDisplay;
+  view: PublishedView;
+}) {
+  const sourceLabel = display.sourceRepos.join(", ");
+
+  return (
+    <div className="publisher-profile-source-catalog">
+      <div className="publisher-profile-source-note">
+        <GitHubIcon size={16} />
+        <span>
+          <strong>Source-backed from {sourceLabel}</strong>
+          <small>ClawHub indexes metadata and scan results; install bytes stay in GitHub.</small>
+        </span>
+      </div>
+      {display.sections.map((section) => (
+        <section key={section.key} className="publisher-profile-manifest-section">
+          <div className="publisher-profile-manifest-heading">
+            <div>
+              <h3>{section.title}</h3>
+              {section.description ? <p>{section.description}</p> : null}
+            </div>
+            {section.sourceRepo ? <Badge variant="compact">{section.sourceRepo}</Badge> : null}
+          </div>
+          <div className={view === "list" ? "results-list" : "grid publisher-published-grid"}>
+            {section.items.map((item) => (
+              <PublishedItemCard key={`${item.kind}:${item._id}`} item={item} view={view} />
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
 export function PublishedItemCard({
   item,
   view,
@@ -559,6 +605,7 @@ export function PublishedItemCard({
           />
           <h3 className="skill-card-title">{item.displayName}</h3>
           {item.isOfficial ? <OfficialBadge /> : null}
+          {item.sourceBacked ? <Badge variant="compact">Source-backed</Badge> : null}
         </div>
         <p className="skill-card-summary">
           {item.summary ?? `${item.kind === "plugin" ? "Plugin" : "Skill"} published on ClawHub.`}
@@ -592,6 +639,7 @@ export function PublishedItemCard({
           <span className="skill-list-item-sep">/</span>
           <span className="skill-list-item-name">{item.displayName}</span>
           {item.isOfficial ? <OfficialBadge /> : null}
+          {item.sourceBacked ? <Badge variant="compact">Source-backed</Badge> : null}
         </span>
         {item.summary ? <p className="skill-list-item-summary">{item.summary}</p> : null}
       </div>

@@ -31,6 +31,84 @@ type SeedActionResult = {
 
 type SeedMutationResult = Record<string, unknown>;
 
+const LOCAL_NVIDIA_GITHUB_SKILL_SOURCE_FIXTURE: SeedGitHubBackedSkillSourceArgs = {
+  repo: "NVIDIA/skills",
+  defaultBranch: "main",
+  displayManifestKind: "skills.sh",
+  displayManifestHash: "local-nvidia-skills-manifest",
+  displayManifestCommit: "0".repeat(40),
+  displayManifestStatus: "ok",
+  displayManifest: {
+    notGrouped: "bottom",
+    groupings: [
+      {
+        title: "Agentic AI",
+        description: "Agentic AI skills.",
+        skills: ["aiq-deploy"],
+      },
+      {
+        title: "Physical AI",
+        description: "Robotics and simulation skills.",
+        skills: ["isaac-sim-helper"],
+      },
+      {
+        title: "Vision AI",
+        description: "Computer vision workflow skills.",
+        skills: ["vision-helper"],
+      },
+    ],
+  },
+  skills: [
+    {
+      slug: "aiq-deploy",
+      displayName: "AIQ Deploy",
+      summary: "Deploy AgentIQ workflows from NVIDIA's source-backed skills catalog.",
+      githubPath: "skills/aiq-deploy",
+      githubVerifiedCommit: "1".repeat(40),
+      githubVerifiedContentHash: "local-aiq-deploy-hash",
+      githubScanStatus: "clean",
+      githubSignatureStatus: "verified",
+      githubVerifiedAt: 1,
+      capabilityTags: ["agentic-ai"],
+    },
+    {
+      slug: "isaac-sim-helper",
+      displayName: "Isaac Sim Helper",
+      summary: "Configure simulation workflows from a GitHub-backed skill source.",
+      githubPath: "skills/isaac-sim-helper",
+      githubVerifiedCommit: "2".repeat(40),
+      githubVerifiedContentHash: "local-isaac-sim-helper-hash",
+      githubScanStatus: "clean",
+      githubSignatureStatus: "verified",
+      githubVerifiedAt: 1,
+      capabilityTags: ["physical-ai"],
+    },
+    {
+      slug: "vision-helper",
+      displayName: "Vision Helper",
+      summary: "Prepare computer vision assets from a source-backed skill.",
+      githubPath: "skills/vision-helper",
+      githubVerifiedCommit: "3".repeat(40),
+      githubVerifiedContentHash: "local-vision-helper-hash",
+      githubScanStatus: "clean",
+      githubSignatureStatus: "verified",
+      githubVerifiedAt: 1,
+      capabilityTags: ["vision-ai"],
+    },
+    {
+      slug: "nvidia-extra-lab",
+      displayName: "NVIDIA Extra Lab",
+      summary: "Unlisted source-backed fixture that renders under Other skills.",
+      githubPath: "skills/nvidia-extra-lab",
+      githubVerifiedCommit: "4".repeat(40),
+      githubVerifiedContentHash: "local-nvidia-extra-lab-hash",
+      githubScanStatus: "clean",
+      githubSignatureStatus: "verified",
+      githubVerifiedAt: 1,
+    },
+  ],
+};
+
 const displayManifestStatusValidator = v.union(
   v.literal("ok"),
   v.literal("missing"),
@@ -803,7 +881,21 @@ async function seedLocalFixturesHandler(
     },
   );
 
-  return { ok: true, results: [{ slug: "local-moderation-fixtures", ...fixtureResult }] };
+  const githubBackedResult: SeedMutationResult = await ctx.runMutation(
+    internal.devSeed.seedGitHubBackedSkillSourceMutation,
+    {
+      ...LOCAL_NVIDIA_GITHUB_SKILL_SOURCE_FIXTURE,
+      reset: args.reset,
+    },
+  );
+
+  return {
+    ok: true,
+    results: [
+      { slug: "local-moderation-fixtures", ...fixtureResult },
+      { slug: "nvidia-github-backed-skills", ...githubBackedResult },
+    ],
+  };
 }
 
 export const seedLocalFixtures: ReturnType<typeof internalAction> = internalAction({

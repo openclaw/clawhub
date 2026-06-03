@@ -7,6 +7,7 @@ import {
   listPublic,
   listMine,
   listPublishedPage,
+  getPublishedDisplayManifest,
   migrateLegacyPublisherHandleToOrgInternal,
   ensureOrgPublisherHandleInternal,
   removeOrgPublisherMemberInternal,
@@ -144,6 +145,25 @@ const listPublishedPageHandler = (
       continueCursor: string;
       isDone: boolean;
     }
+  >
+)._handler;
+
+const getPublishedDisplayManifestHandler = (
+  getPublishedDisplayManifest as unknown as WrappedHandler<
+    {
+      handle: string;
+      kind?: "skill" | "plugin";
+      sort?: "downloads" | "recent";
+    },
+    {
+      mode: "grouped";
+      sourceRepos: string[];
+      sections: Array<{
+        title: string;
+        sourceRepo: string | null;
+        items: Array<{ displayName: string }>;
+      }>;
+    } | null
   >
 )._handler;
 
@@ -1108,6 +1128,216 @@ describe("publishers membership controls", () => {
     expect(byName["Plain Skill"]).toMatchObject({ kind: "skill", icon: null });
     // Plugins always carry null in Phase 1.
     expect(byName["Example Plugin"]).toMatchObject({ kind: "plugin", icon: null });
+  });
+
+  it("returns GitHub-backed display manifest groups for publisher catalogs", async () => {
+    const publisher = {
+      _id: "publishers:nvidia",
+      _creationTime: 1,
+      kind: "org",
+      handle: "nvidia",
+      displayName: "NVIDIA",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const githubSource = {
+      _id: "githubSkillSources:nvidia",
+      repo: "NVIDIA/skills",
+      ownerPublisherId: "publishers:nvidia",
+      displayManifestStatus: "ok",
+      displayManifest: {
+        notGrouped: "bottom",
+        groupings: [
+          {
+            title: "Agentic AI",
+            description: "Agentic AI skills.",
+            skills: ["aiq-deploy", "missing-entry"],
+          },
+          {
+            title: "Vision AI",
+            skills: ["vision-helper"],
+          },
+        ],
+      },
+    };
+    const skillRows = [
+      {
+        _id: "skills:aiq-deploy",
+        ownerPublisherId: "publishers:nvidia",
+        softDeletedAt: undefined,
+        slug: "aiq-deploy",
+        displayName: "AIQ Deploy",
+        summary: "Deploy AgentIQ workflows.",
+        icon: null,
+        installKind: "github",
+        githubSourceId: "githubSkillSources:nvidia",
+        githubPath: "skills/aiq-deploy",
+        githubVerifiedCommit: "1".repeat(40),
+        stats: { downloads: 10, stars: 2, installsCurrent: 1, installsAllTime: 3 },
+        updatedAt: 8,
+      },
+      {
+        _id: "skills:vision-helper",
+        ownerPublisherId: "publishers:nvidia",
+        softDeletedAt: undefined,
+        slug: "vision-helper",
+        displayName: "Vision Helper",
+        summary: "Vision tools.",
+        icon: null,
+        installKind: "github",
+        githubSourceId: "githubSkillSources:nvidia",
+        githubPath: "skills/vision-helper",
+        githubVerifiedCommit: "2".repeat(40),
+        stats: { downloads: 7, stars: 1, installsCurrent: 1, installsAllTime: 2 },
+        updatedAt: 6,
+      },
+      {
+        _id: "skills:other",
+        ownerPublisherId: "publishers:nvidia",
+        softDeletedAt: undefined,
+        slug: "other",
+        displayName: "Other Skill",
+        summary: "Not listed in the manifest.",
+        icon: null,
+        installKind: "github",
+        githubSourceId: "githubSkillSources:nvidia",
+        githubPath: "skills/other",
+        githubVerifiedCommit: "3".repeat(40),
+        stats: { downloads: 1, stars: 0, installsCurrent: 0, installsAllTime: 0 },
+        updatedAt: 2,
+      },
+    ];
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => (id === "publishers:nvidia" ? publisher : null)),
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
+            const fields: Record<string, unknown> = {};
+            const q = {
+              eq: (field: string, value: unknown) => {
+                fields[field] = value;
+                return q;
+              },
+            };
+            buildQuery(q);
+            if (table === "publishers" && indexName === "by_handle") {
+              return {
+                unique: vi.fn(async () => (fields.handle === "nvidia" ? publisher : null)),
+              };
+            }
+            if (table === "skills" && indexName === "by_owner_publisher_active_updated") {
+              return indexedRows(skillRows);
+            }
+            if (table === "packages" && indexName === "by_owner_publisher_active_updated") {
+              return indexedRows([]);
+            }
+            if (table === "githubSkillSources" && indexName === "by_owner_publisher") {
+              return indexedRows([githubSource]);
+            }
+            throw new Error(`unexpected ${table} index ${indexName}`);
+          }),
+        })),
+      },
+    };
+
+    const result = await getPublishedDisplayManifestHandler(ctx as never, {
+      handle: "nvidia",
+      kind: "skill",
+    });
+
+    expect(result).toMatchObject({
+      mode: "grouped",
+      sourceRepos: ["NVIDIA/skills"],
+      sections: [
+        {
+          title: "Agentic AI",
+          sourceRepo: "NVIDIA/skills",
+          items: [{ displayName: "AIQ Deploy", sourceBacked: true }],
+        },
+        {
+          title: "Vision AI",
+          sourceRepo: "NVIDIA/skills",
+          items: [{ displayName: "Vision Helper", sourceBacked: true }],
+        },
+        {
+          title: "Other skills",
+          sourceRepo: null,
+          items: [{ displayName: "Other Skill", sourceBacked: true }],
+        },
+      ],
+    });
+  });
+
+  it("falls back to the normal catalog when no valid display manifest exists", async () => {
+    const publisher = {
+      _id: "publishers:nvidia",
+      _creationTime: 1,
+      kind: "org",
+      handle: "nvidia",
+      displayName: "NVIDIA",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => (id === "publishers:nvidia" ? publisher : null)),
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
+            const fields: Record<string, unknown> = {};
+            const q = {
+              eq: (field: string, value: unknown) => {
+                fields[field] = value;
+                return q;
+              },
+            };
+            buildQuery(q);
+            if (table === "publishers" && indexName === "by_handle") {
+              return {
+                unique: vi.fn(async () => (fields.handle === "nvidia" ? publisher : null)),
+              };
+            }
+            if (table === "skills" && indexName === "by_owner_publisher_active_updated") {
+              return indexedRows([
+                {
+                  _id: "skills:aiq-deploy",
+                  ownerPublisherId: "publishers:nvidia",
+                  softDeletedAt: undefined,
+                  slug: "aiq-deploy",
+                  displayName: "AIQ Deploy",
+                  summary: "Deploy AgentIQ workflows.",
+                  icon: null,
+                  installKind: "github",
+                  githubSourceId: "githubSkillSources:nvidia",
+                  stats: { downloads: 10, stars: 2, installsCurrent: 1, installsAllTime: 3 },
+                  updatedAt: 8,
+                },
+              ]);
+            }
+            if (table === "packages" && indexName === "by_owner_publisher_active_updated") {
+              return indexedRows([]);
+            }
+            if (table === "githubSkillSources" && indexName === "by_owner_publisher") {
+              return indexedRows([
+                {
+                  _id: "githubSkillSources:nvidia",
+                  repo: "NVIDIA/skills",
+                  ownerPublisherId: "publishers:nvidia",
+                  displayManifestStatus: "invalid",
+                },
+              ]);
+            }
+            throw new Error(`unexpected ${table} index ${indexName}`);
+          }),
+        })),
+      },
+    };
+
+    await expect(
+      getPublishedDisplayManifestHandler(ctx as never, {
+        handle: "nvidia",
+        kind: "skill",
+      }),
+    ).resolves.toBeNull();
   });
 
   it("prevents admins from promoting members to owner", async () => {

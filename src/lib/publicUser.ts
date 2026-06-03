@@ -49,6 +49,24 @@ export type PublicPublisherCatalogItem = {
   stars: number;
   isOfficial: boolean;
   updatedAt: number;
+  sourceBacked?: boolean;
+  sourceRepo?: string | null;
+  sourcePath?: string | null;
+  sourceVerifiedCommit?: string | null;
+};
+
+type PublicPublisherCatalogSection = {
+  key: string;
+  title: string;
+  description: string | null;
+  sourceRepo: string | null;
+  items: PublicPublisherCatalogItem[];
+};
+
+export type PublicPublisherCatalogDisplay = {
+  mode: "grouped";
+  sourceRepos: string[];
+  sections: PublicPublisherCatalogSection[];
 };
 
 export type PublicSkill = Pick<
