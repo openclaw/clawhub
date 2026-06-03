@@ -17,6 +17,11 @@ import { getOptionalApiTokenUserId, requireApiTokenUser } from "../lib/apiTokenA
 import { mergeHeaders } from "../lib/httpHeaders";
 import { applyRateLimit } from "../lib/httpRateLimit";
 import { parseBooleanQueryParam, resolveBooleanQueryParam } from "../lib/httpUtils";
+import {
+  buildSkillInstallResolution,
+  type InstallResolverSkill,
+  type InstallResolverSource,
+} from "../lib/installResolver";
 import type {
   LlmAgenticRiskFinding,
   LlmEvalDimension,
@@ -278,6 +283,9 @@ type SkillSecuritySnapshot = {
 };
 
 const internalRefs = internal as unknown as {
+  githubSkillSources: {
+    getByIdInternal: unknown;
+  };
   securityScan: {
     enqueueBulkSkillRescanBatchForAdminInternal: unknown;
     getBulkSkillRescanBatchStatusForAdminInternal: unknown;
@@ -288,6 +296,7 @@ const internalRefs = internal as unknown as {
   };
   skills: {
     getSecurityVerdictTargetInternal: unknown;
+    getSkillBySlugInternal: unknown;
     reportSkillForUserInternal: unknown;
     listSkillReportsInternal: unknown;
     triageSkillReportForUserInternal: unknown;
@@ -1261,6 +1270,58 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
       limit: toOptionalNumber(url.searchParams.get("limit")),
     });
     return json(result, 200, rate.headers);
+  }
+
+  if (second === "install" && segments.length === 2) {
+    const publicSkillResult = (await ctx.runQuery(api.skills.getBySlug, {
+      slug,
+    })) as GetBySlugResult;
+    if (!publicSkillResult?.skill) {
+      return text("Skill not found", 404, rate.headers);
+    }
+
+    const skill = (await runQueryRef<
+      | (InstallResolverSkill & {
+          _id: Id<"skills">;
+          githubSourceId?: Id<"githubSkillSources">;
+          softDeletedAt?: number;
+          moderationStatus?: "active" | "hidden" | "removed";
+          moderationFlags?: string[];
+        })
+      | null
+    >(ctx, internalRefs.skills.getSkillBySlugInternal, { slug })) as
+      | (InstallResolverSkill & {
+          _id: Id<"skills">;
+          githubSourceId?: Id<"githubSkillSources">;
+          softDeletedAt?: number;
+          moderationStatus?: "active" | "hidden" | "removed";
+          moderationFlags?: string[];
+        })
+      | null;
+    if (!skill || skill._id !== publicSkillResult.skill._id) {
+      return text("Skill not found", 404, rate.headers);
+    }
+    if (
+      skill.softDeletedAt ||
+      (skill.moderationStatus && skill.moderationStatus !== "active") ||
+      skill.moderationFlags?.includes("blocked.malware")
+    ) {
+      return text("Skill not found", 404, rate.headers);
+    }
+
+    const source =
+      skill.installKind === "github" && skill.githubSourceId
+        ? ((await runQueryRef(ctx, internalRefs.githubSkillSources.getByIdInternal, {
+            sourceId: skill.githubSourceId,
+          })) as InstallResolverSource | null)
+        : null;
+    const resolution = buildSkillInstallResolution({
+      origin: publicApiOrigin(request),
+      skill,
+      source,
+    });
+
+    return json(resolution, resolution.ok ? 200 : resolution.status, rate.headers);
   }
 
   if (segments.length === 1) {

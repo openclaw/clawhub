@@ -170,6 +170,10 @@ type SeedGitHubBackedSkillSourceArgs = {
     githubPath: string;
     githubVerifiedCommit: string;
     githubVerifiedContentHash: string;
+    githubCurrentCommit?: string;
+    githubCurrentContentHash?: string;
+    githubCurrentStatus?: "present" | "missing" | "unknown";
+    githubCurrentCheckedAt?: number;
     githubScanStatus: GitHubSkillScanStatus;
     githubSignatureStatus: GitHubSkillSignatureStatus;
     githubVerifiedAt?: number;
@@ -2721,6 +2725,11 @@ export async function seedGitHubBackedSkillSourceHandler(
       githubPath: spec.githubPath,
       githubVerifiedCommit: spec.githubVerifiedCommit,
       githubVerifiedContentHash: spec.githubVerifiedContentHash,
+      githubCurrentCommit: spec.githubCurrentCommit ?? spec.githubVerifiedCommit,
+      githubCurrentContentHash: spec.githubCurrentContentHash ?? spec.githubVerifiedContentHash,
+      githubCurrentStatus:
+        spec.githubCurrentStatus ?? (spec.githubRemovedAt ? "missing" : "present"),
+      githubCurrentCheckedAt: spec.githubCurrentCheckedAt ?? spec.githubVerifiedAt,
       githubScanStatus: spec.githubScanStatus,
       githubSignatureStatus: spec.githubSignatureStatus,
       githubVerifiedAt: spec.githubVerifiedAt,
@@ -2785,6 +2794,12 @@ export const seedGitHubBackedSkillSourceMutation = internalMutation({
         githubPath: v.string(),
         githubVerifiedCommit: v.string(),
         githubVerifiedContentHash: v.string(),
+        githubCurrentCommit: v.optional(v.string()),
+        githubCurrentContentHash: v.optional(v.string()),
+        githubCurrentStatus: v.optional(
+          v.union(v.literal("present"), v.literal("missing"), v.literal("unknown")),
+        ),
+        githubCurrentCheckedAt: v.optional(v.number()),
         githubScanStatus: githubSkillScanStatusValidator,
         githubSignatureStatus: githubSkillSignatureStatusValidator,
         githubVerifiedAt: v.optional(v.number()),

@@ -98,6 +98,35 @@ export const ApiSkillResolveResponseSchema = type({
     match: type({ version: "string" }).or("null"),
     latestVersion: type({ version: "string" }).or("null"),
 });
+export const ApiV1SkillInstallResolveResponseSchema = type({
+    ok: "true",
+    slug: "string",
+    installKind: '"archive"',
+    archive: {
+        version: "string",
+        downloadUrl: "string",
+    },
+})
+    .or({
+    ok: "true",
+    slug: "string",
+    installKind: '"github"',
+    github: {
+        repo: "string",
+        path: "string",
+        commit: "string",
+        contentHash: "string",
+        verifiedAt: "number|null",
+        sourceUrl: "string",
+    },
+})
+    .or({
+    ok: "false",
+    slug: "string",
+    reason: '"archive_version_missing"|"github_source_missing"|"github_upstream_removed"|"github_upstream_missing"|"github_upstream_unknown"|"github_upstream_changed"|"github_verification_pending"|"github_scan_failed"|"github_signature_failed"',
+    message: "string",
+    status: "number",
+});
 export const CliTelemetrySyncRequestSchema = type({
     roots: type({
         rootId: "string",

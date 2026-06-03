@@ -121,6 +121,34 @@ export declare const ApiSkillResolveResponseSchema: import("arktype/internal/var
         version: string;
     } | null;
 }, {}>;
+export declare const ApiV1SkillInstallResolveResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    slug: string;
+    installKind: "archive";
+    archive: {
+        version: string;
+        downloadUrl: string;
+    };
+} | {
+    ok: true;
+    slug: string;
+    installKind: "github";
+    github: {
+        repo: string;
+        path: string;
+        commit: string;
+        contentHash: string;
+        verifiedAt: number | null;
+        sourceUrl: string;
+    };
+} | {
+    ok: false;
+    slug: string;
+    reason: "archive_version_missing" | "github_source_missing" | "github_upstream_removed" | "github_upstream_missing" | "github_upstream_unknown" | "github_upstream_changed" | "github_verification_pending" | "github_scan_failed" | "github_signature_failed";
+    message: string;
+    status: number;
+}, {}>;
+export type ApiV1SkillInstallResolveResponse = (typeof ApiV1SkillInstallResolveResponseSchema)[inferred];
 export declare const CliTelemetrySyncRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     roots: {
         rootId: string;

@@ -295,6 +295,11 @@ const githubSkillSignatureStatusValidator = v.union(
   v.literal("missing"),
   v.literal("pending"),
 );
+const githubSkillCurrentStatusValidator = v.union(
+  v.literal("present"),
+  v.literal("missing"),
+  v.literal("unknown"),
+);
 
 const packageFamilyValidator = v.union(
   v.literal("skill"),
@@ -515,6 +520,10 @@ const skills = defineTable({
   githubPath: v.optional(v.string()),
   githubVerifiedCommit: v.optional(v.string()),
   githubVerifiedContentHash: v.optional(v.string()),
+  githubCurrentCommit: v.optional(v.string()),
+  githubCurrentContentHash: v.optional(v.string()),
+  githubCurrentStatus: v.optional(githubSkillCurrentStatusValidator),
+  githubCurrentCheckedAt: v.optional(v.number()),
   githubScanStatus: v.optional(githubSkillScanStatusValidator),
   githubSignatureStatus: v.optional(githubSkillSignatureStatusValidator),
   githubVerifiedAt: v.optional(v.number()),

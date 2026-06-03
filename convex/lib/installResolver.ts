@@ -1,0 +1,197 @@
+export type GitHubSkillScanStatus = "clean" | "suspicious" | "malicious" | "pending" | "failed";
+export type GitHubSkillSignatureStatus = "verified" | "failed" | "missing" | "pending";
+export type GitHubCurrentStatus = "present" | "missing" | "unknown";
+
+export type InstallResolverSkill = {
+  slug: string;
+  displayName: string;
+  latestVersionSummary?: { version: string } | null;
+  installKind?: "github";
+  githubPath?: string;
+  githubVerifiedCommit?: string;
+  githubVerifiedContentHash?: string;
+  githubCurrentCommit?: string;
+  githubCurrentContentHash?: string;
+  githubCurrentStatus?: GitHubCurrentStatus;
+  githubScanStatus?: GitHubSkillScanStatus;
+  githubSignatureStatus?: GitHubSkillSignatureStatus;
+  githubVerifiedAt?: number;
+  githubRemovedAt?: number;
+};
+
+export type InstallResolverSource = {
+  repo: string;
+  defaultBranch?: string | null;
+};
+
+export type SkillInstallResolution =
+  | {
+      ok: true;
+      slug: string;
+      installKind: "archive";
+      archive: {
+        version: string;
+        downloadUrl: string;
+      };
+    }
+  | {
+      ok: true;
+      slug: string;
+      installKind: "github";
+      github: {
+        repo: string;
+        path: string;
+        commit: string;
+        contentHash: string;
+        verifiedAt: number | null;
+        sourceUrl: string;
+      };
+    }
+  | {
+      ok: false;
+      slug: string;
+      reason:
+        | "archive_version_missing"
+        | "github_source_missing"
+        | "github_upstream_removed"
+        | "github_upstream_missing"
+        | "github_upstream_unknown"
+        | "github_upstream_changed"
+        | "github_verification_pending"
+        | "github_scan_failed"
+        | "github_signature_failed";
+      message: string;
+      status: 403 | 409 | 410 | 423;
+    };
+
+export function buildSkillInstallResolution({
+  origin,
+  skill,
+  source,
+}: {
+  origin: string;
+  skill: InstallResolverSkill;
+  source: InstallResolverSource | null;
+}): SkillInstallResolution {
+  if (skill.installKind !== "github") {
+    const version = skill.latestVersionSummary?.version;
+    if (!version) {
+      return block(skill.slug, "archive_version_missing", 409);
+    }
+
+    const url = new URL("/api/v1/download", origin);
+    url.searchParams.set("slug", skill.slug);
+    url.searchParams.set("version", version);
+    return {
+      ok: true,
+      slug: skill.slug,
+      installKind: "archive",
+      archive: {
+        version,
+        downloadUrl: url.toString(),
+      },
+    };
+  }
+
+  if (skill.githubRemovedAt) {
+    return block(skill.slug, "github_upstream_removed", 410);
+  }
+  if (skill.githubCurrentStatus === "missing") {
+    return block(skill.slug, "github_upstream_missing", 410);
+  }
+  if (
+    skill.githubScanStatus === "failed" ||
+    skill.githubScanStatus === "malicious" ||
+    skill.githubScanStatus === "suspicious"
+  ) {
+    return block(skill.slug, "github_scan_failed", 403);
+  }
+  if (skill.githubSignatureStatus === "failed" || skill.githubSignatureStatus === "missing") {
+    return block(skill.slug, "github_signature_failed", 403);
+  }
+  if (
+    skill.githubScanStatus !== "clean" ||
+    skill.githubSignatureStatus !== "verified" ||
+    !skill.githubVerifiedCommit ||
+    !skill.githubVerifiedContentHash
+  ) {
+    return block(skill.slug, "github_verification_pending", 423);
+  }
+  if (!source || !skill.githubPath) {
+    return block(skill.slug, "github_source_missing", 409);
+  }
+  if (
+    skill.githubCurrentStatus !== "present" ||
+    !skill.githubCurrentCommit ||
+    !skill.githubCurrentContentHash
+  ) {
+    return block(skill.slug, "github_upstream_unknown", 423);
+  }
+  if (skill.githubCurrentContentHash !== skill.githubVerifiedContentHash) {
+    return block(skill.slug, "github_upstream_changed", 409);
+  }
+
+  return {
+    ok: true,
+    slug: skill.slug,
+    installKind: "github",
+    github: {
+      repo: source.repo,
+      path: skill.githubPath,
+      commit: skill.githubCurrentCommit,
+      contentHash: skill.githubCurrentContentHash,
+      verifiedAt: skill.githubVerifiedAt ?? null,
+      sourceUrl: buildGitHubTreeUrl(source.repo, skill.githubCurrentCommit, skill.githubPath),
+    },
+  };
+}
+
+function block(
+  slug: string,
+  reason: Extract<SkillInstallResolution, { ok: false }>["reason"],
+  status: Extract<SkillInstallResolution, { ok: false }>["status"],
+): SkillInstallResolution {
+  return {
+    ok: false,
+    slug,
+    reason,
+    status,
+    message: INSTALL_BLOCK_MESSAGES[reason],
+  };
+}
+
+const INSTALL_BLOCK_MESSAGES: Record<
+  Extract<SkillInstallResolution, { ok: false }>["reason"],
+  string
+> = {
+  archive_version_missing: "Hosted skill has no downloadable version.",
+  github_source_missing: "GitHub-backed skill source metadata is incomplete.",
+  github_upstream_removed: "GitHub-backed skill has been removed upstream.",
+  github_upstream_missing: "GitHub-backed skill path is missing upstream.",
+  github_upstream_unknown: "GitHub-backed skill needs an upstream freshness check before install.",
+  github_upstream_changed:
+    "GitHub-backed skill has changed upstream and needs ClawHub verification before install.",
+  github_verification_pending: "GitHub-backed skill is waiting for ClawHub verification.",
+  github_scan_failed: "GitHub-backed skill failed ClawHub security scanning.",
+  github_signature_failed: "GitHub-backed skill failed signature verification.",
+};
+
+function buildGitHubTreeUrl(repo: string, commit: string, path: string) {
+  return `https://github.com/${encodeURIComponentRepo(repo)}/tree/${commit}/${encodeURIComponentPath(
+    path,
+  )}`;
+}
+
+function encodeURIComponentRepo(repo: string) {
+  return repo
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+}
+
+function encodeURIComponentPath(path: string) {
+  return path
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+}

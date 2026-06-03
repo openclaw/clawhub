@@ -68,6 +68,38 @@ function findRateLimitCallArgs(mock: ReturnType<typeof vi.fn>) {
   return mock.mock.calls.map(([, args]) => args).find(isRateLimitArgs);
 }
 
+function makeInstallResolverRunQuery({
+  skill,
+  source = null,
+  publicVisible = true,
+}: {
+  skill: Record<string, unknown> | null;
+  source?: Record<string, unknown> | null;
+  publicVisible?: boolean;
+}) {
+  let slugQueryCount = 0;
+  return vi.fn(async (query: unknown, args: Record<string, unknown>) => {
+    void query;
+    if ("sourceId" in args) return source;
+    if ("slug" in args) {
+      slugQueryCount += 1;
+      if (slugQueryCount === 1) {
+        return publicVisible && skill
+          ? {
+              skill: {
+                _id: skill._id,
+                slug: skill.slug,
+                displayName: skill.displayName,
+              },
+            }
+          : null;
+      }
+      return skill;
+    }
+    throw new Error(`unexpected query ${JSON.stringify(args)}`);
+  });
+}
+
 function makeCatalogItem(
   name: string,
   options: {
@@ -1637,6 +1669,279 @@ describe("httpApiV1 handlers", () => {
       updatedAt: 4,
     });
   });
+
+  it("skill install resolver returns archive descriptor for hosted direct uploads", async () => {
+    const runQuery = makeInstallResolverRunQuery({
+      skill: {
+        _id: "skills:demo",
+        slug: "demo",
+        displayName: "Demo Skill",
+        latestVersionSummary: { version: "1.0.0" },
+      },
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/install"),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      ok: true,
+      slug: "demo",
+      installKind: "archive",
+      archive: {
+        version: "1.0.0",
+        downloadUrl: "https://example.com/api/v1/download?slug=demo&version=1.0.0",
+      },
+    });
+  });
+
+  it("skill install resolver returns a pinned GitHub descriptor for verified source-backed skills", async () => {
+    const runQuery = makeInstallResolverRunQuery({
+      skill: {
+        _id: "skills:aiq-deploy",
+        slug: "aiq-deploy",
+        displayName: "AIQ Deploy",
+        installKind: "github",
+        githubSourceId: "githubSkillSources:nvidia",
+        githubPath: "skills/aiq-deploy",
+        githubVerifiedCommit: "1".repeat(40),
+        githubVerifiedContentHash: "hash-aiq-deploy",
+        githubCurrentCommit: "1".repeat(40),
+        githubCurrentContentHash: "hash-aiq-deploy",
+        githubCurrentStatus: "present",
+        githubScanStatus: "clean",
+        githubSignatureStatus: "verified",
+        githubVerifiedAt: 123,
+      },
+      source: {
+        _id: "githubSkillSources:nvidia",
+        repo: "NVIDIA/skills",
+        defaultBranch: "main",
+      },
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/aiq-deploy/install"),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      slug: "aiq-deploy",
+      installKind: "github",
+      github: {
+        repo: "NVIDIA/skills",
+        path: "skills/aiq-deploy",
+        commit: "1".repeat(40),
+        contentHash: "hash-aiq-deploy",
+      },
+    });
+  });
+
+  it.each([
+    {
+      name: "hosted direct uploads",
+      slug: "hidden-direct",
+      skill: {
+        _id: "skills:hidden-direct",
+        slug: "hidden-direct",
+        displayName: "Hidden Direct",
+        moderationStatus: "hidden",
+        latestVersionSummary: { version: "1.0.0" },
+      },
+    },
+    {
+      name: "GitHub-backed skills",
+      slug: "hidden-github",
+      skill: {
+        _id: "skills:hidden-github",
+        slug: "hidden-github",
+        displayName: "Hidden GitHub",
+        moderationStatus: "hidden",
+        installKind: "github",
+        githubSourceId: "githubSkillSources:nvidia",
+        githubPath: "skills/hidden-github",
+        githubVerifiedCommit: "1".repeat(40),
+        githubVerifiedContentHash: "hash-hidden-github",
+        githubCurrentCommit: "1".repeat(40),
+        githubCurrentContentHash: "hash-hidden-github",
+        githubCurrentStatus: "present",
+        githubScanStatus: "clean",
+        githubSignatureStatus: "verified",
+      },
+    },
+  ])("skill install resolver hides moderated $name", async ({ slug, skill }) => {
+    const runQuery = makeInstallResolverRunQuery({
+      skill,
+      publicVisible: false,
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(`https://example.com/api/v1/skills/${slug}/install`),
+    );
+
+    expect(response.status).toBe(404);
+    await expect(response.text()).resolves.toBe("Skill not found");
+  });
+
+  it("skill install resolver hides skills absent from the public skill detail path", async () => {
+    const runQuery = makeInstallResolverRunQuery({
+      publicVisible: false,
+      skill: {
+        _id: "skills:orphaned-github",
+        slug: "orphaned-github",
+        displayName: "Orphaned GitHub",
+        installKind: "github",
+        githubSourceId: "githubSkillSources:nvidia",
+        githubPath: "skills/orphaned-github",
+        githubVerifiedCommit: "1".repeat(40),
+        githubVerifiedContentHash: "hash-orphaned-github",
+        githubCurrentCommit: "1".repeat(40),
+        githubCurrentContentHash: "hash-orphaned-github",
+        githubCurrentStatus: "present",
+        githubScanStatus: "clean",
+        githubSignatureStatus: "verified",
+      },
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/orphaned-github/install"),
+    );
+
+    expect(response.status).toBe(404);
+    await expect(response.text()).resolves.toBe("Skill not found");
+  });
+
+  it("skill install resolver blocks GitHub-backed skills when upstream hash is stale", async () => {
+    const runQuery = makeInstallResolverRunQuery({
+      skill: {
+        _id: "skills:aiq-deploy",
+        slug: "aiq-deploy",
+        displayName: "AIQ Deploy",
+        installKind: "github",
+        githubSourceId: "githubSkillSources:nvidia",
+        githubPath: "skills/aiq-deploy",
+        githubVerifiedCommit: "1".repeat(40),
+        githubVerifiedContentHash: "hash-aiq-deploy",
+        githubCurrentCommit: "2".repeat(40),
+        githubCurrentContentHash: "hash-aiq-deploy-v2",
+        githubCurrentStatus: "present",
+        githubScanStatus: "clean",
+        githubSignatureStatus: "verified",
+      },
+      source: { repo: "NVIDIA/skills" },
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/aiq-deploy/install"),
+    );
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      reason: "github_upstream_changed",
+    });
+  });
+
+  it("skill install resolver blocks GitHub-backed skills with failed scans", async () => {
+    const runQuery = makeInstallResolverRunQuery({
+      skill: {
+        _id: "skills:bad-source",
+        slug: "bad-source",
+        displayName: "Bad Source",
+        installKind: "github",
+        githubSourceId: "githubSkillSources:nvidia",
+        githubPath: "skills/bad-source",
+        githubVerifiedCommit: "1".repeat(40),
+        githubVerifiedContentHash: "hash-bad-source",
+        githubCurrentCommit: "1".repeat(40),
+        githubCurrentContentHash: "hash-bad-source",
+        githubCurrentStatus: "present",
+        githubScanStatus: "failed",
+        githubSignatureStatus: "verified",
+      },
+      source: { repo: "NVIDIA/skills" },
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/bad-source/install"),
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      reason: "github_scan_failed",
+    });
+  });
+
+  it.each([
+    {
+      name: "pending scan",
+      patch: { githubScanStatus: "pending" },
+      status: 423,
+      reason: "github_verification_pending",
+    },
+    {
+      name: "failed signature",
+      patch: { githubSignatureStatus: "failed" },
+      status: 403,
+      reason: "github_signature_failed",
+    },
+    {
+      name: "missing upstream path",
+      patch: { githubCurrentStatus: "missing" },
+      status: 410,
+      reason: "github_upstream_missing",
+    },
+  ])(
+    "skill install resolver blocks GitHub-backed skills with $name",
+    async ({ patch, status, reason }) => {
+      const runQuery = makeInstallResolverRunQuery({
+        skill: {
+          _id: "skills:blocked-source",
+          slug: "blocked-source",
+          displayName: "Blocked Source",
+          installKind: "github",
+          githubSourceId: "githubSkillSources:nvidia",
+          githubPath: "skills/blocked-source",
+          githubVerifiedCommit: "1".repeat(40),
+          githubVerifiedContentHash: "hash-blocked-source",
+          githubCurrentCommit: "1".repeat(40),
+          githubCurrentContentHash: "hash-blocked-source",
+          githubCurrentStatus: "present",
+          githubScanStatus: "clean",
+          githubSignatureStatus: "verified",
+          ...patch,
+        },
+        source: { repo: "NVIDIA/skills" },
+      });
+      const runMutation = vi.fn().mockResolvedValue(okRate());
+
+      const response = await __handlers.skillsGetRouterV1Handler(
+        makeCtx({ runQuery, runMutation }),
+        new Request("https://example.com/api/v1/skills/blocked-source/install"),
+      );
+
+      expect(response.status).toBe(status);
+      await expect(response.json()).resolves.toMatchObject({
+        ok: false,
+        reason,
+      });
+    },
+  );
 
   it("get skill treats reports as a valid slug", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
