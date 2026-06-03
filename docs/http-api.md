@@ -369,7 +369,7 @@ Notes:
 - `moderation` is a current skill-level moderation snapshot derived from the latest version.
 - When querying a historical version, check `moderation.matchesRequestedVersion` and `moderation.sourceVersion` before treating `moderation` and `security` as the same version context.
 
-### `POST /api/v1/skills/scan`
+### `POST /api/v1/skills/-/scan`
 
 Authenticated submit endpoint for new ClawScan jobs.
 
@@ -396,7 +396,7 @@ Notes:
 - Published scans write back only when `update: true` and the scan completes successfully.
 - Response is `202` with `{ "ok": true, "scanId": "...", "jobId": "...", "status": "queued", "sourceKind": "upload|published", "update": false }`.
 
-### `GET /api/v1/skills/scan/{scanId}`
+### `GET /api/v1/skills/-/scan/{scanId}`
 
 Authenticated poll endpoint for a submitted scan.
 
@@ -404,18 +404,18 @@ Authenticated poll endpoint for a submitted scan.
 - When available, `report` contains `clawscan`, `skillspector`, `staticAnalysis`, and `virustotal` sections.
 - Failed scan jobs return `status: "failed"` with `lastError`.
 
-### `GET /api/v1/skills/scan/{scanId}/download`
+### `GET /api/v1/skills/-/scan/{scanId}/download`
 
 Authenticated report archive endpoint.
 
 - Requires a succeeded scan; non-terminal scans return `409`.
 - Returns a ZIP with `manifest.json`, `clawscan.json`, `skillspector.json`, `static-analysis.json`, `virustotal.json`, and `README.md`.
 
-### `POST /api/v1/skills/scan/batch`
+### `POST /api/v1/skills/-/scan/batch`
 
 Admin-only canonical batch rescan route. It accepts the same payload shape as legacy `POST /api/v1/skills/-/rescan-batch`.
 
-### `POST /api/v1/skills/scan/batch/status`
+### `POST /api/v1/skills/-/scan/batch/status`
 
 Admin-only canonical batch status route. It accepts `{ "jobIds": ["..."] }` and returns the same aggregate counters as legacy `POST /api/v1/skills/-/rescan-batch/status`.
 

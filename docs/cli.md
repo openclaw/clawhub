@@ -192,7 +192,7 @@ clawhub skill publish ./my-skill --version 1.0.0
 ### `scan [path]`
 
 - Requires `clawhub login`.
-- Runs ClawHub ClawScan through `POST /api/v1/skills/scan`, then polls until the scan is terminal.
+- Runs ClawHub ClawScan through `POST /api/v1/skills/-/scan`, then polls until the scan is terminal.
 - Local path scans are always ephemeral. They upload the local skill bundle for scanning, print the security report, and never create or update a published skill/version.
 - Published scans require ownership or publisher management access. Moderators/admins can use the same backend through `clawhub-mod`.
 - `--update` is valid only with `--slug`; it writes successful published scan results back to the selected version.

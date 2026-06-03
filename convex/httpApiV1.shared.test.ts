@@ -91,7 +91,7 @@ describe("http API v1 shared helpers", () => {
     const form = new FormData();
     form.set("payload", JSON.stringify({ source: { kind: "upload" }, update: true }));
     form.append("files", new Blob(["# Demo"], { type: "text/markdown" }), "SKILL.md");
-    const request = new Request("https://clawhub.ai/api/v1/skills/scan", {
+    const request = new Request("https://clawhub.ai/api/v1/skills/-/scan", {
       method: "POST",
       body: form,
     });

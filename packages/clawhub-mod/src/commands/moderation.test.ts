@@ -189,7 +189,7 @@ describe("cmdRescanSkill", () => {
       "https://clawhub.ai",
       expect.objectContaining({
         method: "POST",
-        path: "/api/v1/skills/scan",
+        path: "/api/v1/skills/-/scan",
         token: "tkn",
         body: {
           source: { kind: "published", slug: "markdown2doc", version: "1.0.4" },
@@ -244,7 +244,7 @@ describe("cmdRescanAllSkills", () => {
       "https://clawhub.ai",
       expect.objectContaining({
         method: "POST",
-        path: "/api/v1/skills/scan/batch",
+        path: "/api/v1/skills/-/scan/batch",
         body: {
           mode: "all-active-latest",
           cursor: null,
@@ -259,7 +259,7 @@ describe("cmdRescanAllSkills", () => {
       "https://clawhub.ai",
       expect.objectContaining({
         method: "POST",
-        path: "/api/v1/skills/scan/batch",
+        path: "/api/v1/skills/-/scan/batch",
         body: {
           mode: "all-active-latest",
           cursor: "cursor-2",
@@ -309,7 +309,7 @@ describe("cmdRescanAllSkills", () => {
       "https://clawhub.ai",
       expect.objectContaining({
         method: "POST",
-        path: "/api/v1/skills/scan/batch",
+        path: "/api/v1/skills/-/scan/batch",
         token: "tkn",
         body: {
           mode: "all-active-latest",
@@ -325,7 +325,7 @@ describe("cmdRescanAllSkills", () => {
       "https://clawhub.ai",
       expect.objectContaining({
         method: "POST",
-        path: "/api/v1/skills/scan/batch/status",
+        path: "/api/v1/skills/-/scan/batch/status",
         token: "tkn",
         body: { jobIds: ["securityScanJobs:1"] },
       }),

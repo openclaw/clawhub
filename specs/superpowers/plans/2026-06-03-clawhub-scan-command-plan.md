@@ -14,7 +14,7 @@
 
 - `convex/schema.ts`: add `skillScanRequests` and extend `securityScanJobs` with `skillScanRequestId`.
 - `convex/securityScan.ts`: create/poll/download scan requests and hydrate/complete/fail worker jobs for scan-request targets.
-- `convex/httpApiV1/skillsV1.ts`: add canonical `/api/v1/skills/scan` submit/poll/download/batch handlers and keep legacy rescan aliases.
+- `convex/httpApiV1/skillsV1.ts`: add canonical `/api/v1/skills/-/scan` submit/poll/download/batch handlers and keep legacy rescan aliases.
 - `convex/httpApiV1/shared.ts`: add multipart parsing helper for scan upload files if the publish parser is too specific.
 - `convex/http.ts`: register scan routes before generic `/api/v1/skills/*` routes.
 - `packages/schema/src/routes.ts` and `packages/schema/src/schemas.ts`: add route constants and request/response schemas.
@@ -47,7 +47,7 @@ Add a test that expects the CLI to submit:
 }
 ```
 
-to `POST /api/v1/skills/scan` and accept:
+to `POST /api/v1/skills/-/scan` and accept:
 
 ```ts
 {
@@ -67,7 +67,7 @@ Expected: FAIL because the `scan` command and scan schemas do not exist yet.
 
 - [ ] **Step 3: Add route constants**
 
-Add `skillScans: '/api/v1/skills/scan'` to both route files.
+Add `skillScans: '/api/v1/skills/-/scan'` to both route files.
 
 - [ ] **Step 4: Add Zod schemas**
 
@@ -142,21 +142,21 @@ Add tests for auth-required local submit, owner-only published submit, poll, and
 
 Parse a `payload` JSON part plus `files[]` file parts. Store uploaded file blobs in Convex storage and pass path/size/hash/storage metadata into the internal create helper.
 
-- [ ] **Step 3: Implement `POST /api/v1/skills/scan`**
+- [ ] **Step 3: Implement `POST /api/v1/skills/-/scan`**
 
 Require token auth. For `source.kind === 'upload'`, reject `update: true`. For `source.kind === 'published'`, resolve slug/version and enforce owner/member/operator access before enqueueing.
 
-- [ ] **Step 4: Implement `GET /api/v1/skills/scan/{scanId}`**
+- [ ] **Step 4: Implement `GET /api/v1/skills/-/scan/{scanId}`**
 
 Require token auth. Return queued/running/succeeded/failed status, artifact identity, writeback status, and the full report payload when available.
 
-- [ ] **Step 5: Implement `GET /api/v1/skills/scan/{scanId}/download`**
+- [ ] **Step 5: Implement `GET /api/v1/skills/-/scan/{scanId}/download`**
 
 Require token auth. Return a ZIP with `manifest.json`, `clawscan.json`, `skillspector.json`, `static-analysis.json`, `virustotal.json`, and `README.md`.
 
 - [ ] **Step 6: Move batch routes under the scan group**
 
-Register `POST /api/v1/skills/scan/batch` and `POST /api/v1/skills/scan/batch/status`, then keep the old `/-/rescan-batch` routes as compatibility aliases.
+Register `POST /api/v1/skills/-/scan/batch` and `POST /api/v1/skills/-/scan/batch/status`, then keep the old `/-/rescan-batch` routes as compatibility aliases.
 
 ## Task 4: Public CLI Command
 
@@ -190,7 +190,7 @@ Require `--slug`, optional `--version`, optional `--update`, and submit JSON to 
 
 - [ ] **Step 4: Implement polling**
 
-Poll `GET /api/v1/skills/scan/{scanId}` until `succeeded` or `failed`. Print progress unless `--json` is set.
+Poll `GET /api/v1/skills/-/scan/{scanId}` until `succeeded` or `failed`. Print progress unless `--json` is set.
 
 - [ ] **Step 5: Implement terminal and JSON reports**
 
@@ -198,7 +198,7 @@ Render artifact metadata, ClawScan summary/findings/guidance, SkillSpector issue
 
 - [ ] **Step 6: Implement `--output`**
 
-Call `GET /api/v1/skills/scan/{scanId}/download` after terminal success and write the returned ZIP bytes to the requested file path.
+Call `GET /api/v1/skills/-/scan/{scanId}/download` after terminal success and write the returned ZIP bytes to the requested file path.
 
 ## Task 5: Moderator CLI Migration
 
@@ -209,9 +209,9 @@ Call `GET /api/v1/skills/scan/{scanId}/download` after terminal success and writ
 
 - [ ] **Step 1: Update failing tests**
 
-Expect `clawhub-mod skills rescan <slug>` to call `POST /api/v1/skills/scan` with published `update: true`.
+Expect `clawhub-mod skills rescan <slug>` to call `POST /api/v1/skills/-/scan` with published `update: true`.
 
-Expect `clawhub-mod skills rescan-all` to call `POST /api/v1/skills/scan/batch` and poll `/api/v1/skills/scan/batch/status`.
+Expect `clawhub-mod skills rescan-all` to call `POST /api/v1/skills/-/scan/batch` and poll `/api/v1/skills/-/scan/batch/status`.
 
 - [ ] **Step 2: Update implementation**
 

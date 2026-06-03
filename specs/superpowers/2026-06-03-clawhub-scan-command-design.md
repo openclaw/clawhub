@@ -41,12 +41,12 @@ The command should upload a local skill bundle, run ClawHub's scan pipeline, wai
 Use a canonical scan job group:
 
 ```txt
-POST /api/v1/skills/scan
-GET  /api/v1/skills/scan/{scanId}
-GET  /api/v1/skills/scan/{scanId}/download
+POST /api/v1/skills/-/scan
+GET  /api/v1/skills/-/scan/{scanId}
+GET  /api/v1/skills/-/scan/{scanId}/download
 ```
 
-`POST /api/v1/skills/scan` creates a scan job and returns a `scanId`. The caller then polls the status endpoint until the scan reaches a terminal state.
+`POST /api/v1/skills/-/scan` creates a scan job and returns a `scanId`. The caller then polls the status endpoint until the scan reaches a terminal state.
 
 ### Submit Modes
 
@@ -113,8 +113,8 @@ POST /api/v1/skills/-/rescan-batch/status
 should move to scan group routes:
 
 ```txt
-POST /api/v1/skills/scan/batch
-POST /api/v1/skills/scan/batch/status
+POST /api/v1/skills/-/scan/batch
+POST /api/v1/skills/-/scan/batch/status
 ```
 
 The existing `GET /api/v1/skills/{slug}/scan` route currently reads stored scan details. Because this name conflicts with new scan-job creation, keep it as a legacy detail route for now and document the distinction. A later API cleanup can rename stored details to a security-audit route.
@@ -168,7 +168,7 @@ virustotal.json
 README.md
 ```
 
-The ZIP should be available through `GET /api/v1/skills/scan/{scanId}/download` and should match the bytes written by `clawhub scan --output <file.zip>`.
+The ZIP should be available through `GET /api/v1/skills/-/scan/{scanId}/download` and should match the bytes written by `clawhub scan --output <file.zip>`.
 
 `manifest.json` should include:
 
