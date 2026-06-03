@@ -1,0 +1,21 @@
+{
+  "status": "passed",
+  "mode": "feature",
+  "scenario": "manual-plugin-download-counts",
+  "provider": "local-playwright",
+  "baseline": "not-run",
+  "candidate": "pe/plugin-download-counts",
+  "lanes": [
+    {
+      "name": "candidate",
+      "steps": [
+        {
+          "name": "Plugin detail downloads top stat",
+          "slug": "plugin-downloads-top",
+          "status": "passed",
+          "screenshot": "plugin-downloads-top.png"
+        }
+      ]
+    }
+  ]
+}
