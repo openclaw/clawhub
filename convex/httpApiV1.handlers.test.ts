@@ -191,6 +191,287 @@ const okRate = () => ({
   resetAt: Date.now() + 60_000,
 });
 
+describe("feed handlers", () => {
+  it("lists selectable ClawHub feeds", async () => {
+    const response = await __handlers.feedsIndexV1Handler(
+      makeCtx({}),
+      new Request("https://example.com/api/v1/feeds"),
+    );
+
+    expect(response.status).toBe(200);
+    const index = await response.json();
+    expect(index.schemaVersion).toBe(1);
+    expect(index.feeds).toEqual([
+      expect.objectContaining({
+        id: "clawhub-all",
+        url: "https://example.com/api/v1/feeds/all",
+        types: ["skill", "plugin"],
+      }),
+      expect.objectContaining({
+        id: "clawhub-official",
+        url: "https://example.com/api/v1/feeds/official",
+        types: ["skill", "plugin"],
+      }),
+      expect.objectContaining({
+        id: "clawhub-community",
+        url: "https://example.com/api/v1/feeds/community",
+        types: ["skill", "plugin"],
+      }),
+      expect.objectContaining({
+        id: "clawhub-reviewed",
+        url: "https://example.com/api/v1/feeds/reviewed",
+        types: ["skill", "plugin"],
+        criteria: expect.any(String),
+      }),
+    ]);
+  });
+
+  it("emits a Scout-compatible ClawHub all feed", async () => {
+    const runQuery = vi.fn().mockResolvedValue({
+      generatedAtMs: Date.parse("2026-05-29T12:00:00Z"),
+      limit: 20,
+      truncated: false,
+      skills: [
+        {
+          slug: "calendar-helper",
+          displayName: "Calendar Helper",
+          summary: "Calendar assistance",
+          ownerUserId: "users:platform",
+          ownerHandle: "platform",
+          latestVersionSummary: { version: "1.2.0" },
+          capabilityTags: ["calendar"],
+          moderationStatus: "active",
+          isSuspicious: false,
+          statsDownloads: 27,
+          statsStars: 8,
+          updatedAt: Date.parse("2026-05-29T12:00:00Z"),
+        },
+      ],
+      packages: [
+        {
+          name: "@openclaw/native-plugin",
+          displayName: "Native Plugin",
+          summary: "Native plugin",
+          family: "code-plugin",
+          channel: "official",
+          isOfficial: true,
+          ownerHandle: "openclaw",
+          latestVersion: "2.0.0",
+          runtimeId: "native-plugin",
+          capabilityTags: ["runtime"],
+          executesCode: true,
+          verificationTier: "source-linked",
+          scanStatus: "clean",
+          updatedAt: Date.parse("2026-05-28T12:00:00Z"),
+        },
+      ],
+    });
+
+    const response = await __handlers.allFeedV1Handler(
+      makeCtx({ runQuery }),
+      new Request("https://example.com/api/v1/feeds/all?limit=20&type=all"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runQuery).toHaveBeenCalledWith(expect.anything(), {
+      feed: "all",
+      limit: 20,
+      includeSkills: true,
+      includePlugins: true,
+    });
+
+    const feed = await response.json();
+    expect(feed.schemaVersion).toBe(1);
+    expect(feed.feedId).toBe("clawhub-all");
+    expect(feed.scope).toEqual({ kind: "root" });
+    expect(feed.generatedAt).toBe("2026-05-29T12:00:00Z");
+    expect(feed.attestation.algorithm).toBe("sha256");
+    expect(feed.attestation.hash).toMatch(/^[a-f0-9]{64}$/);
+    expect(feed.entries).toHaveLength(2);
+    expect(feed.entries[0]).toMatchObject({
+      id: "@openclaw/native-plugin",
+      type: "plugin",
+      version: "2.0.0",
+      source: {
+        registry: "clawhub",
+        package: "@openclaw/native-plugin",
+        url: "/plugins/@openclaw/native-plugin",
+      },
+    });
+    expect(feed.entries[1]).toMatchObject({
+      id: "calendar-helper",
+      type: "skill",
+      version: "1.2.0",
+      source: {
+        registry: "clawhub",
+        package: "calendar-helper",
+        url: "/platform/calendar-helper",
+      },
+    });
+    expect(feed.entries[1].metadata["clawhub.statsDownloads"]).toBe("27");
+  });
+
+  it("uses the shared stable canonical feed attestation hash", async () => {
+    const runQuery = vi.fn().mockResolvedValue({
+      generatedAtMs: Date.parse("2026-05-29T12:00:00Z"),
+      limit: 1,
+      truncated: false,
+      skills: [],
+      packages: [
+        {
+          name: "calendar",
+          displayName: "Calendar",
+          family: "code-plugin",
+          channel: "official",
+          isOfficial: true,
+          latestVersion: "1.0.0",
+          updatedAt: undefined,
+        },
+      ],
+    });
+
+    const response = await __handlers.reviewedFeedV1Handler(
+      makeCtx({ runQuery }),
+      new Request("https://example.com/api/v1/feeds/reviewed?type=plugin&limit=1"),
+    );
+
+    const feed = await response.json();
+    expect(feed).toMatchObject({
+      schemaVersion: 1,
+      feedId: "clawhub-reviewed",
+      scope: { kind: "root" },
+      generatedAt: "2026-05-29T12:00:00Z",
+      sourceRevision: "clawhub-digest:feed=clawhub-reviewed;limit=1;truncated=false",
+    });
+    expect(feed.entries).toEqual([
+      {
+        id: "calendar",
+        type: "plugin",
+        version: "1.0.0",
+        title: "Calendar",
+        source: {
+          registry: "clawhub",
+          package: "calendar",
+          url: "/plugins/calendar",
+        },
+        updatedAt: "1970-01-01T00:00:00Z",
+        metadata: {
+          "clawhub.channel": "official",
+          "clawhub.family": "code-plugin",
+          "clawhub.isOfficial": "true",
+        },
+      },
+    ]);
+    expect(feed.attestation.hash).toBe(
+      "edb394a535f8685086649bd607dcf226f58a0765d2a2e59f9f465ff9091febd0",
+    );
+  });
+
+  it("supports type filters inside feed lanes", async () => {
+    const runQuery = vi.fn().mockResolvedValue({
+      generatedAtMs: 0,
+      limit: 50,
+      truncated: false,
+      skills: [],
+      packages: [],
+    });
+
+    await __handlers.allFeedV1Handler(
+      makeCtx({ runQuery }),
+      new Request("https://example.com/api/v1/feeds/all?type=skill"),
+    );
+
+    expect(runQuery).toHaveBeenCalledWith(expect.anything(), {
+      feed: "all",
+      limit: undefined,
+      includeSkills: true,
+      includePlugins: false,
+    });
+  });
+
+  it("emits a named official feed", async () => {
+    const runQuery = vi.fn().mockResolvedValue({
+      generatedAtMs: 0,
+      limit: 50,
+      truncated: false,
+      skills: [],
+      packages: [],
+    });
+
+    const response = await __handlers.officialFeedV1Handler(
+      makeCtx({ runQuery }),
+      new Request("https://example.com/api/v1/feeds/official"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runQuery).toHaveBeenCalledWith(expect.anything(), {
+      feed: "official",
+      limit: undefined,
+      includeSkills: true,
+      includePlugins: true,
+    });
+    expect((await response.json()).feedId).toBe("clawhub-official");
+  });
+
+  it("emits a named community feed", async () => {
+    const runQuery = vi.fn().mockResolvedValue({
+      generatedAtMs: 0,
+      limit: 50,
+      truncated: false,
+      skills: [],
+      packages: [],
+    });
+
+    const response = await __handlers.communityFeedV1Handler(
+      makeCtx({ runQuery }),
+      new Request("https://example.com/api/v1/feeds/community"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runQuery).toHaveBeenCalledWith(expect.anything(), {
+      feed: "community",
+      limit: undefined,
+      includeSkills: true,
+      includePlugins: true,
+    });
+    expect((await response.json()).feedId).toBe("clawhub-community");
+  });
+
+  it("emits a named reviewed feed", async () => {
+    const runQuery = vi.fn().mockResolvedValue({
+      generatedAtMs: 0,
+      limit: 50,
+      truncated: false,
+      skills: [],
+      packages: [],
+    });
+
+    const response = await __handlers.reviewedFeedV1Handler(
+      makeCtx({ runQuery }),
+      new Request("https://example.com/api/v1/feeds/reviewed?type=plugin"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runQuery).toHaveBeenCalledWith(expect.anything(), {
+      feed: "reviewed",
+      limit: undefined,
+      includeSkills: false,
+      includePlugins: true,
+    });
+    expect((await response.json()).feedId).toBe("clawhub-reviewed");
+  });
+
+  it("rejects unknown feed type filters", async () => {
+    const response = await __handlers.allFeedV1Handler(
+      makeCtx({ runQuery: vi.fn() }),
+      new Request("https://example.com/api/v1/feeds/all?type=soul"),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toBe("invalid feed type");
+  });
+});
+
 const blockedRate = () => ({
   allowed: false,
   remaining: 0,
