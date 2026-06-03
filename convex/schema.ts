@@ -199,6 +199,42 @@ const publisherMembers = defineTable({
   .index("by_user", ["userId"])
   .index("by_publisher_user", ["publisherId", "userId"]);
 
+const displayManifestStatusValidator = v.union(
+  v.literal("ok"),
+  v.literal("missing"),
+  v.literal("invalid"),
+  v.literal("failed"),
+);
+
+const displayManifestValidator = v.object({
+  notGrouped: v.optional(v.union(v.literal("top"), v.literal("bottom"))),
+  groupings: v.array(
+    v.object({
+      title: v.string(),
+      description: v.optional(v.string()),
+      skills: v.array(v.string()),
+    }),
+  ),
+});
+
+const githubSkillSources = defineTable({
+  repo: v.string(),
+  ownerPublisherId: v.optional(v.id("publishers")),
+  defaultBranch: v.optional(v.string()),
+  displayManifestKind: v.optional(v.literal("skills.sh")),
+  displayManifestHash: v.optional(v.string()),
+  displayManifestCommit: v.optional(v.string()),
+  displayManifestFetchedAt: v.optional(v.number()),
+  displayManifestStatus: v.optional(displayManifestStatusValidator),
+  displayManifest: v.optional(displayManifestValidator),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_repo", ["repo"])
+  .index("by_owner_publisher", ["ownerPublisherId"])
+  .index("by_owner_publisher_and_repo", ["ownerPublisherId", "repo"])
+  .index("by_updated", ["updatedAt"]);
+
 // Shared validator fragments used by both `skills` and `skillSearchDigest`.
 const forkOfValidator = v.optional(
   v.object({
@@ -243,6 +279,21 @@ const statsValidator = v.object({
 
 const moderationStatusValidator = v.optional(
   v.union(v.literal("active"), v.literal("hidden"), v.literal("removed")),
+);
+
+const githubSkillScanStatusValidator = v.union(
+  v.literal("clean"),
+  v.literal("suspicious"),
+  v.literal("malicious"),
+  v.literal("pending"),
+  v.literal("failed"),
+);
+
+const githubSkillSignatureStatusValidator = v.union(
+  v.literal("verified"),
+  v.literal("failed"),
+  v.literal("missing"),
+  v.literal("pending"),
 );
 
 const packageFamilyValidator = v.union(
@@ -459,6 +510,15 @@ const skills = defineTable({
   ownerPublisherId: v.optional(v.id("publishers")),
   canonicalSkillId: v.optional(v.id("skills")),
   forkOf: forkOfValidator,
+  installKind: v.optional(v.literal("github")),
+  githubSourceId: v.optional(v.id("githubSkillSources")),
+  githubPath: v.optional(v.string()),
+  githubVerifiedCommit: v.optional(v.string()),
+  githubVerifiedContentHash: v.optional(v.string()),
+  githubScanStatus: v.optional(githubSkillScanStatusValidator),
+  githubSignatureStatus: v.optional(githubSkillSignatureStatusValidator),
+  githubVerifiedAt: v.optional(v.number()),
+  githubRemovedAt: v.optional(v.number()),
   latestVersionId: v.optional(v.id("skillVersions")),
   latestVersionSummary: v.optional(
     v.object({
@@ -2120,6 +2180,7 @@ export default defineSchema({
   users,
   publishers,
   publisherMembers,
+  githubSkillSources,
   skills,
   skillSlugAliases,
   packages,

@@ -4,6 +4,7 @@ import {
   currentUserSeedPackageName,
   currentUserSeedSkillSlug,
   seedFeaturedPluginPackagesMutation,
+  seedGitHubBackedSkillSourceMutation,
   seedLocalModerationFixturesHandler,
   seedSkillMutation,
 } from "./devSeed";
@@ -17,6 +18,9 @@ const seedSkillMutationHandler = (
 )._handler;
 const seedFeaturedPluginPackagesHandler = (
   seedFeaturedPluginPackagesMutation as unknown as WrappedHandler<Record<string, unknown>>
+)._handler;
+const seedGitHubBackedSkillSourceHandler = (
+  seedGitHubBackedSkillSourceMutation as unknown as WrappedHandler<Record<string, unknown>>
 )._handler;
 
 function chainEq(constraints: Record<string, unknown>) {
@@ -187,6 +191,181 @@ describe("devSeed local fixtures", () => {
         ownerUserId: userId,
         ownerPublisherId: tables.publishers?.[0]?._id,
       }),
+    );
+  });
+
+  it("seeds a GitHub-backed source and skills without creating mirrored versions", async () => {
+    const { db, tables } = createDb();
+    const userId = (await db.insert("users", {
+      handle: "nvidia-dev",
+      displayName: "NVIDIA Dev",
+      role: "user",
+      createdAt: 1,
+      updatedAt: 1,
+    })) as Id<"users">;
+
+    const result = await seedGitHubBackedSkillSourceHandler(
+      createMutationCtx(db) as never,
+      {
+        ownerUserId: userId,
+        repo: "NVIDIA/skills",
+        defaultBranch: "main",
+        displayManifestKind: "skills.sh",
+        displayManifestHash: "manifest-sha256",
+        displayManifestCommit: "0".repeat(40),
+        displayManifestFetchedAt: 123,
+        displayManifestStatus: "ok",
+        displayManifest: {
+          notGrouped: "bottom",
+          groupings: [
+            {
+              title: "Agentic AI",
+              description: "Agentic AI skills.",
+              skills: ["aiq-deploy", "nemoclaw-user-configure-security"],
+            },
+          ],
+        },
+        skills: [
+          {
+            slug: "aiq-deploy",
+            displayName: "AIQ Deploy",
+            summary: "Deploy AgentIQ workflows.",
+            githubPath: "skills/aiq-deploy",
+            githubVerifiedCommit: "1".repeat(40),
+            githubVerifiedContentHash: "hash-aiq-deploy",
+            githubScanStatus: "clean",
+            githubSignatureStatus: "verified",
+            githubVerifiedAt: 456,
+          },
+          {
+            slug: "nemoclaw-user-configure-security",
+            displayName: "NeMoClaw User Configure Security",
+            summary: "Configure NeMoClaw user security.",
+            githubPath: "skills/nemoclaw-user-configure-security",
+            githubVerifiedCommit: "2".repeat(40),
+            githubVerifiedContentHash: "hash-nemoclaw",
+            githubScanStatus: "clean",
+            githubSignatureStatus: "verified",
+            githubVerifiedAt: 789,
+            githubRemovedAt: 900,
+          },
+        ],
+      } as never,
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      seeded: ["aiq-deploy", "nemoclaw-user-configure-security"],
+      skipped: [],
+    });
+    expect(tables.githubSkillSources).toHaveLength(1);
+    expect(tables.githubSkillSources?.[0]).toEqual(
+      expect.objectContaining({
+        repo: "NVIDIA/skills",
+        ownerPublisherId: tables.publishers?.[0]?._id,
+        defaultBranch: "main",
+        displayManifestKind: "skills.sh",
+        displayManifestHash: "manifest-sha256",
+        displayManifestCommit: "0".repeat(40),
+        displayManifestFetchedAt: 123,
+        displayManifestStatus: "ok",
+        displayManifest: {
+          notGrouped: "bottom",
+          groupings: [
+            {
+              title: "Agentic AI",
+              description: "Agentic AI skills.",
+              skills: ["aiq-deploy", "nemoclaw-user-configure-security"],
+            },
+          ],
+        },
+      }),
+    );
+    expect(tables.skills).toHaveLength(2);
+    expect(tables.skills).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          slug: "aiq-deploy",
+          installKind: "github",
+          githubSourceId: tables.githubSkillSources?.[0]?._id,
+          githubPath: "skills/aiq-deploy",
+          githubVerifiedCommit: "1".repeat(40),
+          githubVerifiedContentHash: "hash-aiq-deploy",
+          githubScanStatus: "clean",
+          githubSignatureStatus: "verified",
+          githubVerifiedAt: 456,
+          latestVersionId: undefined,
+          latestVersionSummary: undefined,
+          tags: {},
+          stats: expect.objectContaining({ versions: 0 }),
+        }),
+        expect.objectContaining({
+          slug: "nemoclaw-user-configure-security",
+          installKind: "github",
+          githubSourceId: tables.githubSkillSources?.[0]?._id,
+          githubPath: "skills/nemoclaw-user-configure-security",
+          githubVerifiedContentHash: "hash-nemoclaw",
+          githubRemovedAt: 900,
+          moderationStatus: "hidden",
+          moderationReason: "github.upstream.removed",
+          moderationVerdict: undefined,
+          isSuspicious: false,
+          latestVersionId: undefined,
+          tags: {},
+        }),
+      ]),
+    );
+    expect(tables.skillVersions ?? []).toHaveLength(0);
+  });
+
+  it("keeps unverified GitHub-backed skills hidden from public listings", async () => {
+    const { db, tables } = createDb();
+
+    await seedGitHubBackedSkillSourceHandler(
+      createMutationCtx(db) as never,
+      {
+        repo: "NVIDIA/skills",
+        displayManifestStatus: "ok",
+        skills: [
+          {
+            slug: "pending-github-skill",
+            displayName: "Pending GitHub Skill",
+            githubPath: "skills/pending-github-skill",
+            githubVerifiedCommit: "1".repeat(40),
+            githubVerifiedContentHash: "hash-pending",
+            githubScanStatus: "pending",
+            githubSignatureStatus: "verified",
+          },
+          {
+            slug: "bad-signature-github-skill",
+            displayName: "Bad Signature GitHub Skill",
+            githubPath: "skills/bad-signature-github-skill",
+            githubVerifiedCommit: "2".repeat(40),
+            githubVerifiedContentHash: "hash-bad-signature",
+            githubScanStatus: "clean",
+            githubSignatureStatus: "failed",
+          },
+        ],
+      } as never,
+    );
+
+    expect(tables.skills).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          slug: "pending-github-skill",
+          moderationStatus: "hidden",
+          moderationReason: "pending.scan",
+          moderationVerdict: undefined,
+          isSuspicious: false,
+        }),
+        expect.objectContaining({
+          slug: "bad-signature-github-skill",
+          moderationStatus: "hidden",
+          moderationReason: "github.signature.failed",
+          moderationVerdict: undefined,
+          isSuspicious: false,
+        }),
+      ]),
     );
   });
 
