@@ -18,6 +18,8 @@ const DEFAULT_CANCEL_SCAN_LIMIT = 1000;
 const DEFAULT_CANCEL_DELETE_LIMIT = 500;
 const MAX_CANCEL_SCAN_LIMIT = 5000;
 const CANCEL_SAMPLE_LIMIT = 20;
+const DEFAULT_PRUNE_SKILL_SCAN_REQUEST_LIMIT = 250;
+const MAX_PRUNE_SKILL_SCAN_REQUEST_LIMIT = 1000;
 const DEFAULT_BULK_RESCAN_BATCH_SIZE = 50;
 const MAX_BULK_RESCAN_BATCH_SIZE = 100;
 const MAX_BULK_RESCAN_STATUS_JOB_IDS = 200;
@@ -25,6 +27,7 @@ const BULK_RESCAN_SAMPLE_LIMIT = 10;
 const MAX_STORED_SKILLSPECTOR_ISSUES = 25;
 const MAX_STORED_SKILLSPECTOR_TEXT_CHARS = 2_000;
 const MAX_STORED_SKILLSPECTOR_SHORT_TEXT_CHARS = 512;
+const DEFAULT_SKILL_SCAN_REQUEST_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
 const finalLlmAnalysisStatuses = new Set(["clean", "suspicious", "malicious"]);
 const artifactBackedLlmAnalysisStatuses = new Set(["clean", "benign", "suspicious", "malicious"]);
@@ -42,8 +45,10 @@ type CancelSkipReason =
 
 type JobTarget = {
   job: Doc<"securityScanJobs">;
+  skill?: Doc<"skills"> | null;
   version?: Doc<"skillVersions">;
   release?: Doc<"packageReleases">;
+  scanRequest?: Doc<"skillScanRequests">;
   missing?: true;
 };
 
@@ -206,6 +211,14 @@ const skillSpectorAnalysisValidator = v.object({
   checkedAt: v.number(),
 });
 
+const scanRequestFileValidator = v.object({
+  path: v.string(),
+  size: v.number(),
+  storageId: v.id("_storage"),
+  sha256: v.string(),
+  contentType: v.optional(v.string()),
+});
+
 const internalRefs = internal as unknown as {
   packages: {
     getPackageByIdInternal: unknown;
@@ -215,10 +228,15 @@ const internalRefs = internal as unknown as {
   };
   securityScan: {
     claimQueuedJobsInternal: unknown;
+    createUploadedSkillScanRequestInternal: unknown;
+    createPublishedSkillScanRequestInternal: unknown;
     enqueuePackageReleaseScanInternal: unknown;
     enqueueSkillVersionScanInternal: unknown;
     failJobInternal: unknown;
+    getSkillScanRequestForUserInternal: unknown;
     getJobTargetInternal: unknown;
+    recordSkillScanRequestFailedInternal: unknown;
+    recordSkillScanRequestSucceededInternal: unknown;
     succeedJobInternal: unknown;
   };
   skills: {
@@ -754,6 +772,350 @@ export const requestSkillRescan = mutation({
   },
 });
 
+function skillScanRequestExpiresAt(now: number) {
+  return now + DEFAULT_SKILL_SCAN_REQUEST_RETENTION_MS;
+}
+
+function skillScanReportFromRequest(request: Doc<"skillScanRequests">) {
+  return {
+    clawscan: request.llmAnalysis ?? null,
+    skillspector: request.skillSpectorAnalysis ?? null,
+    staticAnalysis: request.staticScan ?? null,
+    virustotal: request.vtAnalysis
+      ? {
+          ...request.vtAnalysis,
+          ...request.vtAnalysis.engineStats,
+        }
+      : null,
+  };
+}
+
+function skillScanArtifactFromRequest(request: Doc<"skillScanRequests">) {
+  return {
+    ...(request.slug ? { slug: request.slug } : {}),
+    ...(request.displayName ? { displayName: request.displayName } : {}),
+    ...(request.version ? { version: request.version } : {}),
+    ...(request.sha256hash ? { sha256hash: request.sha256hash } : {}),
+    fileCount: request.files.length,
+  };
+}
+
+function skillScanStatusResponse(
+  request: Doc<"skillScanRequests">,
+  job: Doc<"securityScanJobs"> | null,
+) {
+  const status =
+    request.status === "succeeded" || request.status === "failed"
+      ? request.status
+      : (job?.status ?? request.status);
+  return {
+    ok: true as const,
+    scanId: request._id,
+    jobId: request.securityScanJobId,
+    status,
+    sourceKind: request.sourceKind,
+    update: request.update,
+    writtenBack: request.writtenBack,
+    artifact: skillScanArtifactFromRequest(request),
+    report: skillScanReportFromRequest(request),
+    lastError: request.lastError ?? job?.lastError,
+    createdAt: request.createdAt,
+    updatedAt: Math.max(request.updatedAt, job?.updatedAt ?? request.updatedAt),
+    completedAt: request.completedAt ?? job?.completedAt,
+  };
+}
+
+async function enqueueSkillScanRequestJob(ctx: MutationCtx, requestId: Id<"skillScanRequests">) {
+  const request = await ctx.db.get(requestId);
+  if (!request) throw new ConvexError("Scan request not found");
+  const now = Date.now();
+  const jobId = await ctx.db.insert("securityScanJobs", {
+    targetKind: "skillScanRequest",
+    skillScanRequestId: request._id,
+    status: "queued",
+    source: "manual",
+    priority: 100,
+    hasMaliciousSignal: false,
+    waitForVtUntil: now,
+    nextRunAt: now,
+    attempts: 0,
+    createdAt: now,
+    updatedAt: now,
+  });
+  await ctx.db.patch(request._id, {
+    securityScanJobId: jobId,
+    updatedAt: now,
+  });
+  return jobId;
+}
+
+export const createUploadedSkillScanRequestInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    files: v.array(scanRequestFileValidator),
+    displayName: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor) throw new ConvexError("Unauthorized");
+    if (args.files.length === 0) throw new ConvexError("files required");
+    if (
+      !args.files.some((file) => {
+        const lower = file.path.trim().toLowerCase();
+        return lower === "skill.md";
+      })
+    ) {
+      throw new ConvexError("SKILL.md required");
+    }
+
+    const now = Date.now();
+    const scanId = await ctx.db.insert("skillScanRequests", {
+      actorUserId: actor._id,
+      sourceKind: "upload",
+      update: false,
+      writtenBack: false,
+      status: "queued",
+      displayName: args.displayName,
+      version: "local",
+      files: args.files,
+      expiresAt: skillScanRequestExpiresAt(now),
+      createdAt: now,
+      updatedAt: now,
+    });
+    const jobId = await enqueueSkillScanRequestJob(ctx, scanId);
+
+    await ctx.db.insert("auditLogs", {
+      actorUserId: actor._id,
+      action: "skill.clawscan.scan_upload",
+      targetType: "skillScanRequest",
+      targetId: scanId,
+      metadata: {
+        jobId,
+        fileCount: args.files.length,
+      },
+      createdAt: now,
+    });
+
+    return {
+      ok: true as const,
+      scanId,
+      jobId,
+      status: "queued" as const,
+      sourceKind: "upload" as const,
+      update: false,
+      alreadyQueued: false,
+    };
+  },
+});
+
+export const createPublishedSkillScanRequestInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    slug: v.string(),
+    version: v.optional(v.string()),
+    update: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor) throw new ConvexError("Unauthorized");
+
+    const slug = args.slug.trim().toLowerCase();
+    if (!slug) throw new ConvexError("Slug required");
+    const skill = await ctx.db
+      .query("skills")
+      .withIndex("by_slug", (q) => q.eq("slug", slug))
+      .unique();
+    if (!skill || skill.softDeletedAt) throw new ConvexError("Skill not found");
+
+    await assertCanManageOwnedResource(ctx, {
+      actor,
+      ownerUserId: skill.ownerUserId,
+      ownerPublisherId: skill.ownerPublisherId,
+      allowPlatformModerator: true,
+    });
+
+    const requestedVersion = args.version?.trim();
+    const version = requestedVersion
+      ? await ctx.db
+          .query("skillVersions")
+          .withIndex("by_skill_version", (q) =>
+            q.eq("skillId", skill._id).eq("version", requestedVersion),
+          )
+          .unique()
+      : skill.latestVersionId
+        ? await ctx.db.get(skill.latestVersionId)
+        : null;
+    if (!version || version.softDeletedAt) throw new ConvexError("Skill version not found");
+
+    const fingerprintEntries = await ctx.db
+      .query("skillVersionFingerprints")
+      .withIndex("by_version", (q) => q.eq("versionId", version._id))
+      .collect();
+    const files = sourceSkillVersionFiles(version.files, {
+      generatedBundleFingerprints: fingerprintEntries
+        .filter((entry) => entry.kind === "generated-bundle")
+        .map((entry) => entry.fingerprint),
+    });
+
+    const now = Date.now();
+    const update = args.update === true;
+    const scanId = await ctx.db.insert("skillScanRequests", {
+      actorUserId: actor._id,
+      sourceKind: "published",
+      update,
+      writtenBack: false,
+      status: "queued",
+      slug: skill.slug,
+      displayName: skill.displayName,
+      version: version.version,
+      skillId: skill._id,
+      skillVersionId: version._id,
+      files,
+      parsed: version.parsed,
+      sha256hash: version.sha256hash,
+      vtAnalysis: version.vtAnalysis,
+      capabilityTags: version.capabilityTags,
+      staticScan: version.staticScan,
+      expiresAt: skillScanRequestExpiresAt(now),
+      createdAt: now,
+      updatedAt: now,
+    });
+    const jobId = await enqueueSkillScanRequestJob(ctx, scanId);
+
+    await ctx.db.insert("auditLogs", {
+      actorUserId: actor._id,
+      action: update ? "skill.clawscan.scan_published_update" : "skill.clawscan.scan_published",
+      targetType: "skillVersion",
+      targetId: version._id,
+      metadata: {
+        skillId: skill._id,
+        slug: skill.slug,
+        version: version.version,
+        scanId,
+        jobId,
+        update,
+      },
+      createdAt: now,
+    });
+
+    return {
+      ok: true as const,
+      scanId,
+      jobId,
+      status: "queued" as const,
+      sourceKind: "published" as const,
+      update,
+      alreadyQueued: false,
+    };
+  },
+});
+
+export const getSkillScanRequestForUserInternal = internalQuery({
+  args: {
+    actorUserId: v.id("users"),
+    scanId: v.id("skillScanRequests"),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor) throw new ConvexError("Unauthorized");
+    const request = await ctx.db.get(args.scanId);
+    if (!request) throw new ConvexError("Scan not found");
+    if (request.actorUserId !== actor._id && actor.role !== "admin" && actor.role !== "moderator") {
+      throw new ConvexError("Forbidden");
+    }
+    const job = request.securityScanJobId ? await ctx.db.get(request.securityScanJobId) : null;
+    return skillScanStatusResponse(request, job);
+  },
+});
+
+export const recordSkillScanRequestSucceededInternal = internalMutation({
+  args: {
+    scanId: v.id("skillScanRequests"),
+    jobId: v.id("securityScanJobs"),
+    runId: v.optional(v.string()),
+    llmAnalysis: llmAnalysisValidator,
+    skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
+    writtenBack: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const request = await ctx.db.get(args.scanId);
+    if (!request) throw new ConvexError("Scan request not found");
+    const now = Date.now();
+    await ctx.db.patch(request._id, {
+      status: "succeeded",
+      llmAnalysis: args.llmAnalysis,
+      ...(args.skillSpectorAnalysis
+        ? { skillSpectorAnalysis: capSkillSpectorAnalysisForStorage(args.skillSpectorAnalysis) }
+        : {}),
+      writtenBack: args.writtenBack === true || request.writtenBack,
+      runId: args.runId,
+      completedAt: now,
+      updatedAt: now,
+    });
+    return { ok: true as const };
+  },
+});
+
+export const recordSkillScanRequestFailedInternal = internalMutation({
+  args: {
+    scanId: v.id("skillScanRequests"),
+    error: v.string(),
+    llmAnalysis: v.optional(llmAnalysisValidator),
+  },
+  handler: async (ctx, args) => {
+    const request = await ctx.db.get(args.scanId);
+    if (!request) throw new ConvexError("Scan request not found");
+    const now = Date.now();
+    await ctx.db.patch(request._id, {
+      status: "failed",
+      lastError: args.error.slice(0, 2000),
+      ...(args.llmAnalysis ? { llmAnalysis: args.llmAnalysis } : {}),
+      completedAt: now,
+      updatedAt: now,
+    });
+    return { ok: true as const };
+  },
+});
+
+export const pruneExpiredSkillScanRequestsInternal = internalMutation({
+  args: {
+    batchSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const batchSize = Math.max(
+      1,
+      Math.min(
+        args.batchSize ?? DEFAULT_PRUNE_SKILL_SCAN_REQUEST_LIMIT,
+        MAX_PRUNE_SKILL_SCAN_REQUEST_LIMIT,
+      ),
+    );
+    const now = Date.now();
+    const requests = await ctx.db
+      .query("skillScanRequests")
+      .withIndex("by_expires_at", (q) => q.lt("expiresAt", now))
+      .take(batchSize);
+
+    let deletedJobs = 0;
+    for (const request of requests) {
+      if (request.securityScanJobId) {
+        const job = await ctx.db.get(request.securityScanJobId);
+        if (job?.targetKind === "skillScanRequest") {
+          await ctx.db.delete(job._id);
+          deletedJobs += 1;
+        }
+      }
+      await ctx.db.delete(request._id);
+    }
+
+    return {
+      ok: true as const,
+      deletedRequests: requests.length,
+      deletedJobs,
+      done: requests.length < batchSize,
+    };
+  },
+});
+
 async function requestPackageRescanForActor(
   ctx: MutationCtx,
   args: {
@@ -1168,6 +1530,13 @@ export const claimQueuedJobsInternal = internalMutation({
         lastError: undefined,
         updatedAt: now,
       });
+      if (job.targetKind === "skillScanRequest" && job.skillScanRequestId) {
+        await ctx.db.patch(job.skillScanRequestId, {
+          status: "running",
+          lastError: undefined,
+          updatedAt: now,
+        });
+      }
       claimed.push({
         ...job,
         status: "running" as const,
@@ -1205,6 +1574,15 @@ export const getJobTargetInternal = internalQuery({
         release,
         trustedOpenClawPlugin: isOpenClawPluginPackage(pkg, ownerPublisher),
       };
+    }
+    if (job.targetKind === "skillScanRequest" && job.skillScanRequestId) {
+      const scanRequest = await ctx.db.get(job.skillScanRequestId);
+      if (!scanRequest) return { job, missing: true as const };
+      const version = scanRequest.skillVersionId
+        ? await ctx.db.get(scanRequest.skillVersionId)
+        : null;
+      const skill = scanRequest.skillId ? await ctx.db.get(scanRequest.skillId) : null;
+      return { job, skill, version: version ?? undefined, scanRequest };
     }
     return { job, missing: true as const };
   },
@@ -1252,6 +1630,14 @@ export const failJobInternal = internalMutation({
       workerId: undefined,
       updatedAt: now,
     });
+    if (job.targetKind === "skillScanRequest" && job.skillScanRequestId) {
+      await ctx.db.patch(job.skillScanRequestId, {
+        status: retry ? "queued" : "failed",
+        lastError: args.error.slice(0, 2000),
+        ...(retry ? {} : { completedAt: now }),
+        updatedAt: now,
+      });
+    }
     return { ok: true as const, retry };
   },
 });
@@ -1291,6 +1677,7 @@ export const claimCodexScanJobs = action({
         continue;
       }
 
+      const scanRequest = target.scanRequest as Doc<"skillScanRequests"> | undefined;
       const version = target.version as Doc<"skillVersions"> | undefined;
       const release = target.release as Doc<"packageReleases"> | undefined;
       let files: Array<{
@@ -1300,7 +1687,9 @@ export const claimCodexScanJobs = action({
         storageId: Id<"_storage">;
         contentType?: string;
       }> = [];
-      if (version) {
+      if (scanRequest) {
+        files = scanRequest.files;
+      } else if (version) {
         const fingerprintEntries = await runQueryRef<
           Array<{ fingerprint: string; kind?: "source" | "generated-bundle" }>
         >(ctx, internalRefs.skills.listVersionFingerprintsInternal, {
@@ -1406,6 +1795,33 @@ export const completeCodexScanJob = action({
         releaseId: target.release._id,
         llmAnalysis: args.llmAnalysis,
       });
+    } else if (target.job.targetKind === "skillScanRequest" && target.scanRequest) {
+      let writtenBack = false;
+      if (
+        target.scanRequest.sourceKind === "published" &&
+        target.scanRequest.update &&
+        target.version
+      ) {
+        if (args.skillSpectorAnalysis) {
+          await runMutationRef(ctx, internalRefs.skills.updateVersionSkillSpectorAnalysisInternal, {
+            versionId: target.version._id,
+            skillSpectorAnalysis: capSkillSpectorAnalysisForStorage(args.skillSpectorAnalysis),
+          });
+        }
+        await runMutationRef(ctx, internalRefs.skills.updateVersionLlmAnalysisInternal, {
+          versionId: target.version._id,
+          llmAnalysis: args.llmAnalysis,
+        });
+        writtenBack = true;
+      }
+      await runMutationRef(ctx, internalRefs.securityScan.recordSkillScanRequestSucceededInternal, {
+        scanId: target.scanRequest._id,
+        jobId: args.jobId,
+        runId: args.runId,
+        llmAnalysis: args.llmAnalysis,
+        skillSpectorAnalysis: args.skillSpectorAnalysis,
+        writtenBack,
+      });
     } else {
       throw new ConvexError("Unsupported security scan target");
     }
@@ -1462,6 +1878,16 @@ export const failCodexScanJob = action({
               llmAnalysis,
             });
           }
+        } else if (target.job.targetKind === "skillScanRequest" && target.scanRequest) {
+          await runMutationRef(
+            ctx,
+            internalRefs.securityScan.recordSkillScanRequestFailedInternal,
+            {
+              scanId: target.scanRequest._id,
+              error: args.error,
+              llmAnalysis,
+            },
+          );
         }
       }
     }

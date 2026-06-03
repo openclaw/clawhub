@@ -16,10 +16,10 @@ import {
   ApiV1ReclassifyBanResponseSchema,
   ApiV1RemediateAutobansResponseSchema,
   ApiV1SetRoleResponseSchema,
-  ApiV1SkillBulkRescanBatchResponseSchema,
-  ApiV1SkillBulkRescanStatusResponseSchema,
+  ApiV1SkillScanBatchResponseSchema,
+  ApiV1SkillScanBatchStatusResponseSchema,
+  ApiV1SkillScanSubmitResponseSchema,
   ApiV1SkillRepairVtPendingResponseSchema,
-  ApiV1SkillRescanResponseSchema,
   ApiV1UnbanUserResponseSchema,
   ApiV1UserSearchResponseSchema,
   parseArk,
@@ -217,15 +217,22 @@ export async function cmdRescanSkill(
       registry,
       {
         method: "POST",
-        path: `${ApiRoutes.skills}/${encodeURIComponent(slug)}/rescan`,
+        path: ApiRoutes.skillScans,
         token,
-        body: version ? { version } : {},
+        body: {
+          source: {
+            kind: "published",
+            slug,
+            ...(version ? { version } : {}),
+          },
+          update: true,
+        },
       },
-      ApiV1SkillRescanResponseSchema,
+      ApiV1SkillScanSubmitResponseSchema,
     );
-    const parsed = parseArk(ApiV1SkillRescanResponseSchema, result, "Skill rescan response");
+    const parsed = parseArk(ApiV1SkillScanSubmitResponseSchema, result, "Skill rescan response");
     spinner?.succeed(
-      `OK. Queued ClawScan for ${parsed.slug}@${parsed.version} (${parsed.alreadyQueued ? "existing job" : "new job"}).`,
+      `OK. Queued ClawScan for ${slug}${version ? `@${version}` : ""} (${parsed.alreadyQueued ? "existing job" : "new job"}).`,
     );
     if (options.json) {
       process.stdout.write(`${JSON.stringify(parsed, null, 2)}\n`);
@@ -283,7 +290,7 @@ export async function cmdRescanAllSkills(
       registry,
       {
         method: "POST",
-        path: `${ApiRoutes.skills}/-/rescan-batch`,
+        path: `${ApiRoutes.skillScans}/batch`,
         token,
         body: {
           mode: "all-active-latest",
@@ -292,10 +299,10 @@ export async function cmdRescanAllSkills(
           dryRun: options.dryRun === true,
         },
       },
-      ApiV1SkillBulkRescanBatchResponseSchema,
+      ApiV1SkillScanBatchResponseSchema,
     );
     const batch = parseArk(
-      ApiV1SkillBulkRescanBatchResponseSchema,
+      ApiV1SkillScanBatchResponseSchema,
       result,
       "Bulk skill rescan batch response",
     );
@@ -473,14 +480,14 @@ async function pollBulkRescanStatus(
       registry,
       {
         method: "POST",
-        path: `${ApiRoutes.skills}/-/rescan-batch/status`,
+        path: `${ApiRoutes.skillScans}/batch/status`,
         token,
         body: { jobIds },
       },
-      ApiV1SkillBulkRescanStatusResponseSchema,
+      ApiV1SkillScanBatchStatusResponseSchema,
     );
     const status = parseArk(
-      ApiV1SkillBulkRescanStatusResponseSchema,
+      ApiV1SkillScanBatchStatusResponseSchema,
       result,
       "Bulk skill rescan status response",
     );

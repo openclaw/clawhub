@@ -31,6 +31,7 @@ import {
 } from "./cli/commands/packages.js";
 import { cmdPublish } from "./cli/commands/publish.js";
 import { cmdCreatePublisher } from "./cli/commands/publishers.js";
+import { cmdScan } from "./cli/commands/scan.js";
 import {
   cmdExplore,
   cmdInstall,
@@ -369,6 +370,19 @@ registerCommand(program, ["publish"])
   .action(async (folder, options) => {
     const opts = await resolveGlobalOpts();
     await cmdPublish(opts, folder, options);
+  });
+
+registerCommand(program, ["scan"])
+  .description("Run ClawScan on a local skill bundle or one of your published skills")
+  .argument("[path]", "Local skill folder path")
+  .option("--slug <slug>", "Published skill slug to scan")
+  .option("--version <version>", "Published skill version to scan")
+  .option("--update", "Write published scan results back to the selected version")
+  .option("-o, --output <path>", "Write the full report ZIP to a file")
+  .option("--json", "Output scan report JSON")
+  .action(async (folder, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdScan(opts, folder, options);
   });
 
 registerCommand(program, ["delete"])

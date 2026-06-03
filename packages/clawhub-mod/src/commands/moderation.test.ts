@@ -170,12 +170,11 @@ describe("cmdRescanSkill", () => {
   it("posts a moderator skill rescan request", async () => {
     httpMocks.apiRequest.mockResolvedValueOnce({
       ok: true,
-      slug: "markdown2doc",
-      version: "1.0.4",
-      skillId: "skills:1",
-      skillVersionId: "skillVersions:1",
+      scanId: "skillScanRequests:1",
       jobId: "securityScanJobs:1",
-      alreadyQueued: false,
+      status: "queued",
+      sourceKind: "published",
+      update: true,
     });
 
     const result = await cmdRescanSkill(
@@ -185,14 +184,17 @@ describe("cmdRescanSkill", () => {
       false,
     );
 
-    expect(result).toMatchObject({ ok: true, slug: "markdown2doc", version: "1.0.4" });
+    expect(result).toMatchObject({ ok: true, scanId: "skillScanRequests:1", update: true });
     expect(httpMocks.apiRequest).toHaveBeenCalledWith(
       "https://clawhub.ai",
       expect.objectContaining({
         method: "POST",
-        path: "/api/v1/skills/markdown2doc/rescan",
+        path: "/api/v1/skills/scan",
         token: "tkn",
-        body: { version: "1.0.4" },
+        body: {
+          source: { kind: "published", slug: "markdown2doc", version: "1.0.4" },
+          update: true,
+        },
       }),
       expect.anything(),
     );
@@ -242,7 +244,7 @@ describe("cmdRescanAllSkills", () => {
       "https://clawhub.ai",
       expect.objectContaining({
         method: "POST",
-        path: "/api/v1/skills/-/rescan-batch",
+        path: "/api/v1/skills/scan/batch",
         body: {
           mode: "all-active-latest",
           cursor: null,
@@ -257,7 +259,7 @@ describe("cmdRescanAllSkills", () => {
       "https://clawhub.ai",
       expect.objectContaining({
         method: "POST",
-        path: "/api/v1/skills/-/rescan-batch",
+        path: "/api/v1/skills/scan/batch",
         body: {
           mode: "all-active-latest",
           cursor: "cursor-2",
@@ -307,7 +309,7 @@ describe("cmdRescanAllSkills", () => {
       "https://clawhub.ai",
       expect.objectContaining({
         method: "POST",
-        path: "/api/v1/skills/-/rescan-batch",
+        path: "/api/v1/skills/scan/batch",
         token: "tkn",
         body: {
           mode: "all-active-latest",
@@ -323,7 +325,7 @@ describe("cmdRescanAllSkills", () => {
       "https://clawhub.ai",
       expect.objectContaining({
         method: "POST",
-        path: "/api/v1/skills/-/rescan-batch/status",
+        path: "/api/v1/skills/scan/batch/status",
         token: "tkn",
         body: { jobIds: ["securityScanJobs:1"] },
       }),

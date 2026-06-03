@@ -94,6 +94,14 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   signals, and staff moderation state, not publisher-supplied explanatory text.
   Legacy persisted note fields may exist on old rows for schema compatibility,
   but publish, rescan, API, UI, and prompt paths must ignore them.
+- User-submitted `POST /api/v1/skills/scan` upload scans are authenticated but
+  ephemeral. They store uploaded files only on `skillScanRequests`, feed the
+  normal ClawScan worker, and must never create or patch public `skills`,
+  `skillVersions`, moderation, or trust state. Expired `skillScanRequests` rows
+  must be pruned by cron so uploaded file payloads do not become durable skill
+  storage. Published scan requests may patch a version only when the caller can
+  manage the skill and explicitly sets `update: true`; local uploads must reject
+  update mode.
 - `auditLogs` remains the global compliance/security ledger. Product-facing
   moderation timelines live in `skillModerationEventLogs` and
   `packageModerationEventLogs`.

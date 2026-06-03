@@ -422,6 +422,59 @@ export async function parseMultipartPublish(
   return parsePublishBody(body);
 }
 
+export async function parseMultipartSkillScan(
+  ctx: ActionCtx,
+  request: Request,
+): Promise<{
+  payload: Record<string, unknown>;
+  files: Array<{
+    path: string;
+    size: number;
+    storageId: Id<"_storage">;
+    sha256: string;
+    contentType?: string;
+  }>;
+}> {
+  const form = await request.formData();
+  const payloadRaw = form.get("payload");
+  if (!payloadRaw || typeof payloadRaw !== "string") {
+    throw new Error("Missing payload");
+  }
+  let payload: Record<string, unknown>;
+  try {
+    payload = JSON.parse(payloadRaw) as Record<string, unknown>;
+  } catch {
+    throw new Error("Invalid JSON payload");
+  }
+
+  const files: Array<{
+    path: string;
+    size: number;
+    storageId: Id<"_storage">;
+    sha256: string;
+    contentType?: string;
+  }> = [];
+
+  for (const entry of form.getAll("files")) {
+    const file = toFileLike(entry);
+    if (!file) continue;
+    const path = file.name;
+    if (isMacJunkPath(path)) continue;
+    const size = file.size;
+    if (size > MAX_PUBLISH_FILE_BYTES) {
+      throw new Error(getPublishFileSizeError(path));
+    }
+    const contentType = file.type || undefined;
+    const buffer = new Uint8Array(await file.arrayBuffer());
+    const sha256 = await sha256Hex(buffer);
+    const storageId = await ctx.storage.store(file as Blob);
+    files.push({ path, size, storageId, sha256, contentType });
+  }
+
+  if (files.length === 0) throw new Error("files required");
+  return { payload, files };
+}
+
 export function parsePublishBody(body: unknown) {
   const parsed = parseArk(CliPublishRequestSchema, body, "Publish payload");
   if (parsed.files.length === 0) throw new Error("files required");

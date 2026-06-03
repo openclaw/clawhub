@@ -20,6 +20,10 @@ import {
   publishSkillV1Handler,
   resolveSkillVersionV1Handler,
   searchSkillsV1Handler,
+  skillScanBatchStatusV1Handler,
+  skillScanBatchSubmitV1Handler,
+  skillScanGetRouterV1Handler,
+  skillScanSubmitV1Handler,
   skillSecurityVerdictsV1Handler,
   skillsDeleteRouterV1Handler,
   skillsGetRouterV1Handler,
@@ -61,6 +65,10 @@ export const listSkillsV1Http = httpAction(listSkillsV1Handler);
 export const skillsGetRouterV1Http = httpAction(skillsGetRouterV1Handler);
 export const publishSkillV1Http = httpAction(publishSkillV1Handler);
 export const skillSecurityVerdictsV1Http = httpAction(skillSecurityVerdictsV1Handler);
+export const skillScanSubmitV1Http = httpAction(skillScanSubmitV1Handler);
+export const skillScanGetRouterV1Http = httpAction(skillScanGetRouterV1Handler);
+export const skillScanBatchSubmitV1Http = httpAction(skillScanBatchSubmitV1Handler);
+export const skillScanBatchStatusV1Http = httpAction(skillScanBatchStatusV1Handler);
 export const skillsPostRouterV1Http = httpAction(skillsPostRouterV1Handler);
 export const skillsDeleteRouterV1Http = httpAction(skillsDeleteRouterV1Handler);
 export const exportSkillsV1Http = httpAction(exportSkillsV1Handler);

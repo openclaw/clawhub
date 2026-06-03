@@ -29,6 +29,7 @@
 ## Task 1: Shared Schema Contract
 
 **Files:**
+
 - Modify: `packages/schema/src/routes.ts`
 - Modify: `packages/schema/src/schemas.ts`
 - Modify: `packages/clawhub/src/schema/routes.ts`
@@ -73,15 +74,15 @@ Add `skillScans: '/api/v1/skills/scan'` to both route files.
 Add schemas for:
 
 ```ts
-ApiV1SkillScanSourceSchema
-ApiV1SkillScanSubmitRequestSchema
-ApiV1SkillScanSubmitResponseSchema
-ApiV1SkillScanStatusResponseSchema
-ApiV1SkillScanDownloadManifestSchema
-ApiV1SkillScanBatchRequestSchema
-ApiV1SkillScanBatchResponseSchema
-ApiV1SkillScanBatchStatusRequestSchema
-ApiV1SkillScanBatchStatusResponseSchema
+ApiV1SkillScanSourceSchema;
+ApiV1SkillScanSubmitRequestSchema;
+ApiV1SkillScanSubmitResponseSchema;
+ApiV1SkillScanStatusResponseSchema;
+ApiV1SkillScanDownloadManifestSchema;
+ApiV1SkillScanBatchRequestSchema;
+ApiV1SkillScanBatchResponseSchema;
+ApiV1SkillScanBatchStatusRequestSchema;
+ApiV1SkillScanBatchStatusResponseSchema;
 ```
 
 Keep the batch schemas compatible with existing bulk rescan request/status shapes while renaming them to the scan route vocabulary.
@@ -95,6 +96,7 @@ Expected: still FAIL until the CLI command exists, but schema import failures sh
 ## Task 2: Convex Scan Request Storage
 
 **Files:**
+
 - Modify: `convex/schema.ts`
 - Modify: `convex/securityScan.ts`
 
@@ -125,6 +127,7 @@ Update `completeCodexScanJob` and `failCodexScanJob` so scan-request jobs store 
 ## Task 3: HTTP Scan API
 
 **Files:**
+
 - Modify: `convex/httpApiV1/skillsV1.ts`
 - Modify: `convex/httpApiV1/shared.ts`
 - Modify: `convex/http.ts`
@@ -158,6 +161,7 @@ Register `POST /api/v1/skills/scan/batch` and `POST /api/v1/skills/scan/batch/st
 ## Task 4: Public CLI Command
 
 **Files:**
+
 - Create: `packages/clawhub/src/cli/commands/scan.ts`
 - Create: `packages/clawhub/src/cli/commands/scan.test.ts`
 - Modify: `packages/clawhub/src/cli.ts`
@@ -199,6 +203,7 @@ Call `GET /api/v1/skills/scan/{scanId}/download` after terminal success and writ
 ## Task 5: Moderator CLI Migration
 
 **Files:**
+
 - Modify: `packages/clawhub-mod/src/commands/moderation.ts`
 - Modify: `packages/clawhub-mod/src/commands/moderation.test.ts`
 
@@ -215,6 +220,7 @@ Keep prompts and JSON output behavior. Change only the route contract and respon
 ## Task 6: Docs, Specs, Verification
 
 **Files:**
+
 - Modify: `docs/cli.md`
 - Modify: `docs/http-api.md`
 - Modify: `specs/security-moderation.md`
