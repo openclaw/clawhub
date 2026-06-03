@@ -1096,12 +1096,23 @@ export const pruneExpiredSkillScanRequestsInternal = internalMutation({
       .take(batchSize);
 
     let deletedJobs = 0;
+    let deletedFiles = 0;
     for (const request of requests) {
       if (request.securityScanJobId) {
         const job = await ctx.db.get(request.securityScanJobId);
         if (job?.targetKind === "skillScanRequest") {
           await ctx.db.delete(job._id);
           deletedJobs += 1;
+        }
+      }
+      if (request.sourceKind === "upload") {
+        for (const file of request.files) {
+          try {
+            await ctx.storage.delete(file.storageId);
+            deletedFiles += 1;
+          } catch {
+            // Missing storage objects should not block expiry of the request row.
+          }
         }
       }
       await ctx.db.delete(request._id);
@@ -1111,6 +1122,7 @@ export const pruneExpiredSkillScanRequestsInternal = internalMutation({
       ok: true as const,
       deletedRequests: requests.length,
       deletedJobs,
+      deletedFiles,
       done: requests.length < batchSize,
     };
   },

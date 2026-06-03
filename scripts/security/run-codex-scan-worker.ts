@@ -17,7 +17,7 @@ type ClaimedJob = {
   job: {
     _id: string;
     leaseToken: string;
-    targetKind: "skillVersion" | "packageRelease";
+    targetKind: "skillVersion" | "packageRelease" | "skillScanRequest";
     source: string;
     hasMaliciousSignal: boolean;
     waitForVtUntil: number;

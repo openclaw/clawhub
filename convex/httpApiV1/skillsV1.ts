@@ -324,6 +324,10 @@ function isMultipartRequest(request: Request) {
   );
 }
 
+async function deleteStoredScanFiles(ctx: ActionCtx, files: Array<{ storageId: Id<"_storage"> }>) {
+  await Promise.allSettled(files.map((file) => ctx.storage.delete(file.storageId)));
+}
+
 function encodeJsonEntry(value: unknown) {
   return new TextEncoder().encode(`${JSON.stringify(value, null, 2)}\n`);
 }
@@ -1109,21 +1113,23 @@ export async function skillScanSubmitV1Handler(ctx: ActionCtx, request: Request)
 
   try {
     if (isMultipartRequest(request)) {
-      const multipart = await parseMultipartSkillScan(ctx, request);
-      const body = parseArk(
-        ApiV1SkillScanSubmitRequestSchema,
-        multipart.payload,
-        "Skill scan payload",
-      ) as {
-        source: { kind: "upload" } | { kind: "published"; slug: string; version?: string };
-        update?: boolean;
-      };
-      if (body.source.kind !== "upload") {
-        return text("multipart scan payload must use source.kind=upload", 400, rate.headers);
-      }
-      if (body.update === true) {
-        return text("update is not valid for uploaded scans", 400, rate.headers);
-      }
+      const multipart = await parseMultipartSkillScan(ctx, request, (payload) => {
+        const parsed = parseArk(
+          ApiV1SkillScanSubmitRequestSchema,
+          payload,
+          "Skill scan payload",
+        ) as {
+          source: { kind: "upload" } | { kind: "published"; slug: string; version?: string };
+          update?: boolean;
+        };
+        if (parsed.source.kind !== "upload") {
+          throw new Error("multipart scan payload must use source.kind=upload");
+        }
+        if (parsed.update === true) {
+          throw new Error("update is not valid for uploaded scans");
+        }
+        return parsed;
+      });
       const result = await runMutationRef(
         ctx,
         internalRefs.securityScan.createUploadedSkillScanRequestInternal,
@@ -1131,7 +1137,10 @@ export async function skillScanSubmitV1Handler(ctx: ActionCtx, request: Request)
           actorUserId: auth.userId,
           files: multipart.files,
         },
-      );
+      ).catch(async (error) => {
+        await deleteStoredScanFiles(ctx, multipart.files);
+        throw error;
+      });
       return json(result, 202, rate.headers);
     }
 

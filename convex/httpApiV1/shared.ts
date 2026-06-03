@@ -425,6 +425,7 @@ export async function parseMultipartPublish(
 export async function parseMultipartSkillScan(
   ctx: ActionCtx,
   request: Request,
+  validatePayload?: (payload: Record<string, unknown>) => Record<string, unknown>,
 ): Promise<{
   payload: Record<string, unknown>;
   files: Array<{
@@ -446,6 +447,19 @@ export async function parseMultipartSkillScan(
   } catch {
     throw new Error("Invalid JSON payload");
   }
+  const validatedPayload = validatePayload ? validatePayload(payload) : payload;
+
+  const fileEntries = form
+    .getAll("files")
+    .map((entry) => toFileLike(entry))
+    .filter((file): file is FileLikeEntry => Boolean(file))
+    .filter((file) => !isMacJunkPath(file.name));
+  if (fileEntries.length === 0) throw new Error("files required");
+  if (!fileEntries.some((file) => file.name.trim().toLowerCase() === "skill.md")) {
+    throw new Error("SKILL.md required");
+  }
+  const oversized = fileEntries.find((file) => file.size > MAX_PUBLISH_FILE_BYTES);
+  if (oversized) throw new Error(getPublishFileSizeError(oversized.name));
 
   const files: Array<{
     path: string;
@@ -455,24 +469,22 @@ export async function parseMultipartSkillScan(
     contentType?: string;
   }> = [];
 
-  for (const entry of form.getAll("files")) {
-    const file = toFileLike(entry);
-    if (!file) continue;
-    const path = file.name;
-    if (isMacJunkPath(path)) continue;
-    const size = file.size;
-    if (size > MAX_PUBLISH_FILE_BYTES) {
-      throw new Error(getPublishFileSizeError(path));
+  try {
+    for (const file of fileEntries) {
+      const path = file.name;
+      const size = file.size;
+      const contentType = file.type || undefined;
+      const buffer = new Uint8Array(await file.arrayBuffer());
+      const sha256 = await sha256Hex(buffer);
+      const storageId = await ctx.storage.store(file as Blob);
+      files.push({ path, size, storageId, sha256, contentType });
     }
-    const contentType = file.type || undefined;
-    const buffer = new Uint8Array(await file.arrayBuffer());
-    const sha256 = await sha256Hex(buffer);
-    const storageId = await ctx.storage.store(file as Blob);
-    files.push({ path, size, storageId, sha256, contentType });
+  } catch (error) {
+    await Promise.allSettled(files.map((file) => ctx.storage.delete(file.storageId)));
+    throw error;
   }
 
-  if (files.length === 0) throw new Error("files required");
-  return { payload, files };
+  return { payload: validatedPayload, files };
 }
 
 export function parsePublishBody(body: unknown) {
