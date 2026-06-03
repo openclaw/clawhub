@@ -680,6 +680,43 @@ describe("plugins publish route", () => {
     expect(screen.getByText(/\.\/images\/bar\.png/)).toBeTruthy();
   });
 
+  it("warns when README picture source srcset references relative image paths", async () => {
+    renderPublishRoute();
+
+    const packageJson = withRelativePath(
+      new File(
+        [makeCodePluginPackageJson({ name: "demo-plugin", version: "1.0.0" })],
+        "package.json",
+        {
+          type: "application/json",
+        },
+      ),
+      "demo-plugin/package.json",
+    );
+    const manifest = withRelativePath(
+      new File(['{"id":"demo.plugin"}'], "openclaw.plugin.json", { type: "application/json" }),
+      "demo-plugin/openclaw.plugin.json",
+    );
+    const readme = withRelativePath(
+      new File(
+        [
+          '# Demo Plugin\n\n<picture><source media="(prefers-color-scheme: dark)" srcset="./images/dark.png 1x, ./images/dark@2x.png 2x"><img src="https://example.com/fallback.png" alt="x"></picture>',
+        ],
+        "README.md",
+        { type: "text/markdown" },
+      ),
+      "demo-plugin/README.md",
+    );
+
+    fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest, readme] } });
+
+    await waitFor(() => {
+      expect(screen.getByText(/2 package-relative image paths/i)).toBeTruthy();
+    });
+    expect(screen.getByText(/\.\/images\/dark\.png/)).toBeTruthy();
+    expect(screen.getByText(/\.\/images\/dark@2x\.png/)).toBeTruthy();
+  });
+
   it("swaps the missing-source warning for a Package-path reminder once Source repo and a valid 40-hex Source commit are filled", async () => {
     renderPublishRoute();
 

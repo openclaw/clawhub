@@ -30,6 +30,25 @@ describe("detectRelativeReadmeAssets", () => {
     expect(report.unresolvableSamples).toEqual([]);
   });
 
+  it("flags relative <source srcset> candidates in raw HTML", () => {
+    const report = detectRelativeReadmeAssets(
+      `<picture><source media="(prefers-color-scheme: dark)" srcset="./dark.png 1x, ./dark@2x.png 2x, https://example.com/remote.png 3x"/><img src="https://example.com/fallback.png"/></picture>`,
+    );
+    expect(report.samples).toEqual(["./dark.png", "./dark@2x.png"]);
+    expect(report.total).toBe(2);
+    expect(report.unresolvableSamples).toEqual([]);
+  });
+
+  it("flags root-absolute <source srcset> candidates separately", () => {
+    const report = detectRelativeReadmeAssets(
+      `<source srcset="/dark.png 1x, ./light.png 2x, data:image/svg+xml,%3Csvg%3E 3x"/>`,
+    );
+    expect(report.samples).toEqual(["/dark.png", "./light.png"]);
+    expect(report.total).toBe(2);
+    expect(report.unresolvableSamples).toEqual(["/dark.png"]);
+    expect(report.unresolvableTotal).toBe(1);
+  });
+
   it("flags root-absolute paths separately as unresolvable", () => {
     const report = detectRelativeReadmeAssets("![logo](/static/logo.png)");
     expect(report.samples).toEqual(["/static/logo.png"]);
