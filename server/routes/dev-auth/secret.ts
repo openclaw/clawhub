@@ -10,6 +10,23 @@ type DevAuthSecretEnv = {
   DEV_AUTH_SECRET?: string;
 };
 
+type DevAuthSecretResult =
+  | { kind: "secret"; value: string }
+  | { kind: "notRequired" }
+  | { kind: "unavailable" };
+
+function getDevAuthDeployment(env: DevAuthSecretEnv) {
+  return env.CONVEX_DEPLOYMENT?.trim() || env.DEV_AUTH_CONVEX_DEPLOYMENT?.trim() || "";
+}
+
+function isLocalConvexDeployment(deployment: string) {
+  return deployment.startsWith("local:") || deployment.startsWith("anonymous:");
+}
+
+function isDevConvexDeployment(deployment: string) {
+  return deployment.startsWith("dev:");
+}
+
 function isLocalhostHost(value: string | null | undefined) {
   if (!value) return false;
   try {
@@ -30,13 +47,17 @@ function isLocalhostUrl(value: string | null | undefined) {
   }
 }
 
-function getCloudDevAuthSecret(env: DevAuthSecretEnv = process.env) {
-  if (env.DEV_AUTH_ENABLED !== "1") return undefined;
-  const deployment = env.CONVEX_DEPLOYMENT?.trim() || env.DEV_AUTH_CONVEX_DEPLOYMENT?.trim() || "";
-  if (!deployment.startsWith("dev:")) return undefined;
+function getDevAuthSecret(env: DevAuthSecretEnv = process.env): DevAuthSecretResult {
+  if (env.DEV_AUTH_ENABLED !== "1") return { kind: "unavailable" };
+  const deployment = getDevAuthDeployment(env);
+  if (isLocalConvexDeployment(deployment)) return { kind: "notRequired" };
+  if (!isDevConvexDeployment(deployment)) return { kind: "unavailable" };
+
   const secret = env.DEV_AUTH_SECRET?.trim();
-  if (!secret || secret.length < MIN_CLOUD_DEV_AUTH_SECRET_LENGTH) return undefined;
-  return secret;
+  if (!secret || secret.length < MIN_CLOUD_DEV_AUTH_SECRET_LENGTH) {
+    return { kind: "unavailable" };
+  }
+  return { kind: "secret", value: secret };
 }
 
 function isLoopbackAddress(value: string | undefined) {
@@ -75,9 +96,13 @@ function jsonResponse(payload: { devAuthSecret: string | null }, status = 200) {
 }
 
 export default defineEventHandler((event) => {
-  const secret = isLocalRequest(event) ? getCloudDevAuthSecret() : undefined;
-  if (!secret) {
+  if (!isLocalRequest(event)) {
     return jsonResponse({ devAuthSecret: null }, 404);
   }
-  return jsonResponse({ devAuthSecret: secret });
+
+  const secret = getDevAuthSecret();
+  if (secret.kind === "unavailable") {
+    return jsonResponse({ devAuthSecret: null }, 404);
+  }
+  return jsonResponse({ devAuthSecret: secret.kind === "secret" ? secret.value : null });
 });

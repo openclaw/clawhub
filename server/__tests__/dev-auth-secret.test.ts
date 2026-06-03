@@ -71,6 +71,22 @@ describe("dev-auth secret route", () => {
     });
   });
 
+  it.each(["local:anonymous-agent", "anonymous:anonymous-agent"])(
+    "returns no secret for %s without causing a browser 404",
+    async (deployment) => {
+      process.env.CONVEX_DEPLOYMENT = deployment;
+      delete process.env.DEV_AUTH_SECRET;
+      const event = createEvent();
+
+      await expect(runSecretRoute(event)).resolves.toEqual({
+        status: 200,
+        cacheControl: "no-store",
+        contentType: "application/json; charset=utf-8",
+        body: { devAuthSecret: null },
+      });
+    },
+  );
+
   it("does not return the secret to non-local hosts", async () => {
     const event = createEvent("https://preview.clawhub.ai/dev-auth/secret");
 
