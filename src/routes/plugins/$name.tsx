@@ -19,6 +19,7 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { formatRetryDelay } from "../../lib/formatRetryDelay";
+import { formatCompactStat } from "../../lib/numberFormat";
 import { buildPluginMeta } from "../../lib/og";
 import { getOpenClawPackageCandidateNames } from "../../lib/openClawExtensionSlugs";
 import {
@@ -674,6 +675,11 @@ export function PluginDetailPage({
                   ariaLabel="Plugin metadata"
                   density="compact"
                   blocks={[
+                    {
+                      label: "Downloads",
+                      value: formatCompactStat(pkg.stats?.downloads ?? 0),
+                      large: true,
+                    },
                     { label: "Repository", value: sourceRepoLink },
                     { label: "Owner", value: ownerMetadataValue },
                     securitySummary
