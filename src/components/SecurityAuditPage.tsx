@@ -1,7 +1,12 @@
-import { Check, Clock, ExternalLink, Info, RefreshCw, TriangleAlert } from "lucide-react";
+import { Check, Clock, Download, ExternalLink, Info, RefreshCw, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { Id } from "../../convex/_generated/dataModel";
 import { getRuntimeEnv } from "../lib/runtimeEnv";
+import {
+  buildSecurityAuditExportFilename,
+  buildSecurityAuditExportZip,
+  type StaticScan,
+} from "../lib/securityAuditExport";
 import {
   aggregateAuditVerdict,
   AUDIT_SCANNER_LABELS,
@@ -51,6 +56,7 @@ type SecurityAuditPageProps = {
   vtAnalysis?: VtAnalysis | null;
   llmAnalysis?: LlmAnalysis | null;
   skillSpectorAnalysis?: SkillSpectorAnalysis | null;
+  staticScan?: StaticScan | null;
   source?: Record<string, unknown> | null;
   canManageArtifact?: boolean;
   onRequestRescan?: (() => Promise<unknown>) | null;
@@ -733,6 +739,20 @@ function SecurityAuditSidebar(props: SecurityAuditPageProps) {
     }
   }
 
+  function downloadAuditExport() {
+    if (!showRescanButton || typeof document === "undefined" || typeof URL === "undefined") return;
+    const zipBytes = buildSecurityAuditExportZip(props);
+    const filename = buildSecurityAuditExportFilename(props);
+    const url = URL.createObjectURL(new Blob([zipBytes], { type: "application/zip" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
   const versionValue = (
     <div className="security-audit-version-stack">
       <span>{props.entity.version ?? "Latest"}</span>
@@ -751,6 +771,16 @@ function SecurityAuditSidebar(props: SecurityAuditPageProps) {
               <RefreshCw className="security-audit-rescan-icon" aria-hidden="true" />
             ) : null}
             <span>{isRescanBusy ? "Scanning" : "Rescan"}</span>
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="skill-sidebar-action-button security-audit-download-button"
+            onClick={downloadAuditExport}
+            aria-label="Download security audit"
+          >
+            <Download className="security-audit-action-icon" aria-hidden="true" />
+            <span>Download</span>
           </Button>
           {rescanState === "error" ? (
             <span className="security-audit-rescan-error" role="status">

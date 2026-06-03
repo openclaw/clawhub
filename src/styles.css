@@ -4680,6 +4680,7 @@ code {
   margin-top: 4px;
 }
 
+.security-audit-action-icon,
 .security-audit-rescan-icon {
   width: 14px;
   height: 14px;

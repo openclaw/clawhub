@@ -149,6 +149,7 @@ export function PluginSecurityAuditPage({
       vtAnalysis={release.vtAnalysis ?? null}
       llmAnalysis={release.llmAnalysis ?? null}
       skillSpectorAnalysis={release.skillSpectorAnalysis ?? null}
+      staticScan={release.staticScan ?? null}
       canManageArtifact={Boolean(manageContext)}
       onRequestRescan={
         manageContext

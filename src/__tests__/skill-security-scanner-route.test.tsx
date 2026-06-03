@@ -124,6 +124,7 @@ describe("skill security audit route", () => {
 
     render(<Component />);
 
+    expect(screen.getByRole("button", { name: "Download security audit" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Rescan" }));
 
     await waitFor(() =>

@@ -61,6 +61,7 @@ describe("plugin security audit route", () => {
 
     render(<PluginSecurityAuditPage name="demo-plugin" loaderData={makeLoaderData() as never} />);
 
+    expect(screen.getByRole("button", { name: "Download security audit" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Rescan" }));
 
     await waitFor(() =>
@@ -77,5 +78,6 @@ describe("plugin security audit route", () => {
     render(<PluginSecurityAuditPage name="demo-plugin" loaderData={makeLoaderData() as never} />);
 
     expect(screen.queryByRole("button", { name: "Rescan" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Download security audit" })).toBeNull();
   });
 });
