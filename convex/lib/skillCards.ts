@@ -51,6 +51,16 @@ export async function selectGeneratedSkillCardFile<T extends { path: string; sha
   return generatedBundleFingerprints.includes(currentBundleFingerprint) ? cardFile : null;
 }
 
+export async function selectTrustedSkillCardFile<T extends { path: string; sha256: string }>(
+  files: T[],
+  generatedBundleFingerprints: readonly string[],
+  options: { allowPublisherSupplied?: boolean } = {},
+) {
+  const generatedCardFile = await selectGeneratedSkillCardFile(files, generatedBundleFingerprints);
+  if (generatedCardFile) return generatedCardFile;
+  return options.allowPublisherSupplied ? selectSkillCardFile(files) : null;
+}
+
 export async function replaceGeneratedSkillCardFile<T extends SkillCardFile>(
   files: T[],
   cardFile: T,

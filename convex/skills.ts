@@ -63,6 +63,7 @@ import {
   summarizeReasonCodes,
   verdictFromCodes,
 } from "./lib/moderationReasonCodes";
+import { isOfficialOrgPublisher } from "./lib/officialPublishers";
 import {
   type HydratableSkill,
   type PublicPublisher,
@@ -100,8 +101,8 @@ import {
 import { matchesAllTokens, matchesExploratoryTokenPrefixes, tokenize } from "./lib/searchText";
 import { SKILL_CAPABILITY_TAGS } from "./lib/skillCapabilityTags";
 import {
-  selectGeneratedSkillCardFile,
   selectSkillCardFile,
+  selectTrustedSkillCardFile,
   sourceSkillVersionFiles,
 } from "./lib/skillCards";
 import { isPublicSkillVersionAvailableForSkill } from "./lib/skillFileAccess";
@@ -2054,9 +2055,10 @@ function toPublicSkillCardFile(file: Doc<"skillVersions">["files"][number]) {
   };
 }
 
-async function getGeneratedSkillCardPublicFile(
+async function getSkillCardPublicFile(
   ctx: Pick<QueryCtx, "db">,
   version: Doc<"skillVersions"> | null,
+  options: { allowPublisherSupplied?: boolean } = {},
 ) {
   if (!version) return null;
   const files = Array.isArray(version.files) ? version.files : [];
@@ -2067,9 +2069,10 @@ async function getGeneratedSkillCardPublicFile(
       q.eq("versionId", version._id).eq("kind", "generated-bundle"),
     )
     .collect();
-  const file = await selectGeneratedSkillCardFile(
+  const file = await selectTrustedSkillCardFile(
     files,
     entries.map((entry) => entry.fingerprint),
+    options,
   );
   return file ? toPublicSkillCardFile(file) : null;
 }
@@ -2297,7 +2300,9 @@ export const getBySlug = query({
       ? latestVersionDoc
       : null;
     const latestVersion = toPublicSkillVersion(publicLatestVersionDoc);
-    const generatedSkillCard = await getGeneratedSkillCardPublicFile(ctx, publicLatestVersionDoc);
+    const generatedSkillCard = await getSkillCardPublicFile(ctx, publicLatestVersionDoc, {
+      allowPublisherSupplied: isOfficialOrgPublisher(ownerPublisher),
+    });
     if (latestVersion) latestVersion.generatedSkillCard = generatedSkillCard;
     const owner = toPublicPublisher(ownerPublisher);
     if (!owner) return null;
@@ -2622,11 +2627,13 @@ export const getBySlugForStaff = query({
     const skill = resolved.skill;
     if (!skill) return null;
 
-    const latestVersion = skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null;
-    const generatedSkillCard = await getGeneratedSkillCardPublicFile(ctx, latestVersion);
     const ownerPublisher = await getOwnerPublisher(ctx, {
       ownerPublisherId: skill.ownerPublisherId,
       ownerUserId: skill.ownerUserId,
+    });
+    const latestVersion = skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null;
+    const generatedSkillCard = await getSkillCardPublicFile(ctx, latestVersion, {
+      allowPublisherSupplied: isOfficialOrgPublisher(ownerPublisher),
     });
     const owner = toPublicPublisher(ownerPublisher);
     const badges = await getSkillBadgeMap(ctx, skill._id);
@@ -8406,11 +8413,20 @@ export const getSkillCard: ReturnType<typeof action> = action({
         skillVersionId: version._id,
       },
     )) as Array<{ fingerprint: string; kind?: "source" | "generated-bundle" }>;
-    const file = await selectGeneratedSkillCardFile(
+    const skill = (await ctx.runQuery(internal.skills.getSkillByIdInternal, {
+      skillId: version.skillId,
+    })) as Doc<"skills"> | null;
+    const publisher = skill?.ownerPublisherId
+      ? ((await ctx.runQuery(internal.publishers.getByIdInternal, {
+          publisherId: skill.ownerPublisherId,
+        })) as Doc<"publishers"> | null)
+      : null;
+    const file = await selectTrustedSkillCardFile(
       version.files,
       fingerprintEntries
         .filter((entry) => entry.kind === "generated-bundle")
         .map((entry) => entry.fingerprint),
+      { allowPublisherSupplied: isOfficialOrgPublisher(publisher) },
     );
     if (!file) throw new ConvexError("Skill Card not found");
     if (file.size > MAX_DIFF_FILE_BYTES) {

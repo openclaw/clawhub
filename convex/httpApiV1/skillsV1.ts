@@ -21,12 +21,13 @@ import { getOptionalApiTokenUserId, requireApiTokenUser } from "../lib/apiTokenA
 import { mergeHeaders } from "../lib/httpHeaders";
 import { applyRateLimit } from "../lib/httpRateLimit";
 import { parseBooleanQueryParam, resolveBooleanQueryParam } from "../lib/httpUtils";
+import { isOfficialOrgPublisher } from "../lib/officialPublishers";
 import type {
   LlmAgenticRiskFinding,
   LlmEvalDimension,
   LlmRiskSummary,
 } from "../lib/securityPrompt";
-import { selectGeneratedSkillCardFile, sourceSkillVersionFiles } from "../lib/skillCards";
+import { selectTrustedSkillCardFile, sourceSkillVersionFiles } from "../lib/skillCards";
 import { getPublicSkillFileAccessBlock, isSkillVersionForSkill } from "../lib/skillFileAccess";
 import {
   buildDeterministicZip,
@@ -172,6 +173,7 @@ type GetBySlugResult = {
     createdAt: number;
     updatedAt: number;
     latestVersionId?: Id<"skillVersions">;
+    ownerPublisherId?: Id<"publishers">;
   } | null;
   latestVersion: PublicSkillVersionResponse | null;
   owner: { _id: Id<"users">; handle?: string; displayName?: string; image?: string } | null;
@@ -1854,10 +1856,17 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
     const bundleFingerprints = fingerprintEntries
       .filter((entry) => entry.kind === "generated-bundle")
       .map((entry) => entry.fingerprint);
-    const generatedCardFile = await selectGeneratedSkillCardFile(version.files, bundleFingerprints);
+    const ownerPublisher = skillResult.skill.ownerPublisherId
+      ? ((await ctx.runQuery(internal.publishers.getByIdInternal, {
+          publisherId: skillResult.skill.ownerPublisherId,
+        })) as Doc<"publishers"> | null)
+      : null;
+    const trustedCardFile = await selectTrustedSkillCardFile(version.files, bundleFingerprints, {
+      allowPublisherSupplied: isOfficialOrgPublisher(ownerPublisher),
+    });
     const security = buildVerifySecurity(version);
     const reasons = buildVerifyReasons({
-      cardAvailable: Boolean(generatedCardFile),
+      cardAvailable: Boolean(trustedCardFile),
       isMalwareBlocked: skillResult.moderationInfo?.isMalwareBlocked ?? false,
       securityPassed: security.passed,
       securityStatus: security.status,
@@ -1883,14 +1892,14 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
         resolvedFrom,
         tag: tagParam || null,
         createdAt: version.createdAt,
-        card: generatedCardFile
+        card: trustedCardFile
           ? {
               available: true,
-              path: generatedCardFile.path,
+              path: trustedCardFile.path,
               url: buildCardUrl(request, skillResult.skill.slug, version.version),
-              sha256: generatedCardFile.sha256,
-              size: generatedCardFile.size,
-              contentType: generatedCardFile.contentType ?? "text/markdown; charset=utf-8",
+              sha256: trustedCardFile.sha256,
+              size: trustedCardFile.size,
+              contentType: trustedCardFile.contentType ?? "text/markdown; charset=utf-8",
             }
           : {
               available: false,
@@ -1969,7 +1978,14 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
     const bundleFingerprints = fingerprintEntries
       .filter((entry) => entry.kind === "generated-bundle")
       .map((entry) => entry.fingerprint);
-    const file = await selectGeneratedSkillCardFile(version.files, bundleFingerprints);
+    const ownerPublisher = skillResult.skill.ownerPublisherId
+      ? ((await ctx.runQuery(internal.publishers.getByIdInternal, {
+          publisherId: skillResult.skill.ownerPublisherId,
+        })) as Doc<"publishers"> | null)
+      : null;
+    const file = await selectTrustedSkillCardFile(version.files, bundleFingerprints, {
+      allowPublisherSupplied: isOfficialOrgPublisher(ownerPublisher),
+    });
     if (!file) return text("Skill Card not found", 404, rate.headers);
     if (file.size > MAX_RAW_FILE_BYTES) return text("File exceeds 200KB limit", 413, rate.headers);
 

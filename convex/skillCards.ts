@@ -3,11 +3,14 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx } from "./_generated/server";
 import { action, internalMutation, internalQuery } from "./functions";
+import { isOfficialOrgPublisher } from "./lib/officialPublishers";
 import {
   hasSettledSkillCardInputs,
   MAX_SKILL_CARD_FILE_BYTES,
   normalizeSkillCardSecurityStatus,
   replaceGeneratedSkillCardFile,
+  selectSkillCardFile,
+  selectTrustedSkillCardFile,
   SKILL_CARD_FILE_PATH,
   sourceSkillVersionFiles,
 } from "./lib/skillCards";
@@ -110,6 +113,9 @@ async function enqueueSkillCardJob(
   if (!hasSettledSkillCardInputs(version)) {
     return { ok: true as const, skipped: "scan-not-settled" as const };
   }
+  if (await hasOfficialBundledSkillCard(ctx, version)) {
+    return { ok: true as const, skipped: "official-bundled-card" as const };
+  }
   if (
     args.requireMissingCard &&
     version.files.some((file) => file.path.trim().toLowerCase() === SKILL_CARD_FILE_PATH)
@@ -147,6 +153,26 @@ async function enqueueSkillCardJob(
     updatedAt: now,
   });
   return { ok: true as const, jobId, alreadyQueued: false as const };
+}
+
+async function hasOfficialBundledSkillCard(ctx: MutationCtx, version: Doc<"skillVersions">) {
+  if (!selectSkillCardFile(version.files)) return false;
+
+  const fingerprintRows = await ctx.db
+    .query("skillVersionFingerprints")
+    .withIndex("by_version_kind", (q) =>
+      q.eq("versionId", version._id).eq("kind", "generated-bundle"),
+    )
+    .collect();
+  const trustedCard = await selectTrustedSkillCardFile(
+    version.files,
+    generatedBundleFingerprints(fingerprintRows),
+  );
+  if (trustedCard) return false;
+
+  const skill = await ctx.db.get(version.skillId);
+  const publisher = skill?.ownerPublisherId ? await ctx.db.get(skill.ownerPublisherId) : null;
+  return isOfficialOrgPublisher(publisher);
 }
 
 export const enqueueForVersionInternal = internalMutation({

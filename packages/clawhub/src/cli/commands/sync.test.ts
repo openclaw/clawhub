@@ -179,8 +179,8 @@ describe("cmdSync", () => {
           all: true,
           dryRun: true,
           json: true,
-          owner: "nvidia",
-          sourceRepo: "NVIDIA/skills",
+          owner: "openclaw",
+          sourceRepo: "openclaw/skills",
           sourceCommit: "abc123",
           sourceRef: "refs/heads/main",
         },
@@ -214,13 +214,13 @@ describe("cmdSync", () => {
     };
     expect(parsed.ok).toBe(true);
     expect(parsed.dryRun).toBe(true);
-    expect(parsed.owner).toBe("nvidia");
+    expect(parsed.owner).toBe("openclaw");
     expect(parsed.summary).toMatchObject({ wouldPublish: 2, alreadySynced: 1, failed: 0 });
     expect(parsed.wouldPublish.map((entry) => [entry.slug, entry.version, entry.status])).toEqual([
       ["new-skill", "1.0.0", "new"],
       ["update-skill", "1.0.1", "update"],
     ]);
-    expect(parsed.wouldPublish[0]?.source?.repo).toBe("NVIDIA/skills");
+    expect(parsed.wouldPublish[0]?.source?.repo).toBe("openclaw/skills");
     expect(parsed.alreadySynced).toEqual([
       expect.objectContaining({ slug: "synced-skill", version: "1.2.3" }),
     ]);
@@ -299,9 +299,9 @@ describe("cmdSync", () => {
         root: ["/repo/skills"],
         all: true,
         dryRun: false,
-        owner: "nvidia",
+        owner: "openclaw",
         tags: "latest,catalog",
-        sourceRepo: "https://github.com/NVIDIA/skills",
+        sourceRepo: "https://github.com/openclaw/skills",
         sourceCommit: "abc123",
         sourceRef: "refs/heads/main",
       },
@@ -312,20 +312,20 @@ describe("cmdSync", () => {
     expect(mockCmdPublish.mock.calls.map((call) => call[2])).toEqual([
       expect.objectContaining({
         slug: "new-skill",
-        owner: "nvidia",
+        owner: "openclaw",
         version: "1.0.0",
         tags: "latest,catalog",
-        sourceRepo: "https://github.com/NVIDIA/skills",
+        sourceRepo: "https://github.com/openclaw/skills",
         sourceCommit: "abc123",
         sourceRef: "refs/heads/main",
         sourcePath: "skills/new-skill",
       }),
       expect.objectContaining({
         slug: "update-skill",
-        owner: "nvidia",
+        owner: "openclaw",
         version: "1.0.1",
         tags: "latest,catalog",
-        sourceRepo: "https://github.com/NVIDIA/skills",
+        sourceRepo: "https://github.com/openclaw/skills",
         sourceCommit: "abc123",
         sourceRef: "refs/heads/main",
         sourcePath: "skills/update-skill",
@@ -355,7 +355,7 @@ describe("cmdSync", () => {
       {
         all: true,
         dryRun: false,
-        sourceRepo: "NVIDIA/root-skill",
+        sourceRepo: "openclaw/root-skill",
         sourceCommit: "abc123",
       },
       false,

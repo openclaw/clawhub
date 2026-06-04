@@ -331,6 +331,61 @@ describe("skillCards queue", () => {
     );
   });
 
+  it("does not enqueue generation over an official org bundled skill-card.md", async () => {
+    const version = makeSettledVersion({
+      files: [
+        {
+          path: "SKILL.md",
+          size: 12,
+          storageId: "_storage:skill",
+          sha256: "a".repeat(64),
+          contentType: "text/markdown",
+        },
+        {
+          path: "skill-card.md",
+          size: 42,
+          storageId: "_storage:card",
+          sha256: "b".repeat(64),
+          contentType: "text/markdown",
+        },
+      ],
+    });
+    const insert = vi.fn();
+    const ctx = {
+      db: completeDb({
+        get: vi.fn(async (id: string) => {
+          if (id === "skillVersions:1") return version;
+          if (id === "skills:1") {
+            return {
+              _id: "skills:1",
+              ownerPublisherId: "publishers:openclaw",
+            };
+          }
+          if (id === "publishers:openclaw") {
+            return {
+              _id: "publishers:openclaw",
+              kind: "org",
+              handle: "openclaw",
+              deletedAt: undefined,
+              deactivatedAt: undefined,
+            };
+          }
+          return null;
+        }),
+        query: vi.fn(() => makeQueryWithCollect([])),
+        insert,
+      }),
+    };
+
+    const result = await enqueueHandler(ctx, {
+      versionId: "skillVersions:1",
+      source: "scan",
+    });
+
+    expect(result).toEqual({ ok: true, skipped: "official-bundled-card" });
+    expect(insert).not.toHaveBeenCalled();
+  });
+
   it("bounds queued job lookup by version and status", async () => {
     const version = makeSettledVersion();
     const eq = vi.fn(function (this: unknown) {

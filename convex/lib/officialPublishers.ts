@@ -26,15 +26,21 @@ type OfficialPublisherCandidate = Pick<
   | "deactivatedAt"
 >;
 
+export function isOfficialOrgPublisher(
+  publisher: OfficialPublisherCandidate | null | undefined,
+): boolean {
+  if (!publisher || publisher.deletedAt || publisher.deactivatedAt) return false;
+  if (publisher.kind !== "org") return false;
+  const handle = normalizePublisherHandle(publisher.handle);
+  return Boolean(handle && OFFICIAL_ORG_HANDLE_SET.has(handle));
+}
+
 export async function isOfficialPublisher(
   ctx: DbCtx,
   publisher: OfficialPublisherCandidate | null | undefined,
 ): Promise<boolean> {
   if (!publisher || publisher.deletedAt || publisher.deactivatedAt) return false;
-  if (publisher.kind === "org") {
-    const handle = normalizePublisherHandle(publisher.handle);
-    return Boolean(handle && OFFICIAL_ORG_HANDLE_SET.has(handle));
-  }
+  if (isOfficialOrgPublisher(publisher)) return true;
   if (!publisher.linkedUserId) return false;
 
   for (const officialOrgHandle of OFFICIAL_ORG_HANDLES) {

@@ -134,7 +134,7 @@ jobs:
   dry-run:
     uses: openclaw/clawhub/.github/workflows/skill-publish.yml@v1
     with:
-      owner: nvidia
+      owner: <owner>
       dry_run: true
 ```
 
