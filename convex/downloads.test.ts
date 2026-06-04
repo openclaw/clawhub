@@ -150,6 +150,56 @@ describe("downloads helpers", () => {
     });
   });
 
+  it("does not deliver a revoked exact skill version", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            ownerUserId: "users:1",
+            slug: "demo",
+            tags: {},
+            latestVersionId: "skillVersions:1",
+          },
+          moderationInfo: null,
+        };
+      }
+      if ("versionId" in args) {
+        return {
+          _id: "skillVersions:1",
+          skillId: "skills:1",
+          version: "1.0.0",
+          createdAt: 3,
+          files: [{ path: "SKILL.md", storageId: "_storage:1" }],
+          manualRevocation: {
+            reason: "confirmed compromise",
+            reviewerUserId: "users:moderator",
+            revokedAt: 4,
+          },
+        };
+      }
+      return null;
+    });
+    const storageGet = vi.fn();
+
+    const response = await downloadZipHandler(
+      {
+        runQuery,
+        runMutation: vi.fn(async (_mutation: unknown, args: Record<string, unknown>) =>
+          isRateLimitArgs(args) ? okRate() : null,
+        ),
+        scheduler: { runAfter: vi.fn() },
+        storage: { get: storageGet },
+      } as unknown as ActionCtx,
+      new Request("https://example.com/api/v1/download?slug=demo"),
+    );
+
+    expect(response.status).toBe(410);
+    expect(await response.text()).toBe("Version not available");
+    expect(storageGet).not.toHaveBeenCalled();
+  });
+
   it("does not serve a tag that points at another skill's version", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();

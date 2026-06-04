@@ -9,6 +9,7 @@ import {
   SkillAppealRequestSchema,
   SkillAppealResolveRequestSchema,
   SkillReportTriageRequestSchema,
+  SkillVersionRevocationRequestSchema,
   normalizeTextContentType,
   parseArk,
   type SkillAppealListStatus,
@@ -33,7 +34,11 @@ import type {
   LlmRiskSummary,
 } from "../lib/securityPrompt";
 import { selectGeneratedSkillCardFile, sourceSkillVersionFiles } from "../lib/skillCards";
-import { getPublicSkillFileAccessBlock, isSkillVersionForSkill } from "../lib/skillFileAccess";
+import {
+  getPublicSkillFileAccessBlock,
+  isSkillVersionForSkill,
+  isSkillVersionRevoked,
+} from "../lib/skillFileAccess";
 import {
   buildDeterministicZip,
   buildMergedExportZip,
@@ -306,6 +311,7 @@ const internalRefs = internal as unknown as {
   skills: {
     getSecurityVerdictTargetInternal: unknown;
     getSkillBySlugInternal: unknown;
+    setSkillVersionRevocationForUserInternal: unknown;
     reportSkillForUserInternal: unknown;
     listSkillReportsInternal: unknown;
     triageSkillReportForUserInternal: unknown;
@@ -677,8 +683,13 @@ type SecurityVerdictTargetResult = {
     overrideActive?: boolean;
   } | null;
   version:
-    | (VerifySecurityVersion &
-        Pick<Doc<"skillVersions">, "_id" | "version" | "createdAt" | "softDeletedAt">)
+    | (VerifySecurityVersion & {
+        _id: Id<"skillVersions">;
+        version: string;
+        createdAt: number;
+        softDeletedAt?: number;
+        manualRevocation?: { revokedAt: number };
+      })
     | null;
 } | null;
 
@@ -1032,6 +1043,7 @@ function buildSecurityVerdictError(
     skillUrl: null,
     securityAuditUrl: null,
     security: null,
+    revocation: null,
     error: { code, message },
   };
 }
@@ -1073,12 +1085,17 @@ async function buildSecurityVerdictItem(
 
   const security = buildVerifySecurity(version);
   const staffCleared = isStaffClearedSecurityVerdict(result.moderationInfo);
-  const reasons = buildSecurityVerdictReasons({
-    isMalwareBlocked: result.moderationInfo?.isMalwareBlocked ?? false,
-    securityPassed: security.passed,
-    securityStatus: security.status,
-    staffCleared,
-  });
+  const reasons = [
+    ...(isSkillVersionRevoked(version) ? ["version.revoked"] : []),
+    ...buildSecurityVerdictReasons({
+      isMalwareBlocked: result.moderationInfo?.isMalwareBlocked ?? false,
+      securityPassed: security.passed,
+      securityStatus: security.status,
+      staffCleared,
+    }),
+  ];
+  const checkedAt = getEffectiveSecurityVerdictCheckedAt(security, result.moderationInfo);
+  const revokedAt = version.manualRevocation?.revokedAt ?? null;
 
   return {
     ok: reasons.length === 0,
@@ -1092,7 +1109,10 @@ async function buildSecurityVerdictItem(
     requestedVersion: item.version,
     version: version.version,
     createdAt: version.createdAt,
-    checkedAt: getEffectiveSecurityVerdictCheckedAt(security, result.moderationInfo),
+    checkedAt:
+      typeof revokedAt === "number" && typeof checkedAt === "number"
+        ? Math.max(revokedAt, checkedAt)
+        : (revokedAt ?? checkedAt),
     skillUrl: buildSkillPageUrl(request, result.owner, result.skill.slug),
     securityAuditUrl: buildSecurityAuditUrl(
       request,
@@ -1101,6 +1121,10 @@ async function buildSecurityVerdictItem(
       version.version,
     ),
     security: buildEffectiveSecurityVerdictSummary(security, result.moderationInfo),
+    revocation: {
+      revoked: isSkillVersionRevoked(version),
+      revokedAt,
+    },
   };
 }
 
@@ -1805,7 +1829,9 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
       version: third,
     })) as PublicSkillVersionResponse | null;
     if (!version) return text("Version not found", 404, rate.headers);
-    if (version.softDeletedAt) return text("Version not available", 410, rate.headers);
+    if (version.softDeletedAt || isSkillVersionRevoked(version)) {
+      return text("Version not available", 410, rate.headers);
+    }
     const security = buildSkillSecuritySnapshot(version);
 
     return json(
@@ -1861,7 +1887,9 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
     if (!version || !isSkillVersionForSkill(version, result.skill._id)) {
       return text("Version not found", 404, rate.headers);
     }
-    if (version.softDeletedAt) return text("Version not available", 410, rate.headers);
+    if (version.softDeletedAt || isSkillVersionRevoked(version)) {
+      return text("Version not available", 410, rate.headers);
+    }
 
     const security = buildSkillSecuritySnapshot(version);
     const moderationMatchesRequestedVersion = Boolean(
@@ -1939,7 +1967,9 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
     if (!version || !isSkillVersionForSkill(version, skillResult.skill._id)) {
       return text("Version not found", 404, rate.headers);
     }
-    if (version.softDeletedAt) return text("Version not available", 410, rate.headers);
+    if (version.softDeletedAt || isSkillVersionRevoked(version)) {
+      return text("Version not available", 410, rate.headers);
+    }
 
     const fingerprintEntries = ((await ctx.runQuery(
       internal.skills.listVersionFingerprintsInternal,
@@ -2054,7 +2084,9 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
     if (!version || !isSkillVersionForSkill(version, skillResult.skill._id)) {
       return text("Version not found", 404, rate.headers);
     }
-    if (version.softDeletedAt) return text("Version not available", 410, rate.headers);
+    if (version.softDeletedAt || isSkillVersionRevoked(version)) {
+      return text("Version not available", 410, rate.headers);
+    }
 
     const fingerprintEntries = ((await ctx.runQuery(
       internal.skills.listVersionFingerprintsInternal,
@@ -2113,7 +2145,9 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
     if (!version || !isSkillVersionForSkill(version, skillResult.skill._id)) {
       return text("Version not found", 404, rate.headers);
     }
-    if (version.softDeletedAt) return text("Version not available", 410, rate.headers);
+    if (version.softDeletedAt || isSkillVersionRevoked(version)) {
+      return text("Version not available", 410, rate.headers);
+    }
 
     const normalized = path.trim();
     const normalizedLower = normalized.toLowerCase();
@@ -2427,6 +2461,44 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
   const segments = getPathSegments(request, "/api/v1/skills/");
   const action = segments[1] ?? "";
   const slug = segments[0]?.trim().toLowerCase() ?? "";
+
+  if (
+    segments[1] === "versions" &&
+    segments[2] &&
+    segments[3] === "revocation" &&
+    segments.length === 4
+  ) {
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+    try {
+      const body = parseArk(
+        SkillVersionRevocationRequestSchema,
+        await request.json(),
+        "Skill version revocation payload",
+      ) as {
+        state: "active" | "revoked";
+        reason: string;
+      };
+      const result = await runMutationRef(
+        ctx,
+        internalRefs.skills.setSkillVersionRevocationForUserInternal,
+        {
+          actorUserId: auth.userId,
+          slug,
+          version: segments[2],
+          state: body.state,
+          reason: body.reason,
+        },
+      );
+      return json(result, 200, rate.headers);
+    } catch (error) {
+      return text(
+        error instanceof Error ? error.message : "Skill version revocation failed",
+        400,
+        rate.headers,
+      );
+    }
+  }
 
   if (segments[0] === "-" && segments[1] === "repair-vt-pending" && segments.length === 2) {
     const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
@@ -2986,7 +3058,7 @@ export async function exportSkillsV1Handler(ctx: ActionCtx, request: Request) {
         });
         continue;
       }
-      if (version.softDeletedAt) {
+      if (version.softDeletedAt || isSkillVersionRevoked(version)) {
         exportErrors.push({
           slug: digest.slug,
           error: `version not available (latestVersionId: ${digest.latestVersionId})`,

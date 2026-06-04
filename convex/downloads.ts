@@ -7,7 +7,11 @@ import { getOptionalActiveAuthUserIdFromAction } from "./lib/access";
 import { getOptionalApiTokenUserId } from "./lib/apiTokenAuth";
 import { corsHeaders, mergeHeaders } from "./lib/httpHeaders";
 import { applyRateLimit, getClientIp } from "./lib/httpRateLimit";
-import { getPublicSkillFileAccessBlock, isSkillVersionForSkill } from "./lib/skillFileAccess";
+import {
+  getPublicSkillFileAccessBlock,
+  isSkillVersionForSkill,
+  isSkillVersionRevoked,
+} from "./lib/skillFileAccess";
 import { buildDeterministicZip } from "./lib/skillZip";
 import { insertStatEvent } from "./skillStatEvents";
 
@@ -77,7 +81,7 @@ export async function downloadZipHandler(
       headers: mergeHeaders(rate.headers, corsHeaders()),
     });
   }
-  if (version.softDeletedAt) {
+  if (version.softDeletedAt || isSkillVersionRevoked(version)) {
     return new Response("Version not available", {
       status: 410,
       headers: mergeHeaders(rate.headers, corsHeaders()),

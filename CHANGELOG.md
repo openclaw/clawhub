@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changes
+
+- Security/API: let moderators revoke an exact skill version, block future artifact delivery for it, and expose exact revocation state through bulk security verdicts for install clients (thanks @vyctorbrzezowski).
+
 ## 0.20.0 - 2026-06-06
 
 ### Changes

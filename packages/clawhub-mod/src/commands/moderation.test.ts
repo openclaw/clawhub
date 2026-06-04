@@ -26,6 +26,7 @@ const {
   cmdRepairVtPendingSkills,
   cmdRescanAllSkills,
   cmdRescanSkill,
+  cmdSetSkillVersionRevocation,
   cmdSetRole,
   cmdUnbanUser,
 } = await import("./moderation");
@@ -198,6 +199,47 @@ describe("cmdRescanSkill", () => {
       }),
       expect.anything(),
     );
+  });
+});
+
+describe("cmdSetSkillVersionRevocation", () => {
+  it("posts an exact skill version revocation", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      skillId: "skills:1",
+      versionId: "skillVersions:1",
+      state: "revoked",
+      revokedAt: 1,
+    });
+
+    const result = await cmdSetSkillVersionRevocation(makeGlobalOpts(), "Demo", {
+      version: "1.2.3",
+      state: "revoked",
+      reason: "confirmed compromise",
+      json: true,
+    });
+
+    expect(result).toMatchObject({ state: "revoked", revokedAt: 1 });
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({
+        method: "POST",
+        path: "/api/v1/skills/demo/versions/1.2.3/revocation",
+        token: "tkn",
+        body: { state: "revoked", reason: "confirmed compromise" },
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("requires an explicit supported state", async () => {
+    await expect(
+      cmdSetSkillVersionRevocation(makeGlobalOpts(), "demo", {
+        version: "1.2.3",
+        state: "quarantined" as "revoked",
+        reason: "review",
+      }),
+    ).rejects.toThrow(/active or revoked/i);
   });
 });
 
