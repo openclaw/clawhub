@@ -829,6 +829,7 @@ Additional ClawHub policy for this Codex run:
   scanner-relevant middle ranges. SkillSpector, VirusTotal, static metadata, or file names alone do
   not count as file-content coverage.
 - Fill artifact_coverage with exact artifact-relative paths from the submitted artifact manifest.
+  For each coverage range, set unused line or byte coordinates to null.
   If any submitted file is omitted, unreadable, metadata-only, or lacks tail coverage when large,
   set artifact_coverage.status to incomplete and do not return benign.
 - SkillSpector findings are advisory research-preview evidence, not validated ground truth and
@@ -1270,6 +1271,11 @@ export function assertCodexArtifactCoverageForVerdict(
     }
 
     const coverageKind = readString(inspectedFile, ["coverage"]);
+    if (coverageKind === "metadata_only" || coverageKind === "not_inspected") {
+      problems.push(`${file.path}: coverage is ${coverageKind}`);
+      continue;
+    }
+
     const ranges = coverageRangeKinds(inspectedFile);
     const hasFullCoverage = coverageKind === "full" || ranges.has("full");
     const hasHeadTailCoverage =

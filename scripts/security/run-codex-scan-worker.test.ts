@@ -64,6 +64,16 @@ function unsafeFixtureLabels() {
   };
 }
 
+function coverageRange(kind: "full" | "head" | "tail") {
+  return {
+    kind,
+    startLine: null,
+    endLine: null,
+    startByte: null,
+    endByte: null,
+  };
+}
+
 function codexResult(overrides: Record<string, unknown> = {}) {
   return JSON.stringify({
     verdict: "benign",
@@ -84,13 +94,13 @@ function codexResult(overrides: Record<string, unknown> = {}) {
         {
           path: "SKILL.md",
           coverage: "full",
-          ranges: [{ kind: "full" }],
+          ranges: [coverageRange("full")],
           reason: "Primary instructions were fully read.",
         },
         {
           path: "src/large.ts",
           coverage: "head_tail",
-          ranges: [{ kind: "head" }, { kind: "tail" }],
+          ranges: [coverageRange("head"), coverageRange("tail")],
           reason: "Large source file was sampled at both ends.",
         },
       ],
@@ -307,6 +317,7 @@ describe("run-codex-scan-worker diagnostics", () => {
     expect(prompt).toContain("A benign verdict requires complete artifact coverage proof");
     expect(prompt).toContain("Submitted artifact files that must be covered");
     expect(prompt).toContain("artifact_coverage");
+    expect(prompt).toContain("set unused line or byte coordinates to null");
     expect(prompt).toContain("SkillSpector findings are advisory research-preview evidence");
     expect(prompt).toContain("not validated ground truth");
     expect(prompt).toContain("artifact-backed evidence");
@@ -326,6 +337,19 @@ describe("run-codex-scan-worker diagnostics", () => {
     expect(schema.properties).toHaveProperty("artifact_coverage");
     expect(schema.required).not.toContain("incomplete_artifact_inspection");
     expect(schema.properties).not.toHaveProperty("incomplete_artifact_inspection");
+  });
+
+  it("keeps artifact coverage ranges compatible with Codex structured outputs", async () => {
+    const raw = await readFile("scripts/security/codex-scan-output.schema.json", "utf8");
+    const schema = JSON.parse(raw);
+    const rangeSchema =
+      schema.properties.artifact_coverage.properties.inspected_files.items.properties.ranges.items;
+
+    expect(rangeSchema.required).toEqual(Object.keys(rangeSchema.properties));
+    expect(rangeSchema.properties.startLine.type).toContain("null");
+    expect(rangeSchema.properties.endLine.type).toContain("null");
+    expect(rangeSchema.properties.startByte.type).toContain("null");
+    expect(rangeSchema.properties.endByte.type).toContain("null");
   });
 
   it("accepts benign Codex results only when submitted files have coverage proof", () => {
@@ -350,13 +374,13 @@ describe("run-codex-scan-worker diagnostics", () => {
           {
             path: "SKILL.md",
             coverage: "full",
-            ranges: [{ kind: "full" }],
+            ranges: [coverageRange("full")],
             reason: "Primary instructions were fully read.",
           },
           {
             path: "src/large.ts",
             coverage: "partial",
-            ranges: [{ kind: "head" }],
+            ranges: [coverageRange("head")],
             reason: "Only the beginning was read.",
           },
         ],
@@ -365,6 +389,34 @@ describe("run-codex-scan-worker diagnostics", () => {
 
     expect(() => assertCodexArtifactCoverageForVerdict(raw, coverageJob, "benign")).toThrow(
       "src/large.ts: large file lacks full or head/tail coverage",
+    );
+  });
+
+  it.each([
+    {
+      path: "SKILL.md",
+      coverage: "metadata_only",
+      ranges: [coverageRange("full")],
+    },
+    {
+      path: "src/large.ts",
+      coverage: "not_inspected",
+      ranges: [coverageRange("head"), coverageRange("tail")],
+    },
+  ])("rejects benign Codex results with contradictory $coverage coverage", (contradiction) => {
+    const inspectedFiles = JSON.parse(codexResult()).artifact_coverage.inspected_files.map(
+      (file: { path: string }) =>
+        file.path === contradiction.path ? { ...file, ...contradiction } : file,
+    );
+    const raw = codexResult({
+      artifact_coverage: {
+        status: "complete",
+        inspected_files: inspectedFiles,
+      },
+    });
+
+    expect(() => assertCodexArtifactCoverageForVerdict(raw, coverageJob, "benign")).toThrow(
+      `${contradiction.path}: coverage is ${contradiction.coverage}`,
     );
   });
 
