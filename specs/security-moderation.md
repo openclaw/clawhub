@@ -94,6 +94,14 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   signals, and staff moderation state, not publisher-supplied explanatory text.
   Legacy persisted note fields may exist on old rows for schema compatibility,
   but publish, rescan, API, UI, and prompt paths must ignore them.
+- User-submitted `POST /api/v1/skills/-/scan` upload scans are authenticated but
+  ephemeral. They store uploaded files only on `skillScanRequests`, feed the
+  normal ClawScan worker, and must never create or patch public `skills`,
+  `skillVersions`, moderation, or trust state. Expired `skillScanRequests` rows
+  must be pruned by cron so uploaded file payloads do not become durable skill
+  storage. Published scan requests may patch a version only when the caller can
+  manage the skill and explicitly sets `update: true`; local uploads must reject
+  update mode.
 - `auditLogs` remains the global compliance/security ledger. Product-facing
   moderation timelines live in `skillModerationEventLogs` and
   `packageModerationEventLogs`.
@@ -115,6 +123,28 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   compatibility while new writes store `confirmed`.
 - Skills directory supports an optional "Hide suspicious" filter to exclude
   active-but-flagged (`flagged.suspicious`) entries from browse/search results.
+
+## Package publish upload boundary
+
+- Package publish is multipart-only. `POST /api/v1/packages` must reject JSON
+  request bodies, including bodies that reference pre-existing storage IDs.
+- Public HTTP package publish payloads must not accept caller-supplied `files`
+  or `artifact` metadata. Internal publish actions may receive that metadata
+  only after the HTTP boundary derives it from uploaded multipart bytes or a
+  staged ClawPack blob.
+- Package publish accepts either multipart `files` uploads or one `clawpack`
+  tarball reference, never both in the same request. `clawpack` may be a direct
+  `.tgz` file part or a Convex storage id created by the upload-url flow. The
+  storage-id path must include the matching `clawpackUploadTicket`, and the
+  server must reject tickets from a different auth context, expired or used
+  tickets, and storage blobs created before the ticket.
+- Direct package publish multipart bytes are capped at 18MB so callers get a
+  clear ClawHub validation error before hitting Convex's 20MB HTTP action body
+  cap. ClawPack tarballs keep the 120MB package tarball cap through staged
+  storage uploads.
+- For tarball uploads, ClawHub stores the uploaded tarball, derives its
+  artifact hashes and npm metadata, and derives package file metadata from the
+  tarball contents.
 
 ## Skill moderation pipeline
 
@@ -274,9 +304,17 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Gate applies to web uploads, CLI publish, GitHub import, and comments.
 - If GitHub responds `403` or `429`, publish fails with:
   - `GitHub API rate limit exceeded — please try again in a few minutes`
-- To reduce rate-limit failures, set `GITHUB_TOKEN` in Convex env for authenticated
-  GitHub API requests. The same token is used for trusted-publisher repository
-  identity lookups.
+- To reduce rate-limit failures, configure the ClawHub GitHub App in Convex env:
+  `GITHUB_APP_ID`, `GITHUB_APP_INSTALLATION_ID`, and `GITHUB_APP_PRIVATE_KEY`.
+  Account-age/profile lookups prefer short-lived GitHub App installation
+  tokens, then fall back to `GITHUB_TOKEN`, then to unauthenticated public
+  requests where safe. Trusted-publisher repository identity lookups avoid
+  GitHub App installation tokens because users may configure repositories
+  outside the App installation; they use `GITHUB_TOKEN` or unauthenticated
+  public requests instead.
+- If configured GitHub API auth is rejected with `401`, retry the account-age
+  lookup without auth before failing. Never fall back to mutable GitHub usernames
+  for this gate; use the operator backfill to cache missing ages for existing users.
 
 ## Empty-skill cleanup (backfill)
 

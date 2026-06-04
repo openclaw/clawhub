@@ -21,6 +21,7 @@ import {
   extractValidatedDigestFields,
   getFirstSearchToken,
   normalizeSkillSearchText,
+  upsertSkillSearchDigest,
 } from "./lib/skillSearchDigest";
 import { generateSkillSummary } from "./lib/skillSummary";
 
@@ -2222,16 +2223,10 @@ export const backfillSkillSearchDigestInternal = internalMutation({
       .query("skills")
       .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
 
-    let inserted = 0;
+    let upserted = 0;
     for (const skill of page) {
-      const existing = await ctx.db
-        .query("skillSearchDigest")
-        .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
-        .unique();
-      if (!existing) {
-        await ctx.db.insert("skillSearchDigest", await extractValidatedDigestFields(ctx, skill));
-        inserted++;
-      }
+      await upsertSkillSearchDigest(ctx, await extractValidatedDigestFields(ctx, skill));
+      upserted++;
     }
 
     if (!isDone) {
@@ -2241,7 +2236,7 @@ export const backfillSkillSearchDigestInternal = internalMutation({
       });
     }
 
-    return { inserted, isDone, scanned: page.length };
+    return { upserted, isDone, scanned: page.length };
   },
 });
 

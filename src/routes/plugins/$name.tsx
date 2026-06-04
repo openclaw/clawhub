@@ -19,6 +19,7 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { formatRetryDelay } from "../../lib/formatRetryDelay";
+import { formatCompactStat } from "../../lib/numberFormat";
 import { buildPluginMeta } from "../../lib/og";
 import { getOpenClawPackageCandidateNames } from "../../lib/openClawExtensionSlugs";
 import {
@@ -37,6 +38,7 @@ import {
   buildPluginSecurityAuditHref,
   parseScopedPackageName,
 } from "../../lib/pluginRoutes";
+import { buildReadmeAssetBaseUrl } from "../../lib/readmeAssetBaseUrl";
 import { useAuthStatus } from "../../lib/useAuthStatus";
 
 type PluginDetailRateLimitState = {
@@ -416,6 +418,11 @@ export function PluginDetailPage({
   const capabilities = latestRelease?.capabilities ?? pkg.capabilities;
   const compatibility = latestRelease?.compatibility ?? pkg.compatibility;
   const verification = latestRelease?.verification ?? pkg.verification;
+  const readmeAssetBaseUrl = buildReadmeAssetBaseUrl(
+    verification?.sourceRepo,
+    verification?.sourceCommit,
+    verification?.sourcePath,
+  );
   const artifact = latestRelease?.artifact ?? pkg.artifact ?? null;
   const downloadPath =
     pkg.latestVersion && latestRelease?.version && artifact?.kind === "npm-pack"
@@ -444,7 +451,7 @@ export function PluginDetailPage({
     ? Object.entries(compatibility).filter(([, v]) => v !== undefined && v !== null)
     : [];
   const readmePanel = readme ? (
-    <MarkdownPreview>{readme}</MarkdownPreview>
+    <MarkdownPreview assetBaseUrl={readmeAssetBaseUrl}>{readme}</MarkdownPreview>
   ) : (
     <div className="empty-state px-[var(--space-4)] py-[var(--space-6)]">
       <p className="empty-state-title">No README available</p>
@@ -674,6 +681,11 @@ export function PluginDetailPage({
                   ariaLabel="Plugin metadata"
                   density="compact"
                   blocks={[
+                    {
+                      label: "Downloads",
+                      value: formatCompactStat(pkg.stats?.downloads ?? 0),
+                      large: true,
+                    },
                     { label: "Repository", value: sourceRepoLink },
                     { label: "Owner", value: ownerMetadataValue },
                     securitySummary

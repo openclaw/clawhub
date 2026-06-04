@@ -47,6 +47,7 @@ export declare const ApiSkillMetaResponseSchema: import("arktype/internal/varian
 }, {}>;
 export declare const ApiCliUploadUrlResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     uploadUrl: string;
+    uploadTicket: string;
 }, {}>;
 export declare const ApiUploadFileResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     storageId: string;
@@ -398,6 +399,65 @@ export declare const ApiV1SkillRescanResponseSchema: import("arktype/internal/va
     alreadyQueued: boolean;
 }, {}>;
 export type ApiV1SkillRescanResponse = (typeof ApiV1SkillRescanResponseSchema)[inferred];
+export declare const ApiV1SkillScanStatusSchema: import("arktype/internal/variants/string.ts").StringType<"queued" | "running" | "succeeded" | "failed", {}>;
+export type ApiV1SkillScanStatus = (typeof ApiV1SkillScanStatusSchema)[inferred];
+export declare const ApiV1SkillScanSourceSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    kind: "upload";
+} | {
+    kind: "published";
+    slug: string;
+    version?: string | undefined;
+}, {}>;
+export type ApiV1SkillScanSource = (typeof ApiV1SkillScanSourceSchema)[inferred];
+export declare const ApiV1SkillScanSubmitRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    source: {
+        kind: "upload";
+    } | {
+        kind: "published";
+        slug: string;
+        version?: string | undefined;
+    };
+    update?: boolean | undefined;
+}, {}>;
+export type ApiV1SkillScanSubmitRequest = (typeof ApiV1SkillScanSubmitRequestSchema)[inferred];
+export declare const ApiV1SkillScanSubmitResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    scanId: string;
+    status: "queued" | "running" | "succeeded" | "failed";
+    sourceKind: "upload" | "published";
+    update: boolean;
+    jobId?: string | undefined;
+    alreadyQueued?: boolean | undefined;
+}, {}>;
+export type ApiV1SkillScanSubmitResponse = (typeof ApiV1SkillScanSubmitResponseSchema)[inferred];
+export declare const ApiV1SkillScanStatusResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    scanId: string;
+    status: "queued" | "running" | "succeeded" | "failed";
+    sourceKind: "upload" | "published";
+    update: boolean;
+    createdAt: number;
+    updatedAt: number;
+    jobId?: string | undefined;
+    writtenBack?: boolean | undefined;
+    artifact?: unknown;
+    report?: unknown;
+    lastError?: string | undefined;
+    completedAt?: number | undefined;
+}, {}>;
+export type ApiV1SkillScanStatusResponse = (typeof ApiV1SkillScanStatusResponseSchema)[inferred];
+export declare const ApiV1SkillScanDownloadManifestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    scanId: string;
+    sourceKind: "upload" | "published";
+    update: boolean;
+    status: "queued" | "running" | "succeeded" | "failed";
+    createdAt: number;
+    updatedAt: number;
+    artifact?: unknown;
+    completedAt?: number | undefined;
+    writtenBack?: boolean | undefined;
+}, {}>;
+export type ApiV1SkillScanDownloadManifest = (typeof ApiV1SkillScanDownloadManifestSchema)[inferred];
 export declare const ApiV1SkillBulkRescanBatchRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     mode?: "all-active-latest" | undefined;
     cursor?: string | null | undefined;
@@ -434,6 +494,42 @@ export declare const ApiV1SkillBulkRescanStatusResponseSchema: import("arktype/i
     failedJobIds: string[];
 }, {}>;
 export type ApiV1SkillBulkRescanStatusResponse = (typeof ApiV1SkillBulkRescanStatusResponseSchema)[inferred];
+export declare const ApiV1SkillScanBatchRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    mode?: "all-active-latest" | undefined;
+    cursor?: string | null | undefined;
+    batchSize?: number | undefined;
+    dryRun?: boolean | undefined;
+}, {}>;
+export type ApiV1SkillScanBatchRequest = (typeof ApiV1SkillScanBatchRequestSchema)[inferred];
+export declare const ApiV1SkillScanBatchResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    mode: "all-active-latest";
+    queued: number;
+    alreadyQueued: number;
+    skipped: number;
+    jobIds: string[];
+    nextCursor: string | null;
+    done: boolean;
+    sampleSlugs: string[];
+}, {}>;
+export type ApiV1SkillScanBatchResponse = (typeof ApiV1SkillScanBatchResponseSchema)[inferred];
+export declare const ApiV1SkillScanBatchStatusRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    jobIds: string[];
+}, {}>;
+export type ApiV1SkillScanBatchStatusRequest = (typeof ApiV1SkillScanBatchStatusRequestSchema)[inferred];
+export declare const ApiV1SkillScanBatchStatusResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    total: number;
+    queued: number;
+    running: number;
+    succeeded: number;
+    failed: number;
+    missing: number;
+    terminal: number;
+    done: boolean;
+    failedJobIds: string[];
+}, {}>;
+export type ApiV1SkillScanBatchStatusResponse = (typeof ApiV1SkillScanBatchStatusResponseSchema)[inferred];
 export declare const ApiV1SkillRepairVtPendingRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     cursor?: string | null | undefined;
     batchSize?: number | undefined;
@@ -507,7 +603,7 @@ export declare const ApiV1SkillResolveResponseSchema: import("arktype/internal/v
 export declare const ApiV1SkillVerifyResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     schema: "clawhub.skill.verify.v1";
     ok: boolean;
-    decision: "pass" | "fail";
+    decision: "fail" | "pass";
     reasons: string[];
     slug: string;
     displayName: string;

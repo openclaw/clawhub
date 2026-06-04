@@ -38,6 +38,11 @@ export function SkillCard({
 
   return (
     <Link to={link} className={["card skill-card", className].filter(Boolean).join(" ")}>
+      <div className="skill-card-header">
+        <MarketplaceIcon kind="skill" label={skill.displayName} icon={skill.icon} size="md" />
+        <h3 className="skill-card-title">{skill.displayName}</h3>
+      </div>
+      <p className="skill-card-summary">{skill.summary ?? summaryFallback}</p>
       {hasTags ? (
         <div className="skill-card-tags">
           {badges.map((label) =>
@@ -56,11 +61,6 @@ export function SkillCard({
           <ApiKeyRequiredBadge apiKeyRequired={apiKeyRequired} />
         </div>
       ) : null}
-      <div className="skill-card-header">
-        <MarketplaceIcon kind="skill" label={skill.displayName} icon={skill.icon} size="md" />
-        <h3 className="skill-card-title">{skill.displayName}</h3>
-      </div>
-      <p className="skill-card-summary">{skill.summary ?? summaryFallback}</p>
       <div className="skill-card-footer">{meta}</div>
     </Link>
   );

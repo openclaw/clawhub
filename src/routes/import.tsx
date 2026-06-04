@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import { Container } from "../components/layout/Container";
 import { SignInPrompt } from "../components/SignInPrompt";
+import { ImportGitHubSkeleton } from "../components/skeletons/ProtectedPageSkeletons";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
@@ -218,16 +219,10 @@ export function ImportGitHub() {
   };
 
   if (isLoading) {
-    return (
-      <SignInPrompt
-        title="Loading..."
-        description="Checking your session before starting a GitHub import."
-        showAction={false}
-      />
-    );
+    return <ImportGitHubSkeleton />;
   }
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated || !me) {
     return (
       <SignInPrompt
         title="Sign in to import and publish skills"

@@ -1,8 +1,8 @@
 /* @vitest-environment node */
 
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createHash, randomBytes } from "node:crypto";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gzipSync, zipSync } from "fflate";
@@ -65,6 +65,10 @@ function makeOpts(workdir = "/work") {
 
 async function makeTmpWorkdir() {
   return await mkdtemp(join(tmpdir(), "clawhub-package-"));
+}
+
+async function listClawPackTempDirs() {
+  return new Set((await readdir(tmpdir())).filter((name) => name.startsWith("clawhub-clawpack-")));
 }
 
 function runGit(cwd: string, args: string[]) {
@@ -143,8 +147,8 @@ function tarOctal(value: number, width: number) {
   return value.toString(8).padStart(width - 1, "0") + "\0";
 }
 
-function tarFile(path: string, content: string) {
-  const bytes = new TextEncoder().encode(content);
+function tarFile(path: string, content: string | Uint8Array) {
+  const bytes = typeof content === "string" ? new TextEncoder().encode(content) : content;
   const header = new Uint8Array(TAR_BLOCK_SIZE);
   writeTarString(header, 0, 100, path);
   writeTarString(header, 100, 8, tarOctal(0o644, 8));
@@ -167,7 +171,7 @@ function tarFile(path: string, content: string) {
   return [header, body];
 }
 
-function npmPackFixture(files: Record<string, string>) {
+function npmPackFixture(files: Record<string, string | Uint8Array>) {
   const parts: Uint8Array[] = [];
   for (const [path, content] of Object.entries(files)) {
     parts.push(...tarFile(path, content));
@@ -1274,6 +1278,65 @@ describe("package commands", () => {
     }
   });
 
+  it("stages ClawPack tarballs over the multipart publish budget", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const packName = "oversized-plugin-1.0.0.tgz";
+      const packBytes = npmPackFixture({
+        "package/package.json": makeCodePluginPackageJson({
+          name: "@scope/oversized-plugin",
+          displayName: "Oversized Plugin",
+          version: "1.0.0",
+        }),
+        "package/openclaw.plugin.json": JSON.stringify({ id: "oversized.plugin" }),
+        "package/dist/index.js": "export const demo = true;\n",
+        "package/dist/model.bin": randomBytes(24 * 1024 * 1024),
+      });
+      expect(packBytes.byteLength).toBeGreaterThan(18 * 1024 * 1024);
+      await writeFile(join(workdir, packName), packBytes);
+      httpMocks.apiRequest.mockResolvedValueOnce({
+        uploadUrl: "https://upload.local",
+        uploadTicket: "uploadTickets:clawpack",
+      });
+      httpMocks.uploadBinary.mockResolvedValueOnce({ storageId: "storage:clawpack" });
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        packageId: "pkg_1",
+        releaseId: "rel_1",
+      });
+
+      await cmdPublishPackage(makeOpts(workdir), packName, {
+        sourceRepo: "openclaw/oversized-plugin",
+        sourceCommit: "abc123",
+      });
+
+      expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+        "https://clawhub.ai",
+        {
+          method: "POST",
+          path: "/api/cli/upload-url",
+          token: "tkn",
+        },
+        expect.anything(),
+      );
+      expect(httpMocks.uploadBinary).toHaveBeenCalledWith(
+        {
+          url: "https://upload.local",
+          bytes: expect.any(Uint8Array),
+          contentType: "application/octet-stream",
+          retryCount: 5,
+        },
+        expect.anything(),
+      );
+      expect(getPublishForm().get("clawpack")).toBe("storage:clawpack");
+      expect(getPublishForm().get("clawpackUploadTicket")).toBe("uploadTickets:clawpack");
+      expect(getPublishPayload()).not.toHaveProperty("artifact");
+      expect(getPublishPayload()).not.toHaveProperty("files");
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
   it("packs a plugin folder through npm pack and validates the ClawPack", async () => {
     const workdir = await makeTmpWorkdir();
     try {
@@ -1310,6 +1373,88 @@ describe("package commands", () => {
       expect(uiMocks.spinner.succeed).toHaveBeenCalledWith(
         `Packed @scope/demo-plugin@1.0.0 -> ${packPath}`,
       );
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("packs local ClawPacks over the multipart publish upload budget", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "demo-heavy-plugin");
+      await mkdir(join(folder, "dist"), { recursive: true });
+      await mkdir(join(workdir, "packs"), { recursive: true });
+      await writeFile(
+        join(folder, "package.json"),
+        makeCodePluginPackageJson({
+          name: "demo-heavy-plugin",
+          displayName: "Demo Heavy Plugin",
+          version: "1.0.0",
+        }),
+        "utf8",
+      );
+      await writeFile(
+        join(folder, "openclaw.plugin.json"),
+        JSON.stringify({ id: "demo.heavy.plugin" }),
+        "utf8",
+      );
+      await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
+      await writeFile(join(folder, "dist", "model.bin"), randomBytes(24 * 1024 * 1024));
+
+      await cmdPackPackage(makeOpts(workdir), "demo-heavy-plugin", {
+        packDestination: "packs",
+      });
+
+      const packPath = join(workdir, "packs", "demo-heavy-plugin-1.0.0.tgz");
+      const packed = await readFile(packPath);
+      expect(packed.byteLength).toBeGreaterThan(18 * 1024 * 1024);
+      expect(parseClawPack(new Uint8Array(packed)).packageName).toBe("demo-heavy-plugin");
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("cleans generated ClawPack temp dirs after staged publish failure", async () => {
+    const workdir = await makeTmpWorkdir();
+    const beforeTempDirs = await listClawPackTempDirs();
+    try {
+      const folder = join(workdir, "demo-heavy-plugin");
+      await mkdir(join(folder, "dist"), { recursive: true });
+      await writeFile(
+        join(folder, "package.json"),
+        makeCodePluginPackageJson({
+          name: "demo-heavy-plugin",
+          displayName: "Demo Heavy Plugin",
+          version: "1.0.0",
+          repository: "https://github.com/openclaw/demo-heavy-plugin.git",
+        }),
+        "utf8",
+      );
+      await writeFile(
+        join(folder, "openclaw.plugin.json"),
+        JSON.stringify({ id: "demo.heavy.plugin" }),
+        "utf8",
+      );
+      await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
+      await writeFile(join(folder, "dist", "model.bin"), randomBytes(24 * 1024 * 1024));
+      httpMocks.apiRequest.mockResolvedValueOnce({
+        uploadUrl: "https://upload.local",
+        uploadTicket: "uploadTickets:clawpack",
+      });
+      httpMocks.uploadBinary.mockResolvedValueOnce({ storageId: "storage:clawpack" });
+      httpMocks.apiRequestForm.mockRejectedValueOnce(new Error("Registry rejected upload"));
+
+      await expect(
+        cmdPublishPackage(makeOpts(workdir), "demo-heavy-plugin", {
+          sourceRepo: "openclaw/demo-heavy-plugin",
+          sourceCommit: "abc123",
+        }),
+      ).rejects.toThrow("Registry rejected upload");
+      expect(getPublishForm().get("clawpack")).toBe("storage:clawpack");
+      expect(getPublishForm().get("clawpackUploadTicket")).toBe("uploadTickets:clawpack");
+
+      const afterTempDirs = await listClawPackTempDirs();
+      expect([...afterTempDirs].filter((name) => !beforeTempDirs.has(name))).toEqual([]);
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }

@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { mkdirSync } from "node:fs";
 import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
@@ -6,6 +7,7 @@ import { pathToFileURL } from "node:url";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
+import { assertCodexWorkerExecutionAllowed, resolveCodexWorkerHome } from "../codex-worker-guard";
 
 type ClaimedSkillCardJob = {
   job: {
@@ -44,6 +46,7 @@ const NVIDIA_AUTOMATION_DIR = "AI Transparency Card Automation";
 const NVIDIA_SKILL_DIR = "nvidia-skill-card-generator";
 const SKILL_CARD_CONTEXT_FILE = "skill-card.context.json";
 const SKILL_CARD_OUTPUT_FILE = "skill-card.md";
+const LOCAL_CODEX_HOME = join(root, ".codex/runtime/codex-workers/skill-card");
 const NVIDIA_ONLY_PUBLIC_CARD_PATTERNS = [
   "NVIDIA believes",
   "For Release on NVIDIA Platforms Only",
@@ -137,6 +140,11 @@ async function download(url: string) {
 
 function codexEnv() {
   const env = { ...process.env };
+  const codexHome = resolveCodexWorkerHome(process.env, LOCAL_CODEX_HOME);
+  if (codexHome) {
+    mkdirSync(codexHome, { recursive: true });
+    env.CODEX_HOME = codexHome;
+  }
   delete env.GH_TOKEN;
   delete env.GITHUB_TOKEN;
   delete env.CONVEX_DEPLOY_KEY;
@@ -442,6 +450,7 @@ async function processJob(
 
 async function main() {
   const { batchLimit, maxJobs, maxRuntimeMs, leaseMs, toolDir } = parseArgs();
+  assertCodexWorkerExecutionAllowed(process.env);
   const convexUrl = process.env.CONVEX_URL ?? process.env.VITE_CONVEX_URL;
   if (!convexUrl) throw new Error("CONVEX_URL or VITE_CONVEX_URL is required");
   const token = workerToken();

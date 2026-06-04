@@ -4,6 +4,7 @@ import { useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import { Container } from "../../components/layout/Container";
 import { SignInButton } from "../../components/SignInButton";
+import { AuthFlowSkeleton } from "../../components/skeletons/ProtectedPageSkeletons";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Input } from "../../components/ui/input";
@@ -48,6 +49,10 @@ export function CliDeviceAuth() {
       setStatus(error instanceof Error ? error.message : "Deny failed.");
     }
   };
+
+  if (isLoading) {
+    return <AuthFlowSkeleton title="CLI device login" />;
+  }
 
   return (
     <main className="py-10">

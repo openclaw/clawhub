@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { usePaginatedQuery, useQuery } from "convex/react";
 import { Box, Loader2, Package, Plus, Settings } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 import { ArtifactCard } from "../components/artifacts/ArtifactCard";
@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from "../components/ui/select";
 import { buildPluginDetailHref } from "../lib/pluginRoutes";
+import { useAuthStatus } from "../lib/useAuthStatus";
 
 const emptyPluginPublishSearch = {
   ownerHandle: undefined,
@@ -103,8 +104,8 @@ export const Route = createFileRoute("/dashboard")({
 });
 
 export function Dashboard() {
-  const me = useQuery(api.users.me) as Doc<"users"> | null | undefined;
-  const publishers = useQuery(api.publishers.listMine) as
+  const { isAuthenticated, isLoading: isAuthLoading, me } = useAuthStatus();
+  const publishers = useQuery(api.publishers.listMine, me ? {} : "skip") as
     | Array<{
         publisher: {
           _id: string;
@@ -116,14 +117,19 @@ export function Dashboard() {
       }>
     | undefined;
   const [selectedPublisherId, setSelectedPublisherId] = useState<string>("");
-  const selectedPublisher =
-    publishers?.find((entry) => entry.publisher._id === selectedPublisherId) ?? null;
+  const defaultPublisher =
+    publishers?.find((entry) => entry.publisher.kind === "user") ?? publishers?.[0] ?? null;
+  const selectedPublisherFromState = selectedPublisherId
+    ? (publishers?.find((entry) => entry.publisher._id === selectedPublisherId) ?? null)
+    : null;
+  const selectedPublisher = selectedPublisherFromState ?? defaultPublisher ?? null;
+  const activePublisherId = selectedPublisher?.publisher._id ?? "";
 
   const skillsQueryArgs =
     selectedPublisher?.publisher.kind === "user" && me?._id
       ? { ownerUserId: me._id }
-      : selectedPublisherId
-        ? { ownerPublisherId: selectedPublisherId as Doc<"publishers">["_id"] }
+      : activePublisherId
+        ? { ownerPublisherId: activePublisherId as Doc<"publishers">["_id"] }
         : me?._id
           ? { ownerUserId: me._id }
           : "skip";
@@ -137,42 +143,38 @@ export function Dashboard() {
   const mySkills = paginatedSkills as DashboardSkill[] | undefined;
   const myPackages = useQuery(
     api.packages.list,
-    selectedPublisherId
-      ? { ownerPublisherId: selectedPublisherId as Doc<"publishers">["_id"], limit: 100 }
+    activePublisherId
+      ? { ownerPublisherId: activePublisherId as Doc<"publishers">["_id"], limit: 100 }
       : me?._id
         ? { ownerUserId: me._id, limit: 100 }
         : "skip",
   ) as DashboardPackage[] | undefined;
 
-  useEffect(() => {
-    if (selectedPublisherId) return;
-    const personal =
-      publishers?.find((entry) => entry.publisher.kind === "user") ?? publishers?.[0];
-    if (personal?.publisher._id) {
-      setSelectedPublisherId(personal.publisher._id);
-    }
-  }, [publishers, selectedPublisherId]);
-
-  if (me === undefined) {
+  if (isAuthLoading) {
     return <DashboardSkeleton />;
   }
 
-  if (me === null) {
+  if (!isAuthenticated || !me) {
     return <SignInPrompt title="Sign in to access your dashboard." />;
   }
 
   const skills = mySkills ?? [];
   const packages = myPackages ?? [];
-  const isLoading = skillsStatus === "LoadingFirstPage";
+  const isLoading =
+    publishers === undefined || skillsStatus === "LoadingFirstPage" || myPackages === undefined;
   const ownerHandle =
     selectedPublisher?.publisher.handle ?? me.handle ?? me.name ?? me.displayName ?? me._id;
   const isDashboardEmpty = !isLoading && skills.length === 0 && packages.length === 0;
+
+  if (isLoading) {
+    return <DashboardSkeleton />;
+  }
 
   const publisherSelector =
     publishers && publishers.length > 1 ? (
       <div className="dashboard-publisher-select">
         <span className="text-sm font-medium text-muted-foreground">Viewing as</span>
-        <Select value={selectedPublisherId} onValueChange={setSelectedPublisherId}>
+        <Select value={activePublisherId} onValueChange={setSelectedPublisherId}>
           <SelectTrigger
             aria-label="Dashboard publisher"
             className="min-w-[220px] rounded-[var(--radius-sm)]"

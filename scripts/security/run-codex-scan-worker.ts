@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { mkdirSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
@@ -12,12 +13,13 @@ import {
   type LlmEvalDimension,
   SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT,
 } from "../../convex/lib/securityPrompt";
+import { assertCodexWorkerExecutionAllowed, resolveCodexWorkerHome } from "../codex-worker-guard";
 
 type ClaimedJob = {
   job: {
     _id: string;
     leaseToken: string;
-    targetKind: "skillVersion" | "packageRelease";
+    targetKind: "skillVersion" | "packageRelease" | "skillScanRequest";
     source: string;
     hasMaliciousSignal: boolean;
     waitForVtUntil: number;
@@ -113,6 +115,7 @@ const DEFAULT_DIAGNOSTICS_ROOT = join(
   ".artifacts/codex-security-scan",
   process.env.GITHUB_RUN_ID ?? `local-${process.pid}`,
 );
+const LOCAL_CODEX_HOME = join(root, ".codex/runtime/codex-workers/security-scan");
 const ARTIFACT_SIGNAL_FILE_EXTENSIONS = new Set([
   ".cjs",
   ".css",
@@ -601,6 +604,11 @@ Return the required JSON object only.`;
 
 function codexEnv() {
   const env = { ...process.env };
+  const codexHome = resolveCodexWorkerHome(process.env, LOCAL_CODEX_HOME);
+  if (codexHome) {
+    mkdirSync(codexHome, { recursive: true });
+    env.CODEX_HOME = codexHome;
+  }
   delete env.GH_TOKEN;
   delete env.GITHUB_TOKEN;
   delete env.CONVEX_DEPLOY_KEY;
@@ -1081,6 +1089,7 @@ async function processJob(
 
 async function main() {
   const { batchLimit, maxJobs, maxRuntimeMs, leaseMs, diagnosticsRoot } = parseArgs();
+  assertCodexWorkerExecutionAllowed(process.env);
   const convexUrl = process.env.CONVEX_URL ?? process.env.VITE_CONVEX_URL;
   if (!convexUrl) throw new Error("CONVEX_URL or VITE_CONVEX_URL is required");
   const token = requireEnv("SECURITY_SCAN_WORKER_TOKEN");

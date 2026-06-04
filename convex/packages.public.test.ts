@@ -10,7 +10,6 @@ import {
   getPackageReleaseScanBackfillBatchInternal,
   getByName,
   list,
-  publishPackage,
   publishPackageForTrustedPublisherInternal,
   publishPackageForUserInternal,
   listPackageReportsInternal,
@@ -235,14 +234,6 @@ const searchForViewerInternalHandler = (
       viewerUserId?: string;
     },
     Array<{ package: { name: string } }>
-  >
-)._handler;
-const publishPackageHandler = (
-  publishPackage as unknown as WrappedHandler<
-    {
-      payload: unknown;
-    },
-    unknown
   >
 )._handler;
 const publishPackageForUserInternalHandler = (
@@ -2823,6 +2814,62 @@ describe("packages public queries", () => {
         publicDownloadBlocked: false,
       },
       version: { version: "1.0.0" },
+    });
+  });
+
+  it("derives missing public verification source paths from legacy release provenance", async () => {
+    const verification = {
+      tier: "source-linked",
+      scope: "artifact-only",
+      sourceRepo: "OpenViking/OpenViking",
+      sourceCommit: "abcdef0123456789abcdef0123456789abcdef01",
+      scanStatus: "clean",
+    };
+    const latestRelease = makeReleaseDoc({
+      verification,
+      source: {
+        kind: "github",
+        repo: "OpenViking/OpenViking",
+        path: "openclaw-plugin",
+      },
+    });
+    const { ctx } = makePackageCtx({
+      pkg: makePackageDoc({
+        name: "@openviking/openclaw-plugin",
+        normalizedName: "@openviking/openclaw-plugin",
+        verification,
+        latestVersionSummary: {
+          version: "1.0.0",
+          verification,
+        },
+      }),
+      latestRelease,
+    });
+
+    await expect(
+      getByNameHandler(ctx, {
+        name: "@openviking/openclaw-plugin",
+      }),
+    ).resolves.toMatchObject({
+      package: {
+        verification: { sourcePath: "openclaw-plugin" },
+      },
+      latestRelease: {
+        verification: { sourcePath: "openclaw-plugin" },
+      },
+    });
+    await expect(
+      getVersionByNameHandler(ctx, {
+        name: "@openviking/openclaw-plugin",
+        version: "1.0.0",
+      }),
+    ).resolves.toMatchObject({
+      package: {
+        verification: { sourcePath: "openclaw-plugin" },
+      },
+      version: {
+        verification: { sourcePath: "openclaw-plugin" },
+      },
     });
   });
 
@@ -6298,20 +6345,6 @@ describe("packages public queries", () => {
     );
 
     expect(result).toEqual([expect.objectContaining({ name: "demo-plugin" })]);
-  });
-
-  it("requires auth inside the public publish action", async () => {
-    await expect(
-      publishPackageHandler({ runQuery: vi.fn(), runMutation: vi.fn() } as never, {
-        payload: {
-          name: "demo-plugin",
-          family: "bundle-plugin",
-          version: "1.0.0",
-          changelog: "init",
-          files: [],
-        },
-      }),
-    ).rejects.toThrow("Unauthorized");
   });
 
   it("records package reports for moderation", async () => {

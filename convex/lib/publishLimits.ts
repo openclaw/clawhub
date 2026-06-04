@@ -1,6 +1,17 @@
+import { MAX_PACKAGE_CLAWPACK_BYTES } from "clawhub-schema";
+
+export {
+  estimatePackageMultipartUploadBytes,
+  getPackageMultipartSizeError,
+  isPackageMultipartUploadTooLarge,
+  MAX_PACKAGE_MULTIPART_BYTES,
+  type PackageMultipartUploadField,
+  type PackageMultipartUploadPart,
+} from "clawhub-schema";
+
 export const MAX_PUBLISH_TOTAL_BYTES = 50 * 1024 * 1024;
 export const MAX_PUBLISH_FILE_BYTES = 10 * 1024 * 1024;
-export const MAX_CLAWPACK_BYTES = 120 * 1024 * 1024;
+export const MAX_CLAWPACK_BYTES = MAX_PACKAGE_CLAWPACK_BYTES;
 
 type SizedPathLike = {
   path: string;

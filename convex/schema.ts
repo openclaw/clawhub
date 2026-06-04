@@ -111,6 +111,53 @@ const llmRiskSummaryBucketValidator = v.object({
   highestSeverity: v.optional(v.string()),
 });
 
+const llmAnalysisValidator = v.object({
+  status: v.string(),
+  verdict: v.optional(v.string()),
+  confidence: v.optional(v.string()),
+  summary: v.optional(v.string()),
+  dimensions: v.optional(
+    v.array(
+      v.object({
+        name: v.string(),
+        label: v.string(),
+        rating: v.string(),
+        detail: v.string(),
+      }),
+    ),
+  ),
+  guidance: v.optional(v.string()),
+  findings: v.optional(v.string()),
+  agenticRiskFindings: v.optional(v.array(llmAgenticRiskFindingValidator)),
+  riskSummary: v.optional(
+    v.object({
+      abnormal_behavior_control: llmRiskSummaryBucketValidator,
+      permission_boundary: llmRiskSummaryBucketValidator,
+      sensitive_data_protection: llmRiskSummaryBucketValidator,
+    }),
+  ),
+  model: v.optional(v.string()),
+  checkedAt: v.number(),
+});
+
+const staticScanValidator = v.object({
+  status: v.union(v.literal("clean"), v.literal("suspicious"), v.literal("malicious")),
+  reasonCodes: v.array(v.string()),
+  findings: v.array(
+    v.object({
+      code: v.string(),
+      severity: v.union(v.literal("info"), v.literal("warn"), v.literal("critical")),
+      file: v.string(),
+      line: v.number(),
+      message: v.string(),
+      evidence: v.string(),
+    }),
+  ),
+  summary: v.string(),
+  engineVersion: v.string(),
+  checkedAt: v.number(),
+});
+
 const users = defineTable({
   name: v.optional(v.string()),
   image: v.optional(v.string()),
@@ -435,6 +482,7 @@ const packageVerificationValidator = v.optional(
     sourceRepo: v.optional(v.string()),
     sourceCommit: v.optional(v.string()),
     sourceTag: v.optional(v.string()),
+    sourcePath: v.optional(v.string()),
     hasProvenance: v.optional(v.boolean()),
     trustedOpenClawPlugin: v.optional(v.boolean()),
     scanStatus: v.optional(
@@ -486,6 +534,7 @@ const packageReleaseModerationOverrideValidator = v.object({
 const securityScanTargetKindValidator = v.union(
   v.literal("skillVersion"),
   v.literal("packageRelease"),
+  v.literal("skillScanRequest"),
 );
 const securityScanJobStatusValidator = v.union(
   v.literal("queued"),
@@ -522,6 +571,8 @@ const packageFilesValidator = v.array(
     contentType: v.optional(v.string()),
   }),
 );
+
+const skillScanRequestSourceKindValidator = v.union(v.literal("upload"), v.literal("published"));
 
 const skills = defineTable({
   slug: v.string(),
@@ -1004,6 +1055,13 @@ const skillSearchDigest = defineTable({
     "statsInstallsAllTime",
     "updatedAt",
   ])
+  .index("by_active_recommended_rank", [
+    "softDeletedAt",
+    "statsStars",
+    "statsInstallsAllTime",
+    "statsDownloads",
+    "updatedAt",
+  ])
   .index("by_nonsuspicious_updated", ["softDeletedAt", "isSuspicious", "updatedAt"])
   .index("by_nonsuspicious_created", ["softDeletedAt", "isSuspicious", "createdAt"])
   .index("by_nonsuspicious_name", ["softDeletedAt", "isSuspicious", "displayName"])
@@ -1034,6 +1092,14 @@ const skillSearchDigest = defineTable({
     "softDeletedAt",
     "isSuspicious",
     "statsInstallsAllTime",
+    "updatedAt",
+  ])
+  .index("by_nonsuspicious_recommended_rank", [
+    "softDeletedAt",
+    "isSuspicious",
+    "statsStars",
+    "statsInstallsAllTime",
+    "statsDownloads",
     "updatedAt",
   ])
   .searchIndex("search_by_display_name", {
@@ -1200,6 +1266,7 @@ const securityScanJobs = defineTable({
   targetKind: securityScanTargetKindValidator,
   skillVersionId: v.optional(v.id("skillVersions")),
   packageReleaseId: v.optional(v.id("packageReleases")),
+  skillScanRequestId: v.optional(v.id("skillScanRequests")),
   status: securityScanJobStatusValidator,
   source: securityScanJobSourceValidator,
   priority: v.number(),
@@ -1223,7 +1290,48 @@ const securityScanJobs = defineTable({
   .index("by_status_and_lease_expires_at", ["status", "leaseExpiresAt"])
   .index("by_status_malicious_signal_next_run_at", ["status", "hasMaliciousSignal", "nextRunAt"])
   .index("by_skill_version", ["skillVersionId"])
-  .index("by_package_release", ["packageReleaseId"]);
+  .index("by_package_release", ["packageReleaseId"])
+  .index("by_skill_scan_request", ["skillScanRequestId"]);
+
+const skillScanRequests = defineTable({
+  actorUserId: v.id("users"),
+  sourceKind: skillScanRequestSourceKindValidator,
+  update: v.boolean(),
+  writtenBack: v.boolean(),
+  status: securityScanJobStatusValidator,
+  securityScanJobId: v.optional(v.id("securityScanJobs")),
+  slug: v.optional(v.string()),
+  displayName: v.optional(v.string()),
+  version: v.optional(v.string()),
+  skillId: v.optional(v.id("skills")),
+  skillVersionId: v.optional(v.id("skillVersions")),
+  files: packageFilesValidator,
+  parsed: v.optional(
+    v.object({
+      frontmatter: v.record(v.string(), v.any()),
+      metadata: v.optional(v.any()),
+      clawdis: v.optional(v.any()),
+      moltbot: v.optional(v.any()),
+      license: v.optional(v.literal(PLATFORM_SKILL_LICENSE)),
+    }),
+  ),
+  sha256hash: v.optional(v.string()),
+  vtAnalysis: v.optional(vtAnalysisValidator),
+  skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
+  llmAnalysis: v.optional(llmAnalysisValidator),
+  capabilityTags: v.optional(v.array(v.string())),
+  staticScan: v.optional(staticScanValidator),
+  lastError: v.optional(v.string()),
+  runId: v.optional(v.string()),
+  completedAt: v.optional(v.number()),
+  expiresAt: v.number(),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_actor_user_id_and_created_at", ["actorUserId", "createdAt"])
+  .index("by_security_scan_job_id", ["securityScanJobId"])
+  .index("by_skill_version_id_and_created_at", ["skillVersionId", "createdAt"])
+  .index("by_expires_at", ["expiresAt"]);
 
 const skillCardGenerationJobs = defineTable({
   skillId: v.id("skills"),
@@ -1299,6 +1407,16 @@ const packagePublishTokens = defineTable({
   .index("by_hash", ["tokenHash"])
   .index("by_package", ["packageId", "version", "createdAt"])
   .index("by_package_revoked_created", ["packageId", "revokedAt", "createdAt"]);
+
+const packagePublishUploadTickets = defineTable({
+  kind: v.union(v.literal("user"), v.literal("github-actions")),
+  userId: v.optional(v.id("users")),
+  publishTokenId: v.optional(v.id("packagePublishTokens")),
+  createdAt: v.number(),
+  expiresAt: v.number(),
+  usedAt: v.optional(v.number()),
+  storageId: v.optional(v.id("_storage")),
+});
 
 const packageSearchDigest = defineTable({
   packageId: v.id("packages"),
@@ -2218,10 +2336,12 @@ export default defineSchema({
   packages,
   packageReleases,
   securityScanJobs,
+  skillScanRequests,
   skillCardGenerationJobs,
   packageStatEvents,
   packageTrustedPublishers,
   packagePublishTokens,
+  packagePublishUploadTickets,
   packageBadges,
   packageSearchDigest,
   packageCapabilitySearchDigest,

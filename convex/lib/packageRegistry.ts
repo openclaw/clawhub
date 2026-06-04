@@ -271,6 +271,15 @@ function buildVerification(source: SourceInfo | undefined): PackageVerificationS
       scanStatus: "not-run",
     };
   }
+  // `source.path` is the package directory inside the source repo (e.g.
+  // "examples/openclaw-plugin"). When the package lives at the repo root the
+  // CLI sends "." (or empty), and there's nothing useful to serialize. Only
+  // promote real subpaths into `verification.sourcePath` so consumers can
+  // build a `raw.githubusercontent.com/<repo>/<sha>/<path>/` base URL for
+  // resolving relative README asset references.
+  const rawPath = typeof source.path === "string" ? source.path.trim() : "";
+  const sourcePath =
+    rawPath && rawPath !== "." ? rawPath.replace(/^\/+/, "").replace(/\/+$/, "") : undefined;
   return {
     tier: "source-linked",
     scope: "artifact-only",
@@ -278,6 +287,7 @@ function buildVerification(source: SourceInfo | undefined): PackageVerificationS
     sourceRepo: source.repo || source.url,
     sourceCommit: source.commit,
     sourceTag: source.ref,
+    sourcePath: sourcePath || undefined,
     hasProvenance: false,
     scanStatus: "not-run",
   };

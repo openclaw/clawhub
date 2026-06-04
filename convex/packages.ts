@@ -1,5 +1,5 @@
 import {
-  PackagePublishRequestSchema,
+  ServerPackagePublishRequestSchema,
   getPackageScopeOwnerMismatch,
   isPluginCategorySlug,
   parseArk,
@@ -11,7 +11,7 @@ import {
   type PackageModerationQueueStatus,
   type PackageOfficialMigrationListPhase,
   type PackageOfficialMigrationPhase,
-  type PackagePublishRequest,
+  type ServerPackagePublishRequest,
   type PackageVerificationTier,
 } from "clawhub-schema";
 import { paginationOptsValidator } from "convex/server";
@@ -33,7 +33,6 @@ import {
   assertModerator,
   getOptionalActiveAuthUserId,
   requireUser,
-  requireUserFromAction,
 } from "./lib/access";
 import {
   assertArtifactAppealFinalAction,
@@ -765,13 +764,29 @@ function resolvePublicPackageScanStatus(
   return pkg.scanStatus;
 }
 
+function normalizePublicPackageSourcePath(sourcePath: unknown) {
+  if (typeof sourcePath !== "string") return undefined;
+  const trimmed = sourcePath.trim();
+  if (!trimmed || trimmed === ".") return undefined;
+  return trimmed.replace(/^\/+/, "").replace(/\/+$/, "") || undefined;
+}
+
+function getReleaseSourcePath(release?: Pick<Doc<"packageReleases">, "source"> | null) {
+  const source = release?.source;
+  if (!source || typeof source !== "object" || Array.isArray(source)) return undefined;
+  return normalizePublicPackageSourcePath((source as { path?: unknown }).path);
+}
+
 function resolvePublicPackageVerification(
   pkg: Pick<Doc<"packages">, "verification" | "latestVersionSummary" | "scanStatus">,
   latestRelease?: Doc<"packageReleases"> | null,
 ) {
   const scanStatus = resolvePublicPackageScanStatus(pkg, latestRelease);
   const source = pkg.verification ?? pkg.latestVersionSummary?.verification;
-  return source && scanStatus ? { ...source, scanStatus } : source;
+  if (!source) return source;
+  const sourcePath = source.sourcePath ?? getReleaseSourcePath(latestRelease);
+  const verification = sourcePath ? { ...source, sourcePath } : source;
+  return scanStatus ? { ...verification, scanStatus } : verification;
 }
 
 function toPublicPackage(
@@ -821,6 +836,19 @@ function omitLegacyClawScanNoteFields(release: Doc<"packageReleases">) {
     ...publicRelease
   } = release;
   return publicRelease;
+}
+
+function toPublicPackageRelease(release: Doc<"packageReleases">) {
+  const publicRelease = omitLegacyClawScanNoteFields(release);
+  const sourcePath = release.verification?.sourcePath ?? getReleaseSourcePath(release);
+  if (!release.verification || !sourcePath) return publicRelease;
+  return {
+    ...publicRelease,
+    verification: {
+      ...release.verification,
+      sourcePath,
+    },
+  };
 }
 
 function packageArtifactSummary(
@@ -1908,7 +1936,7 @@ export const getByName = query({
       package: publicPackage,
       latestRelease:
         latestRelease && !latestRelease.softDeletedAt
-          ? omitLegacyClawScanNoteFields(latestRelease)
+          ? toPublicPackageRelease(latestRelease)
           : null,
       owner,
     };
@@ -1949,7 +1977,7 @@ export const getManageContext = query({
 
     return {
       package: pkg,
-      latestRelease: omitLegacyClawScanNoteFields(latestRelease),
+      latestRelease: toPublicPackageRelease(latestRelease),
     };
   },
 });
@@ -1979,7 +2007,7 @@ export const getByNameForStaff = query({
       package: pkg,
       latestRelease:
         latestRelease && !latestRelease.softDeletedAt
-          ? omitLegacyClawScanNoteFields(latestRelease)
+          ? toPublicPackageRelease(latestRelease)
           : null,
       owner,
       highlighted: highlighted
@@ -2013,7 +2041,7 @@ export const getByNameForViewerInternal = internalQuery({
       package: publicPackage,
       latestRelease:
         latestRelease && !latestRelease.softDeletedAt
-          ? omitLegacyClawScanNoteFields(latestRelease)
+          ? toPublicPackageRelease(latestRelease)
           : null,
       owner,
     };
@@ -2092,7 +2120,7 @@ export const getVersionByName = query({
     if (!publicPackage) return null;
     return {
       package: publicPackage,
-      version: omitLegacyClawScanNoteFields(release),
+      version: toPublicPackageRelease(release),
     };
   },
 });
@@ -2123,7 +2151,7 @@ export const getVersionByNameForViewerInternal = internalQuery({
     if (!publicPackage) return null;
     return {
       package: publicPackage,
-      version: omitLegacyClawScanNoteFields(release),
+      version: toPublicPackageRelease(release),
     };
   },
 });
@@ -2160,7 +2188,7 @@ export const getVersionSecurityByNameForViewerInternal = internalQuery({
         ...publicPackage,
         publicDownloadBlocked,
       },
-      version: omitLegacyClawScanNoteFields(release),
+      version: toPublicPackageRelease(release),
     };
   },
 });
@@ -5027,9 +5055,9 @@ function buildGitHubActionsPublishActor(
 }
 
 function resolveTrustedPublishSource(
-  payload: PackagePublishRequest,
+  payload: ServerPackagePublishRequest,
   publishToken: Doc<"packagePublishTokens">,
-): PackagePublishRequest["source"] {
+): ServerPackagePublishRequest["source"] {
   const source = payload.source;
   if (source && source.kind !== "github") {
     throw new ConvexError("Trusted publishes only support GitHub source metadata");
@@ -5081,11 +5109,11 @@ async function publishPackageImpl(
   auth: PackagePublishAuthContext,
   rawPayload: unknown,
 ) {
-  const payload = parseArk(
-    PackagePublishRequestSchema,
+  const payload = parseArk<ServerPackagePublishRequest>(
+    ServerPackagePublishRequestSchema,
     rawPayload,
     "Package publish payload",
-  ) as PackagePublishRequest;
+  );
   if (payload.family === "skill") {
     throw new ConvexError("Skill packages must use the skills publish flow");
   }
@@ -5204,7 +5232,7 @@ async function publishPackageImpl(
   }
 
   const displayName = payload.displayName?.trim() || name;
-  const files = normalizePublishFiles(payload.files as never);
+  const files = normalizePublishFiles(payload.files);
   if (payload.artifact?.kind !== "npm-pack") {
     const oversizedFile = findOversizedPublishFile(files);
     if (oversizedFile) {
@@ -5459,14 +5487,6 @@ async function publishPackageImpl(
   return publishResult;
 }
 
-export const publishPackage = action({
-  args: { payload: v.any() },
-  handler: async (ctx, args) => {
-    const { userId } = await requireUserFromAction(ctx);
-    return await publishPackageImpl(ctx, { kind: "user", actorUserId: userId }, args.payload);
-  },
-});
-
 export const publishPackageForUserInternal = internalAction({
   args: {
     actorUserId: v.id("users"),
@@ -5506,14 +5526,6 @@ export const publishPackageForTrustedPublisherInternal = internalAction({
       );
     }
     return await publishPackageImpl(ctx, { kind: "github-actions", publishToken }, args.payload);
-  },
-});
-
-export const publishRelease = action({
-  args: { payload: v.any() },
-  handler: async (ctx, args) => {
-    const { userId } = await requireUserFromAction(ctx);
-    return await publishPackageImpl(ctx, { kind: "user", actorUserId: userId }, args.payload);
   },
 });
 

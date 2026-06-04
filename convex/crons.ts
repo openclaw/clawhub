@@ -87,6 +87,13 @@ crons.interval(
 );
 
 crons.interval(
+  "skill-scan-request-prune",
+  { hours: 6 },
+  internal.securityScan.pruneExpiredSkillScanRequestsInternal,
+  { batchSize: 250 },
+);
+
+crons.interval(
   "download-dedupe-prune",
   { hours: 24 },
   internal.downloads.pruneDownloadDedupesInternal,

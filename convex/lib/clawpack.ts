@@ -67,6 +67,7 @@ function isZeroBlock(block: Uint8Array) {
 
 function parseTarEntries(bytes: Uint8Array): ClawPackEntry[] {
   const entries: ClawPackEntry[] = [];
+  const paths = new Set<string>();
   let offset = 0;
 
   while (offset + TAR_BLOCK_SIZE <= bytes.byteLength) {
@@ -93,6 +94,10 @@ function parseTarEntries(bytes: Uint8Array): ClawPackEntry[] {
         offset = nextTarOffset(payloadOffset, size);
         continue;
       }
+      if (paths.has(relPath)) {
+        throw new Error(`ClawPack contains duplicate path: ${relPath}`);
+      }
+      paths.add(relPath);
       entries.push({
         path: relPath,
         bytes: Uint8Array.from(tarEntryPayload(bytes, payloadOffset, size)),

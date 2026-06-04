@@ -22,7 +22,7 @@ export function parseProofPublishArgs(argv = []) {
   const opts = {
     artifactBranch: DEFAULT_ARTIFACT_BRANCH,
     marker: DEFAULT_MARKER,
-    repo: process.env.GITHUB_REPOSITORY || DEFAULT_REPO,
+    repo: DEFAULT_REPO,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];

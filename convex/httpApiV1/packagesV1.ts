@@ -11,16 +11,18 @@ import {
   PackageReportRequestSchema,
   PackageReportTriageRequestSchema,
   PackageReleaseModerationRequestSchema,
-  PackagePublishRequestSchema,
+  PackagePublishMetadataSchema,
   PackageTransferRequestSchema,
   PackageTrustedPublisherUpsertRequestSchema,
   PublishTokenMintRequestSchema,
   isPluginCategorySlug,
   parseArk,
+  type PackagePublishMetadata,
   type PackageAppealListStatus,
   type PackageModerationQueueStatus,
   type PackageOfficialMigrationListPhase,
   type PackageReportListStatus,
+  type ServerPackagePublishRequest,
 } from "clawhub-schema";
 import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
@@ -43,9 +45,13 @@ import {
 } from "../lib/packageSecurity";
 import {
   getClawPackSizeError,
+  getPackageMultipartSizeError,
   getPublishFileSizeError,
+  getPublishTotalSizeError,
+  isPackageMultipartUploadTooLarge,
   MAX_CLAWPACK_BYTES,
   MAX_PUBLISH_FILE_BYTES,
+  MAX_PUBLISH_TOTAL_BYTES,
 } from "../lib/publishLimits";
 import { getPublicSkillFileAccessBlock, isSkillVersionForSkill } from "../lib/skillFileAccess";
 import { isMacJunkPath, isTextFile } from "../lib/skills";
@@ -119,6 +125,9 @@ const internalRefs = internal as unknown as {
   };
   packagePublishTokens: {
     createInternal: unknown;
+  };
+  uploads: {
+    consumePackagePublishUploadTicketInternal: unknown;
   };
   skills: {
     getSkillBySlugInternal: unknown;
@@ -1018,75 +1027,27 @@ function skillVersionTags(tags: Record<string, string>, version: string) {
     .map(([tag]) => tag);
 }
 
-function parsePackagePublishBody(body: unknown) {
-  const parsed = parseArk(PackagePublishRequestSchema, body, "Package publish payload") as {
-    name: string;
-    displayName?: string;
-    ownerHandle?: string;
-    family: "skill" | "code-plugin" | "bundle-plugin";
-    version: string;
-    changelog: string;
-    manualOverrideReason?: string;
-    channel?: "official" | "community" | "private";
-    tags?: string[];
-    source?: Record<string, unknown>;
-    bundle?: Record<string, unknown>;
-    files: Array<{
-      path: string;
-      size: number;
-      storageId: string;
-      sha256: string;
-      contentType?: string;
-    }>;
-    artifact?: {
-      kind: "npm-pack";
-      storageId: string;
-      sha256: string;
-      size: number;
-      format: "tgz";
-      npmIntegrity: string;
-      npmShasum: string;
-      npmTarballName: string;
-      npmUnpackedSize: number;
-      npmFileCount: number;
+type StoredPackagePublishFile = ServerPackagePublishRequest["files"][number];
+type PackagePublishTarballArtifact = NonNullable<ServerPackagePublishRequest["artifact"]>;
+type ParsedPackageClawPack = Awaited<ReturnType<typeof parseClawPack>>;
+type PackagePublishAuth =
+  | { kind: "user"; userId: Id<"users"> }
+  | { kind: "github-actions"; publishToken: Doc<"packagePublishTokens"> };
+type PackagePublishTarballPart =
+  | { kind: "file"; file: File }
+  | {
+      kind: "storage";
+      storageId: Id<"_storage">;
+      uploadTicket: Id<"packagePublishUploadTickets">;
     };
-  };
-  if (parsed.files.length === 0) throw new Error("files required");
-  return {
-    name: parsed.name,
-    displayName: parsed.displayName ?? undefined,
-    ownerHandle: parsed.ownerHandle?.trim().replace(/^@+/, "") || undefined,
-    family: parsed.family,
-    version: parsed.version,
-    changelog: parsed.changelog,
-    manualOverrideReason: parsed.manualOverrideReason?.trim() || undefined,
-    channel: parsed.channel ?? undefined,
-    tags: parsed.tags?.filter(Boolean) ?? undefined,
-    source: parsed.source ?? undefined,
-    bundle: parsed.bundle ?? undefined,
-    files: parsed.files.map((file) => ({
-      ...file,
-      storageId: file.storageId as Id<"_storage">,
-    })),
-    artifact: parsed.artifact
-      ? {
-          ...parsed.artifact,
-          storageId: parsed.artifact.storageId as Id<"_storage">,
-        }
-      : undefined,
-  };
-}
 
 function inferStoredPackageContentType(path: string) {
   const lower = path.toLowerCase();
   if (lower.endsWith(".json")) return "application/json";
-  if (lower.endsWith(".md") || lower.endsWith(".mdx") || lower.endsWith(".txt")) {
-    return "text/plain; charset=utf-8";
-  }
   if (lower.endsWith(".js") || lower.endsWith(".mjs") || lower.endsWith(".cjs")) {
     return "text/javascript; charset=utf-8";
   }
-  if (lower.endsWith(".ts") || lower.endsWith(".tsx")) return "text/plain; charset=utf-8";
+  if (isTextFile(path)) return "text/plain; charset=utf-8";
   return "application/octet-stream";
 }
 
@@ -1096,9 +1057,10 @@ function bytesToArrayBuffer(bytes: Uint8Array) {
   return copy.buffer;
 }
 
-async function storeClawPackFile(ctx: ActionCtx, entry: { path: string; bytes: Uint8Array }) {
-  // npm-pack artifacts are bounded by the tarball and total package limits; the
-  // legacy per-file cap only applies to raw file uploads.
+async function storeClawPackFile(
+  ctx: ActionCtx,
+  entry: { path: string; bytes: Uint8Array },
+): Promise<StoredPackagePublishFile> {
   const contentType = inferStoredPackageContentType(entry.path);
   const storageId = await ctx.storage.store(
     new Blob([bytesToArrayBuffer(entry.bytes)], { type: contentType }),
@@ -1116,91 +1078,234 @@ async function storeClawPackFiles(
   ctx: ActionCtx,
   entries: Array<{ path: string; bytes: Uint8Array }>,
 ) {
-  const files: Awaited<ReturnType<typeof storeClawPackFile>>[] = [];
-  // Convex HTTP actions have a tight memory ceiling; concurrent Blob/storage
-  // work can duplicate large npm-pack entries enough to OOM the action.
+  const files: StoredPackagePublishFile[] = [];
+  // Convex HTTP actions have a tight memory ceiling; avoid concurrent Blob work.
   for (const entry of entries) {
     files.push(await storeClawPackFile(ctx, entry));
   }
   return files;
 }
 
-async function parseMultipartPackagePublish(ctx: ActionCtx, request: Request) {
+async function storeUploadedPackageFile(
+  ctx: ActionCtx,
+  entry: File,
+): Promise<StoredPackagePublishFile> {
+  if (entry.size > MAX_PUBLISH_FILE_BYTES) {
+    throw new Error(getPublishFileSizeError(entry.name));
+  }
+  const buffer = new Uint8Array(await entry.arrayBuffer());
+  const contentType = inferStoredPackageContentType(entry.name);
+  const storageId = await ctx.storage.store(
+    new Blob([bytesToArrayBuffer(buffer)], { type: contentType }),
+  );
+  return {
+    path: entry.name,
+    size: entry.size,
+    storageId,
+    sha256: await sha256Hex(buffer),
+    contentType,
+  };
+}
+
+function getFileParts(form: FormData, fields: readonly string[], stringPartError: string) {
+  const parts = fields.flatMap((field) => form.getAll(field));
+  if (parts.some((entry) => typeof entry === "string")) {
+    throw new Error(stringPartError);
+  }
+  return parts.filter((entry): entry is File => typeof entry !== "string");
+}
+
+function getTarballPart(form: FormData): PackagePublishTarballPart | null {
+  const parts = form.getAll("clawpack");
+  if (parts.length > 1) throw new Error("Upload one package tarball");
+  const ticketParts = form.getAll("clawpackUploadTicket");
+  if (ticketParts.length > 1) throw new Error("Upload one package tarball ticket");
+  const ticketPart = ticketParts[0];
+  if (ticketPart && typeof ticketPart !== "string") {
+    throw new Error("Package tarball upload ticket must be a string");
+  }
+  const part = parts[0];
+  if (!part) {
+    if (ticketPart) throw new Error("Package tarball upload ticket requires a staged ClawPack");
+    return null;
+  }
+  if (typeof part !== "string") {
+    if (ticketPart) throw new Error("Package tarball upload ticket requires a staged ClawPack");
+    return { kind: "file", file: part };
+  }
+
+  const storageId = part.trim();
+  if (!storageId) throw new Error("Package tarball storage id required");
+  const uploadTicket = ticketPart?.trim();
+  if (!uploadTicket) throw new Error("Package tarball upload ticket required");
+  return {
+    kind: "storage",
+    storageId: storageId as Id<"_storage">,
+    uploadTicket: uploadTicket as Id<"packagePublishUploadTickets">,
+  };
+}
+
+async function consumePackageTarballUploadTicket(
+  ctx: ActionCtx,
+  auth: PackagePublishAuth,
+  part: Extract<PackagePublishTarballPart, { kind: "storage" }>,
+) {
+  await ctx.runMutation(
+    internalRefs.uploads.consumePackagePublishUploadTicketInternal as never,
+    {
+      uploadTicket: part.uploadTicket,
+      storageId: part.storageId,
+      auth:
+        auth.kind === "user"
+          ? { kind: "user", userId: auth.userId }
+          : { kind: "github-actions", publishTokenId: auth.publishToken._id },
+    } as never,
+  );
+}
+
+async function readStoredPackageTarball(ctx: ActionCtx, storageId: Id<"_storage">) {
+  const blob = await ctx.storage.get(storageId);
+  if (!blob) throw new Error("Package tarball upload no longer exists");
+  if (blob.size > MAX_CLAWPACK_BYTES) {
+    throw new Error(getClawPackSizeError("uploaded ClawPack"));
+  }
+  return new Uint8Array(await blob.arrayBuffer());
+}
+
+async function buildPackagePublishRequestFromClawPack(
+  ctx: ActionCtx,
+  metadata: PackagePublishMetadata,
+  parsed: ParsedPackageClawPack,
+  artifactBytes: Uint8Array,
+  artifactStorageId: Id<"_storage">,
+): Promise<ServerPackagePublishRequest> {
+  if (parsed.unpackedSize > MAX_PUBLISH_TOTAL_BYTES) {
+    throw new Error(getPublishTotalSizeError("package"));
+  }
+  const artifact: PackagePublishTarballArtifact = {
+    kind: "npm-pack",
+    storageId: artifactStorageId,
+    sha256: parsed.artifactSha256,
+    size: artifactBytes.byteLength,
+    format: "tgz",
+    npmIntegrity: parsed.npmIntegrity,
+    npmShasum: parsed.npmShasum,
+    npmTarballName: parsed.npmTarballName,
+    npmUnpackedSize: parsed.unpackedSize,
+    npmFileCount: parsed.fileCount,
+  };
+  const files = await storeClawPackFiles(ctx, parsed.entries);
+  return { ...metadata, files, artifact };
+}
+
+const PACKAGE_PUBLISH_FILE_FIELDS = ["files"] as const;
+const PACKAGE_PUBLISH_TARBALL_FIELDS = ["clawpack"] as const;
+const PACKAGE_PUBLISH_FORM_FIELDS = new Set([
+  "payload",
+  ...PACKAGE_PUBLISH_FILE_FIELDS,
+  ...PACKAGE_PUBLISH_TARBALL_FIELDS,
+  "clawpackUploadTicket",
+]);
+
+function multipartUploadPart(file: File) {
+  return {
+    name: file.name,
+    size: file.size,
+    type: file.type || undefined,
+  };
+}
+
+async function parseMultipartPackagePublish(
+  ctx: ActionCtx,
+  auth: PackagePublishAuth,
+  request: Request,
+): Promise<ServerPackagePublishRequest> {
   const form = await request.formData();
-  const payloadRaw = form.get("payload");
-  if (!payloadRaw || typeof payloadRaw !== "string") throw new Error("Missing payload");
-  const payload = JSON.parse(payloadRaw) as Record<string, unknown>;
-  const files: Array<{
-    path: string;
-    size: number;
-    storageId: Id<"_storage">;
-    sha256: string;
-    contentType?: string;
-  }> = [];
-  let artifact:
-    | {
-        kind: "npm-pack";
-        storageId: Id<"_storage">;
-        sha256: string;
-        size: number;
-        format: "tgz";
-        npmIntegrity: string;
-        npmShasum: string;
-        npmTarballName: string;
-        npmUnpackedSize: number;
-        npmFileCount: number;
-      }
-    | undefined;
+  for (const field of form.keys()) {
+    if (!PACKAGE_PUBLISH_FORM_FIELDS.has(field)) {
+      throw new Error(`Unsupported package publish form field: ${field}`);
+    }
+  }
 
-  const clawpackEntry = form.get("clawpack") ?? form.get("artifact");
-  if (clawpackEntry && typeof clawpackEntry !== "string") {
-    if (form.getAll("files").some((entry) => typeof entry !== "string")) {
-      throw new Error("Upload either a ClawPack tarball or individual files, not both");
+  const payloadParts = form.getAll("payload");
+  const payloadRaw = payloadParts[0];
+  if (payloadParts.length !== 1 || typeof payloadRaw !== "string") {
+    throw new Error("Package publish payload must be one JSON string");
+  }
+  const parsedPayload: unknown = JSON.parse(payloadRaw);
+  const metadata: PackagePublishMetadata = parseArk(
+    PackagePublishMetadataSchema,
+    parsedPayload,
+    "Package publish payload",
+  );
+
+  const tarballPart = getTarballPart(form);
+  const fileParts = getFileParts(
+    form,
+    PACKAGE_PUBLISH_FILE_FIELDS,
+    "Package publish file uploads must be files",
+  );
+
+  if (tarballPart) {
+    if (fileParts.length > 0) {
+      throw new Error("Upload either a package tarball or individual files, not both");
     }
-    if (clawpackEntry.size > MAX_CLAWPACK_BYTES) {
-      throw new Error(getClawPackSizeError(clawpackEntry.name));
+    if (tarballPart.kind === "storage") {
+      await consumePackageTarballUploadTicket(ctx, auth, tarballPart);
+      const artifactBytes = await readStoredPackageTarball(ctx, tarballPart.storageId);
+      const parsed = await parseClawPack(artifactBytes);
+      return await buildPackagePublishRequestFromClawPack(
+        ctx,
+        metadata,
+        parsed,
+        artifactBytes,
+        tarballPart.storageId,
+      );
     }
-    const artifactBytes = new Uint8Array(await clawpackEntry.arrayBuffer());
+
+    const tarballEntry = tarballPart.file;
+    if (tarballEntry.size > MAX_CLAWPACK_BYTES) {
+      throw new Error(getClawPackSizeError(tarballEntry.name));
+    }
+    if (
+      isPackageMultipartUploadTooLarge({
+        payloadJson: payloadRaw,
+        fileFieldName: "clawpack",
+        files: [multipartUploadPart(tarballEntry)],
+      })
+    ) {
+      throw new Error(getPackageMultipartSizeError());
+    }
+    const artifactBytes = new Uint8Array(await tarballEntry.arrayBuffer());
     const parsed = await parseClawPack(artifactBytes);
-    const artifactBlob = new Blob([artifactBytes], { type: "application/octet-stream" });
-    const artifactStorageId = await ctx.storage.store(artifactBlob);
-    artifact = {
-      kind: "npm-pack",
-      storageId: artifactStorageId,
-      sha256: parsed.artifactSha256,
-      size: artifactBytes.byteLength,
-      format: "tgz",
-      npmIntegrity: parsed.npmIntegrity,
-      npmShasum: parsed.npmShasum,
-      npmTarballName: parsed.npmTarballName,
-      npmUnpackedSize: parsed.unpackedSize,
-      npmFileCount: parsed.fileCount,
-    };
-    files.push(...(await storeClawPackFiles(ctx, parsed.entries)));
-    return parsePackagePublishBody({ ...payload, files, artifact });
+    const artifactStorageId = await ctx.storage.store(
+      new Blob([bytesToArrayBuffer(artifactBytes)], { type: "application/octet-stream" }),
+    );
+    return await buildPackagePublishRequestFromClawPack(
+      ctx,
+      metadata,
+      parsed,
+      artifactBytes,
+      artifactStorageId,
+    );
   }
 
-  for (const entry of form.getAll("files")) {
-    if (typeof entry === "string") continue;
-    if (isMacJunkPath(entry.name)) continue;
-    if (entry.size > MAX_PUBLISH_FILE_BYTES) {
-      throw new Error(getPublishFileSizeError(entry.name));
-    }
-    const buffer = new Uint8Array(await entry.arrayBuffer());
-    const digest = await crypto.subtle.digest("SHA-256", buffer);
-    const sha256 = Array.from(new Uint8Array(digest), (byte) =>
-      byte.toString(16).padStart(2, "0"),
-    ).join("");
-    const storageId = await ctx.storage.store(entry);
-    files.push({
-      path: entry.name,
-      size: entry.size,
-      storageId,
-      sha256,
-      contentType: entry.type || undefined,
-    });
+  if (
+    isPackageMultipartUploadTooLarge({
+      payloadJson: payloadRaw,
+      fileFieldName: "files",
+      files: fileParts.map(multipartUploadPart),
+    })
+  ) {
+    throw new Error(getPackageMultipartSizeError());
   }
-  return parsePackagePublishBody({ ...payload, files });
+
+  const packageFileParts = fileParts.filter((entry) => !isMacJunkPath(entry.name));
+  const files = await Promise.all(
+    packageFileParts.map((entry) => storeUploadedPackageFile(ctx, entry)),
+  );
+  if (files.length === 0) throw new Error("files required");
+  return { ...metadata, files };
 }
 
 async function listPackages(
@@ -1481,9 +1586,10 @@ export async function publishPackageV1Handler(ctx: ActionCtx, request: Request) 
 
   try {
     const contentType = request.headers.get("content-type") ?? "";
-    const payload = contentType.includes("multipart/form-data")
-      ? await parseMultipartPackagePublish(ctx, request)
-      : parsePackagePublishBody(await request.json());
+    if (!contentType.includes("multipart/form-data")) {
+      return text("Package publish requires multipart/form-data", 415, rate.headers);
+    }
+    const payload = await parseMultipartPackagePublish(ctx, auth.auth, request);
     const result =
       auth.auth.kind === "user"
         ? await runActionRef(ctx, internalRefs.packages.publishPackageForUserInternal, {

@@ -103,6 +103,24 @@ CLAWHUB_WORKTREE_SOURCE=/path/to/source/worktree bun run setup:worktree
 
 The detached server writes runtime state under `.codex/runtime/`. Stop it with `wt --yes stop` before removing the worktree.
 
+### Local Codex workers
+
+Local dev does not start Codex-backed workers by default, so `dev:worktree` does
+not spend Codex quota.
+
+To process local ClawScan or Skill Card jobs, opt in for that shell:
+
+```bash
+CLAWHUB_ALLOW_LOCAL_CODEX_SCAN=1 bun run dev:workers -- --workers security-scan --once
+CLAWHUB_ALLOW_LOCAL_CODEX_SCAN=1 bun run dev:workers -- --workers skill-card --once
+```
+
+Opted-in local runs use an ignored worktree-local `CODEX_HOME` unless you provide
+one.
+
+Without those workers, local ClawScan and Skill Card jobs stay pending until you
+opt in, seed/mock results, or use the production workflows.
+
 ### Seed the database
 
 Populate local QA fixtures and the committed public corpus so the UI isn't empty:

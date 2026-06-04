@@ -6,18 +6,21 @@ import { Stars } from "./stars";
 
 const useQueryMock = vi.fn();
 const useMutationMock = vi.fn();
-const useConvexAuthMock = vi.fn();
+const useAuthStatusMock = vi.fn();
 const useAuthActionsMock = vi.fn();
 const navigateMock = vi.fn();
 
 vi.mock("convex/react", () => ({
-  useConvexAuth: () => useConvexAuthMock(),
   useQuery: (...args: unknown[]) => useQueryMock(...args),
   useMutation: (...args: unknown[]) => useMutationMock(...args),
 }));
 
 vi.mock("@convex-dev/auth/react", () => ({
   useAuthActions: () => useAuthActionsMock(),
+}));
+
+vi.mock("../lib/useAuthStatus", () => ({
+  useAuthStatus: () => useAuthStatusMock(),
 }));
 
 vi.mock("@tanstack/react-router", async () => {
@@ -61,20 +64,24 @@ describe("Stars", () => {
   beforeEach(() => {
     useQueryMock.mockReset();
     useMutationMock.mockReset();
-    useConvexAuthMock.mockReset();
+    useAuthStatusMock.mockReset();
     useAuthActionsMock.mockReset();
     navigateMock.mockReset();
     useMutationMock.mockReturnValue(toggleStarMock);
-    useConvexAuthMock.mockReturnValue({ isAuthenticated: true, isLoading: false });
+    useAuthStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: { _id: "user_123" },
+    });
     useAuthActionsMock.mockReturnValue({ signIn: vi.fn() });
     toggleStarMock.mockReset();
     toggleStarMock.mockResolvedValue(null);
   });
 
   it("shows sign-in prompt when user is not authenticated", () => {
-    useConvexAuthMock.mockReturnValue({ isAuthenticated: false, isLoading: false });
+    useAuthStatusMock.mockReturnValue({ isAuthenticated: false, isLoading: false, me: null });
     useQueryMock.mockImplementation((_query, args) => {
-      if (args === undefined) return null;
+      if (args === "skip") return undefined;
       return undefined;
     });
 
@@ -85,9 +92,9 @@ describe("Stars", () => {
   });
 
   it("shows skeleton while loading", () => {
-    useConvexAuthMock.mockReturnValue({ isAuthenticated: false, isLoading: true });
+    useAuthStatusMock.mockReturnValue({ isAuthenticated: false, isLoading: true, me: undefined });
     useQueryMock.mockImplementation((_query, args) => {
-      if (args === undefined) return { _id: "user_123" };
+      if (args === "skip") return undefined;
       return undefined;
     });
 
@@ -99,7 +106,7 @@ describe("Stars", () => {
 
   it("shows empty state when user has no stars", () => {
     useQueryMock.mockImplementation((_query, args) => {
-      if (args === undefined) return { _id: "user_123" };
+      if (args === "skip") return undefined;
       return [];
     });
 
@@ -114,7 +121,6 @@ describe("Stars", () => {
 
   it("renders skill cards when user has stars", () => {
     useQueryMock.mockImplementation((_query, args) => {
-      if (args === undefined) return { _id: "user_123" };
       if (args === "skip") return undefined;
       return [makeSkill({ _id: "skill_1", slug: "test-skill", displayName: "Test Skill" })];
     });
@@ -129,7 +135,6 @@ describe("Stars", () => {
   it("calls toggleStar when unstar button is clicked", () => {
     const skill = makeSkill({ _id: "skill_1", slug: "test-skill", displayName: "Test Skill" });
     useQueryMock.mockImplementation((_query, args) => {
-      if (args === undefined) return { _id: "user_123" };
       if (args === "skip") return undefined;
       return [skill];
     });

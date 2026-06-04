@@ -37,9 +37,9 @@ function tarFile(path: string, content: string) {
   return [header, body];
 }
 
-function npmPackFixture(files: Record<string, string>) {
+function npmPackFixtureEntries(files: Array<[string, string]>) {
   const parts: Uint8Array[] = [];
-  for (const [path, content] of Object.entries(files)) {
+  for (const [path, content] of files) {
     parts.push(...tarFile(path, content));
   }
   parts.push(new Uint8Array(BLOCK_SIZE), new Uint8Array(BLOCK_SIZE));
@@ -51,6 +51,10 @@ function npmPackFixture(files: Record<string, string>) {
     offset += part.byteLength;
   }
   return gzipSync(tar);
+}
+
+function npmPackFixture(files: Record<string, string>) {
+  return npmPackFixtureEntries(Object.entries(files));
 }
 
 describe("clawpack", () => {
@@ -93,6 +97,18 @@ describe("clawpack", () => {
     });
 
     await expect(parseClawPack(pack)).rejects.toThrow("rooted under package");
+  });
+
+  it("rejects duplicate normalized archive paths", async () => {
+    const pack = npmPackFixtureEntries([
+      ["package/package.json", JSON.stringify({ name: "demo", version: "1.0.0" })],
+      ["package/openclaw.plugin.json", JSON.stringify({ id: "demo" })],
+      ["package/package.json", JSON.stringify({ name: "other", version: "9.9.9" })],
+    ]);
+
+    await expect(parseClawPack(pack)).rejects.toThrow(
+      "ClawPack contains duplicate path: package.json",
+    );
   });
 
   it("uses npm-style tarball names", () => {

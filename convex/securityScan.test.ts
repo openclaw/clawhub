@@ -9,6 +9,7 @@ import {
   enqueueBulkSkillRescanBatchForAdminInternal,
   failCodexScanJob,
   getBulkSkillRescanBatchStatusForAdminInternal,
+  pruneExpiredSkillScanRequestsInternal,
   requestPackageRescanForUserInternal,
   requestPackageRescan,
   requestSkillRescanForUserInternal,
@@ -121,6 +122,12 @@ const clearQueuedBackfillJobsForLocalDevHandler = (
   clearQueuedBackfillJobsForLocalDev as unknown as WrappedHandler<
     { dryRun?: boolean; limit?: number },
     { dryRun: boolean; matched: number; deleted: number; sampleDeletedJobIds: string[] }
+  >
+)._handler;
+const pruneExpiredSkillScanRequestsInternalHandler = (
+  pruneExpiredSkillScanRequestsInternal as unknown as WrappedHandler<
+    { batchSize?: number },
+    { ok: true; deletedRequests: number; deletedJobs: number; deletedFiles: number; done: boolean }
   >
 )._handler;
 
@@ -1204,6 +1211,81 @@ describe("securityScan", () => {
       sampleDeletedJobIds: ["securityScanJobs:backfill-1", "securityScanJobs:backfill-2"],
     });
     expect(deleted).toEqual(["securityScanJobs:backfill-1", "securityScanJobs:backfill-2"]);
+  });
+
+  it("prunes expired uploaded scan request blobs without deleting published version files", async () => {
+    const requests = [
+      {
+        _id: "skillScanRequests:upload",
+        sourceKind: "upload",
+        securityScanJobId: "securityScanJobs:upload",
+        files: [{ storageId: "storage:upload-1" }, { storageId: "storage:upload-2" }],
+      },
+      {
+        _id: "skillScanRequests:published",
+        sourceKind: "published",
+        securityScanJobId: "securityScanJobs:published",
+        files: [{ storageId: "storage:published-version-file" }],
+      },
+    ];
+    const deletedDocs: string[] = [];
+    const deletedStorage: string[] = [];
+    const take = vi.fn(async () => requests);
+    const indexBuilder = {
+      lt: vi.fn(() => indexBuilder),
+    };
+    const withIndex = vi.fn(
+      (indexName: string, buildRange: (q: typeof indexBuilder) => unknown) => {
+        expect(indexName).toBe("by_expires_at");
+        buildRange(indexBuilder);
+        expect(indexBuilder.lt).toHaveBeenCalledWith("expiresAt", expect.any(Number));
+        return { take };
+      },
+    );
+    const ctx = {
+      db: {
+        query: vi.fn((tableName: string) => {
+          expect(tableName).toBe("skillScanRequests");
+          return { withIndex };
+        }),
+        insert: vi.fn(async () => "noop"),
+        patch: vi.fn(async () => undefined),
+        replace: vi.fn(async () => undefined),
+        get: vi.fn(async (id: string) => ({
+          _id: id,
+          targetKind: "skillScanRequest",
+        })),
+        delete: vi.fn(async (id: string) => {
+          deletedDocs.push(id);
+        }),
+        normalizeId: vi.fn(() => null),
+        system: {},
+      },
+      storage: {
+        delete: vi.fn(async (id: string) => {
+          deletedStorage.push(id);
+        }),
+      },
+    };
+
+    const result = await pruneExpiredSkillScanRequestsInternalHandler(ctx as never, {
+      batchSize: 10,
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      deletedRequests: 2,
+      deletedJobs: 2,
+      deletedFiles: 2,
+      done: true,
+    });
+    expect(deletedStorage).toEqual(["storage:upload-1", "storage:upload-2"]);
+    expect(deletedDocs).toEqual([
+      "securityScanJobs:upload",
+      "skillScanRequests:upload",
+      "securityScanJobs:published",
+      "skillScanRequests:published",
+    ]);
   });
 
   it("fails claimed package jobs when the ClawPack URL is unavailable", async () => {

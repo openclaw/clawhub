@@ -74,7 +74,6 @@ function SkillsHome() {
     convexHttp
       .query(api.skills.listPublicPageV4, {
         numItems: 6,
-        sort: "downloads",
         dir: "desc",
       })
       .then((r) => {
@@ -553,8 +552,8 @@ function SkillsHome() {
                       }
                     : {
                         q: undefined,
-                        sort: "downloads",
-                        dir: "desc",
+                        sort: undefined,
+                        dir: undefined,
                         featured: undefined,
                         highlighted: undefined,
                         view: undefined,
@@ -775,8 +774,8 @@ function SkillsHome() {
               to="/skills"
               search={{
                 q: undefined,
-                sort: "downloads",
-                dir: "desc",
+                sort: undefined,
+                dir: undefined,
                 featured: undefined,
                 highlighted: undefined,
                 view: undefined,

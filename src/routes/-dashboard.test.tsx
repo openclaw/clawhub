@@ -1,5 +1,6 @@
 /* @vitest-environment jsdom */
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { getFunctionName } from "convex/server";
 import type React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -9,11 +10,16 @@ import { Dashboard } from "./dashboard";
 const mocks = vi.hoisted(() => ({
   useQuery: vi.fn(),
   usePaginatedQuery: vi.fn(),
+  useAuthStatus: vi.fn(),
 }));
 
 vi.mock("convex/react", () => ({
   useQuery: (...args: unknown[]) => mocks.useQuery(...args),
   usePaginatedQuery: (...args: unknown[]) => mocks.usePaginatedQuery(...args),
+}));
+
+vi.mock("../lib/useAuthStatus", () => ({
+  useAuthStatus: () => mocks.useAuthStatus(),
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -228,18 +234,16 @@ function arrangeDashboard({
   skills?: TestSkill[];
   packages?: TestPackage[];
 }) {
-  let unscopedQueryCount = 0;
   mocks.usePaginatedQuery.mockReturnValue({
     results: skills,
     status: "Exhausted",
     loadMore: vi.fn(),
   });
-  mocks.useQuery.mockImplementation((_fn: unknown, args: unknown) => {
+  mocks.useQuery.mockImplementation((query: unknown, args: unknown) => {
     if (args === "skip") return undefined;
-    if (args === undefined) {
-      unscopedQueryCount += 1;
-      return unscopedQueryCount % 2 === 1 ? me : publishers;
-    }
+    const name = getFunctionName(query as never);
+    if (name === "publishers:listMine") return publishers;
+    if (name === "packages:list") return packages;
     return packages;
   });
 }
@@ -256,10 +260,16 @@ describe("Dashboard rows", () => {
   beforeEach(() => {
     mocks.useQuery.mockReset();
     mocks.usePaginatedQuery.mockReset();
+    mocks.useAuthStatus.mockReset();
     mocks.usePaginatedQuery.mockReturnValue({
       results: [],
       status: "LoadingFirstPage",
       loadMore: vi.fn(),
+    });
+    mocks.useAuthStatus.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me,
     });
   });
 
@@ -324,13 +334,10 @@ describe("Dashboard rows", () => {
       status: "Exhausted",
       loadMore: vi.fn(),
     });
-    let unscopedQueryCount = 0;
-    mocks.useQuery.mockImplementation((_fn: unknown, args: unknown) => {
+    mocks.useQuery.mockImplementation((query: unknown, args: unknown) => {
       if (args === "skip") return undefined;
-      if (args === undefined) {
-        unscopedQueryCount += 1;
-        return unscopedQueryCount % 2 === 1 ? me : orgPublishers;
-      }
+      const name = getFunctionName(query as never);
+      if (name === "publishers:listMine") return orgPublishers;
       if (
         typeof args === "object" &&
         args !== null &&
@@ -382,13 +389,10 @@ describe("Dashboard rows", () => {
       status: "Exhausted",
       loadMore: vi.fn(),
     });
-    let unscopedQueryCount = 0;
-    mocks.useQuery.mockImplementation((_fn: unknown, args: unknown) => {
+    mocks.useQuery.mockImplementation((query: unknown, args: unknown) => {
       if (args === "skip") return undefined;
-      if (args === undefined) {
-        unscopedQueryCount += 1;
-        return unscopedQueryCount % 2 === 1 ? me : orgPublishers;
-      }
+      const name = getFunctionName(query as never);
+      if (name === "publishers:listMine") return orgPublishers;
       return [];
     });
 
@@ -404,6 +408,11 @@ describe("Dashboard rows", () => {
   });
 
   it("renders a skeleton while auth state is loading", () => {
+    mocks.useAuthStatus.mockReturnValue({
+      isAuthenticated: false,
+      isLoading: true,
+      me: undefined,
+    });
     mocks.useQuery.mockReturnValue(undefined);
 
     renderDashboard();
@@ -428,25 +437,26 @@ describe("Dashboard rows", () => {
     arrangeDashboard({
       skills: [createSkill()],
     });
-    let unscopedQueryCount = 0;
-    mocks.useQuery.mockImplementation((_fn: unknown, args: unknown) => {
+    mocks.useAuthStatus.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: { ...me, handle: "Local Owner" },
+    });
+    mocks.useQuery.mockImplementation((query: unknown, args: unknown) => {
       if (args === "skip") return undefined;
-      if (args === undefined) {
-        unscopedQueryCount += 1;
-        return unscopedQueryCount % 2 === 1
-          ? { ...me, handle: "Local Owner" }
-          : [
-              {
-                publisher: {
-                  _id: "publishers:stale" as Id<"publishers">,
-                  handle: "Local Owner",
-                  displayName: "Local Owner",
-                  kind: "user" as const,
-                },
-                role: "owner" as const,
-              },
-            ];
-      }
+      const name = getFunctionName(query as never);
+      if (name === "publishers:listMine")
+        return [
+          {
+            publisher: {
+              _id: "publishers:stale" as Id<"publishers">,
+              handle: "Local Owner",
+              displayName: "Local Owner",
+              kind: "user" as const,
+            },
+            role: "owner" as const,
+          },
+        ];
       return [];
     });
 

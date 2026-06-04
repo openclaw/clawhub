@@ -7,10 +7,20 @@ import ignore from "ignore";
 import mime from "mime";
 import semver from "semver";
 import { parseClawPack } from "../../clawpack.js";
-import { apiRequest, apiRequestForm, fetchBinary, fetchText, registryUrl } from "../../http.js";
 import {
+  apiRequest,
+  apiRequestForm,
+  fetchBinary,
+  fetchText,
+  registryUrl,
+  uploadBinary,
+} from "../../http.js";
+import {
+  ApiCliUploadUrlResponseSchema,
   ApiRoutes,
+  LegacyApiRoutes,
   ApiV1DeleteResponseSchema,
+  ApiUploadFileResponseSchema,
   ApiV1PackageArtifactResponseSchema,
   ApiV1PackageListResponseSchema,
   ApiV1PackageModerationStatusResponseSchema,
@@ -24,6 +34,10 @@ import {
   ApiV1PackageVersionListResponseSchema,
   ApiV1PackageVersionResponseSchema,
   ApiV1PublishTokenMintResponseSchema,
+  estimatePackageMultipartUploadBytes,
+  getPackageMultipartSizeError,
+  MAX_PACKAGE_CLAWPACK_BYTES,
+  MAX_PACKAGE_MULTIPART_BYTES,
   normalizeOpenClawExternalPluginCompatibility,
   type PackageArtifactSummary,
   type PackageCapabilitySummary,
@@ -50,7 +64,6 @@ const DOT_DIR = ".clawhub";
 const LEGACY_DOT_DIR = ".clawdhub";
 const DOT_IGNORE = ".clawhubignore";
 const LEGACY_DOT_IGNORE = ".clawdhubignore";
-const MAX_CLAWPACK_BYTES = 120 * 1024 * 1024;
 const PACKAGE_PUBLISH_RETRY_COUNT = 5;
 
 type PackageInspectOptions = {
@@ -598,7 +611,6 @@ async function createClawPackFromFolder(options: {
 
   const packPath = resolve(options.packDestination, filename);
   const bytes = new Uint8Array(await readFile(packPath));
-  assertClawPackSize(bytes.byteLength, basename(packPath));
   const parsed = parseClawPack(bytes);
   return {
     path: packPath,
@@ -665,14 +677,26 @@ export async function cmdPublishPackage(
         spinner,
       });
       const form = new FormData();
-      form.set("payload", JSON.stringify(plan.payload));
+      const payloadJson = JSON.stringify(plan.payload);
+      form.set("payload", payloadJson);
 
       if (plan.clawpackOnDisk) {
-        if (spinner) spinner.text = `Uploading ${plan.clawpackOnDisk.relPath}`;
-        const blob = new Blob([Buffer.from(plan.clawpackOnDisk.bytes)], {
-          type: "application/octet-stream",
-        });
-        form.append("clawpack", blob, plan.clawpackOnDisk.relPath);
+        if (isPackageMultipartTooLarge(payloadJson, "clawpack", [plan.clawpackOnDisk])) {
+          const staged = await uploadClawPackToStorage(
+            registry,
+            publishToken,
+            plan.clawpackOnDisk,
+            spinner,
+          );
+          form.set("clawpack", staged.storageId);
+          form.set("clawpackUploadTicket", staged.uploadTicket);
+        } else {
+          if (spinner) spinner.text = `Uploading ${plan.clawpackOnDisk.relPath}`;
+          const blob = new Blob([Buffer.from(plan.clawpackOnDisk.bytes)], {
+            type: "application/octet-stream",
+          });
+          form.append("clawpack", blob, plan.clawpackOnDisk.relPath);
+        }
       } else {
         let index = 0;
         for (const file of plan.filesOnDisk) {
@@ -1551,10 +1575,64 @@ function packageJsonString(value: Record<string, unknown> | null, key: string): 
   return typeof candidate === "string" && candidate.trim() ? candidate.trim() : undefined;
 }
 
-function assertClawPackSize(size: number, label: string) {
-  if (size > MAX_CLAWPACK_BYTES) {
-    fail(`ClawPack "${label}" exceeds 120MB limit`);
+function assertPackageMultipartSize(
+  payloadJson: string,
+  fileFieldName: "files" | "clawpack",
+  files: PackageFile[],
+) {
+  if (isPackageMultipartTooLarge(payloadJson, fileFieldName, files)) {
+    fail(getPackageMultipartSizeError());
   }
+}
+
+function getClawPackSizeError(path: string) {
+  return `ClawPack "${path}" exceeds 120MB limit`;
+}
+
+function isPackageMultipartTooLarge(
+  payloadJson: string,
+  fileFieldName: "files" | "clawpack",
+  files: PackageFile[],
+) {
+  return (
+    estimatePackageMultipartUploadBytes({
+      payloadJson,
+      fileFieldName,
+      files: files.map((file) => ({
+        name: file.relPath,
+        size: file.bytes.byteLength,
+        type: file.contentType,
+      })),
+    }) > MAX_PACKAGE_MULTIPART_BYTES
+  );
+}
+
+async function uploadClawPackToStorage(
+  registry: string,
+  publishToken: string,
+  file: PackageFile,
+  spinner: ReturnType<typeof createSpinner> | null,
+) {
+  if (spinner) spinner.text = `Uploading ${file.relPath}`;
+  const { uploadUrl, uploadTicket } = await apiRequest(
+    registry,
+    {
+      method: "POST",
+      path: LegacyApiRoutes.cliUploadUrl,
+      token: publishToken,
+    },
+    ApiCliUploadUrlResponseSchema,
+  );
+  const result = await uploadBinary(
+    {
+      url: uploadUrl,
+      bytes: file.bytes,
+      contentType: file.contentType ?? "application/octet-stream",
+      retryCount: PACKAGE_PUBLISH_RETRY_COUNT,
+    },
+    ApiUploadFileResponseSchema,
+  );
+  return { storageId: result.storageId, uploadTicket };
 }
 
 const REAL_BUNDLE_MANIFESTS = [
@@ -1666,11 +1744,13 @@ async function preparePackagePublishPlan(
     }
   } else {
     const folderStat = await stat(folder).catch(() => null);
-    if (!folderStat) fail("Path must be a folder or ClawPack .tgz");
+    if (!folderStat) fail("Path must be a folder or package tarball .tgz");
     if (folderStat.isFile()) {
-      if (!folder.endsWith(".tgz")) fail("ClawPack publish files must end in .tgz");
+      if (!folder.endsWith(".tgz")) fail("Package publish files must end in .tgz");
       const bytes = new Uint8Array(await readFile(folder));
-      assertClawPackSize(bytes.byteLength, basename(folder));
+      if (bytes.byteLength > MAX_PACKAGE_CLAWPACK_BYTES) {
+        fail(getClawPackSizeError(basename(folder)));
+      }
       parsedClawpack = parseClawPack(bytes);
       clawpackOnDisk = {
         relPath: basename(folder),
@@ -1678,7 +1758,7 @@ async function preparePackagePublishPlan(
         contentType: "application/octet-stream",
       };
     } else if (!folderStat.isDirectory()) {
-      fail("Path must be a folder or ClawPack .tgz");
+      fail("Path must be a folder or package tarball .tgz");
     }
 
     const localGitInfo = folderStat.isDirectory() ? resolveLocalGitInfo(folder) : null;
@@ -1782,7 +1862,9 @@ async function preparePackagePublishPlan(
       contentType: mime.getType(entry.path) ?? "application/octet-stream",
     }));
   }
-
+  const totalBytes = clawpackOnDisk
+    ? clawpackOnDisk.bytes.byteLength
+    : filesOnDisk.reduce((sum, file) => sum + file.bytes.byteLength, 0);
   const payload: PackagePublishPayload = {
     name,
     displayName,
@@ -1804,6 +1886,18 @@ async function preparePackagePublishPlan(
         }
       : {}),
   };
+  try {
+    if (clawpackOnDisk) {
+      if (clawpackOnDisk.bytes.byteLength > MAX_PACKAGE_CLAWPACK_BYTES) {
+        fail(getClawPackSizeError(clawpackOnDisk.relPath));
+      }
+    } else {
+      assertPackageMultipartSize(JSON.stringify(payload), "files", filesOnDisk);
+    }
+  } catch (error) {
+    await cleanup?.();
+    throw error;
+  }
   const sourceLabel = describePublishSource(sourceForFetch, source, folder);
 
   return {
@@ -1826,9 +1920,7 @@ async function preparePackagePublishPlan(
       version,
       ...(source?.commit ? { commit: source.commit } : {}),
       files: filesOnDisk.length,
-      totalBytes: clawpackOnDisk
-        ? clawpackOnDisk.bytes.byteLength
-        : filesOnDisk.reduce((sum, file) => sum + file.bytes.byteLength, 0),
+      totalBytes,
     },
   };
 }

@@ -63,9 +63,10 @@ describe("Upload route", () => {
       isLoading: false,
       me: { _id: "users:1" },
     });
-    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+    useQueryMock.mockImplementation((fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;
-      if (args === undefined) {
+      const name = fn ? getFunctionName(fn as Parameters<typeof getFunctionName>[0]) : "";
+      if (name === "publishers:listMine") {
         return [
           {
             publisher: {
@@ -437,9 +438,10 @@ describe("Upload route", () => {
   });
 
   it("blocks publish in preflight when slug availability reports a collision", async () => {
-    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+    useQueryMock.mockImplementation((fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;
-      if (args === undefined) {
+      const name = fn ? getFunctionName(fn as Parameters<typeof getFunctionName>[0]) : "";
+      if (name === "publishers:listMine") {
         return [
           {
             publisher: {

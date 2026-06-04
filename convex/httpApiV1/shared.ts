@@ -422,6 +422,71 @@ export async function parseMultipartPublish(
   return parsePublishBody(body);
 }
 
+export async function parseMultipartSkillScan(
+  ctx: ActionCtx,
+  request: Request,
+  validatePayload?: (payload: Record<string, unknown>) => Record<string, unknown>,
+): Promise<{
+  payload: Record<string, unknown>;
+  files: Array<{
+    path: string;
+    size: number;
+    storageId: Id<"_storage">;
+    sha256: string;
+    contentType?: string;
+  }>;
+}> {
+  const form = await request.formData();
+  const payloadRaw = form.get("payload");
+  if (!payloadRaw || typeof payloadRaw !== "string") {
+    throw new Error("Missing payload");
+  }
+  let payload: Record<string, unknown>;
+  try {
+    payload = JSON.parse(payloadRaw) as Record<string, unknown>;
+  } catch {
+    throw new Error("Invalid JSON payload");
+  }
+  const validatedPayload = validatePayload ? validatePayload(payload) : payload;
+
+  const fileEntries = form
+    .getAll("files")
+    .map((entry) => toFileLike(entry))
+    .filter((file): file is FileLikeEntry => Boolean(file))
+    .filter((file) => !isMacJunkPath(file.name));
+  if (fileEntries.length === 0) throw new Error("files required");
+  if (!fileEntries.some((file) => file.name.trim().toLowerCase() === "skill.md")) {
+    throw new Error("SKILL.md required");
+  }
+  const oversized = fileEntries.find((file) => file.size > MAX_PUBLISH_FILE_BYTES);
+  if (oversized) throw new Error(getPublishFileSizeError(oversized.name));
+
+  const files: Array<{
+    path: string;
+    size: number;
+    storageId: Id<"_storage">;
+    sha256: string;
+    contentType?: string;
+  }> = [];
+
+  try {
+    for (const file of fileEntries) {
+      const path = file.name;
+      const size = file.size;
+      const contentType = file.type || undefined;
+      const buffer = new Uint8Array(await file.arrayBuffer());
+      const sha256 = await sha256Hex(buffer);
+      const storageId = await ctx.storage.store(file as Blob);
+      files.push({ path, size, storageId, sha256, contentType });
+    }
+  } catch (error) {
+    await Promise.allSettled(files.map((file) => ctx.storage.delete(file.storageId)));
+    throw error;
+  }
+
+  return { payload: validatedPayload, files };
+}
+
 export function parsePublishBody(body: unknown) {
   const parsed = parseArk(CliPublishRequestSchema, body, "Publish payload");
   if (parsed.files.length === 0) throw new Error("files required");
@@ -449,22 +514,40 @@ export function parsePublishBody(body: unknown) {
   };
 }
 
+// Substrings that indicate user-input validation failures from the underlying
+// mutations (e.g. `normalizePackageName` ConvexErrors). These are surfaced as
+// 400s with the cleaned message so CLI/API clients can see the actual reason
+// instead of an opaque 500.
+const SOFT_DELETE_BAD_REQUEST_HINTS = [
+  "slug required",
+  "package name required",
+  "package name must be",
+  "must be lowercase",
+  "npm-safe",
+  "reserved for clawhub routes",
+  "version required",
+] as const;
+
 export function softDeleteErrorToResponse(
   entity: "skill" | "soul" | "package",
   error: unknown,
   headers: HeadersInit,
 ) {
-  const message = error instanceof Error ? error.message : `${entity} delete failed`;
-  const lower = message.toLowerCase();
+  const rawMessage = error instanceof Error ? error.message : `${entity} delete failed`;
+  const cleaned = cleanUserFacingErrorMessage(rawMessage) || rawMessage;
+  const lower = cleaned.toLowerCase();
 
   if (lower.includes("unauthorized"))
     return text(formatAuthzMessage(error, "Unauthorized"), 401, headers);
   if (lower.includes("forbidden"))
     return text(formatAuthzMessage(error, "Forbidden"), 403, headers);
-  if (lower.includes("not found")) return text(message, 404, headers);
-  if (lower.includes("slug required")) return text("Slug required", 400, headers);
+  if (lower.includes("not found")) return text(cleaned, 404, headers);
+  if (SOFT_DELETE_BAD_REQUEST_HINTS.some((hint) => lower.includes(hint))) {
+    return text(cleaned, 400, headers);
+  }
 
-  // Unknown: server-side failure. Keep body generic.
+  // Unknown: server-side failure. Keep the body generic; only known
+  // user-input validation failures above surface the cleaned mutation message.
   return text("Internal Server Error", 500, headers);
 }
 

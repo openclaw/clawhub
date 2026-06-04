@@ -6,6 +6,7 @@ import { api } from "../../../convex/_generated/api";
 import { Container } from "../../components/layout/Container";
 import { SignInButton } from "../../components/SignInButton";
 import { SignInPrompt } from "../../components/SignInPrompt";
+import { AuthFlowSkeleton } from "../../components/skeletons/ProtectedPageSkeletons";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { getClawHubSiteUrl, normalizeClawHubSiteOrigin } from "../../lib/site";
 import { useAuthError } from "../../lib/useAuthError";
@@ -132,6 +133,10 @@ export function CliAuth({
         </Container>
       </main>
     );
+  }
+
+  if (isLoading) {
+    return <AuthFlowSkeleton title="CLI login" />;
   }
 
   if (!isAuthenticated || !me) {

@@ -4,13 +4,15 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("./lib/apiTokenAuth", () => ({
   getOptionalApiTokenUser: vi.fn(),
   requireApiTokenUser: vi.fn(),
+  requirePackagePublishAuth: vi.fn(),
 }));
 
 vi.mock("./skills", () => ({
   publishVersionForUser: vi.fn(),
 }));
 
-const { getOptionalApiTokenUser, requireApiTokenUser } = await import("./lib/apiTokenAuth");
+const { getOptionalApiTokenUser, requireApiTokenUser, requirePackagePublishAuth } =
+  await import("./lib/apiTokenAuth");
 const { publishVersionForUser } = await import("./skills");
 const { __handlers } = await import("./httpApi");
 const { hashSkillFiles } = await import("./lib/skills");
@@ -23,6 +25,7 @@ describe("httpApi handlers", () => {
   afterEach(() => {
     vi.mocked(getOptionalApiTokenUser).mockReset();
     vi.mocked(requireApiTokenUser).mockReset();
+    vi.mocked(requirePackagePublishAuth).mockReset();
     vi.mocked(publishVersionForUser).mockReset();
   });
 
@@ -444,18 +447,51 @@ describe("httpApi handlers", () => {
   });
 
   it("cliUploadUrlHttp returns uploadUrl", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: "user1" } as never);
-    const runMutation = vi.fn().mockResolvedValue("https://upload.local");
+    vi.mocked(requirePackagePublishAuth).mockResolvedValueOnce({
+      kind: "user",
+      userId: "user1",
+    } as never);
+    const runMutation = vi.fn().mockResolvedValue({
+      uploadUrl: "https://upload.local",
+      uploadTicket: "packagePublishUploadTickets:1",
+    });
     const response = await __handlers.cliUploadUrlHandler(
       makeCtx({ runMutation }),
       new Request("https://x/api/cli/upload-url", { method: "POST" }),
     );
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ uploadUrl: "https://upload.local" });
+    expect(await response.json()).toEqual({
+      uploadUrl: "https://upload.local",
+      uploadTicket: "packagePublishUploadTickets:1",
+    });
+  });
+
+  it("cliUploadUrlHttp accepts package publish tokens", async () => {
+    vi.mocked(requirePackagePublishAuth).mockResolvedValueOnce({
+      kind: "github-actions",
+      publishToken: { _id: "packagePublishTokens:1" },
+    } as never);
+    const runMutation = vi.fn().mockResolvedValue({
+      uploadUrl: "https://upload.local/package",
+      uploadTicket: "packagePublishUploadTickets:2",
+    });
+    const response = await __handlers.cliUploadUrlHandler(
+      makeCtx({ runMutation }),
+      new Request("https://x/api/cli/upload-url", { method: "POST" }),
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      uploadUrl: "https://upload.local/package",
+      uploadTicket: "packagePublishUploadTickets:2",
+    });
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ publishTokenId: "packagePublishTokens:1" }),
+    );
   });
 
   it("cliUploadUrlHttp returns 401 when unauthorized", async () => {
-    vi.mocked(requireApiTokenUser).mockRejectedValueOnce(new Error("Unauthorized"));
+    vi.mocked(requirePackagePublishAuth).mockRejectedValueOnce(new Error("Unauthorized"));
     const response = await __handlers.cliUploadUrlHandler(
       makeCtx({}),
       new Request("https://x/api/cli/upload-url", { method: "POST" }),

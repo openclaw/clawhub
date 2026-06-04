@@ -2,6 +2,7 @@ import { ConvexError } from "convex/values";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
+import { buildGitHubApiHeaders } from "./githubAuth";
 import { GITHUB_PROFILE_SYNC_WINDOW_MS } from "./githubProfileSync";
 
 const GITHUB_API = "https://api.github.com";
@@ -22,13 +23,34 @@ function assertGitHubNumericId(providerAccountId: string) {
   }
 }
 
-function buildGitHubHeaders() {
-  const headers: Record<string, string> = { "User-Agent": "clawhub" };
-  const token = process.env.GITHUB_TOKEN;
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
+async function fetchGitHubUserByNumericId(providerAccountId: string) {
+  assertGitHubNumericId(providerAccountId);
+  const url = `${GITHUB_API}/user/${providerAccountId}`;
+  const headers = await buildGitHubApiHeaders({ userAgent: "clawhub" });
+  const response = await fetch(url, {
+    headers,
+  });
+  if (response.status !== 401 || !headers.Authorization) return response;
+
+  console.warn("[githubAccount] GitHub API auth was rejected; retrying lookup without auth");
+  return await fetch(url, {
+    headers: { "User-Agent": "clawhub" },
+  });
+}
+
+export async function fetchGitHubCreatedAtByProviderAccountId(providerAccountId: string) {
+  const response = await fetchGitHubUserByNumericId(providerAccountId);
+  if (!response.ok) {
+    if (response.status === 403 || response.status === 429) {
+      throw new ConvexError("GitHub API rate limit exceeded — please try again in a few minutes");
+    }
+    throw new ConvexError("GitHub account lookup failed");
   }
-  return headers;
+
+  const payload = (await response.json()) as GitHubUser;
+  const parsed = payload.created_at ? Date.parse(payload.created_at) : Number.NaN;
+  if (!Number.isFinite(parsed)) throw new ConvexError("GitHub account lookup failed");
+  return parsed;
 }
 
 export async function requireGitHubAccountAge(ctx: GitHubAccountGateCtx, userId: Id<"users">) {
@@ -48,24 +70,8 @@ export async function requireGitHubAccountAge(ctx: GitHubAccountGateCtx, userId:
       // Invariant: GitHub is our only auth provider, so this should never happen.
       throw new ConvexError("GitHub account required");
     }
-    assertGitHubNumericId(providerAccountId);
 
-    // Fetch by immutable GitHub numeric ID to avoid username swap attacks entirely.
-    const response = await fetch(`${GITHUB_API}/user/${providerAccountId}`, {
-      headers: buildGitHubHeaders(),
-    });
-    if (!response.ok) {
-      if (response.status === 403 || response.status === 429) {
-        throw new ConvexError("GitHub API rate limit exceeded — please try again in a few minutes");
-      }
-      throw new ConvexError("GitHub account lookup failed");
-    }
-
-    const payload = (await response.json()) as GitHubUser;
-    const parsed = payload.created_at ? Date.parse(payload.created_at) : Number.NaN;
-    if (!Number.isFinite(parsed)) throw new ConvexError("GitHub account lookup failed");
-
-    createdAt = parsed;
+    createdAt = await fetchGitHubCreatedAtByProviderAccountId(providerAccountId);
     await ctx.runMutation(internal.users.setGitHubCreatedAtInternal, {
       userId,
       githubCreatedAt: createdAt,
@@ -107,9 +113,7 @@ export async function syncGitHubProfile(ctx: ActionCtx, userId: Id<"users">) {
 
   assertGitHubNumericId(providerAccountId);
 
-  const response = await fetch(`${GITHUB_API}/user/${providerAccountId}`, {
-    headers: buildGitHubHeaders(),
-  });
+  const response = await fetchGitHubUserByNumericId(providerAccountId);
   if (!response.ok) {
     // Silently fail - this is a best-effort sync, not critical path
     console.warn(`[syncGitHubProfile] GitHub API error for user ${userId}: ${response.status}`);

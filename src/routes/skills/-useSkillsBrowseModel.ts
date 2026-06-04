@@ -95,12 +95,15 @@ export function useSkillsBrowseModel({
   const excludeCategoryKeywords =
     activeCategory?.slug === "other" ? ALL_CATEGORY_KEYWORDS : undefined;
   const hasQuery = trimmedQuery.length > 0 && (Boolean(urlCategory) || !legacyQueryCategory);
+  const requestedSort = search.sort === "default" ? "recommended" : search.sort;
   const sort: SortKey =
-    search.sort === "relevance" && !hasQuery
-      ? "downloads"
-      : (search.sort ?? (hasQuery ? "relevance" : "downloads"));
+    requestedSort === "relevance" && !hasQuery
+      ? "recommended"
+      : requestedSort === "recommended" && hasQuery
+        ? "relevance"
+        : (requestedSort ?? (hasQuery ? "relevance" : "recommended"));
   const listSort = toListSort(sort);
-  const dir = parseDir(search.dir, sort);
+  const dir = sort === "relevance" ? "desc" : parseDir(search.dir, sort);
   const searchKey = hasQuery
     ? `${trimmedQuery}::${featuredOnly ? "1" : "0"}::${capabilityTag ?? ""}`
     : "";
@@ -117,7 +120,7 @@ export function useSkillsBrowseModel({
         const result = await convexHttp.query(api.skills.listPublicPageV4, {
           cursor: cursor ?? undefined,
           numItems: pageSize,
-          sort: listSort,
+          ...(listSort ? { sort: listSort } : {}),
           dir,
           highlightedOnly: featuredOnly,
           capabilityTag,
@@ -361,16 +364,14 @@ export function useSkillsBrowseModel({
           search: (prev) => {
             const hadQuery = typeof prev.q === "string" && prev.q.trim().length > 0;
             const enteringSearch = Boolean(trimmed) && !hadQuery;
-            const usesImplicitBrowseDefault = prev.sort === "downloads" && prev.dir === undefined;
-
+            const usesStaleImplicitDownloadsDefault =
+              prev.sort === "downloads" && prev.dir === undefined && !prev.category;
             return {
               ...prev,
               q: trimmed ? next : undefined,
-              ...(enteringSearch && usesImplicitBrowseDefault
-                ? {
-                    sort: undefined,
-                    dir: undefined,
-                  }
+              ...(enteringSearch &&
+              (parseSort(prev.sort) === "recommended" || usesStaleImplicitDownloadsDefault)
+                ? { sort: undefined, dir: undefined }
                 : null),
             };
           },
@@ -411,11 +412,21 @@ export function useSkillsBrowseModel({
     (value: string) => {
       const nextSort = parseSort(value);
       void navigate({
-        search: (prev) => ({
-          ...prev,
-          sort: nextSort,
-          dir: parseDir(prev.dir, nextSort),
-        }),
+        search: (prev) => {
+          const reusePreviousDir =
+            prev.sort !== undefined &&
+            prev.sort !== "recommended" &&
+            prev.sort !== "default" &&
+            prev.sort !== "relevance";
+          return {
+            ...prev,
+            sort: nextSort,
+            dir:
+              nextSort === "recommended" || nextSort === "default"
+                ? undefined
+                : parseDir(reusePreviousDir ? prev.dir : undefined, nextSort),
+          };
+        },
         replace: true,
       });
     },

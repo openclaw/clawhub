@@ -16,6 +16,7 @@ export const ApiRoutes = {
     download: "/api/v1/download",
     publishTokenMint: "/api/v1/publish/token/mint",
     skills: "/api/v1/skills",
+    skillScans: "/api/v1/skills/-/scan",
     plugins: "/api/v1/plugins",
     packages: "/api/v1/packages",
     codePlugins: "/api/v1/code-plugins",

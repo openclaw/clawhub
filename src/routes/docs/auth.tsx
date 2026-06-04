@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { Container } from "../../components/layout/Container";
 import { SignInButton } from "../../components/SignInButton";
 import { SignInPrompt } from "../../components/SignInPrompt";
+import { AuthFlowSkeleton } from "../../components/skeletons/ProtectedPageSkeletons";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { buildDocsAuthCallbackUrl, normalizeDocsReturnTo } from "../../lib/docsAuth";
@@ -56,6 +57,10 @@ export function DocsAuth({ autoSubmit = true }: DocsAuthProps = {}) {
         </p>
       </AuthFrame>
     );
+  }
+
+  if (isLoading) {
+    return <AuthFlowSkeleton title="docs login" />;
   }
 
   if (!isAuthenticated || !me) {

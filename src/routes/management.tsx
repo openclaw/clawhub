@@ -3,6 +3,7 @@ import { useMutation, useQuery } from "convex/react";
 import { useEffect, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
+import { ManagementSkeleton } from "../components/skeletons/ProtectedPageSkeletons";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
@@ -122,7 +123,7 @@ export const Route = createFileRoute("/management")({
 });
 
 export function Management() {
-  const { me } = useAuthStatus();
+  const { isLoading: isAuthLoading, me } = useAuthStatus();
   const search = Route.useSearch();
   const navigate = useNavigate();
   const staff = isModerator(me);
@@ -206,6 +207,10 @@ export function Management() {
     return () => clearTimeout(handle);
   }, [userSearch]);
 
+  if (isAuthLoading) {
+    return <ManagementSkeleton />;
+  }
+
   if (!staff) {
     return (
       <main className="section">
@@ -215,11 +220,7 @@ export function Management() {
   }
 
   if (!recentVersions || !reportedSkills || !duplicateCandidates) {
-    return (
-      <main className="section">
-        <Card>Loading management console…</Card>
-      </main>
-    );
+    return <ManagementSkeleton />;
   }
 
   const reportQuery = reportSearchDebounced.trim().toLowerCase();
