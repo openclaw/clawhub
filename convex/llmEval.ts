@@ -10,7 +10,7 @@ import {
   parseCommentScamEvalResponse,
 } from "./lib/commentScamPrompt";
 import { extractResponseText } from "./lib/openaiResponse";
-import type { SkillEvalContext } from "./lib/securityPrompt";
+import type { LlmEvalResponse, SkillEvalContext } from "./lib/securityPrompt";
 import {
   assembleEvalUserMessage,
   assembleSkillEvalUserMessage,
@@ -29,7 +29,6 @@ const internalRefs = internal as unknown as {
   packages: {
     getReleaseByIdInternal: unknown;
     getPackageByIdInternal: unknown;
-    updateReleaseLlmAnalysisInternal: unknown;
     getSuspiciousPluginReleaseBatchForLlmRescanInternal: unknown;
     getPluginScanStatusCountPageInternal: unknown;
   };
@@ -38,10 +37,12 @@ const internalRefs = internal as unknown as {
     getSuspiciousSkillCountPageInternal: unknown;
   };
   llmEval: {
-    evaluateWithLlm: unknown;
-    evaluatePackageReleaseWithLlm: unknown;
     scheduleSuspiciousSkillLlmRescanInternal: unknown;
     scheduleSuspiciousPluginLlmRescanInternal: unknown;
+  };
+  securityScan: {
+    enqueuePackageReleaseScanInternal: unknown;
+    enqueueSkillVersionScanInternal: unknown;
   };
 };
 
@@ -55,6 +56,8 @@ type JsonRecord = Record<string, unknown>;
 const MAX_PACKAGE_ENV_DECLARATIONS = 50;
 const MAX_PACKAGE_CONFIG_DECLARATIONS = 50;
 const MAX_PACKAGE_ENV_VALUE_LENGTH = 200;
+const LEGACY_ARTIFACT_EVAL_ADVISORY =
+  "Legacy hosted artifact LLM evaluation is advisory only because it uses bounded prompt excerpts. Use the Codex-backed ClawScan worker for authoritative moderation.";
 
 async function runQueryRef<T>(
   ctx: { runQuery: (ref: never, args: never) => Promise<unknown> },
@@ -177,21 +180,25 @@ export function packageOpenClawEnvironmentForPrompt(packageJson: unknown): JsonR
   return Object.keys(openclawMetadata).length > 0 ? openclawMetadata : undefined;
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function verdictToStatus(verdict: string): string {
-  switch (verdict) {
-    case "benign":
-      return "clean";
-    case "malicious":
-      return "malicious";
-    case "suspicious":
-      return "suspicious";
-    default:
-      return "pending";
-  }
+function legacyArtifactEvalToAdvisoryAnalysis(params: {
+  result: LlmEvalResponse;
+  model: string;
+  checkedAt: number;
+}) {
+  const original = params.result;
+  const summary = `${LEGACY_ARTIFACT_EVAL_ADVISORY} Legacy model output was ${original.verdict} (${original.confidence} confidence): ${original.summary}`;
+  return {
+    status: "pending",
+    summary,
+    guidance: original.guidance
+      ? `${LEGACY_ARTIFACT_EVAL_ADVISORY} Legacy guidance: ${original.guidance}`
+      : LEGACY_ARTIFACT_EVAL_ADVISORY,
+    findings: original.findings
+      ? `Legacy advisory findings, not authoritative ClawScan findings:\n${original.findings}`
+      : undefined,
+    model: params.model,
+    checkedAt: params.checkedAt,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -207,27 +214,27 @@ export const evaluateWithLlm = internalAction({
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
       console.log("[llmEval] OPENAI_API_KEY not configured, skipping evaluation");
-      return;
     }
 
     const model = getLlmEvalModel();
     const reasoningEffort = getLlmEvalReasoningEffort();
     const serviceTier = getLlmEvalServiceTier();
 
-    // Store error helper
-    const storeError = async (message: string) => {
+    const buildError = (message: string) => {
       console.error(`[llmEval] ${message}`);
-      await ctx.runMutation(internal.skills.updateVersionLlmAnalysisInternal, {
-        versionId: args.versionId,
-        ...(args.moderationMode ? { moderationMode: args.moderationMode } : {}),
+      return {
+        ok: false as const,
+        advisory: true as const,
+        error: message,
         llmAnalysis: {
           status: "error",
           summary: message,
           model,
           checkedAt: Date.now(),
         },
-      });
+      };
     };
+    if (!apiKey) return buildError("OPENAI_API_KEY not configured");
 
     // 1. Fetch version
     const version = (await ctx.runQuery(internal.skills.getVersionByIdInternal, {
@@ -235,8 +242,7 @@ export const evaluateWithLlm = internalAction({
     })) as Doc<"skillVersions"> | null;
 
     if (!version) {
-      await storeError(`Version ${args.versionId} not found`);
-      return;
+      return buildError(`Version ${args.versionId} not found`);
     }
 
     // 2. Fetch skill
@@ -245,8 +251,7 @@ export const evaluateWithLlm = internalAction({
     })) as Doc<"skills"> | null;
 
     if (!skill) {
-      await storeError(`Skill ${version.skillId} not found`);
-      return;
+      return buildError(`Skill ${version.skillId} not found`);
     }
 
     const fingerprintEntries = await ctx.runQuery(internal.skills.listVersionFingerprintsInternal, {
@@ -272,8 +277,7 @@ export const evaluateWithLlm = internalAction({
     }
 
     if (!skillMdContent) {
-      await storeError("No SKILL.md content found");
-      return;
+      return buildError("No SKILL.md content found");
     }
 
     // 4. Read all file contents
@@ -372,22 +376,19 @@ export const evaluateWithLlm = internalAction({
 
       if (!response || !response.ok) {
         const errorText = response ? await response.text() : "No response";
-        await storeError(`OpenAI API error (${response?.status}): ${errorText.slice(0, 200)}`);
-        return;
+        return buildError(`OpenAI API error (${response?.status}): ${errorText.slice(0, 200)}`);
       }
 
       const payload = (await response.json()) as unknown;
       raw = extractResponseText(payload);
     } catch (error) {
-      await storeError(
+      return buildError(
         `OpenAI API call failed: ${error instanceof Error ? error.message : String(error)}`,
       );
-      return;
     }
 
     if (!raw) {
-      await storeError("Empty response from OpenAI");
-      return;
+      return buildError("Empty response from OpenAI");
     }
 
     // 8. Parse response
@@ -395,37 +396,22 @@ export const evaluateWithLlm = internalAction({
 
     if (!parsedResult) {
       console.error(`[llmEval] Raw response (first 500 chars): ${raw.slice(0, 500)}`);
-      await storeError("Failed to parse LLM evaluation response");
-      return;
+      return buildError("Failed to parse LLM evaluation response");
     }
 
     const result = applyInjectionSignalFloor(parsedResult, injectionSignals);
 
-    // 9. Store result
-    await ctx.runMutation(internal.skills.updateVersionLlmAnalysisInternal, {
-      versionId: args.versionId,
-      ...(args.moderationMode ? { moderationMode: args.moderationMode } : {}),
-      llmAnalysis: {
-        status: verdictToStatus(result.verdict),
-        verdict: result.verdict,
-        confidence: result.confidence,
-        summary: result.summary,
-        dimensions: result.dimensions,
-        guidance: result.guidance,
-        findings: result.findings || undefined,
-        agenticRiskFindings: result.agenticRiskFindings,
-        riskSummary: result.riskSummary,
-        model,
-        checkedAt: Date.now(),
-      },
+    const llmAnalysis = legacyArtifactEvalToAdvisoryAnalysis({
+      result,
+      model,
+      checkedAt: Date.now(),
     });
 
     console.log(
-      `[llmEval] Evaluated ${skill.slug}@${version.version}: ${result.verdict} (${result.confidence} confidence)`,
+      `[llmEval] Legacy advisory eval for ${skill.slug}@${version.version}: ${result.verdict} (${result.confidence} confidence)`,
     );
 
-    // Normal writes recompute moderation in updateVersionLlmAnalysisInternal.
-    // Preserve mode stores analysis only for one-time backfills.
+    return { ok: true as const, advisory: true as const, llmAnalysis };
   },
 });
 
@@ -437,39 +423,39 @@ export const evaluatePackageReleaseWithLlm = internalAction({
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
       console.log("[llmEval] OPENAI_API_KEY not configured, skipping package evaluation");
-      return;
     }
 
     const model = getLlmEvalModel();
     const reasoningEffort = getLlmEvalReasoningEffort();
     const serviceTier = getLlmEvalServiceTier();
-    const storeError = async (message: string) => {
+    const buildError = (message: string) => {
       console.error(`[llmEval:package] ${message}`);
-      await runMutationRef(ctx, internalRefs.packages.updateReleaseLlmAnalysisInternal, {
-        releaseId: args.releaseId,
+      return {
+        ok: false as const,
+        advisory: true as const,
+        error: message,
         llmAnalysis: {
           status: "error",
           summary: message,
           model,
           checkedAt: Date.now(),
         },
-      });
+      };
     };
+    if (!apiKey) return buildError("OPENAI_API_KEY not configured");
 
     const release = (await runQueryRef(ctx, internalRefs.packages.getReleaseByIdInternal, {
       releaseId: args.releaseId,
     })) as Doc<"packageReleases"> | null;
     if (!release || release.softDeletedAt) {
-      await storeError(`Release ${args.releaseId} not found`);
-      return;
+      return buildError(`Release ${args.releaseId} not found`);
     }
 
     const pkg = (await runQueryRef(ctx, internalRefs.packages.getPackageByIdInternal, {
       packageId: release.packageId,
     })) as Doc<"packages"> | null;
     if (!pkg) {
-      await storeError(`Package ${release.packageId} not found`);
-      return;
+      return buildError(`Package ${release.packageId} not found`);
     }
 
     let readmeContent = "";
@@ -576,47 +562,33 @@ export const evaluatePackageReleaseWithLlm = internalAction({
 
       if (!response || !response.ok) {
         const errorText = response ? await response.text() : "No response";
-        await storeError(`OpenAI API error (${response?.status}): ${errorText.slice(0, 200)}`);
-        return;
+        return buildError(`OpenAI API error (${response?.status}): ${errorText.slice(0, 200)}`);
       }
 
       const payload = (await response.json()) as unknown;
       raw = extractResponseText(payload);
     } catch (error) {
-      await storeError(
+      return buildError(
         `OpenAI API call failed: ${error instanceof Error ? error.message : String(error)}`,
       );
-      return;
     }
 
     if (!raw) {
-      await storeError("Empty response from OpenAI");
-      return;
+      return buildError("Empty response from OpenAI");
     }
 
     const parsedResult = parseLlmEvalResponse(raw);
     if (!parsedResult) {
-      await storeError("Failed to parse LLM evaluation response");
-      return;
+      return buildError("Failed to parse LLM evaluation response");
     }
     const result = applyInjectionSignalFloor(parsedResult, injectionSignals);
 
-    await runMutationRef(ctx, internalRefs.packages.updateReleaseLlmAnalysisInternal, {
-      releaseId: args.releaseId,
-      llmAnalysis: {
-        status: verdictToStatus(result.verdict),
-        verdict: result.verdict,
-        confidence: result.confidence,
-        summary: result.summary,
-        dimensions: result.dimensions,
-        guidance: result.guidance,
-        findings: result.findings || undefined,
-        agenticRiskFindings: result.agenticRiskFindings,
-        riskSummary: result.riskSummary,
-        model,
-        checkedAt: Date.now(),
-      },
+    const llmAnalysis = legacyArtifactEvalToAdvisoryAnalysis({
+      result,
+      model,
+      checkedAt: Date.now(),
     });
+    return { ok: true as const, advisory: true as const, llmAnalysis };
   },
 });
 
@@ -644,21 +616,27 @@ export const evaluateBySlug = internalAction({
       return { error: "No published version" };
     }
 
-    console.log(`[llmEval:bySlug] Evaluating ${args.slug} (versionId: ${skill.latestVersionId})`);
+    console.log(`[llmEval:bySlug] Queueing ClawScan for ${args.slug} (${skill.latestVersionId})`);
 
-    await ctx.scheduler.runAfter(0, internal.llmEval.evaluateWithLlm, {
-      versionId: skill.latestVersionId,
-    });
+    const queued = await runMutationRef(
+      ctx,
+      internalRefs.securityScan.enqueueSkillVersionScanInternal,
+      {
+        versionId: skill.latestVersionId,
+        source: "manual",
+        priority: 100,
+        waitForVtMs: 0,
+      },
+    );
 
-    return { ok: true, slug: args.slug, versionId: skill.latestVersionId };
+    return { ok: true, slug: args.slug, versionId: skill.latestVersionId, queued };
   },
 });
 
 // ---------------------------------------------------------------------------
 // Backfill action (Phase 2)
-// Schedules individual evaluateWithLlm actions for each skill in the batch,
-// then self-schedules the next batch. Each eval runs as its own action
-// invocation so we don't hit Convex action timeouts.
+// Compatibility wrapper: old callers still invoke backfillLlmEval, but artifact
+// verdicts now come from the Codex-backed ClawScan worker.
 // ---------------------------------------------------------------------------
 
 type LlmBackfillBatch = {
@@ -685,12 +663,7 @@ export const backfillLlmEval: ReturnType<typeof internalAction> = internalAction
   },
   handler: async (ctx, args) => {
     const startTime = args.startTime ?? Date.now();
-    const apiKey = process.env.OPENAI_API_KEY;
     const dryRun = args.dryRun ?? false;
-    if (!dryRun && !apiKey) {
-      console.log("[llmEval:backfill] OPENAI_API_KEY not configured");
-      return { error: "OPENAI_API_KEY not configured" };
-    }
 
     const requestedBatchSize = Math.max(1, Math.min(Math.floor(args.batchSize ?? 25), 50));
     const maxToSchedule =
@@ -749,9 +722,9 @@ export const backfillLlmEval: ReturnType<typeof internalAction> = internalAction
 
       // Schedule each evaluation as a separate action invocation.
       if (!dryRun) {
-        await ctx.scheduler.runAfter(0, internal.llmEval.evaluateWithLlm, {
+        await runMutationRef(ctx, internalRefs.securityScan.enqueueSkillVersionScanInternal, {
           versionId,
-          moderationMode,
+          source: "backfill",
         });
       }
       accScheduled++;
@@ -864,9 +837,6 @@ export const scheduleSuspiciousSkillLlmRescanInternal: ReturnType<typeof interna
     },
     handler: async (ctx, args) => {
       const dryRun = args.dryRun ?? false;
-      if (!dryRun && !process.env.OPENAI_API_KEY) {
-        return { error: "OPENAI_API_KEY not configured" };
-      }
 
       const batchSize = Math.max(1, Math.min(Math.floor(args.batchSize ?? 100), 200));
       const pageDelayMs = Math.max(0, Math.floor(args.pageDelayMs ?? 1_000));
@@ -913,15 +883,12 @@ export const scheduleSuspiciousSkillLlmRescanInternal: ReturnType<typeof interna
         }
 
         if (!dryRun) {
-          await runAfterRef(
-            ctx,
-            (accScheduled + scheduledThisPage) * evalDelayStepMs,
-            internalRefs.llmEval.evaluateWithLlm,
-            {
-              versionId: skill.versionId,
-              moderationMode,
-            },
-          );
+          await runMutationRef(ctx, internalRefs.securityScan.enqueueSkillVersionScanInternal, {
+            versionId: skill.versionId,
+            source: "manual",
+            priority: 100,
+            waitForVtMs: 0,
+          });
         }
         scheduledThisPage++;
       }
@@ -1017,9 +984,6 @@ export const scheduleSuspiciousPluginLlmRescanInternal: ReturnType<typeof intern
     },
     handler: async (ctx, args) => {
       const dryRun = args.dryRun ?? false;
-      if (!dryRun && !process.env.OPENAI_API_KEY) {
-        return { error: "OPENAI_API_KEY not configured" };
-      }
 
       const batchSize = Math.max(1, Math.min(Math.floor(args.batchSize ?? 100), 200));
       const pageDelayMs = Math.max(0, Math.floor(args.pageDelayMs ?? 1_000));
@@ -1062,14 +1026,12 @@ export const scheduleSuspiciousPluginLlmRescanInternal: ReturnType<typeof intern
         }
 
         if (!dryRun) {
-          await runAfterRef(
-            ctx,
-            (accScheduled + scheduledThisPage) * evalDelayStepMs,
-            internalRefs.llmEval.evaluatePackageReleaseWithLlm,
-            {
-              releaseId: release.releaseId,
-            },
-          );
+          await runMutationRef(ctx, internalRefs.securityScan.enqueuePackageReleaseScanInternal, {
+            releaseId: release.releaseId,
+            source: "manual",
+            priority: 100,
+            waitForVtMs: 0,
+          });
         }
         scheduledThisPage++;
       }

@@ -154,11 +154,13 @@ describe("runLocalClawScanDryRun", () => {
       expect(result.staticScan.status).toBe("clean");
       expect(result.llmAnalysis).toMatchObject({
         status: "clean",
+        advisory: true,
         verdict: "benign",
         confidence: "high",
         summary: "No concerning behavior found.",
         guidance: "Looks fine for local testing.",
       });
+      expect(result.llmAnalysis.coverageWarning).toContain("clawhub scan");
       expect(fetchImpl).toHaveBeenCalledWith(
         "https://api.openai.com/v1/responses",
         expect.objectContaining({
