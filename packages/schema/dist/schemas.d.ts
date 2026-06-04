@@ -483,15 +483,16 @@ export declare const ApiV1SkillScanDownloadManifestSchema: import("arktype/inter
 }, {}>;
 export type ApiV1SkillScanDownloadManifest = (typeof ApiV1SkillScanDownloadManifestSchema)[inferred];
 export declare const ApiV1SkillBulkRescanBatchRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
-    mode?: "all-active-latest" | undefined;
+    mode?: "all-active-latest" | "truncation-risk-latest" | undefined;
     cursor?: string | null | undefined;
     batchSize?: number | undefined;
+    minSkillMdBytes?: number | undefined;
     dryRun?: boolean | undefined;
 }, {}>;
 export type ApiV1SkillBulkRescanBatchRequest = (typeof ApiV1SkillBulkRescanBatchRequestSchema)[inferred];
 export declare const ApiV1SkillBulkRescanBatchResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     ok: true;
-    mode: "all-active-latest";
+    mode: "all-active-latest" | "truncation-risk-latest";
     queued: number;
     alreadyQueued: number;
     skipped: number;
@@ -519,15 +520,16 @@ export declare const ApiV1SkillBulkRescanStatusResponseSchema: import("arktype/i
 }, {}>;
 export type ApiV1SkillBulkRescanStatusResponse = (typeof ApiV1SkillBulkRescanStatusResponseSchema)[inferred];
 export declare const ApiV1SkillScanBatchRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
-    mode?: "all-active-latest" | undefined;
+    mode?: "all-active-latest" | "truncation-risk-latest" | undefined;
     cursor?: string | null | undefined;
     batchSize?: number | undefined;
+    minSkillMdBytes?: number | undefined;
     dryRun?: boolean | undefined;
 }, {}>;
 export type ApiV1SkillScanBatchRequest = (typeof ApiV1SkillScanBatchRequestSchema)[inferred];
 export declare const ApiV1SkillScanBatchResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     ok: true;
-    mode: "all-active-latest";
+    mode: "all-active-latest" | "truncation-risk-latest";
     queued: number;
     alreadyQueued: number;
     skipped: number;

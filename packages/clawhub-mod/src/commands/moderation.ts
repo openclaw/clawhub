@@ -247,10 +247,12 @@ export async function cmdRescanSkill(
 export async function cmdRescanAllSkills(
   opts: GlobalOpts,
   options: {
+    mode?: string;
     batchSize?: number;
     pollInterval?: number;
     cursor?: string;
     maxSkills?: number;
+    minSkillMdBytes?: number;
     dryRun?: boolean;
     yes?: boolean;
     json?: boolean;
@@ -258,16 +260,27 @@ export async function cmdRescanAllSkills(
   },
   inputAllowed: boolean,
 ) {
+  const mode = normalizeBulkSkillRescanMode(options.mode);
   const batchSize = normalizePositiveInt(options.batchSize, 50);
   const pollIntervalMs = normalizeNonNegativeInt(options.pollInterval, 30) * 1000;
   const maxSkills =
     options.maxSkills === undefined ? undefined : normalizePositiveInt(options.maxSkills, 1);
+  const minSkillMdBytes =
+    options.minSkillMdBytes === undefined
+      ? mode === "truncation-risk-latest"
+        ? 6000
+        : undefined
+      : normalizePositiveInt(options.minSkillMdBytes, 6000);
   const allowPrompt = isInteractive() && inputAllowed !== false;
 
   if (!options.dryRun && !options.yes) {
     if (!allowPrompt) fail("Pass --yes (no input)");
+    const target =
+      mode === "truncation-risk-latest"
+        ? `active latest skills with SKILL.md >= ${minSkillMdBytes} bytes`
+        : "active latest skills";
     const ok = await promptConfirm(
-      `Queue bulk ClawScan rescans for active latest skills in batches of ${batchSize}? (admin)`,
+      `Queue bulk ClawScan rescans for ${target} in batches of ${batchSize}? (admin)`,
     );
     if (!ok) return undefined;
   }
@@ -293,9 +306,10 @@ export async function cmdRescanAllSkills(
         path: `${ApiRoutes.skillScans}/batch`,
         token,
         body: {
-          mode: "all-active-latest",
+          mode,
           cursor,
           batchSize: effectiveBatchSize,
+          ...(minSkillMdBytes !== undefined ? { minSkillMdBytes } : {}),
           dryRun: options.dryRun === true,
         },
       },
@@ -314,6 +328,7 @@ export async function cmdRescanAllSkills(
     emitBulkRescanProgress(options, {
       type: "batch",
       batch: batches,
+      mode,
       cursor,
       nextCursor: batch.nextCursor,
       queued: batch.queued,
@@ -348,6 +363,7 @@ export async function cmdRescanAllSkills(
     failed: totalFailed,
     cursor,
     dryRun: options.dryRun === true,
+    mode,
   };
   emitBulkRescanProgress(options, { type: "summary", ...summary });
   if (totalFailed > 0) fail(`Bulk rescan finished with ${totalFailed} failed job(s)`);
@@ -576,6 +592,12 @@ function normalizePositiveInt(value: number | undefined, fallback: number) {
 function normalizeNonNegativeInt(value: number | undefined, fallback: number) {
   const normalized = Number.isFinite(value) ? Math.floor(value ?? fallback) : fallback;
   return Math.max(0, normalized);
+}
+
+function normalizeBulkSkillRescanMode(value: string | undefined) {
+  const mode = value?.trim() || "all-active-latest";
+  if (mode === "all-active-latest" || mode === "truncation-risk-latest") return mode;
+  return fail("Mode must be all-active-latest|truncation-risk-latest");
 }
 
 export async function cmdReclassifyBan(

@@ -412,9 +412,10 @@ async function handleSkillScanBatchSubmit(ctx: ActionCtx, request: Request, head
       await request.json(),
       "Skill scan batch payload",
     ) as {
-      mode?: "all-active-latest";
+      mode?: "all-active-latest" | "truncation-risk-latest";
       cursor?: string | null;
       batchSize?: number;
+      minSkillMdBytes?: number;
       dryRun?: boolean;
     };
     const result = await runMutationRef(
@@ -425,6 +426,7 @@ async function handleSkillScanBatchSubmit(ctx: ActionCtx, request: Request, head
         ...(body.mode ? { mode: body.mode } : {}),
         cursor: body.cursor ?? null,
         ...(body.batchSize !== undefined ? { batchSize: body.batchSize } : {}),
+        ...(body.minSkillMdBytes !== undefined ? { minSkillMdBytes: body.minSkillMdBytes } : {}),
         ...(body.dryRun !== undefined ? { dryRun: body.dryRun } : {}),
       },
     );
@@ -2488,9 +2490,10 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
         await request.json(),
         "Skill bulk rescan batch payload",
       ) as {
-        mode?: "all-active-latest";
+        mode?: "all-active-latest" | "truncation-risk-latest";
         cursor?: string | null;
         batchSize?: number;
+        minSkillMdBytes?: number;
         dryRun?: boolean;
       };
       const result = await runMutationRef(
@@ -2501,6 +2504,7 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
           ...(body.mode ? { mode: body.mode } : {}),
           cursor: body.cursor ?? null,
           ...(body.batchSize !== undefined ? { batchSize: body.batchSize } : {}),
+          ...(body.minSkillMdBytes !== undefined ? { minSkillMdBytes: body.minSkillMdBytes } : {}),
           ...(body.dryRun !== undefined ? { dryRun: body.dryRun } : {}),
         },
       );
