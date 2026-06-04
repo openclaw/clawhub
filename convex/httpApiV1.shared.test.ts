@@ -6,6 +6,7 @@ import {
   formatUserFacingErrorMessage,
   parseMultipartSkillScan,
   resolveVersionTagsBatch,
+  softDeleteErrorToResponse,
 } from "./httpApiV1/shared";
 
 function makeCtx() {
@@ -30,6 +31,28 @@ describe("http API v1 shared helpers", () => {
         "Request failed",
       ),
     ).toBe("Publisher not found");
+  });
+
+  it("maps soft-delete validation failures to 400 with cleaned messages", async () => {
+    const response = softDeleteErrorToResponse(
+      "package",
+      new Error(
+        "[CONVEX M] [Request ID: abc] Server Error Called by client Uncaught ConvexError: Package name must be lowercase and npm-safe (example: @scope/name or plugin-name)",
+      ),
+      {},
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.text()).resolves.toBe(
+      "Package name must be lowercase and npm-safe (example: @scope/name or plugin-name)",
+    );
+  });
+
+  it("keeps unknown soft-delete failures generic 500s", async () => {
+    const response = softDeleteErrorToResponse("soul", new Error("boom"), {});
+
+    expect(response.status).toBe(500);
+    await expect(response.text()).resolves.toBe("Internal Server Error");
   });
 
   it("resolves latest tags without reading version documents", async () => {

@@ -546,16 +546,9 @@ export function softDeleteErrorToResponse(
     return text(cleaned, 400, headers);
   }
 
-  // Unknown: server-side failure. Keep status 500 but include the cleaned
-  // message in the body so CLI users get an actionable hint instead of a bare
-  // "Internal Server Error". The status code stays 500 so monitoring/alerting
-  // pipelines that key off the status are unaffected.
-  const fallback = "Internal Server Error";
-  const body =
-    cleaned && cleaned.toLowerCase() !== fallback.toLowerCase()
-      ? `${fallback}: ${cleaned}`
-      : fallback;
-  return text(body, 500, headers);
+  // Unknown: server-side failure. Keep the body generic; only known
+  // user-input validation failures above surface the cleaned mutation message.
+  return text("Internal Server Error", 500, headers);
 }
 
 export function cleanUserFacingErrorMessage(message: string) {

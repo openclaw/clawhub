@@ -10882,10 +10882,7 @@ describe("httpApiV1 handlers", () => {
       }),
     );
     expect(unknown.status).toBe(500);
-    // The 500 fallback now appends the cleaned underlying error message so CLI
-    // users get an actionable hint instead of an opaque "Internal Server
-    // Error". The status code stays 500 so monitoring is unaffected.
-    expect(await unknown.text()).toBe("Internal Server Error: boom");
+    expect(await unknown.text()).toBe("Internal Server Error");
   });
 
   // Regression: owner undelete gate throws a ConvexError prefixed with
