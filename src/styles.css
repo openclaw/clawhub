@@ -14888,17 +14888,13 @@ a.publisher-profile-detail:hover {
     padding: 0 20px 64px;
   }
   .home-v2-listing-row {
-    grid-template-columns: auto minmax(0, 1fr);
-    row-gap: 10px;
-    padding: 12px 14px;
-  }
-  .home-v2-listing-row-aside {
-    grid-column: 1 / -1;
-    justify-content: space-between;
-    padding-left: 50px;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    padding: 10px 0;
   }
   .home-v2-listing-row-stats {
     gap: 10px;
+    min-width: 0;
+    font-size: 12px;
   }
   .home-v2-listing-toolbar {
     gap: 12px;

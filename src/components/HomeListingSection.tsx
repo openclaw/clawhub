@@ -84,7 +84,9 @@ function HomeListingSkillRow({ entry }: { entry: SkillPageEntry }) {
 
   return (
     <Link to={skillLink(entry)} className="home-v2-listing-row">
-      <MarketplaceIcon kind="skill" label={name} icon={entry.skill.icon} size="sm" />
+      <span className="home-v2-listing-row-icon" aria-hidden="true">
+        <MarketplaceIcon kind="skill" label={name} icon={entry.skill.icon} size="sm" />
+      </span>
       <div className="home-v2-listing-row-body">
         <div className="home-v2-listing-row-title">
           <span className="home-v2-listing-row-name">{name}</span>
@@ -94,18 +96,15 @@ function HomeListingSkillRow({ entry }: { entry: SkillPageEntry }) {
           {entry.skill.summary || "Agent-ready skill pack."}
         </p>
       </div>
-      <div className="home-v2-listing-row-aside">
-        <div className="home-v2-listing-row-stats">
-          <span>
-            <Star size={13} aria-hidden="true" />
-            {formatCompactStat(entry.skill.stats?.stars ?? 0)}
-          </span>
-          <span>
-            <ArrowDownToLine size={13} aria-hidden="true" />
-            {formatCompactStat(entry.skill.stats?.downloads ?? 0)}
-          </span>
-        </div>
-        <span className="home-v2-listing-row-cta">Install</span>
+      <div className="home-v2-listing-row-stats" aria-label="Popularity">
+        <span>
+          <Star size={13} aria-hidden="true" />
+          {formatCompactStat(entry.skill.stats?.stars ?? 0)}
+        </span>
+        <span>
+          <ArrowDownToLine size={13} aria-hidden="true" />
+          {formatCompactStat(entry.skill.stats?.downloads ?? 0)}
+        </span>
       </div>
     </Link>
   );
@@ -116,7 +115,9 @@ function HomeListingPluginRow({ plugin }: { plugin: PackageListItem }) {
 
   return (
     <Link to="/plugins/$name" params={{ name: plugin.name }} className="home-v2-listing-row">
-      <MarketplaceIcon kind="plugin" label={name} size="sm" />
+      <span className="home-v2-listing-row-icon" aria-hidden="true">
+        <MarketplaceIcon kind="plugin" label={name} size="sm" />
+      </span>
       <div className="home-v2-listing-row-body">
         <div className="home-v2-listing-row-title">
           <span className="home-v2-listing-row-name">{name}</span>
@@ -129,12 +130,9 @@ function HomeListingPluginRow({ plugin }: { plugin: PackageListItem }) {
           {plugin.summary || "Gateway plugin for OpenClaw workflows."}
         </p>
       </div>
-      <div className="home-v2-listing-row-aside">
-        <div className="home-v2-listing-row-stats">
-          <span>{familyLabel(plugin.family)}</span>
-          {plugin.latestVersion ? <span>v{plugin.latestVersion}</span> : null}
-        </div>
-        <span className="home-v2-listing-row-cta">Install</span>
+      <div className="home-v2-listing-row-stats">
+        <span>{familyLabel(plugin.family)}</span>
+        {plugin.latestVersion ? <span>v{plugin.latestVersion}</span> : null}
       </div>
     </Link>
   );
