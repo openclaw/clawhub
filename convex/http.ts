@@ -8,6 +8,7 @@ import {
   cliDeviceTokenHttp,
   cliSkillDeleteHttp,
   cliSkillUndeleteHttp,
+  cliTelemetryInstallHttp,
   cliTelemetrySyncHttp,
   cliUploadUrlHttp,
   cliWhoamiHttp,
@@ -353,6 +354,12 @@ http.route({
   path: LegacyApiRoutes.cliPublish,
   method: "POST",
   handler: cliPublishHttp,
+});
+
+http.route({
+  path: LegacyApiRoutes.cliTelemetryInstall,
+  method: "POST",
+  handler: cliTelemetryInstallHttp,
 });
 
 http.route({

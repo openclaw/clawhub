@@ -138,7 +138,6 @@ export const ApiV1SkillInstallResolveResponseSchema = type({
       path: "string",
       commit: "string",
       contentHash: "string",
-      verifiedAt: "number|null",
       sourceUrl: "string",
     },
   })
@@ -146,7 +145,7 @@ export const ApiV1SkillInstallResolveResponseSchema = type({
     ok: "false",
     slug: "string",
     reason:
-      '"archive_version_missing"|"github_source_missing"|"github_upstream_removed"|"github_upstream_missing"|"github_upstream_unknown"|"github_upstream_changed"|"github_verification_pending"|"github_scan_failed"|"github_signature_failed"',
+      '"archive_version_missing"|"github_source_missing"|"github_upstream_removed"|"github_upstream_missing"|"github_upstream_unknown"|"github_verification_pending"|"github_scan_failed"',
     message: "string",
     status: "number",
   });

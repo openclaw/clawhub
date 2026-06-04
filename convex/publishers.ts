@@ -326,7 +326,6 @@ function getPublisherCatalogItems(
       sourceId: skill.githubSourceId ?? null,
       sourceRepo: null,
       sourcePath: skill.githubPath ?? null,
-      sourceVerifiedCommit: skill.githubVerifiedCommit ?? null,
     })),
     ...rows.packages.map((pkg) => ({
       _id: pkg._id,

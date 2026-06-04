@@ -46,7 +46,7 @@ export async function reportTelemetryIfEnabled(params: {
       params.registry,
       {
         method: "POST",
-        path: LegacyApiRoutes.cliTelemetrySync,
+        path: LegacyApiRoutes.cliTelemetryInstall,
         token: params.token,
         body: { roots },
       },
@@ -54,6 +54,45 @@ export async function reportTelemetryIfEnabled(params: {
     );
   } catch {
     // ignore telemetry failures
+  }
+}
+
+export async function reportInstalledSkillsTelemetryIfEnabled(params: {
+  token: string | undefined;
+  registry: string;
+  root: string;
+  skills: Record<string, { version?: string | null }>;
+}) {
+  if (!params.token || isTelemetryDisabled()) return;
+  const skills = Object.entries(params.skills)
+    .map(([slug, entry]) => ({
+      slug,
+      version: entry.version ?? null,
+    }))
+    .filter((skill) => Boolean(skill.slug));
+
+  try {
+    await apiRequest(
+      params.registry,
+      {
+        method: "POST",
+        path: LegacyApiRoutes.cliTelemetryInstall,
+        token: params.token,
+        body: {
+          roots: [
+            {
+              rootId: rootTelemetryId(params.root),
+              label: formatRootLabel(params.root),
+              skills,
+            },
+          ],
+        },
+      },
+      ApiCliTelemetrySyncResponseSchema,
+    );
+  } catch {
+    // Install telemetry is best-effort; local installs must not fail because
+    // metrics reporting is unavailable.
   }
 }
 

@@ -1,5 +1,5 @@
 import { useAuthActions } from "@convex-dev/auth/react";
-import { Check, Shield, User, UserCog, Wrench } from "lucide-react";
+import { Building2, Check, Shield, User, UserCog, Wrench } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { getRuntimeEnv } from "../lib/runtimeEnv";
@@ -13,7 +13,7 @@ import {
 } from "./ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 
-type DevPersona = "owner" | "user" | "admin";
+type DevPersona = "owner" | "user" | "admin" | "officialOrgMember";
 
 const DEV_PERSONA_AUTH_TIMEOUT_MS = 10_000;
 
@@ -40,6 +40,12 @@ const PERSONAS: Array<{
     label: "Use Admin",
     description: "@local-admin",
     icon: Shield,
+  },
+  {
+    value: "officialOrgMember",
+    label: "Use Org Member",
+    description: "@local-official-member",
+    icon: Building2,
   },
 ];
 

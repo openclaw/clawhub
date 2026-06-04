@@ -34,6 +34,7 @@ import { getRegistry } from "../registry.js";
 import type { GlobalOpts, ResolveResult } from "../types.js";
 import { createSpinner, fail, formatError, isInteractive, promptConfirm } from "../ui.js";
 import { presentModerationPlan, reportModerationPlan } from "./moderationPlan.js";
+import { reportInstalledSkillsTelemetryIfEnabled } from "./syncHelpers.js";
 
 type SkillReportOptions = {
   version?: string;
@@ -250,6 +251,12 @@ export async function cmdInstall(
 
     lock.skills[trimmed] = withPinnedMetadata(resolvedVersion!, Date.now(), existingEntry);
     await writeLockfile(opts.workdir, lock);
+    await reportInstalledSkillsTelemetryIfEnabled({
+      token,
+      registry,
+      root: opts.dir,
+      skills: lock.skills,
+    });
     spinner.succeed(`OK. Installed ${trimmed} -> ${target}`);
   } catch (error) {
     spinner.fail(formatError(error));
@@ -911,7 +918,12 @@ async function installGitHubSkill(
 }
 
 function gitHubZipUrl(repo: string, commit: string) {
-  return `https://codeload.github.com/${encodeGitHubRepo(repo)}/zip/${encodeURIComponent(commit)}`;
+  const base = (
+    process.env.CLAWHUB_GITHUB_CODELOAD_BASE_URL ||
+    process.env.OPENCLAW_CLAWHUB_GITHUB_CODELOAD_BASE_URL ||
+    "https://codeload.github.com"
+  ).replace(/\/+$/, "");
+  return `${base}/${encodeGitHubRepo(repo)}/zip/${encodeURIComponent(commit)}`;
 }
 
 function encodeGitHubRepo(repo: string) {

@@ -7,14 +7,10 @@ const baseSkill = {
   latestVersionSummary: null,
   installKind: "github" as const,
   githubPath: "skills/aiq-deploy",
-  githubVerifiedCommit: "1".repeat(40),
-  githubVerifiedContentHash: "hash-aiq-deploy",
   githubCurrentCommit: "1".repeat(40),
   githubCurrentContentHash: "hash-aiq-deploy",
   githubCurrentStatus: "present" as const,
   githubScanStatus: "clean" as const,
-  githubSignatureStatus: "verified" as const,
-  githubVerifiedAt: 123,
   githubRemovedAt: undefined,
 };
 
@@ -46,7 +42,7 @@ describe("buildSkillInstallResolution", () => {
     });
   });
 
-  it("returns a pinned GitHub descriptor when current upstream state matches verified state", () => {
+  it("returns a pinned GitHub descriptor when current upstream state is scan-clean", () => {
     const resolution = buildSkillInstallResolution({
       origin: "https://clawhub.ai",
       skill: baseSkill,
@@ -62,13 +58,12 @@ describe("buildSkillInstallResolution", () => {
         path: "skills/aiq-deploy",
         commit: "1".repeat(40),
         contentHash: "hash-aiq-deploy",
-        verifiedAt: 123,
         sourceUrl: `https://github.com/NVIDIA/skills/tree/${"1".repeat(40)}/skills/aiq-deploy`,
       },
     });
   });
 
-  it("blocks GitHub-backed installs when upstream content changed after verification", () => {
+  it("allows GitHub-backed installs when upstream content changed and the current hash is clean", () => {
     const resolution = buildSkillInstallResolution({
       origin: "https://clawhub.ai",
       skill: {
@@ -79,13 +74,14 @@ describe("buildSkillInstallResolution", () => {
       source,
     });
 
-    expect(resolution).toEqual({
-      ok: false,
-      slug: "aiq-deploy",
-      reason: "github_upstream_changed",
-      message:
-        "GitHub-backed skill has changed upstream and needs ClawHub verification before install.",
-      status: 409,
+    expect(resolution).toMatchObject({
+      ok: true,
+      installKind: "github",
+      github: {
+        commit: "2".repeat(40),
+        contentHash: "hash-aiq-deploy-v2",
+        sourceUrl: `https://github.com/NVIDIA/skills/tree/${"2".repeat(40)}/skills/aiq-deploy`,
+      },
     });
   });
 
@@ -95,7 +91,7 @@ describe("buildSkillInstallResolution", () => {
       skill: {
         ...baseSkill,
         githubCurrentCommit: "2".repeat(40),
-        githubCurrentContentHash: baseSkill.githubVerifiedContentHash,
+        githubCurrentContentHash: baseSkill.githubCurrentContentHash,
       },
       source,
     });
@@ -140,12 +136,6 @@ describe("buildSkillInstallResolution", () => {
       name: "scan is suspicious",
       patch: { githubScanStatus: "suspicious" as const },
       reason: "github_scan_failed",
-      status: 403,
-    },
-    {
-      name: "signature failed",
-      patch: { githubSignatureStatus: "failed" as const },
-      reason: "github_signature_failed",
       status: 403,
     },
   ])("blocks GitHub-backed installs when $name", ({ patch, reason, status }) => {

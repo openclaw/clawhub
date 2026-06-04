@@ -32,6 +32,7 @@ const {
   syncGitHubProfileInternal,
   updateProfile,
   deleteAccount,
+  upsertDevPersonaInternal,
 } = await import("./users");
 
 type WrappedHandler<TArgs, TResult> = {
@@ -46,6 +47,12 @@ const updateProfileHandler = (
 )._handler;
 const deleteAccountHandler = (
   deleteAccount as unknown as WrappedHandler<Record<string, never>, void>
+)._handler;
+const upsertDevPersonaInternalHandler = (
+  upsertDevPersonaInternal as unknown as WrappedHandler<
+    { persona: "owner" | "user" | "admin" | "officialOrgMember" },
+    unknown
+  >
 )._handler;
 
 function makeCtx() {
@@ -128,6 +135,176 @@ function makeCtx() {
     get,
     insert,
     query,
+  };
+}
+
+function makeDevPersonaCtx() {
+  const users = new Map<string, Record<string, unknown>>();
+  const publishers = new Map<string, Record<string, unknown>>();
+  const publisherMembers: Array<Record<string, unknown>> = [];
+  const officialPublishers: Array<Record<string, unknown>> = [];
+  const inserts: Array<{ table: string; value: Record<string, unknown> }> = [];
+  const patches: Array<{ id: string; value: Record<string, unknown> }> = [];
+
+  const insert = vi.fn(async (table: string, value: Record<string, unknown>) => {
+    const id = `${table}:${inserts.length + 1}`;
+    const row = { _id: id, _creationTime: 1, ...value };
+    inserts.push({ table, value: row });
+    if (table === "users") users.set(id, row);
+    if (table === "publishers") publishers.set(id, row);
+    if (table === "publisherMembers") publisherMembers.push(row);
+    if (table === "officialPublishers") officialPublishers.push(row);
+    return id;
+  });
+
+  const get = vi.fn(async (...args: string[]) => {
+    const id = args.length === 2 ? args[1] : args[0];
+    return users.get(id) ?? publishers.get(id) ?? null;
+  });
+
+  const patch = vi.fn(async (id: string, value: Record<string, unknown>) => {
+    patches.push({ id, value });
+    const current = users.get(id) ?? publishers.get(id);
+    if (current) Object.assign(current, value);
+  });
+
+  const query = vi.fn((table: string) => {
+    if (table === "users") {
+      return {
+        withIndex: vi.fn((name: string, builder?: (q: unknown) => unknown) => {
+          if (name !== "handle") throw new Error(`Unexpected users index ${name}`);
+          let handle = "";
+          const q = {
+            eq: (field: string, value: string) => {
+              if (field === "handle") handle = value;
+              return q;
+            },
+          };
+          builder?.(q);
+          return {
+            unique: vi.fn(
+              async () => [...users.values()].find((user) => user.handle === handle) ?? null,
+            ),
+          };
+        }),
+      };
+    }
+    if (table === "publishers") {
+      return {
+        withIndex: vi.fn((name: string, builder?: (q: unknown) => unknown) => {
+          let handle = "";
+          let linkedUserId = "";
+          const q = {
+            eq: (field: string, value: string) => {
+              if (field === "handle") handle = value;
+              if (field === "linkedUserId") linkedUserId = value;
+              return q;
+            },
+          };
+          builder?.(q);
+          if (name === "by_handle") {
+            return {
+              unique: vi.fn(
+                async () =>
+                  [...publishers.values()].find((publisher) => publisher.handle === handle) ?? null,
+              ),
+            };
+          }
+          if (name === "by_linked_user") {
+            return {
+              unique: vi.fn(
+                async () =>
+                  [...publishers.values()].find(
+                    (publisher) => publisher.linkedUserId === linkedUserId,
+                  ) ?? null,
+              ),
+            };
+          }
+          throw new Error(`Unexpected publishers index ${name}`);
+        }),
+      };
+    }
+    if (table === "publisherMembers") {
+      return {
+        withIndex: vi.fn((name: string, builder?: (q: unknown) => unknown) => {
+          if (name !== "by_publisher_user") {
+            throw new Error(`Unexpected publisherMembers index ${name}`);
+          }
+          let publisherId = "";
+          let userId = "";
+          const q = {
+            eq: (field: string, value: string) => {
+              if (field === "publisherId") publisherId = value;
+              if (field === "userId") userId = value;
+              return q;
+            },
+          };
+          builder?.(q);
+          return {
+            unique: vi.fn(
+              async () =>
+                publisherMembers.find(
+                  (member) => member.publisherId === publisherId && member.userId === userId,
+                ) ?? null,
+            ),
+          };
+        }),
+      };
+    }
+    if (table === "reservedHandles") {
+      return {
+        withIndex: vi.fn((name: string) => {
+          if (name !== "by_handle_active_updatedAt") {
+            throw new Error(`Unexpected reservedHandles index ${name}`);
+          }
+          return { order: () => ({ take: vi.fn(async () => []) }) };
+        }),
+      };
+    }
+    if (table === "officialPublishers") {
+      return {
+        withIndex: vi.fn((name: string, builder?: (q: unknown) => unknown) => {
+          if (name !== "by_publisher")
+            throw new Error(`Unexpected officialPublishers index ${name}`);
+          let publisherId = "";
+          const q = {
+            eq: (field: string, value: string) => {
+              if (field === "publisherId") publisherId = value;
+              return q;
+            },
+          };
+          builder?.(q);
+          return {
+            unique: vi.fn(
+              async () =>
+                officialPublishers.find((entry) => entry.publisherId === publisherId) ?? null,
+            ),
+          };
+        }),
+      };
+    }
+    if (table === "packages" || table === "skills") {
+      return {
+        withIndex: vi.fn((name: string) => {
+          if (name !== "by_owner") throw new Error(`Unexpected ${table} index ${name}`);
+          return {
+            collect: vi.fn(async () => []),
+            paginate: vi.fn(async () => ({
+              page: [],
+              continueCursor: null,
+              isDone: true,
+            })),
+          };
+        }),
+      };
+    }
+    throw new Error(`Unexpected table ${table}`);
+  });
+
+  return {
+    ctx: { db: { patch, get, insert, query, normalizeId: vi.fn() } } as never,
+    inserts,
+    patches,
   };
 }
 
@@ -831,6 +1008,54 @@ describe("ensureHandler", () => {
       expect.objectContaining({ handle: expect.any(String) }),
     );
     expect(insert).not.toHaveBeenCalledWith("publishers", expect.anything());
+  });
+});
+
+describe("users.upsertDevPersonaInternal", () => {
+  it("seeds a non-platform-admin user who manages an official org", async () => {
+    process.env.DEV_AUTH_ENABLED = "1";
+    process.env.CONVEX_DEPLOYMENT = "local:dev";
+    process.env.CONVEX_SITE_URL = "http://localhost:3210";
+    const { ctx, inserts } = makeDevPersonaCtx();
+
+    const userId = await upsertDevPersonaInternalHandler(ctx, {
+      persona: "officialOrgMember",
+    });
+
+    expect(userId).toBe("users:1");
+    expect(inserts).toContainEqual(
+      expect.objectContaining({
+        table: "users",
+        value: expect.objectContaining({
+          handle: "local-official-member",
+          displayName: "Local Official Org Member",
+          role: "user",
+        }),
+      }),
+    );
+    const orgInsert = inserts.find(
+      (entry) => entry.table === "publishers" && entry.value.handle === "local-official-org",
+    );
+    expect(orgInsert).toBeTruthy();
+    expect(inserts).toContainEqual(
+      expect.objectContaining({
+        table: "officialPublishers",
+        value: expect.objectContaining({
+          publisherId: orgInsert?.value._id,
+          reason: "dev-persona.official-org-member",
+        }),
+      }),
+    );
+    expect(inserts).toContainEqual(
+      expect.objectContaining({
+        table: "publisherMembers",
+        value: expect.objectContaining({
+          publisherId: orgInsert?.value._id,
+          userId,
+          role: "admin",
+        }),
+      }),
+    );
   });
 });
 

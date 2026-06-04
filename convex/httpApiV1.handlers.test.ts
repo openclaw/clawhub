@@ -1753,7 +1753,7 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
-  it("skill install resolver returns a pinned GitHub descriptor for verified source-backed skills", async () => {
+  it("skill install resolver returns a pinned GitHub descriptor for scan-clean source-backed skills", async () => {
     const runQuery = makeInstallResolverRunQuery({
       skill: {
         _id: "skills:aiq-deploy",
@@ -1762,14 +1762,10 @@ describe("httpApiV1 handlers", () => {
         installKind: "github",
         githubSourceId: "githubSkillSources:nvidia",
         githubPath: "skills/aiq-deploy",
-        githubVerifiedCommit: "1".repeat(40),
-        githubVerifiedContentHash: "hash-aiq-deploy",
         githubCurrentCommit: "1".repeat(40),
         githubCurrentContentHash: "hash-aiq-deploy",
         githubCurrentStatus: "present",
         githubScanStatus: "clean",
-        githubSignatureStatus: "verified",
-        githubVerifiedAt: 123,
       },
       source: {
         _id: "githubSkillSources:nvidia",
@@ -1821,13 +1817,10 @@ describe("httpApiV1 handlers", () => {
         installKind: "github",
         githubSourceId: "githubSkillSources:nvidia",
         githubPath: "skills/hidden-github",
-        githubVerifiedCommit: "1".repeat(40),
-        githubVerifiedContentHash: "hash-hidden-github",
         githubCurrentCommit: "1".repeat(40),
         githubCurrentContentHash: "hash-hidden-github",
         githubCurrentStatus: "present",
         githubScanStatus: "clean",
-        githubSignatureStatus: "verified",
       },
     },
   ])("skill install resolver hides moderated $name", async ({ slug, skill }) => {
@@ -1856,13 +1849,10 @@ describe("httpApiV1 handlers", () => {
         installKind: "github",
         githubSourceId: "githubSkillSources:nvidia",
         githubPath: "skills/orphaned-github",
-        githubVerifiedCommit: "1".repeat(40),
-        githubVerifiedContentHash: "hash-orphaned-github",
         githubCurrentCommit: "1".repeat(40),
         githubCurrentContentHash: "hash-orphaned-github",
         githubCurrentStatus: "present",
         githubScanStatus: "clean",
-        githubSignatureStatus: "verified",
       },
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -1876,7 +1866,7 @@ describe("httpApiV1 handlers", () => {
     await expect(response.text()).resolves.toBe("Skill not found");
   });
 
-  it("skill install resolver blocks GitHub-backed skills when upstream hash is stale", async () => {
+  it("skill install resolver installs the current GitHub hash after it is clean", async () => {
     const runQuery = makeInstallResolverRunQuery({
       skill: {
         _id: "skills:aiq-deploy",
@@ -1885,13 +1875,10 @@ describe("httpApiV1 handlers", () => {
         installKind: "github",
         githubSourceId: "githubSkillSources:nvidia",
         githubPath: "skills/aiq-deploy",
-        githubVerifiedCommit: "1".repeat(40),
-        githubVerifiedContentHash: "hash-aiq-deploy",
         githubCurrentCommit: "2".repeat(40),
         githubCurrentContentHash: "hash-aiq-deploy-v2",
         githubCurrentStatus: "present",
         githubScanStatus: "clean",
-        githubSignatureStatus: "verified",
       },
       source: { repo: "NVIDIA/skills" },
     });
@@ -1902,10 +1889,14 @@ describe("httpApiV1 handlers", () => {
       new Request("https://example.com/api/v1/skills/aiq-deploy/install"),
     );
 
-    expect(response.status).toBe(409);
+    expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
-      ok: false,
-      reason: "github_upstream_changed",
+      ok: true,
+      installKind: "github",
+      github: {
+        commit: "2".repeat(40),
+        contentHash: "hash-aiq-deploy-v2",
+      },
     });
   });
 
@@ -1917,17 +1908,14 @@ describe("httpApiV1 handlers", () => {
         slug: "aiq-deploy",
         displayName: "AIQ Deploy",
         moderationStatus: "hidden",
-        moderationReason: "github.signature.pending",
+        moderationReason: "pending.scan",
         installKind: "github",
         githubSourceId: "githubSkillSources:nvidia",
         githubPath: "skills/aiq-deploy",
-        githubVerifiedCommit: "1".repeat(40),
-        githubVerifiedContentHash: "hash-aiq-deploy",
         githubCurrentCommit: "2".repeat(40),
         githubCurrentContentHash: "hash-aiq-deploy-v2",
         githubCurrentStatus: "present",
         githubScanStatus: "pending",
-        githubSignatureStatus: "pending",
       },
       source: { repo: "NVIDIA/skills" },
     });
@@ -1954,13 +1942,10 @@ describe("httpApiV1 handlers", () => {
         installKind: "github",
         githubSourceId: "githubSkillSources:nvidia",
         githubPath: "skills/bad-source",
-        githubVerifiedCommit: "1".repeat(40),
-        githubVerifiedContentHash: "hash-bad-source",
         githubCurrentCommit: "1".repeat(40),
         githubCurrentContentHash: "hash-bad-source",
         githubCurrentStatus: "present",
         githubScanStatus: "failed",
-        githubSignatureStatus: "verified",
       },
       source: { repo: "NVIDIA/skills" },
     });
@@ -1986,12 +1971,6 @@ describe("httpApiV1 handlers", () => {
       reason: "github_verification_pending",
     },
     {
-      name: "failed signature",
-      patch: { githubSignatureStatus: "failed" },
-      status: 403,
-      reason: "github_signature_failed",
-    },
-    {
       name: "missing upstream path",
       patch: { githubCurrentStatus: "missing" },
       status: 410,
@@ -2008,13 +1987,10 @@ describe("httpApiV1 handlers", () => {
           installKind: "github",
           githubSourceId: "githubSkillSources:nvidia",
           githubPath: "skills/blocked-source",
-          githubVerifiedCommit: "1".repeat(40),
-          githubVerifiedContentHash: "hash-blocked-source",
           githubCurrentCommit: "1".repeat(40),
           githubCurrentContentHash: "hash-blocked-source",
           githubCurrentStatus: "present",
           githubScanStatus: "clean",
-          githubSignatureStatus: "verified",
           ...patch,
         },
         source: { repo: "NVIDIA/skills" },

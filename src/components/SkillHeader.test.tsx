@@ -182,6 +182,23 @@ describe("SkillHeader", () => {
     expect(screen.queryByText("MIT-0")).toBeNull();
   });
 
+  it("shows the source repository for GitHub-backed skills", () => {
+    renderHeader({
+      skill: {
+        ...skill,
+        installKind: "github",
+        githubSourceRepo: "NVIDIA/skills",
+        githubPath: "skills/accelerated-computing-cudf",
+        githubCurrentCommit: "bb0436f",
+      },
+      showArchiveMetadata: false,
+    });
+
+    expect(screen.getByText("Repository")).toBeTruthy();
+    const repoLink = screen.getByRole("link", { name: "NVIDIA/skills" });
+    expect(repoLink.getAttribute("href")).toBe("https://github.com/NVIDIA/skills");
+  });
+
   it("hides Report for non-staff managers", () => {
     renderHeader({
       canManage: true,

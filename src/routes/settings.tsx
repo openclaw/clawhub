@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
+import { Link, createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { useAction, useMutation, useQuery } from "convex/react";
 import {
   Building2,
@@ -11,7 +11,6 @@ import {
   Moon,
   Palette,
   Plus,
-  RefreshCw,
   Save,
   ShieldAlert,
   Sun,
@@ -56,6 +55,7 @@ import { Textarea } from "../components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "../components/ui/toggle-group";
 import { getUserFacingConvexError } from "../lib/convexError";
 import { useThemeMode } from "../lib/theme";
+import { timeAgo } from "../lib/timeAgo";
 import { useAuthStatus } from "../lib/useAuthStatus";
 
 const settingsViews = ["account", "organizations", "githubSources", "tokens", "danger"] as const;
@@ -111,9 +111,25 @@ type GitHubSkillSource = {
   _id: Id<"githubSkillSources">;
   repo: string;
   defaultBranch?: string;
+  lastSyncStatus?: "ok" | "failed" | "skipped";
+  lastSyncError?: string;
+  lastSyncErrorAt?: number;
   displayManifestStatus?: "ok" | "missing" | "invalid" | "failed";
   displayManifestFetchedAt?: number;
   displayManifestCommit?: string;
+  lastSyncInvalidSkills?: Array<{
+    slug: string;
+    path: string;
+    displayName: string;
+    error: string;
+  }>;
+  skills: Array<{
+    _id: Id<"skills">;
+    slug: string;
+    displayName: string;
+    githubPath?: string;
+    githubCurrentStatus?: "present" | "missing" | "unknown";
+  }>;
   createdAt: number;
   updatedAt: number;
 };
@@ -146,8 +162,8 @@ const navigationGroups: Array<{
       },
       {
         view: "githubSources",
-        label: "GitHub sources",
-        mobileLabel: "Sources",
+        label: "GitHub Skill Sync",
+        mobileLabel: "Skill Sync",
         icon: GitBranch,
       },
       { view: "tokens", label: "API tokens", mobileLabel: "Tokens", icon: KeyRound },
@@ -182,6 +198,7 @@ export function Settings() {
   const addOrgMember = useMutation(api.publishers.addMember);
   const removeOrgMember = useMutation(api.publishers.removeMember);
   const configureGitHubSource = useAction(api.githubSkillSync.configurePublicGitHubSkillSource);
+  const deleteGitHubSource = useMutation(api.githubSkillSources.deleteForPublisher);
   const [displayName, setDisplayName] = useState("");
   const [bio, setBio] = useState("");
   const [tokenLabel, setTokenLabel] = useState("");
@@ -199,6 +216,8 @@ export function Settings() {
   const [selectedSourcePublisherId, setSelectedSourcePublisherId] = useState("");
   const [githubRepo, setGithubRepo] = useState("");
   const [isSyncingSource, setIsSyncingSource] = useState(false);
+  const [deletingSourceId, setDeletingSourceId] = useState<Id<"githubSkillSources"> | null>(null);
+  const [sourceToDelete, setSourceToDelete] = useState<GitHubSkillSource | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [createOrgDialogOpen, setCreateOrgDialogOpen] = useState(false);
   const [addMemberDialogOpen, setAddMemberDialogOpen] = useState(false);
@@ -208,15 +227,20 @@ export function Settings() {
   const manageablePublishers = (publisherMemberships ?? []).filter(
     (entry) => entry.role !== "publisher",
   );
+  const officialGitHubSourcePublishers = manageablePublishers.filter(
+    (entry) => entry.publisher.official === true,
+  );
   const publisherMembershipsLoaded = publisherMemberships !== undefined;
-  const canConfigureGitHubSources = manageablePublishers.length > 0;
+  const canConfigureGitHubSources = officialGitHubSourcePublishers.length > 0;
   const effectiveActiveView =
     activeView === "githubSources" && publisherMembershipsLoaded && !canConfigureGitHubSources
       ? "account"
       : activeView;
   const selectedSourcePublisher =
-    manageablePublishers.find((entry) => entry.publisher._id === selectedSourcePublisherId) ??
-    manageablePublishers[0] ??
+    officialGitHubSourcePublishers.find(
+      (entry) => entry.publisher._id === selectedSourcePublisherId,
+    ) ??
+    officialGitHubSourcePublishers[0] ??
     null;
   const selectedOrg =
     orgs.find((entry) => entry.publisher.handle === selectedOrgHandle) ?? orgs[0] ?? null;
@@ -257,18 +281,20 @@ export function Settings() {
   }, [orgs, selectedOrgHandle]);
 
   useEffect(() => {
-    if (!manageablePublishers.length) {
+    if (!officialGitHubSourcePublishers.length) {
       setSelectedSourcePublisherId("");
       return;
     }
     if (
       selectedSourcePublisherId &&
-      manageablePublishers.some((entry) => entry.publisher._id === selectedSourcePublisherId)
+      officialGitHubSourcePublishers.some(
+        (entry) => entry.publisher._id === selectedSourcePublisherId,
+      )
     ) {
       return;
     }
-    setSelectedSourcePublisherId(manageablePublishers[0]?.publisher._id ?? "");
-  }, [manageablePublishers, selectedSourcePublisherId]);
+    setSelectedSourcePublisherId(officialGitHubSourcePublishers[0]?.publisher._id ?? "");
+  }, [officialGitHubSourcePublishers, selectedSourcePublisherId]);
 
   useEffect(() => {
     if (!selectedOrg) {
@@ -367,7 +393,7 @@ export function Settings() {
   async function onConfigureGitHubSource(event: FormEvent) {
     event.preventDefault();
     if (!selectedSourcePublisher) return;
-    const repo = githubRepo.trim();
+    const repo = parseGitHubRepoInput(githubRepo);
     if (!repo) return;
     setIsSyncingSource(true);
     try {
@@ -376,12 +402,32 @@ export function Settings() {
         repo,
       });
       setGithubRepo("");
-      const count = result?.stats?.discovered ?? 0;
-      toast.success(`GitHub source synced (${count} ${count === 1 ? "skill" : "skills"} found)`);
+      toast.success(formatGitHubSourceSyncToast(result?.stats));
     } catch (error) {
       toast.error(getUserFacingConvexError(error, "GitHub source could not be synced."));
     } finally {
       setIsSyncingSource(false);
+    }
+  }
+
+  async function onDeleteGitHubSource(source: GitHubSkillSource) {
+    if (!selectedSourcePublisher) return;
+    setDeletingSourceId(source._id);
+    try {
+      const result = await deleteGitHubSource({
+        ownerPublisherId: selectedSourcePublisher.publisher._id,
+        sourceId: source._id,
+      });
+      toast.success(
+        `GitHub sync deleted (${result.deletedSkills} ${
+          result.deletedSkills === 1 ? "skill" : "skills"
+        } deleted)`,
+      );
+      setSourceToDelete(null);
+    } catch (error) {
+      toast.error(getUserFacingConvexError(error, "GitHub sync could not be deleted."));
+    } finally {
+      setDeletingSourceId(null);
     }
   }
 
@@ -420,7 +466,14 @@ export function Settings() {
                     className="contents lg:flex lg:shrink lg:flex-col lg:gap-1"
                   >
                     {group.items.map((item) => {
-                      const active = activeView === item.view;
+                      if (
+                        item.view === "githubSources" &&
+                        publisherMembershipsLoaded &&
+                        !canConfigureGitHubSources
+                      ) {
+                        return null;
+                      }
+                      const active = effectiveActiveView === item.view;
                       return (
                         <button
                           key={item.view}
@@ -456,7 +509,7 @@ export function Settings() {
           <div className="flex min-w-0 flex-col lg:flex-1">
             <SettingsSection
               id="account"
-              visible={activeView === "account"}
+              visible={effectiveActiveView === "account"}
               icon={<UserRound size={18} />}
               title="Account & Preferences"
               description="Profile details and interface preferences."
@@ -570,7 +623,7 @@ export function Settings() {
 
             <SettingsSection
               id="organizations"
-              visible={activeView === "organizations"}
+              visible={effectiveActiveView === "organizations"}
               icon={<Building2 size={18} />}
               title="Organizations"
               description="Publisher profiles and access."
@@ -1035,9 +1088,9 @@ export function Settings() {
 
             <SettingsSection
               id="githubSources"
-              visible={activeView === "githubSources"}
+              visible={effectiveActiveView === "githubSources"}
               icon={<GitBranch size={18} />}
-              title="GitHub sources"
+              title="GitHub Skill Sync"
               description="Public source-backed skill repos."
             >
               <div className="flex flex-col gap-5">
@@ -1049,77 +1102,53 @@ export function Settings() {
                       </span>
                       <div className="min-w-0">
                         <h3 className="text-sm font-bold text-[color:var(--ink)]">
-                          GitHub sync sources
+                          Sync GitHub skills repo
                         </h3>
                         <p className="text-sm text-[color:var(--ink-soft)]">
-                          Enter a public repo. ClawHub stores metadata and scan results; install
-                          bytes stay in GitHub.
+                          Add a public repo URL. ClawHub syncs metadata and scan results every 15
+                          minutes. Users install your skills directly from your GitHub repo.
                         </p>
                       </div>
                     </div>
 
                     {selectedSourcePublisher ? (
-                      <form className="grid gap-4" onSubmit={onConfigureGitHubSource}>
-                        {manageablePublishers.length > 1 ? (
-                          <Field label="Publisher" htmlFor="settings-github-source-publisher">
-                            <Select
-                              value={selectedSourcePublisher.publisher._id}
-                              onValueChange={setSelectedSourcePublisherId}
-                            >
-                              <SelectTrigger id="settings-github-source-publisher">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {manageablePublishers.map((entry) => (
-                                  <SelectItem key={entry.publisher._id} value={entry.publisher._id}>
-                                    @{entry.publisher.handle} · {entry.role}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </Field>
-                        ) : (
-                          <div className="rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)]/25 px-3 py-2 text-sm text-[color:var(--ink-soft)]">
-                            Publishing as @{selectedSourcePublisher.publisher.handle}
-                          </div>
-                        )}
-
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-                          <div className="min-w-0 flex-1">
-                            <Field label="Public GitHub repo" htmlFor="settings-github-repo">
-                              <Input
-                                id="settings-github-repo"
-                                value={githubRepo}
-                                onChange={(event) => setGithubRepo(event.target.value)}
-                                placeholder="Enter a public repo"
-                              />
-                            </Field>
-                          </div>
-                          <Button
-                            type="submit"
-                            disabled={!githubRepo.trim() || isSyncingSource}
-                            className="shrink-0"
-                          >
-                            <RefreshCw size={16} />
-                            {isSyncingSource ? "Syncing..." : "Sync source"}
-                          </Button>
-                        </div>
-                      </form>
+                      <GitHubSourceForm
+                        publisherOptions={officialGitHubSourcePublishers}
+                        selectedPublisherId={selectedSourcePublisher.publisher._id}
+                        onPublisherChange={setSelectedSourcePublisherId}
+                        githubRepo={githubRepo}
+                        onGithubRepoChange={setGithubRepo}
+                        onConfigure={onConfigureGitHubSource}
+                        isSyncing={isSyncingSource}
+                      />
                     ) : (
                       <p className="rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)]/25 p-3 text-sm text-[color:var(--ink-soft)]">
-                        You need a publisher profile before adding GitHub sources.
+                        You need an official publisher profile before adding GitHub skill sync.
                       </p>
                     )}
                   </div>
                 </SettingsBlock>
 
-                <GitHubSourceList sources={githubSources} />
+                <GitHubSourceList
+                  sources={githubSources}
+                  publisherHandle={selectedSourcePublisher?.publisher.handle}
+                  deletingSourceId={deletingSourceId}
+                  onDeleteSource={setSourceToDelete}
+                />
+                <GitHubSourceDeleteDialog
+                  source={sourceToDelete}
+                  deletingSourceId={deletingSourceId}
+                  onOpenChange={(open) => {
+                    if (!open) setSourceToDelete(null);
+                  }}
+                  onConfirm={(source) => void onDeleteGitHubSource(source)}
+                />
               </div>
             </SettingsSection>
 
             <SettingsSection
               id="tokens"
-              visible={activeView === "tokens"}
+              visible={effectiveActiveView === "tokens"}
               icon={<KeyRound size={18} />}
               title="API tokens"
               description="CLI access. New tokens are shown once."
@@ -1258,7 +1287,7 @@ export function Settings() {
 
             <SettingsSection
               id="danger"
-              visible={activeView === "danger"}
+              visible={effectiveActiveView === "danger"}
               icon={<ShieldAlert size={18} />}
               title="Account deletion"
               description="Delete your account permanently. Published skills remain public."
@@ -1328,6 +1357,31 @@ export function Settings() {
       </div>
     </main>
   );
+}
+
+function formatGitHubSourceSyncToast(
+  stats:
+    | {
+        discovered?: number;
+        inserted?: number;
+        revived?: number;
+        conflicts?: number;
+      }
+    | undefined,
+) {
+  const discovered = stats?.discovered ?? 0;
+  const inserted = stats?.inserted ?? 0;
+  const revived = stats?.revived ?? 0;
+  const conflicts = stats?.conflicts ?? 0;
+  const visibleChanges = inserted + revived;
+  const details = [
+    `${discovered} ${discovered === 1 ? "skill" : "skills"} found`,
+    visibleChanges > 0
+      ? `${visibleChanges} ${visibleChanges === 1 ? "skill" : "skills"} added`
+      : null,
+    conflicts > 0 ? `${conflicts} conflict${conflicts === 1 ? "" : "s"}` : null,
+  ].filter(Boolean);
+  return `GitHub source synced (${details.join(", ")})`;
 }
 
 function SettingsSection({
@@ -1453,75 +1507,400 @@ function OrgLogoSmall({
   );
 }
 
-function GitHubSourceList({ sources }: { sources: GitHubSkillSource[] | undefined }) {
+function GitHubSourceList({
+  sources,
+  publisherHandle,
+  deletingSourceId,
+  onDeleteSource,
+}: {
+  sources: GitHubSkillSource[] | undefined;
+  publisherHandle: string | undefined;
+  deletingSourceId: Id<"githubSkillSources"> | null;
+  onDeleteSource: (source: GitHubSkillSource) => void;
+}) {
   return (
-    <SettingsBlock className="gap-4">
-      <div className="flex min-w-0 items-center gap-3">
-        <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface)] text-[color:var(--ink)]">
-          <GitBranch size={16} />
+    <section className="flex min-w-0 flex-col gap-3" aria-labelledby="github-synced-repos-title">
+      <div className="flex items-center gap-2">
+        <h3 id="github-synced-repos-title" className="text-sm font-bold text-[color:var(--ink)]">
+          Synced repositories
+        </h3>
+        <span className="inline-flex h-5 items-center rounded-full border border-[color:var(--line)] bg-[color:var(--surface-muted)] px-2 text-[11px] font-semibold text-[color:var(--ink-soft)]">
+          {sources?.length ?? 0}
         </span>
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <h3 className="text-sm font-bold text-[color:var(--ink)]">Configured sources</h3>
-            <span className="inline-flex h-5 items-center rounded-full border border-[color:var(--line)] bg-[color:var(--surface-muted)] px-2 text-[11px] font-semibold text-[color:var(--ink-soft)]">
-              {sources?.length ?? 0}
-            </span>
-          </div>
-        </div>
       </div>
 
       {sources === undefined ? (
         <p className="text-sm text-[color:var(--ink-soft)]">Loading sources...</p>
       ) : sources.length ? (
-        <div className="divide-y divide-[color:var(--line)] overflow-hidden">
+        <div className="flex flex-col gap-3">
           {sources.map((source) => (
-            <div
-              key={source._id}
-              className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
-            >
-              <div className="min-w-0">
-                <div className="flex min-w-0 flex-wrap items-center gap-2">
-                  <span className="truncate text-sm font-semibold text-[color:var(--ink)]">
-                    {source.repo}
-                  </span>
-                  <Badge className="px-2.5 py-0.5 text-fs-xs">
-                    {manifestStatusLabel(source.displayManifestStatus)}
-                  </Badge>
+            <SettingsBlock key={source._id} className="overflow-hidden p-0 sm:p-0">
+              <div className="flex flex-col gap-3 p-4 sm:p-5">
+                <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface)] text-[color:var(--ink)]">
+                      <GitBranch size={17} />
+                    </span>
+                    <div className="min-w-0">
+                      <h4 className="truncate text-base font-bold text-[color:var(--ink)]">
+                        {source.repo}
+                      </h4>
+                      <a
+                        href={`https://github.com/${source.repo}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-1 block truncate text-sm text-[color:var(--ink-soft)] hover:text-[color:var(--ink-soft)] visited:text-[color:var(--ink-soft)]"
+                      >
+                        {`https://github.com/${source.repo}`}
+                      </a>
+                    </div>
+                  </div>
                 </div>
-                <div className="mt-1 flex min-w-0 flex-wrap gap-x-3 gap-y-1 text-xs text-[color:var(--ink-soft)]">
-                  <span>{source.defaultBranch ?? "main"}</span>
-                  {source.displayManifestCommit ? (
-                    <span>{shortCommit(source.displayManifestCommit)}</span>
-                  ) : null}
-                  <span>Updated {formatShortDate(source.updatedAt)}</span>
+
+                <GitHubSourceHealth source={source} />
+
+                <GitHubSourceInvalidSkills source={source} />
+
+                <div className="rounded-[var(--radius-sm)] border border-[color:var(--line)]">
+                  <div className="flex items-center gap-2 border-b border-[color:var(--line)] px-3 py-2">
+                    <span className="text-xs font-semibold uppercase tracking-[0.08em] text-[color:var(--ink-soft)]">
+                      Synced skills
+                    </span>
+                    <span className="inline-flex h-5 items-center rounded-full border border-[color:var(--line)] bg-[color:var(--surface-muted)] px-2 text-[11px] font-semibold text-[color:var(--ink-soft)]">
+                      {source.skills.length}
+                    </span>
+                  </div>
+                  {source.skills.length ? (
+                    <div className="divide-y divide-[color:var(--line)]">
+                      {source.skills.map((skill) => (
+                        <div
+                          key={skill._id}
+                          className="flex min-w-0 flex-col gap-1 px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
+                        >
+                          <div className="min-w-0">
+                            <Link
+                              to="/$owner/$slug"
+                              params={{ owner: publisherHandle ?? "", slug: skill.slug }}
+                              disabled={!publisherHandle}
+                              className="block truncate text-sm font-semibold text-[color:var(--ink)] no-underline hover:text-[color:var(--accent)] hover:no-underline"
+                            >
+                              {skill.displayName}
+                            </Link>
+                            <div className="truncate text-xs text-[color:var(--ink-soft)]">
+                              {skill.githubPath ?? skill.slug}
+                            </div>
+                          </div>
+                          <span className="shrink-0 text-xs font-mono text-[color:var(--ink-soft)]">
+                            {skill.slug}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="px-3 py-3 text-sm text-[color:var(--ink-soft)]">
+                      No published skills are currently synced from this repo.
+                    </p>
+                  )}
+                </div>
+
+                <div className="-mx-4 -mb-4 flex flex-col gap-3 border-t border-[color:var(--line)] px-4 py-4 sm:-mx-5 sm:-mb-5 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+                  <div className="min-w-0">
+                    <h5 className="text-sm font-bold text-[color:var(--ink)]">
+                      Delete synced repo &amp; skills
+                    </h5>
+                    <p className="mt-1 text-sm leading-6 text-[color:var(--ink-soft)]">
+                      This will delete the sync job for this repo and all published skills
+                      associated to the repo. This action cannot be undone.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    loading={deletingSourceId === source._id}
+                    className="shrink-0 border-red-500/45 text-red-700 hover:not-disabled:border-red-500 hover:not-disabled:bg-red-500/10 dark:border-red-500/35 dark:text-red-300"
+                    onClick={() => onDeleteSource(source)}
+                  >
+                    Delete
+                  </Button>
                 </div>
               </div>
-            </div>
+            </SettingsBlock>
           ))}
         </div>
       ) : (
-        <p className="text-sm text-[color:var(--ink-soft)]">No GitHub sources configured.</p>
+        <EmptyState
+          icon={GitBranch}
+          title="No synced repositories"
+          description="Add a repo above to start syncing GitHub-backed skills."
+        />
       )}
-    </SettingsBlock>
+    </section>
   );
 }
 
-function manifestStatusLabel(status: GitHubSkillSource["displayManifestStatus"]) {
-  switch (status) {
-    case "ok":
-      return "Grouped";
-    case "invalid":
-      return "Ungrouped";
-    case "failed":
-      return "Needs attention";
-    case "missing":
-    default:
-      return "Ungrouped";
-  }
+function GitHubSourceDeleteDialog({
+  source,
+  deletingSourceId,
+  onOpenChange,
+  onConfirm,
+}: {
+  source: GitHubSkillSource | null;
+  deletingSourceId: Id<"githubSkillSources"> | null;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: (source: GitHubSkillSource) => void;
+}) {
+  const isDeleting = Boolean(source && deletingSourceId === source._id);
+
+  return (
+    <Dialog open={Boolean(source)} onOpenChange={onOpenChange}>
+      <DialogContent className="flex w-[min(100%,640px)] flex-col gap-4">
+        <DialogHeader>
+          <DialogTitle>Delete {source?.repo ?? "synced repo"}</DialogTitle>
+          <DialogDescription>
+            This will delete the sync job and all published skills associated with this repo. This
+            action cannot be undone.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="rounded-[var(--radius-sm)] border border-[color:var(--line)]">
+          <div className="border-b border-[color:var(--line)] px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-[color:var(--ink-soft)]">
+            Skills to delete
+          </div>
+          {source?.skills.length ? (
+            <div className="max-h-72 divide-y divide-[color:var(--line)] overflow-auto">
+              {source.skills.map((skill) => (
+                <div
+                  key={skill._id}
+                  className="flex min-w-0 flex-col gap-1 px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-semibold text-[color:var(--ink)]">
+                      {skill.displayName}
+                    </div>
+                    <div className="truncate text-xs text-[color:var(--ink-soft)]">
+                      {skill.githubPath ?? skill.slug}
+                    </div>
+                  </div>
+                  <span className="shrink-0 text-xs font-mono text-[color:var(--ink-soft)]">
+                    {skill.slug}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="px-3 py-3 text-sm text-[color:var(--ink-soft)]">
+              No published skills are currently synced from this repo.
+            </p>
+          )}
+        </div>
+
+        <DialogFooter className="sm:block">
+          <Button
+            variant="destructive"
+            type="button"
+            className="w-full"
+            disabled={!source || isDeleting}
+            loading={isDeleting}
+            onClick={() => {
+              if (source) onConfirm(source);
+            }}
+          >
+            <Trash2 size={16} />
+            Delete synced repo &amp; skills
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function GitHubSourceHealth({ source }: { source: GitHubSkillSource }) {
+  const needsAttention =
+    source.lastSyncStatus === "failed" ||
+    source.displayManifestStatus === "failed" ||
+    source.displayManifestStatus === "invalid";
+  const latestError =
+    source.lastSyncError ??
+    (source.displayManifestStatus === "invalid"
+      ? "skills.sh.json could not be parsed"
+      : source.displayManifestStatus === "failed"
+        ? "GitHub sync failed"
+        : null);
+  const lastSuccessfulSync =
+    source.displayManifestFetchedAt ?? (source.lastSyncStatus === "ok" ? source.updatedAt : null);
+
+  return (
+    <div className="rounded-[var(--radius-sm)] border border-[color:var(--line)]">
+      <div className="border-b border-[color:var(--line)] px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-[color:var(--ink-soft)]">
+        Overview
+      </div>
+      <div className="divide-y divide-[color:var(--line)]">
+        <GitHubSourceOverviewRow label="Status">
+          <GitHubSourceStatusPill needsAttention={needsAttention} />
+        </GitHubSourceOverviewRow>
+        <GitHubSourceOverviewRow label="Last synced">
+          {lastSuccessfulSync ? timeAgo(lastSuccessfulSync) : "Never"}
+        </GitHubSourceOverviewRow>
+        <GitHubSourceOverviewRow label="Current commit">
+          {source.displayManifestCommit ? (
+            <a
+              href={`https://github.com/${source.repo}/commit/${source.displayManifestCommit}`}
+              target="_blank"
+              rel="noreferrer"
+              className="text-[color:var(--ink-soft)] no-underline hover:text-[color:var(--accent)] hover:no-underline visited:text-[color:var(--ink-soft)]"
+            >
+              {shortCommit(source.displayManifestCommit)}
+            </a>
+          ) : (
+            "None"
+          )}
+        </GitHubSourceOverviewRow>
+      </div>
+      {needsAttention && latestError ? (
+        <p className="border-t border-[color:var(--line)] px-3 py-2 text-sm text-red-700 dark:text-red-300">
+          <span className="font-semibold">Latest error:</span> {latestError}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function GitHubSourceInvalidSkills({ source }: { source: GitHubSkillSource }) {
+  const invalidSkills = source.lastSyncInvalidSkills ?? [];
+  if (invalidSkills.length === 0) return null;
+
+  return (
+    <div className="rounded-[var(--radius-sm)] border border-[color:var(--line)]">
+      <div className="flex items-center gap-2 border-b border-[color:var(--line)] px-3 py-2">
+        <span className="text-xs font-semibold uppercase tracking-[0.08em] text-[color:var(--ink-soft)]">
+          Invalid skills
+        </span>
+        <span className="inline-flex h-5 items-center rounded-full border border-red-500/35 bg-red-500/10 px-2 text-[11px] font-semibold text-red-700 dark:text-red-300">
+          {invalidSkills.length}
+        </span>
+      </div>
+      <div className="divide-y divide-[color:var(--line)]">
+        {invalidSkills.map((skill) => (
+          <div
+            key={`${skill.path}:${skill.slug}`}
+            className="flex min-w-0 flex-col gap-1 px-3 py-2 sm:flex-row sm:items-start sm:justify-between"
+          >
+            <div className="min-w-0">
+              <div className="truncate text-sm font-semibold text-[color:var(--ink)]">
+                {skill.displayName}
+              </div>
+              <div className="truncate text-xs text-[color:var(--ink-soft)]">{skill.path}</div>
+            </div>
+            <div className="shrink-0 text-left text-xs font-semibold text-red-700 dark:text-red-300 sm:max-w-[40%] sm:text-right">
+              {skill.error}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function GitHubSourceOverviewRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-1 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="text-xs font-semibold uppercase tracking-[0.08em] text-[color:var(--ink)] sm:text-[11px]">
+        {label}
+      </div>
+      <div className="min-w-0 truncate text-sm font-semibold text-[color:var(--ink-soft)]">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function GitHubSourceStatusPill({ needsAttention }: { needsAttention: boolean }) {
+  return (
+    <span
+      className={`inline-flex h-6 items-center rounded-full border px-2.5 text-xs font-semibold ${
+        needsAttention
+          ? "border-red-500/35 bg-red-500/10 text-red-700 dark:text-red-300"
+          : "border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+      }`}
+    >
+      {needsAttention ? "Needs attention" : "Healthy"}
+    </span>
+  );
+}
+
+function GitHubSourceForm({
+  publisherOptions,
+  selectedPublisherId,
+  onPublisherChange,
+  githubRepo,
+  onGithubRepoChange,
+  onConfigure,
+  isSyncing,
+}: {
+  publisherOptions: PublisherMembership[];
+  selectedPublisherId: string;
+  onPublisherChange: (publisherId: string) => void;
+  githubRepo: string;
+  onGithubRepoChange: (repo: string) => void;
+  onConfigure: (event: FormEvent) => void;
+  isSyncing: boolean;
+}) {
+  return (
+    <form className="contents" onSubmit={onConfigure}>
+      {publisherOptions.length > 1 ? (
+        <Field label="Publisher" htmlFor="settings-github-source-publisher">
+          <Select value={selectedPublisherId} onValueChange={onPublisherChange}>
+            <SelectTrigger id="settings-github-source-publisher">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {publisherOptions.map((entry) => (
+                <SelectItem key={entry.publisher._id} value={entry.publisher._id}>
+                  @{entry.publisher.handle} · {entry.role}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+      ) : null}
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+        <div className="min-w-0 flex-1">
+          <Field label="GitHub repo URL" htmlFor="settings-github-repo">
+            <Input
+              id="settings-github-repo"
+              value={githubRepo}
+              onChange={(event) => onGithubRepoChange(event.target.value)}
+              placeholder="https://github.com/owner/repo"
+            />
+          </Field>
+        </div>
+        <Button type="submit" disabled={!githubRepo.trim() || isSyncing} className="shrink-0">
+          <Plus size={16} />
+          {isSyncing ? "Adding..." : "Add repo"}
+        </Button>
+      </div>
+    </form>
+  );
 }
 
 function shortCommit(commit: string) {
   return commit.slice(0, 7);
+}
+
+function parseGitHubRepoInput(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  const markdownUrl = trimmed.match(/\]\((https?:\/\/[^)]+)\)$/i)?.[1];
+  const raw = markdownUrl ?? trimmed;
+  const normalized = raw
+    .replace(/^https?:\/\/(?:www\.)?github\.com\//i, "")
+    .replace(/^github\.com\//i, "")
+    .replace(/\.git$/i, "")
+    .split(/[?#]/)[0];
+  const parts = normalized.split("/").filter(Boolean);
+  if (parts.length >= 2) return `${parts[0]}/${parts[1]}`;
+  return trimmed;
 }
 
 function TokenList({

@@ -227,7 +227,7 @@ export const cliSkillUndeleteHttp = httpAction((ctx, request) =>
   cliSkillDeleteHandler(ctx, request, false),
 );
 
-async function cliTelemetrySyncHandler(ctx: ActionCtx, request: Request) {
+async function cliTelemetryInstallHandler(ctx: ActionCtx, request: Request) {
   let body: unknown;
   try {
     body = await request.json();
@@ -258,7 +258,9 @@ async function cliTelemetrySyncHandler(ctx: ActionCtx, request: Request) {
   }
 }
 
-export const cliTelemetrySyncHttp = httpAction(cliTelemetrySyncHandler);
+const cliTelemetrySyncHandler = cliTelemetryInstallHandler;
+export const cliTelemetryInstallHttp = httpAction(cliTelemetryInstallHandler);
+export const cliTelemetrySyncHttp = httpAction(cliTelemetryInstallHandler);
 
 async function cliDeviceCodeHandler(ctx: ActionCtx, request: Request) {
   if (request.method !== "POST") return text("Method not allowed", 405);
@@ -392,6 +394,7 @@ export const __handlers = {
   cliUploadUrlHandler,
   cliPublishHandler,
   cliSkillDeleteHandler,
+  cliTelemetryInstallHandler,
   cliTelemetrySyncHandler,
   cliDeviceCodeHandler,
   cliDeviceTokenHandler,

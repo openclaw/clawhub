@@ -246,6 +246,16 @@ const publisherMembers = defineTable({
   .index("by_user", ["userId"])
   .index("by_publisher_user", ["publisherId", "userId"]);
 
+const officialPublishers = defineTable({
+  publisherId: v.id("publishers"),
+  reason: v.optional(v.string()),
+  createdByUserId: v.optional(v.id("users")),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_publisher", ["publisherId"])
+  .index("by_created", ["createdAt"]);
+
 const displayManifestStatusValidator = v.union(
   v.literal("ok"),
   v.literal("missing"),
@@ -264,16 +274,27 @@ const displayManifestValidator = v.object({
   ),
 });
 
+const githubSkillSourceInvalidSkillValidator = v.object({
+  slug: v.string(),
+  path: v.string(),
+  displayName: v.string(),
+  error: v.string(),
+});
+
 const githubSkillSources = defineTable({
   repo: v.string(),
   ownerPublisherId: v.optional(v.id("publishers")),
   defaultBranch: v.optional(v.string()),
+  lastSyncStatus: v.optional(v.union(v.literal("ok"), v.literal("failed"), v.literal("skipped"))),
+  lastSyncError: v.optional(v.string()),
+  lastSyncErrorAt: v.optional(v.number()),
   displayManifestKind: v.optional(v.literal("skills.sh")),
   displayManifestHash: v.optional(v.string()),
   displayManifestCommit: v.optional(v.string()),
   displayManifestFetchedAt: v.optional(v.number()),
   displayManifestStatus: v.optional(displayManifestStatusValidator),
   displayManifest: v.optional(displayManifestValidator),
+  lastSyncInvalidSkills: v.optional(v.array(githubSkillSourceInvalidSkillValidator)),
   createdAt: v.number(),
   updatedAt: v.number(),
 })
@@ -354,12 +375,6 @@ const githubSkillScanStatusValidator = v.union(
   v.literal("failed"),
 );
 
-const githubSkillSignatureStatusValidator = v.union(
-  v.literal("verified"),
-  v.literal("failed"),
-  v.literal("missing"),
-  v.literal("pending"),
-);
 const githubSkillCurrentStatusValidator = v.union(
   v.literal("present"),
   v.literal("missing"),
@@ -588,15 +603,11 @@ const skills = defineTable({
   githubSourceId: v.optional(v.id("githubSkillSources")),
   githubPath: v.optional(v.string()),
   githubHasSkillCard: v.optional(v.boolean()),
-  githubVerifiedCommit: v.optional(v.string()),
-  githubVerifiedContentHash: v.optional(v.string()),
   githubCurrentCommit: v.optional(v.string()),
   githubCurrentContentHash: v.optional(v.string()),
   githubCurrentStatus: v.optional(githubSkillCurrentStatusValidator),
   githubCurrentCheckedAt: v.optional(v.number()),
   githubScanStatus: v.optional(githubSkillScanStatusValidator),
-  githubSignatureStatus: v.optional(githubSkillSignatureStatusValidator),
-  githubVerifiedAt: v.optional(v.number()),
   githubRemovedAt: v.optional(v.number()),
   latestVersionId: v.optional(v.id("skillVersions")),
   latestVersionSummary: v.optional(
@@ -2329,6 +2340,7 @@ export default defineSchema({
   users,
   publishers,
   publisherMembers,
+  officialPublishers,
   githubSkillSources,
   githubSkillContents,
   skills,

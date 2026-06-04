@@ -19,6 +19,7 @@ import {
   getActiveUserByHandleOrPersonalPublisher,
   getPersonalPublisherForUser,
   getPublisherByHandle,
+  getPublisherMembership,
   getUserByHandleOrPersonalPublisher,
 } from "./lib/publishers";
 import {
@@ -126,6 +127,17 @@ const DEV_PERSONAS = {
     displayName: "Local Admin",
     role: "admin",
   },
+  officialOrgMember: {
+    handle: "local-official-member",
+    displayName: "Local Official Org Member",
+    role: "user",
+  },
+} as const;
+
+const DEV_OFFICIAL_ORG = {
+  handle: "local-official-org",
+  displayName: "Local Official Org",
+  reason: "dev-persona.official-org-member",
 } as const;
 
 type DevPersona = keyof typeof DEV_PERSONAS;
@@ -141,7 +153,14 @@ export const getByIdInternal = internalQuery({
 });
 
 export const upsertDevPersonaInternal = internalMutation({
-  args: { persona: v.union(v.literal("owner"), v.literal("user"), v.literal("admin")) },
+  args: {
+    persona: v.union(
+      v.literal("owner"),
+      v.literal("user"),
+      v.literal("admin"),
+      v.literal("officialOrgMember"),
+    ),
+  },
   handler: async (ctx, args): Promise<Id<"users">> => {
     if (!isLocalDevAuthEnabled()) throw new Error("Dev auth is disabled");
 
@@ -175,9 +194,65 @@ export const upsertDevPersonaInternal = internalMutation({
       actorUserId: user._id,
       source: "dev_persona.upsert",
     });
+    if (args.persona === "officialOrgMember") {
+      await ensureDevOfficialOrgMembership(ctx, user, now);
+    }
     return userId;
   },
 });
+
+async function ensureDevOfficialOrgMembership(ctx: MutationCtx, user: Doc<"users">, now: number) {
+  let publisher = await getPublisherByHandle(ctx, DEV_OFFICIAL_ORG.handle);
+  let publisherId = publisher?._id;
+
+  if (!publisherId) {
+    publisherId = await ctx.db.insert("publishers", {
+      kind: "org",
+      handle: DEV_OFFICIAL_ORG.handle,
+      displayName: DEV_OFFICIAL_ORG.displayName,
+      bio: undefined,
+      image: undefined,
+      linkedUserId: undefined,
+      trustedPublisher: undefined,
+      createdAt: now,
+      updatedAt: now,
+    });
+  } else if (publisher?.deletedAt || publisher?.deactivatedAt) {
+    await ctx.db.patch(publisherId, {
+      displayName: DEV_OFFICIAL_ORG.displayName,
+      deletedAt: undefined,
+      deactivatedAt: undefined,
+      updatedAt: now,
+    });
+  }
+
+  const existingOfficial = await ctx.db
+    .query("officialPublishers")
+    .withIndex("by_publisher", (q) => q.eq("publisherId", publisherId))
+    .unique();
+  if (!existingOfficial) {
+    await ctx.db.insert("officialPublishers", {
+      publisherId,
+      reason: DEV_OFFICIAL_ORG.reason,
+      createdByUserId: user._id,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
+  const membership = await getPublisherMembership(ctx, publisherId, user._id);
+  if (!membership) {
+    await ctx.db.insert("publisherMembers", {
+      publisherId,
+      userId: user._id,
+      role: "admin",
+      createdAt: now,
+      updatedAt: now,
+    });
+  } else if (membership.role === "publisher") {
+    await ctx.db.patch(membership._id, { role: "admin", updatedAt: now });
+  }
+}
 
 export const getByHandleInternal = internalQuery({
   args: { handle: v.string() },

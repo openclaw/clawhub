@@ -1,7 +1,6 @@
 import { getFrontmatterValue, parseFrontmatter } from "./skills";
 
 export type GitHubSkillScanStatus = "clean" | "suspicious" | "malicious" | "pending" | "failed";
-export type GitHubSkillSignatureStatus = "verified" | "failed" | "missing" | "pending";
 export type GitHubCurrentStatus = "present" | "missing" | "unknown";
 export type DisplayManifestStatus = "ok" | "missing" | "invalid" | "failed";
 
@@ -35,7 +34,6 @@ export type DiscoveredGitHubSkill = {
   skillCardMarkdownPath?: string;
   skillCardMarkdown?: string;
   contentHash: string;
-  hasSignature: boolean;
 };
 
 export type ExistingGitHubSkillForSync = {
@@ -48,14 +46,10 @@ export type ExistingGitHubSkillForSync = {
     createdAt: number;
   };
   githubPath?: string;
-  githubVerifiedCommit?: string;
-  githubVerifiedContentHash?: string;
   githubCurrentCommit?: string;
   githubCurrentContentHash?: string;
   githubCurrentStatus?: GitHubCurrentStatus;
   githubScanStatus?: GitHubSkillScanStatus;
-  githubSignatureStatus?: GitHubSkillSignatureStatus;
-  githubVerifiedAt?: number;
   githubRemovedAt?: number;
 };
 
@@ -93,7 +87,6 @@ export type GitHubSkillSyncPlan = {
 
 const SKILL_MARKDOWN_BASENAME = "skill.md";
 const SKILL_CARD_MARKDOWN_BASENAME = "skill-card.md";
-const SIGNATURE_BASENAME = "skill.oms.sig";
 const MAX_STORED_MARKDOWN_BYTES = 512 * 1024;
 const MAX_STORED_SKILL_CONTENT_BYTES = 768 * 1024;
 
@@ -200,7 +193,6 @@ export async function buildGitHubSkillSourceSnapshot({
       assertStoredSkillContentSize(markdownBytes.byteLength);
     }
     const skillCardMarkdown = skillCardBytes ? decodeUtf8(skillCardBytes) : undefined;
-    const signaturePath = path ? `${path}/${SIGNATURE_BASENAME}` : SIGNATURE_BASENAME;
 
     skills.push({
       slug,
@@ -213,7 +205,6 @@ export async function buildGitHubSkillSourceSnapshot({
       ...(skillCardMarkdownPath ? { skillCardMarkdownPath } : {}),
       ...(skillCardMarkdown !== undefined ? { skillCardMarkdown } : {}),
       contentHash: await computeGitHubSkillFolderContentHash(normalizedEntries, path),
-      hasSignature: Boolean(normalizedEntries[signaturePath]),
     });
   }
 
@@ -269,6 +260,9 @@ export function buildGitHubSkillSyncPlan({
   const sourcePatch = {
     repo: snapshot.repo,
     defaultBranch: snapshot.defaultBranch,
+    lastSyncStatus: "ok",
+    lastSyncError: undefined,
+    lastSyncErrorAt: undefined,
     displayManifestKind: "skills.sh",
     displayManifestHash: snapshot.manifestHash,
     displayManifestCommit: snapshot.commit,
@@ -299,10 +293,7 @@ export function buildGitHubSkillSyncPlan({
     const existing = existingByPath.get(discovered.path) ?? existingBySlug.get(discovered.slug);
     if (!existing) {
       const scanStatus: GitHubSkillScanStatus = "pending";
-      const signatureStatus: GitHubSkillSignatureStatus = discovered.hasSignature
-        ? "pending"
-        : "missing";
-      const moderation = githubBackedSkillModeration(scanStatus, signatureStatus);
+      const moderation = githubBackedSkillModeration(scanStatus);
       skillInserts.push({
         slug: discovered.slug,
         doc: {
@@ -320,7 +311,6 @@ export function buildGitHubSkillSyncPlan({
           githubCurrentStatus: "present",
           githubCurrentCheckedAt: now,
           githubScanStatus: scanStatus,
-          githubSignatureStatus: signatureStatus,
           githubRemovedAt: undefined,
           latestVersionId: undefined,
           latestVersionSummary: latestVersionSummary(discovered.upstreamVersion, now),
@@ -350,29 +340,13 @@ export function buildGitHubSkillSyncPlan({
     }
 
     matchedSkillIds.add(existing._id);
-    const currentMatchesVerified =
-      existing.githubVerifiedContentHash !== undefined &&
-      existing.githubVerifiedContentHash === discovered.contentHash;
     const currentContentUnchanged =
-      (existing.githubCurrentStatus === "present" &&
-        existing.githubCurrentContentHash === discovered.contentHash) ||
-      currentMatchesVerified;
-    const scanStatus: GitHubSkillScanStatus = currentMatchesVerified
-      ? githubScanStatusForVerifiedContent()
-      : currentContentUnchanged
-        ? githubScanStatusForUnchangedContent(existing.githubScanStatus)
-        : "pending";
-    const signatureStatus: GitHubSkillSignatureStatus = currentMatchesVerified
-      ? githubSignatureStatusForVerifiedContent()
-      : currentContentUnchanged
-        ? githubSignatureStatusForUnchangedContent(
-            existing.githubSignatureStatus,
-            discovered.hasSignature,
-          )
-        : discovered.hasSignature
-          ? "pending"
-          : "missing";
-    const moderation = githubBackedSkillModeration(scanStatus, signatureStatus);
+      existing.githubCurrentStatus === "present" &&
+      existing.githubCurrentContentHash === discovered.contentHash;
+    const scanStatus: GitHubSkillScanStatus = currentContentUnchanged
+      ? githubScanStatusForUnchangedContent(existing.githubScanStatus)
+      : "pending";
+    const moderation = githubBackedSkillModeration(scanStatus);
     const nextLatestVersionSummary = latestVersionSummary(
       discovered.upstreamVersion,
       existing.latestVersionSummary?.createdAt ?? now,
@@ -391,16 +365,13 @@ export function buildGitHubSkillSyncPlan({
       githubSourceId: sourceId,
       githubPath: discovered.path,
       githubHasSkillCard: Boolean(discovered.skillCardMarkdownPath),
-      githubVerifiedCommit: existing.githubVerifiedCommit,
-      githubVerifiedContentHash: existing.githubVerifiedContentHash,
       githubCurrentCommit: snapshot.commit,
       githubCurrentContentHash: discovered.contentHash,
       githubCurrentStatus: "present",
       githubCurrentCheckedAt: now,
       githubScanStatus: scanStatus,
-      githubSignatureStatus: signatureStatus,
-      githubVerifiedAt: existing.githubVerifiedAt,
       githubRemovedAt: undefined,
+      softDeletedAt: undefined,
       ...(materialChanged
         ? {
             latestVersionSummary: latestVersionSummary(discovered.upstreamVersion, now),
@@ -419,7 +390,6 @@ export function buildGitHubSkillSyncPlan({
     const removedAt = existing.githubRemovedAt ?? now;
     const moderation = githubBackedSkillModeration(
       existing.githubScanStatus ?? "pending",
-      existing.githubSignatureStatus ?? "pending",
       removedAt,
     );
     const wasAlreadyRemoved =
@@ -442,10 +412,6 @@ export function buildGitHubSkillSyncPlan({
   return { sourcePatch, skillPatches, skillInserts, stats };
 }
 
-function githubScanStatusForVerifiedContent(): GitHubSkillScanStatus {
-  return "clean";
-}
-
 function githubScanStatusForUnchangedContent(
   status: GitHubSkillScanStatus | undefined,
 ): GitHubSkillScanStatus {
@@ -460,36 +426,14 @@ function githubScanStatusForUnchangedContent(
   return "pending";
 }
 
-function githubSignatureStatusForVerifiedContent(): GitHubSkillSignatureStatus {
-  return "verified";
-}
-
-function githubSignatureStatusForUnchangedContent(
-  status: GitHubSkillSignatureStatus | undefined,
-  hasSignature: boolean,
-): GitHubSkillSignatureStatus {
-  if (status === "verified" || status === "failed" || status === "missing") return status;
-  return hasSignature ? "pending" : "missing";
-}
-
 export function githubBackedSkillModeration(
   scanStatus: GitHubSkillScanStatus,
-  signatureStatus: GitHubSkillSignatureStatus,
   removedAt?: number,
 ): GitHubBackedSkillModeration {
   if (typeof removedAt === "number") {
     return {
       moderationStatus: "hidden",
       moderationReason: "github.upstream.removed",
-      moderationVerdict: undefined,
-      moderationFlags: [],
-      isSuspicious: false,
-    };
-  }
-  if (signatureStatus !== "verified") {
-    return {
-      moderationStatus: "hidden",
-      moderationReason: `github.signature.${signatureStatus}`,
       moderationVerdict: undefined,
       moderationFlags: [],
       isSuspicious: false,

@@ -267,12 +267,12 @@ describe("httpApi handlers", () => {
     expect(json.user.handle).toBe("p");
   });
 
-  it("cliTelemetrySyncHttp forwards roots and returns ok", async () => {
+  it("cliTelemetryInstallHttp forwards roots and returns ok", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: "users:1" } as never);
     const runMutation = vi.fn().mockResolvedValue(null);
-    const response = await __handlers.cliTelemetrySyncHandler(
+    const response = await __handlers.cliTelemetryInstallHandler(
       makeCtx({ runMutation }),
-      new Request("https://x/api/cli/telemetry/sync", {
+      new Request("https://x/api/cli/telemetry/install", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -288,6 +288,22 @@ describe("httpApi handlers", () => {
     );
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true });
+    expect(runMutation).toHaveBeenCalledTimes(1);
+  });
+
+  it("cliTelemetrySyncHttp remains a backwards-compatible alias", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: "users:1" } as never);
+    const runMutation = vi.fn().mockResolvedValue(null);
+    const response = await __handlers.cliTelemetrySyncHandler(
+      makeCtx({ runMutation }),
+      new Request("https://x/api/cli/telemetry/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ roots: [] }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
     expect(runMutation).toHaveBeenCalledTimes(1);
   });
 

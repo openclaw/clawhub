@@ -2305,6 +2305,8 @@ export const getBySlug = query({
 
     const forkOf = await loadPublicSkillReference(ctx, skill.forkOf?.skillId);
     const canonical = await loadPublicSkillReference(ctx, skill.canonicalSkillId);
+    const githubSource = skill.githubSourceId ? await ctx.db.get(skill.githubSourceId) : null;
+    const githubSourceRepo = githubSource?.repo;
 
     const publicSkill = toPublicSkill({ ...skill, badges });
 
@@ -2336,6 +2338,8 @@ export const getBySlug = query({
       forkOf: skill.forkOf,
       latestVersionId: skill.latestVersionId,
       installKind: skill.installKind,
+      githubPath: skill.githubPath,
+      githubCurrentCommit: skill.githubCurrentCommit,
       githubHasSkillCard: skill.githubHasSkillCard,
       tags: skill.tags,
       badges,
@@ -2347,6 +2351,7 @@ export const getBySlug = query({
       ...skillData,
       canonicalSkillId: canonical ? skillData.canonicalSkillId : undefined,
       forkOf: forkOf ? skillData.forkOf : undefined,
+      ...(githubSourceRepo ? { githubSourceRepo } : {}),
     };
 
     // Moderation info - visible to owners for all states, or anyone for flagged skills (transparency)

@@ -62,6 +62,22 @@ function getLatestVersionDescription(latestVersion: SkillHeaderLatestVersion) {
   return description?.trim() || null;
 }
 
+function getGitHubRepositoryLink(skill: Doc<"skills"> | PublicSkill) {
+  const repo = "githubSourceRepo" in skill ? skill.githubSourceRepo : undefined;
+  if (skill.installKind !== "github" || !repo) return null;
+
+  return (
+    <a
+      href={`https://github.com/${repo}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="plugin-external-link"
+    >
+      {repo}
+    </a>
+  );
+}
+
 type SkillHeaderProps = {
   skill: Doc<"skills"> | PublicSkill;
   owner: PublicPublisher | null;
@@ -455,12 +471,15 @@ function SkillSidebarStats({
   showArchiveMetadata: boolean;
   securityAuditSummary?: ReactNode;
 }) {
+  const githubRepositoryLink = getGitHubRepositoryLink(skill);
+
   return (
     <SidebarMetadata
       ariaLabel="Skill metadata"
       density="compact"
       blocks={[
         { label: "Downloads", value: formattedStats.downloads, large: true },
+        { label: "Repository", value: githubRepositoryLink },
         {
           label: "Owner",
           value: (

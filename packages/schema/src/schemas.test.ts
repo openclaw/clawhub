@@ -106,7 +106,6 @@ describe("clawhub-schema", () => {
           path: "skills/aiq-deploy",
           commit: "1".repeat(40),
           contentHash: "hash-aiq-deploy",
-          verifiedAt: 123,
           sourceUrl: `https://github.com/NVIDIA/skills/tree/${"1".repeat(40)}/skills/aiq-deploy`,
         },
       },
@@ -121,9 +120,9 @@ describe("clawhub-schema", () => {
       {
         ok: false,
         slug: "aiq-deploy",
-        reason: "github_upstream_changed",
+        reason: "github_verification_pending",
         message: "Needs verification.",
-        status: 409,
+        status: 423,
       },
       "Install resolver response",
     );

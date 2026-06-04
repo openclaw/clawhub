@@ -1,0 +1,84 @@
+name: ClawHub Scheduled Live Checks
+
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+    inputs:
+      github-repo:
+        description: GitHub skills repo to use for the source-backed canary
+        required: false
+        default: openclaw/agent-skills
+      github-skill:
+        description: Skill slug to verify from the GitHub skills repo
+        required: false
+        default: handoff
+
+concurrency:
+  group: clawhub-scheduled-live-checks-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  VITE_CONVEX_URL: https://example.invalid
+
+jobs:
+  github-backed-skills:
+    name: GitHub-backed skills canary
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Run GitHub-backed skills live canary
+        env:
+          CLAWHUB_LIVE_GITHUB_CANARY: "1"
+          CLAWHUB_LIVE_GITHUB_REPO: ${{ inputs.github-repo || 'openclaw/agent-skills' }}
+          CLAWHUB_LIVE_GITHUB_SKILL: ${{ inputs.github-skill || 'handoff' }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: bunx vitest run convex/githubSkillSync.live.test.ts
+
+  open-failure-issue:
+    name: Open failure issue
+    needs: github-backed-skills
+    if: ${{ always() && needs.github-backed-skills.result == 'failure' }}
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update failure issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          WORKFLOW_NAME: ${{ github.workflow }}
+        run: |
+          set -euo pipefail
+
+          marker_token="clawhub-scheduled-live-checks-failure"
+          marker="<!-- $marker_token -->"
+          title="ClawHub scheduled live checks failing"
+          issue_number="$(gh issue list \
+            --repo "$GITHUB_REPOSITORY" \
+            --state open \
+            --search "$marker_token in:body" \
+            --json number \
+            --jq '.[0].number // empty')"
+
+          body_file="$(mktemp)"
+          cat > "$body_file" <<EOF
+          $marker
+          The scheduled ClawHub live checks failed.
+
+          Workflow: $WORKFLOW_NAME
+          Run: $RUN_URL
+          EOF
+
+          if [[ -n "$issue_number" ]]; then
+            gh issue comment "$issue_number" --repo "$GITHUB_REPOSITORY" --body-file "$body_file"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body-file "$body_file"
+          fi

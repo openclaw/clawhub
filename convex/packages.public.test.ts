@@ -1256,6 +1256,13 @@ function makeTransferPackageOwnerCtx(options?: {
               })),
             };
           }
+          if (table === "officialPublishers") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue(null),
+              })),
+            };
+          }
           if (
             table === "packageCapabilitySearchDigest" ||
             table === "packagePluginCategorySearchDigest"
@@ -3773,7 +3780,7 @@ describe("packages public queries", () => {
     );
   });
 
-  it("rejects official package transfers to non-OpenClaw publishers", async () => {
+  it("rejects official package transfers to non-official publishers", async () => {
     const { ctx } = makeTransferPackageOwnerCtx({
       ownerPublisher: {
         _id: "publishers:openclaw",

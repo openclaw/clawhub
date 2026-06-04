@@ -1,7 +1,7 @@
 /* @vitest-environment node */
 
 import { spawn, spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -10,9 +10,10 @@ import {
   ApiRoutes,
   ApiV1SearchResponseSchema,
   ApiV1WhoamiResponseSchema,
+  LegacyApiRoutes,
   parseArk,
 } from "clawhub-schema";
-import { unzipSync } from "fflate";
+import { strToU8, unzipSync, zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 import { readGlobalConfig } from "../packages/clawhub/src/config";
 import { hashSkillFiles } from "../packages/clawhub/src/skills";
@@ -452,6 +453,127 @@ describe("clawhub e2e", () => {
       expect(result.status).toBe(0);
       expect(resolvedHash).toBe(expectedFingerprint);
       expect(result.stdout + result.stderr).toMatch(/up to date/i);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await rm(workdir, { recursive: true, force: true });
+      await rm(cfg.dir, { recursive: true, force: true });
+    }
+  });
+
+  it("installs a GitHub-backed skill through the install resolver and reports install telemetry", async () => {
+    const commit = "b".repeat(40);
+    const telemetryBodies: unknown[] = [];
+    const requestLog: string[] = [];
+    const githubZipBytes = zipSync({
+      "skills-main/skills/aiq-deploy/SKILL.md": strToU8("# AIQ Deploy\n"),
+      "skills-main/skills/aiq-deploy/skill-card.md": strToU8("# Card\n"),
+      "skills-main/skills/other/SKILL.md": strToU8("# Other\n"),
+    });
+    const server = createServer(async (req, res) => {
+      const url = new URL(req.url ?? "/", "http://127.0.0.1");
+      requestLog.push(`${req.method ?? "GET"} ${url.pathname}`);
+      if (req.method === "GET" && url.pathname === `${ApiRoutes.skills}/aiq-deploy`) {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            skill: {
+              slug: "aiq-deploy",
+              displayName: "AIQ Deploy",
+              summary: "Deploy AgentIQ workflows.",
+              tags: {},
+              stats: {},
+              createdAt: 1,
+              updatedAt: 1,
+            },
+            latestVersion: null,
+            owner: null,
+            moderation: null,
+          }),
+        );
+        return;
+      }
+      if (req.method === "GET" && url.pathname === `${ApiRoutes.skills}/aiq-deploy/install`) {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            ok: true,
+            slug: "aiq-deploy",
+            installKind: "github",
+            github: {
+              repo: "NVIDIA/skills",
+              path: "skills/aiq-deploy",
+              commit,
+              contentHash: "hash-aiq-deploy",
+              sourceUrl: `https://github.com/NVIDIA/skills/tree/${commit}/skills/aiq-deploy`,
+            },
+          }),
+        );
+        return;
+      }
+      if (req.method === "GET" && url.pathname === `/NVIDIA/skills/zip/${commit}`) {
+        res.writeHead(200, { "Content-Type": "application/zip" });
+        res.end(Buffer.from(githubZipBytes));
+        return;
+      }
+      if (req.method === "POST" && url.pathname === LegacyApiRoutes.cliTelemetryInstall) {
+        telemetryBodies.push(JSON.parse(await readRequestBody(req)) as unknown);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true }));
+        return;
+      }
+      res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+      res.end("not found");
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+
+    const registry = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const cfg = await makeTempConfig(registry, "test-token");
+    const workdir = await mkdtemp(join(tmpdir(), "clawhub-e2e-github-install-"));
+    try {
+      const result = await spawnCommand(
+        "bun",
+        [
+          "clawhub",
+          "install",
+          "aiq-deploy",
+          "--workdir",
+          workdir,
+          "--site",
+          registry,
+          "--registry",
+          registry,
+        ],
+        {
+          cwd: process.cwd(),
+          env: {
+            ...process.env,
+            CLAWHUB_CONFIG_PATH: cfg.path,
+            CLAWHUB_DISABLE_TELEMETRY: "",
+            CLAWDHUB_DISABLE_TELEMETRY: "",
+            CLAWHUB_GITHUB_CODELOAD_BASE_URL: registry,
+          },
+        },
+      );
+
+      expect(result.status).toBe(0);
+      await expect(
+        readFile(join(workdir, "skills", "aiq-deploy", "SKILL.md"), "utf8"),
+      ).resolves.toContain("# AIQ Deploy");
+      await expect(readFile(join(workdir, "skills", "aiq-deploy", "skill-card.md"), "utf8"))
+        .resolves.toContain("# Card");
+      await expect(
+        readFile(join(workdir, "skills", "aiq-deploy", "other", "SKILL.md")),
+      ).rejects.toThrow();
+      if (telemetryBodies.length !== 1) {
+        throw new Error(`Expected one install telemetry request, saw: ${requestLog.join(", ")}`);
+      }
+      expect(telemetryBodies[0]).toMatchObject({
+        roots: [
+          {
+            skills: [{ slug: "aiq-deploy", version: commit }],
+          },
+        ],
+      });
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
       await rm(workdir, { recursive: true, force: true });

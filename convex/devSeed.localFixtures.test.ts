@@ -154,7 +154,7 @@ function seedSkillArgs(storageId: string) {
 }
 
 describe("devSeed local fixtures", () => {
-  it("includes a GitHub-backed NVIDIA manifest fixture in the local seed action", async () => {
+  it("does not preconfigure GitHub-backed source fixtures in the local seed action", async () => {
     const mutationCalls: Array<{ args: Record<string, unknown> }> = [];
     let storageCounter = 0;
     const ctx = {
@@ -163,41 +163,20 @@ describe("devSeed local fixtures", () => {
       },
       runMutation: async (_ref: unknown, args: Record<string, unknown>) => {
         mutationCalls.push({ args });
-        if (args.repo === "NVIDIA/skills") {
-          return {
-            ok: true,
-            seeded: ["aiq-deploy", "isaac-sim-helper", "vision-helper"],
-            skipped: [],
-          };
-        }
         return { ok: true, seeded: ["local-moderation-fixtures"], skipped: [] };
       },
     };
 
     const result = await seedLocalFixturesHandler(ctx as never, { reset: true });
 
-    expect(mutationCalls).toHaveLength(2);
-    expect(mutationCalls[1]?.args).toMatchObject({
+    expect(mutationCalls).toHaveLength(1);
+    expect(mutationCalls[0]?.args).toMatchObject({
       reset: true,
-      repo: "NVIDIA/skills",
-      defaultBranch: "main",
-      displayManifestKind: "skills.sh",
-      displayManifestStatus: "ok",
-      displayManifest: {
-        notGrouped: "bottom",
-        groupings: expect.arrayContaining([
-          expect.objectContaining({ title: "Agentic AI" }),
-          expect.objectContaining({ title: "Physical AI" }),
-          expect.objectContaining({ title: "Vision AI" }),
-        ]),
-      },
     });
     expect(result).toEqual(
       expect.objectContaining({
         ok: true,
-        results: expect.arrayContaining([
-          expect.objectContaining({ slug: "nvidia-github-backed-skills" }),
-        ]),
+        results: [expect.objectContaining({ slug: "local-moderation-fixtures" })],
       }),
     );
   });
@@ -283,22 +262,20 @@ describe("devSeed local fixtures", () => {
             displayName: "AIQ Deploy",
             summary: "Deploy AgentIQ workflows.",
             githubPath: "skills/aiq-deploy",
-            githubVerifiedCommit: "1".repeat(40),
-            githubVerifiedContentHash: "hash-aiq-deploy",
+            githubCurrentCommit: "1".repeat(40),
+            githubCurrentContentHash: "hash-aiq-deploy",
             githubScanStatus: "clean",
-            githubSignatureStatus: "verified",
-            githubVerifiedAt: 456,
+            githubCurrentCheckedAt: 456,
           },
           {
             slug: "nemoclaw-user-configure-security",
             displayName: "NeMoClaw User Configure Security",
             summary: "Configure NeMoClaw user security.",
             githubPath: "skills/nemoclaw-user-configure-security",
-            githubVerifiedCommit: "2".repeat(40),
-            githubVerifiedContentHash: "hash-nemoclaw",
+            githubCurrentCommit: "2".repeat(40),
+            githubCurrentContentHash: "hash-nemoclaw",
             githubScanStatus: "clean",
-            githubSignatureStatus: "verified",
-            githubVerifiedAt: 789,
+            githubCurrentCheckedAt: 789,
             githubRemovedAt: 900,
           },
         ],
@@ -341,11 +318,10 @@ describe("devSeed local fixtures", () => {
           installKind: "github",
           githubSourceId: tables.githubSkillSources?.[0]?._id,
           githubPath: "skills/aiq-deploy",
-          githubVerifiedCommit: "1".repeat(40),
-          githubVerifiedContentHash: "hash-aiq-deploy",
+          githubCurrentCommit: "1".repeat(40),
+          githubCurrentContentHash: "hash-aiq-deploy",
           githubScanStatus: "clean",
-          githubSignatureStatus: "verified",
-          githubVerifiedAt: 456,
+          githubCurrentCheckedAt: 456,
           latestVersionId: undefined,
           latestVersionSummary: undefined,
           tags: {},
@@ -356,7 +332,7 @@ describe("devSeed local fixtures", () => {
           installKind: "github",
           githubSourceId: tables.githubSkillSources?.[0]?._id,
           githubPath: "skills/nemoclaw-user-configure-security",
-          githubVerifiedContentHash: "hash-nemoclaw",
+          githubCurrentContentHash: "hash-nemoclaw",
           githubRemovedAt: 900,
           moderationStatus: "hidden",
           moderationReason: "github.upstream.removed",
@@ -370,7 +346,7 @@ describe("devSeed local fixtures", () => {
     expect(tables.skillVersions ?? []).toHaveLength(0);
   });
 
-  it("keeps unverified GitHub-backed skills hidden from public listings", async () => {
+  it("keeps unscanned GitHub-backed skills hidden from public listings", async () => {
     const { db, tables } = createDb();
 
     await seedGitHubBackedSkillSourceHandler(
@@ -383,19 +359,17 @@ describe("devSeed local fixtures", () => {
             slug: "pending-github-skill",
             displayName: "Pending GitHub Skill",
             githubPath: "skills/pending-github-skill",
-            githubVerifiedCommit: "1".repeat(40),
-            githubVerifiedContentHash: "hash-pending",
+            githubCurrentCommit: "1".repeat(40),
+            githubCurrentContentHash: "hash-pending",
             githubScanStatus: "pending",
-            githubSignatureStatus: "verified",
           },
           {
-            slug: "bad-signature-github-skill",
-            displayName: "Bad Signature GitHub Skill",
-            githubPath: "skills/bad-signature-github-skill",
-            githubVerifiedCommit: "2".repeat(40),
-            githubVerifiedContentHash: "hash-bad-signature",
-            githubScanStatus: "clean",
-            githubSignatureStatus: "failed",
+            slug: "failed-scan-github-skill",
+            displayName: "Failed Scan GitHub Skill",
+            githubPath: "skills/failed-scan-github-skill",
+            githubCurrentCommit: "2".repeat(40),
+            githubCurrentContentHash: "hash-failed-scan",
+            githubScanStatus: "failed",
           },
         ],
       } as never,
@@ -411,9 +385,9 @@ describe("devSeed local fixtures", () => {
           isSuspicious: false,
         }),
         expect.objectContaining({
-          slug: "bad-signature-github-skill",
+          slug: "failed-scan-github-skill",
           moderationStatus: "hidden",
-          moderationReason: "github.signature.failed",
+          moderationReason: "scanner.failed",
           moderationVerdict: undefined,
           isSuspicious: false,
         }),

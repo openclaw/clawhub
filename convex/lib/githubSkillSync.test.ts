@@ -69,7 +69,6 @@ describe("buildGitHubSkillSourceSnapshot", () => {
       "skills/aiq-deploy/SKILL.md":
         "---\nname: AIQ Deploy\nversion: 0.2.0\ndescription: Deploy AgentIQ workflows.\n---\n# AIQ Deploy\n",
       "skills/aiq-deploy/skill-card.md": "# Card\n",
-      "skills/aiq-deploy/skill.oms.sig": "signature",
       "skills/vision-helper/SKILL.md": "# Vision Helper\n",
       "skills.sh.json": JSON.stringify({
         groupings: [{ title: "Agentic AI", skills: ["aiq-deploy"] }],
@@ -110,7 +109,6 @@ describe("buildGitHubSkillSourceSnapshot", () => {
             "---\nname: AIQ Deploy\nversion: 0.2.0\ndescription: Deploy AgentIQ workflows.\n---\n# AIQ Deploy\n",
           skillCardMarkdownPath: "skills/aiq-deploy/skill-card.md",
           skillCardMarkdown: "# Card\n",
-          hasSignature: true,
         }),
         expect.objectContaining({
           slug: "vision-helper",
@@ -118,7 +116,6 @@ describe("buildGitHubSkillSourceSnapshot", () => {
           path: "skills/vision-helper",
           skillMarkdownPath: "skills/vision-helper/SKILL.md",
           skillMarkdown: "# Vision Helper\n",
-          hasSignature: false,
         }),
       ]),
     );
@@ -174,9 +171,7 @@ describe("buildGitHubSkillSourceSnapshot", () => {
       commit: "1".repeat(40),
       entries: repoEntries({
         "skills/aiq-deploy/SKILL.md": "# AIQ Deploy\n",
-        "skills/aiq-deploy/skill.oms.sig": "signature",
         "plugins/nvidia-skills/skills/aiq-deploy/SKILL.md": "# Plugin Copy\n",
-        "plugins/nvidia-skills/skills/aiq-deploy/skill.oms.sig": "signature",
         "skills.sh.json": JSON.stringify({
           groupings: [{ title: "Agentic AI", skills: ["aiq-deploy"] }],
         }),
@@ -202,14 +197,13 @@ describe("buildGitHubSkillSourceSnapshot", () => {
 });
 
 describe("buildGitHubSkillSyncPlan", () => {
-  it("marks changed upstream content pending without moving the verified hash", async () => {
+  it("marks changed upstream content pending", async () => {
     const snapshot = await buildGitHubSkillSourceSnapshot({
       repo: "NVIDIA/skills",
       defaultBranch: "main",
       commit: "2".repeat(40),
       entries: repoEntries({
         "skills/aiq-deploy/SKILL.md": "# AIQ Deploy v2\n",
-        "skills/aiq-deploy/skill.oms.sig": "signature",
         "skills.sh.json": JSON.stringify({
           groupings: [{ title: "Agentic AI", skills: ["aiq-deploy"] }],
         }),
@@ -226,10 +220,9 @@ describe("buildGitHubSkillSyncPlan", () => {
           slug: "aiq-deploy",
           displayName: "AIQ Deploy",
           githubPath: "skills/aiq-deploy",
-          githubVerifiedCommit: "1".repeat(40),
-          githubVerifiedContentHash: "old-hash",
+          githubCurrentStatus: "present",
+          githubCurrentContentHash: "old-hash",
           githubScanStatus: "clean",
-          githubSignatureStatus: "verified",
         },
       ],
       snapshot,
@@ -243,12 +236,9 @@ describe("buildGitHubSkillSyncPlan", () => {
         patch: expect.objectContaining({
           githubCurrentCommit: "2".repeat(40),
           githubCurrentContentHash: snapshot.skills[0]?.contentHash,
-          githubVerifiedCommit: "1".repeat(40),
-          githubVerifiedContentHash: "old-hash",
           githubScanStatus: "pending",
-          githubSignatureStatus: "pending",
           moderationStatus: "hidden",
-          moderationReason: "github.signature.pending",
+          moderationReason: "pending.scan",
         }),
       }),
     ]);
@@ -256,14 +246,13 @@ describe("buildGitHubSkillSyncPlan", () => {
     expect(plan.stats.changed).toBe(1);
   });
 
-  it("keeps clean verification when only the repo commit changes", async () => {
+  it("keeps clean scan status when only the repo commit changes", async () => {
     const snapshot = await buildGitHubSkillSourceSnapshot({
       repo: "NVIDIA/skills",
       defaultBranch: "main",
       commit: "2".repeat(40),
       entries: repoEntries({
         "skills/aiq-deploy/SKILL.md": "---\nversion: 0.2.0\n---\n# AIQ Deploy\n",
-        "skills/aiq-deploy/skill.oms.sig": "signature",
       }),
     });
     const contentHash = snapshot.skills[0]?.contentHash ?? "";
@@ -282,10 +271,9 @@ describe("buildGitHubSkillSyncPlan", () => {
             createdAt: 7,
           },
           githubPath: "skills/aiq-deploy",
-          githubVerifiedCommit: "1".repeat(40),
-          githubVerifiedContentHash: contentHash,
+          githubCurrentStatus: "present",
+          githubCurrentContentHash: contentHash,
           githubScanStatus: "clean",
-          githubSignatureStatus: "verified",
         },
       ],
       snapshot,
@@ -295,10 +283,7 @@ describe("buildGitHubSkillSyncPlan", () => {
     expect(plan.skillPatches[0]?.patch).toMatchObject({
       githubCurrentCommit: "2".repeat(40),
       githubCurrentContentHash: contentHash,
-      githubVerifiedCommit: "1".repeat(40),
-      githubVerifiedContentHash: contentHash,
       githubScanStatus: "clean",
-      githubSignatureStatus: "verified",
       moderationStatus: "active",
       moderationVerdict: "clean",
     });
@@ -314,7 +299,6 @@ describe("buildGitHubSkillSyncPlan", () => {
       commit: "2".repeat(40),
       entries: repoEntries({
         "skills/aiq-deploy/SKILL.md": "# AIQ Deploy\n",
-        "skills/aiq-deploy/skill.oms.sig": "signature",
       }),
     });
 
@@ -328,10 +312,9 @@ describe("buildGitHubSkillSyncPlan", () => {
           slug: "aiq-deploy",
           displayName: "AIQ Deploy",
           githubPath: "skills/aiq-deploy",
-          githubVerifiedCommit: "1".repeat(40),
-          githubVerifiedContentHash: snapshot.skills[0]?.contentHash ?? "",
+          githubCurrentStatus: "present",
+          githubCurrentContentHash: snapshot.skills[0]?.contentHash ?? "",
           githubScanStatus: "clean",
-          githubSignatureStatus: "verified",
         },
       ],
       snapshot,
@@ -344,14 +327,13 @@ describe("buildGitHubSkillSyncPlan", () => {
     });
   });
 
-  it("restores clean verification when upstream reverts to previously verified bytes", async () => {
+  it("preserves pending scan status for unchanged pending content", async () => {
     const snapshot = await buildGitHubSkillSourceSnapshot({
       repo: "NVIDIA/skills",
       defaultBranch: "main",
       commit: "3".repeat(40),
       entries: repoEntries({
         "skills/aiq-deploy/SKILL.md": "# AIQ Deploy\n",
-        "skills/aiq-deploy/skill.oms.sig": "signature",
       }),
     });
     const contentHash = snapshot.skills[0]?.contentHash ?? "";
@@ -366,10 +348,9 @@ describe("buildGitHubSkillSyncPlan", () => {
           slug: "aiq-deploy",
           displayName: "AIQ Deploy",
           githubPath: "skills/aiq-deploy",
-          githubVerifiedCommit: "1".repeat(40),
-          githubVerifiedContentHash: contentHash,
+          githubCurrentStatus: "present",
+          githubCurrentContentHash: contentHash,
           githubScanStatus: "pending",
-          githubSignatureStatus: "pending",
         },
       ],
       snapshot,
@@ -379,24 +360,20 @@ describe("buildGitHubSkillSyncPlan", () => {
     expect(plan.skillPatches[0]?.patch).toMatchObject({
       githubCurrentCommit: "3".repeat(40),
       githubCurrentContentHash: contentHash,
-      githubVerifiedCommit: "1".repeat(40),
-      githubVerifiedContentHash: contentHash,
-      githubScanStatus: "clean",
-      githubSignatureStatus: "verified",
-      moderationStatus: "active",
-      moderationVerdict: "clean",
+      githubScanStatus: "pending",
+      moderationStatus: "hidden",
+      moderationReason: "pending.scan",
     });
     expect(plan.stats.unchanged).toBe(1);
   });
 
-  it("resets stale rejected status when upstream reverts to previously verified bytes", async () => {
+  it("preserves terminal scan status for unchanged current content", async () => {
     const snapshot = await buildGitHubSkillSourceSnapshot({
       repo: "NVIDIA/skills",
       defaultBranch: "main",
       commit: "3".repeat(40),
       entries: repoEntries({
         "skills/aiq-deploy/SKILL.md": "# AIQ Deploy\n",
-        "skills/aiq-deploy/skill.oms.sig": "signature",
       }),
     });
     const contentHash = snapshot.skills[0]?.contentHash ?? "";
@@ -411,54 +388,9 @@ describe("buildGitHubSkillSyncPlan", () => {
           slug: "aiq-deploy",
           displayName: "AIQ Deploy",
           githubPath: "skills/aiq-deploy",
-          githubVerifiedCommit: "1".repeat(40),
-          githubVerifiedContentHash: contentHash,
-          githubScanStatus: "malicious",
-          githubSignatureStatus: "failed",
-        },
-      ],
-      snapshot,
-      now: 123,
-    });
-
-    expect(plan.skillPatches[0]?.patch).toMatchObject({
-      githubCurrentContentHash: contentHash,
-      githubVerifiedContentHash: contentHash,
-      githubScanStatus: "clean",
-      githubSignatureStatus: "verified",
-      moderationStatus: "active",
-      moderationVerdict: "clean",
-    });
-  });
-
-  it("preserves terminal verification status for unchanged unverified current bytes", async () => {
-    const snapshot = await buildGitHubSkillSourceSnapshot({
-      repo: "NVIDIA/skills",
-      defaultBranch: "main",
-      commit: "3".repeat(40),
-      entries: repoEntries({
-        "skills/aiq-deploy/SKILL.md": "# AIQ Deploy\n",
-        "skills/aiq-deploy/skill.oms.sig": "signature",
-      }),
-    });
-    const contentHash = snapshot.skills[0]?.contentHash ?? "";
-
-    const plan = buildGitHubSkillSyncPlan({
-      sourceId: "githubSkillSources:nvidia",
-      ownerUserId: "users:nvidia",
-      ownerPublisherId: "publishers:nvidia",
-      existingSkills: [
-        {
-          _id: "skills:aiq-deploy",
-          slug: "aiq-deploy",
-          displayName: "AIQ Deploy",
-          githubPath: "skills/aiq-deploy",
-          githubVerifiedCommit: "1".repeat(40),
-          githubVerifiedContentHash: "old-hash",
           githubCurrentStatus: "present",
           githubCurrentContentHash: contentHash,
           githubScanStatus: "malicious",
-          githubSignatureStatus: "verified",
         },
       ],
       snapshot,
@@ -467,14 +399,84 @@ describe("buildGitHubSkillSyncPlan", () => {
 
     expect(plan.skillPatches[0]?.patch).toMatchObject({
       githubCurrentContentHash: contentHash,
-      githubVerifiedContentHash: "old-hash",
       githubScanStatus: "malicious",
-      githubSignatureStatus: "verified",
+      moderationStatus: "hidden",
+      moderationReason: "scanner.llm.malicious",
+    });
+  });
+
+  it("preserves terminal scan status for unchanged current bytes", async () => {
+    const snapshot = await buildGitHubSkillSourceSnapshot({
+      repo: "NVIDIA/skills",
+      defaultBranch: "main",
+      commit: "3".repeat(40),
+      entries: repoEntries({
+        "skills/aiq-deploy/SKILL.md": "# AIQ Deploy\n",
+      }),
+    });
+    const contentHash = snapshot.skills[0]?.contentHash ?? "";
+
+    const plan = buildGitHubSkillSyncPlan({
+      sourceId: "githubSkillSources:nvidia",
+      ownerUserId: "users:nvidia",
+      ownerPublisherId: "publishers:nvidia",
+      existingSkills: [
+        {
+          _id: "skills:aiq-deploy",
+          slug: "aiq-deploy",
+          displayName: "AIQ Deploy",
+          githubPath: "skills/aiq-deploy",
+          githubCurrentStatus: "present",
+          githubCurrentContentHash: contentHash,
+          githubScanStatus: "malicious",
+        },
+      ],
+      snapshot,
+      now: 123,
+    });
+
+    expect(plan.skillPatches[0]?.patch).toMatchObject({
+      githubCurrentContentHash: contentHash,
+      githubScanStatus: "malicious",
       moderationStatus: "hidden",
       moderationReason: "scanner.llm.malicious",
     });
     expect(plan.skillPatches[0]?.patch).not.toHaveProperty("updatedAt");
     expect(plan.stats.unchanged).toBe(1);
+  });
+
+  it("revives soft-deleted skills when a configured repo is synced again", async () => {
+    const snapshot = await buildGitHubSkillSourceSnapshot({
+      repo: "mattpocock/skills",
+      defaultBranch: "main",
+      commit: "4".repeat(40),
+      entries: repoEntries({
+        "skills/engineering/tdd/SKILL.md": "# TDD\n",
+      }),
+    });
+
+    const plan = buildGitHubSkillSyncPlan({
+      sourceId: "githubSkillSources:matt",
+      ownerUserId: "users:matt",
+      ownerPublisherId: "publishers:matt",
+      existingSkills: [
+        {
+          _id: "skills:tdd",
+          slug: "tdd",
+          displayName: "TDD",
+          githubPath: "skills/engineering/tdd",
+          githubCurrentStatus: "missing",
+        },
+      ],
+      snapshot,
+      now: 123,
+    });
+
+    expect(plan.skillPatches[0]?.patch).toMatchObject({
+      githubCurrentStatus: "present",
+      githubRemovedAt: undefined,
+      softDeletedAt: undefined,
+    });
   });
 
   it("tombstones upstream removals instead of leaving stale installs active", async () => {
@@ -497,10 +499,7 @@ describe("buildGitHubSkillSyncPlan", () => {
           slug: "aiq-deploy",
           displayName: "AIQ Deploy",
           githubPath: "skills/aiq-deploy",
-          githubVerifiedCommit: "1".repeat(40),
-          githubVerifiedContentHash: "old-hash",
           githubScanStatus: "clean",
-          githubSignatureStatus: "verified",
         },
       ],
       snapshot,
@@ -547,7 +546,6 @@ describe("buildGitHubSkillSyncPlan", () => {
           githubCurrentStatus: "missing",
           githubRemovedAt: 77,
           githubScanStatus: "clean",
-          githubSignatureStatus: "verified",
         },
       ],
       snapshot,

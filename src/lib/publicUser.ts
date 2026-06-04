@@ -83,6 +83,8 @@ export type PublicSkill = Pick<
   | "forkOf"
   | "latestVersionId"
   | "installKind"
+  | "githubPath"
+  | "githubCurrentCommit"
   | "githubHasSkillCard"
   | "tags"
   | "capabilityTags"
@@ -91,7 +93,9 @@ export type PublicSkill = Pick<
   | "isSuspicious"
   | "createdAt"
   | "updatedAt"
->;
+> & {
+  githubSourceRepo?: string;
+};
 
 export type PublicSoul = Pick<
   Doc<"souls">,

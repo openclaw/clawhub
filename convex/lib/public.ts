@@ -25,6 +25,8 @@ export type PublicSkill = Pick<
   | "forkOf"
   | "latestVersionId"
   | "installKind"
+  | "githubPath"
+  | "githubCurrentCommit"
   | "githubHasSkillCard"
   | "tags"
   | "capabilityTags"
@@ -33,7 +35,9 @@ export type PublicSkill = Pick<
   | "isSuspicious"
   | "createdAt"
   | "updatedAt"
->;
+> & {
+  githubSourceRepo?: string;
+};
 
 /**
  * Minimum set of fields needed by `hydrateResults` to filter and convert
@@ -72,7 +76,8 @@ export type HydratableSkill = Pick<
   | "isSuspicious"
   | "createdAt"
   | "updatedAt"
->;
+> &
+  Partial<Pick<Doc<"skills">, "githubPath" | "githubCurrentCommit">>;
 
 export type PublicSoul = Pick<
   Doc<"souls">,
@@ -154,6 +159,8 @@ export function toPublicSkill(skill: HydratableSkill | null | undefined): Public
     forkOf: skill.forkOf,
     latestVersionId: skill.latestVersionId,
     installKind: skill.installKind,
+    githubPath: skill.githubPath,
+    githubCurrentCommit: skill.githubCurrentCommit,
     githubHasSkillCard: skill.githubHasSkillCard,
     tags: skill.tags,
     capabilityTags: skill.capabilityTags,

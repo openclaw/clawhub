@@ -31,84 +31,6 @@ type SeedActionResult = {
 
 type SeedMutationResult = Record<string, unknown>;
 
-const LOCAL_NVIDIA_GITHUB_SKILL_SOURCE_FIXTURE: SeedGitHubBackedSkillSourceArgs = {
-  repo: "NVIDIA/skills",
-  defaultBranch: "main",
-  displayManifestKind: "skills.sh",
-  displayManifestHash: "local-nvidia-skills-manifest",
-  displayManifestCommit: "0".repeat(40),
-  displayManifestStatus: "ok",
-  displayManifest: {
-    notGrouped: "bottom",
-    groupings: [
-      {
-        title: "Agentic AI",
-        description: "Agentic AI skills.",
-        skills: ["aiq-deploy"],
-      },
-      {
-        title: "Physical AI",
-        description: "Robotics and simulation skills.",
-        skills: ["isaac-sim-helper"],
-      },
-      {
-        title: "Vision AI",
-        description: "Computer vision workflow skills.",
-        skills: ["vision-helper"],
-      },
-    ],
-  },
-  skills: [
-    {
-      slug: "aiq-deploy",
-      displayName: "AIQ Deploy",
-      summary: "Deploy AgentIQ workflows from NVIDIA's source-backed skills catalog.",
-      githubPath: "skills/aiq-deploy",
-      githubVerifiedCommit: "1".repeat(40),
-      githubVerifiedContentHash: "local-aiq-deploy-hash",
-      githubScanStatus: "clean",
-      githubSignatureStatus: "verified",
-      githubVerifiedAt: 1,
-      capabilityTags: ["agentic-ai"],
-    },
-    {
-      slug: "isaac-sim-helper",
-      displayName: "Isaac Sim Helper",
-      summary: "Configure simulation workflows from a GitHub-backed skill source.",
-      githubPath: "skills/isaac-sim-helper",
-      githubVerifiedCommit: "2".repeat(40),
-      githubVerifiedContentHash: "local-isaac-sim-helper-hash",
-      githubScanStatus: "clean",
-      githubSignatureStatus: "verified",
-      githubVerifiedAt: 1,
-      capabilityTags: ["physical-ai"],
-    },
-    {
-      slug: "vision-helper",
-      displayName: "Vision Helper",
-      summary: "Prepare computer vision assets from a source-backed skill.",
-      githubPath: "skills/vision-helper",
-      githubVerifiedCommit: "3".repeat(40),
-      githubVerifiedContentHash: "local-vision-helper-hash",
-      githubScanStatus: "clean",
-      githubSignatureStatus: "verified",
-      githubVerifiedAt: 1,
-      capabilityTags: ["vision-ai"],
-    },
-    {
-      slug: "nvidia-extra-lab",
-      displayName: "NVIDIA Extra Lab",
-      summary: "Unlisted source-backed fixture that renders under Other skills.",
-      githubPath: "skills/nvidia-extra-lab",
-      githubVerifiedCommit: "4".repeat(40),
-      githubVerifiedContentHash: "local-nvidia-extra-lab-hash",
-      githubScanStatus: "clean",
-      githubSignatureStatus: "verified",
-      githubVerifiedAt: 1,
-    },
-  ],
-};
-
 const displayManifestStatusValidator = v.union(
   v.literal("ok"),
   v.literal("missing"),
@@ -135,15 +57,7 @@ const githubSkillScanStatusValidator = v.union(
   v.literal("failed"),
 );
 
-const githubSkillSignatureStatusValidator = v.union(
-  v.literal("verified"),
-  v.literal("failed"),
-  v.literal("missing"),
-  v.literal("pending"),
-);
-
 type GitHubSkillScanStatus = "clean" | "suspicious" | "malicious" | "pending" | "failed";
-type GitHubSkillSignatureStatus = "verified" | "failed" | "missing" | "pending";
 
 type SeedGitHubBackedSkillSourceArgs = {
   reset?: boolean;
@@ -168,15 +82,11 @@ type SeedGitHubBackedSkillSourceArgs = {
     displayName: string;
     summary?: string;
     githubPath: string;
-    githubVerifiedCommit: string;
-    githubVerifiedContentHash: string;
-    githubCurrentCommit?: string;
-    githubCurrentContentHash?: string;
+    githubCurrentCommit: string;
+    githubCurrentContentHash: string;
     githubCurrentStatus?: "present" | "missing" | "unknown";
     githubCurrentCheckedAt?: number;
     githubScanStatus: GitHubSkillScanStatus;
-    githubSignatureStatus: GitHubSkillSignatureStatus;
-    githubVerifiedAt?: number;
     githubRemovedAt?: number;
     capabilityTags?: string[];
   }>;
@@ -885,20 +795,9 @@ async function seedLocalFixturesHandler(
     },
   );
 
-  const githubBackedResult: SeedMutationResult = await ctx.runMutation(
-    internal.devSeed.seedGitHubBackedSkillSourceMutation,
-    {
-      ...LOCAL_NVIDIA_GITHUB_SKILL_SOURCE_FIXTURE,
-      reset: args.reset,
-    },
-  );
-
   return {
     ok: true,
-    results: [
-      { slug: "local-moderation-fixtures", ...fixtureResult },
-      { slug: "nvidia-github-backed-skills", ...githubBackedResult },
-    ],
+    results: [{ slug: "local-moderation-fixtures", ...fixtureResult }],
   };
 }
 
@@ -2597,24 +2496,11 @@ export const seedLocalModerationFixturesMutation = internalMutation({
   handler: seedLocalModerationFixturesHandler,
 });
 
-function githubBackedSkillModeration(
-  scanStatus: GitHubSkillScanStatus,
-  signatureStatus: GitHubSkillSignatureStatus,
-  removedAt?: number,
-) {
+function githubBackedSkillModeration(scanStatus: GitHubSkillScanStatus, removedAt?: number) {
   if (typeof removedAt === "number") {
     return {
       moderationStatus: "hidden" as const,
       moderationReason: "github.upstream.removed",
-      moderationVerdict: undefined,
-      moderationFlags: [],
-      isSuspicious: false,
-    };
-  }
-  if (signatureStatus !== "verified") {
-    return {
-      moderationStatus: "hidden" as const,
-      moderationReason: `github.signature.${signatureStatus}`,
       moderationVerdict: undefined,
       moderationFlags: [],
       isSuspicious: false,
@@ -2709,11 +2595,7 @@ export async function seedGitHubBackedSkillSourceHandler(
     }
     if (existing && args.reset) await deleteSkillAndVersions(ctx, existing._id);
 
-    const moderation = githubBackedSkillModeration(
-      spec.githubScanStatus,
-      spec.githubSignatureStatus,
-      spec.githubRemovedAt,
-    );
+    const moderation = githubBackedSkillModeration(spec.githubScanStatus, spec.githubRemovedAt);
     const skillId = await ctx.db.insert("skills", {
       slug: spec.slug,
       displayName: spec.displayName,
@@ -2723,16 +2605,12 @@ export async function seedGitHubBackedSkillSourceHandler(
       installKind: "github",
       githubSourceId: sourceId,
       githubPath: spec.githubPath,
-      githubVerifiedCommit: spec.githubVerifiedCommit,
-      githubVerifiedContentHash: spec.githubVerifiedContentHash,
-      githubCurrentCommit: spec.githubCurrentCommit ?? spec.githubVerifiedCommit,
-      githubCurrentContentHash: spec.githubCurrentContentHash ?? spec.githubVerifiedContentHash,
+      githubCurrentCommit: spec.githubCurrentCommit,
+      githubCurrentContentHash: spec.githubCurrentContentHash,
       githubCurrentStatus:
         spec.githubCurrentStatus ?? (spec.githubRemovedAt ? "missing" : "present"),
-      githubCurrentCheckedAt: spec.githubCurrentCheckedAt ?? spec.githubVerifiedAt,
+      githubCurrentCheckedAt: spec.githubCurrentCheckedAt,
       githubScanStatus: spec.githubScanStatus,
-      githubSignatureStatus: spec.githubSignatureStatus,
-      githubVerifiedAt: spec.githubVerifiedAt,
       githubRemovedAt: spec.githubRemovedAt,
       latestVersionId: undefined,
       latestVersionSummary: undefined,
@@ -2792,23 +2670,92 @@ export const seedGitHubBackedSkillSourceMutation = internalMutation({
         displayName: v.string(),
         summary: v.optional(v.string()),
         githubPath: v.string(),
-        githubVerifiedCommit: v.string(),
-        githubVerifiedContentHash: v.string(),
-        githubCurrentCommit: v.optional(v.string()),
-        githubCurrentContentHash: v.optional(v.string()),
+        githubCurrentCommit: v.string(),
+        githubCurrentContentHash: v.string(),
         githubCurrentStatus: v.optional(
           v.union(v.literal("present"), v.literal("missing"), v.literal("unknown")),
         ),
         githubCurrentCheckedAt: v.optional(v.number()),
         githubScanStatus: githubSkillScanStatusValidator,
-        githubSignatureStatus: githubSkillSignatureStatusValidator,
-        githubVerifiedAt: v.optional(v.number()),
         githubRemovedAt: v.optional(v.number()),
         capabilityTags: v.optional(v.array(v.string())),
       }),
     ),
   },
   handler: seedGitHubBackedSkillSourceHandler,
+});
+
+export const seedGitHubSourceInvalidSkillsPreviewMutation = internalMutation({
+  args: {
+    repo: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const source = await ctx.db
+      .query("githubSkillSources")
+      .withIndex("by_repo", (q) => q.eq("repo", args.repo))
+      .unique();
+
+    if (!source) {
+      return { ok: false as const, reason: "source_not_found" as const };
+    }
+
+    const overlongSlug = "preview-" + "x".repeat(97);
+    await ctx.db.patch(source._id, {
+      lastSyncInvalidSkills: [
+        {
+          slug: overlongSlug,
+          path: `skills/${overlongSlug}`,
+          displayName: "Preview Invalid Skill",
+          error: "Slug must be at most 96 characters.",
+        },
+      ],
+      updatedAt: Date.now(),
+    });
+
+    return { ok: true as const, sourceId: source._id };
+  },
+});
+
+export const deleteGitHubBackedSkillSourceSeedMutation = internalMutation({
+  args: {
+    repo: v.optional(v.string()),
+    sourceId: v.optional(v.id("githubSkillSources")),
+  },
+  handler: async (ctx, args) => {
+    const source = args.sourceId
+      ? await ctx.db.get(args.sourceId)
+      : args.repo
+        ? await ctx.db
+            .query("githubSkillSources")
+            .withIndex("by_repo", (q) => q.eq("repo", args.repo as string))
+            .unique()
+        : null;
+    const sourceId = source?._id ?? args.sourceId;
+    if (!sourceId) {
+      return { ok: true as const, deletedSource: false, deletedSkills: 0, deletedContents: 0 };
+    }
+
+    const contents = await ctx.db
+      .query("githubSkillContents")
+      .withIndex("by_github_source", (q) => q.eq("githubSourceId", sourceId))
+      .collect();
+    for (const content of contents) await ctx.db.delete(content._id);
+
+    const skills = await ctx.db
+      .query("skills")
+      .withIndex("by_github_source", (q) => q.eq("githubSourceId", sourceId))
+      .collect();
+    for (const skill of skills) await deleteSkillAndVersions(ctx, skill._id);
+
+    if (source) await ctx.db.delete(source._id);
+
+    return {
+      ok: true as const,
+      deletedSource: Boolean(source),
+      deletedSkills: skills.length,
+      deletedContents: contents.length,
+    };
+  },
 });
 
 export const seedFeaturedPluginPackagesMutation = internalMutation({

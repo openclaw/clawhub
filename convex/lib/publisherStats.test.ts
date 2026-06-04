@@ -155,7 +155,7 @@ describe("publisher stat maintenance", () => {
     await adjustPublisherStatsForSkillChange(
       ctx as never,
       null,
-      makeSkill({ moderationStatus: "hidden", moderationReason: "github.signature.pending" }),
+      makeSkill({ moderationStatus: "hidden", moderationReason: "pending.scan" }),
     );
 
     expect(ctx.db.get).not.toHaveBeenCalled();

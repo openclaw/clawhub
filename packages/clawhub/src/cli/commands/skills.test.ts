@@ -9,7 +9,7 @@ import {
   createUiModuleMocks,
   makeGlobalOpts,
 } from "../../../test/cliCommandTestKit.js";
-import { ApiRoutes } from "../../schema/index.js";
+import { ApiRoutes, LegacyApiRoutes } from "../../schema/index.js";
 import * as skillStore from "../../skills.js";
 
 const fsMocks = vi.hoisted(() => ({
@@ -444,9 +444,9 @@ describe("cmdUpdate", () => {
       .mockResolvedValueOnce({
         ok: false,
         slug: "stale-github",
-        reason: "github_upstream_changed",
+        reason: "github_verification_pending",
         message: "stale-github changed upstream; waiting for ClawHub scan.",
-        status: 409,
+        status: 423,
       })
       .mockResolvedValueOnce({
         latestVersion: { version: "2.0.0" },
@@ -529,7 +529,6 @@ describe("cmdUpdate", () => {
           path: "skills/aiq-deploy",
           commit,
           contentHash: "hash-aiq-deploy",
-          verifiedAt: 123,
           sourceUrl: `https://github.com/NVIDIA/skills/tree/${commit}/skills/aiq-deploy`,
         },
       });
@@ -576,7 +575,6 @@ describe("cmdUpdate", () => {
           path: "skills/aiq-deploy",
           commit,
           contentHash: "hash-aiq-deploy",
-          verifiedAt: 123,
           sourceUrl: `https://github.com/NVIDIA/skills/tree/${commit}/skills/aiq-deploy`,
         },
       });
@@ -625,7 +623,6 @@ describe("cmdUpdate", () => {
           path: "skills/aiq-deploy",
           commit,
           contentHash: "hash-aiq-deploy",
-          verifiedAt: 123,
           sourceUrl: `https://github.com/NVIDIA/skills/tree/${commit}/skills/aiq-deploy`,
         },
       });
@@ -841,19 +838,22 @@ describe("cmdList", () => {
 describe("cmdInstall", () => {
   it("passes optional auth token to API + download requests", async () => {
     mockGetOptionalAuthToken.mockResolvedValue("tkn");
-    mockApiRequest.mockResolvedValue({
-      skill: {
-        slug: "demo",
-        displayName: "Demo",
-        summary: null,
-        tags: {},
-        stats: {},
-        createdAt: 0,
-        updatedAt: 0,
-      },
-      latestVersion: { version: "1.0.0" },
-      owner: null,
-      moderation: null,
+    mockApiRequest.mockImplementation(async (_registry, args) => {
+      if (args.path === LegacyApiRoutes.cliTelemetryInstall) return { ok: true };
+      return {
+        skill: {
+          slug: "demo",
+          displayName: "Demo",
+          summary: null,
+          tags: {},
+          stats: {},
+          createdAt: 0,
+          updatedAt: 0,
+        },
+        latestVersion: { version: "1.0.0" },
+        owner: null,
+        moderation: null,
+      };
     });
     mockDownloadZip.mockResolvedValue(new Uint8Array([1, 2, 3]));
     vi.mocked(readLockfile).mockResolvedValue({ version: 1, skills: {} });
@@ -869,6 +869,55 @@ describe("cmdInstall", () => {
     expect(requestArgs?.token).toBe("tkn");
     const [, zipArgs] = mockDownloadZip.mock.calls[0] ?? [];
     expect(zipArgs?.token).toBe("tkn");
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({
+        method: "POST",
+        path: LegacyApiRoutes.cliTelemetryInstall,
+        token: "tkn",
+        body: {
+          roots: [
+            {
+              rootId: expect.any(String),
+              label: expect.any(String),
+              skills: [{ slug: "demo", version: "1.0.0" }],
+            },
+          ],
+        },
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("does not fail installs when install telemetry fails", async () => {
+    mockGetOptionalAuthToken.mockResolvedValue("tkn");
+    mockApiRequest.mockImplementation(async (_registry, args) => {
+      if (args.path === LegacyApiRoutes.cliTelemetryInstall) throw new Error("telemetry down");
+      return {
+        skill: {
+          slug: "demo",
+          displayName: "Demo",
+          summary: null,
+          tags: {},
+          stats: {},
+          createdAt: 0,
+          updatedAt: 0,
+        },
+        latestVersion: { version: "1.0.0" },
+        owner: null,
+        moderation: null,
+      };
+    });
+    mockDownloadZip.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    vi.mocked(readLockfile).mockResolvedValue({ version: 1, skills: {} });
+    vi.mocked(writeLockfile).mockResolvedValue();
+    vi.mocked(writeSkillOrigin).mockResolvedValue();
+    vi.mocked(extractZipToDir).mockResolvedValue();
+    vi.mocked(stat).mockRejectedValue(new Error("missing"));
+
+    await expect(cmdInstall(makeOpts(), "demo")).resolves.toBeUndefined();
+
+    expect(writeLockfile).toHaveBeenCalled();
   });
 
   it("installs source-backed skills from the GitHub resolver response", async () => {
@@ -898,7 +947,6 @@ describe("cmdInstall", () => {
           path: "skills/aiq-deploy",
           commit,
           contentHash: "hash-aiq-deploy",
-          verifiedAt: 123,
           sourceUrl: `https://github.com/NVIDIA/skills/tree/${commit}/skills/aiq-deploy`,
         },
       });

@@ -6,6 +6,7 @@ export const LegacyApiRoutes = {
   cliWhoami: "/api/cli/whoami",
   cliUploadUrl: "/api/cli/upload-url",
   cliPublish: "/api/cli/publish",
+  cliTelemetryInstall: "/api/cli/telemetry/install",
   cliTelemetrySync: "/api/cli/telemetry/sync",
   cliSkillDelete: "/api/cli/skill/delete",
   cliSkillUndelete: "/api/cli/skill/undelete",

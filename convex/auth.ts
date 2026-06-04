@@ -14,7 +14,7 @@ export const DELETED_ACCOUNT_REAUTH_MESSAGE =
   "This account has been permanently deleted and cannot be restored.";
 
 const REAUTH_BLOCKING_BAN_ACTIONS = new Set(["user.ban", "user.autoban.malware"]);
-const DEV_PERSONAS = new Set(["owner", "user", "admin"]);
+const DEV_PERSONAS = new Set(["owner", "user", "admin", "officialOrgMember"]);
 
 function getBannedReauthMessage(reason: string | undefined) {
   const normalizedReason = reason?.trim();
@@ -94,7 +94,7 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
         const persona = typeof credentials.persona === "string" ? credentials.persona : "";
         if (!DEV_PERSONAS.has(persona)) throw new Error("Unknown dev persona");
         const userId: Id<"users"> = await ctx.runMutation(internal.users.upsertDevPersonaInternal, {
-          persona: persona as "owner" | "user" | "admin",
+          persona: persona as "owner" | "user" | "admin" | "officialOrgMember",
         });
         return { userId };
       },
