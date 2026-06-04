@@ -84,6 +84,9 @@ function makeInstallResolverRunQuery({
     if ("slug" in args) {
       slugQueryCount += 1;
       if (slugQueryCount === 1) {
+        return skill;
+      }
+      if (slugQueryCount === 2) {
         return publicVisible && skill
           ? {
               skill: {
@@ -94,7 +97,6 @@ function makeInstallResolverRunQuery({
             }
           : null;
       }
-      return skill;
     }
     throw new Error(`unexpected query ${JSON.stringify(args)}`);
   });
@@ -1851,6 +1853,42 @@ describe("httpApiV1 handlers", () => {
     await expect(response.json()).resolves.toMatchObject({
       ok: false,
       reason: "github_upstream_changed",
+    });
+  });
+
+  it("skill install resolver returns structured GitHub blocks for hidden stale source-backed skills", async () => {
+    const runQuery = makeInstallResolverRunQuery({
+      publicVisible: false,
+      skill: {
+        _id: "skills:aiq-deploy",
+        slug: "aiq-deploy",
+        displayName: "AIQ Deploy",
+        moderationStatus: "hidden",
+        moderationReason: "github.signature.pending",
+        installKind: "github",
+        githubSourceId: "githubSkillSources:nvidia",
+        githubPath: "skills/aiq-deploy",
+        githubVerifiedCommit: "1".repeat(40),
+        githubVerifiedContentHash: "hash-aiq-deploy",
+        githubCurrentCommit: "2".repeat(40),
+        githubCurrentContentHash: "hash-aiq-deploy-v2",
+        githubCurrentStatus: "present",
+        githubScanStatus: "pending",
+        githubSignatureStatus: "pending",
+      },
+      source: { repo: "NVIDIA/skills" },
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/aiq-deploy/install"),
+    );
+
+    expect(response.status).toBe(423);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      reason: "github_verification_pending",
     });
   });
 

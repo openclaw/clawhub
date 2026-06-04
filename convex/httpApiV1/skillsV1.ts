@@ -21,6 +21,7 @@ import {
   buildSkillInstallResolution,
   type InstallResolverSkill,
   type InstallResolverSource,
+  type SkillInstallResolution,
 } from "../lib/installResolver";
 import type {
   LlmAgenticRiskFinding,
@@ -1208,6 +1209,25 @@ async function describeOwnerVisibleSkillState(
   return null;
 }
 
+function shouldExposeHiddenGitHubInstallBlock(
+  skill: InstallResolverSkill & {
+    installKind?: "github";
+    moderationStatus?: "active" | "hidden" | "removed";
+    moderationReason?: string;
+  },
+  resolution: SkillInstallResolution,
+) {
+  if (skill.installKind !== "github" || resolution.ok) return false;
+  if (skill.moderationStatus !== "hidden") return false;
+  const reason = skill.moderationReason ?? "";
+  return (
+    reason === "pending.scan" ||
+    reason === "scanner.failed" ||
+    reason === "scanner.llm.malicious" ||
+    reason.startsWith("github.")
+  );
+}
+
 export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request) {
   const rate = await applyRateLimit(ctx, request, "read");
   if (!rate.ok) return rate.response;
@@ -1273,19 +1293,13 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
   }
 
   if (second === "install" && segments.length === 2) {
-    const publicSkillResult = (await ctx.runQuery(api.skills.getBySlug, {
-      slug,
-    })) as GetBySlugResult;
-    if (!publicSkillResult?.skill) {
-      return text("Skill not found", 404, rate.headers);
-    }
-
     const skill = (await runQueryRef<
       | (InstallResolverSkill & {
           _id: Id<"skills">;
           githubSourceId?: Id<"githubSkillSources">;
           softDeletedAt?: number;
           moderationStatus?: "active" | "hidden" | "removed";
+          moderationReason?: string;
           moderationFlags?: string[];
         })
       | null
@@ -1295,17 +1309,11 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
           githubSourceId?: Id<"githubSkillSources">;
           softDeletedAt?: number;
           moderationStatus?: "active" | "hidden" | "removed";
+          moderationReason?: string;
           moderationFlags?: string[];
         })
       | null;
-    if (!skill || skill._id !== publicSkillResult.skill._id) {
-      return text("Skill not found", 404, rate.headers);
-    }
-    if (
-      skill.softDeletedAt ||
-      (skill.moderationStatus && skill.moderationStatus !== "active") ||
-      skill.moderationFlags?.includes("blocked.malware")
-    ) {
+    if (!skill || skill.softDeletedAt || skill.moderationStatus === "removed") {
       return text("Skill not found", 404, rate.headers);
     }
 
@@ -1320,6 +1328,17 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
       skill,
       source,
     });
+
+    const publicSkillResult = (await ctx.runQuery(api.skills.getBySlug, {
+      slug,
+    })) as GetBySlugResult;
+    const publiclyVisible = publicSkillResult?.skill?._id === skill._id;
+    if (!publiclyVisible) {
+      if (!resolution.ok && shouldExposeHiddenGitHubInstallBlock(skill, resolution)) {
+        return json(resolution, resolution.status, rate.headers);
+      }
+      return text("Skill not found", 404, rate.headers);
+    }
 
     return json(resolution, resolution.ok ? 200 : resolution.status, rate.headers);
   }
