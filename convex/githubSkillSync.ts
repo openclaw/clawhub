@@ -1,5 +1,5 @@
 import { ConvexError, v } from "convex/values";
-import { unzipSync } from "fflate";
+import { unzipSync, type UnzipFileInfo } from "fflate";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
@@ -975,25 +975,44 @@ function shouldAttachGitHubSkillSourceHeaders(input: RequestInfo | URL) {
 }
 
 function unzipToEntries(zipBytes: Uint8Array) {
-  const entries = unzipSync(zipBytes);
+  const limits = createZipEntryLimitFilter();
+  const entries = unzipSync(zipBytes, {
+    filter: (file) => limits.accept(file),
+  });
   const out: Record<string, Uint8Array> = {};
-  const rawPaths = Object.keys(entries);
-  if (rawPaths.length > MAX_FILE_COUNT) throw new ConvexError("Repo archive has too many files");
   let totalBytes = 0;
   for (const [rawPath, bytes] of Object.entries(entries)) {
-    if (rawPath.endsWith("/")) continue;
     const normalizedPath = normalizeRepoPath(rawPath);
     if (!normalizedPath) throw new ConvexError("Repo archive contains an invalid path");
-    if (isMacJunkPath(normalizedPath)) continue;
     if (!bytes) continue;
-    if (bytes.byteLength > MAX_SINGLE_FILE_BYTES) {
-      throw new ConvexError("Repo archive contains a file that is too large");
-    }
     totalBytes += bytes.byteLength;
     if (totalBytes > MAX_UNZIPPED_BYTES) throw new ConvexError("Repo archive is too large");
     out[normalizedPath] = new Uint8Array(bytes);
   }
   return out;
+}
+
+function createZipEntryLimitFilter() {
+  let fileCount = 0;
+  let totalBytes = 0;
+  return {
+    accept(file: UnzipFileInfo) {
+      fileCount += 1;
+      if (fileCount > MAX_FILE_COUNT) throw new ConvexError("Repo archive has too many files");
+      if (file.name.endsWith("/")) return false;
+
+      const normalizedPath = normalizeRepoPath(file.name);
+      if (!normalizedPath) throw new ConvexError("Repo archive contains an invalid path");
+      if (isMacJunkPath(normalizedPath)) return false;
+
+      if (file.originalSize > MAX_SINGLE_FILE_BYTES) {
+        throw new ConvexError("Repo archive contains a file that is too large");
+      }
+      totalBytes += file.originalSize;
+      if (totalBytes > MAX_UNZIPPED_BYTES) throw new ConvexError("Repo archive is too large");
+      return true;
+    },
+  };
 }
 
 async function adjustGlobalPublicCountForSkillChange(

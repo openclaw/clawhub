@@ -389,7 +389,7 @@ describe("buildGitHubSkillSyncPlan", () => {
     expect(plan.stats.unchanged).toBe(1);
   });
 
-  it("preserves rejected verification status for previously verified bytes", async () => {
+  it("resets stale rejected status when upstream reverts to previously verified bytes", async () => {
     const snapshot = await buildGitHubSkillSourceSnapshot({
       repo: "NVIDIA/skills",
       defaultBranch: "main",
@@ -414,7 +414,7 @@ describe("buildGitHubSkillSyncPlan", () => {
           githubVerifiedCommit: "1".repeat(40),
           githubVerifiedContentHash: contentHash,
           githubScanStatus: "malicious",
-          githubSignatureStatus: "verified",
+          githubSignatureStatus: "failed",
         },
       ],
       snapshot,
@@ -424,10 +424,10 @@ describe("buildGitHubSkillSyncPlan", () => {
     expect(plan.skillPatches[0]?.patch).toMatchObject({
       githubCurrentContentHash: contentHash,
       githubVerifiedContentHash: contentHash,
-      githubScanStatus: "malicious",
+      githubScanStatus: "clean",
       githubSignatureStatus: "verified",
-      moderationStatus: "hidden",
-      moderationReason: "scanner.llm.malicious",
+      moderationStatus: "active",
+      moderationVerdict: "clean",
     });
   });
 

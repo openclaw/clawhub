@@ -358,12 +358,12 @@ export function buildGitHubSkillSyncPlan({
         existing.githubCurrentContentHash === discovered.contentHash) ||
       currentMatchesVerified;
     const scanStatus: GitHubSkillScanStatus = currentMatchesVerified
-      ? githubScanStatusForVerifiedContent(existing.githubScanStatus)
+      ? githubScanStatusForVerifiedContent()
       : currentContentUnchanged
         ? githubScanStatusForUnchangedContent(existing.githubScanStatus)
         : "pending";
     const signatureStatus: GitHubSkillSignatureStatus = currentMatchesVerified
-      ? githubSignatureStatusForVerifiedContent(existing.githubSignatureStatus)
+      ? githubSignatureStatusForVerifiedContent()
       : currentContentUnchanged
         ? githubSignatureStatusForUnchangedContent(
             existing.githubSignatureStatus,
@@ -442,10 +442,7 @@ export function buildGitHubSkillSyncPlan({
   return { sourcePatch, skillPatches, skillInserts, stats };
 }
 
-function githubScanStatusForVerifiedContent(
-  status: GitHubSkillScanStatus | undefined,
-): GitHubSkillScanStatus {
-  if (status === "failed" || status === "malicious" || status === "suspicious") return status;
+function githubScanStatusForVerifiedContent(): GitHubSkillScanStatus {
   return "clean";
 }
 
@@ -463,10 +460,7 @@ function githubScanStatusForUnchangedContent(
   return "pending";
 }
 
-function githubSignatureStatusForVerifiedContent(
-  status: GitHubSkillSignatureStatus | undefined,
-): GitHubSkillSignatureStatus {
-  if (status === "failed" || status === "missing") return status;
+function githubSignatureStatusForVerifiedContent(): GitHubSkillSignatureStatus {
   return "verified";
 }
 
