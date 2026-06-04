@@ -240,7 +240,7 @@ describe("httpApi handlers", () => {
   it("cliWhoamiHttp returns 401 on auth failure", async () => {
     vi.mocked(requireApiTokenUser).mockRejectedValueOnce(
       new Error(
-        "Unauthorized: This ClawHub account is not in good standing and cannot use API tokens. If you believe this is a mistake, contact security@openclaw.ai.",
+        "Unauthorized: This ClawHub account is not in good standing and cannot use API tokens. If you believe this is a mistake, open a GitHub issue: https://github.com/openclaw/clawhub/issues/new.",
       ),
     );
     const response = await __handlers.cliWhoamiHandler(

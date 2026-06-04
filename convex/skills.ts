@@ -832,7 +832,7 @@ function buildSlugTakenErrorMessage(skill: Doc<"skills">, owner: SkillOwnerRef) 
   if (!owner || owner.deletedAt || owner.deactivatedAt) {
     return (
       "This slug is locked to a deleted or banned account. " +
-      "If you believe you are the rightful owner, please contact security@openclaw.ai to reclaim it."
+      "If you believe you are the rightful owner, open a GitHub issue to reclaim it: https://github.com/openclaw/clawhub/issues/new."
     );
   }
   const base = "Slug is already taken. Choose a different slug.";
@@ -2591,7 +2591,7 @@ export const checkSlugAvailability = query({
         reason: "taken" as const,
         message:
           "This slug is locked to a deleted or banned account. " +
-          "If you believe you are the rightful owner, please contact security@openclaw.ai to reclaim it.",
+          "If you believe you are the rightful owner, open a GitHub issue to reclaim it: https://github.com/openclaw/clawhub/issues/new.",
         url: null,
       };
     }

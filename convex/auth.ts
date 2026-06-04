@@ -9,7 +9,7 @@ import { isLocalDevAuthEnabled } from "./lib/devAuth";
 import { shouldScheduleGitHubProfileSync } from "./lib/githubProfileSync";
 
 export const BANNED_REAUTH_MESSAGE =
-  "This account has been banned and cannot sign in. If you believe this is a mistake, please contact security@openclaw.ai and we will review it.";
+  "This account has been banned and cannot sign in. If you believe this is a mistake, open a GitHub issue: https://github.com/openclaw/clawhub/issues/new.";
 export const DELETED_ACCOUNT_REAUTH_MESSAGE =
   "This account has been permanently deleted and cannot be restored.";
 
