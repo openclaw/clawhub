@@ -420,7 +420,17 @@ Authenticated stored report archive endpoint for submitted versions.
 
 ### `POST /api/v1/skills/-/scan/batch`
 
-Admin-only canonical batch rescan route. It accepts the same payload shape as legacy `POST /api/v1/skills/-/rescan-batch`.
+Admin-only canonical batch rescan route. It accepts the same payload shape as
+legacy `POST /api/v1/skills/-/rescan-batch`.
+
+Supported modes:
+
+- `all-active-latest`: page active skills and queue their latest versions.
+- `truncation-risk-latest`: page active skills but queue only latest versions
+  whose primary `SKILL.md` or `skills.md` meets the truncation-risk size
+  threshold. Pass `minSkillMdBytes` to override the default threshold.
+
+Use `dryRun: true` to count and sample matched rows without creating jobs.
 
 ### `POST /api/v1/skills/-/scan/batch/status`
 

@@ -15,8 +15,9 @@ to install. They show what a release does, what authority it asks for, and
 whether anything deserves extra attention before it can access files, accounts,
 credentials, code, or external services.
 
-Audits are strong safety signals, but they are not a guarantee that a release is
-risk-free. Always use judgment before granting sensitive access.
+Audits are strong current safety signals, but they are not a guarantee that a
+release is risk-free. Scanner results can change after new evidence, rule
+updates, or manual review. Always use judgment before granting sensitive access.
 
 See also [Security](./security.md), [Acceptable usage](./acceptable-usage.md),
 and [Moderation and Account Safety](./moderation.md).
@@ -117,9 +118,8 @@ The audit page combines:
 ## VirusTotal
 
 ClawHub uses VirusTotal as malware telemetry in the audit stack. VirusTotal is a
-trusted industry standard for file reputation and malware scanning, and our
-partnership lets ClawHub add broader security intelligence to skill and plugin
-review.
+widely used file reputation and malware scanning service, and our partnership
+lets ClawHub add broader security intelligence to skill and plugin review.
 
 VirusTotal is especially useful for known malicious artifacts, engine hits, and
 reputation signals that complement ClawHub's agent-aware review. When vendor
@@ -143,14 +143,16 @@ No VirusTotal findings
 ```
 
 VirusTotal remains telemetry. It does not replace ClawHub's own artifact-aware
-risk analysis.
+risk analysis, and vendor counts should not be treated as a standalone trust
+decision.
 
 ## Risk analysis
 
 Risk analysis is powered internally by ClawScan, ClawHub's own security audit
 system. It reviews each release as an agent-facing artifact: instructions,
 metadata, declared permissions, files, capability signals, static scan signals,
-SkillSpector findings, VirusTotal telemetry, and publisher-provided context.
+SkillSpector findings, VirusTotal telemetry, and publisher metadata and source
+context.
 Static scan signals are internal context for this review; they are not a
 standalone public audit section or install-blocking verdict.
 
@@ -162,3 +164,7 @@ unsafe execution, memory or context poisoning, and excessive agency.
 ClawScan does not treat a scary-looking capability as automatically malicious.
 It asks whether the capability is disclosed, purpose-aligned, and supported by
 the release's stated use case.
+
+ClawHub may rescan already-published releases after scanner rule changes,
+security reports, or moderator review. The page shows the latest stored result,
+not a permanent certification.

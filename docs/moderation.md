@@ -61,6 +61,10 @@ discovery or future publishes may start hidden until the issue is reviewed.
 Moderation holds are meant to protect users while ClawHub resolves high-risk
 cases. They can also be lifted when a false positive is confirmed.
 
+ClawHub may also rescan already-published releases when scanner rules change,
+new evidence appears, or moderators review a report. A stored scan result is the
+latest completed assessment, not a permanent certification.
+
 ## Hidden or blocked listings
 
 A listing may be held, hidden, quarantined, revoked, or otherwise unavailable on

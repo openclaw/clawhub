@@ -14,7 +14,10 @@ metadata, name, version, files, and source information, then stores the release
 and starts automated security checks.
 
 If validation fails, nothing is published. New releases may also stay out of
-normal install and download surfaces until review finishes.
+normal install and download surfaces until review finishes. Security scan
+results are current risk signals, not permanent approval; ClawHub may rescan
+already-published releases after scanner rule changes, new reports, or
+moderator review.
 
 ## Skills
 

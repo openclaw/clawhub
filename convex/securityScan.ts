@@ -24,6 +24,7 @@ const DEFAULT_BULK_RESCAN_BATCH_SIZE = 50;
 const MAX_BULK_RESCAN_BATCH_SIZE = 100;
 const MAX_BULK_RESCAN_STATUS_JOB_IDS = 200;
 const BULK_RESCAN_SAMPLE_LIMIT = 10;
+const DEFAULT_TRUNCATION_RISK_SKILL_MD_BYTES = 6000;
 const MAX_STORED_SKILLSPECTOR_ISSUES = 25;
 const MAX_STORED_SKILLSPECTOR_TEXT_CHARS = 2_000;
 const MAX_STORED_SKILLSPECTOR_SHORT_TEXT_CHARS = 512;
@@ -98,9 +99,23 @@ const jobSourceValidator = v.union(
   v.literal("manual"),
 );
 
-type SecurityScanJobSource = "publish" | "vt-update" | "backfill" | "bulk-rescan" | "manual";
+const bulkSkillRescanModeValidator = v.union(
+  v.literal("all-active-latest"),
+  v.literal("truncation-risk-latest"),
+);
+
+type BulkSkillRescanMode = "all-active-latest" | "truncation-risk-latest";
+
+type SecurityScanJobSource =
+  | "publish"
+  | "clawscan-note"
+  | "vt-update"
+  | "backfill"
+  | "bulk-rescan"
+  | "manual";
 
 const CLAIM_SOURCE_ORDER: SecurityScanJobSource[] = [
+  "clawscan-note",
   "backfill",
   "publish",
   "vt-update",
@@ -403,6 +418,13 @@ function normalizeBulkRescanBatchSize(batchSize: number | undefined) {
   return Math.max(1, Math.min(normalized, MAX_BULK_RESCAN_BATCH_SIZE));
 }
 
+function normalizeTruncationRiskSkillMdBytes(minSkillMdBytes: number | undefined) {
+  const normalized = Number.isFinite(minSkillMdBytes)
+    ? Math.floor(minSkillMdBytes ?? DEFAULT_TRUNCATION_RISK_SKILL_MD_BYTES)
+    : DEFAULT_TRUNCATION_RISK_SKILL_MD_BYTES;
+  return Math.max(1, normalized);
+}
+
 async function getBulkSkillRescanBatchStatus(ctx: QueryCtx, jobIds: Id<"securityScanJobs">[]) {
   let queued = 0;
   let running = 0;
@@ -485,9 +507,10 @@ export const enqueueSkillVersionScanInternal = internalMutation({
 export const enqueueBulkSkillRescanBatchForAdminInternal = internalMutation({
   args: {
     actorUserId: v.id("users"),
-    mode: v.optional(v.literal("all-active-latest")),
+    mode: v.optional(bulkSkillRescanModeValidator),
     cursor: v.optional(v.union(v.string(), v.null())),
     batchSize: v.optional(v.number()),
+    minSkillMdBytes: v.optional(v.number()),
     dryRun: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
@@ -497,6 +520,7 @@ export const enqueueBulkSkillRescanBatchForAdminInternal = internalMutation({
 
     const mode = args.mode ?? "all-active-latest";
     const batchSize = normalizeBulkRescanBatchSize(args.batchSize);
+    const minSkillMdBytes = normalizeTruncationRiskSkillMdBytes(args.minSkillMdBytes);
     const dryRun = args.dryRun === true;
     const page = await ctx.db
       .query("skills")
@@ -514,7 +538,6 @@ export const enqueueBulkSkillRescanBatchForAdminInternal = internalMutation({
     const sampleSlugs: string[] = [];
 
     for (const skill of page.page) {
-      if (sampleSlugs.length < BULK_RESCAN_SAMPLE_LIMIT) sampleSlugs.push(skill.slug);
       if ((skill.moderationStatus ?? "active") !== "active" || !skill.latestVersionId) {
         skipped += 1;
         continue;
@@ -525,6 +548,13 @@ export const enqueueBulkSkillRescanBatchForAdminInternal = internalMutation({
         skipped += 1;
         continue;
       }
+
+      if (!isBulkRescanCandidate(mode, version, minSkillMdBytes)) {
+        skipped += 1;
+        continue;
+      }
+
+      if (sampleSlugs.length < BULK_RESCAN_SAMPLE_LIMIT) sampleSlugs.push(skill.slug);
 
       if (dryRun) {
         const existing = await ctx.db
@@ -565,6 +595,7 @@ export const enqueueBulkSkillRescanBatchForAdminInternal = internalMutation({
         metadata: {
           mode,
           batchSize,
+          ...(mode === "truncation-risk-latest" ? { minSkillMdBytes } : {}),
           queued,
           alreadyQueued,
           skipped,
@@ -589,6 +620,25 @@ export const enqueueBulkSkillRescanBatchForAdminInternal = internalMutation({
     };
   },
 });
+
+function isBulkRescanCandidate(
+  mode: BulkSkillRescanMode,
+  version: Doc<"skillVersions">,
+  minSkillMdBytes: number,
+) {
+  if (mode === "all-active-latest") return true;
+  const primarySkillFile = version.files.find((file) => isPrimarySkillMarkdownPath(file.path));
+  return Boolean(primarySkillFile && primarySkillFile.size >= minSkillMdBytes);
+}
+
+function isPrimarySkillMarkdownPath(path: string) {
+  const normalized = path
+    .trim()
+    .replace(/^\.\/+/, "")
+    .replace(/\\/g, "/")
+    .toLowerCase();
+  return normalized === "skill.md" || normalized === "skills.md";
+}
 
 export const getBulkSkillRescanBatchStatusForAdminInternal = internalQuery({
   args: {
