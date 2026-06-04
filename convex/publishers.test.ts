@@ -2563,6 +2563,34 @@ describe("self-serve org publisher creation", () => {
     ).resolves.toMatchObject({ ok: true, handle: "opik" });
   });
 
+  it("rejects unreserved official org handles", async () => {
+    const { ctx } = makeCreateOrgPublisherCtx({});
+
+    await expect(
+      createOrgPublisherForUserInternalHandler(ctx as never, {
+        actorUserId: "users:vincent",
+        handle: "NVIDIA",
+      }),
+    ).rejects.toThrow('Handle "@nvidia" is reserved for verified official publisher ownership');
+  });
+
+  it("lets the rightful owner create a reserved official org handle", async () => {
+    const { ctx } = makeCreateOrgPublisherCtx({
+      reservedHandle: {
+        _id: "reservedHandles:nvidia",
+        handle: "nvidia",
+        rightfulOwnerUserId: "users:vincent",
+      },
+    });
+
+    await expect(
+      createOrgPublisherForUserInternalHandler(ctx as never, {
+        actorUserId: "users:vincent",
+        handle: "NVIDIA",
+      }),
+    ).resolves.toMatchObject({ ok: true, handle: "nvidia" });
+  });
+
   function makeSettingsCreateOrgCtx(options: {
     reservedHandle?: Record<string, unknown> | null;
     existingOrgPublisher?: Record<string, unknown> | null;

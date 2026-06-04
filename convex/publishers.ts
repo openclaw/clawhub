@@ -4,7 +4,11 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { internalMutation, internalQuery, mutation, query } from "./functions";
 import { assertAdmin, getOptionalActiveAuthUserId, requireUser } from "./lib/access";
-import { isOfficialPublisher, toPublicPublisherWithOfficial } from "./lib/officialPublishers";
+import {
+  isOfficialPublisher,
+  isReservedOwnerVerifiedOfficialOrgHandle,
+  toPublicPublisherWithOfficial,
+} from "./lib/officialPublishers";
 import { toPublicPublisher } from "./lib/public";
 import {
   formatReservedPublicOwnerHandleMessage,
@@ -21,7 +25,7 @@ import {
   isPublisherRoleAllowed,
   normalizePublisherHandle,
 } from "./lib/publishers";
-import { isHandleReservedForAnotherUser } from "./lib/reservedHandles";
+import { getLatestActiveReservedHandle } from "./lib/reservedHandles";
 import { readCanonicalStat } from "./lib/skillStats";
 
 const PUBLISHER_HANDLE_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
@@ -840,8 +844,14 @@ async function createOrgPublisherForUser(
   if (existingUser) {
     throw new ConvexError(`Handle "@${handle}" is already used by a user or personal publisher`);
   }
-  if (await isHandleReservedForAnotherUser(ctx, handle, args.actorUserId)) {
+  const reservedHandle = await getLatestActiveReservedHandle(ctx, handle);
+  if (reservedHandle && reservedHandle.rightfulOwnerUserId !== args.actorUserId) {
     throw new ConvexError(`Handle "@${handle}" is reserved for another user`);
+  }
+  if (isReservedOwnerVerifiedOfficialOrgHandle(handle) && !reservedHandle) {
+    throw new ConvexError(
+      `Handle "@${handle}" is reserved for verified official publisher ownership`,
+    );
   }
 
   const now = Date.now();

@@ -5,13 +5,19 @@ official organization allowlist.
 
 For now, Official means:
 
-- org publishers on the official allowlist are Official
+- legacy org publishers on the official allowlist are Official
+- reserved-owner-verified org handles on the official allowlist are Official
+  only after the handle has an active reservation for the rightful owner and
+  that reserved owner owns the org publisher
 - personal publishers for current members of an official org are Official
 
-Official must not be accepted from uploaded skill or package metadata.
-Membership in any org outside the official allowlist does not make a personal
-publisher Official. There is no generic admin endpoint for marking arbitrary
-publishers Official.
+Official must not be accepted from uploaded skill or package metadata, and it
+must not be derived solely from a user-claimable handle. New official org
+handles must either be blocked from public unreserved creation or require an
+active reservation/ownership check before the org or its members receive
+Official status. Membership in any org outside the official allowlist does not
+make a personal publisher Official. There is no generic admin endpoint for
+marking arbitrary publishers Official.
 
 The same policy signal appears in two places:
 

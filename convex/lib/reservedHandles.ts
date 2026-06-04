@@ -6,7 +6,9 @@ export function normalizeReservedHandle(handle: string | undefined | null) {
   return normalized ? normalized : undefined;
 }
 
-function reservedHandleQuery(ctx: QueryCtx | MutationCtx, handle: string) {
+type DbCtx = Pick<QueryCtx | MutationCtx, "db">;
+
+function reservedHandleQuery(ctx: DbCtx, handle: string) {
   return ctx.db
     .query("reservedHandles")
     .withIndex("by_handle_active_updatedAt", (q) =>
@@ -15,17 +17,14 @@ function reservedHandleQuery(ctx: QueryCtx | MutationCtx, handle: string) {
     .order("desc");
 }
 
-export async function getLatestActiveReservedHandle(
-  ctx: QueryCtx | MutationCtx,
-  handle: string | undefined | null,
-) {
+export async function getLatestActiveReservedHandle(ctx: DbCtx, handle: string | undefined | null) {
   const normalized = normalizeReservedHandle(handle);
   if (!normalized) return null;
   return (await reservedHandleQuery(ctx, normalized).take(1))[0] ?? null;
 }
 
 export async function isHandleReservedForAnotherUser(
-  ctx: QueryCtx | MutationCtx,
+  ctx: DbCtx,
   handle: string | undefined | null,
   userId: Id<"users">,
 ) {
