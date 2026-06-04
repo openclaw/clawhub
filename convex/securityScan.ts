@@ -489,6 +489,7 @@ export const enqueueSkillVersionScanInternal = internalMutation({
     moderationMode: v.optional(llmEvalModerationModeValidator),
     priority: v.optional(v.number()),
     waitForVtMs: v.optional(v.number()),
+    preserveActiveJob: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     return enqueueSkillVersionScan(ctx, args);
