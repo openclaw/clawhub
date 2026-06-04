@@ -74,6 +74,24 @@ async function withDevAuthTimeout<T>(operation: Promise<T>) {
   }
 }
 
+async function getLocalDevAuthSecret() {
+  try {
+    const response = await fetch("/dev-auth/secret", {
+      cache: "no-store",
+      credentials: "same-origin",
+    });
+    if (!response.ok) return undefined;
+    const payload: unknown = await response.json();
+    if (!payload || typeof payload !== "object" || !("devAuthSecret" in payload)) {
+      return undefined;
+    }
+    const secret = payload.devAuthSecret;
+    return typeof secret === "string" && secret.trim() ? secret.trim() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function DevPersonaFab() {
   const [busyPersona, setBusyPersona] = useState<DevPersona | "sign-out" | null>(null);
   const [section, setSection] = useState("auth");
@@ -88,7 +106,10 @@ export function DevPersonaFab() {
       if (isAuthenticated) {
         await withDevAuthTimeout(signOut());
       }
-      const result = await withDevAuthTimeout(signIn("dev-persona", { persona }));
+      const devAuthSecret = await getLocalDevAuthSecret();
+      const result = await withDevAuthTimeout(
+        signIn("dev-persona", devAuthSecret ? { persona, devAuthSecret } : { persona }),
+      );
       if (result.signingIn === false) {
         throw new Error("Dev persona sign-in did not create a session");
       }

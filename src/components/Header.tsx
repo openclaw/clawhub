@@ -27,6 +27,7 @@ import {
   type UnifiedPluginResult,
   type UnifiedSkillResult,
 } from "../lib/useUnifiedSearch";
+import { AuthErrorMessage } from "./AuthErrorMessage";
 import { Button } from "./ui/button";
 import {
   DropdownMenu,
@@ -493,7 +494,7 @@ export default function Header() {
               <>
                 {authError ? (
                   <div className="error mr-2 text-[0.85rem]" role="alert">
-                    {authError}{" "}
+                    <AuthErrorMessage message={authError} />{" "}
                     <button
                       type="button"
                       onClick={clearAuthError}

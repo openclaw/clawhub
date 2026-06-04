@@ -160,9 +160,12 @@ export const upsertDevPersonaInternal = internalMutation({
       v.literal("admin"),
       v.literal("officialOrgMember"),
     ),
+    devAuthSecret: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<Id<"users">> => {
-    if (!isLocalDevAuthEnabled()) throw new Error("Dev auth is disabled");
+    if (!isLocalDevAuthEnabled(process.env, args.devAuthSecret)) {
+      throw new Error("Dev auth is disabled");
+    }
 
     const persona = DEV_PERSONAS[args.persona as DevPersona];
     const now = Date.now();

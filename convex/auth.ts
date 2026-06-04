@@ -9,7 +9,7 @@ import { isLocalDevAuthEnabled } from "./lib/devAuth";
 import { shouldScheduleGitHubProfileSync } from "./lib/githubProfileSync";
 
 export const BANNED_REAUTH_MESSAGE =
-  "This account has been banned and cannot sign in. If you believe this is a mistake, please contact security@openclaw.ai and we will review it.";
+  "This account has been banned and cannot sign in. If you believe this is a mistake, open a GitHub issue: https://github.com/openclaw/clawhub/issues/new.";
 export const DELETED_ACCOUNT_REAUTH_MESSAGE =
   "This account has been permanently deleted and cannot be restored.";
 
@@ -90,11 +90,16 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
     ConvexCredentials({
       id: "dev-persona",
       authorize: async (credentials, ctx) => {
-        if (!isLocalDevAuthEnabled()) throw new Error("Dev auth is disabled");
+        const devAuthSecret =
+          typeof credentials.devAuthSecret === "string" ? credentials.devAuthSecret : undefined;
+        if (!isLocalDevAuthEnabled(process.env, devAuthSecret)) {
+          throw new Error("Dev auth is disabled");
+        }
         const persona = typeof credentials.persona === "string" ? credentials.persona : "";
         if (!DEV_PERSONAS.has(persona)) throw new Error("Unknown dev persona");
         const userId: Id<"users"> = await ctx.runMutation(internal.users.upsertDevPersonaInternal, {
           persona: persona as "owner" | "user" | "admin" | "officialOrgMember",
+          devAuthSecret,
         });
         return { userId };
       },

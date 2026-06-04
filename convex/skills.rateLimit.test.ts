@@ -384,7 +384,7 @@ describe("skills anti-spam guards", () => {
       ),
     ).rejects.toThrow(
       "This slug is locked to a deleted or banned account. " +
-        "If you believe you are the rightful owner, please contact security@openclaw.ai to reclaim it.",
+        "If you believe you are the rightful owner, open a GitHub issue to reclaim it: https://github.com/openclaw/clawhub/issues/new.",
     );
   });
 
