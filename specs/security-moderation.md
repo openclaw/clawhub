@@ -192,6 +192,11 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   hosted LLM call. Publishes enqueue a scan job that waits at most 10 minutes
   for VirusTotal telemetry, then Codex reviews the materialized artifact
   workspace with static and VT signals as context.
+- Legacy hosted artifact evaluators in `convex/llmEval.ts` are compatibility
+  diagnostics only. Because those prompts use bounded artifact excerpts, their
+  results must not write clean/suspicious/malicious public trust or moderation
+  state. Use `securityScanJobs` and the Codex worker for authoritative ClawScan
+  coverage.
 - ClawScan worker concurrency is an operator-controlled compute concern. The
   backend claim path must cap only a single worker claim size and must not impose
   a global active-scan ceiling; horizontal capacity is controlled by worker

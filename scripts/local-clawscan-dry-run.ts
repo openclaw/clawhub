@@ -54,6 +54,8 @@ type RunOptions = {
 
 type LocalLlmAnalysis = {
   status: "clean" | "suspicious" | "malicious" | "pending";
+  advisory: boolean;
+  coverageWarning: string;
   verdict: LlmEvalResponse["verdict"];
   confidence: LlmEvalResponse["confidence"];
   summary: string;
@@ -81,6 +83,8 @@ const DOT_DIR = ".clawhub";
 const LEGACY_DOT_DIR = ".clawdhub";
 const DOT_IGNORE = ".clawhubignore";
 const LEGACY_DOT_IGNORE = ".clawdhubignore";
+const LOCAL_DRY_RUN_COVERAGE_WARNING =
+  "Legacy local dry runs use bounded prompt excerpts and are advisory only. Use `clawhub scan` for authoritative Codex-backed ClawScan coverage.";
 
 const textDecoder = new TextDecoder();
 
@@ -332,6 +336,8 @@ async function evaluateWithLlm(params: {
 
   return {
     status: verdictToStatus(result.verdict),
+    advisory: true,
+    coverageWarning: LOCAL_DRY_RUN_COVERAGE_WARNING,
     verdict: result.verdict,
     confidence: result.confidence,
     summary: result.summary,
@@ -489,6 +495,8 @@ function printHuman(result: LocalClawScanDryRunResult) {
   console.log(`Display: ${result.displayName}`);
   console.log(`Version: ${result.version}`);
   console.log(`Files: ${result.files.length}`);
+  console.log("Scope: advisory legacy local dry run");
+  console.log(`Coverage: ${result.llmAnalysis.coverageWarning}`);
   console.log("");
   console.log(`Static: ${result.staticScan.status}`);
   console.log(`Static summary: ${result.staticScan.summary}`);
