@@ -185,6 +185,7 @@ export declare const PackageLlmAnalysisSchema: import("arktype/internal/variants
     findings?: string | undefined;
     agenticRiskFindings?: unknown[] | undefined;
     riskSummary?: unknown;
+    artifactCoverage?: unknown;
     model?: string | undefined;
 }, {}>;
 export type PackageLlmAnalysis = (typeof PackageLlmAnalysisSchema)[inferred];
@@ -601,6 +602,7 @@ export declare const ApiV1PackageVersionResponseSchema: import("arktype/internal
             findings?: string | undefined;
             agenticRiskFindings?: unknown[] | undefined;
             riskSummary?: unknown;
+            artifactCoverage?: unknown;
             model?: string | undefined;
         } | null | undefined;
         staticScan?: {

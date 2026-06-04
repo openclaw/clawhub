@@ -217,6 +217,11 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Prompt-injection pre-scan hits are also context for Codex, not a deterministic
   post-Codex veto. The release worker must not downgrade a benign Codex verdict
   solely from regex telemetry.
+- Any prompt-backed ClawScan path must persist artifact coverage and apply a
+  review floor when material artifact text was not reviewed. Truncated
+  `SKILL.md` content, truncated file content, omitted file blocks, and stripped
+  hidden comments are incomplete coverage and must not produce a clean
+  ClawScan result.
 - Artifacts remain visible while Codex runs unless another non-scanner moderation
   hold applies. Codex malicious verdicts block the candidate version. On updates,
   the previous clean/current public version remains live; on first versions,

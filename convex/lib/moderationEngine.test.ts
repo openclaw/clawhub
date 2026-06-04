@@ -2105,6 +2105,29 @@ describe("moderationEngine", () => {
     expect(snapshot.legacyFlags).toBeUndefined();
   });
 
+  it("keeps incomplete artifact coverage in review even if a caller submits clean", () => {
+    const snapshot = buildModerationSnapshot({
+      llmStatus: "clean",
+      llmAnalysis: {
+        status: "clean",
+        artifactCoverage: {
+          complete: false,
+          issues: [
+            {
+              kind: "skill_md_truncated",
+              path: "SKILL.md",
+              detail: "SKILL.md exceeded the ClawScan prompt review limit.",
+            },
+          ],
+        },
+      },
+    });
+
+    expect(snapshot.verdict).toBe("clean");
+    expect(snapshot.reasonCodes).toEqual(["review.artifact_incomplete"]);
+    expect(snapshot.legacyFlags).toBeUndefined();
+  });
+
   it("keeps high LLM concerns in the suspicious bucket", () => {
     const snapshot = buildModerationSnapshot({
       llmStatus: "suspicious",

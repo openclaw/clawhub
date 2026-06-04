@@ -16,6 +16,7 @@ export const MODERATION_ENGINE_VERSION = "v2.4.25";
 
 export const REASON_CODES = {
   LLM_REVIEW: "review.llm_review",
+  ARTIFACT_INCOMPLETE: "review.artifact_incomplete",
   DANGEROUS_EXEC: "suspicious.dangerous_exec",
   DYNAMIC_CODE: "suspicious.dynamic_code_execution",
   GENERATED_SOURCE_TEMPLATE: "suspicious.generated_source_template_injection",

@@ -287,6 +287,21 @@ const skillSpectorAnalysisValidator = v.object({
   checkedAt: v.number(),
 });
 
+const llmArtifactCoverageIssueValidator = v.object({
+  kind: v.string(),
+  path: v.optional(v.string()),
+  detail: v.string(),
+  originalChars: v.optional(v.number()),
+  reviewedChars: v.optional(v.number()),
+  omittedFileCount: v.optional(v.number()),
+  hiddenCommentBlocksRemoved: v.optional(v.number()),
+});
+
+const llmArtifactCoverageValidator = v.object({
+  complete: v.boolean(),
+  issues: v.array(llmArtifactCoverageIssueValidator),
+});
+
 function inferOwnerHandleFromScopedPackageName(name: string) {
   const match = /^@([^/]+)\//.exec(name);
   return match?.[1] || undefined;
@@ -8200,6 +8215,7 @@ export const updateReleaseLlmAnalysisInternal = internalMutation({
           sensitive_data_protection: llmRiskSummaryBucketValidator,
         }),
       ),
+      artifactCoverage: v.optional(llmArtifactCoverageValidator),
       model: v.optional(v.string()),
       checkedAt: v.number(),
     }),

@@ -150,6 +150,21 @@ const llmRiskSummaryBucketValidator = v.object({
   highestSeverity: v.optional(v.string()),
 });
 
+const llmArtifactCoverageIssueValidator = v.object({
+  kind: v.string(),
+  path: v.optional(v.string()),
+  detail: v.string(),
+  originalChars: v.optional(v.number()),
+  reviewedChars: v.optional(v.number()),
+  omittedFileCount: v.optional(v.number()),
+  hiddenCommentBlocksRemoved: v.optional(v.number()),
+});
+
+const llmArtifactCoverageValidator = v.object({
+  complete: v.boolean(),
+  issues: v.array(llmArtifactCoverageIssueValidator),
+});
+
 const llmAnalysisValidator = v.object({
   status: v.string(),
   verdict: v.optional(v.string()),
@@ -175,6 +190,7 @@ const llmAnalysisValidator = v.object({
       sensitive_data_protection: llmRiskSummaryBucketValidator,
     }),
   ),
+  artifactCoverage: v.optional(llmArtifactCoverageValidator),
   model: v.optional(v.string()),
   checkedAt: v.number(),
 });

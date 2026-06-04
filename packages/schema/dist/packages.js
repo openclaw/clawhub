@@ -161,6 +161,7 @@ export const PackageLlmAnalysisSchema = type({
     findings: "string?",
     agenticRiskFindings: "unknown[]?",
     riskSummary: "unknown?",
+    artifactCoverage: "unknown?",
     model: "string?",
     checkedAt: "number",
 });

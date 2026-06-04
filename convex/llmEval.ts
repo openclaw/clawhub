@@ -12,8 +12,10 @@ import {
 import { extractResponseText } from "./lib/openaiResponse";
 import type { SkillEvalContext } from "./lib/securityPrompt";
 import {
+  analyzeEvalArtifactCoverage,
   assembleEvalUserMessage,
   assembleSkillEvalUserMessage,
+  applyArtifactCoverageFloor,
   applyInjectionSignalFloor,
   detectInjectionPatterns,
   getLlmEvalModel,
@@ -323,6 +325,8 @@ export const evaluateWithLlm = internalAction({
       capabilityTags: version.capabilityTags,
     };
 
+    const artifactCoverage = analyzeEvalArtifactCoverage(evalCtx);
+
     // 6. Assemble user message
     const userMessage = assembleSkillEvalUserMessage(evalCtx);
 
@@ -399,7 +403,10 @@ export const evaluateWithLlm = internalAction({
       return;
     }
 
-    const result = applyInjectionSignalFloor(parsedResult, injectionSignals);
+    const result = applyArtifactCoverageFloor(
+      applyInjectionSignalFloor(parsedResult, injectionSignals),
+      artifactCoverage,
+    );
 
     // 9. Store result
     await ctx.runMutation(internal.skills.updateVersionLlmAnalysisInternal, {
@@ -415,6 +422,7 @@ export const evaluateWithLlm = internalAction({
         findings: result.findings || undefined,
         agenticRiskFindings: result.agenticRiskFindings,
         riskSummary: result.riskSummary,
+        artifactCoverage: result.artifactCoverage,
         model,
         checkedAt: Date.now(),
       },
@@ -533,6 +541,7 @@ export const evaluatePackageReleaseWithLlm = internalAction({
       capabilityTags: pkg.capabilityTags,
     };
 
+    const artifactCoverage = analyzeEvalArtifactCoverage(evalCtx);
     const userMessage = assembleEvalUserMessage(evalCtx);
     const MAX_RETRIES = 3;
     let raw: string | null = null;
@@ -599,7 +608,10 @@ export const evaluatePackageReleaseWithLlm = internalAction({
       await storeError("Failed to parse LLM evaluation response");
       return;
     }
-    const result = applyInjectionSignalFloor(parsedResult, injectionSignals);
+    const result = applyArtifactCoverageFloor(
+      applyInjectionSignalFloor(parsedResult, injectionSignals),
+      artifactCoverage,
+    );
 
     await runMutationRef(ctx, internalRefs.packages.updateReleaseLlmAnalysisInternal, {
       releaseId: args.releaseId,
@@ -613,6 +625,7 @@ export const evaluatePackageReleaseWithLlm = internalAction({
         findings: result.findings || undefined,
         agenticRiskFindings: result.agenticRiskFindings,
         riskSummary: result.riskSummary,
+        artifactCoverage: result.artifactCoverage,
         model,
         checkedAt: Date.now(),
       },
