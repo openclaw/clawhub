@@ -193,6 +193,7 @@ const enqueueSkillVersionScanInternalHandler = (
       moderationMode?: "normal" | "preserve";
       priority?: number;
       waitForVtMs?: number;
+      preserveActiveJob?: boolean;
     },
     { ok: true; jobId?: string; alreadyQueued?: boolean; skipped?: "missing" }
   >
@@ -1215,6 +1216,40 @@ describe("securityScan", () => {
       "securityScanJobs:manual",
       expect.objectContaining({ moderationMode: "normal" }),
     );
+  });
+
+  it("can leave active skill scan jobs untouched for preserve-mode backfills", async () => {
+    const { ctx, patch } = makeRescanCtx({
+      actorId: "users:unused",
+      docs: {
+        "skillVersions:1": {
+          _id: "skillVersions:1",
+          skillId: "skills:1",
+          version: "1.0.0",
+        },
+      },
+      activeJobs: [
+        makeScanJob({
+          _id: "securityScanJobs:manual",
+          skillVersionId: "skillVersions:1",
+          source: "manual",
+        }),
+      ],
+    });
+
+    const result = await enqueueSkillVersionScanInternalHandler(ctx, {
+      versionId: "skillVersions:1",
+      source: "backfill",
+      moderationMode: "preserve",
+      preserveActiveJob: true,
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      jobId: "securityScanJobs:manual",
+      alreadyQueued: true,
+    });
+    expect(patch).not.toHaveBeenCalled();
   });
 
   it("queues bulk rescans for active latest skill versions as low-priority jobs", async () => {

@@ -726,6 +726,7 @@ export const backfillLlmEval: ReturnType<typeof internalAction> = internalAction
           versionId,
           source: "backfill",
           moderationMode,
+          preserveActiveJob: moderationMode === "preserve",
         });
       }
       accScheduled++;

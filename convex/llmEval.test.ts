@@ -171,6 +171,7 @@ describe("llm eval backfill", () => {
       versionId: "skillVersions:1",
       source: "backfill",
       moderationMode: "preserve",
+      preserveActiveJob: true,
     });
     expect(runAfter).toHaveBeenCalledTimes(1);
     expect(runAfter).toHaveBeenNthCalledWith(1, 1234, expect.anything(), {
