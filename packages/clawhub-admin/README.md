@@ -106,6 +106,7 @@ Package moderation and operations:
 ```bash
 bun run admin -- skills reports [--status open|confirmed|dismissed|all]
 bun run admin -- skills rescan <slug> [--version <version>] [--yes] [--json]
+bun run admin -- skills moderate-version <slug> --version <version> --state active|revoked --reason <text> [--json]
 bun run admin -- skills unhide <slug> --reason <text> [--yes]
 bun run admin -- skills triage-report <report-id> --status open|confirmed|dismissed [--note <text>] [--action none|hide] [--yes]
 
@@ -122,5 +123,10 @@ bun run admin -- plugins trusted-publisher get <name>
 bun run admin -- plugins trusted-publisher set <name> --repository <owner/repo> --workflow-filename <file>
 bun run admin -- plugins trusted-publisher delete <name>
 ```
+
+`skills moderate-version` sets or clears an exact skill version revocation. Use
+`--state revoked` to block future delivery of that version's artifact and expose
+the exact revocation through security verdict lookups. Use `--state active` with
+a reason to restore the exact version.
 
 All skill and plugin commands accept `--json` where the underlying endpoint supports machine-readable output.

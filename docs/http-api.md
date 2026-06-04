@@ -465,6 +465,8 @@ Notes:
 - The response is security-only. It does not include Skill Card data, generated card status, artifact file lists, or detailed scanner payloads.
 - `security.signals` contains status-level supporting evidence only; use `/scan` or the ClawHub security-audit page for full scanner details.
 - `security.signals.dependencyRegistry` is retained for v1 response compatibility, but the dependency registry existence scanner is retired and this key is always `null`.
+- Exact version revocation is reported per item as `revocation.revoked`. When `revocation.revoked` is `true`, the item fails with `decision: "fail"` and includes the machine-readable reason `version.revoked`.
+- Clients should treat only an explicit `revocation.revoked: true` verdict for the exact requested `{ slug, version }` as a revocation signal. Missing fields, lookup failures, and API failures are not revocation signals.
 - Skill Card absence does not affect this endpoint's `ok`, `decision`, or `reasons`; clients should read installed `skill-card.md` locally when they need card content.
 - Use `/verify` when you need the single-skill Skill Card verification envelope, `/card` when you need generated card markdown, and `/scan` when you need detailed scanner data.
 
@@ -487,6 +489,7 @@ Response:
       "version": "1.2.3",
       "createdAt": 0,
       "checkedAt": 0,
+      "revocation": { "revoked": false, "revokedAt": null },
       "skillUrl": "https://clawhub.ai/steipete/gifgrep",
       "securityAuditUrl": "https://clawhub.ai/steipete/gifgrep/security-audit?version=1.2.3",
       "security": {
@@ -510,6 +513,37 @@ Response:
       "security": null
     }
   ]
+}
+```
+
+### `POST /api/v1/skills/{slug}/versions/{version}/revocation`
+
+Moderator-only endpoint that sets the exact revocation state for one skill
+version artifact. Revoked versions remain recorded, but future public artifact
+delivery for that exact `{ slug, version }` is blocked and the bulk security
+verdict endpoint reports the revocation machine-readably.
+
+Request:
+
+```json
+{
+  "state": "revoked",
+  "reason": "credential exfiltration in published artifact"
+}
+```
+
+Use `"state": "active"` with a moderator reason to clear the exact-version
+revocation without deleting the version record.
+
+Response:
+
+```json
+{
+  "ok": true,
+  "skillId": "skills:...",
+  "versionId": "skillVersions:...",
+  "state": "revoked",
+  "revokedAt": 1730000000000
 }
 ```
 
