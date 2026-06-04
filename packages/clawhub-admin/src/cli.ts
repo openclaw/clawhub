@@ -30,6 +30,7 @@ import {
   cmdRepairVtPendingSkills,
   cmdRescanAllSkills,
   cmdRescanSkill,
+  cmdSetSkillVersionRevocation,
   cmdSetRole,
   cmdUnbanUser,
 } from "./commands/moderation.js";
@@ -630,6 +631,19 @@ function registerPluginOperations(command: Command) {
 }
 
 function registerSkillModerationCommands(command: Command) {
+  command
+    .command("moderate-version")
+    .description("Set exact skill version revocation state")
+    .argument("<slug>", "Skill slug")
+    .requiredOption("--version <version>", "Exact skill version")
+    .requiredOption("--state <state>", "active|revoked")
+    .requiredOption("--reason <text>", "Audit reason")
+    .option("--json", "Output JSON")
+    .action(async (slug, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdSetSkillVersionRevocation(opts, slug, options);
+    });
+
   command
     .command("unhide")
     .description("Manually restore a hidden skill after moderator review")

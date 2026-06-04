@@ -4485,6 +4485,57 @@ describe("httpApiV1 handlers", () => {
     expect(response.headers.get("X-Content-SHA256")).toBe("abcd");
   });
 
+  it("does not return raw file content for a revoked exact version", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "demo",
+            displayName: "Demo",
+            summary: "s",
+            tags: {},
+            stats: {},
+            createdAt: 1,
+            updatedAt: 2,
+            latestVersionId: "skillVersions:1",
+          },
+          latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
+          owner: null,
+        };
+      }
+      if ("versionId" in args) {
+        return {
+          _id: "skillVersions:1",
+          skillId: "skills:1",
+          version: "1.0.0",
+          manualRevocation: { revokedAt: 20 },
+          files: [
+            {
+              path: "SKILL.md",
+              size: 5,
+              storageId: "storage:1",
+              sha256: "abcd",
+              contentType: "text/plain",
+            },
+          ],
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const storage = { get: vi.fn() };
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation, storage }),
+      new Request("https://example.com/api/v1/skills/demo/file?path=SKILL.md"),
+    );
+
+    expect(response.status).toBe(410);
+    expect(await response.text()).toBe("Version not available");
+    expect(storage.get).not.toHaveBeenCalled();
+  });
+
   it("blocks raw file reads for malware-blocked skills", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("slug" in args) {
@@ -5081,6 +5132,46 @@ describe("httpApiV1 handlers", () => {
         summary: "Security findings were reviewed by moderators and cleared for public use.",
         checkedAt: 20,
       },
+    });
+  });
+
+  it("reports exact skill version revocation as a machine-readable failed verdict", async () => {
+    const runQuery = vi.fn(async () => ({
+      skill: { _id: "skills:1", slug: "demo", displayName: "Demo" },
+      owner: { _id: "users:1", handle: "acme", displayName: "Acme" },
+      moderationInfo: null,
+      version: {
+        _id: "skillVersions:1",
+        version: "1.0.0",
+        createdAt: 1,
+        llmAnalysis: { status: "clean", verdict: "clean", checkedAt: 2 },
+        manualRevocation: { revokedAt: 20 },
+      },
+    }));
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillSecurityVerdictsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/-/security-verdicts", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ items: [{ slug: "demo", version: "1.0.0" }] }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      items: [
+        {
+          ok: false,
+          decision: "fail",
+          reasons: ["version.revoked"],
+          requestedSlug: "demo",
+          requestedVersion: "1.0.0",
+          checkedAt: 20,
+          revocation: { revoked: true, revokedAt: 20 },
+        },
+      ],
     });
   });
 
@@ -8691,6 +8782,60 @@ describe("httpApiV1 handlers", () => {
     expect(storage.get).toHaveBeenCalledWith("storage:skill");
   });
 
+  it("packages file does not serve a revoked exact skill version", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args) return null;
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:demo",
+            slug: "demo",
+            displayName: "Demo Skill",
+            summary: "Skill summary",
+            latestVersionId: "skillVersions:demo-1",
+            tags: { latest: "skillVersions:demo-1" },
+            badges: {},
+            createdAt: 1,
+            updatedAt: 2,
+          },
+          latestVersion: null,
+          owner: { handle: "steipete" },
+        };
+      }
+      if ("versionId" in args) {
+        return {
+          _id: "skillVersions:demo-1",
+          skillId: "skills:demo",
+          version: "1.0.0",
+          createdAt: 3,
+          changelog: "init",
+          manualRevocation: { revokedAt: 4 },
+          files: [
+            {
+              path: "SKILL.md",
+              size: 11,
+              sha256: "abc",
+              storageId: "storage:skill",
+              contentType: "text/markdown",
+            },
+          ],
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const storage = { get: vi.fn() };
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation, storage }),
+      new Request("https://example.com/api/v1/packages/demo/file?path=README.md"),
+    );
+
+    expect(response.status).toBe(410);
+    expect(await response.text()).toBe("Version not available");
+    expect(storage.get).not.toHaveBeenCalled();
+  });
+
   it("packages file blocks skill compatibility files for malware-blocked skills", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("name" in args) return null;
@@ -9960,6 +10105,52 @@ describe("httpApiV1 handlers", () => {
         version: "1.0.0",
         state: "quarantined",
         reason: "manual review",
+      },
+    );
+  });
+
+  it("skill version revocation posts exact state changes", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        ok: true,
+        skillId: "skills:demo",
+        versionId: "skillVersions:1",
+        state: "revoked",
+        revokedAt: 10,
+      };
+    });
+
+    const response = await __handlers.skillsPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/versions/1.0.0/revocation", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({
+          state: "revoked",
+          reason: "confirmed compromise",
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      state: "revoked",
+      revokedAt: 10,
+    });
+    expect(runMutation).toHaveBeenCalledWith(
+      internal.skills.setSkillVersionRevocationForUserInternal,
+      {
+        actorUserId: "users:moderator",
+        slug: "demo",
+        version: "1.0.0",
+        state: "revoked",
+        reason: "confirmed compromise",
       },
     );
   });

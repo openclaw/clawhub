@@ -16,6 +16,7 @@ import {
   ApiV1PublisherRecoveryResponseSchema,
   ApiV1ReclassifyBanResponseSchema,
   ApiV1SetRoleResponseSchema,
+  ApiV1SkillVersionRevocationResponseSchema,
   ApiV1SkillScanBatchResponseSchema,
   ApiV1SkillScanBatchStatusResponseSchema,
   ApiV1SkillScanSubmitResponseSchema,
@@ -23,6 +24,7 @@ import {
   ApiV1UnbanUserResponseSchema,
   ApiV1UserSearchResponseSchema,
   parseArk,
+  type SkillVersionRevocationState,
 } from "../../../clawhub/src/schema/index.js";
 
 export async function cmdBanUser(
@@ -333,6 +335,53 @@ export async function cmdRescanSkill(
       process.stdout.write(`${JSON.stringify(parsed, null, 2)}\n`);
     }
     return parsed;
+  } catch (error) {
+    spinner?.fail(formatError(error));
+    throw error;
+  }
+}
+
+export async function cmdSetSkillVersionRevocation(
+  opts: GlobalOpts,
+  slugArg: string,
+  options: {
+    version?: string;
+    state?: SkillVersionRevocationState;
+    reason?: string;
+    json?: boolean;
+  },
+) {
+  const slug = normalizeSkillSlug(slugArg);
+  const version = options.version?.trim();
+  const state = options.state?.trim() as SkillVersionRevocationState | undefined;
+  const reason = options.reason?.trim();
+  if (!version) fail("--version required");
+  if (!state || !["active", "revoked"].includes(state)) {
+    fail("--state must be active or revoked");
+  }
+  if (!reason) fail("--reason required");
+
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const spinner = options.json ? null : createSpinner(`Setting revocation for ${slug}@${version}`);
+  try {
+    const result = await apiRequest(
+      registry,
+      {
+        method: "POST",
+        path: `${ApiRoutes.skills}/${encodeURIComponent(slug)}/versions/${encodeURIComponent(version)}/revocation`,
+        token,
+        body: { state, reason },
+      },
+      ApiV1SkillVersionRevocationResponseSchema,
+    );
+    spinner?.stop();
+    if (options.json) {
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      return result;
+    }
+    console.log(`OK. ${slug}@${version} revocation state set to ${result.state}.`);
+    return result;
   } catch (error) {
     spinner?.fail(formatError(error));
     throw error;

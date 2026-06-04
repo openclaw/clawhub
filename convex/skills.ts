@@ -3058,6 +3058,9 @@ function compactSecurityVerdictVersion(version: Doc<"skillVersions">) {
     version: version.version,
     createdAt: version.createdAt,
     softDeletedAt: version.softDeletedAt,
+    manualRevocation: version.manualRevocation
+      ? { revokedAt: version.manualRevocation.revokedAt }
+      : undefined,
     ...(version.staticScan
       ? {
           staticScan: {
@@ -6460,7 +6463,7 @@ export const listVersions = query({
       .order("desc")
       .take(limit);
     return versions
-      .filter((version) => isStaff || !version.softDeletedAt)
+      .filter((version) => isStaff || isPublicSkillVersionAvailableForSkill(version, args.skillId))
       .map((version) => toPublicSkillVersion(version)!);
   },
 });
@@ -6479,7 +6482,7 @@ export const listVersionsPage = query({
       .order("desc")
       .paginate({ cursor: args.cursor ?? null, numItems: limit });
     const items = page
-      .filter((version) => !version.softDeletedAt)
+      .filter((version) => isPublicSkillVersionAvailableForSkill(version, args.skillId))
       .map((version) => toPublicSkillVersion(version)!);
     return { items, nextCursor: isDone ? null : continueCursor };
   },
@@ -6514,6 +6517,72 @@ export const getVersionBySkillAndVersionInternal = internalQuery({
         q.eq("skillId", args.skillId).eq("version", args.version),
       )
       .unique();
+  },
+});
+
+export const setSkillVersionRevocationForUserInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    slug: v.string(),
+    version: v.string(),
+    state: v.union(v.literal("active"), v.literal("revoked")),
+    reason: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    assertModerator(actor);
+
+    const slug = normalizeSkillSlugKey(args.slug);
+    const skill = await ctx.db
+      .query("skills")
+      .withIndex("by_slug", (q) => q.eq("slug", slug))
+      .unique();
+    if (!skill || skill.softDeletedAt) throw new ConvexError("Skill not found");
+
+    const version = await ctx.db
+      .query("skillVersions")
+      .withIndex("by_skill_version", (q) => q.eq("skillId", skill._id).eq("version", args.version))
+      .unique();
+    if (!version || version.softDeletedAt) throw new ConvexError("Version not found");
+
+    const reason = args.reason.trim();
+    if (!reason) throw new ConvexError("Revocation reason required");
+
+    const now = Date.now();
+    await ctx.db.patch(version._id, {
+      manualRevocation:
+        args.state === "revoked"
+          ? {
+              reason,
+              reviewerUserId: actor._id,
+              revokedAt: now,
+            }
+          : undefined,
+    });
+    await ctx.db.insert("auditLogs", {
+      actorUserId: actor._id,
+      action:
+        args.state === "revoked" ? "skill.version.revoked" : "skill.version.revocation_cleared",
+      targetType: "skillVersion",
+      targetId: version._id,
+      metadata: {
+        skillId: skill._id,
+        slug: skill.slug,
+        version: version.version,
+        state: args.state,
+        reason,
+      },
+      createdAt: now,
+    });
+
+    return {
+      ok: true as const,
+      skillId: skill._id,
+      versionId: version._id,
+      state: args.state,
+      revokedAt: args.state === "revoked" ? now : null,
+    };
   },
 });
 
@@ -8708,6 +8777,11 @@ async function canReadSkillVersionFiles(ctx: ActionCtx, version: Doc<"skillVersi
 
   const authUserId = await getOptionalActiveAuthUserIdFromAction(ctx);
   if (authUserId) {
+    const actor = (await ctx.runQuery(internal.users.getByIdInternal, {
+      userId: authUserId,
+    })) as Doc<"users"> | null;
+    if (actor?.role === "admin" || actor?.role === "moderator") return true;
+    if (version.manualRevocation) return false;
     if (isDirectSkillOwner(skill, authUserId) && !skill.softDeletedAt && !version.softDeletedAt) {
       return true;
     }
@@ -8725,13 +8799,9 @@ async function canReadSkillVersionFiles(ctx: ActionCtx, version: Doc<"skillVersi
         return true;
       }
     }
-    const actor = (await ctx.runQuery(internal.users.getByIdInternal, {
-      userId: authUserId,
-    })) as Doc<"users"> | null;
-    if (actor?.role === "admin" || actor?.role === "moderator") return true;
   }
 
-  if (skill.softDeletedAt || version.softDeletedAt) return false;
+  if (skill.softDeletedAt || version.softDeletedAt || version.manualRevocation) return false;
 
   return Boolean(toPublicSkill(skill));
 }
@@ -8918,8 +8988,8 @@ export const resolveVersionByHash = query({
         fingerprintMatches[0] as (typeof fingerprintMatches)[number],
       );
       const version = await ctx.db.get(newest.versionId);
-      if (version && !version.softDeletedAt) {
-        match = { version: version.version };
+      if (isPublicSkillVersionAvailableForSkill(version, skill._id)) {
+        match = { version: version!.version };
       }
     }
 
@@ -8931,7 +9001,7 @@ export const resolveVersionByHash = query({
         .take(200);
 
       for (const version of versions) {
-        if (version.softDeletedAt) continue;
+        if (!isPublicSkillVersionAvailableForSkill(version, skill._id)) continue;
         if (typeof version.fingerprint === "string" && version.fingerprint === hash) {
           match = { version: version.version };
           break;

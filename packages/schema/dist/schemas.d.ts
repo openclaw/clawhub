@@ -655,6 +655,21 @@ export declare const ApiV1SkillVersionResponseSchema: import("arktype/internal/v
         displayName: string;
     } | null;
 }, {}>;
+export declare const SkillVersionRevocationStateSchema: import("arktype/internal/variants/string.ts").StringType<"active" | "revoked", {}>;
+export type SkillVersionRevocationState = (typeof SkillVersionRevocationStateSchema)[inferred];
+export declare const SkillVersionRevocationRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    state: "active" | "revoked";
+    reason: string;
+}, {}>;
+export type SkillVersionRevocationRequest = (typeof SkillVersionRevocationRequestSchema)[inferred];
+export declare const ApiV1SkillVersionRevocationResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    skillId: string;
+    versionId: string;
+    state: "active" | "revoked";
+    revokedAt: number | null;
+}, {}>;
+export type ApiV1SkillVersionRevocationResponse = (typeof ApiV1SkillVersionRevocationResponseSchema)[inferred];
 export declare const ApiV1SkillResolveResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     match: {
         version: string;

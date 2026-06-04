@@ -577,6 +577,18 @@ export const ApiV1SkillVersionResponseSchema = type({
         displayName: "string",
     }).or("null"),
 });
+export const SkillVersionRevocationStateSchema = type('"active"|"revoked"');
+export const SkillVersionRevocationRequestSchema = type({
+    state: SkillVersionRevocationStateSchema,
+    reason: "string",
+});
+export const ApiV1SkillVersionRevocationResponseSchema = type({
+    ok: "true",
+    skillId: "string",
+    versionId: "string",
+    state: SkillVersionRevocationStateSchema,
+    revokedAt: "number|null",
+});
 export const ApiV1SkillResolveResponseSchema = type({
     match: type({ version: "string" }).or("null"),
     latestVersion: type({ version: "string" }).or("null"),

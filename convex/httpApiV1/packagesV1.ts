@@ -60,6 +60,7 @@ import {
   getPublicSkillVersionDownloadBlock,
   getSkillFileModerationInfoFromSkill,
   isSkillVersionForSkill,
+  isSkillVersionRevoked,
 } from "../lib/skillFileAccess";
 import { isMacJunkPath, isTextFile } from "../lib/skills";
 import {
@@ -457,6 +458,7 @@ type SkillVersionLike = {
     contentType?: string;
   }>;
   softDeletedAt?: number;
+  manualRevocation?: unknown;
 };
 
 type ReleaseLike = {
@@ -3575,6 +3577,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     if (skillDetail?.skill) {
       const version = await getSkillVersionForRequest(ctx, skillDetail.skill, request);
       if (!version || version.softDeletedAt) return text("Version not found", 404, rate.headers);
+      if (isSkillVersionRevoked(version)) return text("Version not available", 410, rate.headers);
       const effectiveLatestVersionId =
         skillDetail.skill.latestVersionId ?? skillDetail.skill.tags?.latest;
       const moderationBlock = getPublicSkillVersionDownloadBlock(

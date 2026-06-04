@@ -137,15 +137,30 @@ export function isSkillVersionForSkill(
   return version?.skillId === skillId;
 }
 
+export function isSkillVersionRevoked(version: unknown) {
+  return Boolean(
+    version &&
+    typeof version === "object" &&
+    "manualRevocation" in version &&
+    version.manualRevocation,
+  );
+}
+
 export function isPublicSkillVersionAvailableForSkill(
   version:
     | {
         skillId?: Id<"skills"> | string | null;
         softDeletedAt?: number | null;
+        manualRevocation?: unknown;
       }
     | null
     | undefined,
   skillId: Id<"skills"> | string,
 ) {
-  return Boolean(version && !version.softDeletedAt && isSkillVersionForSkill(version, skillId));
+  return Boolean(
+    version &&
+    !version.softDeletedAt &&
+    !isSkillVersionRevoked(version) &&
+    isSkillVersionForSkill(version, skillId),
+  );
 }
