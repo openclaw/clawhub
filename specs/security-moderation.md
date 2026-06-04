@@ -260,6 +260,9 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Static malware detection still records deterministic findings such as
   obfuscated shell payload prompts, but those findings are context for ClawScan,
   not a standalone hard block or uploader moderation trigger.
+- Extreme blank-line or whitespace padding before later artifact content is static
+  context-evasion evidence for ClawScan because it can hide payloads from
+  context-limited previews or model review.
 
 ## AI comment scam backfill
 

@@ -83,6 +83,8 @@ const STANDARD_PORTS = new Set([80, 443, 8080, 8443, 3000]);
 const RAW_IP_URL_PATTERN = /https?:\/\/\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?(?:\/|["'])/i;
 const CGNAT_HTTP_URL_PATTERN =
   /http:\/\/100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}(?::\d+)?(?:\/[^\s"'`]*)?/i;
+const CONTEXT_PADDING_MIN_BLANK_LINES = 2_000;
+const CONTEXT_PADDING_MIN_WHITESPACE_CHARS = 32_768;
 const INSTALL_PACKAGE_PATTERN = /installer-package\s*:\s*https?:\/\/[^\s"'`]+/i;
 const GENERATED_SOURCE_PLACEHOLDER_PATTERN =
   /^\s*[A-Za-z_][A-Za-z0-9_]*\s*=.*["']\$\{[A-Za-z_][A-Za-z0-9_-]*\}["']/m;
@@ -449,6 +451,105 @@ function addFinding(
   finding: Omit<ModerationFinding, "evidence"> & { evidence: string },
 ) {
   findings.push({ ...finding, evidence: truncateEvidence(finding.evidence.trim()) });
+}
+
+type ContextPaddingHit = {
+  kind: "blank-lines" | "whitespace-run";
+  line: number;
+  hiddenLine: number;
+  blankLines?: number;
+  whitespaceChars?: number;
+};
+
+function isNonWhitespace(char: string) {
+  return /\S/.test(char);
+}
+
+function findExtremeBlankLinePadding(content: string): ContextPaddingHit | null {
+  let line = 1;
+  let lineHasContent = false;
+  let blankLines = 0;
+  let blankRunStartLine = 1;
+
+  for (let index = 0; index <= content.length; index += 1) {
+    const char = content[index];
+    if (index < content.length && char !== "\n") {
+      if (isNonWhitespace(char)) lineHasContent = true;
+      continue;
+    }
+
+    if (lineHasContent) {
+      if (blankLines >= CONTEXT_PADDING_MIN_BLANK_LINES) {
+        return {
+          kind: "blank-lines",
+          line: blankRunStartLine,
+          hiddenLine: line,
+          blankLines,
+        };
+      }
+      blankLines = 0;
+    } else {
+      if (blankLines === 0) blankRunStartLine = line;
+      blankLines += 1;
+    }
+
+    line += 1;
+    lineHasContent = false;
+  }
+
+  return null;
+}
+
+function findExtremeWhitespacePadding(content: string): ContextPaddingHit | null {
+  let line = 1;
+  let runStartLine = 1;
+  let whitespaceChars = 0;
+
+  for (let index = 0; index <= content.length; index += 1) {
+    const char = content[index];
+    if (index < content.length && /\s/.test(char)) {
+      if (whitespaceChars === 0) runStartLine = line;
+      whitespaceChars += 1;
+      if (char === "\n") line += 1;
+      continue;
+    }
+
+    if (whitespaceChars >= CONTEXT_PADDING_MIN_WHITESPACE_CHARS && index < content.length) {
+      return {
+        kind: "whitespace-run",
+        line: runStartLine,
+        hiddenLine: line,
+        whitespaceChars,
+      };
+    }
+
+    whitespaceChars = 0;
+  }
+
+  return null;
+}
+
+function findContextPaddingAbuse(content: string): ContextPaddingHit | null {
+  return findExtremeBlankLinePadding(content) ?? findExtremeWhitespacePadding(content);
+}
+
+function scanContextPadding(file: TextFile, findings: ModerationFinding[]) {
+  const hit = findContextPaddingAbuse(file.content);
+  if (!hit) return;
+
+  const quantity =
+    hit.kind === "blank-lines"
+      ? `${hit.blankLines ?? 0} consecutive blank/whitespace-only lines`
+      : `${hit.whitespaceChars ?? 0} consecutive whitespace characters`;
+
+  addFinding(findings, {
+    code: REASON_CODES.CONTEXT_PADDING_TRUNCATION,
+    severity: "warn",
+    file: file.path,
+    line: hit.line,
+    message: "Extreme context padding hides later artifact content from context-limited review.",
+    evidence: `${quantity} before later artifact content; content resumes at line ${hit.hiddenLine}.`,
+  });
 }
 
 function findFirstLine(content: string, pattern: RegExp) {
@@ -1327,6 +1428,7 @@ export function runStaticModerationScan(input: StaticScanInput): StaticScanResul
   const declaredEnvNames = collectDeclaredEnvNames(input);
 
   for (const file of files) {
+    scanContextPadding(file, findings);
     scanSecretLiteralFile(file.path, file.content, findings);
     scanPlaintextCgnatEndpointFile(file.path, file.content, findings);
     scanCodeFile(file.path, file.content, findings, declaredEnvNames);
