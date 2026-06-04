@@ -52,6 +52,13 @@ describe("publisher stat maintenance", () => {
               return {
                 collect: vi.fn(async () => [
                   makeSkill({ statsDownloads: 11, statsStars: 2, statsInstallsAllTime: 5 }),
+                  makeSkill({
+                    _id: "skills:hidden",
+                    moderationStatus: "hidden",
+                    statsDownloads: 100,
+                    statsStars: 100,
+                    statsInstallsAllTime: 100,
+                  }),
                 ]),
               };
             }

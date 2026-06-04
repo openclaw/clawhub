@@ -139,6 +139,29 @@ describe("node http client", () => {
     expect((init.headers as Record<string, string>)["Content-Type"]).toBe("application/json");
   });
 
+  it("parses explicitly accepted non-2xx json responses", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: async () => ({
+        ok: false,
+        message: "GitHub-backed skill changed upstream; waiting for scan.",
+      }),
+    });
+    const client = createNodeClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
+
+    await expect(
+      client.apiRequest("https://example.com", {
+        method: "GET",
+        path: "/api/v1/skills/demo/install",
+        acceptedStatuses: [409],
+      }),
+    ).resolves.toEqual({
+      ok: false,
+      message: "GitHub-backed skill changed upstream; waiting for scan.",
+    });
+  });
+
   it("includes rate-limit guidance from response headers on 429", async () => {
     const { setTimeoutImpl, clearTimeoutImpl } = createImmediateTimeouts();
     const fetchImpl = vi.fn().mockResolvedValue({

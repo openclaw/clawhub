@@ -435,6 +435,61 @@ describe("cmdUpdate", () => {
     expect(mockLog).toHaveBeenCalledWith("Skipped 1 pinned skill: demo");
   });
 
+  it("continues update --all when a source-backed resolver response blocks one skill", async () => {
+    mockApiRequest
+      .mockResolvedValueOnce({
+        latestVersion: null,
+        moderation: null,
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        slug: "stale-github",
+        reason: "github_upstream_changed",
+        message: "stale-github changed upstream; waiting for ClawHub scan.",
+        status: 409,
+      })
+      .mockResolvedValueOnce({
+        latestVersion: { version: "2.0.0" },
+        moderation: null,
+      });
+    mockDownloadZip.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    vi.mocked(readLockfile).mockResolvedValue({
+      version: 1,
+      skills: {
+        "stale-github": { version: "a".repeat(40), installedAt: 123 },
+        demo: { version: "1.0.0", installedAt: 456 },
+      },
+    });
+    vi.mocked(writeLockfile).mockResolvedValue();
+    vi.mocked(writeSkillOrigin).mockResolvedValue();
+    vi.mocked(extractZipToDir).mockResolvedValue();
+    vi.mocked(listTextFiles).mockResolvedValue([]);
+
+    await cmdUpdate(makeOpts(), undefined, { all: true }, false);
+
+    expect(mockSpinner.fail).toHaveBeenCalledWith(
+      "stale-github: stale-github changed upstream; waiting for ClawHub scan.",
+    );
+    expect(mockDownloadZip).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({ slug: "demo", version: "2.0.0" }),
+    );
+    expect(writeLockfile).toHaveBeenCalledWith("/work", {
+      version: 1,
+      skills: {
+        "stale-github": { version: "a".repeat(40), installedAt: 123 },
+        demo: { version: "2.0.0", installedAt: expect.any(Number) },
+      },
+    });
+    const [, resolverArgs] = mockApiRequest.mock.calls[1] ?? [];
+    expect(resolverArgs).toEqual(
+      expect.objectContaining({
+        path: `${ApiRoutes.skills}/${encodeURIComponent("stale-github")}/install`,
+        acceptedStatuses: [403, 409, 410, 423],
+      }),
+    );
+  });
+
   it("uses path-based skill lookup when no local fingerprint is available", async () => {
     mockApiRequest.mockResolvedValue({ latestVersion: { version: "1.0.0" } });
     mockDownloadZip.mockResolvedValue(new Uint8Array([1, 2, 3]));
@@ -867,6 +922,7 @@ describe("cmdInstall", () => {
         method: "GET",
         path: `${ApiRoutes.skills}/${encodeURIComponent("aiq-deploy")}/install`,
         token: "tkn",
+        acceptedStatuses: [403, 409, 410, 423],
       },
       expect.anything(),
     );

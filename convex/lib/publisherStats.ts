@@ -92,7 +92,7 @@ function publisherHasSkillTotalStats(
   );
 }
 
-async function recomputePublisherStats(
+export async function recomputePublisherStats(
   ctx: Pick<MutationCtx, "db">,
   publisherId: Id<"publishers">,
 ): Promise<PublisherStatsContribution> {

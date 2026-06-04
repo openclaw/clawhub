@@ -11,6 +11,9 @@ vi.mock("./_generated/api", () => ({
       getUserOwnedSkillsBackfillPageInternal: Symbol("getUserOwnedSkillsBackfillPageInternal"),
       applyUserStatsBackfillPatchInternal: Symbol("applyUserStatsBackfillPatchInternal"),
       backfillUserStatsInternal: Symbol("backfillUserStatsInternal"),
+      getPublisherStatsBackfillPageInternal: Symbol("getPublisherStatsBackfillPageInternal"),
+      recomputePublisherStatsInternal: Symbol("recomputePublisherStatsInternal"),
+      backfillPublisherStatsInternal: Symbol("backfillPublisherStatsInternal"),
       getSkillFingerprintBackfillPageInternal: Symbol("getSkillFingerprintBackfillPageInternal"),
       applySkillFingerprintBackfillPatchInternal: Symbol(
         "applySkillFingerprintBackfillPatchInternal",
@@ -44,6 +47,7 @@ const {
   applySkillCapabilityTagsInternal,
   backfillDigestVersionSummary,
   backfillLatestVersionSummaryInternal,
+  backfillPublisherStatsInternalHandler,
   backfillSkillFingerprintsInternalHandler,
   backfillSkillSummariesInternalHandler,
   backfillUserStatsInternalHandler,
@@ -395,6 +399,54 @@ describe("maintenance backfill", () => {
         publishedSkills: 2,
         totalStars: 5,
         totalDownloads: 35,
+      },
+    );
+  });
+
+  it("backfills denormalized publisher stats through the recompute mutation", async () => {
+    const runQuery = vi.fn().mockResolvedValue({
+      items: [{ _id: "publishers:1" }, { _id: "publishers:2" }],
+      cursor: "next",
+      isDone: false,
+    });
+    const runMutation = vi.fn().mockResolvedValue({ ok: true });
+
+    const result = await backfillPublisherStatsInternalHandler({ runQuery, runMutation } as never, {
+      dryRun: true,
+      batchSize: 2,
+      maxBatches: 1,
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      stats: {
+        publishersScanned: 2,
+        publishersPatched: 0,
+      },
+      isDone: false,
+      cursor: "next",
+    });
+    expect(runQuery).toHaveBeenCalledWith(
+      internal.maintenance.getPublisherStatsBackfillPageInternal,
+      {
+        cursor: undefined,
+        batchSize: 2,
+      },
+    );
+    expect(runMutation).toHaveBeenNthCalledWith(
+      1,
+      internal.maintenance.recomputePublisherStatsInternal,
+      {
+        publisherId: "publishers:1",
+        dryRun: true,
+      },
+    );
+    expect(runMutation).toHaveBeenNthCalledWith(
+      2,
+      internal.maintenance.recomputePublisherStatsInternal,
+      {
+        publisherId: "publishers:2",
+        dryRun: true,
       },
     );
   });

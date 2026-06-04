@@ -893,6 +893,7 @@ async function resolveLatestSkillInstall(registry: string, slug: string, token?:
       method: "GET",
       path: `${ApiRoutes.skills}/${encodeURIComponent(slug)}/install`,
       token,
+      acceptedStatuses: [403, 409, 410, 423],
     },
     ApiV1SkillInstallResolveResponseSchema,
   );

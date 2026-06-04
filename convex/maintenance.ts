@@ -5,6 +5,7 @@ import type { ActionCtx } from "./_generated/server";
 import { action, internalAction, internalMutation, internalQuery } from "./functions";
 import { assertRole, requireUserFromAction } from "./lib/access";
 import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
+import { recomputePublisherStats } from "./lib/publisherStats";
 import { buildSkillSummaryBackfillPatch, type ParsedSkillData } from "./lib/skillBackfill";
 import { deriveSkillCapabilityTags } from "./lib/skillCapabilityTags";
 import { isSkillCardPath } from "./lib/skillCards";
@@ -47,6 +48,11 @@ type UserStatsBackfillStats = {
   usersPatched: number;
 };
 
+type PublisherStatsBackfillStats = {
+  publishersScanned: number;
+  publishersPatched: number;
+};
+
 type BackfillPageItem =
   | {
       kind: "ok";
@@ -70,6 +76,12 @@ type BackfillPageResult = {
 
 type UserStatsBackfillPageResult = {
   items: Array<Pick<Doc<"users">, "_id">>;
+  cursor: string | null;
+  isDone: boolean;
+};
+
+type PublisherStatsBackfillPageResult = {
+  items: Array<Pick<Doc<"publishers">, "_id">>;
   cursor: string | null;
   isDone: boolean;
 };
@@ -178,6 +190,25 @@ export const getUserStatsBackfillPageInternal = internalQuery({
   },
 });
 
+export const getPublisherStatsBackfillPageInternal = internalQuery({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args): Promise<PublisherStatsBackfillPageResult> => {
+    const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
+    const { page, isDone, continueCursor } = await ctx.db
+      .query("publishers")
+      .order("asc")
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+    return {
+      items: page.map((publisher) => ({ _id: publisher._id })),
+      cursor: continueCursor,
+      isDone,
+    };
+  },
+});
+
 export const getUserOwnedSkillsBackfillPageInternal = internalQuery({
   args: {
     ownerUserId: v.id("users"),
@@ -218,6 +249,20 @@ export const applyUserStatsBackfillPatchInternal = internalMutation({
   },
 });
 
+export const recomputePublisherStatsInternal = internalMutation({
+  args: {
+    publisherId: v.id("publishers"),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const stats = await recomputePublisherStats(ctx, args.publisherId);
+    if (!args.dryRun) {
+      await ctx.db.patch(args.publisherId, stats);
+    }
+    return { ok: true as const, stats };
+  },
+});
+
 export type BackfillActionArgs = {
   dryRun?: boolean;
   batchSize?: number;
@@ -243,6 +288,20 @@ export type UserStatsBackfillActionArgs = {
 export type UserStatsBackfillActionResult = {
   ok: true;
   stats: UserStatsBackfillStats;
+  isDone: boolean;
+  cursor: string | null;
+};
+
+export type PublisherStatsBackfillActionArgs = {
+  dryRun?: boolean;
+  batchSize?: number;
+  maxBatches?: number;
+  cursor?: string;
+};
+
+export type PublisherStatsBackfillActionResult = {
+  ok: true;
+  stats: PublisherStatsBackfillStats;
   isDone: boolean;
   cursor: string | null;
 };
@@ -409,6 +468,45 @@ export async function backfillUserStatsInternalHandler(
   return { ok: true as const, stats: totals, isDone, cursor };
 }
 
+export async function backfillPublisherStatsInternalHandler(
+  ctx: ActionCtx,
+  args: PublisherStatsBackfillActionArgs,
+): Promise<PublisherStatsBackfillActionResult> {
+  const dryRun = Boolean(args.dryRun);
+  const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
+  const maxBatches = clampInt(args.maxBatches ?? DEFAULT_MAX_BATCHES, 1, MAX_MAX_BATCHES);
+  const totals: PublisherStatsBackfillStats = {
+    publishersScanned: 0,
+    publishersPatched: 0,
+  };
+
+  let cursor: string | null = args.cursor ?? null;
+  let isDone = false;
+
+  for (let i = 0; i < maxBatches; i++) {
+    const page = (await ctx.runQuery(internal.maintenance.getPublisherStatsBackfillPageInternal, {
+      cursor: cursor ?? undefined,
+      batchSize,
+    })) as PublisherStatsBackfillPageResult;
+
+    cursor = page.cursor;
+    isDone = page.isDone;
+
+    for (const publisher of page.items) {
+      totals.publishersScanned++;
+      await ctx.runMutation(internal.maintenance.recomputePublisherStatsInternal, {
+        publisherId: publisher._id,
+        dryRun,
+      });
+      if (!dryRun) totals.publishersPatched++;
+    }
+
+    if (isDone) break;
+  }
+
+  return { ok: true as const, stats: totals, isDone, cursor };
+}
+
 export const backfillSkillSummariesInternal = internalAction({
   args: {
     dryRun: v.optional(v.boolean()),
@@ -430,6 +528,16 @@ export const backfillUserStatsInternal = internalAction({
   handler: backfillUserStatsInternalHandler,
 });
 
+export const backfillPublisherStatsInternal = internalAction({
+  args: {
+    dryRun: v.optional(v.boolean()),
+    batchSize: v.optional(v.number()),
+    maxBatches: v.optional(v.number()),
+    cursor: v.optional(v.string()),
+  },
+  handler: backfillPublisherStatsInternalHandler,
+});
+
 export const backfillSkillSummaries: ReturnType<typeof action> = action({
   args: {
     dryRun: v.optional(v.boolean()),
@@ -445,6 +553,37 @@ export const backfillSkillSummaries: ReturnType<typeof action> = action({
       internal.maintenance.backfillSkillSummariesInternal,
       args,
     ) as Promise<BackfillActionResult>;
+  },
+});
+
+export const backfillPublisherStats: ReturnType<typeof action> = action({
+  args: {
+    dryRun: v.optional(v.boolean()),
+    batchSize: v.optional(v.number()),
+    maxBatches: v.optional(v.number()),
+    cursor: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<PublisherStatsBackfillActionResult> => {
+    const { user } = await requireUserFromAction(ctx);
+    assertRole(user, ["admin"]);
+    return ctx.runAction(
+      internal.maintenance.backfillPublisherStatsInternal,
+      args,
+    ) as Promise<PublisherStatsBackfillActionResult>;
+  },
+});
+
+export const scheduleBackfillPublisherStats: ReturnType<typeof action> = action({
+  args: { dryRun: v.optional(v.boolean()) },
+  handler: async (ctx, args) => {
+    const { user } = await requireUserFromAction(ctx);
+    assertRole(user, ["admin"]);
+    await ctx.scheduler.runAfter(0, internal.maintenance.backfillPublisherStatsInternal, {
+      dryRun: Boolean(args.dryRun),
+      batchSize: DEFAULT_BATCH_SIZE,
+      maxBatches: DEFAULT_MAX_BATCHES,
+    });
+    return { ok: true as const };
   },
 });
 
