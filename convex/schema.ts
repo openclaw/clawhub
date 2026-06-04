@@ -235,6 +235,24 @@ const githubSkillSources = defineTable({
   .index("by_owner_publisher_and_repo", ["ownerPublisherId", "repo"])
   .index("by_updated", ["updatedAt"]);
 
+const githubSkillContents = defineTable({
+  skillId: v.id("skills"),
+  githubSourceId: v.id("githubSkillSources"),
+  githubPath: v.string(),
+  skillMarkdownPath: v.string(),
+  skillMarkdown: v.string(),
+  skillCardMarkdownPath: v.optional(v.string()),
+  skillCardMarkdown: v.optional(v.string()),
+  githubCommit: v.string(),
+  githubContentHash: v.string(),
+  fetchedAt: v.number(),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_skill", ["skillId"])
+  .index("by_skill_and_content_hash", ["skillId", "githubContentHash"])
+  .index("by_github_source", ["githubSourceId"]);
+
 // Shared validator fragments used by both `skills` and `skillSearchDigest`.
 const forkOfValidator = v.optional(
   v.object({
@@ -518,6 +536,7 @@ const skills = defineTable({
   installKind: v.optional(v.literal("github")),
   githubSourceId: v.optional(v.id("githubSkillSources")),
   githubPath: v.optional(v.string()),
+  githubHasSkillCard: v.optional(v.boolean()),
   githubVerifiedCommit: v.optional(v.string()),
   githubVerifiedContentHash: v.optional(v.string()),
   githubCurrentCommit: v.optional(v.string()),
@@ -642,6 +661,7 @@ const skills = defineTable({
   .index("by_canonical", ["canonicalSkillId"])
   .index("by_fork_of", ["forkOf.skillId"])
   .index("by_moderation", ["moderationStatus", "moderationReason"])
+  .index("by_github_source", ["githubSourceId"])
   .index("by_nonsuspicious_updated", ["softDeletedAt", "isSuspicious", "updatedAt"])
   .index("by_nonsuspicious_created", ["softDeletedAt", "isSuspicious", "createdAt"])
   .index("by_nonsuspicious_name", ["softDeletedAt", "isSuspicious", "displayName"])
@@ -937,6 +957,8 @@ const skillSearchDigest = defineTable({
   forkOf: forkOfValidator,
   latestVersionId: v.optional(v.id("skillVersions")),
   latestVersionSkillId: v.optional(v.id("skills")),
+  installKind: v.optional(v.literal("github")),
+  githubHasSkillCard: v.optional(v.boolean()),
   latestVersionSummary: v.optional(
     v.object({
       version: v.string(),
@@ -2190,6 +2212,7 @@ export default defineSchema({
   publishers,
   publisherMembers,
   githubSkillSources,
+  githubSkillContents,
   skills,
   skillSlugAliases,
   packages,

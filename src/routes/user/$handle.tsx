@@ -3,8 +3,6 @@ import { usePaginatedQuery, useQuery } from "convex/react";
 import {
   ArrowDownToLine,
   Building2,
-  LayoutGrid,
-  List,
   Package,
   Star,
   Users,
@@ -71,9 +69,8 @@ type PublisherMemberResult = {
 };
 
 type PublishedView = "list" | "grid";
-type PublishedKindFilter = "skill" | "plugin" | undefined;
-type ProfileCatalogTab = "published" | "starred";
-type PublishedSort = "downloads" | "recent";
+type ProfileCatalogTab = "skills" | "plugins" | "stars";
+type ActiveCatalogTab = ProfileCatalogTab | "published";
 
 const roleColor: Record<string, "accent" | "default" | "compact"> = {
   owner: "accent",
@@ -91,17 +88,20 @@ function GitHubIcon({ size = 14 }: { size?: number }) {
 
 function PublisherProfile() {
   const { handle } = Route.useParams();
-  const [publishedView, setPublishedView] = useState<PublishedView>("list");
-  const [catalogTab, setCatalogTab] = useState<ProfileCatalogTab>("published");
-  const [publishedKind, setPublishedKind] = useState<PublishedKindFilter>(undefined);
-  const [publishedSort, setPublishedSort] = useState<PublishedSort>("downloads");
-  const publishedQueryArgs = publishedKind
-    ? { handle, kind: publishedKind, sort: publishedSort }
-    : { handle, sort: publishedSort };
+  const [catalogTab, setCatalogTab] = useState<ProfileCatalogTab>("skills");
+  const publishedKind: "skill" | "plugin" = catalogTab === "plugins" ? "plugin" : "skill";
   const publisher = useQuery(api.publishers.getProfileByHandle, { handle }) as
     | PublicPublisherListItem
     | null
     | undefined;
+  const publishedQueryArgs: {
+    handle: string;
+    kind?: "skill" | "plugin";
+    sort: "downloads";
+  } =
+    publisher?.kind === "org"
+      ? { handle, sort: "downloads" }
+      : { handle, kind: publishedKind, sort: "downloads" };
   const publishedDisplay = useQuery(
     api.publishers.getPublishedDisplayManifest,
     publishedQueryArgs,
@@ -123,7 +123,7 @@ function PublisherProfile() {
     loadMore: loadMoreStarred,
   } = usePaginatedQuery(
     api.publishers.listStarredPage,
-    { handle, sort: publishedSort },
+    { handle, sort: "downloads" },
     {
       initialNumItems: 12,
     },
@@ -172,13 +172,13 @@ function PublisherProfile() {
   const affiliations = publisher.affiliations ?? [];
   const visibleAffiliations = affiliations.slice(0, 1);
   const memberCount = members?.members.length ?? 0;
-  const activeCatalogTab = publisher.kind === "user" ? catalogTab : "published";
-  const activeItems = activeCatalogTab === "starred" ? starredItems : publishedItems;
-  const activeStatus = activeCatalogTab === "starred" ? starredStatus : publishedStatus;
-  const activeLoadMore = activeCatalogTab === "starred" ? loadMoreStarred : loadMore;
-  const activePublishedDisplay = activeCatalogTab === "published" ? publishedDisplay : null;
+  const activeCatalogTab: ActiveCatalogTab = publisher.kind === "user" ? catalogTab : "published";
+  const activeItems = activeCatalogTab === "stars" ? starredItems : publishedItems;
+  const activeStatus = activeCatalogTab === "stars" ? starredStatus : publishedStatus;
+  const activeLoadMore = activeCatalogTab === "stars" ? loadMoreStarred : loadMore;
+  const activePublishedDisplay =
+    activeCatalogTab === "skills" || activeCatalogTab === "published" ? publishedDisplay : null;
   const isLoadingCatalog = activeStatus === "LoadingFirstPage";
-  const showPublishedKindFilters = activeCatalogTab === "published" && publishedCount > 0;
 
   return (
     <main className="publisher-profile-route">
@@ -364,20 +364,30 @@ function PublisherProfile() {
                     Publisher catalog
                   </h2>
                   {publisher.kind === "user" ? (
-                    <div className="publisher-profile-collection-tabs" aria-label="Catalog">
+                    <div className="publisher-profile-catalog-tabs" aria-label="Catalog">
                       <button
                         type="button"
-                        className={activeCatalogTab === "published" ? "is-active" : undefined}
-                        onClick={() => setCatalogTab("published")}
+                        className={activeCatalogTab === "skills" ? "is-active" : undefined}
+                        onClick={() => setCatalogTab("skills")}
                       >
-                        Published <span>{formatCompactStat(publishedCount)}</span>
+                        <Wrench size={14} aria-hidden="true" />
+                        Skills <span>{formatCompactStat(publisher.stats.skills)}</span>
                       </button>
                       <button
                         type="button"
-                        className={activeCatalogTab === "starred" ? "is-active" : undefined}
-                        onClick={() => setCatalogTab("starred")}
+                        className={activeCatalogTab === "plugins" ? "is-active" : undefined}
+                        onClick={() => setCatalogTab("plugins")}
                       >
-                        Starred <span>{formatCompactStat(publisher.starredCount ?? 0)}</span>
+                        <Package size={14} aria-hidden="true" />
+                        Plugins <span>{formatCompactStat(publisher.stats.packages)}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className={activeCatalogTab === "stars" ? "is-active" : undefined}
+                        onClick={() => setCatalogTab("stars")}
+                      >
+                        <Star size={14} aria-hidden="true" />
+                        Stars <span>{formatCompactStat(publisher.starredCount ?? 0)}</span>
                       </button>
                     </div>
                   ) : (
@@ -387,86 +397,17 @@ function PublisherProfile() {
                     </>
                   )}
                 </div>
-                <div className="publisher-profile-section-controls">
-                  <div className="publisher-profile-sort-tabs" aria-label="Sort catalog">
-                    <button
-                      type="button"
-                      className={publishedSort === "downloads" ? "is-active" : undefined}
-                      onClick={() => setPublishedSort("downloads")}
-                    >
-                      Downloads
-                    </button>
-                    <button
-                      type="button"
-                      className={publishedSort === "recent" ? "is-active" : undefined}
-                      onClick={() => setPublishedSort("recent")}
-                    >
-                      Recent
-                    </button>
-                  </div>
-                  {showPublishedKindFilters ? (
-                    <div className="publisher-profile-kind-tabs" aria-label="Published type">
-                      <button
-                        type="button"
-                        className={!publishedKind ? "is-active" : undefined}
-                        onClick={() => setPublishedKind(undefined)}
-                      >
-                        All {formatCompactStat(publishedCount)}
-                      </button>
-                      <button
-                        type="button"
-                        className={publishedKind === "skill" ? "is-active" : undefined}
-                        onClick={() => setPublishedKind("skill")}
-                      >
-                        Skills {formatCompactStat(publisher.stats.skills)}
-                      </button>
-                      <button
-                        type="button"
-                        className={publishedKind === "plugin" ? "is-active" : undefined}
-                        onClick={() => setPublishedKind("plugin")}
-                      >
-                        Plugins {formatCompactStat(publisher.stats.packages)}
-                      </button>
-                    </div>
-                  ) : null}
-                  <div className="publisher-profile-view-tabs" aria-label="Published view">
-                    <button
-                      type="button"
-                      className={publishedView === "list" ? "is-active" : undefined}
-                      onClick={() => setPublishedView("list")}
-                      aria-label="List view"
-                    >
-                      <List size={15} aria-hidden="true" />
-                    </button>
-                    <button
-                      type="button"
-                      className={publishedView === "grid" ? "is-active" : undefined}
-                      onClick={() => setPublishedView("grid")}
-                      aria-label="Grid view"
-                    >
-                      <LayoutGrid size={15} aria-hidden="true" />
-                    </button>
-                  </div>
-                </div>
               </div>
 
               {isLoadingCatalog ? (
                 <SkillCardSkeletonGrid count={6} />
               ) : activePublishedDisplay ? (
-                <PublishedCatalogSections display={activePublishedDisplay} view={publishedView} />
+                <PublishedCatalogSections display={activePublishedDisplay} view="list" />
               ) : activeItems.length > 0 ? (
                 <>
-                  <div
-                    className={
-                      publishedView === "list" ? "results-list" : "grid publisher-published-grid"
-                    }
-                  >
+                  <div className="results-list">
                     {activeItems.map((item) => (
-                      <PublishedItemCard
-                        key={`${item.kind}:${item._id}`}
-                        item={item}
-                        view={publishedView}
-                      />
+                      <PublishedItemCard key={`${item.kind}:${item._id}`} item={item} view="list" />
                     ))}
                   </div>
                   {activeStatus === "CanLoadMore" ? (
@@ -483,9 +424,11 @@ function PublisherProfile() {
               ) : (
                 <EmptyState
                   title={
-                    activeCatalogTab === "starred"
+                    activeCatalogTab === "stars"
                       ? "No starred items yet"
-                      : "No published items yet"
+                      : activeCatalogTab === "plugins"
+                        ? "No published plugins yet"
+                        : "No published skills yet"
                   }
                 />
               )}
@@ -555,17 +498,8 @@ export function PublishedCatalogSections({
   display: PublicPublisherCatalogDisplay;
   view: PublishedView;
 }) {
-  const sourceLabel = display.sourceRepos.join(", ");
-
   return (
     <div className="publisher-profile-source-catalog">
-      <div className="publisher-profile-source-note">
-        <GitHubIcon size={16} />
-        <span>
-          <strong>Source-backed from {sourceLabel}</strong>
-          <small>ClawHub indexes metadata and scan results; install bytes stay in GitHub.</small>
-        </span>
-      </div>
       {display.sections.map((section) => (
         <section key={section.key} className="publisher-profile-manifest-section">
           <div className="publisher-profile-manifest-heading">
@@ -573,7 +507,6 @@ export function PublishedCatalogSections({
               <h3>{section.title}</h3>
               {section.description ? <p>{section.description}</p> : null}
             </div>
-            {section.sourceRepo ? <Badge variant="compact">{section.sourceRepo}</Badge> : null}
           </div>
           <div className={view === "list" ? "results-list" : "grid publisher-published-grid"}>
             {section.items.map((item) => (
@@ -605,7 +538,6 @@ export function PublishedItemCard({
           />
           <h3 className="skill-card-title">{item.displayName}</h3>
           {item.isOfficial ? <OfficialBadge /> : null}
-          {item.sourceBacked ? <Badge variant="compact">Source-backed</Badge> : null}
         </div>
         <p className="skill-card-summary">
           {item.summary ?? `${item.kind === "plugin" ? "Plugin" : "Skill"} published on ClawHub.`}
@@ -639,7 +571,6 @@ export function PublishedItemCard({
           <span className="skill-list-item-sep">/</span>
           <span className="skill-list-item-name">{item.displayName}</span>
           {item.isOfficial ? <OfficialBadge /> : null}
-          {item.sourceBacked ? <Badge variant="compact">Source-backed</Badge> : null}
         </span>
         {item.summary ? <p className="skill-list-item-summary">{item.summary}</p> : null}
       </div>

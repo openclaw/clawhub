@@ -33,6 +33,7 @@ import { readCanonicalStat } from "./lib/skillStats";
 const PUBLISHER_HANDLE_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
 const MAX_PUBLIC_PUBLISHER_LIST_LIMIT = 500;
 const PUBLISHER_LIST_PREVIEW_LIMIT = 3;
+const PUBLISHER_LIST_PREVIEW_FETCH_LIMIT = 24;
 const publisherRoleValidator = v.union(
   v.literal("owner"),
   v.literal("admin"),
@@ -92,6 +93,10 @@ type PublisherListSummary = {
   publisher: Doc<"publishers">;
   item: PublisherListItem;
 };
+
+function isPublicPublishedSkill(skill: Doc<"skills">) {
+  return !skill.softDeletedAt && (!skill.moderationStatus || skill.moderationStatus === "active");
+}
 
 type PublicPublisherKindFilter = "user" | "org";
 type PublisherListCounts = {
@@ -183,7 +188,7 @@ async function getPublisherPublishedRows(
       )
       .collect(),
   ]);
-  return { skills, packages };
+  return { skills: skills.filter(isPublicPublishedSkill), packages };
 }
 
 async function getPublisherPublishedPreviewRows(
@@ -191,13 +196,7 @@ async function getPublisherPublishedPreviewRows(
   publisherId: Id<"publishers">,
 ): Promise<PublisherPublishedRows> {
   const [skills, packages] = await Promise.all([
-    ctx.db
-      .query("skills")
-      .withIndex("by_owner_publisher_active_downloads", (q) =>
-        q.eq("ownerPublisherId", publisherId).eq("softDeletedAt", undefined),
-      )
-      .order("desc")
-      .take(PUBLISHER_LIST_PREVIEW_LIMIT),
+    getPublisherPublishedPreviewSkills(ctx, publisherId),
     ctx.db
       .query("packages")
       .withIndex("by_owner_publisher_active_downloads", (q) =>
@@ -207,6 +206,31 @@ async function getPublisherPublishedPreviewRows(
       .take(PUBLISHER_LIST_PREVIEW_LIMIT),
   ]);
   return { skills, packages };
+}
+
+async function getPublisherPublishedPreviewSkills(
+  ctx: Pick<QueryCtx, "db">,
+  publisherId: Id<"publishers">,
+) {
+  const skills: Doc<"skills">[] = [];
+  let cursor: string | null = null;
+  while (skills.length < PUBLISHER_LIST_PREVIEW_LIMIT) {
+    const page = await ctx.db
+      .query("skills")
+      .withIndex("by_owner_publisher_active_downloads", (q) =>
+        q.eq("ownerPublisherId", publisherId).eq("softDeletedAt", undefined),
+      )
+      .order("desc")
+      .paginate({ cursor, numItems: PUBLISHER_LIST_PREVIEW_FETCH_LIMIT });
+    for (const skill of page.page) {
+      if (!isPublicPublishedSkill(skill)) continue;
+      skills.push(skill);
+      if (skills.length >= PUBLISHER_LIST_PREVIEW_LIMIT) break;
+    }
+    if (page.isDone) break;
+    cursor = page.continueCursor;
+  }
+  return skills;
 }
 
 function getIndexedPublisherStatsFromRows(rows: PublisherPublishedRows): PublisherListStats {

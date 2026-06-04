@@ -43,6 +43,38 @@ describe("SkillDetailTabs README links", () => {
     expect(screen.queryByRole("tab", { name: "Compare" })).toBeNull();
   });
 
+  it("hides archive-only tabs for source-backed skills", () => {
+    render(
+      <SkillDetailTabs
+        activeTab="readme"
+        setActiveTab={vi.fn()}
+        readmeContent="# API Gateway"
+        readmeError={null}
+        skillCardContent="# Skill Card"
+        skillCardError={null}
+        hasSkillCard={true}
+        latestFiles={[]}
+        latestVersionId={null}
+        skill={{ slug: "api-gateway" } as Doc<"skills">}
+        onCompareIntent={vi.fn()}
+        diffVersions={undefined}
+        versions={undefined}
+        nixPlugin={false}
+        showArchiveTabs={false}
+        suppressVersionScanResults={false}
+        scanResultsSuppressedMessage={null}
+        clawdis={undefined}
+        osLabels={[]}
+      />,
+    );
+
+    expect(screen.getByRole("tab", { name: "SKILL.md" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Skill Card" })).toBeTruthy();
+    expect(screen.queryByRole("tab", { name: "Files" })).toBeNull();
+    expect(screen.queryByRole("tab", { name: "Versions" })).toBeNull();
+    expect(screen.queryByRole("tab", { name: "Compare" })).toBeNull();
+  });
+
   it("keeps relative skill README links inside the viewed skill", () => {
     const { container } = renderReadme(
       [
@@ -64,6 +96,36 @@ describe("SkillDetailTabs README links", () => {
       (link) => link.textContent === "Traversal",
     );
     expect(traversal?.getAttribute("href")).toBe("");
+  });
+
+  it("uses a custom README link resolver when provided", () => {
+    render(
+      <SkillDetailTabs
+        activeTab="readme"
+        setActiveTab={vi.fn()}
+        readmeContent="[Source doc](references/install.md)"
+        readmeError={null}
+        skillCardContent={null}
+        skillCardError={null}
+        hasSkillCard={false}
+        latestFiles={[]}
+        latestVersionId={null}
+        skill={{ slug: "api-gateway" } as Doc<"skills">}
+        onCompareIntent={vi.fn()}
+        diffVersions={undefined}
+        versions={undefined}
+        nixPlugin={false}
+        suppressVersionScanResults={false}
+        scanResultsSuppressedMessage={null}
+        clawdis={undefined}
+        osLabels={[]}
+        readmeHrefResolver={(href) => `https://github.com/NVIDIA/skills/blob/abc/${href}`}
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: "Source doc" }).getAttribute("href")).toBe(
+      "https://github.com/NVIDIA/skills/blob/abc/references/install.md",
+    );
   });
 
   it("adds Clawdis metadata to the existing skill detail tabs", () => {

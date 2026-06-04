@@ -96,6 +96,7 @@ type SkillHeaderProps = {
   securityAuditSummary?: ReactNode;
   newVersionHref?: string | null;
   settingsHref?: string | null;
+  showArchiveMetadata?: boolean;
   children?: ReactNode;
 };
 
@@ -130,6 +131,7 @@ export function SkillHeader({
   securityAuditSummary,
   newVersionHref,
   settingsHref,
+  showArchiveMetadata = true,
   children,
 }: SkillHeaderProps) {
   const formattedStats = formatSkillStatsTriplet(skill.stats);
@@ -194,6 +196,7 @@ export function SkillHeader({
               ownerHandle={ownerHandle}
               formattedStats={formattedStats}
               latestVersion={latestVersion}
+              showArchiveMetadata={showArchiveMetadata}
               securityAuditSummary={securityAuditSummary}
             />
             {hasSidebarActions ? (
@@ -441,6 +444,7 @@ function SkillSidebarStats({
   ownerHandle,
   formattedStats,
   latestVersion,
+  showArchiveMetadata,
   securityAuditSummary,
 }: {
   skill: Doc<"skills"> | PublicSkill;
@@ -448,6 +452,7 @@ function SkillSidebarStats({
   ownerHandle: string | null;
   formattedStats: ReturnType<typeof formatSkillStatsTriplet>;
   latestVersion: SkillHeaderLatestVersion;
+  showArchiveMetadata: boolean;
   securityAuditSummary?: ReactNode;
 }) {
   return (
@@ -478,15 +483,19 @@ function SkillSidebarStats({
             }
           : { label: "", value: null },
         { label: "Last updated", value: timeAgo(skill.updatedAt) },
-        {
-          grid: [
-            {
-              label: "Current version",
-              value: latestVersion?.version ? `v${latestVersion.version}` : "None",
-            },
-            { label: "License", value: PLATFORM_SKILL_LICENSE },
-          ],
-        },
+        ...(showArchiveMetadata
+          ? [
+              {
+                grid: [
+                  {
+                    label: "Current version",
+                    value: latestVersion?.version ? `v${latestVersion.version}` : "None",
+                  },
+                  { label: "License", value: PLATFORM_SKILL_LICENSE },
+                ],
+              },
+            ]
+          : []),
       ]}
     />
   );

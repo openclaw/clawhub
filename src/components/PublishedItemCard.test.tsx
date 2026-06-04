@@ -79,7 +79,7 @@ describe("PublishedItemCard", () => {
       expect(screen.queryByText("Official")).toBeNull();
     });
 
-    it("marks GitHub-backed skill cards as source-backed", () => {
+    it("does not add source-backed chrome to GitHub-backed skill cards", () => {
       render(
         <PublishedItemCard
           item={{
@@ -92,7 +92,7 @@ describe("PublishedItemCard", () => {
         />,
       );
 
-      expect(screen.getByText("Source-backed")).toBeTruthy();
+      expect(screen.queryByText("Source-backed")).toBeNull();
     });
   });
 
@@ -118,7 +118,7 @@ describe("PublishedItemCard", () => {
 });
 
 describe("PublishedCatalogSections", () => {
-  it("renders manifest groups with source-backed catalog copy", () => {
+  it("renders manifest groups without source-backed catalog chrome", () => {
     render(
       <PublishedCatalogSections
         view="list"
@@ -165,11 +165,12 @@ describe("PublishedCatalogSections", () => {
       />,
     );
 
-    expect(screen.getByText("Source-backed from NVIDIA/skills")).toBeTruthy();
-    expect(screen.getByText(/install bytes stay in github/i)).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Agentic AI" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Other skills" })).toBeTruthy();
     expect(screen.getByText("AIQ Deploy")).toBeTruthy();
     expect(screen.getByText("Other Skill")).toBeTruthy();
+    expect(screen.queryByText("Source-backed from NVIDIA/skills")).toBeNull();
+    expect(screen.queryByText("Source-backed")).toBeNull();
+    expect(screen.queryByText("NVIDIA/skills")).toBeNull();
   });
 });

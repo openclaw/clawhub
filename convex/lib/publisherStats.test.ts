@@ -136,6 +136,26 @@ describe("publisher stat maintenance", () => {
     expect(ctx.db.query).not.toHaveBeenCalled();
   });
 
+  it("does not count hidden skills in public publisher aggregates", async () => {
+    const ctx = {
+      db: {
+        get: vi.fn(),
+        patch: vi.fn(),
+        query: vi.fn(),
+      },
+    };
+
+    await adjustPublisherStatsForSkillChange(
+      ctx as never,
+      null,
+      makeSkill({ moderationStatus: "hidden", moderationReason: "github.signature.pending" }),
+    );
+
+    expect(ctx.db.get).not.toHaveBeenCalled();
+    expect(ctx.db.patch).not.toHaveBeenCalled();
+    expect(ctx.db.query).not.toHaveBeenCalled();
+  });
+
   it("keeps legacy aggregate updates bounded when skill-only aggregates are missing", async () => {
     const patch = vi.fn();
     const ctx = {

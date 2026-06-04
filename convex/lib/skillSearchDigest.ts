@@ -24,6 +24,8 @@ const SHARED_KEYS = [
   "canonicalSkillId",
   "forkOf",
   "latestVersionId",
+  "installKind",
+  "githubHasSkillCard",
   "latestVersionSummary",
   "tags",
   "capabilityTags",

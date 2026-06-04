@@ -82,6 +82,8 @@ export type PublicSkill = Pick<
   | "canonicalSkillId"
   | "forkOf"
   | "latestVersionId"
+  | "installKind"
+  | "githubHasSkillCard"
   | "tags"
   | "capabilityTags"
   | "badges"

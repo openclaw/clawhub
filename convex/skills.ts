@@ -135,7 +135,7 @@ const MAX_OWNER_SUMMARY_LENGTH = 500;
 
 export { publishVersionForUser } from "./lib/skillPublish";
 
-type ReadmeResult = { path: string; text: string };
+type ReadmeResult = { path: string; text: string; sourceBaseUrl?: string };
 type FileTextResult = {
   path: string;
   text: string;
@@ -2329,9 +2329,12 @@ export const getBySlug = query({
       displayName: skill.displayName,
       summary: skill.summary,
       ownerUserId: skill.ownerUserId,
+      ownerPublisherId: skill.ownerPublisherId,
       canonicalSkillId: skill.canonicalSkillId,
       forkOf: skill.forkOf,
       latestVersionId: skill.latestVersionId,
+      installKind: skill.installKind,
+      githubHasSkillCard: skill.githubHasSkillCard,
       tags: skill.tags,
       badges,
       stats: skill.stats,
@@ -8193,6 +8196,84 @@ async function canReadSkillVersionFiles(ctx: ActionCtx, version: Doc<"skillVersi
   if (skill.softDeletedAt || version.softDeletedAt) return false;
 
   return Boolean(toPublicSkill(skill));
+}
+
+async function canReadGitHubSkillContent(ctx: QueryCtx, skill: Doc<"skills">) {
+  const authUserId = await getOptionalActiveAuthUserId(ctx);
+  if (authUserId) {
+    if (isDirectSkillOwner(skill, authUserId) && !skill.softDeletedAt) return true;
+    if (skill.ownerPublisherId && !skill.softDeletedAt) {
+      const canAccessOwnerScope = await canAccessPublisherOwnerScope(ctx, {
+        publisher: await ctx.db.get(skill.ownerPublisherId),
+        userId: authUserId,
+        legacyOwnerUserId: skill.ownerUserId,
+      });
+      if (canAccessOwnerScope) return true;
+    }
+    const actor = await ctx.db.get(authUserId);
+    if (actor?.role === "admin" || actor?.role === "moderator") return true;
+  }
+
+  if (skill.softDeletedAt) return false;
+  return Boolean(toPublicSkill(skill));
+}
+
+export const getGitHubSkillContent = query({
+  args: {
+    skillId: v.id("skills"),
+    kind: v.union(v.literal("readme"), v.literal("skill-card")),
+  },
+  handler: async (ctx, args): Promise<ReadmeResult | null> => {
+    const skill = await ctx.db.get(args.skillId);
+    if (!skill || skill.installKind !== "github") return null;
+    if (skill.githubCurrentStatus !== "present") return null;
+    if (!(await canReadGitHubSkillContent(ctx, skill))) {
+      throw new ConvexError("Skill content not available");
+    }
+
+    const content = await ctx.db
+      .query("githubSkillContents")
+      .withIndex("by_skill", (q) => q.eq("skillId", args.skillId))
+      .unique();
+    if (!content) return null;
+    if (content.githubContentHash !== skill.githubCurrentContentHash) return null;
+
+    const source = await ctx.db.get(content.githubSourceId);
+    const resultSource = source
+      ? buildGitHubMarkdownSourceBaseUrl(source.repo, content.githubCommit, content.githubPath)
+      : undefined;
+
+    if (args.kind === "skill-card") {
+      if (!content.skillCardMarkdown || !content.skillCardMarkdownPath) return null;
+      return {
+        path: content.skillCardMarkdownPath,
+        text: content.skillCardMarkdown,
+        ...(resultSource ? { sourceBaseUrl: resultSource } : {}),
+      };
+    }
+
+    return {
+      path: content.skillMarkdownPath,
+      text: content.skillMarkdown,
+      ...(resultSource ? { sourceBaseUrl: resultSource } : {}),
+    };
+  },
+});
+
+function buildGitHubMarkdownSourceBaseUrl(repo: string, commit: string, githubPath: string) {
+  if (!repo || !commit) return undefined;
+  const encodedRepo = repo
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+  const normalizedPath = githubPath.replace(/^\/+|\/+$/g, "");
+  const encodedPath = normalizedPath
+    ? `/${normalizedPath
+        .split("/")
+        .map((segment) => encodeURIComponent(segment))
+        .join("/")}`
+    : "";
+  return `https://github.com/${encodedRepo}/blob/${encodeURIComponent(commit)}${encodedPath}`;
 }
 
 export const getReadme: ReturnType<typeof action> = action({

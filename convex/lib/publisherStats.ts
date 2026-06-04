@@ -1,5 +1,6 @@
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
+import { isPublicSkillDoc } from "./globalStats";
 import { readCanonicalStat } from "./skillStats";
 
 export type PublisherStatsContribution = {
@@ -27,7 +28,7 @@ export function emptyPublisherStatsContribution(): PublisherStatsContribution {
 }
 
 export function getSkillPublisherContribution(skill: Doc<"skills">): PublisherStatsContribution {
-  if (skill.softDeletedAt) return emptyPublisherStatsContribution();
+  if (!isPublicSkillDoc(skill)) return emptyPublisherStatsContribution();
   const totalInstalls = readCanonicalStat(skill, "installsAllTime");
   const totalDownloads = readCanonicalStat(skill, "downloads");
   const totalStars = readCanonicalStat(skill, "stars");

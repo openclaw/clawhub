@@ -8,6 +8,7 @@ import { Settings } from "./settings";
 
 const useQueryMock = vi.fn();
 const useMutationMock = vi.fn();
+const useActionMock = vi.fn();
 const useAuthActionsMock = vi.fn();
 const { navigateMock, searchMock } = vi.hoisted(() => ({
   navigateMock: vi.fn(),
@@ -17,6 +18,7 @@ const { navigateMock, searchMock } = vi.hoisted(() => ({
 vi.mock("convex/react", () => ({
   useQuery: (...args: unknown[]) => useQueryMock(...args),
   useMutation: (...args: unknown[]) => useMutationMock(...args),
+  useAction: (...args: unknown[]) => useActionMock(...args),
 }));
 
 vi.mock("@convex-dev/auth/react", () => ({
@@ -59,6 +61,18 @@ const orgMembership = {
   role: "owner",
 };
 
+const personalMembership = {
+  publisher: {
+    _id: "publisher_patrick",
+    handle: "patrick",
+    displayName: "Patrick",
+    kind: "user",
+    image: null,
+    bio: null,
+  },
+  role: "owner",
+};
+
 const orgMembers = {
   publisher: { _id: "publisher_openclaw", handle: "openclaw" },
   members: [
@@ -80,7 +94,7 @@ function mockSignedInSettings({
   members = orgMembers,
 }: {
   search?: Record<string, unknown>;
-  memberships?: Array<typeof orgMembership>;
+  memberships?: Array<typeof orgMembership | typeof personalMembership>;
   members?: typeof orgMembers;
 } = {}) {
   searchMock.mockReturnValue(search);
@@ -98,11 +112,13 @@ describe("Settings", () => {
     window.history.replaceState(null, "", "/settings");
     useQueryMock.mockReset();
     useMutationMock.mockReset();
+    useActionMock.mockReset();
     useAuthActionsMock.mockReset();
     navigateMock.mockReset();
     searchMock.mockReset();
     searchMock.mockReturnValue({});
     useMutationMock.mockReturnValue(vi.fn());
+    useActionMock.mockReturnValue(vi.fn());
     vi.mocked(toast.error).mockReset();
     vi.mocked(toast.success).mockReset();
     useAuthActionsMock.mockReturnValue({
@@ -172,6 +188,37 @@ describe("Settings", () => {
     expect(useQueryMock).toHaveBeenCalledWith(api.publishers.listMembers, {
       publisherHandle: "openclaw",
     });
+  });
+
+  it("lets publisher owners configure a public GitHub sync source", async () => {
+    const configureSource = vi.fn().mockResolvedValue({ ok: true, stats: { discovered: 1 } });
+    useActionMock.mockReturnValue(configureSource);
+    mockSignedInSettings({
+      search: { view: "githubSources" },
+      memberships: [personalMembership, orgMembership],
+    });
+
+    render(<Settings />);
+
+    expect(
+      screen.getByRole("button", { name: "GitHub sources" }).getAttribute("aria-current"),
+    ).toBe("true");
+    expect(screen.getByRole("heading", { name: "GitHub sync sources" })).toBeTruthy();
+    expect(screen.getByPlaceholderText("Enter a public repo")).toBeTruthy();
+    expect(screen.queryByText(/skills\.sh\.json/i)).toBeNull();
+
+    fireEvent.change(screen.getByLabelText("Public GitHub repo"), {
+      target: { value: "NVIDIA/skills" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Sync source/i }));
+
+    await waitFor(() => {
+      expect(configureSource).toHaveBeenCalledWith({
+        ownerPublisherId: "publisher_patrick",
+        repo: "NVIDIA/skills",
+      });
+    });
+    expect(toast.success).toHaveBeenCalledWith(expect.stringMatching(/GitHub source synced/i));
   });
 
   it("shows create organization mutation errors to the user", async () => {

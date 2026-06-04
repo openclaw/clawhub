@@ -1,15 +1,17 @@
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
-import { useMutation, useQuery } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import {
   Building2,
   CircleX,
   Code,
   Copy,
+  GitBranch,
   KeyRound,
   Monitor,
   Moon,
   Palette,
   Plus,
+  RefreshCw,
   Save,
   ShieldAlert,
   Sun,
@@ -54,7 +56,7 @@ import { ToggleGroup, ToggleGroupItem } from "../components/ui/toggle-group";
 import { getUserFacingConvexError } from "../lib/convexError";
 import { useThemeMode } from "../lib/theme";
 
-const settingsViews = ["account", "organizations", "tokens", "danger"] as const;
+const settingsViews = ["account", "organizations", "githubSources", "tokens", "danger"] as const;
 type SettingsView = (typeof settingsViews)[number];
 
 function isSettingsView(value: unknown): value is SettingsView {
@@ -85,6 +87,7 @@ type PublisherMembership = {
     kind: "user" | "org";
     image?: string | null;
     bio?: string | null;
+    official?: boolean;
   };
   role: "owner" | "admin" | "publisher";
 };
@@ -102,8 +105,24 @@ type OrgMembersResult = {
   }>;
 };
 
+type GitHubSkillSource = {
+  _id: Id<"githubSkillSources">;
+  repo: string;
+  defaultBranch?: string;
+  displayManifestStatus?: "ok" | "missing" | "invalid" | "failed";
+  displayManifestFetchedAt?: number;
+  displayManifestCommit?: string;
+  createdAt: number;
+  updatedAt: number;
+};
+
 const navigationGroups: Array<{
-  items: Array<{ view: SettingsView; label: string; mobileLabel: string; icon: LucideIcon }>;
+  items: Array<{
+    view: SettingsView;
+    label: string;
+    mobileLabel: string;
+    icon: LucideIcon;
+  }>;
 }> = [
   {
     items: [
@@ -122,6 +141,12 @@ const navigationGroups: Array<{
         label: "Organizations",
         mobileLabel: "Orgs",
         icon: Building2,
+      },
+      {
+        view: "githubSources",
+        label: "GitHub sources",
+        mobileLabel: "Sources",
+        icon: GitBranch,
       },
       { view: "tokens", label: "API tokens", mobileLabel: "Tokens", icon: KeyRound },
       {
@@ -154,6 +179,7 @@ export function Settings() {
   const updateOrgProfile = useMutation(api.publishers.updateProfile);
   const addOrgMember = useMutation(api.publishers.addMember);
   const removeOrgMember = useMutation(api.publishers.removeMember);
+  const configureGitHubSource = useAction(api.githubSkillSync.configurePublicGitHubSkillSource);
   const [displayName, setDisplayName] = useState("");
   const [bio, setBio] = useState("");
   const [tokenLabel, setTokenLabel] = useState("");
@@ -168,12 +194,28 @@ export function Settings() {
   const [selectedOrgImage, setSelectedOrgImage] = useState("");
   const [memberHandle, setMemberHandle] = useState("");
   const [memberRole, setMemberRole] = useState<"owner" | "admin" | "publisher">("publisher");
+  const [selectedSourcePublisherId, setSelectedSourcePublisherId] = useState("");
+  const [githubRepo, setGithubRepo] = useState("");
+  const [isSyncingSource, setIsSyncingSource] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [createOrgDialogOpen, setCreateOrgDialogOpen] = useState(false);
   const [addMemberDialogOpen, setAddMemberDialogOpen] = useState(false);
   const [revokeTokenId, setRevokeTokenId] = useState<Id<"apiTokens"> | null>(null);
   const { activeView, navigateToView } = useActiveSettingsView();
   const orgs = (publisherMemberships ?? []).filter((entry) => entry.publisher.kind === "org");
+  const manageablePublishers = (publisherMemberships ?? []).filter(
+    (entry) => entry.role !== "publisher",
+  );
+  const publisherMembershipsLoaded = publisherMemberships !== undefined;
+  const canConfigureGitHubSources = manageablePublishers.length > 0;
+  const effectiveActiveView =
+    activeView === "githubSources" && publisherMembershipsLoaded && !canConfigureGitHubSources
+      ? "account"
+      : activeView;
+  const selectedSourcePublisher =
+    manageablePublishers.find((entry) => entry.publisher._id === selectedSourcePublisherId) ??
+    manageablePublishers[0] ??
+    null;
   const selectedOrg =
     orgs.find((entry) => entry.publisher.handle === selectedOrgHandle) ?? orgs[0] ?? null;
   const hasOrgProfileChanges = selectedOrg
@@ -192,6 +234,12 @@ export function Settings() {
       ? { publisherHandle: selectedOrg.publisher.handle }
       : "skip",
   ) as OrgMembersResult | null | undefined;
+  const githubSources = useQuery(
+    api.githubSkillSources.listForPublisher,
+    effectiveActiveView === "githubSources" && selectedSourcePublisher
+      ? { ownerPublisherId: selectedSourcePublisher.publisher._id }
+      : "skip",
+  ) as GitHubSkillSource[] | undefined;
 
   useEffect(() => {
     if (!me) return;
@@ -205,6 +253,20 @@ export function Settings() {
       setSelectedOrgHandle(orgs[0].publisher.handle);
     }
   }, [orgs, selectedOrgHandle]);
+
+  useEffect(() => {
+    if (!manageablePublishers.length) {
+      setSelectedSourcePublisherId("");
+      return;
+    }
+    if (
+      selectedSourcePublisherId &&
+      manageablePublishers.some((entry) => entry.publisher._id === selectedSourcePublisherId)
+    ) {
+      return;
+    }
+    setSelectedSourcePublisherId(manageablePublishers[0]?.publisher._id ?? "");
+  }, [manageablePublishers, selectedSourcePublisherId]);
 
   useEffect(() => {
     if (!selectedOrg) {
@@ -284,6 +346,27 @@ export function Settings() {
       image: selectedOrgImage || undefined,
     });
     toast.success("Organization updated");
+  }
+
+  async function onConfigureGitHubSource(event: FormEvent) {
+    event.preventDefault();
+    if (!selectedSourcePublisher) return;
+    const repo = githubRepo.trim();
+    if (!repo) return;
+    setIsSyncingSource(true);
+    try {
+      const result = await configureGitHubSource({
+        ownerPublisherId: selectedSourcePublisher.publisher._id,
+        repo,
+      });
+      setGithubRepo("");
+      const count = result?.stats?.discovered ?? 0;
+      toast.success(`GitHub source synced (${count} ${count === 1 ? "skill" : "skills"} found)`);
+    } catch (error) {
+      toast.error(getUserFacingConvexError(error, "GitHub source could not be synced."));
+    } finally {
+      setIsSyncingSource(false);
+    }
   }
 
   return (
@@ -935,6 +1018,90 @@ export function Settings() {
             </SettingsSection>
 
             <SettingsSection
+              id="githubSources"
+              visible={activeView === "githubSources"}
+              icon={<GitBranch size={18} />}
+              title="GitHub sources"
+              description="Public source-backed skill repos."
+            >
+              <div className="flex flex-col gap-5">
+                <SettingsBlock>
+                  <div className="flex flex-col gap-4">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface)] text-[color:var(--ink)]">
+                        <GitBranch size={17} />
+                      </span>
+                      <div className="min-w-0">
+                        <h3 className="text-sm font-bold text-[color:var(--ink)]">
+                          GitHub sync sources
+                        </h3>
+                        <p className="text-sm text-[color:var(--ink-soft)]">
+                          Enter a public repo. ClawHub stores metadata and scan results; install
+                          bytes stay in GitHub.
+                        </p>
+                      </div>
+                    </div>
+
+                    {selectedSourcePublisher ? (
+                      <form className="grid gap-4" onSubmit={onConfigureGitHubSource}>
+                        {manageablePublishers.length > 1 ? (
+                          <Field label="Publisher" htmlFor="settings-github-source-publisher">
+                            <Select
+                              value={selectedSourcePublisher.publisher._id}
+                              onValueChange={setSelectedSourcePublisherId}
+                            >
+                              <SelectTrigger id="settings-github-source-publisher">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {manageablePublishers.map((entry) => (
+                                  <SelectItem key={entry.publisher._id} value={entry.publisher._id}>
+                                    @{entry.publisher.handle} · {entry.role}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </Field>
+                        ) : (
+                          <div className="rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)]/25 px-3 py-2 text-sm text-[color:var(--ink-soft)]">
+                            Publishing as @{selectedSourcePublisher.publisher.handle}
+                          </div>
+                        )}
+
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                          <div className="min-w-0 flex-1">
+                            <Field label="Public GitHub repo" htmlFor="settings-github-repo">
+                              <Input
+                                id="settings-github-repo"
+                                value={githubRepo}
+                                onChange={(event) => setGithubRepo(event.target.value)}
+                                placeholder="Enter a public repo"
+                              />
+                            </Field>
+                          </div>
+                          <Button
+                            type="submit"
+                            disabled={!githubRepo.trim() || isSyncingSource}
+                            className="shrink-0"
+                          >
+                            <RefreshCw size={16} />
+                            {isSyncingSource ? "Syncing..." : "Sync source"}
+                          </Button>
+                        </div>
+                      </form>
+                    ) : (
+                      <p className="rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)]/25 p-3 text-sm text-[color:var(--ink-soft)]">
+                        You need a publisher profile before adding GitHub sources.
+                      </p>
+                    )}
+                  </div>
+                </SettingsBlock>
+
+                <GitHubSourceList sources={githubSources} />
+              </div>
+            </SettingsSection>
+
+            <SettingsSection
               id="tokens"
               visible={activeView === "tokens"}
               icon={<KeyRound size={18} />}
@@ -1268,6 +1435,77 @@ function OrgLogoSmall({
       <MarketplaceIcon kind="org" label={name || handle} imageUrl={image} size="xs" />
     </span>
   );
+}
+
+function GitHubSourceList({ sources }: { sources: GitHubSkillSource[] | undefined }) {
+  return (
+    <SettingsBlock className="gap-4">
+      <div className="flex min-w-0 items-center gap-3">
+        <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface)] text-[color:var(--ink)]">
+          <GitBranch size={16} />
+        </span>
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-bold text-[color:var(--ink)]">Configured sources</h3>
+            <span className="inline-flex h-5 items-center rounded-full border border-[color:var(--line)] bg-[color:var(--surface-muted)] px-2 text-[11px] font-semibold text-[color:var(--ink-soft)]">
+              {sources?.length ?? 0}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {sources === undefined ? (
+        <p className="text-sm text-[color:var(--ink-soft)]">Loading sources...</p>
+      ) : sources.length ? (
+        <div className="divide-y divide-[color:var(--line)] overflow-hidden">
+          {sources.map((source) => (
+            <div
+              key={source._id}
+              className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+            >
+              <div className="min-w-0">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <span className="truncate text-sm font-semibold text-[color:var(--ink)]">
+                    {source.repo}
+                  </span>
+                  <Badge className="px-2.5 py-0.5 text-fs-xs">
+                    {manifestStatusLabel(source.displayManifestStatus)}
+                  </Badge>
+                </div>
+                <div className="mt-1 flex min-w-0 flex-wrap gap-x-3 gap-y-1 text-xs text-[color:var(--ink-soft)]">
+                  <span>{source.defaultBranch ?? "main"}</span>
+                  {source.displayManifestCommit ? (
+                    <span>{shortCommit(source.displayManifestCommit)}</span>
+                  ) : null}
+                  <span>Updated {formatShortDate(source.updatedAt)}</span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-sm text-[color:var(--ink-soft)]">No GitHub sources configured.</p>
+      )}
+    </SettingsBlock>
+  );
+}
+
+function manifestStatusLabel(status: GitHubSkillSource["displayManifestStatus"]) {
+  switch (status) {
+    case "ok":
+      return "Grouped";
+    case "invalid":
+      return "Ungrouped";
+    case "failed":
+      return "Needs attention";
+    case "missing":
+    default:
+      return "Ungrouped";
+  }
+}
+
+function shortCommit(commit: string) {
+  return commit.slice(0, 7);
 }
 
 function TokenList({

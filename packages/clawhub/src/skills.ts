@@ -38,6 +38,37 @@ export async function extractZipToDir(zipBytes: Uint8Array, targetDir: string) {
   }
 }
 
+export async function extractGitHubZipPathToDir(
+  zipBytes: Uint8Array,
+  targetDir: string,
+  sourcePath: string,
+) {
+  const entries = unzipSync(zipBytes);
+  const normalizedSourcePath = normalizeGitHubSourcePath(sourcePath);
+  let wroteFile = false;
+
+  await mkdir(targetDir, { recursive: true });
+  for (const [rawPath, data] of Object.entries(entries)) {
+    const safeZipPath = sanitizeRelPath(rawPath);
+    if (!safeZipPath) continue;
+    const repoRelativePath = stripGitHubZipRoot(safeZipPath);
+    if (repoRelativePath === null) continue;
+    const targetRelativePath = getGitHubSourceRelativePath(repoRelativePath, normalizedSourcePath);
+    if (!targetRelativePath) continue;
+    const safeTargetPath = sanitizeRelPath(targetRelativePath);
+    if (!safeTargetPath) continue;
+
+    const outPath = join(targetDir, safeTargetPath);
+    await mkdir(dirname(outPath), { recursive: true });
+    await writeFile(outPath, data);
+    wroteFile = true;
+  }
+
+  if (!wroteFile) {
+    throw new Error(`GitHub zip did not contain ${sourcePath}`);
+  }
+}
+
 export async function listTextFiles(root: string) {
   const files: Array<{ relPath: string; bytes: Uint8Array; contentType?: string }> = [];
   const absRoot = resolve(root);
@@ -200,12 +231,31 @@ function isLikelyTextBytes(bytes: Uint8Array) {
 function sanitizeRelPath(path: string) {
   const normalized = path.replace(/^\.\/+/, "").replace(/^\/+/, "");
   if (!normalized || normalized.endsWith("/")) return null;
-  if (normalized.includes("..") || normalized.includes("\\")) return null;
+  if (normalized.includes("\\")) return null;
+  const segments = normalized.split("/");
+  if (segments.some((segment) => !segment || segment === "." || segment === "..")) return null;
   return normalized;
 }
 
 function sanitizeZipPath(path: string) {
   return sanitizeRelPath(path);
+}
+
+function normalizeGitHubSourcePath(path: string) {
+  return path.replace(/^\.\/+/, "").replace(/^\/+|\/+$/g, "");
+}
+
+function stripGitHubZipRoot(path: string) {
+  const slash = path.indexOf("/");
+  if (slash < 0) return null;
+  return path.slice(slash + 1);
+}
+
+function getGitHubSourceRelativePath(repoRelativePath: string, sourcePath: string) {
+  if (!sourcePath) return repoRelativePath;
+  if (repoRelativePath === sourcePath) return null;
+  if (!repoRelativePath.startsWith(`${sourcePath}/`)) return null;
+  return repoRelativePath.slice(sourcePath.length + 1);
 }
 
 async function walk(dir: string, onFile: (path: string) => Promise<void>) {

@@ -11,6 +11,13 @@ crons.interval(
 );
 
 crons.interval(
+  "github-skill-source-sync",
+  { minutes: 15 },
+  internal.githubSkillSync.syncGitHubSkillSourcesInternal,
+  { limit: 25 },
+);
+
+crons.interval(
   "trending-leaderboard",
   { minutes: 60 },
   internal.leaderboards.rebuildTrendingLeaderboardAction,

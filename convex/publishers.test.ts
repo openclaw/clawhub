@@ -104,7 +104,12 @@ const listPublicHandler = (
   listPublic as unknown as WrappedHandler<
     { limit?: number; kind?: "user" | "org" },
     {
-      items: Array<{ handle: string; kind: "user" | "org"; stats: { downloads: number } }>;
+      items: Array<{
+        handle: string;
+        kind: "user" | "org";
+        stats: { downloads: number };
+        publishedItems?: Array<{ displayName: string }>;
+      }>;
       total: number;
       counts: { all: number; individuals: number; organizations: number };
       limit: number;
@@ -234,7 +239,20 @@ const resolvePublishTargetForUserInternalHandler = (
 function indexedRows<T>(rows: T[]) {
   return {
     collect: vi.fn(async () => rows),
-    order: vi.fn(() => ({ take: vi.fn(async (limit: number) => rows.slice(0, limit)) })),
+    order: vi.fn(() => ({
+      take: vi.fn(async (limit: number) => rows.slice(0, limit)),
+      paginate: vi.fn(async ({ cursor, numItems }: { cursor: string | null; numItems: number }) => {
+        const offset = cursor ? Number(cursor) : 0;
+        const page = rows.slice(offset, offset + numItems);
+        const nextOffset = offset + page.length;
+        const isDone = nextOffset >= rows.length;
+        return {
+          page,
+          isDone,
+          continueCursor: isDone ? "" : String(nextOffset),
+        };
+      }),
+    })),
   };
 }
 
@@ -593,6 +611,123 @@ describe("publishers membership controls", () => {
     expect(result.total).toBe(1);
     expect(result.counts).toEqual({ all: 2, individuals: 1, organizations: 1 });
     expect(result.items.map((item) => item.handle)).toEqual(["openclaw"]);
+  });
+
+  it("fills publisher previews from visible skills below hidden high-download rows", async () => {
+    const publisherRows = [
+      {
+        _id: "publishers:nvidia",
+        _creationTime: 1,
+        kind: "org",
+        handle: "nvidia",
+        displayName: "NVIDIA",
+        publishedSkills: 1,
+        publishedPackages: 0,
+        totalInstalls: 0,
+        totalDownloads: 70,
+        totalStars: 0,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+    const skillRows = [
+      ...Array.from({ length: 25 }, (_, index) => 100 - index).map((downloads, index) => ({
+        _id: `skills:hidden-${index}`,
+        ownerPublisherId: "publishers:nvidia",
+        ownerUserId: "users:nvidia",
+        slug: `hidden-${index}`,
+        displayName: `Hidden ${index}`,
+        summary: "Pending verification.",
+        icon: null,
+        softDeletedAt: undefined,
+        moderationStatus: "hidden",
+        statsDownloads: downloads,
+        statsStars: 0,
+        statsInstallsAllTime: 0,
+        stats: { downloads, stars: 0, installsCurrent: 0, installsAllTime: 0 },
+        updatedAt: downloads,
+      })),
+      {
+        _id: "skills:visible",
+        ownerPublisherId: "publishers:nvidia",
+        ownerUserId: "users:nvidia",
+        slug: "visible",
+        displayName: "Visible Skill",
+        summary: "Shown.",
+        icon: null,
+        softDeletedAt: undefined,
+        moderationStatus: "active",
+        statsDownloads: 70,
+        statsStars: 0,
+        statsInstallsAllTime: 0,
+        stats: { downloads: 70, stars: 0, installsCurrent: 0, installsAllTime: 0 },
+        updatedAt: 70,
+      },
+    ];
+    const ctx = {
+      db: {
+        get: vi.fn(async () => null),
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
+            const fields: Record<string, unknown> = {};
+            const q = {
+              eq: (field: string, value: unknown) => {
+                fields[field] = value;
+                return q;
+              },
+            };
+            buildQuery(q);
+            if (table === "publishers" && indexName === "by_handle") {
+              return { unique: vi.fn(async () => null) };
+            }
+            if (table === "publishers" && indexName === "by_active_total_downloads") {
+              return {
+                order: vi.fn(() => ({ collect: vi.fn(async () => publisherRows) })),
+              };
+            }
+            if (table === "skills" && indexName === "by_owner_publisher_active_downloads") {
+              return {
+                order: vi.fn(() => ({
+                  take: vi.fn(async (limit: number) =>
+                    skillRows
+                      .filter((skill) => skill.ownerPublisherId === fields.ownerPublisherId)
+                      .slice(0, limit),
+                  ),
+                  paginate: vi.fn(
+                    async ({ cursor, numItems }: { cursor: string | null; numItems: number }) => {
+                      const rows = skillRows.filter(
+                        (skill) => skill.ownerPublisherId === fields.ownerPublisherId,
+                      );
+                      const offset = cursor ? Number(cursor) : 0;
+                      const page = rows.slice(offset, offset + numItems);
+                      const nextOffset = offset + page.length;
+                      const isDone = nextOffset >= rows.length;
+                      return {
+                        page,
+                        isDone,
+                        continueCursor: isDone ? "" : String(nextOffset),
+                      };
+                    },
+                  ),
+                })),
+              };
+            }
+            if (table === "packages" && indexName === "by_owner_publisher_active_downloads") {
+              return {
+                order: vi.fn(() => ({ take: vi.fn(async () => []) })),
+              };
+            }
+            throw new Error(`unexpected ${table} index ${indexName}`);
+          }),
+        })),
+      },
+    };
+
+    const result = await listPublicHandler(ctx as never, { limit: 48 });
+
+    expect(result.items[0]?.publishedItems).toEqual([
+      expect.objectContaining({ displayName: "Visible Skill" }),
+    ]);
   });
 
   it("pages public publishers by kind and query", async () => {
@@ -1016,6 +1151,94 @@ describe("publishers membership controls", () => {
     expect(result.page).toMatchObject([
       { displayName: "Example Plugin", href: "/plugins/@openclaw/example-plugin" },
     ]);
+  });
+
+  it("excludes hidden and removed skills from publisher catalogs", async () => {
+    const publisher = {
+      _id: "publishers:nvidia",
+      _creationTime: 1,
+      kind: "org",
+      handle: "nvidia",
+      displayName: "NVIDIA",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const skillRows = [
+      {
+        _id: "skills:visible",
+        ownerPublisherId: "publishers:nvidia",
+        ownerUserId: "users:nvidia",
+        slug: "visible",
+        displayName: "Visible Skill",
+        summary: "Shown.",
+        icon: null,
+        moderationStatus: "active",
+        stats: { downloads: 3, stars: 1, installsCurrent: 0, installsAllTime: 0 },
+        updatedAt: 5,
+      },
+      {
+        _id: "skills:hidden",
+        ownerPublisherId: "publishers:nvidia",
+        ownerUserId: "users:nvidia",
+        slug: "hidden",
+        displayName: "Hidden Skill",
+        summary: "Pending verification.",
+        icon: null,
+        moderationStatus: "hidden",
+        moderationReason: "github.signature.pending",
+        stats: { downloads: 10, stars: 1, installsCurrent: 0, installsAllTime: 0 },
+        updatedAt: 6,
+      },
+      {
+        _id: "skills:removed",
+        ownerPublisherId: "publishers:nvidia",
+        ownerUserId: "users:nvidia",
+        slug: "removed",
+        displayName: "Removed Skill",
+        summary: "Removed upstream.",
+        icon: null,
+        moderationStatus: "removed",
+        moderationReason: "github.upstream.removed",
+        stats: { downloads: 9, stars: 1, installsCurrent: 0, installsAllTime: 0 },
+        updatedAt: 7,
+      },
+    ];
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => (id === "publishers:nvidia" ? publisher : null)),
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
+            const fields: Record<string, unknown> = {};
+            const q = {
+              eq: (field: string, value: unknown) => {
+                fields[field] = value;
+                return q;
+              },
+            };
+            buildQuery(q);
+            if (table === "publishers" && indexName === "by_handle") {
+              return {
+                unique: vi.fn(async () => (fields.handle === "nvidia" ? publisher : null)),
+              };
+            }
+            if (table === "skills" && indexName === "by_owner_publisher_active_updated") {
+              return indexedRows(skillRows);
+            }
+            if (table === "packages" && indexName === "by_owner_publisher_active_updated") {
+              return indexedRows([]);
+            }
+            throw new Error(`unexpected ${table} index ${indexName}`);
+          }),
+        })),
+      },
+    };
+
+    const result = await listPublishedPageHandler(ctx as never, {
+      handle: "nvidia",
+      paginationOpts: { cursor: null, numItems: 12 },
+    });
+
+    expect(result.page.map((item) => item.displayName)).toEqual(["Visible Skill"]);
   });
 
   it("includes skill.icon on catalog items and surfaces null for plugins (F7)", async () => {

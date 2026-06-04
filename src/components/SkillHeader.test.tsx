@@ -171,6 +171,17 @@ describe("SkillHeader", () => {
     expect(screen.queryByRole("link", { name: "New version" })).toBeNull();
   });
 
+  it("hides archive-only metadata for source-backed skills", () => {
+    renderHeader({ showArchiveMetadata: false });
+
+    expect(screen.getByText("Downloads")).toBeTruthy();
+    expect(screen.getByText("Owner")).toBeTruthy();
+    expect(screen.getByText("Last updated")).toBeTruthy();
+    expect(screen.queryByText("Current version")).toBeNull();
+    expect(screen.queryByText("License")).toBeNull();
+    expect(screen.queryByText("MIT-0")).toBeNull();
+  });
+
   it("hides Report for non-staff managers", () => {
     renderHeader({
       canManage: true,

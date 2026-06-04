@@ -24,6 +24,8 @@ export type PublicSkill = Pick<
   | "canonicalSkillId"
   | "forkOf"
   | "latestVersionId"
+  | "installKind"
+  | "githubHasSkillCard"
   | "tags"
   | "capabilityTags"
   | "badges"
@@ -52,6 +54,8 @@ export type HydratableSkill = Pick<
   | "canonicalSkillId"
   | "forkOf"
   | "latestVersionId"
+  | "installKind"
+  | "githubHasSkillCard"
   | "latestVersionSummary"
   | "tags"
   | "capabilityTags"
@@ -149,6 +153,8 @@ export function toPublicSkill(skill: HydratableSkill | null | undefined): Public
     canonicalSkillId: skill.canonicalSkillId,
     forkOf: skill.forkOf,
     latestVersionId: skill.latestVersionId,
+    installKind: skill.installKind,
+    githubHasSkillCard: skill.githubHasSkillCard,
     tags: skill.tags,
     capabilityTags: skill.capabilityTags,
     badges: skill.badges,
