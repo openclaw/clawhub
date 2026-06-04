@@ -514,23 +514,48 @@ export function parsePublishBody(body: unknown) {
   };
 }
 
+// Substrings that indicate user-input validation failures from the underlying
+// mutations (e.g. `normalizePackageName` ConvexErrors). These are surfaced as
+// 400s with the cleaned message so CLI/API clients can see the actual reason
+// instead of an opaque 500.
+const SOFT_DELETE_BAD_REQUEST_HINTS = [
+  "slug required",
+  "package name required",
+  "package name must be",
+  "must be lowercase",
+  "npm-safe",
+  "reserved",
+  "version required",
+] as const;
+
 export function softDeleteErrorToResponse(
   entity: "skill" | "soul" | "package",
   error: unknown,
   headers: HeadersInit,
 ) {
-  const message = error instanceof Error ? error.message : `${entity} delete failed`;
-  const lower = message.toLowerCase();
+  const rawMessage = error instanceof Error ? error.message : `${entity} delete failed`;
+  const cleaned = cleanUserFacingErrorMessage(rawMessage) || rawMessage;
+  const lower = cleaned.toLowerCase();
 
   if (lower.includes("unauthorized"))
     return text(formatAuthzMessage(error, "Unauthorized"), 401, headers);
   if (lower.includes("forbidden"))
     return text(formatAuthzMessage(error, "Forbidden"), 403, headers);
-  if (lower.includes("not found")) return text(message, 404, headers);
-  if (lower.includes("slug required")) return text("Slug required", 400, headers);
+  if (lower.includes("not found")) return text(cleaned, 404, headers);
+  if (SOFT_DELETE_BAD_REQUEST_HINTS.some((hint) => lower.includes(hint))) {
+    return text(cleaned, 400, headers);
+  }
 
-  // Unknown: server-side failure. Keep body generic.
-  return text("Internal Server Error", 500, headers);
+  // Unknown: server-side failure. Keep status 500 but include the cleaned
+  // message in the body so CLI users get an actionable hint instead of a bare
+  // "Internal Server Error". The status code stays 500 so monitoring/alerting
+  // pipelines that key off the status are unaffected.
+  const fallback = "Internal Server Error";
+  const body =
+    cleaned && cleaned.toLowerCase() !== fallback.toLowerCase()
+      ? `${fallback}: ${cleaned}`
+      : fallback;
+  return text(body, 500, headers);
 }
 
 export function cleanUserFacingErrorMessage(message: string) {
