@@ -7,7 +7,8 @@
     "summary",
     "dimensions",
     "scan_findings_in_context",
-    "user_guidance"
+    "user_guidance",
+    "artifact_coverage"
   ],
   "properties": {
     "verdict": { "type": "string", "enum": ["benign", "suspicious", "malicious"] },
@@ -84,6 +85,49 @@
         }
       }
     },
-    "user_guidance": { "type": "string" }
+    "user_guidance": { "type": "string" },
+    "artifact_coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "inspected_files"],
+      "properties": {
+        "status": { "type": "string", "enum": ["complete", "incomplete"] },
+        "inspected_files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "coverage", "ranges", "reason"],
+            "properties": {
+              "path": { "type": "string" },
+              "coverage": {
+                "type": "string",
+                "enum": ["full", "head_tail", "partial", "metadata_only", "not_inspected"]
+              },
+              "ranges": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["kind"],
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": ["full", "head", "tail", "middle", "match", "metadata"]
+                    },
+                    "startLine": { "type": "integer", "minimum": 1 },
+                    "endLine": { "type": "integer", "minimum": 1 },
+                    "startByte": { "type": "integer", "minimum": 0 },
+                    "endByte": { "type": "integer", "minimum": 0 }
+                  }
+                }
+              },
+              "reason": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
   }
 }

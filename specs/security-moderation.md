@@ -189,6 +189,12 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   hosted LLM call. Publishes enqueue a scan job that waits at most 10 minutes
   for VirusTotal telemetry, then Codex reviews the materialized artifact
   workspace with static and VT signals as context.
+- Codex worker clean verdicts are valid only with worker-time artifact coverage
+  proof. The worker output schema requires `artifact_coverage`, and the worker
+  must reject a benign result before storage when submitted files are omitted,
+  marked metadata-only/unread, or large files lack full or head/tail coverage.
+  Coverage proof is a worker contract and diagnostics aid, not public scan state,
+  unless a future product surface explicitly needs it.
 - ClawScan worker concurrency is an operator-controlled compute concern. The
   backend claim path must cap only a single worker claim size and must not impose
   a global active-scan ceiling; horizontal capacity is controlled by worker
