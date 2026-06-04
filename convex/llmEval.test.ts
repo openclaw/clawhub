@@ -8,6 +8,7 @@ import {
   evaluatePackageReleaseWithLlm,
   evaluateWithLlm,
   packageOpenClawEnvironmentForPrompt,
+  scheduleSuspiciousSkillLlmRescanInternal,
 } from "./llmEval";
 
 type WrappedHandler<TArgs, TResult> = {
@@ -39,6 +40,15 @@ const evaluateWithLlmHandler = (
 const evaluatePackageReleaseWithLlmHandler = (
   evaluatePackageReleaseWithLlm as unknown as WrappedHandler<
     { releaseId: string },
+    Record<string, unknown>
+  >
+)._handler;
+const scheduleSuspiciousSkillLlmRescanInternalHandler = (
+  scheduleSuspiciousSkillLlmRescanInternal as unknown as WrappedHandler<
+    {
+      bucket: "all" | "llm-only" | "vt-only" | "both";
+      moderationMode?: "normal" | "preserve";
+    },
     Record<string, unknown>
   >
 )._handler;
@@ -161,6 +171,7 @@ describe("llm eval backfill", () => {
     expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
       versionId: "skillVersions:1",
       source: "backfill",
+      moderationMode: "preserve",
     });
     expect(runAfter).toHaveBeenCalledTimes(1);
     expect(runAfter).toHaveBeenNthCalledWith(1, 1234, expect.anything(), {
@@ -201,6 +212,45 @@ describe("llm eval backfill", () => {
       nextCursor: 42,
       done: false,
       moderationMode: "preserve",
+    });
+  });
+
+  it("preserves moderation mode when queueing suspicious skill rescans", async () => {
+    const runQuery = vi.fn(async () => ({
+      skills: [
+        {
+          skillId: "skills:1",
+          versionId: "skillVersions:1",
+          slug: "demo",
+          reasonCodes: ["llm-suspicious"],
+        },
+      ],
+      examined: 1,
+      continueCursor: null,
+      isDone: true,
+    }));
+    const runMutation = vi.fn(async () => ({ ok: true, jobId: "securityScanJobs:1" }));
+    const runAfter = vi.fn(async () => undefined);
+
+    const result = await scheduleSuspiciousSkillLlmRescanInternalHandler(
+      { runQuery, runMutation, scheduler: { runAfter } },
+      { bucket: "all", moderationMode: "preserve" },
+    );
+
+    expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
+      versionId: "skillVersions:1",
+      source: "manual",
+      moderationMode: "preserve",
+      priority: 100,
+      waitForVtMs: 0,
+    });
+    expect(runAfter).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      status: "complete",
+      examined: 1,
+      scheduled: 1,
+      skipped: 0,
+      done: true,
     });
   });
 });

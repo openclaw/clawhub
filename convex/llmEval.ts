@@ -740,6 +740,7 @@ export const backfillLlmEval: ReturnType<typeof internalAction> = internalAction
         await runMutationRef(ctx, internalRefs.securityScan.enqueueSkillVersionScanInternal, {
           versionId,
           source: "backfill",
+          moderationMode,
         });
       }
       accScheduled++;
@@ -901,6 +902,7 @@ export const scheduleSuspiciousSkillLlmRescanInternal: ReturnType<typeof interna
           await runMutationRef(ctx, internalRefs.securityScan.enqueueSkillVersionScanInternal, {
             versionId: skill.versionId,
             source: "manual",
+            moderationMode,
             priority: 100,
             waitForVtMs: 0,
           });
