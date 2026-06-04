@@ -1277,9 +1277,8 @@ export function assertCodexArtifactCoverageForVerdict(
     }
 
     const ranges = coverageRangeKinds(inspectedFile);
-    const hasFullCoverage = coverageKind === "full" || ranges.has("full");
-    const hasHeadTailCoverage =
-      coverageKind === "head_tail" || (ranges.has("head") && ranges.has("tail"));
+    const hasFullCoverage = ranges.has("full");
+    const hasHeadTailCoverage = ranges.has("head") && ranges.has("tail");
 
     if (file.size > LARGE_ARTIFACT_COVERAGE_THRESHOLD_BYTES) {
       if (!hasFullCoverage && !hasHeadTailCoverage) {

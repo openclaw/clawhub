@@ -392,6 +392,29 @@ describe("run-codex-scan-worker diagnostics", () => {
     );
   });
 
+  it("rejects benign Codex results when the coverage summary overstates ranges", () => {
+    const inspectedFiles = JSON.parse(codexResult()).artifact_coverage.inspected_files.map(
+      (file: { path: string }) =>
+        file.path === "src/large.ts"
+          ? {
+              ...file,
+              coverage: "head_tail",
+              ranges: [coverageRange("head")],
+            }
+          : file,
+    );
+    const raw = codexResult({
+      artifact_coverage: {
+        status: "complete",
+        inspected_files: inspectedFiles,
+      },
+    });
+
+    expect(() => assertCodexArtifactCoverageForVerdict(raw, coverageJob, "benign")).toThrow(
+      "src/large.ts: large file lacks full or head/tail coverage",
+    );
+  });
+
   it.each([
     {
       path: "SKILL.md",
