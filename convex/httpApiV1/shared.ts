@@ -524,7 +524,7 @@ const SOFT_DELETE_BAD_REQUEST_HINTS = [
   "package name must be",
   "must be lowercase",
   "npm-safe",
-  "reserved",
+  "reserved for clawhub routes",
   "version required",
 ] as const;
 

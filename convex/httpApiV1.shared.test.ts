@@ -48,8 +48,34 @@ describe("http API v1 shared helpers", () => {
     );
   });
 
+  it("maps reserved package route validation failures to 400 with cleaned messages", async () => {
+    const response = softDeleteErrorToResponse(
+      "package",
+      new Error(
+        '[CONVEX M] [Request ID: abc] Server Error Called by client Uncaught ConvexError: Package name "publish" is reserved for ClawHub routes. Use a scoped name or choose a different package name.',
+      ),
+      {},
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.text()).resolves.toBe(
+      'Package name "publish" is reserved for ClawHub routes. Use a scoped name or choose a different package name.',
+    );
+  });
+
   it("keeps unknown soft-delete failures generic 500s", async () => {
     const response = softDeleteErrorToResponse("soul", new Error("boom"), {});
+
+    expect(response.status).toBe(500);
+    await expect(response.text()).resolves.toBe("Internal Server Error");
+  });
+
+  it("keeps unrelated reserved-word failures generic 500s", async () => {
+    const response = softDeleteErrorToResponse(
+      "package",
+      new Error("database reserved capacity exceeded"),
+      {},
+    );
 
     expect(response.status).toBe(500);
     await expect(response.text()).resolves.toBe("Internal Server Error");
