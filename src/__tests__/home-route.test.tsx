@@ -46,6 +46,10 @@ vi.mock("../lib/featuredCatalog", () => ({
   fetchFeaturedPlugins: fetchFeaturedPluginsMock,
 }));
 
+vi.mock("../components/HomeListingSection", () => ({
+  HomeListingSection: () => <section data-testid="home-listing-stub" />,
+}));
+
 describe("home route", () => {
   beforeEach(() => {
     convexQueryMock.mockResolvedValue([]);

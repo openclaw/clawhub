@@ -64,6 +64,7 @@ describe("restored UI design contract", () => {
   const header = () => read("src/components/Header.tsx");
   const footer = () => read("src/components/Footer.tsx");
   const home = () => read("src/routes/index.tsx");
+  const homeListing = () => read("src/components/HomeListingSection.tsx");
   const navItems = () => read("src/lib/nav-items.ts");
   const settings = () => read("src/routes/settings.tsx");
   const styles = () => read("src/styles.css");
