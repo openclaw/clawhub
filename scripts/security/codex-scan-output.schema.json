@@ -110,16 +110,16 @@
                 "items": {
                   "type": "object",
                   "additionalProperties": false,
-                  "required": ["kind"],
+                  "required": ["kind", "startLine", "endLine", "startByte", "endByte"],
                   "properties": {
                     "kind": {
                       "type": "string",
                       "enum": ["full", "head", "tail", "middle", "match", "metadata"]
                     },
-                    "startLine": { "type": "integer", "minimum": 1 },
-                    "endLine": { "type": "integer", "minimum": 1 },
-                    "startByte": { "type": "integer", "minimum": 0 },
-                    "endByte": { "type": "integer", "minimum": 0 }
+                    "startLine": { "type": ["integer", "null"], "minimum": 1 },
+                    "endLine": { "type": ["integer", "null"], "minimum": 1 },
+                    "startByte": { "type": ["integer", "null"], "minimum": 0 },
+                    "endByte": { "type": ["integer", "null"], "minimum": 0 }
                   }
                 }
               },
