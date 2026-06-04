@@ -113,11 +113,8 @@ vi.mock("../lib/theme-transition", () => ({
 }));
 
 vi.mock("../lib/useAuthError", () => ({
+  clearAuthError: vi.fn(),
   setAuthError: vi.fn(),
-  useAuthError: () => ({
-    error: null,
-    clear: vi.fn(),
-  }),
 }));
 
 vi.mock("../lib/roles", () => ({

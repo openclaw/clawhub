@@ -6,8 +6,8 @@ export const CLAWHUB_ACCOUNT_ISSUE_LINK_TEXT = "open a GitHub issue";
 export const BANNED_SIGN_IN_MESSAGE = `This ClawHub account is not in good standing and cannot sign in. Please ${CLAWHUB_ACCOUNT_ISSUE_LINK_TEXT} if you believe this is a mistake.`;
 export const DELETED_SIGN_IN_MESSAGE =
   "This ClawHub account was permanently deleted and cannot sign in again.";
-export const ACCESS_DENIED_SIGN_IN_MESSAGE = `Sign in was denied. Please ${CLAWHUB_ACCOUNT_ISSUE_LINK_TEXT} if this ClawHub account was disabled or banned in error.`;
-export const AUTH_CODE_NO_SESSION_MESSAGE = `Sign in did not create a session. If this ClawHub account was deleted, banned, or disabled, it cannot sign in. Please ${CLAWHUB_ACCOUNT_ISSUE_LINK_TEXT} if you believe this is a mistake.`;
+export const ACCESS_DENIED_SIGN_IN_MESSAGE = `Sign in was denied. Please try signing in with GitHub again. If this keeps happening, please ${CLAWHUB_ACCOUNT_ISSUE_LINK_TEXT}.`;
+export const AUTH_CODE_NO_SESSION_MESSAGE = `Sign in did not complete. Please try signing in with GitHub again. If this keeps happening, please ${CLAWHUB_ACCOUNT_ISSUE_LINK_TEXT}.`;
 
 export function normalizeAuthErrorMessage(message: string | null | undefined, fallback: string) {
   const normalized = message?.trim();

@@ -20,14 +20,13 @@ import { filterNavItems, PRIMARY_NAV_ITEMS, SECONDARY_NAV_ITEMS } from "../lib/n
 import { isModerator } from "../lib/roles";
 import { getClawHubSiteUrl, getSiteMode, getSiteName } from "../lib/site";
 import { applyTheme, useThemeMode } from "../lib/theme";
-import { setAuthError, useAuthError } from "../lib/useAuthError";
+import { clearAuthError, setAuthError } from "../lib/useAuthError";
 import { useAuthStatus } from "../lib/useAuthStatus";
 import {
   useUnifiedSearch,
   type UnifiedPluginResult,
   type UnifiedSkillResult,
 } from "../lib/useUnifiedSearch";
-import { AuthErrorMessage } from "./AuthErrorMessage";
 import { Button } from "./ui/button";
 import {
   DropdownMenu,
@@ -98,7 +97,6 @@ export default function Header() {
   );
   const primaryItems = useMemo(() => filterNavItems(PRIMARY_NAV_ITEMS, navCtx), [navCtx]);
   const secondaryItems = useMemo(() => filterNavItems(SECONDARY_NAV_ITEMS, navCtx), [navCtx]);
-  const { error: authError, clear: clearAuthError } = useAuthError();
   const signInRedirectTo = getCurrentRelativeUrl();
 
   const [navSearchQuery, setNavSearchQuery] = useState("");
@@ -492,19 +490,6 @@ export default function Header() {
               <div className="github-sign-in-button auth-loading-placeholder" aria-hidden="true" />
             ) : (
               <>
-                {authError ? (
-                  <div className="error mr-2 text-[0.85rem]" role="alert">
-                    <AuthErrorMessage message={authError} />{" "}
-                    <button
-                      type="button"
-                      onClick={clearAuthError}
-                      aria-label="Dismiss"
-                      className="cursor-pointer border-none bg-transparent px-0.5 py-0 text-inherit"
-                    >
-                      &times;
-                    </button>
-                  </div>
-                ) : null}
                 <Button
                   variant="outline"
                   size="sm"
