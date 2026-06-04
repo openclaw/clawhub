@@ -194,6 +194,9 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   results must not write clean/suspicious/malicious public trust or moderation
   state. Use `securityScanJobs` and the Codex worker for authoritative ClawScan
   coverage.
+- Compatibility backfills that request `moderationMode: preserve` must carry
+  that mode through the queued worker job so completion refreshes stored
+  analysis without recomputing public moderation state.
 - ClawScan worker concurrency is an operator-controlled compute concern. The
   backend claim path must cap only a single worker claim size and must not impose
   a global active-scan ceiling; horizontal capacity is controlled by worker

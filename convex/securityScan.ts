@@ -99,6 +99,9 @@ const jobSourceValidator = v.union(
 );
 
 type SecurityScanJobSource = "publish" | "vt-update" | "backfill" | "bulk-rescan" | "manual";
+type LlmEvalModerationMode = "normal" | "preserve";
+
+const llmEvalModerationModeValidator = v.union(v.literal("normal"), v.literal("preserve"));
 
 const CLAIM_SOURCE_ORDER: SecurityScanJobSource[] = [
   "backfill",
@@ -110,6 +113,7 @@ const CLAIM_SOURCE_ORDER: SecurityScanJobSource[] = [
 type EnqueueSkillVersionScanArgs = {
   versionId: Id<"skillVersions">;
   source: SecurityScanJobSource;
+  moderationMode?: LlmEvalModerationMode;
   priority?: number;
   waitForVtMs?: number;
   preserveActiveJob?: boolean;
@@ -474,6 +478,7 @@ export const enqueueSkillVersionScanInternal = internalMutation({
   args: {
     versionId: v.id("skillVersions"),
     source: jobSourceValidator,
+    moderationMode: v.optional(llmEvalModerationModeValidator),
     priority: v.optional(v.number()),
     waitForVtMs: v.optional(v.number()),
   },
@@ -1512,6 +1517,10 @@ async function enqueueSkillVersionScan(ctx: MutationCtx, args: EnqueueSkillVersi
     }
     await ctx.db.patch(active._id, {
       source: args.source,
+      moderationMode:
+        active.moderationMode === "preserve" && args.moderationMode === "preserve"
+          ? "preserve"
+          : "normal",
       priority: Math.max(active.priority, args.priority ?? 0),
       hasMaliciousSignal,
       waitForVtUntil: Math.min(active.waitForVtUntil, waitForVtUntil),
@@ -1526,6 +1535,7 @@ async function enqueueSkillVersionScan(ctx: MutationCtx, args: EnqueueSkillVersi
     skillVersionId: args.versionId,
     status: "queued",
     source: args.source,
+    ...(args.moderationMode ? { moderationMode: args.moderationMode } : {}),
     priority: args.priority ?? 0,
     hasMaliciousSignal,
     waitForVtUntil,
@@ -2059,6 +2069,7 @@ export const completeCodexScanJob = action({
       }
       await runMutationRef(ctx, internalRefs.skills.updateVersionLlmAnalysisInternal, {
         versionId: target.version._id,
+        ...(target.job.moderationMode ? { moderationMode: target.job.moderationMode } : {}),
         llmAnalysis: args.llmAnalysis,
       });
     } else if (target.job.targetKind === "packageRelease" && target.release) {

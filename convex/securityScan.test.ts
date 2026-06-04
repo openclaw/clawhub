@@ -7,6 +7,7 @@ import {
   claimQueuedJobsInternal,
   completeCodexScanJob,
   enqueueBulkSkillRescanBatchForAdminInternal,
+  enqueueSkillVersionScanInternal,
   failCodexScanJob,
   getBulkSkillRescanBatchStatusForAdminInternal,
   getSkillScanRequestForUserInternal,
@@ -106,6 +107,7 @@ type ScanJob = {
   packageReleaseId?: string;
   skillScanRequestId?: string;
   source: string;
+  moderationMode?: "normal" | "preserve";
   priority: number;
   hasMaliciousSignal: boolean;
   waitForVtUntil: number;
@@ -181,6 +183,18 @@ const enqueueBulkSkillRescanBatchForAdminInternalHandler = (
       done: boolean;
       sampleSlugs: string[];
     }
+  >
+)._handler;
+const enqueueSkillVersionScanInternalHandler = (
+  enqueueSkillVersionScanInternal as unknown as WrappedHandler<
+    {
+      versionId: string;
+      source: "publish" | "vt-update" | "backfill" | "bulk-rescan" | "manual";
+      moderationMode?: "normal" | "preserve";
+      priority?: number;
+      waitForVtMs?: number;
+    },
+    { ok: true; jobId?: string; alreadyQueued?: boolean; skipped?: "missing" }
   >
 )._handler;
 
@@ -1139,6 +1153,67 @@ describe("securityScan", () => {
           }),
         }),
       ]),
+    );
+  });
+
+  it("stores preserve mode on queued skill scan jobs", async () => {
+    const { ctx, inserts } = makeRescanCtx({
+      actorId: "users:unused",
+      docs: {
+        "skillVersions:1": {
+          _id: "skillVersions:1",
+          skillId: "skills:1",
+          version: "1.0.0",
+        },
+      },
+    });
+
+    await enqueueSkillVersionScanInternalHandler(ctx, {
+      versionId: "skillVersions:1",
+      source: "backfill",
+      moderationMode: "preserve",
+    });
+
+    expect(inserts).toEqual([
+      expect.objectContaining({
+        table: "securityScanJobs",
+        doc: expect.objectContaining({
+          skillVersionId: "skillVersions:1",
+          source: "backfill",
+          moderationMode: "preserve",
+        }),
+      }),
+    ]);
+  });
+
+  it("does not let a preserve-mode backfill downgrade an active normal scan", async () => {
+    const { ctx, patch } = makeRescanCtx({
+      actorId: "users:unused",
+      docs: {
+        "skillVersions:1": {
+          _id: "skillVersions:1",
+          skillId: "skills:1",
+          version: "1.0.0",
+        },
+      },
+      activeJobs: [
+        makeScanJob({
+          _id: "securityScanJobs:manual",
+          skillVersionId: "skillVersions:1",
+          source: "manual",
+        }),
+      ],
+    });
+
+    await enqueueSkillVersionScanInternalHandler(ctx, {
+      versionId: "skillVersions:1",
+      source: "backfill",
+      moderationMode: "preserve",
+    });
+
+    expect(patch).toHaveBeenCalledWith(
+      "securityScanJobs:manual",
+      expect.objectContaining({ moderationMode: "normal" }),
     );
   });
 
@@ -2257,6 +2332,43 @@ describe("securityScan", () => {
       expect.objectContaining({
         jobId: "securityScanJobs:1",
         leaseToken: "lease-token",
+      }),
+    );
+  });
+
+  it("preserves moderation state when completing preserve-mode skill scans", async () => {
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-secret");
+
+    const runQuery = vi.fn(async () => ({
+      job: {
+        _id: "securityScanJobs:1",
+        targetKind: "skillVersion",
+        leaseToken: "lease-token",
+        moderationMode: "preserve",
+      },
+      version: {
+        _id: "skillVersions:1",
+      },
+    }));
+    const runMutation = vi.fn(async () => ({ ok: true }));
+
+    await completeCodexScanJobHandler(
+      { runQuery, runMutation },
+      {
+        token: "worker-secret",
+        jobId: "securityScanJobs:1",
+        leaseToken: "lease-token",
+        llmAnalysis: { status: "clean", checkedAt: 123 },
+      },
+    );
+
+    expect(runMutation).toHaveBeenNthCalledWith(
+      1,
+      expect.anything(),
+      expect.objectContaining({
+        versionId: "skillVersions:1",
+        moderationMode: "preserve",
+        llmAnalysis: { status: "clean", checkedAt: 123 },
       }),
     );
   });

@@ -1353,6 +1353,7 @@ const securityScanJobs = defineTable({
   skillScanRequestId: v.optional(v.id("skillScanRequests")),
   status: securityScanJobStatusValidator,
   source: securityScanJobSourceValidator,
+  moderationMode: v.optional(v.union(v.literal("normal"), v.literal("preserve"))),
   priority: v.number(),
   hasMaliciousSignal: v.boolean(),
   waitForVtUntil: v.number(),
