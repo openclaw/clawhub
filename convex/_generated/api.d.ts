@@ -17,6 +17,7 @@ import type * as crons from "../crons.js";
 import type * as depRegistryScan from "../depRegistryScan.js";
 import type * as devSeed from "../devSeed.js";
 import type * as devSeedExtra from "../devSeedExtra.js";
+import type * as downloadMetrics from "../downloadMetrics.js";
 import type * as downloads from "../downloads.js";
 import type * as functions from "../functions.js";
 import type * as githubAccountAgeBackfill from "../githubAccountAgeBackfill.js";
@@ -169,6 +170,7 @@ declare const fullApi: ApiFromModules<{
   depRegistryScan: typeof depRegistryScan;
   devSeed: typeof devSeed;
   devSeedExtra: typeof devSeedExtra;
+  downloadMetrics: typeof downloadMetrics;
   downloads: typeof downloads;
   functions: typeof functions;
   githubAccountAgeBackfill: typeof githubAccountAgeBackfill;

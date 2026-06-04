@@ -27,6 +27,7 @@ import {
 import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
+import { buildDownloadMetricArgs, getDownloadIdentity } from "../downloadMetrics";
 import { getOptionalActiveAuthUserIdFromAction } from "../lib/access";
 import { getOptionalApiTokenUserId } from "../lib/apiTokenAuth";
 import { parseClawPack, sha256Base64, sha256Hex } from "../lib/clawpack";
@@ -122,6 +123,9 @@ const internalRefs = internal as unknown as {
     upsertOfficialPluginMigrationForUserInternal: unknown;
     backfillPackageArtifactKindsInternal: unknown;
     listPackageModerationQueueInternal: unknown;
+  };
+  downloadMetrics: {
+    recordDownloadMetricInternal: unknown;
   };
   packagePublishTokens: {
     createInternal: unknown;
@@ -643,9 +647,11 @@ function releaseArtifactUrls(request: Request, packageName: string, release: Rel
 
 async function streamClawPackRelease(
   ctx: ActionCtx,
+  request: Request,
   rateHeaders: HeadersInit,
   pkg: PublicPackageDocLike,
   release: ReleaseLike,
+  viewerUserId: Id<"users"> | null,
   statKind: "download" | "install" = "download",
 ) {
   const securityBlock = getReleaseSecurityBlock(release);
@@ -656,13 +662,24 @@ async function streamClawPackRelease(
   const blob = await ctx.storage.get(release.clawpackStorageId);
   if (!blob) return text("ClawPack artifact not found", 404, rateHeaders);
   try {
-    const statMutation =
-      statKind === "install"
-        ? internalRefs.packages.recordPackageInstallInternal
-        : internalRefs.packages.recordPackageDownloadInternal;
-    await runMutationRef(ctx, statMutation, {
-      packageId: pkg._id,
-    });
+    if (statKind === "install") {
+      await runMutationRef(ctx, internalRefs.packages.recordPackageInstallInternal, {
+        packageId: pkg._id,
+      });
+    }
+
+    const identity = getDownloadIdentity(request, viewerUserId ? String(viewerUserId) : null);
+    if (identity) {
+      await runMutationRef(
+        ctx,
+        internalRefs.downloadMetrics.recordDownloadMetricInternal,
+        await buildDownloadMetricArgs({
+          target: { kind: "package", id: pkg._id },
+          identity,
+          now: Date.now(),
+        }),
+      );
+    }
   } catch {
     // Best-effort metric path; never fail package downloads.
   }
@@ -2906,7 +2923,14 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     if (!release) return text("Version not found", 404, rate.headers);
     if (packageSegments[3] === "download") {
       if (release.artifactKind === "npm-pack") {
-        return await streamClawPackRelease(ctx, rate.headers, publicPackage!, release);
+        return await streamClawPackRelease(
+          ctx,
+          request,
+          rate.headers,
+          publicPackage!,
+          release,
+          viewerUserId ?? null,
+        );
       }
       const url = new URL(
         `/api/v1/packages/${encodePackagePath(publicPackage!.name)}/download`,
@@ -3105,9 +3129,18 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     const zip = buildDeterministicPackageZip(entries);
     const [zipSha256, zipSha256Base64] = await Promise.all([sha256Hex(zip), sha256Base64(zip)]);
     try {
-      await runMutationRef(ctx, internalRefs.packages.recordPackageDownloadInternal, {
-        packageId: publicPackage!._id,
-      });
+      const identity = getDownloadIdentity(request, viewerUserId ? String(viewerUserId) : null);
+      if (identity) {
+        await runMutationRef(
+          ctx,
+          internalRefs.downloadMetrics.recordDownloadMetricInternal,
+          await buildDownloadMetricArgs({
+            target: { kind: "package", id: publicPackage!._id },
+            identity,
+            now: Date.now(),
+          }),
+        );
+      }
     } catch {
       // Best-effort metric path; never fail package downloads.
     }
@@ -3253,7 +3286,15 @@ export async function npmMirrorGetHandler(ctx: ActionCtx, request: Request) {
     const tarballName = path.rest[1]!;
     const release = releases.find((candidate) => candidate.npmTarballName === tarballName);
     if (!release) return text("ClawPack artifact not found", 404, rate.headers);
-    return await streamClawPackRelease(ctx, rate.headers, detail.package, release, "install");
+    return await streamClawPackRelease(
+      ctx,
+      request,
+      rate.headers,
+      detail.package,
+      release,
+      viewerUserId ?? null,
+      "install",
+    );
   }
   if (path.rest.length > 0) return text("Not found", 404, rate.headers);
 

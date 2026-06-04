@@ -2246,6 +2246,26 @@ const downloadDedupes = defineTable({
   .index("by_skill_identity_hour", ["skillId", "identityHash", "hourStart"])
   .index("by_hour", ["hourStart"]);
 
+const downloadMetricTargetKind = v.union(v.literal("skill"), v.literal("package"));
+const downloadMetricIdentityKind = v.union(v.literal("user"), v.literal("ip"));
+
+const downloadMetricDedupes = defineTable({
+  targetKind: downloadMetricTargetKind,
+  targetId: v.string(),
+  identityKind: downloadMetricIdentityKind,
+  identityHash: v.string(),
+  dayStart: v.number(),
+  createdAt: v.number(),
+})
+  .index("by_target_identity_day", [
+    "targetKind",
+    "targetId",
+    "identityKind",
+    "identityHash",
+    "dayStart",
+  ])
+  .index("by_day", ["dayStart"]);
+
 const reservedSlugs = defineTable({
   slug: v.string(),
   originalOwnerUserId: v.id("users"),
@@ -2402,6 +2422,7 @@ export default defineSchema({
   rateLimits,
   rateLimitShards,
   downloadDedupes,
+  downloadMetricDedupes,
   reservedSlugs,
   reservedHandles,
   githubBackupSyncState,
