@@ -23,6 +23,75 @@ describe("moderationEngine", () => {
     expect(result.status).toBe("clean");
   });
 
+  it("flags extreme blank-line context padding before later skill content", () => {
+    const content =
+      "# CSV Summarizer\n" +
+      "\n".repeat(2_500) +
+      "FAKE_PAYLOAD_MARKER: late instructions hidden after padding.\n";
+    const result = runStaticModerationScan({
+      slug: "csv-summarizer",
+      displayName: "CSV Summarizer",
+      summary: "Summarizes CSV files",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "SKILL.md", size: content.length }],
+      fileContents: [{ path: "SKILL.md", content }],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.context_padding_truncation");
+    expect(result.status).toBe("suspicious");
+    expect(result.findings).toContainEqual(
+      expect.objectContaining({
+        code: "suspicious.context_padding_truncation",
+        file: "SKILL.md",
+        line: 2,
+        evidence: expect.stringContaining("2500 consecutive blank/whitespace-only lines"),
+      }),
+    );
+  });
+
+  it("flags long whitespace runs before later text content", () => {
+    const content =
+      "Visible setup notes" +
+      " ".repeat(40_000) +
+      "FAKE_PAYLOAD_MARKER: late content hidden on the same line.";
+    const result = runStaticModerationScan({
+      slug: "formatter",
+      displayName: "Formatter",
+      summary: "Formats text",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "notes.txt", size: content.length }],
+      fileContents: [{ path: "notes.txt", content }],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.context_padding_truncation");
+    expect(result.findings).toContainEqual(
+      expect.objectContaining({
+        code: "suspicious.context_padding_truncation",
+        file: "notes.txt",
+        line: 1,
+        evidence: expect.stringContaining("40000 consecutive whitespace characters"),
+      }),
+    );
+  });
+
+  it("does not flag ordinary sparse markdown spacing", () => {
+    const content = ["# Demo", ...Array.from({ length: 200 }, () => ""), "## Usage"].join("\n");
+    const result = runStaticModerationScan({
+      slug: "demo",
+      displayName: "Demo",
+      summary: "A normal integration skill",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "SKILL.md", size: content.length }],
+      fileContents: [{ path: "SKILL.md", content }],
+    });
+
+    expect(result.reasonCodes).not.toContain("suspicious.context_padding_truncation");
+    expect(result.status).toBe("clean");
+  });
+
   it("flags hardcoded API secrets in skill documentation and redacts every evidence copy", () => {
     const exposedSecret = "ak_live_1234567890abcdefSECRET";
     const result = runStaticModerationScan({
