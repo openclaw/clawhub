@@ -125,6 +125,7 @@ export const importGitHubSkill = action({
     candidatePath: v.string(),
     selectedPaths: v.array(v.string()),
     slug: v.optional(v.string()),
+    ownerHandle: v.optional(v.string()),
     displayName: v.optional(v.string()),
     version: v.optional(v.string()),
     tags: v.optional(v.array(v.string())),
@@ -216,8 +217,16 @@ export const importGitHubSkill = action({
     const version = (args.version ?? "").trim();
 
     if (!slugBase) throw new ConvexError("Slug required");
+    const ownerHandle = args.ownerHandle?.trim().replace(/^@+/, "") || "";
+    if (!ownerHandle) throw new ConvexError("Owner is required");
     if (!displayName) throw new ConvexError("Display name required");
     if (!version || !semver.valid(version)) throw new ConvexError("Version must be valid semver");
+
+    const target = (await ctx.runMutation(internal.publishers.resolvePublishTargetForUserInternal, {
+      actorUserId: userId,
+      ownerHandle,
+      minimumRole: "publisher",
+    })) as { publisherId: Id<"publishers"> };
 
     const sourceProvenance = {
       kind: "github" as const,
@@ -243,7 +252,7 @@ export const importGitHubSkill = action({
           files: storedFiles,
           source: sourceProvenance,
         },
-        { sourceProvenance },
+        { ownerPublisherId: target.publisherId, sourceProvenance },
       );
     } catch (error) {
       throw new ConvexError(buildPublishFailureMessage(error));

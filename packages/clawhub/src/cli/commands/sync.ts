@@ -263,17 +263,25 @@ export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllow
       allowPrompt,
       changelogFlag: options.changelog,
     });
-    const forkOf =
+    const sameRegistryOrigin =
       skill.origin && normalizeRegistry(skill.origin.registry) === normalizeRegistry(registry)
-        ? skill.origin.slug !== skill.slug
-          ? `${skill.origin.slug}@${skill.origin.installedVersion}`
-          : undefined
+        ? skill.origin
+        : null;
+    const originOwnerHandle =
+      sameRegistryOrigin?.ownerHandle?.trim().replace(/^@+/, "") || undefined;
+    const publishOwnerHandle =
+      sameRegistryOrigin?.slug === skill.slug ? originOwnerHandle : undefined;
+    const forkOf =
+      sameRegistryOrigin && sameRegistryOrigin.slug !== skill.slug
+        ? `${originOwnerHandle ? `@${originOwnerHandle}/` : ""}${sameRegistryOrigin.slug}@${
+            sameRegistryOrigin.installedVersion
+          }`
         : undefined;
     try {
       await cmdPublish(opts, skill.folder, {
         slug: skill.slug,
         name: skill.displayName,
-        owner: normalizeOwner(options.owner),
+        owner: normalizeOwner(options.owner) ?? publishOwnerHandle,
         version: publishVersion,
         changelog,
         tags,

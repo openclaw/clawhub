@@ -145,4 +145,52 @@ describe("Import route", () => {
       screen.getByRole("button", { name: /import \+ publish/i }).getAttribute("disabled"),
     ).not.toBeNull();
   });
+
+  it("checks and publishes imported skills in the authenticated user's owner namespace", async () => {
+    importSkill.mockResolvedValueOnce({ slug: "taken-skill" });
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (
+        args &&
+        typeof args === "object" &&
+        "slug" in (args as Record<string, unknown>) &&
+        (args as Record<string, unknown>).slug === "taken-skill"
+      ) {
+        return {
+          available: true,
+          reason: "available",
+          message: null,
+          url: null,
+        };
+      }
+      return null;
+    });
+
+    render(<ImportGitHub />);
+    fireEvent.change(screen.getByPlaceholderText("https://github.com/owner/repo"), {
+      target: { value: "https://github.com/octo/repo" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /detect/i }));
+
+    await waitFor(() => {
+      expect(previewCandidate).toHaveBeenCalled();
+    });
+    await waitFor(() => {
+      expect(useQueryMock).toHaveBeenCalledWith(expect.anything(), {
+        slug: "taken-skill",
+        ownerHandle: "me",
+      });
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /import \+ publish/i }));
+
+    await waitFor(() => {
+      expect(importSkill).toHaveBeenCalledWith(
+        expect.objectContaining({
+          slug: "taken-skill",
+          ownerHandle: "me",
+        }),
+      );
+    });
+  });
 });

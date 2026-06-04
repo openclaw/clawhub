@@ -547,8 +547,10 @@ describe("SkillDetailPage", () => {
     expect(sidebarMetadata).toBeTruthy();
 
     expect(screen.getAllByRole("heading", { name: "Install" }).length).toBeGreaterThan(0);
-    expect(screen.getAllByText("openclaw skills install weather").length).toBeGreaterThan(0);
-    expect(screen.queryByText("npx clawhub@latest install weather")).toBeNull();
+    expect(screen.getAllByText("openclaw skills install @steipete/weather").length).toBeGreaterThan(
+      0,
+    );
+    expect(screen.queryByText("npx clawhub@latest install @steipete/weather")).toBeNull();
     expect(screen.queryByRole("tab", { name: "ClawHub" })).toBeNull();
     expect(screen.getByRole("tab", { name: "CLI" }).getAttribute("aria-selected")).toBe("true");
     expect(screen.getByRole("tab", { name: "Prompt" })).toBeTruthy();
@@ -752,8 +754,9 @@ describe("SkillDetailPage", () => {
     );
 
     await screen.findByText("Short summary");
-    expect(screen.queryByText("Publish a new version")).toBeNull();
-    expect(screen.queryByRole("link", { name: "New Version" })).toBeNull();
+    expect(screen.getByRole("link", { name: "New Version" }).getAttribute("href")).toBe(
+      "/publish-skill?updateSlug=weather&ownerHandle=steipete",
+    );
     expect(screen.queryByText(/request security/i)).toBeNull();
     expect(screen.queryByRole("button", { name: "Rescan" })).toBeNull();
     expect(screen.queryByText(/rescans/i)).toBeNull();

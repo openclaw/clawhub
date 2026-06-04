@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { getFunctionName } from "convex/server";
 import { strToU8, zipSync } from "fflate";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { api } from "../../convex/_generated/api";
 import { Upload } from "../routes/skills/publish";
 
 vi.mock("@tanstack/react-router", () => ({
@@ -548,6 +549,50 @@ describe("Upload route", () => {
         ownerHandle: "clawkit",
       });
     });
+  });
+
+  it("loads update metadata in the owner namespace when ownerHandle is present", async () => {
+    useSearchMock.mockReturnValue({ updateSlug: "shared-skill", ownerHandle: "clawkit" });
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (args === undefined) {
+        return [
+          {
+            publisher: {
+              _id: "publishers:clawkit",
+              handle: "clawkit",
+              displayName: "ClawKit",
+              kind: "org",
+            },
+            role: "admin",
+          },
+        ];
+      }
+      if (
+        args &&
+        typeof args === "object" &&
+        "slug" in (args as Record<string, unknown>) &&
+        (args as Record<string, unknown>).slug === "shared-skill"
+      ) {
+        return {
+          skill: { slug: "shared-skill", displayName: "Shared Skill" },
+          latestVersion: { version: "1.2.3", clawScanNote: "safe network access" },
+          owner: { handle: "clawkit", displayName: "ClawKit" },
+        };
+      }
+      return null;
+    });
+
+    render(<Upload />);
+
+    await waitFor(() => {
+      expect(useQueryMock).toHaveBeenCalledWith(api.skills.getBySlug, {
+        slug: "shared-skill",
+        ownerHandle: "clawkit",
+      });
+    });
+    expect(await screen.findByDisplayValue("Shared Skill")).toBeTruthy();
+    expect(await screen.findByDisplayValue("1.2.4")).toBeTruthy();
   });
 
   it("reconciles the selected owner when publisher memberships change", async () => {

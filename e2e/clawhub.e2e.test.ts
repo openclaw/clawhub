@@ -33,6 +33,8 @@ import {
 const itIfLiveMutations = allowLiveMutations() ? it : it.skip;
 const itIfAdminAndUserTokens =
   (getAdminToken() && getUserToken()) || shouldSeedRoleHelpTokens() ? it : it.skip;
+const itIfLocalRoleHelpMutations =
+  allowLiveMutations() && shouldSeedRoleHelpTokens() ? it : it.skip;
 
 async function readRequestBody(req: IncomingMessage) {
   const chunks: Buffer[] = [];
@@ -837,6 +839,110 @@ describe("clawhub e2e", () => {
         await rm(workdir, { recursive: true, force: true });
         await rm(installWorkdir, { recursive: true, force: true });
         await rm(cfg.dir, { recursive: true, force: true });
+      }
+    },
+    180_000,
+  );
+
+  itIfLocalRoleHelpMutations(
+    "publishes the same skill slug under separate owner namespaces",
+    async () => {
+      const registry = getRegistry();
+      const site = getSite();
+      const { adminToken, userToken } = await resolveRoleHelpTokens(registry);
+      const adminCfg = await makeTempConfig(registry, adminToken);
+      const userCfg = await makeTempConfig(registry, userToken);
+      const workdir = await mkdtemp(join(tmpdir(), "clawhub-e2e-owner-slug-"));
+      const slug = `owner-scope-e2e-${Date.now()}`;
+      const adminSkillDir = join(workdir, "admin-skill");
+      const userSkillDir = join(workdir, "user-skill");
+
+      async function expectScopedRead(ownerHandle: string) {
+        const url = new URL(`${ApiRoutes.skills}/${encodeURIComponent(slug)}`, registry);
+        url.searchParams.set("ownerHandle", ownerHandle);
+        const response = await fetchWithTimeout(url.toString(), {
+          headers: { Accept: "application/json" },
+        });
+        expect(response.status).toBe(200);
+        const body = (await response.json()) as {
+          skill?: { slug?: unknown };
+          owner?: { handle?: unknown };
+        };
+        expect(body.skill?.slug).toBe(slug);
+        expect(body.owner?.handle).toBe(ownerHandle);
+      }
+
+      function publishSkill(params: { configPath: string; skillDir: string; changelog: string }) {
+        return spawnSync(
+          "bun",
+          [
+            "clawhub",
+            "publish",
+            params.skillDir,
+            "--slug",
+            slug,
+            "--name",
+            `Owner Scope ${slug}`,
+            "--version",
+            "1.0.0",
+            "--tags",
+            "latest",
+            "--changelog",
+            params.changelog,
+            "--site",
+            site,
+            "--registry",
+            registry,
+            "--workdir",
+            workdir,
+          ],
+          {
+            cwd: process.cwd(),
+            env: {
+              ...process.env,
+              CLAWHUB_CONFIG_PATH: params.configPath,
+              CLAWHUB_DISABLE_TELEMETRY: "1",
+            },
+            encoding: "utf8",
+          },
+        );
+      }
+
+      try {
+        await mkdir(adminSkillDir, { recursive: true });
+        await mkdir(userSkillDir, { recursive: true });
+        await writeFile(join(adminSkillDir, "SKILL.md"), buildE2ESkillMarkdown(slug), "utf8");
+        await writeFile(join(userSkillDir, "SKILL.md"), buildE2ESkillMarkdown(slug), "utf8");
+
+        const adminPublish = publishSkill({
+          configPath: adminCfg.path,
+          skillDir: adminSkillDir,
+          changelog: "manual owner-scope e2e first publish",
+        });
+        expect(adminPublish.status).toBe(0);
+
+        const userPublish = publishSkill({
+          configPath: userCfg.path,
+          skillDir: userSkillDir,
+          changelog: "manual owner-scope e2e second publish",
+        });
+        expect(userPublish.status).toBe(0);
+
+        await expectScopedRead("cli-admin");
+        await expectScopedRead("cli-user");
+
+        const unscopedUrl = new URL(`${ApiRoutes.skills}/${encodeURIComponent(slug)}`, registry);
+        const unscopedResponse = await fetchWithTimeout(unscopedUrl.toString(), {
+          headers: { Accept: "text/plain" },
+        });
+        expect(unscopedResponse.status).toBe(409);
+        const message = await unscopedResponse.text();
+        expect(message).toContain("Ambiguous skill slug");
+        expect(message).toContain(`/api/v1/skills/${slug}?ownerHandle=<owner>`);
+      } finally {
+        await rm(workdir, { recursive: true, force: true });
+        await rm(adminCfg.dir, { recursive: true, force: true });
+        await rm(userCfg.dir, { recursive: true, force: true });
       }
     },
     180_000,

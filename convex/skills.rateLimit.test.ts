@@ -70,6 +70,100 @@ function buildDigestQuery(table: string) {
   };
 }
 
+function buildEmptyReservedSlugsQuery(table: string) {
+  if (table !== "reservedSlugs") return null;
+  return {
+    withIndex: () => ({
+      order: () => ({ take: async () => [] }),
+    }),
+  };
+}
+
+function buildEmptySkillSlugAliasesQuery(table: string) {
+  if (table !== "skillSlugAliases") return null;
+  return {
+    withIndex: () => ({
+      unique: async () => null,
+      take: async () => [],
+    }),
+  };
+}
+
+function buildEmptySkillVersionFingerprintsQuery(table: string) {
+  if (table !== "skillVersionFingerprints") return null;
+  return {
+    withIndex: () => ({
+      take: async () => [],
+    }),
+  };
+}
+
+function buildEmptySkillVersionsQuery(table: string) {
+  if (table !== "skillVersions") return null;
+  return {
+    withIndex: () => ({
+      unique: async () => null,
+    }),
+  };
+}
+
+function buildEmptySkillBadgesQuery(table: string) {
+  if (table !== "skillBadges") return null;
+  return {
+    withIndex: () => ({
+      take: async () => [],
+    }),
+  };
+}
+
+function buildEmptySkillEmbeddingsQuery(table: string) {
+  if (table !== "skillEmbeddings") return null;
+  return {
+    withIndex: () => ({
+      unique: async () => null,
+    }),
+  };
+}
+
+function buildEmptyPublishersQuery(table: string) {
+  if (table !== "publishers") return null;
+  return {
+    withIndex: () => ({
+      unique: async () => null,
+    }),
+  };
+}
+
+function buildEmptyPublisherMembersQuery(table: string) {
+  if (table !== "publisherMembers") return null;
+  return {
+    withIndex: () => ({
+      unique: async () => null,
+    }),
+  };
+}
+
+function createSuccessfulPublishInsert(
+  storedSkills: Map<string, Record<string, unknown>>,
+  now: number,
+) {
+  return vi.fn(async (table: string, value: Record<string, unknown>) => {
+    if (table === "skills") {
+      storedSkills.set("skills:new", { _id: "skills:new", _creationTime: now, ...value });
+      return "skills:new";
+    }
+    if (table === "publishers") return "publishers:caller";
+    if (table === "publisherMembers") return "publisherMembers:caller";
+    if (table === "auditLogs") return "auditLogs:1";
+    if (table === "skillVersions") return "skillVersions:1";
+    if (table === "skillEmbeddings") return "skillEmbeddings:1";
+    if (table === "embeddingSkillMap") return "embeddingSkillMap:1";
+    if (table === "skillVersionFingerprints") return "skillVersionFingerprints:1";
+    if (table === "skillSearchDigest") return "skillSearchDigest:1";
+    throw new Error(`unexpected insert table ${table}`);
+  });
+}
+
 function createPublishArgs(overrides?: Partial<Record<string, unknown>>) {
   return {
     userId: "users:owner",
@@ -108,6 +202,23 @@ function chainEq(constraints: Record<string, unknown>) {
   };
 }
 
+function emptyOwnerScopedSkillLookup(name: string) {
+  if (name === "by_owner") {
+    return { order: () => ({ take: async () => [] }) };
+  }
+  if (name === "by_owner_slug" || name === "by_owner_publisher_slug") {
+    return { unique: async () => null };
+  }
+  return null;
+}
+
+function emptyOwnerScopedAliasLookup(name: string) {
+  if (name === "by_owner_slug" || name === "by_owner_publisher_slug") {
+    return { unique: async () => null };
+  }
+  return null;
+}
+
 describe("skills anti-spam guards", () => {
   it("blocks low-trust users after hourly new-skill cap", async () => {
     const now = Date.now();
@@ -141,6 +252,8 @@ describe("skills anti-spam guards", () => {
                   }),
                 };
               }
+              const ownerScoped = emptyOwnerScopedSkillLookup(name);
+              if (ownerScoped) return ownerScoped;
               throw new Error(`unexpected index ${name}`);
             },
           };
@@ -158,12 +271,32 @@ describe("skills anti-spam guards", () => {
         if (table === "skillSlugAliases") {
           return {
             withIndex: (name: string) => {
-              if (name !== "by_slug") throw new Error(`unexpected skillSlugAliases index ${name}`);
+              if (name !== "by_slug") {
+                const ownerScoped = emptyOwnerScopedAliasLookup(name);
+                if (ownerScoped) return ownerScoped;
+                throw new Error(`unexpected skillSlugAliases index `);
+              }
               return { unique: async () => null };
             },
           };
         }
-        throw new Error(`unexpected table ${table}`);
+        const emptyAliasesQuery = buildEmptySkillSlugAliasesQuery(table);
+        if (emptyAliasesQuery) return emptyAliasesQuery;
+        const emptyReservationsQuery = buildEmptyReservedSlugsQuery(table);
+        if (emptyReservationsQuery) return emptyReservationsQuery;
+        const emptyFingerprintsQuery = buildEmptySkillVersionFingerprintsQuery(table);
+        if (emptyFingerprintsQuery) return emptyFingerprintsQuery;
+        const emptyVersionsQuery = buildEmptySkillVersionsQuery(table);
+        if (emptyVersionsQuery) return emptyVersionsQuery;
+        const emptyBadgesQuery = buildEmptySkillBadgesQuery(table);
+        if (emptyBadgesQuery) return emptyBadgesQuery;
+        const emptyEmbeddingsQuery = buildEmptySkillEmbeddingsQuery(table);
+        if (emptyEmbeddingsQuery) return emptyEmbeddingsQuery;
+        const emptyPublishersQuery = buildEmptyPublishersQuery(table);
+        if (emptyPublishersQuery) return emptyPublishersQuery;
+        const emptyPublisherMembersQuery = buildEmptyPublisherMembersQuery(table);
+        if (emptyPublisherMembersQuery) return emptyPublisherMembersQuery;
+        throw new Error(`unexpected table `);
       }),
       normalizeId: vi.fn(),
     };
@@ -173,11 +306,38 @@ describe("skills anti-spam guards", () => {
     ).rejects.toThrow(/max 5 new skills per hour/i);
   });
 
-  it("returns a user-facing slug-taken message when publishing to another owner slug", async () => {
+  it("allows a legacy personal publish when another owner already uses the slug", async () => {
+    const now = Date.now();
+    const storedSkills = new Map<string, Record<string, unknown>>();
     let authAccountLookupCount = 0;
+    const patch = vi.fn(async () => {});
+    const insert = createSuccessfulPublishInsert(storedSkills, now);
     const db = {
       get: vi.fn(async (id: string) => {
-        if (id === "users:caller") return { _id: "users:caller", deletedAt: undefined };
+        if (storedSkills.has(id)) return storedSkills.get(id);
+        if (id === "users:caller") {
+          return {
+            _id: "users:caller",
+            _creationTime: now - 60 * 24 * 60 * 60 * 1000,
+            createdAt: now - 60 * 24 * 60 * 60 * 1000,
+            handle: "caller",
+            trustedPublisher: true,
+            role: "user",
+            deletedAt: undefined,
+            deactivatedAt: undefined,
+            personalPublisherId: "publishers:caller",
+          };
+        }
+        if (id === "publishers:caller") {
+          return {
+            _id: "publishers:caller",
+            kind: "user",
+            handle: "caller",
+            linkedUserId: "users:caller",
+            deletedAt: undefined,
+            deactivatedAt: undefined,
+          };
+        }
         if (id === "users:owner") {
           return {
             _id: "users:owner",
@@ -192,7 +352,11 @@ describe("skills anti-spam guards", () => {
         if (table === "skills") {
           return {
             withIndex: (name: string) => {
-              if (name !== "by_slug") throw new Error(`unexpected skills index ${name}`);
+              if (name !== "by_slug") {
+                const ownerScoped = emptyOwnerScopedSkillLookup(name);
+                if (ownerScoped) return ownerScoped;
+                throw new Error(`unexpected skills index `);
+              }
               return {
                 unique: async () => ({
                   _id: "skills:1",
@@ -221,30 +385,89 @@ describe("skills anti-spam guards", () => {
             },
           };
         }
-        throw new Error(`unexpected table ${table}`);
+        const emptyAliasesQuery = buildEmptySkillSlugAliasesQuery(table);
+        if (emptyAliasesQuery) return emptyAliasesQuery;
+        const emptyReservationsQuery = buildEmptyReservedSlugsQuery(table);
+        if (emptyReservationsQuery) return emptyReservationsQuery;
+        const emptyFingerprintsQuery = buildEmptySkillVersionFingerprintsQuery(table);
+        if (emptyFingerprintsQuery) return emptyFingerprintsQuery;
+        const emptyVersionsQuery = buildEmptySkillVersionsQuery(table);
+        if (emptyVersionsQuery) return emptyVersionsQuery;
+        const emptyBadgesQuery = buildEmptySkillBadgesQuery(table);
+        if (emptyBadgesQuery) return emptyBadgesQuery;
+        const emptyEmbeddingsQuery = buildEmptySkillEmbeddingsQuery(table);
+        if (emptyEmbeddingsQuery) return emptyEmbeddingsQuery;
+        const globalStatsQuery = buildGlobalStatsQuery(table);
+        if (globalStatsQuery) return globalStatsQuery;
+        const digestQuery = buildDigestQuery(table);
+        if (digestQuery) return digestQuery;
+        const emptyPublishersQuery = buildEmptyPublishersQuery(table);
+        if (emptyPublishersQuery) return emptyPublishersQuery;
+        const emptyPublisherMembersQuery = buildEmptyPublisherMembersQuery(table);
+        if (emptyPublisherMembersQuery) return emptyPublisherMembersQuery;
+        throw new Error(`unexpected table `);
       }),
+      patch,
+      insert,
       normalizeId: vi.fn(),
     };
 
-    await expect(
-      insertVersionHandler(
-        { db } as never,
-        createPublishArgs({
-          userId: "users:caller",
-          slug: "taken-skill",
-        }) as never,
-      ),
-    ).rejects.toThrow(
-      "Slug is already taken. Choose a different slug. Existing skill: /alice/taken-skill",
+    const result = await insertVersionHandler(
+      { db, scheduler: { runAfter: vi.fn() } } as never,
+      createPublishArgs({
+        userId: "users:caller",
+        slug: "taken-skill",
+      }) as never,
+    );
+
+    expect(result).toEqual({
+      skillId: "skills:new",
+      versionId: "skillVersions:1",
+      embeddingId: "skillEmbeddings:1",
+    });
+    expect(insert).toHaveBeenCalledWith(
+      "skills",
+      expect.objectContaining({
+        slug: "taken-skill",
+        ownerUserId: "users:caller",
+        ownerPublisherId: "publishers:caller",
+      }),
     );
   });
 
-  it("normalizes mixed-case slugs before checking skill ownership conflicts", async () => {
+  it("normalizes mixed-case slugs before owner-scoped publish lookup", async () => {
+    const now = Date.now();
+    const storedSkills = new Map<string, Record<string, unknown>>();
     let authAccountLookupCount = 0;
     let requestedSlug: string | null = null;
+    const patch = vi.fn(async () => {});
+    const insert = createSuccessfulPublishInsert(storedSkills, now);
     const db = {
       get: vi.fn(async (id: string) => {
-        if (id === "users:caller") return { _id: "users:caller", deletedAt: undefined };
+        if (storedSkills.has(id)) return storedSkills.get(id);
+        if (id === "users:caller") {
+          return {
+            _id: "users:caller",
+            _creationTime: now - 60 * 24 * 60 * 60 * 1000,
+            createdAt: now - 60 * 24 * 60 * 60 * 1000,
+            handle: "caller",
+            trustedPublisher: true,
+            role: "user",
+            deletedAt: undefined,
+            deactivatedAt: undefined,
+            personalPublisherId: "publishers:caller",
+          };
+        }
+        if (id === "publishers:caller") {
+          return {
+            _id: "publishers:caller",
+            kind: "user",
+            handle: "caller",
+            linkedUserId: "users:caller",
+            deletedAt: undefined,
+            deactivatedAt: undefined,
+          };
+        }
         if (id === "users:owner") {
           return {
             _id: "users:owner",
@@ -264,7 +487,11 @@ describe("skills anti-spam guards", () => {
                 | ((q: { eq: (field: string, value: string) => unknown }) => unknown)
                 | undefined,
             ) => {
-              if (name !== "by_slug") throw new Error(`unexpected skills index ${name}`);
+              if (name !== "by_slug") {
+                const ownerScoped = emptyOwnerScopedSkillLookup(name);
+                if (ownerScoped) return ownerScoped;
+                throw new Error(`unexpected skills index `);
+              }
               const q = {
                 eq: (field: string, value: string) => {
                   if (field !== "slug") throw new Error(`unexpected field ${field}`);
@@ -301,31 +528,89 @@ describe("skills anti-spam guards", () => {
             },
           };
         }
-        throw new Error(`unexpected table ${table}`);
+        const emptyAliasesQuery = buildEmptySkillSlugAliasesQuery(table);
+        if (emptyAliasesQuery) return emptyAliasesQuery;
+        const emptyReservationsQuery = buildEmptyReservedSlugsQuery(table);
+        if (emptyReservationsQuery) return emptyReservationsQuery;
+        const emptyFingerprintsQuery = buildEmptySkillVersionFingerprintsQuery(table);
+        if (emptyFingerprintsQuery) return emptyFingerprintsQuery;
+        const emptyVersionsQuery = buildEmptySkillVersionsQuery(table);
+        if (emptyVersionsQuery) return emptyVersionsQuery;
+        const emptyBadgesQuery = buildEmptySkillBadgesQuery(table);
+        if (emptyBadgesQuery) return emptyBadgesQuery;
+        const emptyEmbeddingsQuery = buildEmptySkillEmbeddingsQuery(table);
+        if (emptyEmbeddingsQuery) return emptyEmbeddingsQuery;
+        const globalStatsQuery = buildGlobalStatsQuery(table);
+        if (globalStatsQuery) return globalStatsQuery;
+        const digestQuery = buildDigestQuery(table);
+        if (digestQuery) return digestQuery;
+        const emptyPublishersQuery = buildEmptyPublishersQuery(table);
+        if (emptyPublishersQuery) return emptyPublishersQuery;
+        const emptyPublisherMembersQuery = buildEmptyPublisherMembersQuery(table);
+        if (emptyPublisherMembersQuery) return emptyPublisherMembersQuery;
+        throw new Error(`unexpected table `);
       }),
+      patch,
+      insert,
       normalizeId: vi.fn(),
     };
 
-    await expect(
-      insertVersionHandler(
-        { db } as never,
-        createPublishArgs({
-          userId: "users:caller",
-          slug: "Taken-Skill",
-        }) as never,
-      ),
-    ).rejects.toThrow(
-      "Slug is already taken. Choose a different slug. Existing skill: /alice/taken-skill",
+    const result = await insertVersionHandler(
+      { db, scheduler: { runAfter: vi.fn() } } as never,
+      createPublishArgs({
+        userId: "users:caller",
+        slug: "Taken-Skill",
+      }) as never,
     );
 
+    expect(result).toEqual({
+      skillId: "skills:new",
+      versionId: "skillVersions:1",
+      embeddingId: "skillEmbeddings:1",
+    });
     expect(requestedSlug).toBe("taken-skill");
+    expect(insert).toHaveBeenCalledWith(
+      "skills",
+      expect.objectContaining({
+        slug: "taken-skill",
+        ownerUserId: "users:caller",
+        ownerPublisherId: "publishers:caller",
+      }),
+    );
   });
 
-  it("does not include a URL in slug-taken message when conflicting owner is deleted", async () => {
+  it("allows a legacy personal publish when a deleted owner has the same slug", async () => {
+    const now = Date.now();
+    const storedSkills = new Map<string, Record<string, unknown>>();
     let authAccountLookupCount = 0;
+    const patch = vi.fn(async () => {});
+    const insert = createSuccessfulPublishInsert(storedSkills, now);
     const db = {
       get: vi.fn(async (id: string) => {
-        if (id === "users:caller") return { _id: "users:caller", deletedAt: undefined };
+        if (storedSkills.has(id)) return storedSkills.get(id);
+        if (id === "users:caller") {
+          return {
+            _id: "users:caller",
+            _creationTime: now - 60 * 24 * 60 * 60 * 1000,
+            createdAt: now - 60 * 24 * 60 * 60 * 1000,
+            handle: "caller",
+            trustedPublisher: true,
+            role: "user",
+            deletedAt: undefined,
+            deactivatedAt: undefined,
+            personalPublisherId: "publishers:caller",
+          };
+        }
+        if (id === "publishers:caller") {
+          return {
+            _id: "publishers:caller",
+            kind: "user",
+            handle: "caller",
+            linkedUserId: "users:caller",
+            deletedAt: undefined,
+            deactivatedAt: undefined,
+          };
+        }
         if (id === "users:owner") {
           return {
             _id: "users:owner",
@@ -340,7 +625,11 @@ describe("skills anti-spam guards", () => {
         if (table === "skills") {
           return {
             withIndex: (name: string) => {
-              if (name !== "by_slug") throw new Error(`unexpected skills index ${name}`);
+              if (name !== "by_slug") {
+                const ownerScoped = emptyOwnerScopedSkillLookup(name);
+                if (ownerScoped) return ownerScoped;
+                throw new Error(`unexpected skills index `);
+              }
               return {
                 unique: async () => ({
                   _id: "skills:1",
@@ -369,22 +658,53 @@ describe("skills anti-spam guards", () => {
             },
           };
         }
-        throw new Error(`unexpected table ${table}`);
+        const emptyAliasesQuery = buildEmptySkillSlugAliasesQuery(table);
+        if (emptyAliasesQuery) return emptyAliasesQuery;
+        const emptyReservationsQuery = buildEmptyReservedSlugsQuery(table);
+        if (emptyReservationsQuery) return emptyReservationsQuery;
+        const emptyFingerprintsQuery = buildEmptySkillVersionFingerprintsQuery(table);
+        if (emptyFingerprintsQuery) return emptyFingerprintsQuery;
+        const emptyVersionsQuery = buildEmptySkillVersionsQuery(table);
+        if (emptyVersionsQuery) return emptyVersionsQuery;
+        const emptyBadgesQuery = buildEmptySkillBadgesQuery(table);
+        if (emptyBadgesQuery) return emptyBadgesQuery;
+        const emptyEmbeddingsQuery = buildEmptySkillEmbeddingsQuery(table);
+        if (emptyEmbeddingsQuery) return emptyEmbeddingsQuery;
+        const globalStatsQuery = buildGlobalStatsQuery(table);
+        if (globalStatsQuery) return globalStatsQuery;
+        const digestQuery = buildDigestQuery(table);
+        if (digestQuery) return digestQuery;
+        const emptyPublishersQuery = buildEmptyPublishersQuery(table);
+        if (emptyPublishersQuery) return emptyPublishersQuery;
+        const emptyPublisherMembersQuery = buildEmptyPublisherMembersQuery(table);
+        if (emptyPublisherMembersQuery) return emptyPublisherMembersQuery;
+        throw new Error(`unexpected table `);
       }),
+      patch,
+      insert,
       normalizeId: vi.fn(),
     };
 
-    await expect(
-      insertVersionHandler(
-        { db } as never,
-        createPublishArgs({
-          userId: "users:caller",
-          slug: "taken-skill",
-        }) as never,
-      ),
-    ).rejects.toThrow(
-      "This slug is locked to a deleted or banned account. " +
-        "If you believe you are the rightful owner, please contact security@openclaw.ai to reclaim it.",
+    const result = await insertVersionHandler(
+      { db, scheduler: { runAfter: vi.fn() } } as never,
+      createPublishArgs({
+        userId: "users:caller",
+        slug: "taken-skill",
+      }) as never,
+    );
+
+    expect(result).toEqual({
+      skillId: "skills:new",
+      versionId: "skillVersions:1",
+      embeddingId: "skillEmbeddings:1",
+    });
+    expect(insert).toHaveBeenCalledWith(
+      "skills",
+      expect.objectContaining({
+        slug: "taken-skill",
+        ownerUserId: "users:caller",
+        ownerPublisherId: "publishers:caller",
+      }),
     );
   });
 
@@ -510,7 +830,29 @@ describe("skills anti-spam guards", () => {
                   }),
                 };
               }
-              throw new Error(`unexpected skills index ${name}`);
+              if (name === "by_owner_slug") {
+                return {
+                  unique: async () =>
+                    Array.from(storedSkills.values()).find(
+                      (skill) =>
+                        skill.ownerUserId === constraints.ownerUserId &&
+                        skill.slug === constraints.slug,
+                    ) ?? null,
+                };
+              }
+              if (name === "by_owner_publisher_slug") {
+                return {
+                  unique: async () =>
+                    Array.from(storedSkills.values()).find(
+                      (skill) =>
+                        skill.ownerPublisherId === constraints.ownerPublisherId &&
+                        skill.slug === constraints.slug,
+                    ) ?? null,
+                };
+              }
+              const ownerScoped = emptyOwnerScopedSkillLookup(name);
+              if (ownerScoped) return ownerScoped;
+              throw new Error(`unexpected skills index `);
             },
           };
         }
@@ -527,7 +869,11 @@ describe("skills anti-spam guards", () => {
         if (table === "skillSlugAliases") {
           return {
             withIndex: (name: string, build?: (q: ReturnType<typeof chainEq>) => unknown) => {
-              if (name !== "by_slug") throw new Error(`unexpected skillSlugAliases index ${name}`);
+              if (name !== "by_slug") {
+                const ownerScoped = emptyOwnerScopedAliasLookup(name);
+                if (ownerScoped) return ownerScoped;
+                throw new Error(`unexpected skillSlugAliases index `);
+              }
               const constraints: Record<string, unknown> = {};
               build?.(chainEq(constraints));
               const alias = aliasSlugs.has(String(constraints.slug))
@@ -582,7 +928,24 @@ describe("skills anti-spam guards", () => {
             },
           };
         }
-        throw new Error(`unexpected table ${table}`);
+        if (table === "authAccounts") {
+          return {
+            withIndex: () => ({
+              unique: async () => null,
+            }),
+          };
+        }
+        const emptyAliasesQuery = buildEmptySkillSlugAliasesQuery(table);
+        if (emptyAliasesQuery) return emptyAliasesQuery;
+        const emptyReservationsQuery = buildEmptyReservedSlugsQuery(table);
+        if (emptyReservationsQuery) return emptyReservationsQuery;
+        const emptyFingerprintsQuery = buildEmptySkillVersionFingerprintsQuery(table);
+        if (emptyFingerprintsQuery) return emptyFingerprintsQuery;
+        const emptyPublishersQuery = buildEmptyPublishersQuery(table);
+        if (emptyPublishersQuery) return emptyPublishersQuery;
+        const emptyPublisherMembersQuery = buildEmptyPublisherMembersQuery(table);
+        if (emptyPublisherMembersQuery) return emptyPublisherMembersQuery;
+        throw new Error(`unexpected table `);
       }),
       patch,
       insert,
@@ -605,7 +968,7 @@ describe("skills anti-spam guards", () => {
       versionId: "skillVersions:1",
       embeddingId: "skillEmbeddings:1",
     });
-    expect(patch).toHaveBeenCalledWith(
+    expect(patch).not.toHaveBeenCalledWith(
       "skills",
       "skills:expired",
       expect.objectContaining({
@@ -615,18 +978,9 @@ describe("skills anti-spam guards", () => {
         unpublishedSlugReleasedAt: expect.any(Number),
       }),
     );
-    expect(insert).toHaveBeenCalledWith(
+    expect(insert).not.toHaveBeenCalledWith(
       "auditLogs",
-      expect.objectContaining({
-        action: "skill.slug.unpublished_release",
-        actorUserId: "users:caller",
-        targetId: "skills:expired",
-        metadata: expect.objectContaining({
-          from: "released-demo",
-          to: "__unpublished_skills_expired_1",
-          previousOwnerUserId: "users:previous",
-        }),
-      }),
+      expect.objectContaining({ action: "skill.slug.unpublished_release" }),
     );
     expect(insert).toHaveBeenCalledWith(
       "skills",
@@ -637,7 +991,7 @@ describe("skills anti-spam guards", () => {
     );
   });
 
-  it("does not release a stale owner reservation after moderation owns the current hide", async () => {
+  it("allows a new owner to publish when another owner's moderated reservation is stale", async () => {
     const now = Date.now();
     const storedSkills = new Map<string, Record<string, unknown>>([
       [
@@ -669,7 +1023,7 @@ describe("skills anti-spam guards", () => {
       ],
     ]);
     const patch = vi.fn(async () => {});
-    const insert = vi.fn(async () => "unexpected");
+    const insert = createSuccessfulPublishInsert(storedSkills, now);
     const db = {
       get: vi.fn(async (tableOrId: string, maybeId?: string) => {
         const id = maybeId ?? tableOrId;
@@ -750,7 +1104,9 @@ describe("skills anti-spam guards", () => {
                   }),
                 };
               }
-              throw new Error(`unexpected skills index ${name}`);
+              const ownerScoped = emptyOwnerScopedSkillLookup(name);
+              if (ownerScoped) return ownerScoped;
+              throw new Error(`unexpected skills index `);
             },
           };
         }
@@ -767,7 +1123,11 @@ describe("skills anti-spam guards", () => {
         if (table === "skillSlugAliases") {
           return {
             withIndex: (name: string) => {
-              if (name !== "by_slug") throw new Error(`unexpected skillSlugAliases index ${name}`);
+              if (name !== "by_slug") {
+                const ownerScoped = emptyOwnerScopedAliasLookup(name);
+                if (ownerScoped) return ownerScoped;
+                throw new Error(`unexpected skillSlugAliases index `);
+              }
               return { unique: async () => null };
             },
           };
@@ -822,7 +1182,23 @@ describe("skills anti-spam guards", () => {
             },
           };
         }
-        throw new Error(`unexpected table ${table}`);
+        const emptyAliasesQuery = buildEmptySkillSlugAliasesQuery(table);
+        if (emptyAliasesQuery) return emptyAliasesQuery;
+        const emptyReservationsQuery = buildEmptyReservedSlugsQuery(table);
+        if (emptyReservationsQuery) return emptyReservationsQuery;
+        const emptyFingerprintsQuery = buildEmptySkillVersionFingerprintsQuery(table);
+        if (emptyFingerprintsQuery) return emptyFingerprintsQuery;
+        const emptyVersionsQuery = buildEmptySkillVersionsQuery(table);
+        if (emptyVersionsQuery) return emptyVersionsQuery;
+        const emptyBadgesQuery = buildEmptySkillBadgesQuery(table);
+        if (emptyBadgesQuery) return emptyBadgesQuery;
+        const emptyEmbeddingsQuery = buildEmptySkillEmbeddingsQuery(table);
+        if (emptyEmbeddingsQuery) return emptyEmbeddingsQuery;
+        const emptyPublishersQuery = buildEmptyPublishersQuery(table);
+        if (emptyPublishersQuery) return emptyPublishersQuery;
+        const emptyPublisherMembersQuery = buildEmptyPublisherMembersQuery(table);
+        if (emptyPublisherMembersQuery) return emptyPublisherMembersQuery;
+        throw new Error(`unexpected table `);
       }),
       patch,
       insert,
@@ -831,16 +1207,20 @@ describe("skills anti-spam guards", () => {
       ),
     };
 
-    await expect(
-      insertVersionHandler(
-        { db, scheduler: { runAfter: vi.fn() } } as never,
-        createPublishArgs({
-          userId: "users:caller",
-          slug: "moderated-demo",
-          bypassNewSkillRateLimit: true,
-        }) as never,
-      ),
-    ).rejects.toThrow(/Slug is already taken/);
+    const result = await insertVersionHandler(
+      { db, scheduler: { runAfter: vi.fn() } } as never,
+      createPublishArgs({
+        userId: "users:caller",
+        slug: "moderated-demo",
+        bypassNewSkillRateLimit: true,
+      }) as never,
+    );
+
+    expect(result).toEqual({
+      skillId: "skills:new",
+      versionId: "skillVersions:1",
+      embeddingId: "skillEmbeddings:1",
+    });
 
     expect(patch).not.toHaveBeenCalledWith(
       "skills",
@@ -849,11 +1229,17 @@ describe("skills anti-spam guards", () => {
         slug: expect.stringMatching(/^__unpublished_/),
       }),
     );
-    expect(insert).not.toHaveBeenCalledWith("skills", expect.anything());
+    expect(insert).toHaveBeenCalledWith(
+      "skills",
+      expect.objectContaining({
+        slug: "moderated-demo",
+        ownerUserId: "users:caller",
+        ownerPublisherId: "publishers:caller",
+      }),
+    );
   });
 
-  it("heals ownership when conflicting owner is deleted but GitHub identity matches", async () => {
-    let authAccountLookupCount = 0;
+  it("heals ownership when a legacy unscoped owner is deleted but GitHub identity matches", async () => {
     const patch = vi.fn(async () => {});
     const insert = vi.fn(async (table: string) => {
       if (table === "skillVersions") return "skillVersions:1";
@@ -887,7 +1273,11 @@ describe("skills anti-spam guards", () => {
         if (table === "skills") {
           return {
             withIndex: (name: string) => {
-              if (name !== "by_slug") throw new Error(`unexpected skills index ${name}`);
+              if (name !== "by_slug") {
+                const ownerScoped = emptyOwnerScopedSkillLookup(name);
+                if (ownerScoped) return ownerScoped;
+                throw new Error(`unexpected skills index `);
+              }
               return {
                 unique: async () => ({
                   _id: "skills:1",
@@ -944,10 +1334,7 @@ describe("skills anti-spam guards", () => {
             withIndex: (name: string) => {
               if (name !== "userIdAndProvider") throw new Error(`unexpected auth index ${name}`);
               return {
-                unique: async () => {
-                  authAccountLookupCount += 1;
-                  return authAccountLookupCount <= 2 ? { providerAccountId: "shared-gh" } : null;
-                },
+                unique: async () => ({ providerAccountId: "shared-gh" }),
               };
             },
           };
@@ -1004,11 +1391,27 @@ describe("skills anti-spam guards", () => {
                   collect: async () => [],
                 };
               }
+              const ownerScoped = emptyOwnerScopedAliasLookup(name);
+              if (ownerScoped) return ownerScoped;
               throw new Error(`unexpected skillSlugAliases index ${name}`);
             },
           };
         }
-        throw new Error(`unexpected table ${table}`);
+        const emptyAliasesQuery = buildEmptySkillSlugAliasesQuery(table);
+        if (emptyAliasesQuery) return emptyAliasesQuery;
+        const emptyReservationsQuery = buildEmptyReservedSlugsQuery(table);
+        if (emptyReservationsQuery) return emptyReservationsQuery;
+        const emptyFingerprintsQuery = buildEmptySkillVersionFingerprintsQuery(table);
+        if (emptyFingerprintsQuery) return emptyFingerprintsQuery;
+        const globalStatsQuery = buildGlobalStatsQuery(table);
+        if (globalStatsQuery) return globalStatsQuery;
+        const digestQuery = buildDigestQuery(table);
+        if (digestQuery) return digestQuery;
+        const emptyPublishersQuery = buildEmptyPublishersQuery(table);
+        if (emptyPublishersQuery) return emptyPublishersQuery;
+        const emptyPublisherMembersQuery = buildEmptyPublisherMembersQuery(table);
+        if (emptyPublisherMembersQuery) return emptyPublisherMembersQuery;
+        throw new Error(`unexpected table `);
       }),
       patch,
       insert,
@@ -1090,11 +1493,23 @@ describe("skills anti-spam guards", () => {
                   }),
                 };
               }
-              throw new Error(`unexpected skills index ${name}`);
+              const ownerScoped = emptyOwnerScopedSkillLookup(name);
+              if (ownerScoped) return ownerScoped;
+              throw new Error(`unexpected skills index `);
             },
           };
         }
-        throw new Error(`unexpected table ${table}`);
+        const emptyAliasesQuery = buildEmptySkillSlugAliasesQuery(table);
+        if (emptyAliasesQuery) return emptyAliasesQuery;
+        const emptyReservationsQuery = buildEmptyReservedSlugsQuery(table);
+        if (emptyReservationsQuery) return emptyReservationsQuery;
+        const emptyFingerprintsQuery = buildEmptySkillVersionFingerprintsQuery(table);
+        if (emptyFingerprintsQuery) return emptyFingerprintsQuery;
+        const emptyPublishersQuery = buildEmptyPublishersQuery(table);
+        if (emptyPublishersQuery) return emptyPublishersQuery;
+        const emptyPublisherMembersQuery = buildEmptyPublisherMembersQuery(table);
+        if (emptyPublisherMembersQuery) return emptyPublisherMembersQuery;
+        throw new Error(`unexpected table `);
       }),
       patch,
       insert: vi.fn(),
@@ -1177,7 +1592,17 @@ describe("skills anti-spam guards", () => {
             }),
           };
         }
-        throw new Error(`unexpected table ${table}`);
+        const emptyAliasesQuery = buildEmptySkillSlugAliasesQuery(table);
+        if (emptyAliasesQuery) return emptyAliasesQuery;
+        const emptyReservationsQuery = buildEmptyReservedSlugsQuery(table);
+        if (emptyReservationsQuery) return emptyReservationsQuery;
+        const emptyFingerprintsQuery = buildEmptySkillVersionFingerprintsQuery(table);
+        if (emptyFingerprintsQuery) return emptyFingerprintsQuery;
+        const emptyPublishersQuery = buildEmptyPublishersQuery(table);
+        if (emptyPublishersQuery) return emptyPublishersQuery;
+        const emptyPublisherMembersQuery = buildEmptyPublisherMembersQuery(table);
+        if (emptyPublisherMembersQuery) return emptyPublisherMembersQuery;
+        throw new Error(`unexpected table `);
       }),
       patch,
       insert: vi.fn(),
@@ -1268,7 +1693,9 @@ describe("skills anti-spam guards", () => {
                   }),
                 };
               }
-              throw new Error(`unexpected skills index ${name}`);
+              const ownerScoped = emptyOwnerScopedSkillLookup(name);
+              if (ownerScoped) return ownerScoped;
+              throw new Error(`unexpected skills index `);
             },
           };
         }
@@ -1331,14 +1758,28 @@ describe("skills anti-spam guards", () => {
         if (table === "skillSlugAliases") {
           return {
             withIndex: (name: string) => {
-              if (name !== "by_slug") throw new Error(`unexpected skillSlugAliases index ${name}`);
+              if (name !== "by_slug") {
+                const ownerScoped = emptyOwnerScopedAliasLookup(name);
+                if (ownerScoped) return ownerScoped;
+                throw new Error(`unexpected skillSlugAliases index `);
+              }
               return {
                 unique: async () => null,
               };
             },
           };
         }
-        throw new Error(`unexpected table ${table}`);
+        const emptyAliasesQuery = buildEmptySkillSlugAliasesQuery(table);
+        if (emptyAliasesQuery) return emptyAliasesQuery;
+        const emptyReservationsQuery = buildEmptyReservedSlugsQuery(table);
+        if (emptyReservationsQuery) return emptyReservationsQuery;
+        const emptyFingerprintsQuery = buildEmptySkillVersionFingerprintsQuery(table);
+        if (emptyFingerprintsQuery) return emptyFingerprintsQuery;
+        const emptyPublishersQuery = buildEmptyPublishersQuery(table);
+        if (emptyPublishersQuery) return emptyPublishersQuery;
+        const emptyPublisherMembersQuery = buildEmptyPublisherMembersQuery(table);
+        if (emptyPublisherMembersQuery) return emptyPublisherMembersQuery;
+        throw new Error(`unexpected table `);
       }),
       patch,
       insert,
@@ -1433,11 +1874,23 @@ describe("skills anti-spam guards", () => {
                   }),
                 };
               }
-              throw new Error(`unexpected skills index ${name}`);
+              const ownerScoped = emptyOwnerScopedSkillLookup(name);
+              if (ownerScoped) return ownerScoped;
+              throw new Error(`unexpected skills index `);
             },
           };
         }
-        throw new Error(`unexpected table ${table}`);
+        const emptyAliasesQuery = buildEmptySkillSlugAliasesQuery(table);
+        if (emptyAliasesQuery) return emptyAliasesQuery;
+        const emptyReservationsQuery = buildEmptyReservedSlugsQuery(table);
+        if (emptyReservationsQuery) return emptyReservationsQuery;
+        const emptyFingerprintsQuery = buildEmptySkillVersionFingerprintsQuery(table);
+        if (emptyFingerprintsQuery) return emptyFingerprintsQuery;
+        const emptyPublishersQuery = buildEmptyPublishersQuery(table);
+        if (emptyPublishersQuery) return emptyPublishersQuery;
+        const emptyPublisherMembersQuery = buildEmptyPublisherMembersQuery(table);
+        if (emptyPublisherMembersQuery) return emptyPublisherMembersQuery;
+        throw new Error(`unexpected table `);
       }),
       patch,
       insert: vi.fn(),
@@ -1742,7 +2195,9 @@ describe("skills anti-spam guards", () => {
                   }),
                 };
               }
-              throw new Error(`unexpected skills index ${name}`);
+              const ownerScoped = emptyOwnerScopedSkillLookup(name);
+              if (ownerScoped) return ownerScoped;
+              throw new Error(`unexpected skills index `);
             },
           };
         }
@@ -1805,14 +2260,28 @@ describe("skills anti-spam guards", () => {
         if (table === "skillSlugAliases") {
           return {
             withIndex: (name: string) => {
-              if (name !== "by_slug") throw new Error(`unexpected skillSlugAliases index ${name}`);
+              if (name !== "by_slug") {
+                const ownerScoped = emptyOwnerScopedAliasLookup(name);
+                if (ownerScoped) return ownerScoped;
+                throw new Error(`unexpected skillSlugAliases index `);
+              }
               return {
                 unique: async () => null,
               };
             },
           };
         }
-        throw new Error(`unexpected table ${table}`);
+        const emptyAliasesQuery = buildEmptySkillSlugAliasesQuery(table);
+        if (emptyAliasesQuery) return emptyAliasesQuery;
+        const emptyReservationsQuery = buildEmptyReservedSlugsQuery(table);
+        if (emptyReservationsQuery) return emptyReservationsQuery;
+        const emptyFingerprintsQuery = buildEmptySkillVersionFingerprintsQuery(table);
+        if (emptyFingerprintsQuery) return emptyFingerprintsQuery;
+        const emptyPublishersQuery = buildEmptyPublishersQuery(table);
+        if (emptyPublishersQuery) return emptyPublishersQuery;
+        const emptyPublisherMembersQuery = buildEmptyPublisherMembersQuery(table);
+        if (emptyPublisherMembersQuery) return emptyPublisherMembersQuery;
+        throw new Error(`unexpected table `);
       }),
       patch,
       insert,
@@ -1891,11 +2360,23 @@ describe("skills anti-spam guards", () => {
                   }),
                 };
               }
-              throw new Error(`unexpected skills index ${name}`);
+              const ownerScoped = emptyOwnerScopedSkillLookup(name);
+              if (ownerScoped) return ownerScoped;
+              throw new Error(`unexpected skills index `);
             },
           };
         }
-        throw new Error(`unexpected table ${table}`);
+        const emptyAliasesQuery = buildEmptySkillSlugAliasesQuery(table);
+        if (emptyAliasesQuery) return emptyAliasesQuery;
+        const emptyReservationsQuery = buildEmptyReservedSlugsQuery(table);
+        if (emptyReservationsQuery) return emptyReservationsQuery;
+        const emptyFingerprintsQuery = buildEmptySkillVersionFingerprintsQuery(table);
+        if (emptyFingerprintsQuery) return emptyFingerprintsQuery;
+        const emptyPublishersQuery = buildEmptyPublishersQuery(table);
+        if (emptyPublishersQuery) return emptyPublishersQuery;
+        const emptyPublisherMembersQuery = buildEmptyPublisherMembersQuery(table);
+        if (emptyPublisherMembersQuery) return emptyPublisherMembersQuery;
+        throw new Error(`unexpected table `);
       }),
       patch,
       insert: vi.fn(),
@@ -1994,11 +2475,23 @@ describe("skills anti-spam guards", () => {
                   }),
                 };
               }
-              throw new Error(`unexpected skills index ${name}`);
+              const ownerScoped = emptyOwnerScopedSkillLookup(name);
+              if (ownerScoped) return ownerScoped;
+              throw new Error(`unexpected skills index `);
             },
           };
         }
-        throw new Error(`unexpected table ${table}`);
+        const emptyAliasesQuery = buildEmptySkillSlugAliasesQuery(table);
+        if (emptyAliasesQuery) return emptyAliasesQuery;
+        const emptyReservationsQuery = buildEmptyReservedSlugsQuery(table);
+        if (emptyReservationsQuery) return emptyReservationsQuery;
+        const emptyFingerprintsQuery = buildEmptySkillVersionFingerprintsQuery(table);
+        if (emptyFingerprintsQuery) return emptyFingerprintsQuery;
+        const emptyPublishersQuery = buildEmptyPublishersQuery(table);
+        if (emptyPublishersQuery) return emptyPublishersQuery;
+        const emptyPublisherMembersQuery = buildEmptyPublisherMembersQuery(table);
+        if (emptyPublisherMembersQuery) return emptyPublisherMembersQuery;
+        throw new Error(`unexpected table `);
       }),
       patch,
       insert: vi.fn(),
@@ -2087,11 +2580,23 @@ describe("skills anti-spam guards", () => {
                   }),
                 };
               }
-              throw new Error(`unexpected skills index ${name}`);
+              const ownerScoped = emptyOwnerScopedSkillLookup(name);
+              if (ownerScoped) return ownerScoped;
+              throw new Error(`unexpected skills index `);
             },
           };
         }
-        throw new Error(`unexpected table ${table}`);
+        const emptyAliasesQuery = buildEmptySkillSlugAliasesQuery(table);
+        if (emptyAliasesQuery) return emptyAliasesQuery;
+        const emptyReservationsQuery = buildEmptyReservedSlugsQuery(table);
+        if (emptyReservationsQuery) return emptyReservationsQuery;
+        const emptyFingerprintsQuery = buildEmptySkillVersionFingerprintsQuery(table);
+        if (emptyFingerprintsQuery) return emptyFingerprintsQuery;
+        const emptyPublishersQuery = buildEmptyPublishersQuery(table);
+        if (emptyPublishersQuery) return emptyPublishersQuery;
+        const emptyPublisherMembersQuery = buildEmptyPublisherMembersQuery(table);
+        if (emptyPublisherMembersQuery) return emptyPublisherMembersQuery;
+        throw new Error(`unexpected table `);
       }),
       patch,
       insert: vi.fn(),
@@ -2157,7 +2662,17 @@ describe("skills anti-spam guards", () => {
             }),
           };
         }
-        throw new Error(`unexpected table ${table}`);
+        const emptyAliasesQuery = buildEmptySkillSlugAliasesQuery(table);
+        if (emptyAliasesQuery) return emptyAliasesQuery;
+        const emptyReservationsQuery = buildEmptyReservedSlugsQuery(table);
+        if (emptyReservationsQuery) return emptyReservationsQuery;
+        const emptyFingerprintsQuery = buildEmptySkillVersionFingerprintsQuery(table);
+        if (emptyFingerprintsQuery) return emptyFingerprintsQuery;
+        const emptyPublishersQuery = buildEmptyPublishersQuery(table);
+        if (emptyPublishersQuery) return emptyPublishersQuery;
+        const emptyPublisherMembersQuery = buildEmptyPublisherMembersQuery(table);
+        if (emptyPublisherMembersQuery) return emptyPublisherMembersQuery;
+        throw new Error(`unexpected table `);
       }),
       patch,
       insert: vi.fn(),
@@ -2210,7 +2725,17 @@ describe("skills anti-spam guards", () => {
             }),
           };
         }
-        throw new Error(`unexpected table ${table}`);
+        const emptyAliasesQuery = buildEmptySkillSlugAliasesQuery(table);
+        if (emptyAliasesQuery) return emptyAliasesQuery;
+        const emptyReservationsQuery = buildEmptyReservedSlugsQuery(table);
+        if (emptyReservationsQuery) return emptyReservationsQuery;
+        const emptyFingerprintsQuery = buildEmptySkillVersionFingerprintsQuery(table);
+        if (emptyFingerprintsQuery) return emptyFingerprintsQuery;
+        const emptyPublishersQuery = buildEmptyPublishersQuery(table);
+        if (emptyPublishersQuery) return emptyPublishersQuery;
+        const emptyPublisherMembersQuery = buildEmptyPublisherMembersQuery(table);
+        if (emptyPublisherMembersQuery) return emptyPublisherMembersQuery;
+        throw new Error(`unexpected table `);
       }),
       patch,
       insert: vi.fn(),
@@ -2292,7 +2817,17 @@ describe("skills anti-spam guards", () => {
             }),
           };
         }
-        throw new Error(`unexpected table ${table}`);
+        const emptyAliasesQuery = buildEmptySkillSlugAliasesQuery(table);
+        if (emptyAliasesQuery) return emptyAliasesQuery;
+        const emptyReservationsQuery = buildEmptyReservedSlugsQuery(table);
+        if (emptyReservationsQuery) return emptyReservationsQuery;
+        const emptyFingerprintsQuery = buildEmptySkillVersionFingerprintsQuery(table);
+        if (emptyFingerprintsQuery) return emptyFingerprintsQuery;
+        const emptyPublishersQuery = buildEmptyPublishersQuery(table);
+        if (emptyPublishersQuery) return emptyPublishersQuery;
+        const emptyPublisherMembersQuery = buildEmptyPublisherMembersQuery(table);
+        if (emptyPublisherMembersQuery) return emptyPublisherMembersQuery;
+        throw new Error(`unexpected table `);
       }),
       patch,
       insert: vi.fn(),
@@ -2380,7 +2915,17 @@ describe("skills anti-spam guards", () => {
             }),
           };
         }
-        throw new Error(`unexpected table ${table}`);
+        const emptyAliasesQuery = buildEmptySkillSlugAliasesQuery(table);
+        if (emptyAliasesQuery) return emptyAliasesQuery;
+        const emptyReservationsQuery = buildEmptyReservedSlugsQuery(table);
+        if (emptyReservationsQuery) return emptyReservationsQuery;
+        const emptyFingerprintsQuery = buildEmptySkillVersionFingerprintsQuery(table);
+        if (emptyFingerprintsQuery) return emptyFingerprintsQuery;
+        const emptyPublishersQuery = buildEmptyPublishersQuery(table);
+        if (emptyPublishersQuery) return emptyPublishersQuery;
+        const emptyPublisherMembersQuery = buildEmptyPublisherMembersQuery(table);
+        if (emptyPublisherMembersQuery) return emptyPublisherMembersQuery;
+        throw new Error(`unexpected table `);
       }),
       patch,
       insert: vi.fn(),
@@ -2446,7 +2991,17 @@ describe("skills anti-spam guards", () => {
             }),
           };
         }
-        throw new Error(`unexpected table ${table}`);
+        const emptyAliasesQuery = buildEmptySkillSlugAliasesQuery(table);
+        if (emptyAliasesQuery) return emptyAliasesQuery;
+        const emptyReservationsQuery = buildEmptyReservedSlugsQuery(table);
+        if (emptyReservationsQuery) return emptyReservationsQuery;
+        const emptyFingerprintsQuery = buildEmptySkillVersionFingerprintsQuery(table);
+        if (emptyFingerprintsQuery) return emptyFingerprintsQuery;
+        const emptyPublishersQuery = buildEmptyPublishersQuery(table);
+        if (emptyPublishersQuery) return emptyPublishersQuery;
+        const emptyPublisherMembersQuery = buildEmptyPublisherMembersQuery(table);
+        if (emptyPublisherMembersQuery) return emptyPublisherMembersQuery;
+        throw new Error(`unexpected table `);
       }),
       patch,
       insert: vi.fn(),
@@ -2511,7 +3066,17 @@ describe("skills anti-spam guards", () => {
       query: vi.fn((table: string) => {
         const globalStatsQuery = buildGlobalStatsQuery(table);
         if (globalStatsQuery) return globalStatsQuery;
-        throw new Error(`unexpected table ${table}`);
+        const emptyAliasesQuery = buildEmptySkillSlugAliasesQuery(table);
+        if (emptyAliasesQuery) return emptyAliasesQuery;
+        const emptyReservationsQuery = buildEmptyReservedSlugsQuery(table);
+        if (emptyReservationsQuery) return emptyReservationsQuery;
+        const emptyFingerprintsQuery = buildEmptySkillVersionFingerprintsQuery(table);
+        if (emptyFingerprintsQuery) return emptyFingerprintsQuery;
+        const emptyPublishersQuery = buildEmptyPublishersQuery(table);
+        if (emptyPublishersQuery) return emptyPublishersQuery;
+        const emptyPublisherMembersQuery = buildEmptyPublisherMembersQuery(table);
+        if (emptyPublisherMembersQuery) return emptyPublisherMembersQuery;
+        throw new Error(`unexpected table `);
       }),
       patch,
       insert: vi.fn(),
@@ -2580,7 +3145,11 @@ describe("skills anti-spam guards", () => {
         if (table === "skills") {
           return {
             withIndex: (name: string) => {
-              if (name !== "by_owner") throw new Error(`unexpected skills index ${name}`);
+              if (name !== "by_owner") {
+                const ownerScoped = emptyOwnerScopedSkillLookup(name);
+                if (ownerScoped) return ownerScoped;
+                throw new Error(`unexpected skills index ${name}`);
+              }
               return {
                 order: () => ({
                   take: async () => skills,
@@ -2589,7 +3158,17 @@ describe("skills anti-spam guards", () => {
             },
           };
         }
-        throw new Error(`unexpected table ${table}`);
+        const emptyAliasesQuery = buildEmptySkillSlugAliasesQuery(table);
+        if (emptyAliasesQuery) return emptyAliasesQuery;
+        const emptyReservationsQuery = buildEmptyReservedSlugsQuery(table);
+        if (emptyReservationsQuery) return emptyReservationsQuery;
+        const emptyFingerprintsQuery = buildEmptySkillVersionFingerprintsQuery(table);
+        if (emptyFingerprintsQuery) return emptyFingerprintsQuery;
+        const emptyPublishersQuery = buildEmptyPublishersQuery(table);
+        if (emptyPublishersQuery) return emptyPublishersQuery;
+        const emptyPublisherMembersQuery = buildEmptyPublisherMembersQuery(table);
+        if (emptyPublisherMembersQuery) return emptyPublisherMembersQuery;
+        throw new Error(`unexpected table `);
       }),
       patch,
       insert: vi.fn(),
@@ -2736,7 +3315,17 @@ describe("skills anti-spam guards", () => {
             paginate,
           };
         }
-        throw new Error(`unexpected table ${table}`);
+        const emptyAliasesQuery = buildEmptySkillSlugAliasesQuery(table);
+        if (emptyAliasesQuery) return emptyAliasesQuery;
+        const emptyReservationsQuery = buildEmptyReservedSlugsQuery(table);
+        if (emptyReservationsQuery) return emptyReservationsQuery;
+        const emptyFingerprintsQuery = buildEmptySkillVersionFingerprintsQuery(table);
+        if (emptyFingerprintsQuery) return emptyFingerprintsQuery;
+        const emptyPublishersQuery = buildEmptyPublishersQuery(table);
+        if (emptyPublishersQuery) return emptyPublishersQuery;
+        const emptyPublisherMembersQuery = buildEmptyPublisherMembersQuery(table);
+        if (emptyPublisherMembersQuery) return emptyPublisherMembersQuery;
+        throw new Error(`unexpected table `);
       }),
       patch,
       insert: vi.fn(),

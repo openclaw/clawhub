@@ -262,6 +262,7 @@ const internalRefs = internal as unknown as {
   };
   skills: {
     getSkillBySlugInternal: unknown;
+    hasAnySkillWithSlugInternal: unknown;
   };
   users: {
     getByIdInternal: unknown;
@@ -5244,10 +5245,14 @@ async function publishPackageImpl(
     throw new ConvexError(getPublishTotalSizeError("package"));
   }
 
-  const existingSkill = await runQueryRef(ctx, internalRefs.skills.getSkillBySlugInternal, {
-    slug: name,
-  });
-  if (existingSkill) {
+  const existingSkillSlug = await runQueryRef<boolean>(
+    ctx,
+    internalRefs.skills.hasAnySkillWithSlugInternal,
+    {
+      slug: name,
+    },
+  );
+  if (existingSkillSlug) {
     throw new ConvexError(`Package name collides with existing skill slug "${name}"`);
   }
   if (family === "code-plugin" && (!effectiveSource?.repo || !effectiveSource?.commit)) {

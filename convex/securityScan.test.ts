@@ -147,7 +147,7 @@ const requestPackageRescanHandler = (
 
 const requestSkillRescanForUserInternalHandler = (
   requestSkillRescanForUserInternal as unknown as WrappedHandler<
-    { actorUserId: string; slug: string; version?: string },
+    { actorUserId: string; slug: string; ownerHandle?: string; version?: string },
     { jobId: string; alreadyQueued: boolean; skillVersionId: string }
   >
 )._handler;
@@ -285,13 +285,36 @@ function makeRescanCtx(options: {
           if (table === "securityScanJobs") return options.activeJobs ?? [];
           return [];
         }),
+        take: vi.fn(async () => {
+          if (table === "skills") {
+            return Array.from(docs.values()).filter((doc) => {
+              if (!doc._id?.toString().startsWith("skills:")) return false;
+              if (doc.slug !== equals.get("slug")) return false;
+              const ownerPublisherId = equals.get("ownerPublisherId");
+              return !ownerPublisherId || doc.ownerPublisherId === ownerPublisherId;
+            });
+          }
+          return [];
+        }),
         unique: vi.fn(async () => {
           if (table === "publisherMembers") return options.membership ?? null;
+          if (table === "publishers") {
+            return (
+              Array.from(docs.values()).find(
+                (doc) =>
+                  doc._id?.toString().startsWith("publishers:") &&
+                  doc.handle === equals.get("handle"),
+              ) ?? null
+            );
+          }
           if (table === "skills") {
             return (
               Array.from(docs.values()).find(
                 (doc) =>
-                  doc._id?.toString().startsWith("skills:") && doc.slug === equals.get("slug"),
+                  doc._id?.toString().startsWith("skills:") &&
+                  doc.slug === equals.get("slug") &&
+                  (!equals.has("ownerPublisherId") ||
+                    doc.ownerPublisherId === equals.get("ownerPublisherId")),
               ) ?? null
             );
           }
@@ -684,6 +707,103 @@ describe("securityScan", () => {
         }),
       ]),
     );
+  });
+
+  it("scopes API helper rescans by owner handle", async () => {
+    const { ctx } = makeRescanCtx({
+      actorId: "users:owner",
+      docs: {
+        "publishers:owner": {
+          _id: "publishers:owner",
+          kind: "user",
+          handle: "owner",
+          linkedUserId: "users:owner",
+        },
+        "publishers:other": {
+          _id: "publishers:other",
+          kind: "user",
+          handle: "other",
+          linkedUserId: "users:other",
+        },
+        "skills:owner": {
+          _id: "skills:owner",
+          slug: "demo-skill",
+          ownerUserId: "users:owner",
+          ownerPublisherId: "publishers:owner",
+          latestVersionId: "skillVersions:owner",
+        },
+        "skills:other": {
+          _id: "skills:other",
+          slug: "demo-skill",
+          ownerUserId: "users:other",
+          ownerPublisherId: "publishers:other",
+          latestVersionId: "skillVersions:other",
+        },
+        "skillVersions:owner": {
+          _id: "skillVersions:owner",
+          skillId: "skills:owner",
+          version: "1.0.0",
+        },
+        "skillVersions:other": {
+          _id: "skillVersions:other",
+          skillId: "skills:other",
+          version: "1.0.0",
+        },
+      },
+    });
+
+    const result = await requestSkillRescanForUserInternalHandler(ctx, {
+      actorUserId: "users:owner",
+      slug: "demo-skill",
+      ownerHandle: "owner",
+      version: "1.0.0",
+    });
+
+    expect(result).toMatchObject({
+      skillId: "skills:owner",
+      skillVersionId: "skillVersions:owner",
+    });
+  });
+
+  it("fails slug-only API helper rescans with controlled ambiguity", async () => {
+    const { ctx } = makeRescanCtx({
+      actorId: "users:owner",
+      docs: {
+        "publishers:owner": {
+          _id: "publishers:owner",
+          kind: "user",
+          handle: "owner",
+          linkedUserId: "users:owner",
+        },
+        "publishers:other": {
+          _id: "publishers:other",
+          kind: "user",
+          handle: "other",
+          linkedUserId: "users:other",
+        },
+        "skills:owner": {
+          _id: "skills:owner",
+          slug: "demo-skill",
+          ownerUserId: "users:owner",
+          ownerPublisherId: "publishers:owner",
+          latestVersionId: "skillVersions:owner",
+        },
+        "skills:other": {
+          _id: "skills:other",
+          slug: "demo-skill",
+          ownerUserId: "users:other",
+          ownerPublisherId: "publishers:other",
+          latestVersionId: "skillVersions:other",
+        },
+      },
+    });
+
+    await expect(
+      requestSkillRescanForUserInternalHandler(ctx, {
+        actorUserId: "users:owner",
+        slug: "demo-skill",
+      }),
+    ).rejects.toThrow("Slug is used by multiple publishers");
   });
 
   it("queues bulk rescans for active latest skill versions as low-priority jobs", async () => {

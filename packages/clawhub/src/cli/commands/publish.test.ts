@@ -54,6 +54,9 @@ describe("cmdPublish", () => {
         skillId: "skill_1",
         versionId: "ver_1",
       });
+      httpMocks.apiRequest.mockResolvedValueOnce({
+        user: { handle: "me" },
+      });
 
       const options = {
         slug: "my-skill",
@@ -77,6 +80,7 @@ describe("cmdPublish", () => {
       const payload = JSON.parse(payloadEntry);
       expect(payload.slug).toBe("my-skill");
       expect(payload.displayName).toBe("My Skill");
+      expect(payload.ownerHandle).toBe("me");
       expect(payload.version).toBe("1.0.0");
       expect(payload.changelog).toBe("");
       expect(payload).not.toHaveProperty("clawScanNote");
@@ -84,6 +88,51 @@ describe("cmdPublish", () => {
       expect(payload.tags).toEqual(["latest"]);
       const files = publishForm.getAll("files") as Array<Blob & { name?: string }>;
       expect(files.map((file) => file.name ?? "").sort()).toEqual(["SKILL.md", "notes.md"]);
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("sends owner-scoped fork provenance when --fork-of is owner-qualified", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "demo-fork");
+      await mkdir(folder, { recursive: true });
+      await writeFile(join(folder, "SKILL.md"), "# Skill\n", "utf8");
+
+      httpMocks.apiRequest.mockResolvedValueOnce({
+        user: { handle: "steipete" },
+      });
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        skillId: "skill_1",
+        versionId: "ver_1",
+      });
+      httpMocks.apiRequest.mockResolvedValueOnce({
+        user: { handle: "me" },
+      });
+
+      await cmdPublish(makeOpts(workdir), "demo-fork", {
+        slug: "demo-fork",
+        name: "Demo Fork",
+        version: "1.0.0",
+        changelog: "",
+        forkOf: "@openclaw/demo@1.2.3",
+      });
+
+      const publishCall = httpMocks.apiRequestForm.mock.calls.find((call) => {
+        const req = call[1] as { path?: string } | undefined;
+        return req?.path === "/api/v1/skills";
+      });
+      if (!publishCall) throw new Error("Missing publish call");
+      const publishForm = (publishCall[1] as { form?: FormData }).form as FormData;
+      const payloadEntry = publishForm.get("payload");
+      if (typeof payloadEntry !== "string") throw new Error("Missing publish payload");
+      expect(JSON.parse(payloadEntry).forkOf).toEqual({
+        slug: "demo",
+        ownerHandle: "openclaw",
+        version: "1.2.3",
+      });
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }
@@ -102,6 +151,9 @@ describe("cmdPublish", () => {
         ok: true,
         skillId: "skill_1",
         versionId: "ver_1",
+      });
+      httpMocks.apiRequest.mockResolvedValueOnce({
+        user: { handle: "me" },
       });
 
       await cmdPublish(makeOpts(workdir), "downloaded-skill", {
@@ -137,6 +189,9 @@ describe("cmdPublish", () => {
         skillId: "skill_1",
         versionId: "ver_2",
       });
+      httpMocks.apiRequest.mockResolvedValueOnce({
+        user: { handle: "me" },
+      });
 
       await cmdPublish(makeOpts(workdir), "existing-skill", {
         version: "1.0.1",
@@ -167,6 +222,9 @@ describe("cmdPublish", () => {
         ok: true,
         skillId: "skill_1",
         versionId: "ver_1",
+      });
+      httpMocks.apiRequest.mockResolvedValueOnce({
+        user: { handle: "me" },
       });
 
       await cmdPublish(makeOpts(workdir), "ignored-manifest", {
@@ -202,6 +260,9 @@ describe("cmdPublish", () => {
         skillId: "skill_1",
         versionId: "ver_2",
       });
+      httpMocks.apiRequest.mockResolvedValueOnce({
+        user: { handle: "me" },
+      });
 
       await cmdPublish(makeOpts(workdir), "org-skill", {
         owner: "@openclaw",
@@ -221,7 +282,33 @@ describe("cmdPublish", () => {
       if (typeof payloadEntry !== "string") throw new Error("Missing publish payload");
       const payload = JSON.parse(payloadEntry);
       expect(payload.ownerHandle).toBe("openclaw");
+      expect(payload.sourceOwnerHandle).toBe("me");
       expect(payload.migrateOwner).toBe(true);
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("fails clearly when publishing without --owner and whoami has no handle", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "anonymous-skill");
+      await mkdir(folder, { recursive: true });
+      await writeFile(join(folder, "SKILL.md"), "# Skill\n", "utf8");
+
+      httpMocks.apiRequest.mockReset();
+      httpMocks.apiRequest.mockResolvedValueOnce({
+        user: { handle: null },
+      });
+
+      await expect(
+        cmdPublish(makeOpts(workdir), "anonymous-skill", {
+          version: "1.0.0",
+          changelog: "",
+          tags: "latest",
+        }),
+      ).rejects.toThrow("Unable to resolve your publisher handle. Pass --owner explicitly.");
+      expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }
@@ -235,6 +322,10 @@ describe("cmdPublish", () => {
       await mkdir(folder, { recursive: true });
       await writeFile(join(folder, "SKILL.md"), "# Skill\n", "utf8");
 
+      httpMocks.apiRequest.mockReset();
+      httpMocks.apiRequest.mockResolvedValueOnce({
+        user: { handle: "steipete" },
+      });
       httpMocks.apiRequestForm.mockResolvedValueOnce({
         ok: true,
         skillId: "skill_1",
@@ -269,8 +360,8 @@ describe("cmdPublish", () => {
         path: "skills/source-skill",
         importedAt: 123_456_789,
       });
-      dateSpy.mockRestore();
     } finally {
+      dateSpy.mockRestore();
       await rm(workdir, { recursive: true, force: true });
     }
   });

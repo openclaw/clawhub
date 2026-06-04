@@ -67,6 +67,35 @@ describe("fetchSkillPageData", () => {
     expect(actionMock).toHaveBeenCalledWith("skills:getReadme", { versionId: "skillVersions:1" });
   });
 
+  it("threads owner handle into the skill lookup when provided", async () => {
+    queryMock.mockResolvedValue({
+      skill: {
+        _id: "skills:1",
+        slug: "weather",
+        displayName: "Weather",
+        summary: "Get current weather.",
+      },
+      latestVersion: null,
+      owner: {
+        _id: "publishers:1",
+        handle: "clawkit",
+        displayName: "Clawkit",
+      },
+      forkOf: null,
+      canonical: null,
+    });
+
+    await expect(fetchSkillPageData("weather", "clawkit")).resolves.toEqual(
+      expect.objectContaining({
+        owner: "clawkit",
+      }),
+    );
+    expect(queryMock).toHaveBeenCalledWith("skills:getBySlug", {
+      slug: "weather",
+      ownerHandle: "clawkit",
+    });
+  });
+
   it("keeps skill snapshot when readme fetch fails", async () => {
     queryMock.mockResolvedValue({
       skill: {

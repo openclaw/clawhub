@@ -206,6 +206,9 @@ function buildDb(skill: SkillDoc, captured: Captured) {
             if (name === "by_slug") {
               return { unique: async () => skill };
             }
+            if (name === "by_owner_publisher_slug" || name === "by_owner_slug") {
+              return { unique: async () => skill };
+            }
             if (name === "by_owner") {
               return { order: () => ({ take: async () => [skill] }) };
             }
@@ -216,7 +219,11 @@ function buildDb(skill: SkillDoc, captured: Captured) {
       if (table === "skillSlugAliases") {
         return {
           withIndex: (name: string) => {
-            if (name !== "by_slug") {
+            if (
+              name !== "by_slug" &&
+              name !== "by_owner_publisher_slug" &&
+              name !== "by_owner_slug"
+            ) {
               throw new Error(`unexpected skillSlugAliases index ${name}`);
             }
             return { unique: async () => null };

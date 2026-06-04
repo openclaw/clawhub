@@ -59,6 +59,13 @@ type BinaryUploadArgs = {
   retryCount?: number;
 };
 
+type DownloadZipArgs = {
+  slug: string;
+  ownerHandle?: string;
+  version?: string;
+  token?: string;
+};
+
 type HeaderSource = Headers | Record<string, string> | null | undefined;
 
 type RateLimitInfo = {
@@ -98,10 +105,7 @@ type HttpClient = {
   fetchText(registry: string, args: TextRequestArgs): Promise<string>;
   fetchBinary(registry: string, args: TextRequestArgs): Promise<Uint8Array>;
   uploadBinary<T>(args: BinaryUploadArgs, schema?: ArkValidator<T>): Promise<T>;
-  downloadZip(
-    registry: string,
-    args: { slug: string; version?: string; token?: string },
-  ): Promise<Uint8Array>;
+  downloadZip(registry: string, args: DownloadZipArgs): Promise<Uint8Array>;
 };
 
 class HttpStatusError extends Error {
@@ -306,12 +310,10 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
     return json as T;
   }
 
-  async function downloadZipRequest(
-    registry: string,
-    args: { slug: string; version?: string; token?: string },
-  ) {
+  async function downloadZipRequest(registry: string, args: DownloadZipArgs) {
     const url = registryUrl(ApiRoutes.download, registry);
     url.searchParams.set("slug", args.slug);
+    if (args.ownerHandle) url.searchParams.set("ownerHandle", args.ownerHandle);
     if (args.version) url.searchParams.set("version", args.version);
     return await runWithRetries(async () => {
       if (deps.runtime === "bun") {
@@ -413,10 +415,7 @@ export async function uploadBinary<T>(
   return await defaultHttpClient.uploadBinary<T>(args, schema);
 }
 
-export async function downloadZip(
-  registry: string,
-  args: { slug: string; version?: string; token?: string },
-) {
+export async function downloadZip(registry: string, args: DownloadZipArgs) {
   return await defaultHttpClient.downloadZip(registry, args);
 }
 
@@ -534,6 +533,8 @@ function buildHttpErrorMessage(status: number, text: string, rateLimit: RateLimi
 
 function normalizeHttpErrorBody(status: number, text: string): string {
   const body = cleanUserFacingErrorMessage(text);
+  const formattedStructuredError = formatStructuredHttpError(body);
+  if (formattedStructuredError) return formattedStructuredError;
   const lowered = body.toLowerCase();
   if (body && lowered !== "unauthorized" && lowered !== "forbidden") {
     if (isTransientConvexContention(body)) {
@@ -555,6 +556,55 @@ function normalizeHttpErrorBody(status: number, text: string): string {
   }
   if (body) return body;
   return `HTTP ${status}`;
+}
+
+function formatStructuredHttpError(body: string): string | null {
+  if (!body.startsWith("{")) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object") return null;
+  const error = parsed as {
+    code?: unknown;
+    message?: unknown;
+    matches?: unknown;
+  };
+  if (error.code !== "AMBIGUOUS_SKILL_SLUG" || typeof error.message !== "string") {
+    return null;
+  }
+  const lines = [error.message, ""];
+  let index = 1;
+  const matches = Array.isArray(error.matches) ? error.matches : [];
+  for (const rawMatch of matches) {
+    if (!rawMatch || typeof rawMatch !== "object") continue;
+    const match = rawMatch as {
+      ownerHandle?: unknown;
+      slug?: unknown;
+      ref?: unknown;
+      url?: unknown;
+    };
+    if (
+      typeof match.ownerHandle !== "string" ||
+      typeof match.slug !== "string" ||
+      typeof match.ref !== "string" ||
+      typeof match.url !== "string"
+    ) {
+      continue;
+    }
+    lines.push(
+      `  ${index}.`,
+      `     Skill: ${match.ownerHandle}/${match.slug}`,
+      `     Page:  ${match.url}`,
+      `     Run:   clawhub install ${match.ref}`,
+      "",
+    );
+    index += 1;
+  }
+  while (lines[lines.length - 1] === "") lines.pop();
+  return lines.join("\n");
 }
 
 function cleanUserFacingErrorMessage(message: string) {

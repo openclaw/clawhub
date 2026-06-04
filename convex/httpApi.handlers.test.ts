@@ -43,6 +43,7 @@ describe("httpApi handlers", () => {
       {
         score: 1,
         skill: { slug: "a", displayName: "A", summary: null, updatedAt: 1 },
+        ownerHandle: "openclaw",
         version: null,
       },
     ]);
@@ -59,6 +60,7 @@ describe("httpApi handlers", () => {
     expect(response.status).toBe(200);
     const json = await response.json();
     expect(json.results[0].slug).toBe("a");
+    expect(json.results[0].ownerHandle).toBe("openclaw");
   });
 
   it("searchSkillsHttp forwards highlightedOnly", async () => {
@@ -148,6 +150,19 @@ describe("httpApi handlers", () => {
     expect(response.status).toBe(404);
   });
 
+  it("getSkillHttp returns ownerHandle guidance when the slug is ambiguous", async () => {
+    const runQuery = vi.fn().mockResolvedValue({ skill: null, ambiguous: true });
+    const response = await __handlers.getSkillHandler(
+      makeCtx({ runQuery }),
+      new Request("https://example.com/api/skill?slug=demo"),
+    );
+
+    expect(response.status).toBe(409);
+    const body = await response.text();
+    expect(body).toContain('Ambiguous skill slug "demo"');
+    expect(body).toContain("/api/skill?slug=demo&ownerHandle=<owner>");
+  });
+
   it("getSkillHttp returns payload with owner and latestVersion", async () => {
     const runQuery = vi.fn().mockResolvedValue({
       skill: {
@@ -223,6 +238,24 @@ describe("httpApi handlers", () => {
     expect(response.status).toBe(404);
   });
 
+  it("resolveSkillVersionHttp returns ownerHandle guidance when the slug is ambiguous", async () => {
+    const hash = "a".repeat(64);
+    const runQuery = vi.fn().mockResolvedValue({
+      match: null,
+      latestVersion: null,
+      ambiguous: true,
+    });
+    const response = await __handlers.resolveSkillVersionHandler(
+      makeCtx({ runQuery }),
+      new Request(`https://example.com/api/skill/resolve?slug=demo&hash=${hash}`),
+    );
+
+    expect(response.status).toBe(409);
+    const body = await response.text();
+    expect(body).toContain('Ambiguous skill slug "demo"');
+    expect(body).toContain(`/api/skill/resolve?slug=demo&ownerHandle=<owner>&hash=${hash}`);
+  });
+
   it("resolveSkillVersionHttp returns match and latestVersion", async () => {
     const matchHash = await hashSkillFiles([{ path: "SKILL.md", sha256: "abc" }]);
     const runQuery = vi.fn().mockResolvedValueOnce({
@@ -280,7 +313,7 @@ describe("httpApi handlers", () => {
             {
               rootId: "abc",
               label: "~/skills",
-              skills: [{ slug: "weather", version: null }],
+              skills: [{ slug: "weather", ownerHandle: "openclaw", version: null }],
             },
           ],
         }),
@@ -317,7 +350,7 @@ describe("httpApi handlers", () => {
             {
               rootId: "abc",
               label: "~/skills",
-              skills: [{ slug: "weather", version: "1.0.0" }],
+              skills: [{ slug: "weather", ownerHandle: "openclaw", version: "1.0.0" }],
             },
           ],
         }),
@@ -326,7 +359,11 @@ describe("httpApi handlers", () => {
     expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
       userId: "users:1",
       roots: [
-        { rootId: "abc", label: "~/skills", skills: [{ slug: "weather", version: "1.0.0" }] },
+        {
+          rootId: "abc",
+          label: "~/skills",
+          skills: [{ slug: "weather", ownerHandle: "openclaw", version: "1.0.0" }],
+        },
       ],
     });
   });
@@ -525,13 +562,18 @@ describe("httpApi handlers", () => {
       body: JSON.stringify({
         slug: "cool-skill",
         displayName: "Cool Skill",
+        ownerHandle: "me",
         version: "1.2.3",
         changelog: "c",
         acceptLicenseTerms: true,
+        forkOf: { slug: "upstream", ownerHandle: "@openclaw", version: "1.0.0" },
         files: [{ path: "SKILL.md", size: 1, storageId: "id", sha256: "a" }],
       }),
     });
-    const response = await __handlers.cliPublishHandler(makeCtx({}), request);
+    const response = await __handlers.cliPublishHandler(
+      makeCtx({ runMutation: vi.fn().mockResolvedValue({ publisherId: "publishers:me" }) }),
+      request,
+    );
     expect(response.status).toBe(400);
   });
 
@@ -548,17 +590,109 @@ describe("httpApi handlers", () => {
       body: JSON.stringify({
         slug: "cool-skill",
         displayName: "Cool Skill",
+        ownerHandle: "me",
+        version: "1.2.3",
+        changelog: "c",
+        acceptLicenseTerms: true,
+        forkOf: { slug: "upstream", ownerHandle: "@openclaw", version: "1.0.0" },
+        files: [{ path: "SKILL.md", size: 1, storageId: "id", sha256: "a" }],
+      }),
+    });
+    const response = await __handlers.cliPublishHandler(
+      makeCtx({ runMutation: vi.fn().mockResolvedValue({ publisherId: "publishers:me" }) }),
+      request,
+    );
+    if (response.status !== 200) throw new Error(await response.text());
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.ok).toBe(true);
+    expect(json.skillId).toBe("s");
+    expect(publishVersionForUser).toHaveBeenCalledWith(
+      expect.anything(),
+      "user1",
+      expect.objectContaining({
+        forkOf: { slug: "upstream", ownerHandle: "openclaw", version: "1.0.0" },
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("cliPublishHttp defaults omitted ownerHandle to personal publish scope", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: "user1" } as never);
+    vi.mocked(publishVersionForUser).mockResolvedValueOnce({
+      skillId: "s",
+      versionId: "v",
+      embeddingId: "e",
+    } as never);
+    const runMutation = vi.fn();
+    const request = new Request("https://x/api/cli/publish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        slug: "cool-skill",
+        displayName: "Cool Skill",
+        version: "1.2.3",
+        changelog: "c",
+        acceptLicenseTerms: true,
+        migrateOwner: true,
+        sourceOwnerHandle: "org",
+        files: [{ path: "SKILL.md", size: 1, storageId: "id", sha256: "a" }],
+      }),
+    });
+    const response = await __handlers.cliPublishHandler(makeCtx({ runMutation }), request);
+    if (response.status !== 200) throw new Error(await response.text());
+    expect(response.status).toBe(200);
+    expect(runMutation).not.toHaveBeenCalled();
+    expect(publishVersionForUser).toHaveBeenCalledWith(
+      expect.anything(),
+      "user1",
+      expect.not.objectContaining({ ownerHandle: expect.anything() }),
+      expect.not.objectContaining({ ownerPublisherId: expect.anything() }),
+    );
+    expect(vi.mocked(publishVersionForUser).mock.calls[0]?.[3]).not.toHaveProperty(
+      "ownerPublisherId",
+    );
+    expect(vi.mocked(publishVersionForUser).mock.calls[0]?.[3]).not.toHaveProperty(
+      "sourceOwnerPublisherId",
+    );
+    expect(vi.mocked(publishVersionForUser).mock.calls[0]?.[3]).not.toHaveProperty("migrateOwner");
+  });
+
+  it("cliPublishHttp treats same source and target owner as a normal owner-scoped publish", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: "user1" } as never);
+    vi.mocked(publishVersionForUser).mockResolvedValueOnce({
+      skillId: "s",
+      versionId: "v",
+      embeddingId: "e",
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (args.ownerHandle === "openclaw") return { publisherId: "publishers:openclaw" };
+      return null;
+    });
+    const request = new Request("https://x/api/cli/publish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        slug: "cool-skill",
+        displayName: "Cool Skill",
+        ownerHandle: "openclaw",
+        sourceOwnerHandle: "openclaw",
+        migrateOwner: true,
         version: "1.2.3",
         changelog: "c",
         acceptLicenseTerms: true,
         files: [{ path: "SKILL.md", size: 1, storageId: "id", sha256: "a" }],
       }),
     });
-    const response = await __handlers.cliPublishHandler(makeCtx({}), request);
+    const response = await __handlers.cliPublishHandler(makeCtx({ runMutation }), request);
+    if (response.status !== 200) throw new Error(await response.text());
     expect(response.status).toBe(200);
-    const json = await response.json();
-    expect(json.ok).toBe(true);
-    expect(json.skillId).toBe("s");
+    expect(publishVersionForUser).toHaveBeenCalledWith(
+      expect.anything(),
+      "user1",
+      expect.not.objectContaining({ ownerHandle: expect.anything() }),
+      { ownerPublisherId: "publishers:openclaw" },
+    );
   });
 
   it("cliPublishHttp rejects omitted license terms", async () => {
@@ -569,6 +703,7 @@ describe("httpApi handlers", () => {
       body: JSON.stringify({
         slug: "cool-skill",
         displayName: "Cool Skill",
+        ownerHandle: "me",
         version: "1.2.3",
         changelog: "c",
         files: [{ path: "SKILL.md", size: 1, storageId: "id", sha256: "a" }],
@@ -588,6 +723,7 @@ describe("httpApi handlers", () => {
       body: JSON.stringify({
         slug: "cool-skill",
         displayName: "Cool Skill",
+        ownerHandle: "me",
         version: "1.2.3",
         changelog: "c",
         acceptLicenseTerms: false,

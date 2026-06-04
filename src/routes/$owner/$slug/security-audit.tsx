@@ -17,7 +17,7 @@ export const Route = createFileRoute("/$owner/$slug/security-audit")({
     if (!isHandle && !isOwnerId) throw notFound();
   },
   loader: async ({ params }) => {
-    const data = await fetchSkillPageData(params.slug);
+    const data = await fetchSkillPageData(params.slug, params.owner);
     const canonicalOwner = data.initialData?.result?.owner?.handle ?? null;
     const canonicalSlug = data.initialData?.result?.resolvedSlug ?? params.slug;
 
@@ -64,7 +64,7 @@ export const Route = createFileRoute("/$owner/$slug/security-audit")({
 function SkillSecurityAuditRoute() {
   const { owner, slug } = Route.useParams();
   const { initialData } = Route.useLoaderData();
-  const liveResult = useQuery(api.skills.getBySlug, { slug });
+  const liveResult = useQuery(api.skills.getBySlug, { slug, ownerHandle: owner });
   const requestSkillRescan = useMutation(api.securityScan.requestSkillRescan);
   const { me } = useAuthStatus();
   const myPublishers = useQuery(api.publishers.listMine, me ? {} : "skip") as

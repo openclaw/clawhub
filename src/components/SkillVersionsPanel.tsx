@@ -7,14 +7,29 @@ type SkillVersionsPanelProps = {
   versions: Doc<"skillVersions">[] | undefined;
   nixPlugin: boolean;
   skillSlug: string;
+  ownerHandle?: string | null;
   suppressScanResults: boolean;
   suppressedMessage: string | null;
 };
+
+function buildVersionDownloadHref(
+  convexSiteUrl: string,
+  skillSlug: string,
+  ownerHandle: string | null | undefined,
+  version: string,
+) {
+  const params = new URLSearchParams({ slug: skillSlug });
+  const normalizedOwner = ownerHandle?.trim().replace(/^@+/, "");
+  if (normalizedOwner) params.set("ownerHandle", normalizedOwner);
+  params.set("version", version);
+  return `${convexSiteUrl}/api/v1/download?${params.toString()}`;
+}
 
 export function SkillVersionsPanel({
   versions,
   nixPlugin,
   skillSlug,
+  ownerHandle,
   suppressScanResults,
   suppressedMessage,
 }: SkillVersionsPanelProps) {
@@ -68,7 +83,12 @@ export function SkillVersionsPanel({
               {!nixPlugin ? (
                 <div className="shrink-0">
                   <a
-                    href={`${convexSiteUrl}/api/v1/download?slug=${skillSlug}&version=${version.version}`}
+                    href={buildVersionDownloadHref(
+                      convexSiteUrl,
+                      skillSlug,
+                      ownerHandle,
+                      version.version,
+                    )}
                     className="inline-flex items-center justify-center gap-2 whitespace-nowrap font-semibold text-xs min-h-[34px] rounded-[var(--radius-pill)] px-3 py-1.5 border border-[color:var(--line)] bg-[color:var(--surface)] text-[color:var(--ink)] transition-all duration-200 no-underline"
                   >
                     Zip

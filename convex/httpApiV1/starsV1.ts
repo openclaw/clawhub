@@ -3,6 +3,12 @@ import type { ActionCtx } from "../_generated/server";
 import { applyRateLimit } from "../lib/httpRateLimit";
 import { getPathSegments, json, requireApiTokenUserOrResponse, text } from "./shared";
 
+function getOwnerHandleParam(request: Request) {
+  const url = new URL(request.url);
+  const value = url.searchParams.get("ownerHandle") ?? url.searchParams.get("owner");
+  return value?.trim().replace(/^@+/, "") || undefined;
+}
+
 export async function starsPostRouterV1Handler(ctx: ActionCtx, request: Request) {
   const rate = await applyRateLimit(ctx, request, "write");
   if (!rate.ok) return rate.response;
@@ -15,7 +21,11 @@ export async function starsPostRouterV1Handler(ctx: ActionCtx, request: Request)
   if (!auth.ok) return auth.response;
 
   try {
-    const skill = await ctx.runQuery(internal.skills.getSkillBySlugInternal, { slug });
+    const ownerHandle = getOwnerHandleParam(request);
+    const skill = await ctx.runQuery(internal.skills.getSkillBySlugInternal, {
+      slug,
+      ...(ownerHandle ? { ownerHandle } : {}),
+    });
     if (!skill) return text("Skill not found", 404, rate.headers);
 
     const result = await ctx.runMutation(internal.stars.addStarInternal, {
@@ -43,7 +53,11 @@ export async function starsDeleteRouterV1Handler(ctx: ActionCtx, request: Reques
   if (!auth.ok) return auth.response;
 
   try {
-    const skill = await ctx.runQuery(internal.skills.getSkillBySlugInternal, { slug });
+    const ownerHandle = getOwnerHandleParam(request);
+    const skill = await ctx.runQuery(internal.skills.getSkillBySlugInternal, {
+      slug,
+      ...(ownerHandle ? { ownerHandle } : {}),
+    });
     if (!skill) return text("Skill not found", 404, rate.headers);
 
     const result = await ctx.runMutation(internal.stars.removeStarInternal, {

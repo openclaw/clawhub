@@ -175,10 +175,11 @@ export function SkillDetailPage({
   const initialResult = initialData?.result ?? undefined;
 
   const isStaff = isModerator(me);
-  const staffResult = useQuery(api.skills.getBySlugForStaff, isStaff ? { slug } : "skip") as
+  const skillLookupArgs = canonicalOwner ? { slug, ownerHandle: canonicalOwner } : { slug };
+  const staffResult = useQuery(api.skills.getBySlugForStaff, isStaff ? skillLookupArgs : "skip") as
     | SkillBySlugResult
     | undefined;
-  const publicResult = useQuery(api.skills.getBySlug, !isStaff ? { slug } : "skip") as
+  const publicResult = useQuery(api.skills.getBySlug, !isStaff ? skillLookupArgs : "skip") as
     | SkillBySlugResult
     | undefined;
   const result = isStaff ? staffResult : publicResult === undefined ? initialResult : publicResult;
@@ -778,6 +779,7 @@ export function SkillDetailPage({
             latestFiles={latestFiles}
             latestVersionId={latestVersion?._id ?? null}
             skill={skill as Doc<"skills">}
+            ownerHandle={ownerHandle}
             diffVersions={diffVersions}
             versions={versions}
             nixPlugin={Boolean(nixPlugin)}

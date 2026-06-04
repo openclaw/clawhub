@@ -20,6 +20,7 @@ export declare const LockfileSchema: import("arktype/internal/variants/object.ts
         [x: string]: {
             version: string | null;
             installedAt: number;
+            ownerHandle?: string | undefined;
             pinned?: boolean | undefined;
             pinReason?: string | undefined;
         };
@@ -35,6 +36,7 @@ export declare const ApiSearchResponseSchema: import("arktype/internal/variants/
     results: {
         score: number;
         slug?: string | undefined;
+        ownerHandle?: string | null | undefined;
         displayName?: string | undefined;
         version?: string | null | undefined;
     }[];
@@ -82,6 +84,7 @@ export declare const CliPublishRequestSchema: import("arktype/internal/variants/
         contentType?: string | undefined;
     }[];
     ownerHandle?: string | undefined;
+    sourceOwnerHandle?: string | undefined;
     migrateOwner?: boolean | undefined;
     acceptLicenseTerms?: boolean | undefined;
     tags?: string[] | undefined;
@@ -96,6 +99,7 @@ export declare const CliPublishRequestSchema: import("arktype/internal/variants/
     } | undefined;
     forkOf?: {
         slug: string;
+        ownerHandle?: string | undefined;
         version?: string | undefined;
     } | undefined;
 }, {}>;
@@ -128,6 +132,7 @@ export declare const CliTelemetrySyncRequestSchema: import("arktype/internal/var
         label: string;
         skills: {
             slug: string;
+            ownerHandle?: string | undefined;
             version?: string | null | undefined;
         }[];
     }[];
@@ -166,11 +171,11 @@ export declare const ApiV1SearchResponseSchema: import("arktype/internal/variant
     results: {
         score: number;
         slug?: string | undefined;
+        ownerHandle?: string | null | undefined;
         displayName?: string | undefined;
         summary?: string | null | undefined;
         version?: string | null | undefined;
         updatedAt?: number | undefined;
-        ownerHandle?: string | null | undefined;
         owner?: {
             handle?: string | null | undefined;
             displayName?: string | null | undefined;

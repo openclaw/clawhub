@@ -5,7 +5,7 @@ vi.mock("@convex-dev/auth/server", () => ({
   authTables: {},
 }));
 
-import { insertVersion } from "./skills";
+import { getSkillForPublishPreflightInternal, insertVersion } from "./skills";
 
 type WrappedHandler<TArgs> = {
   _handler: (ctx: unknown, args: TArgs) => Promise<unknown>;
@@ -13,6 +13,9 @@ type WrappedHandler<TArgs> = {
 
 const insertVersionHandler = (insertVersion as unknown as WrappedHandler<Record<string, unknown>>)
   ._handler;
+const getSkillForPublishPreflightHandler = (
+  getSkillForPublishPreflightInternal as unknown as WrappedHandler<Record<string, unknown>>
+)._handler;
 
 const SENTINEL_BAIL_MESSAGE = "__owner_migration_sentinel_stop__";
 
@@ -82,6 +85,8 @@ function createMigrationFixture(params: {
    */
   skillSource?: SkillSourceMode;
   sourcePersonalLinkedUserId?: string | null;
+  duplicateGlobalSlug?: boolean;
+  destinationDuplicateSkill?: boolean;
   skillOverrides?: Record<string, unknown>;
 }): OrgMigrationFixture {
   const now = Date.now();
@@ -230,9 +235,17 @@ function createMigrationFixture(params: {
             name: string,
             build: ((q: { eq: (field: string, value: string) => unknown }) => unknown) | undefined,
           ) => {
-            if (name === "by_slug") {
+            if (
+              name === "by_slug" ||
+              name === "by_owner_publisher_slug" ||
+              name === "by_owner_slug"
+            ) {
+              const constraints: Record<string, string> = {};
               const q = {
-                eq: (_field: string, _value: string) => q,
+                eq: (field: string, value: string) => {
+                  constraints[field] = value;
+                  return q;
+                },
               };
               build?.(q);
               const mode: SkillSourceMode = params.skillSource ?? "other-personal";
@@ -243,27 +256,66 @@ function createMigrationFixture(params: {
                     ? "publishers:sourceOrg"
                     : "publishers:personalSource";
               const ownerUserId = mode === "caller-personal" ? "users:caller" : "users:sourceOwner";
+              const skill = {
+                _id: "skills:1",
+                slug: "nano",
+                ownerUserId,
+                ownerPublisherId,
+                softDeletedAt: undefined,
+                moderationStatus: "active",
+                moderationFlags: undefined,
+                statsDownloads: 42,
+                statsStars: 7,
+                stats: {
+                  downloads: 1,
+                  stars: 2,
+                  installsCurrent: 0,
+                  installsAllTime: 0,
+                  comments: 0,
+                  versions: 1,
+                },
+                ...params.skillOverrides,
+              };
+              const unrelatedDuplicateSkill = {
+                ...skill,
+                _id: "skills:duplicate",
+                ownerUserId: "users:duplicate",
+                ownerPublisherId: "publishers:duplicate",
+              };
+              const destinationDuplicateSkill = {
+                ...skill,
+                _id: "skills:destination",
+                ownerUserId: "users:caller",
+                ownerPublisherId: "publishers:org",
+              };
+              const candidates = [
+                skill,
+                ...(params.destinationDuplicateSkill ? [destinationDuplicateSkill] : []),
+              ];
+              const matches = candidates.filter((candidate) => {
+                const skillMatches =
+                  constraints.slug === undefined || constraints.slug === candidate.slug;
+                const ownerPublisherMatches =
+                  constraints.ownerPublisherId === undefined ||
+                  constraints.ownerPublisherId === candidate.ownerPublisherId;
+                const ownerUserMatches =
+                  constraints.ownerUserId === undefined ||
+                  constraints.ownerUserId === candidate.ownerUserId;
+                return skillMatches && ownerPublisherMatches && ownerUserMatches;
+              });
               return {
-                unique: async () => ({
-                  _id: "skills:1",
-                  slug: "nano",
-                  ownerUserId,
-                  ownerPublisherId,
-                  softDeletedAt: undefined,
-                  moderationStatus: "active",
-                  moderationFlags: undefined,
-                  statsDownloads: 42,
-                  statsStars: 7,
-                  stats: {
-                    downloads: 1,
-                    stars: 2,
-                    installsCurrent: 0,
-                    installsAllTime: 0,
-                    comments: 0,
-                    versions: 1,
-                  },
-                  ...params.skillOverrides,
-                }),
+                unique: async () => matches[0] ?? null,
+                take: async () => {
+                  if (
+                    params.duplicateGlobalSlug &&
+                    name === "by_slug" &&
+                    constraints.ownerPublisherId === undefined &&
+                    constraints.ownerUserId === undefined
+                  ) {
+                    return [...matches, unrelatedDuplicateSkill];
+                  }
+                  return matches;
+                },
               };
             }
             // Any subsequent skill-table access means migration was allowed and
@@ -281,6 +333,9 @@ function createMigrationFixture(params: {
               return { collect: async () => [] };
             }
             if (name === "by_slug") {
+              return { unique: async () => null, take: async () => [] };
+            }
+            if (name === "by_owner_publisher_slug" || name === "by_owner_slug") {
               return { unique: async () => null };
             }
             throw new Error(`unexpected skillSlugAliases index ${name}`);
@@ -636,6 +691,151 @@ describe("skills.insertVersion owner migration", () => {
     });
   });
 
+  it("migrates from the explicit source owner even when another publisher has the same slug", async () => {
+    const fixture = createMigrationFixture({
+      skillSource: "caller-personal",
+      duplicateGlobalSlug: true,
+      sourceMemberships: [
+        {
+          _id: "publisherMembers:orgAdminCaller",
+          publisherId: "publishers:org",
+          userId: "users:caller",
+          role: "admin",
+        },
+      ],
+    });
+
+    await expect(
+      insertVersionHandler(
+        { db: fixture.db } as never,
+        buildPublishArgs({
+          migrateOwner: true,
+          sourceOwnerPublisherId: "publishers:personalCaller",
+        }) as never,
+      ),
+    ).rejects.toThrow(SENTINEL_BAIL_MESSAGE);
+
+    const skillPatches = fixture.patchCalls.filter((p) => p.id === "skills:1");
+    expect(skillPatches).toHaveLength(1);
+    expect(skillPatches[0]?.value).toMatchObject({
+      ownerPublisherId: "publishers:org",
+      ownerUserId: "users:caller",
+    });
+  });
+
+  it("rejects explicit migration when the destination owner already has the slug", async () => {
+    const fixture = createMigrationFixture({
+      skillSource: "caller-personal",
+      destinationDuplicateSkill: true,
+      sourceMemberships: [
+        {
+          _id: "publisherMembers:orgAdminCaller",
+          publisherId: "publishers:org",
+          userId: "users:caller",
+          role: "admin",
+        },
+      ],
+    });
+
+    await expect(
+      insertVersionHandler(
+        { db: fixture.db } as never,
+        buildPublishArgs({
+          migrateOwner: true,
+          sourceOwnerPublisherId: "publishers:personalCaller",
+        }) as never,
+      ),
+    ).rejects.toThrow(
+      'Destination owner @casualsecurityinc already has skill "nano". Choose a different slug or publish without migrating ownership.',
+    );
+
+    expect(fixture.patchCalls.filter((p) => p.id === "skills:1")).toHaveLength(0);
+    expect(fixture.patchCalls.filter((p) => p.id === "skills:destination")).toHaveLength(0);
+    expect(fixture.insertCalls).not.toContainEqual(
+      expect.objectContaining({
+        table: "skillVersions",
+      }),
+    );
+  });
+
+  it("classifies explicit migrations as blocked when preflight sees a destination slug collision", async () => {
+    const fixture = createMigrationFixture({
+      skillSource: "caller-personal",
+      destinationDuplicateSkill: true,
+      sourceMemberships: [],
+    });
+
+    await expect(
+      getSkillForPublishPreflightHandler(
+        { db: fixture.db } as never,
+        {
+          userId: "users:caller",
+          slug: "nano",
+          ownerPublisherId: "publishers:org",
+          sourceOwnerPublisherId: "publishers:personalCaller",
+          migrateOwner: true,
+        } as never,
+      ),
+    ).rejects.toThrow(
+      'Destination owner @casualsecurityinc already has skill "nano". Choose a different slug or publish without migrating ownership.',
+    );
+  });
+
+  it("classifies default personal publishes as existing legacy personal rows", async () => {
+    const fixture = createMigrationFixture({
+      skillSource: "caller-personal",
+      sourceMemberships: [],
+      skillOverrides: { ownerPublisherId: undefined },
+    });
+
+    const result = await getSkillForPublishPreflightHandler(
+      { db: fixture.db } as never,
+      {
+        userId: "users:caller",
+        slug: "nano",
+        ownerPublisherId: "publishers:personalCaller",
+      } as never,
+    );
+
+    expect(result).toMatchObject({
+      _id: "skills:1",
+      ownerUserId: "users:caller",
+      ownerPublisherId: undefined,
+    });
+  });
+
+  it("rejects an explicit migration when the source owner no longer has the slug", async () => {
+    const fixture = createMigrationFixture({
+      skillSource: "caller-personal",
+      sourceMemberships: [
+        {
+          _id: "publisherMembers:orgAdminCaller",
+          publisherId: "publishers:org",
+          userId: "users:caller",
+          role: "admin",
+        },
+      ],
+    });
+
+    await expect(
+      insertVersionHandler(
+        { db: fixture.db } as never,
+        buildPublishArgs({
+          migrateOwner: true,
+          sourceOwnerPublisherId: "publishers:sourceOrg",
+        }) as never,
+      ),
+    ).rejects.toThrow('Source owner @sourceorg does not have skill "nano".');
+
+    const skillPatches = fixture.patchCalls.filter((p) => p.id === "skills:1");
+    expect(skillPatches).toHaveLength(0);
+    expect(fixture.insertCalls).not.toContainEqual(
+      expect.objectContaining({
+        table: "skills",
+      }),
+    );
+  });
+
   it("rejects legacy publisher backfill for skills under moderation", async () => {
     const fixture = createMigrationFixture({
       skillSource: "caller-personal",
@@ -685,14 +885,12 @@ describe("skills.insertVersion owner migration", () => {
     expect(migrationAudits).toHaveLength(0);
   });
 
-  it("does NOT migrate ownership when caller omits ownerPublisherId (prevents silent re-ownership)", async () => {
+  it("does NOT migrate ownership when caller omits ownerPublisherId", async () => {
     const fixture = createMigrationFixture({
       sourceMemberships: [
-        // Caller happens to be a publisher on the source org — but has NOT
-        // explicitly asked for any particular target publisher. Without the
-        // explicit opt-in, we must fall through to the "Slug is already taken"
-        // error instead of silently migrating the org-owned skill back into
-        // the caller's personal namespace.
+        // Missing ownerPublisherId means the publish is scoped to the caller's
+        // personal publisher. It must not migrate a same-slug skill from a
+        // different owner namespace.
         {
           _id: "publisherMembers:sourceCaller",
           publisherId: "publishers:personalSource",
@@ -707,7 +905,7 @@ describe("skills.insertVersion owner migration", () => {
 
     await expect(
       insertVersionHandler({ db: fixture.db } as never, argsWithoutOwner as never),
-    ).rejects.toThrow(/Slug is already taken/);
+    ).rejects.toThrow(SENTINEL_BAIL_MESSAGE);
 
     const skillPatches = fixture.patchCalls.filter((p) => p.id === "skills:1");
     expect(skillPatches).toHaveLength(0);
@@ -718,13 +916,9 @@ describe("skills.insertVersion owner migration", () => {
     expect(migrationAudits).toHaveLength(0);
   });
 
-  it("rejects migration when caller does NOT pass migrateOwner:true even with full source+destination authority", async () => {
-    // Explicit-intent gate: even if the caller has all the authority needed
-    // on both sides, refusing to pass `migrateOwner: true` must be treated as
-    // "not trying to move the skill" and fall through to the slug-collision
-    // error. This is what protects the New Version form from silently
-    // re-owning a skill whose Owner selector happens to default to the
-    // caller's personal publisher.
+  it("does NOT migrate ownership when caller omits migrateOwner:true", async () => {
+    // Without migrateOwner, a same-slug publish into another owner namespace is
+    // a scoped publish, not an ownership transfer.
     const fixture = createMigrationFixture({
       skillSource: "caller-personal",
       sourceMemberships: [
@@ -739,7 +933,7 @@ describe("skills.insertVersion owner migration", () => {
 
     await expect(
       insertVersionHandler({ db: fixture.db } as never, buildPublishArgs() as never),
-    ).rejects.toThrow(/Slug is already taken/);
+    ).rejects.toThrow(SENTINEL_BAIL_MESSAGE);
 
     const skillPatches = fixture.patchCalls.filter((p) => p.id === "skills:1");
     expect(skillPatches).toHaveLength(0);

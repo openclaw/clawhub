@@ -2774,6 +2774,7 @@ async function upsertRoleHelpFixtureUser(ctx: MutationCtx, user: RoleHelpFixture
     handle: user.handle,
     displayName: user.displayName,
     role: user.role,
+    githubCreatedAt: Date.UTC(2015, 0, 1),
     deletedAt: undefined,
     deactivatedAt: undefined,
     updatedAt: now,

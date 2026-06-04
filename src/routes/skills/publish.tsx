@@ -86,7 +86,9 @@ export function Upload() {
   );
   const existingSkill = useQuery(
     api.skills.getBySlug,
-    !isSoulMode && updateSlug ? { slug: updateSlug } : "skip",
+    !isSoulMode && updateSlug
+      ? { slug: updateSlug, ownerHandle: searchOwnerHandle || undefined }
+      : "skip",
   );
   const existingSoul = useQuery(
     api.souls.getBySlug,
@@ -714,6 +716,10 @@ export function Upload() {
       }
       const result = await publishVersion({
         ownerHandle: isSoulMode ? undefined : ownerHandle || undefined,
+        sourceOwnerHandle:
+          !isSoulMode && isOwnerMigration && confirmMigrateOwner && existingOwnerHandle
+            ? existingOwnerHandle
+            : undefined,
         // Only propagate the migration opt-in when the user is actually
         // changing the skill's owner AND has explicitly confirmed the move.
         // Same-owner republishes must never carry `migrateOwner: true`.

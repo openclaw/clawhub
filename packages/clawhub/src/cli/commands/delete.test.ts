@@ -68,6 +68,20 @@ describe("delete/undelete", () => {
     );
   });
 
+  it("delete accepts owner-qualified refs", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({ ok: true });
+    await cmdDeleteSkill(makeGlobalOpts(), "@Alice/Demo", { yes: true }, false);
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        method: "DELETE",
+        path: "/api/v1/skills/demo",
+        body: { ownerHandle: "alice" },
+      }),
+      expect.anything(),
+    );
+  });
+
   it("supports --note as a reason alias", async () => {
     httpMocks.apiRequest.mockResolvedValueOnce({ ok: true });
     await cmdHideSkill(makeGlobalOpts(), "demo", { yes: true, note: "legal notice" }, false);
@@ -112,6 +126,20 @@ describe("delete/undelete", () => {
         method: "POST",
         path: "/api/v1/skills/demo/undelete",
         body: { reason: "reviewed" },
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("undelete accepts owner-qualified refs", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({ ok: true });
+    await cmdUndeleteSkill(makeGlobalOpts(), "@Alice/Demo", { yes: true }, false);
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        method: "POST",
+        path: "/api/v1/skills/demo/undelete",
+        body: { ownerHandle: "alice" },
       }),
       expect.anything(),
     );

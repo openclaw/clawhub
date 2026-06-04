@@ -244,21 +244,19 @@ async function pruneDeletedSkillBackups(
     try {
       const skill = (await ctx.runQuery(internal.skills.getSkillBySlugInternal, {
         slug: entry.slug,
+        ownerHandle: entry.owner,
       })) as Doc<"skills"> | null;
       if (!isMirrorEligibleSkill(skill)) {
         await deleteBackupIfNeeded(context, entry, dryRun, stats);
         continue;
       }
 
-      const owner = (await ctx.runQuery(internal.users.getByIdInternal, {
-        userId: skill.ownerUserId,
-      })) as Doc<"users"> | null;
-      if (!owner || owner.deletedAt || owner.deactivatedAt) {
+      const ownerHandle = await getBackupOwnerHandleForSkill(ctx, skill);
+      if (!ownerHandle) {
         await deleteBackupIfNeeded(context, entry, dryRun, stats);
         continue;
       }
 
-      const ownerHandle = normalizeOwner(owner.handle ?? owner._id);
       if (ownerHandle !== entry.owner) {
         await deleteBackupIfNeeded(context, entry, dryRun, stats);
       }
@@ -279,6 +277,22 @@ function isMirrorEligibleSkill(skill: Doc<"skills"> | null): skill is Doc<"skill
     skill.moderationStatus === null ||
     skill.moderationStatus === "active"
   );
+}
+
+async function getBackupOwnerHandleForSkill(ctx: ActionCtx, skill: Doc<"skills">) {
+  if (skill.ownerPublisherId) {
+    const publisher = (await ctx.runQuery(internal.publishers.getByIdInternal, {
+      publisherId: skill.ownerPublisherId,
+    })) as Doc<"publishers"> | null;
+    if (!publisher || publisher.deletedAt || publisher.deactivatedAt) return null;
+    return normalizeOwner(publisher.handle ?? publisher._id);
+  }
+
+  const owner = (await ctx.runQuery(internal.users.getByIdInternal, {
+    userId: skill.ownerUserId,
+  })) as Doc<"users"> | null;
+  if (!owner || owner.deletedAt || owner.deactivatedAt) return null;
+  return normalizeOwner(owner.handle ?? owner._id);
 }
 
 async function deleteBackupIfNeeded(

@@ -44,7 +44,7 @@ Notes:
 
 ```bash
 clawhub search "postgres backups"
-clawhub install my-skill-pack
+clawhub install @openclaw/demo
 clawhub pin bear-notes --reason "scanner-flagged while awaiting moderation"
 clawhub update --all
 clawhub update --all --no-input --force

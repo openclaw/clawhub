@@ -48,12 +48,12 @@ describe("legacy publish redirects", () => {
     const route = await loadRoute("../routes/publish-skill");
     const search = route.__config.validateSearch({
       updateSlug: "dronzer",
-      ownerHandle: "openclaw",
+      ownerHandle: "vintageayu",
       ignored: "drop-me",
     });
 
     expect(route.__path).toBe("/publish-skill");
-    expect(search).toEqual({ updateSlug: "dronzer", ownerHandle: "openclaw" });
+    expect(search).toEqual({ updateSlug: "dronzer", ownerHandle: "vintageayu" });
     expect(() => route.__config.beforeLoad({ search })).toThrow();
     expect(redirectMock).toHaveBeenCalledWith({
       to: "/skills/publish",
