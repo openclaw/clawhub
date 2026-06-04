@@ -10,6 +10,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 import {
   detectInjectionPatterns,
   parseLlmEvalResponse,
+  type ArtifactCoverage,
   type LlmEvalDimension,
   SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT,
 } from "../../convex/lib/securityPrompt";
@@ -45,6 +46,7 @@ type StoredLlmAnalysis = {
   dimensions?: LlmEvalDimension[];
   guidance?: string;
   findings?: string;
+  artifactCoverage?: ArtifactCoverage;
   model?: string;
   checkedAt: number;
 };
@@ -942,6 +944,7 @@ function toStoredLlmAnalysis(parsed: NonNullable<ReturnType<typeof parseLlmEvalR
     dimensions: parsed.dimensions,
     guidance: parsed.guidance,
     findings: parsed.findings || undefined,
+    artifactCoverage: parsed.artifactCoverage,
     model: process.env.CODEX_SECURITY_SCAN_MODEL ?? "gpt-5.5",
     checkedAt: Date.now(),
   };

@@ -228,6 +228,21 @@ const skillSpectorAnalysisValidator = v.object({
   checkedAt: v.number(),
 });
 
+const llmArtifactCoverageIssueValidator = v.object({
+  kind: v.string(),
+  path: v.optional(v.string()),
+  detail: v.string(),
+  originalChars: v.optional(v.number()),
+  reviewedChars: v.optional(v.number()),
+  omittedFileCount: v.optional(v.number()),
+  hiddenCommentBlocksRemoved: v.optional(v.number()),
+});
+
+const llmArtifactCoverageValidator = v.object({
+  complete: v.boolean(),
+  issues: v.array(llmArtifactCoverageIssueValidator),
+});
+
 const depRegistryStatusValidator = v.union(
   v.literal("clean"),
   v.literal("suspicious"),
@@ -8227,6 +8242,7 @@ export const updateVersionLlmAnalysisInternal = internalMutation({
           }),
         }),
       ),
+      artifactCoverage: v.optional(llmArtifactCoverageValidator),
       model: v.optional(v.string()),
       checkedAt: v.number(),
     }),

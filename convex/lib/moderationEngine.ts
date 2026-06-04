@@ -44,6 +44,10 @@ type LlmAnalysis = {
   verdict?: string;
   agenticRiskFindings?: LlmRiskFinding[];
   riskSummary?: Record<string, LlmRiskSummaryBucket | undefined>;
+  artifactCoverage?: {
+    complete?: boolean;
+    issues?: unknown[];
+  };
 };
 
 export type StaticScanInput = {
@@ -1299,6 +1303,9 @@ function addLlmStatusReason(reasonCodes: string[], status?: string, analysis?: L
   if (normalized === "malicious") {
     reasonCodes.push("malicious.llm_malicious");
     return;
+  }
+  if (analysis?.artifactCoverage?.complete === false) {
+    reasonCodes.push(REASON_CODES.ARTIFACT_INCOMPLETE);
   }
   if (normalized !== "suspicious") return;
 

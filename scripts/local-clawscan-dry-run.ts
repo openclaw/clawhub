@@ -5,9 +5,11 @@ import mime from "mime";
 import { runStaticModerationScan, type StaticScanResult } from "../convex/lib/moderationEngine";
 import { extractResponseText } from "../convex/lib/openaiResponse";
 import {
+  analyzeEvalArtifactCoverage,
   applyInjectionSignalFloor,
   assembleEvalUserMessage,
   assembleSkillEvalUserMessage,
+  applyArtifactCoverageFloor,
   detectInjectionPatterns,
   getLlmEvalModel,
   getLlmEvalReasoningEffort,
@@ -15,6 +17,7 @@ import {
   LLM_EVAL_MAX_OUTPUT_TOKENS,
   parseLlmEvalResponse,
   SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT,
+  type ArtifactCoverage,
   type LlmEvalResponse,
   type SkillEvalContext,
 } from "../convex/lib/securityPrompt";
@@ -62,6 +65,7 @@ type LocalLlmAnalysis = {
   findings?: string;
   agenticRiskFindings?: LlmEvalResponse["agenticRiskFindings"];
   riskSummary?: LlmEvalResponse["riskSummary"];
+  artifactCoverage?: ArtifactCoverage;
   model: string;
   checkedAt: number;
 };
@@ -293,6 +297,7 @@ async function evaluateWithLlm(params: {
   useSkillPrompt: boolean;
 }): Promise<LocalLlmAnalysis> {
   const model = getLlmEvalModel();
+  const artifactCoverage = analyzeEvalArtifactCoverage(params.ctx);
   const requestBody = JSON.stringify({
     model,
     service_tier: getLlmEvalServiceTier(),
@@ -328,7 +333,10 @@ async function evaluateWithLlm(params: {
   if (!raw) throw new Error("Empty response from OpenAI");
   const parsed = parseLlmEvalResponse(raw);
   if (!parsed) throw new Error("Failed to parse LLM evaluation response");
-  const result = applyInjectionSignalFloor(parsed, params.ctx.injectionSignals);
+  const result = applyArtifactCoverageFloor(
+    applyInjectionSignalFloor(parsed, params.ctx.injectionSignals),
+    artifactCoverage,
+  );
 
   return {
     status: verdictToStatus(result.verdict),
@@ -340,6 +348,7 @@ async function evaluateWithLlm(params: {
     findings: result.findings || undefined,
     agenticRiskFindings: result.agenticRiskFindings,
     riskSummary: result.riskSummary,
+    artifactCoverage: result.artifactCoverage,
     model,
     checkedAt: params.now(),
   };
