@@ -244,6 +244,12 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   workspace with static and VT signals as context.
 - Current skill and plugin scans are queued through `securityScanJobs` and
   completed by the external Codex worker.
+- Codex worker clean verdicts are valid only with worker-time artifact coverage
+  proof. The worker output schema requires `artifact_coverage`, and the worker
+  must reject a benign result before storage when submitted files are omitted,
+  marked metadata-only/unread, or large files lack full or head/tail coverage.
+  Coverage proof is a worker contract and diagnostics aid, not public scan state,
+  unless a future product surface explicitly needs it.
 - ClawScan worker concurrency is an operator-controlled compute concern. The
   backend claim path must cap only a single worker claim size and must not impose
   a global active-scan ceiling; horizontal capacity is controlled by worker
