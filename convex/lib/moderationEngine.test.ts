@@ -2105,11 +2105,11 @@ describe("moderationEngine", () => {
     expect(snapshot.legacyFlags).toBeUndefined();
   });
 
-  it("keeps incomplete artifact coverage in review even if a caller submits clean", () => {
+  it("keeps incomplete artifact coverage at the visible review floor", () => {
     const snapshot = buildModerationSnapshot({
-      llmStatus: "clean",
+      llmStatus: "suspicious",
       llmAnalysis: {
-        status: "clean",
+        status: "suspicious",
         artifactCoverage: {
           complete: false,
           issues: [
@@ -2124,7 +2124,8 @@ describe("moderationEngine", () => {
     });
 
     expect(snapshot.verdict).toBe("clean");
-    expect(snapshot.reasonCodes).toEqual(["review.artifact_incomplete"]);
+    expect(snapshot.reasonCodes).toEqual(["review.artifact_incomplete", "review.llm_review"]);
+    expect(snapshot.summary).toBe("Review: review.artifact_incomplete, review.llm_review");
     expect(snapshot.legacyFlags).toBeUndefined();
   });
 
