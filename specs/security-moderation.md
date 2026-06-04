@@ -225,7 +225,7 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   default. They may still be audited, but scanner telemetry alone must not
   downgrade them.
 - Operators can schedule ClawScan rescans after scanner policy changes or bypass
-  reports. `clawhub-mod skills rescan-all --mode all-active-latest` queues a
+  reports. `clawhub-admin skills rescan-all --mode all-active-latest` queues a
   broad active-skill sweep. `--mode truncation-risk-latest` narrows the sweep to
   active latest skill versions whose primary `SKILL.md`/`skills.md` size meets
   the ClawScan prompt truncation-risk threshold; use `--dry-run --json` first to

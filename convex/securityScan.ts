@@ -106,16 +106,9 @@ const bulkSkillRescanModeValidator = v.union(
 
 type BulkSkillRescanMode = "all-active-latest" | "truncation-risk-latest";
 
-type SecurityScanJobSource =
-  | "publish"
-  | "clawscan-note"
-  | "vt-update"
-  | "backfill"
-  | "bulk-rescan"
-  | "manual";
+type SecurityScanJobSource = "publish" | "vt-update" | "backfill" | "bulk-rescan" | "manual";
 
 const CLAIM_SOURCE_ORDER: SecurityScanJobSource[] = [
-  "clawscan-note",
   "backfill",
   "publish",
   "vt-update",

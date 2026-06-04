@@ -106,6 +106,7 @@ Package moderation and operations:
 ```bash
 bun run admin -- skills reports [--status open|confirmed|dismissed|all]
 bun run admin -- skills rescan <slug> [--version <version>] [--yes] [--json]
+bun run admin -- skills rescan-all [--mode all-active-latest|truncation-risk-latest] [--dry-run] [--batch-size <n>] [--cursor <cursor>] [--json]
 bun run admin -- skills unhide <slug> --reason <text> [--yes]
 bun run admin -- skills triage-report <report-id> --status open|confirmed|dismissed [--note <text>] [--action none|hide] [--yes]
 
@@ -124,3 +125,14 @@ bun run admin -- plugins trusted-publisher delete <name>
 ```
 
 All skill and plugin commands accept `--json` where the underlying endpoint supports machine-readable output.
+
+For post-rule or bypass-class ClawScan remediation, start with:
+
+```bash
+bun run admin -- skills rescan-all --mode truncation-risk-latest --dry-run --json
+```
+
+This mode targets active latest skill versions whose primary `SKILL.md` or
+`skills.md` is large enough to risk prompt truncation. It queues fresh ClawScan
+jobs only when rerun without `--dry-run`; it does not change scanner verdict
+logic or moderation state directly.

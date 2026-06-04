@@ -319,6 +319,45 @@ describe("cmdRescanAllSkills", () => {
     );
   });
 
+  it("lets the backend choose the default truncation-risk threshold", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      mode: "truncation-risk-latest",
+      queued: 1,
+      alreadyQueued: 0,
+      skipped: 2,
+      jobIds: [],
+      nextCursor: null,
+      done: true,
+      sampleSlugs: ["large-skill"],
+    });
+
+    await cmdRescanAllSkills(
+      makeGlobalOpts(),
+      {
+        dryRun: true,
+        mode: "truncation-risk-latest",
+        batchSize: 10,
+      },
+      false,
+    );
+
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({
+        method: "POST",
+        path: "/api/v1/skills/-/scan/batch",
+        body: {
+          mode: "truncation-risk-latest",
+          cursor: null,
+          batchSize: 10,
+          dryRun: true,
+        },
+      }),
+      expect.anything(),
+    );
+  });
+
   it("rejects unknown bulk rescan modes before calling the API", async () => {
     await expect(
       cmdRescanAllSkills(makeGlobalOpts(), { dryRun: true, mode: "near-miss" }, false),
