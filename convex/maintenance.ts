@@ -1,10 +1,18 @@
 import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import type { ActionCtx } from "./_generated/server";
+import type { ActionCtx, MutationCtx } from "./_generated/server";
 import { action, internalAction, internalMutation, internalQuery } from "./functions";
 import { assertRole, requireUserFromAction } from "./lib/access";
 import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
+import {
+  derivePersonalPublisherHandle,
+  ensurePersonalPublisherForUser,
+  getPersonalPublisherForUser,
+  getPublisherByHandle,
+  getPublisherMembership,
+  isPublisherActive,
+} from "./lib/publishers";
 import { recomputePublisherStats } from "./lib/publisherStats";
 import { buildSkillSummaryBackfillPatch, type ParsedSkillData } from "./lib/skillBackfill";
 import { deriveSkillCapabilityTags } from "./lib/skillCapabilityTags";
@@ -91,6 +99,20 @@ type UserOwnedSkillsBackfillPageResult = {
   items: Array<Pick<Doc<"skills">, "stats" | "softDeletedAt">>;
   cursor: string | null;
   isDone: boolean;
+};
+
+type LegacyPublisherOwnershipPhase = "users" | "skills" | "packages";
+
+type LegacyPublisherOwnershipRepairResult = {
+  phase: LegacyPublisherOwnershipPhase;
+  dryRun: boolean;
+  scanned: number;
+  repaired: number;
+  skipped: number;
+  errors: string[];
+  cursor: string | null;
+  isDone: boolean;
+  nextPhase?: LegacyPublisherOwnershipPhase;
 };
 
 export const getSkillBackfillPageInternal = internalQuery({
@@ -2274,6 +2296,261 @@ export const backfillPackagePluginCategoryDigestsInternal = internalMutation({
 
     return { synced, isDone, scanned: page.length };
   },
+});
+
+function isActiveLegacyPublisherRepairUser(
+  user: Doc<"users"> | null | undefined,
+): user is Doc<"users"> {
+  return Boolean(user && !user.deletedAt && !user.deactivatedAt && !user.purgedAt);
+}
+
+function nextLegacyPublisherOwnershipPhase(
+  phase: LegacyPublisherOwnershipPhase,
+): LegacyPublisherOwnershipPhase | undefined {
+  if (phase === "users") return "skills";
+  if (phase === "skills") return "packages";
+  return undefined;
+}
+
+async function getExistingActivePersonalPublisher(
+  ctx: Pick<MutationCtx, "db">,
+  user: Doc<"users">,
+) {
+  if (user.personalPublisherId) {
+    const publisher = await ctx.db.get(user.personalPublisherId);
+    if (isPublisherActive(publisher)) return publisher;
+  }
+  const publisher = await getPersonalPublisherForUser(ctx, user._id);
+  return isPublisherActive(publisher) ? publisher : null;
+}
+
+async function needsPersonalPublisherRepair(ctx: Pick<MutationCtx, "db">, user: Doc<"users">) {
+  const publisher = await getExistingActivePersonalPublisher(ctx, user);
+  if (!publisher) return true;
+  if (user.personalPublisherId !== publisher._id) return true;
+  if (publisher.kind !== "user" || publisher.linkedUserId !== user._id) return true;
+  const member = await getPublisherMembership(ctx, publisher._id, user._id);
+  return !member;
+}
+
+function pushRepairError(errors: string[], label: string, error: unknown) {
+  if (errors.length >= 10) return;
+  const message = error instanceof Error ? error.message : String(error);
+  errors.push(`${label}: ${message}`);
+}
+
+async function resolvePersonalPublisherForOwnershipRepair(
+  ctx: Pick<MutationCtx, "db">,
+  user: Doc<"users">,
+  dryRun: boolean,
+) {
+  if (dryRun) {
+    const existing = await getExistingActivePersonalPublisher(ctx, user);
+    if (existing) return existing;
+    const handle = derivePersonalPublisherHandle(user);
+    const conflict = await getPublisherByHandle(ctx, handle);
+    if (conflict && conflict.linkedUserId !== user._id) {
+      throw new ConvexError(`Publisher handle "@${handle}" is already claimed`);
+    }
+    return null;
+  }
+  return await ensurePersonalPublisherForUser(ctx, user, {
+    source: "maintenance.legacy_publisher_ownership",
+  });
+}
+
+async function repairLegacySkillOwnerPublisher(
+  ctx: Pick<MutationCtx, "db">,
+  skill: Doc<"skills">,
+  dryRun: boolean,
+) {
+  if (skill.ownerPublisherId) return "skipped" as const;
+  const owner = await ctx.db.get(skill.ownerUserId);
+  if (!isActiveLegacyPublisherRepairUser(owner)) return "skipped" as const;
+
+  const publisher = await resolvePersonalPublisherForOwnershipRepair(ctx, owner, dryRun);
+  if (!dryRun && (!publisher || !isPublisherActive(publisher))) return "skipped" as const;
+  if (dryRun) return "repaired" as const;
+
+  // The trigger-wrapped mutation syncs skill search digest and publisher stats.
+  // This repair only patches owner projections that triggers do not own.
+  await ctx.db.patch(skill._id, { ownerPublisherId: publisher!._id });
+
+  const aliases = await ctx.db
+    .query("skillSlugAliases")
+    .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
+    .collect();
+  for (const alias of aliases) {
+    if (alias.ownerPublisherId === publisher!._id) continue;
+    await ctx.db.patch(alias._id, { ownerPublisherId: publisher!._id });
+  }
+
+  const embeddings = await ctx.db
+    .query("skillEmbeddings")
+    .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
+    .collect();
+  for (const embedding of embeddings) {
+    if (embedding.ownerPublisherId === publisher!._id) continue;
+    await ctx.db.patch(embedding._id, { ownerPublisherId: publisher!._id });
+  }
+
+  return "repaired" as const;
+}
+
+async function repairLegacyPackageOwnerPublisher(
+  ctx: Pick<MutationCtx, "db">,
+  pkg: Doc<"packages">,
+  dryRun: boolean,
+) {
+  if (pkg.ownerPublisherId) return "skipped" as const;
+  const owner = await ctx.db.get(pkg.ownerUserId);
+  if (!isActiveLegacyPublisherRepairUser(owner)) return "skipped" as const;
+
+  const publisher = await resolvePersonalPublisherForOwnershipRepair(ctx, owner, dryRun);
+  if (!dryRun && (!publisher || !isPublisherActive(publisher))) return "skipped" as const;
+  if (dryRun) return "repaired" as const;
+
+  // The trigger-wrapped mutation syncs package search digests and publisher stats.
+  await ctx.db.patch(pkg._id, { ownerPublisherId: publisher!._id });
+  return "repaired" as const;
+}
+
+export async function repairLegacyPublisherOwnershipHandler(
+  ctx: MutationCtx,
+  args: {
+    phase?: LegacyPublisherOwnershipPhase;
+    cursor?: string;
+    batchSize?: number;
+    delayMs?: number;
+    dryRun?: boolean;
+    scheduleNext?: boolean;
+  },
+): Promise<LegacyPublisherOwnershipRepairResult> {
+  const phase = args.phase ?? "users";
+  const dryRun = args.dryRun === true;
+  const batchSize = clampInt(args.batchSize ?? 50, 1, 200);
+  const delayMs = clampInt(args.delayMs ?? 500, 0, 60_000);
+  const errors: string[] = [];
+
+  let scanned = 0;
+  let repaired = 0;
+  let skipped = 0;
+  let continueCursor: string | null = null;
+  let isDone = true;
+
+  if (phase === "users") {
+    const page = await ctx.db
+      .query("users")
+      .withIndex("by_active_handle", (q) =>
+        q.eq("deletedAt", undefined).eq("deactivatedAt", undefined),
+      )
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+    continueCursor = page.continueCursor;
+    isDone = page.isDone;
+
+    for (const user of page.page) {
+      scanned++;
+      if (!isActiveLegacyPublisherRepairUser(user)) {
+        skipped++;
+        continue;
+      }
+      try {
+        if (!(await needsPersonalPublisherRepair(ctx, user))) continue;
+        if (dryRun) {
+          await resolvePersonalPublisherForOwnershipRepair(ctx, user, true);
+        } else {
+          await ensurePersonalPublisherForUser(ctx, user, {
+            source: "maintenance.legacy_publisher_ownership",
+          });
+        }
+        repaired++;
+      } catch (error) {
+        if (!dryRun) throw error;
+        skipped++;
+        pushRepairError(errors, `user:${user._id}`, error);
+      }
+    }
+  } else if (phase === "skills") {
+    const page = await ctx.db
+      .query("skills")
+      .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", undefined))
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+    continueCursor = page.continueCursor;
+    isDone = page.isDone;
+
+    for (const skill of page.page) {
+      scanned++;
+      try {
+        const result = await repairLegacySkillOwnerPublisher(ctx, skill, dryRun);
+        if (result === "repaired") repaired++;
+        else skipped++;
+      } catch (error) {
+        if (!dryRun) throw error;
+        skipped++;
+        pushRepairError(errors, `skill:${skill._id}`, error);
+      }
+    }
+  } else {
+    const page = await ctx.db
+      .query("packages")
+      .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", undefined))
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+    continueCursor = page.continueCursor;
+    isDone = page.isDone;
+
+    for (const pkg of page.page) {
+      scanned++;
+      try {
+        const result = await repairLegacyPackageOwnerPublisher(ctx, pkg, dryRun);
+        if (result === "repaired") repaired++;
+        else skipped++;
+      } catch (error) {
+        if (!dryRun) throw error;
+        skipped++;
+        pushRepairError(errors, `package:${pkg._id}`, error);
+      }
+    }
+  }
+
+  const nextPhase = isDone ? nextLegacyPublisherOwnershipPhase(phase) : phase;
+  if (!dryRun && args.scheduleNext !== false && nextPhase) {
+    await ctx.scheduler.runAfter(delayMs, internal.maintenance.repairLegacyPublisherOwnership, {
+      phase: nextPhase,
+      cursor: isDone ? undefined : (continueCursor ?? undefined),
+      batchSize: args.batchSize,
+      delayMs: args.delayMs,
+      scheduleNext: args.scheduleNext,
+    });
+  }
+
+  return {
+    phase,
+    dryRun,
+    scanned,
+    repaired,
+    skipped,
+    errors,
+    cursor: continueCursor,
+    isDone,
+    ...(nextPhase ? { nextPhase } : {}),
+  };
+}
+
+// Repair legacy personal publisher ownership after the publisher model rollout.
+// Dry run one phase:
+//   npx convex run maintenance:repairLegacyPublisherOwnership '{"phase":"skills","dryRun":true,"scheduleNext":false}' --prod
+// Apply all phases, scheduled batch-by-batch:
+//   npx convex run maintenance:repairLegacyPublisherOwnership '{"phase":"users","batchSize":50}' --prod
+export const repairLegacyPublisherOwnership = internalMutation({
+  args: {
+    phase: v.optional(v.union(v.literal("users"), v.literal("skills"), v.literal("packages"))),
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    delayMs: v.optional(v.number()),
+    dryRun: v.optional(v.boolean()),
+    scheduleNext: v.optional(v.boolean()),
+  },
+  handler: repairLegacyPublisherOwnershipHandler,
 });
 
 const DIGEST_OWNER_BACKFILL_KEY = "digest-owner-backfill";

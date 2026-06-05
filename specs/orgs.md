@@ -420,6 +420,23 @@ necessary. Keep digest-first reads.
 - backfill digest owner publisher fields
 - backfill alias tables if needed
 
+Production cleanup is handled by `maintenance:repairLegacyPublisherOwnership`.
+It runs in three cursor-batched phases:
+
+1. `users` ensures active users have a linked personal publisher and owner
+   membership.
+2. `skills` patches legacy skills with missing `ownerPublisherId`, plus slug
+   aliases and embeddings. The trigger-wrapped skill patch syncs
+   `skillSearchDigest` and publisher stats.
+3. `packages` patches legacy packages with missing `ownerPublisherId`. The
+   trigger-wrapped package patch syncs package digests and publisher stats.
+
+Run with `dryRun: true` and `scheduleNext: false` before apply. The repair must
+skip deleted, deactivated, and purged users. Dry-runs should report per-row
+conflicts without aborting the whole batch. Apply-mode failures should abort the
+current mutation so Convex rolls back any partial owner projection, trigger-owned
+digest/stat, or content updates for that batch.
+
 ### Phase 3: dual read/write
 
 - all writes set both old and new ownership fields

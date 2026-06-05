@@ -27,6 +27,7 @@ vi.mock("./_generated/api", () => ({
       nominateUserForEmptySkillSpamInternal: Symbol("nominateUserForEmptySkillSpamInternal"),
       cleanupEmptySkillsInternal: Symbol("cleanupEmptySkillsInternal"),
       nominateEmptySkillSpammersInternal: Symbol("nominateEmptySkillSpammersInternal"),
+      repairLegacyPublisherOwnership: Symbol("repairLegacyPublisherOwnership"),
     },
     skills: {
       backfillLatestSkillModerationInternal: Symbol("skills.backfillLatestSkillModerationInternal"),
@@ -54,6 +55,7 @@ const {
   backfillUserStatsInternalHandler,
   cleanupEmptySkillsInternalHandler,
   nominateEmptySkillSpammersInternalHandler,
+  repairLegacyPublisherOwnershipHandler,
   upsertSkillBadgeRecordInternal,
 } = await import("./maintenance");
 const { internal } = await import("./_generated/api");
@@ -62,6 +64,553 @@ const { generateSkillSummary } = await import("./lib/skillSummary");
 function makeBlob(text: string) {
   return { text: () => Promise.resolve(text) } as unknown as Blob;
 }
+
+type QueryEq = {
+  eq: (field: string, value: unknown) => QueryEq;
+};
+
+function makeLegacyPublisherOwnershipDb() {
+  const now = 1_717_456_000_000;
+  let nextPublisherId = 2;
+  let nextMemberId = 1;
+  const users = new Map<string, Record<string, unknown>>([
+    [
+      "users:legacy",
+      {
+        _id: "users:legacy",
+        _creationTime: now - 1000,
+        handle: "legacy-owner",
+        name: "Legacy Owner",
+        displayName: "Legacy Owner",
+        deletedAt: undefined,
+        deactivatedAt: undefined,
+        purgedAt: undefined,
+      },
+    ],
+    [
+      "users:deleted",
+      {
+        _id: "users:deleted",
+        _creationTime: now - 1000,
+        handle: "deleted-owner",
+        deletedAt: now - 10,
+        deactivatedAt: undefined,
+        purgedAt: undefined,
+      },
+    ],
+  ]);
+  const publishers = new Map<string, Record<string, unknown>>([
+    [
+      "publishers:existing",
+      {
+        _id: "publishers:existing",
+        _creationTime: now - 500,
+        kind: "user",
+        handle: "existing-owner",
+        displayName: "Existing Owner",
+        linkedUserId: "users:existing",
+        publishedSkills: 0,
+        publishedPackages: 0,
+        totalInstalls: 0,
+        totalDownloads: 0,
+        totalStars: 0,
+        skillTotalInstalls: 0,
+        skillTotalDownloads: 0,
+        skillTotalStars: 0,
+        createdAt: now - 500,
+        updatedAt: now - 500,
+      },
+    ],
+  ]);
+  const publisherMembers = new Map<string, Record<string, unknown>>();
+  const skills = new Map<string, Record<string, unknown>>([
+    [
+      "skills:legacy",
+      {
+        _id: "skills:legacy",
+        _creationTime: now - 400,
+        slug: "legacy-skill",
+        displayName: "Legacy Skill",
+        ownerUserId: "users:legacy",
+        ownerPublisherId: undefined,
+        latestVersionId: "skillVersions:legacy",
+        tags: { latest: "skillVersions:legacy" },
+        stats: {
+          downloads: 10,
+          stars: 3,
+          installsCurrent: 2,
+          installsAllTime: 5,
+          comments: 0,
+          versions: 1,
+        },
+        statsDownloads: 10,
+        statsStars: 3,
+        statsInstallsCurrent: 2,
+        statsInstallsAllTime: 5,
+        softDeletedAt: undefined,
+        moderationStatus: "active",
+        createdAt: now - 300,
+        updatedAt: now - 200,
+      },
+    ],
+    [
+      "skills:deleted-owner",
+      {
+        _id: "skills:deleted-owner",
+        _creationTime: now - 400,
+        slug: "deleted-owner-skill",
+        displayName: "Deleted Owner Skill",
+        ownerUserId: "users:deleted",
+        ownerPublisherId: undefined,
+        latestVersionId: "skillVersions:deleted-owner",
+        tags: { latest: "skillVersions:deleted-owner" },
+        stats: {
+          downloads: 1,
+          stars: 0,
+          installsCurrent: 0,
+          installsAllTime: 0,
+          comments: 0,
+          versions: 1,
+        },
+        softDeletedAt: undefined,
+        moderationStatus: "active",
+        createdAt: now - 300,
+        updatedAt: now - 200,
+      },
+    ],
+  ]);
+  const skillVersions = new Map<string, Record<string, unknown>>([
+    [
+      "skillVersions:legacy",
+      {
+        _id: "skillVersions:legacy",
+        skillId: "skills:legacy",
+        version: "1.0.0",
+        softDeletedAt: undefined,
+      },
+    ],
+    [
+      "skillVersions:deleted-owner",
+      {
+        _id: "skillVersions:deleted-owner",
+        skillId: "skills:deleted-owner",
+        version: "1.0.0",
+        softDeletedAt: undefined,
+      },
+    ],
+  ]);
+  const skillSlugAliases = new Map<string, Record<string, unknown>>([
+    [
+      "skillSlugAliases:legacy",
+      {
+        _id: "skillSlugAliases:legacy",
+        slug: "old-legacy-skill",
+        skillId: "skills:legacy",
+        ownerUserId: "users:legacy",
+        ownerPublisherId: undefined,
+        createdAt: now - 250,
+        updatedAt: now - 250,
+      },
+    ],
+  ]);
+  const skillEmbeddings = new Map<string, Record<string, unknown>>([
+    [
+      "skillEmbeddings:legacy",
+      {
+        _id: "skillEmbeddings:legacy",
+        skillId: "skills:legacy",
+        versionId: "skillVersions:legacy",
+        ownerId: "users:legacy",
+        ownerPublisherId: undefined,
+        embedding: [0.1, 0.2],
+        isLatest: true,
+        isApproved: true,
+        visibility: "public",
+        updatedAt: now - 200,
+      },
+    ],
+  ]);
+  const skillSearchDigest = new Map<string, Record<string, unknown>>([
+    [
+      "skillSearchDigest:legacy",
+      {
+        _id: "skillSearchDigest:legacy",
+        skillId: "skills:legacy",
+        slug: "legacy-skill",
+        displayName: "Legacy Skill",
+        ownerUserId: "users:legacy",
+        ownerPublisherId: undefined,
+        ownerHandle: "legacy-owner",
+        ownerKind: "user",
+        stats: {
+          downloads: 10,
+          stars: 3,
+          installsCurrent: 2,
+          installsAllTime: 5,
+          comments: 0,
+          versions: 1,
+        },
+        statsDownloads: 10,
+        statsStars: 3,
+        statsInstallsCurrent: 2,
+        statsInstallsAllTime: 5,
+        softDeletedAt: undefined,
+        moderationStatus: "active",
+        createdAt: now - 300,
+        updatedAt: now - 200,
+      },
+    ],
+  ]);
+  const packages = new Map<string, Record<string, unknown>>([
+    [
+      "packages:legacy",
+      {
+        _id: "packages:legacy",
+        _creationTime: now - 400,
+        name: "@legacy-owner/demo-plugin",
+        normalizedName: "@legacy-owner/demo-plugin",
+        displayName: "Demo Plugin",
+        family: "bundle-plugin",
+        channel: "community",
+        isOfficial: false,
+        ownerUserId: "users:legacy",
+        ownerPublisherId: undefined,
+        summary: "Demo package",
+        latestReleaseId: undefined,
+        tags: {},
+        compatibility: undefined,
+        capabilities: undefined,
+        verification: undefined,
+        scanStatus: "clean",
+        stats: { downloads: 7, installs: 4, stars: 2, versions: 1 },
+        softDeletedAt: undefined,
+        createdAt: now - 300,
+        updatedAt: now - 200,
+      },
+    ],
+  ]);
+  const packageSearchDigest = new Map<string, Record<string, unknown>>([
+    [
+      "packageSearchDigest:legacy",
+      {
+        _id: "packageSearchDigest:legacy",
+        packageId: "packages:legacy",
+        name: "@legacy-owner/demo-plugin",
+        normalizedName: "@legacy-owner/demo-plugin",
+        displayName: "Demo Plugin",
+        family: "bundle-plugin",
+        channel: "community",
+        isOfficial: false,
+        ownerUserId: "users:legacy",
+        ownerPublisherId: undefined,
+        ownerHandle: "legacy-owner",
+        ownerKind: "user",
+        summary: "Demo package",
+        scanStatus: "clean",
+        softDeletedAt: undefined,
+        createdAt: now - 300,
+        updatedAt: now - 200,
+      },
+    ],
+  ]);
+  const packageCapabilitySearchDigest = new Map<string, Record<string, unknown>>();
+  const packagePluginCategorySearchDigest = new Map<string, Record<string, unknown>>();
+
+  const tableMap: Record<string, Map<string, Record<string, unknown>>> = {
+    users,
+    publishers,
+    publisherMembers,
+    skills,
+    skillVersions,
+    skillSlugAliases,
+    skillEmbeddings,
+    skillSearchDigest,
+    packages,
+    packageSearchDigest,
+    packageCapabilitySearchDigest,
+    packagePluginCategorySearchDigest,
+  };
+  const patchCalls: Array<{ id: string; patch: Record<string, unknown> }> = [];
+  const insertCalls: Array<{ table: string; value: Record<string, unknown> }> = [];
+
+  const getRows = (table: string) => Array.from(tableMap[table]?.values() ?? []);
+  const getTableForId = (id: string) => id.split(":")[0];
+  const readField = (row: Record<string, unknown>, field: string) =>
+    field.split(".").reduce<unknown>((value, part) => {
+      if (!value || typeof value !== "object") return undefined;
+      return (value as Record<string, unknown>)[part];
+    }, row);
+  const makeQuery = (table: string, rows: Record<string, unknown>[]) => ({
+    collect: vi.fn(async () => rows),
+    unique: vi.fn(async () => rows[0] ?? null),
+    take: vi.fn(async (limit: number) => rows.slice(0, limit)),
+    order: vi.fn(() => ({
+      take: vi.fn(async (limit: number) => rows.slice(0, limit)),
+      paginate: vi.fn(async ({ cursor, numItems }: { cursor: string | null; numItems: number }) =>
+        paginateRows(rows, cursor, numItems),
+      ),
+    })),
+    paginate: vi.fn(async ({ cursor, numItems }: { cursor: string | null; numItems: number }) =>
+      paginateRows(rows, cursor, numItems),
+    ),
+    withIndex: vi.fn((indexName: string, build?: (q: QueryEq) => unknown) => {
+      const filters: Array<{ field: string; value: unknown }> = [];
+      const q: QueryEq = {
+        eq: (field, value) => {
+          filters.push({ field, value });
+          return q;
+        },
+      };
+      build?.(q);
+      let indexedRows = getRows(table).filter((row) =>
+        filters.every((filter) => readField(row, filter.field) === filter.value),
+      );
+      if (table === "users" && indexName === "by_active_handle") {
+        indexedRows = indexedRows.filter(
+          (row) => row.deletedAt === undefined && row.deactivatedAt === undefined,
+        );
+      }
+      return makeQuery(table, indexedRows);
+    }),
+  });
+
+  const db = {
+    get: vi.fn(async (id: string) => tableMap[getTableForId(id)]?.get(id) ?? null),
+    query: vi.fn((table: string) => makeQuery(table, getRows(table))),
+    patch: vi.fn(async (id: string, patch: Record<string, unknown>) => {
+      patchCalls.push({ id, patch });
+      const row = tableMap[getTableForId(id)]?.get(id);
+      if (row) Object.assign(row, patch);
+    }),
+    insert: vi.fn(async (table: string, value: Record<string, unknown>) => {
+      const id =
+        table === "publishers"
+          ? `publishers:created${nextPublisherId++}`
+          : table === "publisherMembers"
+            ? `publisherMembers:created${nextMemberId++}`
+            : `${table}:created`;
+      insertCalls.push({ table, value });
+      tableMap[table].set(id, { _id: id, _creationTime: now, ...value });
+      return id;
+    }),
+    delete: vi.fn(async (id: string) => {
+      tableMap[getTableForId(id)]?.delete(id);
+    }),
+    normalizeId: vi.fn(),
+  };
+
+  return {
+    db,
+    patchCalls,
+    insertCalls,
+    tableMap,
+  };
+}
+
+function paginateRows(rows: Record<string, unknown>[], cursor: string | null, numItems: number) {
+  const start = cursor ? Number(cursor) : 0;
+  const page = rows.slice(start, start + numItems);
+  const next = start + page.length;
+  return {
+    page,
+    continueCursor: next >= rows.length ? null : String(next),
+    isDone: next >= rows.length,
+  };
+}
+
+describe("maintenance legacy publisher ownership repair", () => {
+  it("dry-runs legacy publisher ownership repair without writes", async () => {
+    const { db, patchCalls, insertCalls } = makeLegacyPublisherOwnershipDb();
+
+    const result = await repairLegacyPublisherOwnershipHandler(
+      { db, scheduler: { runAfter: vi.fn() } } as never,
+      { phase: "users", dryRun: true, batchSize: 10, scheduleNext: false },
+    );
+
+    expect(result).toMatchObject({
+      phase: "users",
+      dryRun: true,
+      scanned: 1,
+      repaired: 1,
+      skipped: 0,
+      isDone: true,
+    });
+    expect(patchCalls).toEqual([]);
+    expect(insertCalls).toEqual([]);
+  });
+
+  it("reports dry-run personal publisher handle conflicts without writes", async () => {
+    const { db, tableMap, patchCalls, insertCalls } = makeLegacyPublisherOwnershipDb();
+    tableMap.users.set("users:conflict", {
+      _id: "users:conflict",
+      _creationTime: 1_717_456_000_000 - 1000,
+      handle: "existing-owner",
+      name: "Conflicting Owner",
+      displayName: "Conflicting Owner",
+      deletedAt: undefined,
+      deactivatedAt: undefined,
+      purgedAt: undefined,
+    });
+
+    const result = await repairLegacyPublisherOwnershipHandler(
+      { db, scheduler: { runAfter: vi.fn() } } as never,
+      { phase: "users", dryRun: true, batchSize: 10, scheduleNext: false },
+    );
+
+    expect(result).toMatchObject({
+      phase: "users",
+      dryRun: true,
+      scanned: 2,
+      repaired: 1,
+      skipped: 1,
+      isDone: true,
+      errors: ['user:users:conflict: Publisher handle "@existing-owner" is already claimed'],
+    });
+    expect(patchCalls).toEqual([]);
+    expect(insertCalls).toEqual([]);
+  });
+
+  it("repairs active legacy users, skills, aliases, embeddings, and packages", async () => {
+    const { db, tableMap, patchCalls, insertCalls } = makeLegacyPublisherOwnershipDb();
+    const scheduler = { runAfter: vi.fn() };
+
+    const usersResult = await repairLegacyPublisherOwnershipHandler({ db, scheduler } as never, {
+      phase: "users",
+      dryRun: false,
+      batchSize: 10,
+      scheduleNext: false,
+    });
+    const createdPublisher = Array.from(tableMap.publishers.values()).find(
+      (publisher) => publisher.handle === "legacy-owner",
+    );
+    expect(usersResult).toMatchObject({
+      phase: "users",
+      dryRun: false,
+      scanned: 1,
+      repaired: 1,
+      skipped: 0,
+      isDone: true,
+    });
+    expect(createdPublisher).toMatchObject({
+      kind: "user",
+      handle: "legacy-owner",
+      displayName: "Legacy Owner",
+      linkedUserId: "users:legacy",
+    });
+    expect(tableMap.users.get("users:legacy")).toMatchObject({
+      personalPublisherId: createdPublisher?._id,
+    });
+    expect(insertCalls.some((call) => call.table === "publisherMembers")).toBe(true);
+
+    const skillsResult = await repairLegacyPublisherOwnershipHandler({ db, scheduler } as never, {
+      phase: "skills",
+      dryRun: false,
+      batchSize: 10,
+      scheduleNext: false,
+    });
+    expect(skillsResult).toMatchObject({
+      phase: "skills",
+      dryRun: false,
+      scanned: 2,
+      repaired: 1,
+      skipped: 1,
+      isDone: true,
+    });
+    expect(tableMap.skills.get("skills:legacy")).toMatchObject({
+      ownerPublisherId: createdPublisher?._id,
+    });
+    expect(tableMap.skills.get("skills:deleted-owner")).toMatchObject({
+      ownerPublisherId: undefined,
+    });
+    expect(tableMap.skillSlugAliases.get("skillSlugAliases:legacy")).toMatchObject({
+      ownerPublisherId: createdPublisher?._id,
+    });
+    expect(tableMap.skillEmbeddings.get("skillEmbeddings:legacy")).toMatchObject({
+      ownerPublisherId: createdPublisher?._id,
+    });
+
+    const packagesResult = await repairLegacyPublisherOwnershipHandler({ db, scheduler } as never, {
+      phase: "packages",
+      dryRun: false,
+      batchSize: 10,
+      scheduleNext: false,
+    });
+    expect(packagesResult).toMatchObject({
+      phase: "packages",
+      dryRun: false,
+      scanned: 1,
+      repaired: 1,
+      skipped: 0,
+      isDone: true,
+    });
+    expect(tableMap.packages.get("packages:legacy")).toMatchObject({
+      ownerPublisherId: createdPublisher?._id,
+    });
+    expect(patchCalls.some((call) => call.id === "skillSearchDigest:legacy")).toBe(false);
+    expect(patchCalls.some((call) => call.id === "packageSearchDigest:legacy")).toBe(false);
+    expect(
+      patchCalls.some(
+        (call) =>
+          call.id === createdPublisher?._id &&
+          ("publishedSkills" in call.patch || "publishedPackages" in call.patch),
+      ),
+    ).toBe(false);
+  });
+
+  it("aborts apply-mode skill repair when owner projection sync fails", async () => {
+    const { db } = makeLegacyPublisherOwnershipDb();
+    const scheduler = { runAfter: vi.fn() };
+
+    await repairLegacyPublisherOwnershipHandler({ db, scheduler } as never, {
+      phase: "users",
+      dryRun: false,
+      batchSize: 10,
+      scheduleNext: false,
+    });
+
+    const patch = db.patch;
+    db.patch = vi.fn(async (id: string, value: Record<string, unknown>) => {
+      if (id === "skillEmbeddings:legacy") throw new Error("embedding sync failed");
+      await patch(id, value);
+    });
+
+    await expect(
+      repairLegacyPublisherOwnershipHandler({ db, scheduler } as never, {
+        phase: "skills",
+        dryRun: false,
+        batchSize: 10,
+        scheduleNext: false,
+      }),
+    ).rejects.toThrow("embedding sync failed");
+  });
+
+  it("propagates apply-mode package patch failures", async () => {
+    const { db } = makeLegacyPublisherOwnershipDb();
+    const scheduler = { runAfter: vi.fn() };
+
+    await repairLegacyPublisherOwnershipHandler({ db, scheduler } as never, {
+      phase: "users",
+      dryRun: false,
+      batchSize: 10,
+      scheduleNext: false,
+    });
+
+    const patch = db.patch;
+    db.patch = vi.fn(async (id: string, value: Record<string, unknown>) => {
+      if (id === "packages:legacy") throw new Error("package patch failed");
+      await patch(id, value);
+    });
+
+    await expect(
+      repairLegacyPublisherOwnershipHandler({ db, scheduler } as never, {
+        phase: "packages",
+        dryRun: false,
+        batchSize: 10,
+        scheduleNext: false,
+      }),
+    ).rejects.toThrow("package patch failed");
+  });
+});
 
 describe("maintenance backfill", () => {
   it("patches stale skill search digest rank stats from legacy skill stats", async () => {
