@@ -2,10 +2,8 @@ import { Link } from "@tanstack/react-router";
 import { ArrowDownToLine } from "lucide-react";
 import { formatCompactStat } from "../lib/numberFormat";
 import type { PackageListItem } from "../lib/packageApi";
-import { familyLabel } from "../lib/packageLabels";
 import { MarketplaceIcon } from "./MarketplaceIcon";
 import { OfficialBadge } from "./OfficialBadge";
-import { Badge } from "./ui/badge";
 
 type PluginListItemProps = {
   item: PackageListItem;
@@ -23,10 +21,11 @@ export function PluginListItem({ item, variant = "list" }: PluginListItemProps) 
         className="card skill-card plugin-card"
         aria-label={`Plugin: ${item.displayName}`}
       >
-        <div className="skill-card-tags">
-          <Badge variant="compact">{familyLabel(item.family)}</Badge>
-          {item.isOfficial ? <OfficialBadge /> : null}
-        </div>
+        {item.isOfficial ? (
+          <div className="skill-card-tags">
+            <OfficialBadge />
+          </div>
+        ) : null}
         <div className="skill-card-header">
           <MarketplaceIcon kind="plugin" label={item.displayName} size="md" />
           <h3 className="skill-card-title">{item.displayName}</h3>
@@ -69,7 +68,6 @@ export function PluginListItem({ item, variant = "list" }: PluginListItemProps) 
             </>
           ) : null}
           <span className="skill-list-item-name">{item.displayName}</span>
-          <Badge variant="compact">{familyLabel(item.family)}</Badge>
           {item.isOfficial ? <OfficialBadge /> : null}
         </div>
         <p className="skill-list-item-summary">
