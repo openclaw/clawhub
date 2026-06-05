@@ -13,7 +13,7 @@ import {
   type PackageListItem,
 } from "../../lib/packageApi";
 
-type PluginSort = "relevance" | "updated" | "newest" | "name";
+type PluginSort = "relevance" | "updated" | "downloads" | "newest" | "name";
 
 const PLUGINS_PAGE_SIZE = 100;
 
@@ -56,7 +56,13 @@ function formatRetryDelay(retryAfterSeconds: number | null) {
 }
 
 function parsePluginSort(value: unknown): PluginSort | undefined {
-  if (value === "relevance" || value === "updated" || value === "newest" || value === "name") {
+  if (
+    value === "relevance" ||
+    value === "updated" ||
+    value === "downloads" ||
+    value === "newest" ||
+    value === "name"
+  ) {
     return value;
   }
   return undefined;
@@ -87,6 +93,10 @@ function sortPluginSearchItems(items: PackageListItem[], sort: PluginSort) {
         a.family.localeCompare(b.family) ||
         a.name.localeCompare(b.name)
       );
+    }
+
+    if (sort === "downloads") {
+      return (b.stats?.downloads ?? 0) - (a.stats?.downloads ?? 0) || tieBreak();
     }
 
     return tieBreak();
@@ -137,7 +147,8 @@ export const Route = createFileRoute("/plugins/")({
   }),
   beforeLoad: ({ search }) => {
     const hasQuery = Boolean(search.q?.trim());
-    const incompatibleSort = !hasQuery && search.sort && search.sort !== "updated";
+    const incompatibleSort =
+      !hasQuery && search.sort && search.sort !== "updated" && search.sort !== "downloads";
     const browseOnlyFeatured = hasQuery && search.featured;
     const invalidCategory = Boolean(search.category && !isPluginCategorySlug(search.category));
     if (incompatibleSort || browseOnlyFeatured || invalidCategory) {
@@ -160,6 +171,7 @@ export const Route = createFileRoute("/plugins/")({
     featured: search.featured,
     official: search.official,
     executesCode: search.executesCode,
+    sort: search.sort,
   }),
   loader: async ({ deps }): Promise<PluginsLoaderData> => {
     try {
@@ -170,6 +182,7 @@ export const Route = createFileRoute("/plugins/")({
         featured: deps.featured,
         isOfficial: deps.official,
         executesCode: deps.executesCode,
+        ...(!deps.q && deps.sort === "downloads" ? { sort: deps.sort } : {}),
         limit: PLUGINS_PAGE_SIZE,
       });
 
@@ -223,6 +236,7 @@ function PluginsIndexPending() {
           onCategoryChange={() => {}}
           sortOptions={[
             { value: "featured", label: "Featured" },
+            { value: "downloads", label: "Most downloaded" },
             { value: "updated", label: "Recently updated" },
           ]}
           activeSort="updated"
@@ -280,7 +294,7 @@ function PluginsIndex() {
     ? (search.sort ?? "relevance")
     : search.featured
       ? "featured"
-      : "updated";
+      : (search.sort ?? "updated");
   const visibleItems = useMemo(
     () => (hasQuery ? sortPluginSearchItems(items, activeSort as PluginSort) : items),
     [activeSort, hasQuery, items],
@@ -294,6 +308,7 @@ function PluginsIndex() {
     if (hasQuery) {
       return [
         { value: "relevance", label: "Relevance" },
+        { value: "downloads", label: "Most downloaded" },
         { value: "updated", label: "Recently updated" },
         { value: "newest", label: "Newest" },
         { value: "name", label: "Name" },
@@ -301,6 +316,7 @@ function PluginsIndex() {
     }
     return [
       { value: "featured", label: "Featured" },
+      { value: "downloads", label: "Most downloaded" },
       { value: "updated", label: "Recently updated" },
     ];
   }, [hasQuery]);

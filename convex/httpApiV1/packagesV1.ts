@@ -231,6 +231,7 @@ function normalizeCapabilityTagSegment(value: string) {
 
 const PACKAGE_FAMILY_VALUES = ["skill", "code-plugin", "bundle-plugin"] as const;
 const PACKAGE_CHANNEL_VALUES = ["official", "community", "private"] as const;
+const PACKAGE_LIST_SORT_VALUES = ["updated", "downloads"] as const;
 
 function invalidQueryParamMessage(name: string) {
   return `Invalid ${name} query parameter`;
@@ -392,6 +393,7 @@ type PackageListQueryArgs = {
   executesCode?: boolean;
   capabilityTag?: string;
   category?: string;
+  sort?: (typeof PACKAGE_LIST_SORT_VALUES)[number];
   viewerUserId?: Id<"users">;
   paginationOpts: { cursor: string | null; numItems: number };
 };
@@ -736,6 +738,7 @@ type CatalogListItem = {
   capabilityTags?: string[];
   executesCode?: boolean;
   verificationTier?: string | null;
+  stats?: { downloads: number; installs: number; stars: number; versions: number };
 };
 
 type CatalogSearchEntry = {
@@ -939,6 +942,18 @@ function compareCatalogItems(a: CatalogListItem, b: CatalogListItem) {
   if (a.createdAt !== b.createdAt) return b.createdAt - a.createdAt;
   if (a.family !== b.family) return a.family.localeCompare(b.family);
   return a.name.localeCompare(b.name);
+}
+
+function compareCatalogItemsForSort(
+  a: CatalogListItem,
+  b: CatalogListItem,
+  sort: (typeof PACKAGE_LIST_SORT_VALUES)[number] | undefined,
+) {
+  if (sort === "downloads") {
+    const downloads = (b.stats?.downloads ?? 0) - (a.stats?.downloads ?? 0);
+    if (downloads !== 0) return downloads;
+  }
+  return compareCatalogItems(a, b);
 }
 
 function compareCatalogSearchEntries(a: CatalogSearchEntry, b: CatalogSearchEntry) {
@@ -1352,6 +1367,8 @@ async function listPackages(
   if (!highlightedOnlyParam.ok) return text(highlightedOnlyParam.message, 400, rate.headers);
   const executesCode = parseBooleanQueryParam(url.searchParams, "executesCode");
   if (!executesCode.ok) return text(executesCode.message, 400, rate.headers);
+  const sortParam = parseEnumQueryParam(url.searchParams, "sort", PACKAGE_LIST_SORT_VALUES);
+  if (!sortParam.ok) return text(sortParam.message, 400, rate.headers);
   const category = url.searchParams.get("category")?.trim() || undefined;
   if (category && !isPluginCategorySlug(category)) {
     return text("Invalid plugin category", 400, rate.headers);
@@ -1378,6 +1395,7 @@ async function listPackages(
       highlightedOnly: highlightedOnly || undefined,
       executesCode: executesCode.value,
       capabilityTag,
+      sort: sortParam.value,
       paginationOpts: { cursor, numItems: limit },
     });
     return json(
@@ -1411,6 +1429,7 @@ async function listPackages(
             executesCode: executesCode.value,
             capabilityTag,
             category,
+            sort: sortParam.value,
             viewerUserId: viewerUserId ?? undefined,
             paginationOpts: { cursor: pageCursor, numItems },
           });
@@ -1431,6 +1450,7 @@ async function listPackages(
             highlightedOnly: highlightedOnly || undefined,
             executesCode: executesCode.value,
             capabilityTag,
+            sort: sortParam.value,
             paginationOpts: { cursor: pageCursor, numItems },
           });
           return {
@@ -1444,7 +1464,8 @@ async function listPackages(
       if (!packageCandidate && !skillCandidate) break;
       if (
         !skillCandidate ||
-        (packageCandidate && compareCatalogItems(packageCandidate, skillCandidate) <= 0)
+        (packageCandidate &&
+          compareCatalogItemsForSort(packageCandidate, skillCandidate, sortParam.value) <= 0)
       ) {
         items.push(packageCandidate!);
         packageSource.index += 1;
@@ -1496,6 +1517,7 @@ async function listPackages(
         executesCode: executesCode.value,
         capabilityTag,
         category,
+        sort: sortParam.value,
         viewerUserId: viewerUserId ?? undefined,
         paginationOpts: { cursor: pageCursor, numItems },
       });
@@ -1524,7 +1546,8 @@ async function listPackages(
       if (
         !bundlePluginCandidate ||
         (codePluginCandidate &&
-          compareCatalogItems(codePluginCandidate, bundlePluginCandidate) <= 0)
+          compareCatalogItemsForSort(codePluginCandidate, bundlePluginCandidate, sortParam.value) <=
+            0)
       ) {
         items.push(codePluginCandidate!);
         codePluginSource.index += 1;
@@ -1565,6 +1588,7 @@ async function listPackages(
     executesCode: executesCode.value,
     capabilityTag,
     category,
+    sort: sortParam.value,
     viewerUserId: viewerUserId ?? undefined,
     paginationOpts: { cursor, numItems: limit },
   } satisfies PackageListQueryArgs);

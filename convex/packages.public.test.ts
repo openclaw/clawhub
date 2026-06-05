@@ -117,6 +117,7 @@ const listPublicPageHandler = (
       executesCode?: boolean;
       capabilityTag?: string;
       category?: string;
+      sort?: "updated" | "downloads";
       paginationOpts: { cursor: string | null; numItems: number };
     },
     { page: Array<{ name: string }>; isDone: boolean; continueCursor: string }
@@ -131,6 +132,7 @@ const listPageForViewerInternalHandler = (
       executesCode?: boolean;
       capabilityTag?: string;
       category?: string;
+      sort?: "updated" | "downloads";
       viewerUserId?: string;
       paginationOpts: { cursor: string | null; numItems: number };
     },
@@ -746,6 +748,11 @@ function makeDigestCtx(options: {
     isDone: boolean;
     continueCursor: string;
   }>;
+  packagePages?: Array<{
+    page: Array<Record<string, unknown>>;
+    isDone: boolean;
+    continueCursor: string;
+  }>;
   exactPackages?: Array<Record<string, unknown>>;
   exactDigests?: Array<Record<string, unknown>>;
   publisherDocs?: Record<string, Record<string, unknown>>;
@@ -797,6 +804,7 @@ function makeDigestCtx(options: {
   setPages("packageSearchDigest", options.pages ?? []);
   setPages("packageCapabilitySearchDigest", options.capabilityPages ?? []);
   setPages("packagePluginCategorySearchDigest", options.categoryPages ?? []);
+  setPages("packages", options.packagePages ?? []);
 
   const paginate = vi.fn();
   const take = vi.fn();
@@ -856,6 +864,8 @@ function makeDigestCtx(options: {
     ctx: {
       db: {
         get: vi.fn(async (id: string) => {
+          const exactPackage = (options.exactPackages ?? []).find((pkg) => pkg._id === id);
+          if (exactPackage) return exactPackage;
           if (options.publisherDocs?.[id]) return options.publisherDocs[id];
           if (options.publisherMemberships?.[id]) return { _id: id, kind: "org" };
           return null;
@@ -890,6 +900,9 @@ function makeDigestCtx(options: {
                     },
                   };
                   builder?.(queryBuilder);
+                  if (indexName === "by_active_downloads") {
+                    return withIndex(table, indexName);
+                  }
                   if (indexName !== "by_name" && indexName !== "by_runtime_id") {
                     throw new Error(`Unexpected packages index ${indexName}`);
                   }
@@ -1765,6 +1778,102 @@ describe("packages public queries", () => {
     expect(result.continueCursor.length).toBeLessThan(512);
     expect(result.continueCursor).not.toContain("aaaaaaaa");
     expect(result.continueCursor).not.toContain("bravo summary");
+  });
+
+  it("includes package stats on public list items", async () => {
+    const stats = { downloads: 43, installs: 3, stars: 1, versions: 2 };
+    const { ctx } = makeDigestCtx({
+      pages: [
+        {
+          page: [makeDigest("stats-demo", { stats })],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+
+    expect((result.page[0] as { stats?: unknown }).stats).toEqual(stats);
+  });
+
+  it("uses current package stats when digest stats are stale", async () => {
+    const currentStats = { downloads: 99, installs: 7, stars: 2, versions: 3 };
+    const { ctx } = makeDigestCtx({
+      pages: [
+        {
+          page: [
+            makeDigest("stats-demo", {
+              stats: { downloads: 1, installs: 0, stars: 0, versions: 1 },
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+      exactPackages: [
+        makePackageDoc({
+          _id: "packages:stats-demo",
+          name: "stats-demo",
+          normalizedName: "stats-demo",
+          displayName: "stats-demo",
+          stats: currentStats,
+        }),
+      ],
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+
+    expect((result.page[0] as { stats?: unknown }).stats).toEqual(currentStats);
+  });
+
+  it("continues scanning download-sorted pages until filtered public results are filled", async () => {
+    const { ctx, paginate } = makeDigestCtx({
+      packagePages: [
+        {
+          page: [
+            makePackageDoc({
+              _id: "packages:bundle-plugin",
+              name: "bundle-plugin",
+              normalizedName: "bundle-plugin",
+              displayName: "Bundle Plugin",
+              family: "bundle-plugin",
+              stats: { downloads: 500, installs: 0, stars: 0, versions: 1 },
+            }),
+          ],
+          isDone: false,
+          continueCursor: "cursor:next",
+        },
+        {
+          page: [
+            makePackageDoc({
+              _id: "packages:code-plugin",
+              name: "code-plugin",
+              normalizedName: "code-plugin",
+              displayName: "Code Plugin",
+              family: "code-plugin",
+              stats: { downloads: 200, installs: 0, stars: 0, versions: 1 },
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      family: "code-plugin",
+      sort: "downloads",
+      paginationOpts: { cursor: null, numItems: 1 },
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual(["code-plugin"]);
+    expect(result.isDone).toBe(true);
+    expect(paginate).toHaveBeenCalledTimes(2);
   });
 
   it("excludes private packages from public list pages", async () => {
