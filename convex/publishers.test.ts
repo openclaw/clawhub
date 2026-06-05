@@ -12,8 +12,10 @@ import {
   ensureOrgPublisherHandleInternal,
   removeOrgPublisherMemberInternal,
   createOrg,
+  deleteOrg,
   removeMember,
   createOrgPublisherForUserInternal,
+  deleteSoleOwnerOrgsForAccountDeletionInternal,
   resolvePublishTargetForUserInternal,
   setTrustedPublisherInternal,
   updateProfile,
@@ -220,6 +222,38 @@ const createOrgHandler = (
   >
 )._handler;
 
+const deleteOrgHandler = (
+  deleteOrg as unknown as WrappedHandler<
+    {
+      publisherId: string;
+    },
+    {
+      ok: true;
+      publisherId: string;
+      handle: string;
+      hiddenSkills: number;
+      deletedPackages: number;
+      revokedPackageTokens: number;
+      scheduled: boolean;
+    }
+  >
+)._handler;
+
+const deleteSoleOwnerOrgsForAccountDeletionInternalHandler = (
+  deleteSoleOwnerOrgsForAccountDeletionInternal as unknown as WrappedHandler<
+    {
+      actorUserId: string;
+      deletedAt: number;
+    },
+    {
+      ok: true;
+      deletedOrgs: number;
+      hiddenSkills: number;
+      deletedPackages: number;
+    }
+  >
+)._handler;
+
 const resolvePublishTargetForUserInternalHandler = (
   resolvePublishTargetForUserInternal as unknown as WrappedHandler<
     {
@@ -371,6 +405,218 @@ function makeResolvePublishTargetCtx(options: {
 }
 
 describe("publishers membership controls", () => {
+  it("lets an org owner delete an org and cascade owned resources", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
+    const patch = vi.fn();
+    const insert = vi.fn();
+    const runMutation = vi
+      .fn()
+      .mockResolvedValueOnce({ hiddenCount: 2, scheduled: false })
+      .mockResolvedValueOnce({ deletedCount: 1, revokedTokenCount: 1, scheduled: false });
+    const ctx = {
+      runMutation,
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:owner") return { _id: id };
+          if (id === "publishers:gladia") {
+            return {
+              _id: id,
+              kind: "org",
+              handle: "gladia",
+              displayName: "Gladia",
+              createdAt: 1,
+              updatedAt: 1,
+            };
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table !== "publisherMembers") throw new Error(`unexpected table ${table}`);
+          return {
+            withIndex: vi.fn(() => ({
+              unique: vi.fn(async () => ({
+                _id: "publisherMembers:owner",
+                publisherId: "publishers:gladia",
+                userId: "users:owner",
+                role: "owner",
+              })),
+            })),
+          };
+        }),
+        patch,
+        insert,
+        replace: vi.fn(),
+        delete: vi.fn(),
+        normalizeId: vi.fn(() => null),
+      },
+    };
+
+    const result = await deleteOrgHandler(ctx as never, { publisherId: "publishers:gladia" });
+
+    expect(result).toMatchObject({
+      handle: "gladia",
+      hiddenSkills: 2,
+      deletedPackages: 1,
+      revokedPackageTokens: 1,
+    });
+    expect(patch).toHaveBeenCalledWith(
+      "publishers:gladia",
+      expect.objectContaining({
+        deletedAt: expect.any(Number),
+        deactivatedAt: expect.any(Number),
+      }),
+    );
+    expect(runMutation).toHaveBeenCalledTimes(2);
+    expect(insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({
+        action: "publisher.org.delete",
+        targetId: "publishers:gladia",
+        metadata: expect.objectContaining({
+          handle: "gladia",
+          source: "settings",
+          hiddenSkills: 2,
+          deletedPackages: 1,
+        }),
+      }),
+    );
+  });
+
+  it("rejects org deletion by non-owner members", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:publisher" as never);
+    const runMutation = vi.fn();
+    const patch = vi.fn();
+    const ctx = {
+      runMutation,
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:publisher") return { _id: id };
+          if (id === "publishers:gladia") {
+            return {
+              _id: id,
+              kind: "org",
+              handle: "gladia",
+              displayName: "Gladia",
+              createdAt: 1,
+              updatedAt: 1,
+            };
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table !== "publisherMembers") throw new Error(`unexpected table ${table}`);
+          return {
+            withIndex: vi.fn(() => ({
+              unique: vi.fn(async () => ({
+                _id: "publisherMembers:publisher",
+                publisherId: "publishers:gladia",
+                userId: "users:publisher",
+                role: "publisher",
+              })),
+            })),
+          };
+        }),
+        patch,
+        insert: vi.fn(),
+        replace: vi.fn(),
+        delete: vi.fn(),
+        normalizeId: vi.fn(() => null),
+      },
+    };
+
+    await expect(
+      deleteOrgHandler(ctx as never, { publisherId: "publishers:gladia" }),
+    ).rejects.toThrow("Only org owners can delete an organization");
+    expect(patch).not.toHaveBeenCalled();
+    expect(runMutation).not.toHaveBeenCalled();
+  });
+
+  it("deletes sole-owner account orgs when other owner memberships are inactive", async () => {
+    const patch = vi.fn();
+    const insert = vi.fn();
+    const runMutation = vi
+      .fn()
+      .mockResolvedValueOnce({ hiddenCount: 2, scheduled: false })
+      .mockResolvedValueOnce({ deletedCount: 1, revokedTokenCount: 1, scheduled: false });
+    const actorMembership = {
+      _id: "publisherMembers:owner",
+      publisherId: "publishers:gladia",
+      userId: "users:owner",
+      role: "owner",
+    };
+    const inactiveOwnerMembership = {
+      _id: "publisherMembers:inactive-owner",
+      publisherId: "publishers:gladia",
+      userId: "users:inactive-owner",
+      role: "owner",
+    };
+    const ctx = {
+      runMutation,
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:owner") return { _id: id };
+          if (id === "users:inactive-owner") return { _id: id, deactivatedAt: 2_000 };
+          if (id === "publishers:gladia") {
+            return {
+              _id: id,
+              kind: "org",
+              handle: "gladia",
+              displayName: "Gladia",
+              createdAt: 1,
+              updatedAt: 1,
+            };
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table !== "publisherMembers") throw new Error(`unexpected table ${table}`);
+          return {
+            withIndex: vi.fn((indexName: string) => {
+              if (indexName === "by_user") {
+                return { collect: vi.fn(async () => [actorMembership]) };
+              }
+              if (indexName === "by_publisher") {
+                return {
+                  collect: vi.fn(async () => [actorMembership, inactiveOwnerMembership]),
+                };
+              }
+              if (indexName === "by_publisher_user") {
+                return { unique: vi.fn(async () => actorMembership) };
+              }
+              throw new Error(`unexpected index ${indexName}`);
+            }),
+          };
+        }),
+        patch,
+        insert,
+        replace: vi.fn(),
+        delete: vi.fn(),
+        normalizeId: vi.fn(() => null),
+      },
+    };
+
+    const result = await deleteSoleOwnerOrgsForAccountDeletionInternalHandler(ctx as never, {
+      actorUserId: "users:owner",
+      deletedAt: 3_000,
+    });
+
+    expect(result).toMatchObject({ deletedOrgs: 1, hiddenSkills: 2, deletedPackages: 1 });
+    expect(patch).toHaveBeenCalledWith(
+      "publishers:gladia",
+      expect.objectContaining({
+        deletedAt: 3_000,
+        deactivatedAt: 3_000,
+      }),
+    );
+    expect(insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({
+        action: "publisher.org.delete",
+        metadata: expect.objectContaining({ source: "account.delete" }),
+      }),
+    );
+  });
+
   it("does not resolve another personal publisher through a stale membership", async () => {
     const ctx = makeResolvePublishTargetCtx({
       targetPublisher: {
