@@ -60,10 +60,12 @@ export function buildSkillInstallResolution({
   origin,
   skill,
   source,
+  forceInstall = false,
 }: {
   origin: string;
   skill: InstallResolverSkill;
   source: InstallResolverSource | null;
+  forceInstall?: boolean;
 }): SkillInstallResolution {
   if (skill.installKind !== "github") {
     const version = skill.latestVersionSummary?.version;
@@ -98,9 +100,6 @@ export function buildSkillInstallResolution({
   ) {
     return block(skill.slug, "github_scan_failed", 403);
   }
-  if (skill.githubScanStatus !== "clean") {
-    return block(skill.slug, "github_verification_pending", 423);
-  }
   if (!source || !skill.githubPath) {
     return block(skill.slug, "github_source_missing", 409);
   }
@@ -110,6 +109,12 @@ export function buildSkillInstallResolution({
     !skill.githubCurrentContentHash
   ) {
     return block(skill.slug, "github_upstream_unknown", 423);
+  }
+  if (
+    skill.githubScanStatus !== "clean" &&
+    !(forceInstall && skill.githubScanStatus === "pending")
+  ) {
+    return block(skill.slug, "github_verification_pending", 423);
   }
 
   return {
@@ -149,7 +154,8 @@ const INSTALL_BLOCK_MESSAGES: Record<
   github_upstream_removed: "GitHub-backed skill has been removed upstream.",
   github_upstream_missing: "GitHub-backed skill path is missing upstream.",
   github_upstream_unknown: "GitHub-backed skill needs an upstream freshness check before install.",
-  github_verification_pending: "GitHub-backed skill is waiting for ClawHub verification.",
+  github_verification_pending:
+    "GitHub-backed skill security scan is in progress. Try again shortly, or rerun with --force-install to install the unverified upstream commit.",
   github_scan_failed: "GitHub-backed skill failed ClawHub security scanning.",
 };
 

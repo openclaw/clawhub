@@ -152,4 +152,63 @@ describe("buildSkillInstallResolution", () => {
       status,
     });
   });
+
+  it("explains pending GitHub-backed verification clearly", () => {
+    const resolution = buildSkillInstallResolution({
+      origin: "https://clawhub.ai",
+      skill: {
+        ...baseSkill,
+        githubScanStatus: "pending",
+      },
+      source,
+    });
+
+    expect(resolution).toMatchObject({
+      ok: false,
+      slug: "aiq-deploy",
+      reason: "github_verification_pending",
+      status: 423,
+      message:
+        "GitHub-backed skill security scan is in progress. Try again shortly, or rerun with --force-install to install the unverified upstream commit.",
+    });
+  });
+
+  it("allows force-install for pending GitHub-backed verification", () => {
+    const resolution = buildSkillInstallResolution({
+      origin: "https://clawhub.ai",
+      skill: {
+        ...baseSkill,
+        githubScanStatus: "pending",
+      },
+      source,
+      forceInstall: true,
+    });
+
+    expect(resolution).toMatchObject({
+      ok: true,
+      installKind: "github",
+      github: {
+        commit: "1".repeat(40),
+        contentHash: "hash-aiq-deploy",
+      },
+    });
+  });
+
+  it("does not force-install failed GitHub-backed scans", () => {
+    const resolution = buildSkillInstallResolution({
+      origin: "https://clawhub.ai",
+      skill: {
+        ...baseSkill,
+        githubScanStatus: "failed",
+      },
+      source,
+      forceInstall: true,
+    });
+
+    expect(resolution).toMatchObject({
+      ok: false,
+      reason: "github_scan_failed",
+      status: 403,
+    });
+  });
 });

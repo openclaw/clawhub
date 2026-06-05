@@ -1560,6 +1560,8 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
   }
 
   if (second === "install" && segments.length === 2) {
+    const url = new URL(request.url);
+    const forceInstall = parseBooleanQueryParam(url.searchParams.get("forceInstall"));
     const skill = (await runQueryRef<
       | (InstallResolverSkill & {
           _id: Id<"skills">;
@@ -1594,6 +1596,7 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
       origin: publicApiOrigin(request),
       skill,
       source,
+      forceInstall,
     });
 
     const publicSkillResult = (await ctx.runQuery(api.skills.getBySlug, {

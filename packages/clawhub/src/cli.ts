@@ -271,9 +271,10 @@ registerCommand(program, ["install"])
   .argument("<slug>", "Skill slug")
   .option("--version <version>", "Version to install")
   .option("--force", "Overwrite existing folder")
+  .option("--force-install", "Install a pending GitHub-backed skill before ClawHub scan completes")
   .action(async (slug, options) => {
     const opts = await resolveGlobalOpts();
-    await cmdInstall(opts, slug, options.version, options.force);
+    await cmdInstall(opts, slug, options.version, options.force, options.forceInstall);
   });
 
 registerCommand(program, ["update"])
@@ -282,6 +283,7 @@ registerCommand(program, ["update"])
   .option("--all", "Update all installed skills")
   .option("--version <version>", "Update to specific version (single slug only)")
   .option("--force", "Overwrite when local files do not match any version")
+  .option("--force-install", "Install a pending GitHub-backed skill before ClawHub scan completes")
   .action(async (slug, options) => {
     const opts = await resolveGlobalOpts();
     await cmdUpdate(opts, slug, options, isInputAllowed());

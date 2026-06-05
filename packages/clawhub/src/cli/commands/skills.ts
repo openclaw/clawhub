@@ -144,6 +144,7 @@ export async function cmdInstall(
   slug: string,
   versionFlag?: string,
   force = false,
+  forceInstall = false,
 ) {
   const trimmed = normalizeSkillSlugOrFail(slug);
 
@@ -197,7 +198,9 @@ export async function cmdInstall(
     let resolvedVersion = versionFlag ?? skillMeta.latestVersion?.version ?? null;
     let githubInstall: GitHubInstallResolution | null = null;
     if (!resolvedVersion && !versionFlag) {
-      const resolvedInstall = await resolveLatestSkillInstall(registry, trimmed, token);
+      const resolvedInstall = await resolveLatestSkillInstall(registry, trimmed, token, {
+        forceInstall,
+      });
       if (!resolvedInstall.ok) fail(resolvedInstall.message);
       if (resolvedInstall.installKind === "github") {
         githubInstall = resolvedInstall;
@@ -267,7 +270,7 @@ export async function cmdInstall(
 export async function cmdUpdate(
   opts: GlobalOpts,
   slugArg: string | undefined,
-  options: { all?: boolean; version?: string; force?: boolean },
+  options: { all?: boolean; version?: string; force?: boolean; forceInstall?: boolean },
   inputAllowed: boolean,
 ) {
   const slug = slugArg ? normalizeSkillSlugOrFail(slugArg) : undefined;
@@ -355,7 +358,9 @@ export async function cmdUpdate(
 
       let latestInstall: ApiV1SkillInstallResolveResponse | null = null;
       if (!skillMeta.latestVersion && !options.version) {
-        latestInstall = await resolveLatestSkillInstall(registry, entry, token);
+        latestInstall = await resolveLatestSkillInstall(registry, entry, token, {
+          forceInstall: Boolean(options.forceInstall),
+        });
         if (!latestInstall.ok) {
           spinner.fail(`${entry}: ${latestInstall.message}`);
           continue;
@@ -893,12 +898,20 @@ async function resolveSkillVersion(registry: string, slug: string, hash: string,
   );
 }
 
-async function resolveLatestSkillInstall(registry: string, slug: string, token?: string) {
+async function resolveLatestSkillInstall(
+  registry: string,
+  slug: string,
+  token?: string,
+  options: { forceInstall?: boolean } = {},
+) {
+  const path = `${ApiRoutes.skills}/${encodeURIComponent(slug)}/install${
+    options.forceInstall ? "?forceInstall=1" : ""
+  }`;
   return await apiRequest(
     registry,
     {
       method: "GET",
-      path: `${ApiRoutes.skills}/${encodeURIComponent(slug)}/install`,
+      path,
       token,
       acceptedStatuses: [403, 409, 410, 423],
     },

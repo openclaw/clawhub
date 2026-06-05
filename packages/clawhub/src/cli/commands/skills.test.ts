@@ -490,6 +490,50 @@ describe("cmdUpdate", () => {
     );
   });
 
+  it("passes force-install to source-backed update resolution", async () => {
+    const commit = "d".repeat(40);
+    mockApiRequest
+      .mockResolvedValueOnce({
+        latestVersion: null,
+        moderation: null,
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        slug: "aiq-deploy",
+        installKind: "github",
+        github: {
+          repo: "NVIDIA/skills",
+          path: "skills/aiq-deploy",
+          commit,
+          contentHash: "hash-aiq-deploy",
+          sourceUrl: `https://github.com/NVIDIA/skills/tree/${commit}/skills/aiq-deploy`,
+        },
+      });
+    mockFetchBinary.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    vi.mocked(readLockfile).mockResolvedValue({
+      version: 1,
+      skills: { "aiq-deploy": { version: "a".repeat(40), installedAt: 123 } },
+    });
+    vi.mocked(readSkillOrigin).mockResolvedValue({
+      version: 1,
+      registry: "https://clawhub.ai",
+      slug: "aiq-deploy",
+      installedVersion: "a".repeat(40),
+      installedAt: 123,
+      fingerprint: "hash",
+    });
+    vi.mocked(stat).mockResolvedValue({} as unknown as Awaited<ReturnType<typeof stat>>);
+
+    await cmdUpdate(makeOpts(), "aiq-deploy", { forceInstall: true }, false);
+
+    const [, resolverArgs] = mockApiRequest.mock.calls[1] ?? [];
+    expect(resolverArgs).toEqual(
+      expect.objectContaining({
+        path: `${ApiRoutes.skills}/${encodeURIComponent("aiq-deploy")}/install?forceInstall=1`,
+      }),
+    );
+  });
+
   it("uses path-based skill lookup when no local fingerprint is available", async () => {
     mockApiRequest.mockResolvedValue({ latestVersion: { version: "1.0.0" } });
     mockDownloadZip.mockResolvedValue(new Uint8Array([1, 2, 3]));
@@ -997,6 +1041,52 @@ describe("cmdInstall", () => {
         "aiq-deploy": { version: commit, installedAt: expect.any(Number) },
       },
     });
+  });
+
+  it("passes force-install to source-backed install resolution", async () => {
+    const commit = "a".repeat(40);
+    mockGetOptionalAuthToken.mockResolvedValue("tkn");
+    mockApiRequest
+      .mockResolvedValueOnce({
+        skill: {
+          slug: "aiq-deploy",
+          displayName: "AIQ Deploy",
+          summary: null,
+          tags: {},
+          stats: {},
+          createdAt: 0,
+          updatedAt: 0,
+        },
+        latestVersion: null,
+        owner: null,
+        moderation: null,
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        slug: "aiq-deploy",
+        installKind: "github",
+        github: {
+          repo: "NVIDIA/skills",
+          path: "skills/aiq-deploy",
+          commit,
+          contentHash: "hash-aiq-deploy",
+          sourceUrl: `https://github.com/NVIDIA/skills/tree/${commit}/skills/aiq-deploy`,
+        },
+      });
+    mockFetchBinary.mockResolvedValue(new Uint8Array([1, 2, 3]));
+
+    await cmdInstall(makeOpts(), "aiq-deploy", undefined, false, true);
+
+    expect(mockApiRequest).toHaveBeenNthCalledWith(
+      2,
+      "https://clawhub.ai",
+      expect.objectContaining({
+        method: "GET",
+        path: `${ApiRoutes.skills}/${encodeURIComponent("aiq-deploy")}/install?forceInstall=1`,
+        token: "tkn",
+      }),
+      expect.anything(),
+    );
   });
 
   it("blocks force reinstall when a skill is pinned", async () => {

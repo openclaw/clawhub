@@ -1942,6 +1942,42 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
+  it("skill install resolver force-installs pending GitHub-backed skills", async () => {
+    const runQuery = makeInstallResolverRunQuery({
+      skill: {
+        _id: "skills:aiq-deploy",
+        slug: "aiq-deploy",
+        displayName: "AIQ Deploy",
+        moderationStatus: "active",
+        moderationReason: "pending.scan",
+        installKind: "github",
+        githubSourceId: "githubSkillSources:nvidia",
+        githubPath: "skills/aiq-deploy",
+        githubCurrentCommit: "2".repeat(40),
+        githubCurrentContentHash: "hash-aiq-deploy-v2",
+        githubCurrentStatus: "present",
+        githubScanStatus: "pending",
+      },
+      source: { repo: "NVIDIA/skills" },
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/aiq-deploy/install?forceInstall=1"),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      installKind: "github",
+      github: {
+        commit: "2".repeat(40),
+        contentHash: "hash-aiq-deploy-v2",
+      },
+    });
+  });
+
   it("skill install resolver blocks GitHub-backed skills with failed scans", async () => {
     const runQuery = makeInstallResolverRunQuery({
       skill: {

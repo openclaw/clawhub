@@ -1,0 +1,694 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Skill Marketplace Manifests: Claude, Codex, Hermes, ClawHub</title>
+    <style>
+      :root {
+        --ink: #17212b;
+        --muted: #5a6573;
+        --line: #d7dee8;
+        --paper: #fbfcfd;
+        --panel: #ffffff;
+        --blue: #2f6fed;
+        --green: #2f8a5f;
+        --amber: #a86c0b;
+        --red: #b04444;
+        --violet: #7657b8;
+        --code: #f4f7fa;
+        --shadow: 0 10px 30px rgba(31, 45, 61, 0.08);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font:
+          15px/1.48 ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+        color: var(--ink);
+        background: var(--paper);
+      }
+      a {
+        color: var(--blue);
+        text-decoration: none;
+      }
+      a:hover {
+        text-decoration: underline;
+      }
+      header {
+        padding: 40px max(24px, calc((100vw - 1180px) / 2)) 28px;
+        background: #ffffff;
+        border-bottom: 1px solid var(--line);
+      }
+      .eyebrow {
+        display: inline-flex;
+        gap: 8px;
+        align-items: center;
+        color: var(--muted);
+        font-size: 13px;
+        text-transform: uppercase;
+        letter-spacing: 0;
+        font-weight: 700;
+      }
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--green);
+        display: inline-block;
+      }
+      h1 {
+        max-width: 920px;
+        margin: 12px 0 12px;
+        font-size: clamp(34px, 5vw, 56px);
+        line-height: 1.02;
+        letter-spacing: 0;
+      }
+      .lede {
+        max-width: 850px;
+        margin: 0;
+        color: var(--muted);
+        font-size: 18px;
+      }
+      main {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 28px 24px 56px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(12, 1fr);
+        gap: 18px;
+      }
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        box-shadow: var(--shadow);
+      }
+      .span-4 {
+        grid-column: span 4;
+      }
+      .span-5 {
+        grid-column: span 5;
+      }
+      .span-7 {
+        grid-column: span 7;
+      }
+      .span-8 {
+        grid-column: span 8;
+      }
+      .span-12 {
+        grid-column: span 12;
+      }
+      section.panel {
+        padding: 22px;
+      }
+      h2 {
+        margin: 0 0 12px;
+        font-size: 21px;
+        letter-spacing: 0;
+      }
+      h3 {
+        margin: 0 0 8px;
+        font-size: 15px;
+        letter-spacing: 0;
+      }
+      p {
+        margin: 0 0 12px;
+      }
+      ul {
+        margin: 10px 0 0;
+        padding-left: 19px;
+      }
+      li {
+        margin: 6px 0;
+      }
+      code,
+      pre {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 13px;
+      }
+      code {
+        background: var(--code);
+        border: 1px solid #e4e9f0;
+        border-radius: 5px;
+        padding: 1px 5px;
+      }
+      pre {
+        margin: 12px 0 0;
+        padding: 14px;
+        background: #101820;
+        color: #edf5f7;
+        border-radius: 8px;
+        overflow: auto;
+        max-height: 320px;
+      }
+      .verdict {
+        border-left: 4px solid var(--green);
+        padding-left: 14px;
+        font-size: 18px;
+      }
+      .callout {
+        background: #f6faf8;
+        border: 1px solid #cfe5d9;
+        border-radius: 8px;
+        padding: 14px;
+        margin-top: 14px;
+      }
+      .warn {
+        background: #fff8eb;
+        border-color: #efd6a8;
+      }
+      .danger {
+        background: #fff5f4;
+        border-color: #e9c7c4;
+      }
+      .tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 12px 0 18px;
+      }
+      button {
+        appearance: none;
+        border: 1px solid var(--line);
+        background: #ffffff;
+        color: var(--ink);
+        border-radius: 7px;
+        padding: 8px 11px;
+        font: inherit;
+        cursor: pointer;
+      }
+      button[aria-selected="true"] {
+        border-color: var(--blue);
+        background: #eef4ff;
+        color: #174ea6;
+        font-weight: 700;
+      }
+      .tab-pane {
+        display: none;
+      }
+      .tab-pane.active {
+        display: block;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 12px;
+        overflow: hidden;
+        border-radius: 8px;
+      }
+      th,
+      td {
+        border: 1px solid var(--line);
+        padding: 10px;
+        text-align: left;
+        vertical-align: top;
+      }
+      th {
+        background: #f3f6f9;
+        font-size: 13px;
+        color: #33404f;
+      }
+      .tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 3px 8px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 700;
+        border: 1px solid var(--line);
+        background: #fff;
+        white-space: nowrap;
+      }
+      .tag.blue {
+        color: #174ea6;
+        background: #eef4ff;
+        border-color: #cfe0ff;
+      }
+      .tag.green {
+        color: #176347;
+        background: #eef9f4;
+        border-color: #cbe8dc;
+      }
+      .tag.amber {
+        color: #804f00;
+        background: #fff6e4;
+        border-color: #edd19d;
+      }
+      .tag.violet {
+        color: #553c91;
+        background: #f4efff;
+        border-color: #ddd1fb;
+      }
+      .flow {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 12px;
+        margin-top: 16px;
+      }
+      .step {
+        position: relative;
+        min-height: 142px;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #ffffff;
+      }
+      .step strong {
+        display: block;
+        margin-bottom: 6px;
+        color: var(--blue);
+      }
+      .step small {
+        color: var(--muted);
+      }
+      .split {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+        margin-top: 12px;
+      }
+      .mini {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 13px;
+        background: #fff;
+      }
+      .source-list {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 10px;
+      }
+      .source-list a {
+        display: block;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 10px;
+        background: #fff;
+        overflow-wrap: anywhere;
+      }
+      .copy-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-top: 12px;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .hide-mobile {
+        display: inline;
+      }
+
+      @media (max-width: 860px) {
+        header {
+          padding-top: 28px;
+        }
+        .span-4,
+        .span-5,
+        .span-7,
+        .span-8,
+        .span-12 {
+          grid-column: span 12;
+        }
+        .flow,
+        .split,
+        .source-list {
+          grid-template-columns: 1fr;
+        }
+        .hide-mobile {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="eyebrow"><span class="dot"></span> Research snapshot · 2026-06-01</div>
+      <h1>Marketplace JSON is a catalog, not the skill payload.</h1>
+      <p class="lede">
+        The common pattern across Claude, Codex, Copilot, and Hermes is: publish skills as folders,
+        then optionally wrap them in a marketplace/plugin manifest so an agent can discover,
+        install, cache, and update them.
+      </p>
+    </header>
+
+    <main>
+      <div class="grid">
+        <section class="panel span-8">
+          <h2>TL;DR</h2>
+          <p class="verdict">
+            For ClawHub auto-sync from <code>NVIDIA/skills</code>, treat the repo's
+            <code>skills/</code> tree as the primary skill catalog. Treat
+            <code>.claude-plugin/marketplace.json</code> and
+            <code>.agents/plugins/marketplace.json</code> as secondary bundle metadata.
+          </p>
+          <div class="flow" aria-label="Recommended sync flow">
+            <div class="step">
+              <strong>1. Checkout repo</strong>
+              <small>Use GitHub Actions against a pinned ref or the current main SHA.</small>
+            </div>
+            <div class="step">
+              <strong>2. Scan skill roots</strong>
+              <small
+                >Default root: <code>skills/</code>. Curated plugin subset:
+                <code>plugins/nvidia-skills/skills/</code>.</small
+              >
+            </div>
+            <div class="step">
+              <strong>3. Dry run first</strong>
+              <small
+                ><code
+                  >clawhub sync --dry-run --json --owner nvidia --source-repo NVIDIA/skills</code
+                ></small
+              >
+            </div>
+            <div class="step">
+              <strong>4. Publish changed skills</strong>
+              <small
+                >Use the existing reusable <code>skill-publish.yml</code> workflow and preserve
+                source provenance.</small
+              >
+            </div>
+          </div>
+          <div class="callout">
+            <strong>Why this matters:</strong> NVIDIA's marketplace files currently advertise a
+            single <code>nvidia-skills</code> plugin bundle. The repo's root
+            <code>skills/</code> directory is the broad catalog. Syncing only the marketplace entry
+            would miss most standalone skills.
+          </div>
+        </section>
+
+        <section class="panel span-4">
+          <h2>Vocabulary</h2>
+          <p>
+            <span class="tag green">Skill</span> A folder with <code>SKILL.md</code> and optional
+            support files.
+          </p>
+          <p>
+            <span class="tag blue">Plugin</span> A bundle that can include skills, agents, hooks,
+            MCP servers, assets, or app metadata.
+          </p>
+          <p>
+            <span class="tag amber">Marketplace</span> A JSON catalog that points at plugins or
+            bundles.
+          </p>
+          <p>
+            <span class="tag violet">Registry</span> A service like ClawHub that stores, searches,
+            audits, and installs published artifacts.
+          </p>
+        </section>
+
+        <section class="panel span-12">
+          <h2>Format Comparison</h2>
+          <div class="tabs" role="tablist" aria-label="Format tabs">
+            <button role="tab" aria-selected="true" data-tab="claude">Claude</button>
+            <button role="tab" aria-selected="false" data-tab="codex">Codex</button>
+            <button role="tab" aria-selected="false" data-tab="nvidia">NVIDIA repo</button>
+            <button role="tab" aria-selected="false" data-tab="hermes">Hermes / Nous</button>
+            <button role="tab" aria-selected="false" data-tab="clawhub">ClawHub</button>
+          </div>
+
+          <div id="claude" class="tab-pane active">
+            <h3>Claude Code marketplace</h3>
+            <p>
+              Claude expects <code>.claude-plugin/marketplace.json</code> at the marketplace root.
+              Each entry has a <code>name</code> and <code>source</code>; the source can be a
+              relative path, GitHub repo, git URL/subdirectory, URL, or npm package.
+            </p>
+            <pre><code>{
+  "name": "company-tools",
+  "owner": { "name": "DevTools Team" },
+  "plugins": [
+    {
+      "name": "quality-review-plugin",
+      "source": "./plugins/quality-review-plugin",
+      "description": "Adds a quality-review skill"
+    }
+  ]
+}</code></pre>
+          </div>
+
+          <div id="codex" class="tab-pane">
+            <h3>Codex marketplace</h3>
+            <p>
+              Codex uses <code>.agents/plugins/marketplace.json</code>. The OpenAI sample spec makes
+              the marketplace more UI/policy-shaped: <code>interface.displayName</code>, ordered
+              plugin entries, a local <code>source.path</code>, <code>policy</code>, and
+              <code>category</code>.
+            </p>
+            <pre><code>{
+  "name": "openai-curated",
+  "interface": { "displayName": "ChatGPT Official" },
+  "plugins": [
+    {
+      "name": "linear",
+      "source": { "source": "local", "path": "./plugins/linear" },
+      "policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" },
+      "category": "Productivity"
+    }
+  ]
+}</code></pre>
+          </div>
+
+          <div id="nvidia" class="tab-pane">
+            <h3>NVIDIA/skills today</h3>
+            <p>
+              NVIDIA ships both marketplace dialects and both plugin manifests. The marketplace
+              points to
+              <code>./plugins/nvidia-skills</code>; the Claude plugin manifest lists
+              <code>skills: ["./skills/"]</code>, while the Codex manifest uses
+              <code>skills: "./skills/"</code> plus richer UI metadata.
+            </p>
+            <div class="split">
+              <div class="mini">
+                <strong>Root catalog</strong>
+                <p class="muted">
+                  Repo-level <code>skills/</code> contains the large skill catalog.
+                </p>
+              </div>
+              <div class="mini">
+                <strong>Curated plugin bundle</strong>
+                <p class="muted">
+                  <code>plugins/nvidia-skills/skills/</code> contains a smaller bundled subset for
+                  agent plugin delivery.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div id="hermes" class="tab-pane">
+            <h3>Hermes / NousResearch</h3>
+            <p>
+              Hermes documents several hub sources: official skills, skills.sh, well-known
+              endpoints, direct GitHub skills/taps, ClawHub, and Claude marketplace-style repos. So
+              yes, Nous/Hermes mentions this pattern, but it treats Claude marketplaces as one
+              adapter among many.
+            </p>
+            <pre><code>Hermes source shapes:
+official | skills-sh | well-known | url | github | clawhub | claude-marketplace | lobehub | browse-sh</code></pre>
+          </div>
+
+          <div id="clawhub" class="tab-pane">
+            <h3>ClawHub sync</h3>
+            <p>
+              ClawHub's existing path is already skill-folder first: <code>clawhub sync</code> scans
+              folders containing <code>SKILL.md</code>, hashes files, checks the registry, and
+              publishes new or changed versions. The reusable workflow wraps that with source
+              provenance.
+            </p>
+            <pre><code>bun packages/clawhub/src/cli.ts sync \
+  --all --json --no-clawdbot-roots \
+  --owner nvidia \
+  --source-repo NVIDIA/skills \
+  --source-commit "$GITHUB_SHA" \
+  --source-ref "$GITHUB_REF"</code></pre>
+          </div>
+        </section>
+
+        <section class="panel span-7">
+          <h2>Decision Table</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Question</th>
+                <th>Use</th>
+                <th>Reason</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Do we want every NVIDIA standalone skill on ClawHub?</td>
+                <td><code>skills/</code></td>
+                <td>
+                  This is the broad source tree and matches ClawHub's current skill publish model.
+                </td>
+              </tr>
+              <tr>
+                <td>Do we want the curated NVIDIA plugin bundle?</td>
+                <td><code>plugins/nvidia-skills/</code></td>
+                <td>
+                  This is the installable Claude/Codex bundle with its own manifests and assets.
+                </td>
+              </tr>
+              <tr>
+                <td>Do we need to mirror Claude/Codex discovery?</td>
+                <td><code>marketplace.json</code></td>
+                <td>
+                  Use it as bundle inventory and presentation metadata, not as the canonical skill
+                  list.
+                </td>
+              </tr>
+              <tr>
+                <td>Do we need automatic sync?</td>
+                <td>GitHub Actions + <code>skill-publish.yml</code></td>
+                <td>
+                  ClawHub already records source repo, commit, ref, path, and JSON dry-run output.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section class="panel span-5">
+          <h2>Sharp Edge</h2>
+          <div class="callout warn">
+            <strong>Do not infer all skills from the marketplace file.</strong>
+            In NVIDIA's repo, the marketplace advertises a plugin bundle. It does not enumerate the
+            full root <code>skills/</code> catalog one by one.
+          </div>
+          <div class="callout danger">
+            <strong>Do not publish from mutable HEAD without provenance.</strong>
+            Always attach <code>sourceRepo</code>, <code>sourceCommit</code>,
+            <code>sourceRef</code>, and derived <code>sourcePath</code> so ClawHub can prove exactly
+            what was synced.
+          </div>
+        </section>
+
+        <section class="panel span-12">
+          <h2>Proposed ClawHub Contract</h2>
+          <div class="split">
+            <div class="mini">
+              <h3>Phase 1: skill sync</h3>
+              <ul>
+                <li>
+                  Add a caller workflow in <code>NVIDIA/skills</code> that invokes ClawHub's
+                  reusable <code>skill-publish.yml</code>.
+                </li>
+                <li>Default <code>root: skills</code> for the broad catalog.</li>
+                <li>
+                  Use <code>workflow_dispatch</code> first: <code>dry-run</code>,
+                  <code>publish-single</code>, <code>publish-catalog</code>.
+                </li>
+                <li>Only enable push-to-main automation after dry-run noise is low.</li>
+              </ul>
+            </div>
+            <div class="mini">
+              <h3>Phase 2: plugin/bundle awareness</h3>
+              <ul>
+                <li>
+                  Parse <code>.claude-plugin/marketplace.json</code> and
+                  <code>.agents/plugins/marketplace.json</code> as package metadata.
+                </li>
+                <li>Publish the plugin bundle separately from standalone skills.</li>
+                <li>
+                  Surface bundle membership on ClawHub, but keep individual skill pages installable.
+                </li>
+                <li>
+                  Track marketplace drift as an advisory signal, not as the only source of truth.
+                </li>
+              </ul>
+            </div>
+          </div>
+          <div class="copy-row">
+            <p class="muted">
+              Copy the recommended workflow shape for a follow-up implementation prompt.
+            </p>
+            <button id="copy">Copy Prompt</button>
+          </div>
+          <pre
+            id="prompt"
+          ><code>Implement NVIDIA/skills auto-sync for ClawHub as a skill-folder-first workflow.
+
+Use openclaw/clawhub/.github/workflows/skill-publish.yml from a caller workflow in NVIDIA/skills.
+Start with workflow_dispatch modes: dry-run, publish-single, publish-catalog.
+Default root to skills/ and owner to nvidia.
+Preserve source provenance with sourceRepo=NVIDIA/skills, sourceCommit, sourceRef, and per-skill sourcePath.
+Treat .claude-plugin/marketplace.json and .agents/plugins/marketplace.json as plugin/bundle metadata only, not as the complete skill catalog.</code></pre>
+        </section>
+
+        <section class="panel span-12">
+          <h2>Sources Read</h2>
+          <div class="source-list">
+            <a href="https://code.claude.com/docs/en/plugin-marketplaces"
+              >Claude Code docs: create and distribute plugin marketplaces</a
+            >
+            <a href="https://code.claude.com/docs/en/discover-plugins"
+              >Claude Code docs: discover and install marketplaces</a
+            >
+            <a href="https://github.com/anthropics/skills/blob/main/.claude-plugin/marketplace.json"
+              >Anthropic skills marketplace.json</a
+            >
+            <a
+              href="https://github.com/openai/codex/blob/main/codex-rs/skills/src/assets/samples/plugin-creator/references/plugin-json-spec.md"
+              >OpenAI Codex plugin and marketplace sample spec</a
+            >
+            <a href="https://github.com/openai/plugins">OpenAI plugins repo</a>
+            <a href="https://github.com/NVIDIA/skills/blob/main/.claude-plugin/marketplace.json"
+              >NVIDIA Claude marketplace.json</a
+            >
+            <a href="https://github.com/NVIDIA/skills/blob/main/.agents/plugins/marketplace.json"
+              >NVIDIA Codex marketplace.json</a
+            >
+            <a
+              href="https://github.com/NVIDIA/skills/blob/main/plugins/nvidia-skills/.claude-plugin/plugin.json"
+              >NVIDIA Claude plugin.json</a
+            >
+            <a
+              href="https://github.com/NousResearch/hermes-agent/blob/main/website/docs/user-guide/features/skills.md"
+              >Hermes / NousResearch skills docs</a
+            >
+            <a
+              href="https://docs.github.com/en/enterprise-cloud@latest/copilot/reference/copilot-cli-reference/cli-plugin-reference"
+              >GitHub Copilot CLI plugin reference</a
+            >
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <script>
+      const buttons = Array.from(document.querySelectorAll('[role="tab"]'));
+      const panes = Array.from(document.querySelectorAll(".tab-pane"));
+      buttons.forEach((button) => {
+        button.addEventListener("click", () => {
+          const target = button.dataset.tab;
+          buttons.forEach((item) => item.setAttribute("aria-selected", String(item === button)));
+          panes.forEach((pane) => pane.classList.toggle("active", pane.id === target));
+        });
+      });
+
+      document.getElementById("copy").addEventListener("click", async () => {
+        const text = document.getElementById("prompt").innerText.trim();
+        await navigator.clipboard.writeText(text);
+        const button = document.getElementById("copy");
+        button.textContent = "Copied";
+        setTimeout(() => {
+          button.textContent = "Copy Prompt";
+        }, 1200);
+      });
+    </script>
+  </body>
+</html>
