@@ -3,6 +3,7 @@ node_modules
 .bun-build
 *.bun-build
 .artifacts/
+artifacts/
 .cache/
 .data/
 bin/docs-list

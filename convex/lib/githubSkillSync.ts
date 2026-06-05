@@ -450,7 +450,7 @@ export function githubBackedSkillModeration(
   }
   if (scanStatus === "pending") {
     return {
-      moderationStatus: "active",
+      moderationStatus: "hidden",
       moderationReason: "pending.scan",
       moderationVerdict: undefined,
       moderationFlags: [],
