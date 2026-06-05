@@ -1041,6 +1041,8 @@ const skillSearchDigest = defineTable({
   latestVersionSkillId: v.optional(v.id("skills")),
   installKind: v.optional(v.literal("github")),
   githubHasSkillCard: v.optional(v.boolean()),
+  githubCurrentStatus: v.optional(githubSkillCurrentStatusValidator),
+  githubScanStatus: v.optional(githubSkillScanStatusValidator),
   latestVersionSummary: v.optional(
     v.object({
       version: v.string(),

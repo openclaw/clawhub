@@ -1,6 +1,7 @@
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import type { HydratableSkill, PublicPublisher } from "./public";
+import { getOwnerPublisher } from "./publishers";
 import { tokenize } from "./searchText";
 import { readCanonicalStat } from "./skillStats";
 
@@ -27,6 +28,8 @@ const SHARED_KEYS = [
   "latestVersionId",
   "installKind",
   "githubHasSkillCard",
+  "githubCurrentStatus",
+  "githubScanStatus",
   "latestVersionSummary",
   "tags",
   "capabilityTags",
@@ -130,6 +133,26 @@ export async function upsertSkillSearchDigest(
   } else {
     await ctx.db.insert("skillSearchDigest", fields);
   }
+}
+
+export async function syncSkillSearchDigestForSkill(
+  ctx: Pick<MutationCtx, "db">,
+  skill: Doc<"skills"> | null | undefined,
+) {
+  if (!skill) return;
+  const fields = await extractValidatedDigestFields(ctx, skill);
+  const owner = await getOwnerPublisher(ctx, {
+    ownerPublisherId: skill.ownerPublisherId,
+    ownerUserId: skill.ownerUserId,
+  });
+  await upsertSkillSearchDigest(ctx, {
+    ...fields,
+    ownerHandle: owner?.handle ?? "",
+    ownerKind: owner?.kind,
+    ownerName: owner?.linkedUserId ? owner.handle : undefined,
+    ownerDisplayName: owner?.displayName,
+    ownerImage: owner?.image,
+  });
 }
 
 /** Compare new fields against existing row. Returns true if any field differs. */

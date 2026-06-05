@@ -6,6 +6,7 @@ import { requireUser } from "./lib/access";
 import { adjustGlobalPublicSkillsCount, getPublicSkillVisibilityDelta } from "./lib/globalStats";
 import { isOfficialPublisher } from "./lib/officialPublishers";
 import { isPublisherActive, isPublisherRoleAllowed, requirePublisherRole } from "./lib/publishers";
+import { syncSkillSearchDigestForSkill } from "./lib/skillSearchDigest";
 
 type PublicGitHubSkillSource = Pick<
   Doc<"githubSkillSources">,
@@ -184,6 +185,7 @@ export async function deleteForPublisherHandler(
       githubRemovedAt: nextSkill.githubRemovedAt,
       updatedAt: now,
     });
+    await syncSkillSearchDigestForSkill(ctx, nextSkill);
     deletedSkills += 1;
   }
 
