@@ -90,6 +90,14 @@ async function resolveAppPort() {
   throw new Error(`No available preview port found starting at ${requested}.`);
 }
 
+function requireLocalUrlPort(url: string, label: string) {
+  const parsed = new URL(url);
+  if (!parsed.port) {
+    throw new Error(`${label} must include an explicit port: ${url}`);
+  }
+  return parsed.port;
+}
+
 function buildAuthKeys() {
   const { publicKey, privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
   const privatePem = privateKey.export({ type: "pkcs8", format: "pem" });
@@ -296,6 +304,11 @@ async function main() {
   const appUrl = `http://127.0.0.1:${appPort}`;
   const convexUrl = runnerConfig.convexUrl;
   const convexSiteUrl = runnerConfig.convexSiteUrl;
+  const convexCloudPort = requireLocalUrlPort(convexUrl, "PLAYWRIGHT_LOCAL_AUTH_CONVEX_URL");
+  const convexSitePort = requireLocalUrlPort(
+    convexSiteUrl,
+    "PLAYWRIGHT_LOCAL_AUTH_CONVEX_SITE_URL",
+  );
   if (await isReachable(convexUrl)) {
     throw new Error(
       `Local Convex is already reachable at ${convexUrl}. Stop the running local Convex process before running this e2e so it can use isolated disposable state.`,
@@ -362,6 +375,10 @@ async function main() {
       "disable",
       "--codegen",
       "disable",
+      "--local-cloud-port",
+      convexCloudPort,
+      "--local-site-port",
+      convexSitePort,
     ],
     e2eEnv,
   );

@@ -1,5 +1,5 @@
 /* @vitest-environment jsdom */
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../../convex/_generated/api";
@@ -162,6 +162,24 @@ describe("Settings", () => {
     expect(useQueryMock).toHaveBeenCalledWith(api.publishers.listMembers, {
       publisherHandle: "openclaw",
     });
+  });
+
+  it("lets organization owners confirm org deletion", async () => {
+    const deleteOrg = vi.fn().mockResolvedValue({ deleted: true });
+    useMutationMock.mockReturnValue(deleteOrg);
+    mockSignedInSettings({ search: { view: "organizations" } });
+
+    render(<Settings />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete organization" }));
+
+    expect(await screen.findByText(/Delete @openclaw\?/)).toBeTruthy();
+    const deleteButtons = screen.getAllByRole("button", { name: "Delete organization" });
+    fireEvent.click(deleteButtons.at(-1)!);
+
+    await waitFor(() =>
+      expect(deleteOrg).toHaveBeenCalledWith({ publisherId: "publisher_openclaw" }),
+    );
   });
 
   it("migrates legacy hash settings URLs to focused query params", () => {

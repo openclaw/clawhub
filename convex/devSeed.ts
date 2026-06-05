@@ -2773,6 +2773,251 @@ export const seedCliRoleHelpFixtures = rawInternalMutation({
   },
 });
 
+type OrgDeletionFixtureArgs = {
+  handle: string;
+  displayName: string;
+  skillSlug: string;
+  skillDisplayName: string;
+  packageName: string;
+  packageDisplayName: string;
+};
+
+type OrgDeletionFixtureResult = {
+  ok: true;
+  publisherId: Id<"publishers">;
+  skillId: Id<"skills">;
+  skillVersionId: Id<"skillVersions">;
+  packageId: Id<"packages">;
+  packageReleaseId: Id<"packageReleases">;
+  handle: string;
+  skillSlug: string;
+  packageName: string;
+};
+
+export const seedOrgDeletionFixture: ReturnType<typeof rawInternalMutation> = rawInternalMutation({
+  args: {
+    handle: v.string(),
+    displayName: v.string(),
+    skillSlug: v.string(),
+    skillDisplayName: v.string(),
+    packageName: v.string(),
+    packageDisplayName: v.string(),
+  },
+  handler: async (ctx, args): Promise<OrgDeletionFixtureResult> => {
+    return (await ctx.runMutation(
+      internal.devSeed.seedOrgDeletionFixtureMutation,
+      args as OrgDeletionFixtureArgs,
+    )) as OrgDeletionFixtureResult;
+  },
+});
+
+export const seedOrgDeletionFixtureMutation = internalMutation({
+  args: {
+    handle: v.string(),
+    displayName: v.string(),
+    skillSlug: v.string(),
+    skillDisplayName: v.string(),
+    packageName: v.string(),
+    packageDisplayName: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const { userId } = await ensureLocalSeedOwner(ctx);
+    const normalizedName = normalizePackageName(args.packageName);
+    const existingSkill = await ctx.db
+      .query("skills")
+      .withIndex("by_slug", (q) => q.eq("slug", args.skillSlug))
+      .unique();
+    const existingPackage = await ctx.db
+      .query("packages")
+      .withIndex("by_name", (q) => q.eq("normalizedName", normalizedName))
+      .unique();
+
+    if (existingSkill || existingPackage) {
+      throw new Error("Org deletion fixture names must be unique per run");
+    }
+
+    const publisherId = await ctx.db.insert("publishers", {
+      kind: "org",
+      handle: args.handle,
+      displayName: args.displayName,
+      bio: "Disposable local-auth fixture for org deletion e2e proof.",
+      image: undefined,
+      trustedPublisher: false,
+      publishedSkills: 1,
+      publishedPackages: 1,
+      totalInstalls: 0,
+      totalDownloads: 0,
+      totalStars: 0,
+      skillTotalInstalls: 0,
+      skillTotalDownloads: 0,
+      skillTotalStars: 0,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await ctx.db.insert("publisherMembers", {
+      publisherId,
+      userId,
+      role: "owner",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const skillId = await ctx.db.insert("skills", {
+      slug: args.skillSlug,
+      displayName: args.skillDisplayName,
+      summary: "Disposable local-auth fixture skill owned by an organization.",
+      ownerUserId: userId,
+      ownerPublisherId: publisherId,
+      latestVersionId: undefined,
+      latestVersionSummary: undefined,
+      tags: {},
+      capabilityTags: ["dev-tools"],
+      softDeletedAt: undefined,
+      badges: { highlighted: undefined, redactionApproved: undefined },
+      moderationStatus: "active",
+      moderationReason: "clean",
+      isSuspicious: false,
+      statsDownloads: 0,
+      statsStars: 0,
+      statsInstallsCurrent: 0,
+      statsInstallsAllTime: 0,
+      stats: {
+        downloads: 0,
+        installsCurrent: 0,
+        installsAllTime: 0,
+        stars: 0,
+        versions: 0,
+        comments: 0,
+      },
+      createdAt: now,
+      updatedAt: now,
+    });
+    const skillVersionId = await ctx.db.insert("skillVersions", {
+      skillId,
+      version: "1.0.0",
+      changelog: "Seeded local-auth org deletion fixture.",
+      changelogSource: "user",
+      files: [],
+      parsed: {
+        frontmatter: {
+          name: args.skillSlug,
+          description: "Disposable local-auth org deletion fixture skill.",
+        },
+        metadata: {},
+      },
+      capabilityTags: ["dev-tools"],
+      createdBy: userId,
+      createdAt: now,
+      softDeletedAt: undefined,
+    });
+    await ctx.db.patch(skillId, {
+      latestVersionId: skillVersionId,
+      latestVersionSummary: {
+        version: "1.0.0",
+        createdAt: now,
+        changelog: "Seeded local-auth org deletion fixture.",
+        changelogSource: "user",
+      },
+      tags: { latest: skillVersionId },
+      stats: {
+        downloads: 0,
+        installsCurrent: 0,
+        installsAllTime: 0,
+        stars: 0,
+        versions: 1,
+        comments: 0,
+      },
+      updatedAt: now,
+    });
+
+    const compatibility = { pluginApiRange: ">=0.1.0" };
+    const capabilities = {
+      executesCode: true,
+      runtimeId: normalizedName,
+      pluginKind: "runtime",
+      capabilityTags: ["dev-tools"],
+    };
+    const verification = {
+      tier: "structural" as const,
+      scope: "artifact-only" as const,
+      summary: "Seeded local-auth org deletion fixture.",
+      scanStatus: "clean" as const,
+    };
+    const packageId = await ctx.db.insert("packages", {
+      name: args.packageName,
+      normalizedName,
+      displayName: args.packageDisplayName,
+      summary: "Disposable local-auth fixture plugin owned by an organization.",
+      ownerUserId: userId,
+      ownerPublisherId: publisherId,
+      family: "code-plugin",
+      channel: "community",
+      isOfficial: false,
+      runtimeId: normalizedName,
+      latestReleaseId: undefined,
+      latestVersionSummary: undefined,
+      tags: {},
+      capabilityTags: ["dev-tools"],
+      executesCode: true,
+      compatibility,
+      capabilities,
+      verification,
+      scanStatus: "clean",
+      stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
+      softDeletedAt: undefined,
+      createdAt: now,
+      updatedAt: now,
+    });
+    const packageReleaseId = await ctx.db.insert("packageReleases", {
+      packageId,
+      version: "1.0.0",
+      changelog: "Seeded local-auth org deletion fixture.",
+      summary: "Disposable local-auth fixture plugin release.",
+      distTags: ["latest"],
+      files: [],
+      integritySha256: `org-delete-fixture-${normalizedName}`,
+      extractedPackageJson: {
+        name: args.packageName,
+        version: "1.0.0",
+      },
+      compatibility,
+      capabilities,
+      verification,
+      sha256hash: `org-delete-fixture-${normalizedName}`,
+      createdBy: userId,
+      publishActor: { kind: "user", userId },
+      createdAt: now,
+      softDeletedAt: undefined,
+    });
+    await ctx.db.patch(packageId, {
+      latestReleaseId: packageReleaseId,
+      latestVersionSummary: {
+        version: "1.0.0",
+        createdAt: now,
+        changelog: "Seeded local-auth org deletion fixture.",
+        compatibility,
+        capabilities,
+        verification,
+      },
+      tags: { latest: packageReleaseId },
+      stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
+      updatedAt: now,
+    });
+    return {
+      ok: true,
+      publisherId,
+      skillId,
+      skillVersionId,
+      packageId,
+      packageReleaseId,
+      handle: args.handle,
+      skillSlug: args.skillSlug,
+      packageName: args.packageName,
+    };
+  },
+});
+
 async function upsertRoleHelpFixtureUser(ctx: MutationCtx, user: RoleHelpFixtureUser) {
   const now = Date.now();
   const existing = await ctx.db

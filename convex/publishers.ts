@@ -1,5 +1,6 @@
 import { paginationOptsValidator } from "convex/server";
 import { ConvexError, v } from "convex/values";
+import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { internalMutation, internalQuery, mutation, query } from "./functions";
@@ -881,6 +882,80 @@ async function createOrgPublisherForUser(
   };
 }
 
+async function deleteOrgPublisherForOwner(
+  ctx: MutationCtx,
+  args: {
+    actorUserId: Id<"users">;
+    publisherId: Id<"publishers">;
+    deletedAt: number;
+    source: "settings" | "account.delete";
+  },
+) {
+  const actor = await ctx.db.get(args.actorUserId);
+  if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+
+  const publisher = await ctx.db.get(args.publisherId);
+  if (!publisher || publisher.kind !== "org" || publisher.deletedAt || publisher.deactivatedAt) {
+    throw new ConvexError("Publisher not found");
+  }
+
+  const membership = await getPublisherMembership(ctx, publisher._id, args.actorUserId);
+  if (!membership || membership.role !== "owner") {
+    throw new ConvexError("Only org owners can delete an organization");
+  }
+
+  await ctx.db.patch(publisher._id, {
+    deletedAt: args.deletedAt,
+    deactivatedAt: args.deletedAt,
+    updatedAt: args.deletedAt,
+  });
+
+  const skillsResult = (await ctx.runMutation(
+    internal.skills.applyPublisherDeletionToOwnedSkillsBatchInternal,
+    {
+      ownerPublisherId: publisher._id,
+      actorUserId: args.actorUserId,
+      deletedAt: args.deletedAt,
+      cursor: undefined,
+    },
+  )) as { hiddenCount?: number; scheduled?: boolean };
+  const packagesResult = (await ctx.runMutation(
+    internal.packages.applyPublisherDeletionToOwnedPackagesBatchInternal,
+    {
+      ownerPublisherId: publisher._id,
+      actorUserId: args.actorUserId,
+      deletedAt: args.deletedAt,
+      cursor: undefined,
+    },
+  )) as { deletedCount?: number; revokedTokenCount?: number; scheduled?: boolean };
+
+  await ctx.db.insert("auditLogs", {
+    actorUserId: args.actorUserId,
+    action: "publisher.org.delete",
+    targetType: "publisher",
+    targetId: publisher._id,
+    metadata: {
+      handle: publisher.handle,
+      source: args.source,
+      hiddenSkills: skillsResult.hiddenCount ?? 0,
+      deletedPackages: packagesResult.deletedCount ?? 0,
+      revokedPackageTokens: packagesResult.revokedTokenCount ?? 0,
+      scheduled: Boolean(skillsResult.scheduled) || Boolean(packagesResult.scheduled) || undefined,
+    },
+    createdAt: args.deletedAt,
+  });
+
+  return {
+    ok: true as const,
+    publisherId: publisher._id,
+    handle: publisher.handle,
+    hiddenSkills: skillsResult.hiddenCount ?? 0,
+    deletedPackages: packagesResult.deletedCount ?? 0,
+    revokedPackageTokens: packagesResult.revokedTokenCount ?? 0,
+    scheduled: Boolean(skillsResult.scheduled) || Boolean(packagesResult.scheduled),
+  };
+}
+
 export const getByIdInternal = internalQuery({
   args: { publisherId: v.id("publishers") },
   handler: async (ctx, args) => await ctx.db.get(args.publisherId),
@@ -1350,6 +1425,21 @@ export const createOrg = mutation({
   },
 });
 
+export const deleteOrg = mutation({
+  args: {
+    publisherId: v.id("publishers"),
+  },
+  handler: async (ctx, args) => {
+    const { userId } = await requireUser(ctx);
+    return await deleteOrgPublisherForOwner(ctx, {
+      actorUserId: userId,
+      publisherId: args.publisherId,
+      deletedAt: Date.now(),
+      source: "settings",
+    });
+  },
+});
+
 export const updateProfile = mutation({
   args: {
     publisherId: v.id("publishers"),
@@ -1530,6 +1620,65 @@ export const createOrgPublisherForUserInternal = internalMutation({
     displayName: v.optional(v.string()),
   },
   handler: async (ctx, args) => await createOrgPublisherForUser(ctx, args),
+});
+
+async function hasOtherActiveOwner(
+  ctx: MutationCtx,
+  members: Array<Doc<"publisherMembers">>,
+  actorUserId: Id<"users">,
+) {
+  for (const member of members) {
+    if (member.role !== "owner" || member.userId === actorUserId) continue;
+    const user = await ctx.db.get(member.userId);
+    if (user && !user.deletedAt && !user.deactivatedAt) return true;
+  }
+  return false;
+}
+
+export const deleteSoleOwnerOrgsForAccountDeletionInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    deletedAt: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const memberships = await ctx.db
+      .query("publisherMembers")
+      .withIndex("by_user", (q) => q.eq("userId", args.actorUserId))
+      .collect();
+
+    let deletedOrgs = 0;
+    let hiddenSkills = 0;
+    let deletedPackages = 0;
+    for (const membership of memberships) {
+      if (membership.role !== "owner") continue;
+      const publisher = await ctx.db.get(membership.publisherId);
+      if (
+        !publisher ||
+        publisher.kind !== "org" ||
+        publisher.deletedAt ||
+        publisher.deactivatedAt
+      ) {
+        continue;
+      }
+      const members = await ctx.db
+        .query("publisherMembers")
+        .withIndex("by_publisher", (q) => q.eq("publisherId", publisher._id))
+        .collect();
+      if (await hasOtherActiveOwner(ctx, members, args.actorUserId)) continue;
+
+      const result = await deleteOrgPublisherForOwner(ctx, {
+        actorUserId: args.actorUserId,
+        publisherId: publisher._id,
+        deletedAt: args.deletedAt,
+        source: "account.delete",
+      });
+      deletedOrgs += 1;
+      hiddenSkills += result.hiddenSkills;
+      deletedPackages += result.deletedPackages;
+    }
+
+    return { ok: true as const, deletedOrgs, hiddenSkills, deletedPackages };
+  },
 });
 
 export const addMember = mutation({

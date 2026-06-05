@@ -331,6 +331,7 @@ export async function repointPackageLatestRelease(
   if (!packageId || !affectedReleaseId) return;
   const pkg = await ctx.db.get(packageId);
   if (!pkg) return;
+  if (pkg.softDeletedAt) return;
 
   const nextTags = Object.fromEntries(
     Object.entries(pkg.tags).filter(([, releaseId]) => releaseId !== affectedReleaseId),

@@ -150,6 +150,7 @@ export function Settings() {
     | Array<PublisherMembership>
     | undefined;
   const createOrg = useMutation(api.publishers.createOrg);
+  const deleteOrg = useMutation(api.publishers.deleteOrg);
   const updateOrgProfile = useMutation(api.publishers.updateProfile);
   const addOrgMember = useMutation(api.publishers.addMember);
   const removeOrgMember = useMutation(api.publishers.removeMember);
@@ -166,6 +167,7 @@ export function Settings() {
   const [memberHandle, setMemberHandle] = useState("");
   const [memberRole, setMemberRole] = useState<"owner" | "admin" | "publisher">("publisher");
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteOrgDialogOpen, setDeleteOrgDialogOpen] = useState(false);
   const [createOrgDialogOpen, setCreateOrgDialogOpen] = useState(false);
   const [addMemberDialogOpen, setAddMemberDialogOpen] = useState(false);
   const [revokeTokenId, setRevokeTokenId] = useState<Id<"apiTokens"> | null>(null);
@@ -270,6 +272,16 @@ export function Settings() {
       image: selectedOrgImage || undefined,
     });
     toast.success("Organization updated");
+  }
+
+  async function onDeleteOrg() {
+    if (!selectedOrg) return;
+    const deletingHandle = selectedOrg.publisher.handle;
+    await deleteOrg({ publisherId: selectedOrg.publisher._id });
+    setDeleteOrgDialogOpen(false);
+    const nextOrg = orgs.find((entry) => entry.publisher.handle !== deletingHandle);
+    setSelectedOrgHandle(nextOrg?.publisher.handle ?? "");
+    toast.success(`Deleted @${deletingHandle}`);
   }
 
   return (
@@ -800,6 +812,60 @@ export function Settings() {
                             ) : null}
                           </div>
                         </SettingsBlock>
+
+                        {selectedOrg.role === "owner" ? (
+                          <SettingsBlock tone="danger">
+                            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                              <div className="flex min-w-0 items-center gap-3">
+                                <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-red-300/40 bg-red-500/10 text-red-700 dark:border-red-500/30 dark:text-red-300">
+                                  <ShieldAlert size={17} />
+                                </span>
+                                <div className="min-w-0">
+                                  <h3 className="text-sm font-bold text-red-700 dark:text-red-300">
+                                    Delete organization
+                                  </h3>
+                                  <p className="text-sm text-[color:var(--ink-soft)]">
+                                    Hide this org and its published skills and plugins.
+                                  </p>
+                                </div>
+                              </div>
+                              <Dialog
+                                open={deleteOrgDialogOpen}
+                                onOpenChange={setDeleteOrgDialogOpen}
+                              >
+                                <DialogTrigger asChild>
+                                  <Button variant="destructive" type="button" className="sm:w-auto">
+                                    <Trash2 size={16} />
+                                    Delete organization
+                                  </Button>
+                                </DialogTrigger>
+                                <DialogContent>
+                                  <DialogHeader>
+                                    <DialogTitle>Delete organization</DialogTitle>
+                                    <DialogDescription>
+                                      Delete @{selectedOrg.publisher.handle}? Its skills and plugins
+                                      will be hidden from public pages and installs.
+                                    </DialogDescription>
+                                  </DialogHeader>
+                                  <DialogFooter>
+                                    <Button
+                                      variant="ghost"
+                                      onClick={() => setDeleteOrgDialogOpen(false)}
+                                    >
+                                      Cancel
+                                    </Button>
+                                    <Button
+                                      variant="destructive"
+                                      onClick={() => void onDeleteOrg()}
+                                    >
+                                      Delete organization
+                                    </Button>
+                                  </DialogFooter>
+                                </DialogContent>
+                              </Dialog>
+                            </div>
+                          </SettingsBlock>
+                        ) : null}
                       </>
                     ) : selectedOrg ? (
                       <div className="rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)]/30 p-4 text-sm text-[color:var(--ink-soft)]">
@@ -1024,7 +1090,7 @@ export function Settings() {
               visible={activeView === "danger"}
               icon={<ShieldAlert size={18} />}
               title="Account deletion"
-              description="Delete your account permanently. Published skills remain public."
+              description="Delete your account permanently and hide personal published resources."
               tone="danger"
               hideHeader
             >
@@ -1052,8 +1118,8 @@ export function Settings() {
                         <DialogHeader>
                           <DialogTitle>Delete account</DialogTitle>
                           <DialogDescription>
-                            Delete your account permanently? This cannot be undone. Published skills
-                            will remain public.
+                            Delete your account permanently? This cannot be undone. Your personal
+                            skills and plugins will be hidden.
                           </DialogDescription>
                         </DialogHeader>
                         <DialogFooter>
@@ -1078,8 +1144,8 @@ export function Settings() {
                         This will permanently delete your account
                       </p>
                       <p className="text-sm text-[color:var(--ink-soft)]">
-                        Your profile, starred skills, and API tokens will be removed. Published
-                        skills will remain public and accessible to the community.
+                        Your profile, starred skills, and API tokens will be removed. Personal
+                        publisher resources and orgs where you are the only owner will be hidden.
                       </p>
                     </div>
                   </div>
