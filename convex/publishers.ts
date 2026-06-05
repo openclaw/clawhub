@@ -1632,6 +1632,174 @@ export const removeOrgPublisherMemberInternal = internalMutation({
   },
 });
 
+export const listOfficialPublishersInternal = internalQuery({
+  args: {
+    actorUserId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    assertAdmin(actor);
+
+    const rows = await ctx.db
+      .query("officialPublishers")
+      .withIndex("by_created", (q) => q)
+      .order("asc")
+      .collect();
+    const items = await Promise.all(
+      rows.map(async (row) => {
+        const [publisher, createdBy] = await Promise.all([
+          ctx.db.get(row.publisherId),
+          row.createdByUserId ? ctx.db.get(row.createdByUserId) : Promise.resolve(null),
+        ]);
+        return {
+          officialPublisherId: row._id,
+          publisherId: row.publisherId,
+          handle: publisher?.handle ?? null,
+          displayName: publisher?.displayName ?? null,
+          kind: publisher?.kind ?? null,
+          active: Boolean(publisher && !publisher.deletedAt && !publisher.deactivatedAt),
+          reason: row.reason ?? null,
+          createdByUserId: row.createdByUserId ?? null,
+          createdByHandle: createdBy?.handle ?? null,
+          createdAt: row.createdAt,
+          updatedAt: row.updatedAt,
+        };
+      }),
+    );
+    return { ok: true as const, items };
+  },
+});
+
+export const addOfficialPublisherInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    handle: v.string(),
+    reason: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    assertAdmin(actor);
+
+    const handle = normalizePublisherHandle(args.handle);
+    if (!handle) throw new ConvexError("Publisher handle is required");
+    const reason = args.reason.trim();
+    if (!reason) throw new ConvexError("Reason is required");
+    if (reason.length > 500) throw new ConvexError("Reason too long (max 500 chars)");
+
+    const publisher = await getPublisherByHandle(ctx, handle);
+    if (!publisher || publisher.deletedAt || publisher.deactivatedAt) {
+      throw new ConvexError(`Publisher "@${handle}" not found`);
+    }
+    if (publisher.kind !== "org") {
+      throw new ConvexError("Only org publishers can be marked official");
+    }
+
+    const existing = await ctx.db
+      .query("officialPublishers")
+      .withIndex("by_publisher", (q) => q.eq("publisherId", publisher._id))
+      .unique();
+    if (existing) {
+      return {
+        ok: true as const,
+        added: false,
+        publisherId: publisher._id,
+        handle: publisher.handle,
+        officialPublisherId: existing._id,
+      };
+    }
+
+    const now = Date.now();
+    const officialPublisherId = await ctx.db.insert("officialPublishers", {
+      publisherId: publisher._id,
+      reason,
+      createdByUserId: args.actorUserId,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await ctx.db.insert("auditLogs", {
+      actorUserId: args.actorUserId,
+      action: "publisher.official.add",
+      targetType: "publisher",
+      targetId: publisher._id,
+      metadata: {
+        handle: publisher.handle,
+        reason,
+      },
+      createdAt: now,
+    });
+
+    return {
+      ok: true as const,
+      added: true,
+      publisherId: publisher._id,
+      handle: publisher.handle,
+      officialPublisherId,
+    };
+  },
+});
+
+export const removeOfficialPublisherInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    handle: v.string(),
+    reason: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    assertAdmin(actor);
+
+    const handle = normalizePublisherHandle(args.handle);
+    if (!handle) throw new ConvexError("Publisher handle is required");
+    const reason = args.reason.trim();
+    if (!reason) throw new ConvexError("Reason is required");
+    if (reason.length > 500) throw new ConvexError("Reason too long (max 500 chars)");
+
+    const publisher = await getPublisherByHandle(ctx, handle);
+    if (!publisher || publisher.deletedAt || publisher.deactivatedAt) {
+      throw new ConvexError(`Publisher "@${handle}" not found`);
+    }
+
+    const existing = await ctx.db
+      .query("officialPublishers")
+      .withIndex("by_publisher", (q) => q.eq("publisherId", publisher._id))
+      .unique();
+    if (!existing) {
+      return {
+        ok: true as const,
+        removed: false,
+        publisherId: publisher._id,
+        handle: publisher.handle,
+      };
+    }
+
+    const now = Date.now();
+    await ctx.db.delete(existing._id);
+    await ctx.db.insert("auditLogs", {
+      actorUserId: args.actorUserId,
+      action: "publisher.official.remove",
+      targetType: "publisher",
+      targetId: publisher._id,
+      metadata: {
+        handle: publisher.handle,
+        reason,
+        officialPublisherId: existing._id,
+      },
+      createdAt: now,
+    });
+
+    return {
+      ok: true as const,
+      removed: true,
+      publisherId: publisher._id,
+      handle: publisher.handle,
+      officialPublisherId: existing._id,
+    };
+  },
+});
+
 export const createOrgPublisherForUserInternal = internalMutation({
   args: {
     actorUserId: v.id("users"),

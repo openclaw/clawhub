@@ -22,7 +22,14 @@ vi.mock("../../../clawhub/src/cli/registry.js", () => registryMocks.moduleFactor
 vi.mock("../../../clawhub/src/http.js", () => httpMocks.moduleFactory());
 vi.mock("../../../clawhub/src/cli/ui.js", () => uiMocks.moduleFactory());
 
-const { cmdCreateOrg, cmdRemoveOrgMember, cmdRepairScopedPackages } = await import("./orgs");
+const {
+  cmdAddOfficialOrg,
+  cmdCreateOrg,
+  cmdListOfficialOrgs,
+  cmdRemoveOfficialOrg,
+  cmdRemoveOrgMember,
+  cmdRepairScopedPackages,
+} = await import("./orgs");
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -166,6 +173,121 @@ describe("cmdRemoveOrgMember", () => {
       /Member handle required/i,
     );
     expect(httpMocks.apiRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe("official org commands", () => {
+  it("lists official org publishers", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      items: [
+        {
+          officialPublisherId: "officialPublishers:1",
+          publisherId: "publishers:openclaw",
+          handle: "openclaw",
+          displayName: "OpenClaw",
+          kind: "org",
+          active: true,
+          reason: "platform-owned publisher",
+          createdByUserId: "users:admin",
+          createdByHandle: "patrick-erichsen-2",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+    });
+
+    const result = await cmdListOfficialOrgs(makeGlobalOpts(), { json: true });
+
+    expect(result.items).toHaveLength(1);
+    expect(authTokenMocks.requireAuthToken).toHaveBeenCalled();
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({
+        method: "GET",
+        path: "/api/v1/users/publisher-official",
+        token: "tkn",
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("requires --yes to add an official org when input is disabled", async () => {
+    await expect(
+      cmdAddOfficialOrg(
+        makeGlobalOpts(),
+        "nvidia",
+        { reason: "NVIDIA source-backed catalog" },
+        false,
+      ),
+    ).rejects.toThrow(/--yes/i);
+    expect(httpMocks.apiRequest).not.toHaveBeenCalled();
+  });
+
+  it("marks an org publisher official", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      publisherId: "publishers:nvidia",
+      handle: "nvidia",
+      added: true,
+      officialPublisherId: "officialPublishers:nvidia",
+    });
+
+    const result = await cmdAddOfficialOrg(
+      makeGlobalOpts(),
+      "@NVIDIA",
+      { reason: "NVIDIA source-backed catalog", yes: true, json: true },
+      false,
+    );
+
+    expect(result).toMatchObject({ ok: true, handle: "nvidia", added: true });
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({
+        method: "POST",
+        path: "/api/v1/users/publisher-official",
+        token: "tkn",
+        body: {
+          action: "add",
+          handle: "nvidia",
+          reason: "NVIDIA source-backed catalog",
+        },
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("removes an org publisher from the official list", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      publisherId: "publishers:nvidia",
+      handle: "nvidia",
+      removed: true,
+      officialPublisherId: "officialPublishers:nvidia",
+    });
+
+    const result = await cmdRemoveOfficialOrg(
+      makeGlobalOpts(),
+      "nvidia",
+      { reason: "requested by publisher", yes: true, json: true },
+      false,
+    );
+
+    expect(result).toMatchObject({ ok: true, handle: "nvidia", removed: true });
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({
+        method: "POST",
+        path: "/api/v1/users/publisher-official",
+        token: "tkn",
+        body: {
+          action: "remove",
+          handle: "nvidia",
+          reason: "requested by publisher",
+        },
+      }),
+      expect.anything(),
+    );
   });
 });
 

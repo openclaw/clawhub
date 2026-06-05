@@ -14,7 +14,10 @@ import {
 
 const usersV1InternalRefs = internal as unknown as {
   publishers: {
+    addOfficialPublisherInternal: unknown;
+    listOfficialPublishersInternal: unknown;
     removeOrgPublisherMemberInternal: unknown;
+    removeOfficialPublisherInternal: unknown;
   };
   users: {
     getBanAppealContextByGitHubProviderAccountIdInternal: unknown;
@@ -84,6 +87,7 @@ export async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request)
     action !== "reclaim" &&
     action !== "reserve" &&
     action !== "publisher" &&
+    action !== "publisher-official" &&
     action !== "publisher-member"
   ) {
     return text("Not found", 404, rate.headers);
@@ -137,6 +141,12 @@ export async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request)
     const admin = requireAdminOrResponse(actorUser, rate.headers);
     if (!admin.ok) return admin.response;
     return handleAdminEnsurePublisher(ctx, payload, actorUserId, rate.headers);
+  }
+
+  if (action === "publisher-official") {
+    const admin = requireAdminOrResponse(actorUser, rate.headers);
+    if (!admin.ok) return admin.response;
+    return handleAdminOfficialPublisherPost(ctx, payload, actorUserId, rate.headers);
   }
 
   if (action === "publisher-member") {
@@ -352,6 +362,37 @@ async function handleAdminRemediateAutobans(
   }
 }
 
+export async function usersGetRouterV1Handler(ctx: ActionCtx, request: Request) {
+  const rate = await applyRateLimit(ctx, request, "read");
+  if (!rate.ok) return rate.response;
+
+  const segments = getPathSegments(request, "/api/v1/users/");
+  if (segments.length !== 1 || segments[0] !== "publisher-official") {
+    return text("Not found", 404, rate.headers);
+  }
+
+  const authResult = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+  if (!authResult.ok) return authResult.response;
+  const admin = requireAdminOrResponse(authResult.user, rate.headers);
+  if (!admin.ok) return admin.response;
+
+  try {
+    const result = await runUsersV1QueryRef(
+      ctx,
+      usersV1InternalRefs.publishers.listOfficialPublishersInternal,
+      { actorUserId: authResult.userId },
+    );
+    return json(result, 200, rate.headers);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Official publisher list failed";
+    if (message.toLowerCase().includes("forbidden")) return text("Forbidden", 403, rate.headers);
+    if (message.toLowerCase().includes("unauthorized")) {
+      return text("Unauthorized", 401, rate.headers);
+    }
+    return text(message, 400, rate.headers);
+  }
+}
+
 /**
  * POST /api/v1/users/restore
  * Admin-only: restore skills from GitHub backup for a user.
@@ -530,6 +571,42 @@ async function handleAdminReserve(
   const failed = results.filter((r) => !r.ok).length;
 
   return json({ ok: true, results, succeeded, failed }, 200, headers);
+}
+
+async function handleAdminOfficialPublisherPost(
+  ctx: ActionCtx,
+  payload: Record<string, unknown>,
+  actorUserId: Id<"users">,
+  headers: HeadersInit,
+) {
+  const action = typeof payload.action === "string" ? payload.action.trim().toLowerCase() : "";
+  const handle = typeof payload.handle === "string" ? payload.handle.trim().toLowerCase() : "";
+  const reason = typeof payload.reason === "string" ? payload.reason.trim() : "";
+  if (action !== "add" && action !== "remove") return text("Invalid action", 400, headers);
+  if (!handle) return text("Missing handle", 400, headers);
+  if (!reason) return text("Missing reason", 400, headers);
+  if (reason.length > 500) return text("Reason too long (max 500 chars)", 400, headers);
+
+  try {
+    const result = await runUsersV1MutationRef(
+      ctx,
+      action === "add"
+        ? usersV1InternalRefs.publishers.addOfficialPublisherInternal
+        : usersV1InternalRefs.publishers.removeOfficialPublisherInternal,
+      {
+        actorUserId,
+        handle,
+        reason,
+      },
+    );
+    return json(result, 200, headers);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Official publisher update failed";
+    if (message.toLowerCase().includes("forbidden")) return text("Forbidden", 403, headers);
+    if (message.toLowerCase().includes("unauthorized")) return text("Unauthorized", 401, headers);
+    if (message.toLowerCase().includes("not found")) return text(message, 404, headers);
+    return text(message, 400, headers);
+  }
 }
 
 async function handleAdminEnsurePublisher(

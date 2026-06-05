@@ -226,6 +226,36 @@ export const ApiV1PublisherRemoveMemberResponseSchema = type({
 export type ApiV1PublisherRemoveMemberResponse =
   (typeof ApiV1PublisherRemoveMemberResponseSchema)[inferred];
 
+export const ApiV1OfficialPublisherListResponseSchema = type({
+  ok: "true",
+  items: type({
+    officialPublisherId: "string",
+    publisherId: "string",
+    handle: "string|null",
+    displayName: "string|null",
+    kind: '"user"|"org"|null',
+    active: "boolean",
+    reason: "string|null",
+    createdByUserId: "string|null",
+    createdByHandle: "string|null",
+    createdAt: "number",
+    updatedAt: "number",
+  }).array(),
+});
+export type ApiV1OfficialPublisherListResponse =
+  (typeof ApiV1OfficialPublisherListResponseSchema)[inferred];
+
+export const ApiV1OfficialPublisherUpdateResponseSchema = type({
+  ok: "true",
+  publisherId: "string",
+  handle: "string",
+  "added?": "boolean",
+  "removed?": "boolean",
+  "officialPublisherId?": "string",
+});
+export type ApiV1OfficialPublisherUpdateResponse =
+  (typeof ApiV1OfficialPublisherUpdateResponseSchema)[inferred];
+
 export const ApiV1SearchResponseSchema = type({
   results: type({
     slug: "string?",

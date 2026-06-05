@@ -32,7 +32,14 @@ import {
   cmdSetRole,
   cmdUnbanUser,
 } from "./commands/moderation.js";
-import { cmdCreateOrg, cmdRemoveOrgMember, cmdRepairScopedPackages } from "./commands/orgs.js";
+import {
+  cmdAddOfficialOrg,
+  cmdCreateOrg,
+  cmdListOfficialOrgs,
+  cmdRemoveOfficialOrg,
+  cmdRemoveOrgMember,
+  cmdRepairScopedPackages,
+} from "./commands/orgs.js";
 import {
   cmdBackfillPackageArtifacts,
   cmdDeletePackageTrustedPublisher,
@@ -347,6 +354,45 @@ registerOrgCommands(org);
 registerSkillModerationCommands(skills);
 
 function registerOrgCommands(command: Command) {
+  const official = command
+    .command("official")
+    .description("Manage official org publishers")
+    .showHelpAfterError()
+    .showSuggestionAfterError();
+
+  official
+    .command("list")
+    .description("List official org publishers")
+    .option("--json", "Output JSON")
+    .action(async (options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdListOfficialOrgs(opts, options);
+    });
+
+  official
+    .command("add")
+    .description("Mark an org publisher as official")
+    .argument("<handle>", "Org publisher handle")
+    .requiredOption("--reason <reason>", "Audit reason")
+    .option("--yes", "Skip confirmation")
+    .option("--json", "Output JSON")
+    .action(async (handle, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdAddOfficialOrg(opts, handle, options, isInputAllowed());
+    });
+
+  official
+    .command("remove")
+    .description("Remove an org publisher from the official list")
+    .argument("<handle>", "Org publisher handle")
+    .requiredOption("--reason <reason>", "Audit reason")
+    .option("--yes", "Skip confirmation")
+    .option("--json", "Output JSON")
+    .action(async (handle, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdRemoveOfficialOrg(opts, handle, options, isInputAllowed());
+    });
+
   command
     .command("create")
     .description("Create or update an org publisher")

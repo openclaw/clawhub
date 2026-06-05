@@ -51,6 +51,7 @@ import {
   starsPostRouterV1Http,
   transfersGetRouterV1Http,
   banAppealContextV1Http,
+  usersGetRouterV1Http,
   usersListV1Http,
   usersPostRouterV1Http,
   verifyDocsSessionV1Http,
@@ -270,6 +271,12 @@ http.route({
   path: "/api/v1/users/ban-appeal-context",
   method: "GET",
   handler: banAppealContextV1Http,
+});
+
+http.route({
+  pathPrefix: `${ApiRoutes.users}/`,
+  method: "GET",
+  handler: usersGetRouterV1Http,
 });
 
 http.route({

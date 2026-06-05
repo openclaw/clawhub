@@ -936,6 +936,130 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("users/publisher-official lists official publishers for admin", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        ok: true,
+        items: [
+          {
+            officialPublisherId: "officialPublishers:openclaw",
+            publisherId: "publishers:openclaw",
+            handle: "openclaw",
+            displayName: "OpenClaw",
+            kind: "org",
+            active: true,
+            reason: "platform-owned publisher",
+            createdByUserId: "users:admin",
+            createdByHandle: "patrick-erichsen-2",
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        ],
+      };
+    });
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return null;
+    });
+
+    const response = await __handlers.usersGetRouterV1Handler(
+      makeCtx({ runQuery, runAction: vi.fn(), runMutation }),
+      new Request("https://example.com/api/v1/users/publisher-official", {
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      items: [{ handle: "openclaw" }],
+    });
+    expect(runQuery).toHaveBeenCalledWith(internal.publishers.listOfficialPublishersInternal, {
+      actorUserId: "users:admin",
+    });
+  });
+
+  it("users/publisher-official adds official org publishers for admin", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        ok: true,
+        publisherId: "publishers:nvidia",
+        handle: "nvidia",
+        added: true,
+        officialPublisherId: "officialPublishers:nvidia",
+      };
+    });
+
+    const response = await __handlers.usersPostRouterV1Handler(
+      makeCtx({ runQuery: vi.fn(), runAction: vi.fn(), runMutation }),
+      new Request("https://example.com/api/v1/users/publisher-official", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({
+          action: "add",
+          handle: "NVIDIA",
+          reason: "NVIDIA source-backed catalog",
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ ok: true, added: true });
+    expect(runMutation).toHaveBeenCalledWith(internal.publishers.addOfficialPublisherInternal, {
+      actorUserId: "users:admin",
+      handle: "nvidia",
+      reason: "NVIDIA source-backed catalog",
+    });
+  });
+
+  it("users/publisher-official removes official org publishers for admin", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        ok: true,
+        publisherId: "publishers:nvidia",
+        handle: "nvidia",
+        removed: true,
+        officialPublisherId: "officialPublishers:nvidia",
+      };
+    });
+
+    const response = await __handlers.usersPostRouterV1Handler(
+      makeCtx({ runQuery: vi.fn(), runAction: vi.fn(), runMutation }),
+      new Request("https://example.com/api/v1/users/publisher-official", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({
+          action: "remove",
+          handle: "NVIDIA",
+          reason: "requested by publisher",
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ ok: true, removed: true });
+    expect(runMutation).toHaveBeenCalledWith(internal.publishers.removeOfficialPublisherInternal, {
+      actorUserId: "users:admin",
+      handle: "nvidia",
+      reason: "requested by publisher",
+    });
+  });
+
   it("publishers creates a self-serve org publisher for the authenticated user", async () => {
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();

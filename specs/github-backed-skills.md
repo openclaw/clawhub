@@ -230,4 +230,3 @@ Keep coverage for:
 - cached `SKILL.md` and `skill-card.md` display content
 - no `skillVersions` for GitHub-backed skills
 - OpenClaw installing the pinned GitHub commit/path rather than ClawHub bytes
-
