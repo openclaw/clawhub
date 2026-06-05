@@ -85,6 +85,8 @@ export type PublicSkill = Pick<
   | "installKind"
   | "githubPath"
   | "githubCurrentCommit"
+  | "githubCurrentStatus"
+  | "githubScanStatus"
   | "githubHasSkillCard"
   | "tags"
   | "capabilityTags"

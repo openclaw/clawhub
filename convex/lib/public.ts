@@ -161,6 +161,8 @@ export function toPublicSkill(skill: HydratableSkill | null | undefined): Public
     installKind: skill.installKind,
     githubPath: skill.githubPath,
     githubCurrentCommit: skill.githubCurrentCommit,
+    githubCurrentStatus: skill.githubCurrentStatus,
+    githubScanStatus: skill.githubScanStatus,
     githubHasSkillCard: skill.githubHasSkillCard,
     tags: skill.tags,
     capabilityTags: skill.capabilityTags,

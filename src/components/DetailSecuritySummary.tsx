@@ -7,6 +7,7 @@ type DetailSecuritySummaryProps = {
   auditHref: string;
   vtAnalysis?: VtAnalysis | null;
   llmAnalysis?: LlmAnalysis | null;
+  githubScanStatus?: string | null;
   suppressScanResults?: boolean;
 };
 
@@ -33,13 +34,17 @@ export function DetailSecuritySummary({
   auditHref,
   vtAnalysis,
   llmAnalysis,
+  githubScanStatus,
   suppressScanResults = false,
 }: DetailSecuritySummaryProps) {
-  const auditVerdict = aggregateAuditVerdict({
-    vtAnalysis,
-    llmAnalysis,
-    suppressScanResults,
-  });
+  const hasVersionScanResult = Boolean(vtAnalysis || llmAnalysis);
+  const auditVerdict = hasVersionScanResult
+    ? aggregateAuditVerdict({
+        vtAnalysis,
+        llmAnalysis,
+        suppressScanResults,
+      })
+    : (githubScanStatus ?? "pending");
   const auditVerdictInfo = getScanStatusInfo(auditVerdict);
   const meterLevel = auditVerdictMeterLevel(auditVerdict);
   return (

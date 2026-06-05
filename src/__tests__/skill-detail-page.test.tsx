@@ -172,6 +172,7 @@ describe("SkillDetailPage", () => {
   it("does not spin forever when a source-backed skill has no stored version", async () => {
     useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;
+      if (args && typeof args === "object" && "kind" in args) return null;
       return undefined;
     });
 
@@ -188,6 +189,8 @@ describe("SkillDetailPage", () => {
               summary: "Deploy AgentIQ workflows.",
               ownerUserId: ownerId,
               ownerPublisherId,
+              installKind: "github",
+              githubScanStatus: "pending",
               tags: {},
               badges: {},
               stats: {
@@ -219,7 +222,8 @@ describe("SkillDetailPage", () => {
       />,
     );
 
-    expect(await screen.findByText("No README available")).toBeTruthy();
+    expect(await screen.findByText("Pending")).toBeTruthy();
+    expect(screen.getByText("Security audit")).toBeTruthy();
     expect(screen.queryByText("Loading README...")).toBeNull();
   });
 

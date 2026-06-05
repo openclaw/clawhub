@@ -811,7 +811,7 @@ description: Install from a GitHub-backed source.
         githubCurrentCommit: "a".repeat(40),
         githubCurrentStatus: "present",
         githubScanStatus: "pending",
-        moderationStatus: "hidden",
+        moderationStatus: "active",
       });
       expect(resolveInstallFromTables(tables, "demo-source")).toMatchObject({
         ok: false,
@@ -872,7 +872,7 @@ description: Install from a GitHub-backed source.
         githubCurrentCommit: "b".repeat(40),
         githubCurrentStatus: "present",
         githubScanStatus: "pending",
-        moderationStatus: "hidden",
+        moderationStatus: "active",
       });
       expect(skill.githubCurrentContentHash).not.toBe(commitAContentHash);
       expect(tables.githubSkillContents[0]).toMatchObject({
@@ -1094,7 +1094,7 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
     expect(tables.skills.find((skill) => skill._id === "skills:aiq-deploy")).toMatchObject({
       githubCurrentCommit: "2".repeat(40),
       githubScanStatus: "pending",
-      moderationStatus: "hidden",
+      moderationStatus: "active",
     });
     expect(tables.githubSkillContents).toEqual([
       expect.objectContaining({
@@ -1112,8 +1112,8 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
       }),
     ]);
     expect(tables.globalStats[0]).toMatchObject({
-      activeSkillsCount: 9,
-      updatedAt: 123,
+      activeSkillsCount: 10,
+      updatedAt: 1,
     });
     const conflict = tables.skills.find((skill) => skill._id === "skills:vision-helper-conflict");
     expect(conflict).toMatchObject({
@@ -1259,7 +1259,7 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
       githubCurrentStatus: "present",
       githubCurrentContentHash: snapshot.skills[0]?.contentHash,
       githubScanStatus: "pending",
-      moderationStatus: "hidden",
+      moderationStatus: "active",
       moderationReason: "pending.scan",
       statsDownloads: 7,
       statsStars: 3,

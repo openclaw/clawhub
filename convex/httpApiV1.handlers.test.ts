@@ -2033,14 +2033,13 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
-  it("skill install resolver returns structured GitHub blocks for hidden stale source-backed skills", async () => {
+  it("skill install resolver returns structured GitHub blocks for pending source-backed skills", async () => {
     const runQuery = makeInstallResolverRunQuery({
-      publicVisible: false,
       skill: {
         _id: "skills:aiq-deploy",
         slug: "aiq-deploy",
         displayName: "AIQ Deploy",
-        moderationStatus: "hidden",
+        moderationStatus: "active",
         moderationReason: "pending.scan",
         installKind: "github",
         githubSourceId: "githubSkillSources:nvidia",

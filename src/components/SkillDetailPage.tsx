@@ -54,6 +54,7 @@ type SkillDetailVersion = NonNullable<NonNullable<SkillBySlugResult>["latestVers
 type GitHubBackedSkillFields = {
   installKind?: "github";
   githubHasSkillCard?: boolean;
+  githubScanStatus?: string | null;
 };
 
 const SHOW_SKILL_COMMENTS = false;
@@ -702,16 +703,22 @@ export function SkillDetailPage({
     return <GenericNotFoundPage />;
   }
 
-  const securitySummary = latestVersion ? (
-    <DetailSecuritySummary
-      auditHref={`/${encodeURIComponent(ownerParam ?? ownerHandle ?? "unknown")}/${encodeURIComponent(
-        skill.slug,
-      )}/security-audit`}
-      vtAnalysis={latestVersion.vtAnalysis ?? null}
-      llmAnalysis={latestVersion.llmAnalysis ?? null}
-      suppressScanResults={suppressVersionScanResults}
-    />
-  ) : null;
+  const githubScanStatus =
+    !latestVersion && (displayedSkill as GitHubBackedSkillFields).installKind === "github"
+      ? (displayedSkill as GitHubBackedSkillFields).githubScanStatus
+      : null;
+  const securitySummary =
+    latestVersion || githubScanStatus ? (
+      <DetailSecuritySummary
+        auditHref={`/${encodeURIComponent(ownerParam ?? ownerHandle ?? "unknown")}/${encodeURIComponent(
+          skill.slug,
+        )}/security-audit`}
+        vtAnalysis={latestVersion?.vtAnalysis ?? null}
+        llmAnalysis={latestVersion?.llmAnalysis ?? null}
+        githubScanStatus={githubScanStatus}
+        suppressScanResults={suppressVersionScanResults}
+      />
+    ) : null;
   const staffVisibilityAlert = staffModerationNote ? (
     <Alert variant="warn" className="skill-visibility-alert" role="status">
       <TriangleAlert size={18} aria-hidden="true" />

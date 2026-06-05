@@ -237,7 +237,7 @@ describe("buildGitHubSkillSyncPlan", () => {
           githubCurrentCommit: "2".repeat(40),
           githubCurrentContentHash: snapshot.skills[0]?.contentHash,
           githubScanStatus: "pending",
-          moderationStatus: "hidden",
+          moderationStatus: "active",
           moderationReason: "pending.scan",
         }),
       }),
@@ -361,7 +361,7 @@ describe("buildGitHubSkillSyncPlan", () => {
       githubCurrentCommit: "3".repeat(40),
       githubCurrentContentHash: contentHash,
       githubScanStatus: "pending",
-      moderationStatus: "hidden",
+      moderationStatus: "active",
       moderationReason: "pending.scan",
     });
     expect(plan.stats.unchanged).toBe(1);

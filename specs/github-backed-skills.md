@@ -175,7 +175,8 @@ For clean GitHub-backed skills, ClawHub returns:
 OpenClaw downloads the GitHub archive for that commit and extracts only the skill
 path. The local lock/origin version is the commit SHA.
 
-For pending verification, ClawHub returns a structured block:
+Pending verification keeps the skill visible in ClawHub search and detail UI,
+but normal install/update returns a structured block:
 
 ```json
 {
