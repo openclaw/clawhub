@@ -110,6 +110,11 @@ type OrgMembersResult = {
 type GitHubSkillSource = {
   _id: Id<"githubSkillSources">;
   repo: string;
+  ownerPublisher?: {
+    _id: Id<"publishers">;
+    handle: string;
+    displayName: string;
+  } | null;
   defaultBranch?: string;
   lastSyncStatus?: "ok" | "failed" | "skipped";
   lastSyncError?: string;
@@ -270,10 +275,8 @@ export function Settings() {
       : "skip",
   ) as OrgMembersResult | null | undefined;
   const githubSources = useQuery(
-    api.githubSkillSources.listForPublisher,
-    effectiveActiveView === "githubSources" && selectedSourcePublisher
-      ? { ownerPublisherId: selectedSourcePublisher.publisher._id }
-      : "skip",
+    api.githubSkillSources.listForManageableOfficialPublishers,
+    effectiveActiveView === "githubSources" && canConfigureGitHubSources ? {} : "skip",
   ) as GitHubSkillSource[] | undefined;
 
   useEffect(() => {
@@ -420,11 +423,12 @@ export function Settings() {
   }
 
   async function onDeleteGitHubSource(source: GitHubSkillSource) {
-    if (!selectedSourcePublisher) return;
+    const ownerPublisherId = source.ownerPublisher?._id ?? selectedSourcePublisher?.publisher._id;
+    if (!ownerPublisherId) return;
     setDeletingSourceId(source._id);
     try {
       const result = await deleteGitHubSource({
-        ownerPublisherId: selectedSourcePublisher.publisher._id,
+        ownerPublisherId,
         sourceId: source._id,
       });
       toast.success(
@@ -1140,7 +1144,6 @@ export function Settings() {
 
                 <GitHubSourceList
                   sources={githubSources}
-                  publisherHandle={selectedSourcePublisher?.publisher.handle}
                   deletingSourceId={deletingSourceId}
                   onDeleteSource={setSourceToDelete}
                 />
@@ -1518,12 +1521,10 @@ function OrgLogoSmall({
 
 function GitHubSourceList({
   sources,
-  publisherHandle,
   deletingSourceId,
   onDeleteSource,
 }: {
   sources: GitHubSkillSource[] | undefined;
-  publisherHandle: string | undefined;
   deletingSourceId: Id<"githubSkillSources"> | null;
   onDeleteSource: (source: GitHubSkillSource) => void;
 }) {
@@ -1562,6 +1563,11 @@ function GitHubSourceList({
                       >
                         {`https://github.com/${source.repo}`}
                       </a>
+                      {source.ownerPublisher ? (
+                        <div className="mt-1 truncate text-xs font-semibold text-[color:var(--ink-soft)]">
+                          @{source.ownerPublisher.handle}
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 </div>
@@ -1589,8 +1595,11 @@ function GitHubSourceList({
                           <div className="min-w-0">
                             <Link
                               to="/$owner/$slug"
-                              params={{ owner: publisherHandle ?? "", slug: skill.slug }}
-                              disabled={!publisherHandle}
+                              params={{
+                                owner: source.ownerPublisher?.handle ?? "",
+                                slug: skill.slug,
+                              }}
+                              disabled={!source.ownerPublisher}
                               className="block truncate text-sm font-semibold text-[color:var(--ink)] no-underline hover:text-[color:var(--accent)] hover:no-underline"
                             >
                               {skill.displayName}
@@ -1886,25 +1895,24 @@ function GitHubSourceForm({
   isSyncing: boolean;
 }) {
   return (
-    <form className="contents" onSubmit={onConfigure}>
-      {publisherOptions.length > 1 ? (
+    <form className="flex flex-col gap-3 sm:flex-row sm:items-end" onSubmit={onConfigure}>
+      <div className="min-w-0 sm:w-64 sm:shrink-0">
         <Field label="Publisher" htmlFor="settings-github-source-publisher">
           <Select value={selectedPublisherId} onValueChange={onPublisherChange}>
             <SelectTrigger id="settings-github-source-publisher">
-              <SelectValue />
+              <SelectValue placeholder="Select org" />
             </SelectTrigger>
             <SelectContent>
               {publisherOptions.map((entry) => (
                 <SelectItem key={entry.publisher._id} value={entry.publisher._id}>
-                  @{entry.publisher.handle} · {entry.role}
+                  @{entry.publisher.handle}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
         </Field>
-      ) : null}
-
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-end">
         <div className="min-w-0 flex-1">
           <Field label="GitHub repo URL" htmlFor="settings-github-repo">
             <Input

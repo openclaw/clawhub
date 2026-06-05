@@ -818,6 +818,26 @@ describe("SecurityScanResults static guidance", () => {
     );
   });
 
+  it("renders latest audit timestamps deterministically for hydration", () => {
+    render(
+      <SecurityAuditPage
+        entity={{
+          kind: "skill",
+          title: "Hydration Guard",
+          name: "hydration-guard",
+          version: "1.0.0",
+          detailPath: "/local/hydration-guard",
+        }}
+        llmAnalysis={{
+          ...clawScanAnalysis,
+          checkedAt: Date.UTC(2024, 0, 2, 3, 4),
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Jan 2, 2024 at 3:04 AM UTC")).toBeTruthy();
+  });
+
   it("shows VirusTotal reports in the shared scanner report shell", () => {
     const { container } = render(
       <SecurityAuditPage

@@ -1,10 +1,11 @@
 import { ConvexError, v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
-import type { MutationCtx } from "./_generated/server";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { internalQuery, mutation, query } from "./functions";
 import { requireUser } from "./lib/access";
 import { adjustGlobalPublicSkillsCount, getPublicSkillVisibilityDelta } from "./lib/globalStats";
-import { requirePublisherRole } from "./lib/publishers";
+import { isOfficialPublisher } from "./lib/officialPublishers";
+import { isPublisherActive, isPublisherRoleAllowed, requirePublisherRole } from "./lib/publishers";
 
 type PublicGitHubSkillSource = Pick<
   Doc<"githubSkillSources">,
@@ -22,6 +23,7 @@ type PublicGitHubSkillSource = Pick<
   | "createdAt"
   | "updatedAt"
 > & {
+  ownerPublisher: Pick<Doc<"publishers">, "_id" | "handle" | "displayName"> | null;
   skills: Array<
     Pick<Doc<"skills">, "_id" | "slug" | "displayName" | "githubPath" | "githubCurrentStatus">
   >;
@@ -31,6 +33,51 @@ export const getByIdInternal = internalQuery({
   args: { sourceId: v.id("githubSkillSources") },
   handler: async (ctx, args) => ctx.db.get(args.sourceId),
 });
+
+async function toPublicGitHubSkillSource(
+  ctx: Pick<QueryCtx, "db">,
+  source: Doc<"githubSkillSources">,
+): Promise<PublicGitHubSkillSource> {
+  const skills = await ctx.db
+    .query("skills")
+    .withIndex("by_github_source", (q) => q.eq("githubSourceId", source._id))
+    .collect();
+  const visibleGitHubSkills = skills
+    .filter((skill) => skill.installKind === "github" && !skill.softDeletedAt)
+    .sort((a, b) => a.displayName.localeCompare(b.displayName))
+    .map((skill) => ({
+      _id: skill._id,
+      slug: skill.slug,
+      displayName: skill.displayName,
+      githubPath: skill.githubPath,
+      githubCurrentStatus: skill.githubCurrentStatus,
+    }));
+  const ownerPublisher = source.ownerPublisherId ? await ctx.db.get(source.ownerPublisherId) : null;
+
+  return {
+    _id: source._id as Id<"githubSkillSources">,
+    repo: source.repo,
+    ownerPublisher: ownerPublisher
+      ? {
+          _id: ownerPublisher._id,
+          handle: ownerPublisher.handle,
+          displayName: ownerPublisher.displayName,
+        }
+      : null,
+    defaultBranch: source.defaultBranch,
+    lastSyncStatus: source.lastSyncStatus,
+    lastSyncError: source.lastSyncError,
+    lastSyncErrorAt: source.lastSyncErrorAt,
+    displayManifestStatus: source.displayManifestStatus,
+    displayManifestFetchedAt: source.displayManifestFetchedAt,
+    displayManifestCommit: source.displayManifestCommit,
+    lastSyncIssues: source.lastSyncIssues,
+    lastSyncInvalidSkills: source.lastSyncInvalidSkills,
+    createdAt: source.createdAt,
+    updatedAt: source.updatedAt,
+    skills: visibleGitHubSkills,
+  };
+}
 
 export const listForPublisher = query({
   args: { ownerPublisherId: v.id("publishers") },
@@ -46,41 +93,42 @@ export const listForPublisher = query({
       .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", args.ownerPublisherId))
       .collect();
     const sortedSources = sources.sort((a, b) => b.updatedAt - a.updatedAt);
-    return await Promise.all(
-      sortedSources.map(async (source) => {
-        const skills = await ctx.db
-          .query("skills")
-          .withIndex("by_github_source", (q) => q.eq("githubSourceId", source._id))
-          .collect();
-        const visibleGitHubSkills = skills
-          .filter((skill) => skill.installKind === "github" && !skill.softDeletedAt)
-          .sort((a, b) => a.displayName.localeCompare(b.displayName))
-          .map((skill) => ({
-            _id: skill._id,
-            slug: skill.slug,
-            displayName: skill.displayName,
-            githubPath: skill.githubPath,
-            githubCurrentStatus: skill.githubCurrentStatus,
-          }));
+    return await Promise.all(sortedSources.map((source) => toPublicGitHubSkillSource(ctx, source)));
+  },
+});
 
-        return {
-          _id: source._id as Id<"githubSkillSources">,
-          repo: source.repo,
-          defaultBranch: source.defaultBranch,
-          lastSyncStatus: source.lastSyncStatus,
-          lastSyncError: source.lastSyncError,
-          lastSyncErrorAt: source.lastSyncErrorAt,
-          displayManifestStatus: source.displayManifestStatus,
-          displayManifestFetchedAt: source.displayManifestFetchedAt,
-          displayManifestCommit: source.displayManifestCommit,
-          lastSyncIssues: source.lastSyncIssues,
-          lastSyncInvalidSkills: source.lastSyncInvalidSkills,
-          createdAt: source.createdAt,
-          updatedAt: source.updatedAt,
-          skills: visibleGitHubSkills,
-        };
-      }),
+export const listForManageableOfficialPublishers = query({
+  args: {},
+  handler: async (ctx): Promise<PublicGitHubSkillSource[]> => {
+    const { userId } = await requireUser(ctx);
+    const memberships = await ctx.db
+      .query("publisherMembers")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .collect();
+    const ownerPublisherIds: Id<"publishers">[] = [];
+    for (const membership of memberships) {
+      if (!isPublisherRoleAllowed(membership.role, ["admin"])) continue;
+      const publisher = await ctx.db.get(membership.publisherId);
+      if (
+        !publisher ||
+        publisher.kind !== "org" ||
+        !isPublisherActive(publisher) ||
+        !(await isOfficialPublisher(ctx, publisher))
+      ) {
+        continue;
+      }
+      ownerPublisherIds.push(publisher._id);
+    }
+    const sourceGroups = await Promise.all(
+      ownerPublisherIds.map((ownerPublisherId) =>
+        ctx.db
+          .query("githubSkillSources")
+          .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", ownerPublisherId))
+          .collect(),
+      ),
     );
+    const sortedSources = sourceGroups.flat().sort((a, b) => b.updatedAt - a.updatedAt);
+    return await Promise.all(sortedSources.map((source) => toPublicGitHubSkillSource(ctx, source)));
   },
 });
 
