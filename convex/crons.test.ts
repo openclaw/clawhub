@@ -38,6 +38,9 @@ vi.mock("./_generated/api", () => ({
       pruneExpiredSkillScanRequestsInternal: Symbol("skill-scan-request-prune"),
     },
     downloads: { pruneDownloadDedupesInternal: Symbol("download-dedupe-prune") },
+    downloadMetrics: {
+      pruneDownloadMetricDedupesInternal: Symbol("download-metric-dedupe-prune"),
+    },
   },
 }));
 

@@ -1142,6 +1142,37 @@ function makeInsertReleaseCtx(
             ),
           };
         }
+        if (table === "officialPublishers") {
+          return {
+            withIndex: vi.fn(
+              (
+                _indexName: string,
+                buildQuery?: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+              ) => {
+                const filters = new Map<string, unknown>();
+                const query = {
+                  eq(field: string, value: unknown) {
+                    filters.set(field, value);
+                    return query;
+                  },
+                };
+                buildQuery?.(query);
+                const rawPublisherId = filters.get("publisherId");
+                const publisherId = typeof rawPublisherId === "string" ? rawPublisherId : "";
+                const publisher = recordsById[publisherId];
+                return {
+                  unique: vi
+                    .fn()
+                    .mockResolvedValue(
+                      publisher?.handle === "openclaw"
+                        ? { _id: "officialPublishers:openclaw", publisherId }
+                        : null,
+                    ),
+                };
+              },
+            ),
+          };
+        }
         throw new Error(`Unexpected table ${table}`);
       }),
       insert,
@@ -1258,9 +1289,34 @@ function makeTransferPackageOwnerCtx(options?: {
           }
           if (table === "officialPublishers") {
             return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue(null),
-              })),
+              withIndex: vi.fn((_indexName: string, builder: (q: unknown) => unknown) => {
+                const terms: Record<string, unknown> = {};
+                builder({
+                  eq: (field: string, value: unknown) => {
+                    terms[field] = value;
+                    return {};
+                  },
+                });
+                const ownerPublisher =
+                  terms.publisherId === "publishers:openclaw"
+                    ? (options?.ownerPublisher ?? {
+                        _id: "publishers:openclaw",
+                        kind: "org",
+                        handle: "openclaw",
+                        displayName: "OpenClaw",
+                        trustedPublisher: true,
+                      })
+                    : null;
+                return {
+                  unique: vi
+                    .fn()
+                    .mockResolvedValue(
+                      ownerPublisher?.handle === "openclaw"
+                        ? { _id: "officialPublishers:openclaw", publisherId: terms.publisherId }
+                        : null,
+                    ),
+                };
+              }),
             };
           }
           if (
@@ -1412,6 +1468,13 @@ function makeUserTransferPackageOwnerCtx(options?: {
                     ),
                 };
               }),
+            };
+          }
+          if (table === "officialPublishers") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue(null),
+              })),
             };
           }
           throw new Error(`Unexpected table ${table}`);

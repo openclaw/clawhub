@@ -256,6 +256,17 @@ function indexedRows<T>(rows: T[]) {
   };
 }
 
+function emptyOfficialPublishersQuery() {
+  return {
+    withIndex: vi.fn((indexName: string) => {
+      if (indexName !== "by_publisher") {
+        throw new Error(`unexpected officialPublishers index ${indexName}`);
+      }
+      return { unique: vi.fn(async () => null) };
+    }),
+  };
+}
+
 function makeResolvePublishTargetCtx(options: {
   targetPublisher: Record<string, unknown>;
   targetMembership?: Record<string, unknown> | null;
@@ -523,6 +534,9 @@ describe("publishers membership controls", () => {
                 packageRows.filter((pkg) => pkg.ownerPublisherId === fields.ownerPublisherId),
               );
             }
+            if (table === "officialPublishers" && indexName === "by_publisher") {
+              return { unique: vi.fn(async () => null) };
+            }
             throw new Error(`unexpected ${table} index ${indexName}`);
           }),
         })),
@@ -599,6 +613,9 @@ describe("publishers membership controls", () => {
               indexName === "by_owner_publisher_active_installs"
             ) {
               return indexedRows([]);
+            }
+            if (table === "officialPublishers" && indexName === "by_publisher") {
+              return { unique: vi.fn(async () => null) };
             }
             throw new Error(`unexpected ${table} index ${indexName}`);
           }),
@@ -816,6 +833,9 @@ describe("publishers membership controls", () => {
             ) {
               return indexedRows([]);
             }
+            if (table === "officialPublishers" && indexName === "by_publisher") {
+              return { unique: vi.fn(async () => null) };
+            }
             throw new Error(`unexpected ${table} index ${indexName}`);
           }),
         })),
@@ -1023,6 +1043,9 @@ describe("publishers membership controls", () => {
               ownerPublisherQueries.push(String(fields.ownerPublisherId));
               return indexedRows([]);
             }
+            if (table === "officialPublishers" && indexName === "by_publisher") {
+              return { unique: vi.fn(async () => null) };
+            }
             throw new Error(`unexpected ${table} index ${indexName}`);
           }),
         })),
@@ -1136,6 +1159,9 @@ describe("publishers membership controls", () => {
                 },
               ]);
             }
+            if (table === "officialPublishers" && indexName === "by_publisher") {
+              return { unique: vi.fn(async () => null) };
+            }
             throw new Error(`unexpected ${table} index ${indexName}`);
           }),
         })),
@@ -1225,6 +1251,9 @@ describe("publishers membership controls", () => {
             }
             if (table === "packages" && indexName === "by_owner_publisher_active_updated") {
               return indexedRows([]);
+            }
+            if (table === "officialPublishers" && indexName === "by_publisher") {
+              return { unique: vi.fn(async () => null) };
             }
             throw new Error(`unexpected ${table} index ${indexName}`);
           }),
@@ -1324,6 +1353,9 @@ describe("publishers membership controls", () => {
                   updatedAt: 4,
                 },
               ]);
+            }
+            if (table === "officialPublishers" && indexName === "by_publisher") {
+              return { unique: vi.fn(async () => null) };
             }
             throw new Error(`unexpected ${table} index ${indexName}`);
           }),
@@ -1453,6 +1485,9 @@ describe("publishers membership controls", () => {
             if (table === "githubSkillSources" && indexName === "by_owner_publisher") {
               return indexedRows([githubSource]);
             }
+            if (table === "officialPublishers" && indexName === "by_publisher") {
+              return { unique: vi.fn(async () => null) };
+            }
             throw new Error(`unexpected ${table} index ${indexName}`);
           }),
         })),
@@ -1544,6 +1579,9 @@ describe("publishers membership controls", () => {
                   displayManifestStatus: "invalid",
                 },
               ]);
+            }
+            if (table === "officialPublishers" && indexName === "by_publisher") {
+              return { unique: vi.fn(async () => null) };
             }
             throw new Error(`unexpected ${table} index ${indexName}`);
           }),
@@ -2213,6 +2251,9 @@ describe("publishers membership controls", () => {
               })),
             };
           }
+          if (table === "officialPublishers") {
+            return emptyOfficialPublishersQuery();
+          }
           throw new Error(`unexpected table ${table}`);
         }),
         patch,
@@ -2563,6 +2604,9 @@ describe("publisher bootstrap", () => {
               }),
             };
           }
+          if (table === "officialPublishers") {
+            return emptyOfficialPublishersQuery();
+          }
           throw new Error(`unexpected table ${table}`);
         }),
       },
@@ -2606,6 +2650,9 @@ describe("publisher bootstrap", () => {
                 return { unique: vi.fn().mockResolvedValue(null) };
               }),
             };
+          }
+          if (table === "officialPublishers") {
+            return emptyOfficialPublishersQuery();
           }
           throw new Error(`unexpected table ${table}`);
         }),
@@ -2661,6 +2708,9 @@ describe("publisher bootstrap", () => {
                 return { unique: vi.fn().mockResolvedValue(null) };
               }),
             };
+          }
+          if (table === "officialPublishers") {
+            return emptyOfficialPublishersQuery();
           }
           throw new Error(`unexpected table ${table}`);
         }),
@@ -2797,6 +2847,9 @@ describe("publisher bootstrap", () => {
               }),
             };
           }
+          if (table === "officialPublishers") {
+            return emptyOfficialPublishersQuery();
+          }
           throw new Error(`unexpected table ${table}`);
         }),
       },
@@ -2864,6 +2917,9 @@ describe("self-serve org publisher creation", () => {
             };
           }),
         };
+      }
+      if (table === "officialPublishers") {
+        return emptyOfficialPublishersQuery();
       }
       throw new Error(`unexpected table ${table}`);
     });
@@ -3095,6 +3151,9 @@ describe("self-serve org publisher creation", () => {
             };
           }),
         };
+      }
+      if (table === "officialPublishers") {
+        return emptyOfficialPublishersQuery();
       }
       throw new Error(`unexpected table ${table}`);
     });
