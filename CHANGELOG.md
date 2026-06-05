@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.19.2 - 2026-06-05
+
+### Fixes
+
+- CLI: accept the legacy `clawhub skill verify --json` flag as a hidden compatibility no-op while continuing to print JSON by default.
+
 ## 0.19.1 - 2026-06-05
 
 ### Fixes

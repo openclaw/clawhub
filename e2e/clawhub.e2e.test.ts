@@ -724,6 +724,126 @@ describe("clawhub e2e", () => {
     expect(result.stdout).not.toMatch(/--json/);
   });
 
+  it("skill verify accepts the legacy json flag with flattened verification responses", async () => {
+    const requestLog: string[] = [];
+    const server = createServer(async (req, res) => {
+      const url = new URL(req.url ?? "/", "http://127.0.0.1");
+      requestLog.push(`${req.method ?? "GET"} ${url.pathname}${url.search}`);
+      if (req.method === "GET" && url.pathname === `${ApiRoutes.skills}/fulcra-context/verify`) {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            schema: "clawhub.skill.verify.v1",
+            ok: true,
+            decision: "pass",
+            reasons: [],
+            slug: "fulcra-context",
+            displayName: "Fulcra Context",
+            pageUrl: "https://clawhub.ai/arc-claw-bot/fulcra-context",
+            publisherHandle: "arc-claw-bot",
+            publisherDisplayName: "Arc Claw Bot",
+            publisherProfileUrl: "https://clawhub.ai/user/arc-claw-bot",
+            version: "1.4.10",
+            resolvedFrom: "version",
+            tag: null,
+            createdAt: 1780075196459,
+            card: {
+              available: true,
+              path: "skill-card.md",
+              url: `${registry}/api/v1/skills/fulcra-context/card?version=1.4.10`,
+              sha256: "f6d6dc3701e5fea5116526261c73031030b06a6110e57fdc3ed4de7df8f315dd",
+              size: 3285,
+              contentType: "text/markdown",
+            },
+            artifact: {
+              sourceFingerprint: "source-fingerprint",
+              bundleFingerprints: ["generated-bundle-fingerprint"],
+              files: [
+                {
+                  path: "SKILL.md",
+                  size: 5929,
+                  sha256: "db813e41699340098840b6ba2ed958f1ae53fb620e4cc1cb0aa03aabfd1a4dbc",
+                },
+              ],
+            },
+            provenance: { source: "unavailable" },
+            security: {
+              status: "clean",
+              passed: true,
+              rawStatus: "clean",
+              verdict: "benign",
+              confidence: "high",
+              summary: "Docs-only skill with bounded Fulcra read workflows.",
+              model: "gpt-5.5",
+              checkedAt: 1780082252374,
+              signals: {
+                staticScan: { status: "clean", rawStatus: "clean", reasonCodes: [] },
+                virusTotal: { status: "clean", rawStatus: "clean", source: "engines" },
+                skillSpector: {
+                  status: "clean",
+                  rawStatus: "clean",
+                  score: 0,
+                  severity: "LOW",
+                  recommendation: "SAFE",
+                  issueCount: 0,
+                },
+                dependencyRegistry: { status: "clean" },
+              },
+            },
+            signature: { status: "unsigned" },
+          }),
+        );
+        return;
+      }
+      res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+      res.end("not found");
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+
+    const registry = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const cfg = await makeTempConfig(registry, "test-token");
+    try {
+      const result = await spawnCommand(
+        "bun",
+        [
+          "clawhub",
+          "skill",
+          "verify",
+          "fulcra-context",
+          "--version",
+          "1.4.10",
+          "--json",
+          "--site",
+          registry,
+          "--registry",
+          registry,
+        ],
+        {
+          cwd: process.cwd(),
+          env: { ...process.env, CLAWHUB_CONFIG_PATH: cfg.path, CLAWHUB_DISABLE_TELEMETRY: "1" },
+        },
+      );
+
+      expect(result.status).toBe(0);
+      expect(result.stderr).not.toMatch(/unknown option|API response:/i);
+      const output = JSON.parse(result.stdout) as Record<string, unknown>;
+      expect(output).toMatchObject({
+        ok: true,
+        decision: "pass",
+        reasons: [],
+        slug: "fulcra-context",
+        publisherHandle: "arc-claw-bot",
+        version: "1.4.10",
+      });
+      expect(output).not.toHaveProperty("skill");
+      expect(output).not.toHaveProperty("publisher");
+      expect(requestLog).toEqual(["GET /api/v1/skills/fulcra-context/verify?version=1.4.10"]);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await rm(cfg.dir, { recursive: true, force: true });
+    }
+  });
+
   itIfLiveMutations(
     "publishes, deletes, and undeletes a skill (logged-in)",
     async () => {
