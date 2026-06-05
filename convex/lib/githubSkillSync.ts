@@ -23,6 +23,10 @@ export type GitHubSkillSourceSnapshot = {
   skills: DiscoveredGitHubSkill[];
 };
 
+export type GitHubSkillSourceMetadataSnapshot = Omit<GitHubSkillSourceSnapshot, "skills"> & {
+  skills: DiscoveredGitHubSkillMetadata[];
+};
+
 export type DiscoveredGitHubSkill = {
   slug: string;
   displayName: string;
@@ -35,6 +39,11 @@ export type DiscoveredGitHubSkill = {
   skillCardMarkdown?: string;
   contentHash: string;
 };
+
+export type DiscoveredGitHubSkillMetadata = Omit<
+  DiscoveredGitHubSkill,
+  "skillMarkdown" | "skillCardMarkdown"
+>;
 
 export type ExistingGitHubSkillForSync = {
   _id: string;
@@ -254,7 +263,7 @@ export function buildGitHubSkillSyncPlan({
   ownerUserId: string;
   ownerPublisherId?: string;
   existingSkills: ExistingGitHubSkillForSync[];
-  snapshot: GitHubSkillSourceSnapshot;
+  snapshot: GitHubSkillSourceSnapshot | GitHubSkillSourceMetadataSnapshot;
   now: number;
 }): GitHubSkillSyncPlan {
   const sourcePatch = {

@@ -301,6 +301,7 @@ const githubSkillSources = defineTable({
   .index("by_repo", ["repo"])
   .index("by_owner_publisher", ["ownerPublisherId"])
   .index("by_owner_publisher_and_repo", ["ownerPublisherId", "repo"])
+  .index("by_created", ["createdAt"])
   .index("by_updated", ["updatedAt"]);
 
 const githubSkillContents = defineTable({

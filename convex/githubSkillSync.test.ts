@@ -9,6 +9,7 @@ import {
   recordGitHubSkillSourceSyncAttemptHandler,
   resolveOwnerUserIdForPublisherHandler,
   syncGitHubSkillSourcesHandler,
+  upsertGitHubSkillContentHandler,
   verifyGitHubSkillHandler,
 } from "./githubSkillSync";
 import { stripGitHubZipRoot } from "./lib/githubImport";
@@ -678,6 +679,26 @@ description: Install from a GitHub-backed source.
               : null;
           return skill && source ? { skill, source } : null;
         }
+        if ("sourceId" in args) {
+          return (tables.skills ?? []).flatMap((skill) => {
+            if (
+              skill.githubSourceId !== args.sourceId ||
+              skill.installKind !== "github" ||
+              skill.githubCurrentStatus !== "present" ||
+              typeof skill.githubPath !== "string" ||
+              typeof skill.githubCurrentContentHash !== "string"
+            ) {
+              return [];
+            }
+            return [
+              {
+                skillId: skill._id,
+                githubPath: skill.githubPath,
+                githubCurrentContentHash: skill.githubCurrentContentHash,
+              },
+            ];
+          });
+        }
         if ("batchSize" in args || "cursor" in args || Object.keys(args).length === 0) {
           return await listSourcesForSyncHandler({ db } as never, args);
         }
@@ -695,6 +716,15 @@ description: Install from a GitHub-backed source.
         }
         if ("scanStatus" in args && "contentHash" in args) {
           return await applyGitHubSkillVerificationResultHandler(
+            { db } as never,
+            {
+              ...args,
+              now,
+            } as never,
+          );
+        }
+        if ("discovered" in args && "commit" in args) {
+          return await upsertGitHubSkillContentHandler(
             { db } as never,
             {
               ...args,
@@ -740,6 +770,27 @@ description: Install from a GitHub-backed source.
       expect(tables.githubSkillContents[0]).toMatchObject({
         skillMarkdown: expect.stringContaining("# Demo Source A"),
         githubCommit: "a".repeat(40),
+      });
+      const metadataSyncCalls = actionCtx.runMutation.mock.calls.filter(
+        ([, args]) => args && typeof args === "object" && "snapshot" in args,
+      );
+      expect(metadataSyncCalls).toHaveLength(1);
+      expect(metadataSyncCalls[0]?.[1]).toMatchObject({
+        snapshot: {
+          skills: [
+            expect.not.objectContaining({
+              skillMarkdown: expect.any(String),
+              skillCardMarkdown: expect.any(String),
+            }),
+          ],
+        },
+      });
+      const contentSyncCalls = actionCtx.runMutation.mock.calls.filter(
+        ([, args]) => args && typeof args === "object" && "discovered" in args,
+      );
+      expect(contentSyncCalls).toHaveLength(1);
+      expect(contentSyncCalls[0]?.[1]).toMatchObject({
+        discovered: { skillMarkdown: expect.stringContaining("# Demo Source A") },
       });
 
       let skill = getSkill(tables, "demo-source");

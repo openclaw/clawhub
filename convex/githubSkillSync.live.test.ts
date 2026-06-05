@@ -4,6 +4,7 @@ import {
   applyGitHubSkillSourceSyncHandler,
   applyGitHubSkillVerificationResultHandler,
   configurePublicGitHubSkillSourceHandler,
+  upsertGitHubSkillContentHandler,
   verifyGitHubSkillHandler,
 } from "./githubSkillSync";
 import { buildSkillInstallResolution } from "./lib/installResolver";
@@ -132,6 +133,26 @@ describe("GitHub-backed skills live canary", () => {
                 : null;
             return skill && source ? { skill, source } : null;
           }
+          if ("sourceId" in args) {
+            return (tables.skills ?? []).flatMap((skill) => {
+              if (
+                skill.githubSourceId !== args.sourceId ||
+                skill.installKind !== "github" ||
+                skill.githubCurrentStatus !== "present" ||
+                typeof skill.githubPath !== "string" ||
+                typeof skill.githubCurrentContentHash !== "string"
+              ) {
+                return [];
+              }
+              return [
+                {
+                  skillId: skill._id,
+                  githubPath: skill.githubPath,
+                  githubCurrentContentHash: skill.githubCurrentContentHash,
+                },
+              ];
+            });
+          }
           throw new Error(`unexpected live canary query args: ${JSON.stringify(args)}`);
         },
         runMutation: async (_mutation: unknown, args: Record<string, unknown>) => {
@@ -146,6 +167,15 @@ describe("GitHub-backed skills live canary", () => {
           }
           if ("scanStatus" in args && "contentHash" in args) {
             return await applyGitHubSkillVerificationResultHandler(
+              { db } as never,
+              {
+                ...args,
+                now,
+              } as never,
+            );
+          }
+          if ("discovered" in args && "commit" in args) {
+            return await upsertGitHubSkillContentHandler(
               { db } as never,
               {
                 ...args,
