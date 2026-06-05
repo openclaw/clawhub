@@ -922,6 +922,7 @@ description: Install from a GitHub-backed source.
         githubCurrentCommit: "c".repeat(40),
         githubCurrentStatus: "missing",
         githubRemovedAt: 300,
+        softDeletedAt: 300,
         moderationStatus: "hidden",
         moderationReason: "github.upstream.removed",
       });

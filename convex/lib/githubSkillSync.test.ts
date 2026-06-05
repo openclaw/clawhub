@@ -514,6 +514,7 @@ describe("buildGitHubSkillSyncPlan", () => {
           githubCurrentCommit: "2".repeat(40),
           githubCurrentStatus: "missing",
           githubRemovedAt: 123,
+          softDeletedAt: 123,
           moderationStatus: "hidden",
           moderationReason: "github.upstream.removed",
         }),

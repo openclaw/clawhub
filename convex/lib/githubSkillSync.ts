@@ -411,6 +411,7 @@ export function buildGitHubSkillSyncPlan({
         githubCurrentStatus: "missing",
         githubCurrentCheckedAt: now,
         githubRemovedAt: removedAt,
+        softDeletedAt: existing.softDeletedAt ?? removedAt,
         ...(wasAlreadyRemoved ? {} : { updatedAt: now }),
         ...moderation,
       },
