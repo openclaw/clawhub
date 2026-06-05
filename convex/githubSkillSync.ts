@@ -438,6 +438,7 @@ export async function applyGitHubSkillSourceSyncHandler(
       githubCurrentStatus: skill.githubCurrentStatus,
       githubScanStatus: skill.githubScanStatus,
       githubRemovedAt: skill.githubRemovedAt,
+      softDeletedAt: skill.softDeletedAt,
     })),
     snapshot: {
       ...args.snapshot,

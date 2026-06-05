@@ -1123,6 +1123,61 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
     expect(tables.skills).toHaveLength(2);
   });
 
+  it("preserves an existing soft delete timestamp when upstream remains missing", async () => {
+    const snapshot = await buildGitHubSkillSourceSnapshot({
+      repo: "NVIDIA/skills",
+      defaultBranch: "main",
+      commit: "2".repeat(40),
+      entries: {},
+    });
+    const { db, tables } = createDb({
+      githubSkillSources: [
+        {
+          _id: "githubSkillSources:nvidia",
+          repo: "NVIDIA/skills",
+          ownerPublisherId: "publishers:nvidia",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      skills: [
+        {
+          _id: "skills:aiq-deploy",
+          slug: "aiq-deploy",
+          displayName: "AIQ Deploy",
+          ownerUserId: "users:nvidia",
+          ownerPublisherId: "publishers:nvidia",
+          installKind: "github",
+          githubSourceId: "githubSkillSources:nvidia",
+          githubPath: "skills/aiq-deploy",
+          githubCurrentStatus: "missing",
+          githubRemovedAt: 60,
+          softDeletedAt: 40,
+          githubScanStatus: "clean",
+          tags: {},
+          stats: { downloads: 0, stars: 0, installsCurrent: 0, installsAllTime: 0, versions: 0 },
+          createdAt: 1,
+          updatedAt: 60,
+        },
+      ],
+    });
+
+    await applyGitHubSkillSourceSyncHandler({ db } as never, {
+      sourceId: "githubSkillSources:nvidia" as never,
+      repo: "NVIDIA/skills",
+      ownerUserId: "users:nvidia" as never,
+      ownerPublisherId: "publishers:nvidia" as never,
+      snapshot,
+      now: 123,
+    });
+
+    expect(tables.skills[0]).toMatchObject({
+      githubCurrentStatus: "missing",
+      githubRemovedAt: 60,
+      softDeletedAt: 40,
+    });
+  });
+
   it("stores GitHub content for newly inserted source-backed skills without creating versions", async () => {
     const snapshot = await buildGitHubSkillSourceSnapshot({
       repo: "NVIDIA/skills",

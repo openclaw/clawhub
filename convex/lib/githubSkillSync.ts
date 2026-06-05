@@ -60,6 +60,7 @@ export type ExistingGitHubSkillForSync = {
   githubCurrentStatus?: GitHubCurrentStatus;
   githubScanStatus?: GitHubSkillScanStatus;
   githubRemovedAt?: number;
+  softDeletedAt?: number;
 };
 
 export type GitHubBackedSkillModeration = {
