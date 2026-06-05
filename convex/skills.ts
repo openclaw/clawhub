@@ -8409,9 +8409,7 @@ export const getGitHubSkillContent = query({
     const skill = await ctx.db.get(args.skillId);
     if (!skill || skill.installKind !== "github") return null;
     if (skill.githubCurrentStatus !== "present") return null;
-    if (!(await canReadGitHubSkillContent(ctx, skill))) {
-      throw new ConvexError("Skill content not available");
-    }
+    if (!(await canReadGitHubSkillContent(ctx, skill))) return null;
 
     const content = await ctx.db
       .query("githubSkillContents")

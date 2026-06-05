@@ -16,10 +16,15 @@ vi.mock("./lib/soulPublish", () => ({
 }));
 
 const { getAuthUserId } = await import("@convex-dev/auth/server");
-const { getReadme: getSkillReadme, getFileText: getSkillFileText } = await import("./skills");
+const {
+  getReadme: getSkillReadme,
+  getFileText: getSkillFileText,
+  getGitHubSkillContent,
+} = await import("./skills");
 const { getReadme: getSoulReadme, getFileText: getSoulFileText } = await import("./souls");
 const getSkillReadmeHandler = getSkillReadme as unknown as { _handler: Function };
 const getSkillFileTextHandler = getSkillFileText as unknown as { _handler: Function };
+const getGitHubSkillContentHandler = getGitHubSkillContent as unknown as { _handler: Function };
 const getSoulReadmeHandler = getSoulReadme as unknown as { _handler: Function };
 const getSoulFileTextHandler = getSoulFileText as unknown as { _handler: Function };
 
@@ -292,6 +297,54 @@ describe("version file access actions", () => {
         path: "SKILL.md",
       } as never),
     ).rejects.toThrow("Version not available");
+  });
+
+  it("returns null instead of throwing for public reads from malware-blocked GitHub skill content", async () => {
+    const skill = {
+      _id: "skills:github",
+      _creationTime: 1,
+      slug: "github-demo",
+      displayName: "GitHub Demo",
+      summary: "Summary",
+      ownerUserId: "users:owner",
+      canonicalSkillId: undefined,
+      forkOf: undefined,
+      latestVersionId: undefined,
+      installKind: "github",
+      githubCurrentStatus: "present",
+      githubCurrentContentHash: "hash-a",
+      tags: {},
+      badges: undefined,
+      stats: {
+        downloads: 1,
+        installsCurrent: 1,
+        installsAllTime: 1,
+        stars: 1,
+        versions: 0,
+        comments: 0,
+      },
+      createdAt: 1,
+      updatedAt: 2,
+      softDeletedAt: undefined,
+      moderationStatus: "hidden",
+      moderationFlags: ["blocked.malware"],
+      moderationReason: "scanner.vt.malicious",
+    };
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => (id === "skills:github" ? skill : null)),
+        query: vi.fn(() => {
+          throw new Error("Content should not be read when the skill is not publicly readable");
+        }),
+      },
+    };
+
+    await expect(
+      getGitHubSkillContentHandler._handler(ctx, {
+        skillId: "skills:github",
+        kind: "readme",
+      } as never),
+    ).resolves.toBeNull();
   });
 
   it("still allows public access to visible skill files", async () => {
