@@ -1,9 +1,9 @@
 {
-  "generatedAt": "2026-06-05T23:05:17.478Z",
+  "generatedAt": "2026-06-05T23:09:45.000Z",
   "mode": "feature",
   "status": "pass",
-  "provider": "local in-app browser",
-  "scenario": "manual proof: rendered emails and banned-account sign-in copy",
+  "provider": "rendered email builder plus full-stack local-auth Playwright",
+  "scenario": "email builder rendering plus live ClawHub dashboard auth-error route",
   "candidate": "worktree 03bc802e",
   "outputDir": ".artifacts/pr-2520-proof",
   "lanes": [
@@ -21,7 +21,7 @@
         },
         {
           "lane": "candidate",
-          "name": "Banned-account sign-in copy",
+          "name": "Live banned-account dashboard sign-in copy",
           "slug": "banned-sign-in",
           "status": "pass",
           "screenshot": "screenshots/banned-sign-in.png"
