@@ -16,7 +16,6 @@ import { Container } from "../../components/layout/Container";
 import { MarketplaceIcon } from "../../components/MarketplaceIcon";
 import { OfficialBadge, OfficialTag } from "../../components/OfficialBadge";
 import { BrowseResultsSkeleton } from "../../components/skeletons/BrowseResultsSkeleton";
-import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent } from "../../components/ui/card";
 import { Skeleton } from "../../components/ui/skeleton";
@@ -193,7 +192,6 @@ function PublisherProfile() {
                 <span className="publisher-profile-handle">@{publisher.handle}</span>
                 <div className="publisher-profile-title-row">
                   <h1>{publisher.displayName}</h1>
-                  {publisher.kind === "org" ? <Badge>Org</Badge> : null}
                   {publisher.official ? <OfficialTag /> : null}
                   {publisher.kind === "user"
                     ? visibleAffiliations.map((entry) => (
