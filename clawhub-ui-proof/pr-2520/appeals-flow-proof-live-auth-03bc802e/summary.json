@@ -1,0 +1,32 @@
+{
+  "generatedAt": "2026-06-05T23:09:45.000Z",
+  "mode": "feature",
+  "status": "pass",
+  "provider": "rendered email builder plus full-stack local-auth Playwright",
+  "scenario": "email builder rendering plus live ClawHub dashboard auth-error route",
+  "candidate": "worktree 03bc802e",
+  "outputDir": ".artifacts/pr-2520-proof",
+  "lanes": [
+    {
+      "name": "candidate",
+      "ref": "worktree 03bc802e",
+      "status": "pass",
+      "steps": [
+        {
+          "lane": "candidate",
+          "name": "Rendered moderation emails",
+          "slug": "rendered-emails",
+          "status": "pass",
+          "screenshot": "screenshots/rendered-emails.png"
+        },
+        {
+          "lane": "candidate",
+          "name": "Live banned-account dashboard sign-in copy",
+          "slug": "banned-sign-in",
+          "status": "pass",
+          "screenshot": "screenshots/banned-sign-in.png"
+        }
+      ]
+    }
+  ]
+}
