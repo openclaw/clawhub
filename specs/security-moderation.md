@@ -26,6 +26,20 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Restore pages only clear the exact `softDeletedAt` timestamp from the ban
   being lifted and only for skills hidden with `moderationReason = "user.banned"`.
 
+## Account and publisher deletion
+
+- User and org deletion are soft-delete flows. They must not hard-delete users,
+  publishers, memberships, skills, packages/plugins, reports, or audit rows.
+- Deleting a personal account hides personal publisher resources and any orgs
+  where that user is the sole owner. Multi-owner orgs stay active.
+- Deleting an org publisher marks the publisher deleted/deactivated and hides
+  resources owned by that publisher. Skills are hidden with
+  `moderationReason = "publisher.deleted"` and packages/plugins with
+  `softDeletedReason = "publisher.deleted"`.
+- Public/user-facing browse, detail, install, raw-file, and package download
+  paths must continue to exclude soft-deleted resources regardless of whether
+  the deletion came from moderation, account deletion, or org deletion.
+
 ## Reporting + auto-hide
 
 - Reports are unique per user + target (skill/comment/package).

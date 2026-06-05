@@ -55,6 +55,7 @@ const {
   backfillUserStatsInternalHandler,
   cleanupEmptySkillsInternalHandler,
   nominateEmptySkillSpammersInternalHandler,
+  repairLegacyPublisherOwnershipForUserHandler,
   repairLegacyPublisherOwnershipHandler,
   upsertSkillBadgeRecordInternal,
 } = await import("./maintenance");
@@ -595,6 +596,78 @@ describe("maintenance legacy publisher ownership repair", () => {
           ("publishedSkills" in call.patch || "publishedPackages" in call.patch),
       ),
     ).toBe(false);
+  });
+
+  it("repairs legacy owner projections for one targeted user by handle", async () => {
+    const { db, tableMap } = makeLegacyPublisherOwnershipDb();
+    const scheduler = { runAfter: vi.fn() };
+
+    await repairLegacyPublisherOwnershipHandler({ db, scheduler } as never, {
+      phase: "users",
+      dryRun: false,
+      batchSize: 10,
+      scheduleNext: false,
+    });
+    const createdPublisher = Array.from(tableMap.publishers.values()).find(
+      (publisher) => publisher.handle === "legacy-owner",
+    );
+
+    const skillsResult = await repairLegacyPublisherOwnershipForUserHandler(
+      { db, scheduler } as never,
+      {
+        handle: "legacy-owner",
+        phase: "skills",
+        dryRun: false,
+        batchSize: 10,
+        scheduleNext: false,
+      },
+    );
+    expect(skillsResult).toMatchObject({
+      phase: "skills",
+      dryRun: false,
+      userId: "users:legacy",
+      publisherId: createdPublisher?._id,
+      scanned: 1,
+      repaired: 1,
+      skipped: 0,
+      isDone: true,
+    });
+    expect(tableMap.skills.get("skills:legacy")).toMatchObject({
+      ownerPublisherId: createdPublisher?._id,
+    });
+    expect(tableMap.skills.get("skills:deleted-owner")).toMatchObject({
+      ownerPublisherId: undefined,
+    });
+    expect(tableMap.skillSlugAliases.get("skillSlugAliases:legacy")).toMatchObject({
+      ownerPublisherId: createdPublisher?._id,
+    });
+    expect(tableMap.skillEmbeddings.get("skillEmbeddings:legacy")).toMatchObject({
+      ownerPublisherId: createdPublisher?._id,
+    });
+
+    const packagesResult = await repairLegacyPublisherOwnershipForUserHandler(
+      { db, scheduler } as never,
+      {
+        handle: "legacy-owner",
+        phase: "packages",
+        dryRun: false,
+        batchSize: 10,
+        scheduleNext: false,
+      },
+    );
+    expect(packagesResult).toMatchObject({
+      phase: "packages",
+      dryRun: false,
+      userId: "users:legacy",
+      publisherId: createdPublisher?._id,
+      scanned: 1,
+      repaired: 1,
+      skipped: 0,
+      isDone: true,
+    });
+    expect(tableMap.packages.get("packages:legacy")).toMatchObject({
+      ownerPublisherId: createdPublisher?._id,
+    });
   });
 
   it("aborts apply-mode skill repair when owner projection sync fails", async () => {

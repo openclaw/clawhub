@@ -331,7 +331,7 @@ const packageAutobanRemediationInternalRefs = internal as unknown as {
 type DbReaderCtx = Pick<QueryCtx | MutationCtx, "db">;
 const BAN_USER_PACKAGES_BATCH_SIZE = 25;
 const PACKAGE_PUBLISH_TOKEN_REVOKE_BATCH_SIZE = 25;
-type PackageSoftDeletedReason = "user.banned" | "user.deactivated";
+type PackageSoftDeletedReason = "user.banned" | "user.deactivated" | "publisher.deleted";
 const ownedPackageScanScopeValidator = v.optional(
   v.union(v.literal("ownerUserId"), v.literal("personalPublisher")),
 );
@@ -2986,15 +2986,9 @@ async function softDeletePackageDoc(
     .query("packageReleases")
     .withIndex("by_package", (q) => q.eq("packageId", pkg._id))
     .collect();
-  let releaseCount = 0;
-  const deletedReleaseIds: Array<Id<"packageReleases">> = [];
-  for (const release of releases) {
-    if (release.softDeletedAt) continue;
-    await ctx.db.patch(release._id, { softDeletedAt: now });
-    releaseCount += 1;
-    deletedReleaseIds.push(release._id);
-  }
-
+  const deletedReleaseIds = releases
+    .filter((release) => !release.softDeletedAt)
+    .map((release) => release._id);
   const packagePatch: Partial<Doc<"packages">> = {
     softDeletedAt: now,
     softDeletedReason: params.reason,
@@ -3013,6 +3007,9 @@ async function softDeletePackageDoc(
     ownerHandle: deleteOwner?.handle ?? "",
     ownerKind: deleteOwner?.kind,
   });
+  for (const releaseId of deletedReleaseIds) {
+    await ctx.db.patch(releaseId, { softDeletedAt: now });
+  }
   await ctx.db.insert("auditLogs", {
     actorUserId: params.actorUserId,
     action: "package.delete",
@@ -3025,7 +3022,7 @@ async function softDeletePackageDoc(
       ownerPublisherId: pkg.ownerPublisherId,
       actorRole: params.actorRole ?? "user",
       softDeletedReason: params.reason ?? null,
-      releaseCount,
+      releaseCount: deletedReleaseIds.length,
       releaseIds: deletedReleaseIds,
       source: params.source,
     },
@@ -3035,7 +3032,7 @@ async function softDeletePackageDoc(
   return {
     ok: true as const,
     packageId: pkg._id,
-    releaseCount,
+    releaseCount: deletedReleaseIds.length,
     alreadyDeleted: false as const,
   };
 }
@@ -3584,6 +3581,66 @@ export const applyAccountDeletionToOwnedPackagesBatchInternal = internalMutation
     );
 
     return { ok: true as const, deletedCount, revokedTokenCount, scheduled };
+  },
+});
+
+export const applyPublisherDeletionToOwnedPackagesBatchInternal = internalMutation({
+  args: {
+    ownerPublisherId: v.id("publishers"),
+    actorUserId: v.id("users"),
+    deletedAt: v.number(),
+    cursor: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const publisher = await ctx.db.get(args.ownerPublisherId);
+    if (!publisher || publisher.deletedAt !== args.deletedAt) {
+      return {
+        ok: true as const,
+        deletedCount: 0,
+        revokedTokenCount: 0,
+        scheduled: false,
+        stale: true as const,
+      };
+    }
+
+    const { page, isDone, continueCursor } = await ctx.db
+      .query("packages")
+      .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", args.ownerPublisherId))
+      .order("desc")
+      .paginate({
+        cursor: args.cursor ?? null,
+        numItems: BAN_USER_PACKAGES_BATCH_SIZE,
+      });
+
+    let deletedCount = 0;
+    let revokedTokenCount = 0;
+    for (const pkg of page) {
+      const revokeResult = await revokePackagePublishTokensForPackage(ctx, pkg._id, args.deletedAt);
+      revokedTokenCount += revokeResult.revokedCount;
+      if (pkg.softDeletedAt) continue;
+
+      await softDeletePackageDoc(ctx, pkg, {
+        actorUserId: args.actorUserId,
+        actorRole: "user",
+        deletedAt: args.deletedAt,
+        reason: "publisher.deleted",
+        source: "dashboard",
+      });
+      deletedCount += 1;
+    }
+
+    if (!isDone) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.packages.applyPublisherDeletionToOwnedPackagesBatchInternal,
+        {
+          ...args,
+          cursor: continueCursor,
+        },
+      );
+    }
+
+    return { ok: true as const, deletedCount, revokedTokenCount, scheduled: !isDone };
   },
 });
 

@@ -15,7 +15,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resolveLocalAuthRunnerConfig } from "./playwright-local-auth-config";
 
-const DEFAULT_CONVEX_DEPLOYMENT = "local:anonymous-agent";
+const DEFAULT_CONVEX_DEPLOYMENT = "anonymous-agent";
+const DEFAULT_DEV_AUTH_CONVEX_DEPLOYMENT = "anonymous:anonymous-agent";
 const DEFAULT_PLAYWRIGHT_PORT = 4173;
 const DEFAULT_E2E_WORKER_TOKEN = "local-e2e-worker-token";
 const START_TIMEOUT_MS = 120_000;
@@ -117,7 +118,14 @@ function readLocalDeploymentConfig(): LocalDeploymentConfig | null {
 
 function readLocalDeployment() {
   const config = readLocalDeploymentConfig();
-  return config ? `local:${config.deploymentName}` : null;
+  if (!config) return null;
+  return config.deploymentName.startsWith("anonymous-")
+    ? `anonymous:${config.deploymentName}`
+    : `local:${config.deploymentName}`;
+}
+
+function devAuthDeploymentMarker(deployment: string) {
+  return deployment.startsWith("anonymous-") ? `anonymous:${deployment}` : deployment;
 }
 
 function getLocalUrlPort(url: string, label: string) {
@@ -314,6 +322,10 @@ async function main() {
   const appUrl = `http://127.0.0.1:${appPort}`;
   const convexUrl = runnerConfig.convexUrl;
   const convexSiteUrl = runnerConfig.convexSiteUrl;
+  const convexCloudPort = String(getLocalUrlPort(convexUrl, "PLAYWRIGHT_LOCAL_AUTH_CONVEX_URL"));
+  const convexSitePort = String(
+    getLocalUrlPort(convexSiteUrl, "PLAYWRIGHT_LOCAL_AUTH_CONVEX_SITE_URL"),
+  );
   if (await isReachable(convexUrl)) {
     throw new Error(
       `Local Convex is already reachable at ${convexUrl}. Stop the running local Convex process before running this e2e so it can use isolated disposable state.`,
@@ -330,9 +342,7 @@ async function main() {
     AUTH_GITHUB_ID: process.env.AUTH_GITHUB_ID ?? "local-dev",
     AUTH_GITHUB_SECRET: process.env.AUTH_GITHUB_SECRET ?? "local-dev",
     CONVEX_AGENT_MODE: process.env.CONVEX_AGENT_MODE ?? "anonymous",
-    CONVEX_DEPLOYMENT: deployment,
     CONVEX_SITE_URL: convexSiteUrl,
-    DEV_AUTH_CONVEX_DEPLOYMENT: deployment,
     DEV_AUTH_ENABLED: "1",
     JWKS: authKeys.JWKS,
     JWT_PRIVATE_KEY: authKeys.JWT_PRIVATE_KEY,
@@ -344,15 +354,19 @@ async function main() {
     VITE_ENABLE_DEV_AUTH: "1",
     VITE_SITE_URL: appUrl,
   };
+  if (deployment) {
+    e2eEnv.CONVEX_DEPLOYMENT = deployment;
+    e2eEnv.DEV_AUTH_CONVEX_DEPLOYMENT = devAuthDeploymentMarker(deployment);
+  }
 
   writeFileSync(
     envFile,
     [
       `AUTH_GITHUB_ID=${e2eEnv.AUTH_GITHUB_ID}`,
       `AUTH_GITHUB_SECRET=${e2eEnv.AUTH_GITHUB_SECRET}`,
-      `CONVEX_DEPLOYMENT=${deployment}`,
+      ...(deployment ? [`CONVEX_DEPLOYMENT=${deployment}`] : []),
       `CONVEX_SITE_URL=${convexSiteUrl}`,
-      `DEV_AUTH_CONVEX_DEPLOYMENT=${deployment}`,
+      ...(deployment ? [`DEV_AUTH_CONVEX_DEPLOYMENT=${devAuthDeploymentMarker(deployment)}`] : []),
       "DEV_AUTH_ENABLED=1",
       `JWKS=${authKeys.JWKS}`,
       `JWT_PRIVATE_KEY=${authKeys.JWT_PRIVATE_KEY}`,
@@ -373,7 +387,6 @@ async function main() {
     [
       "convex",
       "dev",
-      "--local",
       "--env-file",
       envFile,
       "--typecheck",
@@ -381,16 +394,19 @@ async function main() {
       "--codegen",
       "disable",
       "--local-cloud-port",
-      String(getLocalUrlPort(convexUrl, "Local Convex URL")),
+      convexCloudPort,
       "--local-site-port",
-      String(getLocalUrlPort(convexSiteUrl, "Local Convex site URL")),
+      convexSitePort,
     ],
     e2eEnv,
   );
   await waitUntilReachable(convexUrl, "Local Convex");
 
   console.log("Configuring local Convex environment for local-auth Playwright e2e.");
-  const localAuthDeployment = readLocalDeployment() ?? deployment;
+  const localAuthDeployment =
+    readLocalDeployment() ?? deployment ?? DEFAULT_DEV_AUTH_CONVEX_DEPLOYMENT;
+  e2eEnv.CONVEX_DEPLOYMENT = localAuthDeployment;
+  e2eEnv.DEV_AUTH_CONVEX_DEPLOYMENT = localAuthDeployment;
   await setLocalConvexEnv(convexUrl, [
     { name: "AUTH_GITHUB_ID", value: e2eEnv.AUTH_GITHUB_ID ?? "local-dev" },
     { name: "AUTH_GITHUB_SECRET", value: e2eEnv.AUTH_GITHUB_SECRET ?? "local-dev" },

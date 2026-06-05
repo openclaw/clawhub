@@ -449,6 +449,16 @@ export const ApiV1SkillScanSubmitRequestSchema = type({
 });
 export type ApiV1SkillScanSubmitRequest = (typeof ApiV1SkillScanSubmitRequestSchema)[inferred];
 
+export const ApiV1SkillScanQueueSchema = type({
+  queuedAhead: "number",
+  queuedAheadIsEstimate: "boolean?",
+  position: "number|null",
+  running: "number",
+  runningIsEstimate: "boolean?",
+  note: "string",
+});
+export type ApiV1SkillScanQueue = (typeof ApiV1SkillScanQueueSchema)[inferred];
+
 export const ApiV1SkillScanSubmitResponseSchema = type({
   ok: "true",
   scanId: "string",
@@ -457,6 +467,7 @@ export const ApiV1SkillScanSubmitResponseSchema = type({
   sourceKind: '"upload"|"published"',
   update: "boolean",
   alreadyQueued: "boolean?",
+  queue: ApiV1SkillScanQueueSchema.optional(),
 });
 export type ApiV1SkillScanSubmitResponse = (typeof ApiV1SkillScanSubmitResponseSchema)[inferred];
 
@@ -470,6 +481,7 @@ export const ApiV1SkillScanStatusResponseSchema = type({
   writtenBack: "boolean?",
   artifact: "unknown?",
   report: "unknown?",
+  queue: ApiV1SkillScanQueueSchema.optional(),
   lastError: "string?",
   createdAt: "number",
   updatedAt: "number",

@@ -9,6 +9,7 @@ import {
   enqueueBulkSkillRescanBatchForAdminInternal,
   failCodexScanJob,
   getBulkSkillRescanBatchStatusForAdminInternal,
+  getSkillScanRequestForUserInternal,
   pruneExpiredSkillScanRequestsInternal,
   requestPackageRescanForUserInternal,
   requestPackageRescan,
@@ -102,6 +103,7 @@ type ScanJob = {
   targetKind: string;
   skillVersionId?: string;
   packageReleaseId?: string;
+  skillScanRequestId?: string;
   source: string;
   priority: number;
   hasMaliciousSignal: boolean;
@@ -195,6 +197,26 @@ const getBulkSkillRescanBatchStatusForAdminInternalHandler = (
       terminal: number;
       done: boolean;
       failedJobIds: string[];
+    }
+  >
+)._handler;
+
+const getSkillScanRequestForUserInternalHandler = (
+  getSkillScanRequestForUserInternal as unknown as WrappedHandler<
+    { actorUserId: string; scanId: string },
+    {
+      ok: true;
+      scanId: string;
+      jobId?: string;
+      status: string;
+      queue: {
+        queuedAhead: number;
+        queuedAheadIsEstimate?: boolean;
+        position: number | null;
+        running: number;
+        runningIsEstimate?: boolean;
+        note: string;
+      };
     }
   >
 )._handler;
@@ -583,6 +605,83 @@ function makeClaimCtx(jobs: ScanJob[]) {
     patches,
     patch,
     query,
+  };
+}
+
+function makeSkillScanStatusCtx(options: {
+  actor: Record<string, unknown>;
+  request: Record<string, unknown>;
+  jobs: ScanJob[];
+}) {
+  const docs = new Map<string, Record<string, unknown>>([
+    [String(options.actor._id), options.actor],
+    [String(options.request._id), options.request],
+    ...options.jobs.map((job) => [job._id, job] as const),
+  ]);
+  const get = vi.fn(async (id: string) => docs.get(id) ?? null);
+  const query = vi.fn((tableName: string) => {
+    expect(tableName).toBe("securityScanJobs");
+    return {
+      withIndex: vi.fn(
+        (
+          indexName: string,
+          buildRange: (q: {
+            eq: (field: string, value: unknown) => unknown;
+            lte: (field: string, value: number) => unknown;
+          }) => unknown,
+        ) => {
+          const eqFilters = new Map<string, unknown>();
+          const lteFilters = new Map<string, number>();
+          const indexBuilder = {
+            eq(field: string, value: unknown) {
+              eqFilters.set(field, value);
+              return indexBuilder;
+            },
+            lte(field: string, value: number) {
+              lteFilters.set(field, value);
+              return indexBuilder;
+            },
+          };
+          buildRange(indexBuilder);
+          const select = () =>
+            options.jobs
+              .filter((job) => {
+                for (const [field, value] of eqFilters) {
+                  if ((job as unknown as Record<string, unknown>)[field] !== value) return false;
+                }
+                for (const [field, value] of lteFilters) {
+                  const fieldValue = (job as unknown as Record<string, unknown>)[field];
+                  if (typeof fieldValue !== "number" || fieldValue > value) return false;
+                }
+                return true;
+              })
+              .sort((a, b) => {
+                if (indexName.includes("next_run_at")) {
+                  if (a.nextRunAt !== b.nextRunAt) return a.nextRunAt - b.nextRunAt;
+                  if (a._creationTime !== b._creationTime) {
+                    return a._creationTime - b._creationTime;
+                  }
+                  return a._id.localeCompare(b._id);
+                }
+                return a.createdAt - b.createdAt;
+              });
+          const collect = vi.fn(async () => select());
+          const take = vi.fn(async (limit: number) => select().slice(0, limit));
+          return {
+            collect,
+            take,
+            order: vi.fn(() => ({ collect, take })),
+          };
+        },
+      ),
+    };
+  });
+
+  return {
+    db: {
+      get,
+      query,
+    },
   };
 }
 
@@ -1486,6 +1585,177 @@ describe("securityScan", () => {
       "securityScanJobs:manual-1",
       "securityScanJobs:manual-2",
     ]);
+  });
+
+  it("reports queued scan position for manual scan requests", async () => {
+    const targetJob = makeScanJob({
+      _id: "securityScanJobs:target",
+      targetKind: "skillScanRequest",
+      skillScanRequestId: "skillScanRequests:target",
+      source: "manual",
+      createdAt: 300,
+      nextRunAt: 300,
+    });
+    const ctx = makeSkillScanStatusCtx({
+      actor: { _id: "users:owner", role: "user" },
+      request: {
+        _id: "skillScanRequests:target",
+        actorUserId: "users:owner",
+        sourceKind: "upload",
+        update: false,
+        writtenBack: false,
+        status: "queued",
+        securityScanJobId: targetJob._id,
+        files: [],
+        expiresAt: 1000,
+        createdAt: 300,
+        updatedAt: 300,
+      },
+      jobs: [
+        makeScanJob({
+          _id: "securityScanJobs:older",
+          source: "manual",
+          createdAt: 100,
+          nextRunAt: 100,
+        }),
+        makeScanJob({
+          _id: "securityScanJobs:running",
+          status: "running",
+          source: "manual",
+          createdAt: 200,
+          nextRunAt: 200,
+        }),
+        targetJob,
+        makeScanJob({
+          _id: "securityScanJobs:bulk",
+          source: "bulk-rescan",
+          createdAt: 1,
+          nextRunAt: 1,
+        }),
+      ],
+    });
+
+    const status = await getSkillScanRequestForUserInternalHandler(ctx, {
+      actorUserId: "users:owner",
+      scanId: "skillScanRequests:target",
+    });
+
+    expect(status.queue).toEqual({
+      queuedAhead: 1,
+      queuedAheadIsEstimate: false,
+      position: 2,
+      running: 1,
+      runningIsEstimate: false,
+      note: "Scans are asynchronous and may take time to complete.",
+    });
+  });
+
+  it("uses claim-order tie-breaks for same-timestamp queued scan positions", async () => {
+    const targetJob = makeScanJob({
+      _id: "securityScanJobs:target",
+      _creationTime: 2,
+      targetKind: "skillScanRequest",
+      skillScanRequestId: "skillScanRequests:target",
+      source: "manual",
+      createdAt: 300,
+      nextRunAt: 300,
+    });
+    const ctx = makeSkillScanStatusCtx({
+      actor: { _id: "users:owner", role: "user" },
+      request: {
+        _id: "skillScanRequests:target",
+        actorUserId: "users:owner",
+        sourceKind: "upload",
+        update: false,
+        writtenBack: false,
+        status: "queued",
+        securityScanJobId: targetJob._id,
+        files: [],
+        expiresAt: 1000,
+        createdAt: 300,
+        updatedAt: 300,
+      },
+      jobs: [
+        makeScanJob({
+          _id: "securityScanJobs:first",
+          _creationTime: 1,
+          source: "manual",
+          createdAt: 300,
+          nextRunAt: 300,
+        }),
+        targetJob,
+        makeScanJob({
+          _id: "securityScanJobs:last",
+          _creationTime: 3,
+          source: "manual",
+          createdAt: 300,
+          nextRunAt: 300,
+        }),
+      ],
+    });
+
+    const status = await getSkillScanRequestForUserInternalHandler(ctx, {
+      actorUserId: "users:owner",
+      scanId: "skillScanRequests:target",
+    });
+
+    expect(status.queue).toMatchObject({
+      queuedAhead: 1,
+      queuedAheadIsEstimate: false,
+      position: 2,
+    });
+  });
+
+  it("bounds large queue position scans and marks the count as estimated", async () => {
+    const targetJob = makeScanJob({
+      _id: "securityScanJobs:target",
+      targetKind: "skillScanRequest",
+      skillScanRequestId: "skillScanRequests:target",
+      source: "manual",
+      createdAt: 1_000,
+      nextRunAt: 1_000,
+    });
+    const ctx = makeSkillScanStatusCtx({
+      actor: { _id: "users:owner", role: "user" },
+      request: {
+        _id: "skillScanRequests:target",
+        actorUserId: "users:owner",
+        sourceKind: "upload",
+        update: false,
+        writtenBack: false,
+        status: "queued",
+        securityScanJobId: targetJob._id,
+        files: [],
+        expiresAt: 1000,
+        createdAt: 1_000,
+        updatedAt: 1_000,
+      },
+      jobs: [
+        ...Array.from({ length: 300 }, (_, index) =>
+          makeScanJob({
+            _id: `securityScanJobs:older-${index}`,
+            source: "manual",
+            createdAt: index,
+            nextRunAt: index,
+          }),
+        ),
+        targetJob,
+      ],
+    });
+
+    const status = await getSkillScanRequestForUserInternalHandler(ctx, {
+      actorUserId: "users:owner",
+      scanId: "skillScanRequests:target",
+    });
+
+    expect(status.queue).toEqual({
+      queuedAhead: 250,
+      queuedAheadIsEstimate: true,
+      position: null,
+      running: 0,
+      runningIsEstimate: false,
+      note: "Scans are asynchronous and may take time to complete.",
+    });
   });
 
   it("caps SkillSpector findings before storing completed scan results", async () => {
