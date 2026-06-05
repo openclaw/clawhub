@@ -5066,6 +5066,12 @@ describe("packages public queries", () => {
         })
         .mockResolvedValueOnce(null),
       runMutation: vi.fn(),
+      storage: {
+        get: vi.fn(async (storageId: string) => {
+          if (storageId !== "storage:large") return null;
+          return new Blob([new Uint8Array(MAX_PUBLISH_FILE_BYTES + 1)]);
+        }),
+      },
     };
 
     await expect(
@@ -5080,7 +5086,7 @@ describe("packages public queries", () => {
           files: [
             {
               path: "assets/viewer-runtime.js",
-              size: MAX_PUBLISH_FILE_BYTES + 1,
+              size: 1,
               storageId: "storage:large",
               sha256: "large",
             },
@@ -5118,7 +5124,7 @@ describe("packages public queries", () => {
       },
       storage: {
         get: vi.fn(async (storageId: string) => {
-          const files = new Map<string, string>([
+          const files = new Map<string, BlobPart>([
             [
               "storage:package",
               JSON.stringify({
@@ -5134,7 +5140,7 @@ describe("packages public queries", () => {
             ],
             ["storage:manifest", JSON.stringify({ id: "demo-plugin" })],
             ["storage:runtime", "export {};"],
-            ["storage:large", "/* bundled viewer runtime */"],
+            ["storage:large", new Uint8Array(MAX_PUBLISH_FILE_BYTES + 1)],
           ]);
           const content = files.get(storageId);
           return content ? new Blob([content]) : null;

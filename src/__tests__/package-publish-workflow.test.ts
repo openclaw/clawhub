@@ -24,7 +24,10 @@ describe("package publish workflow", () => {
     expect(workflow).toContain("resolve_github_url_ref_and_path");
     expect(workflow).toContain("quote(ref, safe='')");
     expect(workflow).toContain("error.code in (404, 422)");
-    expect(workflow).toContain('.plugin-inspector.json").write_text');
+    expect(workflow).toContain('config_path = root / ".plugin-inspector.json"');
+    expect(workflow).toContain("generated_config_path.write_text(str(config_path)");
+    expect(workflow).toContain("cleanup_generated_inspector_config");
+    expect(workflow).toContain('rm -f "$generated_config"');
     expect(workflow).toContain('re.sub(r"[^a-z0-9]+", "-", base)');
     expect(workflow).toContain("@openclaw/plugin-inspector");
     expect(workflow).toContain("ci --no-openclaw");

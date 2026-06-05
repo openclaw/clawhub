@@ -43,6 +43,7 @@ import {
   readArtifactReportStatus,
   appendPackageModerationEventLog,
 } from "./lib/artifactModeration";
+import { sha256Hex } from "./lib/clawpack";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
 import { isOfficialPublisher } from "./lib/officialPublishers";
@@ -5317,6 +5318,25 @@ function packageInspectorWarningDedupeKey(
   ]);
 }
 
+async function verifyPublishFileStorageMetadata(
+  ctx: Pick<ActionCtx, "storage">,
+  files: ReturnType<typeof normalizePublishFiles>,
+) {
+  return await Promise.all(
+    files.map(async (file) => {
+      const blob = await ctx.storage.get(file.storageId as Id<"_storage">);
+      if (!blob) throw new ConvexError(`Uploaded file no longer exists: ${file.path}`);
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      return {
+        ...file,
+        size: blob.size,
+        sha256: await sha256Hex(bytes),
+        contentType: file.contentType?.trim() || blob.type || undefined,
+      };
+    }),
+  );
+}
+
 async function publishPackageImpl(
   ctx: Parameters<typeof requireGitHubAccountAge>[0] &
     Pick<ActionCtx, "storage" | "scheduler" | "runAction">,
@@ -5446,7 +5466,7 @@ async function publishPackageImpl(
   }
 
   const displayName = payload.displayName?.trim() || name;
-  const files = normalizePublishFiles(payload.files);
+  const files = await verifyPublishFileStorageMetadata(ctx, normalizePublishFiles(payload.files));
   if (payload.artifact?.kind !== "npm-pack") {
     const oversizedFile = findOversizedPublishFile(files);
     if (oversizedFile) {
