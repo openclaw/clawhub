@@ -114,6 +114,22 @@ describe("PublishedItemCard", () => {
       expect(screen.getByLabelText("Official")).toBeTruthy();
       expect(screen.queryByText("Official")).toBeNull();
     });
+
+    it("does not render artifact-kind prefixes as owner handles", () => {
+      render(<PublishedItemCard item={{ ...baseSkill, icon: null }} view="list" />);
+
+      expect(screen.queryByText("@skill")).toBeNull();
+      expect(screen.queryByText("/")).toBeNull();
+      expect(screen.getByText("Test Skill")).toBeTruthy();
+    });
+
+    it("does not render plugin artifact-kind prefixes as owner handles", () => {
+      render(<PublishedItemCard item={{ ...basePlugin, icon: null }} view="list" />);
+
+      expect(screen.queryByText("@plugin")).toBeNull();
+      expect(screen.queryByText("/")).toBeNull();
+      expect(screen.getByText("Test Plugin")).toBeTruthy();
+    });
   });
 });
 

@@ -15,7 +15,7 @@ import { EmptyState } from "../../components/EmptyState";
 import { Container } from "../../components/layout/Container";
 import { MarketplaceIcon } from "../../components/MarketplaceIcon";
 import { OfficialBadge, OfficialTag } from "../../components/OfficialBadge";
-import { SkillCardSkeletonGrid } from "../../components/skeletons/SkillCardSkeleton";
+import { BrowseResultsSkeleton } from "../../components/skeletons/BrowseResultsSkeleton";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent } from "../../components/ui/card";
@@ -142,7 +142,7 @@ function PublisherProfile() {
                 </div>
               </CardContent>
             </Card>
-            <SkillCardSkeletonGrid count={6} />
+            <BrowseResultsSkeleton count={6} variant="list" />
           </div>
         </Container>
       </main>
@@ -380,7 +380,7 @@ function PublisherProfile() {
               </div>
 
               {isLoadingCatalog ? (
-                <SkillCardSkeletonGrid count={6} />
+                <BrowseResultsSkeleton count={6} variant="list" />
               ) : activePublishedDisplay ? (
                 <PublishedCatalogSections display={activePublishedDisplay} view="list" />
               ) : activeItems.length > 0 ? (
@@ -547,8 +547,6 @@ export function PublishedItemCard({
       />
       <div className="skill-list-item-body">
         <span className="skill-list-item-main">
-          <span className="skill-list-item-owner">@{item.kind}</span>
-          <span className="skill-list-item-sep">/</span>
           <span className="skill-list-item-name">{item.displayName}</span>
           {item.isOfficial ? <OfficialBadge /> : null}
         </span>
