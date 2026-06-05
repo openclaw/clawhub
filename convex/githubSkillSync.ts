@@ -57,6 +57,7 @@ type SyncOneResult = {
   sourceId?: Id<"githubSkillSources">;
   commit: string;
   manifestStatus: DisplayManifestStatus;
+  issues?: GitHubSkillSourceSyncIssue[];
   invalidSkills?: Array<{
     slug: string;
     path: string;
@@ -73,6 +74,16 @@ type SyncOneResult = {
     invalid: number;
     revived: number;
   };
+};
+
+type GitHubSkillSourceSyncIssue = {
+  slug: string;
+  path: string;
+  displayName: string;
+  kind: "invalid_slug" | "slug_conflict";
+  severity: "error" | "warning";
+  message: string;
+  existingOwnerHandle?: string;
 };
 
 type SyncManyResult = {
@@ -482,24 +493,36 @@ export async function applyGitHubSkillSourceSyncHandler(
   let invalid = 0;
   let revived = 0;
   const invalidSkills: NonNullable<SyncOneResult["invalidSkills"]> = [];
+  const issues: GitHubSkillSourceSyncIssue[] = [];
   for (const skillInsert of plan.skillInserts) {
     try {
       assertValidSkillSlug(skillInsert.slug);
     } catch (error) {
       invalid += 1;
       const discovered = discoveredBySlug.get(skillInsert.slug);
+      const path =
+        discovered?.path ??
+        (typeof skillInsert.doc.githubPath === "string"
+          ? skillInsert.doc.githubPath
+          : skillInsert.slug);
+      const displayName =
+        typeof skillInsert.doc.displayName === "string"
+          ? skillInsert.doc.displayName
+          : skillInsert.slug;
+      const message = getErrorMessage(error);
       invalidSkills.push({
         slug: skillInsert.slug,
-        path:
-          discovered?.path ??
-          (typeof skillInsert.doc.githubPath === "string"
-            ? skillInsert.doc.githubPath
-            : skillInsert.slug),
-        displayName:
-          typeof skillInsert.doc.displayName === "string"
-            ? skillInsert.doc.displayName
-            : skillInsert.slug,
-        error: getErrorMessage(error),
+        path,
+        displayName,
+        error: message,
+      });
+      issues.push({
+        slug: skillInsert.slug,
+        path,
+        displayName,
+        kind: "invalid_slug",
+        severity: "error",
+        message,
       });
       continue;
     }
@@ -558,6 +581,13 @@ export async function applyGitHubSkillSourceSyncHandler(
         continue;
       }
       conflicts += 1;
+      issues.push(
+        await buildSlugConflictIssue(ctx, {
+          skillInsert,
+          existingSkill: existingBySlug,
+          discovered: discoveredBySlug.get(skillInsert.slug),
+        }),
+      );
       continue;
     }
 
@@ -593,7 +623,10 @@ export async function applyGitHubSkillSourceSyncHandler(
     inserted += 1;
   }
 
-  await ctx.db.patch(sourceId, { lastSyncInvalidSkills: invalidSkills });
+  await ctx.db.patch(sourceId, {
+    lastSyncIssues: issues,
+    lastSyncInvalidSkills: invalidSkills,
+  });
 
   return {
     ok: true,
@@ -601,6 +634,7 @@ export async function applyGitHubSkillSourceSyncHandler(
     sourceId,
     commit: args.snapshot.commit,
     manifestStatus: args.snapshot.manifestStatus,
+    issues,
     invalidSkills,
     stats: {
       ...plan.stats,
@@ -610,6 +644,48 @@ export async function applyGitHubSkillSourceSyncHandler(
       revived,
     },
   };
+}
+
+async function buildSlugConflictIssue(
+  ctx: MutationCtx,
+  args: {
+    skillInsert: ReturnType<typeof buildGitHubSkillSyncPlan>["skillInserts"][number];
+    existingSkill: Doc<"skills">;
+    discovered: GitHubSkillSourceMetadataSnapshot["skills"][number] | undefined;
+  },
+): Promise<GitHubSkillSourceSyncIssue> {
+  const displayName =
+    typeof args.skillInsert.doc.displayName === "string"
+      ? args.skillInsert.doc.displayName
+      : args.skillInsert.slug;
+  const path =
+    args.discovered?.path ??
+    (typeof args.skillInsert.doc.githubPath === "string"
+      ? args.skillInsert.doc.githubPath
+      : args.skillInsert.slug);
+  const existingOwnerHandle = await getSkillOwnerHandle(ctx, args.existingSkill);
+  const ownerPhrase = existingOwnerHandle ? ` under @${existingOwnerHandle}` : "";
+  return {
+    slug: args.skillInsert.slug,
+    path,
+    displayName,
+    kind: "slug_conflict",
+    severity: "error",
+    message: `Slug already exists on ClawHub${ownerPhrase}.`,
+    ...(existingOwnerHandle ? { existingOwnerHandle } : {}),
+  };
+}
+
+async function getSkillOwnerHandle(ctx: MutationCtx, skill: Doc<"skills">) {
+  if (skill.ownerPublisherId) {
+    const publisher = await ctx.db.get(skill.ownerPublisherId);
+    if (publisher?.handle) return publisher.handle;
+  }
+  if (skill.ownerUserId) {
+    const user = await ctx.db.get(skill.ownerUserId);
+    if (user?.handle) return user.handle;
+  }
+  return null;
 }
 
 function canReviveGitHubSkillSlugConflict(

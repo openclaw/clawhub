@@ -597,8 +597,19 @@ description: Invalid because the folder name is too long.
         error: "Slug must be at most 96 characters.",
       },
     ]);
+    expect(result.issues).toEqual([
+      {
+        slug: longSlug,
+        path: `skills/${longSlug}`,
+        displayName: "Invalid Length",
+        kind: "invalid_slug",
+        severity: "error",
+        message: "Slug must be at most 96 characters.",
+      },
+    ]);
     expect(tables.githubSkillSources[0]).toMatchObject({
       repo: "NVIDIA/skills",
+      lastSyncIssues: result.issues,
       lastSyncInvalidSkills: result.invalidSkills,
     });
     expect(tables.skills ?? []).toHaveLength(0);
@@ -998,6 +1009,16 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
           updatedAt: 1,
         },
       ],
+      publishers: [
+        {
+          _id: "publishers:someone-else",
+          kind: "user",
+          handle: "jonathanjing",
+          displayName: "Jonathan Jing",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
       globalStats: [
         {
           _id: "globalStats:default",
@@ -1057,6 +1078,17 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
       ownerPublisherId: "publishers:nvidia",
       displayManifestStatus: "ok",
       displayManifestCommit: "2".repeat(40),
+      lastSyncIssues: [
+        {
+          slug: "vision-helper",
+          path: "skills/vision-helper",
+          displayName: "Vision Helper",
+          kind: "slug_conflict",
+          severity: "error",
+          message: "Slug already exists on ClawHub under @jonathanjing.",
+          existingOwnerHandle: "jonathanjing",
+        },
+      ],
     });
     expect(tables.skills.find((skill) => skill._id === "skills:aiq-deploy")).toMatchObject({
       githubCurrentCommit: "2".repeat(40),

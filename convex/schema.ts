@@ -281,6 +281,16 @@ const githubSkillSourceInvalidSkillValidator = v.object({
   error: v.string(),
 });
 
+const githubSkillSourceIssueValidator = v.object({
+  slug: v.string(),
+  path: v.string(),
+  displayName: v.string(),
+  kind: v.union(v.literal("invalid_slug"), v.literal("slug_conflict")),
+  severity: v.union(v.literal("error"), v.literal("warning")),
+  message: v.string(),
+  existingOwnerHandle: v.optional(v.string()),
+});
+
 const githubSkillSources = defineTable({
   repo: v.string(),
   ownerPublisherId: v.optional(v.id("publishers")),
@@ -294,6 +304,8 @@ const githubSkillSources = defineTable({
   displayManifestFetchedAt: v.optional(v.number()),
   displayManifestStatus: v.optional(displayManifestStatusValidator),
   displayManifest: v.optional(displayManifestValidator),
+  lastSyncIssues: v.optional(v.array(githubSkillSourceIssueValidator)),
+  // Deprecated. Use lastSyncIssues; kept optional for deployed rows and rollback safety.
   lastSyncInvalidSkills: v.optional(v.array(githubSkillSourceInvalidSkillValidator)),
   createdAt: v.number(),
   updatedAt: v.number(),

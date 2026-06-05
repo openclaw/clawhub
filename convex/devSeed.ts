@@ -2701,6 +2701,16 @@ export const seedGitHubSourceInvalidSkillsPreviewMutation = internalMutation({
 
     const overlongSlug = "preview-" + "x".repeat(97);
     await ctx.db.patch(source._id, {
+      lastSyncIssues: [
+        {
+          slug: overlongSlug,
+          path: `skills/${overlongSlug}`,
+          displayName: "Preview Invalid Skill",
+          kind: "invalid_slug",
+          severity: "error",
+          message: "Slug must be at most 96 characters.",
+        },
+      ],
       lastSyncInvalidSkills: [
         {
           slug: overlongSlug,

@@ -115,6 +115,15 @@ function mockSignedInSettings({
     displayManifestStatus?: "ok" | "missing" | "invalid" | "failed";
     displayManifestFetchedAt?: number;
     displayManifestCommit?: string;
+    lastSyncIssues?: Array<{
+      slug: string;
+      path: string;
+      displayName: string;
+      kind: "invalid_slug" | "slug_conflict";
+      severity: "error" | "warning";
+      message: string;
+      existingOwnerHandle?: string;
+    }>;
     lastSyncInvalidSkills?: Array<{
       slug: string;
       path: string;
@@ -298,12 +307,23 @@ describe("Settings", () => {
           displayManifestStatus: "ok",
           displayManifestFetchedAt: Date.now() - 4 * 60 * 1000,
           displayManifestCommit: "aaf2453",
-          lastSyncInvalidSkills: [
+          lastSyncIssues: [
             {
               slug: "too-long-skill-slug",
               path: "skills/too-long-skill-slug",
               displayName: "Too Long Skill Slug",
-              error: "Slug must be at most 96 characters.",
+              kind: "invalid_slug",
+              severity: "error",
+              message: "Slug must be at most 96 characters.",
+            },
+            {
+              slug: "rag-eval",
+              path: "skills/rag-eval",
+              displayName: "RAG Eval",
+              kind: "slug_conflict",
+              severity: "error",
+              message: "Slug already exists on ClawHub under @jonathanjing.",
+              existingOwnerHandle: "jonathanjing",
             },
           ],
           skills: [
@@ -341,10 +361,14 @@ describe("Settings", () => {
     expect(screen.getByText("Synced skills")).toBeTruthy();
     expect(screen.getByText("Agent Browser")).toBeTruthy();
     expect(screen.getByText("skills/agent-browser")).toBeTruthy();
-    expect(screen.getByText("Invalid skills")).toBeTruthy();
+    expect(screen.getByText("Sync issues")).toBeTruthy();
     expect(screen.getByText("Too Long Skill Slug")).toBeTruthy();
     expect(screen.getByText("skills/too-long-skill-slug")).toBeTruthy();
     expect(screen.getByText("Slug must be at most 96 characters.")).toBeTruthy();
+    expect(screen.getByText("RAG Eval")).toBeTruthy();
+    expect(screen.getByText("skills/rag-eval")).toBeTruthy();
+    expect(screen.getByText("Slug conflict")).toBeTruthy();
+    expect(screen.getByText("Slug already exists on ClawHub under @jonathanjing.")).toBeTruthy();
     expect(screen.queryByText("Ungrouped")).toBeNull();
     expect(screen.queryByRole("heading", { name: "No synced repositories" })).toBeNull();
     expect(screen.getByRole("heading", { name: "Delete synced repo & skills" })).toBeTruthy();

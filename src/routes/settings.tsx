@@ -117,6 +117,15 @@ type GitHubSkillSource = {
   displayManifestStatus?: "ok" | "missing" | "invalid" | "failed";
   displayManifestFetchedAt?: number;
   displayManifestCommit?: string;
+  lastSyncIssues?: Array<{
+    slug: string;
+    path: string;
+    displayName: string;
+    kind: "invalid_slug" | "slug_conflict";
+    severity: "error" | "warning";
+    message: string;
+    existingOwnerHandle?: string;
+  }>;
   lastSyncInvalidSkills?: Array<{
     slug: string;
     path: string;
@@ -1559,7 +1568,7 @@ function GitHubSourceList({
 
                 <GitHubSourceHealth source={source} />
 
-                <GitHubSourceInvalidSkills source={source} />
+                <GitHubSourceSyncIssues source={source} />
 
                 <div className="rounded-[var(--radius-sm)] border border-[color:var(--line)]">
                   <div className="flex items-center gap-2 border-b border-[color:var(--line)] px-3 py-2">
@@ -1765,22 +1774,22 @@ function GitHubSourceHealth({ source }: { source: GitHubSkillSource }) {
   );
 }
 
-function GitHubSourceInvalidSkills({ source }: { source: GitHubSkillSource }) {
-  const invalidSkills = source.lastSyncInvalidSkills ?? [];
-  if (invalidSkills.length === 0) return null;
+function GitHubSourceSyncIssues({ source }: { source: GitHubSkillSource }) {
+  const issues = getGitHubSourceSyncIssues(source);
+  if (issues.length === 0) return null;
 
   return (
     <div className="rounded-[var(--radius-sm)] border border-[color:var(--line)]">
       <div className="flex items-center gap-2 border-b border-[color:var(--line)] px-3 py-2">
         <span className="text-xs font-semibold uppercase tracking-[0.08em] text-[color:var(--ink-soft)]">
-          Invalid skills
+          Sync issues
         </span>
         <span className="inline-flex h-5 items-center rounded-full border border-red-500/35 bg-red-500/10 px-2 text-[11px] font-semibold text-red-700 dark:text-red-300">
-          {invalidSkills.length}
+          {issues.length}
         </span>
       </div>
       <div className="divide-y divide-[color:var(--line)]">
-        {invalidSkills.map((skill) => (
+        {issues.map((skill) => (
           <div
             key={`${skill.path}:${skill.slug}`}
             className="flex min-w-0 flex-col gap-1 px-3 py-2 sm:flex-row sm:items-start sm:justify-between"
@@ -1790,15 +1799,46 @@ function GitHubSourceInvalidSkills({ source }: { source: GitHubSkillSource }) {
                 {skill.displayName}
               </div>
               <div className="truncate text-xs text-[color:var(--ink-soft)]">{skill.path}</div>
+              <div className="mt-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-[color:var(--ink-soft)]">
+                {formatGitHubSourceIssueKind(skill.kind)}
+              </div>
             </div>
             <div className="shrink-0 text-left text-xs font-semibold text-red-700 dark:text-red-300 sm:max-w-[40%] sm:text-right">
-              {skill.error}
+              {skill.message}
             </div>
           </div>
         ))}
       </div>
     </div>
   );
+}
+
+function getGitHubSourceSyncIssues(source: GitHubSkillSource) {
+  return (
+    source.lastSyncIssues ??
+    source.lastSyncInvalidSkills?.map((skill) => ({
+      slug: skill.slug,
+      path: skill.path,
+      displayName: skill.displayName,
+      kind: "invalid_slug" as const,
+      severity: "error" as const,
+      message: skill.error,
+    })) ??
+    []
+  );
+}
+
+function formatGitHubSourceIssueKind(
+  kind: NonNullable<GitHubSkillSource["lastSyncIssues"]>[number]["kind"],
+) {
+  switch (kind) {
+    case "invalid_slug":
+      return "Invalid slug";
+    case "slug_conflict":
+      return "Slug conflict";
+    default:
+      return kind;
+  }
 }
 
 function GitHubSourceOverviewRow({ label, children }: { label: string; children: ReactNode }) {
