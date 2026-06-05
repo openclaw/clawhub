@@ -775,6 +775,7 @@ export const deleteAccount = mutation({
   handler: async (ctx) => {
     const { userId } = await requireUser(ctx);
     const now = Date.now();
+    const user = await ctx.db.get(userId);
 
     const tokens = await ctx.db
       .query("apiTokens")
@@ -786,13 +787,47 @@ export const deleteAccount = mutation({
       }
     }
 
+    const personalPublisher = user
+      ? user.personalPublisherId
+        ? await ctx.db.get(user.personalPublisherId)
+        : await getPersonalPublisherForUser(ctx, userId)
+      : null;
+    if (personalPublisher && !personalPublisher.deletedAt && !personalPublisher.deactivatedAt) {
+      await ctx.db.patch(personalPublisher._id, {
+        deletedAt: now,
+        deactivatedAt: now,
+        updatedAt: now,
+      });
+      await ctx.runMutation(internal.skills.applyPublisherDeletionToOwnedSkillsBatchInternal, {
+        ownerPublisherId: personalPublisher._id,
+        actorUserId: userId,
+        deletedAt: now,
+        cursor: undefined,
+      });
+      await ctx.runMutation(internal.packages.applyPublisherDeletionToOwnedPackagesBatchInternal, {
+        ownerPublisherId: personalPublisher._id,
+        actorUserId: userId,
+        deletedAt: now,
+        cursor: undefined,
+      });
+    }
+
     await ctx.runMutation(internal.packages.applyAccountDeletionToOwnedPackagesBatchInternal, {
       ownerUserId: userId,
       deletedAt: now,
       cursor: undefined,
     });
+    await ctx.runMutation(internal.skills.applyAccountDeletionToOwnedSkillsBatchInternal, {
+      ownerUserId: userId,
+      hiddenBy: userId,
+      deletedAt: now,
+      cursor: undefined,
+    });
+    await ctx.runMutation(internal.publishers.deleteSoleOwnerOrgsForAccountDeletionInternal, {
+      actorUserId: userId,
+      deletedAt: now,
+    });
 
-    const user = await ctx.db.get(userId);
     await ctx.db.patch(userId, {
       deactivatedAt: now,
       purgedAt: now,

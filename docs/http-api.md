@@ -394,13 +394,15 @@ Notes:
 - Local upload scans reject `update: true`.
 - Published scans require owner/publisher management access, or platform moderator/admin authority.
 - Published scans write back only when `update: true` and the scan completes successfully.
-- Response is `202` with `{ "ok": true, "scanId": "...", "jobId": "...", "status": "queued", "sourceKind": "upload|published", "update": false }`.
+- Response is `202` with `{ "ok": true, "scanId": "...", "jobId": "...", "status": "queued", "sourceKind": "upload|published", "update": false, "queue": { "queuedAhead": 0, "queuedAheadIsEstimate": false, "position": 1, "running": 0, "runningIsEstimate": false, "note": "Scans are asynchronous and may take time to complete." } }`.
+- Scan jobs are asynchronous. Manual scan requests are prioritized ahead of normal publish/backfill work, but completion still depends on worker availability.
 
 ### `GET /api/v1/skills/-/scan/{scanId}`
 
 Authenticated poll endpoint for a submitted scan.
 
 - Returns queued/running/succeeded/failed status.
+- Returns `queue.queuedAhead` and `queue.position` while queued so clients can show how many prioritized manual scans are ahead of the request. Very large queues are bounded and reported with `queuedAheadIsEstimate: true`.
 - When available, `report` contains `clawscan`, `skillspector`, `staticAnalysis`, and `virustotal` sections.
 - Failed scan jobs return `status: "failed"` with `lastError`.
 

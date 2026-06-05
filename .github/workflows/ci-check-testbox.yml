@@ -22,7 +22,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Begin Testbox
-        uses: useblacksmith/begin-testbox@d0e04585c26905fdd92c94a09c159544c7ee1b67
+        uses: useblacksmith/begin-testbox@233448af4bfdc6fca509a7f0974411ac6d8a8043
         with:
           testbox_id: ${{ inputs.testbox_id }}
 

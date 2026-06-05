@@ -1041,6 +1041,8 @@ const skillSearchDigest = defineTable({
   latestVersionSkillId: v.optional(v.id("skills")),
   installKind: v.optional(v.literal("github")),
   githubHasSkillCard: v.optional(v.boolean()),
+  githubCurrentStatus: v.optional(githubSkillCurrentStatusValidator),
+  githubScanStatus: v.optional(githubSkillScanStatusValidator),
   latestVersionSummary: v.optional(
     v.object({
       version: v.string(),
@@ -1177,7 +1179,13 @@ const packages = defineTable({
   reportCount: v.optional(v.number()),
   lastReportedAt: v.optional(v.number()),
   softDeletedAt: v.optional(v.number()),
-  softDeletedReason: v.optional(v.union(v.literal("user.banned"), v.literal("user.deactivated"))),
+  softDeletedReason: v.optional(
+    v.union(
+      v.literal("user.banned"),
+      v.literal("user.deactivated"),
+      v.literal("publisher.deleted"),
+    ),
+  ),
   softDeletedBy: v.optional(v.id("users")),
   softDeletedByRole: v.optional(
     v.union(v.literal("admin"), v.literal("moderator"), v.literal("user")),

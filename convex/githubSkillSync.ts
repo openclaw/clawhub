@@ -28,6 +28,7 @@ import { Events, logErrorEvent, logEvent } from "./lib/observabilityEvents";
 import { isOfficialPublisher } from "./lib/officialPublishers";
 import { requirePublisherRole } from "./lib/publishers";
 import { isMacJunkPath, isTextFile, parseFrontmatter } from "./lib/skills";
+import { syncSkillSearchDigestForSkill } from "./lib/skillSearchDigest";
 import { assertValidSkillSlug } from "./lib/skillSlugValidator";
 
 const DEFAULT_BRANCH = "main";
@@ -456,13 +457,12 @@ export async function applyGitHubSkillSourceSyncHandler(
     const previousSkillSnapshot = previousSkill ? ({ ...previousSkill } as Doc<"skills">) : null;
     await ctx.db.patch(skillPatch.skillId as Id<"skills">, skillPatch.patch);
     if (previousSkillSnapshot) {
+      const nextSkillSnapshot = { ...previousSkillSnapshot, ...skillPatch.patch };
+      await syncSkillSearchDigestForSkill(ctx, nextSkillSnapshot);
       await adjustGlobalPublicCountForSkillChange(
         ctx,
         previousSkillSnapshot,
-        {
-          ...previousSkillSnapshot,
-          ...skillPatch.patch,
-        },
+        nextSkillSnapshot,
         now,
       );
     }
@@ -552,6 +552,7 @@ export async function applyGitHubSkillSourceSyncHandler(
           updatedAt: now,
         };
         await ctx.db.patch(existingBySlug._id, patch);
+        const nextSkillSnapshot = { ...previousSkillSnapshot, ...patch } as Doc<"skills">;
         const discovered = discoveredBySlug.get(skillInsert.slug);
         if (discovered) {
           if (hasGitHubSkillContent(discovered)) {
@@ -572,12 +573,10 @@ export async function applyGitHubSkillSourceSyncHandler(
         await adjustGlobalPublicCountForSkillChange(
           ctx,
           previousSkillSnapshot,
-          {
-            ...previousSkillSnapshot,
-            ...patch,
-          } as Doc<"skills">,
+          nextSkillSnapshot,
           now,
         );
+        await syncSkillSearchDigestForSkill(ctx, nextSkillSnapshot);
         revived += 1;
         continue;
       }
@@ -594,6 +593,8 @@ export async function applyGitHubSkillSourceSyncHandler(
 
     const doc = stripUndefined(skillInsert.doc) as Omit<Doc<"skills">, "_id" | "_creationTime">;
     const skillId = await ctx.db.insert("skills", doc);
+    const insertedSkill = { ...doc, _id: skillId, _creationTime: now } as Doc<"skills">;
+    await syncSkillSearchDigestForSkill(ctx, insertedSkill);
     const discovered = discoveredBySlug.get(skillInsert.slug);
     if (discovered) {
       if (hasGitHubSkillContent(discovered)) {
@@ -611,16 +612,7 @@ export async function applyGitHubSkillSourceSyncHandler(
         scanStatus: doc.githubScanStatus,
       });
     }
-    await adjustGlobalPublicCountForSkillChange(
-      ctx,
-      null,
-      {
-        ...doc,
-        _id: skillId,
-        _creationTime: now,
-      } as Doc<"skills">,
-      now,
-    );
+    await adjustGlobalPublicCountForSkillChange(ctx, null, insertedSkill, now);
     inserted += 1;
   }
 
@@ -849,12 +841,9 @@ export async function applyGitHubSkillVerificationResultHandler(
     ...moderation,
   };
   await ctx.db.patch(args.skillId, patch);
-  await adjustGlobalPublicCountForSkillChange(
-    ctx,
-    previousSkill,
-    { ...previousSkill, ...patch },
-    now,
-  );
+  const nextSkill = { ...previousSkill, ...patch };
+  await syncSkillSearchDigestForSkill(ctx, nextSkill);
+  await adjustGlobalPublicCountForSkillChange(ctx, previousSkill, nextSkill, now);
 
   return { ok: true as const, promoted: promote };
 }

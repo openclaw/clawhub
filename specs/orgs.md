@@ -157,6 +157,17 @@ Use dual fields during rollout:
 - Publisher owners/admins may manage user lifecycle actions for content owned by
   that publisher: rename, transfer into another publisher they administer,
   soft-delete, and restore.
+- Org deletion is owner-only and self-serve from account settings. It marks the
+  org publisher `deletedAt` and `deactivatedAt`, keeps membership/audit/resource
+  rows, and soft-deletes resources owned through that `ownerPublisherId`.
+- Org deletion cascades must hide both skills and packages/plugins from public
+  browse, detail, install, and API surfaces. Skills use
+  `moderationReason = "publisher.deleted"` and packages use
+  `softDeletedReason = "publisher.deleted"`; package publish tokens are revoked
+  when present.
+- Account deletion must hide the user's personal publisher resources and must
+  delete sole-owner org publishers through the same soft-delete cascade.
+  Multi-owner orgs remain active because another owner can still manage them.
 - Platform moderators/admins may still perform moderation actions, but a normal
   publisher-admin restore must not lift scanner, moderator, ban, or security
   hides.

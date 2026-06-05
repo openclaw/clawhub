@@ -28,6 +28,9 @@ const MAX_STORED_SKILLSPECTOR_ISSUES = 25;
 const MAX_STORED_SKILLSPECTOR_TEXT_CHARS = 2_000;
 const MAX_STORED_SKILLSPECTOR_SHORT_TEXT_CHARS = 512;
 const DEFAULT_SKILL_SCAN_REQUEST_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+const MAX_SKILL_SCAN_QUEUE_POSITION_READS = 250;
+const MAX_SKILL_SCAN_RUNNING_COUNT_READS = 512;
+const SKILL_SCAN_ASYNC_NOTE = "Scans are asynchronous and may take time to complete.";
 
 const finalLlmAnalysisStatuses = new Set(["clean", "suspicious", "malicious"]);
 const artifactBackedLlmAnalysisStatuses = new Set(["clean", "benign", "suspicious", "malicious"]);
@@ -800,7 +803,84 @@ function skillScanArtifactFromRequest(request: Doc<"skillScanRequests">) {
   };
 }
 
-function skillScanStatusResponse(
+async function countSecurityScanJobs(
+  ctx: QueryCtx | MutationCtx,
+  status: Doc<"securityScanJobs">["status"],
+  source: SecurityScanJobSource,
+) {
+  const jobs = await ctx.db
+    .query("securityScanJobs")
+    .withIndex("by_status_source_created_at", (q) => q.eq("status", status).eq("source", source))
+    .take(MAX_SKILL_SCAN_RUNNING_COUNT_READS + 1);
+  return {
+    count: Math.min(jobs.length, MAX_SKILL_SCAN_RUNNING_COUNT_READS),
+    isEstimate: jobs.length > MAX_SKILL_SCAN_RUNNING_COUNT_READS,
+  };
+}
+
+function compareQueuedScanClaimOrder(a: Doc<"securityScanJobs">, b: Doc<"securityScanJobs">) {
+  if (a.nextRunAt !== b.nextRunAt) return a.nextRunAt - b.nextRunAt;
+  if (a._creationTime !== b._creationTime) return a._creationTime - b._creationTime;
+  return a._id.localeCompare(b._id);
+}
+
+async function countQueuedJobsAhead(ctx: QueryCtx | MutationCtx, job: Doc<"securityScanJobs">) {
+  const candidates = await ctx.db
+    .query("securityScanJobs")
+    .withIndex("by_status_source_next_run_at", (q) =>
+      q.eq("status", "queued").eq("source", job.source).lte("nextRunAt", job.nextRunAt),
+    )
+    .order("asc")
+    .take(MAX_SKILL_SCAN_QUEUE_POSITION_READS + 1);
+
+  const queuedAhead = candidates.reduce((count, candidate) => {
+    if (candidate._id === job._id) return count;
+    return compareQueuedScanClaimOrder(candidate, job) < 0 ? count + 1 : count;
+  }, 0);
+  const sawTarget = candidates.some((candidate) => candidate._id === job._id);
+  const isEstimate =
+    !sawTarget ||
+    candidates.length > MAX_SKILL_SCAN_QUEUE_POSITION_READS ||
+    queuedAhead > MAX_SKILL_SCAN_QUEUE_POSITION_READS;
+
+  return {
+    queuedAhead: Math.min(queuedAhead, MAX_SKILL_SCAN_QUEUE_POSITION_READS),
+    isEstimate,
+  };
+}
+
+async function skillScanQueueState(
+  ctx: QueryCtx | MutationCtx,
+  job: Doc<"securityScanJobs"> | null,
+) {
+  if (!job) {
+    return {
+      queuedAhead: 0,
+      position: null,
+      running: 0,
+      note: SKILL_SCAN_ASYNC_NOTE,
+    };
+  }
+
+  const running = await countSecurityScanJobs(ctx, "running", job.source);
+  const queuedAhead =
+    job.status === "queued"
+      ? await countQueuedJobsAhead(ctx, job)
+      : { queuedAhead: 0, isEstimate: false };
+
+  return {
+    queuedAhead: queuedAhead.queuedAhead,
+    queuedAheadIsEstimate: queuedAhead.isEstimate,
+    position:
+      job.status === "queued" && !queuedAhead.isEstimate ? queuedAhead.queuedAhead + 1 : null,
+    running: running.count,
+    runningIsEstimate: running.isEstimate,
+    note: SKILL_SCAN_ASYNC_NOTE,
+  };
+}
+
+async function skillScanStatusResponse(
+  ctx: QueryCtx | MutationCtx,
   request: Doc<"skillScanRequests">,
   job: Doc<"securityScanJobs"> | null,
 ) {
@@ -818,6 +898,7 @@ function skillScanStatusResponse(
     writtenBack: request.writtenBack,
     artifact: skillScanArtifactFromRequest(request),
     report: skillScanReportFromRequest(request),
+    queue: await skillScanQueueState(ctx, job),
     lastError: request.lastError ?? job?.lastError,
     createdAt: request.createdAt,
     updatedAt: Math.max(request.updatedAt, job?.updatedAt ?? request.updatedAt),
@@ -904,6 +985,7 @@ export const createUploadedSkillScanRequestInternal = internalMutation({
       sourceKind: "upload" as const,
       update: false,
       alreadyQueued: false,
+      queue: await skillScanQueueState(ctx, await ctx.db.get(jobId)),
     };
   },
 });
@@ -1006,6 +1088,7 @@ export const createPublishedSkillScanRequestInternal = internalMutation({
       sourceKind: "published" as const,
       update,
       alreadyQueued: false,
+      queue: await skillScanQueueState(ctx, await ctx.db.get(jobId)),
     };
   },
 });
@@ -1024,7 +1107,7 @@ export const getSkillScanRequestForUserInternal = internalQuery({
       throw new ConvexError("Forbidden");
     }
     const job = request.securityScanJobId ? await ctx.db.get(request.securityScanJobId) : null;
-    return skillScanStatusResponse(request, job);
+    return await skillScanStatusResponse(ctx, request, job);
   },
 });
 

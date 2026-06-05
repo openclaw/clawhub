@@ -260,6 +260,24 @@ describe("Settings", () => {
     });
   });
 
+  it("lets organization owners confirm org deletion", async () => {
+    const deleteOrg = vi.fn().mockResolvedValue({ deleted: true });
+    useMutationMock.mockReturnValue(deleteOrg);
+    mockSignedInSettings({ search: { view: "organizations" } });
+
+    render(<Settings />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete organization" }));
+
+    expect(await screen.findByText(/Delete @openclaw\?/)).toBeTruthy();
+    const deleteButtons = screen.getAllByRole("button", { name: "Delete organization" });
+    fireEvent.click(deleteButtons.at(-1)!);
+
+    await waitFor(() =>
+      expect(deleteOrg).toHaveBeenCalledWith({ publisherId: "publisher_openclaw" }),
+    );
+  });
+
   it("lets official publisher owners configure a public GitHub sync source", async () => {
     const configureSource = vi.fn().mockResolvedValue({ ok: true, stats: { discovered: 1 } });
     useActionMock.mockReturnValue(configureSource);

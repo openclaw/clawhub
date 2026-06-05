@@ -119,7 +119,25 @@ describe("githubSkillSources.deleteForPublisherHandler", () => {
           githubCurrentContentHash: "hash-source-backed",
           githubCurrentStatus: "present",
           githubScanStatus: "clean",
+          ownerUserId: "users:owner",
           ownerPublisherId: "publishers:openclaw",
+          forkOf: undefined,
+          tags: {},
+          capabilityTags: undefined,
+          badges: {},
+          stats: {
+            comments: 0,
+            downloads: 0,
+            installsAllTime: 0,
+            installsCurrent: 0,
+            stars: 0,
+            versions: 0,
+          },
+          moderationStatus: "active",
+          moderationFlags: [],
+          isSuspicious: false,
+          createdAt: 1,
+          updatedAt: 2,
           softDeletedAt: undefined,
         },
         {
@@ -171,6 +189,14 @@ describe("githubSkillSources.deleteForPublisherHandler", () => {
       githubCurrentStatus: "missing",
       updatedAt: 123,
     });
+    expect(tables.skillSearchDigest).toEqual([
+      expect.objectContaining({
+        skillId: "skills:github",
+        githubCurrentStatus: "missing",
+        githubScanStatus: "clean",
+        softDeletedAt: 123,
+      }),
+    ]);
     expect(
       buildSkillInstallResolution({
         origin: "https://clawhub.ai",

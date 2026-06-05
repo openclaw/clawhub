@@ -374,6 +374,14 @@ export const ApiV1SkillScanSubmitRequestSchema = type({
     source: ApiV1SkillScanSourceSchema,
     update: "boolean?",
 });
+export const ApiV1SkillScanQueueSchema = type({
+    queuedAhead: "number",
+    queuedAheadIsEstimate: "boolean?",
+    position: "number|null",
+    running: "number",
+    runningIsEstimate: "boolean?",
+    note: "string",
+});
 export const ApiV1SkillScanSubmitResponseSchema = type({
     ok: "true",
     scanId: "string",
@@ -382,6 +390,7 @@ export const ApiV1SkillScanSubmitResponseSchema = type({
     sourceKind: '"upload"|"published"',
     update: "boolean",
     alreadyQueued: "boolean?",
+    queue: ApiV1SkillScanQueueSchema.optional(),
 });
 export const ApiV1SkillScanStatusResponseSchema = type({
     ok: "true",
@@ -393,6 +402,7 @@ export const ApiV1SkillScanStatusResponseSchema = type({
     writtenBack: "boolean?",
     artifact: "unknown?",
     report: "unknown?",
+    queue: ApiV1SkillScanQueueSchema.optional(),
     lastError: "string?",
     createdAt: "number",
     updatedAt: "number",

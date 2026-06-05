@@ -2516,6 +2516,8 @@ export const getBySlug = query({
       installKind: skill.installKind,
       githubPath: skill.githubPath,
       githubCurrentCommit: skill.githubCurrentCommit,
+      githubCurrentStatus: skill.githubCurrentStatus,
+      githubScanStatus: skill.githubScanStatus,
       githubHasSkillCard: skill.githubHasSkillCard,
       tags: skill.tags,
       badges,
@@ -7590,6 +7592,129 @@ export const applyUserModerationToOwnedSkillsBatchInternal = internalMutation({
     scheduleNextBatchIfNeeded(
       ctx.scheduler,
       internal.skills.applyUserModerationToOwnedSkillsBatchInternal,
+      args,
+      isDone,
+      continueCursor,
+    );
+
+    return { ok: true as const, hiddenCount, scheduled: !isDone };
+  },
+});
+
+export const applyPublisherDeletionToOwnedSkillsBatchInternal = internalMutation({
+  args: {
+    ownerPublisherId: v.id("publishers"),
+    actorUserId: v.id("users"),
+    deletedAt: v.number(),
+    cursor: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const publisher = await ctx.db.get(args.ownerPublisherId);
+    if (!publisher || publisher.deletedAt !== args.deletedAt) {
+      return { ok: true as const, hiddenCount: 0, scheduled: false, stale: true as const };
+    }
+
+    const { page, isDone, continueCursor } = await ctx.db
+      .query("skills")
+      .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", args.ownerPublisherId))
+      .order("desc")
+      .paginate({
+        cursor: args.cursor ?? null,
+        numItems: BAN_USER_SKILLS_BATCH_SIZE,
+      });
+
+    let hiddenCount = 0;
+    for (const skill of page) {
+      if (skill.softDeletedAt) continue;
+
+      const patch: Partial<Doc<"skills">> = {
+        softDeletedAt: args.deletedAt,
+        moderationStatus: "hidden",
+        moderationReason: "publisher.deleted",
+        hiddenAt: args.deletedAt,
+        hiddenBy: args.actorUserId,
+        lastReviewedAt: args.deletedAt,
+        unpublishedSlugReservedUntil: undefined,
+        unpublishedSlugReleasedAt: undefined,
+        unpublishedOriginalSlug: undefined,
+        updatedAt: args.deletedAt,
+        isSuspicious: computeIsSuspicious({
+          moderationFlags: skill.moderationFlags,
+          moderationReason: "publisher.deleted",
+        }),
+      };
+      const nextSkill = { ...skill, ...patch };
+      await ctx.db.patch(skill._id, patch);
+      await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
+      await adjustUserSkillStatsForSkillChange(ctx, skill, nextSkill);
+      await setSkillEmbeddingsSoftDeleted(ctx, skill._id, true, args.deletedAt);
+      hiddenCount += 1;
+    }
+
+    scheduleNextBatchIfNeeded(
+      ctx.scheduler,
+      internal.skills.applyPublisherDeletionToOwnedSkillsBatchInternal,
+      args,
+      isDone,
+      continueCursor,
+    );
+
+    return { ok: true as const, hiddenCount, scheduled: !isDone };
+  },
+});
+
+export const applyAccountDeletionToOwnedSkillsBatchInternal = internalMutation({
+  args: {
+    ownerUserId: v.id("users"),
+    deletedAt: v.number(),
+    hiddenBy: v.optional(v.id("users")),
+    cursor: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { page, isDone, continueCursor } = await ctx.db
+      .query("skills")
+      .withIndex("by_owner", (q) => q.eq("ownerUserId", args.ownerUserId))
+      .order("desc")
+      .paginate({
+        cursor: args.cursor ?? null,
+        numItems: BAN_USER_SKILLS_BATCH_SIZE,
+      });
+
+    let hiddenCount = 0;
+    for (const skill of page) {
+      if (skill.ownerPublisherId) {
+        const ownerPublisher = await ctx.db.get(skill.ownerPublisherId);
+        if (ownerPublisher?.kind === "org") continue;
+      }
+      if (skill.softDeletedAt) continue;
+
+      const patch: Partial<Doc<"skills">> = {
+        softDeletedAt: args.deletedAt,
+        moderationStatus: "hidden",
+        moderationReason: "user.deactivated",
+        hiddenAt: args.deletedAt,
+        hiddenBy: args.hiddenBy,
+        lastReviewedAt: args.deletedAt,
+        unpublishedSlugReservedUntil: undefined,
+        unpublishedSlugReleasedAt: undefined,
+        unpublishedOriginalSlug: undefined,
+        updatedAt: args.deletedAt,
+        isSuspicious: computeIsSuspicious({
+          moderationFlags: skill.moderationFlags,
+          moderationReason: "user.deactivated",
+        }),
+      };
+      const nextSkill = { ...skill, ...patch };
+      await ctx.db.patch(skill._id, patch);
+      await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
+      await adjustUserSkillStatsForSkillChange(ctx, skill, nextSkill);
+      await setSkillEmbeddingsSoftDeleted(ctx, skill._id, true, args.deletedAt);
+      hiddenCount += 1;
+    }
+
+    scheduleNextBatchIfNeeded(
+      ctx.scheduler,
+      internal.skills.applyAccountDeletionToOwnedSkillsBatchInternal,
       args,
       isDone,
       continueCursor,

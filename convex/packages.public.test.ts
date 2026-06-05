@@ -33,6 +33,7 @@ import {
   updateReleaseLlmAnalysisInternal,
   updateReleaseStaticScanInternal,
   applyAccountDeletionToOwnedPackagesBatchInternal,
+  applyPublisherDeletionToOwnedPackagesBatchInternal,
   applyBanToOwnedPackagesBatchInternal,
   revokePackagePublishTokensForPackageBatchInternal,
   restoreOwnedPackagesForUnbanBatchInternal,
@@ -78,6 +79,22 @@ const listHandler = (
         staticScanStatus: string | null;
       } | null;
     }>
+  >
+)._handler;
+const applyPublisherDeletionToOwnedPackagesBatchInternalHandler = (
+  applyPublisherDeletionToOwnedPackagesBatchInternal as unknown as WrappedHandler<
+    {
+      ownerPublisherId: string;
+      actorUserId: string;
+      deletedAt: number;
+      cursor?: string;
+    },
+    {
+      deletedCount: number;
+      revokedTokenCount: number;
+      scheduled: boolean;
+      stale?: true;
+    }
   >
 )._handler;
 const getVersionByNameHandler = (
@@ -9084,6 +9101,56 @@ describe("owned package sanction batches", () => {
     expect(patch).toHaveBeenCalledWith("packagePublishTokens:personal-publisher", {
       revokedAt: 1_000,
     });
+  });
+
+  it("soft-deletes packages owned by a deleted publisher", async () => {
+    const orgPackage = makePackageDoc({
+      _id: "packages:org-plugin",
+      ownerUserId: "users:owner",
+      ownerPublisherId: "publishers:org",
+    });
+    const { ctx, patch } = makeOwnedPackageBatchCtx({
+      publisherPackages: [orgPackage],
+      releases: [
+        makeReleaseDoc({
+          _id: "packageReleases:org-plugin-1",
+          packageId: "packages:org-plugin",
+        }),
+      ],
+      packageTokens: [
+        {
+          _id: "packagePublishTokens:org-plugin",
+          packageId: "packages:org-plugin",
+          version: "1.0.0",
+          revokedAt: undefined,
+        },
+      ],
+      publishers: {
+        "publishers:org": {
+          _id: "publishers:org",
+          kind: "org",
+          deletedAt: 3_000,
+        },
+      },
+    });
+
+    const result = await applyPublisherDeletionToOwnedPackagesBatchInternalHandler(ctx as never, {
+      ownerPublisherId: "publishers:org",
+      actorUserId: "users:owner",
+      deletedAt: 3_000,
+    });
+
+    expect(result).toMatchObject({ deletedCount: 1, revokedTokenCount: 1, scheduled: false });
+    expect(patch).toHaveBeenCalledWith(
+      "packages:org-plugin",
+      expect.objectContaining({
+        softDeletedAt: 3_000,
+        softDeletedReason: "publisher.deleted",
+        softDeletedBy: "users:owner",
+        softDeletedByRole: "user",
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith("packagePublishTokens:org-plugin", { revokedAt: 3_000 });
   });
 
   it("schedules linked legacy personal publisher scans when the user row lacks the publisher id", async () => {
