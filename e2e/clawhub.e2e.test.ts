@@ -559,8 +559,9 @@ describe("clawhub e2e", () => {
       await expect(
         readFile(join(workdir, "skills", "aiq-deploy", "SKILL.md"), "utf8"),
       ).resolves.toContain("# AIQ Deploy");
-      await expect(readFile(join(workdir, "skills", "aiq-deploy", "skill-card.md"), "utf8"))
-        .resolves.toContain("# Card");
+      await expect(
+        readFile(join(workdir, "skills", "aiq-deploy", "skill-card.md"), "utf8"),
+      ).resolves.toContain("# Card");
       await expect(
         readFile(join(workdir, "skills", "aiq-deploy", "other", "SKILL.md")),
       ).rejects.toThrow();
