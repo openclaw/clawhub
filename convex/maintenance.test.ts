@@ -470,6 +470,46 @@ describe("maintenance legacy publisher ownership repair", () => {
     expect(insertCalls).toEqual([]);
   });
 
+  it("skips apply-mode personal publisher handle conflicts while repairing other users", async () => {
+    const { db, tableMap } = makeLegacyPublisherOwnershipDb();
+    tableMap.users.set("users:conflict", {
+      _id: "users:conflict",
+      _creationTime: 1_717_456_000_000 - 1000,
+      handle: "existing-owner",
+      name: "Conflicting Owner",
+      displayName: "Conflicting Owner",
+      deletedAt: undefined,
+      deactivatedAt: undefined,
+      purgedAt: undefined,
+    });
+
+    const result = await repairLegacyPublisherOwnershipHandler(
+      { db, scheduler: { runAfter: vi.fn() } } as never,
+      { phase: "users", dryRun: false, batchSize: 10, scheduleNext: false },
+    );
+
+    const createdPublisher = Array.from(tableMap.publishers.values()).find(
+      (publisher) => publisher.handle === "legacy-owner",
+    );
+    expect(result).toMatchObject({
+      phase: "users",
+      dryRun: false,
+      scanned: 2,
+      repaired: 1,
+      skipped: 1,
+      isDone: true,
+      errors: ['user:users:conflict: Publisher handle "@existing-owner" is already claimed'],
+    });
+    expect(createdPublisher).toMatchObject({
+      kind: "user",
+      linkedUserId: "users:legacy",
+    });
+    expect(tableMap.users.get("users:legacy")).toMatchObject({
+      personalPublisherId: createdPublisher?._id,
+    });
+    expect(tableMap.users.get("users:conflict")).not.toHaveProperty("personalPublisherId");
+  });
+
   it("repairs active legacy users, skills, aliases, embeddings, and packages", async () => {
     const { db, tableMap, patchCalls, insertCalls } = makeLegacyPublisherOwnershipDb();
     const scheduler = { runAfter: vi.fn() };

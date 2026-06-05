@@ -2339,6 +2339,11 @@ function pushRepairError(errors: string[], label: string, error: unknown) {
   errors.push(`${label}: ${message}`);
 }
 
+function isPublisherHandleConflictError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /Publisher handle "@[^"]+" is already claimed/.test(message);
+}
+
 async function resolvePersonalPublisherForOwnershipRepair(
   ctx: Pick<MutationCtx, "db">,
   user: Doc<"users">,
@@ -2465,7 +2470,7 @@ export async function repairLegacyPublisherOwnershipHandler(
         }
         repaired++;
       } catch (error) {
-        if (!dryRun) throw error;
+        if (!dryRun && !isPublisherHandleConflictError(error)) throw error;
         skipped++;
         pushRepairError(errors, `user:${user._id}`, error);
       }
@@ -2485,7 +2490,7 @@ export async function repairLegacyPublisherOwnershipHandler(
         if (result === "repaired") repaired++;
         else skipped++;
       } catch (error) {
-        if (!dryRun) throw error;
+        if (!dryRun && !isPublisherHandleConflictError(error)) throw error;
         skipped++;
         pushRepairError(errors, `skill:${skill._id}`, error);
       }
@@ -2505,7 +2510,7 @@ export async function repairLegacyPublisherOwnershipHandler(
         if (result === "repaired") repaired++;
         else skipped++;
       } catch (error) {
-        if (!dryRun) throw error;
+        if (!dryRun && !isPublisherHandleConflictError(error)) throw error;
         skipped++;
         pushRepairError(errors, `package:${pkg._id}`, error);
       }
