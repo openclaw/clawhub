@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { usePaginatedQuery, useQuery } from "convex/react";
 import {
   ArrowDownToLine,
@@ -29,6 +29,14 @@ import type {
 } from "../../lib/publicUser";
 
 export const Route = createFileRoute("/user/$handle")({
+  loader: async ({ params }) => {
+    const { convexHttp } = await import("../../convex/client");
+    const publisher = (await convexHttp.query(api.publishers.getProfileByHandle, {
+      handle: params.handle,
+    })) as PublicPublisherListItem | null;
+    if (!publisher) throw notFound();
+    return { publisher };
+  },
   head: ({ params }) => {
     const meta = buildPublisherMeta({ handle: params.handle });
     return {
@@ -86,12 +94,16 @@ function GitHubIcon({ size = 14 }: { size?: number }) {
 
 function PublisherProfile() {
   const { handle } = Route.useParams();
+  const { publisher: loaderPublisher } = Route.useLoaderData() as {
+    publisher: PublicPublisherListItem;
+  };
   const [catalogTab, setCatalogTab] = useState<ProfileCatalogTab>("skills");
   const publishedKind: "skill" | "plugin" = catalogTab === "plugins" ? "plugin" : "skill";
-  const publisher = useQuery(api.publishers.getProfileByHandle, { handle }) as
+  const queriedPublisher = useQuery(api.publishers.getProfileByHandle, { handle }) as
     | PublicPublisherListItem
     | null
     | undefined;
+  const publisher = queriedPublisher === undefined ? loaderPublisher : queriedPublisher;
   const publishedQueryArgs: {
     handle: string;
     kind: "skill" | "plugin";
