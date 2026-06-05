@@ -38,7 +38,7 @@ export async function cmdScan(opts: GlobalOpts, pathArg: string | undefined, opt
       ? await submitLocalScan(opts, registry, token, pathArg)
       : await submitPublishedScan(registry, token, options);
 
-    spinner.text = `Scan queued (${submitted.scanId})`;
+    spinner.text = formatScanProgress("queued", submitted.scanId, submitted.queue);
     const status = await pollScan(registry, token, submitted.scanId, spinner);
 
     if (status.status === "failed") {
@@ -145,7 +145,7 @@ async function pollScan(
       },
       ApiV1SkillScanStatusResponseSchema,
     );
-    spinner.text = `Scan ${status.status} (${scanId})`;
+    spinner.text = formatScanProgress(status.status, scanId, status.queue);
     if (status.status === "succeeded" || status.status === "failed") return status;
     await sleep(DEFAULT_POLL_INTERVAL_MS);
   }
@@ -154,6 +154,34 @@ async function pollScan(
 
 function sleep(ms: number) {
   return new Promise((resolvePromise) => setTimeout(resolvePromise, ms));
+}
+
+function formatScanProgress(
+  status: ApiV1SkillScanStatusResponse["status"],
+  scanId: string,
+  queue: ApiV1SkillScanStatusResponse["queue"],
+) {
+  const queueProgress = formatQueueProgress(status, queue);
+  return `Scan ${status} (${scanId})${queueProgress ? ` - ${queueProgress}` : ""}`;
+}
+
+function formatQueueProgress(
+  status: ApiV1SkillScanStatusResponse["status"],
+  queue: ApiV1SkillScanStatusResponse["queue"],
+) {
+  if (!queue) return undefined;
+  if (status === "queued") {
+    const aheadCount = `${queue.queuedAhead}${queue.queuedAheadIsEstimate ? "+" : ""}`;
+    const ahead =
+      queue.queuedAhead === 0
+        ? "no scans ahead"
+        : `${aheadCount} scan${queue.queuedAhead === 1 && !queue.queuedAheadIsEstimate ? "" : "s"} ahead`;
+    const position = typeof queue.position === "number" ? `position ${queue.position}` : undefined;
+    const running = `${queue.running}${queue.runningIsEstimate ? "+" : ""} running`;
+    return [position, ahead, running, queue.note].filter(Boolean).join("; ");
+  }
+  if (status === "running") return `${queue.running}${queue.runningIsEstimate ? "+" : ""} running`;
+  return undefined;
 }
 
 function printJson(status: ApiV1SkillScanStatusResponse) {

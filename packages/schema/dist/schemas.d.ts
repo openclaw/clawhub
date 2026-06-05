@@ -419,6 +419,15 @@ export declare const ApiV1SkillScanSubmitRequestSchema: import("arktype/internal
     update?: boolean | undefined;
 }, {}>;
 export type ApiV1SkillScanSubmitRequest = (typeof ApiV1SkillScanSubmitRequestSchema)[inferred];
+export declare const ApiV1SkillScanQueueSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    queuedAhead: number;
+    position: number | null;
+    running: number;
+    note: string;
+    queuedAheadIsEstimate?: boolean | undefined;
+    runningIsEstimate?: boolean | undefined;
+}, {}>;
+export type ApiV1SkillScanQueue = (typeof ApiV1SkillScanQueueSchema)[inferred];
 export declare const ApiV1SkillScanSubmitResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     ok: true;
     scanId: string;
@@ -427,6 +436,14 @@ export declare const ApiV1SkillScanSubmitResponseSchema: import("arktype/interna
     update: boolean;
     jobId?: string | undefined;
     alreadyQueued?: boolean | undefined;
+    queue?: {
+        queuedAhead: number;
+        position: number | null;
+        running: number;
+        note: string;
+        queuedAheadIsEstimate?: boolean | undefined;
+        runningIsEstimate?: boolean | undefined;
+    } | undefined;
 }, {}>;
 export type ApiV1SkillScanSubmitResponse = (typeof ApiV1SkillScanSubmitResponseSchema)[inferred];
 export declare const ApiV1SkillScanStatusResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
@@ -441,6 +458,14 @@ export declare const ApiV1SkillScanStatusResponseSchema: import("arktype/interna
     writtenBack?: boolean | undefined;
     artifact?: unknown;
     report?: unknown;
+    queue?: {
+        queuedAhead: number;
+        position: number | null;
+        running: number;
+        note: string;
+        queuedAheadIsEstimate?: boolean | undefined;
+        runningIsEstimate?: boolean | undefined;
+    } | undefined;
     lastError?: string | undefined;
     completedAt?: number | undefined;
 }, {}>;
