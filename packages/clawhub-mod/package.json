@@ -27,7 +27,7 @@
     "verify": "bun run test && bun run typecheck && bun run build"
   },
   "dependencies": {
-    "@clack/prompts": "1.4.0",
+    "@clack/prompts": "1.5.1",
     "arktype": "2.2.0",
     "commander": "14.0.3",
     "fflate": "0.8.3",
@@ -36,8 +36,8 @@
     "mime": "4.1.0",
     "ora": "9.4.0",
     "p-retry": "8.0.0",
-    "semver": "7.8.1",
-    "undici": "7.26.0"
+    "semver": "7.8.2",
+    "undici": "7.27.1"
   },
   "devDependencies": {
     "@types/node": "25.9.1",
