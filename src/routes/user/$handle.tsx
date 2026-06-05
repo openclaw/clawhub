@@ -70,7 +70,6 @@ type PublisherMemberResult = {
 
 type PublishedView = "list" | "grid";
 type ProfileCatalogTab = "skills" | "plugins" | "stars";
-type ActiveCatalogTab = ProfileCatalogTab | "published";
 
 const roleColor: Record<string, "accent" | "default" | "compact"> = {
   owner: "accent",
@@ -96,12 +95,9 @@ function PublisherProfile() {
     | undefined;
   const publishedQueryArgs: {
     handle: string;
-    kind?: "skill" | "plugin";
+    kind: "skill" | "plugin";
     sort: "downloads";
-  } =
-    publisher?.kind === "org"
-      ? { handle, sort: "downloads" }
-      : { handle, kind: publishedKind, sort: "downloads" };
+  } = { handle, kind: publishedKind, sort: "downloads" };
   const publishedDisplay = useQuery(
     api.publishers.getPublishedDisplayManifest,
     publishedQueryArgs,
@@ -172,12 +168,11 @@ function PublisherProfile() {
   const affiliations = publisher.affiliations ?? [];
   const visibleAffiliations = affiliations.slice(0, 1);
   const memberCount = members?.members.length ?? 0;
-  const activeCatalogTab: ActiveCatalogTab = publisher.kind === "user" ? catalogTab : "published";
+  const activeCatalogTab = catalogTab;
   const activeItems = activeCatalogTab === "stars" ? starredItems : publishedItems;
   const activeStatus = activeCatalogTab === "stars" ? starredStatus : publishedStatus;
   const activeLoadMore = activeCatalogTab === "stars" ? loadMoreStarred : loadMore;
-  const activePublishedDisplay =
-    activeCatalogTab === "skills" || activeCatalogTab === "published" ? publishedDisplay : null;
+  const activePublishedDisplay = activeCatalogTab === "skills" ? publishedDisplay : null;
   const isLoadingCatalog = activeStatus === "LoadingFirstPage";
 
   return (
@@ -255,29 +250,19 @@ function PublisherProfile() {
 
           <div className="publisher-profile-layout">
             <aside className="publisher-profile-sidebar">
-              <section className="publisher-profile-panel">
-                <h2>Details</h2>
-                <div className="publisher-profile-detail-list">
-                  <ProfileDetail
-                    icon={Wrench}
-                    label="Skills"
-                    value={formatCompactStat(publisher.stats.skills)}
-                  />
-                  <ProfileDetail
-                    icon={Package}
-                    label="Plugins"
-                    value={formatCompactStat(publisher.stats.packages)}
-                  />
-                  {publisher.kind !== "org" && (
+              {publisher.kind !== "org" ? (
+                <section className="publisher-profile-panel">
+                  <h2>Details</h2>
+                  <div className="publisher-profile-detail-list">
                     <ProfileDetail
                       icon={GitHubIcon}
                       label="GitHub"
                       value={`@${publisher.handle}`}
                       href={`https://github.com/${publisher.handle}`}
                     />
-                  )}
-                </div>
-              </section>
+                  </div>
+                </section>
+              ) : null}
 
               {publisher.kind === "user" && affiliations.length > 0 ? (
                 <section className="publisher-profile-panel">
@@ -363,24 +348,24 @@ function PublisherProfile() {
                   <h2 id="publisher-published-title" className="sr-only">
                     Publisher catalog
                   </h2>
-                  {publisher.kind === "user" ? (
-                    <div className="publisher-profile-catalog-tabs" aria-label="Catalog">
-                      <button
-                        type="button"
-                        className={activeCatalogTab === "skills" ? "is-active" : undefined}
-                        onClick={() => setCatalogTab("skills")}
-                      >
-                        <Wrench size={14} aria-hidden="true" />
-                        Skills <span>{formatCompactStat(publisher.stats.skills)}</span>
-                      </button>
-                      <button
-                        type="button"
-                        className={activeCatalogTab === "plugins" ? "is-active" : undefined}
-                        onClick={() => setCatalogTab("plugins")}
-                      >
-                        <Package size={14} aria-hidden="true" />
-                        Plugins <span>{formatCompactStat(publisher.stats.packages)}</span>
-                      </button>
+                  <div className="publisher-profile-catalog-tabs" aria-label="Catalog">
+                    <button
+                      type="button"
+                      className={activeCatalogTab === "skills" ? "is-active" : undefined}
+                      onClick={() => setCatalogTab("skills")}
+                    >
+                      <Wrench size={14} aria-hidden="true" />
+                      Skills <span>{formatCompactStat(publisher.stats.skills)}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className={activeCatalogTab === "plugins" ? "is-active" : undefined}
+                      onClick={() => setCatalogTab("plugins")}
+                    >
+                      <Package size={14} aria-hidden="true" />
+                      Plugins <span>{formatCompactStat(publisher.stats.packages)}</span>
+                    </button>
+                    {publisher.kind === "user" ? (
                       <button
                         type="button"
                         className={activeCatalogTab === "stars" ? "is-active" : undefined}
@@ -389,13 +374,8 @@ function PublisherProfile() {
                         <Star size={14} aria-hidden="true" />
                         Stars <span>{formatCompactStat(publisher.starredCount ?? 0)}</span>
                       </button>
-                    </div>
-                  ) : (
-                    <>
-                      <h2>Published</h2>
-                      <span>{formatCompactStat(publishedCount)} items</span>
-                    </>
-                  )}
+                    ) : null}
+                  </div>
                 </div>
               </div>
 
