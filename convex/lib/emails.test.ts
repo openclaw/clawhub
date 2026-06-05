@@ -101,6 +101,8 @@ describe("moderation notification email copy", () => {
     expect(email.text).toContain("Version: 1.2.3");
     expect(email.text).toContain("clawhub scan ./my-skill --output clawhub-scan.zip");
     expect(email.text).toContain("https://docs.openclaw.ai/clawhub/cli#scan-path");
+    expect(email.text).toContain("Repeated malicious rejections may lead to account disablement");
+    expect(email.html).toContain("Repeated malicious rejections may lead to account disablement");
     expect(email.text).not.toContain(APPEALS_URL);
     expect(email.html).not.toContain(APPEALS_URL);
     expect(email.html).not.toContain("appeal this decision");

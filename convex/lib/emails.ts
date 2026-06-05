@@ -1,6 +1,8 @@
 export const APPEALS_URL = "https://appeals.openclaw.ai/";
 export const CLI_SCAN_DOCS_URL = "https://docs.openclaw.ai/clawhub/cli#scan-path";
 export const DEFAULT_SCAN_REMEDIATION_COMMAND = "clawhub scan ./my-skill --output clawhub-scan.zip";
+export const MALICIOUS_REJECTION_ACCOUNT_WARNING =
+  "Repeated malicious rejections may lead to account disablement.";
 
 export type NotificationArtifact = {
   kind: "skill" | "plugin";
@@ -329,6 +331,7 @@ export function buildMaliciousArtifactEmail(args: MaliciousArtifactEmailArgs) {
     "- This version was not made public.",
     "- Your account can still sign in.",
     `- You can upload a fixed version of this ${artifactKind}.`,
+    `- ${MALICIOUS_REJECTION_ACCOUNT_WARNING}`,
     "",
     "Before trying again, scan a fixed local copy and review the output:",
     DEFAULT_SCAN_REMEDIATION_COMMAND,
@@ -355,6 +358,7 @@ export function buildMaliciousArtifactEmail(args: MaliciousArtifactEmailArgs) {
         "This version was not made public.",
         "Your account can still sign in.",
         `You can upload a fixed version of this ${artifactKind}.`,
+        MALICIOUS_REJECTION_ACCOUNT_WARNING,
       ]),
       sectionHeading("Scan a fixed local copy"),
       paragraph("Before trying again, scan a fixed local copy and review the output."),
