@@ -103,17 +103,19 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   owner is deleted/deactivated or when the skill is malicious, hidden, or
   removed. The accept path is the final shared gate before ownership changes,
   so it must cancel the pending transfer before reporting the rejection.
-- `clawScanNote` is optional publisher-authored context stored directly on a
-  `skillVersions` or `packageReleases` row. It is not an appeal, has no
-  accepted/rejected state, does not imply staff response, and must not drive
-  moderation state transitions by itself.
-- CLI publishes only include `clawScanNote` when the publisher explicitly passes
-  it. UI publish flows may prefill the previous version/release note for
-  convenience. Owners/admins can also update the latest version/release note
-  from artifact settings and request a fresh ClawScan review without publishing
-  a new version. ClawScan must treat the field as untrusted publisher-provided
-  context rather than scanner instructions, and note updates must write an
-  `auditLogs` entry.
+- Publisher-authored scan notes are no longer part of the ClawScan input
+  contract. ClawScan decisions must be based on submitted artifacts, scanner
+  signals, and staff moderation state, not publisher-supplied explanatory text.
+  Legacy persisted note fields may exist on old rows for schema compatibility,
+  but publish, rescan, API, UI, and prompt paths must ignore them.
+- User-submitted `POST /api/v1/skills/-/scan` upload scans are authenticated but
+  ephemeral. They store uploaded files only on `skillScanRequests`, feed the
+  normal ClawScan worker, and must never create or patch public `skills`,
+  `skillVersions`, moderation, or trust state. Expired `skillScanRequests` rows
+  must be pruned by cron so uploaded file payloads do not become durable skill
+  storage. Published scan requests may patch a version only when the caller can
+  manage the skill and explicitly sets `update: true`; local uploads must reject
+  update mode.
 - `auditLogs` remains the global compliance/security ledger. Product-facing
   moderation timelines live in `skillModerationEventLogs` and
   `packageModerationEventLogs`.
@@ -135,6 +137,28 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   compatibility while new writes store `confirmed`.
 - Skills directory supports an optional "Hide suspicious" filter to exclude
   active-but-flagged (`flagged.suspicious`) entries from browse/search results.
+
+## Package publish upload boundary
+
+- Package publish is multipart-only. `POST /api/v1/packages` must reject JSON
+  request bodies, including bodies that reference pre-existing storage IDs.
+- Public HTTP package publish payloads must not accept caller-supplied `files`
+  or `artifact` metadata. Internal publish actions may receive that metadata
+  only after the HTTP boundary derives it from uploaded multipart bytes or a
+  staged ClawPack blob.
+- Package publish accepts either multipart `files` uploads or one `clawpack`
+  tarball reference, never both in the same request. `clawpack` may be a direct
+  `.tgz` file part or a Convex storage id created by the upload-url flow. The
+  storage-id path must include the matching `clawpackUploadTicket`, and the
+  server must reject tickets from a different auth context, expired or used
+  tickets, and storage blobs created before the ticket.
+- Direct package publish multipart bytes are capped at 18MB so callers get a
+  clear ClawHub validation error before hitting Convex's 20MB HTTP action body
+  cap. ClawPack tarballs keep the 120MB package tarball cap through staged
+  storage uploads.
+- For tarball uploads, ClawHub stores the uploaded tarball, derives its
+  artifact hashes and npm metadata, and derives package file metadata from the
+  tarball contents.
 
 ## Skill moderation pipeline
 
@@ -249,6 +273,18 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   - sets `deletedAt` on the user
 - Admins can manually unban (`deletedAt` + `banReason` cleared); revoked API tokens
   stay revoked and should be recreated by the user.
+- The external appeals site may query ban context and accept account-ban appeals
+  through the dedicated `CLAWHUB_BAN_APPEALS_TOKEN` service path. Accepted
+  appeals record the Discord reviewer id in audit metadata; the token must not
+  authorize any other moderation action. Accepted appeals must use the same
+  matching-ban restore behavior as admin unbans for skills and packages/plugins
+  and must only clear accounts with a current `user.ban` or
+  `user.autoban.malware` audit matching the ban timestamp.
+  Package/plugin restore audit entries from this service path are actorless;
+  reviewer provenance belongs on the `user.unban` service audit metadata, not
+  on the restored user's package audit rows.
+  Ban context lookup must tolerate duplicate Convex Auth account rows by
+  selecting the currently banned user with matching ban audit evidence.
 - Unban restore batches only restore packages/plugins hidden by the matching
   ban timestamp and must stop if the user has been banned again.
 - Stale unban restore batches must stop if the user was banned again before a
@@ -282,9 +318,17 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Gate applies to web uploads, CLI publish, GitHub import, and comments.
 - If GitHub responds `403` or `429`, publish fails with:
   - `GitHub API rate limit exceeded — please try again in a few minutes`
-- To reduce rate-limit failures, set `GITHUB_TOKEN` in Convex env for authenticated
-  GitHub API requests. The same token is used for trusted-publisher repository
-  identity lookups.
+- To reduce rate-limit failures, configure the ClawHub GitHub App in Convex env:
+  `GITHUB_APP_ID`, `GITHUB_APP_INSTALLATION_ID`, and `GITHUB_APP_PRIVATE_KEY`.
+  Account-age/profile lookups prefer short-lived GitHub App installation
+  tokens, then fall back to `GITHUB_TOKEN`, then to unauthenticated public
+  requests where safe. Trusted-publisher repository identity lookups avoid
+  GitHub App installation tokens because users may configure repositories
+  outside the App installation; they use `GITHUB_TOKEN` or unauthenticated
+  public requests instead.
+- If configured GitHub API auth is rejected with `401`, retry the account-age
+  lookup without auth before failing. Never fall back to mutable GitHub usernames
+  for this gate; use the operator backfill to cache missing ages for existing users.
 
 ## Empty-skill cleanup (backfill)
 

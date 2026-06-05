@@ -8,8 +8,21 @@ export type Role = "admin" | "moderator" | "user" | "mirror";
 const DEV_IMPERSONATE_LOCAL_HANDLE = "local";
 
 function readEnv(name: string) {
-  const value = process.env[name]?.trim();
+  const value = readKnownEnv(name)?.trim();
   return value ? value : undefined;
+}
+
+function readKnownEnv(name: string) {
+  if (name === "CLAW_HUB_DEV_IMPERSONATE_USER_HANDLE") {
+    return process.env.CLAW_HUB_DEV_IMPERSONATE_USER_HANDLE;
+  }
+  if (name === "CLAW_HUB_ENABLE_DEV_IMPERSONATION") {
+    return process.env.CLAW_HUB_ENABLE_DEV_IMPERSONATION;
+  }
+  if (name === "CONVEX_DEPLOYMENT") {
+    return process.env.CONVEX_DEPLOYMENT;
+  }
+  return undefined;
 }
 
 function isDevImpersonationAllowed() {
@@ -52,39 +65,49 @@ async function getDevImpersonatedUserIdFromAction(
 export async function getOptionalActiveAuthUserId(
   ctx: MutationCtx | QueryCtx,
 ): Promise<Id<"users"> | undefined> {
+  const devUserId = await getDevImpersonatedUserId(ctx);
+  if (devUserId) return devUserId;
   try {
     const userId = await getAuthUserId(ctx);
-    if (!userId) return await getDevImpersonatedUserId(ctx);
+    if (!userId) return undefined;
     const user = await ctx.db.get(userId);
     if (!user || user.deletedAt || user.deactivatedAt) return undefined;
     return userId;
   } catch {
-    return await getDevImpersonatedUserId(ctx);
+    return undefined;
   }
 }
 
 export async function getOptionalActiveAuthUserIdFromAction(
   ctx: ActionCtx,
 ): Promise<Id<"users"> | undefined> {
+  const devUserId = await getDevImpersonatedUserIdFromAction(ctx);
+  if (devUserId) return devUserId;
   try {
     const userId = await getAuthUserId(ctx);
-    if (!userId) return await getDevImpersonatedUserIdFromAction(ctx);
+    if (!userId) return undefined;
     const user = await ctx.runQuery(internal.users.getByIdInternal, { userId });
     if (!user || user.deletedAt || user.deactivatedAt) return undefined;
     return userId;
   } catch {
-    return await getDevImpersonatedUserIdFromAction(ctx);
+    return undefined;
   }
 }
 
 export async function requireUser(ctx: MutationCtx | QueryCtx) {
+  const devUserId = await getDevImpersonatedUserId(ctx);
+  if (devUserId) {
+    const devUser = await ctx.db.get(devUserId);
+    if (!devUser || devUser.deletedAt || devUser.deactivatedAt) throw new Error("User not found");
+    return { userId: devUserId, user: devUser };
+  }
+
   let userId: Id<"users"> | null | undefined = null;
   try {
     userId = await getAuthUserId(ctx);
   } catch {
     userId = null;
   }
-  userId ??= await getDevImpersonatedUserId(ctx);
   if (!userId) throw new Error("Unauthorized");
   let user: Doc<"users"> | null;
   try {
@@ -99,13 +122,19 @@ export async function requireUser(ctx: MutationCtx | QueryCtx) {
 export async function requireUserFromAction(
   ctx: ActionCtx,
 ): Promise<{ userId: Id<"users">; user: Doc<"users"> }> {
+  const devUserId = await getDevImpersonatedUserIdFromAction(ctx);
+  if (devUserId) {
+    const devUser = await ctx.runQuery(internal.users.getByIdInternal, { userId: devUserId });
+    if (!devUser || devUser.deletedAt || devUser.deactivatedAt) throw new Error("User not found");
+    return { userId: devUserId, user: devUser as Doc<"users"> };
+  }
+
   let userId: Id<"users"> | null | undefined = null;
   try {
     userId = await getAuthUserId(ctx);
   } catch {
     userId = null;
   }
-  userId ??= await getDevImpersonatedUserIdFromAction(ctx);
   if (!userId) throw new Error("Unauthorized");
   let user: Doc<"users"> | null;
   try {

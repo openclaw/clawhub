@@ -3,6 +3,7 @@ import { gzipSync, unzipSync } from "fflate";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { internal } from "./_generated/api";
 import { RATE_LIMITS } from "./lib/httpRateLimit";
+import { MAX_PUBLISH_FILE_BYTES } from "./lib/publishLimits";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
@@ -63,8 +64,51 @@ function hasPackageNameArgs(args: unknown): args is { name: string } {
   return typeof value.name === "string";
 }
 
+function hasPackageDownloadMetricTarget(args: unknown, packageId: string) {
+  if (!args || typeof args !== "object") return false;
+  const value = args as Record<string, unknown>;
+  const target = value.target;
+  if (!target || typeof target !== "object") return false;
+  const targetValue = target as Record<string, unknown>;
+  return targetValue.kind === "package" && targetValue.id === packageId;
+}
+
 function findRateLimitCallArgs(mock: ReturnType<typeof vi.fn>) {
   return mock.mock.calls.map(([, args]) => args).find(isRateLimitArgs);
+}
+
+function makeInstallResolverRunQuery({
+  skill,
+  source = null,
+  publicVisible = true,
+}: {
+  skill: Record<string, unknown> | null;
+  source?: Record<string, unknown> | null;
+  publicVisible?: boolean;
+}) {
+  let slugQueryCount = 0;
+  return vi.fn(async (query: unknown, args: Record<string, unknown>) => {
+    void query;
+    if ("sourceId" in args) return source;
+    if ("slug" in args) {
+      slugQueryCount += 1;
+      if (slugQueryCount === 1) {
+        return skill;
+      }
+      if (slugQueryCount === 2) {
+        return publicVisible && skill
+          ? {
+              skill: {
+                _id: skill._id,
+                slug: skill.slug,
+                displayName: skill.displayName,
+              },
+            }
+          : null;
+      }
+    }
+    throw new Error(`unexpected query ${JSON.stringify(args)}`);
+  });
 }
 
 function makeCatalogItem(
@@ -98,8 +142,8 @@ function writeTarString(target: Uint8Array, offset: number, width: number, value
   target.set(encoded.subarray(0, width), offset);
 }
 
-function tarFile(path: string, content: string) {
-  const bytes = new TextEncoder().encode(content);
+function tarFile(path: string, content: string | Uint8Array) {
+  const bytes = typeof content === "string" ? new TextEncoder().encode(content) : content;
   const header = new Uint8Array(TAR_BLOCK_SIZE);
   writeTarString(header, 0, 100, path);
   writeTarString(header, 100, 8, tarOctal(0o644, 8));
@@ -122,7 +166,7 @@ function tarFile(path: string, content: string) {
   return [header, body];
 }
 
-function npmPackFixture(files: Record<string, string>) {
+function npmPackFixture(files: Record<string, string | Uint8Array>) {
   const parts: Uint8Array[] = [];
   for (const [path, content] of Object.entries(files)) {
     parts.push(...tarFile(path, content));
@@ -144,13 +188,35 @@ function bytesToArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   return copy.buffer;
 }
 
+function packagePublishMetadata(overrides: Record<string, unknown> = {}) {
+  return {
+    name: "demo-plugin",
+    family: "bundle-plugin",
+    version: "1.0.0",
+    changelog: "init",
+    ...overrides,
+  };
+}
+
+function packagePublishForm(payload: Record<string, unknown>) {
+  const form = new FormData();
+  form.set("payload", JSON.stringify(payload));
+  return form;
+}
+
 function makeCtx(partial: Record<string, unknown>) {
+  const rateLimitStatus =
+    typeof partial.rateLimitStatus === "function"
+      ? (partial.rateLimitStatus as (args: RateLimitArgs) => unknown)
+      : null;
   const partialRunQuery =
     typeof partial.runQuery === "function"
       ? (partial.runQuery as (query: unknown, args: Record<string, unknown>) => unknown)
       : null;
   const runQuery = vi.fn(async (query: unknown, args: Record<string, unknown>) => {
-    if (isRateLimitArgs(args)) return { ...okRate(), limit: args.limit };
+    if (isRateLimitArgs(args)) {
+      return rateLimitStatus?.(args) ?? { ...okRate(), limit: args.limit };
+    }
     return partialRunQuery ? await partialRunQuery(query, args) : null;
   });
   const runMutation =
@@ -870,6 +936,130 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("users/publisher-official lists official publishers for admin", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        ok: true,
+        items: [
+          {
+            officialPublisherId: "officialPublishers:openclaw",
+            publisherId: "publishers:openclaw",
+            handle: "openclaw",
+            displayName: "OpenClaw",
+            kind: "org",
+            active: true,
+            reason: "platform-owned publisher",
+            createdByUserId: "users:admin",
+            createdByHandle: "patrick-erichsen-2",
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        ],
+      };
+    });
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return null;
+    });
+
+    const response = await __handlers.usersGetRouterV1Handler(
+      makeCtx({ runQuery, runAction: vi.fn(), runMutation }),
+      new Request("https://example.com/api/v1/users/publisher-official", {
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      items: [{ handle: "openclaw" }],
+    });
+    expect(runQuery).toHaveBeenCalledWith(internal.publishers.listOfficialPublishersInternal, {
+      actorUserId: "users:admin",
+    });
+  });
+
+  it("users/publisher-official adds official org publishers for admin", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        ok: true,
+        publisherId: "publishers:nvidia",
+        handle: "nvidia",
+        added: true,
+        officialPublisherId: "officialPublishers:nvidia",
+      };
+    });
+
+    const response = await __handlers.usersPostRouterV1Handler(
+      makeCtx({ runQuery: vi.fn(), runAction: vi.fn(), runMutation }),
+      new Request("https://example.com/api/v1/users/publisher-official", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({
+          action: "add",
+          handle: "NVIDIA",
+          reason: "NVIDIA source-backed catalog",
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ ok: true, added: true });
+    expect(runMutation).toHaveBeenCalledWith(internal.publishers.addOfficialPublisherInternal, {
+      actorUserId: "users:admin",
+      handle: "nvidia",
+      reason: "NVIDIA source-backed catalog",
+    });
+  });
+
+  it("users/publisher-official removes official org publishers for admin", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        ok: true,
+        publisherId: "publishers:nvidia",
+        handle: "nvidia",
+        removed: true,
+        officialPublisherId: "officialPublishers:nvidia",
+      };
+    });
+
+    const response = await __handlers.usersPostRouterV1Handler(
+      makeCtx({ runQuery: vi.fn(), runAction: vi.fn(), runMutation }),
+      new Request("https://example.com/api/v1/users/publisher-official", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({
+          action: "remove",
+          handle: "NVIDIA",
+          reason: "requested by publisher",
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ ok: true, removed: true });
+    expect(runMutation).toHaveBeenCalledWith(internal.publishers.removeOfficialPublisherInternal, {
+      actorUserId: "users:admin",
+      handle: "nvidia",
+      reason: "requested by publisher",
+    });
+  });
+
   it("publishers creates a self-serve org publisher for the authenticated user", async () => {
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
@@ -1173,6 +1363,23 @@ describe("httpApiV1 handlers", () => {
     expect(json.items[0].tags.latest).toBe("1.0.0");
   });
 
+  it("lists skills keeps the v1 no-sort default on updated ranking", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("cursor" in args || "numItems" in args) {
+        expect(args.sort).toBe("updated");
+        return { page: [], nextCursor: null };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.listSkillsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills"),
+    );
+
+    expect(response.status).toBe(200);
+  });
+
   it("batches tag resolution across multiple skills into single query", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("cursor" in args || "numItems" in args) {
@@ -1431,6 +1638,8 @@ describe("httpApiV1 handlers", () => {
 
   it("lists skills supports sort aliases", async () => {
     const checks: Array<[string, string | null]> = [
+      ["default", "recommended"],
+      ["recommended", "recommended"],
       ["createdAt", "newest"],
       ["created-at", "newest"],
       ["newest", "newest"],
@@ -1469,6 +1678,18 @@ describe("httpApiV1 handlers", () => {
     const response = await __handlers.listSkillsV1Handler(
       makeCtx({ runQuery, runMutation }),
       new Request("https://example.com/api/v1/skills?sort=unknown"),
+    );
+    expect(response.status).toBe(400);
+    expect(await response.text()).toBe("Invalid sort query parameter");
+    expect(runQuery).not.toHaveBeenCalled();
+  });
+
+  it("lists skills rejects empty sort", async () => {
+    const runQuery = vi.fn();
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.listSkillsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills?sort="),
     );
     expect(response.status).toBe(400);
     expect(await response.text()).toBe("Invalid sort query parameter");
@@ -1636,6 +1857,326 @@ describe("httpApiV1 handlers", () => {
       updatedAt: 4,
     });
   });
+
+  it("skill install resolver returns archive descriptor for hosted direct uploads", async () => {
+    const runQuery = makeInstallResolverRunQuery({
+      skill: {
+        _id: "skills:demo",
+        slug: "demo",
+        displayName: "Demo Skill",
+        latestVersionSummary: { version: "1.0.0" },
+      },
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/install"),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      ok: true,
+      slug: "demo",
+      installKind: "archive",
+      archive: {
+        version: "1.0.0",
+        downloadUrl: "https://example.com/api/v1/download?slug=demo&version=1.0.0",
+      },
+    });
+  });
+
+  it("skill install resolver returns a pinned GitHub descriptor for scan-clean source-backed skills", async () => {
+    const runQuery = makeInstallResolverRunQuery({
+      skill: {
+        _id: "skills:aiq-deploy",
+        slug: "aiq-deploy",
+        displayName: "AIQ Deploy",
+        installKind: "github",
+        githubSourceId: "githubSkillSources:nvidia",
+        githubPath: "skills/aiq-deploy",
+        githubCurrentCommit: "1".repeat(40),
+        githubCurrentContentHash: "hash-aiq-deploy",
+        githubCurrentStatus: "present",
+        githubScanStatus: "clean",
+      },
+      source: {
+        _id: "githubSkillSources:nvidia",
+        repo: "NVIDIA/skills",
+        defaultBranch: "main",
+      },
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/aiq-deploy/install"),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      slug: "aiq-deploy",
+      installKind: "github",
+      github: {
+        repo: "NVIDIA/skills",
+        path: "skills/aiq-deploy",
+        commit: "1".repeat(40),
+        contentHash: "hash-aiq-deploy",
+      },
+    });
+  });
+
+  it.each([
+    {
+      name: "hosted direct uploads",
+      slug: "hidden-direct",
+      skill: {
+        _id: "skills:hidden-direct",
+        slug: "hidden-direct",
+        displayName: "Hidden Direct",
+        moderationStatus: "hidden",
+        latestVersionSummary: { version: "1.0.0" },
+      },
+    },
+    {
+      name: "GitHub-backed skills",
+      slug: "hidden-github",
+      skill: {
+        _id: "skills:hidden-github",
+        slug: "hidden-github",
+        displayName: "Hidden GitHub",
+        moderationStatus: "hidden",
+        installKind: "github",
+        githubSourceId: "githubSkillSources:nvidia",
+        githubPath: "skills/hidden-github",
+        githubCurrentCommit: "1".repeat(40),
+        githubCurrentContentHash: "hash-hidden-github",
+        githubCurrentStatus: "present",
+        githubScanStatus: "clean",
+      },
+    },
+  ])("skill install resolver hides moderated $name", async ({ slug, skill }) => {
+    const runQuery = makeInstallResolverRunQuery({
+      skill,
+      publicVisible: false,
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(`https://example.com/api/v1/skills/${slug}/install`),
+    );
+
+    expect(response.status).toBe(404);
+    await expect(response.text()).resolves.toBe("Skill not found");
+  });
+
+  it("skill install resolver hides skills absent from the public skill detail path", async () => {
+    const runQuery = makeInstallResolverRunQuery({
+      publicVisible: false,
+      skill: {
+        _id: "skills:orphaned-github",
+        slug: "orphaned-github",
+        displayName: "Orphaned GitHub",
+        installKind: "github",
+        githubSourceId: "githubSkillSources:nvidia",
+        githubPath: "skills/orphaned-github",
+        githubCurrentCommit: "1".repeat(40),
+        githubCurrentContentHash: "hash-orphaned-github",
+        githubCurrentStatus: "present",
+        githubScanStatus: "clean",
+      },
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/orphaned-github/install"),
+    );
+
+    expect(response.status).toBe(404);
+    await expect(response.text()).resolves.toBe("Skill not found");
+  });
+
+  it("skill install resolver installs the current GitHub hash after it is clean", async () => {
+    const runQuery = makeInstallResolverRunQuery({
+      skill: {
+        _id: "skills:aiq-deploy",
+        slug: "aiq-deploy",
+        displayName: "AIQ Deploy",
+        installKind: "github",
+        githubSourceId: "githubSkillSources:nvidia",
+        githubPath: "skills/aiq-deploy",
+        githubCurrentCommit: "2".repeat(40),
+        githubCurrentContentHash: "hash-aiq-deploy-v2",
+        githubCurrentStatus: "present",
+        githubScanStatus: "clean",
+      },
+      source: { repo: "NVIDIA/skills" },
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/aiq-deploy/install"),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      installKind: "github",
+      github: {
+        commit: "2".repeat(40),
+        contentHash: "hash-aiq-deploy-v2",
+      },
+    });
+  });
+
+  it("skill install resolver returns structured GitHub blocks for pending source-backed skills", async () => {
+    const runQuery = makeInstallResolverRunQuery({
+      skill: {
+        _id: "skills:aiq-deploy",
+        slug: "aiq-deploy",
+        displayName: "AIQ Deploy",
+        moderationStatus: "active",
+        moderationReason: "pending.scan",
+        installKind: "github",
+        githubSourceId: "githubSkillSources:nvidia",
+        githubPath: "skills/aiq-deploy",
+        githubCurrentCommit: "2".repeat(40),
+        githubCurrentContentHash: "hash-aiq-deploy-v2",
+        githubCurrentStatus: "present",
+        githubScanStatus: "pending",
+      },
+      source: { repo: "NVIDIA/skills" },
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/aiq-deploy/install"),
+    );
+
+    expect(response.status).toBe(423);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      reason: "github_verification_pending",
+    });
+  });
+
+  it("skill install resolver force-installs pending GitHub-backed skills", async () => {
+    const runQuery = makeInstallResolverRunQuery({
+      skill: {
+        _id: "skills:aiq-deploy",
+        slug: "aiq-deploy",
+        displayName: "AIQ Deploy",
+        moderationStatus: "active",
+        moderationReason: "pending.scan",
+        installKind: "github",
+        githubSourceId: "githubSkillSources:nvidia",
+        githubPath: "skills/aiq-deploy",
+        githubCurrentCommit: "2".repeat(40),
+        githubCurrentContentHash: "hash-aiq-deploy-v2",
+        githubCurrentStatus: "present",
+        githubScanStatus: "pending",
+      },
+      source: { repo: "NVIDIA/skills" },
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/aiq-deploy/install?forceInstall=1"),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      installKind: "github",
+      github: {
+        commit: "2".repeat(40),
+        contentHash: "hash-aiq-deploy-v2",
+      },
+    });
+  });
+
+  it("skill install resolver blocks GitHub-backed skills with failed scans", async () => {
+    const runQuery = makeInstallResolverRunQuery({
+      skill: {
+        _id: "skills:bad-source",
+        slug: "bad-source",
+        displayName: "Bad Source",
+        installKind: "github",
+        githubSourceId: "githubSkillSources:nvidia",
+        githubPath: "skills/bad-source",
+        githubCurrentCommit: "1".repeat(40),
+        githubCurrentContentHash: "hash-bad-source",
+        githubCurrentStatus: "present",
+        githubScanStatus: "failed",
+      },
+      source: { repo: "NVIDIA/skills" },
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/bad-source/install"),
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      reason: "github_scan_failed",
+    });
+  });
+
+  it.each([
+    {
+      name: "pending scan",
+      patch: { githubScanStatus: "pending" },
+      status: 423,
+      reason: "github_verification_pending",
+    },
+    {
+      name: "missing upstream path",
+      patch: { githubCurrentStatus: "missing" },
+      status: 410,
+      reason: "github_upstream_missing",
+    },
+  ])(
+    "skill install resolver blocks GitHub-backed skills with $name",
+    async ({ patch, status, reason }) => {
+      const runQuery = makeInstallResolverRunQuery({
+        skill: {
+          _id: "skills:blocked-source",
+          slug: "blocked-source",
+          displayName: "Blocked Source",
+          installKind: "github",
+          githubSourceId: "githubSkillSources:nvidia",
+          githubPath: "skills/blocked-source",
+          githubCurrentCommit: "1".repeat(40),
+          githubCurrentContentHash: "hash-blocked-source",
+          githubCurrentStatus: "present",
+          githubScanStatus: "clean",
+          ...patch,
+        },
+        source: { repo: "NVIDIA/skills" },
+      });
+      const runMutation = vi.fn().mockResolvedValue(okRate());
+
+      const response = await __handlers.skillsGetRouterV1Handler(
+        makeCtx({ runQuery, runMutation }),
+        new Request("https://example.com/api/v1/skills/blocked-source/install"),
+      );
+
+      expect(response.status).toBe(status);
+      await expect(response.json()).resolves.toMatchObject({
+        ok: false,
+        reason,
+      });
+    },
+  );
 
   it("get skill treats reports as a valid slug", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
@@ -4994,6 +5535,75 @@ describe("httpApiV1 handlers", () => {
       {
         actorUserId: "users:admin",
         jobIds: ["securityScanJobs:1", "securityScanJobs:2"],
+      },
+    );
+  });
+
+  it("VT pending repair requires admin role", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      throw new Error("should not repair");
+    });
+
+    const response = await __handlers.skillsPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/skills/-/repair-vt-pending", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({ batchSize: 25, dryRun: true }),
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.text()).resolves.toBe("Admin role required.");
+    expect(runMutation).toHaveBeenCalledTimes(1);
+  });
+
+  it("VT pending repair invokes the internal repair action via admin API", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runAction = vi.fn(async () => ({
+      dryRun: true,
+      total: 2,
+      wouldUpdate: 2,
+      updated: 0,
+      noResults: 0,
+      noDecisiveStats: 0,
+      errors: 0,
+      done: false,
+      cursor: "cursor-2",
+      statusCounts: { clean: 2 },
+      sampleUpdated: [{ slug: "demo", status: "clean" }],
+    }));
+
+    const response = await __handlers.skillsPostRouterV1Handler(
+      makeCtx({ runAction }),
+      new Request("https://example.com/api/v1/skills/-/repair-vt-pending", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({ batchSize: 25, cursor: null, dryRun: true }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      dryRun: true,
+      wouldUpdate: 2,
+      cursor: "cursor-2",
+    });
+    expect(runAction).toHaveBeenCalledWith(
+      (internal as unknown as { vt: Record<string, unknown> }).vt.repairPendingSkillVtAnalysis,
+      {
+        dryRun: true,
+        cursor: null,
+        batchSize: 25,
       },
     );
   });
@@ -8620,7 +9230,7 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
-  it("npm mirror tarball downloads record package installs", async () => {
+  it("npm mirror tarball downloads record package installs and download metrics", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("name" in args && !("paginationOpts" in args)) {
         return {
@@ -8675,13 +9285,25 @@ describe("httpApiV1 handlers", () => {
           get: vi.fn(async () => new Blob(["tarball"], { type: "application/octet-stream" })),
         },
       }),
-      new Request("https://example.com/api/npm/demo-plugin/-/demo-plugin-1.0.0.tgz"),
+      new Request("https://example.com/api/npm/demo-plugin/-/demo-plugin-1.0.0.tgz", {
+        headers: { "cf-connecting-ip": "203.0.113.10" },
+      }),
     );
 
     expect(response.status).toBe(200);
     expect(runMutation).toHaveBeenCalledWith(internal.packages.recordPackageInstallInternal, {
       packageId: "packages:demo-plugin",
     });
+    expect(runMutation).toHaveBeenCalledWith(
+      internal.downloadMetrics.recordDownloadMetricInternal,
+      expect.objectContaining({
+        target: { kind: "package", id: "packages:demo-plugin" },
+        identityKind: "ip",
+        identityHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+        dayStart: expect.any(Number),
+        occurredAt: expect.any(Number),
+      }),
+    );
   });
 
   it("npm mirror returns not found for invalid package lookup names", async () => {
@@ -9079,7 +9701,9 @@ describe("httpApiV1 handlers", () => {
           }),
         },
       }),
-      new Request("https://example.com/api/v1/packages/demo-plugin/download"),
+      new Request("https://example.com/api/v1/packages/demo-plugin/download", {
+        headers: { "cf-connecting-ip": "203.0.113.20" },
+      }),
     );
 
     const zipEntries = unzipSync(new Uint8Array(await response.arrayBuffer()));
@@ -9088,9 +9712,147 @@ describe("httpApiV1 handlers", () => {
       "package/package.json",
     ]);
     expect(zipEntries["_meta.json"]).toBeUndefined();
-    expect(runMutation).toHaveBeenCalledWith(internal.packages.recordPackageDownloadInternal, {
-      packageId: "packages:1",
+    expect(runMutation).toHaveBeenCalledWith(
+      internal.downloadMetrics.recordDownloadMetricInternal,
+      {
+        target: { kind: "package", id: "packages:1" },
+        identityKind: "ip",
+        identityHash: expect.any(String),
+        dayStart: expect.any(Number),
+        occurredAt: expect.any(Number),
+      },
+    );
+  });
+
+  it("package download metrics prefer API token user identity over IP", async () => {
+    vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:viewer" as never);
+
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args) {
+        return {
+          package: {
+            _id: "packages:1",
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            family: "code-plugin",
+            tags: {},
+            latestReleaseId: "packageReleases:1",
+            channel: "community",
+            isOfficial: false,
+            createdAt: 1,
+            updatedAt: 1,
+          },
+          latestRelease: null,
+          owner: { _id: "users:owner", handle: "owner" },
+        };
+      }
+      if ("releaseId" in args) {
+        return {
+          _id: "packageReleases:1",
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "init",
+          files: [
+            {
+              path: "package.json",
+              size: 2,
+              sha256: "a".repeat(64),
+              storageId: "storage:1",
+              contentType: "application/json",
+            },
+          ],
+        };
+      }
+      return null;
     });
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({
+        runQuery,
+        runMutation,
+        storage: {
+          get: vi.fn(async () => new Blob(["{}"], { type: "application/json" })),
+        },
+      }),
+      new Request("https://example.com/api/v1/packages/demo-plugin/download", {
+        headers: {
+          authorization: "Bearer clh_test",
+          "cf-connecting-ip": "203.0.113.20",
+        },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runMutation).toHaveBeenCalledWith(
+      internal.downloadMetrics.recordDownloadMetricInternal,
+      expect.objectContaining({
+        target: { kind: "package", id: "packages:1" },
+        identityKind: "user",
+        identityHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      }),
+    );
+  });
+
+  it("package downloads succeed and record download metrics", async () => {
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args) {
+        return {
+          package: {
+            _id: "packages:1",
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            family: "code-plugin",
+            tags: {},
+            latestReleaseId: "packageReleases:1",
+            channel: "community",
+            isOfficial: false,
+            createdAt: 1,
+            updatedAt: 1,
+          },
+          latestRelease: null,
+          owner: { _id: "users:owner", handle: "owner" },
+        };
+      }
+      if ("releaseId" in args) {
+        return {
+          _id: "packageReleases:1",
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "init",
+          files: [
+            {
+              path: "package.json",
+              size: 2,
+              sha256: "a".repeat(64),
+              storageId: "storage:1",
+              contentType: "application/json",
+            },
+          ],
+        };
+      }
+      return null;
+    });
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({
+        runQuery,
+        runMutation,
+        storage: {
+          get: vi.fn(async () => new Blob(["{}"], { type: "application/json" })),
+        },
+      }),
+      new Request("https://example.com/api/v1/packages/demo-plugin/download", {
+        headers: { "cf-connecting-ip": "203.0.113.20" },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    const mutationArgs = runMutation.mock.calls.map(([, args]) => args);
+    expect(
+      mutationArgs.filter((args) => hasPackageDownloadMetricTarget(args, "packages:1")),
+    ).toHaveLength(1);
   });
 
   it("package download fails when any stored file is missing", async () => {
@@ -9394,37 +10156,26 @@ describe("httpApiV1 handlers", () => {
     const runAction = vi
       .fn()
       .mockResolvedValue({ ok: true, packageId: "pkg:1", releaseId: "rel:1" });
+    const form = packagePublishForm(
+      packagePublishMetadata({
+        ownerHandle: "openclaw",
+        bundle: { hostTargets: ["desktop"] },
+      }),
+    );
+    form.append("files", new File(["{}"], "openclaw.plugin.json", { type: "application/json" }));
 
     const response = await __handlers.publishPackageV1Handler(
-      makeCtx({ runAction, runMutation }),
+      makeCtx({
+        runAction,
+        runMutation,
+        storage: {
+          store: vi.fn(async (entry: File) => `storage:${entry.name}`),
+        },
+      }),
       new Request("https://example.com/api/v1/packages", {
         method: "POST",
-        headers: {
-          Authorization: "Bearer clh_test",
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          name: "demo-plugin",
-          ownerHandle: "openclaw",
-          family: "bundle-plugin",
-          version: "1.0.0",
-          changelog: "init",
-          bundle: { hostTargets: ["desktop"] },
-          files: [
-            {
-              path: "openclaw.plugin.json",
-              size: 2,
-              storageId: "storage:1",
-              sha256: "a".repeat(64),
-            },
-            {
-              path: ".codex-plugin/plugin.json",
-              size: 2,
-              storageId: "storage:1",
-              sha256: "a".repeat(64),
-            },
-          ],
-        }),
+        headers: { Authorization: "Bearer clh_test" },
+        body: form,
       }),
     );
 
@@ -9462,6 +10213,53 @@ describe("httpApiV1 handlers", () => {
           'Documents read from or written to the "publishers" table changed while this mutation was being run and on every subsequent retry.',
         ),
       );
+    const form = packagePublishForm(
+      packagePublishMetadata({
+        ownerHandle: "openclaw",
+        bundle: { hostTargets: ["desktop"] },
+      }),
+    );
+    const pack = npmPackFixture({
+      "package/package.json": JSON.stringify({ name: "demo-plugin", version: "1.0.0" }),
+      "package/openclaw.plugin.json": JSON.stringify({ id: "demo.plugin" }),
+      "package/dist/index.js": "export const demo = true;\n",
+    });
+    form.append(
+      "clawpack",
+      new File([bytesToArrayBuffer(pack)], "demo-plugin-1.0.0.tgz", {
+        type: "application/octet-stream",
+      }),
+    );
+
+    const response = await __handlers.publishPackageV1Handler(
+      makeCtx({
+        runAction,
+        runMutation,
+        storage: { store: vi.fn(async (_entry: Blob) => "storage:1") },
+      }),
+      new Request("https://example.com/api/v1/packages", {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer clh_test",
+        },
+        body: form,
+      }),
+    );
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get("Retry-After")).toBe("1");
+    await expect(response.text()).resolves.toContain("Transient ClawHub write contention");
+  });
+
+  it("package publish rejects JSON request bodies before publish actions run", async () => {
+    vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
+    vi.mocked(requirePackagePublishAuth).mockResolvedValue({
+      kind: "user",
+      userId: "users:1",
+      user: { _id: "users:1", handle: "p" },
+    } as never);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runAction = vi.fn();
 
     const response = await __handlers.publishPackageV1Handler(
       makeCtx({ runAction, runMutation }),
@@ -9471,34 +10269,39 @@ describe("httpApiV1 handlers", () => {
           Authorization: "Bearer clh_test",
           "content-type": "application/json",
         },
-        body: JSON.stringify({
-          name: "demo-plugin",
-          ownerHandle: "openclaw",
-          family: "bundle-plugin",
-          version: "1.0.0",
-          changelog: "init",
-          bundle: { hostTargets: ["desktop"] },
-          files: [
-            {
-              path: "openclaw.plugin.json",
-              size: 2,
-              storageId: "storage:1",
-              sha256: "a".repeat(64),
-            },
-            {
-              path: ".codex-plugin/plugin.json",
-              size: 2,
-              storageId: "storage:1",
-              sha256: "a".repeat(64),
-            },
-          ],
-        }),
+        body: JSON.stringify(packagePublishMetadata()),
       }),
     );
 
-    expect(response.status).toBe(503);
-    expect(response.headers.get("Retry-After")).toBe("1");
-    await expect(response.text()).resolves.toContain("Transient ClawHub write contention");
+    expect(response.status).toBe(415);
+    expect(await response.text()).toBe("Package publish requires multipart/form-data");
+    expect(runAction).not.toHaveBeenCalled();
+  });
+
+  it("package publish rejects browser session auth when token auth is not an API token", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:session" as never);
+    vi.mocked(requirePackagePublishAuth).mockRejectedValue(new Error("Unauthorized"));
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runAction = vi.fn();
+    const form = packagePublishForm(packagePublishMetadata());
+    form.append("files", new File(["{}"], "openclaw.plugin.json", { type: "application/json" }));
+
+    const response = await __handlers.publishPackageV1Handler(
+      makeCtx({
+        runAction,
+        runMutation,
+        storage: { store: vi.fn(async () => "storage:plugin") },
+      }),
+      new Request("https://example.com/api/v1/packages", {
+        method: "POST",
+        headers: { Authorization: "Bearer convex-session-token" },
+        body: form,
+      }),
+    );
+
+    expect(response.status).toBe(401);
+    expect(await response.text()).toBe("Unauthorized");
+    expect(runAction).not.toHaveBeenCalled();
   });
 
   it("multipart package publish ignores macOS junk files", async () => {
@@ -9512,6 +10315,7 @@ describe("httpApiV1 handlers", () => {
     const runAction = vi
       .fn()
       .mockResolvedValue({ ok: true, packageId: "pkg:1", releaseId: "rel:1" });
+    const storageStore = vi.fn(async () => "storage:plugin");
     const form = new FormData();
     form.set(
       "payload",
@@ -9530,9 +10334,7 @@ describe("httpApiV1 handlers", () => {
       makeCtx({
         runAction,
         runMutation,
-        storage: {
-          store: vi.fn(async (entry: File) => `storage:${entry.name}`),
-        },
+        storage: { store: storageStore },
       }),
       new Request("https://example.com/api/v1/packages", {
         method: "POST",
@@ -9542,16 +10344,28 @@ describe("httpApiV1 handlers", () => {
     );
 
     expect(response.status).toBe(200);
+    expect(storageStore).toHaveBeenCalledTimes(1);
     expect(runAction).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
         payload: expect.objectContaining({
           files: [
-            expect.objectContaining({
+            {
               path: "openclaw.plugin.json",
-            }),
+              size: 2,
+              storageId: "storage:plugin",
+              sha256: "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+              contentType: "application/json",
+            },
           ],
         }),
+      }),
+    );
+    const actionCall = runAction.mock.calls[0];
+    expect(actionCall).toBeTruthy();
+    expect(actionCall[1]).toEqual(
+      expect.objectContaining({
+        payload: expect.not.objectContaining({ artifact: expect.anything() }),
       }),
     );
   });
@@ -9572,6 +10386,7 @@ describe("httpApiV1 handlers", () => {
       "package/package.json": JSON.stringify({ name: "demo-plugin", version: "1.0.0" }),
       "package/openclaw.plugin.json": JSON.stringify({ id: "demo.plugin" }),
       "package/dist/index.js": "export const demo = true;\n",
+      "package/assets/viewer-runtime.js": "x".repeat(MAX_PUBLISH_FILE_BYTES + 1),
     });
     const form = new FormData();
     form.set(
@@ -9604,7 +10419,7 @@ describe("httpApiV1 handlers", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(storageStore).toHaveBeenCalledTimes(4);
+    expect(storageStore).toHaveBeenCalledTimes(5);
     expect(runAction).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
@@ -9613,12 +10428,17 @@ describe("httpApiV1 handlers", () => {
             kind: "npm-pack",
             storageId: "storage:1",
             size: pack.byteLength,
-            npmFileCount: 3,
+            npmFileCount: 4,
           }),
           files: [
             expect.objectContaining({ path: "package.json", storageId: "storage:2" }),
             expect.objectContaining({ path: "openclaw.plugin.json", storageId: "storage:3" }),
             expect.objectContaining({ path: "dist/index.js", storageId: "storage:4" }),
+            expect.objectContaining({
+              path: "assets/viewer-runtime.js",
+              storageId: "storage:5",
+              size: MAX_PUBLISH_FILE_BYTES + 1,
+            }),
           ],
         }),
       }),
@@ -9628,6 +10448,234 @@ describe("httpApiV1 handlers", () => {
     const payload = (actionCall[1] as { payload?: { files?: Array<{ path: string }> } }).payload;
     expect(payload?.files?.map((file) => file.path)).toContain("dist/index.js");
   });
+
+  it("staged ClawPack publish derives artifact metadata from stored bytes", async () => {
+    vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
+    vi.mocked(requirePackagePublishAuth).mockResolvedValue({
+      kind: "user",
+      userId: "users:1",
+      user: { _id: "users:1", handle: "p" },
+    } as never);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runAction = vi
+      .fn()
+      .mockResolvedValue({ ok: true, packageId: "pkg:1", releaseId: "rel:1" });
+    const pack = npmPackFixture({
+      "package/package.json": JSON.stringify({ name: "demo-plugin", version: "1.0.0" }),
+      "package/openclaw.plugin.json": JSON.stringify({ id: "demo.plugin" }),
+      "package/dist/index.js": "export const demo = true;\n",
+    });
+    const storageGet = vi.fn(async (storageId: string) =>
+      storageId === "storage:clawpack"
+        ? new Blob([bytesToArrayBuffer(pack)], { type: "application/octet-stream" })
+        : null,
+    );
+    const storageStore = vi.fn(async (_entry: Blob) => `storage:${storageStore.mock.calls.length}`);
+    const form = packagePublishForm(
+      packagePublishMetadata({
+        family: "code-plugin",
+      }),
+    );
+    form.set("clawpack", "storage:clawpack");
+    form.set("clawpackUploadTicket", "packagePublishUploadTickets:1");
+
+    const response = await __handlers.publishPackageV1Handler(
+      makeCtx({
+        runAction,
+        runMutation,
+        storage: { get: storageGet, store: storageStore },
+      }),
+      new Request("https://example.com/api/v1/packages", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: form,
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        uploadTicket: "packagePublishUploadTickets:1",
+        storageId: "storage:clawpack",
+        auth: { kind: "user", userId: "users:1" },
+      }),
+    );
+    expect(storageGet).toHaveBeenCalledWith("storage:clawpack");
+    expect(storageStore).toHaveBeenCalledTimes(3);
+    expect(runAction).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          artifact: expect.objectContaining({
+            kind: "npm-pack",
+            storageId: "storage:clawpack",
+            size: pack.byteLength,
+            npmFileCount: 3,
+          }),
+          files: [
+            expect.objectContaining({ path: "package.json", storageId: "storage:1" }),
+            expect.objectContaining({ path: "openclaw.plugin.json", storageId: "storage:2" }),
+            expect.objectContaining({ path: "dist/index.js", storageId: "storage:3" }),
+          ],
+        }),
+      }),
+    );
+  });
+
+  it("staged ClawPack publish rejects storage ids without upload tickets", async () => {
+    vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
+    vi.mocked(requirePackagePublishAuth).mockResolvedValue({
+      kind: "user",
+      userId: "users:1",
+      user: { _id: "users:1", handle: "p" },
+    } as never);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runAction = vi.fn();
+    const storageGet = vi.fn();
+    const form = packagePublishForm(packagePublishMetadata({ family: "code-plugin" }));
+    form.set("clawpack", "storage:clawpack");
+
+    const response = await __handlers.publishPackageV1Handler(
+      makeCtx({
+        runAction,
+        runMutation,
+        storage: { get: storageGet, store: vi.fn() },
+      }),
+      new Request("https://example.com/api/v1/packages", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: form,
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toBe("Package tarball upload ticket required");
+    expect(storageGet).not.toHaveBeenCalled();
+    expect(runAction).not.toHaveBeenCalled();
+  });
+
+  it("multipart package publish rejects files and tarball together", async () => {
+    vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
+    vi.mocked(requirePackagePublishAuth).mockResolvedValue({
+      kind: "user",
+      userId: "users:1",
+      user: { _id: "users:1", handle: "p" },
+    } as never);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runAction = vi.fn();
+    const pack = npmPackFixture({
+      "package/package.json": JSON.stringify({ name: "demo-plugin", version: "1.0.0" }),
+      "package/openclaw.plugin.json": JSON.stringify({ id: "demo.plugin" }),
+    });
+    const form = packagePublishForm(packagePublishMetadata({ family: "code-plugin" }));
+    form.append("files", new File(["{}"], "openclaw.plugin.json", { type: "application/json" }));
+    form.append(
+      "clawpack",
+      new File([bytesToArrayBuffer(pack)], "demo-plugin-1.0.0.tgz", {
+        type: "application/octet-stream",
+      }),
+    );
+
+    const response = await __handlers.publishPackageV1Handler(
+      makeCtx({ runAction, runMutation, storage: { store: vi.fn() } }),
+      new Request("https://example.com/api/v1/packages", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: form,
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toBe(
+      "Upload either a package tarball or individual files, not both",
+    );
+    expect(runAction).not.toHaveBeenCalled();
+  });
+
+  it.each(["files[]", "tarball", "artifact", "extraMetadata"])(
+    "multipart package publish rejects unsupported field %s",
+    async (field) => {
+      vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
+      vi.mocked(requirePackagePublishAuth).mockResolvedValue({
+        kind: "user",
+        userId: "users:1",
+        user: { _id: "users:1", handle: "p" },
+      } as never);
+      const runMutation = vi.fn().mockResolvedValue(okRate());
+      const runAction = vi.fn();
+      const form = packagePublishForm(packagePublishMetadata());
+      form.append("files", new File(["{}"], "openclaw.plugin.json", { type: "application/json" }));
+      form.append(field, new File(["{}"], "ignored.json", { type: "application/json" }));
+
+      const response = await __handlers.publishPackageV1Handler(
+        makeCtx({ runAction, runMutation, storage: { store: vi.fn() } }),
+        new Request("https://example.com/api/v1/packages", {
+          method: "POST",
+          headers: { Authorization: "Bearer clh_test" },
+          body: form,
+        }),
+      );
+
+      expect(response.status).toBe(400);
+      expect(await response.text()).toBe(`Unsupported package publish form field: ${field}`);
+      expect(runAction).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["files", "artifact"])(
+    "multipart package publish rejects caller-supplied %s metadata",
+    async (field) => {
+      vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
+      vi.mocked(requirePackagePublishAuth).mockResolvedValue({
+        kind: "user",
+        userId: "users:1",
+        user: { _id: "users:1", handle: "p" },
+      } as never);
+      const runMutation = vi.fn().mockResolvedValue(okRate());
+      const runAction = vi.fn();
+      const form = packagePublishForm(
+        packagePublishMetadata({
+          [field]:
+            field === "files"
+              ? [
+                  {
+                    path: "openclaw.plugin.json",
+                    size: 2,
+                    storageId: "storage:attacker",
+                    sha256: "a".repeat(64),
+                  },
+                ]
+              : {
+                  kind: "npm-pack",
+                  storageId: "storage:attacker",
+                  sha256: "a".repeat(64),
+                  size: 2,
+                  format: "tgz",
+                  npmIntegrity: "sha512-attacker",
+                  npmShasum: "a".repeat(40),
+                  npmTarballName: "demo-plugin-1.0.0.tgz",
+                  npmUnpackedSize: 2,
+                  npmFileCount: 1,
+                },
+        }),
+      );
+      form.append("files", new File(["{}"], "openclaw.plugin.json", { type: "application/json" }));
+
+      const response = await __handlers.publishPackageV1Handler(
+        makeCtx({ runAction, runMutation, storage: { store: vi.fn() } }),
+        new Request("https://example.com/api/v1/packages", {
+          method: "POST",
+          headers: { Authorization: "Bearer clh_test" },
+          body: form,
+        }),
+      );
+
+      expect(response.status).toBe(400);
+      expect(await response.text()).toContain(`Package publish payload: ${field}`);
+      expect(runAction).not.toHaveBeenCalled();
+    },
+  );
 
   it("package publish routes GitHub Actions auth through the trusted publisher action", async () => {
     vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
@@ -9639,36 +10687,35 @@ describe("httpApiV1 handlers", () => {
     const runAction = vi
       .fn()
       .mockResolvedValue({ ok: true, packageId: "pkg:1", releaseId: "rel:1" });
+    const form = packagePublishForm(
+      packagePublishMetadata({
+        bundle: { hostTargets: ["desktop"] },
+      }),
+    );
+    const pack = npmPackFixture({
+      "package/package.json": JSON.stringify({ name: "demo-plugin", version: "1.0.0" }),
+      "package/openclaw.plugin.json": JSON.stringify({ id: "demo.plugin" }),
+      "package/dist/index.js": "export const demo = true;\n",
+    });
+    form.append(
+      "clawpack",
+      new File([bytesToArrayBuffer(pack)], "demo-plugin-1.0.0.tgz", {
+        type: "application/octet-stream",
+      }),
+    );
 
     const response = await __handlers.publishPackageV1Handler(
-      makeCtx({ runAction, runMutation }),
+      makeCtx({
+        runAction,
+        runMutation,
+        storage: { store: vi.fn(async (_entry: Blob) => "storage:1") },
+      }),
       new Request("https://example.com/api/v1/packages", {
         method: "POST",
         headers: {
           Authorization: "Bearer clh_publish",
-          "content-type": "application/json",
         },
-        body: JSON.stringify({
-          name: "demo-plugin",
-          family: "bundle-plugin",
-          version: "1.0.0",
-          changelog: "init",
-          bundle: { hostTargets: ["desktop"] },
-          files: [
-            {
-              path: "openclaw.plugin.json",
-              size: 2,
-              storageId: "storage:1",
-              sha256: "a".repeat(64),
-            },
-            {
-              path: ".codex-plugin/plugin.json",
-              size: 2,
-              storageId: "storage:1",
-              sha256: "a".repeat(64),
-            },
-          ],
-        }),
+        body: form,
       }),
     );
 

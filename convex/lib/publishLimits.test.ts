@@ -5,6 +5,7 @@ import {
   getPublishFileSizeError,
   getPublishTotalSizeError,
   MAX_CLAWPACK_BYTES,
+  MAX_PACKAGE_MULTIPART_BYTES,
   MAX_PUBLISH_FILE_BYTES,
 } from "./publishLimits";
 
@@ -31,8 +32,9 @@ describe("publishLimits", () => {
     );
   });
 
-  it("keeps the ClawPack tarball limit separate from legacy file limits", () => {
+  it("keeps ClawPack capacity above the multipart request budget", () => {
     expect(MAX_CLAWPACK_BYTES).toBe(120 * 1024 * 1024);
+    expect(MAX_CLAWPACK_BYTES).toBeGreaterThan(MAX_PACKAGE_MULTIPART_BYTES);
     expect(MAX_CLAWPACK_BYTES).toBeGreaterThan(MAX_PUBLISH_FILE_BYTES);
   });
 });

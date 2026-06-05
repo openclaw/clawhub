@@ -89,6 +89,11 @@ Stores your API token + cached registry URL.
 
 - Verifies the stored token via `/api/v1/whoami`.
 
+### `token`
+
+- Prints the stored API token to stdout.
+- Useful for piping a local login token into CI secret setup commands.
+
 ### `star <slug>` / `unstar <slug>`
 
 - Adds/removes a skill from your highlights.
@@ -178,15 +183,70 @@ Stores your API token + cached registry URL.
 - Publishing a skill means it is released under `MIT-0` on ClawHub.
 - Published skills are free to use, modify, and redistribute without attribution.
 - ClawHub does not support paid skills or per-skill pricing.
-- `--clawscan-note <text>` adds a ClawScan note. This note gives ClawScan
-  context for behavior that may otherwise look unusual, such as network access,
-  native host access, or provider-specific credentials. The note is stored on
-  the published version.
 - Legacy alias: `publish <path>`.
 
 ```bash
-clawhub skill publish ./my-skill --clawscan-note "Uses network access only to call the user-configured Weather API."
+clawhub skill publish ./my-skill --version 1.0.0
 ```
+
+### `scan [path]`
+
+- Requires `clawhub login`.
+- Runs ClawHub ClawScan through `POST /api/v1/skills/-/scan`, then polls until the scan is terminal.
+- Scans are asynchronous and may take time to complete. While queued, the terminal spinner shows the current prioritized scan position and how many scans are ahead.
+- Local path scans are always ephemeral. They upload the local skill bundle for scanning, print the security report, and never create or update a published skill/version.
+- Published scans require ownership or publisher management access. Moderators/admins can use the same backend through `clawhub-mod`.
+- `--update` is valid only with `--slug`; it writes successful published scan results back to the selected version.
+- `--output <file.zip>` downloads the full report archive with `manifest.json`, `clawscan.json`, `skillspector.json`, `static-analysis.json`, `virustotal.json`, and `README.md`.
+- `--json` prints the full poll response for automation.
+
+```bash
+clawhub scan ./my-skill
+clawhub scan ./my-skill --output report.zip
+clawhub scan --slug gifgrep
+clawhub scan --slug gifgrep --version 1.2.3
+clawhub scan --slug gifgrep --update --output report.zip
+```
+
+#### GitHub Actions
+
+ClawHub ships an official reusable workflow at
+[`/.github/workflows/skill-publish.yml`](../.github/workflows/skill-publish.yml)
+for skill repos and catalog repos.
+
+Typical catalog setup:
+
+```yaml
+name: Skill Publish
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  dry-run:
+    if: github.event_name == 'pull_request'
+    uses: openclaw/clawhub/.github/workflows/skill-publish.yml@v1
+    with:
+      owner: nvidia
+      dry_run: true
+
+  publish:
+    if: github.event_name == 'workflow_dispatch'
+    uses: openclaw/clawhub/.github/workflows/skill-publish.yml@v1
+    with:
+      owner: nvidia
+      dry_run: false
+    secrets:
+      clawhub_token: ${{ secrets.CLAWHUB_TOKEN }}
+```
+
+Notes:
+
+- `root` defaults to `skills` for catalog repos.
+- Pass `skill_path: skills/review-helper` to process one skill folder.
+- `owner` maps to the CLI `--owner` flag; omit it to publish as the authenticated user.
+- V1 skill publishing uses `clawhub_token`; GitHub OIDC trusted publishing is package-only for now.
 
 ### `delete <slug>`
 
@@ -482,16 +542,12 @@ clawhub publisher create opik --display-name "Opik"
 - `--dry-run` previews the resolved publish payload without uploading.
 - `--json` emits machine-readable output for CI.
 - `--owner <handle>` publishes under a user or org publisher handle when the actor has publisher access.
-- `--clawscan-note <text>` adds a ClawScan note. This note gives ClawScan
-  context for behavior that may otherwise look unusual, such as network access,
-  native host access, or provider-specific credentials. The note is stored on
-  the published release.
 - Scoped package names must match the selected owner. See `docs/publishing.md`.
 - Existing flags (`--family`, `--name`, `--version`, `--source-repo`, `--source-commit`, `--source-ref`, `--source-path`) still work as overrides.
 - Private GitHub repos require `GITHUB_TOKEN`.
 
 ```bash
-clawhub package publish ./plugin.tgz --clawscan-note "Native host access is limited to the local OpenClaw bridge."
+clawhub package publish ./plugin.tgz --owner openclaw
 ```
 
 #### Recommended local flow
@@ -617,10 +673,13 @@ Notes:
   - `--root <dir...>` extra scan roots
   - `--all` upload without prompting
   - `--dry-run` show plan only
+  - `--json` machine-readable summary for CI
+  - `--owner <handle>` publish under a user or org publisher
   - `--bump patch|minor|major` (default: patch)
   - `--changelog <text>` (non-interactive)
   - `--tags a,b,c` (default: latest)
   - `--concurrency <n>` (default: 4)
+  - `--source-repo <repo>`, `--source-commit <sha>`, `--source-ref <ref>` for GitHub provenance
 
 Telemetry:
 

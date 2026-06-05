@@ -34,7 +34,7 @@ export const MISSING_API_TOKEN_MESSAGE =
 export const INVALID_API_TOKEN_MESSAGE =
   "Unauthorized: API token is invalid or revoked. Run `clawhub login` again.";
 export const BLOCKED_API_TOKEN_ACCOUNT_MESSAGE =
-  "Unauthorized: This ClawHub account is not in good standing and cannot use API tokens. If you believe this is a mistake, contact security@openclaw.ai.";
+  "Unauthorized: This ClawHub account is not in good standing and cannot use API tokens. If you believe this is a mistake, open a GitHub issue: https://github.com/openclaw/clawhub/issues/new.";
 
 export async function requireApiTokenUser(
   ctx: ActionCtx,

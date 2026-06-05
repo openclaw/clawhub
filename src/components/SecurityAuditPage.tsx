@@ -1,14 +1,17 @@
-import { Check, Clock, ExternalLink, Info, RefreshCw, TriangleAlert, X } from "lucide-react";
+import { Check, Clock, Download, ExternalLink, Info, RefreshCw, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { Id } from "../../convex/_generated/dataModel";
 import { getRuntimeEnv } from "../lib/runtimeEnv";
-import { PublisherClawScanNote } from "./PublisherClawScanNote";
+import {
+  buildSecurityAuditExportFilename,
+  buildSecurityAuditExportZip,
+  type StaticScan,
+} from "../lib/securityAuditExport";
 import {
   aggregateAuditVerdict,
   AUDIT_SCANNER_LABELS,
   SECURITY_AUDIT_SUBTEXT,
   getAuditScannerOrder,
-  getAuditScannerStatus,
   getLatestAuditCheckedAt,
   getSecurityAuditOverviewCopy,
   type AuditScannerKind,
@@ -27,7 +30,6 @@ import {
   type SkillSpectorIssue,
   type VtAnalysis,
 } from "./SkillSecurityScanResults";
-import { Alert, AlertDescription } from "./ui/alert";
 import { Button } from "./ui/button";
 import { Skeleton } from "./ui/skeleton";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
@@ -54,10 +56,9 @@ type SecurityAuditPageProps = {
   vtAnalysis?: VtAnalysis | null;
   llmAnalysis?: LlmAnalysis | null;
   skillSpectorAnalysis?: SkillSpectorAnalysis | null;
+  staticScan?: StaticScan | null;
   source?: Record<string, unknown> | null;
-  clawScanNote?: string | null;
   canManageArtifact?: boolean;
-  settingsHref?: string | null;
   onRequestRescan?: (() => Promise<unknown>) | null;
 };
 
@@ -247,12 +248,29 @@ function getFlaggedSkillSpectorPatternCategories(issues: SkillSpectorIssue[]) {
   );
 }
 
+const UTC_MONTH_LABELS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+] as const;
+
 function formatTime(value?: number | null) {
   if (!value) return "Not checked yet";
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
+  const date = new Date(value);
+  const hour = date.getUTCHours();
+  const hour12 = hour % 12 || 12;
+  const minute = date.getUTCMinutes().toString().padStart(2, "0");
+  const period = hour >= 12 ? "PM" : "AM";
+  return `${UTC_MONTH_LABELS[date.getUTCMonth()]} ${date.getUTCDate()}, ${date.getUTCFullYear()} at ${hour12}:${minute} ${period} UTC`;
 }
 
 function extractDetailPathParts(detailPath: string) {
@@ -388,46 +406,6 @@ function getVirusTotalOverviewCopy(analysis: VtAnalysis | null | undefined, enti
   return getVirusTotalEngineOverview(analysis, entity) ?? getVirusTotalPendingCopy(entity);
 }
 
-function isReviewStatus(status: string) {
-  const normalized = status.trim().toLowerCase();
-  return normalized === "review" || normalized === "warn" || normalized === "suspicious";
-}
-
-function PublisherNotePrompt({
-  storageKey,
-  settingsHref,
-}: {
-  storageKey: string;
-  settingsHref: string;
-}) {
-  const [dismissed, setDismissed] = useState(false);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    setDismissed(window.localStorage.getItem(storageKey) === "1");
-  }, [storageKey]);
-
-  if (dismissed) return null;
-
-  function dismiss() {
-    setDismissed(true);
-    if (typeof window !== "undefined") window.localStorage.setItem(storageKey, "1");
-  }
-
-  return (
-    <Alert variant="info" className="publisher-note-prompt" role="status">
-      <Info size={18} aria-hidden="true" />
-      <AlertDescription>
-        <a href={settingsHref}>Add a publisher note</a> to give this audit context on these
-        findings.
-      </AlertDescription>
-      <button type="button" onClick={dismiss} aria-label="Dismiss publisher note prompt">
-        <X size={16} aria-hidden="true" />
-      </button>
-    </Alert>
-  );
-}
-
 function SecurityAuditOverview(props: SecurityAuditPageProps) {
   const overviewCopy = getSecurityAuditOverviewCopy({ llmAnalysis: props.llmAnalysis });
   return (
@@ -460,32 +438,6 @@ function ClawScanSection(props: SecurityAuditPageProps) {
     <div className="security-report-panel-body security-report-panel-body-findings">
       <ClawScanRiskReview analysis={riskAnalysis} showTitle={false} />
     </div>
-  );
-}
-
-function PublisherNoteSection(props: SecurityAuditPageProps) {
-  const status = getAuditScannerStatus("clawscan", props);
-  const riskAnalysis =
-    props.llmAnalysis && hasClawScanRiskReview(props.llmAnalysis) ? props.llmAnalysis : null;
-  const showPublisherNotePrompt =
-    props.canManageArtifact &&
-    props.settingsHref &&
-    !props.clawScanNote?.trim() &&
-    isReviewStatus(status) &&
-    Boolean(riskAnalysis);
-  const publisherNotePromptHref = showPublisherNotePrompt ? props.settingsHref : null;
-  const publisherNotePromptStorageKey = `clawhub.publisher-note-prompt.${props.entity.kind}.${props.entity.name}.${props.entity.version ?? "latest"}`;
-
-  return (
-    <>
-      <PublisherClawScanNote note={props.clawScanNote} compact />
-      {publisherNotePromptHref ? (
-        <PublisherNotePrompt
-          storageKey={publisherNotePromptStorageKey}
-          settingsHref={publisherNotePromptHref}
-        />
-      ) : null}
-    </>
   );
 }
 
@@ -804,6 +756,20 @@ function SecurityAuditSidebar(props: SecurityAuditPageProps) {
     }
   }
 
+  function downloadAuditExport() {
+    if (!showRescanButton || typeof document === "undefined" || typeof URL === "undefined") return;
+    const zipBytes = buildSecurityAuditExportZip(props);
+    const filename = buildSecurityAuditExportFilename(props);
+    const url = URL.createObjectURL(new Blob([zipBytes], { type: "application/zip" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
   const versionValue = (
     <div className="security-audit-version-stack">
       <span>{props.entity.version ?? "Latest"}</span>
@@ -822,6 +788,16 @@ function SecurityAuditSidebar(props: SecurityAuditPageProps) {
               <RefreshCw className="security-audit-rescan-icon" aria-hidden="true" />
             ) : null}
             <span>{isRescanBusy ? "Scanning" : "Rescan"}</span>
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="skill-sidebar-action-button security-audit-download-button"
+            onClick={downloadAuditExport}
+            aria-label="Download security audit"
+          >
+            <Download className="security-audit-action-icon" aria-hidden="true" />
+            <span>Download</span>
           </Button>
           {rescanState === "error" ? (
             <span className="security-audit-rescan-error" role="status">
@@ -868,7 +844,6 @@ export function SecurityAuditPage(props: SecurityAuditPageProps) {
         <div className="security-report-layout">
           <div className="security-report-main">
             <SecurityAuditOverview {...props} />
-            <PublisherNoteSection {...props} />
             {orderedScanners.map((kind) => (
               <SecurityAuditScannerSection key={kind} kind={kind} props={props} />
             ))}

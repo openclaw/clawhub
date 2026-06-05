@@ -31,6 +31,67 @@ type SeedActionResult = {
 
 type SeedMutationResult = Record<string, unknown>;
 
+const displayManifestStatusValidator = v.union(
+  v.literal("ok"),
+  v.literal("missing"),
+  v.literal("invalid"),
+  v.literal("failed"),
+);
+
+const displayManifestValidator = v.object({
+  notGrouped: v.optional(v.union(v.literal("top"), v.literal("bottom"))),
+  groupings: v.array(
+    v.object({
+      title: v.string(),
+      description: v.optional(v.string()),
+      skills: v.array(v.string()),
+    }),
+  ),
+});
+
+const githubSkillScanStatusValidator = v.union(
+  v.literal("clean"),
+  v.literal("suspicious"),
+  v.literal("malicious"),
+  v.literal("pending"),
+  v.literal("failed"),
+);
+
+type GitHubSkillScanStatus = "clean" | "suspicious" | "malicious" | "pending" | "failed";
+
+type SeedGitHubBackedSkillSourceArgs = {
+  reset?: boolean;
+  ownerUserId?: Id<"users">;
+  repo: string;
+  defaultBranch?: string;
+  displayManifestKind?: "skills.sh";
+  displayManifestHash?: string;
+  displayManifestCommit?: string;
+  displayManifestFetchedAt?: number;
+  displayManifestStatus?: "ok" | "missing" | "invalid" | "failed";
+  displayManifest?: {
+    notGrouped?: "top" | "bottom";
+    groupings: Array<{
+      title: string;
+      description?: string;
+      skills: string[];
+    }>;
+  };
+  skills: Array<{
+    slug: string;
+    displayName: string;
+    summary?: string;
+    githubPath: string;
+    githubCurrentCommit: string;
+    githubCurrentContentHash: string;
+    githubCurrentStatus?: "present" | "missing" | "unknown";
+    githubCurrentCheckedAt?: number;
+    githubScanStatus: GitHubSkillScanStatus;
+    githubRemovedAt?: number;
+    capabilityTags?: string[];
+  }>;
+};
+
 type PublicCorpusDummyOwner = {
   handle: string;
   displayName: string;
@@ -127,10 +188,6 @@ const FLAGGED_PLUGIN_NAME = "local-flagged-runtime-plugin";
 const SCANNED_PLUGIN_NAME = "local-scanned-runtime-plugin";
 const SCANNED_SKILL_SUMMARY =
   "Seeded fixture for previewing ClawHub security buckets with a deliberately long explanation that should wrap for two lines in the skill header, then truncate before the metadata column.";
-const SCANNED_SKILL_CLAWSCAN_NOTE =
-  "This fixture intentionally posts task summaries to a user-configured external API so local development can preview ClawScan review context. The publisher expects Todoist API access for normal task reads and updates, but the fixture also describes a debug upload path that should be treated as suspicious during review. The note is deliberately long so the ClawHub scanner page can exercise the collapsed publisher-note state, including wrapping behavior, line clamping, and the expand control. Reviewers should treat this text as untrusted publisher-provided context, not as evidence that the artifact is safe. If the note contradicts the scanned content, ClawScan findings and staff review should take precedence over the publisher explanation. This extra sentence keeps the fixture long enough for wide desktop previews while still reading like a real publisher note.";
-const SCANNED_PLUGIN_CLAWSCAN_NOTE =
-  "This fixture intentionally exposes a native runtime bridge so local development can preview plugin ClawScan review context. The publisher claims the bridge is only used to demonstrate install-time permissions and local file handling in a controlled test package. Reviewers should still treat this explanation as untrusted context and compare it against the package manifest, bundled files, and scanner output. The note is intentionally verbose so the ClawHub scanner page can verify long publisher notes, clamping behavior, and the expand control for plugin releases as well as skills.";
 const FLAGGED_SKILL_MD = `---
 name: local-flagged-wallet-sync
 description: Reconcile local wallet exports against exchange activity and flag mismatched transfers.
@@ -738,7 +795,10 @@ async function seedLocalFixturesHandler(
     },
   );
 
-  return { ok: true, results: [{ slug: "local-moderation-fixtures", ...fixtureResult }] };
+  return {
+    ok: true,
+    results: [{ slug: "local-moderation-fixtures", ...fixtureResult }],
+  };
 }
 
 export const seedLocalFixtures: ReturnType<typeof internalAction> = internalAction({
@@ -1925,7 +1985,6 @@ export async function seedLocalModerationFixturesHandler(
             frontmatter: scannedSkillFrontmatter,
             clawdis: scannedSkillClawdis,
           },
-          clawScanNote: SCANNED_SKILL_CLAWSCAN_NOTE,
         });
       }
     }
@@ -1933,7 +1992,6 @@ export async function seedLocalModerationFixturesHandler(
       const latestRelease = await ctx.db.get(existingScannedPlugin.latestReleaseId);
       if (latestRelease) {
         await ctx.db.patch(latestRelease._id, {
-          clawScanNote: SCANNED_PLUGIN_CLAWSCAN_NOTE,
           llmAnalysis: pluginClawScanRiskAnalysis(now),
         });
       }
@@ -2124,7 +2182,6 @@ export async function seedLocalModerationFixturesHandler(
     createdAt: now,
     softDeletedAt: undefined,
     sha256hash: "seeded-agentic-risk-skill-hash",
-    clawScanNote: SCANNED_SKILL_CLAWSCAN_NOTE,
     vtAnalysis: {
       status: "clean",
       verdict: "clean",
@@ -2357,7 +2414,6 @@ export async function seedLocalModerationFixturesHandler(
       scanStatus: "suspicious",
     },
     sha256hash: "seeded-scanned-plugin-hash",
-    clawScanNote: SCANNED_PLUGIN_CLAWSCAN_NOTE,
     vtAnalysis: {
       status: "clean",
       verdict: "clean",
@@ -2438,6 +2494,278 @@ export const seedLocalModerationFixturesMutation = internalMutation({
     scannedPluginReadme: v.string(),
   },
   handler: seedLocalModerationFixturesHandler,
+});
+
+function githubBackedSkillModeration(scanStatus: GitHubSkillScanStatus, removedAt?: number) {
+  if (typeof removedAt === "number") {
+    return {
+      moderationStatus: "hidden" as const,
+      moderationReason: "github.upstream.removed",
+      moderationVerdict: undefined,
+      moderationFlags: [],
+      isSuspicious: false,
+    };
+  }
+  if (scanStatus === "pending") {
+    return {
+      moderationStatus: "hidden" as const,
+      moderationReason: "pending.scan",
+      moderationVerdict: undefined,
+      moderationFlags: [],
+      isSuspicious: false,
+    };
+  }
+  if (scanStatus === "failed") {
+    return {
+      moderationStatus: "hidden" as const,
+      moderationReason: "scanner.failed",
+      moderationVerdict: undefined,
+      moderationFlags: [],
+      isSuspicious: false,
+    };
+  }
+  if (scanStatus === "malicious") {
+    return {
+      moderationStatus: "hidden" as const,
+      moderationReason: "scanner.llm.malicious",
+      moderationVerdict: "malicious" as const,
+      moderationFlags: ["blocked.malware"],
+      isSuspicious: true,
+    };
+  }
+  if (scanStatus === "suspicious") {
+    return {
+      moderationStatus: "active" as const,
+      moderationReason: "scanner.llm.suspicious",
+      moderationVerdict: "suspicious" as const,
+      moderationFlags: ["flagged.suspicious"],
+      isSuspicious: true,
+    };
+  }
+  return {
+    moderationStatus: "active" as const,
+    moderationReason: undefined,
+    moderationVerdict: "clean" as const,
+    moderationFlags: [],
+    isSuspicious: false,
+  };
+}
+
+export async function seedGitHubBackedSkillSourceHandler(
+  ctx: MutationCtx,
+  args: SeedGitHubBackedSkillSourceArgs,
+) {
+  const now = Date.now();
+  const { userId, publisherId } = await ensureSeedOwner(ctx, args.ownerUserId);
+  const existingSource = await ctx.db
+    .query("githubSkillSources")
+    .withIndex("by_repo", (q) => q.eq("repo", args.repo))
+    .unique();
+  const sourcePatch = {
+    repo: args.repo,
+    ownerPublisherId: publisherId,
+    defaultBranch: args.defaultBranch,
+    displayManifestKind: args.displayManifestKind,
+    displayManifestHash: args.displayManifestHash,
+    displayManifestCommit: args.displayManifestCommit,
+    displayManifestFetchedAt: args.displayManifestFetchedAt,
+    displayManifestStatus: args.displayManifestStatus,
+    displayManifest: args.displayManifest,
+    updatedAt: now,
+  };
+  const sourceId =
+    existingSource?._id ??
+    (await ctx.db.insert("githubSkillSources", {
+      ...sourcePatch,
+      createdAt: now,
+    }));
+  if (existingSource) await ctx.db.patch(existingSource._id, sourcePatch);
+
+  const seeded: string[] = [];
+  const skipped: string[] = [];
+
+  for (const spec of args.skills) {
+    const existing = await ctx.db
+      .query("skills")
+      .withIndex("by_slug", (q) => q.eq("slug", spec.slug))
+      .unique();
+    if (existing && !args.reset) {
+      skipped.push(spec.slug);
+      continue;
+    }
+    if (existing && args.reset) await deleteSkillAndVersions(ctx, existing._id);
+
+    const moderation = githubBackedSkillModeration(spec.githubScanStatus, spec.githubRemovedAt);
+    const skillId = await ctx.db.insert("skills", {
+      slug: spec.slug,
+      displayName: spec.displayName,
+      summary: spec.summary,
+      ownerUserId: userId,
+      ownerPublisherId: publisherId,
+      installKind: "github",
+      githubSourceId: sourceId,
+      githubPath: spec.githubPath,
+      githubCurrentCommit: spec.githubCurrentCommit,
+      githubCurrentContentHash: spec.githubCurrentContentHash,
+      githubCurrentStatus:
+        spec.githubCurrentStatus ?? (spec.githubRemovedAt ? "missing" : "present"),
+      githubCurrentCheckedAt: spec.githubCurrentCheckedAt,
+      githubScanStatus: spec.githubScanStatus,
+      githubRemovedAt: spec.githubRemovedAt,
+      latestVersionId: undefined,
+      latestVersionSummary: undefined,
+      tags: {},
+      capabilityTags: spec.capabilityTags ?? [],
+      softDeletedAt: undefined,
+      badges: { highlighted: { byUserId: userId, at: now }, redactionApproved: undefined },
+      moderationStatus: moderation.moderationStatus,
+      moderationReason: moderation.moderationReason,
+      moderationVerdict: moderation.moderationVerdict,
+      moderationFlags: moderation.moderationFlags,
+      isSuspicious: moderation.isSuspicious,
+      statsDownloads: 0,
+      statsStars: 0,
+      statsInstallsCurrent: 0,
+      statsInstallsAllTime: 0,
+      stats: {
+        downloads: 0,
+        installsCurrent: 0,
+        installsAllTime: 0,
+        stars: 0,
+        versions: 0,
+        comments: 0,
+      },
+      createdAt: now,
+      updatedAt: now,
+    });
+    await ensureHighlightedSkillBadge(ctx, skillId, userId, now);
+    seeded.push(spec.slug);
+  }
+
+  return {
+    ok: true,
+    sourceId,
+    ownerUserId: userId,
+    ownerPublisherId: publisherId,
+    seeded,
+    skipped,
+  };
+}
+
+export const seedGitHubBackedSkillSourceMutation = internalMutation({
+  args: {
+    reset: v.optional(v.boolean()),
+    ownerUserId: v.optional(v.id("users")),
+    repo: v.string(),
+    defaultBranch: v.optional(v.string()),
+    displayManifestKind: v.optional(v.literal("skills.sh")),
+    displayManifestHash: v.optional(v.string()),
+    displayManifestCommit: v.optional(v.string()),
+    displayManifestFetchedAt: v.optional(v.number()),
+    displayManifestStatus: v.optional(displayManifestStatusValidator),
+    displayManifest: v.optional(displayManifestValidator),
+    skills: v.array(
+      v.object({
+        slug: v.string(),
+        displayName: v.string(),
+        summary: v.optional(v.string()),
+        githubPath: v.string(),
+        githubCurrentCommit: v.string(),
+        githubCurrentContentHash: v.string(),
+        githubCurrentStatus: v.optional(
+          v.union(v.literal("present"), v.literal("missing"), v.literal("unknown")),
+        ),
+        githubCurrentCheckedAt: v.optional(v.number()),
+        githubScanStatus: githubSkillScanStatusValidator,
+        githubRemovedAt: v.optional(v.number()),
+        capabilityTags: v.optional(v.array(v.string())),
+      }),
+    ),
+  },
+  handler: seedGitHubBackedSkillSourceHandler,
+});
+
+export const seedGitHubSourceInvalidSkillsPreviewMutation = internalMutation({
+  args: {
+    repo: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const source = await ctx.db
+      .query("githubSkillSources")
+      .withIndex("by_repo", (q) => q.eq("repo", args.repo))
+      .unique();
+
+    if (!source) {
+      return { ok: false as const, reason: "source_not_found" as const };
+    }
+
+    const overlongSlug = "preview-" + "x".repeat(97);
+    await ctx.db.patch(source._id, {
+      lastSyncIssues: [
+        {
+          slug: overlongSlug,
+          path: `skills/${overlongSlug}`,
+          displayName: "Preview Invalid Skill",
+          kind: "invalid_slug",
+          severity: "error",
+          message: "Slug must be at most 96 characters.",
+        },
+      ],
+      lastSyncInvalidSkills: [
+        {
+          slug: overlongSlug,
+          path: `skills/${overlongSlug}`,
+          displayName: "Preview Invalid Skill",
+          error: "Slug must be at most 96 characters.",
+        },
+      ],
+      updatedAt: Date.now(),
+    });
+
+    return { ok: true as const, sourceId: source._id };
+  },
+});
+
+export const deleteGitHubBackedSkillSourceSeedMutation = internalMutation({
+  args: {
+    repo: v.optional(v.string()),
+    sourceId: v.optional(v.id("githubSkillSources")),
+  },
+  handler: async (ctx, args) => {
+    const source = args.sourceId
+      ? await ctx.db.get(args.sourceId)
+      : args.repo
+        ? await ctx.db
+            .query("githubSkillSources")
+            .withIndex("by_repo", (q) => q.eq("repo", args.repo as string))
+            .unique()
+        : null;
+    const sourceId = source?._id ?? args.sourceId;
+    if (!sourceId) {
+      return { ok: true as const, deletedSource: false, deletedSkills: 0, deletedContents: 0 };
+    }
+
+    const contents = await ctx.db
+      .query("githubSkillContents")
+      .withIndex("by_github_source", (q) => q.eq("githubSourceId", sourceId))
+      .collect();
+    for (const content of contents) await ctx.db.delete(content._id);
+
+    const skills = await ctx.db
+      .query("skills")
+      .withIndex("by_github_source", (q) => q.eq("githubSourceId", sourceId))
+      .collect();
+    for (const skill of skills) await deleteSkillAndVersions(ctx, skill._id);
+
+    if (source) await ctx.db.delete(source._id);
+
+    return {
+      ok: true as const,
+      deletedSource: Boolean(source),
+      deletedSkills: skills.length,
+      deletedContents: contents.length,
+    };
+  },
 });
 
 export const seedFeaturedPluginPackagesMutation = internalMutation({
@@ -2698,7 +3026,6 @@ export const seedAgenticRiskDemoSkillMutation = internalMutation({
       createdAt: now,
       softDeletedAt: undefined,
       sha256hash: "seeded-agentic-risk-skill-hash",
-      clawScanNote: SCANNED_SKILL_CLAWSCAN_NOTE,
       vtAnalysis: {
         status: "clean",
         verdict: "clean",

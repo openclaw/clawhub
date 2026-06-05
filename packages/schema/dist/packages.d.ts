@@ -50,6 +50,7 @@ export declare const PackageVerificationSummarySchema: import("arktype/internal/
     sourceRepo?: string | undefined;
     sourceCommit?: string | undefined;
     sourceTag?: string | undefined;
+    sourcePath?: string | undefined;
     hasProvenance?: boolean | undefined;
     trustedOpenClawPlugin?: boolean | undefined;
     scanStatus?: "clean" | "suspicious" | "malicious" | "pending" | "not-run" | undefined;
@@ -78,9 +79,9 @@ export declare const PackageAppealFinalActionSchema: import("arktype/internal/va
 export type PackageAppealFinalAction = (typeof PackageAppealFinalActionSchema)[inferred];
 export declare const PackageAppealListStatusSchema: import("arktype/internal/variants/string.ts").StringType<"open" | "all" | "accepted" | "rejected", {}>;
 export type PackageAppealListStatus = (typeof PackageAppealListStatusSchema)[inferred];
-export declare const PackageOfficialMigrationPhaseSchema: import("arktype/internal/variants/string.ts").StringType<"planned" | "published" | "clawpack-ready" | "legacy-zip-only" | "metadata-ready" | "blocked" | "ready-for-openclaw", {}>;
+export declare const PackageOfficialMigrationPhaseSchema: import("arktype/internal/variants/string.ts").StringType<"published" | "planned" | "clawpack-ready" | "legacy-zip-only" | "metadata-ready" | "blocked" | "ready-for-openclaw", {}>;
 export type PackageOfficialMigrationPhase = (typeof PackageOfficialMigrationPhaseSchema)[inferred];
-export declare const PackageOfficialMigrationListPhaseSchema: import("arktype/internal/variants/string.ts").StringType<"all" | "planned" | "published" | "clawpack-ready" | "legacy-zip-only" | "metadata-ready" | "blocked" | "ready-for-openclaw", {}>;
+export declare const PackageOfficialMigrationListPhaseSchema: import("arktype/internal/variants/string.ts").StringType<"all" | "published" | "planned" | "clawpack-ready" | "legacy-zip-only" | "metadata-ready" | "blocked" | "ready-for-openclaw", {}>;
 export type PackageOfficialMigrationListPhase = (typeof PackageOfficialMigrationListPhaseSchema)[inferred];
 export declare const PackageArtifactSummarySchema: import("arktype/internal/variants/object.ts").ObjectType<{
     kind: "legacy-zip" | "npm-pack";
@@ -228,21 +229,29 @@ export declare const PackageTrustedPublisherSchema: import("arktype/internal/var
     environment?: string | undefined;
 }, {}>;
 export type PackageTrustedPublisher = (typeof PackageTrustedPublisherSchema)[inferred];
-export declare const PackagePublishRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+export declare const MAX_PACKAGE_MULTIPART_BYTES: number;
+export declare const MAX_PACKAGE_CLAWPACK_BYTES: number;
+export type PackageMultipartUploadField = "files" | "clawpack";
+export type PackageMultipartUploadPart = {
+    name: string;
+    size: number;
+    type?: string;
+};
+export type PackageMultipartUploadSizeInput = {
+    payloadJson: string;
+    fileFieldName: PackageMultipartUploadField;
+    files: readonly PackageMultipartUploadPart[];
+};
+export declare function estimatePackageMultipartUploadBytes(input: PackageMultipartUploadSizeInput): number;
+export declare function isPackageMultipartUploadTooLarge(input: PackageMultipartUploadSizeInput): boolean;
+export declare function getPackageMultipartSizeError(): string;
+export declare const PackagePublishMetadataSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     name: string;
     family: "skill" | "code-plugin" | "bundle-plugin";
     version: string;
     changelog: string;
-    files: {
-        path: string;
-        size: number;
-        storageId: string;
-        sha256: string;
-        contentType?: string | undefined;
-    }[];
     displayName?: string | undefined;
     ownerHandle?: string | undefined;
-    clawScanNote?: string | undefined;
     manualOverrideReason?: string | undefined;
     channel?: "official" | "community" | "private" | undefined;
     tags?: string[] | undefined;
@@ -260,6 +269,20 @@ export declare const PackagePublishRequestSchema: import("arktype/internal/varia
         format?: string | undefined;
         hostTargets?: string[] | undefined;
     } | undefined;
+}, {}>;
+export type PackagePublishMetadata = (typeof PackagePublishMetadataSchema)[inferred];
+export declare const ServerPackagePublishRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    files: {
+        path: string;
+        size: number;
+        storageId: string;
+        sha256: string;
+        contentType?: string | undefined;
+    }[];
+    name: string;
+    family: "skill" | "code-plugin" | "bundle-plugin";
+    version: string;
+    changelog: string;
     artifact?: {
         kind: "npm-pack";
         storageId: string;
@@ -272,8 +295,27 @@ export declare const PackagePublishRequestSchema: import("arktype/internal/varia
         npmUnpackedSize: number;
         npmFileCount: number;
     } | undefined;
+    displayName?: string | undefined;
+    ownerHandle?: string | undefined;
+    manualOverrideReason?: string | undefined;
+    channel?: "official" | "community" | "private" | undefined;
+    tags?: string[] | undefined;
+    source?: {
+        kind: "github";
+        url: string;
+        repo: string;
+        ref: string;
+        commit: string;
+        path: string;
+        importedAt: number;
+    } | undefined;
+    bundle?: {
+        id?: string | undefined;
+        format?: string | undefined;
+        hostTargets?: string[] | undefined;
+    } | undefined;
 }, {}>;
-export type PackagePublishRequest = (typeof PackagePublishRequestSchema)[inferred];
+export type ServerPackagePublishRequest = (typeof ServerPackagePublishRequestSchema)[inferred];
 export declare const PackageListItemSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     name: string;
     displayName: string;
@@ -380,6 +422,7 @@ export declare const ApiV1PackageResponseSchema: import("arktype/internal/varian
             sourceRepo?: string | undefined;
             sourceCommit?: string | undefined;
             sourceTag?: string | undefined;
+            sourcePath?: string | undefined;
             hasProvenance?: boolean | undefined;
             trustedOpenClawPlugin?: boolean | undefined;
             scanStatus?: "clean" | "suspicious" | "malicious" | "pending" | "not-run" | undefined;
@@ -470,6 +513,7 @@ export declare const ApiV1PackageVersionResponseSchema: import("arktype/internal
             sourceRepo?: string | undefined;
             sourceCommit?: string | undefined;
             sourceTag?: string | undefined;
+            sourcePath?: string | undefined;
             hasProvenance?: boolean | undefined;
             trustedOpenClawPlugin?: boolean | undefined;
             scanStatus?: "clean" | "suspicious" | "malicious" | "pending" | "not-run" | undefined;
@@ -541,8 +585,6 @@ export declare const ApiV1PackageVersionResponseSchema: import("arktype/internal
             riskSummary?: unknown;
             model?: string | undefined;
         } | null | undefined;
-        clawScanNote?: string | null | undefined;
-        clawScanNoteUpdatedAt?: number | null | undefined;
         staticScan?: {
             status: string;
             reasonCodes: string[];
@@ -774,7 +816,7 @@ export type ApiV1PackageArtifactBackfillResponse = (typeof ApiV1PackageArtifactB
 export declare const PackageReadinessCheckSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     id: string;
     label: string;
-    status: "warn" | "pass" | "fail";
+    status: "warn" | "fail" | "pass";
     message: string;
 }, {}>;
 export type PackageReadinessCheck = (typeof PackageReadinessCheckSchema)[inferred];
@@ -790,7 +832,7 @@ export declare const ApiV1PackageReadinessResponseSchema: import("arktype/intern
     checks: {
         id: string;
         label: string;
-        status: "warn" | "pass" | "fail";
+        status: "warn" | "fail" | "pass";
         message: string;
     }[];
     blockers: string[];
@@ -875,7 +917,7 @@ export declare const PackageOfficialMigrationUpsertRequestSchema: import("arktyp
     sourceRepo?: string | undefined;
     sourcePath?: string | undefined;
     sourceCommit?: string | undefined;
-    phase?: "planned" | "published" | "clawpack-ready" | "legacy-zip-only" | "metadata-ready" | "blocked" | "ready-for-openclaw" | undefined;
+    phase?: "published" | "planned" | "clawpack-ready" | "legacy-zip-only" | "metadata-ready" | "blocked" | "ready-for-openclaw" | undefined;
     blockers?: string[] | undefined;
     hostTargetsComplete?: boolean | undefined;
     scanClean?: boolean | undefined;
@@ -888,7 +930,7 @@ export declare const PackageOfficialMigrationItemSchema: import("arktype/interna
     migrationId: string;
     bundledPluginId: string;
     packageName: string;
-    phase: "planned" | "published" | "clawpack-ready" | "legacy-zip-only" | "metadata-ready" | "blocked" | "ready-for-openclaw";
+    phase: "published" | "planned" | "clawpack-ready" | "legacy-zip-only" | "metadata-ready" | "blocked" | "ready-for-openclaw";
     blockers: string[];
     hostTargetsComplete: boolean;
     scanClean: boolean;
@@ -909,7 +951,7 @@ export declare const ApiV1PackageOfficialMigrationListResponseSchema: import("ar
         migrationId: string;
         bundledPluginId: string;
         packageName: string;
-        phase: "planned" | "published" | "clawpack-ready" | "legacy-zip-only" | "metadata-ready" | "blocked" | "ready-for-openclaw";
+        phase: "published" | "planned" | "clawpack-ready" | "legacy-zip-only" | "metadata-ready" | "blocked" | "ready-for-openclaw";
         blockers: string[];
         hostTargetsComplete: boolean;
         scanClean: boolean;
@@ -934,7 +976,7 @@ export declare const ApiV1PackageOfficialMigrationResponseSchema: import("arktyp
         migrationId: string;
         bundledPluginId: string;
         packageName: string;
-        phase: "planned" | "published" | "clawpack-ready" | "legacy-zip-only" | "metadata-ready" | "blocked" | "ready-for-openclaw";
+        phase: "published" | "planned" | "clawpack-ready" | "legacy-zip-only" | "metadata-ready" | "blocked" | "ready-for-openclaw";
         blockers: string[];
         hostTargetsComplete: boolean;
         scanClean: boolean;

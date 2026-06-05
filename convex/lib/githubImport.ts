@@ -91,12 +91,7 @@ export function parseGitHubImportUrl(input: string): GitHubImportUrl {
 }
 
 function canonicalGitHubImportUrl(url: URL) {
-  const canonical = new URL(url.toString());
-  canonical.username = "";
-  canonical.password = "";
-  canonical.search = "";
-  canonical.hash = "";
-  return `${canonical.origin}${canonical.pathname}`;
+  return `https://${url.hostname}${url.pathname}`;
 }
 
 export async function resolveGitHubCommit(

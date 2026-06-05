@@ -2,7 +2,12 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Id } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
-import { formatUserFacingErrorMessage, resolveVersionTagsBatch } from "./httpApiV1/shared";
+import {
+  formatUserFacingErrorMessage,
+  parseMultipartSkillScan,
+  resolveVersionTagsBatch,
+  softDeleteErrorToResponse,
+} from "./httpApiV1/shared";
 
 function makeCtx() {
   return {
@@ -26,6 +31,54 @@ describe("http API v1 shared helpers", () => {
         "Request failed",
       ),
     ).toBe("Publisher not found");
+  });
+
+  it("maps soft-delete validation failures to 400 with cleaned messages", async () => {
+    const response = softDeleteErrorToResponse(
+      "package",
+      new Error(
+        "[CONVEX M] [Request ID: abc] Server Error Called by client Uncaught ConvexError: Package name must be lowercase and npm-safe (example: @scope/name or plugin-name)",
+      ),
+      {},
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.text()).resolves.toBe(
+      "Package name must be lowercase and npm-safe (example: @scope/name or plugin-name)",
+    );
+  });
+
+  it("maps reserved package route validation failures to 400 with cleaned messages", async () => {
+    const response = softDeleteErrorToResponse(
+      "package",
+      new Error(
+        '[CONVEX M] [Request ID: abc] Server Error Called by client Uncaught ConvexError: Package name "publish" is reserved for ClawHub routes. Use a scoped name or choose a different package name.',
+      ),
+      {},
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.text()).resolves.toBe(
+      'Package name "publish" is reserved for ClawHub routes. Use a scoped name or choose a different package name.',
+    );
+  });
+
+  it("keeps unknown soft-delete failures generic 500s", async () => {
+    const response = softDeleteErrorToResponse("soul", new Error("boom"), {});
+
+    expect(response.status).toBe(500);
+    await expect(response.text()).resolves.toBe("Internal Server Error");
+  });
+
+  it("keeps unrelated reserved-word failures generic 500s", async () => {
+    const response = softDeleteErrorToResponse(
+      "package",
+      new Error("database reserved capacity exceeded"),
+      {},
+    );
+
+    expect(response.status).toBe(500);
+    await expect(response.text()).resolves.toBe("Internal Server Error");
   });
 
   it("resolves latest tags without reading version documents", async () => {
@@ -81,5 +134,29 @@ describe("http API v1 shared helpers", () => {
     );
 
     expect(result).toEqual([{ stable: "1.5.0" }]);
+  });
+
+  it("validates skill scan multipart payloads before storing uploaded files", async () => {
+    const form = new FormData();
+    form.set("payload", JSON.stringify({ source: { kind: "upload" }, update: true }));
+    form.append("files", new Blob(["# Demo"], { type: "text/markdown" }), "SKILL.md");
+    const request = new Request("https://clawhub.ai/api/v1/skills/-/scan", {
+      method: "POST",
+      body: form,
+    });
+    const store = vi.fn();
+    const ctx = {
+      storage: {
+        store,
+        delete: vi.fn(),
+      },
+    } as unknown as ActionCtx;
+
+    await expect(
+      parseMultipartSkillScan(ctx, request, () => {
+        throw new Error("update is not valid for uploaded scans");
+      }),
+    ).rejects.toThrow("update is not valid for uploaded scans");
+    expect(store).not.toHaveBeenCalled();
   });
 });

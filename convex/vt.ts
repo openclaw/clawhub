@@ -307,6 +307,7 @@ type PendingVTSkill = {
   versionId: Id<"skillVersions">;
   sha256hash: string;
   slug: string;
+  isLatest?: boolean;
 };
 
 type NullModerationStatusSkill = {
@@ -1030,6 +1031,7 @@ export const repairPendingSkillVtAnalysis = internalAction({
   args: {
     dryRun: v.boolean(),
     batchSize: v.optional(v.number()),
+    concurrency: v.optional(v.number()),
     cursor: v.optional(v.union(v.string(), v.null())),
   },
   handler: async (ctx, args): Promise<RepairPendingSkillVtAnalysisResult> => {
@@ -1038,8 +1040,10 @@ export const repairPendingSkillVtAnalysis = internalAction({
       console.log("[vt:repairPendingSkillVt] VT_API_KEY not configured");
       return { error: "VT_API_KEY not configured" };
     }
+    const vtApiKey = apiKey;
 
     const batchSize = Math.max(1, Math.min(Math.floor(args.batchSize ?? 100), 500));
+    const concurrency = Math.max(1, Math.min(Math.floor(args.concurrency ?? 16), 32));
     const pendingPage: {
       skills: PendingVTSkill[];
       cursor: string | null;
@@ -1058,25 +1062,31 @@ export const repairPendingSkillVtAnalysis = internalAction({
     const statusCounts: Record<string, number> = {};
     const sampleUpdated: Array<{ slug: string; status: string }> = [];
 
-    for (const { skillId, versionId, sha256hash, slug } of skills) {
+    async function repairSkill({
+      skillId,
+      versionId,
+      sha256hash,
+      slug,
+      isLatest = true,
+    }: PendingVTSkill) {
       try {
-        const vtResult = await checkExistingFile(apiKey, sha256hash);
+        const vtResult = await checkExistingFile(vtApiKey, sha256hash);
         if (!vtResult) {
           noResults++;
-          continue;
+          return;
         }
 
         const stats = vtResult.data.attributes.last_analysis_stats;
         const status = statusFromAvStats(stats);
         if (!status) {
           noDecisiveStats++;
-          continue;
+          return;
         }
 
         wouldUpdate++;
         statusCounts[status] = (statusCounts[status] ?? 0) + 1;
         if (sampleUpdated.length < 20) sampleUpdated.push({ slug, status });
-        if (args.dryRun) continue;
+        if (args.dryRun) return;
 
         await ctx.runMutation(internal.skills.updateVersionScanResultsInternal, {
           versionId,
@@ -1088,6 +1098,11 @@ export const repairPendingSkillVtAnalysis = internalAction({
             checkedAt: Date.now(),
           },
         });
+        if (!isLatest) {
+          updated++;
+          return;
+        }
+
         if (status === "malicious" || status === "suspicious") {
           await enqueueSkillCodexForVtSignal(ctx, versionId);
         } else {
@@ -1100,6 +1115,10 @@ export const repairPendingSkillVtAnalysis = internalAction({
         console.error(`[vt:repairPendingSkillVt] Error for ${slug}:`, error);
         errors++;
       }
+    }
+
+    for (let index = 0; index < skills.length; index += concurrency) {
+      await Promise.all(skills.slice(index, index + concurrency).map(repairSkill));
     }
 
     return {

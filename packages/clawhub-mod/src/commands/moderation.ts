@@ -16,9 +16,10 @@ import {
   ApiV1ReclassifyBanResponseSchema,
   ApiV1RemediateAutobansResponseSchema,
   ApiV1SetRoleResponseSchema,
-  ApiV1SkillBulkRescanBatchResponseSchema,
-  ApiV1SkillBulkRescanStatusResponseSchema,
-  ApiV1SkillRescanResponseSchema,
+  ApiV1SkillScanBatchResponseSchema,
+  ApiV1SkillScanBatchStatusResponseSchema,
+  ApiV1SkillScanSubmitResponseSchema,
+  ApiV1SkillRepairVtPendingResponseSchema,
   ApiV1UnbanUserResponseSchema,
   ApiV1UserSearchResponseSchema,
   parseArk,
@@ -216,15 +217,22 @@ export async function cmdRescanSkill(
       registry,
       {
         method: "POST",
-        path: `${ApiRoutes.skills}/${encodeURIComponent(slug)}/rescan`,
+        path: ApiRoutes.skillScans,
         token,
-        body: version ? { version } : {},
+        body: {
+          source: {
+            kind: "published",
+            slug,
+            ...(version ? { version } : {}),
+          },
+          update: true,
+        },
       },
-      ApiV1SkillRescanResponseSchema,
+      ApiV1SkillScanSubmitResponseSchema,
     );
-    const parsed = parseArk(ApiV1SkillRescanResponseSchema, result, "Skill rescan response");
+    const parsed = parseArk(ApiV1SkillScanSubmitResponseSchema, result, "Skill rescan response");
     spinner?.succeed(
-      `OK. Queued ClawScan for ${parsed.slug}@${parsed.version} (${parsed.alreadyQueued ? "existing job" : "new job"}).`,
+      `OK. Queued ClawScan for ${slug}${version ? `@${version}` : ""} (${parsed.alreadyQueued ? "existing job" : "new job"}).`,
     );
     if (options.json) {
       process.stdout.write(`${JSON.stringify(parsed, null, 2)}\n`);
@@ -282,7 +290,7 @@ export async function cmdRescanAllSkills(
       registry,
       {
         method: "POST",
-        path: `${ApiRoutes.skills}/-/rescan-batch`,
+        path: `${ApiRoutes.skillScans}/batch`,
         token,
         body: {
           mode: "all-active-latest",
@@ -291,10 +299,10 @@ export async function cmdRescanAllSkills(
           dryRun: options.dryRun === true,
         },
       },
-      ApiV1SkillBulkRescanBatchResponseSchema,
+      ApiV1SkillScanBatchResponseSchema,
     );
     const batch = parseArk(
-      ApiV1SkillBulkRescanBatchResponseSchema,
+      ApiV1SkillScanBatchResponseSchema,
       result,
       "Bulk skill rescan batch response",
     );
@@ -346,6 +354,121 @@ export async function cmdRescanAllSkills(
   return summary;
 }
 
+export async function cmdRepairVtPendingSkills(
+  opts: GlobalOpts,
+  options: {
+    batchSize?: number;
+    concurrency?: number;
+    cursor?: string;
+    dryRun?: boolean;
+    all?: boolean;
+    yes?: boolean;
+    json?: boolean;
+  },
+  inputAllowed: boolean,
+) {
+  const batchSize = normalizePositiveInt(options.batchSize, 500);
+  const concurrency =
+    options.concurrency === undefined ? undefined : normalizePositiveInt(options.concurrency, 16);
+  const dryRun = options.dryRun === true;
+  const allowPrompt = isInteractive() && inputAllowed !== false;
+
+  if (!dryRun && !options.yes) {
+    if (!allowPrompt) fail("Pass --yes (no input)");
+    const ok = await promptConfirm(
+      `Repair pending VirusTotal cache in batches of ${batchSize} with concurrency ${concurrency ?? 16}? (admin)`,
+    );
+    if (!ok) return undefined;
+  }
+
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  let cursor = options.cursor?.trim() || null;
+  let batches = 0;
+  let total = 0;
+  let wouldUpdate = 0;
+  let updated = 0;
+  let noResults = 0;
+  let noDecisiveStats = 0;
+  let errors = 0;
+  const statusCounts: Record<string, number> = {};
+  const sampleUpdated: Array<{ slug: string; status: string }> = [];
+  let done = false;
+
+  while (!done) {
+    const result = await apiRequest(
+      registry,
+      {
+        method: "POST",
+        path: `${ApiRoutes.skills}/-/repair-vt-pending`,
+        token,
+        body: {
+          cursor,
+          batchSize,
+          ...(concurrency !== undefined ? { concurrency } : {}),
+          dryRun,
+        },
+      },
+      ApiV1SkillRepairVtPendingResponseSchema,
+    );
+    const batch = parseArk(
+      ApiV1SkillRepairVtPendingResponseSchema,
+      result,
+      "Skill VT pending repair response",
+    );
+    batches++;
+    total += batch.total;
+    wouldUpdate += batch.wouldUpdate;
+    updated += batch.updated;
+    noResults += batch.noResults;
+    noDecisiveStats += batch.noDecisiveStats;
+    errors += batch.errors;
+    for (const [status, count] of Object.entries(batch.statusCounts)) {
+      statusCounts[status] = (statusCounts[status] ?? 0) + count;
+    }
+    for (const sample of batch.sampleUpdated) {
+      if (sampleUpdated.length < 20) sampleUpdated.push(sample);
+    }
+    done = batch.done;
+    emitVtRepairProgress(options, {
+      type: "batch",
+      batch: batches,
+      cursor,
+      nextCursor: batch.cursor,
+      total: batch.total,
+      wouldUpdate: batch.wouldUpdate,
+      updated: batch.updated,
+      noResults: batch.noResults,
+      noDecisiveStats: batch.noDecisiveStats,
+      errors: batch.errors,
+      statusCounts: batch.statusCounts,
+      done: batch.done,
+      dryRun,
+    });
+    cursor = batch.cursor;
+    if (!options.all || !cursor) break;
+  }
+
+  const summary = {
+    ok: errors === 0,
+    dryRun,
+    batches,
+    total,
+    wouldUpdate,
+    updated,
+    noResults,
+    noDecisiveStats,
+    errors,
+    statusCounts,
+    sampleUpdated,
+    nextCursor: cursor,
+    done,
+  };
+  emitVtRepairProgress(options, { type: "summary", ...summary });
+  if (errors > 0) fail(`VT pending repair finished with ${errors} error(s)`);
+  return summary;
+}
+
 async function pollBulkRescanStatus(
   registry: string,
   token: string,
@@ -357,14 +480,14 @@ async function pollBulkRescanStatus(
       registry,
       {
         method: "POST",
-        path: `${ApiRoutes.skills}/-/rescan-batch/status`,
+        path: `${ApiRoutes.skillScans}/batch/status`,
         token,
         body: { jobIds },
       },
-      ApiV1SkillBulkRescanStatusResponseSchema,
+      ApiV1SkillScanBatchStatusResponseSchema,
     );
     const status = parseArk(
-      ApiV1SkillBulkRescanStatusResponseSchema,
+      ApiV1SkillScanBatchStatusResponseSchema,
       result,
       "Bulk skill rescan status response",
     );
@@ -406,6 +529,32 @@ function emitBulkRescanProgress(options: { json?: boolean }, event: Record<strin
     );
     if (typeof event.cursor === "string" && event.cursor) {
       console.log(`Resume cursor: ${event.cursor}`);
+    }
+  }
+}
+
+function emitVtRepairProgress(options: { json?: boolean }, event: Record<string, unknown>) {
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify(event)}\n`);
+    return;
+  }
+
+  if (event.type === "batch") {
+    const nextCursor = typeof event.nextCursor === "string" ? event.nextCursor : null;
+    const suffix = nextCursor ? ` Next cursor: ${nextCursor}.` : "";
+    console.log(
+      `VT repair batch ${readEventNumber(event, "batch")}: scanned ${readEventNumber(event, "total")}, ${event.dryRun ? "would update" : "updated"} ${readEventNumber(event, event.dryRun ? "wouldUpdate" : "updated")}, no results ${readEventNumber(event, "noResults")}, errors ${readEventNumber(event, "errors")}.${suffix}`,
+    );
+    return;
+  }
+
+  if (event.type === "summary") {
+    const label = event.dryRun ? "VT repair dry run" : "VT repair";
+    console.log(
+      `${label} finished: ${readEventNumber(event, "batches")} batch(es), scanned ${readEventNumber(event, "total")}, ${event.dryRun ? "would update" : "updated"} ${readEventNumber(event, event.dryRun ? "wouldUpdate" : "updated")}, no results ${readEventNumber(event, "noResults")}, errors ${readEventNumber(event, "errors")}.`,
+    );
+    if (typeof event.nextCursor === "string" && event.nextCursor) {
+      console.log(`Resume cursor: ${event.nextCursor}`);
     }
   }
 }

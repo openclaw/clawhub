@@ -110,13 +110,40 @@ describe("dev-workers", () => {
       env: {},
     });
 
-    expect(resolved.workers.map((worker) => worker.id)).toEqual(["security-scan"]);
+    expect(resolved.workers.map((worker) => worker.id)).toEqual([]);
     expect(resolved.skipped).toEqual([
       expect.objectContaining({
+        workerId: "security-scan",
+        reason: expect.stringContaining("CLAWHUB_ALLOW_LOCAL_CODEX_SCAN=1"),
+      }),
+      expect.objectContaining({
         workerId: "skill-card",
-        reason: expect.stringContaining("NVIDIA Skill Card automation checkout"),
+        reason: expect.stringContaining("CLAWHUB_ALLOW_LOCAL_CODEX_SCAN=1"),
       }),
     ]);
+  });
+
+  it("keeps Codex workers with explicit local opt-in", async () => {
+    const root = await tempDir();
+    const toolDir = join(root, "nvidia-tooling");
+    await mkdir(join(toolDir, "AI Transparency Card Automation", "scripts"), { recursive: true });
+    await writeFile(
+      join(toolDir, "AI Transparency Card Automation", "scripts", "render_card.py"),
+      "print('render')\n",
+      "utf8",
+    );
+    const selected = resolveEnabledWorkers({
+      workers: [],
+      skip: [],
+    });
+
+    const resolved = resolveRunnableWorkers(selected, parseArgs(["--nvidia-tool-dir", toolDir]), {
+      cwd: root,
+      env: { CLAWHUB_ALLOW_LOCAL_CODEX_SCAN: "1" },
+    });
+
+    expect(resolved.workers.map((worker) => worker.id)).toEqual(["security-scan", "skill-card"]);
+    expect(resolved.skipped).toEqual([]);
   });
 
   it("keeps the Skill Card worker when an explicit NVIDIA tool checkout exists", async () => {
@@ -136,7 +163,7 @@ describe("dev-workers", () => {
     const resolved = resolveRunnableWorkers(
       selected,
       parseArgs(["--workers", "skill-card", "--nvidia-tool-dir", toolDir]),
-      { cwd: root, env: {} },
+      { cwd: root, env: { CLAWHUB_ALLOW_LOCAL_CODEX_SCAN: "1" } },
     );
 
     expect(resolved.workers.map((worker) => worker.id)).toEqual(["skill-card"]);

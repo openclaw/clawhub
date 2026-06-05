@@ -1,7 +1,5 @@
 import {
   getClawScanDisplayStatus,
-  getSkillSpectorDisplayStatus,
-  getVirusTotalDisplayStatus,
   hasClawScanRiskReview,
   type LlmAnalysis,
   type SkillSpectorAnalysis,
@@ -30,13 +28,6 @@ const DEFAULT_AUDIT_SCANNER_ORDER: AuditScannerKind[] = ["skillspector", "virust
 const SUPPORTING_AUDIT_SCANNER_ORDER: AuditScannerKind[] = DEFAULT_AUDIT_SCANNER_ORDER.filter(
   (kind) => kind !== "skillspector" && kind !== "clawscan",
 );
-
-export function getAuditScannerStatus(kind: AuditScannerKind, signals: SecurityAuditSignals) {
-  if (signals.suppressScanResults) return "cleared";
-  if (kind === "clawscan") return getClawScanDisplayStatus(signals.llmAnalysis);
-  if (kind === "virustotal") return getVirusTotalDisplayStatus(signals.vtAnalysis);
-  return getSkillSpectorDisplayStatus(signals.skillSpectorAnalysis);
-}
 
 export function aggregateAuditVerdict(signals: SecurityAuditSignals) {
   if (signals.suppressScanResults) return "cleared";

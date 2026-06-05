@@ -1,5 +1,6 @@
 /* @vitest-environment jsdom */
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { getFunctionName } from "convex/server";
 import type React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -9,11 +10,16 @@ import { Dashboard } from "./dashboard";
 const mocks = vi.hoisted(() => ({
   useQuery: vi.fn(),
   usePaginatedQuery: vi.fn(),
+  useAuthStatus: vi.fn(),
 }));
 
 vi.mock("convex/react", () => ({
   useQuery: (...args: unknown[]) => mocks.useQuery(...args),
   usePaginatedQuery: (...args: unknown[]) => mocks.usePaginatedQuery(...args),
+}));
+
+vi.mock("../lib/useAuthStatus", () => ({
+  useAuthStatus: () => mocks.useAuthStatus(),
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -228,18 +234,16 @@ function arrangeDashboard({
   skills?: TestSkill[];
   packages?: TestPackage[];
 }) {
-  let unscopedQueryCount = 0;
   mocks.usePaginatedQuery.mockReturnValue({
     results: skills,
     status: "Exhausted",
     loadMore: vi.fn(),
   });
-  mocks.useQuery.mockImplementation((_fn: unknown, args: unknown) => {
+  mocks.useQuery.mockImplementation((query: unknown, args: unknown) => {
     if (args === "skip") return undefined;
-    if (args === undefined) {
-      unscopedQueryCount += 1;
-      return unscopedQueryCount % 2 === 1 ? me : publishers;
-    }
+    const name = getFunctionName(query as never);
+    if (name === "publishers:listMine") return publishers;
+    if (name === "packages:list") return packages;
     return packages;
   });
 }
@@ -256,10 +260,16 @@ describe("Dashboard rows", () => {
   beforeEach(() => {
     mocks.useQuery.mockReset();
     mocks.usePaginatedQuery.mockReset();
+    mocks.useAuthStatus.mockReset();
     mocks.usePaginatedQuery.mockReturnValue({
       results: [],
       status: "LoadingFirstPage",
       loadMore: vi.fn(),
+    });
+    mocks.useAuthStatus.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me,
     });
   });
 
@@ -295,8 +305,8 @@ describe("Dashboard rows", () => {
       screen.getByRole("link", { name: "Open settings for Local Flagged Skill" }),
     ).toBeTruthy();
     expect(
-      screen.getByRole("link", { name: "Open settings for Local Flagged Runtime Plugin" }),
-    ).toBeTruthy();
+      screen.queryByRole("link", { name: "Open settings for Local Flagged Runtime Plugin" }),
+    ).toBeNull();
   });
 
   it("shows a publisher selector and loads org packages when switching publishers", async () => {
@@ -324,13 +334,10 @@ describe("Dashboard rows", () => {
       status: "Exhausted",
       loadMore: vi.fn(),
     });
-    let unscopedQueryCount = 0;
-    mocks.useQuery.mockImplementation((_fn: unknown, args: unknown) => {
+    mocks.useQuery.mockImplementation((query: unknown, args: unknown) => {
       if (args === "skip") return undefined;
-      if (args === undefined) {
-        unscopedQueryCount += 1;
-        return unscopedQueryCount % 2 === 1 ? me : orgPublishers;
-      }
+      const name = getFunctionName(query as never);
+      if (name === "publishers:listMine") return orgPublishers;
       if (
         typeof args === "object" &&
         args !== null &&
@@ -382,13 +389,10 @@ describe("Dashboard rows", () => {
       status: "Exhausted",
       loadMore: vi.fn(),
     });
-    let unscopedQueryCount = 0;
-    mocks.useQuery.mockImplementation((_fn: unknown, args: unknown) => {
+    mocks.useQuery.mockImplementation((query: unknown, args: unknown) => {
       if (args === "skip") return undefined;
-      if (args === undefined) {
-        unscopedQueryCount += 1;
-        return unscopedQueryCount % 2 === 1 ? me : orgPublishers;
-      }
+      const name = getFunctionName(query as never);
+      if (name === "publishers:listMine") return orgPublishers;
       return [];
     });
 
@@ -404,6 +408,11 @@ describe("Dashboard rows", () => {
   });
 
   it("renders a skeleton while auth state is loading", () => {
+    mocks.useAuthStatus.mockReturnValue({
+      isAuthenticated: false,
+      isLoading: true,
+      me: undefined,
+    });
     mocks.useQuery.mockReturnValue(undefined);
 
     renderDashboard();
@@ -428,25 +437,26 @@ describe("Dashboard rows", () => {
     arrangeDashboard({
       skills: [createSkill()],
     });
-    let unscopedQueryCount = 0;
-    mocks.useQuery.mockImplementation((_fn: unknown, args: unknown) => {
+    mocks.useAuthStatus.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: { ...me, handle: "Local Owner" },
+    });
+    mocks.useQuery.mockImplementation((query: unknown, args: unknown) => {
       if (args === "skip") return undefined;
-      if (args === undefined) {
-        unscopedQueryCount += 1;
-        return unscopedQueryCount % 2 === 1
-          ? { ...me, handle: "Local Owner" }
-          : [
-              {
-                publisher: {
-                  _id: "publishers:stale" as Id<"publishers">,
-                  handle: "Local Owner",
-                  displayName: "Local Owner",
-                  kind: "user" as const,
-                },
-                role: "owner" as const,
-              },
-            ];
-      }
+      const name = getFunctionName(query as never);
+      if (name === "publishers:listMine")
+        return [
+          {
+            publisher: {
+              _id: "publishers:stale" as Id<"publishers">,
+              handle: "Local Owner",
+              displayName: "Local Owner",
+              kind: "user" as const,
+            },
+            role: "owner" as const,
+          },
+        ];
       return [];
     });
 
@@ -457,16 +467,14 @@ describe("Dashboard rows", () => {
     );
   });
 
-  it("links directly to plugin settings from the row action", () => {
+  it("does not show plugin settings from the row action", () => {
     arrangeDashboard({ packages: [createPackage({ scanStatus: "clean" })] });
 
     renderDashboard();
 
     expect(
-      screen
-        .getByRole("link", { name: "Open settings for Local Flagged Runtime Plugin" })
-        .getAttribute("href"),
-    ).toBe("/plugins/local-flagged-runtime-plugin/settings");
+      screen.queryByRole("link", { name: "Open settings for Local Flagged Runtime Plugin" }),
+    ).toBeNull();
     expect(screen.queryByRole("button", { name: /open actions/i })).toBeNull();
     expect(screen.queryByRole("menuitem", { name: /delete plugin/i })).toBeNull();
   });

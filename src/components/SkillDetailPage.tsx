@@ -13,6 +13,7 @@ import { getUserFacingConvexError } from "../lib/convexError";
 import { canManageSkill, isModerator } from "../lib/roles";
 import { skillCardLoadKey } from "../lib/skillCards";
 import type { SkillBySlugResult, SkillPageInitialData } from "../lib/skillPage";
+import { resolveGitHubSkillReadmeHref } from "../lib/skillReadmeLinks";
 import { clearAuthError, setAuthError } from "../lib/useAuthError";
 import { useAuthStatus } from "../lib/useAuthStatus";
 import { ClientOnly } from "./ClientOnly";
@@ -49,6 +50,11 @@ type SkillDetailPageProps = {
 type SkillFile = Doc<"skillVersions">["files"][number];
 type SkillDetailVersion = NonNullable<NonNullable<SkillBySlugResult>["latestVersion"]> & {
   generatedSkillCard?: SkillFile | null;
+};
+type GitHubBackedSkillFields = {
+  installKind?: "github";
+  githubHasSkillCard?: boolean;
+  githubScanStatus?: string | null;
 };
 
 const SHOW_SKILL_COMMENTS = false;
@@ -186,12 +192,9 @@ export function SkillDetailPage({
   const toggleStar = useMutation(api.stars.toggle);
   const reportSkill = useMutation(api.skills.report);
   const updateSummary = useMutation(api.skills.updateSummary);
-  const updatePublisherNoteAndRequestRescan = useMutation(
-    api.skills.updateLatestClawScanNoteAndRequestRescan,
-  );
   const getReadme = useAction(api.skills.getReadme);
   const getSkillCard = useAction(api.skills.getSkillCard);
-  const myPublishers = useQuery(api.publishers.listMine) as
+  const myPublishers = useQuery(api.publishers.listMine, me ? {} : "skip") as
     | Array<{ publisher: { _id: Id<"publishers"> }; role: string }>
     | undefined;
 
@@ -385,17 +388,47 @@ export function SkillDetailPage({
     : null;
   const cliHelp = clawdis?.cliHelp;
   const hasPluginBundle = Boolean(nixSnippet || configRequirements || cliHelp);
+  const githubBackedFields = skill as GitHubBackedSkillFields | null | undefined;
+  const isGitHubBackedSkill = githubBackedFields?.installKind === "github" && !latestVersionId;
+  const githubReadme = useQuery(
+    api.skills.getGitHubSkillContent,
+    isGitHubBackedSkill && skill ? { skillId: skill._id, kind: "readme" } : "skip",
+  ) as { path: string; text: string; sourceBaseUrl?: string } | null | undefined;
+  const githubSkillCard = useQuery(
+    api.skills.getGitHubSkillContent,
+    isGitHubBackedSkill && skill && githubBackedFields?.githubHasSkillCard !== false
+      ? { skillId: skill._id, kind: "skill-card" }
+      : "skip",
+  ) as { path: string; text: string; sourceBaseUrl?: string } | null | undefined;
+  const githubSourceBaseUrl = githubReadme?.sourceBaseUrl ?? githubSkillCard?.sourceBaseUrl;
+  const readmeHrefResolver = useMemo(() => {
+    if (!isGitHubBackedSkill || !githubSourceBaseUrl) return undefined;
+    return (href: string) => resolveGitHubSkillReadmeHref(href, githubSourceBaseUrl);
+  }, [githubSourceBaseUrl, isGitHubBackedSkill]);
+  const displayedReadme = isGitHubBackedSkill ? (githubReadme?.text ?? null) : readme;
+  const displayedReadmeError = isGitHubBackedSkill
+    ? githubReadme === null
+      ? "No SKILL.md available"
+      : null
+    : readmeError;
 
   const readmeContent = useMemo(() => {
-    if (!readme) return null;
-    return stripFrontmatter(readme);
-  }, [readme]);
+    if (!displayedReadme) return null;
+    return stripFrontmatter(displayedReadme);
+  }, [displayedReadme]);
   const latestFiles: SkillFile[] = latestVersion?.files ?? [];
   const skillCardFile = useMemo(
     () => latestVersion?.generatedSkillCard ?? null,
     [latestVersion?.generatedSkillCard],
   );
-  const hasSkillCard = Boolean(skillCardFile);
+  const hasArchiveSkillCard = Boolean(skillCardFile);
+  const hasSkillCard = hasArchiveSkillCard || Boolean(githubSkillCard);
+  const displayedSkillCard = isGitHubBackedSkill ? (githubSkillCard?.text ?? null) : skillCard;
+  const displayedSkillCardError = isGitHubBackedSkill
+    ? githubSkillCard === null
+      ? "No Skill Card available"
+      : null
+    : skillCardError;
   const currentSkillCardKey = useMemo(
     () => skillCardLoadKey(latestVersionId, skillCardFile),
     [latestVersionId, skillCardFile],
@@ -436,11 +469,13 @@ export function SkillDetailPage({
   // content pane blank.
   const validTabIds = useMemo<Set<DetailTab>>(() => {
     const installTabs = buildSkillInstallTabs({ clawdis, osLabels });
-    const baseTabs: DetailTab[] = ["readme", "files", "versions"];
+    const baseTabs: DetailTab[] = isGitHubBackedSkill
+      ? ["readme"]
+      : ["readme", "files", "versions"];
     if (hasSkillCard) baseTabs.splice(1, 0, "skill-card");
-    if ((versions?.length ?? 0) > 1) baseTabs.push("compare");
+    if (!isGitHubBackedSkill && (versions?.length ?? 0) > 1) baseTabs.push("compare");
     return new Set([...baseTabs, ...installTabs.map((t) => t.id)]);
-  }, [clawdis, hasSkillCard, osLabels, versions]);
+  }, [clawdis, hasSkillCard, isGitHubBackedSkill, osLabels, versions]);
 
   useEffect(() => {
     setActiveTab((prev) => {
@@ -452,6 +487,19 @@ export function SkillDetailPage({
 
   useEffect(() => {
     let cancelled = false;
+    if (!skill) {
+      return () => {
+        cancelled = true;
+      };
+    }
+    if (!latestVersionId) {
+      setReadme(null);
+      setReadmeError(isGitHubBackedSkill ? null : "No SKILL.md available");
+      setLoadedReadmeVersionId(null);
+      return () => {
+        cancelled = true;
+      };
+    }
     if (
       latestVersionId &&
       !(loadedReadmeVersionId === latestVersionId && (readme !== null || readmeError !== null))
@@ -477,11 +525,19 @@ export function SkillDetailPage({
     return () => {
       cancelled = true;
     };
-  }, [getReadme, latestVersionId, loadedReadmeVersionId, readme, readmeError]);
+  }, [
+    getReadme,
+    isGitHubBackedSkill,
+    latestVersionId,
+    loadedReadmeVersionId,
+    readme,
+    readmeError,
+    skill,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
-    if (!latestVersionId || !hasSkillCard || !currentSkillCardKey) {
+    if (!latestVersionId || !hasArchiveSkillCard || !currentSkillCardKey) {
       setSkillCard(null);
       setSkillCardError(null);
       setLoadedSkillCardKey(currentSkillCardKey);
@@ -520,7 +576,7 @@ export function SkillDetailPage({
   }, [
     getSkillCard,
     currentSkillCardKey,
-    hasSkillCard,
+    hasArchiveSkillCard,
     latestVersionId,
     loadedSkillCardKey,
     skillCard,
@@ -592,20 +648,6 @@ export function SkillDetailPage({
     }
   };
 
-  const submitPublisherNoteAndRescan = async (clawScanNote: string) => {
-    if (!skill) return;
-    try {
-      await updatePublisherNoteAndRequestRescan({
-        skillId: skill._id,
-        clawScanNote,
-      });
-      toast.success("Publisher note saved. Rescan started; this may take a few minutes.");
-    } catch (error) {
-      toast.error(getUserFacingConvexError(error, "Could not save publisher note."));
-      throw error;
-    }
-  };
-
   const handleToggleStar = async () => {
     if (!skill) return;
     const activeStar = activeOptimisticStar;
@@ -661,16 +703,22 @@ export function SkillDetailPage({
     return <GenericNotFoundPage />;
   }
 
-  const securitySummary = latestVersion ? (
-    <DetailSecuritySummary
-      auditHref={`/${encodeURIComponent(ownerParam ?? ownerHandle ?? "unknown")}/${encodeURIComponent(
-        skill.slug,
-      )}/security-audit`}
-      vtAnalysis={latestVersion.vtAnalysis ?? null}
-      llmAnalysis={latestVersion.llmAnalysis ?? null}
-      suppressScanResults={suppressVersionScanResults}
-    />
-  ) : null;
+  const githubScanStatus =
+    !latestVersion && (displayedSkill as GitHubBackedSkillFields).installKind === "github"
+      ? (displayedSkill as GitHubBackedSkillFields).githubScanStatus
+      : null;
+  const securitySummary =
+    latestVersion || githubScanStatus ? (
+      <DetailSecuritySummary
+        auditHref={`/${encodeURIComponent(ownerParam ?? ownerHandle ?? "unknown")}/${encodeURIComponent(
+          skill.slug,
+        )}/security-audit`}
+        vtAnalysis={latestVersion?.vtAnalysis ?? null}
+        llmAnalysis={latestVersion?.llmAnalysis ?? null}
+        githubScanStatus={githubScanStatus}
+        suppressScanResults={suppressVersionScanResults}
+      />
+    ) : null;
   const staffVisibilityAlert = staffModerationNote ? (
     <Alert variant="warn" className="skill-visibility-alert" role="status">
       <TriangleAlert size={18} aria-hidden="true" />
@@ -687,8 +735,6 @@ export function SkillDetailPage({
         ownedSkills={(ownedSkills ?? []).filter((entry) => entry._id !== skill._id)}
         summary={skill.summary ?? ""}
         onSaveSummary={canAccessSettings ? submitSummary : null}
-        clawScanNote={latestVersion?.clawScanNote ?? null}
-        onSavePublisherNoteAndRescan={submitPublisherNoteAndRescan}
       />
     ) : null;
 
@@ -770,6 +816,7 @@ export function SkillDetailPage({
           securityAuditSummary={securitySummary}
           newVersionHref={newVersionHref}
           settingsHref={settingsHref}
+          showArchiveMetadata={!isGitHubBackedSkill}
         >
           {nixSnippet ? (
             <Card>
@@ -790,9 +837,9 @@ export function SkillDetailPage({
             setActiveTab={setActiveTab}
             onCompareIntent={() => setShouldPrefetchCompare(true)}
             readmeContent={readmeContent}
-            readmeError={readmeError}
-            skillCardContent={skillCard}
-            skillCardError={skillCardError}
+            readmeError={displayedReadmeError}
+            skillCardContent={displayedSkillCard}
+            skillCardError={displayedSkillCardError}
             hasSkillCard={hasSkillCard}
             latestFiles={latestFiles}
             latestVersionId={latestVersion?._id ?? null}
@@ -800,10 +847,12 @@ export function SkillDetailPage({
             diffVersions={diffVersions}
             versions={versions}
             nixPlugin={Boolean(nixPlugin)}
+            showArchiveTabs={!isGitHubBackedSkill}
             suppressVersionScanResults={suppressVersionScanResults}
             scanResultsSuppressedMessage={scanResultsSuppressedMessage}
             clawdis={clawdis}
             osLabels={osLabels}
+            readmeHrefResolver={readmeHrefResolver}
           />
 
           {SHOW_SKILL_COMMENTS ? (

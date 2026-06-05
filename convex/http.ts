@@ -8,6 +8,7 @@ import {
   cliDeviceTokenHttp,
   cliSkillDeleteHttp,
   cliSkillUndeleteHttp,
+  cliTelemetryInstallHttp,
   cliTelemetrySyncHttp,
   cliUploadUrlHttp,
   cliWhoamiHttp,
@@ -35,6 +36,10 @@ import {
   publishSoulV1Http,
   resolveSkillVersionV1Http,
   searchSkillsV1Http,
+  skillScanBatchStatusV1Http,
+  skillScanBatchSubmitV1Http,
+  skillScanGetRouterV1Http,
+  skillScanSubmitV1Http,
   skillSecurityVerdictsV1Http,
   skillsDeleteRouterV1Http,
   skillsGetRouterV1Http,
@@ -45,6 +50,8 @@ import {
   starsDeleteRouterV1Http,
   starsPostRouterV1Http,
   transfersGetRouterV1Http,
+  banAppealContextV1Http,
+  usersGetRouterV1Http,
   usersListV1Http,
   usersPostRouterV1Http,
   verifyDocsSessionV1Http,
@@ -84,6 +91,12 @@ http.route({
   path: ApiRoutes.skills,
   method: "GET",
   handler: listSkillsV1Http,
+});
+
+http.route({
+  pathPrefix: `${ApiRoutes.skillScans}/`,
+  method: "GET",
+  handler: skillScanGetRouterV1Http,
 });
 
 http.route({
@@ -138,6 +151,24 @@ http.route({
   path: ApiRoutes.skills,
   method: "POST",
   handler: publishSkillV1Http,
+});
+
+http.route({
+  path: ApiRoutes.skillScans,
+  method: "POST",
+  handler: skillScanSubmitV1Http,
+});
+
+http.route({
+  path: `${ApiRoutes.skillScans}/batch`,
+  method: "POST",
+  handler: skillScanBatchSubmitV1Http,
+});
+
+http.route({
+  path: `${ApiRoutes.skillScans}/batch/status`,
+  method: "POST",
+  handler: skillScanBatchStatusV1Http,
 });
 
 http.route({
@@ -237,6 +268,18 @@ http.route({
 });
 
 http.route({
+  path: "/api/v1/users/ban-appeal-context",
+  method: "GET",
+  handler: banAppealContextV1Http,
+});
+
+http.route({
+  pathPrefix: `${ApiRoutes.users}/`,
+  method: "GET",
+  handler: usersGetRouterV1Http,
+});
+
+http.route({
   path: ApiRoutes.users,
   method: "GET",
   handler: usersListV1Http,
@@ -318,6 +361,12 @@ http.route({
   path: LegacyApiRoutes.cliPublish,
   method: "POST",
   handler: cliPublishHttp,
+});
+
+http.route({
+  path: LegacyApiRoutes.cliTelemetryInstall,
+  method: "POST",
+  handler: cliTelemetryInstallHttp,
 });
 
 http.route({

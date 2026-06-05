@@ -169,6 +169,258 @@ describe("SkillDetailPage", () => {
     expect(screen.queryByRole("button", { name: "Compare" })).toBeNull();
   });
 
+  it("does not spin forever when a source-backed skill has no stored version", async () => {
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (args && typeof args === "object" && "kind" in args) return null;
+      return undefined;
+    });
+
+    render(
+      <SkillDetailPage
+        slug="aiq-deploy"
+        initialData={{
+          result: {
+            skill: {
+              _id: skillId,
+              _creationTime: 0,
+              slug: "aiq-deploy",
+              displayName: "AIQ Deploy",
+              summary: "Deploy AgentIQ workflows.",
+              ownerUserId: ownerId,
+              ownerPublisherId,
+              installKind: "github",
+              githubScanStatus: "pending",
+              tags: {},
+              badges: {},
+              stats: {
+                stars: 0,
+                downloads: 0,
+                installsCurrent: 0,
+                installsAllTime: 0,
+                versions: 0,
+                comments: 0,
+              },
+              createdAt: 0,
+              updatedAt: 0,
+            },
+            owner: {
+              _id: ownerPublisherId,
+              _creationTime: 0,
+              kind: "org",
+              handle: "local",
+              displayName: "Local Dev",
+            },
+            latestVersion: null,
+            moderationInfo: null,
+            forkOf: null,
+            canonical: null,
+          },
+          readme: null,
+          readmeError: null,
+        }}
+      />,
+    );
+
+    expect(await screen.findByText("Pending")).toBeTruthy();
+    expect(screen.getByText("Security audit")).toBeTruthy();
+    expect(screen.queryByText("Loading README...")).toBeNull();
+  });
+
+  it("clears stale README content when navigating to a skill with no stored version", async () => {
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      return undefined;
+    });
+
+    const { rerender } = render(
+      <SkillDetailPage
+        slug="weather"
+        initialData={{
+          result: {
+            skill: {
+              _id: skillId,
+              _creationTime: 0,
+              slug: "weather",
+              displayName: "Weather",
+              summary: "Get current weather.",
+              ownerUserId: ownerId,
+              ownerPublisherId,
+              tags: {},
+              badges: {},
+              stats: {
+                stars: 12,
+                downloads: 34,
+                installsCurrent: 5,
+                installsAllTime: 8,
+                versions: 1,
+                comments: 0,
+              },
+              createdAt: 0,
+              updatedAt: 0,
+            },
+            owner: {
+              _id: ownerPublisherId,
+              _creationTime: 0,
+              kind: "user",
+              handle: "steipete",
+              displayName: "Peter",
+              linkedUserId: ownerId,
+            },
+            latestVersion: {
+              _id: versionId,
+              _creationTime: 0,
+              skillId,
+              version: "1.0.0",
+              fingerprint: "abc",
+              changelog: "Initial release",
+              parsed: { license: "MIT-0", frontmatter: {} },
+              files: [
+                {
+                  path: "SKILL.md",
+                  size: 10,
+                  storageId,
+                  sha256: "abc",
+                  contentType: "text/markdown",
+                },
+              ],
+              createdBy: ownerId,
+              createdAt: 0,
+            },
+            forkOf: null,
+            canonical: null,
+          },
+          readme: "# Weather\n\nOnly old body.",
+          readmeError: null,
+        }}
+      />,
+    );
+
+    expect(await screen.findByText("Only old body.")).toBeTruthy();
+
+    rerender(
+      <SkillDetailPage
+        slug="aiq-deploy"
+        initialData={{
+          result: {
+            skill: {
+              _id: skillId,
+              _creationTime: 0,
+              slug: "aiq-deploy",
+              displayName: "AIQ Deploy",
+              summary: "Deploy AgentIQ workflows.",
+              ownerUserId: ownerId,
+              ownerPublisherId,
+              tags: {},
+              badges: {},
+              stats: {
+                stars: 0,
+                downloads: 0,
+                installsCurrent: 0,
+                installsAllTime: 0,
+                versions: 0,
+                comments: 0,
+              },
+              createdAt: 0,
+              updatedAt: 0,
+            },
+            owner: {
+              _id: ownerPublisherId,
+              _creationTime: 0,
+              kind: "org",
+              handle: "local",
+              displayName: "Local Dev",
+            },
+            latestVersion: null,
+            moderationInfo: null,
+            forkOf: null,
+            canonical: null,
+          },
+          readme: null,
+          readmeError: null,
+        }}
+      />,
+    );
+
+    expect(await screen.findByText("No README available")).toBeTruthy();
+    expect(screen.queryByText("Only old body.")).toBeNull();
+  });
+
+  it("renders GitHub-backed SKILL.md and skill-card.md from cached source content", async () => {
+    getReadmeMock.mockResolvedValue({ text: "unexpected archive read" });
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (
+        args &&
+        typeof args === "object" &&
+        "kind" in args &&
+        (args as { kind?: unknown }).kind === "readme"
+      ) {
+        return { path: "skills/aiq-deploy/SKILL.md", text: "# AIQ Deploy\n\nDeploy it." };
+      }
+      if (
+        args &&
+        typeof args === "object" &&
+        "kind" in args &&
+        (args as { kind?: unknown }).kind === "skill-card"
+      ) {
+        return { path: "skills/aiq-deploy/skill-card.md", text: "# AIQ Card\n\nRisk details." };
+      }
+      return undefined;
+    });
+
+    render(
+      <SkillDetailPage
+        slug="aiq-deploy"
+        initialData={{
+          result: {
+            skill: {
+              _id: skillId,
+              _creationTime: 0,
+              slug: "aiq-deploy",
+              displayName: "AIQ Deploy",
+              summary: "Deploy AgentIQ workflows.",
+              ownerUserId: ownerId,
+              ownerPublisherId,
+              installKind: "github",
+              githubHasSkillCard: true,
+              tags: {},
+              badges: {},
+              stats: {
+                stars: 0,
+                downloads: 0,
+                installsCurrent: 0,
+                installsAllTime: 0,
+                versions: 0,
+                comments: 0,
+              },
+              createdAt: 0,
+              updatedAt: 0,
+            },
+            owner: {
+              _id: ownerPublisherId,
+              _creationTime: 0,
+              kind: "org",
+              handle: "local",
+              displayName: "Local Dev",
+            },
+            latestVersion: null,
+            moderationInfo: null,
+            forkOf: null,
+            canonical: null,
+          },
+          readme: null,
+          readmeError: null,
+        }}
+      />,
+    );
+
+    expect(await screen.findByText("Deploy it.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: "Skill Card" }));
+    expect(await screen.findByText("Risk details.")).toBeTruthy();
+    expect(getReadmeMock).not.toHaveBeenCalled();
+  });
+
   it("does not show a Skill Card tab for publisher-supplied card files", async () => {
     useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;

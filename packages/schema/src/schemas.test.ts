@@ -2,11 +2,11 @@
 
 import { describe, expect, it } from "vitest";
 import { parseArk } from "./ark";
-import { MAX_CLAWSCAN_NOTE_CHARS, normalizeClawScanNote } from "./clawScanNote";
 import { DocsLinks, openClawDocsUrl } from "./docsLinks";
 import { getPackageScopeOwnerMismatch, inferPackageNameScope } from "./packages";
 import {
   ApiSearchResponseSchema,
+  ApiV1SkillInstallResolveResponseSchema,
   ApiV1SearchResponseSchema,
   ApiV1SkillVerifyResponseSchema,
   CliPublishRequestSchema,
@@ -77,6 +77,58 @@ describe("clawhub-schema", () => {
     expect(payload.source?.repo).toBe("example/demo");
   });
 
+  it("accepts skill install resolver archive and GitHub responses", () => {
+    const archive = parseArk(
+      ApiV1SkillInstallResolveResponseSchema,
+      {
+        ok: true,
+        slug: "demo",
+        installKind: "archive",
+        archive: {
+          version: "1.0.0",
+          downloadUrl: "https://clawhub.ai/api/v1/download?slug=demo&version=1.0.0",
+        },
+      },
+      "Install resolver response",
+    );
+    expect(archive.ok).toBe(true);
+    if (!archive.ok) throw new Error("expected archive install response");
+    expect(archive.installKind).toBe("archive");
+
+    const github = parseArk(
+      ApiV1SkillInstallResolveResponseSchema,
+      {
+        ok: true,
+        slug: "aiq-deploy",
+        installKind: "github",
+        github: {
+          repo: "NVIDIA/skills",
+          path: "skills/aiq-deploy",
+          commit: "1".repeat(40),
+          contentHash: "hash-aiq-deploy",
+          sourceUrl: `https://github.com/NVIDIA/skills/tree/${"1".repeat(40)}/skills/aiq-deploy`,
+        },
+      },
+      "Install resolver response",
+    );
+    expect(github.ok).toBe(true);
+    if (!github.ok) throw new Error("expected GitHub install response");
+    expect(github.installKind).toBe("github");
+
+    const blocked = parseArk(
+      ApiV1SkillInstallResolveResponseSchema,
+      {
+        ok: false,
+        slug: "aiq-deploy",
+        reason: "github_verification_pending",
+        message: "Needs verification.",
+        status: 423,
+      },
+      "Install resolver response",
+    );
+    expect(blocked.ok).toBe(false);
+  });
+
   it("accepts publish payloads with an owner handle", () => {
     const payload = parseArk(
       CliPublishRequestSchema,
@@ -93,14 +145,6 @@ describe("clawhub-schema", () => {
     );
     expect(payload.ownerHandle).toBe("openclaw");
     expect(payload.migrateOwner).toBe(true);
-  });
-
-  it("normalizes ClawScan notes at the shared input boundary", () => {
-    expect(normalizeClawScanNote("  reviewer context  ")).toBe("reviewer context");
-    expect(normalizeClawScanNote("   ")).toBeUndefined();
-    expect(() => normalizeClawScanNote("x".repeat(MAX_CLAWSCAN_NOTE_CHARS + 1))).toThrow(
-      `ClawScan note must be at most ${MAX_CLAWSCAN_NOTE_CHARS} characters.`,
-    );
   });
 
   it("reports scoped package names that do not match the selected owner", () => {

@@ -897,18 +897,6 @@
                 ],
                 "additionalProperties": true
               },
-              "clawScanNote": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "clawScanNoteUpdatedAt": {
-                "type": [
-                  "number",
-                  "null"
-                ]
-              },
               "staticScan": {
                 "type": [
                   "object",
@@ -3076,6 +3064,8 @@
             "schema": {
               "type": "string",
               "enum": [
+                "recommended",
+                "default",
                 "updated",
                 "createdAt",
                 "newest",

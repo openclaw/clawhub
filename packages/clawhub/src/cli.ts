@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import { Command } from "commander";
 import { getCliBuildLabel, getCliVersion } from "./cli/buildInfo.js";
 import { resolveClawdbotDefaultWorkspace } from "./cli/clawdbotConfig.js";
-import { cmdLoginFlow, cmdLogout, cmdWhoami } from "./cli/commands/auth.js";
+import { cmdLoginFlow, cmdLogout, cmdToken, cmdWhoami } from "./cli/commands/auth.js";
 import {
   cmdDeleteSkill,
   cmdHideSkill,
@@ -31,6 +31,7 @@ import {
 } from "./cli/commands/packages.js";
 import { cmdPublish } from "./cli/commands/publish.js";
 import { cmdCreatePublisher } from "./cli/commands/publishers.js";
+import { cmdScan } from "./cli/commands/scan.js";
 import {
   cmdExplore,
   cmdInstall,
@@ -56,9 +57,6 @@ import { DEFAULT_REGISTRY, DEFAULT_SITE } from "./cli/registry.js";
 import type { GlobalOpts } from "./cli/types.js";
 import { fail } from "./cli/ui.js";
 import { readGlobalConfig } from "./config.js";
-
-const CLAWSCAN_NOTE_HELP =
-  "This note gives ClawScan context for behavior that may otherwise look unusual, such as network access, native host access, or provider-specific credentials.";
 
 const program = new Command()
   .name("clawhub")
@@ -90,6 +88,55 @@ function registerCommand(parent: Command, path: readonly string[]) {
 
 function registerCommandGroup(parent: Command, path: readonly string[]) {
   return parent.command(path.at(-1) ?? "");
+}
+
+function validateTopLevelCommand(args: string[]) {
+  if (hasTerminalGlobalFlag(args)) return;
+  const commandName = findFirstTopLevelOperand(args);
+  if (!commandName) return;
+  const knownCommands = new Set([
+    "help",
+    ...program.commands.flatMap((command) => [command.name(), ...command.aliases()]),
+  ]);
+  if (knownCommands.has(commandName)) return;
+  program.error(`error: unknown command '${commandName}'`, { code: "commander.unknownCommand" });
+}
+
+function hasTerminalGlobalFlag(args: string[]) {
+  return args.some(
+    (arg) => arg === "--help" || arg === "-h" || arg === "--cli-version" || arg === "-V",
+  );
+}
+
+function findFirstTopLevelOperand(args: string[]) {
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (!arg) continue;
+    if (arg === "--") return args[index + 1];
+    if (arg.startsWith("--")) {
+      if (arg === "--workdir" || arg === "--dir" || arg === "--site" || arg === "--registry") {
+        index += 1;
+        continue;
+      }
+      if (
+        arg.startsWith("--workdir=") ||
+        arg.startsWith("--dir=") ||
+        arg.startsWith("--site=") ||
+        arg.startsWith("--registry=")
+      ) {
+        continue;
+      }
+      if (arg === "--help" || arg === "--cli-version") return undefined;
+      if (arg === "--no-input") continue;
+      return undefined;
+    }
+    if (arg.startsWith("-")) {
+      if (arg === "-h" || arg === "-V") return undefined;
+      return undefined;
+    }
+    return arg;
+  }
+  return undefined;
 }
 
 async function resolveGlobalOpts(): Promise<GlobalOpts> {
@@ -173,6 +220,12 @@ registerCommand(program, ["whoami"])
     await cmdWhoami(opts);
   });
 
+registerCommand(program, ["token"])
+  .description("Print stored API token")
+  .action(async () => {
+    await cmdToken();
+  });
+
 const auth = registerCommandGroup(program, ["auth"])
   .description("Authentication commands")
   .showHelpAfterError()
@@ -218,9 +271,10 @@ registerCommand(program, ["install"])
   .argument("<slug>", "Skill slug")
   .option("--version <version>", "Version to install")
   .option("--force", "Overwrite existing folder")
+  .option("--force-install", "Install a pending GitHub-backed skill before ClawHub scan completes")
   .action(async (slug, options) => {
     const opts = await resolveGlobalOpts();
-    await cmdInstall(opts, slug, options.version, options.force);
+    await cmdInstall(opts, slug, options.version, options.force, options.forceInstall);
   });
 
 registerCommand(program, ["update"])
@@ -229,6 +283,7 @@ registerCommand(program, ["update"])
   .option("--all", "Update all installed skills")
   .option("--version <version>", "Update to specific version (single slug only)")
   .option("--force", "Overwrite when local files do not match any version")
+  .option("--force-install", "Install a pending GitHub-backed skill before ClawHub scan completes")
   .action(async (slug, options) => {
     const opts = await resolveGlobalOpts();
     await cmdUpdate(opts, slug, options, isInputAllowed());
@@ -313,11 +368,23 @@ registerCommand(program, ["publish"])
   .option("--version <version>", "Version (semver)")
   .option("--fork-of <slug[@version]>", "Mark as a fork of an existing skill")
   .option("--changelog <text>", "Changelog text")
-  .option("--clawscan-note <text>", CLAWSCAN_NOTE_HELP)
   .option("--tags <tags>", "Comma-separated tags", "latest")
   .action(async (folder, options) => {
     const opts = await resolveGlobalOpts();
     await cmdPublish(opts, folder, options);
+  });
+
+registerCommand(program, ["scan"])
+  .description("Run ClawScan on a local skill bundle or one of your published skills")
+  .argument("[path]", "Local skill folder path")
+  .option("--slug <slug>", "Published skill slug to scan")
+  .option("--version <version>", "Published skill version to scan")
+  .option("--update", "Write published scan results back to the selected version")
+  .option("-o, --output <path>", "Write the full report ZIP to a file")
+  .option("--json", "Output scan report JSON")
+  .action(async (folder, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdScan(opts, folder, options);
   });
 
 registerCommand(program, ["delete"])
@@ -375,7 +442,6 @@ registerCommand(skill, ["skill", "publish"])
   .option("--version <version>", "Version (semver)")
   .option("--fork-of <slug[@version]>", "Mark as a fork of an existing skill")
   .option("--changelog <text>", "Changelog text")
-  .option("--clawscan-note <text>", CLAWSCAN_NOTE_HELP)
   .option("--tags <tags>", "Comma-separated tags", "latest")
   .action(async (folder, options) => {
     const opts = await resolveGlobalOpts();
@@ -578,7 +644,6 @@ registerCommand(packageCmd, ["package", "publish"])
   .option("--owner <handle>", "Publish under this owner/publisher handle")
   .option("--version <version>", "Version")
   .option("--changelog <text>", "Changelog text")
-  .option("--clawscan-note <text>", CLAWSCAN_NOTE_HELP)
   .option(
     "--manual-override-reason <reason>",
     "Required for manual publish when trusted publisher config exists",
@@ -704,10 +769,16 @@ registerCommand(program, ["sync"])
   .option("--root <dir...>", "Extra scan roots (one or more)")
   .option("--all", "Upload all new/updated skills without prompting")
   .option("--dry-run", "Show what would be uploaded")
+  .option("--json", "Output JSON")
+  .option("--owner <handle>", "Publish under an org/user publisher handle")
   .option("--bump <type>", "Version bump for updates (patch|minor|major)", "patch")
   .option("--changelog <text>", "Changelog to use for updates (non-interactive)")
   .option("--tags <tags>", "Comma-separated tags", "latest")
   .option("--concurrency <n>", "Concurrent registry checks (default: 4)", "4")
+  .option("--no-clawdbot-roots", "Only scan the configured workdir/dir and --root values")
+  .option("--source-repo <repo>", "GitHub repo (owner/repo or URL)")
+  .option("--source-commit <sha>", "Git commit SHA")
+  .option("--source-ref <ref>", "Git ref/tag/branch")
   .action(async (options) => {
     const opts = await resolveGlobalOpts();
     const bump = String(options.bump ?? "patch") as "patch" | "minor" | "major";
@@ -721,10 +792,16 @@ registerCommand(program, ["sync"])
         root: options.root,
         all: options.all,
         dryRun: options.dryRun,
+        json: options.json,
+        owner: options.owner,
         bump,
         changelog: options.changelog,
         tags: options.tags,
         concurrency,
+        clawdbotRoots: options.clawdbotRoots,
+        sourceRepo: options.sourceRepo,
+        sourceCommit: options.sourceCommit,
+        sourceRef: options.sourceRef,
       },
       isInputAllowed(),
     );
@@ -740,6 +817,8 @@ program.action(async () => {
   program.outputHelp();
   process.exitCode = 0;
 });
+
+validateTopLevelCommand(process.argv.slice(2));
 
 void program.parseAsync(process.argv).catch((error) => {
   const message = error instanceof Error ? error.message : String(error);

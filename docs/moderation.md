@@ -79,8 +79,9 @@ result in account bans, token revocation, hidden content, or removed listings.
 
 Deleted, banned, or disabled accounts cannot use ClawHub API tokens. If CLI auth
 starts failing after account action, sign in to the web UI to review account
-state. If sign-in or normal CLI access is blocked, contact security@openclaw.ai
-for recovery review.
+state. If sign-in or normal CLI access is blocked,
+[open a GitHub issue](https://github.com/openclaw/clawhub/issues/new) for
+recovery review.
 
 ## Publisher guidance
 
@@ -88,7 +89,6 @@ To reduce false positives and improve user trust:
 
 - keep names, summaries, tags, and changelogs accurate
 - declare required environment variables and permissions
-- explain unusual but intentional behavior in a ClawScan note
 - avoid obfuscated install commands
 - link to source when possible
 - use dry runs before publishing plugins

@@ -4,13 +4,15 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("./lib/apiTokenAuth", () => ({
   getOptionalApiTokenUser: vi.fn(),
   requireApiTokenUser: vi.fn(),
+  requirePackagePublishAuth: vi.fn(),
 }));
 
 vi.mock("./skills", () => ({
   publishVersionForUser: vi.fn(),
 }));
 
-const { getOptionalApiTokenUser, requireApiTokenUser } = await import("./lib/apiTokenAuth");
+const { getOptionalApiTokenUser, requireApiTokenUser, requirePackagePublishAuth } =
+  await import("./lib/apiTokenAuth");
 const { publishVersionForUser } = await import("./skills");
 const { __handlers } = await import("./httpApi");
 const { hashSkillFiles } = await import("./lib/skills");
@@ -23,6 +25,7 @@ describe("httpApi handlers", () => {
   afterEach(() => {
     vi.mocked(getOptionalApiTokenUser).mockReset();
     vi.mocked(requireApiTokenUser).mockReset();
+    vi.mocked(requirePackagePublishAuth).mockReset();
     vi.mocked(publishVersionForUser).mockReset();
   });
 
@@ -240,7 +243,7 @@ describe("httpApi handlers", () => {
   it("cliWhoamiHttp returns 401 on auth failure", async () => {
     vi.mocked(requireApiTokenUser).mockRejectedValueOnce(
       new Error(
-        "Unauthorized: This ClawHub account is not in good standing and cannot use API tokens. If you believe this is a mistake, contact security@openclaw.ai.",
+        "Unauthorized: This ClawHub account is not in good standing and cannot use API tokens. If you believe this is a mistake, open a GitHub issue: https://github.com/openclaw/clawhub/issues/new.",
       ),
     );
     const response = await __handlers.cliWhoamiHandler(
@@ -264,12 +267,12 @@ describe("httpApi handlers", () => {
     expect(json.user.handle).toBe("p");
   });
 
-  it("cliTelemetrySyncHttp forwards roots and returns ok", async () => {
+  it("cliTelemetryInstallHttp forwards roots and returns ok", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: "users:1" } as never);
     const runMutation = vi.fn().mockResolvedValue(null);
-    const response = await __handlers.cliTelemetrySyncHandler(
+    const response = await __handlers.cliTelemetryInstallHandler(
       makeCtx({ runMutation }),
-      new Request("https://x/api/cli/telemetry/sync", {
+      new Request("https://x/api/cli/telemetry/install", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -285,6 +288,22 @@ describe("httpApi handlers", () => {
     );
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true });
+    expect(runMutation).toHaveBeenCalledTimes(1);
+  });
+
+  it("cliTelemetrySyncHttp remains a backwards-compatible alias", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: "users:1" } as never);
+    const runMutation = vi.fn().mockResolvedValue(null);
+    const response = await __handlers.cliTelemetrySyncHandler(
+      makeCtx({ runMutation }),
+      new Request("https://x/api/cli/telemetry/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ roots: [] }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
     expect(runMutation).toHaveBeenCalledTimes(1);
   });
 
@@ -444,18 +463,51 @@ describe("httpApi handlers", () => {
   });
 
   it("cliUploadUrlHttp returns uploadUrl", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: "user1" } as never);
-    const runMutation = vi.fn().mockResolvedValue("https://upload.local");
+    vi.mocked(requirePackagePublishAuth).mockResolvedValueOnce({
+      kind: "user",
+      userId: "user1",
+    } as never);
+    const runMutation = vi.fn().mockResolvedValue({
+      uploadUrl: "https://upload.local",
+      uploadTicket: "packagePublishUploadTickets:1",
+    });
     const response = await __handlers.cliUploadUrlHandler(
       makeCtx({ runMutation }),
       new Request("https://x/api/cli/upload-url", { method: "POST" }),
     );
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ uploadUrl: "https://upload.local" });
+    expect(await response.json()).toEqual({
+      uploadUrl: "https://upload.local",
+      uploadTicket: "packagePublishUploadTickets:1",
+    });
+  });
+
+  it("cliUploadUrlHttp accepts package publish tokens", async () => {
+    vi.mocked(requirePackagePublishAuth).mockResolvedValueOnce({
+      kind: "github-actions",
+      publishToken: { _id: "packagePublishTokens:1" },
+    } as never);
+    const runMutation = vi.fn().mockResolvedValue({
+      uploadUrl: "https://upload.local/package",
+      uploadTicket: "packagePublishUploadTickets:2",
+    });
+    const response = await __handlers.cliUploadUrlHandler(
+      makeCtx({ runMutation }),
+      new Request("https://x/api/cli/upload-url", { method: "POST" }),
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      uploadUrl: "https://upload.local/package",
+      uploadTicket: "packagePublishUploadTickets:2",
+    });
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ publishTokenId: "packagePublishTokens:1" }),
+    );
   });
 
   it("cliUploadUrlHttp returns 401 when unauthorized", async () => {
-    vi.mocked(requireApiTokenUser).mockRejectedValueOnce(new Error("Unauthorized"));
+    vi.mocked(requirePackagePublishAuth).mockRejectedValueOnce(new Error("Unauthorized"));
     const response = await __handlers.cliUploadUrlHandler(
       makeCtx({}),
       new Request("https://x/api/cli/upload-url", { method: "POST" }),

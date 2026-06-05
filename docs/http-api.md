@@ -123,10 +123,10 @@ Response:
 
 Notes:
 
-- Results are returned in relevance order (embedding similarity + exact slug/name token boosts + popularity prior from downloads).
+- Results are returned in relevance order (embedding similarity + exact slug/name token boosts + a small popularity prior from stars, all-time installs, and downloads).
 - Relevance is stronger than popularity. A precise slug or display-name token match can outrank a looser match with many more downloads.
 - ASCII text is tokenized on word and punctuation boundaries. For example, `personal-map` contains a standalone `map` token, while `amap-jsapi-skill` contains `amap`, `jsapi`, and `skill`; searching for `map` therefore gives `personal-map` a stronger lexical match than `amap-jsapi-skill`.
-- Downloads are used as a small log-scaled prior and tie-breaker, not as the primary ranking signal. High-download skills can rank lower when the query text is a weaker match.
+- Popularity is log-scaled and capped. Stars carry the strongest weight, all-time installs carry a smaller weight, and downloads are only a tiny fallback signal. High-download skills can rank lower when the query text is a weaker match.
 - Suspicious or hidden moderation state can remove a skill from public search depending on caller filters and current moderation status.
 
 Publisher discoverability guidance:
@@ -142,7 +142,7 @@ Query params:
 
 - `limit` (optional): integer (1–200)
 - `cursor` (optional): pagination cursor for any non-`trending` sort
-- `sort` (optional): `updated` (default), `createdAt` (alias: `newest`), `downloads`, `stars` (alias: `rating`), `installsCurrent` (alias: `installs`), `installsAllTime`, `trending`
+- `sort` (optional): `updated` (default), `recommended` (alias: `default`), `createdAt` (alias: `newest`), `downloads`, `stars` (alias: `rating`), `installsCurrent` (alias: `installs`), `installsAllTime`, `trending`
 - `nonSuspiciousOnly` (optional): `true` to hide suspicious (`flagged.suspicious`) skills
 - `nonSuspicious` (optional): legacy alias for `nonSuspiciousOnly`
 
@@ -150,6 +150,7 @@ Invalid `sort` values return `400`.
 
 Notes:
 
+- `recommended` ranks by stars, then all-time installs, then downloads, then `updatedAt`.
 - `trending` ranks by installs in the last 7 days (telemetry-based).
 - `createdAt` is stable for new-skill crawls; `updated` changes when existing skills are republished.
 - When `nonSuspiciousOnly=true`, cursor-based sorts may return fewer than `limit` items on a page because suspicious skills are filtered after page retrieval.
@@ -367,6 +368,58 @@ Notes:
 - `security.hasScanResult` is `true` only when a scanner produced a definitive verdict (`clean`, `suspicious`, or `malicious`).
 - `moderation` is a current skill-level moderation snapshot derived from the latest version.
 - When querying a historical version, check `moderation.matchesRequestedVersion` and `moderation.sourceVersion` before treating `moderation` and `security` as the same version context.
+
+### `POST /api/v1/skills/-/scan`
+
+Authenticated submit endpoint for new ClawScan jobs.
+
+Local upload scans use `multipart/form-data`:
+
+- `payload`: JSON string, usually `{ "source": { "kind": "upload" }, "update": false }`
+- `files`: repeated local skill files
+
+Published scans use JSON:
+
+```json
+{
+  "source": { "kind": "published", "slug": "gifgrep", "version": "1.2.3" },
+  "update": false
+}
+```
+
+Notes:
+
+- Local upload scans require auth but are ephemeral. They never mutate public skill, version, moderation, or trust state.
+- Scan request payloads and downloadable reports expire from the scan-request store after the retention window.
+- Local upload scans reject `update: true`.
+- Published scans require owner/publisher management access, or platform moderator/admin authority.
+- Published scans write back only when `update: true` and the scan completes successfully.
+- Response is `202` with `{ "ok": true, "scanId": "...", "jobId": "...", "status": "queued", "sourceKind": "upload|published", "update": false, "queue": { "queuedAhead": 0, "queuedAheadIsEstimate": false, "position": 1, "running": 0, "runningIsEstimate": false, "note": "Scans are asynchronous and may take time to complete." } }`.
+- Scan jobs are asynchronous. Manual scan requests are prioritized ahead of normal publish/backfill work, but completion still depends on worker availability.
+
+### `GET /api/v1/skills/-/scan/{scanId}`
+
+Authenticated poll endpoint for a submitted scan.
+
+- Returns queued/running/succeeded/failed status.
+- Returns `queue.queuedAhead` and `queue.position` while queued so clients can show how many prioritized manual scans are ahead of the request. Very large queues are bounded and reported with `queuedAheadIsEstimate: true`.
+- When available, `report` contains `clawscan`, `skillspector`, `staticAnalysis`, and `virustotal` sections.
+- Failed scan jobs return `status: "failed"` with `lastError`.
+
+### `GET /api/v1/skills/-/scan/{scanId}/download`
+
+Authenticated report archive endpoint.
+
+- Requires a succeeded scan; non-terminal scans return `409`.
+- Returns a ZIP with `manifest.json`, `clawscan.json`, `skillspector.json`, `static-analysis.json`, `virustotal.json`, and `README.md`.
+
+### `POST /api/v1/skills/-/scan/batch`
+
+Admin-only canonical batch rescan route. It accepts the same payload shape as legacy `POST /api/v1/skills/-/rescan-batch`.
+
+### `POST /api/v1/skills/-/scan/batch/status`
+
+Admin-only canonical batch status route. It accepts `{ "jobIds": ["..."] }` and returns the same aggregate counters as legacy `POST /api/v1/skills/-/rescan-batch/status`.
 
 ### `GET /api/v1/skills/{slug}/verify`
 
@@ -1224,8 +1277,16 @@ Publishes a new version.
 Publishes a code-plugin or bundle-plugin release.
 
 - Requires Bearer token auth.
-- Preferred: `multipart/form-data` with `payload` JSON + `files[]` blobs.
-- JSON body with `files` (storageId-based) is also accepted.
+- Requires `multipart/form-data`.
+- Allowed form fields are `payload`, repeated `files` blobs, or one `clawpack`
+  tarball reference. `clawpack` may be a `.tgz` blob or a storage id returned by
+  the upload-url flow. Staged storage-id publishes must also include the
+  `clawpackUploadTicket` returned with that upload URL.
+- Use either `files` or `clawpack`, never both in the same request.
+- JSON bodies and caller-supplied `payload.files` / `payload.artifact`
+  metadata are rejected.
+- Direct multipart publish requests are capped at 18MB. ClawPack tarballs may
+  use the upload-url flow up to the 120MB tarball cap.
 - Optional payload field: `ownerHandle`. When present, only admins may publish on behalf of that owner.
 
 Validation highlights:
@@ -1477,6 +1538,10 @@ Still supported for older CLI versions:
 - `POST /api/cli/skill/undelete`
 
 See `DEPRECATIONS.md` for removal plan.
+
+`POST /api/cli/upload-url` returns `uploadUrl` and `uploadTicket`. Package
+publishes that stage a ClawPack tarball must send the resulting storage id as
+`clawpack` and the returned ticket as `clawpackUploadTicket`.
 
 ## Registry discovery (`/.well-known/clawhub.json`)
 

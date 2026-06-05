@@ -19,6 +19,7 @@ import {
   getActiveUserByHandleOrPersonalPublisher,
   getPersonalPublisherForUser,
   getPublisherByHandle,
+  getPublisherMembership,
   getUserByHandleOrPersonalPublisher,
 } from "./lib/publishers";
 import {
@@ -41,6 +42,8 @@ const DEFAULT_AUTOBAN_REMEDIATION_REASON =
   "Autoban remediation: current scanner verdict is non-malicious";
 const MAX_AUTOBAN_REMEDIATION_LIMIT = 100;
 const AUTOBAN_AUDIT_MATCH_WINDOW_MS = 5_000;
+const BAN_AUDIT_ACTIONS = new Set(["user.ban", "user.autoban.malware"]);
+const BAN_APPEAL_AUTH_ACCOUNT_MATCH_LIMIT = 20;
 const AUTOBAN_REMEDIATION_COUNT_PAGE_SIZE = 100;
 const autobanPackageScanScopeValidator = v.optional(
   v.union(v.literal("ownerUserId"), v.literal("personalPublisher")),
@@ -124,6 +127,17 @@ const DEV_PERSONAS = {
     displayName: "Local Admin",
     role: "admin",
   },
+  officialOrgMember: {
+    handle: "local-official-member",
+    displayName: "Local Official Org Member",
+    role: "user",
+  },
+} as const;
+
+const DEV_OFFICIAL_ORG = {
+  handle: "local-official-org",
+  displayName: "Local Official Org",
+  reason: "dev-persona.official-org-member",
 } as const;
 
 type DevPersona = keyof typeof DEV_PERSONAS;
@@ -139,9 +153,19 @@ export const getByIdInternal = internalQuery({
 });
 
 export const upsertDevPersonaInternal = internalMutation({
-  args: { persona: v.union(v.literal("owner"), v.literal("user"), v.literal("admin")) },
+  args: {
+    persona: v.union(
+      v.literal("owner"),
+      v.literal("user"),
+      v.literal("admin"),
+      v.literal("officialOrgMember"),
+    ),
+    devAuthSecret: v.optional(v.string()),
+  },
   handler: async (ctx, args): Promise<Id<"users">> => {
-    if (!isLocalDevAuthEnabled()) throw new Error("Dev auth is disabled");
+    if (!isLocalDevAuthEnabled(process.env, args.devAuthSecret)) {
+      throw new Error("Dev auth is disabled");
+    }
 
     const persona = DEV_PERSONAS[args.persona as DevPersona];
     const now = Date.now();
@@ -173,9 +197,65 @@ export const upsertDevPersonaInternal = internalMutation({
       actorUserId: user._id,
       source: "dev_persona.upsert",
     });
+    if (args.persona === "officialOrgMember") {
+      await ensureDevOfficialOrgMembership(ctx, user, now);
+    }
     return userId;
   },
 });
+
+async function ensureDevOfficialOrgMembership(ctx: MutationCtx, user: Doc<"users">, now: number) {
+  let publisher = await getPublisherByHandle(ctx, DEV_OFFICIAL_ORG.handle);
+  let publisherId = publisher?._id;
+
+  if (!publisherId) {
+    publisherId = await ctx.db.insert("publishers", {
+      kind: "org",
+      handle: DEV_OFFICIAL_ORG.handle,
+      displayName: DEV_OFFICIAL_ORG.displayName,
+      bio: undefined,
+      image: undefined,
+      linkedUserId: undefined,
+      trustedPublisher: undefined,
+      createdAt: now,
+      updatedAt: now,
+    });
+  } else if (publisher?.deletedAt || publisher?.deactivatedAt) {
+    await ctx.db.patch(publisherId, {
+      displayName: DEV_OFFICIAL_ORG.displayName,
+      deletedAt: undefined,
+      deactivatedAt: undefined,
+      updatedAt: now,
+    });
+  }
+
+  const existingOfficial = await ctx.db
+    .query("officialPublishers")
+    .withIndex("by_publisher", (q) => q.eq("publisherId", publisherId))
+    .unique();
+  if (!existingOfficial) {
+    await ctx.db.insert("officialPublishers", {
+      publisherId,
+      reason: DEV_OFFICIAL_ORG.reason,
+      createdByUserId: user._id,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
+  const membership = await getPublisherMembership(ctx, publisherId, user._id);
+  if (!membership) {
+    await ctx.db.insert("publisherMembers", {
+      publisherId,
+      userId: user._id,
+      role: "admin",
+      createdAt: now,
+      updatedAt: now,
+    });
+  } else if (membership.role === "publisher") {
+    await ctx.db.patch(membership._id, { role: "admin", updatedAt: now });
+  }
+}
 
 export const getByHandleInternal = internalQuery({
   args: { handle: v.string() },
@@ -183,6 +263,76 @@ export const getByHandleInternal = internalQuery({
     return await getUserByHandleOrPersonalPublisher(ctx, args.handle);
   },
 });
+
+export const getBanAppealContextByGitHubProviderAccountIdInternal = internalQuery({
+  args: { providerAccountId: v.string() },
+  handler: async (ctx, args) => {
+    const providerAccountId = args.providerAccountId.trim();
+    if (!/^\d+$/.test(providerAccountId)) {
+      return { ok: true as const, action: "moderated" as const, userId: null };
+    }
+
+    const accounts = await ctx.db
+      .query("authAccounts")
+      .withIndex("providerAndAccountId", (q) =>
+        q.eq("provider", "github").eq("providerAccountId", providerAccountId),
+      )
+      .take(BAN_APPEAL_AUTH_ACCOUNT_MATCH_LIMIT);
+    if (accounts.length === 0) {
+      return { ok: true as const, action: "moderated" as const, userId: null };
+    }
+
+    let fallbackUser: Doc<"users"> | null = null;
+    for (const account of accounts) {
+      const user = await ctx.db.get(account.userId);
+      if (!user) continue;
+      fallbackUser ??= user;
+      if (!user.deletedAt || user.deactivatedAt) continue;
+
+      const banLog = await getCurrentBanAuditLog(ctx, user._id, user.deletedAt);
+      if (banLog) return toBanAppealContextResult(user, banLog);
+    }
+
+    if (!fallbackUser) return { ok: true as const, action: "moderated" as const, userId: null };
+    return toBanAppealContextResult(fallbackUser, null);
+  },
+});
+
+function toBanAppealContextResult(user: Doc<"users">, banLog: Doc<"auditLogs"> | null) {
+  const banned = Boolean(user.deletedAt && !user.deactivatedAt && banLog);
+  const metadata = banLog?.metadata as { reason?: string } | undefined;
+
+  return {
+    ok: true as const,
+    action: banned ? ("banned" as const) : ("moderated" as const),
+    userId: user._id,
+    handle: user.handle ?? null,
+    displayName: user.displayName ?? user.name ?? null,
+    banReason: banned ? (user.banReason ?? metadata?.reason ?? null) : null,
+    bannedAt: banned ? (user.deletedAt ?? null) : null,
+    auditAction: banLog?.action ?? null,
+    auditActorUserId: banLog?.actorUserId ?? null,
+  };
+}
+
+async function getCurrentBanAuditLog(
+  ctx: Pick<QueryCtx | MutationCtx, "db">,
+  userId: Id<"users">,
+  bannedAt: number,
+) {
+  const logs = await ctx.db
+    .query("auditLogs")
+    .withIndex("by_target_createdAt", (q) =>
+      q
+        .eq("targetType", "user")
+        .eq("targetId", userId.toString())
+        .gte("createdAt", bannedAt - AUTOBAN_AUDIT_MATCH_WINDOW_MS)
+        .lte("createdAt", bannedAt + AUTOBAN_AUDIT_MATCH_WINDOW_MS),
+    )
+    .order("desc")
+    .take(20);
+  return logs.find((log) => BAN_AUDIT_ACTIONS.has(log.action)) ?? null;
+}
 
 export const searchInternal = internalQuery({
   args: {
@@ -909,6 +1059,17 @@ export const unbanUserInternal = internalMutation({
     const actor = await ctx.db.get(args.actorUserId);
     if (!actor || actor.deletedAt || actor.deactivatedAt) throw new Error("User not found");
     return unbanUserWithActor(ctx, actor, args.targetUserId, args.reason);
+  },
+});
+
+export const unbanUserForBanAppealServiceInternal = internalMutation({
+  args: {
+    targetUserId: v.id("users"),
+    reason: v.optional(v.string()),
+    reviewerDiscordId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    return unbanUserForBanAppealService(ctx, args);
   },
 });
 
@@ -1796,6 +1957,85 @@ async function banUserWithActor(
     deletedSkills: hiddenCount,
     deletedComments,
     scheduledSkills,
+  };
+}
+
+async function unbanUserForBanAppealService(
+  ctx: MutationCtx,
+  args: { targetUserId: Id<"users">; reason?: string; reviewerDiscordId: string },
+) {
+  const target = await ctx.db.get(args.targetUserId);
+  if (!target) throw new Error("User not found");
+  if (target.deactivatedAt) {
+    throw new Error("Cannot unban a permanently deleted account");
+  }
+  if (!target.deletedAt) {
+    return { ok: true as const, alreadyUnbanned: true };
+  }
+
+  const reason = args.reason?.trim();
+  if (reason && reason.length > 500) {
+    throw new Error("Reason too long (max 500 chars)");
+  }
+
+  const now = Date.now();
+  const bannedAt = target.deletedAt;
+  const banLog = await getCurrentBanAuditLog(ctx, args.targetUserId, bannedAt);
+  if (!banLog) {
+    throw new Error("Cannot unban account without a matching ban record");
+  }
+
+  await ctx.db.patch(args.targetUserId, {
+    deletedAt: undefined,
+    banReason: undefined,
+    role: "user",
+    updatedAt: now,
+  });
+
+  const restoreSkillsResult = (await ctx.runMutation(
+    internal.skills.restoreOwnedSkillsForUnbanBatchInternal,
+    {
+      ownerUserId: args.targetUserId,
+      bannedAt,
+      cursor: undefined,
+    },
+  )) as { restoredCount?: number; scheduled?: boolean };
+  const restoredSkillCount = restoreSkillsResult.restoredCount ?? 0;
+  const scheduledSkills = restoreSkillsResult.scheduled ?? false;
+
+  const restorePackagesResult = ((await ctx.runMutation(
+    internal.packages.restoreOwnedPackagesForUnbanBatchInternal,
+    {
+      ownerUserId: args.targetUserId,
+      bannedAt,
+      cursor: undefined,
+    },
+  )) ?? {}) as { restoredCount?: number; scheduled?: boolean };
+  const restoredPackageCount = restorePackagesResult.restoredCount ?? 0;
+  const scheduledPackages = restorePackagesResult.scheduled ?? false;
+
+  await ctx.db.insert("auditLogs", {
+    action: "user.unban",
+    targetType: "user",
+    targetId: args.targetUserId,
+    metadata: {
+      reason: reason || undefined,
+      restoredSkills: restoredSkillCount,
+      restoredPackages: restoredPackageCount,
+      scheduledPackages,
+      source: "ban_appeal.service",
+      reviewerDiscordId: args.reviewerDiscordId,
+    },
+    createdAt: now,
+  });
+
+  return {
+    ok: true as const,
+    alreadyUnbanned: false,
+    restoredSkills: restoredSkillCount,
+    scheduledSkills,
+    restoredPackages: restoredPackageCount,
+    scheduledPackages,
   };
 }
 

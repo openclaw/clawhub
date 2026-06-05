@@ -272,14 +272,6 @@ export function getVirusTotalDisplayStatus(analysis?: VtAnalysis | null) {
   return analysis?.verdict ?? analysis?.status ?? "pending";
 }
 
-export function getSkillSpectorDisplayStatus(analysis?: SkillSpectorAnalysis | null) {
-  const status = analysis?.status?.trim().toLowerCase();
-  if (!status) return "pending";
-  if (status === "clean" || status === "benign") return "benign";
-  if (status === "suspicious") return "review";
-  return status;
-}
-
 export function ScanResultBadge({
   status,
   label,

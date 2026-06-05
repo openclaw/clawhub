@@ -1,12 +1,14 @@
 import { ConvexAuthProvider, useAuthActions } from "@convex-dev/auth/react";
 import { useEffect, useRef } from "react";
+import { toast } from "sonner";
 import { convex } from "../convex/client";
 import {
   AUTH_CODE_NO_SESSION_MESSAGE,
   getUserFacingAuthError,
   normalizeAuthErrorMessage,
 } from "../lib/authErrorMessage";
-import { clearAuthError, setAuthError } from "../lib/useAuthError";
+import { clearAuthError, setAuthError, useAuthError } from "../lib/useAuthError";
+import { AuthErrorMessage } from "./AuthErrorMessage";
 import { ClientOnly } from "./ClientOnly";
 import { DevPersonaFab } from "./DevPersonaFab";
 import { TooltipProvider } from "./ui/tooltip";
@@ -17,20 +19,27 @@ function getPendingAuthCode() {
   const url = new URL(window.location.href);
   const code = url.searchParams.get("code");
   if (!code) return null;
+  const isRetry = url.searchParams.get("auth_retry") === "1";
+  const retryUrl = new URL(window.location.href);
+  retryUrl.searchParams.delete("code");
+  retryUrl.searchParams.set("auth_retry", "1");
   url.searchParams.delete("code");
+  url.searchParams.delete("auth_retry");
   return {
     code,
+    isRetry,
     relativeUrl: `${url.pathname}${url.search}${url.hash}`,
+    retryRelativeUrl: `${retryUrl.pathname}${retryUrl.search}${retryUrl.hash}`,
   };
 }
 
 export function AuthCodeHandler() {
   const { signIn } = useAuthActions();
   const handledCodeRef = useRef<string | null>(null);
-  const signInWithCode = signIn as (
+  const signInWithGitHub = signIn as (
     provider: string | undefined,
-    params: { code: string },
-  ) => Promise<{ signingIn: boolean }>;
+    params: { code: string } | { redirectTo: string },
+  ) => Promise<{ signingIn: boolean; redirect?: URL }>;
 
   useEffect(() => {
     const pending = getPendingAuthCode();
@@ -39,18 +48,50 @@ export function AuthCodeHandler() {
     handledCodeRef.current = pending.code;
 
     clearAuthError();
-    window.history.replaceState(null, "", pending.relativeUrl);
+    window.history.replaceState(
+      null,
+      "",
+      pending.isRetry ? pending.relativeUrl : pending.retryRelativeUrl,
+    );
 
-    void signInWithCode(undefined, { code: pending.code })
+    void signInWithGitHub(undefined, { code: pending.code })
       .then((result) => {
-        if (result.signingIn === false) {
-          setAuthError(AUTH_CODE_NO_SESSION_MESSAGE);
+        if (result.signingIn !== false) {
+          window.history.replaceState(null, "", pending.relativeUrl);
+          return;
         }
+
+        console.log("[ClawHub auth] GitHub code sign-in did not create a session", {
+          path: window.location.pathname,
+          retrying: !pending.isRetry,
+          hadRetryMarker: pending.isRetry,
+          hasReturnTo: new URL(window.location.href).searchParams.has("return_to"),
+        });
+
+        if (!pending.isRetry) {
+          window.history.replaceState(null, "", pending.retryRelativeUrl);
+          void signInWithGitHub("github", { redirectTo: pending.retryRelativeUrl })
+            .then((retryResult) => {
+              if (retryResult?.signingIn === false && !retryResult.redirect) {
+                window.history.replaceState(null, "", pending.relativeUrl);
+                setAuthError(AUTH_CODE_NO_SESSION_MESSAGE);
+              }
+            })
+            .catch((error) => {
+              window.history.replaceState(null, "", pending.relativeUrl);
+              setAuthError(getUserFacingAuthError(error, "Sign in failed. Please try again."));
+            });
+          return;
+        }
+
+        window.history.replaceState(null, "", pending.relativeUrl);
+        setAuthError(AUTH_CODE_NO_SESSION_MESSAGE);
       })
       .catch((error) => {
+        window.history.replaceState(null, "", pending.relativeUrl);
         setAuthError(getUserFacingAuthError(error, "Sign in failed. Please try again."));
       });
-  }, [signInWithCode]);
+  }, [signInWithGitHub]);
 
   return null;
 }
@@ -86,12 +127,31 @@ export function AuthErrorHandler() {
   return null;
 }
 
+export function AuthErrorToast() {
+  const { error } = useAuthError();
+  const lastShownRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!error) {
+      lastShownRef.current = null;
+      return;
+    }
+    if (lastShownRef.current === error) return;
+    lastShownRef.current = error;
+
+    toast.error(<AuthErrorMessage message={error} />, { id: "auth-error" });
+  }, [error]);
+
+  return null;
+}
+
 export function AppProviders({ children }: { children: React.ReactNode }) {
   return (
     <ConvexAuthProvider client={convex} shouldHandleCode={false}>
       <TooltipProvider delayDuration={400}>
         <AuthCodeHandler />
         <AuthErrorHandler />
+        <AuthErrorToast />
         <UserBootstrap />
         {children}
         <ClientOnly>

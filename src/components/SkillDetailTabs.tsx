@@ -44,10 +44,12 @@ type SkillDetailTabsProps = {
   diffVersions: Doc<"skillVersions">[] | undefined;
   versions: Doc<"skillVersions">[] | undefined;
   nixPlugin: boolean;
+  showArchiveTabs?: boolean;
   suppressVersionScanResults: boolean;
   scanResultsSuppressedMessage: string | null;
   clawdis: ClawdisSkillMetadata | undefined;
   osLabels: string[];
+  readmeHrefResolver?: (href: string) => string;
 };
 
 export function SkillDetailTabs({
@@ -65,14 +67,18 @@ export function SkillDetailTabs({
   diffVersions,
   versions,
   nixPlugin,
+  showArchiveTabs = true,
   suppressVersionScanResults,
   scanResultsSuppressedMessage,
   clawdis,
   osLabels,
+  readmeHrefResolver,
 }: SkillDetailTabsProps) {
+  const resolveReadmeHref =
+    readmeHrefResolver ?? ((href: string) => resolveSkillReadmeHref(href, skill.slug));
   const installTabs = buildSkillInstallTabs({ clawdis, osLabels });
   const activeInstallTab = installTabs.find((tab) => tab.id === activeTab);
-  const compareEnabled = (versions?.length ?? 0) > 1;
+  const compareEnabled = showArchiveTabs && (versions?.length ?? 0) > 1;
   const selectTab = (tab: DetailTab) => {
     setActiveTab(tab);
     if (typeof window === "undefined") return;
@@ -107,15 +113,17 @@ export function SkillDetailTabs({
             Skill Card
           </button>
         ) : null}
-        <button
-          className={`tab-button${activeTab === "files" ? " is-active" : ""}`}
-          type="button"
-          role="tab"
-          aria-selected={activeTab === "files"}
-          onClick={() => selectTab("files")}
-        >
-          Files
-        </button>
+        {showArchiveTabs ? (
+          <button
+            className={`tab-button${activeTab === "files" ? " is-active" : ""}`}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "files"}
+            onClick={() => selectTab("files")}
+          >
+            Files
+          </button>
+        ) : null}
         {compareEnabled ? (
           <button
             className={`tab-button${activeTab === "compare" ? " is-active" : ""}`}
@@ -135,15 +143,17 @@ export function SkillDetailTabs({
             Compare
           </button>
         ) : null}
-        <button
-          className={`tab-button${activeTab === "versions" ? " is-active" : ""}`}
-          type="button"
-          role="tab"
-          aria-selected={activeTab === "versions"}
-          onClick={() => selectTab("versions")}
-        >
-          Versions
-        </button>
+        {showArchiveTabs ? (
+          <button
+            className={`tab-button${activeTab === "versions" ? " is-active" : ""}`}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "versions"}
+            onClick={() => selectTab("versions")}
+          >
+            Versions
+          </button>
+        ) : null}
         {installTabs.map((tab) => (
           <button
             key={tab.id}
@@ -166,9 +176,7 @@ export function SkillDetailTabs({
                 remarkPlugins={[remarkGfm]}
                 rehypePlugins={REHYPE_PLUGINS}
                 urlTransform={(url, key) =>
-                  key === "href"
-                    ? resolveSkillReadmeHref(url, skill.slug)
-                    : defaultUrlTransform(url)
+                  key === "href" ? resolveReadmeHref(url) : defaultUrlTransform(url)
                 }
               >
                 {readmeContent}
@@ -199,7 +207,7 @@ export function SkillDetailTabs({
             <MarkdownPreview
               highlight={false}
               urlTransform={(url, key) =>
-                key === "href" ? resolveSkillReadmeHref(url, skill.slug) : defaultUrlTransform(url)
+                key === "href" ? resolveReadmeHref(url) : defaultUrlTransform(url)
               }
             >
               {skillCardContent}
@@ -215,13 +223,13 @@ export function SkillDetailTabs({
         </div>
       ) : null}
 
-      {activeTab === "files" ? (
+      {showArchiveTabs && activeTab === "files" ? (
         <Suspense fallback={<div className="tab-body stat">Loading file viewer...</div>}>
           <SkillFilesPanel versionId={latestVersionId} latestFiles={latestFiles} />
         </Suspense>
       ) : null}
 
-      {activeTab === "compare" ? (
+      {showArchiveTabs && activeTab === "compare" ? (
         <div className="tab-body">
           <Suspense fallback={<div className="stat">Loading diff viewer...</div>}>
             <SkillDiffCard skill={skill} versions={diffVersions ?? []} variant="embedded" />
@@ -229,7 +237,7 @@ export function SkillDetailTabs({
         </div>
       ) : null}
 
-      {activeTab === "versions" ? (
+      {showArchiveTabs && activeTab === "versions" ? (
         <SkillVersionsPanel
           versions={versions}
           nixPlugin={nixPlugin}

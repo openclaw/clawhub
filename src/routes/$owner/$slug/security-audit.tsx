@@ -96,7 +96,6 @@ function SkillSecurityAuditRoute() {
     Boolean(me && skill && me._id === skill.ownerUserId) ||
     Boolean(skill?.ownerPublisherId && myManagePublisherIds.has(skill.ownerPublisherId)) ||
     isModerator(me);
-  const settingsHref = `/${encodeURIComponent(ownerSegment)}/${encodeURIComponent(slug)}/settings`;
 
   return (
     <SecurityAuditPage
@@ -114,9 +113,8 @@ function SkillSecurityAuditRoute() {
       vtAnalysis={latestVersion.vtAnalysis ?? null}
       llmAnalysis={latestVersion.llmAnalysis ?? null}
       skillSpectorAnalysis={latestVersion.skillSpectorAnalysis ?? null}
-      clawScanNote={latestVersion.clawScanNote ?? null}
+      staticScan={latestVersion.staticScan ?? null}
       canManageArtifact={canManageArtifact}
-      settingsHref={canManageArtifact ? settingsHref : null}
       onRequestRescan={
         canManageArtifact
           ? () => requestSkillRescan({ skillId: skill._id, version: latestVersion.version })

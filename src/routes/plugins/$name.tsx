@@ -1,6 +1,6 @@
 import { createFileRoute, Link, Outlet, redirect, useRouterState } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
-import { AlertTriangle, Download, Settings, Upload } from "lucide-react";
+import { AlertTriangle, Download, Upload } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { api } from "../../../convex/_generated/api";
 import { DetailHero, DetailPageShell } from "../../components/DetailPageShell";
@@ -19,6 +19,7 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { formatRetryDelay } from "../../lib/formatRetryDelay";
+import { formatCompactStat } from "../../lib/numberFormat";
 import { buildPluginMeta } from "../../lib/og";
 import { getOpenClawPackageCandidateNames } from "../../lib/openClawExtensionSlugs";
 import {
@@ -37,6 +38,7 @@ import {
   buildPluginSecurityAuditHref,
   parseScopedPackageName,
 } from "../../lib/pluginRoutes";
+import { buildReadmeAssetBaseUrl } from "../../lib/readmeAssetBaseUrl";
 import { useAuthStatus } from "../../lib/useAuthStatus";
 
 type PluginDetailRateLimitState = {
@@ -348,15 +350,13 @@ export function PluginDetailPage({
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const { me } = useAuthStatus();
   const isNestedPluginRoute =
-    pathname.includes("/security/") ||
-    pathname.endsWith("/security-audit") ||
-    pathname.endsWith("/settings");
-  const settingsCandidateNames = getOpenClawPackageCandidateNames(name);
-  const settingsLookupName = detail.package?.name ?? settingsCandidateNames[0] ?? name;
-  const settings = useQuery(
-    api.packages.getClawScanNoteSettings,
+    pathname.includes("/security/") || pathname.endsWith("/security-audit");
+  const manageCandidateNames = getOpenClawPackageCandidateNames(name);
+  const manageLookupName = detail.package?.name ?? manageCandidateNames[0] ?? name;
+  const manageContext = useQuery(
+    api.packages.getManageContext,
     me && !isNestedPluginRoute && detail.package
-      ? { name: settingsLookupName, candidateNames: settingsCandidateNames }
+      ? { name: manageLookupName, candidateNames: manageCandidateNames }
       : "skip",
   );
   const [activeTab, setActiveTab] = useState<PluginDetailTab>(() => {
@@ -418,13 +418,17 @@ export function PluginDetailPage({
   const capabilities = latestRelease?.capabilities ?? pkg.capabilities;
   const compatibility = latestRelease?.compatibility ?? pkg.compatibility;
   const verification = latestRelease?.verification ?? pkg.verification;
+  const readmeAssetBaseUrl = buildReadmeAssetBaseUrl(
+    verification?.sourceRepo,
+    verification?.sourceCommit,
+    verification?.sourcePath,
+  );
   const artifact = latestRelease?.artifact ?? pkg.artifact ?? null;
   const downloadPath =
     pkg.latestVersion && latestRelease?.version && artifact?.kind === "npm-pack"
       ? getPackageArtifactDownloadPath(pkg.name, latestRelease.version)
       : getPackageDownloadPath(pkg.name, pkg.latestVersion);
-  const settingsHref = settings ? `${buildPluginDetailHref(pkg.name)}/settings` : null;
-  const newVersionHref = settings
+  const newVersionHref = manageContext
     ? `/plugins/publish?${new URLSearchParams({
         ...(owner?.handle ? { ownerHandle: owner.handle } : {}),
         name: pkg.name,
@@ -447,7 +451,7 @@ export function PluginDetailPage({
     ? Object.entries(compatibility).filter(([, v]) => v !== undefined && v !== null)
     : [];
   const readmePanel = readme ? (
-    <MarkdownPreview>{readme}</MarkdownPreview>
+    <MarkdownPreview assetBaseUrl={readmeAssetBaseUrl}>{readme}</MarkdownPreview>
   ) : (
     <div className="empty-state px-[var(--space-4)] py-[var(--space-6)]">
       <p className="empty-state-title">No README available</p>
@@ -677,6 +681,11 @@ export function PluginDetailPage({
                   ariaLabel="Plugin metadata"
                   density="compact"
                   blocks={[
+                    {
+                      label: "Downloads",
+                      value: formatCompactStat(pkg.stats?.downloads ?? 0),
+                      large: true,
+                    },
                     { label: "Repository", value: sourceRepoLink },
                     { label: "Owner", value: ownerMetadataValue },
                     securitySummary
@@ -701,7 +710,7 @@ export function PluginDetailPage({
                 />
               ) : null}
 
-              {(pkg.latestVersion && !isDownloadBlocked) || newVersionHref || settingsHref ? (
+              {(pkg.latestVersion && !isDownloadBlocked) || newVersionHref ? (
                 <div className="skill-sidebar-actions">
                   {pkg.latestVersion && !isDownloadBlocked ? (
                     <Button asChild variant="outline" className="skill-sidebar-action-button">
@@ -716,14 +725,6 @@ export function PluginDetailPage({
                       <a href={newVersionHref}>
                         <Upload size={14} aria-hidden="true" />
                         New version
-                      </a>
-                    </Button>
-                  ) : null}
-                  {settingsHref ? (
-                    <Button asChild variant="outline" className="skill-sidebar-action-button">
-                      <a href={settingsHref}>
-                        <Settings size={14} aria-hidden="true" />
-                        Settings
                       </a>
                     </Button>
                   ) : null}

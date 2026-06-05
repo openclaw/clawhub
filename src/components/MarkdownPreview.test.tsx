@@ -64,6 +64,71 @@ describe("MarkdownPreview — raw HTML passthrough", () => {
     );
   });
 
+  it("leaves relative <img src> alone when no assetBaseUrl is provided", () => {
+    const { container } = render(
+      <MarkdownPreview highlight={false}>{`![diagram](./images/foo.png)`}</MarkdownPreview>,
+    );
+    const img = container.querySelector("img");
+    // Falls back to the legacy pass-through behavior — relative path stays as-is.
+    expect(img?.getAttribute("src")).toBe("./images/foo.png");
+  });
+
+  it("resolves relative ![](./path) images against assetBaseUrl and proxies them", () => {
+    const { container } = render(
+      <MarkdownPreview
+        highlight={false}
+        assetBaseUrl="https://raw.githubusercontent.com/owner/repo/abc123/sub/"
+      >{`![diagram](./images/foo.png)`}</MarkdownPreview>,
+    );
+    const img = container.querySelector("img");
+    expect(img?.getAttribute("src")).toBe(
+      "/_vercel/image?url=https%3A%2F%2Fraw.githubusercontent.com%2Fowner%2Frepo%2Fabc123%2Fsub%2Fimages%2Ffoo.png&w=1024&q=75",
+    );
+  });
+
+  it("resolves relative <img src> in raw HTML against assetBaseUrl", () => {
+    const { container } = render(
+      <MarkdownPreview
+        highlight={false}
+        assetBaseUrl="https://raw.githubusercontent.com/owner/repo/abc123/"
+      >{`<img src="images/foo.png" alt="d"/>`}</MarkdownPreview>,
+    );
+    const img = container.querySelector("img");
+    expect(img?.getAttribute("src")).toBe(
+      "/_vercel/image?url=https%3A%2F%2Fraw.githubusercontent.com%2Fowner%2Frepo%2Fabc123%2Fimages%2Ffoo.png&w=1024&q=75",
+    );
+  });
+
+  it("resolves relative <source srcset> in raw HTML picture markup against assetBaseUrl", () => {
+    const { container } = render(
+      <MarkdownPreview
+        highlight={false}
+        assetBaseUrl="https://raw.githubusercontent.com/owner/repo/abc123/docs/"
+      >{`<picture><source media="(prefers-color-scheme: dark)" srcset="./dark.png 1x, ./dark@2x.png 2x"/><img alt="Logo" src="./light.png"/></picture>`}</MarkdownPreview>,
+    );
+    const source = container.querySelector("picture source");
+    const img = container.querySelector("picture img");
+    expect(source?.getAttribute("srcset")).toBe(
+      "/_vercel/image?url=https%3A%2F%2Fraw.githubusercontent.com%2Fowner%2Frepo%2Fabc123%2Fdocs%2Fdark.png&w=1024&q=75 1x, /_vercel/image?url=https%3A%2F%2Fraw.githubusercontent.com%2Fowner%2Frepo%2Fabc123%2Fdocs%2Fdark%402x.png&w=1024&q=75 2x",
+    );
+    expect(img?.getAttribute("src")).toBe(
+      "/_vercel/image?url=https%3A%2F%2Fraw.githubusercontent.com%2Fowner%2Frepo%2Fabc123%2Fdocs%2Flight.png&w=1024&q=75",
+    );
+  });
+
+  it("does not rewrite root-absolute paths even when assetBaseUrl is set", () => {
+    const { container } = render(
+      <MarkdownPreview
+        highlight={false}
+        assetBaseUrl="https://raw.githubusercontent.com/owner/repo/abc123/"
+      >{`![x](/foo.png)`}</MarkdownPreview>,
+    );
+    const img = container.querySelector("img");
+    // Root-absolute paths are intentionally left alone — they typically point
+    // at the ClawHub site itself, not at a package asset.
+    expect(img?.getAttribute("src")).toBe("/foo.png");
+  });
+
   it("renders <br/> as a real line break", () => {
     const container = renderMarkdown(`line one<br/>line two`);
     expect(container.querySelector("br")).not.toBeNull();

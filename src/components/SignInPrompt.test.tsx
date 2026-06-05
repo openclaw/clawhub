@@ -21,6 +21,8 @@ vi.mock("../lib/useAuthError", () => ({
 }));
 
 vi.mock("../lib/authErrorMessage", () => ({
+  CLAWHUB_ACCOUNT_ISSUE_LINK_TEXT: "open a GitHub issue",
+  CLAWHUB_ACCOUNT_ISSUE_URL: "https://github.com/openclaw/clawhub/issues/new",
   getUserFacingAuthError: (_error: unknown, fallback: string) => fallback,
 }));
 
@@ -54,6 +56,18 @@ describe("SignInPrompt", () => {
     const dismissBtn = screen.getByRole("button", { name: "Dismiss" });
     fireEvent.click(dismissBtn);
     expect(onDismissError).toHaveBeenCalledTimes(1);
+  });
+
+  it("links account issue guidance in auth errors", () => {
+    render(
+      <SignInPrompt
+        title="Sign in"
+        error="Sign in failed. Please open a GitHub issue if you believe this is a mistake."
+      />,
+    );
+
+    const link = screen.getByRole("link", { name: "open a GitHub issue" });
+    expect(link.getAttribute("href")).toBe("https://github.com/openclaw/clawhub/issues/new");
   });
 
   it("does not render dismiss button when onDismissError is missing", () => {

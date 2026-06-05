@@ -142,8 +142,6 @@ export type PackageVersionDetail = {
       model?: string;
       checkedAt: number;
     } | null;
-    clawScanNote?: string | null;
-    clawScanNoteUpdatedAt?: number | null;
     staticScan?: {
       status: string;
       reasonCodes: string[];

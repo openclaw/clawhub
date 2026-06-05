@@ -14,12 +14,17 @@ import {
 
 const usersV1InternalRefs = internal as unknown as {
   publishers: {
+    addOfficialPublisherInternal: unknown;
+    listOfficialPublishersInternal: unknown;
     removeOrgPublisherMemberInternal: unknown;
+    removeOfficialPublisherInternal: unknown;
   };
   users: {
+    getBanAppealContextByGitHubProviderAccountIdInternal: unknown;
     getByHandleInternal: unknown;
     remediateAutobansInternal: unknown;
     reclassifyBanInternal: unknown;
+    unbanUserForBanAppealServiceInternal: unknown;
   };
 };
 
@@ -39,6 +44,29 @@ async function runUsersV1MutationRef<T>(
   return (await ctx.runMutation(ref as never, args as never)) as T;
 }
 
+function getBanAppealsServiceToken() {
+  return process.env.CLAWHUB_BAN_APPEALS_TOKEN?.trim() || "";
+}
+
+function readBearerToken(request: Request) {
+  return (
+    request.headers
+      .get("authorization")
+      ?.match(/^Bearer\s+(.+)$/i)?.[1]
+      ?.trim() ?? ""
+  );
+}
+
+function requireBanAppealsServiceOrResponse(request: Request, headers: HeadersInit) {
+  const expected = getBanAppealsServiceToken();
+  if (!expected)
+    return { ok: false as const, response: text("Ban appeals service unavailable", 503, headers) };
+  if (readBearerToken(request) !== expected) {
+    return { ok: false as const, response: text("Unauthorized", 401, headers) };
+  }
+  return { ok: true as const };
+}
+
 export async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request) {
   const rate = await applyRateLimit(ctx, request, "write");
   if (!rate.ok) return rate.response;
@@ -55,9 +83,11 @@ export async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request)
     action !== "restore" &&
     action !== "remediate-autobans" &&
     action !== "reclassify-ban" &&
+    action !== "ban-appeal-unban" &&
     action !== "reclaim" &&
     action !== "reserve" &&
     action !== "publisher" &&
+    action !== "publisher-official" &&
     action !== "publisher-member"
   ) {
     return text("Not found", 404, rate.headers);
@@ -66,6 +96,10 @@ export async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request)
   const payloadResult = await parseJsonPayload(request, rate.headers);
   if (!payloadResult.ok) return payloadResult.response;
   const payload = payloadResult.payload;
+
+  if (action === "ban-appeal-unban") {
+    return handleBanAppealUnban(ctx, request, payload, rate.headers);
+  }
 
   const authResult = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
   if (!authResult.ok) return authResult.response;
@@ -107,6 +141,12 @@ export async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request)
     const admin = requireAdminOrResponse(actorUser, rate.headers);
     if (!admin.ok) return admin.response;
     return handleAdminEnsurePublisher(ctx, payload, actorUserId, rate.headers);
+  }
+
+  if (action === "publisher-official") {
+    const admin = requireAdminOrResponse(actorUser, rate.headers);
+    if (!admin.ok) return admin.response;
+    return handleAdminOfficialPublisherPost(ctx, payload, actorUserId, rate.headers);
   }
 
   if (action === "publisher-member") {
@@ -322,6 +362,37 @@ async function handleAdminRemediateAutobans(
   }
 }
 
+export async function usersGetRouterV1Handler(ctx: ActionCtx, request: Request) {
+  const rate = await applyRateLimit(ctx, request, "read");
+  if (!rate.ok) return rate.response;
+
+  const segments = getPathSegments(request, "/api/v1/users/");
+  if (segments.length !== 1 || segments[0] !== "publisher-official") {
+    return text("Not found", 404, rate.headers);
+  }
+
+  const authResult = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+  if (!authResult.ok) return authResult.response;
+  const admin = requireAdminOrResponse(authResult.user, rate.headers);
+  if (!admin.ok) return admin.response;
+
+  try {
+    const result = await runUsersV1QueryRef(
+      ctx,
+      usersV1InternalRefs.publishers.listOfficialPublishersInternal,
+      { actorUserId: authResult.userId },
+    );
+    return json(result, 200, rate.headers);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Official publisher list failed";
+    if (message.toLowerCase().includes("forbidden")) return text("Forbidden", 403, rate.headers);
+    if (message.toLowerCase().includes("unauthorized")) {
+      return text("Unauthorized", 401, rate.headers);
+    }
+    return text(message, 400, rate.headers);
+  }
+}
+
 /**
  * POST /api/v1/users/restore
  * Admin-only: restore skills from GitHub backup for a user.
@@ -502,6 +573,42 @@ async function handleAdminReserve(
   return json({ ok: true, results, succeeded, failed }, 200, headers);
 }
 
+async function handleAdminOfficialPublisherPost(
+  ctx: ActionCtx,
+  payload: Record<string, unknown>,
+  actorUserId: Id<"users">,
+  headers: HeadersInit,
+) {
+  const action = typeof payload.action === "string" ? payload.action.trim().toLowerCase() : "";
+  const handle = typeof payload.handle === "string" ? payload.handle.trim().toLowerCase() : "";
+  const reason = typeof payload.reason === "string" ? payload.reason.trim() : "";
+  if (action !== "add" && action !== "remove") return text("Invalid action", 400, headers);
+  if (!handle) return text("Missing handle", 400, headers);
+  if (!reason) return text("Missing reason", 400, headers);
+  if (reason.length > 500) return text("Reason too long (max 500 chars)", 400, headers);
+
+  try {
+    const result = await runUsersV1MutationRef(
+      ctx,
+      action === "add"
+        ? usersV1InternalRefs.publishers.addOfficialPublisherInternal
+        : usersV1InternalRefs.publishers.removeOfficialPublisherInternal,
+      {
+        actorUserId,
+        handle,
+        reason,
+      },
+    );
+    return json(result, 200, headers);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Official publisher update failed";
+    if (message.toLowerCase().includes("forbidden")) return text("Forbidden", 403, headers);
+    if (message.toLowerCase().includes("unauthorized")) return text("Unauthorized", 401, headers);
+    if (message.toLowerCase().includes("not found")) return text(message, 404, headers);
+    return text(message, 400, headers);
+  }
+}
+
 async function handleAdminEnsurePublisher(
   ctx: ActionCtx,
   payload: Record<string, unknown>,
@@ -545,6 +652,69 @@ async function handleAdminEnsurePublisher(
       return text(message, 404, headers);
     }
     return text(message, 400, headers);
+  }
+}
+
+async function handleBanAppealUnban(
+  ctx: ActionCtx,
+  request: Request,
+  payload: Record<string, unknown>,
+  headers: HeadersInit,
+) {
+  const service = requireBanAppealsServiceOrResponse(request, headers);
+  if (!service.ok) return service.response;
+
+  const targetUserIdRaw = typeof payload.userId === "string" ? payload.userId.trim() : "";
+  if (!targetUserIdRaw) return text("Missing userId", 400, headers);
+
+  const reasonRaw = typeof payload.reason === "string" ? payload.reason.trim() : "";
+  const reviewerDiscordId =
+    typeof payload.reviewerDiscordId === "string" ? payload.reviewerDiscordId.trim() : "";
+  const reason = reasonRaw || "Ban appeal accepted";
+  if (reason.length > 500) return text("Reason too long (max 500 chars)", 400, headers);
+  if (!reviewerDiscordId) return text("Missing reviewerDiscordId", 400, headers);
+
+  try {
+    const result = await runUsersV1MutationRef(
+      ctx,
+      usersV1InternalRefs.users.unbanUserForBanAppealServiceInternal,
+      {
+        targetUserId: targetUserIdRaw as Id<"users">,
+        reason,
+        reviewerDiscordId,
+      },
+    );
+    return json(result, 200, headers);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Ban appeal unban failed";
+    if (message.toLowerCase().includes("forbidden")) return text("Forbidden", 403, headers);
+    if (message.toLowerCase().includes("not found")) return text(message, 404, headers);
+    return text(message, 400, headers);
+  }
+}
+
+export async function banAppealContextV1Handler(ctx: ActionCtx, request: Request) {
+  const rate = await applyRateLimit(ctx, request, "read");
+  if (!rate.ok) return rate.response;
+
+  const service = requireBanAppealsServiceOrResponse(request, rate.headers);
+  if (!service.ok) return service.response;
+
+  const providerAccountId = new URL(request.url).searchParams
+    .get("githubProviderAccountId")
+    ?.trim();
+  if (!providerAccountId) return text("Missing githubProviderAccountId", 400, rate.headers);
+
+  try {
+    const result = await runUsersV1QueryRef(
+      ctx,
+      usersV1InternalRefs.users.getBanAppealContextByGitHubProviderAccountIdInternal,
+      { providerAccountId },
+    );
+    return json(result, 200, rate.headers);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Ban appeal context failed";
+    return text(message, 400, rate.headers);
   }
 }
 

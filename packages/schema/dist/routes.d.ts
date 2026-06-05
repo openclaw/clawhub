@@ -6,6 +6,7 @@ export declare const LegacyApiRoutes: {
     readonly cliWhoami: "/api/cli/whoami";
     readonly cliUploadUrl: "/api/cli/upload-url";
     readonly cliPublish: "/api/cli/publish";
+    readonly cliTelemetryInstall: "/api/cli/telemetry/install";
     readonly cliTelemetrySync: "/api/cli/telemetry/sync";
     readonly cliSkillDelete: "/api/cli/skill/delete";
     readonly cliSkillUndelete: "/api/cli/skill/undelete";
@@ -16,6 +17,7 @@ export declare const ApiRoutes: {
     readonly download: "/api/v1/download";
     readonly publishTokenMint: "/api/v1/publish/token/mint";
     readonly skills: "/api/v1/skills";
+    readonly skillScans: "/api/v1/skills/-/scan";
     readonly plugins: "/api/v1/plugins";
     readonly packages: "/api/v1/packages";
     readonly codePlugins: "/api/v1/code-plugins";

@@ -83,6 +83,29 @@ describe("bun http client", () => {
     expect(postArgs).toContain('{"a":1}');
   });
 
+  it("parses explicitly accepted non-2xx json responses via curl", async () => {
+    const { client, spawnImpl } = createBunClient({
+      spawnImpl: () => ({
+        status: 0,
+        stdout:
+          '{"ok":false,"message":"GitHub-backed skill changed upstream; waiting for scan."}\n409',
+        stderr: "",
+      }),
+    });
+
+    await expect(
+      client.apiRequest("https://registry.example", {
+        method: "GET",
+        path: "/v1/skills/demo/install",
+        acceptedStatuses: [409],
+      }),
+    ).resolves.toEqual({
+      ok: false,
+      message: "GitHub-backed skill changed upstream; waiting for scan.",
+    });
+    expect(spawnImpl).toHaveBeenCalledTimes(1);
+  });
+
   it("retries 429 responses and keeps 404 non-retryable", async () => {
     const rateLimited = createBunClient({
       spawnImpl: () => ({ status: 0, stdout: "rate limited\n429", stderr: "" }),

@@ -26,12 +26,20 @@ import {
   cmdBanUser,
   cmdReclassifyBan,
   cmdRemediateAutobans,
+  cmdRepairVtPendingSkills,
   cmdRescanAllSkills,
   cmdRescanSkill,
   cmdSetRole,
   cmdUnbanUser,
 } from "./commands/moderation.js";
-import { cmdCreateOrg, cmdRemoveOrgMember, cmdRepairScopedPackages } from "./commands/orgs.js";
+import {
+  cmdAddOfficialOrg,
+  cmdCreateOrg,
+  cmdListOfficialOrgs,
+  cmdRemoveOfficialOrg,
+  cmdRemoveOrgMember,
+  cmdRepairScopedPackages,
+} from "./commands/orgs.js";
 import {
   cmdBackfillPackageArtifacts,
   cmdDeletePackageTrustedPublisher,
@@ -346,6 +354,45 @@ registerOrgCommands(org);
 registerSkillModerationCommands(skills);
 
 function registerOrgCommands(command: Command) {
+  const official = command
+    .command("official")
+    .description("Manage official org publishers")
+    .showHelpAfterError()
+    .showSuggestionAfterError();
+
+  official
+    .command("list")
+    .description("List official org publishers")
+    .option("--json", "Output JSON")
+    .action(async (options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdListOfficialOrgs(opts, options);
+    });
+
+  official
+    .command("add")
+    .description("Mark an org publisher as official")
+    .argument("<handle>", "Org publisher handle")
+    .requiredOption("--reason <reason>", "Audit reason")
+    .option("--yes", "Skip confirmation")
+    .option("--json", "Output JSON")
+    .action(async (handle, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdAddOfficialOrg(opts, handle, options, isInputAllowed());
+    });
+
+  official
+    .command("remove")
+    .description("Remove an org publisher from the official list")
+    .argument("<handle>", "Org publisher handle")
+    .requiredOption("--reason <reason>", "Audit reason")
+    .option("--yes", "Skip confirmation")
+    .option("--json", "Output JSON")
+    .action(async (handle, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdRemoveOfficialOrg(opts, handle, options, isInputAllowed());
+    });
+
   command
     .command("create")
     .description("Create or update an org publisher")
@@ -640,6 +687,27 @@ function registerSkillModerationCommands(command: Command) {
     .action(async (options) => {
       const opts = await resolveGlobalOpts();
       await cmdRescanAllSkills(opts, options, isInputAllowed());
+    });
+
+  command
+    .command("repair-vt-pending")
+    .description("Repair stale pending VirusTotal skill cache by rechecking hashes")
+    .option("--batch-size <n>", "Batch size; backend caps at 500", (value) =>
+      Number.parseInt(value, 10),
+    )
+    .option(
+      "--concurrency <n>",
+      "Per-batch VirusTotal lookup concurrency; backend caps at 32",
+      (value) => Number.parseInt(value, 10),
+    )
+    .option("--cursor <cursor>", "Resume from a backend pagination cursor")
+    .option("--dry-run", "Check pending rows without writing VT cache updates")
+    .option("--all", "Continue paging until the backend reports done")
+    .option("--yes", "Skip confirmation for write runs")
+    .option("--json", "Output JSON progress events")
+    .action(async (options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdRepairVtPendingSkills(opts, options, isInputAllowed());
     });
 
   command

@@ -1,5 +1,5 @@
 import {
-  PackagePublishRequestSchema,
+  ServerPackagePublishRequestSchema,
   getPackageScopeOwnerMismatch,
   isPluginCategorySlug,
   parseArk,
@@ -11,7 +11,7 @@ import {
   type PackageModerationQueueStatus,
   type PackageOfficialMigrationListPhase,
   type PackageOfficialMigrationPhase,
-  type PackagePublishRequest,
+  type ServerPackagePublishRequest,
   type PackageVerificationTier,
 } from "clawhub-schema";
 import { paginationOptsValidator } from "convex/server";
@@ -33,7 +33,6 @@ import {
   assertModerator,
   getOptionalActiveAuthUserId,
   requireUser,
-  requireUserFromAction,
 } from "./lib/access";
 import {
   assertArtifactAppealFinalAction,
@@ -43,7 +42,6 @@ import {
   readArtifactReportStatus,
   appendPackageModerationEventLog,
 } from "./lib/artifactModeration";
-import { normalizeClawScanNoteForWrite } from "./lib/clawScanNote";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
 import { isOfficialPublisher } from "./lib/officialPublishers";
@@ -766,13 +764,29 @@ function resolvePublicPackageScanStatus(
   return pkg.scanStatus;
 }
 
+function normalizePublicPackageSourcePath(sourcePath: unknown) {
+  if (typeof sourcePath !== "string") return undefined;
+  const trimmed = sourcePath.trim();
+  if (!trimmed || trimmed === ".") return undefined;
+  return trimmed.replace(/^\/+/, "").replace(/\/+$/, "") || undefined;
+}
+
+function getReleaseSourcePath(release?: Pick<Doc<"packageReleases">, "source"> | null) {
+  const source = release?.source;
+  if (!source || typeof source !== "object" || Array.isArray(source)) return undefined;
+  return normalizePublicPackageSourcePath((source as { path?: unknown }).path);
+}
+
 function resolvePublicPackageVerification(
   pkg: Pick<Doc<"packages">, "verification" | "latestVersionSummary" | "scanStatus">,
   latestRelease?: Doc<"packageReleases"> | null,
 ) {
   const scanStatus = resolvePublicPackageScanStatus(pkg, latestRelease);
   const source = pkg.verification ?? pkg.latestVersionSummary?.verification;
-  return source && scanStatus ? { ...source, scanStatus } : source;
+  if (!source) return source;
+  const sourcePath = source.sourcePath ?? getReleaseSourcePath(latestRelease);
+  const verification = sourcePath ? { ...source, sourcePath } : source;
+  return scanStatus ? { ...verification, scanStatus } : verification;
 }
 
 function toPublicPackage(
@@ -812,6 +826,28 @@ function toPublicPackage(
     stats: pkg.stats,
     createdAt: pkg.createdAt,
     updatedAt: pkg.updatedAt,
+  };
+}
+
+function omitLegacyClawScanNoteFields(release: Doc<"packageReleases">) {
+  const {
+    clawScanNote: _legacyClawScanNote,
+    clawScanNoteUpdatedAt: _legacyClawScanNoteUpdatedAt,
+    ...publicRelease
+  } = release;
+  return publicRelease;
+}
+
+function toPublicPackageRelease(release: Doc<"packageReleases">) {
+  const publicRelease = omitLegacyClawScanNoteFields(release);
+  const sourcePath = release.verification?.sourcePath ?? getReleaseSourcePath(release);
+  if (!release.verification || !sourcePath) return publicRelease;
+  return {
+    ...publicRelease,
+    verification: {
+      ...release.verification,
+      sourcePath,
+    },
   };
 }
 
@@ -1898,13 +1934,16 @@ export const getByName = query({
     );
     return {
       package: publicPackage,
-      latestRelease: latestRelease && !latestRelease.softDeletedAt ? latestRelease : null,
+      latestRelease:
+        latestRelease && !latestRelease.softDeletedAt
+          ? toPublicPackageRelease(latestRelease)
+          : null,
       owner,
     };
   },
 });
 
-export const getClawScanNoteSettings = query({
+export const getManageContext = query({
   args: {
     name: v.string(),
     candidateNames: v.optional(v.array(v.string())),
@@ -1938,7 +1977,7 @@ export const getClawScanNoteSettings = query({
 
     return {
       package: pkg,
-      latestRelease,
+      latestRelease: toPublicPackageRelease(latestRelease),
     };
   },
 });
@@ -1966,7 +2005,10 @@ export const getByNameForStaff = query({
 
     return {
       package: pkg,
-      latestRelease: latestRelease && !latestRelease.softDeletedAt ? latestRelease : null,
+      latestRelease:
+        latestRelease && !latestRelease.softDeletedAt
+          ? toPublicPackageRelease(latestRelease)
+          : null,
       owner,
       highlighted: highlighted
         ? {
@@ -1997,7 +2039,10 @@ export const getByNameForViewerInternal = internalQuery({
     );
     return {
       package: publicPackage,
-      latestRelease: latestRelease && !latestRelease.softDeletedAt ? latestRelease : null,
+      latestRelease:
+        latestRelease && !latestRelease.softDeletedAt
+          ? toPublicPackageRelease(latestRelease)
+          : null,
       owner,
     };
   },
@@ -2012,13 +2057,17 @@ export const listVersions = query({
     const viewerUserId = await getOptionalViewerUserId(ctx);
     const pkg = await getReadablePackageByName(ctx, args.name, viewerUserId);
     if (!pkg) return { page: [], isDone: true, continueCursor: "" };
-    return await ctx.db
+    const result = await ctx.db
       .query("packageReleases")
       .withIndex("by_package_active_created", (q) =>
         q.eq("packageId", pkg._id).eq("softDeletedAt", undefined),
       )
       .order("desc")
       .paginate(args.paginationOpts);
+    return {
+      ...result,
+      page: result.page.map(omitLegacyClawScanNoteFields),
+    };
   },
 });
 
@@ -2031,13 +2080,17 @@ export const listVersionsForViewerInternal = internalQuery({
   handler: async (ctx, args) => {
     const pkg = await getReadablePackageByName(ctx, args.name, args.viewerUserId);
     if (!pkg) return { page: [], isDone: true, continueCursor: "" };
-    return await ctx.db
+    const result = await ctx.db
       .query("packageReleases")
       .withIndex("by_package_active_created", (q) =>
         q.eq("packageId", pkg._id).eq("softDeletedAt", undefined),
       )
       .order("desc")
       .paginate(args.paginationOpts);
+    return {
+      ...result,
+      page: result.page.map(omitLegacyClawScanNoteFields),
+    };
   },
 });
 
@@ -2067,7 +2120,7 @@ export const getVersionByName = query({
     if (!publicPackage) return null;
     return {
       package: publicPackage,
-      version: release,
+      version: toPublicPackageRelease(release),
     };
   },
 });
@@ -2098,7 +2151,7 @@ export const getVersionByNameForViewerInternal = internalQuery({
     if (!publicPackage) return null;
     return {
       package: publicPackage,
-      version: release,
+      version: toPublicPackageRelease(release),
     };
   },
 });
@@ -2135,7 +2188,7 @@ export const getVersionSecurityByNameForViewerInternal = internalQuery({
         ...publicPackage,
         publicDownloadBlocked,
       },
-      version: release,
+      version: toPublicPackageRelease(release),
     };
   },
 });
@@ -2931,11 +2984,11 @@ async function restorePackageDoc(
   ctx: Pick<MutationCtx, "db">,
   pkg: Doc<"packages">,
   params: {
-    actorUserId: Id<"users">;
+    actorUserId?: Id<"users">;
     actorRole?: Doc<"users">["role"];
     allowBanRestore?: boolean;
     releaseSoftDeletedAt?: number;
-    source: "cli" | "dashboard";
+    source: "cli" | "dashboard" | "service";
   },
 ) {
   if (!pkg.softDeletedAt) {
@@ -3041,7 +3094,7 @@ async function restorePackageDoc(
     ownerKind: restoreOwner?.kind,
   });
   await ctx.db.insert("auditLogs", {
-    actorUserId: params.actorUserId,
+    ...(params.actorUserId ? { actorUserId: params.actorUserId } : {}),
     action: "package.undelete",
     targetType: "package",
     targetId: pkg._id,
@@ -3288,15 +3341,15 @@ export const applyBanToOwnedPackagesBatchInternal = internalMutation({
 
 export const restoreOwnedPackagesForUnbanBatchInternal = internalMutation({
   args: {
-    actorUserId: v.id("users"),
+    actorUserId: v.optional(v.id("users")),
     ownerUserId: v.id("users"),
     bannedAt: v.number(),
     cursor: v.optional(v.string()),
     scope: ownedPackageScanScopeValidator,
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) {
+    const actor = args.actorUserId ? await ctx.db.get(args.actorUserId) : null;
+    if (args.actorUserId && (!actor || actor.deletedAt || actor.deactivatedAt)) {
       throw new ConvexError("Unauthorized");
     }
     const owner = await ctx.db.get(args.ownerUserId);
@@ -3332,11 +3385,11 @@ export const restoreOwnedPackagesForUnbanBatchInternal = internalMutation({
       }
 
       await restorePackageDoc(ctx, pkg, {
-        actorUserId: actor._id,
-        actorRole: actor.role,
+        actorUserId: actor?._id,
+        actorRole: actor?.role,
         allowBanRestore: true,
         releaseSoftDeletedAt: args.bannedAt,
-        source: "dashboard",
+        source: actor ? "dashboard" : "service",
       });
       restoredCount += 1;
     }
@@ -5059,9 +5112,9 @@ function buildGitHubActionsPublishActor(
 }
 
 function resolveTrustedPublishSource(
-  payload: PackagePublishRequest,
+  payload: ServerPackagePublishRequest,
   publishToken: Doc<"packagePublishTokens">,
-): PackagePublishRequest["source"] {
+): ServerPackagePublishRequest["source"] {
   const source = payload.source;
   if (source && source.kind !== "github") {
     throw new ConvexError("Trusted publishes only support GitHub source metadata");
@@ -5113,18 +5166,17 @@ async function publishPackageImpl(
   auth: PackagePublishAuthContext,
   rawPayload: unknown,
 ) {
-  const payload = parseArk(
-    PackagePublishRequestSchema,
+  const payload = parseArk<ServerPackagePublishRequest>(
+    ServerPackagePublishRequestSchema,
     rawPayload,
     "Package publish payload",
-  ) as PackagePublishRequest;
+  );
   if (payload.family === "skill") {
     throw new ConvexError("Skill packages must use the skills publish flow");
   }
   const family = payload.family;
   const name = normalizePackageName(payload.name);
   const version = assertPackageVersion(family, payload.version);
-  const clawScanNote = normalizeClawScanNoteForWrite(payload.clawScanNote);
   const existingPackage = await runQueryRef<Doc<"packages"> | null>(
     ctx,
     internalRefs.packages.getPackageByNameInternal,
@@ -5237,10 +5289,12 @@ async function publishPackageImpl(
   }
 
   const displayName = payload.displayName?.trim() || name;
-  const files = normalizePublishFiles(payload.files as never);
-  const oversizedFile = findOversizedPublishFile(files);
-  if (oversizedFile) {
-    throw new ConvexError(getPublishFileSizeError(oversizedFile.path));
+  const files = normalizePublishFiles(payload.files);
+  if (payload.artifact?.kind !== "npm-pack") {
+    const oversizedFile = findOversizedPublishFile(files);
+    if (oversizedFile) {
+      throw new ConvexError(getPublishFileSizeError(oversizedFile.path));
+    }
   }
   const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
   if (totalBytes > MAX_PUBLISH_TOTAL_BYTES) {
@@ -5403,7 +5457,6 @@ async function publishPackageImpl(
     family,
     version,
     changelog: payload.changelog.trim(),
-    clawScanNote,
     tags: payload.tags?.map((tag: string) => tag.trim()).filter(Boolean) ?? ["latest"],
     summary,
     sourceRepo: effectiveSource?.repo || effectiveSource?.url,
@@ -5491,14 +5544,6 @@ async function publishPackageImpl(
   return publishResult;
 }
 
-export const publishPackage = action({
-  args: { payload: v.any() },
-  handler: async (ctx, args) => {
-    const { userId } = await requireUserFromAction(ctx);
-    return await publishPackageImpl(ctx, { kind: "user", actorUserId: userId }, args.payload);
-  },
-});
-
 export const publishPackageForUserInternal = internalAction({
   args: {
     actorUserId: v.id("users"),
@@ -5538,14 +5583,6 @@ export const publishPackageForTrustedPublisherInternal = internalAction({
       );
     }
     return await publishPackageImpl(ctx, { kind: "github-actions", publishToken }, args.payload);
-  },
-});
-
-export const publishRelease = action({
-  args: { payload: v.any() },
-  handler: async (ctx, args) => {
-    const { userId } = await requireUserFromAction(ctx);
-    return await publishPackageImpl(ctx, { kind: "user", actorUserId: userId }, args.payload);
   },
 });
 
@@ -5998,7 +6035,6 @@ export const insertReleaseInternal = internalMutation({
     family: v.union(v.literal("skill"), v.literal("code-plugin"), v.literal("bundle-plugin")),
     version: v.string(),
     changelog: v.string(),
-    clawScanNote: v.optional(v.string()),
     tags: v.array(v.string()),
     summary: v.string(),
     sourceRepo: v.optional(v.string()),
@@ -6211,13 +6247,10 @@ export const insertReleaseInternal = internalMutation({
       ? Array.from(new Set([...args.tags, "latest"]))
       : args.tags;
 
-    const clawScanNote = normalizeClawScanNoteForWrite(args.clawScanNote);
-
     const releaseId = await ctx.db.insert("packageReleases", {
       packageId: pkgId,
       version: args.version,
       changelog: args.changelog,
-      ...(clawScanNote ? { clawScanNote } : {}),
       summary: args.summary,
       distTags: effectiveTags,
       files: args.files,
@@ -6827,62 +6860,6 @@ export const backfillPackageReleaseScans = action({
     return await runActionRef(ctx, internalRefs.packages.backfillPackageReleaseScansInternal, {
       batchSize: args.batchSize,
     });
-  },
-});
-
-export const updateLatestClawScanNoteAndRequestRescan = mutation({
-  args: {
-    packageId: v.id("packages"),
-    clawScanNote: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const { user } = await requireUser(ctx);
-    const pkg = await ctx.db.get(args.packageId);
-    if (!pkg || pkg.softDeletedAt || pkg.family === "skill" || !pkg.latestReleaseId) {
-      throw new ConvexError("Plugin not found");
-    }
-
-    const release = await ctx.db.get(pkg.latestReleaseId);
-    if (!release || release.softDeletedAt) throw new ConvexError("Plugin release not found");
-
-    await assertCanManageOwnedResource(ctx, {
-      actor: user,
-      ownerUserId: pkg.ownerUserId,
-      ownerPublisherId: pkg.ownerPublisherId,
-      allowPlatformModerator: true,
-    });
-
-    const now = Date.now();
-    const previousNote = release.clawScanNote?.trim() || undefined;
-    const nextNote = normalizeClawScanNoteForWrite(args.clawScanNote);
-    await ctx.db.patch(release._id, {
-      clawScanNote: nextNote ?? "",
-      clawScanNoteUpdatedAt: now,
-    });
-    await ctx.db.insert("auditLogs", {
-      actorUserId: user._id,
-      action: "package.clawscan_note.update",
-      targetType: "packageRelease",
-      targetId: release._id,
-      metadata: {
-        packageId: pkg._id,
-        name: pkg.name,
-        version: release.version,
-        hadPreviousNote: Boolean(previousNote),
-        hasNextNote: Boolean(nextNote),
-        previousLength: previousNote?.length ?? 0,
-        nextLength: nextNote?.length ?? 0,
-      },
-      createdAt: now,
-    });
-
-    await runAfterRef(ctx, 0, internalRefs.securityScan.enqueuePackageReleaseScanInternal, {
-      releaseId: release._id,
-      source: "clawscan-note",
-      waitForVtMs: 0,
-    });
-
-    return { ok: true as const, packageReleaseId: release._id };
   },
 });
 

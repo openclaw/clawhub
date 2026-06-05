@@ -12,6 +12,12 @@ import {
   isReservedPublicOwnerHandle,
 } from "./lib/publicRouteReservations";
 import {
+  buildGitHubSkillCatalogDisplay,
+  type GitHubSkillCatalogDisplay,
+  type GitHubSkillCatalogItem,
+  type GitHubSkillCatalogSource,
+} from "./lib/publisherCatalogDisplay";
+import {
   canAccessPublisherOwnerScope,
   ensurePersonalPublisherForUser,
   getActiveUserByHandleOrPersonalPublisher,
@@ -47,10 +53,14 @@ type PublisherPublishedItem = {
   displayName: string;
   downloads: number;
 };
+type PublisherPublishedPreviewItem = PublisherPublishedItem & {
+  installs: number;
+};
 
 type PublisherCatalogItem = {
   _id: Id<"skills"> | Id<"packages">;
   kind: "skill" | "plugin";
+  slug?: string;
   displayName: string;
   summary: string | null;
   // Mirrors `skills.icon` for `kind: "skill"` items so the publisher
@@ -63,6 +73,11 @@ type PublisherCatalogItem = {
   stars: number;
   isOfficial: boolean;
   updatedAt: number;
+  sourceBacked?: boolean;
+  sourceId?: Id<"githubSkillSources"> | null;
+  sourceRepo?: string | null;
+  sourcePath?: string | null;
+  sourceVerifiedCommit?: string | null;
 };
 
 type PublisherCatalogSort = "downloads" | "recent";
@@ -81,6 +96,10 @@ type PublisherListSummary = {
   publisher: Doc<"publishers">;
   item: PublisherListItem;
 };
+
+function isPublicPublishedSkill(skill: Doc<"skills">) {
+  return !skill.softDeletedAt && (!skill.moderationStatus || skill.moderationStatus === "active");
+}
 
 type PublicPublisherKindFilter = "user" | "org";
 type PublisherListCounts = {
@@ -172,7 +191,7 @@ async function getPublisherPublishedRows(
       )
       .collect(),
   ]);
-  return { skills, packages };
+  return { skills: skills.filter(isPublicPublishedSkill), packages };
 }
 
 async function getPublisherPublishedPreviewRows(
@@ -182,20 +201,20 @@ async function getPublisherPublishedPreviewRows(
   const [skills, packages] = await Promise.all([
     ctx.db
       .query("skills")
-      .withIndex("by_owner_publisher_active_downloads", (q) =>
+      .withIndex("by_owner_publisher_active_installs", (q) =>
         q.eq("ownerPublisherId", publisherId).eq("softDeletedAt", undefined),
       )
       .order("desc")
       .take(PUBLISHER_LIST_PREVIEW_LIMIT),
     ctx.db
       .query("packages")
-      .withIndex("by_owner_publisher_active_downloads", (q) =>
+      .withIndex("by_owner_publisher_active_installs", (q) =>
         q.eq("ownerPublisherId", publisherId).eq("softDeletedAt", undefined),
       )
       .order("desc")
       .take(PUBLISHER_LIST_PREVIEW_LIMIT),
   ]);
-  return { skills, packages };
+  return { skills: skills.filter(isPublicPublishedSkill), packages };
 }
 
 function getIndexedPublisherStatsFromRows(rows: PublisherPublishedRows): PublisherListStats {
@@ -219,20 +238,33 @@ function getIndexedPublisherStatsFromRows(rows: PublisherPublishedRows): Publish
 }
 
 function getPublisherPublishedItems(rows: PublisherPublishedRows): PublisherPublishedItem[] {
-  return [
+  const items: PublisherPublishedPreviewItem[] = [
     ...rows.skills.map((skill) => ({
       kind: "skill" as const,
       displayName: skill.displayName,
       downloads: readCanonicalStat(skill, "downloads"),
+      installs: readCanonicalStat(skill, "installsAllTime"),
     })),
     ...rows.packages.map((pkg) => ({
       kind: pkg.family === "skill" ? ("skill" as const) : ("plugin" as const),
       displayName: pkg.displayName,
       downloads: pkg.stats.downloads,
+      installs: pkg.stats.installs,
     })),
-  ]
-    .sort((a, b) => b.downloads - a.downloads || a.displayName.localeCompare(b.displayName))
-    .slice(0, 3);
+  ];
+  return items
+    .sort(
+      (a, b) =>
+        b.installs - a.installs ||
+        b.downloads - a.downloads ||
+        a.displayName.localeCompare(b.displayName),
+    )
+    .slice(0, 3)
+    .map((item) => ({
+      kind: item.kind,
+      displayName: item.displayName,
+      downloads: item.downloads,
+    }));
 }
 
 function buildPluginDetailHref(name: string) {
@@ -278,6 +310,7 @@ function getPublisherCatalogItems(
     ...rows.skills.map((skill) => ({
       _id: skill._id,
       kind: "skill" as const,
+      slug: skill.slug,
       displayName: skill.displayName,
       summary: skill.summary ?? null,
       icon: skill.icon ?? null,
@@ -286,6 +319,10 @@ function getPublisherCatalogItems(
       stars: readCanonicalStat(skill, "stars"),
       isOfficial: publisherOfficial || Boolean(skill.badges?.official),
       updatedAt: skill.updatedAt,
+      sourceBacked: skill.installKind === "github",
+      sourceId: skill.githubSourceId ?? null,
+      sourceRepo: null,
+      sourcePath: skill.githubPath ?? null,
     })),
     ...rows.packages.map((pkg) => ({
       _id: pkg._id,
@@ -300,6 +337,40 @@ function getPublisherCatalogItems(
       updatedAt: pkg.updatedAt,
     })),
   ].sort(comparePublisherCatalogItems(sort));
+}
+
+function toGitHubSkillCatalogSource(source: Doc<"githubSkillSources">): GitHubSkillCatalogSource {
+  return {
+    _id: source._id,
+    repo: source.repo,
+    displayManifestStatus: source.displayManifestStatus,
+    displayManifest: source.displayManifest,
+  };
+}
+
+function toGitHubSkillCatalogItem(
+  item: PublisherCatalogItem,
+  sourceById: Map<string, Doc<"githubSkillSources">>,
+): GitHubSkillCatalogItem {
+  const sourceId = item.sourceId ? String(item.sourceId) : null;
+  return {
+    _id: String(item._id),
+    kind: item.kind,
+    slug: item.slug ?? null,
+    displayName: item.displayName,
+    summary: item.summary,
+    icon: item.icon,
+    href: item.href,
+    downloads: item.downloads,
+    stars: item.stars,
+    isOfficial: item.isOfficial,
+    updatedAt: item.updatedAt,
+    sourceBacked: item.sourceBacked ?? false,
+    sourceId,
+    sourceRepo: sourceId ? (sourceById.get(sourceId)?.repo ?? null) : null,
+    sourcePath: item.sourcePath ?? null,
+    sourceVerifiedCommit: item.sourceVerifiedCommit ?? null,
+  };
 }
 
 async function toPublisherListItem(
@@ -1250,6 +1321,44 @@ export const listPublishedPage = query({
   },
 });
 
+export const getPublishedDisplayManifest = query({
+  args: {
+    handle: v.string(),
+    kind: v.optional(v.union(v.literal("skill"), v.literal("plugin"))),
+    sort: v.optional(v.union(v.literal("downloads"), v.literal("recent"))),
+  },
+  handler: async (ctx, args): Promise<GitHubSkillCatalogDisplay | null> => {
+    if (args.kind === "plugin") return null;
+
+    const publisher = await getPublisherByHandle(ctx, args.handle);
+    if (!publisher || publisher.deletedAt || publisher.deactivatedAt) return null;
+
+    const sources = await ctx.db
+      .query("githubSkillSources")
+      .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", publisher._id))
+      .collect();
+    if (sources.length === 0) return null;
+
+    const rows = await getPublisherPublishedRows(ctx, publisher._id);
+    if (!args.kind && rows.packages.length > 0) return null;
+
+    const sourceById = new Map(sources.map((source) => [String(source._id), source]));
+    const items = getPublisherCatalogItems(
+      publisher,
+      rows,
+      await isOfficialPublisher(ctx, publisher),
+      args.sort ?? "downloads",
+    )
+      .filter((item) => !args.kind || item.kind === args.kind)
+      .map((item) => toGitHubSkillCatalogItem(item, sourceById));
+
+    return buildGitHubSkillCatalogDisplay({
+      sources: sources.map(toGitHubSkillCatalogSource),
+      items,
+    });
+  },
+});
+
 export const listPublic = query({
   args: {
     limit: v.optional(v.number()),
@@ -1609,6 +1718,174 @@ export const removeOrgPublisherMemberInternal = internalMutation({
       handle,
       removed: true,
       member,
+    };
+  },
+});
+
+export const listOfficialPublishersInternal = internalQuery({
+  args: {
+    actorUserId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    assertAdmin(actor);
+
+    const rows = await ctx.db
+      .query("officialPublishers")
+      .withIndex("by_created", (q) => q)
+      .order("asc")
+      .collect();
+    const items = await Promise.all(
+      rows.map(async (row) => {
+        const [publisher, createdBy] = await Promise.all([
+          ctx.db.get(row.publisherId),
+          row.createdByUserId ? ctx.db.get(row.createdByUserId) : Promise.resolve(null),
+        ]);
+        return {
+          officialPublisherId: row._id,
+          publisherId: row.publisherId,
+          handle: publisher?.handle ?? null,
+          displayName: publisher?.displayName ?? null,
+          kind: publisher?.kind ?? null,
+          active: Boolean(publisher && !publisher.deletedAt && !publisher.deactivatedAt),
+          reason: row.reason ?? null,
+          createdByUserId: row.createdByUserId ?? null,
+          createdByHandle: createdBy?.handle ?? null,
+          createdAt: row.createdAt,
+          updatedAt: row.updatedAt,
+        };
+      }),
+    );
+    return { ok: true as const, items };
+  },
+});
+
+export const addOfficialPublisherInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    handle: v.string(),
+    reason: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    assertAdmin(actor);
+
+    const handle = normalizePublisherHandle(args.handle);
+    if (!handle) throw new ConvexError("Publisher handle is required");
+    const reason = args.reason.trim();
+    if (!reason) throw new ConvexError("Reason is required");
+    if (reason.length > 500) throw new ConvexError("Reason too long (max 500 chars)");
+
+    const publisher = await getPublisherByHandle(ctx, handle);
+    if (!publisher || publisher.deletedAt || publisher.deactivatedAt) {
+      throw new ConvexError(`Publisher "@${handle}" not found`);
+    }
+    if (publisher.kind !== "org") {
+      throw new ConvexError("Only org publishers can be marked official");
+    }
+
+    const existing = await ctx.db
+      .query("officialPublishers")
+      .withIndex("by_publisher", (q) => q.eq("publisherId", publisher._id))
+      .unique();
+    if (existing) {
+      return {
+        ok: true as const,
+        added: false,
+        publisherId: publisher._id,
+        handle: publisher.handle,
+        officialPublisherId: existing._id,
+      };
+    }
+
+    const now = Date.now();
+    const officialPublisherId = await ctx.db.insert("officialPublishers", {
+      publisherId: publisher._id,
+      reason,
+      createdByUserId: args.actorUserId,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await ctx.db.insert("auditLogs", {
+      actorUserId: args.actorUserId,
+      action: "publisher.official.add",
+      targetType: "publisher",
+      targetId: publisher._id,
+      metadata: {
+        handle: publisher.handle,
+        reason,
+      },
+      createdAt: now,
+    });
+
+    return {
+      ok: true as const,
+      added: true,
+      publisherId: publisher._id,
+      handle: publisher.handle,
+      officialPublisherId,
+    };
+  },
+});
+
+export const removeOfficialPublisherInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    handle: v.string(),
+    reason: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    assertAdmin(actor);
+
+    const handle = normalizePublisherHandle(args.handle);
+    if (!handle) throw new ConvexError("Publisher handle is required");
+    const reason = args.reason.trim();
+    if (!reason) throw new ConvexError("Reason is required");
+    if (reason.length > 500) throw new ConvexError("Reason too long (max 500 chars)");
+
+    const publisher = await getPublisherByHandle(ctx, handle);
+    if (!publisher || publisher.deletedAt || publisher.deactivatedAt) {
+      throw new ConvexError(`Publisher "@${handle}" not found`);
+    }
+
+    const existing = await ctx.db
+      .query("officialPublishers")
+      .withIndex("by_publisher", (q) => q.eq("publisherId", publisher._id))
+      .unique();
+    if (!existing) {
+      return {
+        ok: true as const,
+        removed: false,
+        publisherId: publisher._id,
+        handle: publisher.handle,
+      };
+    }
+
+    const now = Date.now();
+    await ctx.db.delete(existing._id);
+    await ctx.db.insert("auditLogs", {
+      actorUserId: args.actorUserId,
+      action: "publisher.official.remove",
+      targetType: "publisher",
+      targetId: publisher._id,
+      metadata: {
+        handle: publisher.handle,
+        reason,
+        officialPublisherId: existing._id,
+      },
+      createdAt: now,
+    });
+
+    return {
+      ok: true as const,
+      removed: true,
+      publisherId: publisher._id,
+      handle: publisher.handle,
+      officialPublisherId: existing._id,
     };
   },
 });

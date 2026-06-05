@@ -7,6 +7,7 @@ import {
   listPublic,
   listMine,
   listPublishedPage,
+  getPublishedDisplayManifest,
   migrateLegacyPublisherHandleToOrgInternal,
   ensureOrgPublisherHandleInternal,
   removeOrgPublisherMemberInternal,
@@ -105,7 +106,12 @@ const listPublicHandler = (
   listPublic as unknown as WrappedHandler<
     { limit?: number; kind?: "user" | "org" },
     {
-      items: Array<{ handle: string; kind: "user" | "org"; stats: { downloads: number } }>;
+      items: Array<{
+        handle: string;
+        kind: "user" | "org";
+        stats: { downloads: number };
+        publishedItems?: Array<{ displayName: string }>;
+      }>;
       total: number;
       counts: { all: number; individuals: number; organizations: number };
       limit: number;
@@ -146,6 +152,25 @@ const listPublishedPageHandler = (
       continueCursor: string;
       isDone: boolean;
     }
+  >
+)._handler;
+
+const getPublishedDisplayManifestHandler = (
+  getPublishedDisplayManifest as unknown as WrappedHandler<
+    {
+      handle: string;
+      kind?: "skill" | "plugin";
+      sort?: "downloads" | "recent";
+    },
+    {
+      mode: "grouped";
+      sourceRepos: string[];
+      sections: Array<{
+        title: string;
+        sourceRepo: string | null;
+        items: Array<{ displayName: string }>;
+      }>;
+    } | null
   >
 )._handler;
 
@@ -248,7 +273,31 @@ const resolvePublishTargetForUserInternalHandler = (
 function indexedRows<T>(rows: T[]) {
   return {
     collect: vi.fn(async () => rows),
-    order: vi.fn(() => ({ take: vi.fn(async (limit: number) => rows.slice(0, limit)) })),
+    order: vi.fn(() => ({
+      take: vi.fn(async (limit: number) => rows.slice(0, limit)),
+      paginate: vi.fn(async ({ cursor, numItems }: { cursor: string | null; numItems: number }) => {
+        const offset = cursor ? Number(cursor) : 0;
+        const page = rows.slice(offset, offset + numItems);
+        const nextOffset = offset + page.length;
+        const isDone = nextOffset >= rows.length;
+        return {
+          page,
+          isDone,
+          continueCursor: isDone ? "" : String(nextOffset),
+        };
+      }),
+    })),
+  };
+}
+
+function emptyOfficialPublishersQuery() {
+  return {
+    withIndex: vi.fn((indexName: string) => {
+      if (indexName !== "by_publisher") {
+        throw new Error(`unexpected officialPublishers index ${indexName}`);
+      }
+      return { unique: vi.fn(async () => null) };
+    }),
   };
 }
 
@@ -731,6 +780,9 @@ describe("publishers membership controls", () => {
                 packageRows.filter((pkg) => pkg.ownerPublisherId === fields.ownerPublisherId),
               );
             }
+            if (table === "officialPublishers" && indexName === "by_publisher") {
+              return { unique: vi.fn(async () => null) };
+            }
             throw new Error(`unexpected ${table} index ${indexName}`);
           }),
         })),
@@ -804,9 +856,12 @@ describe("publishers membership controls", () => {
             }
             if (
               (table === "skills" || table === "packages") &&
-              indexName === "by_owner_publisher_active_downloads"
+              indexName === "by_owner_publisher_active_installs"
             ) {
               return indexedRows([]);
+            }
+            if (table === "officialPublishers" && indexName === "by_publisher") {
+              return { unique: vi.fn(async () => null) };
             }
             throw new Error(`unexpected ${table} index ${indexName}`);
           }),
@@ -819,6 +874,113 @@ describe("publishers membership controls", () => {
     expect(result.total).toBe(1);
     expect(result.counts).toEqual({ all: 2, individuals: 1, organizations: 1 });
     expect(result.items.map((item) => item.handle)).toEqual(["openclaw"]);
+  });
+
+  it("omits hidden publisher preview skills without scanning extra pages", async () => {
+    const publisherRows = [
+      {
+        _id: "publishers:nvidia",
+        _creationTime: 1,
+        kind: "org",
+        handle: "nvidia",
+        displayName: "NVIDIA",
+        publishedSkills: 1,
+        publishedPackages: 0,
+        totalInstalls: 0,
+        totalDownloads: 70,
+        totalStars: 0,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+    const skillRows = [
+      ...Array.from({ length: 3 }, (_, index) => 100 - index).map((installs, index) => ({
+        _id: `skills:hidden-${index}`,
+        ownerPublisherId: "publishers:nvidia",
+        ownerUserId: "users:nvidia",
+        slug: `hidden-${index}`,
+        displayName: `Hidden ${index}`,
+        summary: "Pending verification.",
+        icon: null,
+        softDeletedAt: undefined,
+        moderationStatus: "hidden",
+        statsDownloads: 1000 - index,
+        statsStars: 0,
+        statsInstallsAllTime: installs,
+        stats: {
+          downloads: 1000 - index,
+          stars: 0,
+          installsCurrent: installs,
+          installsAllTime: installs,
+        },
+        updatedAt: installs,
+      })),
+      {
+        _id: "skills:visible",
+        ownerPublisherId: "publishers:nvidia",
+        ownerUserId: "users:nvidia",
+        slug: "visible",
+        displayName: "Visible Skill",
+        summary: "Shown.",
+        icon: null,
+        softDeletedAt: undefined,
+        moderationStatus: "active",
+        statsDownloads: 70,
+        statsStars: 0,
+        statsInstallsAllTime: 1,
+        stats: { downloads: 70, stars: 0, installsCurrent: 1, installsAllTime: 1 },
+        updatedAt: 70,
+      },
+    ];
+    const ctx = {
+      db: {
+        get: vi.fn(async () => null),
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
+            const fields: Record<string, unknown> = {};
+            const q = {
+              eq: (field: string, value: unknown) => {
+                fields[field] = value;
+                return q;
+              },
+            };
+            buildQuery(q);
+            if (table === "publishers" && indexName === "by_handle") {
+              return { unique: vi.fn(async () => null) };
+            }
+            if (table === "publishers" && indexName === "by_active_total_downloads") {
+              return {
+                order: vi.fn(() => ({ collect: vi.fn(async () => publisherRows) })),
+              };
+            }
+            if (table === "officialPublishers" && indexName === "by_publisher") {
+              return { unique: vi.fn(async () => null) };
+            }
+            if (table === "skills" && indexName === "by_owner_publisher_active_installs") {
+              return {
+                order: vi.fn(() => ({
+                  take: vi.fn(async (limit: number) =>
+                    skillRows
+                      .filter((skill) => skill.ownerPublisherId === fields.ownerPublisherId)
+                      .slice(0, limit),
+                  ),
+                })),
+              };
+            }
+            if (table === "packages" && indexName === "by_owner_publisher_active_installs") {
+              return {
+                order: vi.fn(() => ({ take: vi.fn(async () => []) })),
+              };
+            }
+            throw new Error(`unexpected ${table} index ${indexName}`);
+          }),
+        })),
+      },
+    };
+
+    const result = await listPublicHandler(ctx as never, { limit: 48 });
+
+    expect(result.items[0]?.publishedItems).toEqual([]);
   });
 
   it("pages public publishers by kind and query", async () => {
@@ -913,9 +1075,12 @@ describe("publishers membership controls", () => {
             }
             if (
               (table === "skills" || table === "packages") &&
-              indexName === "by_owner_publisher_active_downloads"
+              indexName === "by_owner_publisher_active_installs"
             ) {
               return indexedRows([]);
+            }
+            if (table === "officialPublishers" && indexName === "by_publisher") {
+              return { unique: vi.fn(async () => null) };
             }
             throw new Error(`unexpected ${table} index ${indexName}`);
           }),
@@ -934,7 +1099,7 @@ describe("publishers membership controls", () => {
     expect(result.page.map((item) => item.handle)).toEqual(["alice"]);
   });
 
-  it("orders public publisher card previews by downloads", async () => {
+  it("orders public publisher card previews by installs while rendering downloads", async () => {
     const publisherRows = [
       {
         _id: "publishers:openclaw",
@@ -959,8 +1124,8 @@ describe("publishers membership controls", () => {
         displayName: "Popular Skill",
         statsDownloads: 98,
         statsStars: 1,
-        statsInstallsAllTime: 1,
-        stats: { downloads: 98, stars: 1, installsCurrent: 1, installsAllTime: 1 },
+        statsInstallsAllTime: 35,
+        stats: { downloads: 98, stars: 1, installsCurrent: 35, installsAllTime: 35 },
         updatedAt: 1,
       },
     ];
@@ -971,7 +1136,7 @@ describe("publishers membership controls", () => {
         softDeletedAt: undefined,
         family: "code-plugin",
         displayName: "Popular Plugin",
-        stats: { downloads: 128, stars: 1, installs: 1, versions: 1 },
+        stats: { downloads: 128, stars: 1, installs: 5, versions: 1 },
         updatedAt: 1,
       },
       {
@@ -980,7 +1145,7 @@ describe("publishers membership controls", () => {
         softDeletedAt: undefined,
         family: "code-plugin",
         displayName: "Recent Plugin",
-        stats: { downloads: 12, stars: 1, installs: 1, versions: 1 },
+        stats: { downloads: 12, stars: 1, installs: 50, versions: 1 },
         updatedAt: 5,
       },
       {
@@ -989,7 +1154,7 @@ describe("publishers membership controls", () => {
         softDeletedAt: undefined,
         family: "code-plugin",
         displayName: "Recent Helper",
-        stats: { downloads: 11, stars: 1, installs: 1, versions: 1 },
+        stats: { downloads: 11, stars: 1, installs: 20, versions: 1 },
         updatedAt: 4,
       },
       {
@@ -998,19 +1163,24 @@ describe("publishers membership controls", () => {
         softDeletedAt: undefined,
         family: "code-plugin",
         displayName: "Recent Tool",
-        stats: { downloads: 10, stars: 1, installs: 1, versions: 1 },
+        stats: { downloads: 10, stars: 1, installs: 40, versions: 1 },
         updatedAt: 3,
       },
     ];
-    const rowsByDownloads = <
-      T extends { updatedAt: number; stats?: { downloads: number }; statsDownloads?: number },
+    const rowsByInstalls = <
+      T extends {
+        updatedAt: number;
+        stats?: { installs?: number; installsAllTime?: number };
+        statsInstallsAllTime?: number;
+      },
     >(
       rows: T[],
     ) =>
       [...rows].sort(
         (a, b) =>
-          (b.statsDownloads ?? b.stats?.downloads ?? 0) -
-            (a.statsDownloads ?? a.stats?.downloads ?? 0) || b.updatedAt - a.updatedAt,
+          (b.statsInstallsAllTime ?? b.stats?.installs ?? b.stats?.installsAllTime ?? 0) -
+            (a.statsInstallsAllTime ?? a.stats?.installs ?? a.stats?.installsAllTime ?? 0) ||
+          b.updatedAt - a.updatedAt,
       );
     const ctx = {
       db: {
@@ -1035,16 +1205,19 @@ describe("publishers membership controls", () => {
                 })),
               };
             }
-            if (table === "skills" && indexName === "by_owner_publisher_active_downloads") {
+            if (table === "officialPublishers" && indexName === "by_publisher") {
+              return { unique: vi.fn(async () => null) };
+            }
+            if (table === "skills" && indexName === "by_owner_publisher_active_installs") {
               return indexedRows(
-                rowsByDownloads(
+                rowsByInstalls(
                   skillRows.filter((skill) => skill.ownerPublisherId === fields.ownerPublisherId),
                 ),
               );
             }
-            if (table === "packages" && indexName === "by_owner_publisher_active_downloads") {
+            if (table === "packages" && indexName === "by_owner_publisher_active_installs") {
               return indexedRows(
-                rowsByDownloads(
+                rowsByInstalls(
                   packageRows.filter((pkg) => pkg.ownerPublisherId === fields.ownerPublisherId),
                 ),
               );
@@ -1060,11 +1233,12 @@ describe("publishers membership controls", () => {
     });
 
     expect(result.page[0]?.publishedItems.map((item) => item.displayName)).toEqual([
-      "Popular Plugin",
-      "Popular Skill",
       "Recent Plugin",
+      "Recent Tool",
+      "Popular Skill",
     ]);
-    expect(result.page[0]?.publishedItems.map((item) => item.downloads)).toEqual([128, 98, 12]);
+    expect(result.page[0]?.publishedItems.map((item) => item.downloads)).toEqual([12, 10, 98]);
+    expect(result.page[0]?.publishedItems[0]).not.toHaveProperty("installs");
   });
 
   it("does not hydrate every publisher before filtering public publisher pages", async () => {
@@ -1110,10 +1284,13 @@ describe("publishers membership controls", () => {
             }
             if (
               (table === "skills" || table === "packages") &&
-              indexName === "by_owner_publisher_active_downloads"
+              indexName === "by_owner_publisher_active_installs"
             ) {
               ownerPublisherQueries.push(String(fields.ownerPublisherId));
               return indexedRows([]);
+            }
+            if (table === "officialPublishers" && indexName === "by_publisher") {
+              return { unique: vi.fn(async () => null) };
             }
             throw new Error(`unexpected ${table} index ${indexName}`);
           }),
@@ -1228,6 +1405,9 @@ describe("publishers membership controls", () => {
                 },
               ]);
             }
+            if (table === "officialPublishers" && indexName === "by_publisher") {
+              return { unique: vi.fn(async () => null) };
+            }
             throw new Error(`unexpected ${table} index ${indexName}`);
           }),
         })),
@@ -1242,6 +1422,97 @@ describe("publishers membership controls", () => {
     expect(result.page).toMatchObject([
       { displayName: "Example Plugin", href: "/plugins/@openclaw/example-plugin" },
     ]);
+  });
+
+  it("excludes hidden and removed skills from publisher catalogs", async () => {
+    const publisher = {
+      _id: "publishers:nvidia",
+      _creationTime: 1,
+      kind: "org",
+      handle: "nvidia",
+      displayName: "NVIDIA",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const skillRows = [
+      {
+        _id: "skills:visible",
+        ownerPublisherId: "publishers:nvidia",
+        ownerUserId: "users:nvidia",
+        slug: "visible",
+        displayName: "Visible Skill",
+        summary: "Shown.",
+        icon: null,
+        moderationStatus: "active",
+        stats: { downloads: 3, stars: 1, installsCurrent: 0, installsAllTime: 0 },
+        updatedAt: 5,
+      },
+      {
+        _id: "skills:hidden",
+        ownerPublisherId: "publishers:nvidia",
+        ownerUserId: "users:nvidia",
+        slug: "hidden",
+        displayName: "Hidden Skill",
+        summary: "Pending verification.",
+        icon: null,
+        moderationStatus: "hidden",
+        moderationReason: "pending.scan",
+        stats: { downloads: 10, stars: 1, installsCurrent: 0, installsAllTime: 0 },
+        updatedAt: 6,
+      },
+      {
+        _id: "skills:removed",
+        ownerPublisherId: "publishers:nvidia",
+        ownerUserId: "users:nvidia",
+        slug: "removed",
+        displayName: "Removed Skill",
+        summary: "Removed upstream.",
+        icon: null,
+        moderationStatus: "removed",
+        moderationReason: "github.upstream.removed",
+        stats: { downloads: 9, stars: 1, installsCurrent: 0, installsAllTime: 0 },
+        updatedAt: 7,
+      },
+    ];
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => (id === "publishers:nvidia" ? publisher : null)),
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
+            const fields: Record<string, unknown> = {};
+            const q = {
+              eq: (field: string, value: unknown) => {
+                fields[field] = value;
+                return q;
+              },
+            };
+            buildQuery(q);
+            if (table === "publishers" && indexName === "by_handle") {
+              return {
+                unique: vi.fn(async () => (fields.handle === "nvidia" ? publisher : null)),
+              };
+            }
+            if (table === "skills" && indexName === "by_owner_publisher_active_updated") {
+              return indexedRows(skillRows);
+            }
+            if (table === "packages" && indexName === "by_owner_publisher_active_updated") {
+              return indexedRows([]);
+            }
+            if (table === "officialPublishers" && indexName === "by_publisher") {
+              return { unique: vi.fn(async () => null) };
+            }
+            throw new Error(`unexpected ${table} index ${indexName}`);
+          }),
+        })),
+      },
+    };
+
+    const result = await listPublishedPageHandler(ctx as never, {
+      handle: "nvidia",
+      paginationOpts: { cursor: null, numItems: 12 },
+    });
+
+    expect(result.page.map((item) => item.displayName)).toEqual(["Visible Skill"]);
   });
 
   it("includes skill.icon on catalog items and surfaces null for plugins (F7)", async () => {
@@ -1329,6 +1600,9 @@ describe("publishers membership controls", () => {
                 },
               ]);
             }
+            if (table === "officialPublishers" && indexName === "by_publisher") {
+              return { unique: vi.fn(async () => null) };
+            }
             throw new Error(`unexpected ${table} index ${indexName}`);
           }),
         })),
@@ -1354,6 +1628,219 @@ describe("publishers membership controls", () => {
     expect(byName["Plain Skill"]).toMatchObject({ kind: "skill", icon: null });
     // Plugins always carry null in Phase 1.
     expect(byName["Example Plugin"]).toMatchObject({ kind: "plugin", icon: null });
+  });
+
+  it("returns GitHub-backed display manifest groups for publisher catalogs", async () => {
+    const publisher = {
+      _id: "publishers:nvidia",
+      _creationTime: 1,
+      kind: "org",
+      handle: "nvidia",
+      displayName: "NVIDIA",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const githubSource = {
+      _id: "githubSkillSources:nvidia",
+      repo: "NVIDIA/skills",
+      ownerPublisherId: "publishers:nvidia",
+      displayManifestStatus: "ok",
+      displayManifest: {
+        notGrouped: "bottom",
+        groupings: [
+          {
+            title: "Agentic AI",
+            description: "Agentic AI skills.",
+            skills: ["aiq-deploy", "missing-entry"],
+          },
+          {
+            title: "Vision AI",
+            skills: ["vision-helper"],
+          },
+        ],
+      },
+    };
+    const skillRows = [
+      {
+        _id: "skills:aiq-deploy",
+        ownerPublisherId: "publishers:nvidia",
+        softDeletedAt: undefined,
+        slug: "aiq-deploy",
+        displayName: "AIQ Deploy",
+        summary: "Deploy AgentIQ workflows.",
+        icon: null,
+        installKind: "github",
+        githubSourceId: "githubSkillSources:nvidia",
+        githubPath: "skills/aiq-deploy",
+        stats: { downloads: 10, stars: 2, installsCurrent: 1, installsAllTime: 3 },
+        updatedAt: 8,
+      },
+      {
+        _id: "skills:vision-helper",
+        ownerPublisherId: "publishers:nvidia",
+        softDeletedAt: undefined,
+        slug: "vision-helper",
+        displayName: "Vision Helper",
+        summary: "Vision tools.",
+        icon: null,
+        installKind: "github",
+        githubSourceId: "githubSkillSources:nvidia",
+        githubPath: "skills/vision-helper",
+        stats: { downloads: 7, stars: 1, installsCurrent: 1, installsAllTime: 2 },
+        updatedAt: 6,
+      },
+      {
+        _id: "skills:other",
+        ownerPublisherId: "publishers:nvidia",
+        softDeletedAt: undefined,
+        slug: "other",
+        displayName: "Other Skill",
+        summary: "Not listed in the manifest.",
+        icon: null,
+        installKind: "github",
+        githubSourceId: "githubSkillSources:nvidia",
+        githubPath: "skills/other",
+        stats: { downloads: 1, stars: 0, installsCurrent: 0, installsAllTime: 0 },
+        updatedAt: 2,
+      },
+    ];
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => (id === "publishers:nvidia" ? publisher : null)),
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
+            const fields: Record<string, unknown> = {};
+            const q = {
+              eq: (field: string, value: unknown) => {
+                fields[field] = value;
+                return q;
+              },
+            };
+            buildQuery(q);
+            if (table === "publishers" && indexName === "by_handle") {
+              return {
+                unique: vi.fn(async () => (fields.handle === "nvidia" ? publisher : null)),
+              };
+            }
+            if (table === "skills" && indexName === "by_owner_publisher_active_updated") {
+              return indexedRows(skillRows);
+            }
+            if (table === "packages" && indexName === "by_owner_publisher_active_updated") {
+              return indexedRows([]);
+            }
+            if (table === "githubSkillSources" && indexName === "by_owner_publisher") {
+              return indexedRows([githubSource]);
+            }
+            if (table === "officialPublishers" && indexName === "by_publisher") {
+              return { unique: vi.fn(async () => null) };
+            }
+            throw new Error(`unexpected ${table} index ${indexName}`);
+          }),
+        })),
+      },
+    };
+
+    const result = await getPublishedDisplayManifestHandler(ctx as never, {
+      handle: "nvidia",
+      kind: "skill",
+    });
+
+    expect(result).toMatchObject({
+      mode: "grouped",
+      sourceRepos: ["NVIDIA/skills"],
+      sections: [
+        {
+          title: "Agentic AI",
+          sourceRepo: "NVIDIA/skills",
+          items: [{ displayName: "AIQ Deploy", sourceBacked: true }],
+        },
+        {
+          title: "Vision AI",
+          sourceRepo: "NVIDIA/skills",
+          items: [{ displayName: "Vision Helper", sourceBacked: true }],
+        },
+        {
+          title: "Other skills",
+          sourceRepo: null,
+          items: [{ displayName: "Other Skill", sourceBacked: true }],
+        },
+      ],
+    });
+  });
+
+  it("falls back to the normal catalog when no valid display manifest exists", async () => {
+    const publisher = {
+      _id: "publishers:nvidia",
+      _creationTime: 1,
+      kind: "org",
+      handle: "nvidia",
+      displayName: "NVIDIA",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => (id === "publishers:nvidia" ? publisher : null)),
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
+            const fields: Record<string, unknown> = {};
+            const q = {
+              eq: (field: string, value: unknown) => {
+                fields[field] = value;
+                return q;
+              },
+            };
+            buildQuery(q);
+            if (table === "publishers" && indexName === "by_handle") {
+              return {
+                unique: vi.fn(async () => (fields.handle === "nvidia" ? publisher : null)),
+              };
+            }
+            if (table === "skills" && indexName === "by_owner_publisher_active_updated") {
+              return indexedRows([
+                {
+                  _id: "skills:aiq-deploy",
+                  ownerPublisherId: "publishers:nvidia",
+                  softDeletedAt: undefined,
+                  slug: "aiq-deploy",
+                  displayName: "AIQ Deploy",
+                  summary: "Deploy AgentIQ workflows.",
+                  icon: null,
+                  installKind: "github",
+                  githubSourceId: "githubSkillSources:nvidia",
+                  stats: { downloads: 10, stars: 2, installsCurrent: 1, installsAllTime: 3 },
+                  updatedAt: 8,
+                },
+              ]);
+            }
+            if (table === "packages" && indexName === "by_owner_publisher_active_updated") {
+              return indexedRows([]);
+            }
+            if (table === "githubSkillSources" && indexName === "by_owner_publisher") {
+              return indexedRows([
+                {
+                  _id: "githubSkillSources:nvidia",
+                  repo: "NVIDIA/skills",
+                  ownerPublisherId: "publishers:nvidia",
+                  displayManifestStatus: "invalid",
+                },
+              ]);
+            }
+            if (table === "officialPublishers" && indexName === "by_publisher") {
+              return { unique: vi.fn(async () => null) };
+            }
+            throw new Error(`unexpected ${table} index ${indexName}`);
+          }),
+        })),
+      },
+    };
+
+    await expect(
+      getPublishedDisplayManifestHandler(ctx as never, {
+        handle: "nvidia",
+        kind: "skill",
+      }),
+    ).resolves.toBeNull();
   });
 
   it("prevents admins from promoting members to owner", async () => {
@@ -2010,6 +2497,9 @@ describe("publishers membership controls", () => {
               })),
             };
           }
+          if (table === "officialPublishers") {
+            return emptyOfficialPublishersQuery();
+          }
           throw new Error(`unexpected table ${table}`);
         }),
         patch,
@@ -2360,6 +2850,9 @@ describe("publisher bootstrap", () => {
               }),
             };
           }
+          if (table === "officialPublishers") {
+            return emptyOfficialPublishersQuery();
+          }
           throw new Error(`unexpected table ${table}`);
         }),
       },
@@ -2403,6 +2896,9 @@ describe("publisher bootstrap", () => {
                 return { unique: vi.fn().mockResolvedValue(null) };
               }),
             };
+          }
+          if (table === "officialPublishers") {
+            return emptyOfficialPublishersQuery();
           }
           throw new Error(`unexpected table ${table}`);
         }),
@@ -2458,6 +2954,9 @@ describe("publisher bootstrap", () => {
                 return { unique: vi.fn().mockResolvedValue(null) };
               }),
             };
+          }
+          if (table === "officialPublishers") {
+            return emptyOfficialPublishersQuery();
           }
           throw new Error(`unexpected table ${table}`);
         }),
@@ -2594,6 +3093,9 @@ describe("publisher bootstrap", () => {
               }),
             };
           }
+          if (table === "officialPublishers") {
+            return emptyOfficialPublishersQuery();
+          }
           throw new Error(`unexpected table ${table}`);
         }),
       },
@@ -2661,6 +3163,9 @@ describe("self-serve org publisher creation", () => {
             };
           }),
         };
+      }
+      if (table === "officialPublishers") {
+        return emptyOfficialPublishersQuery();
       }
       throw new Error(`unexpected table ${table}`);
     });
@@ -2892,6 +3397,9 @@ describe("self-serve org publisher creation", () => {
             };
           }),
         };
+      }
+      if (table === "officialPublishers") {
+        return emptyOfficialPublishersQuery();
       }
       throw new Error(`unexpected table ${table}`);
     });

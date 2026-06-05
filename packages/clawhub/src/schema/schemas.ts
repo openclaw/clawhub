@@ -54,6 +54,7 @@ export const ApiSkillMetaResponseSchema = type({
 
 export const ApiCliUploadUrlResponseSchema = type({
   uploadUrl: "string",
+  uploadTicket: "string",
 });
 
 export const ApiUploadFileResponseSchema = type({
@@ -86,7 +87,6 @@ export const CliPublishRequestSchema = type({
   migrateOwner: "boolean?",
   version: "string",
   changelog: "string",
-  clawScanNote: "string?",
   acceptLicenseTerms: "boolean?",
   tags: "string[]?",
   source: PublishSourceSchema.optional(),
@@ -119,6 +119,38 @@ export const ApiSkillResolveResponseSchema = type({
   match: type({ version: "string" }).or("null"),
   latestVersion: type({ version: "string" }).or("null"),
 });
+
+export const ApiV1SkillInstallResolveResponseSchema = type({
+  ok: "true",
+  slug: "string",
+  installKind: '"archive"',
+  archive: {
+    version: "string",
+    downloadUrl: "string",
+  },
+})
+  .or({
+    ok: "true",
+    slug: "string",
+    installKind: '"github"',
+    github: {
+      repo: "string",
+      path: "string",
+      commit: "string",
+      contentHash: "string",
+      sourceUrl: "string",
+    },
+  })
+  .or({
+    ok: "false",
+    slug: "string",
+    reason:
+      '"archive_version_missing"|"github_source_missing"|"github_upstream_removed"|"github_upstream_missing"|"github_upstream_unknown"|"github_verification_pending"|"github_scan_failed"',
+    message: "string",
+    status: "number",
+  });
+export type ApiV1SkillInstallResolveResponse =
+  (typeof ApiV1SkillInstallResolveResponseSchema)[inferred];
 
 export const CliTelemetrySyncRequestSchema = type({
   roots: type({
@@ -193,6 +225,36 @@ export const ApiV1PublisherRemoveMemberResponseSchema = type({
 });
 export type ApiV1PublisherRemoveMemberResponse =
   (typeof ApiV1PublisherRemoveMemberResponseSchema)[inferred];
+
+export const ApiV1OfficialPublisherListResponseSchema = type({
+  ok: "true",
+  items: type({
+    officialPublisherId: "string",
+    publisherId: "string",
+    handle: "string|null",
+    displayName: "string|null",
+    kind: '"user"|"org"|null',
+    active: "boolean",
+    reason: "string|null",
+    createdByUserId: "string|null",
+    createdByHandle: "string|null",
+    createdAt: "number",
+    updatedAt: "number",
+  }).array(),
+});
+export type ApiV1OfficialPublisherListResponse =
+  (typeof ApiV1OfficialPublisherListResponseSchema)[inferred];
+
+export const ApiV1OfficialPublisherUpdateResponseSchema = type({
+  ok: "true",
+  publisherId: "string",
+  handle: "string",
+  "added?": "boolean",
+  "removed?": "boolean",
+  "officialPublisherId?": "string",
+});
+export type ApiV1OfficialPublisherUpdateResponse =
+  (typeof ApiV1OfficialPublisherUpdateResponseSchema)[inferred];
 
 export const ApiV1SearchResponseSchema = type({
   results: type({
@@ -427,6 +489,78 @@ export const ApiV1SkillRescanResponseSchema = type({
 });
 export type ApiV1SkillRescanResponse = (typeof ApiV1SkillRescanResponseSchema)[inferred];
 
+export const ApiV1SkillScanStatusSchema = type('"queued"|"running"|"succeeded"|"failed"');
+export type ApiV1SkillScanStatus = (typeof ApiV1SkillScanStatusSchema)[inferred];
+
+export const ApiV1SkillScanSourceSchema = type({
+  kind: '"upload"',
+}).or({
+  kind: '"published"',
+  slug: "string",
+  version: "string?",
+});
+export type ApiV1SkillScanSource = (typeof ApiV1SkillScanSourceSchema)[inferred];
+
+export const ApiV1SkillScanSubmitRequestSchema = type({
+  source: ApiV1SkillScanSourceSchema,
+  update: "boolean?",
+});
+export type ApiV1SkillScanSubmitRequest = (typeof ApiV1SkillScanSubmitRequestSchema)[inferred];
+
+export const ApiV1SkillScanQueueSchema = type({
+  queuedAhead: "number",
+  queuedAheadIsEstimate: "boolean?",
+  position: "number|null",
+  running: "number",
+  runningIsEstimate: "boolean?",
+  note: "string",
+});
+export type ApiV1SkillScanQueue = (typeof ApiV1SkillScanQueueSchema)[inferred];
+
+export const ApiV1SkillScanSubmitResponseSchema = type({
+  ok: "true",
+  scanId: "string",
+  jobId: "string?",
+  status: ApiV1SkillScanStatusSchema,
+  sourceKind: '"upload"|"published"',
+  update: "boolean",
+  alreadyQueued: "boolean?",
+  queue: ApiV1SkillScanQueueSchema.optional(),
+});
+export type ApiV1SkillScanSubmitResponse = (typeof ApiV1SkillScanSubmitResponseSchema)[inferred];
+
+export const ApiV1SkillScanStatusResponseSchema = type({
+  ok: "true",
+  scanId: "string",
+  jobId: "string?",
+  status: ApiV1SkillScanStatusSchema,
+  sourceKind: '"upload"|"published"',
+  update: "boolean",
+  writtenBack: "boolean?",
+  artifact: "unknown?",
+  report: "unknown?",
+  queue: ApiV1SkillScanQueueSchema.optional(),
+  lastError: "string?",
+  createdAt: "number",
+  updatedAt: "number",
+  completedAt: "number?",
+});
+export type ApiV1SkillScanStatusResponse = (typeof ApiV1SkillScanStatusResponseSchema)[inferred];
+
+export const ApiV1SkillScanDownloadManifestSchema = type({
+  scanId: "string",
+  sourceKind: '"upload"|"published"',
+  update: "boolean",
+  status: ApiV1SkillScanStatusSchema,
+  artifact: "unknown?",
+  createdAt: "number",
+  updatedAt: "number",
+  completedAt: "number?",
+  writtenBack: "boolean?",
+});
+export type ApiV1SkillScanDownloadManifest =
+  (typeof ApiV1SkillScanDownloadManifestSchema)[inferred];
+
 export const ApiV1SkillBulkRescanBatchRequestSchema = type({
   mode: '"all-active-latest"?',
   cursor: "string|null?",
@@ -470,6 +604,77 @@ export const ApiV1SkillBulkRescanStatusResponseSchema = type({
 });
 export type ApiV1SkillBulkRescanStatusResponse =
   (typeof ApiV1SkillBulkRescanStatusResponseSchema)[inferred];
+
+export const ApiV1SkillScanBatchRequestSchema = type({
+  mode: '"all-active-latest"?',
+  cursor: "string|null?",
+  batchSize: "number?",
+  dryRun: "boolean?",
+});
+export type ApiV1SkillScanBatchRequest = (typeof ApiV1SkillScanBatchRequestSchema)[inferred];
+
+export const ApiV1SkillScanBatchResponseSchema = type({
+  ok: "true",
+  mode: '"all-active-latest"',
+  queued: "number",
+  alreadyQueued: "number",
+  skipped: "number",
+  jobIds: "string[]",
+  nextCursor: "string|null",
+  done: "boolean",
+  sampleSlugs: "string[]",
+});
+export type ApiV1SkillScanBatchResponse = (typeof ApiV1SkillScanBatchResponseSchema)[inferred];
+
+export const ApiV1SkillScanBatchStatusRequestSchema = type({
+  jobIds: "string[]",
+});
+export type ApiV1SkillScanBatchStatusRequest =
+  (typeof ApiV1SkillScanBatchStatusRequestSchema)[inferred];
+
+export const ApiV1SkillScanBatchStatusResponseSchema = type({
+  ok: "true",
+  total: "number",
+  queued: "number",
+  running: "number",
+  succeeded: "number",
+  failed: "number",
+  missing: "number",
+  terminal: "number",
+  done: "boolean",
+  failedJobIds: "string[]",
+});
+export type ApiV1SkillScanBatchStatusResponse =
+  (typeof ApiV1SkillScanBatchStatusResponseSchema)[inferred];
+
+export const ApiV1SkillRepairVtPendingRequestSchema = type({
+  cursor: "string|null?",
+  batchSize: "number?",
+  concurrency: "number?",
+  dryRun: "boolean?",
+});
+export type ApiV1SkillRepairVtPendingRequest =
+  (typeof ApiV1SkillRepairVtPendingRequestSchema)[inferred];
+
+export const ApiV1SkillRepairVtPendingResponseSchema = type({
+  ok: "true",
+  dryRun: "boolean",
+  total: "number",
+  wouldUpdate: "number",
+  updated: "number",
+  noResults: "number",
+  noDecisiveStats: "number",
+  errors: "number",
+  done: "boolean",
+  cursor: "string|null",
+  statusCounts: { "[string]": "number" },
+  sampleUpdated: type({
+    slug: "string",
+    status: "string",
+  }).array(),
+});
+export type ApiV1SkillRepairVtPendingResponse =
+  (typeof ApiV1SkillRepairVtPendingResponseSchema)[inferred];
 
 export const ApiV1SkillVersionListResponseSchema = type({
   items: type({

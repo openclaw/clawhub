@@ -51,6 +51,7 @@ Specialized corpus, scanner, security-worker, UI proof, proof publishing, Crabbo
 - Tests live in `src/**` and `convex/lib/**`.
 - Coverage threshold: 80% global (lines/functions/branches/statements).
 - Example: `convex/lib/skills.test.ts`.
+- For local UI state testing, prefer creating realistic backend state through seed logic plus a DevPersonaFab entry for the associated test user. Avoid one-off manual DB edits when the state is likely to be reused, such as org membership, official publisher access, moderation holds, or publishing permissions.
 
 ## Commit & Pull Request Guidelines
 

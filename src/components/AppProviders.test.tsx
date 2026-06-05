@@ -1,5 +1,5 @@
 /* @vitest-environment jsdom */
-import { render, waitFor } from "@testing-library/react";
+import { act, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ACCESS_DENIED_SIGN_IN_MESSAGE,
@@ -7,10 +7,20 @@ import {
   BANNED_SIGN_IN_MESSAGE,
   DELETED_SIGN_IN_MESSAGE,
 } from "../lib/authErrorMessage";
-import { getAuthErrorSnapshot, clearAuthError } from "../lib/useAuthError";
-import { AuthCodeHandler, AuthErrorHandler } from "./AppProviders";
+import { getAuthErrorSnapshot, clearAuthError, setAuthError } from "../lib/useAuthError";
+import { AuthCodeHandler, AuthErrorHandler, AuthErrorToast } from "./AppProviders";
 
 const signInMock = vi.fn();
+const { toastErrorMock } = vi.hoisted(() => ({
+  toastErrorMock: vi.fn(),
+}));
+let consoleLogMock: ReturnType<typeof vi.spyOn>;
+
+vi.mock("sonner", () => ({
+  toast: {
+    error: toastErrorMock,
+  },
+}));
 
 vi.mock("@convex-dev/auth/react", () => ({
   ConvexAuthProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -30,17 +40,23 @@ vi.mock("./UserBootstrap", () => ({
 describe("AuthCodeHandler", () => {
   beforeEach(() => {
     signInMock.mockReset();
+    consoleLogMock = vi.spyOn(console, "log").mockImplementation(() => {});
     clearAuthError();
     window.history.replaceState(null, "", "/sign-in");
   });
 
   afterEach(() => {
     clearAuthError();
+    consoleLogMock.mockRestore();
   });
 
-  it("consumes the auth code and strips it from the URL", async () => {
+  it("strips the auth code from the URL after a session is created", async () => {
     signInMock.mockResolvedValue({ signingIn: true });
-    window.history.replaceState(null, "", "/sign-in?code=abc123&next=%2Fdashboard#section");
+    window.history.replaceState(
+      null,
+      "",
+      "/sign-in?code=abc123&auth_retry=1&next=%2Fdashboard#section",
+    );
 
     render(<AuthCodeHandler />);
 
@@ -52,6 +68,24 @@ describe("AuthCodeHandler", () => {
       "/sign-in?next=%2Fdashboard#section",
     );
     expect(getAuthErrorSnapshot()).toBeNull();
+  });
+
+  it("strips the auth code before waiting for code verification", async () => {
+    signInMock.mockReturnValue(new Promise(() => {}));
+    window.history.replaceState(
+      null,
+      "",
+      "/docs/auth?code=abc123&return_to=https%3A%2F%2Fdocs.openclaw.ai%2Fask#molty",
+    );
+
+    render(<AuthCodeHandler />);
+
+    await waitFor(() => {
+      expect(signInMock).toHaveBeenCalledWith(undefined, { code: "abc123" });
+    });
+    expect(`${window.location.pathname}${window.location.search}${window.location.hash}`).toBe(
+      "/docs/auth?return_to=https%3A%2F%2Fdocs.openclaw.ai%2Fask&auth_retry=1#molty",
+    );
   });
 
   it("surfaces user-facing sign-in errors from code verification", async () => {
@@ -67,15 +101,56 @@ describe("AuthCodeHandler", () => {
     });
   });
 
-  it("warns about blocked accounts when sign-in finishes without a session", async () => {
+  it("restarts GitHub sign-in once when code verification finishes without a session", async () => {
+    signInMock.mockResolvedValueOnce({ signingIn: false }).mockResolvedValueOnce({
+      signingIn: false,
+      redirect: new URL("https://github.com/login/oauth/authorize"),
+    });
+    window.history.replaceState(
+      null,
+      "",
+      "/docs/auth?code=abc123&return_to=https%3A%2F%2Fdocs.openclaw.ai%2Fask#molty",
+    );
+
+    render(<AuthCodeHandler />);
+
+    await waitFor(() => {
+      expect(signInMock).toHaveBeenNthCalledWith(1, undefined, { code: "abc123" });
+      expect(signInMock).toHaveBeenNthCalledWith(2, "github", {
+        redirectTo: "/docs/auth?return_to=https%3A%2F%2Fdocs.openclaw.ai%2Fask&auth_retry=1#molty",
+      });
+    });
+
+    expect(consoleLogMock).toHaveBeenCalledWith(
+      "[ClawHub auth] GitHub code sign-in did not create a session",
+      {
+        path: "/docs/auth",
+        retrying: true,
+        hadRetryMarker: false,
+        hasReturnTo: true,
+      },
+    );
+    expect(getAuthErrorSnapshot()).toBeNull();
+  });
+
+  it("shows a generic error when the retried code still finishes without a session", async () => {
     signInMock.mockResolvedValue({ signingIn: false });
-    window.history.replaceState(null, "", "/sign-in?code=abc123");
+    window.history.replaceState(
+      null,
+      "",
+      "/docs/auth?code=abc123&return_to=https%3A%2F%2Fdocs.openclaw.ai%2Fask&auth_retry=1#molty",
+    );
 
     render(<AuthCodeHandler />);
 
     await waitFor(() => {
       expect(getAuthErrorSnapshot()).toBe(AUTH_CODE_NO_SESSION_MESSAGE);
     });
+
+    expect(signInMock).toHaveBeenCalledTimes(1);
+    expect(`${window.location.pathname}${window.location.search}${window.location.hash}`).toBe(
+      "/docs/auth?return_to=https%3A%2F%2Fdocs.openclaw.ai%2Fask#molty",
+    );
   });
 
   it("surfaces deleted-account errors from code verification", async () => {
@@ -155,5 +230,28 @@ describe("AuthErrorHandler", () => {
     expect(`${window.location.pathname}${window.location.search}${window.location.hash}`).toBe(
       "/sign-in",
     );
+  });
+});
+
+describe("AuthErrorToast", () => {
+  beforeEach(() => {
+    toastErrorMock.mockReset();
+    clearAuthError();
+  });
+
+  afterEach(() => {
+    clearAuthError();
+  });
+
+  it("surfaces global auth errors as toasts", async () => {
+    render(<AuthErrorToast />);
+
+    act(() => {
+      setAuthError("Sign in failed. Please open a GitHub issue.");
+    });
+
+    await waitFor(() => {
+      expect(toastErrorMock).toHaveBeenCalledWith(expect.anything(), { id: "auth-error" });
+    });
   });
 });

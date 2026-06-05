@@ -1,13 +1,8 @@
 import { createFileRoute, useSearch } from "@tanstack/react-router";
-import {
-  DocsLinks,
-  getPackageScopeOwnerMismatch,
-  MAX_CLAWSCAN_NOTE_CHARS,
-  normalizeClawScanNote,
-} from "clawhub-schema";
+import { DocsLinks, getPackageScopeOwnerMismatch } from "clawhub-schema";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { ExternalLink, Info, Lock } from "lucide-react";
-import { type ReactNode, startTransition, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, startTransition, useEffect, useMemo, useState } from "react";
 import semver from "semver";
 import { toast } from "sonner";
 import { api } from "../../../convex/_generated/api";
@@ -32,11 +27,16 @@ import { Label } from "../../components/ui/label";
 import { Textarea } from "../../components/ui/textarea";
 import { VersionInput } from "../../components/VersionInput";
 import {
+  detectRelativeReadmeAssets,
+  type RelativeReadmeAssetReport,
+} from "../../lib/detectRelativeReadmeAssets";
+import {
   buildPackageUploadEntries,
   filterIgnoredPackageFiles,
   normalizePackageUploadFiles,
 } from "../../lib/packageUpload";
 import { derivePluginPrefill, listPrefilledFields } from "../../lib/pluginPublishPrefill";
+import { buildReadmeAssetBaseUrl } from "../../lib/readmeAssetBaseUrl";
 import { expandFilesWithReport } from "../../lib/uploadFiles";
 import { useAuthStatus } from "../../lib/useAuthStatus";
 import { formatPublishError, hashFile, uploadFile } from "../upload/-utils";
@@ -55,7 +55,6 @@ export const Route = createFileRoute("/plugins/publish")({
 
 const apiRefs = api as unknown as {
   packages: {
-    getByName: unknown;
     publishRelease: unknown;
   };
 };
@@ -63,20 +62,54 @@ const apiRefs = api as unknown as {
 const SHOW_CLAWPACK_ONBOARDING_BANNER = false;
 const PLUGIN_PUBLISHING_GUIDE_URL = "https://docs.openclaw.ai/clawhub/publishing#plugins";
 
+function findReadmeFile(files: File[]): File | null {
+  // Match the same lookup the publish backend uses (readme.md / readme.mdx)
+  // by going through the shared upload-path normalizer so we see the exact
+  // path the server will see — including any shared-top-level-folder
+  // stripping. We pick the shallowest README so root-level READMEs win over
+  // ones nested in `examples/` etc.
+  const normalized = normalizePackageUploadFiles(files);
+  const candidates: Array<{ file: File; depth: number }> = [];
+  for (const entry of normalized) {
+    const lower = entry.path.toLowerCase();
+    if (lower === "readme.md" || lower === "readme.mdx") {
+      candidates.push({ file: entry.file, depth: 1 });
+      continue;
+    }
+    const segments = lower.split("/").filter(Boolean);
+    const last = segments[segments.length - 1];
+    if (last === "readme.md" || last === "readme.mdx") {
+      candidates.push({ file: entry.file, depth: segments.length });
+    }
+  }
+  if (candidates.length === 0) return null;
+  candidates.sort((a, b) => a.depth - b.depth);
+  return candidates[0]?.file ?? null;
+}
+
+const EMPTY_README_ASSET_REPORT: RelativeReadmeAssetReport = {
+  samples: [],
+  total: 0,
+  unresolvableSamples: [],
+  unresolvableTotal: 0,
+};
+
+async function scanReadmeRelativeAssets(files: File[]): Promise<RelativeReadmeAssetReport> {
+  const readme = findReadmeFile(files);
+  if (!readme) return EMPTY_README_ASSET_REPORT;
+  try {
+    const text = await readme.text();
+    return detectRelativeReadmeAssets(text);
+  } catch {
+    return EMPTY_README_ASSET_REPORT;
+  }
+}
+
 export function PublishPluginRoute() {
   const search = useSearch({ from: "/plugins/publish" });
-  const { isAuthenticated, isLoading: isAuthLoading } = useAuthStatus();
-  const publishers = useQuery(api.publishers.listMine) as
+  const { isAuthenticated, isLoading: isAuthLoading, me } = useAuthStatus();
+  const publishers = useQuery(api.publishers.listMine, me ? {} : "skip") as
     | Array<PublisherOwnerMembership>
-    | undefined;
-  const existingPackage = useQuery(
-    apiRefs.packages.getByName as never,
-    search.name ? ({ name: search.name } as never) : ("skip" as never),
-  ) as
-    | {
-        latestRelease?: { clawScanNote?: string | null } | null;
-      }
-    | null
     | undefined;
   const generateUploadUrl = useMutation(api.uploads.generateUploadUrl);
   const publishRelease = useAction(apiRefs.packages.publishRelease as never) as unknown as (args: {
@@ -88,7 +121,6 @@ export function PublishPluginRoute() {
   const [ownerHandle, setOwnerHandle] = useState(search.ownerHandle ?? "");
   const [version, setVersion] = useState(search.nextVersion ?? "0.1.0");
   const [changelog, setChangelog] = useState("");
-  const [clawScanNote, setClawScanNote] = useState("");
   const [sourceRepo, setSourceRepo] = useState(search.sourceRepo ?? "");
   const [sourceCommit, setSourceCommit] = useState("");
   const [sourceRef, setSourceRef] = useState("");
@@ -99,11 +131,12 @@ export function PublishPluginRoute() {
   const [packageSourceKind, setPackageSourceKind] = useState<PackagePickSource | null>(null);
   const [ignoredPaths, setIgnoredPaths] = useState<string[]>([]);
   const [detectedPrefillFields, setDetectedPrefillFields] = useState<string[]>([]);
+  const [readmeAssetReport, setReadmeAssetReport] =
+    useState<RelativeReadmeAssetReport>(EMPTY_README_ASSET_REPORT);
   const [codePluginFieldIssues, setCodePluginFieldIssues] = useState<string[]>([]);
   const [status, setStatus] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const clawScanNoteTouchedRef = useRef(false);
   const showChangelogField = Boolean(search.name);
 
   const totalBytes = useMemo(() => files.reduce((sum, file) => sum + file.size, 0), [files]);
@@ -128,14 +161,7 @@ export function PublishPluginRoute() {
       ? `Each file must be 10MB or smaller: ${oversizedFileNames.join(", ")}`
       : totalBytes > MAX_PUBLISH_TOTAL_BYTES
         ? "Total file size exceeds 50MB."
-        : clawScanNote.trim().length > MAX_CLAWSCAN_NOTE_CHARS
-          ? `ClawScan note must be at most ${MAX_CLAWSCAN_NOTE_CHARS} characters.`
-          : null;
-  const trimmedClawScanNote = clawScanNote.trim();
-  const normalizedClawScanNote =
-    trimmedClawScanNote.length > 0 && trimmedClawScanNote.length <= MAX_CLAWSCAN_NOTE_CHARS
-      ? normalizeClawScanNote(clawScanNote)
-      : undefined;
+        : null;
   const isMetadataLocked = files.length === 0;
   const metadataDisabled = isMetadataLocked || isSubmitting;
   const ownerScopeError = useMemo(() => {
@@ -187,6 +213,43 @@ export function PublishPluginRoute() {
     validationError,
   ]);
 
+  const readmeAssetWarning = useMemo(() => {
+    const { total, unresolvableTotal, samples, unresolvableSamples } = readmeAssetReport;
+    if (total === 0) return null;
+    const resolvableTotal = total - unresolvableTotal;
+    // Single source of truth: only treat the source metadata as "filled" when
+    // buildReadmeAssetBaseUrl — the same function the renderer uses — accepts
+    // it and produces a real raw.githubusercontent.com URL. This catches the
+    // silent-drop trap where the form previously accepted any non-empty Commit
+    // SHA (e.g. a 7-char short SHA, a tag like `v1.0.0`, a non-GitHub URL, or
+    // a `..`-laden Package path) and reassured the publisher their relative
+    // images would be served, while at render time COMMIT_SHA / owner-repo /
+    // path validation would silently drop the base URL and the detail page
+    // would 404. By gating on resolvedBaseUrl we keep the form's promise and
+    // the renderer's behavior in lock-step.
+    const resolvedBaseUrl = buildReadmeAssetBaseUrl(sourceRepo, sourceCommit, sourcePath);
+    const hasSource = Boolean(resolvedBaseUrl);
+    const showResolvableMissingSource = resolvableTotal > 0 && !hasSource;
+    const showSourcePathReminder = resolvableTotal > 0 && hasSource;
+    const showUnresolvable = unresolvableTotal > 0;
+    if (!showResolvableMissingSource && !showSourcePathReminder && !showUnresolvable) {
+      return null;
+    }
+    const resolvableSamples = samples.filter((sample) => !unresolvableSamples.includes(sample));
+    return {
+      total,
+      samples,
+      resolvableTotal,
+      resolvableSamples,
+      unresolvableTotal,
+      unresolvableSamples,
+      resolvedBaseUrl,
+      showResolvableMissingSource,
+      showSourcePathReminder,
+      showUnresolvable,
+    };
+  }, [readmeAssetReport, sourceRepo, sourceCommit, sourcePath]);
+
   const onPickFiles = async (selected: File[], sourceKind: PackagePickSource) => {
     const expanded = await expandFilesWithReport(selected, {
       includeBinaryArchiveFiles: true,
@@ -201,6 +264,7 @@ export function PublishPluginRoute() {
     setIgnoredPaths(nextIgnoredPaths);
     setError(null);
     setStatus(null);
+    setReadmeAssetReport(await scanReadmeRelativeAssets(filtered.files));
     const prefill = await derivePluginPrefill(normalized);
     setDetectedPrefillFields(listPrefilledFields(prefill));
     setCodePluginFieldIssues(prefill.missingRequiredFields ?? []);
@@ -219,6 +283,12 @@ export function PublishPluginRoute() {
     setIgnoredPaths([]);
     setDetectedPrefillFields([]);
     setCodePluginFieldIssues([]);
+    // Without this reset the README warning Badge keeps showing the previous
+    // package's relative-asset findings until the next pick's async scan
+    // finishes — which is misleading both while no package is selected and
+    // during the brief window between setFiles() and setReadmeAssetReport()
+    // inside onPickFiles().
+    setReadmeAssetReport(EMPTY_README_ASSET_REPORT);
     setError(null);
     setStatus(null);
   };
@@ -232,16 +302,11 @@ export function PublishPluginRoute() {
     }
   }, [ownerHandle, publishers]);
 
-  useEffect(() => {
-    if (clawScanNoteTouchedRef.current) return;
-    setClawScanNote(existingPackage?.latestRelease?.clawScanNote ?? "");
-  }, [existingPackage?.latestRelease?.clawScanNote]);
-
   if (isAuthLoading) {
     return <PublishFormSkeleton />;
   }
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated || !me) {
     return (
       <main className="py-10">
         <Container size="narrow">
@@ -386,21 +451,6 @@ export function PublishPluginRoute() {
                     onValueChange={setVersion}
                   />
                 </div>
-                <div className="flex flex-col gap-2 md:col-span-2">
-                  <Label htmlFor="pluginClawScanNote">ClawScan note</Label>
-                  <Textarea
-                    id="pluginClawScanNote"
-                    placeholder="Optional context for ClawScan, e.g. why this release needs native host access."
-                    rows={4}
-                    value={clawScanNote}
-                    maxLength={MAX_CLAWSCAN_NOTE_CHARS + 1}
-                    disabled={metadataDisabled}
-                    onChange={(event) => {
-                      clawScanNoteTouchedRef.current = true;
-                      setClawScanNote(event.target.value);
-                    }}
-                  />
-                </div>
                 {family === "bundle-plugin" ? (
                   <>
                     <div className="flex flex-col gap-2">
@@ -469,6 +519,59 @@ export function PublishPluginRoute() {
                     disabled={metadataDisabled}
                     onChange={(event) => setSourceCommit(event.target.value)}
                   />
+                  {readmeAssetWarning ? (
+                    <Badge variant="accent">
+                      <span>
+                        {readmeAssetWarning.showResolvableMissingSource ? (
+                          <>
+                            Your README references{" "}
+                            {readmeAssetWarning.resolvableTotal === 1
+                              ? "a package-relative image path"
+                              : `${readmeAssetWarning.resolvableTotal} package-relative image paths`}{" "}
+                            ({readmeAssetWarning.resolvableSamples.slice(0, 3).join(", ")}
+                            {readmeAssetWarning.resolvableSamples.length > 3 ? ", \u2026" : ""}).
+                            Without Source repo + Commit SHA the plugin detail page can't resolve
+                            them to your source host, so they will 404. Fill in GitHub repository +
+                            Commit SHA (and Package path if the package isn't at the repo root) to
+                            serve them from raw.githubusercontent.com, or rewrite them to absolute
+                            URLs in the README.
+                          </>
+                        ) : null}
+                        {readmeAssetWarning.showSourcePathReminder &&
+                        readmeAssetWarning.resolvedBaseUrl ? (
+                          <>
+                            Your README references{" "}
+                            {readmeAssetWarning.resolvableTotal === 1
+                              ? "a package-relative image path"
+                              : `${readmeAssetWarning.resolvableTotal} package-relative image paths`}{" "}
+                            ({readmeAssetWarning.resolvableSamples.slice(0, 3).join(", ")}
+                            {readmeAssetWarning.resolvableSamples.length > 3 ? ", \u2026" : ""}).
+                            They will be served from {readmeAssetWarning.resolvedBaseUrl} — make
+                            sure Package path matches where this package lives in the repo, or the
+                            images will 404.
+                          </>
+                        ) : null}
+                        {(readmeAssetWarning.showResolvableMissingSource ||
+                          readmeAssetWarning.showSourcePathReminder) &&
+                        readmeAssetWarning.showUnresolvable
+                          ? " "
+                          : null}
+                        {readmeAssetWarning.showUnresolvable ? (
+                          <>
+                            Your README also references{" "}
+                            {readmeAssetWarning.unresolvableTotal === 1
+                              ? "a root-absolute image path"
+                              : `${readmeAssetWarning.unresolvableTotal} root-absolute image paths`}{" "}
+                            ({readmeAssetWarning.unresolvableSamples.slice(0, 3).join(", ")}
+                            {readmeAssetWarning.unresolvableSamples.length > 3 ? ", \u2026" : ""}).
+                            These start with "/" and are resolved against the page origin, not the
+                            package, so Source repo + Commit SHA cannot rewrite them — please
+                            replace them with absolute URLs or package-relative paths in the README.
+                          </>
+                        ) : null}
+                      </span>
+                    </Badge>
+                  ) : null}
                 </div>
                 <div className="flex flex-col gap-2">
                   <FieldLabelWithHelp
@@ -591,9 +694,6 @@ export function PublishPluginRoute() {
                           family,
                           version: version.trim(),
                           changelog: changelog.trim(),
-                          ...(normalizedClawScanNote
-                            ? { clawScanNote: normalizedClawScanNote }
-                            : {}),
                           ...(sourceRepo.trim() && sourceCommit.trim()
                             ? {
                                 source: {

@@ -54,6 +54,42 @@ describe("built CLI artifact", () => {
     expect(result.stdout).toContain("ClawHub CLI");
   });
 
+  it("reports unknown top-level commands clearly", async () => {
+    const result = runNode([binPath, "nope"]);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("error: unknown command 'nope'");
+    expect(result.stderr).not.toContain("too many arguments");
+  });
+
+  it("reports unknown top-level commands after global options", async () => {
+    const result = runNode([binPath, "--registry", "https://clawhub.ai", "nope"]);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("error: unknown command 'nope'");
+    expect(result.stderr).not.toContain("too many arguments");
+  });
+
+  it("does not mask unknown global options", async () => {
+    const result = runNode([binPath, "--bad", "nope"]);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("error: unknown option '--bad'");
+    expect(result.stderr).not.toContain("unknown command 'nope'");
+  });
+
+  it("keeps help and version flags terminal", async () => {
+    const helpResult = runNode([binPath, "nope", "--help"]);
+    const versionResult = runNode([binPath, "--cli-version", "nope"]);
+
+    expect(helpResult.status).toBe(0);
+    expect(helpResult.stderr).toBe("");
+    expect(helpResult.stdout).toContain("ClawHub CLI");
+    expect(versionResult.status).toBe(0);
+    expect(versionResult.stderr).toBe("");
+    expect(versionResult.stdout).toMatch(/^\d+\.\d+\.\d+/);
+  });
+
   it("publishes a local code plugin in dry-run json mode from built output", async () => {
     const root = await makeTmpDir("clawhub-artifact-");
     const pluginDir = join(root, "demo-plugin");

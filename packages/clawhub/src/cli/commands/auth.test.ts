@@ -16,7 +16,7 @@ const registryMocks = createRegistryModuleMocks();
 const mockGetRegistry = registryMocks.getRegistry;
 vi.mock("../registry.js", () => registryMocks.moduleFactory());
 
-const { cmdLogout } = await import("./auth");
+const { cmdLogout, cmdToken } = await import("./auth");
 
 const mockLog = vi.spyOn(console, "log").mockImplementation(() => {});
 
@@ -52,5 +52,18 @@ describe("cmdLogout", () => {
       registry: "https://registry.example",
       token: undefined,
     });
+  });
+});
+
+describe("cmdToken", () => {
+  it("prints the stored token", async () => {
+    mockReadGlobalConfig.mockResolvedValueOnce({
+      registry: "https://clawhub.ai",
+      token: "clh_test",
+    });
+
+    await cmdToken();
+
+    expect(mockLog).toHaveBeenCalledWith("clh_test");
   });
 });

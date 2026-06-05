@@ -63,9 +63,10 @@ describe("Upload route", () => {
       isLoading: false,
       me: { _id: "users:1" },
     });
-    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+    useQueryMock.mockImplementation((fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;
-      if (args === undefined) {
+      const name = fn ? getFunctionName(fn as Parameters<typeof getFunctionName>[0]) : "";
+      if (name === "publishers:listMine") {
         return [
           {
             publisher: {
@@ -237,9 +238,7 @@ describe("Upload route", () => {
     fireEvent.change(screen.getByPlaceholderText("latest, stable"), {
       target: { value: "latest" },
     });
-    fireEvent.change(screen.getByLabelText("ClawScan note"), {
-      target: { value: "Needs network access to call the user-configured YNAB API." },
-    });
+    expect(screen.queryByLabelText("ClawScan note")).toBeNull();
 
     const file = new File(["hello"], "SKILL.md", { type: "text/markdown" });
     Object.defineProperty(file, "webkitRelativePath", { value: "ynab/SKILL.md" });
@@ -266,10 +265,10 @@ describe("Upload route", () => {
       ).toBe(true);
     });
     const args = publishVersion.mock.calls
-      .map((call) => call[0] as { files?: Array<{ path: string }>; clawScanNote?: string })
+      .map((call) => call[0] as { files?: Array<{ path: string }> })
       .find((call) => Array.isArray(call.files));
     expect(args?.files?.[0]?.path).toBe("SKILL.md");
-    expect(args?.clawScanNote).toBe("Needs network access to call the user-configured YNAB API.");
+    expect(args).not.toHaveProperty("clawScanNote");
   });
 
   it("blocks non-text folder uploads (png)", async () => {
@@ -439,9 +438,10 @@ describe("Upload route", () => {
   });
 
   it("blocks publish in preflight when slug availability reports a collision", async () => {
-    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+    useQueryMock.mockImplementation((fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;
-      if (args === undefined) {
+      const name = fn ? getFunctionName(fn as Parameters<typeof getFunctionName>[0]) : "";
+      if (name === "publishers:listMine") {
         return [
           {
             publisher: {
@@ -735,7 +735,7 @@ describe("Upload route", () => {
             displayName: "With Icon",
             icon: "lucide:Plug",
           },
-          latestVersion: { version: "1.0.0", clawScanNote: null },
+          latestVersion: { version: "1.0.0" },
           owner: { handle: "alice", displayName: "Alice" },
         };
       }
@@ -812,7 +812,7 @@ describe("Upload route", () => {
             displayName: "Stale Icon",
             icon: "lucide:NoLongerAllowedGlyph",
           },
-          latestVersion: { version: "1.0.0", clawScanNote: null },
+          latestVersion: { version: "1.0.0" },
           owner: { handle: "alice", displayName: "Alice" },
         };
       }

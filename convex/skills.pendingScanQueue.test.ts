@@ -9,6 +9,7 @@ import { MODERATION_ENGINE_VERSION } from "./lib/moderationReasonCodes";
 import {
   getActiveSkillBatchForStaticScanBackfillInternal,
   getPendingScanSkillsInternal,
+  getPendingVTSkillsInternal,
 } from "./skills";
 
 type PendingScanResult = Array<{
@@ -17,6 +18,18 @@ type PendingScanResult = Array<{
   sha256hash: string | null;
   checkCount: number;
 }>;
+
+type PendingVtRepairResult = {
+  skills: Array<{
+    skillId: string;
+    versionId: string;
+    sha256hash: string;
+    slug: string;
+    isLatest: boolean;
+  }>;
+  cursor: string | null;
+  done: boolean;
+};
 
 type WrappedHandler<TArgs, TResult> = {
   _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
@@ -37,6 +50,13 @@ const getStaticScanBackfillBatchHandler = (
       nextCursor: number;
       done: boolean;
     }
+  >
+)._handler;
+
+const getPendingVTSkillsHandler = (
+  getPendingVTSkillsInternal as unknown as WrappedHandler<
+    { limit?: number; cursor?: string | null },
+    PendingVtRepairResult
   >
 )._handler;
 
@@ -227,6 +247,118 @@ describe("skills.getPendingScanSkillsInternal", () => {
     });
 
     expect(result).toHaveLength(150);
+  });
+});
+
+describe("skills.getPendingVTSkillsInternal", () => {
+  it("selects pending VT cache rows from skill versions, not the skill moderation queue", async () => {
+    const page = [
+      {
+        _id: "skillVersions:historical",
+        skillId: "skills:demo",
+        sha256hash: "a".repeat(64),
+        vtAnalysis: { status: "pending" },
+      },
+      {
+        _id: "skillVersions:no-hash",
+        skillId: "skills:no-hash",
+        vtAnalysis: { status: "pending" },
+      },
+      {
+        _id: "skillVersions:deleted-skill",
+        skillId: "skills:deleted",
+        sha256hash: "b".repeat(64),
+        vtAnalysis: { status: "pending" },
+      },
+    ];
+    const skills = new Map<string, unknown>([
+      [
+        "skills:demo",
+        {
+          _id: "skills:demo",
+          slug: "demo",
+          latestVersionId: "skillVersions:latest",
+        },
+      ],
+      [
+        "skills:no-hash",
+        {
+          _id: "skills:no-hash",
+          slug: "no-hash",
+          latestVersionId: "skillVersions:no-hash",
+        },
+      ],
+      [
+        "skills:deleted",
+        {
+          _id: "skills:deleted",
+          slug: "deleted",
+          latestVersionId: "skillVersions:deleted-skill",
+          softDeletedAt: 123,
+        },
+      ],
+    ]);
+    const eqCalls: Array<[string, unknown]> = [];
+
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => {
+          if (table !== "skillVersions") throw new Error(`unexpected table ${table}`);
+          return {
+            withIndex: (
+              indexName: string,
+              builder: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+            ) => {
+              if (indexName !== "by_active_vt_status_created") {
+                throw new Error(`unexpected index ${indexName}`);
+              }
+              type EqBuilder = { eq: (field: string, value: unknown) => EqBuilder };
+              const q: EqBuilder = {
+                eq: (field, value) => {
+                  eqCalls.push([field, value]);
+                  return q;
+                },
+              };
+              builder(q);
+              return {
+                paginate: async (paginationOpts: { cursor: string | null; numItems: number }) => {
+                  expect(paginationOpts).toEqual({ cursor: "cursor-1", numItems: 25 });
+                  return {
+                    page,
+                    continueCursor: "cursor-2",
+                    isDone: false,
+                  };
+                },
+              };
+            },
+          };
+        }),
+        get: vi.fn(async (id: string) => skills.get(id) ?? null),
+      },
+    };
+
+    const result = await getPendingVTSkillsHandler(ctx, {
+      limit: 25,
+      cursor: "cursor-1",
+    });
+
+    expect(eqCalls).toEqual([
+      ["softDeletedAt", undefined],
+      ["vtAnalysis.status", "pending"],
+    ]);
+    expect(result).toEqual({
+      skills: [
+        {
+          skillId: "skills:demo",
+          versionId: "skillVersions:historical",
+          slug: "demo",
+          sha256hash: "a".repeat(64),
+          isLatest: false,
+        },
+      ],
+      cursor: "cursor-2",
+      done: false,
+    });
   });
 });
 

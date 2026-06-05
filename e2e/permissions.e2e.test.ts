@@ -10,6 +10,7 @@ import { readGlobalConfig } from "../packages/clawhub/src/config";
 import {
   allowLiveMutations,
   buildE2ESkillMarkdown,
+  fetchWithRetry,
   fetchWithTimeout,
   getRegistry,
   getSite,
@@ -114,7 +115,7 @@ describe("permission boundary e2e", () => {
     ] as const;
 
     for (const testCase of cases) {
-      const response = await fetchWithTimeout(new URL(testCase.path, registry), {
+      const response = await fetchWithRetry(new URL(testCase.path, registry), {
         method: testCase.method,
         headers: { Accept: "application/json", "Content-Type": "application/json" },
         body: "body" in testCase ? JSON.stringify(testCase.body) : undefined,

@@ -32,7 +32,7 @@ function normalizeGeneratedPublisherHandle(handle: string | undefined | null) {
   return sanitized || undefined;
 }
 
-function derivePersonalPublisherHandle(user: Doc<"users">) {
+export function derivePersonalPublisherHandle(user: Doc<"users">) {
   const emailLocalPart = user.email?.split("@")[0];
   const userIdSuffix = String(user._id).split(":").pop();
   return (

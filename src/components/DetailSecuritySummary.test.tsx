@@ -36,6 +36,18 @@ describe("DetailSecuritySummary", () => {
     expect(document.querySelectorAll(".security-audit-meter span")).toHaveLength(4);
   });
 
+  it("renders GitHub-backed scan status when no version-backed scan exists", () => {
+    render(
+      <DetailSecuritySummary
+        auditHref="/nvidia/aiq-deploy/security-audit"
+        githubScanStatus="pending"
+      />,
+    );
+
+    expect(screen.getByText("Pending")).toBeTruthy();
+    expect(document.querySelector(".security-audit-meter")?.getAttribute("data-level")).toBe("0");
+  });
+
   it("shows staff-cleared public scan summaries as cleared", () => {
     render(
       <DetailSecuritySummary

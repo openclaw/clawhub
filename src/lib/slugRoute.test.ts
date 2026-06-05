@@ -35,6 +35,12 @@ describe("slug route resolution", () => {
       href: "/plugins/@openclaw/kimi-provider",
     });
 
+    await expect(resolveTopLevelSlugRoute("diffs-language-pack")).resolves.toEqual({
+      kind: "plugin",
+      name: "@openclaw/diffs-language-pack",
+      href: "/plugins/@openclaw/diffs-language-pack",
+    });
+
     expect(fetchSkillPageDataMock).not.toHaveBeenCalled();
   });
 

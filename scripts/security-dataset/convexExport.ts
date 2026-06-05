@@ -10,7 +10,7 @@ import type {
   StaticScanInput,
   VtAnalysisInput,
 } from "./normalize";
-import { redactSkillContent } from "./normalize";
+import { redactBundleContent, redactSkillContent } from "./normalize";
 
 type ConvexDoc = Record<string, unknown> & { _id?: unknown };
 
@@ -186,6 +186,7 @@ function skillVersionToExportRow(
       version: requiredString(version.version, "skillVersions.version"),
       artifactSha256: stringOrNull(version.sha256hash),
       skillMdContentRedacted: skillMdContentFromExport(version.files),
+      bundleFilesRedacted: bundleFilesFromExport(version.files),
       createdAt: numberValue(version.createdAt, "skillVersions.createdAt"),
       softDeletedAt: numberOrNull(version.softDeletedAt),
       files: filesFromExport(version.files),
@@ -295,8 +296,8 @@ function skillMdContentFromExport(value: unknown): string | null {
   if (!Array.isArray(value)) return null;
   for (const file of value) {
     if (!isRecord(file)) continue;
-    const path = stringValue(file.path).toLowerCase();
-    if (path !== "skill.md" && !path.endsWith("/skill.md")) continue;
+    const path = stringValue(file.path);
+    if (!isPrimarySkillReadmePath(path)) continue;
     const content =
       stringOrNull(file.contentRedacted) ??
       stringOrNull(file.content_redacted) ??
@@ -307,6 +308,43 @@ function skillMdContentFromExport(value: unknown): string | null {
     return redactSkillContent(content);
   }
   return null;
+}
+
+function bundleFilesFromExport(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((file) => {
+    if (!isRecord(file)) return [];
+    const path = stringValue(file.path);
+    if (!path || isExcludedSkillBundlePath(path)) return [];
+    const content =
+      stringOrNull(file.contentRedacted) ??
+      stringOrNull(file.content_redacted) ??
+      stringOrNull(file.content) ??
+      stringOrNull(file.text);
+    if (!content) return [];
+    return [{ path, content: redactBundleContent(content) }];
+  });
+}
+
+function isExcludedSkillBundlePath(path: string) {
+  return (
+    isPrimarySkillReadmePath(path) || normalizeBundlePathForComparison(path) === "skill-card.md"
+  );
+}
+
+function isPrimarySkillReadmePath(path: string) {
+  const normalized = normalizeBundlePathForComparison(path);
+  return normalized === "skill.md" || normalized === "skills.md";
+}
+
+function normalizeBundlePathForComparison(path: string) {
+  return path
+    .trim()
+    .replace(/^\/+/, "")
+    .split("/")
+    .filter((segment) => segment && segment !== ".")
+    .join("/")
+    .toLowerCase();
 }
 
 function vtAnalysisFromExport(value: unknown): VtAnalysisInput | null {

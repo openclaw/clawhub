@@ -2,10 +2,18 @@ import { readFile, writeFile } from "node:fs/promises";
 import { requireAuthToken } from "../../../clawhub/src/cli/authToken.js";
 import { getRegistry } from "../../../clawhub/src/cli/registry.js";
 import type { GlobalOpts } from "../../../clawhub/src/cli/types.js";
-import { createSpinner, fail, formatError } from "../../../clawhub/src/cli/ui.js";
+import {
+  createSpinner,
+  fail,
+  formatError,
+  isInteractive,
+  promptConfirm,
+} from "../../../clawhub/src/cli/ui.js";
 import { apiRequest } from "../../../clawhub/src/http.js";
 import type { ApiV1PackageRepairNameResponse } from "../../../clawhub/src/schema/index.js";
 import {
+  ApiV1OfficialPublisherListResponseSchema,
+  ApiV1OfficialPublisherUpdateResponseSchema,
   ApiV1PackageRepairNameResponseSchema,
   ApiRoutes,
   ApiV1PublisherEnsureResponseSchema,
@@ -23,6 +31,16 @@ type OrgCreateOptions = {
 };
 
 type OrgRemoveMemberOptions = {
+  json?: boolean;
+};
+
+type OrgOfficialListOptions = {
+  json?: boolean;
+};
+
+type OrgOfficialWriteOptions = {
+  reason?: string;
+  yes?: boolean;
   json?: boolean;
 };
 
@@ -162,6 +180,143 @@ export async function cmdRemoveOrgMember(
   }
 }
 
+export async function cmdListOfficialOrgs(opts: GlobalOpts, options: OrgOfficialListOptions = {}) {
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const spinner = options.json ? null : createSpinner("Listing official org publishers");
+  try {
+    const result = await apiRequest(
+      registry,
+      {
+        method: "GET",
+        path: `${ApiRoutes.users}/publisher-official`,
+        token,
+      },
+      ApiV1OfficialPublisherListResponseSchema,
+    );
+
+    spinner?.stop();
+    if (options.json) {
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      return result;
+    }
+
+    const items = result.items.filter((item) => item.kind === "org" && item.active);
+    if (items.length === 0) {
+      console.log("No official org publishers.");
+      return result;
+    }
+
+    for (const item of items) {
+      const handle = item.handle ? `@${item.handle}` : item.publisherId;
+      const displayName =
+        item.displayName && item.displayName !== item.handle ? item.displayName : "";
+      const reason = item.reason ? ` - ${item.reason}` : "";
+      console.log([handle, displayName].filter(Boolean).join("  ") + reason);
+    }
+    return result;
+  } catch (error) {
+    spinner?.fail(formatError(error));
+    throw error;
+  }
+}
+
+export async function cmdAddOfficialOrg(
+  opts: GlobalOpts,
+  handle: string,
+  options: OrgOfficialWriteOptions = {},
+  inputAllowed: boolean,
+) {
+  const orgHandle = normalizeHandleOrFail(handle, "Org handle");
+  const reason = normalizeReasonOrFail(options.reason);
+  await confirmOfficialOrgUpdate(
+    `Mark @${orgHandle} official? (admin only; affects official badge and GitHub sync eligibility)`,
+    options,
+    inputAllowed,
+  );
+
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const spinner = options.json ? null : createSpinner(`Marking @${orgHandle} official`);
+  try {
+    const result = await apiRequest(
+      registry,
+      {
+        method: "POST",
+        path: `${ApiRoutes.users}/publisher-official`,
+        token,
+        body: {
+          action: "add",
+          handle: orgHandle,
+          reason,
+        },
+      },
+      ApiV1OfficialPublisherUpdateResponseSchema,
+    );
+
+    spinner?.succeed(
+      result.added ? `Marked @${result.handle} official` : `@${result.handle} is already official`,
+    );
+    if (options.json) {
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    }
+    return result;
+  } catch (error) {
+    spinner?.fail(formatError(error));
+    throw error;
+  }
+}
+
+export async function cmdRemoveOfficialOrg(
+  opts: GlobalOpts,
+  handle: string,
+  options: OrgOfficialWriteOptions = {},
+  inputAllowed: boolean,
+) {
+  const orgHandle = normalizeHandleOrFail(handle, "Org handle");
+  const reason = normalizeReasonOrFail(options.reason);
+  await confirmOfficialOrgUpdate(
+    `Remove @${orgHandle} from official org publishers? (admin only)`,
+    options,
+    inputAllowed,
+  );
+
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const spinner = options.json
+    ? null
+    : createSpinner(`Removing @${orgHandle} from official org publishers`);
+  try {
+    const result = await apiRequest(
+      registry,
+      {
+        method: "POST",
+        path: `${ApiRoutes.users}/publisher-official`,
+        token,
+        body: {
+          action: "remove",
+          handle: orgHandle,
+          reason,
+        },
+      },
+      ApiV1OfficialPublisherUpdateResponseSchema,
+    );
+
+    spinner?.succeed(
+      result.removed
+        ? `Removed @${result.handle} from official org publishers`
+        : `@${result.handle} was not official`,
+    );
+    if (options.json) {
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    }
+    return result;
+  } catch (error) {
+    spinner?.fail(formatError(error));
+    throw error;
+  }
+}
+
 export async function cmdRepairScopedPackages(
   opts: GlobalOpts,
   csvPath: string,
@@ -285,6 +440,24 @@ function summarizeScopedPackageRepairs(
   const applied = items.filter((item) => item.status === "applied").length;
   const failed = items.filter((item) => item.status === "failed").length;
   return { ok: failed === 0, dryRun, total, planned, applied, failed, items };
+}
+
+function normalizeReasonOrFail(rawReason: string | undefined) {
+  const reason = rawReason?.trim();
+  if (!reason) fail("--reason required");
+  if (reason.length > 500) fail("--reason must be 500 characters or fewer");
+  return reason;
+}
+
+async function confirmOfficialOrgUpdate(
+  prompt: string,
+  options: OrgOfficialWriteOptions,
+  inputAllowed: boolean,
+) {
+  if (options.yes) return;
+  if (!isInteractive() || inputAllowed === false) fail("Pass --yes (no input)");
+  const confirmed = await promptConfirm(prompt);
+  if (!confirmed) fail("Canceled");
 }
 
 function parseScopedPackageRepairCsv(content: string): ScopedPackageRepairRow[] {

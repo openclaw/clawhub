@@ -116,13 +116,12 @@ afterEach(async () => {
 vi.spyOn(console, "log").mockImplementation((...args) => {
   mockLog(args.map(String).join(" "));
 });
-
 describe("cmdSync", () => {
   it("classifies skills as new/update/synced (dry-run, mocked HTTP)", async () => {
     interactive = false;
     mockApiRequest.mockImplementation(async (_registry: string, args: { path: string }) => {
       if (args.path === "/api/v1/whoami") return { user: { handle: "steipete" } };
-      if (args.path === "/api/cli/telemetry/sync") return { ok: true };
+      if (args.path === "/api/cli/telemetry/install") return { ok: true };
       if (args.path.startsWith("/api/v1/resolve?")) {
         const u = new URL(`https://x.test${args.path}`);
         const slug = u.searchParams.get("slug");
@@ -151,6 +150,84 @@ describe("cmdSync", () => {
     expect(String(dryRunOutro)).toMatch(/Dry run: would upload 2 skill/);
   });
 
+  it("emits CI JSON dry-run without requiring auth", async () => {
+    interactive = false;
+    const stdoutWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    mockApiRequest.mockImplementation(async (_registry: string, args: { path: string }) => {
+      if (args.path.startsWith("/api/v1/resolve?")) {
+        const u = new URL(`https://x.test${args.path}`);
+        const slug = u.searchParams.get("slug");
+        if (slug === "new-skill") {
+          throw new Error("Skill not found");
+        }
+        if (slug === "synced-skill") {
+          return { match: { version: "1.2.3" }, latestVersion: { version: "1.2.3" } };
+        }
+        if (slug === "update-skill") {
+          return { match: null, latestVersion: { version: "1.0.0" } };
+        }
+      }
+      throw new Error(`Unexpected apiRequest: ${args.path}`);
+    });
+
+    let output = "";
+    try {
+      await cmdSync(
+        makeOpts(),
+        {
+          root: ["/scan"],
+          all: true,
+          dryRun: true,
+          json: true,
+          owner: "nvidia",
+          sourceRepo: "NVIDIA/skills",
+          sourceCommit: "abc123",
+          sourceRef: "refs/heads/main",
+        },
+        false,
+      );
+      output = String(stdoutWrite.mock.calls.at(-1)?.[0] ?? "").trim();
+    } finally {
+      stdoutWrite.mockRestore();
+    }
+
+    expect(authTokenMocks.requireAuthToken).not.toHaveBeenCalled();
+    expect(mockCmdPublish).not.toHaveBeenCalled();
+    expect(mockLog).not.toHaveBeenCalled();
+    expect(mockIntro).not.toHaveBeenCalled();
+    expect(mockOutro).not.toHaveBeenCalled();
+
+    const parsed = JSON.parse(output) as {
+      ok: boolean;
+      dryRun: boolean;
+      owner?: string;
+      summary: { wouldPublish: number; alreadySynced: number; failed: number };
+      wouldPublish: Array<{
+        slug: string;
+        version: string;
+        status: string;
+        source?: { repo: string };
+      }>;
+      alreadySynced: Array<{ slug: string; version: string }>;
+      published: unknown[];
+      failed: unknown[];
+    };
+    expect(parsed.ok).toBe(true);
+    expect(parsed.dryRun).toBe(true);
+    expect(parsed.owner).toBe("nvidia");
+    expect(parsed.summary).toMatchObject({ wouldPublish: 2, alreadySynced: 1, failed: 0 });
+    expect(parsed.wouldPublish.map((entry) => [entry.slug, entry.version, entry.status])).toEqual([
+      ["new-skill", "1.0.0", "new"],
+      ["update-skill", "1.0.1", "update"],
+    ]);
+    expect(parsed.wouldPublish[0]?.source?.repo).toBe("NVIDIA/skills");
+    expect(parsed.alreadySynced).toEqual([
+      expect.objectContaining({ slug: "synced-skill", version: "1.2.3" }),
+    ]);
+    expect(parsed.published).toEqual([]);
+    expect(parsed.failed).toEqual([]);
+  });
+
   it("prints bullet lists and selects all actionable by default", async () => {
     interactive = true;
     mockMultiselect.mockImplementation(async (args?: unknown) => {
@@ -159,7 +236,7 @@ describe("cmdSync", () => {
     });
     mockApiRequest.mockImplementation(async (_registry: string, args: { path: string }) => {
       if (args.path === "/api/v1/whoami") return { user: { handle: "steipete" } };
-      if (args.path === "/api/cli/telemetry/sync") return { ok: true };
+      if (args.path === "/api/cli/telemetry/install") return { ok: true };
       if (args.path.startsWith("/api/v1/resolve?")) {
         const u = new URL(`https://x.test${args.path}`);
         const slug = u.searchParams.get("slug");
@@ -191,11 +268,113 @@ describe("cmdSync", () => {
     expect(mockCmdPublish).toHaveBeenCalledTimes(2);
   });
 
+  it("passes owner and source provenance into real bulk publishes", async () => {
+    interactive = false;
+    const opts = makeGlobalOpts("/repo");
+    const { findSkillFolders } = await import("../scanSkills.js");
+    mocked(findSkillFolders).mockImplementation(async (root: string) => {
+      if (root !== "/repo/skills") return [];
+      return [
+        { folder: "/repo/skills/new-skill", slug: "new-skill", displayName: "New Skill" },
+        { folder: "/repo/skills/update-skill", slug: "update-skill", displayName: "Update Skill" },
+      ];
+    });
+    mockApiRequest.mockImplementation(async (_registry: string, args: { path: string }) => {
+      if (args.path === "/api/v1/whoami") return { user: { handle: "mikehollinger" } };
+      if (args.path === "/api/cli/telemetry/install") return { ok: true };
+      if (args.path.startsWith("/api/v1/resolve?")) {
+        const u = new URL(`https://x.test${args.path}`);
+        const slug = u.searchParams.get("slug");
+        if (slug === "new-skill") throw new Error("Skill not found");
+        if (slug === "update-skill") {
+          return { match: null, latestVersion: { version: "1.0.0" } };
+        }
+      }
+      throw new Error(`Unexpected apiRequest: ${args.path}`);
+    });
+
+    await cmdSync(
+      opts,
+      {
+        root: ["/repo/skills"],
+        all: true,
+        dryRun: false,
+        owner: "nvidia",
+        tags: "latest,catalog",
+        sourceRepo: "https://github.com/NVIDIA/skills",
+        sourceCommit: "abc123",
+        sourceRef: "refs/heads/main",
+      },
+      false,
+    );
+
+    expect(mockCmdPublish).toHaveBeenCalledTimes(2);
+    expect(mockCmdPublish.mock.calls.map((call) => call[2])).toEqual([
+      expect.objectContaining({
+        slug: "new-skill",
+        owner: "nvidia",
+        version: "1.0.0",
+        tags: "latest,catalog",
+        sourceRepo: "https://github.com/NVIDIA/skills",
+        sourceCommit: "abc123",
+        sourceRef: "refs/heads/main",
+        sourcePath: "skills/new-skill",
+      }),
+      expect.objectContaining({
+        slug: "update-skill",
+        owner: "nvidia",
+        version: "1.0.1",
+        tags: "latest,catalog",
+        sourceRepo: "https://github.com/NVIDIA/skills",
+        sourceCommit: "abc123",
+        sourceRef: "refs/heads/main",
+        sourcePath: "skills/update-skill",
+      }),
+    ]);
+  });
+
+  it("uses dot source path for a root skill publish", async () => {
+    interactive = false;
+    const opts = makeGlobalOpts("/repo");
+    const { findSkillFolders } = await import("../scanSkills.js");
+    mocked(findSkillFolders).mockImplementation(async (root: string) => {
+      if (root !== "/repo") return [];
+      return [{ folder: "/repo", slug: "root-skill", displayName: "Root Skill" }];
+    });
+    mockApiRequest.mockImplementation(async (_registry: string, args: { path: string }) => {
+      if (args.path === "/api/v1/whoami") return { user: { handle: "mikehollinger" } };
+      if (args.path === "/api/cli/telemetry/install") return { ok: true };
+      if (args.path.startsWith("/api/v1/resolve?")) {
+        throw new Error("Skill not found");
+      }
+      throw new Error(`Unexpected apiRequest: ${args.path}`);
+    });
+
+    await cmdSync(
+      opts,
+      {
+        all: true,
+        dryRun: false,
+        sourceRepo: "NVIDIA/root-skill",
+        sourceCommit: "abc123",
+      },
+      false,
+    );
+
+    expect(mockCmdPublish).toHaveBeenCalledTimes(1);
+    expect(mockCmdPublish.mock.calls[0]?.[2]).toEqual(
+      expect.objectContaining({
+        slug: "root-skill",
+        sourcePath: ".",
+      }),
+    );
+  });
+
   it("labels unmatched local content as proposed publish versions, not registry updates", async () => {
     interactive = false;
     mockApiRequest.mockImplementation(async (_registry: string, args: { path: string }) => {
       if (args.path === "/api/v1/whoami") return { user: { handle: "steipete" } };
-      if (args.path === "/api/cli/telemetry/sync") return { ok: true };
+      if (args.path === "/api/cli/telemetry/install") return { ok: true };
       if (args.path.startsWith("/api/v1/resolve?")) {
         const u = new URL(`https://x.test${args.path}`);
         const slug = u.searchParams.get("slug");
@@ -224,7 +403,7 @@ describe("cmdSync", () => {
     interactive = false;
     mockApiRequest.mockImplementation(async (_registry: string, args: { path: string }) => {
       if (args.path === "/api/v1/whoami") return { user: { handle: "steipete" } };
-      if (args.path === "/api/cli/telemetry/sync") return { ok: true };
+      if (args.path === "/api/cli/telemetry/install") return { ok: true };
       if (args.path.startsWith("/api/v1/resolve?")) {
         return { match: { version: "1.0.0" }, latestVersion: { version: "1.0.0" } };
       }
@@ -256,7 +435,7 @@ describe("cmdSync", () => {
 
     mockApiRequest.mockImplementation(async (_registry: string, args: { path: string }) => {
       if (args.path === "/api/v1/whoami") return { user: { handle: "steipete" } };
-      if (args.path === "/api/cli/telemetry/sync") return { ok: true };
+      if (args.path === "/api/cli/telemetry/install") return { ok: true };
       if (args.path.startsWith("/api/v1/resolve?")) {
         return { match: null, latestVersion: null };
       }
@@ -286,7 +465,7 @@ describe("cmdSync", () => {
     });
     mockApiRequest.mockImplementation(async (_registry: string, args: { path: string }) => {
       if (args.path === "/api/v1/whoami") return { user: { handle: "steipete" } };
-      if (args.path === "/api/cli/telemetry/sync") return { ok: true };
+      if (args.path === "/api/cli/telemetry/install") return { ok: true };
       if (args.path.startsWith("/api/v1/resolve?")) {
         throw new Error("Skill not found");
       }
@@ -300,11 +479,76 @@ describe("cmdSync", () => {
     expect(output).toMatch(/Agent: Work/);
   });
 
+  it("can disable auto-discovered clawdbot roots for CI exact scans", async () => {
+    interactive = false;
+    const stdoutWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const scannedRoots: string[] = [];
+    const { findSkillFolders } = await import("../scanSkills.js");
+    mocked(findSkillFolders).mockImplementation(async (root: string) => {
+      scannedRoots.push(root);
+      if (root === "/scan") {
+        return [{ folder: "/scan/ci-skill", slug: "ci-skill", displayName: "CI Skill" }];
+      }
+      if (root === "/auto") {
+        return [{ folder: "/auto/auto-skill", slug: "auto-skill", displayName: "Auto Skill" }];
+      }
+      return [];
+    });
+    mockResolveClawdbotSkillRoots.mockResolvedValueOnce({
+      roots: ["/auto"],
+      labels: { "/auto": "Agent: Work" },
+    });
+    mockApiRequest.mockImplementation(async (_registry: string, args: { path: string }) => {
+      if (args.path.startsWith("/api/v1/resolve?")) {
+        throw new Error("Skill not found");
+      }
+      throw new Error(`Unexpected apiRequest: ${args.path}`);
+    });
+
+    let output = "";
+    try {
+      await cmdSync(
+        makeOpts(),
+        { root: ["/scan"], all: true, dryRun: true, json: true, clawdbotRoots: false },
+        false,
+      );
+      output = String(stdoutWrite.mock.calls.at(-1)?.[0] ?? "").trim();
+    } finally {
+      stdoutWrite.mockRestore();
+    }
+
+    expect(mockResolveClawdbotSkillRoots).not.toHaveBeenCalled();
+    expect(scannedRoots).not.toContain("/auto");
+    const parsed = JSON.parse(output) as {
+      roots: string[];
+      wouldPublish: Array<{ slug: string }>;
+    };
+    expect(parsed.roots).toEqual(["/work", "/work/skills", "/scan"]);
+    expect(parsed.wouldPublish.map((entry) => entry.slug)).toEqual(["ci-skill"]);
+  });
+
+  it("does not fall back to ambient roots when exact CI scans find no skills", async () => {
+    interactive = false;
+    const { findSkillFolders, getFallbackSkillRoots } = await import("../scanSkills.js");
+    mocked(findSkillFolders).mockImplementation(async () => []);
+
+    await expect(
+      cmdSync(
+        makeOpts(),
+        { root: ["/scan"], all: true, dryRun: true, json: true, clawdbotRoots: false },
+        false,
+      ),
+    ).rejects.toThrow("No skills found (checked configured roots)");
+
+    expect(mockResolveClawdbotSkillRoots).not.toHaveBeenCalled();
+    expect(getFallbackSkillRoots).not.toHaveBeenCalled();
+  });
+
   it("allows empty changelog for updates (interactive)", async () => {
     interactive = true;
     mockApiRequest.mockImplementation(async (_registry: string, args: { path: string }) => {
       if (args.path === "/api/v1/whoami") return { user: { handle: "steipete" } };
-      if (args.path === "/api/cli/telemetry/sync") return { ok: true };
+      if (args.path === "/api/cli/telemetry/install") return { ok: true };
       if (args.path.startsWith("/api/v1/resolve?")) {
         const u = new URL(`https://x.test${args.path}`);
         const slug = u.searchParams.get("slug");
@@ -335,7 +579,7 @@ describe("cmdSync", () => {
     interactive = false;
     mockApiRequest.mockImplementation(async (_registry: string, args: { path: string }) => {
       if (args.path === "/api/v1/whoami") return { user: { handle: "steipete" } };
-      if (args.path === "/api/cli/telemetry/sync") return { ok: true };
+      if (args.path === "/api/cli/telemetry/install") return { ok: true };
       if (args.path.startsWith("/api/v1/resolve?")) {
         const u = new URL(`https://x.test${args.path}`);
         const slug = u.searchParams.get("slug");
@@ -380,7 +624,7 @@ describe("cmdSync", () => {
     interactive = false;
     mockApiRequest.mockImplementation(async (_registry: string, args: { path: string }) => {
       if (args.path === "/api/v1/whoami") return { user: { handle: "steipete" } };
-      if (args.path === "/api/cli/telemetry/sync") return { ok: true };
+      if (args.path === "/api/cli/telemetry/install") return { ok: true };
       if (args.path.startsWith("/api/v1/resolve?")) {
         const u = new URL(`https://x.test${args.path}`);
         const slug = u.searchParams.get("slug");
@@ -427,7 +671,7 @@ describe("cmdSync", () => {
     interactive = false;
     mockApiRequest.mockImplementation(async (_registry: string, args: { path: string }) => {
       if (args.path === "/api/v1/whoami") return { user: { handle: "steipete" } };
-      if (args.path === "/api/cli/telemetry/sync") return { ok: true };
+      if (args.path === "/api/cli/telemetry/install") return { ok: true };
       if (args.path.startsWith("/api/v1/resolve?")) {
         const u = new URL(`https://x.test${args.path}`);
         const slug = u.searchParams.get("slug");
@@ -447,7 +691,7 @@ describe("cmdSync", () => {
       const { slug } = options as { slug: string };
       if (slug === "new-skill") {
         throw new Error(
-          "This slug is locked to a deleted or banned account. If you believe you are the rightful owner, please contact security@openclaw.ai to reclaim it.",
+          "This slug is locked to a deleted or banned account. If you believe you are the rightful owner, open a GitHub issue to reclaim it: https://github.com/openclaw/clawhub/issues/new.",
         );
       }
     });
@@ -473,7 +717,7 @@ describe("cmdSync", () => {
     interactive = false;
     mockApiRequest.mockImplementation(async (_registry: string, args: { path: string }) => {
       if (args.path === "/api/v1/whoami") return { user: { handle: "steipete" } };
-      if (args.path === "/api/cli/telemetry/sync") return { ok: true };
+      if (args.path === "/api/cli/telemetry/install") return { ok: true };
       if (args.path.startsWith("/api/v1/resolve?")) {
         const u = new URL(`https://x.test${args.path}`);
         const slug = u.searchParams.get("slug");
@@ -517,7 +761,7 @@ describe("cmdSync", () => {
     });
     mockApiRequest.mockImplementation(async (_registry: string, args: { path: string }) => {
       if (args.path === "/api/v1/whoami") return { user: { handle: "steipete" } };
-      if (args.path === "/api/cli/telemetry/sync") return { ok: true };
+      if (args.path === "/api/cli/telemetry/install") return { ok: true };
       if (args.path.startsWith("/api/v1/resolve?")) {
         return { match: null, latestVersion: { version: "1.0.0" } };
       }
@@ -548,7 +792,7 @@ describe("cmdSync", () => {
 
     await cmdSync(makeOpts(), { root: ["/scan"], all: true, dryRun: true }, true);
     expect(
-      mockApiRequest.mock.calls.some((call) => call[1]?.path === "/api/cli/telemetry/sync"),
+      mockApiRequest.mock.calls.some((call) => call[1]?.path === "/api/cli/telemetry/install"),
     ).toBe(false);
     delete process.env.CLAWHUB_DISABLE_TELEMETRY;
   });

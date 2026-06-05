@@ -4,6 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  assertCodexWorkerExecutionAllowed,
+  isCodexWorkerExecutionAllowed,
+  LOCAL_CODEX_WORKER_OPT_IN,
+} from "../codex-worker-guard";
+import {
   applyServerPublisherToContext,
   assertPublicSkillCardMarkdown,
   buildPrompt,
@@ -29,6 +34,13 @@ async function tempDir() {
 }
 
 describe("run-skill-card-worker Codex skill setup", () => {
+  it("blocks direct local Skill Card worker runs without Codex opt-in", () => {
+    expect(isCodexWorkerExecutionAllowed({})).toBe(false);
+    expect(() => assertCodexWorkerExecutionAllowed({})).toThrow(
+      `Refusing to run local Codex workers without ${LOCAL_CODEX_WORKER_OPT_IN}=1`,
+    );
+  });
+
   it("uses the same batch, runtime, and lease defaults as the security worker", () => {
     expect(DEFAULT_BATCH_LIMIT).toBe(6);
     expect(DEFAULT_MAX_RUNTIME_MS).toBe(40 * 60 * 1000);

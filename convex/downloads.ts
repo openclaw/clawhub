@@ -1,12 +1,14 @@
 import { v } from "convex/values";
 import { api, internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
+import { buildDownloadMetricArgs, getDownloadIdentity } from "./downloadMetrics";
 import { httpAction, internalMutation } from "./functions";
+import { getOptionalActiveAuthUserIdFromAction } from "./lib/access";
 import { getOptionalApiTokenUserId } from "./lib/apiTokenAuth";
 import { corsHeaders, mergeHeaders } from "./lib/httpHeaders";
 import { applyRateLimit, getClientIp } from "./lib/httpRateLimit";
 import { getPublicSkillFileAccessBlock, isSkillVersionForSkill } from "./lib/skillFileAccess";
 import { buildDeterministicZip } from "./lib/skillZip";
-import { hashToken } from "./lib/tokens";
 import { insertStatEvent } from "./skillStatEvents";
 
 const HOUR_MS = 3_600_000;
@@ -98,17 +100,17 @@ export async function downloadZipHandler(
   const zipBlob = new Blob([zipArray], { type: "application/zip" });
 
   try {
-    const userId = await getOptionalApiTokenUserId(ctx, request);
-    const identity = getDownloadIdentityValue(request, userId ? String(userId) : null);
+    const userId = await getOptionalDownloadUserId(ctx, request);
+    const identity = getDownloadIdentity(request, userId ? String(userId) : null);
     if (identity) {
       await ctx.scheduler.runAfter(
         Math.floor(Math.random() * DOWNLOAD_STAT_JITTER_MS),
-        internal.downloads.recordDownloadInternal,
-        {
-          skillId: skill._id,
-          identityHash: await hashToken(identity),
-          hourStart: getHourStart(Date.now()),
-        },
+        internal.downloadMetrics.recordDownloadMetricInternal,
+        await buildDownloadMetricArgs({
+          target: { kind: "skill", id: skill._id },
+          identity,
+          now: Date.now(),
+        }),
       );
     }
   } catch {
@@ -194,6 +196,15 @@ export function getDownloadIdentityValue(request: Request, userId: string | null
   const ip = getClientIp(request);
   if (!ip) return null;
   return `ip:${ip}`;
+}
+
+async function getOptionalDownloadUserId(
+  ctx: Parameters<Parameters<typeof httpAction>[0]>[0],
+  request: Request,
+): Promise<Id<"users"> | null> {
+  const apiTokenUserId = await getOptionalApiTokenUserId(ctx, request);
+  if (apiTokenUserId) return apiTokenUserId;
+  return (await getOptionalActiveAuthUserIdFromAction(ctx)) ?? null;
 }
 
 export const __test = {

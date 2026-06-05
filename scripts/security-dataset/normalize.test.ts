@@ -248,4 +248,43 @@ describe("security dataset normalizer", () => {
     );
     expect(rows.artifacts[0]?.skill_md_content_redacted).not.toContain("PRIVATE KEY");
   });
+
+  it("emits redacted authored bundle files with content hashes and sizes", () => {
+    const rows = normalizeArtifactExport([
+      {
+        ...baseArtifact,
+        bundleFilesRedacted: [
+          {
+            path: "scripts/export.py",
+            content: "import json\npassword=[REDACTED_SECRET]\n",
+          },
+        ],
+      },
+    ]);
+
+    expect(rows.artifacts[0]?.bundle_files_redacted).toEqual([
+      {
+        path: "scripts/export.py",
+        content: "import json\n[REDACTED_SECRET]\n",
+        sha256: hashString("import json\n[REDACTED_SECRET]\n"),
+        size_bytes: Buffer.byteLength("import json\n[REDACTED_SECRET]\n", "utf8"),
+      },
+    ]);
+  });
+
+  it("omits oversized redacted bundle files", () => {
+    const rows = normalizeArtifactExport([
+      {
+        ...baseArtifact,
+        bundleFilesRedacted: [
+          {
+            path: "scripts/large.py",
+            content: "x".repeat(600 * 1024),
+          },
+        ],
+      },
+    ]);
+
+    expect(rows.artifacts[0]?.bundle_files_redacted).toBeUndefined();
+  });
 });

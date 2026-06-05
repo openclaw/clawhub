@@ -24,9 +24,9 @@ function runBeforeLoad(search: Record<string, unknown>) {
       beforeLoad?: (args: { search: Record<string, unknown> }) => void;
     };
   };
-  const beforeLoad = route.__config.beforeLoad as (args: {
-    search: Record<string, unknown>;
-  }) => void;
+  const beforeLoad = route.__config.beforeLoad;
+  if (!beforeLoad) return undefined;
+
   let thrown: unknown;
 
   try {
@@ -39,23 +39,8 @@ function runBeforeLoad(search: Record<string, unknown>) {
 }
 
 describe("skills route default sort", () => {
-  it("redirects browse view to downloads when sort is missing", () => {
-    expect(runBeforeLoad({})).toEqual({
-      redirect: {
-        to: "/skills",
-        search: {
-          q: undefined,
-          sort: "downloads",
-          dir: undefined,
-          highlighted: undefined,
-          featured: undefined,
-          tag: undefined,
-          view: undefined,
-          focus: undefined,
-        },
-        replace: true,
-      },
-    });
+  it("does not redirect browse view when sort is missing", () => {
+    expect(runBeforeLoad({})).toBeUndefined();
   });
 
   it("does not redirect when query is present", () => {

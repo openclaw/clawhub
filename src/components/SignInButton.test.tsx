@@ -54,6 +54,24 @@ describe("SignInButton", () => {
     expect(setAuthErrorMock).not.toHaveBeenCalled();
   });
 
+  it("does not show an error when GitHub sign-in starts a redirect", async () => {
+    signInMock.mockResolvedValue({
+      signingIn: false,
+      redirect: new URL("https://github.com/login/oauth/authorize"),
+    });
+
+    render(<SignInButton />);
+    fireEvent.click(screen.getByRole("button", { name: "Sign In" }));
+
+    await waitFor(() => {
+      expect(signInMock).toHaveBeenCalledWith("github", {
+        redirectTo: "/skills?q=test#top",
+      });
+    });
+    await Promise.resolve();
+    expect(setAuthErrorMock).not.toHaveBeenCalled();
+  });
+
   it("surfaces a generic error when sign-in resolves without redirecting", async () => {
     signInMock.mockResolvedValue({ signingIn: false });
 

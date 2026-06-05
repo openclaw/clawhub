@@ -11,6 +11,13 @@ crons.interval(
 );
 
 crons.interval(
+  "github-skill-source-sync",
+  { minutes: 15 },
+  internal.githubSkillSync.syncGitHubSkillSourcesInternal,
+  {},
+);
+
+crons.interval(
   "trending-leaderboard",
   { minutes: 60 },
   internal.leaderboards.rebuildTrendingLeaderboardAction,
@@ -80,9 +87,23 @@ crons.interval(
 );
 
 crons.interval(
+  "skill-scan-request-prune",
+  { hours: 6 },
+  internal.securityScan.pruneExpiredSkillScanRequestsInternal,
+  { batchSize: 250 },
+);
+
+crons.interval(
   "download-dedupe-prune",
   { hours: 24 },
   internal.downloads.pruneDownloadDedupesInternal,
+  {},
+);
+
+crons.interval(
+  "download-metric-dedupe-prune",
+  { hours: 24 },
+  internal.downloadMetrics.pruneDownloadMetricDedupesInternal,
   {},
 );
 

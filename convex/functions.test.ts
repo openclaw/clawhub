@@ -2,7 +2,9 @@
 
 import { describe, expect, it, vi } from "vitest";
 import { internal } from "./_generated/api";
+import type { Doc, Id, TableNames } from "./_generated/dataModel";
 import {
+  internalMutation,
   isGitHubMirrorEligibleSkillDoc,
   repointPackageLatestRelease,
   scheduleGitHubBackupDeletionForSkill,
@@ -12,6 +14,35 @@ import {
   syncPackageSearchDigestsForOwnerUserId,
   syncSkillSearchDigestsForOwnerPublisherId,
 } from "./functions";
+
+type WrappedHandler = {
+  _handler: (ctx: unknown, args: Record<string, never>) => Promise<unknown>;
+};
+
+function hasWrappedHandler(value: unknown): value is WrappedHandler {
+  return typeof value === "function" && "_handler" in value && typeof value._handler === "function";
+}
+
+function getWrappedHandler(value: unknown): WrappedHandler["_handler"] {
+  if (!hasWrappedHandler(value)) {
+    throw new Error("Expected a Convex function with a test-callable _handler");
+  }
+  return value._handler;
+}
+
+function testId<TableName extends TableNames>(
+  tableName: TableName,
+  value: `${TableName}:${string}`,
+): Id<TableName> {
+  if (!value.startsWith(`${tableName}:`)) {
+    throw new Error(`Expected ${value} to be a ${tableName} id`);
+  }
+  return value as Id<TableName>;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 
 describe("package digest sync", () => {
   it("identifies GitHub mirror eligibility from skill visibility fields", () => {
@@ -675,6 +706,161 @@ describe("publisher digest scheduling", () => {
       0,
       internal.functions.syncSkillSearchDigestsForOwnerPublisherIdInternal,
       { ownerPublisherId: "publishers:demo", cursor: "next-skills" },
+    );
+  });
+
+  it("syncs recommended rank stats into the skill search digest after wrapped skill patches", async () => {
+    const skillId = testId("skills", "skills:demo");
+    const ownerUserId = testId("users", "users:owner");
+    const publisherId = testId("publishers", "publishers:owner");
+    const digestId = testId("skillSearchDigest", "skillSearchDigest:demo");
+
+    const skill = {
+      _id: skillId,
+      _creationTime: 1,
+      slug: "demo-skill",
+      displayName: "Demo Skill",
+      summary: "Demo summary",
+      ownerUserId,
+      ownerPublisherId: publisherId,
+      tags: {},
+      statsDownloads: 3,
+      statsStars: 2,
+      statsInstallsCurrent: 4,
+      statsInstallsAllTime: 5,
+      stats: {
+        downloads: 3,
+        stars: 2,
+        installsCurrent: 4,
+        installsAllTime: 5,
+        versions: 1,
+        comments: 0,
+      },
+      createdAt: 10,
+      updatedAt: 20,
+    } satisfies Doc<"skills">;
+    const publisher = {
+      _id: publisherId,
+      _creationTime: 2,
+      kind: "user",
+      handle: "owner",
+      displayName: "Owner",
+      linkedUserId: ownerUserId,
+      publishedSkills: 1,
+      publishedPackages: 0,
+      totalInstalls: 5,
+      totalDownloads: 3,
+      totalStars: 2,
+      skillTotalInstalls: 5,
+      skillTotalDownloads: 3,
+      skillTotalStars: 2,
+      createdAt: 10,
+      updatedAt: 20,
+    } satisfies Doc<"publishers">;
+    const digest = {
+      _id: digestId,
+      _creationTime: 3,
+      skillId,
+      slug: "demo-skill",
+      displayName: "Demo Skill",
+      summary: "Demo summary",
+      ownerUserId,
+      ownerPublisherId: publisherId,
+      ownerHandle: "owner",
+      ownerKind: "user",
+      ownerDisplayName: "Owner",
+      tags: {},
+      statsDownloads: 3,
+      statsStars: 2,
+      statsInstallsCurrent: 4,
+      statsInstallsAllTime: 5,
+      stats: {
+        downloads: 3,
+        stars: 2,
+        installsCurrent: 4,
+        installsAllTime: 5,
+        versions: 1,
+        comments: 0,
+      },
+      createdAt: 10,
+      updatedAt: 20,
+    } satisfies Doc<"skillSearchDigest">;
+    const docs = new Map<string, unknown>([
+      [skillId, skill],
+      [publisherId, publisher],
+      [digestId, digest],
+    ]);
+    const patchSkillRankStats = internalMutation({
+      args: {},
+      handler: async (ctx) => {
+        await ctx.db.patch(skillId, {
+          statsDownloads: 13,
+          statsStars: 7,
+          statsInstallsAllTime: 11,
+          stats: {
+            downloads: 13,
+            stars: 7,
+            installsCurrent: 4,
+            installsAllTime: 11,
+            versions: 1,
+            comments: 0,
+          },
+        });
+      },
+    });
+    const handler = getWrappedHandler(patchSkillRankStats);
+    const db = {
+      system: {},
+      normalizeId: vi.fn((tableName: string, id: string) =>
+        id.startsWith(`${tableName}:`) ? id : null,
+      ),
+      get: vi.fn(async (first: string, second?: string) => docs.get(second ?? first) ?? null),
+      insert: vi.fn(async (tableName: string, value: unknown) => {
+        if (!isRecord(value))
+          throw new Error(`Expected inserted ${tableName} value to be an object`);
+        const insertedId = `${tableName}:inserted`;
+        docs.set(insertedId, { ...value, _id: insertedId, _creationTime: 0 });
+        return insertedId;
+      }),
+      patch: vi.fn(
+        async (first: string, second: string | Record<string, unknown>, third?: unknown) => {
+          const id = typeof second === "string" ? second : first;
+          const patch = typeof second === "string" ? third : second;
+          if (!isRecord(patch)) throw new Error(`Expected patch for ${id} to be an object`);
+          const existing = docs.get(id);
+          if (!isRecord(existing)) throw new Error(`Missing test doc ${id}`);
+          docs.set(id, { ...existing, ...patch });
+        },
+      ),
+      delete: vi.fn(async (first: string, second?: string) => {
+        docs.delete(second ?? first);
+      }),
+      query: vi.fn((tableName: string) => ({
+        withIndex: vi.fn(() => ({
+          unique: vi.fn(async () => {
+            if (tableName === "skillSearchDigest") return docs.get(digestId) ?? null;
+            return null;
+          }),
+          collect: vi.fn(async () => []),
+          paginate: vi.fn(async () => ({ page: [], isDone: true, continueCursor: "" })),
+          take: vi.fn(async () => []),
+        })),
+      })),
+    };
+
+    await expect(handler({ db }, {})).resolves.toBeUndefined();
+
+    expect(docs.get(digestId)).toEqual(
+      expect.objectContaining({
+        statsDownloads: 13,
+        statsStars: 7,
+        statsInstallsAllTime: 11,
+        stats: expect.objectContaining({
+          downloads: 13,
+          stars: 7,
+          installsAllTime: 11,
+        }),
+      }),
     );
   });
 });

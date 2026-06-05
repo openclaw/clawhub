@@ -215,6 +215,31 @@ describe("plugin detail route", () => {
     expect(screen.queryByText("Verified")).toBeNull();
   });
 
+  it("renders plugin download counts in the metadata sidebar", async () => {
+    loaderDataMock = {
+      ...loaderDataMock,
+      detail: {
+        package: {
+          ...loaderDataMock.detail.package!,
+          latestVersion: "1.0.0",
+          stats: { downloads: 1_234, installs: 9, stars: 0, versions: 1 },
+        },
+        owner: null,
+      },
+    };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    const downloadsLabel = screen.getByText("Downloads");
+    const currentVersionLabel = screen.getByText("Current version");
+    expect(downloadsLabel.compareDocumentPosition(currentVersionLabel)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(screen.getByText("1.2k")).toBeTruthy();
+  });
+
   it("shows plugin settings when the viewer can manage the plugin", async () => {
     useAuthStatusMock.mockReturnValue({
       isAuthenticated: true,
@@ -264,19 +289,12 @@ describe("plugin detail route", () => {
 
     const downloadLink = screen.getByRole("link", { name: /download/i });
     const newVersionLink = screen.getByRole("link", { name: "New version" });
-    const settingsLink = screen.getByRole("link", { name: /settings/i });
     expect(newVersionLink.getAttribute("href")).toBe(
       "/plugins/publish?ownerHandle=demo-owner&name=demo-plugin&displayName=Demo+Plugin",
     );
-    expect(settingsLink.getAttribute("href")).toBe("/plugins/demo-plugin/settings");
+    expect(screen.queryByRole("link", { name: /settings/i })).toBeNull();
     expect(
       downloadLink.compareDocumentPosition(newVersionLink) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-    expect(
-      newVersionLink.compareDocumentPosition(settingsLink) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-    expect(
-      downloadLink.compareDocumentPosition(settingsLink) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(useQueryMock).toHaveBeenCalledWith(expect.anything(), {
       name: "demo-plugin",
@@ -332,7 +350,7 @@ describe("plugin detail route", () => {
       candidateNames: ["@openclaw/demo-plugin", "demo-plugin"],
     });
     expect(screen.getByRole("link", { name: "New version" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: /settings/i })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /settings/i })).toBeNull();
   });
 
   it("renders package security scan results when scan data is present", async () => {
@@ -348,7 +366,6 @@ describe("plugin detail route", () => {
           version: "1.0.0",
           createdAt: 1,
           changelog: "Initial release",
-          clawScanNote: "Native host access is limited to the OpenClaw extension bridge.",
           distTags: ["latest"],
           files: [],
           compatibility: null,
@@ -407,7 +424,7 @@ describe("plugin detail route", () => {
       label?.startsWith("Security audit"),
     );
     expect(securityAuditLabelIndex).toBeGreaterThanOrEqual(0);
-    expect(securityAuditLabelIndex).toBe(sidebarLabels.indexOf("Owner") + 1);
+    expect(securityAuditLabelIndex).toBeGreaterThan(sidebarLabels.indexOf("Downloads"));
     fireEvent.click(capabilitiesTab);
     expect(screen.getByText("Tags")).toBeTruthy();
   });

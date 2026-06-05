@@ -111,6 +111,53 @@ const llmRiskSummaryBucketValidator = v.object({
   highestSeverity: v.optional(v.string()),
 });
 
+const llmAnalysisValidator = v.object({
+  status: v.string(),
+  verdict: v.optional(v.string()),
+  confidence: v.optional(v.string()),
+  summary: v.optional(v.string()),
+  dimensions: v.optional(
+    v.array(
+      v.object({
+        name: v.string(),
+        label: v.string(),
+        rating: v.string(),
+        detail: v.string(),
+      }),
+    ),
+  ),
+  guidance: v.optional(v.string()),
+  findings: v.optional(v.string()),
+  agenticRiskFindings: v.optional(v.array(llmAgenticRiskFindingValidator)),
+  riskSummary: v.optional(
+    v.object({
+      abnormal_behavior_control: llmRiskSummaryBucketValidator,
+      permission_boundary: llmRiskSummaryBucketValidator,
+      sensitive_data_protection: llmRiskSummaryBucketValidator,
+    }),
+  ),
+  model: v.optional(v.string()),
+  checkedAt: v.number(),
+});
+
+const staticScanValidator = v.object({
+  status: v.union(v.literal("clean"), v.literal("suspicious"), v.literal("malicious")),
+  reasonCodes: v.array(v.string()),
+  findings: v.array(
+    v.object({
+      code: v.string(),
+      severity: v.union(v.literal("info"), v.literal("warn"), v.literal("critical")),
+      file: v.string(),
+      line: v.number(),
+      message: v.string(),
+      evidence: v.string(),
+    }),
+  ),
+  summary: v.string(),
+  engineVersion: v.string(),
+  checkedAt: v.number(),
+});
+
 const users = defineTable({
   name: v.optional(v.string()),
   image: v.optional(v.string()),
@@ -199,6 +246,94 @@ const publisherMembers = defineTable({
   .index("by_user", ["userId"])
   .index("by_publisher_user", ["publisherId", "userId"]);
 
+const officialPublishers = defineTable({
+  publisherId: v.id("publishers"),
+  reason: v.optional(v.string()),
+  createdByUserId: v.optional(v.id("users")),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_publisher", ["publisherId"])
+  .index("by_created", ["createdAt"]);
+
+const displayManifestStatusValidator = v.union(
+  v.literal("ok"),
+  v.literal("missing"),
+  v.literal("invalid"),
+  v.literal("failed"),
+);
+
+const displayManifestValidator = v.object({
+  notGrouped: v.optional(v.union(v.literal("top"), v.literal("bottom"))),
+  groupings: v.array(
+    v.object({
+      title: v.string(),
+      description: v.optional(v.string()),
+      skills: v.array(v.string()),
+    }),
+  ),
+});
+
+const githubSkillSourceInvalidSkillValidator = v.object({
+  slug: v.string(),
+  path: v.string(),
+  displayName: v.string(),
+  error: v.string(),
+});
+
+const githubSkillSourceIssueValidator = v.object({
+  slug: v.string(),
+  path: v.string(),
+  displayName: v.string(),
+  kind: v.union(v.literal("invalid_slug"), v.literal("slug_conflict")),
+  severity: v.union(v.literal("error"), v.literal("warning")),
+  message: v.string(),
+  existingOwnerHandle: v.optional(v.string()),
+});
+
+const githubSkillSources = defineTable({
+  repo: v.string(),
+  ownerPublisherId: v.optional(v.id("publishers")),
+  defaultBranch: v.optional(v.string()),
+  lastSyncStatus: v.optional(v.union(v.literal("ok"), v.literal("failed"), v.literal("skipped"))),
+  lastSyncError: v.optional(v.string()),
+  lastSyncErrorAt: v.optional(v.number()),
+  displayManifestKind: v.optional(v.literal("skills.sh")),
+  displayManifestHash: v.optional(v.string()),
+  displayManifestCommit: v.optional(v.string()),
+  displayManifestFetchedAt: v.optional(v.number()),
+  displayManifestStatus: v.optional(displayManifestStatusValidator),
+  displayManifest: v.optional(displayManifestValidator),
+  lastSyncIssues: v.optional(v.array(githubSkillSourceIssueValidator)),
+  // Deprecated. Use lastSyncIssues; kept optional for deployed rows and rollback safety.
+  lastSyncInvalidSkills: v.optional(v.array(githubSkillSourceInvalidSkillValidator)),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_repo", ["repo"])
+  .index("by_owner_publisher", ["ownerPublisherId"])
+  .index("by_owner_publisher_and_repo", ["ownerPublisherId", "repo"])
+  .index("by_created", ["createdAt"])
+  .index("by_updated", ["updatedAt"]);
+
+const githubSkillContents = defineTable({
+  skillId: v.id("skills"),
+  githubSourceId: v.id("githubSkillSources"),
+  githubPath: v.string(),
+  skillMarkdownPath: v.string(),
+  skillMarkdown: v.string(),
+  skillCardMarkdownPath: v.optional(v.string()),
+  skillCardMarkdown: v.optional(v.string()),
+  githubCommit: v.string(),
+  githubContentHash: v.string(),
+  fetchedAt: v.number(),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_skill", ["skillId"])
+  .index("by_skill_and_content_hash", ["skillId", "githubContentHash"])
+  .index("by_github_source", ["githubSourceId"]);
+
 // Shared validator fragments used by both `skills` and `skillSearchDigest`.
 const forkOfValidator = v.optional(
   v.object({
@@ -245,6 +380,20 @@ const moderationStatusValidator = v.optional(
   v.union(v.literal("active"), v.literal("hidden"), v.literal("removed")),
 );
 
+const githubSkillScanStatusValidator = v.union(
+  v.literal("clean"),
+  v.literal("suspicious"),
+  v.literal("malicious"),
+  v.literal("pending"),
+  v.literal("failed"),
+);
+
+const githubSkillCurrentStatusValidator = v.union(
+  v.literal("present"),
+  v.literal("missing"),
+  v.literal("unknown"),
+);
+
 const packageFamilyValidator = v.union(
   v.literal("skill"),
   v.literal("code-plugin"),
@@ -277,6 +426,7 @@ const publisherAbuseDryRunLabelValidator = v.union(
 
 const publisherAbuseTriageStatusValidator = v.union(
   v.literal("pending"),
+  v.literal("banned"),
   v.literal("reviewed_no_action"),
   v.literal("false_positive"),
   v.literal("needs_policy_discussion"),
@@ -361,6 +511,7 @@ const packageVerificationValidator = v.optional(
     sourceRepo: v.optional(v.string()),
     sourceCommit: v.optional(v.string()),
     sourceTag: v.optional(v.string()),
+    sourcePath: v.optional(v.string()),
     hasProvenance: v.optional(v.boolean()),
     trustedOpenClawPlugin: v.optional(v.boolean()),
     scanStatus: v.optional(
@@ -412,6 +563,7 @@ const packageReleaseModerationOverrideValidator = v.object({
 const securityScanTargetKindValidator = v.union(
   v.literal("skillVersion"),
   v.literal("packageRelease"),
+  v.literal("skillScanRequest"),
 );
 const securityScanJobStatusValidator = v.union(
   v.literal("queued"),
@@ -449,6 +601,8 @@ const packageFilesValidator = v.array(
   }),
 );
 
+const skillScanRequestSourceKindValidator = v.union(v.literal("upload"), v.literal("published"));
+
 const skills = defineTable({
   slug: v.string(),
   displayName: v.string(),
@@ -459,6 +613,16 @@ const skills = defineTable({
   ownerPublisherId: v.optional(v.id("publishers")),
   canonicalSkillId: v.optional(v.id("skills")),
   forkOf: forkOfValidator,
+  installKind: v.optional(v.literal("github")),
+  githubSourceId: v.optional(v.id("githubSkillSources")),
+  githubPath: v.optional(v.string()),
+  githubHasSkillCard: v.optional(v.boolean()),
+  githubCurrentCommit: v.optional(v.string()),
+  githubCurrentContentHash: v.optional(v.string()),
+  githubCurrentStatus: v.optional(githubSkillCurrentStatusValidator),
+  githubCurrentCheckedAt: v.optional(v.number()),
+  githubScanStatus: v.optional(githubSkillScanStatusValidator),
+  githubRemovedAt: v.optional(v.number()),
   latestVersionId: v.optional(v.id("skillVersions")),
   latestVersionSummary: v.optional(
     v.object({
@@ -554,6 +718,12 @@ const skills = defineTable({
     "statsDownloads",
     "updatedAt",
   ])
+  .index("by_owner_publisher_active_installs", [
+    "ownerPublisherId",
+    "softDeletedAt",
+    "statsInstallsAllTime",
+    "updatedAt",
+  ])
   .index("by_updated", ["updatedAt"])
   .index("by_stats_downloads", ["statsDownloads", "updatedAt"])
   .index("by_stats_stars", ["statsStars", "updatedAt"])
@@ -573,6 +743,7 @@ const skills = defineTable({
   .index("by_canonical", ["canonicalSkillId"])
   .index("by_fork_of", ["forkOf.skillId"])
   .index("by_moderation", ["moderationStatus", "moderationReason"])
+  .index("by_github_source", ["githubSourceId"])
   .index("by_nonsuspicious_updated", ["softDeletedAt", "isSuspicious", "updatedAt"])
   .index("by_nonsuspicious_created", ["softDeletedAt", "isSuspicious", "createdAt"])
   .index("by_nonsuspicious_name", ["softDeletedAt", "isSuspicious", "displayName"])
@@ -729,6 +900,7 @@ const skillVersions = defineTable({
   .index("by_skill", ["skillId"])
   .index("by_skill_version", ["skillId", "version"])
   .index("by_active_created", ["softDeletedAt", "createdAt"])
+  .index("by_active_vt_status_created", ["softDeletedAt", "vtAnalysis.status", "createdAt"])
   .index("by_sha256hash", ["sha256hash"])
   .index("by_dep_registry_scan_status_and_created", ["depRegistryScanStatus", "createdAt"]);
 
@@ -867,6 +1039,10 @@ const skillSearchDigest = defineTable({
   forkOf: forkOfValidator,
   latestVersionId: v.optional(v.id("skillVersions")),
   latestVersionSkillId: v.optional(v.id("skills")),
+  installKind: v.optional(v.literal("github")),
+  githubHasSkillCard: v.optional(v.boolean()),
+  githubCurrentStatus: v.optional(githubSkillCurrentStatusValidator),
+  githubScanStatus: v.optional(githubSkillScanStatusValidator),
   latestVersionSummary: v.optional(
     v.object({
       version: v.string(),
@@ -912,6 +1088,13 @@ const skillSearchDigest = defineTable({
     "statsInstallsAllTime",
     "updatedAt",
   ])
+  .index("by_active_recommended_rank", [
+    "softDeletedAt",
+    "statsStars",
+    "statsInstallsAllTime",
+    "statsDownloads",
+    "updatedAt",
+  ])
   .index("by_nonsuspicious_updated", ["softDeletedAt", "isSuspicious", "updatedAt"])
   .index("by_nonsuspicious_created", ["softDeletedAt", "isSuspicious", "createdAt"])
   .index("by_nonsuspicious_name", ["softDeletedAt", "isSuspicious", "displayName"])
@@ -942,6 +1125,14 @@ const skillSearchDigest = defineTable({
     "softDeletedAt",
     "isSuspicious",
     "statsInstallsAllTime",
+    "updatedAt",
+  ])
+  .index("by_nonsuspicious_recommended_rank", [
+    "softDeletedAt",
+    "isSuspicious",
+    "statsStars",
+    "statsInstallsAllTime",
+    "statsDownloads",
     "updatedAt",
   ])
   .searchIndex("search_by_display_name", {
@@ -1010,6 +1201,12 @@ const packages = defineTable({
     "ownerPublisherId",
     "softDeletedAt",
     "stats.downloads",
+    "updatedAt",
+  ])
+  .index("by_owner_publisher_active_installs", [
+    "ownerPublisherId",
+    "softDeletedAt",
+    "stats.installs",
     "updatedAt",
   ])
   .index("by_family_updated", ["family", "updatedAt"])
@@ -1114,6 +1311,7 @@ const securityScanJobs = defineTable({
   targetKind: securityScanTargetKindValidator,
   skillVersionId: v.optional(v.id("skillVersions")),
   packageReleaseId: v.optional(v.id("packageReleases")),
+  skillScanRequestId: v.optional(v.id("skillScanRequests")),
   status: securityScanJobStatusValidator,
   source: securityScanJobSourceValidator,
   priority: v.number(),
@@ -1137,7 +1335,48 @@ const securityScanJobs = defineTable({
   .index("by_status_and_lease_expires_at", ["status", "leaseExpiresAt"])
   .index("by_status_malicious_signal_next_run_at", ["status", "hasMaliciousSignal", "nextRunAt"])
   .index("by_skill_version", ["skillVersionId"])
-  .index("by_package_release", ["packageReleaseId"]);
+  .index("by_package_release", ["packageReleaseId"])
+  .index("by_skill_scan_request", ["skillScanRequestId"]);
+
+const skillScanRequests = defineTable({
+  actorUserId: v.id("users"),
+  sourceKind: skillScanRequestSourceKindValidator,
+  update: v.boolean(),
+  writtenBack: v.boolean(),
+  status: securityScanJobStatusValidator,
+  securityScanJobId: v.optional(v.id("securityScanJobs")),
+  slug: v.optional(v.string()),
+  displayName: v.optional(v.string()),
+  version: v.optional(v.string()),
+  skillId: v.optional(v.id("skills")),
+  skillVersionId: v.optional(v.id("skillVersions")),
+  files: packageFilesValidator,
+  parsed: v.optional(
+    v.object({
+      frontmatter: v.record(v.string(), v.any()),
+      metadata: v.optional(v.any()),
+      clawdis: v.optional(v.any()),
+      moltbot: v.optional(v.any()),
+      license: v.optional(v.literal(PLATFORM_SKILL_LICENSE)),
+    }),
+  ),
+  sha256hash: v.optional(v.string()),
+  vtAnalysis: v.optional(vtAnalysisValidator),
+  skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
+  llmAnalysis: v.optional(llmAnalysisValidator),
+  capabilityTags: v.optional(v.array(v.string())),
+  staticScan: v.optional(staticScanValidator),
+  lastError: v.optional(v.string()),
+  runId: v.optional(v.string()),
+  completedAt: v.optional(v.number()),
+  expiresAt: v.number(),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_actor_user_id_and_created_at", ["actorUserId", "createdAt"])
+  .index("by_security_scan_job_id", ["securityScanJobId"])
+  .index("by_skill_version_id_and_created_at", ["skillVersionId", "createdAt"])
+  .index("by_expires_at", ["expiresAt"]);
 
 const skillCardGenerationJobs = defineTable({
   skillId: v.id("skills"),
@@ -1213,6 +1452,16 @@ const packagePublishTokens = defineTable({
   .index("by_hash", ["tokenHash"])
   .index("by_package", ["packageId", "version", "createdAt"])
   .index("by_package_revoked_created", ["packageId", "revokedAt", "createdAt"]);
+
+const packagePublishUploadTickets = defineTable({
+  kind: v.union(v.literal("user"), v.literal("github-actions")),
+  userId: v.optional(v.id("users")),
+  publishTokenId: v.optional(v.id("packagePublishTokens")),
+  createdAt: v.number(),
+  expiresAt: v.number(),
+  usedAt: v.optional(v.number()),
+  storageId: v.optional(v.id("_storage")),
+});
 
 const packageSearchDigest = defineTable({
   packageId: v.id("packages"),
@@ -1830,7 +2079,7 @@ const soulStars = defineTable({
   .index("by_soul_user", ["soulId", "userId"]);
 
 const auditLogs = defineTable({
-  actorUserId: v.id("users"),
+  actorUserId: v.optional(v.id("users")),
   action: v.string(),
   targetType: v.string(),
   targetId: v.string(),
@@ -1892,6 +2141,7 @@ const publisherAbuseScores = defineTable({
   createdAt: v.number(),
 })
   .index("by_run_and_rank", ["runId", "rank"])
+  .index("by_run_and_label_and_rank", ["runId", "label", "rank"])
   .index("by_run_and_pressure", ["runId", "pressure"])
   .index("by_owner_key_and_created_at", ["ownerKey", "createdAt"])
   .index("by_owner_key_and_model_version", ["ownerKey", "modelVersion"])
@@ -1916,6 +2166,8 @@ const publisherAbuseReviewNominations = defineTable({
 })
   .index("by_owner_key_and_model_version", ["ownerKey", "modelVersion"])
   .index("by_status_and_last_scored_at", ["status", "lastScoredAt"])
+  .index("by_status_and_updated_at", ["status", "updatedAt"])
+  .index("by_status_and_reviewed_at", ["status", "reviewedAt"])
   .index("by_status_and_label_and_last_scored_at", ["status", "label", "lastScoredAt"])
   .index("by_label_and_status_and_last_scored_at", ["label", "status", "lastScoredAt"])
   .index("by_last_scored_at", ["lastScoredAt"]);
@@ -2027,6 +2279,26 @@ const downloadDedupes = defineTable({
   .index("by_skill_identity_hour", ["skillId", "identityHash", "hourStart"])
   .index("by_hour", ["hourStart"]);
 
+const downloadMetricTargetKind = v.union(v.literal("skill"), v.literal("package"));
+const downloadMetricIdentityKind = v.union(v.literal("user"), v.literal("ip"));
+
+const downloadMetricDedupes = defineTable({
+  targetKind: downloadMetricTargetKind,
+  targetId: v.string(),
+  identityKind: downloadMetricIdentityKind,
+  identityHash: v.string(),
+  dayStart: v.number(),
+  createdAt: v.number(),
+})
+  .index("by_target_identity_day", [
+    "targetKind",
+    "targetId",
+    "identityKind",
+    "identityHash",
+    "dayStart",
+  ])
+  .index("by_day", ["dayStart"]);
+
 const reservedSlugs = defineTable({
   slug: v.string(),
   originalOwnerUserId: v.id("users"),
@@ -2125,15 +2397,20 @@ export default defineSchema({
   users,
   publishers,
   publisherMembers,
+  officialPublishers,
+  githubSkillSources,
+  githubSkillContents,
   skills,
   skillSlugAliases,
   packages,
   packageReleases,
   securityScanJobs,
+  skillScanRequests,
   skillCardGenerationJobs,
   packageStatEvents,
   packageTrustedPublishers,
   packagePublishTokens,
+  packagePublishUploadTickets,
   packageBadges,
   packageSearchDigest,
   packageCapabilitySearchDigest,
@@ -2178,6 +2455,7 @@ export default defineSchema({
   rateLimits,
   rateLimitShards,
   downloadDedupes,
+  downloadMetricDedupes,
   reservedSlugs,
   reservedHandles,
   githubBackupSyncState,

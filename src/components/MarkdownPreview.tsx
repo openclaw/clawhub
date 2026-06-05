@@ -14,6 +14,15 @@ interface MarkdownPreviewProps {
   /** Enable Shiki syntax highlighting for fenced code blocks. Default: true. */
   highlight?: boolean;
   urlTransform?: UrlTransform;
+  /**
+   * Base URL used to resolve relative <img src> values inside the README
+   * (e.g. `./images/foo.png`). When set, relative sources are resolved
+   * against this base and then routed through the standard image proxy.
+   * Typical value: a `raw.githubusercontent.com/<repo>/<commit>/<dir>/` URL
+   * derived from the package release's `verification.sourceRepo` +
+   * `verification.sourceCommit`. Must end with `/`.
+   */
+  assetBaseUrl?: string;
 }
 
 const schema = {
@@ -31,8 +40,10 @@ const schema = {
 // Order matters: rehype-sanitize runs BEFORE rehype-shiki so sanitize only
 // sees user-authored HTML; shiki's trusted styled output flows through after.
 // rehypeProxyImages rewrites after sanitize so we rewrite only already-safe
-// <img src="..."> nodes (sanitize strips event handlers, javascript: URLs).
-const baseRehype: PluggableList = [rehypeRaw, [rehypeSanitize, schema], rehypeProxyImages];
+// image URLs (sanitize strips event handlers, javascript: URLs).
+function buildBaseRehype(assetBaseUrl: string | undefined): PluggableList {
+  return [rehypeRaw, [rehypeSanitize, schema], [rehypeProxyImages, { assetBaseUrl }]];
+}
 
 const SHIKI_THEME = "github-dark";
 const SHIKI_LANGS = [
@@ -77,6 +88,7 @@ export function MarkdownPreview({
   className,
   highlight = true,
   urlTransform,
+  assetBaseUrl,
 }: MarkdownPreviewProps) {
   const [highlighter, setHighlighter] = useState<unknown>(null);
 
@@ -97,11 +109,12 @@ export function MarkdownPreview({
   }, [highlight]);
 
   const rehypePlugins = useMemo<PluggableList>(() => {
+    const baseRehype = buildBaseRehype(assetBaseUrl);
     if (highlight && highlighter) {
       return [...baseRehype, [rehypeShikiFromHighlighter, highlighter, { theme: SHIKI_THEME }]];
     }
     return baseRehype;
-  }, [highlight, highlighter]);
+  }, [highlight, highlighter, assetBaseUrl]);
 
   return (
     <div className={cn("markdown", className)}>

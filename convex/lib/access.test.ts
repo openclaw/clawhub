@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
@@ -8,6 +8,10 @@ vi.mock("@convex-dev/auth/server", () => ({
 const { getAuthUserId } = await import("@convex-dev/auth/server");
 const { assertAdmin, assertModerator, assertRole, requireUser, requireUserFromAction } =
   await import("./access");
+
+beforeEach(() => {
+  vi.mocked(getAuthUserId).mockReset();
+});
 
 describe("access.requireUser", () => {
   it("throws when auth is missing", async () => {
@@ -58,6 +62,67 @@ describe("access.requireUser", () => {
 
     expect(dbGet).toHaveBeenCalledWith("users:2");
     expect(result).toEqual({ userId: "users:2", user });
+  });
+
+  it("uses the local dev impersonation user before browser auth", async () => {
+    const previousHandle = process.env.CLAW_HUB_DEV_IMPERSONATE_USER_HANDLE;
+    const previousEnabled = process.env.CLAW_HUB_ENABLE_DEV_IMPERSONATION;
+    try {
+      process.env.CLAW_HUB_DEV_IMPERSONATE_USER_HANDLE = "local";
+      process.env.CLAW_HUB_ENABLE_DEV_IMPERSONATION = "1";
+      vi.mocked(getAuthUserId).mockResolvedValue("users:browser" as never);
+      const user = { _id: "users:local", handle: "local", role: "admin" };
+      const unique = vi.fn().mockResolvedValue(user as never);
+      const withIndex = vi.fn().mockReturnValue({ unique });
+      const query = vi.fn().mockReturnValue({ withIndex });
+      const dbGet = vi.fn().mockResolvedValue(user as never);
+
+      const result = await requireUser({
+        db: { get: dbGet, query },
+      } as never);
+
+      expect(query).toHaveBeenCalledWith("users");
+      expect(withIndex).toHaveBeenCalledWith("handle", expect.any(Function));
+      expect(dbGet).toHaveBeenCalledWith("users:local");
+      expect(getAuthUserId).not.toHaveBeenCalled();
+      expect(result).toEqual({ userId: "users:local", user });
+    } finally {
+      if (previousHandle === undefined) delete process.env.CLAW_HUB_DEV_IMPERSONATE_USER_HANDLE;
+      else process.env.CLAW_HUB_DEV_IMPERSONATE_USER_HANDLE = previousHandle;
+      if (previousEnabled === undefined) delete process.env.CLAW_HUB_ENABLE_DEV_IMPERSONATION;
+      else process.env.CLAW_HUB_ENABLE_DEV_IMPERSONATION = previousEnabled;
+    }
+  });
+
+  it("does not use local dev impersonation in production deployments", async () => {
+    const previousHandle = process.env.CLAW_HUB_DEV_IMPERSONATE_USER_HANDLE;
+    const previousEnabled = process.env.CLAW_HUB_ENABLE_DEV_IMPERSONATION;
+    const previousDeployment = process.env.CONVEX_DEPLOYMENT;
+    try {
+      process.env.CLAW_HUB_DEV_IMPERSONATE_USER_HANDLE = "local";
+      process.env.CLAW_HUB_ENABLE_DEV_IMPERSONATION = "1";
+      process.env.CONVEX_DEPLOYMENT = "prod:wry-manatee-359";
+      vi.mocked(getAuthUserId).mockResolvedValue("users:browser" as never);
+      const user = { _id: "users:browser", handle: "browser", role: "user" };
+      const query = vi.fn();
+      const dbGet = vi.fn().mockResolvedValue(user as never);
+
+      const result = await requireUser({
+        db: { get: dbGet, query },
+      } as never);
+
+      expect(query).not.toHaveBeenCalled();
+      expect(getAuthUserId).toHaveBeenCalled();
+      expect(dbGet).toHaveBeenCalledWith("users:browser");
+      expect(result).toEqual({ userId: "users:browser", user });
+    } finally {
+      if (previousHandle === undefined) delete process.env.CLAW_HUB_DEV_IMPERSONATE_USER_HANDLE;
+      else process.env.CLAW_HUB_DEV_IMPERSONATE_USER_HANDLE = previousHandle;
+      if (previousEnabled === undefined) delete process.env.CLAW_HUB_ENABLE_DEV_IMPERSONATION;
+      else process.env.CLAW_HUB_ENABLE_DEV_IMPERSONATION = previousEnabled;
+      if (previousDeployment === undefined) delete process.env.CONVEX_DEPLOYMENT;
+      else process.env.CONVEX_DEPLOYMENT = previousDeployment;
+    }
   });
 });
 
@@ -110,6 +175,37 @@ describe("access.requireUserFromAction", () => {
 
     expect(runQuery).toHaveBeenCalledTimes(1);
     expect(result).toEqual({ userId: "users:9", user });
+  });
+
+  it("uses the local dev impersonation user before action auth", async () => {
+    const previousHandle = process.env.CLAW_HUB_DEV_IMPERSONATE_USER_HANDLE;
+    const previousEnabled = process.env.CLAW_HUB_ENABLE_DEV_IMPERSONATION;
+    try {
+      process.env.CLAW_HUB_DEV_IMPERSONATE_USER_HANDLE = "local";
+      process.env.CLAW_HUB_ENABLE_DEV_IMPERSONATION = "1";
+      vi.mocked(getAuthUserId).mockResolvedValue("users:browser" as never);
+      const user = { _id: "users:local", handle: "local", role: "admin" };
+      const runQuery = vi.fn(async (_query, args: { handle?: string; userId?: string }) => {
+        if (args.handle === "local") return user;
+        if (args.userId === "users:local") return user;
+        return null;
+      });
+
+      const result = await requireUserFromAction({ runQuery } as never);
+
+      expect(runQuery).toHaveBeenCalledTimes(2);
+      expect(runQuery).toHaveBeenNthCalledWith(1, expect.anything(), { handle: "local" });
+      expect(runQuery).toHaveBeenNthCalledWith(2, expect.anything(), {
+        userId: "users:local",
+      });
+      expect(getAuthUserId).not.toHaveBeenCalled();
+      expect(result).toEqual({ userId: "users:local", user });
+    } finally {
+      if (previousHandle === undefined) delete process.env.CLAW_HUB_DEV_IMPERSONATE_USER_HANDLE;
+      else process.env.CLAW_HUB_DEV_IMPERSONATE_USER_HANDLE = previousHandle;
+      if (previousEnabled === undefined) delete process.env.CLAW_HUB_ENABLE_DEV_IMPERSONATION;
+      else process.env.CLAW_HUB_ENABLE_DEV_IMPERSONATION = previousEnabled;
+    }
   });
 });
 
