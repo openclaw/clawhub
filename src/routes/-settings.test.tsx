@@ -267,7 +267,7 @@ describe("Settings", () => {
     expect(screen.getByRole("heading", { name: "Sync GitHub skills repo" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Synced repositories" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "No synced repositories" })).toBeTruthy();
-    expect(screen.getByLabelText("ClawHub Org")).toBeTruthy();
+    expect(screen.getByLabelText("Publisher")).toBeTruthy();
     expect(screen.getByPlaceholderText("https://github.com/owner/repo")).toBeTruthy();
     expect(screen.queryByText(/Publishing as/i)).toBeNull();
     expect(screen.queryByText(/skills\.sh\.json/i)).toBeNull();

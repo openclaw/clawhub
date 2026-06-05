@@ -1857,7 +1857,7 @@ function GitHubSourceForm({
   return (
     <form className="flex flex-col gap-3 sm:flex-row sm:items-end" onSubmit={onConfigure}>
       <div className="min-w-0 sm:w-64 sm:shrink-0">
-        <Field label="ClawHub Org" htmlFor="settings-github-source-publisher">
+        <Field label="Publisher" htmlFor="settings-github-source-publisher">
           <Select value={selectedPublisherId} onValueChange={onPublisherChange}>
             <SelectTrigger id="settings-github-source-publisher">
               <SelectValue placeholder="Select org" />
