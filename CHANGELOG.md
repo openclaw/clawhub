@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.19.1 - 2026-06-05
+
+### Fixes
+
+- CLI: install source-backed GitHub skills from the deployed `/api/v1/skills/:slug/install` resolver so `clawhub install` works for skills without hosted ClawHub versions.
+
 ## 0.19.0 - 2026-06-03
 
 ### Changes
