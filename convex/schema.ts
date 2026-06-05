@@ -2137,6 +2137,7 @@ const publisherAbuseScores = defineTable({
   .index("by_run_and_rank", ["runId", "rank"])
   .index("by_run_and_label_and_rank", ["runId", "label", "rank"])
   .index("by_run_and_pressure", ["runId", "pressure"])
+  .index("by_run_and_owner_key", ["runId", "ownerKey"])
   .index("by_owner_key_and_created_at", ["ownerKey", "createdAt"])
   .index("by_owner_key_and_model_version", ["ownerKey", "modelVersion"])
   .index("by_label_and_z_score", ["label", "zScore"]);

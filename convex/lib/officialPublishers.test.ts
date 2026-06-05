@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Doc } from "../_generated/dataModel";
-import { isOfficialPublisher } from "./officialPublishers";
+import { hasOfficialPublisherRow, isOfficialPublisher } from "./officialPublishers";
 
 function makePublisher(
   overrides: Partial<Record<keyof Doc<"publishers">, unknown>>,
@@ -103,5 +103,19 @@ describe("isOfficialPublisher", () => {
     const ctx = makeCtx({ officialPublisherIds: ["publishers:openclaw"] });
 
     await expect(isOfficialPublisher(ctx as never, personal)).resolves.toBe(false);
+  });
+
+  it("can check raw official rows independently from active publisher state", async () => {
+    const ctx = makeCtx({ officialPublisherIds: ["publishers:acme"] });
+
+    await expect(
+      isOfficialPublisher(
+        ctx as never,
+        makePublisher({ _id: "publishers:acme", handle: "acme", deactivatedAt: 123 }),
+      ),
+    ).resolves.toBe(false);
+    await expect(hasOfficialPublisherRow(ctx as never, "publishers:acme" as never)).resolves.toBe(
+      true,
+    );
   });
 });

@@ -142,6 +142,7 @@ function makeScore(
   fields: Partial<{
     _id: string;
     ownerKey: string;
+    ownerPublisherId: string;
     rank: number;
     zScore: number;
     label: "potential_ban_candidate" | "review" | "pass";
@@ -151,7 +152,7 @@ function makeScore(
     _id: fields._id ?? "publisherAbuseScores:score",
     runId: "publisherAbuseScoreRuns:latest",
     ownerKey: fields.ownerKey ?? "user:owner",
-    ownerPublisherId: undefined,
+    ownerPublisherId: fields.ownerPublisherId,
     ownerUserId: undefined,
     handleSnapshot: (fields.ownerKey ?? "user:owner").replace("user:", ""),
     modelVersion: "publisher-abuse-pressure.v1",
@@ -176,19 +177,21 @@ function makeNomination(
   fields: Partial<{
     _id: string;
     ownerKey: string;
+    ownerPublisherId: string;
     ownerUserId: string;
     latestScoreId: string;
     handleSnapshot: string;
     label: "potential_ban_candidate" | "review" | "pass";
     status: PublisherAbuseTestTriageStatus;
     lastScoredAt: number;
+    reviewedAt: number;
     updatedAt: number;
   }> = {},
 ) {
   return {
     _id: fields._id ?? "publisherAbuseReviewNominations:nomination",
     ownerKey: fields.ownerKey ?? "user:owner",
-    ownerPublisherId: undefined,
+    ownerPublisherId: fields.ownerPublisherId,
     ownerUserId: fields.ownerUserId,
     handleSnapshot: fields.handleSnapshot ?? "owner",
     latestScoreId: fields.latestScoreId ?? "publisherAbuseScores:score",
@@ -198,7 +201,26 @@ function makeNomination(
     openedAt: 1,
     openedByRunId: "publisherAbuseScoreRuns:latest",
     lastScoredAt: fields.lastScoredAt ?? 1,
+    reviewedAt: fields.reviewedAt,
     updatedAt: fields.updatedAt ?? 1,
+  };
+}
+
+function makeEmptyOfficialPublishersQuery() {
+  return {
+    withIndex: (indexName: string) => {
+      if (indexName === "by_created") {
+        return {
+          paginate: async () => ({ page: [], isDone: true, continueCursor: "" }),
+        };
+      }
+      if (indexName === "by_publisher") {
+        return {
+          unique: async () => null,
+        };
+      }
+      throw new Error(`unexpected official publisher index ${indexName}`);
+    },
   };
 }
 
@@ -477,6 +499,73 @@ describe("publisher abuse dry-run persistence", () => {
         reason: "confirmed spam",
       }),
     ).rejects.toThrow(/pending/i);
+
+    expect(runMutation).not.toHaveBeenCalled();
+    expect(patch).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("rejects direct ban actions for official org publisher nominations", async () => {
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const runMutation = vi.fn(async () => ({ ok: true }));
+    const patch = vi.fn(async () => null);
+    const insert = vi.fn(async (table: string) => `${table}:new`);
+    const officialPublisher = {
+      _id: "publishers:openclaw",
+      kind: "org",
+      handle: "openclaw",
+      displayName: "OpenClaw",
+      linkedUserId: "users:owner",
+      deactivatedAt: 123,
+    };
+    const ctx = {
+      runMutation,
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "publisherAbuseReviewNominations:nomination") {
+            return makeNomination({
+              _id: "publisherAbuseReviewNominations:nomination",
+              ownerKey: "publisher:publishers:openclaw",
+              ownerPublisherId: officialPublisher._id,
+              ownerUserId: "users:owner",
+              label: "potential_ban_candidate",
+              status: "pending",
+              latestScoreId: "publisherAbuseScores:score",
+              updatedAt: 1,
+            });
+          }
+          if (id === officialPublisher._id) return officialPublisher;
+          return null;
+        }),
+        insert,
+        patch,
+        query: vi.fn((table: string) => {
+          if (table === "officialPublishers") {
+            return {
+              withIndex: () => ({
+                unique: async () => ({
+                  _id: "officialPublishers:openclaw",
+                  publisherId: officialPublisher._id,
+                }),
+              }),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await expect(
+      banPublisherAbuseOwnerHandler(ctx, {
+        nominationId: "publisherAbuseReviewNominations:nomination",
+        expectedLatestScoreId: "publisherAbuseScores:score",
+        expectedUpdatedAt: 1,
+        reason: "confirmed spam",
+      }),
+    ).rejects.toThrow(/official org/i);
 
     expect(runMutation).not.toHaveBeenCalled();
     expect(patch).not.toHaveBeenCalled();
@@ -794,6 +883,250 @@ describe("publisher abuse dry-run persistence", () => {
     expect(scoreTakeLimit).toBe(32);
   });
 
+  it("hides stale official org nominations from dashboard lists and nomination detail", async () => {
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const latestRun = {
+      _id: "publisherAbuseScoreRuns:latest",
+      modelVersion: "publisher-abuse-pressure.v1",
+      trigger: "manual",
+      status: "completed",
+      phase: "completed",
+      startedAt: 1,
+      updatedAt: 2,
+      completedAt: 2,
+      scannedPublishers: 200,
+      scoredPublishers: 198,
+      finalizedScores: 198,
+      nominatedPublishers: 2,
+      passCount: 196,
+      reviewCount: 0,
+      potentialBanCandidateCount: 2,
+    };
+    const officialPublisher = {
+      _id: "publishers:official-risk",
+      kind: "org",
+      handle: "official-risk",
+      displayName: "Official Risk",
+      linkedUserId: "users:official-risk",
+    };
+    const communityPublisher = {
+      _id: "publishers:community-risk",
+      kind: "org",
+      handle: "community-risk",
+      displayName: "Community Risk",
+      linkedUserId: "users:community-risk",
+    };
+    const officialScore = makeScore({
+      _id: "publisherAbuseScores:official-risk",
+      ownerKey: "publisher:publishers:official-risk",
+      ownerPublisherId: officialPublisher._id,
+      rank: 1,
+      zScore: 5,
+    });
+    const communityScore = makeScore({
+      _id: "publisherAbuseScores:community-risk",
+      ownerKey: "publisher:publishers:community-risk",
+      ownerPublisherId: communityPublisher._id,
+      rank: 2,
+      zScore: 4.5,
+    });
+    const officialNomination = makeNomination({
+      _id: "publisherAbuseReviewNominations:official-risk",
+      ownerKey: officialScore.ownerKey,
+      ownerPublisherId: officialPublisher._id,
+      ownerUserId: "users:official-risk",
+      latestScoreId: officialScore._id,
+      handleSnapshot: officialPublisher.handle,
+      lastScoredAt: 20,
+    });
+    const communityNomination = makeNomination({
+      _id: "publisherAbuseReviewNominations:community-risk",
+      ownerKey: communityScore.ownerKey,
+      ownerPublisherId: communityPublisher._id,
+      ownerUserId: "users:community-risk",
+      latestScoreId: communityScore._id,
+      handleSnapshot: communityPublisher.handle,
+      lastScoredAt: 19,
+    });
+    const officialResolvedNomination = makeNomination({
+      _id: "publisherAbuseReviewNominations:official-resolved",
+      ownerKey: officialScore.ownerKey,
+      ownerPublisherId: officialPublisher._id,
+      ownerUserId: "users:official-risk",
+      latestScoreId: officialScore._id,
+      handleSnapshot: officialPublisher.handle,
+      status: "reviewed_no_action",
+      reviewedAt: 30,
+    });
+    const communityResolvedNomination = makeNomination({
+      _id: "publisherAbuseReviewNominations:community-resolved",
+      ownerKey: communityScore.ownerKey,
+      ownerPublisherId: communityPublisher._id,
+      ownerUserId: "users:community-risk",
+      latestScoreId: communityScore._id,
+      handleSnapshot: communityPublisher.handle,
+      status: "reviewed_no_action",
+      reviewedAt: 29,
+    });
+    const nominations = new Map([
+      [officialScore.ownerKey, officialNomination],
+      [communityScore.ownerKey, communityNomination],
+    ]);
+    const docs = new Map<string, unknown>([
+      [latestRun._id, latestRun],
+      [officialScore._id, officialScore],
+      [communityScore._id, communityScore],
+      [officialNomination._id, officialNomination],
+      [communityNomination._id, communityNomination],
+      [officialResolvedNomination._id, officialResolvedNomination],
+      [communityResolvedNomination._id, communityResolvedNomination],
+      [officialPublisher._id, officialPublisher],
+      [communityPublisher._id, communityPublisher],
+      ["users:official-risk", { _id: "users:official-risk", handle: "official-risk" }],
+      ["users:community-risk", { _id: "users:community-risk", handle: "community-risk" }],
+    ]);
+    const query = vi.fn((table: string) => {
+      if (table === "publisherAbuseScoreRuns") {
+        return {
+          withIndex: () => ({
+            order: () => ({
+              first: async () => latestRun,
+            }),
+          }),
+        };
+      }
+      if (table === "publisherAbuseScores") {
+        return {
+          withIndex: () => ({
+            order: () => ({
+              take: async () => [officialScore, communityScore],
+            }),
+          }),
+        };
+      }
+      if (table === "publisherAbuseReviewNominations") {
+        return {
+          withIndex: (
+            indexName: string,
+            build: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+          ) => {
+            const constraints: Record<string, unknown> = {};
+            const q = {
+              eq(field: string, value: unknown) {
+                constraints[field] = value;
+                return q;
+              },
+            };
+            build(q);
+            if (indexName === "by_owner_key_and_model_version") {
+              return {
+                first: async () => nominations.get(String(constraints.ownerKey)) ?? null,
+              };
+            }
+            if (indexName === "by_status_and_label_and_last_scored_at") {
+              return {
+                order: () => ({
+                  take: async () => [],
+                }),
+              };
+            }
+            if (indexName === "by_status_and_reviewed_at") {
+              return {
+                order: () => ({
+                  take: async () =>
+                    constraints.status === "reviewed_no_action"
+                      ? [officialResolvedNomination, communityResolvedNomination]
+                      : [],
+                }),
+              };
+            }
+            throw new Error(`unexpected nomination index ${indexName}`);
+          },
+        };
+      }
+      if (table === "officialPublishers") {
+        return {
+          withIndex: (
+            indexName: string,
+            build: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+          ) => {
+            expect(indexName).toBe("by_publisher");
+            const constraints: Record<string, unknown> = {};
+            const q = {
+              eq(field: string, value: unknown) {
+                constraints[field] = value;
+                return q;
+              },
+            };
+            build(q);
+            return {
+              unique: async () =>
+                constraints.publisherId === officialPublisher._id
+                  ? {
+                      _id: "officialPublishers:official-risk",
+                      publisherId: officialPublisher._id,
+                    }
+                  : null,
+            };
+          },
+        };
+      }
+      if (table === "publisherAbuseReviewEvents") {
+        return {
+          withIndex: () => ({
+            order: () => ({
+              take: async () => [],
+            }),
+          }),
+        };
+      }
+      throw new Error(`unexpected table ${table}`);
+    });
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => docs.get(id) ?? null),
+        query,
+      },
+    };
+
+    await expect(listDashboardHandler(ctx, { limit: 5 })).resolves.toEqual(
+      expect.objectContaining({
+        pendingPotentialBanCandidateItems: [
+          expect.objectContaining({
+            nomination: expect.objectContaining({
+              _id: communityNomination._id,
+              handleSnapshot: communityPublisher.handle,
+            }),
+          }),
+        ],
+        pendingReviewItems: [],
+        recentResolvedItems: [
+          expect.objectContaining({
+            nomination: expect.objectContaining({
+              _id: communityResolvedNomination._id,
+              handleSnapshot: communityPublisher.handle,
+            }),
+          }),
+        ],
+      }),
+    );
+    await expect(
+      getReviewNominationDetailHandler(ctx, { nominationId: officialNomination._id }),
+    ).resolves.toBeNull();
+    await expect(
+      getReviewNominationDetailHandler(ctx, { nominationId: communityNomination._id }),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        item: expect.objectContaining({
+          nomination: expect.objectContaining({ _id: communityNomination._id }),
+        }),
+      }),
+    );
+  });
+
   it("uses nomination order while the latest score run is failed", async () => {
     vi.mocked(requireUser).mockResolvedValue({
       userId: "users:moderator",
@@ -1108,7 +1441,7 @@ describe("publisher abuse dry-run persistence", () => {
               return {
                 order: () => ({
                   take: async (limit: number) => {
-                    expect(limit).toBe(30);
+                    expect(limit).toBe(90);
                     return constraints.status === "reviewed_no_action"
                       ? [rescoredOldResolution, resolvedNomination]
                       : [];
@@ -1302,6 +1635,122 @@ describe("publisher abuse dry-run persistence", () => {
     expect(patch).not.toHaveBeenCalledWith(
       expect.stringMatching(/^(users|publishers|skills|skillSearchDigest):/),
       expect.anything(),
+    );
+  });
+
+  it("excludes official org publishers from abuse scoring even when they match abuse-pressure criteria", async () => {
+    const insert = vi.fn(async (table: string) => `${table}:new`);
+    const patch = vi.fn(async () => null);
+    const officialOrgPublisher = {
+      _id: "publishers:openclaw",
+      kind: "org",
+      handle: "openclaw",
+      displayName: "OpenClaw",
+      linkedUserId: "users:openclaw",
+      publishedSkills: 1_200,
+      publishedPackages: 0,
+      totalInstalls: 4,
+      totalStars: 0,
+      totalDownloads: 80,
+    };
+    const communityOrgPublisher = {
+      ...officialOrgPublisher,
+      _id: "publishers:community-bulk",
+      handle: "community-bulk",
+      displayName: "Community Bulk",
+      linkedUserId: "users:community-bulk",
+    };
+    const officialLookupIds: string[] = [];
+    const ctx = {
+      db: {
+        get: vi.fn(async () => ({
+          _id: "publisherAbuseScoreRuns:run",
+          modelVersion: TEST_MODEL_CONFIG.modelVersion,
+          modelConfig: TEST_MODEL_CONFIG,
+          status: "running",
+          phase: "collecting",
+          collectCursor: undefined,
+          scannedPublishers: 0,
+          scoredPublishers: 0,
+          sumLogPressure: 0,
+          sumSquaredLogPressure: 0,
+        })),
+        insert,
+        patch,
+        query: vi.fn((table: string) => {
+          if (table === "publishers") {
+            return {
+              withIndex: () => ({
+                paginate: async () => ({
+                  page: [officialOrgPublisher, communityOrgPublisher],
+                  isDone: true,
+                  continueCursor: "",
+                }),
+              }),
+            };
+          }
+          if (table === "officialPublishers") {
+            return {
+              withIndex: (
+                indexName: string,
+                build: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+              ) => {
+                expect(indexName).toBe("by_publisher");
+                const constraints: Record<string, unknown> = {};
+                const q = {
+                  eq(field: string, value: unknown) {
+                    constraints[field] = value;
+                    return q;
+                  },
+                };
+                build(q);
+                officialLookupIds.push(String(constraints.publisherId));
+                return {
+                  unique: async () =>
+                    constraints.publisherId === officialOrgPublisher._id
+                      ? {
+                          _id: "officialPublishers:openclaw",
+                          publisherId: officialOrgPublisher._id,
+                        }
+                      : null,
+                };
+              },
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await expect(collectHandler(ctx, { runId: "publisherAbuseScoreRuns:run" })).resolves.toEqual(
+      expect.objectContaining({ isDone: false, scanned: 2, phase: "finalizing" }),
+    );
+
+    expect(officialLookupIds).toEqual([officialOrgPublisher._id, communityOrgPublisher._id]);
+    expect(insert).toHaveBeenCalledTimes(1);
+    expect(insert).toHaveBeenCalledWith(
+      "publisherAbuseScores",
+      expect.objectContaining({
+        ownerPublisherId: communityOrgPublisher._id,
+        handleSnapshot: communityOrgPublisher.handle,
+        publishedSkills: officialOrgPublisher.publishedSkills,
+        totalInstalls: officialOrgPublisher.totalInstalls,
+        totalStars: officialOrgPublisher.totalStars,
+        totalDownloads: officialOrgPublisher.totalDownloads,
+      }),
+    );
+    expect(insert).not.toHaveBeenCalledWith(
+      "publisherAbuseScores",
+      expect.objectContaining({
+        ownerPublisherId: officialOrgPublisher._id,
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "publisherAbuseScoreRuns:run",
+      expect.objectContaining({
+        scannedPublishers: 2,
+        scoredPublishers: 1,
+      }),
     );
   });
 
@@ -2393,6 +2842,7 @@ describe("publisher abuse dry-run persistence", () => {
               }),
             };
           }
+          if (table === "officialPublishers") return makeEmptyOfficialPublishersQuery();
           throw new Error(`unexpected table ${table}`);
         }),
       },
@@ -2406,6 +2856,186 @@ describe("publisher abuse dry-run persistence", () => {
     expect(patch).toHaveBeenCalledWith(
       "publisherAbuseReviewNominations:existing",
       expect.objectContaining({ latestScoreId: "publisherAbuseScores:score" }),
+    );
+  });
+
+  it("does not create nominations for official org score rows left by an older run", async () => {
+    const insert = vi.fn(async (table: string) => `${table}:new`);
+    const patch = vi.fn(async () => null);
+    const officialPublisher = {
+      _id: "publishers:openclaw",
+      kind: "org",
+      handle: "openclaw",
+      linkedUserId: "users:openclaw",
+    };
+    const communityPublisher = {
+      _id: "publishers:community",
+      kind: "org",
+      handle: "community",
+      linkedUserId: "users:community",
+    };
+    const officialScore = {
+      _id: "publisherAbuseScores:official",
+      ownerKey: "publisher:publishers:openclaw",
+      ownerPublisherId: officialPublisher._id,
+      ownerUserId: "users:openclaw",
+      handleSnapshot: "openclaw",
+      modelVersion: "publisher-abuse-pressure.v1",
+      pressure: 1000,
+      logPressure: 6,
+      publishedSkills: 1200,
+      totalInstalls: 8,
+      totalStars: 0,
+      totalDownloads: 120,
+      installsPerSkill: 0.006,
+      starsPerSkill: 0,
+      downloadsPerSkill: 0.1,
+      reasonCodes: ["high_catalog_volume"],
+    };
+    const communityScore = {
+      _id: "publisherAbuseScores:community",
+      ownerKey: "publisher:publishers:community",
+      ownerPublisherId: communityPublisher._id,
+      ownerUserId: "users:community",
+      handleSnapshot: "community",
+      modelVersion: "publisher-abuse-pressure.v1",
+      pressure: 100,
+      logPressure: 2,
+      publishedSkills: 120,
+      totalInstalls: 20,
+      totalStars: 1,
+      totalDownloads: 500,
+      installsPerSkill: 0.16,
+      starsPerSkill: 0.008,
+      downloadsPerSkill: 4.16,
+      reasonCodes: ["high_catalog_volume"],
+    };
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "publisherAbuseScoreRuns:run") {
+            return {
+              _id: "publisherAbuseScoreRuns:run",
+              status: "running",
+              phase: "finalizing",
+              modelVersion: "publisher-abuse-pressure.v1",
+              modelConfig: TEST_MODEL_CONFIG,
+              scoredPublishers: 2,
+              finalizedScores: 0,
+              passCount: 0,
+              reviewCount: 0,
+              potentialBanCandidateCount: 0,
+              nominatedPublishers: 0,
+              sumLogPressure: officialScore.logPressure + communityScore.logPressure,
+              sumSquaredLogPressure:
+                officialScore.logPressure ** 2 + communityScore.logPressure ** 2,
+            };
+          }
+          if (id === officialPublisher._id) return officialPublisher;
+          if (id === communityPublisher._id) return communityPublisher;
+          return null;
+        }),
+        insert,
+        patch,
+        query: vi.fn((table: string) => {
+          if (table === "publisherAbuseScores") {
+            return {
+              withIndex: (indexName: string) => {
+                if (indexName === "by_run_and_pressure") {
+                  return {
+                    order: () => ({
+                      paginate: async () => ({
+                        page: [officialScore, communityScore],
+                        isDone: true,
+                        continueCursor: "",
+                      }),
+                    }),
+                  };
+                }
+                if (indexName === "by_run_and_owner_key") {
+                  return {
+                    first: async () => officialScore,
+                  };
+                }
+                throw new Error(`unexpected score index ${indexName}`);
+              },
+            };
+          }
+          if (table === "officialPublishers") {
+            return {
+              withIndex: (
+                indexName: string,
+                build?: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+              ) => {
+                if (indexName === "by_created") {
+                  return {
+                    paginate: async () => ({
+                      page: [
+                        {
+                          _id: "officialPublishers:openclaw",
+                          publisherId: officialPublisher._id,
+                        },
+                      ],
+                      isDone: true,
+                      continueCursor: "",
+                    }),
+                  };
+                }
+                if (indexName === "by_publisher") {
+                  const constraints: Record<string, unknown> = {};
+                  const q = {
+                    eq(field: string, value: unknown) {
+                      constraints[field] = value;
+                      return q;
+                    },
+                  };
+                  build?.(q);
+                  return {
+                    unique: async () =>
+                      constraints.publisherId === officialPublisher._id
+                        ? {
+                            _id: "officialPublishers:openclaw",
+                            publisherId: officialPublisher._id,
+                          }
+                        : null,
+                  };
+                }
+                throw new Error(`unexpected official publisher index ${indexName}`);
+              },
+            };
+          }
+          if (table === "publisherAbuseReviewNominations") {
+            return {
+              withIndex: () => ({
+                first: async () => null,
+              }),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await expect(finalizeHandler(ctx, { runId: "publisherAbuseScoreRuns:run" })).resolves.toEqual(
+      expect.objectContaining({ isDone: true, finalized: 2, nominations: 0 }),
+    );
+
+    expect(insert).not.toHaveBeenCalledWith("publisherAbuseReviewNominations", expect.anything());
+    expect(patch).not.toHaveBeenCalledWith(
+      "publisherAbuseScores:official",
+      expect.objectContaining({ label: "potential_ban_candidate" }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      communityScore._id,
+      expect.objectContaining({ label: "pass", rank: 1, zScore: 0 }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "publisherAbuseScoreRuns:run",
+      expect.objectContaining({
+        meanLogPressure: communityScore.logPressure,
+        stdDevLogPressure: 0,
+        passCount: 1,
+      }),
     );
   });
 
@@ -2478,6 +3108,7 @@ describe("publisher abuse dry-run persistence", () => {
               }),
             };
           }
+          if (table === "officialPublishers") return makeEmptyOfficialPublishersQuery();
           throw new Error(`unexpected table ${table}`);
         }),
       },
@@ -2577,6 +3208,7 @@ describe("publisher abuse dry-run persistence", () => {
               }),
             };
           }
+          if (table === "officialPublishers") return makeEmptyOfficialPublishersQuery();
           throw new Error(`unexpected table ${table}`);
         }),
       },
@@ -2675,6 +3307,7 @@ describe("publisher abuse dry-run persistence", () => {
               }),
             };
           }
+          if (table === "officialPublishers") return makeEmptyOfficialPublishersQuery();
           throw new Error(`unexpected table ${table}`);
         }),
       },
@@ -2760,6 +3393,7 @@ describe("publisher abuse dry-run persistence", () => {
               }),
             };
           }
+          if (table === "officialPublishers") return makeEmptyOfficialPublishersQuery();
           throw new Error(`unexpected table ${table}`);
         }),
       },

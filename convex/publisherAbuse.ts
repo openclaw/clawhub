@@ -11,6 +11,7 @@ import {
   query,
 } from "./functions";
 import { assertModerator, requireUser, requireUserFromAction } from "./lib/access";
+import { hasOfficialPublisherRow } from "./lib/officialPublishers";
 import {
   computePublisherAbuseRawScore,
   DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG,
@@ -54,8 +55,11 @@ type PageResult = RunState & {
 type PublisherMetricsDoc = Pick<
   Doc<"publishers">,
   | "_id"
+  | "kind"
   | "handle"
   | "linkedUserId"
+  | "deletedAt"
+  | "deactivatedAt"
   | "publishedSkills"
   | "publishedPackages"
   | "totalInstalls"
@@ -64,6 +68,11 @@ type PublisherMetricsDoc = Pick<
   | "skillTotalInstalls"
   | "skillTotalStars"
   | "skillTotalDownloads"
+>;
+
+type PublisherAbuseExclusionPublisher = Pick<
+  Doc<"publishers">,
+  "_id" | "kind" | "deletedAt" | "deactivatedAt"
 >;
 
 type PublisherSkillMetricsOptions =
@@ -133,6 +142,7 @@ export const getReviewNominationDetail = query({
     if (!nomination) return null;
 
     const item = await summarizePublisherAbuseReviewNomination(ctx, nomination);
+    if (await isPublisherAbuseExcludedReviewItem(ctx, item)) return null;
     const scoreHistory = await ctx.db
       .query("publisherAbuseScores")
       .withIndex("by_owner_key_and_created_at", (q) => q.eq("ownerKey", nomination.ownerKey))
@@ -172,6 +182,7 @@ export const banPublisherAbuseOwner = mutation({
     if (!nomination.ownerUserId) {
       throw new Error("Cannot ban publisher abuse nomination without a linked user");
     }
+    await requirePublisherAbuseNominationNotExcluded(ctx, nomination);
 
     const reason = normalizeBanReason(args.reason);
     await ctx.runMutation(internal.users.banUserInternal, {
@@ -383,6 +394,7 @@ export async function collectPublisherAbuseScoresPageInternalHandler(
           activeSkillFallbackBudget,
         };
   for (const publisher of page.page) {
+    if (await isPublisherExcludedFromPublisherAbuse(ctx, publisher)) continue;
     const input = await publisherInputFromPublisher(ctx, publisher, publisherSkillMetricsOptions);
     if (!input) continue;
     const rawScore = computePublisherAbuseRawScore(input, modelConfig);
@@ -449,10 +461,11 @@ export async function finalizePublisherAbuseScoresPageInternalHandler(
 
   const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
   const now = Date.now();
+  const cohortStats = await summarizePublisherAbuseFinalizationCohort(ctx, run);
   const { meanLogPressure, stdDevLogPressure } = summarizePublisherAbuseLogPressure(
-    run.sumLogPressure,
-    run.sumSquaredLogPressure,
-    run.scoredPublishers,
+    cohortStats.sumLogPressure,
+    cohortStats.sumSquaredLogPressure,
+    cohortStats.scoredPublishers,
   );
   const safeStdDev = stdDevLogPressure === 0 ? 1 : stdDevLogPressure;
   const page = await ctx.db
@@ -468,12 +481,19 @@ export async function finalizePublisherAbuseScoresPageInternalHandler(
   };
   let nominations = 0;
   let finalized = 0;
+  let ranked = 0;
+  const rankedScoresSoFar = run.passCount + run.reviewCount + run.potentialBanCandidateCount;
   const modelConfig = run.modelConfig;
   for (const score of page.page) {
+    if (await isPublisherAbuseScoreExcluded(ctx, score)) {
+      finalized += 1;
+      continue;
+    }
     const zScore = (score.logPressure - meanLogPressure) / safeStdDev;
     const label = labelForPublisherAbuseZScore(zScore, modelConfig);
-    const rank = run.finalizedScores + finalized + 1;
+    const rank = rankedScoresSoFar + ranked + 1;
     labelCounts[label] += 1;
+    ranked += 1;
     finalized += 1;
 
     await ctx.db.patch(score._id, { zScore, label, rank });
@@ -693,6 +713,84 @@ async function publisherInputFromPublisher(
     totalStars: skillMetrics.totalStars,
     totalDownloads: skillMetrics.totalDownloads,
   };
+}
+
+async function isPublisherExcludedFromPublisherAbuse(
+  ctx: Pick<QueryCtx | MutationCtx, "db">,
+  publisher: PublisherAbuseExclusionPublisher | null | undefined,
+) {
+  if (!publisher || publisher.kind !== "org") return false;
+  return await hasOfficialPublisherRow(ctx, publisher._id);
+}
+
+async function isPublisherAbuseExcludedReviewItem(
+  ctx: Pick<QueryCtx | MutationCtx, "db">,
+  item: PublisherAbuseReviewItem,
+) {
+  return await isPublisherExcludedFromPublisherAbuse(ctx, item.publisher);
+}
+
+async function isPublisherAbuseScoreExcluded(
+  ctx: Pick<QueryCtx | MutationCtx, "db">,
+  score: Pick<ScoreDoc, "ownerPublisherId">,
+) {
+  if (!score.ownerPublisherId) return false;
+  const publisher = await ctx.db.get(score.ownerPublisherId);
+  return await isPublisherExcludedFromPublisherAbuse(ctx, publisher);
+}
+
+async function requirePublisherAbuseNominationNotExcluded(
+  ctx: Pick<MutationCtx, "db">,
+  nomination: Doc<"publisherAbuseReviewNominations">,
+) {
+  if (!nomination.ownerPublisherId) return;
+  const publisher = await ctx.db.get(nomination.ownerPublisherId);
+  if (!(await isPublisherExcludedFromPublisherAbuse(ctx, publisher))) return;
+  throw new Error("Official org publisher abuse nominations cannot be acted on.");
+}
+
+async function summarizePublisherAbuseFinalizationCohort(ctx: MutationCtx, run: ScoreRun) {
+  const exclusions = await summarizeOfficialPublisherAbuseScoreExclusions(ctx, run);
+  const scoredPublishers = Math.max(0, run.scoredPublishers - exclusions.scoredPublishers);
+  if (scoredPublishers === 0) {
+    return { scoredPublishers, sumLogPressure: 0, sumSquaredLogPressure: 0 };
+  }
+  return {
+    scoredPublishers,
+    sumLogPressure: run.sumLogPressure - exclusions.sumLogPressure,
+    sumSquaredLogPressure: run.sumSquaredLogPressure - exclusions.sumSquaredLogPressure,
+  };
+}
+
+async function summarizeOfficialPublisherAbuseScoreExclusions(ctx: MutationCtx, run: ScoreRun) {
+  let cursor: string | null = null;
+  let scoredPublishers = 0;
+  let sumLogPressure = 0;
+  let sumSquaredLogPressure = 0;
+
+  do {
+    const page = await ctx.db
+      .query("officialPublishers")
+      .withIndex("by_created")
+      .paginate({ cursor, numItems: MAX_BATCH_SIZE });
+    for (const officialPublisher of page.page) {
+      const publisher = await ctx.db.get(officialPublisher.publisherId);
+      if (!publisher || publisher.kind !== "org") continue;
+      const score = await ctx.db
+        .query("publisherAbuseScores")
+        .withIndex("by_run_and_owner_key", (q) =>
+          q.eq("runId", run._id).eq("ownerKey", `publisher:${officialPublisher.publisherId}`),
+        )
+        .first();
+      if (!score || score.publishedSkills <= 0) continue;
+      scoredPublishers += 1;
+      sumLogPressure += score.logPressure;
+      sumSquaredLogPressure += score.logPressure ** 2;
+    }
+    cursor = page.isDone ? null : page.continueCursor;
+  } while (cursor);
+
+  return { scoredPublishers, sumLogPressure, sumSquaredLogPressure };
 }
 
 type SkillMetricsForScoring = Pick<
@@ -1022,7 +1120,7 @@ async function getPendingPublisherAbuseReviewItemsForLabelFromScoreRank(
       continue;
     }
     const item = await summarizePublisherAbuseReviewNomination(ctx, nomination);
-    if (!isVisiblePublisherAbuseReviewItem(item)) continue;
+    if (!(await isVisiblePublisherAbuseReviewItem(ctx, item))) continue;
     items.push(item);
     if (items.length >= args.limit) break;
   }
@@ -1044,7 +1142,7 @@ async function getPendingPublisherAbuseReviewItemsForLabelFromLastScoredAt(
     .take(scanLimit);
   const pageItems = await summarizePublisherAbuseReviewNominations(ctx, nominations);
   for (const item of pageItems) {
-    if (!isVisiblePublisherAbuseReviewItem(item)) continue;
+    if (!(await isVisiblePublisherAbuseReviewItem(ctx, item))) continue;
     items.push(item);
     if (items.length >= args.limit) break;
   }
@@ -1073,11 +1171,11 @@ async function getRecentResolvedPublisherAbuseReviewItems(ctx: QueryCtx, limit: 
       .query("publisherAbuseReviewNominations")
       .withIndex("by_status_and_reviewed_at", (q) => q.eq("status", status))
       .order("desc")
-      .take(limit);
+      .take(limit * MAX_REVIEW_DASHBOARD_SCAN_MULTIPLIER);
     nominations.push(...page);
   }
   nominations.sort((left, right) => (right.reviewedAt ?? 0) - (left.reviewedAt ?? 0));
-  return await summarizePublisherAbuseReviewNominations(ctx, nominations.slice(0, limit));
+  return await summarizeVisiblePublisherAbuseReviewNominations(ctx, nominations, limit);
 }
 
 async function summarizePublisherAbuseReviewNominations(
@@ -1087,6 +1185,20 @@ async function summarizePublisherAbuseReviewNominations(
   const items = [];
   for (const nomination of nominations) {
     items.push(await summarizePublisherAbuseReviewNomination(ctx, nomination));
+  }
+  return items;
+}
+
+async function summarizeVisiblePublisherAbuseReviewNominations(
+  ctx: QueryCtx,
+  nominations: Doc<"publisherAbuseReviewNominations">[],
+  limit?: number,
+) {
+  const items = [];
+  for (const nomination of nominations) {
+    const item = await summarizePublisherAbuseReviewNomination(ctx, nomination);
+    if (await isVisiblePublisherAbuseReviewItem(ctx, item)) items.push(item);
+    if (limit && items.length >= limit) break;
   }
   return items;
 }
@@ -1111,13 +1223,14 @@ async function summarizePublisherAbuseReviewNomination(
   };
 }
 
-function isVisiblePublisherAbuseReviewItem(item: PublisherAbuseReviewItem) {
+async function isVisiblePublisherAbuseReviewItem(ctx: QueryCtx, item: PublisherAbuseReviewItem) {
   return (
     item.nomination.label !== "pass" &&
     !item.ownerUser?.deletedAt &&
     !item.ownerUser?.deactivatedAt &&
     !item.publisher?.deletedAt &&
-    !item.publisher?.deactivatedAt
+    !item.publisher?.deactivatedAt &&
+    !(await isPublisherAbuseExcludedReviewItem(ctx, item))
   );
 }
 
