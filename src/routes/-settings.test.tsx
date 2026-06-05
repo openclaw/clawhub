@@ -108,6 +108,11 @@ function mockSignedInSettings({
   githubSources?: Array<{
     _id: string;
     repo: string;
+    ownerPublisher?: {
+      _id: string;
+      handle: string;
+      displayName: string;
+    } | null;
     defaultBranch?: string;
     lastSyncStatus?: "ok" | "failed" | "skipped";
     lastSyncError?: string;
@@ -144,7 +149,8 @@ function mockSignedInSettings({
     if (queryName === "tokens:listMine") return [];
     if (queryName === "publishers:listMine") return memberships;
     if (queryName === "publishers:listMembers") return members;
-    if (queryName === "githubSkillSources:listForPublisher") return githubSources;
+    if (queryName === "githubSkillSources:listForManageableOfficialPublishers")
+      return githubSources;
     if (args && typeof args === "object" && "publisherHandle" in args) return members;
     if (args && typeof args === "object") return [];
     return memberships;
@@ -261,6 +267,7 @@ describe("Settings", () => {
     expect(screen.getByRole("heading", { name: "Sync GitHub skills repo" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Synced repositories" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "No synced repositories" })).toBeTruthy();
+    expect(screen.getByLabelText("ClawHub Org")).toBeTruthy();
     expect(screen.getByPlaceholderText("https://github.com/owner/repo")).toBeTruthy();
     expect(screen.queryByText(/Publishing as/i)).toBeNull();
     expect(screen.queryByText(/skills\.sh\.json/i)).toBeNull();
@@ -293,6 +300,11 @@ describe("Settings", () => {
         {
           _id: "githubSkillSources:matt",
           repo: "mattpocock/skills",
+          ownerPublisher: {
+            _id: "publisher_openclaw",
+            handle: "openclaw",
+            displayName: "OpenClaw Team",
+          },
           defaultBranch: "main",
           lastSyncStatus: "ok",
           displayManifestStatus: "ok",
