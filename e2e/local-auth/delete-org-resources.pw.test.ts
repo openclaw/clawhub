@@ -84,6 +84,9 @@ test("org owners can delete an org and hide its skills and plugins", async ({ pa
   await waitForHydration(page);
   await expect(page.getByRole("heading", { name: displayName })).toBeVisible();
   await expect(page.getByText(skillDisplayName)).toBeVisible();
+
+  await page.goto(`/plugins/${encodeURIComponent(packageName)}`, { waitUntil: "domcontentloaded" });
+  await waitForHydration(page);
   await expect(page.getByText(packageDisplayName)).toBeVisible();
 
   await page.goto("/settings?view=organizations", { waitUntil: "domcontentloaded" });
@@ -109,6 +112,12 @@ test("org owners can delete an org and hide its skills and plugins", async ({ pa
     waitUntil: "domcontentloaded",
   });
   await waitForHydration(page);
+  await expect(page.getByText("No plugins found")).toBeVisible();
+  await expect(page.getByText(new RegExp(escapeRegExp(packageDisplayName)))).toHaveCount(0);
+
+  await page.goto(`/plugins/${encodeURIComponent(packageName)}`, { waitUntil: "domcontentloaded" });
+  await waitForHydration(page);
+  await expect(page.getByRole("heading", { name: "Plugin not found" })).toBeVisible();
   await expect(page.getByText(new RegExp(escapeRegExp(packageDisplayName)))).toHaveCount(0);
 
   await expectHealthyPage(page, errors);
