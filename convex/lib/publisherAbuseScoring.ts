@@ -1,4 +1,5 @@
 export const PUBLISHER_ABUSE_MODEL_VERSION = "publisher-abuse-pressure.v1";
+export const PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION = "publisher-abuse-temporal.v1";
 
 export type PublisherAbuseLabel = "pass" | "review" | "potential_ban_candidate";
 
@@ -50,6 +51,31 @@ export type PublisherAbuseScore = PublisherAbuseRawScore & {
   zScore: number;
 };
 
+export type SkillTemporalAbuseDailyStat = {
+  day: number;
+  downloads: number;
+  installs: number;
+};
+
+export type SkillTemporalAbuseScore = {
+  spike: boolean;
+  sustained: boolean;
+  pressure: number;
+  recent7Downloads: number;
+  recent7Installs: number;
+  previous30Downloads: number;
+  baseline7Downloads: number;
+  spikeMultiplier: number;
+  recent30Downloads: number;
+  recent30Installs: number;
+  downloadInstallRatio30: number;
+  spikeWindowStartDay?: number;
+  spikeWindowEndDay?: number;
+  sustainedWindowStartDay?: number;
+  sustainedWindowEndDay?: number;
+  reasonCodes: string[];
+};
+
 export const DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG = {
   modelVersion: PUBLISHER_ABUSE_MODEL_VERSION,
   skillPivot: 100,
@@ -70,6 +96,16 @@ export const DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG = {
 } satisfies PublisherAbuseModelConfig;
 
 const MIN_PRESSURE_FOR_LOG = 1e-9;
+const TEMPORAL_SPIKE_RECENT_DAYS = 7;
+const TEMPORAL_SPIKE_BASELINE_DAYS = 30;
+const TEMPORAL_SUSTAINED_DAYS = 30;
+const TEMPORAL_MIN_SPIKE_DOWNLOADS = 1_000;
+const TEMPORAL_MAX_SPIKE_INSTALLS = 2;
+const TEMPORAL_MIN_SPIKE_MULTIPLIER = 10;
+const TEMPORAL_MIN_SUSTAINED_DOWNLOADS = 3_000;
+const TEMPORAL_MAX_SUSTAINED_INSTALLS = 5;
+const TEMPORAL_MIN_SUSTAINED_DOWNLOAD_INSTALL_RATIO = 1_000;
+const TEMPORAL_MIN_BASELINE_7_DOWNLOADS = 100;
 
 export function labelForPublisherAbuseZScore(
   zScore: number,
@@ -78,6 +114,21 @@ export function labelForPublisherAbuseZScore(
   if (zScore >= config.potentialBanCandidateZThreshold) return "potential_ban_candidate";
   if (zScore >= config.reviewZThreshold) return "review";
   return "pass";
+}
+
+export function computeTemporalPublisherAbuseZScore(input: {
+  label: PublisherAbuseLabel;
+  highTemporalSkillCount: number;
+  maxTemporalPressure: number;
+}): number {
+  if (input.label === "pass") return 0;
+
+  const pressureBoost = Math.log10(Math.max(input.maxTemporalPressure, 1) + 1) / 2;
+  const skillCountBoost = Math.max(0, input.highTemporalSkillCount - 2) * 0.2;
+  if (input.label === "potential_ban_candidate") {
+    return 2.5 + Math.min(2, pressureBoost + skillCountBoost);
+  }
+  return 1.5 + Math.min(0.99, pressureBoost);
 }
 
 export function computePublisherAbuseRawScore(
@@ -204,6 +255,65 @@ export function summarizePublisherAbuseLogPressure(
   };
 }
 
+export function computeCurrentSkillTemporalAbuseScore(input: {
+  todayDay: number;
+  dailyStats: SkillTemporalAbuseDailyStat[];
+}): SkillTemporalAbuseScore {
+  const statsByDay = aggregateSkillTemporalDailyStats(input.dailyStats);
+  return computeSkillTemporalAbuseScoreForWindows({
+    statsByDay,
+    spikeStartDay: input.todayDay - TEMPORAL_SPIKE_RECENT_DAYS + 1,
+    sustainedStartDay: input.todayDay - TEMPORAL_SUSTAINED_DAYS + 1,
+  });
+}
+
+export function computeHistoricalSkillTemporalAbuseScore(input: {
+  dailyStats: SkillTemporalAbuseDailyStat[];
+}): SkillTemporalAbuseScore {
+  const statsByDay = aggregateSkillTemporalDailyStats(input.dailyStats);
+  const days = [...statsByDay.keys()];
+  if (days.length === 0) return emptySkillTemporalAbuseScore();
+
+  const minDay = Math.min(...days);
+  const maxDay = Math.max(...days);
+  let bestSpike = emptySkillTemporalAbuseScore();
+  let bestSustained = emptySkillTemporalAbuseScore();
+
+  for (let startDay = minDay; startDay <= maxDay; startDay += 1) {
+    if (startDay + TEMPORAL_SPIKE_RECENT_DAYS - 1 <= maxDay) {
+      const score = computeSkillTemporalAbuseScoreForWindows({
+        statsByDay,
+        spikeStartDay: startDay,
+        sustainedStartDay: startDay,
+      });
+      if (score.spike && score.spikeMultiplier > bestSpike.spikeMultiplier) {
+        bestSpike = score;
+      }
+    }
+
+    if (startDay + TEMPORAL_SUSTAINED_DAYS - 1 <= maxDay) {
+      const score = computeSkillTemporalAbuseScoreForWindows({
+        statsByDay,
+        spikeStartDay: startDay,
+        sustainedStartDay: startDay,
+      });
+      if (score.sustained && score.downloadInstallRatio30 > bestSustained.downloadInstallRatio30) {
+        bestSustained = score;
+      }
+    }
+  }
+
+  return mergeTemporalAbuseWindowScores(bestSpike, bestSustained);
+}
+
+export function labelForTemporalPublisherAbuse(input: {
+  highTemporalSkillCount: number;
+}): PublisherAbuseLabel {
+  if (input.highTemporalSkillCount >= 2) return "potential_ban_candidate";
+  if (input.highTemporalSkillCount >= 1) return "review";
+  return "pass";
+}
+
 function reasonCodesForPublisher(input: {
   publishedSkills: number;
   installsPerSkill: number;
@@ -227,6 +337,137 @@ function reasonCodesForPublisher(input: {
     codes.push("extreme_volume_low_engagement");
   }
   return codes;
+}
+
+function computeSkillTemporalAbuseScoreForWindows(input: {
+  statsByDay: Map<number, { downloads: number; installs: number }>;
+  spikeStartDay: number;
+  sustainedStartDay: number;
+}): SkillTemporalAbuseScore {
+  const spikeEndDay = input.spikeStartDay + TEMPORAL_SPIKE_RECENT_DAYS - 1;
+  const sustainedEndDay = input.sustainedStartDay + TEMPORAL_SUSTAINED_DAYS - 1;
+  const recent7 = sumTemporalStatsRange(input.statsByDay, input.spikeStartDay, spikeEndDay);
+  const previous30 = sumTemporalStatsRange(
+    input.statsByDay,
+    input.spikeStartDay - TEMPORAL_SPIKE_BASELINE_DAYS,
+    input.spikeStartDay - 1,
+  );
+  const recent30 = sumTemporalStatsRange(
+    input.statsByDay,
+    input.sustainedStartDay,
+    sustainedEndDay,
+  );
+  const baseline7Downloads = Math.max(
+    TEMPORAL_MIN_BASELINE_7_DOWNLOADS,
+    (previous30.downloads / TEMPORAL_SPIKE_BASELINE_DAYS) * TEMPORAL_SPIKE_RECENT_DAYS,
+  );
+  const spikeMultiplier = baseline7Downloads > 0 ? recent7.downloads / baseline7Downloads : 0;
+  const downloadInstallRatio30 = recent30.downloads / Math.max(1, recent30.installs);
+  const spike =
+    recent7.downloads >= TEMPORAL_MIN_SPIKE_DOWNLOADS &&
+    recent7.installs <= TEMPORAL_MAX_SPIKE_INSTALLS &&
+    spikeMultiplier >= TEMPORAL_MIN_SPIKE_MULTIPLIER;
+  const sustained =
+    recent30.downloads >= TEMPORAL_MIN_SUSTAINED_DOWNLOADS &&
+    recent30.installs <= TEMPORAL_MAX_SUSTAINED_INSTALLS &&
+    downloadInstallRatio30 >= TEMPORAL_MIN_SUSTAINED_DOWNLOAD_INSTALL_RATIO;
+  const reasonCodes: string[] = [];
+  if (spike) reasonCodes.push("temporal_download_spike_flat_installs");
+  if (sustained) reasonCodes.push("temporal_sustained_downloads_flat_installs");
+
+  return {
+    spike,
+    sustained,
+    pressure: Math.max(spike ? spikeMultiplier : 0, sustained ? downloadInstallRatio30 / 1_000 : 0),
+    recent7Downloads: recent7.downloads,
+    recent7Installs: recent7.installs,
+    previous30Downloads: previous30.downloads,
+    baseline7Downloads,
+    spikeMultiplier,
+    recent30Downloads: recent30.downloads,
+    recent30Installs: recent30.installs,
+    downloadInstallRatio30,
+    spikeWindowStartDay: spike ? input.spikeStartDay : undefined,
+    spikeWindowEndDay: spike ? spikeEndDay : undefined,
+    sustainedWindowStartDay: sustained ? input.sustainedStartDay : undefined,
+    sustainedWindowEndDay: sustained ? sustainedEndDay : undefined,
+    reasonCodes,
+  };
+}
+
+function mergeTemporalAbuseWindowScores(
+  bestSpike: SkillTemporalAbuseScore,
+  bestSustained: SkillTemporalAbuseScore,
+): SkillTemporalAbuseScore {
+  if (!bestSpike.spike && !bestSustained.sustained) return emptySkillTemporalAbuseScore();
+  const reasonCodes: string[] = [];
+  if (bestSpike.spike) reasonCodes.push("temporal_download_spike_flat_installs");
+  if (bestSustained.sustained) reasonCodes.push("temporal_sustained_downloads_flat_installs");
+
+  return {
+    spike: bestSpike.spike,
+    sustained: bestSustained.sustained,
+    pressure: Math.max(bestSpike.pressure, bestSustained.pressure),
+    recent7Downloads: bestSpike.recent7Downloads,
+    recent7Installs: bestSpike.recent7Installs,
+    previous30Downloads: bestSpike.previous30Downloads,
+    baseline7Downloads: bestSpike.baseline7Downloads,
+    spikeMultiplier: bestSpike.spikeMultiplier,
+    recent30Downloads: bestSustained.recent30Downloads,
+    recent30Installs: bestSustained.recent30Installs,
+    downloadInstallRatio30: bestSustained.downloadInstallRatio30,
+    spikeWindowStartDay: bestSpike.spikeWindowStartDay,
+    spikeWindowEndDay: bestSpike.spikeWindowEndDay,
+    sustainedWindowStartDay: bestSustained.sustainedWindowStartDay,
+    sustainedWindowEndDay: bestSustained.sustainedWindowEndDay,
+    reasonCodes,
+  };
+}
+
+function aggregateSkillTemporalDailyStats(dailyStats: SkillTemporalAbuseDailyStat[]) {
+  const byDay = new Map<number, { downloads: number; installs: number }>();
+  for (const point of dailyStats) {
+    if (!Number.isFinite(point.day)) continue;
+    const day = Math.trunc(point.day);
+    const existing = byDay.get(day) ?? { downloads: 0, installs: 0 };
+    existing.downloads += nonNegative(point.downloads);
+    existing.installs += nonNegative(point.installs);
+    byDay.set(day, existing);
+  }
+  return byDay;
+}
+
+function sumTemporalStatsRange(
+  statsByDay: Map<number, { downloads: number; installs: number }>,
+  startDay: number,
+  endDay: number,
+) {
+  let downloads = 0;
+  let installs = 0;
+  for (let day = startDay; day <= endDay; day += 1) {
+    const point = statsByDay.get(day);
+    if (!point) continue;
+    downloads += point.downloads;
+    installs += point.installs;
+  }
+  return { downloads, installs };
+}
+
+function emptySkillTemporalAbuseScore(): SkillTemporalAbuseScore {
+  return {
+    spike: false,
+    sustained: false,
+    pressure: 0,
+    recent7Downloads: 0,
+    recent7Installs: 0,
+    previous30Downloads: 0,
+    baseline7Downloads: TEMPORAL_MIN_BASELINE_7_DOWNLOADS,
+    spikeMultiplier: 0,
+    recent30Downloads: 0,
+    recent30Installs: 0,
+    downloadInstallRatio30: 0,
+    reasonCodes: [],
+  };
 }
 
 function nonNegative(value: number) {

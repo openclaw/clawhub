@@ -2116,6 +2116,7 @@ const publisherAbuseScoreRuns = defineTable({
   errorMessage: v.optional(v.string()),
 })
   .index("by_status_and_updated_at", ["status", "updatedAt"])
+  .index("by_model_version_and_started_at", ["modelVersion", "startedAt"])
   .index("by_started_at", ["startedAt"]);
 
 const publisherAbuseScores = defineTable({
@@ -2138,6 +2139,35 @@ const publisherAbuseScores = defineTable({
   starsPerSkill: v.number(),
   downloadsPerSkill: v.number(),
   reasonCodes: v.array(v.string()),
+  temporalHighSkillCount: v.optional(v.number()),
+  temporalSpikeSkillCount: v.optional(v.number()),
+  temporalSustainedSkillCount: v.optional(v.number()),
+  temporalMaxPressure: v.optional(v.number()),
+  temporalEvidence: v.optional(
+    v.array(
+      v.object({
+        skillId: v.id("skills"),
+        slug: v.string(),
+        displayName: v.string(),
+        spike: v.boolean(),
+        sustained: v.boolean(),
+        pressure: v.number(),
+        recent7Downloads: v.number(),
+        recent7Installs: v.number(),
+        previous30Downloads: v.number(),
+        baseline7Downloads: v.number(),
+        spikeMultiplier: v.number(),
+        recent30Downloads: v.number(),
+        recent30Installs: v.number(),
+        downloadInstallRatio30: v.number(),
+        spikeWindowStartDay: v.optional(v.number()),
+        spikeWindowEndDay: v.optional(v.number()),
+        sustainedWindowStartDay: v.optional(v.number()),
+        sustainedWindowEndDay: v.optional(v.number()),
+        reasonCodes: v.array(v.string()),
+      }),
+    ),
+  ),
   createdAt: v.number(),
 })
   .index("by_run_and_rank", ["runId", "rank"])
@@ -2170,6 +2200,12 @@ const publisherAbuseReviewNominations = defineTable({
   .index("by_status_and_updated_at", ["status", "updatedAt"])
   .index("by_status_and_reviewed_at", ["status", "reviewedAt"])
   .index("by_status_and_label_and_last_scored_at", ["status", "label", "lastScoredAt"])
+  .index("by_status_and_model_version_and_label_and_last_scored_at", [
+    "status",
+    "modelVersion",
+    "label",
+    "lastScoredAt",
+  ])
   .index("by_label_and_status_and_last_scored_at", ["label", "status", "lastScoredAt"])
   .index("by_last_scored_at", ["lastScoredAt"]);
 

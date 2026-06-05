@@ -21,10 +21,16 @@ vi.mock("./_generated/api", () => ({
   internal: {
     publisherAbuse: {
       collectPublisherAbuseScoresPageInternal: Symbol("collectPublisherAbuseScoresPageInternal"),
+      collectTemporalPublisherAbuseSkillCandidatesPageInternal: Symbol(
+        "collectTemporalPublisherAbuseSkillCandidatesPageInternal",
+      ),
       finalizePublisherAbuseScoresPageInternal: Symbol("finalizePublisherAbuseScoresPageInternal"),
       getOrStartPublisherAbuseScoreRunInternal: Symbol("getOrStartPublisherAbuseScoreRunInternal"),
       getPublisherAbuseScoreRunStateInternal: Symbol("getPublisherAbuseScoreRunStateInternal"),
       markPublisherAbuseScoreRunFailedInternal: Symbol("markPublisherAbuseScoreRunFailedInternal"),
+      persistTemporalPublisherAbuseCandidatesInternal: Symbol(
+        "persistTemporalPublisherAbuseCandidatesInternal",
+      ),
       runPublisherAbuseScoreRunInternal: Symbol("runPublisherAbuseScoreRunInternal"),
     },
     users: {
@@ -87,6 +93,88 @@ const startScoreRunHandler = (
   publisherAbuse.startPublisherAbuseScoreRun as unknown as Wrapped<
     Record<string, never>,
     { ok: true; runId: string; pages: number; isDone: boolean }
+  >
+)._handler;
+
+const temporalRunHandler = (
+  publisherAbuse.runTemporalPublisherAbuseScanInternal as unknown as Wrapped<
+    {
+      mode?: "current" | "backfill";
+      dryRun?: boolean;
+      candidateLimit?: number;
+      batchSize?: number;
+      maxPages?: number;
+      todayDay?: number;
+      lookbackDays?: number;
+      trigger?: "cron" | "manual";
+    },
+    {
+      ok: true;
+      dryRun: boolean;
+      mode: "current" | "backfill";
+      scannedSkills: number;
+      highTemporalSkills: number;
+      flaggedPublishers: number;
+      nominations: number;
+    }
+  >
+)._handler;
+
+const collectTemporalHandler = (
+  publisherAbuse.collectTemporalPublisherAbuseSkillCandidatesPageInternal as unknown as Wrapped<
+    {
+      mode: "current" | "backfill";
+      cursor?: string;
+      batchSize?: number;
+      todayDay?: number;
+      lookbackDays?: number;
+    },
+    {
+      cursor?: string;
+      isDone: boolean;
+      scannedSkills: number;
+      candidates: unknown[];
+    }
+  >
+)._handler;
+
+const persistTemporalHandler = (
+  publisherAbuse.persistTemporalPublisherAbuseCandidatesInternal as unknown as Wrapped<
+    {
+      mode: "current" | "backfill";
+      trigger: "cron" | "manual";
+      scanComplete: boolean;
+      candidates: Array<{
+        ownerKey: string;
+        ownerPublisherId?: string;
+        ownerUserId?: string;
+        handleSnapshot: string;
+        skillId: string;
+        slug: string;
+        displayName: string;
+        totalDownloads: number;
+        totalInstalls: number;
+        temporalScore: {
+          spike: boolean;
+          sustained: boolean;
+          pressure: number;
+          recent7Downloads: number;
+          recent7Installs: number;
+          previous30Downloads: number;
+          baseline7Downloads: number;
+          spikeMultiplier: number;
+          recent30Downloads: number;
+          recent30Installs: number;
+          downloadInstallRatio30: number;
+          spikeWindowStartDay?: number;
+          spikeWindowEndDay?: number;
+          sustainedWindowStartDay?: number;
+          sustainedWindowEndDay?: number;
+          reasonCodes: string[];
+        };
+      }>;
+    },
+    { runId: string; nominations: number; flaggedPublishers: number }
   >
 )._handler;
 
@@ -774,11 +862,26 @@ describe("publisher abuse dry-run persistence", () => {
     const query = vi.fn((table: string) => {
       if (table === "publisherAbuseScoreRuns") {
         return {
-          withIndex: () => ({
-            order: () => ({
-              first: async () => latestRun,
-            }),
-          }),
+          withIndex: (
+            indexName: string,
+            build: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+          ) => {
+            expect(indexName).toBe("by_model_version_and_started_at");
+            const constraints: Record<string, unknown> = {};
+            const q = {
+              eq(field: string, value: unknown) {
+                constraints[field] = value;
+                return q;
+              },
+            };
+            build(q);
+            expect(constraints.modelVersion).toBe("publisher-abuse-pressure.v1");
+            return {
+              order: () => ({
+                first: async () => latestRun,
+              }),
+            };
+          },
         };
       }
       if (table === "publisherAbuseScores") {
@@ -3641,4 +3744,617 @@ describe("publisher abuse dry-run persistence", () => {
 
     expect(ctx.db.insert).not.toHaveBeenCalled();
   });
+
+  it("dry-runs the temporal backfill without persisting nominations", async () => {
+    const candidate = temporalCandidate("skills:polymarket-trade", {
+      slug: "polymarket-trade",
+      displayName: "Polymarket Trade",
+    });
+    const ctx = {
+      runQuery: vi.fn(async () => ({
+        cursor: undefined,
+        isDone: true,
+        scannedSkills: 1,
+        candidates: [candidate],
+      })),
+      runMutation: vi.fn(),
+    };
+
+    await expect(
+      temporalRunHandler(ctx, {
+        mode: "backfill",
+        dryRun: true,
+        candidateLimit: 1,
+        batchSize: 1,
+        maxPages: 1,
+        todayDay: 100,
+      }),
+    ).resolves.toEqual({
+      ok: true,
+      dryRun: true,
+      mode: "backfill",
+      scannedSkills: 1,
+      highTemporalSkills: 1,
+      flaggedPublishers: 1,
+      nominations: 0,
+      candidates: [candidate],
+    });
+
+    expect(ctx.runQuery).toHaveBeenCalledTimes(1);
+    expect(ctx.runMutation).not.toHaveBeenCalled();
+  });
+
+  it("caps temporal scan candidate limits below Convex array limits", async () => {
+    const ctx = {
+      runQuery: vi.fn(async (_query: unknown, args: { batchSize: number }) => ({
+        cursor: "next",
+        isDone: false,
+        scannedSkills: args.batchSize,
+        candidates: [],
+      })),
+      runMutation: vi.fn(),
+    };
+
+    await expect(
+      temporalRunHandler(ctx, {
+        mode: "current",
+        dryRun: true,
+        candidateLimit: 10_000,
+        batchSize: 100,
+        maxPages: 100,
+        todayDay: 100,
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      dryRun: true,
+      mode: "current",
+      scannedSkills: 8_000,
+      highTemporalSkills: 0,
+      flaggedPublishers: 0,
+      nominations: 0,
+    });
+
+    expect(ctx.runQuery).toHaveBeenCalledTimes(80);
+    expect(ctx.runMutation).not.toHaveBeenCalled();
+  });
+
+  it("persists an empty current temporal scan so stale nominations can clear", async () => {
+    const ctx = {
+      runQuery: vi.fn(async () => ({
+        cursor: undefined,
+        isDone: true,
+        scannedSkills: 12,
+        candidates: [],
+      })),
+      runMutation: vi.fn(async () => ({
+        flaggedPublishers: 0,
+        nominations: 0,
+      })),
+    };
+
+    await expect(
+      temporalRunHandler(ctx, {
+        mode: "current",
+        dryRun: false,
+        candidateLimit: 100,
+        batchSize: 50,
+        maxPages: 1,
+        todayDay: 100,
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      dryRun: false,
+      mode: "current",
+      scannedSkills: 12,
+      highTemporalSkills: 0,
+      flaggedPublishers: 0,
+      nominations: 0,
+    });
+
+    expect(ctx.runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        mode: "current",
+        candidates: [],
+        scanComplete: true,
+      }),
+    );
+  });
+
+  it("caps backfill temporal page size by lookback read budget", async () => {
+    const indexBuilder = {
+      eq: vi.fn(() => indexBuilder),
+      gte: vi.fn(() => indexBuilder),
+      lte: vi.fn(() => indexBuilder),
+    };
+    const paginate = vi.fn(async () => ({
+      page: [
+        {
+          _id: "skills:quiet-old",
+          ownerPublisherId: "publishers:quiet",
+          slug: "quiet-old",
+          displayName: "Quiet Old",
+          softDeletedAt: undefined,
+          statsDownloads: 10,
+          statsInstallsAllTime: 0,
+          stats: {
+            downloads: 10,
+            stars: 0,
+            installsCurrent: 0,
+            installsAllTime: 0,
+          },
+        },
+      ],
+      isDone: true,
+      continueCursor: "",
+    }));
+    const takeDailyStats = vi.fn(async () => []);
+    const ctx = {
+      db: {
+        get: vi.fn(),
+        query: vi.fn((table: string) => {
+          if (table === "skills") {
+            return {
+              withIndex: (indexName: string, callback: (q: typeof indexBuilder) => unknown) => {
+                expect(indexName).toBe("by_active_stats_downloads");
+                callback(indexBuilder);
+                return {
+                  order: () => ({ paginate }),
+                };
+              },
+            };
+          }
+          if (table === "skillDailyStats") {
+            return {
+              withIndex: (indexName: string, callback: (q: typeof indexBuilder) => unknown) => {
+                expect(indexName).toBe("by_skill_day");
+                callback(indexBuilder);
+                return { take: takeDailyStats };
+              },
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await expect(
+      collectTemporalHandler(ctx, {
+        mode: "backfill",
+        batchSize: 100,
+        lookbackDays: 730,
+        todayDay: 1000,
+      }),
+    ).resolves.toEqual({
+      cursor: undefined,
+      isDone: true,
+      scannedSkills: 1,
+      candidates: [],
+    });
+
+    expect(paginate).toHaveBeenCalledWith({ cursor: null, numItems: 10 });
+    expect(takeDailyStats).toHaveBeenCalledWith(730);
+    expect(ctx.db.get).not.toHaveBeenCalled();
+  });
+
+  it("skips official org publishers during temporal candidate collection", async () => {
+    const indexBuilder = {
+      eq: vi.fn(() => indexBuilder),
+      gte: vi.fn(() => indexBuilder),
+      lte: vi.fn(() => indexBuilder),
+    };
+    const officialPublisher = {
+      _id: "publishers:openclaw",
+      kind: "org",
+      handle: "openclaw",
+      linkedUserId: "users:openclaw",
+    };
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === officialPublisher._id) return officialPublisher;
+          throw new Error(`unexpected get ${id}`);
+        }),
+        query: vi.fn((table: string) => {
+          if (table === "skills") {
+            return {
+              withIndex: (indexName: string, callback: (q: typeof indexBuilder) => unknown) => {
+                expect(indexName).toBe("by_active_stats_downloads");
+                callback(indexBuilder);
+                return {
+                  order: () => ({
+                    paginate: async () => ({
+                      page: [
+                        {
+                          _id: "skills:official-spike",
+                          ownerPublisherId: officialPublisher._id,
+                          slug: "official-spike",
+                          displayName: "Official Spike",
+                          softDeletedAt: undefined,
+                          statsDownloads: 10_000,
+                          statsInstallsAllTime: 0,
+                          stats: {
+                            downloads: 10_000,
+                            stars: 0,
+                            installsCurrent: 0,
+                            installsAllTime: 0,
+                          },
+                        },
+                      ],
+                      isDone: true,
+                      continueCursor: "",
+                    }),
+                  }),
+                };
+              },
+            };
+          }
+          if (table === "skillDailyStats") {
+            return {
+              withIndex: (indexName: string, callback: (q: typeof indexBuilder) => unknown) => {
+                expect(indexName).toBe("by_skill_day");
+                callback(indexBuilder);
+                return {
+                  take: async () =>
+                    Array.from({ length: 7 }, (_, index) => ({
+                      skillId: "skills:official-spike",
+                      day: 94 + index,
+                      downloads: 200,
+                      installs: 0,
+                      updatedAt: 1,
+                    })),
+                };
+              },
+            };
+          }
+          if (table === "officialPublishers") {
+            return {
+              withIndex: (indexName: string, callback: (q: typeof indexBuilder) => unknown) => {
+                expect(indexName).toBe("by_publisher");
+                callback(indexBuilder);
+                return {
+                  unique: async () => ({
+                    _id: "officialPublishers:openclaw",
+                    publisherId: officialPublisher._id,
+                  }),
+                };
+              },
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await expect(
+      collectTemporalHandler(ctx, {
+        mode: "current",
+        batchSize: 1,
+        todayDay: 100,
+      }),
+    ).resolves.toEqual({
+      cursor: undefined,
+      isDone: true,
+      scannedSkills: 1,
+      candidates: [],
+    });
+  });
+
+  it("persists temporal abuse candidates into the existing publisher review queue", async () => {
+    const insert = vi.fn(async (table: string, _value?: unknown) => {
+      if (table === "publisherAbuseScoreRuns") return "publisherAbuseScoreRuns:temporal";
+      if (table === "publisherAbuseScores") return "publisherAbuseScores:temporal";
+      if (table === "publisherAbuseReviewNominations") {
+        return "publisherAbuseReviewNominations:temporal";
+      }
+      if (table === "publisherAbuseReviewEvents") return "publisherAbuseReviewEvents:temporal";
+      throw new Error(`unexpected insert ${table}`);
+    });
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "publisherAbuseScoreRuns:temporal") {
+            return {
+              _id: "publisherAbuseScoreRuns:temporal",
+              modelVersion: "publisher-abuse-temporal.v1",
+              modelConfig: TEST_MODEL_CONFIG,
+              trigger: "cron",
+              status: "running",
+              phase: "collecting",
+              scannedPublishers: 0,
+              scoredPublishers: 0,
+              finalizedScores: 0,
+              nominatedPublishers: 0,
+              passCount: 0,
+              reviewCount: 0,
+              potentialBanCandidateCount: 0,
+              sumLogPressure: 0,
+              sumSquaredLogPressure: 0,
+            };
+          }
+          throw new Error(`unexpected get ${id}`);
+        }),
+        insert,
+        patch: vi.fn(async () => null),
+        query: vi.fn((table: string) => {
+          if (table === "publisherAbuseReviewNominations") {
+            return {
+              withIndex: (indexName: string) => {
+                if (indexName === "by_owner_key_and_model_version") {
+                  return {
+                    first: async () => null,
+                  };
+                }
+                if (indexName === "by_status_and_model_version_and_label_and_last_scored_at") {
+                  return {
+                    order: () => ({
+                      take: async () => [],
+                    }),
+                  };
+                }
+                throw new Error(`unexpected nomination index ${indexName}`);
+              },
+            };
+          }
+          throw new Error(`unexpected query ${table}`);
+        }),
+      },
+    };
+
+    await expect(
+      persistTemporalHandler(ctx, {
+        mode: "current",
+        trigger: "cron",
+        scanComplete: true,
+        candidates: [
+          temporalCandidate("skills:first", { slug: "first", displayName: "First" }),
+          temporalCandidate("skills:second", { slug: "second", displayName: "Second" }),
+        ],
+      }),
+    ).resolves.toEqual({
+      runId: "publisherAbuseScoreRuns:temporal",
+      flaggedPublishers: 1,
+      nominations: 1,
+    });
+
+    expect(insert).toHaveBeenCalledWith(
+      "publisherAbuseScores",
+      expect.objectContaining({
+        ownerKey: "publisher:publishers:pollyreach",
+        label: "potential_ban_candidate",
+        zScore: expect.any(Number),
+        temporalHighSkillCount: 2,
+        temporalSpikeSkillCount: 2,
+        temporalSustainedSkillCount: 0,
+      }),
+    );
+    expect(insert).toHaveBeenCalledWith(
+      "publisherAbuseReviewNominations",
+      expect.objectContaining({
+        ownerKey: "publisher:publishers:pollyreach",
+        label: "potential_ban_candidate",
+        latestScoreId: "publisherAbuseScores:temporal",
+      }),
+    );
+    const scoreInsertPayload = insert.mock.calls.find(
+      ([table]) => table === "publisherAbuseScores",
+    )?.[1] as { zScore: number } | undefined;
+    expect(scoreInsertPayload).toEqual(expect.objectContaining({ zScore: expect.any(Number) }));
+    expect(scoreInsertPayload?.zScore).toBeGreaterThanOrEqual(2.5);
+  });
+
+  it("does not clear stale temporal nominations when the current scan is partial", async () => {
+    const insert = vi.fn(async (table: string) => {
+      if (table === "publisherAbuseScoreRuns") return "publisherAbuseScoreRuns:temporal";
+      throw new Error(`unexpected insert ${table}`);
+    });
+    const patch = vi.fn(async () => null);
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "publisherAbuseScoreRuns:temporal") {
+            return {
+              _id: "publisherAbuseScoreRuns:temporal",
+              modelVersion: "publisher-abuse-temporal.v1",
+              modelConfig: TEST_MODEL_CONFIG,
+              trigger: "cron",
+              status: "running",
+              phase: "collecting",
+              scannedPublishers: 0,
+              scoredPublishers: 0,
+              finalizedScores: 0,
+              nominatedPublishers: 0,
+              passCount: 0,
+              reviewCount: 0,
+              potentialBanCandidateCount: 0,
+              sumLogPressure: 0,
+              sumSquaredLogPressure: 0,
+            };
+          }
+          throw new Error(`unexpected get ${id}`);
+        }),
+        insert,
+        patch,
+        query: vi.fn(() => {
+          throw new Error("stale nominations must not be queried for a partial scan");
+        }),
+      },
+    };
+
+    await expect(
+      persistTemporalHandler(ctx, {
+        mode: "current",
+        trigger: "cron",
+        scanComplete: false,
+        candidates: [],
+      }),
+    ).resolves.toEqual({
+      runId: "publisherAbuseScoreRuns:temporal",
+      flaggedPublishers: 0,
+      nominations: 0,
+    });
+
+    expect(insert).toHaveBeenCalledTimes(1);
+    expect(patch).toHaveBeenCalledWith(
+      "publisherAbuseScoreRuns:temporal",
+      expect.objectContaining({
+        passCount: 0,
+        scoredPublishers: 0,
+        finalizedScores: 0,
+      }),
+    );
+  });
+
+  it("writes pass scores for stale temporal nominations when current signals clear", async () => {
+    const insert = vi.fn(async (table: string) => {
+      if (table === "publisherAbuseScoreRuns") return "publisherAbuseScoreRuns:temporal";
+      if (table === "publisherAbuseScores") return "publisherAbuseScores:pass";
+      if (table === "publisherAbuseReviewEvents") return "publisherAbuseReviewEvents:pass";
+      throw new Error(`unexpected insert ${table}`);
+    });
+    const patch = vi.fn(async () => null);
+    const staleNomination = {
+      _id: "publisherAbuseReviewNominations:stale",
+      ownerKey: "publisher:publishers:stale",
+      ownerPublisherId: "publishers:stale",
+      ownerUserId: "users:stale",
+      handleSnapshot: "stale-pub",
+      latestScoreId: "publisherAbuseScores:old",
+      modelVersion: "publisher-abuse-temporal.v1",
+      label: "review",
+      status: "pending",
+      openedAt: 1,
+      openedByRunId: "publisherAbuseScoreRuns:old",
+      lastScoredAt: 1,
+      updatedAt: 1,
+    };
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "publisherAbuseScoreRuns:temporal") {
+            return {
+              _id: "publisherAbuseScoreRuns:temporal",
+              modelVersion: "publisher-abuse-temporal.v1",
+              modelConfig: TEST_MODEL_CONFIG,
+              trigger: "cron",
+              status: "running",
+              phase: "collecting",
+              scannedPublishers: 0,
+              scoredPublishers: 0,
+              finalizedScores: 0,
+              nominatedPublishers: 0,
+              passCount: 0,
+              reviewCount: 0,
+              potentialBanCandidateCount: 0,
+              sumLogPressure: 0,
+              sumSquaredLogPressure: 0,
+            };
+          }
+          throw new Error(`unexpected get ${id}`);
+        }),
+        insert,
+        patch,
+        query: vi.fn((table: string) => {
+          if (table === "publisherAbuseReviewNominations") {
+            return {
+              withIndex: (
+                indexName: string,
+                build: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+              ) => {
+                const constraints: Record<string, unknown> = {};
+                const q = {
+                  eq(field: string, value: unknown) {
+                    constraints[field] = value;
+                    return q;
+                  },
+                };
+                build(q);
+                if (indexName === "by_status_and_model_version_and_label_and_last_scored_at") {
+                  return {
+                    order: () => ({
+                      take: async () => (constraints.label === "review" ? [staleNomination] : []),
+                    }),
+                  };
+                }
+                if (indexName === "by_owner_key_and_model_version") {
+                  return {
+                    first: async () => staleNomination,
+                  };
+                }
+                throw new Error(`unexpected nomination index ${indexName}`);
+              },
+            };
+          }
+          throw new Error(`unexpected query ${table}`);
+        }),
+      },
+    };
+
+    await expect(
+      persistTemporalHandler(ctx, {
+        mode: "current",
+        trigger: "cron",
+        scanComplete: true,
+        candidates: [],
+      }),
+    ).resolves.toEqual({
+      runId: "publisherAbuseScoreRuns:temporal",
+      flaggedPublishers: 0,
+      nominations: 0,
+    });
+
+    expect(insert).toHaveBeenCalledWith(
+      "publisherAbuseScores",
+      expect.objectContaining({
+        ownerKey: staleNomination.ownerKey,
+        label: "pass",
+        temporalHighSkillCount: 0,
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      staleNomination._id,
+      expect.objectContaining({
+        latestScoreId: "publisherAbuseScores:pass",
+        label: "pass",
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "publisherAbuseScoreRuns:temporal",
+      expect.objectContaining({
+        passCount: 1,
+        scoredPublishers: 1,
+        finalizedScores: 1,
+      }),
+    );
+  });
 });
+
+function temporalCandidate(skillId: string, skill: { slug: string; displayName: string }) {
+  return {
+    ownerKey: "publisher:publishers:pollyreach",
+    ownerPublisherId: "publishers:pollyreach",
+    ownerUserId: "users:joel",
+    handleSnapshot: "pollyreach",
+    skillId,
+    slug: skill.slug,
+    displayName: skill.displayName,
+    totalDownloads: 10_000,
+    totalInstalls: 0,
+    temporalScore: {
+      spike: true,
+      sustained: false,
+      pressure: 20,
+      recent7Downloads: 2_000,
+      recent7Installs: 0,
+      previous30Downloads: 100,
+      baseline7Downloads: 100,
+      spikeMultiplier: 20,
+      recent30Downloads: 2_000,
+      recent30Installs: 0,
+      downloadInstallRatio30: 2_000,
+      spikeWindowStartDay: 94,
+      spikeWindowEndDay: 100,
+      reasonCodes: ["temporal_download_spike_flat_installs"],
+    },
+  };
+}
