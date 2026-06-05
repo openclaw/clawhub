@@ -352,6 +352,7 @@ export const PackageListItemSchema = type({
   capabilityTags: "string[]?",
   executesCode: "boolean?",
   verificationTier: PackageVerificationTierSchema.or("null").optional(),
+  stats: PackageStatsSchema.optional(),
 });
 export type PackageListItem = (typeof PackageListItemSchema)[inferred];
 
