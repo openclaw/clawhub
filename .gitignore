@@ -50,6 +50,8 @@ skills-lock.json
 !.agents/skills/clawhub-moderation/**
 !.agents/skills/autoreview/
 !.agents/skills/autoreview/**
+!.agents/skills/nano-empire-tollbooth/
+!.agents/skills/nano-empire-tollbooth/**
 skills/*
 .codex/*
 !.codex/environments/
