@@ -71,6 +71,24 @@ function createDb(initial: Record<string, Row[]> = {}) {
         const constraints: Record<string, unknown> = {};
         build?.(chainEq(constraints));
         const matched = () => list(table).filter((row) => matches(row, constraints));
+        const paginate = async ({
+          cursor,
+          numItems,
+        }: {
+          cursor: string | null;
+          numItems: number;
+        }) => {
+          const rows = matched();
+          const offset = cursor ? Number(cursor) : 0;
+          const start = Number.isFinite(offset) && offset > 0 ? Math.trunc(offset) : 0;
+          const page = rows.slice(start, start + numItems);
+          const next = start + page.length;
+          return {
+            page,
+            continueCursor: next < rows.length ? String(next) : null,
+            isDone: next >= rows.length,
+          };
+        };
         return {
           collect: async () => matched(),
           unique: async () => matched()[0] ?? null,
@@ -78,7 +96,9 @@ function createDb(initial: Record<string, Row[]> = {}) {
           order: () => ({
             collect: async () => matched(),
             take: async (limit: number) => matched().slice(0, limit),
+            paginate,
           }),
+          paginate,
         };
       },
     }),
@@ -429,7 +449,7 @@ describe("configurePublicGitHubSkillSourceHandler", () => {
 });
 
 describe("syncGitHubSkillSourcesHandler", () => {
-  it("lists every configured source for each scheduled sync", async () => {
+  it("pages configured sources for scheduled sync", async () => {
     const { db } = createDb({
       githubSkillSources: Array.from({ length: 30 }, (_, index) => ({
         _id: `githubSkillSources:source-${index}`,
@@ -439,12 +459,22 @@ describe("syncGitHubSkillSourcesHandler", () => {
       })),
     });
 
-    await expect(listSourcesForSyncHandler({ db } as never, {})).resolves.toHaveLength(30);
+    await expect(listSourcesForSyncHandler({ db } as never, { batchSize: 20 })).resolves.toEqual(
+      expect.objectContaining({
+        sources: expect.arrayContaining([
+          expect.objectContaining({ _id: "githubSkillSources:source-0" }),
+        ]),
+        continueCursor: "20",
+        isDone: false,
+      }),
+    );
   });
 
   it("emits structured sync lifecycle events", async () => {
     const consoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
-    const runQuery = vi.fn().mockResolvedValueOnce([]);
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce({ sources: [], continueCursor: null, isDone: true });
     const runMutation = vi.fn();
 
     try {
@@ -467,6 +497,7 @@ describe("syncGitHubSkillSourcesHandler", () => {
             sourcesSucceeded: 0,
             sourcesFailed: 0,
             sourcesSkipped: 0,
+            isDone: true,
           }),
         ]),
       );
@@ -478,14 +509,18 @@ describe("syncGitHubSkillSourcesHandler", () => {
   it("rechecks repo visibility before scheduled syncs", async () => {
     const runQuery = vi
       .fn()
-      .mockResolvedValueOnce([
-        {
-          _id: "githubSkillSources:nvidia",
-          repo: "NVIDIA/skills",
-          ownerPublisherId: "publishers:nvidia",
-          defaultBranch: "main",
-        },
-      ])
+      .mockResolvedValueOnce({
+        sources: [
+          {
+            _id: "githubSkillSources:nvidia",
+            repo: "NVIDIA/skills",
+            ownerPublisherId: "publishers:nvidia",
+            defaultBranch: "main",
+          },
+        ],
+        continueCursor: null,
+        isDone: true,
+      })
       .mockResolvedValueOnce("users:nvidia");
     const runMutation = vi.fn(async () => ({ ok: true }));
     const fetchMock = vi.fn().mockResolvedValueOnce({
@@ -643,8 +678,8 @@ description: Install from a GitHub-backed source.
               : null;
           return skill && source ? { skill, source } : null;
         }
-        if (Object.keys(args).length === 0) {
-          return await listSourcesForSyncHandler({ db } as never, {});
+        if ("batchSize" in args || "cursor" in args || Object.keys(args).length === 0) {
+          return await listSourcesForSyncHandler({ db } as never, args);
         }
         throw new Error(`unexpected lifecycle query args: ${JSON.stringify(args)}`);
       }),

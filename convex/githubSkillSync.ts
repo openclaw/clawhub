@@ -35,11 +35,19 @@ const MAX_FILE_COUNT = 7_500;
 const MAX_SINGLE_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_STATIC_SCAN_TEXT_FILES = 200;
 const MAX_STATIC_SCAN_TEXT_FILE_BYTES = 256 * 1024;
+const DEFAULT_SOURCE_SYNC_BATCH_SIZE = 20;
+const MAX_SOURCE_SYNC_BATCH_SIZE = 50;
 
 type SourceForSync = Pick<
   Doc<"githubSkillSources">,
   "_id" | "repo" | "ownerPublisherId" | "defaultBranch"
 >;
+
+type SourceForSyncPage = {
+  sources: SourceForSync[];
+  continueCursor: string | null;
+  isDone: boolean;
+};
 
 type SyncOneResult = {
   ok: true;
@@ -70,6 +78,9 @@ type SyncManyResult = {
   synced: number;
   skipped: number;
   errors: number;
+  cursor: string | null;
+  isDone: boolean;
+  scheduledNext: boolean;
   results: SyncOneResult[];
 };
 
@@ -110,6 +121,11 @@ const displayManifestStatusValidator = v.union(
   v.literal("invalid"),
   v.literal("failed"),
 );
+
+function clampInt(value: number, min: number, max: number) {
+  const finite = Number.isFinite(value) ? Math.trunc(value) : min;
+  return Math.min(max, Math.max(min, finite));
+}
 
 const displayManifestValidator = v.object({
   notGrouped: v.optional(v.union(v.literal("top"), v.literal("bottom"))),
@@ -165,15 +181,28 @@ export const getSourceByRepoInternal = internalQuery({
 });
 
 export const listSourcesForSyncInternal = internalQuery({
-  args: {},
+  args: {
+    cursor: v.optional(v.union(v.string(), v.null())),
+    batchSize: v.optional(v.number()),
+  },
   handler: listSourcesForSyncHandler,
 });
 
 export async function listSourcesForSyncHandler(
   ctx: QueryCtx,
-  _args: Record<string, never>,
-): Promise<SourceForSync[]> {
-  return await ctx.db.query("githubSkillSources").withIndex("by_updated").order("asc").collect();
+  args: { cursor?: string | null; batchSize?: number },
+): Promise<SourceForSyncPage> {
+  const batchSize = clampInt(
+    args.batchSize ?? DEFAULT_SOURCE_SYNC_BATCH_SIZE,
+    1,
+    MAX_SOURCE_SYNC_BATCH_SIZE,
+  );
+  const { page, continueCursor, isDone } = await ctx.db
+    .query("githubSkillSources")
+    .withIndex("by_updated")
+    .order("asc")
+    .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+  return { sources: page, continueCursor, isDone };
 }
 
 export async function resolveOwnerUserIdForPublisherHandler(
@@ -829,15 +858,21 @@ export const syncGitHubSkillSource: ReturnType<typeof action> = action({
 
 export async function syncGitHubSkillSourcesHandler(
   ctx: ActionCtx,
-  _args: Record<string, never>,
+  args: { cursor?: string | null; batchSize?: number },
   fetcher: typeof fetch = fetch,
 ): Promise<SyncManyResult> {
   const startedAt = Date.now();
-  logEvent(Events.GitHubSkillSourceSyncStarted, { startedAt });
-  const sources = (await ctx.runQuery(
-    internal.githubSkillSync.listSourcesForSyncInternal,
-    {},
-  )) as SourceForSync[];
+  const batchSize = clampInt(
+    args.batchSize ?? DEFAULT_SOURCE_SYNC_BATCH_SIZE,
+    1,
+    MAX_SOURCE_SYNC_BATCH_SIZE,
+  );
+  logEvent(Events.GitHubSkillSourceSyncStarted, { startedAt, cursor: args.cursor ?? null });
+  const page = (await ctx.runQuery(internal.githubSkillSync.listSourcesForSyncInternal, {
+    cursor: args.cursor ?? null,
+    batchSize,
+  })) as SourceForSyncPage;
+  const sources = page.sources;
   const results: SyncOneResult[] = [];
   let skipped = 0;
   let errors = 0;
@@ -909,13 +944,36 @@ export async function syncGitHubSkillSourcesHandler(
     skillsDiscovered,
     skillsChanged,
     skillsRemoved,
+    isDone: page.isDone,
+    nextCursor: page.continueCursor,
   });
 
-  return { ok: true, synced: results.length, skipped, errors, results };
+  let scheduledNext = false;
+  if (!page.isDone && page.continueCursor && ctx.scheduler) {
+    await ctx.scheduler.runAfter(0, internal.githubSkillSync.syncGitHubSkillSourcesInternal, {
+      cursor: page.continueCursor,
+      batchSize,
+    });
+    scheduledNext = true;
+  }
+
+  return {
+    ok: true,
+    synced: results.length,
+    skipped,
+    errors,
+    cursor: page.continueCursor,
+    isDone: page.isDone,
+    scheduledNext,
+    results,
+  };
 }
 
 export const syncGitHubSkillSourcesInternal = internalAction({
-  args: {},
+  args: {
+    cursor: v.optional(v.union(v.string(), v.null())),
+    batchSize: v.optional(v.number()),
+  },
   handler: async (ctx, args) => {
     try {
       return await syncGitHubSkillSourcesHandler(ctx, args);

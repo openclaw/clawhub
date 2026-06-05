@@ -1,6 +1,6 @@
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
-import { mutation } from "./functions";
+import { internalMutation, mutation } from "./functions";
 import { assertAdmin, requireUser } from "./lib/access";
 import { getPublisherByHandle } from "./lib/publishers";
 
@@ -58,3 +58,9 @@ export const seedDefaultOfficialPublishers: ReturnType<typeof mutation> = mutati
     return await seedDefaultOfficialPublishersHandler(ctx, { actorUserId: userId });
   },
 });
+
+export const seedDefaultOfficialPublishersInternal: ReturnType<typeof internalMutation> =
+  internalMutation({
+    args: {},
+    handler: async (ctx) => await seedDefaultOfficialPublishersHandler(ctx),
+  });

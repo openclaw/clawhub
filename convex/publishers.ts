@@ -1262,14 +1262,14 @@ export const getPublishedDisplayManifest = query({
     const publisher = await getPublisherByHandle(ctx, args.handle);
     if (!publisher || publisher.deletedAt || publisher.deactivatedAt) return null;
 
-    const rows = await getPublisherPublishedRows(ctx, publisher._id);
-    if (!args.kind && rows.packages.length > 0) return null;
-
     const sources = await ctx.db
       .query("githubSkillSources")
       .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", publisher._id))
       .collect();
     if (sources.length === 0) return null;
+
+    const rows = await getPublisherPublishedRows(ctx, publisher._id);
+    if (!args.kind && rows.packages.length > 0) return null;
 
     const sourceById = new Map(sources.map((source) => [String(source._id), source]));
     const items = getPublisherCatalogItems(

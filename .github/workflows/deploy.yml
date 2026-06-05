@@ -136,6 +136,10 @@ jobs:
         if: needs.validate-deploy-request.outputs.deploy_backend == 'true'
         run: bun run verify:convex-contract -- --prod
 
+      - name: Seed default official publishers
+        if: needs.validate-deploy-request.outputs.deploy_backend == 'true'
+        run: bunx convex run officialPublishers:seedDefaultOfficialPublishersInternal --prod
+
       - name: Wait for Vercel production deployment
         id: vercel
         if: needs.validate-deploy-request.outputs.deploy_frontend == 'true'
