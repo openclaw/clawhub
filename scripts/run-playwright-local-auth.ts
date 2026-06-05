@@ -370,7 +370,7 @@ async function main() {
   console.log("Configuring local Convex environment for local-auth Playwright e2e.");
   const localAuthDeployment =
     readLocalDeployment() ?? deployment ?? DEFAULT_DEV_AUTH_CONVEX_DEPLOYMENT;
-  e2eEnv.CONVEX_DEPLOYMENT = deployment ?? DEFAULT_CONVEX_DEPLOYMENT;
+  e2eEnv.CONVEX_DEPLOYMENT = localAuthDeployment;
   e2eEnv.DEV_AUTH_CONVEX_DEPLOYMENT = localAuthDeployment;
   await setLocalConvexEnv(convexUrl, [
     { name: "AUTH_GITHUB_ID", value: e2eEnv.AUTH_GITHUB_ID ?? "local-dev" },
