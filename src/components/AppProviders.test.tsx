@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ACCESS_DENIED_SIGN_IN_MESSAGE,
   AUTH_CODE_NO_SESSION_MESSAGE,
-  BANNED_SIGN_IN_MESSAGE,
+  BANNED_ACCOUNT_PATH,
   DELETED_SIGN_IN_MESSAGE,
 } from "../lib/authErrorMessage";
 import { getAuthErrorSnapshot, clearAuthError, setAuthError } from "../lib/useAuthError";
@@ -88,7 +88,7 @@ describe("AuthCodeHandler", () => {
     );
   });
 
-  it("surfaces user-facing sign-in errors from code verification", async () => {
+  it("routes banned-account errors from code verification to the account-banned page", async () => {
     signInMock.mockRejectedValue(
       new Error("[CONVEX A] Server Error Called by client ConvexError: Account banned"),
     );
@@ -97,8 +97,9 @@ describe("AuthCodeHandler", () => {
     render(<AuthCodeHandler />);
 
     await waitFor(() => {
-      expect(getAuthErrorSnapshot()).toBe(BANNED_SIGN_IN_MESSAGE);
+      expect(window.location.pathname).toBe(BANNED_ACCOUNT_PATH);
     });
+    expect(getAuthErrorSnapshot()).toBeNull();
   });
 
   it("restarts GitHub sign-in once when code verification finishes without a session", async () => {
@@ -186,7 +187,7 @@ describe("AuthErrorHandler", () => {
     expect(getAuthErrorSnapshot()).toBeNull();
   });
 
-  it("surfaces provider errors from the URL and strips them", async () => {
+  it("routes banned-account provider errors to the account-banned page", async () => {
     window.history.replaceState(
       null,
       "",
@@ -196,12 +197,11 @@ describe("AuthErrorHandler", () => {
     render(<AuthErrorHandler />);
 
     await waitFor(() => {
-      expect(getAuthErrorSnapshot()).toBe(BANNED_SIGN_IN_MESSAGE);
+      expect(window.location.pathname).toBe(BANNED_ACCOUNT_PATH);
     });
-
-    expect(`${window.location.pathname}${window.location.search}${window.location.hash}`).toBe(
-      "/sign-in?next=%2Fdashboard#section",
-    );
+    expect(getAuthErrorSnapshot()).toBeNull();
+    expect(window.location.search).toBe("");
+    expect(window.location.hash).toBe("");
   });
 
   it("falls back to the provider error when there is no description", async () => {

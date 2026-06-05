@@ -21,8 +21,6 @@ export type BanNotificationEmailArgs = {
 
 export type BanNotificationEmailContext = {
   appealUrl: typeof APPEALS_URL;
-  scanDocsUrl: typeof CLI_SCAN_DOCS_URL;
-  remediationCommand: string | null;
   artifact: NotificationArtifact | null;
   scannerLabel: string | null;
   findingSummary: string;
@@ -50,7 +48,6 @@ export type MaliciousArtifactEmailArgs = {
 type BanReasonSummary = {
   scannerLabel: string | null;
   findingSummary: string;
-  remediationCommand: string | null;
 };
 
 function escapeHtml(value: string) {
@@ -74,14 +71,12 @@ function summarizeBanReason(args: BanNotificationEmailArgs): BanReasonSummary {
       return {
         scannerLabel: "VirusTotal",
         findingSummary: "VirusTotal telemetry contributed to a malicious upload finding.",
-        remediationCommand: DEFAULT_SCAN_REMEDIATION_COMMAND,
       };
     }
     if (normalized.includes("static")) {
       return {
         scannerLabel: "Static analysis",
         findingSummary: "Static analysis flagged malicious upload patterns.",
-        remediationCommand: DEFAULT_SCAN_REMEDIATION_COMMAND,
       };
     }
     if (
@@ -92,13 +87,11 @@ function summarizeBanReason(args: BanNotificationEmailArgs): BanReasonSummary {
       return {
         scannerLabel: "ClawScan",
         findingSummary: "ClawScan classified the uploaded skill as malicious.",
-        remediationCommand: DEFAULT_SCAN_REMEDIATION_COMMAND,
       };
     }
     return {
       scannerLabel: "ClawHub security checks",
       findingSummary: "ClawHub security checks classified the uploaded skill as malicious.",
-      remediationCommand: DEFAULT_SCAN_REMEDIATION_COMMAND,
     };
   }
 
@@ -106,14 +99,12 @@ function summarizeBanReason(args: BanNotificationEmailArgs): BanReasonSummary {
     return {
       scannerLabel: null,
       findingSummary: "Publishing automation triggered ClawHub rate-limit abuse controls.",
-      remediationCommand: null,
     };
   }
 
   return {
     scannerLabel: null,
     findingSummary: "ClawHub staff disabled the account after a security review.",
-    remediationCommand: null,
   };
 }
 
@@ -185,8 +176,6 @@ export function buildBanNotificationEmail(args: BanNotificationEmailArgs): Trans
   const artifact = args.artifact ?? null;
   const context: BanNotificationEmailContext = {
     appealUrl: APPEALS_URL,
-    scanDocsUrl: CLI_SCAN_DOCS_URL,
-    remediationCommand: summary.remediationCommand,
     artifact,
     scannerLabel: summary.scannerLabel,
     findingSummary: summary.findingSummary,
@@ -210,15 +199,6 @@ export function buildBanNotificationEmail(args: BanNotificationEmailArgs): Trans
     `Appeal: ${APPEALS_URL}`,
   );
 
-  if (context.remediationCommand) {
-    lines.push(
-      "",
-      "To support your appeal, include scan results for a fixed local copy showing that the skill passes ClawHub security scans:",
-      context.remediationCommand,
-      `Docs: ${CLI_SCAN_DOCS_URL}`,
-    );
-  }
-
   lines.push("", "ClawHub Security");
 
   const impactItems = [
@@ -226,17 +206,6 @@ export function buildBanNotificationEmail(args: BanNotificationEmailArgs): Trans
     "Existing API tokens for the account have been revoked.",
     "Published listings owned by the account may be hidden from public view.",
   ];
-  const remediationHtml = context.remediationCommand
-    ? [
-        sectionHeading("Include scan results with your appeal"),
-        paragraph(
-          "When you appeal, include ClawHub CLI scan results for a fixed local copy showing that the skill passes our security scans.",
-        ),
-        commandBlock(context.remediationCommand),
-        `<p style="margin:0 0 14px;font-size:15px;line-height:22px;color:#1f2328;">Docs: ${textLink(CLI_SCAN_DOCS_URL, "submit a scan of a local package")}</p>`,
-      ].join("")
-    : "";
-
   const detailLines = [
     detailLine("Reason", context.findingSummary),
     ...(artifact
@@ -254,7 +223,6 @@ export function buildBanNotificationEmail(args: BanNotificationEmailArgs): Trans
       sectionHeading("What changed"),
       bulletList(impactItems),
       `<p style="margin:0 0 14px;font-size:15px;line-height:22px;color:#1f2328;">You can ${textLink(APPEALS_URL, "appeal this decision")} if you believe this was a mistake.</p>`,
-      remediationHtml,
       `<p style="margin:18px 0 0;color:#6a737d;font-size:13px;line-height:20px;">If you already appealed, you do not need to send a separate support email.</p>`,
       paragraph("ClawHub Security"),
     ].join(""),

@@ -1,14 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   APPEALS_URL,
-  CLI_SCAN_DOCS_URL,
   buildMaliciousArtifactEmail,
   buildBanNotificationEmail,
   buildRestoredAccountEmail,
 } from "./emails";
 
 describe("moderation notification email copy", () => {
-  it("builds public-safe malicious skill context with appeal and local scan guidance", () => {
+  it("builds public-safe malicious skill context with appeal but no local scan guidance", () => {
     const email = buildBanNotificationEmail({
       handle: "gingiris",
       source: "autoban",
@@ -20,8 +19,6 @@ describe("moderation notification email copy", () => {
     expect(email.subject).toBe("Your ClawHub account was disabled");
     expect(email.context).toMatchObject({
       appealUrl: APPEALS_URL,
-      scanDocsUrl: CLI_SCAN_DOCS_URL,
-      remediationCommand: "clawhub scan ./my-skill --output clawhub-scan.zip",
       artifact: { kind: "skill", name: "gingiris-launch" },
       scannerLabel: "ClawScan",
       findingSummary: "ClawScan classified the uploaded skill as malicious.",
@@ -31,11 +28,11 @@ describe("moderation notification email copy", () => {
     expect(email.html).not.toContain("<strong>Scanner:</strong>");
     expect(email.text).not.toContain("republishing");
     expect(email.html).not.toContain("republishing");
-    expect(email.text).toContain("To support your appeal, include scan results");
-    expect(email.html).toContain("Include scan results with your appeal");
+    expect(email.text).not.toContain("To support your appeal, include scan results");
+    expect(email.html).not.toContain("Include scan results with your appeal");
     expect(email.text).toContain("Appeal: https://appeals.openclaw.ai/");
-    expect(email.text).toContain("clawhub scan ./my-skill --output clawhub-scan.zip");
-    expect(email.text).toContain("https://docs.openclaw.ai/clawhub/cli#scan-path");
+    expect(email.text).not.toContain("clawhub scan ./my-skill --output clawhub-scan.zip");
+    expect(email.text).not.toContain("https://docs.openclaw.ai/clawhub/cli#scan-path");
   });
 
   it("does not leak raw manual moderator notes into outbound email", () => {
@@ -62,7 +59,6 @@ describe("moderation notification email copy", () => {
 
     expect(email.context).toMatchObject({
       scannerLabel: null,
-      remediationCommand: null,
       findingSummary: "Publishing automation triggered ClawHub rate-limit abuse controls.",
     });
     expect(email.text).toContain("Publishing automation");

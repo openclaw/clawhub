@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import { LockKeyhole } from "lucide-react";
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
+import { isBannedAccountAuthError, routeToBannedAccountPage } from "../lib/authErrorMessage";
 import { useAuthError } from "../lib/useAuthError";
 import { AuthErrorMessage } from "./AuthErrorMessage";
 import { SignInButton } from "./SignInButton";
@@ -35,10 +36,18 @@ export function SignInPrompt({
   className,
 }: SignInPromptProps) {
   const { error: globalAuthError, clear: clearGlobalAuthError } = useAuthError();
-  const visibleError = error ?? globalAuthError;
+  const rawVisibleError = error ?? globalAuthError;
+  const isBannedAuthError = isBannedAccountAuthError(rawVisibleError);
+  const visibleError = isBannedAuthError ? null : rawVisibleError;
   const dismissVisibleError = error
     ? onDismissError
     : (onDismissError ?? (globalAuthError ? clearGlobalAuthError : undefined));
+
+  useEffect(() => {
+    if (!isBannedAuthError) return;
+    if (globalAuthError) clearGlobalAuthError();
+    routeToBannedAccountPage();
+  }, [clearGlobalAuthError, globalAuthError, isBannedAuthError]);
 
   const defaultAction = (
     <SignInButton

@@ -8,6 +8,8 @@ const signInMock = vi.fn();
 const clearAuthErrorMock = vi.fn();
 const setAuthErrorMock = vi.fn();
 const getUserFacingAuthErrorMock = vi.fn();
+const isBannedAccountAuthErrorMock = vi.fn();
+const routeToBannedAccountPageMock = vi.fn();
 
 vi.mock("@convex-dev/auth/react", () => ({
   useAuthActions: () => ({
@@ -23,6 +25,8 @@ vi.mock("../lib/useAuthError", () => ({
 vi.mock("../lib/authErrorMessage", () => ({
   getUserFacingAuthError: (error: unknown, fallback: string) =>
     getUserFacingAuthErrorMock(error, fallback),
+  isBannedAccountAuthError: (message: string) => isBannedAccountAuthErrorMock(message),
+  routeToBannedAccountPage: () => routeToBannedAccountPageMock(),
 }));
 
 describe("SignInButton", () => {
@@ -31,7 +35,10 @@ describe("SignInButton", () => {
     clearAuthErrorMock.mockReset();
     setAuthErrorMock.mockReset();
     getUserFacingAuthErrorMock.mockReset();
+    isBannedAccountAuthErrorMock.mockReset();
+    routeToBannedAccountPageMock.mockReset();
     getUserFacingAuthErrorMock.mockImplementation((_, fallback) => fallback);
+    isBannedAccountAuthErrorMock.mockReturnValue(false);
     window.history.replaceState(null, "", "/skills?q=test#top");
   });
 
@@ -98,5 +105,20 @@ describe("SignInButton", () => {
       );
       expect(setAuthErrorMock).toHaveBeenCalledWith("GitHub auth unavailable");
     });
+  });
+
+  it("routes banned-account sign-in rejections to the banned account page", async () => {
+    const failure = new Error("oauth failed");
+    signInMock.mockRejectedValue(failure);
+    getUserFacingAuthErrorMock.mockReturnValue("This account has been banned.");
+    isBannedAccountAuthErrorMock.mockReturnValue(true);
+
+    render(<SignInButton />);
+    fireEvent.click(screen.getByRole("button", { name: "Sign In" }));
+
+    await waitFor(() => {
+      expect(routeToBannedAccountPageMock).toHaveBeenCalledTimes(1);
+    });
+    expect(setAuthErrorMock).not.toHaveBeenCalled();
   });
 });

@@ -5,7 +5,9 @@ import { convex } from "../convex/client";
 import {
   AUTH_CODE_NO_SESSION_MESSAGE,
   getUserFacingAuthError,
+  isBannedAccountAuthError,
   normalizeAuthErrorMessage,
+  routeToBannedAccountPage as navigateToBannedAccountPage,
 } from "../lib/authErrorMessage";
 import { clearAuthError, setAuthError, useAuthError } from "../lib/useAuthError";
 import { AuthErrorMessage } from "./AuthErrorMessage";
@@ -31,6 +33,20 @@ function getPendingAuthCode() {
     relativeUrl: `${url.pathname}${url.search}${url.hash}`,
     retryRelativeUrl: `${retryUrl.pathname}${retryUrl.search}${retryUrl.hash}`,
   };
+}
+
+function routeAuthErrorToBannedAccountPage() {
+  if (typeof window === "undefined") return;
+  clearAuthError();
+  navigateToBannedAccountPage();
+}
+
+function handleAuthErrorMessage(message: string) {
+  if (isBannedAccountAuthError(message)) {
+    routeAuthErrorToBannedAccountPage();
+    return;
+  }
+  setAuthError(message);
 }
 
 export function AuthCodeHandler() {
@@ -78,8 +94,13 @@ export function AuthCodeHandler() {
               }
             })
             .catch((error) => {
+              const message = getUserFacingAuthError(error, "Sign in failed. Please try again.");
+              if (isBannedAccountAuthError(message)) {
+                routeAuthErrorToBannedAccountPage();
+                return;
+              }
               window.history.replaceState(null, "", pending.relativeUrl);
-              setAuthError(getUserFacingAuthError(error, "Sign in failed. Please try again."));
+              setAuthError(message);
             });
           return;
         }
@@ -88,8 +109,13 @@ export function AuthCodeHandler() {
         setAuthError(AUTH_CODE_NO_SESSION_MESSAGE);
       })
       .catch((error) => {
+        const message = getUserFacingAuthError(error, "Sign in failed. Please try again.");
+        if (isBannedAccountAuthError(message)) {
+          routeAuthErrorToBannedAccountPage();
+          return;
+        }
         window.history.replaceState(null, "", pending.relativeUrl);
-        setAuthError(getUserFacingAuthError(error, "Sign in failed. Please try again."));
+        setAuthError(message);
       });
   }, [signInWithGitHub]);
 
@@ -118,10 +144,16 @@ export function AuthErrorHandler() {
     if (handledErrorRef.current === pending.description) return;
     handledErrorRef.current = pending.description;
 
-    window.history.replaceState(null, "", pending.relativeUrl);
-    setAuthError(
-      normalizeAuthErrorMessage(pending.description, "Sign in failed. Please try again."),
+    const message = normalizeAuthErrorMessage(
+      pending.description,
+      "Sign in failed. Please try again.",
     );
+    if (isBannedAccountAuthError(message)) {
+      routeAuthErrorToBannedAccountPage();
+      return;
+    }
+    window.history.replaceState(null, "", pending.relativeUrl);
+    handleAuthErrorMessage(message);
   }, []);
 
   return null;

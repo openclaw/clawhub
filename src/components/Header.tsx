@@ -13,7 +13,11 @@ import {
   Sun,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { getUserFacingAuthError } from "../lib/authErrorMessage";
+import {
+  getUserFacingAuthError,
+  isBannedAccountAuthError,
+  routeToBannedAccountPage,
+} from "../lib/authErrorMessage";
 import { gravatarUrl } from "../lib/gravatar";
 import { NAV_ICONS } from "../lib/marketplaceIcons";
 import { filterNavItems, PRIMARY_NAV_ITEMS, SECONDARY_NAV_ITEMS } from "../lib/nav-items";
@@ -509,9 +513,15 @@ export default function Header() {
                         }
                       })
                       .catch((error) => {
-                        setAuthError(
-                          getUserFacingAuthError(error, "Sign in failed. Please try again."),
+                        const message = getUserFacingAuthError(
+                          error,
+                          "Sign in failed. Please try again.",
                         );
+                        if (isBannedAccountAuthError(message)) {
+                          routeToBannedAccountPage();
+                          return;
+                        }
+                        setAuthError(message);
                       });
                   }}
                 >

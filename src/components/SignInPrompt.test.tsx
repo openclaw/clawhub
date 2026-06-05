@@ -8,6 +8,8 @@ import { SignInPrompt } from "./SignInPrompt";
 const signInMock = vi.fn();
 const clearAuthErrorMock = vi.fn();
 const setAuthErrorMock = vi.fn();
+const isBannedAccountAuthErrorMock = vi.fn();
+const routeToBannedAccountPageMock = vi.fn();
 let authErrorMock: string | null = null;
 
 vi.mock("@convex-dev/auth/react", () => ({
@@ -28,6 +30,9 @@ vi.mock("../lib/authErrorMessage", () => ({
   CLAWHUB_ACCOUNT_ISSUE_LINK_TEXT: "open a GitHub issue",
   CLAWHUB_ACCOUNT_ISSUE_URL: "https://github.com/openclaw/clawhub/issues/new",
   getUserFacingAuthError: (_error: unknown, fallback: string) => fallback,
+  isBannedAccountAuthError: (message: string | null | undefined) =>
+    isBannedAccountAuthErrorMock(message),
+  routeToBannedAccountPage: () => routeToBannedAccountPageMock(),
 }));
 
 describe("SignInPrompt", () => {
@@ -35,7 +40,10 @@ describe("SignInPrompt", () => {
     authErrorMock = null;
     clearAuthErrorMock.mockReset();
     setAuthErrorMock.mockReset();
+    isBannedAccountAuthErrorMock.mockReset();
+    routeToBannedAccountPageMock.mockReset();
     signInMock.mockReset();
+    isBannedAccountAuthErrorMock.mockReturnValue(false);
   });
 
   it("renders title and description", () => {
@@ -69,7 +77,8 @@ describe("SignInPrompt", () => {
     expect(onDismissError).toHaveBeenCalledTimes(1);
   });
 
-  it("links appeal guidance in banned-account auth errors", () => {
+  it("routes explicit banned-account auth errors to the banned account page", () => {
+    isBannedAccountAuthErrorMock.mockReturnValue(true);
     render(
       <SignInPrompt
         title="Sign in"
@@ -77,21 +86,20 @@ describe("SignInPrompt", () => {
       />,
     );
 
-    const link = screen.getByRole("link", { name: "appeal this decision" });
-    expect(link.getAttribute("href")).toBe("https://appeals.openclaw.ai/");
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(routeToBannedAccountPageMock).toHaveBeenCalledTimes(1);
   });
 
-  it("shows global banned-account auth errors inline", () => {
+  it("routes global banned-account auth errors to the banned account page", () => {
     authErrorMock =
       "This ClawHub account is not in good standing and cannot sign in. Please appeal this decision if you believe this is a mistake.";
+    isBannedAccountAuthErrorMock.mockReturnValue(true);
 
     render(<SignInPrompt title="Sign in" />);
 
-    const link = screen.getByRole("link", { name: "appeal this decision" });
-    expect(link.getAttribute("href")).toBe("https://appeals.openclaw.ai/");
-
-    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByRole("alert")).toBeNull();
     expect(clearAuthErrorMock).toHaveBeenCalledTimes(1);
+    expect(routeToBannedAccountPageMock).toHaveBeenCalledTimes(1);
   });
 
   it("does not render dismiss button when onDismissError is missing", () => {

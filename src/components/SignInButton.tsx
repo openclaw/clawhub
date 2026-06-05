@@ -1,6 +1,10 @@
 import { useAuthActions } from "@convex-dev/auth/react";
 import type { ComponentProps } from "react";
-import { getUserFacingAuthError } from "../lib/authErrorMessage";
+import {
+  getUserFacingAuthError,
+  isBannedAccountAuthError,
+  routeToBannedAccountPage,
+} from "../lib/authErrorMessage";
 import { clearAuthError, setAuthError } from "../lib/useAuthError";
 import { Button } from "./ui/button";
 
@@ -28,7 +32,12 @@ export function SignInButton({ redirectTo, children = "Sign In", ...props }: Sig
             }
           })
           .catch((error) => {
-            setAuthError(getUserFacingAuthError(error, "Sign in failed. Please try again."));
+            const message = getUserFacingAuthError(error, "Sign in failed. Please try again.");
+            if (isBannedAccountAuthError(message)) {
+              routeToBannedAccountPage();
+              return;
+            }
+            setAuthError(message);
           });
       }}
     >
