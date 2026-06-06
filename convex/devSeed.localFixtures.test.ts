@@ -7,6 +7,7 @@ import {
   seedGitHubBackedSkillSourceMutation,
   seedLocalFixtures,
   seedLocalModerationFixturesHandler,
+  seedPublicCorpusBatchMutation,
   seedSkillMutation,
 } from "./devSeed";
 
@@ -25,6 +26,9 @@ const seedGitHubBackedSkillSourceHandler = (
 )._handler;
 const seedLocalFixturesHandler = (
   seedLocalFixtures as unknown as WrappedHandler<{ reset?: boolean }>
+)._handler;
+const seedPublicCorpusBatchHandler = (
+  seedPublicCorpusBatchMutation as unknown as WrappedHandler<Record<string, unknown>>
 )._handler;
 
 function chainEq(constraints: Record<string, unknown>) {
@@ -223,6 +227,40 @@ describe("devSeed local fixtures", () => {
         ownerPublisherId: tables.publishers?.[0]?._id,
       }),
     );
+  });
+
+  it("does not copy publisher ownership onto public corpus skill embeddings", async () => {
+    const { db, tables } = createDb();
+
+    await seedPublicCorpusBatchHandler(
+      createMutationCtx(db) as never,
+      {
+        rows: [
+          {
+            kind: "skill",
+            slug: "corpus-demo",
+            displayName: "Corpus Demo",
+            version: "0.1.0",
+            skillMd: "---\ndescription: Corpus demo\n---\n# Corpus demo",
+            storageId: "storage:corpus-demo",
+            embedding: [0, 1, 2],
+            dummyOwner: {
+              handle: "corpus-owner",
+              displayName: "Corpus Owner",
+              image: "https://example.invalid/avatar.png",
+            },
+          },
+        ],
+      } as never,
+    );
+
+    expect(tables.skills?.[0]).toEqual(
+      expect.objectContaining({
+        slug: "corpus-demo",
+        ownerPublisherId: tables.publishers?.[0]?._id,
+      }),
+    );
+    expect(tables.skillEmbeddings?.[0]).not.toHaveProperty("ownerPublisherId");
   });
 
   it("seeds a GitHub-backed source and skills without creating mirrored versions", async () => {

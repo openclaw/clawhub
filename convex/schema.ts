@@ -991,6 +991,8 @@ const skillEmbeddings = defineTable({
   skillId: v.id("skills"),
   versionId: v.id("skillVersions"),
   ownerId: v.id("users"),
+  // Deprecated compatibility field. Ownership lives on skills/search digests;
+  // keep this optional until old rows are pruned or migrated away.
   ownerPublisherId: v.optional(v.id("publishers")),
   embedding: v.array(v.number()),
   isLatest: v.boolean(),
