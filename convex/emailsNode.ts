@@ -1,5 +1,7 @@
 "use node";
 
+import { mkdir, appendFile } from "node:fs/promises";
+import { dirname } from "node:path";
 import { v } from "convex/values";
 import { Resend } from "resend";
 import { internalAction } from "./functions";
@@ -35,6 +37,17 @@ function getEmailConfig() {
 }
 
 async function sendTransactionalEmail(args: SendEmailArgs) {
+  const captureFile = process.env.CLAWHUB_EMAIL_CAPTURE_FILE?.trim();
+  if (captureFile) {
+    await mkdir(dirname(captureFile), { recursive: true });
+    await appendFile(
+      captureFile,
+      `${JSON.stringify({ ...args, capturedAt: Date.now() })}\n`,
+      "utf8",
+    );
+    return { ok: true as const, id: "local-capture" };
+  }
+
   const config = getEmailConfig();
   if (!config.apiKey) {
     console.warn(`[emails] RESEND_API_KEY is not configured; skipped ${args.idempotencyKey}`);

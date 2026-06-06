@@ -52,7 +52,7 @@ const deleteAccountHandler = (
 )._handler;
 const upsertDevPersonaInternalHandler = (
   upsertDevPersonaInternal as unknown as WrappedHandler<
-    { persona: "owner" | "user" | "admin" | "officialOrgMember" },
+    { persona: "owner" | "user" | "admin" | "officialOrgMember" | "abusePublisher" },
     unknown
   >
 )._handler;
@@ -145,6 +145,7 @@ function makeDevPersonaCtx() {
   const publishers = new Map<string, Record<string, unknown>>();
   const publisherMembers: Array<Record<string, unknown>> = [];
   const officialPublishers: Array<Record<string, unknown>> = [];
+  const auditLogs: Array<Record<string, unknown>> = [];
   const inserts: Array<{ table: string; value: Record<string, unknown> }> = [];
   const patches: Array<{ id: string; value: Record<string, unknown> }> = [];
 
@@ -285,6 +286,30 @@ function makeDevPersonaCtx() {
         }),
       };
     }
+    if (table === "auditLogs") {
+      return {
+        withIndex: vi.fn((name: string, builder?: (q: unknown) => unknown) => {
+          if (name !== "by_target") throw new Error(`Unexpected auditLogs index ${name}`);
+          let targetType = "";
+          let targetId = "";
+          const q = {
+            eq: (field: string, value: string) => {
+              if (field === "targetType") targetType = value;
+              if (field === "targetId") targetId = value;
+              return q;
+            },
+          };
+          builder?.(q);
+          return {
+            collect: vi.fn(async () =>
+              auditLogs.filter(
+                (entry) => entry.targetType === targetType && entry.targetId === targetId,
+              ),
+            ),
+          };
+        }),
+      };
+    }
     if (table === "packages" || table === "skills") {
       return {
         withIndex: vi.fn((name: string) => {
@@ -305,8 +330,10 @@ function makeDevPersonaCtx() {
 
   return {
     ctx: { db: { patch, get, insert, query, normalizeId: vi.fn() } } as never,
+    auditLogs,
     inserts,
     patches,
+    users,
   };
 }
 
@@ -1022,6 +1049,32 @@ describe("ensureHandler", () => {
 });
 
 describe("users.upsertDevPersonaInternal", () => {
+  it("rejects a dev persona sign-in when the persona is banned", async () => {
+    process.env.DEV_AUTH_ENABLED = "1";
+    process.env.CONVEX_DEPLOYMENT = "local:dev";
+    process.env.CONVEX_SITE_URL = "http://localhost:3210";
+    const { auditLogs, ctx, patches, users } = makeDevPersonaCtx();
+    users.set("users:banned", {
+      _id: "users:banned",
+      _creationTime: 1,
+      handle: "local-abuse",
+      displayName: "Local Abuse Test Publisher",
+      deletedAt: 1_700_000_000_000,
+    });
+    auditLogs.push({
+      action: "user.autoban.malware",
+      targetType: "user",
+      targetId: "users:banned",
+    });
+
+    await expect(
+      upsertDevPersonaInternalHandler(ctx, {
+        persona: "abusePublisher",
+      }),
+    ).rejects.toThrow(/account has been banned/i);
+    expect(patches).toEqual([]);
+  });
+
   it("seeds a non-platform-admin user who manages an official org", async () => {
     process.env.DEV_AUTH_ENABLED = "1";
     process.env.CONVEX_DEPLOYMENT = "local:dev";

@@ -2,6 +2,7 @@ import { useAuthActions } from "@convex-dev/auth/react";
 import { Building2, Check, Shield, User, UserCog, Wrench } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { isBannedAccountAuthError, routeToBannedAccountPage } from "../lib/authErrorMessage";
 import { getRuntimeEnv } from "../lib/runtimeEnv";
 import { useAuthStatus } from "../lib/useAuthStatus";
 import {
@@ -13,7 +14,7 @@ import {
 } from "./ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 
-type DevPersona = "owner" | "user" | "admin" | "officialOrgMember";
+type DevPersona = "owner" | "user" | "admin" | "officialOrgMember" | "abusePublisher";
 
 const DEV_PERSONA_AUTH_TIMEOUT_MS = 10_000;
 
@@ -46,6 +47,12 @@ const PERSONAS: Array<{
     label: "Use Org Member",
     description: "@local-official-member",
     icon: Building2,
+  },
+  {
+    value: "abusePublisher",
+    label: "Use Abuse Publisher",
+    description: "@local-abuse",
+    icon: Wrench,
   },
 ];
 
@@ -115,7 +122,12 @@ export function DevPersonaFab() {
       }
       toast.success(`Using ${persona} persona`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Dev persona sign-in failed");
+      const message = error instanceof Error ? error.message : "Dev persona sign-in failed";
+      if (isBannedAccountAuthError(message)) {
+        routeToBannedAccountPage();
+        return;
+      }
+      toast.error(message);
     } finally {
       setBusyPersona(null);
     }

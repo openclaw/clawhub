@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
@@ -49,6 +49,8 @@ const MALICIOUS_ARTIFACT_FINDING_ACTION = "user.malicious_artifact.finding";
 const MALICIOUS_ARTIFACT_DISTINCT_BAN_THRESHOLD = 2;
 const MALICIOUS_ARTIFACT_ATTEMPT_BAN_THRESHOLD = 3;
 const MALICIOUS_ARTIFACT_AUDIT_LOOKBACK = 100;
+const DEV_PERSONA_BANNED_REAUTH_MESSAGE =
+  "This account has been banned and cannot sign in. If you believe this is a mistake, appeal this decision: https://appeals.openclaw.ai/.";
 const autobanPackageScanScopeValidator = v.optional(
   v.union(v.literal("ownerUserId"), v.literal("personalPublisher")),
 );
@@ -213,6 +215,12 @@ const DEV_PERSONAS = {
     displayName: "Local Official Org Member",
     role: "user",
   },
+  abusePublisher: {
+    handle: "local-abuse",
+    displayName: "Local Abuse Test Publisher",
+    email: "local-abuse@example.test",
+    role: "user",
+  },
 } as const;
 
 const DEV_OFFICIAL_ORG = {
@@ -222,6 +230,14 @@ const DEV_OFFICIAL_ORG = {
 } as const;
 
 type DevPersona = keyof typeof DEV_PERSONAS;
+
+async function hasBlockingBanAudit(ctx: Pick<MutationCtx, "db">, userId: Id<"users">) {
+  const banRecords = await ctx.db
+    .query("auditLogs")
+    .withIndex("by_target", (q) => q.eq("targetType", "user").eq("targetId", userId.toString()))
+    .collect();
+  return banRecords.some((record) => BAN_AUDIT_ACTIONS.has(record.action));
+}
 
 export const getById = query({
   args: { userId: v.id("users") },
@@ -240,6 +256,7 @@ export const upsertDevPersonaInternal = internalMutation({
       v.literal("user"),
       v.literal("admin"),
       v.literal("officialOrgMember"),
+      v.literal("abusePublisher"),
     ),
     devAuthSecret: v.optional(v.string()),
   },
@@ -255,6 +272,7 @@ export const upsertDevPersonaInternal = internalMutation({
       handle: persona.handle,
       displayName: persona.displayName,
       name: persona.displayName,
+      email: "email" in persona ? persona.email : undefined,
       role: persona.role,
       githubCreatedAt: DEV_PERSONA_GITHUB_CREATED_AT,
       deletedAt: undefined,
@@ -263,6 +281,13 @@ export const upsertDevPersonaInternal = internalMutation({
       banReason: undefined,
       updatedAt: now,
     };
+    if (
+      existing &&
+      (existing.deletedAt || existing.deactivatedAt) &&
+      (await hasBlockingBanAudit(ctx, existing._id))
+    ) {
+      throw new ConvexError(DEV_PERSONA_BANNED_REAUTH_MESSAGE);
+    }
     const userId =
       existing?._id ??
       (await ctx.db.insert("users", {
