@@ -9025,7 +9025,15 @@ describe("owned package sanction batches", () => {
       deletedAt: 3_000,
       source: "publisher.delete",
     });
-    expect(patch).not.toHaveBeenCalledWith("packages:org-plugin", expect.anything());
+    expect(patch).toHaveBeenCalledWith(
+      "packages:org-plugin",
+      expect.objectContaining({
+        softDeletedAt: 3_000,
+        softDeletedReason: "publisher.deleted",
+        softDeletedBy: "users:owner",
+        softDeletedByRole: "user",
+      }),
+    );
     expect(patch).not.toHaveBeenCalledWith("packagePublishTokens:org-plugin", expect.anything());
   });
 
@@ -9532,7 +9540,15 @@ describe("owned package sanction batches", () => {
       deletedAt: 3_000,
       source: "account.delete",
     });
-    expect(patch).not.toHaveBeenCalledWith("packages:demo", expect.anything());
+    expect(patch).toHaveBeenCalledWith(
+      "packages:demo",
+      expect.objectContaining({
+        softDeletedAt: 3_000,
+        softDeletedReason: "user.deactivated",
+        softDeletedBy: "users:owner",
+        softDeletedByRole: "user",
+      }),
+    );
   });
 
   it("schedules hard deletes for account-deleted packages owned through the user's personal publisher", async () => {
@@ -9578,7 +9594,15 @@ describe("owned package sanction batches", () => {
       deletedAt: 3_000,
       source: "account.delete",
     });
-    expect(patch).not.toHaveBeenCalledWith("packages:personal-publisher", expect.anything());
+    expect(patch).toHaveBeenCalledWith(
+      "packages:personal-publisher",
+      expect.objectContaining({
+        softDeletedAt: 3_000,
+        softDeletedReason: "user.deactivated",
+        softDeletedBy: "users:owner",
+        softDeletedByRole: "user",
+      }),
+    );
   });
 
   it("does not delete org-owned packages when deleting a member account", async () => {
