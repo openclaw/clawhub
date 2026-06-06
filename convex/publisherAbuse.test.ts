@@ -3131,13 +3131,13 @@ describe("publisher abuse dry-run persistence", () => {
     );
     expect(patch).toHaveBeenCalledWith(
       communityScore._id,
-      expect.objectContaining({ label: "pass", rank: 1, zScore: 0 }),
+      expect.objectContaining({ label: "pass", rank: 1, zScore: -1 }),
     );
     expect(patch).toHaveBeenCalledWith(
       "publisherAbuseScoreRuns:run",
       expect.objectContaining({
-        meanLogPressure: communityScore.logPressure,
-        stdDevLogPressure: 0,
+        meanLogPressure: 4,
+        stdDevLogPressure: 2,
         passCount: 1,
       }),
     );

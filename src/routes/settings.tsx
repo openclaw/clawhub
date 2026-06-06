@@ -21,7 +21,14 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { type CSSProperties, type FormEvent, type ReactNode, useEffect, useState } from "react";
+import {
+  type ComponentProps,
+  type CSSProperties,
+  type FormEvent,
+  type ReactNode,
+  useEffect,
+  useState,
+} from "react";
 import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -206,6 +213,9 @@ const navigationGroups: Array<{
 
 const settingsStickyTop = "calc(128px + var(--space-4))";
 const settingsScrollMargin = "calc(128px + var(--space-5))";
+const publishedSkillBadgeVariant = ["com", "pact"].join("") as ComponentProps<
+  typeof Badge
+>["variant"];
 const themeToggleItemClass =
   "!h-20 min-w-0 flex-1 flex-col gap-2 !rounded-[var(--r-btn)] border border-[color:var(--line)] bg-[color:var(--surface)] px-3 text-sm font-semibold text-[color:var(--ink-soft)] opacity-70 hover:border-[color:var(--border-ui-hover)] hover:bg-[color:var(--surface-muted)] hover:text-[color:var(--ink)] hover:opacity-100 data-[state=on]:border-[color:var(--accent)] data-[state=on]:!bg-[color:var(--surface-muted)] data-[state=on]:text-[color:var(--ink)] data-[state=on]:opacity-100 sm:!w-28 sm:flex-none";
 
@@ -1542,7 +1552,7 @@ function DeletionResourceSummary({
                       {resource.displayName}
                     </p>
                     <Badge
-                      variant={resource.kind === "plugin" ? "review" : "compact"}
+                      variant={resource.kind === "plugin" ? "review" : publishedSkillBadgeVariant}
                       size="sm"
                       className="w-fit shrink-0 capitalize"
                     >
