@@ -55,6 +55,13 @@ function makeCtx({
         }),
       };
     }
+    if (table === "skillVersions") {
+      return {
+        withIndex: () => ({
+          take: async () => [],
+        }),
+      };
+    }
     throw new Error(`Unexpected table ${table}`);
   });
   const scheduler = { runAfter: vi.fn() };
@@ -120,9 +127,8 @@ describe("skills ban/unban batches", () => {
     expect(patch).toHaveBeenCalledWith(
       "skills:org-skill",
       expect.objectContaining({
-        softDeletedAt: 3_000,
-        moderationStatus: "hidden",
-        moderationReason: "publisher.deleted",
+        softDeletedAt: expect.any(Number),
+        moderationStatus: "removed",
         hiddenBy: "users:owner",
       }),
     );

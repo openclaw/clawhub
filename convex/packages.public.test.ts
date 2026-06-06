@@ -9218,7 +9218,7 @@ describe("owned package sanction batches", () => {
       ownerUserId: "users:owner",
       ownerPublisherId: "publishers:org",
     });
-    const { ctx, patch } = makeOwnedPackageBatchCtx({
+    const { ctx, runAfter } = makeOwnedPackageBatchCtx({
       publisherPackages: [orgPackage],
       releases: [
         makeReleaseDoc({
@@ -9249,17 +9249,13 @@ describe("owned package sanction batches", () => {
       deletedAt: 3_000,
     });
 
-    expect(result).toMatchObject({ deletedCount: 1, revokedTokenCount: 1, scheduled: false });
-    expect(patch).toHaveBeenCalledWith(
-      "packages:org-plugin",
-      expect.objectContaining({
-        softDeletedAt: 3_000,
-        softDeletedReason: "publisher.deleted",
-        softDeletedBy: "users:owner",
-        softDeletedByRole: "user",
-      }),
-    );
-    expect(patch).toHaveBeenCalledWith("packagePublishTokens:org-plugin", { revokedAt: 3_000 });
+    expect(result).toMatchObject({ deletedCount: 1, revokedTokenCount: 0, scheduled: false });
+    expect(runAfter).toHaveBeenCalledWith(0, expect.anything(), {
+      packageId: "packages:org-plugin",
+      actorUserId: "users:owner",
+      deletedAt: 3_000,
+      source: "publisher.delete",
+    });
   });
 
   it("schedules linked legacy personal publisher scans when the user row lacks the publisher id", async () => {
@@ -9751,23 +9747,20 @@ describe("owned package sanction batches", () => {
   });
 
   it("marks account-deleted packages separately from ban-restorable packages", async () => {
-    const { ctx, patch } = makeOwnedPackageBatchCtx();
+    const { ctx, runAfter } = makeOwnedPackageBatchCtx();
 
     const result = await applyAccountDeletionToOwnedPackagesBatchInternalHandler(ctx as never, {
       ownerUserId: "users:owner",
       deletedAt: 3_000,
     });
 
-    expect(result).toMatchObject({ deletedCount: 1, revokedTokenCount: 1, scheduled: false });
-    expect(patch).toHaveBeenCalledWith(
-      "packages:demo",
-      expect.objectContaining({
-        softDeletedAt: 3_000,
-        softDeletedReason: "user.deactivated",
-        softDeletedBy: "users:owner",
-        softDeletedByRole: "user",
-      }),
-    );
+    expect(result).toMatchObject({ deletedCount: 1, revokedTokenCount: 0, scheduled: false });
+    expect(runAfter).toHaveBeenCalledWith(0, expect.anything(), {
+      packageId: "packages:demo",
+      actorUserId: "users:owner",
+      deletedAt: 3_000,
+      source: "account.delete",
+    });
   });
 
   it("marks account-deleted packages owned through the user's personal publisher", async () => {
@@ -9776,7 +9769,7 @@ describe("owned package sanction batches", () => {
       ownerUserId: "users:publishing-actor",
       ownerPublisherId: "publishers:personal",
     });
-    const { ctx, patch } = makeOwnedPackageBatchCtx({
+    const { ctx, runAfter } = makeOwnedPackageBatchCtx({
       owner: {
         _id: "users:owner",
         deactivatedAt: 3_000,
@@ -9806,14 +9799,13 @@ describe("owned package sanction batches", () => {
       scope: "personalPublisher",
     });
 
-    expect(result).toMatchObject({ deletedCount: 1, revokedTokenCount: 1, scheduled: false });
-    expect(patch).toHaveBeenCalledWith(
-      "packages:personal-publisher",
-      expect.objectContaining({
-        softDeletedAt: 3_000,
-        softDeletedReason: "user.deactivated",
-      }),
-    );
+    expect(result).toMatchObject({ deletedCount: 1, revokedTokenCount: 0, scheduled: false });
+    expect(runAfter).toHaveBeenCalledWith(0, expect.anything(), {
+      packageId: "packages:personal-publisher",
+      actorUserId: "users:owner",
+      deletedAt: 3_000,
+      source: "account.delete",
+    });
   });
 
   it("does not delete org-owned packages when deleting a member account", async () => {
