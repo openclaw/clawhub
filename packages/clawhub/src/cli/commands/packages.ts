@@ -25,6 +25,7 @@ import {
   ApiV1PackageListResponseSchema,
   ApiV1PackageModerationStatusResponseSchema,
   ApiV1PackagePublishResponseSchema,
+  type ApiV1PackagePublishResponse,
   ApiV1PackageReadinessResponseSchema,
   ApiV1PackageReportResponseSchema,
   ApiV1PackageResponseSchema,
@@ -726,12 +727,21 @@ export async function cmdPublishPackage(
 
       if (options.json) {
         process.stdout.write(
-          `${JSON.stringify({ ...plan.output, releaseId: result.releaseId }, null, 2)}\n`,
+          `${JSON.stringify(
+            {
+              ...plan.output,
+              releaseId: result.releaseId,
+              inspectorFindings: result.inspectorFindings,
+            },
+            null,
+            2,
+          )}\n`,
         );
       } else {
         spinner?.succeed(
           `OK. Published ${plan.payload.name}@${plan.payload.version} (${result.releaseId})`,
         );
+        printPackageInspectorFindings(result);
       }
     } catch (error) {
       spinner?.fail(formatError(error));
@@ -739,6 +749,25 @@ export async function cmdPublishPackage(
     }
   } finally {
     await plan?.cleanup?.();
+  }
+}
+
+function printPackageInspectorFindings(result: ApiV1PackagePublishResponse) {
+  const findings = result.inspectorFindings ?? [];
+  if (findings.length === 0) return;
+  const errorCount = findings.filter((finding) => finding.findingKind === "error").length;
+  const warningCount = findings.length - errorCount;
+  const parts = [
+    warningCount > 0 ? `${warningCount} warning${warningCount === 1 ? "" : "s"}` : null,
+    errorCount > 0 ? `${errorCount} error${errorCount === 1 ? "" : "s"}` : null,
+  ].filter((part): part is string => Boolean(part));
+  console.log(`Plugin Inspector findings: ${parts.join(", ")}`);
+  for (const finding of findings.slice(0, 10)) {
+    const label = finding.issueClass ? `${finding.code} (${finding.issueClass})` : finding.code;
+    console.log(`- ${finding.findingKind.toUpperCase()} ${label}: ${finding.message}`);
+  }
+  if (findings.length > 10) {
+    console.log(`- ...and ${findings.length - 10} more findings`);
   }
 }
 

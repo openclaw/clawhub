@@ -501,6 +501,21 @@ describe("devSeed local fixtures", () => {
       scannedPluginName,
     ]);
     expect(tables.packages?.every((pkg) => pkg.ownerUserId === userId)).toBe(true);
+    expect(tables.packageInspectorWarnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          packageName: scannedPluginName,
+          findingKind: "warning",
+          code: "legacy-before-agent-start",
+        }),
+        expect.objectContaining({
+          packageName: scannedPluginName,
+          findingKind: "error",
+          code: "missing-expected-seam",
+          scanSource: "nightly",
+        }),
+      ]),
+    );
   });
 
   it("retires legacy @local-owner seed publishers so dev-auth users can claim the handle", async () => {

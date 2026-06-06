@@ -1050,6 +1050,16 @@ export declare const ApiV1PackagePublishResponseSchema: import("arktype/internal
     ok: true;
     packageId: string;
     releaseId: string;
+    inspectorFindings?: {
+        findingKind: "error" | "warning";
+        code: string;
+        message: string;
+        severity?: string | undefined;
+        level?: string | undefined;
+        issueClass?: string | undefined;
+        inspectorVersion?: string | undefined;
+        targetOpenClawVersion?: string | undefined;
+    }[] | undefined;
 }, {}>;
 export type ApiV1PackagePublishResponse = (typeof ApiV1PackagePublishResponseSchema)[inferred];
 export declare const PackageTrustedPublisherUpsertRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{

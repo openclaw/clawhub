@@ -133,7 +133,6 @@ type TestPackage = {
   summary: string;
   latestVersion: string;
   inspectorWarningCount?: number;
-  canViewInspectorWarnings?: boolean;
   updatedAt: number;
   stats: {
     downloads: number;
@@ -215,7 +214,6 @@ function createPackage(overrides?: Partial<TestPackage>): TestPackage {
     summary: "Flagged plugin fixture.",
     latestVersion: "1.0.0",
     inspectorWarningCount: 0,
-    canViewInspectorWarnings: true,
     updatedAt: 1,
     stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
     verification: null,
@@ -313,7 +311,7 @@ describe("Dashboard rows", () => {
     ).toBeNull();
   });
 
-  it("links plugin warning counts to the warnings settings tab", () => {
+  it("links public plugin finding counts to the plugin warnings tab", () => {
     arrangeDashboard({
       packages: [
         createPackage({
@@ -336,26 +334,8 @@ describe("Dashboard rows", () => {
       name: "View 2 warnings for Local Flagged Runtime Plugin",
     });
     expect(warningsLink.getAttribute("href")).toBe(
-      "/plugins/local-flagged-runtime-plugin/settings#warnings",
+      "/plugins/local-flagged-runtime-plugin#warnings",
     );
-  });
-
-  it("hides plugin warning counts when the viewer cannot open warnings", () => {
-    arrangeDashboard({
-      packages: [
-        createPackage({
-          canViewInspectorWarnings: false,
-          inspectorWarningCount: 2,
-          scanStatus: "clean",
-        }),
-      ],
-    });
-
-    renderDashboard();
-
-    expect(
-      screen.queryByRole("link", { name: "View 2 warnings for Local Flagged Runtime Plugin" }),
-    ).toBeNull();
   });
 
   it("shows a publisher selector and loads org packages when switching publishers", async () => {

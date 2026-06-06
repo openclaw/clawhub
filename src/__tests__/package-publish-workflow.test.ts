@@ -34,4 +34,25 @@ describe("package publish workflow", () => {
     expect(workflow).toContain("plugin-inspector-report");
     expect(workflow).toContain("actions/upload-artifact");
   });
+
+  it("runs nightly plugin inspector rescans with the latest inspector package", () => {
+    const workflow = readFileSync(
+      resolve(".github/workflows/plugin-inspector-nightly.yml"),
+      "utf8",
+    );
+    const script = readFileSync(resolve("scripts/package-inspector-nightly-scan.ts"), "utf8");
+    const http = readFileSync(resolve("convex/packageInspectorHttp.ts"), "utf8");
+
+    expect(workflow).toContain("schedule:");
+    expect(workflow).toContain("@openclaw/plugin-inspector@latest");
+    expect(workflow).toContain("CLAWHUB_PLUGIN_INSPECTOR_WORKER_TOKEN");
+    expect(script).toContain("package-inspector/claim");
+    expect(http).toContain("package-inspector/artifact");
+    expect(script).toContain("package-inspector/results");
+    expect(script).toContain("Authorization: `Bearer ${token}`");
+    expect(script).toContain('path.join(pluginRoot, "package")');
+    expect(script).not.toContain("plugin-inspector-nightly-error");
+    expect(script).toContain("pluginInspector");
+    expect(workflow).toContain("actions/upload-artifact");
+  });
 });

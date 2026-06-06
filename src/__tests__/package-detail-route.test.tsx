@@ -1,6 +1,7 @@
 /* @vitest-environment jsdom */
 
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { getFunctionName } from "convex/server";
 import type { AnchorHTMLAttributes, ComponentType, ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -128,6 +129,7 @@ describe("plugin detail route", () => {
   beforeEach(() => {
     paramsMock = { name: "demo-plugin" };
     pathnameMock = "/plugins/demo-plugin";
+    window.location.hash = "";
     vi.mocked(fetchPackageDetail).mockReset();
     vi.mocked(fetchPackageReadme).mockReset();
     vi.mocked(fetchPackageVersion).mockReset();
@@ -606,6 +608,129 @@ describe("plugin detail route", () => {
     expect(screen.getByRole("link", { name: /Download/i }).getAttribute("href")).toBe(
       "/api/v1/packages/demo-plugin/download?version=1.0.0",
     );
+  });
+
+  it("shows public plugin inspector warnings on the plugin detail warnings tab", async () => {
+    useAuthStatusMock.mockReturnValue({
+      isAuthenticated: false,
+      isLoading: false,
+      me: null,
+    });
+    useQueryMock.mockImplementation((query: unknown) => {
+      const name = getFunctionName(query as never);
+      if (name === "packages:listPackageInspectorFindingsPublic") {
+        return [
+          {
+            packageName: "demo-plugin",
+            version: "1.0.0",
+            findingKind: "warning",
+            code: "legacy-before-agent-start",
+            issueClass: "deprecation-warning",
+            severity: "P2",
+            message: "legacy before_agent_start hook is deprecated",
+            evidence: ["src/index.ts:4"],
+            inspectorVersion: "0.4.0",
+            targetOpenClawVersion: "0.9.0",
+            scanSource: "nightly",
+            createdAt: 1,
+          },
+          {
+            packageName: "demo-plugin",
+            version: "1.0.0",
+            findingKind: "error",
+            code: "missing-expected-seam",
+            issueClass: "compatibility-error",
+            severity: "P0",
+            message: "registerTool is no longer available",
+            evidence: ["dist/index.js:2"],
+            inspectorVersion: "0.4.0",
+            targetOpenClawVersion: "0.9.0",
+            scanSource: "nightly",
+            createdAt: 2,
+          },
+        ];
+      }
+      return null;
+    });
+    loaderDataMock = {
+      detail: {
+        package: {
+          ...loaderDataMock.detail.package!,
+          latestVersion: "1.0.0",
+        },
+        owner: null,
+      },
+      version: {
+        package: {
+          name: "demo-plugin",
+          displayName: "Demo Plugin",
+          family: "code-plugin",
+        },
+        version: {
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "Initial release",
+          distTags: ["latest"],
+          files: [],
+          compatibility: null,
+          capabilities: null,
+          verification: null,
+          artifact: null,
+          sha256hash: null,
+          vtAnalysis: null,
+          llmAnalysis: null,
+          staticScan: null,
+        },
+      },
+      readme: null,
+      rateLimited: null,
+    };
+    window.location.hash = "#warnings";
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(screen.getByRole("tab", { name: "Warnings" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "2 warnings" }).getAttribute("href")).toBe(
+      "/plugins/demo-plugin#warnings",
+    );
+    expect(screen.getByText("legacy-before-agent-start")).toBeTruthy();
+    expect(screen.getByText("missing-expected-seam")).toBeTruthy();
+    expect(screen.getByText("registerTool is no longer available")).toBeTruthy();
+    expect(screen.getAllByText("OpenClaw 0.9.0").length).toBeGreaterThan(0);
+  });
+
+  it("switches to public warnings when the detail-page hash changes", async () => {
+    useQueryMock.mockImplementation((query: unknown) => {
+      const name = getFunctionName(query as never);
+      if (name === "packages:listPackageInspectorFindingsPublic") {
+        return [
+          {
+            packageName: "demo-plugin",
+            version: "1.0.0",
+            findingKind: "warning",
+            code: "legacy-before-agent-start",
+            message: "legacy before_agent_start hook is deprecated",
+            scanSource: "publish",
+            createdAt: 1,
+          },
+        ];
+      }
+      return null;
+    });
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+    expect(screen.queryByText("legacy-before-agent-start")).toBeNull();
+
+    await act(async () => {
+      window.location.hash = "#warnings";
+      window.dispatchEvent(new HashChangeEvent("hashchange"));
+    });
+
+    expect(await screen.findByText("legacy-before-agent-start")).toBeTruthy();
   });
 
   it("shows a retryable empty state when the detail lookup is rate limited", async () => {

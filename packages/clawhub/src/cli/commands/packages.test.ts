@@ -2175,6 +2175,99 @@ describe("package commands", () => {
     }
   });
 
+  it("fails CLI publish on server Plugin Inspector hard errors", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "broken-plugin");
+      await mkdir(join(folder, "dist"), { recursive: true });
+      await writeFile(
+        join(folder, "package.json"),
+        makeCodePluginPackageJson({
+          name: "broken-plugin",
+          displayName: "Broken Plugin",
+          version: "1.0.0",
+        }),
+        "utf8",
+      );
+      await writeFile(
+        join(folder, "openclaw.plugin.json"),
+        JSON.stringify({ id: "broken.plugin" }),
+      );
+      await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
+
+      httpMocks.apiRequestForm.mockRejectedValueOnce(
+        new Error(
+          "Plugin Inspector blocked publish: missing-expected-seam: missing expected registration registerTool",
+        ),
+      );
+
+      await expect(
+        cmdPublishPackage(makeOpts(workdir), "broken-plugin", {
+          sourceRepo: "openclaw/broken-plugin",
+          sourceCommit: "deadbeef",
+        }),
+      ).rejects.toThrow("Plugin Inspector blocked publish");
+
+      expect(uiMocks.spinner.fail).toHaveBeenCalledWith(
+        "Plugin Inspector blocked publish: missing-expected-seam: missing expected registration registerTool",
+      );
+      expect(uiMocks.spinner.succeed).not.toHaveBeenCalled();
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("prints Plugin Inspector warnings for successful CLI publishes", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "warning-plugin");
+      await mkdir(join(folder, "dist"), { recursive: true });
+      await writeFile(
+        join(folder, "package.json"),
+        makeCodePluginPackageJson({
+          name: "warning-plugin",
+          displayName: "Warning Plugin",
+          version: "1.0.0",
+        }),
+        "utf8",
+      );
+      await writeFile(
+        join(folder, "openclaw.plugin.json"),
+        JSON.stringify({ id: "warning.plugin" }),
+      );
+      await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
+
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        packageId: "pkg_1",
+        releaseId: "rel_1",
+        inspectorFindings: [
+          {
+            findingKind: "warning",
+            code: "legacy-before-agent-start",
+            issueClass: "deprecation-warning",
+            message: "legacy before_agent_start hook is deprecated",
+          },
+        ],
+      });
+
+      await cmdPublishPackage(makeOpts(workdir), "warning-plugin", {
+        sourceRepo: "openclaw/warning-plugin",
+        sourceCommit: "abc123",
+      });
+
+      expect(uiMocks.spinner.succeed).toHaveBeenCalledWith(
+        "OK. Published warning-plugin@1.0.0 (rel_1)",
+      );
+      expect(mockLog).toHaveBeenCalledWith("Plugin Inspector findings: 1 warning");
+      expect(mockLog).toHaveBeenCalledWith(
+        "- WARNING legacy-before-agent-start (deprecation-warning): legacy before_agent_start hook is deprecated",
+      );
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
   it("auto-detects local git source metadata and matches the explicit payload", async () => {
     const workdir = await makeTmpWorkdir();
     const dateSpy = vi.spyOn(Date, "now").mockReturnValue(987_654_321);

@@ -1453,10 +1453,17 @@ async function deleteSeedPluginFixtureByName(ctx: MutationCtx, name: string) {
     .query("packageReleases")
     .withIndex("by_package", (q) => q.eq("packageId", existing._id))
     .collect();
+  const inspectorFindings = await ctx.db
+    .query("packageInspectorWarnings")
+    .withIndex("by_package_created", (q) => q.eq("packageId", existing._id))
+    .collect();
   await deletePackageBadgesForPackage(ctx, existing._id);
   await ctx.db.delete(existing._id);
   for (const release of releases) {
     await ctx.db.delete(release._id);
+  }
+  for (const finding of inspectorFindings) {
+    await ctx.db.delete(finding._id);
   }
 }
 
@@ -2514,6 +2521,48 @@ export async function seedLocalModerationFixturesHandler(
     tags: { latest: scannedPackageReleaseId },
     stats: { downloads: 7, installs: 1, stars: 1, versions: 1 },
     updatedAt: now,
+  });
+  await ctx.db.insert("packageInspectorWarnings", {
+    packageId: scannedPackageId,
+    releaseId: scannedPackageReleaseId,
+    ownerUserId: userId,
+    ownerPublisherId: publisherId,
+    packageName: scannedPluginName,
+    version: "0.1.0",
+    findingKind: "warning",
+    scanSource: "publish",
+    inspectorVersion: "0.3.11",
+    targetOpenClawVersion: "2026.3.24-beta.2",
+    code: "legacy-before-agent-start",
+    severity: "P2",
+    level: "warning",
+    issueClass: "deprecation-warning",
+    compatStatus: "deprecated",
+    deprecated: true,
+    message: "legacy before_agent_start hook is deprecated for the current OpenClaw plugin API",
+    evidence: ["src/index.ts:4", "hook:before_agent_start"],
+    inspectorFindingId: "local-scanned-runtime-plugin:legacy-before-agent-start",
+    createdAt: now,
+  });
+  await ctx.db.insert("packageInspectorWarnings", {
+    packageId: scannedPackageId,
+    releaseId: scannedPackageReleaseId,
+    ownerUserId: userId,
+    ownerPublisherId: publisherId,
+    packageName: scannedPluginName,
+    version: "0.1.0",
+    findingKind: "error",
+    scanSource: "nightly",
+    inspectorVersion: "0.4.0",
+    targetOpenClawVersion: "2026.4.0",
+    code: "missing-expected-seam",
+    severity: "P0",
+    level: "breakage",
+    issueClass: "compatibility-error",
+    message: "registerTool is no longer available on the target OpenClaw compatibility surface",
+    evidence: ["src/index.ts:12", "target:OpenClaw 2026.4.0"],
+    inspectorFindingId: "local-scanned-runtime-plugin:missing-expected-seam",
+    createdAt: now + 1,
   });
   await ctx.db.patch(userId, {
     publishedSkills: 6,

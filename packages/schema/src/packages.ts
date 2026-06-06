@@ -871,6 +871,18 @@ export const ApiV1PackagePublishResponseSchema = type({
   ok: "true",
   packageId: "string",
   releaseId: "string",
+  inspectorFindings: type({
+    findingKind: '"warning"|"error"',
+    code: "string",
+    severity: "string?",
+    level: "string?",
+    issueClass: "string?",
+    message: "string",
+    inspectorVersion: "string?",
+    targetOpenClawVersion: "string?",
+  })
+    .array()
+    .optional(),
 });
 export type ApiV1PackagePublishResponse = (typeof ApiV1PackagePublishResponseSchema)[inferred];
 

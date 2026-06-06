@@ -124,6 +124,7 @@ import type * as lib_webhooks from "../lib/webhooks.js";
 import type * as llmEval from "../llmEval.js";
 import type * as maintenance from "../maintenance.js";
 import type * as managementDevSeed from "../managementDevSeed.js";
+import type * as packageInspectorHttp from "../packageInspectorHttp.js";
 import type * as packageInspectorNode from "../packageInspectorNode.js";
 import type * as packagePublishTokens from "../packagePublishTokens.js";
 import type * as packages from "../packages.js";
@@ -277,6 +278,7 @@ declare const fullApi: ApiFromModules<{
   llmEval: typeof llmEval;
   maintenance: typeof maintenance;
   managementDevSeed: typeof managementDevSeed;
+  packageInspectorHttp: typeof packageInspectorHttp;
   packageInspectorNode: typeof packageInspectorNode;
   packagePublishTokens: typeof packagePublishTokens;
   packages: typeof packages;

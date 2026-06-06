@@ -1,0 +1,49 @@
+name: Plugin Inspector Nightly
+
+on:
+  workflow_dispatch:
+    inputs:
+      batch_size:
+        description: "Maximum plugin releases to scan"
+        required: false
+        default: "25"
+  schedule:
+    - cron: "41 8 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    name: Scan published plugins
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Resolve latest plugin inspector
+        id: inspector
+        run: |
+          version="$(npm view @openclaw/plugin-inspector@latest version)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          bunx @openclaw/plugin-inspector@latest --help >/dev/null
+
+      - name: Run nightly plugin inspector scan
+        env:
+          CLAWHUB_SITE_URL: ${{ vars.CLAWHUB_SITE_URL || 'https://clawhub.ai' }}
+          CLAWHUB_PLUGIN_INSPECTOR_WORKER_TOKEN: ${{ secrets.CLAWHUB_PLUGIN_INSPECTOR_WORKER_TOKEN }}
+          PLUGIN_INSPECTOR_BATCH_SIZE: ${{ inputs.batch_size || '25' }}
+          PLUGIN_INSPECTOR_VERSION: ${{ steps.inspector.outputs.version }}
+          PLUGIN_INSPECTOR_ARTIFACT_DIR: plugin-inspector-nightly-reports
+        run: bun scripts/package-inspector-nightly-scan.ts
+
+      - name: Upload inspector reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugin-inspector-nightly-reports
+          path: plugin-inspector-nightly-reports
+          if-no-files-found: warn

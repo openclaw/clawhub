@@ -22,6 +22,7 @@ type InspectorFinding = {
 
 type InspectorReport = {
   status?: string;
+  targetOpenClaw?: unknown;
   summary?: {
     breakageCount?: number;
     warningCount?: number;
@@ -56,6 +57,11 @@ const findingValidator = v.object({
   decision: v.optional(v.string()),
 });
 
+const inspectorMetadataValidator = v.object({
+  inspectorVersion: v.optional(v.string()),
+  targetOpenClawVersion: v.optional(v.string()),
+});
+
 export const runPackageInspectorForPublishInternal = internalAction({
   args: {
     packageName: v.string(),
@@ -72,6 +78,7 @@ export const runPackageInspectorForPublishInternal = internalAction({
     }),
     breakages: v.array(findingValidator),
     warnings: v.array(findingValidator),
+    metadata: inspectorMetadataValidator,
   }),
   handler: async (ctx, args) => {
     const root = path.join(
@@ -122,6 +129,9 @@ export const runPackageInspectorForPublishInternal = internalAction({
           },
         ],
         warnings: [],
+        metadata: {
+          inspectorVersion: getBundledInspectorVersion(),
+        },
       };
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -217,6 +227,10 @@ function normalizeInspectorReport(report: unknown) {
     },
     breakages,
     warnings,
+    metadata: {
+      inspectorVersion: getBundledInspectorVersion(),
+      targetOpenClawVersion: extractTargetOpenClawVersion(parsed.targetOpenClaw),
+    },
   };
 }
 
@@ -270,4 +284,18 @@ function stringValue(value: unknown) {
 
 function numberValue(value: unknown, fallback: number) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function getBundledInspectorVersion() {
+  return stringValue(process.env.CLAWHUB_PLUGIN_INSPECTOR_VERSION);
+}
+
+function extractTargetOpenClawVersion(targetOpenClaw: unknown) {
+  if (!isRecord(targetOpenClaw)) return undefined;
+  return (
+    stringValue(targetOpenClaw.version) ??
+    stringValue(targetOpenClaw.openclawVersion) ??
+    stringValue(targetOpenClaw.label) ??
+    stringValue(targetOpenClaw.status)
+  );
 }

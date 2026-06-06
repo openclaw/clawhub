@@ -43,10 +43,77 @@ async function readRequestBody(req: IncomingMessage) {
   return Buffer.concat(chunks).toString("utf8");
 }
 
+async function startPackagePublishRegistry(
+  handler: (req: IncomingMessage, body: string) => { status: number; body: unknown; text?: true },
+) {
+  const server = createServer(async (req, res) => {
+    const body = await readRequestBody(req);
+    if (req.method !== "POST" || !req.url?.startsWith(ApiRoutes.packages)) {
+      res.writeHead(404, { "Content-Type": "text/plain" });
+      res.end("not found");
+      return;
+    }
+    const response = handler(req, body);
+    res.writeHead(response.status, {
+      "Content-Type": response.text ? "text/plain" : "application/json",
+    });
+    res.end(response.text ? String(response.body) : JSON.stringify(response.body));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address() as AddressInfo;
+  return {
+    registry: `http://127.0.0.1:${address.port}`,
+    close: () =>
+      new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      ),
+  };
+}
+
+async function writeCodePluginFixture(root: string, name: string) {
+  const folder = join(root, name);
+  await mkdir(join(folder, "dist"), { recursive: true });
+  await writeFile(
+    join(folder, "package.json"),
+    `${JSON.stringify(
+      {
+        name,
+        version: "1.0.0",
+        type: "module",
+        main: "dist/index.js",
+        openclaw: {
+          extensions: ["./dist/index.js"],
+          compat: { pluginApi: ">=2026.3.24-beta.2" },
+          build: { openclawVersion: "2026.3.24-beta.2" },
+          configSchema: { type: "object", additionalProperties: false },
+        },
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+  await writeFile(
+    join(folder, "openclaw.plugin.json"),
+    `${JSON.stringify(
+      {
+        id: name,
+        name,
+        configSchema: { type: "object", additionalProperties: false },
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+  await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
+  return folder;
+}
+
 async function spawnCommand(
   command: string,
   args: string[],
-  options: { cwd: string; env: NodeJS.ProcessEnv },
+  options: { cwd: string; env: NodeJS.ProcessEnv; encoding?: BufferEncoding; timeoutMs?: number },
 ) {
   return await new Promise<{
     status: number | null;
@@ -54,6 +121,7 @@ async function spawnCommand(
     stdout: string;
     stderr: string;
   }>((resolve, reject) => {
+    let settled = false;
     const child = spawn(command, args, {
       cwd: options.cwd,
       env: options.env,
@@ -69,8 +137,22 @@ async function spawnCommand(
     child.stderr.on("data", (chunk: string) => {
       stderr += chunk;
     });
-    child.on("error", reject);
+    const timeout =
+      options.timeoutMs && options.timeoutMs > 0
+        ? setTimeout(() => {
+            if (settled) return;
+            child.kill("SIGTERM");
+            reject(new Error(`${command} ${args.join(" ")} timed out`));
+          }, options.timeoutMs)
+        : null;
+    child.on("error", (error) => {
+      settled = true;
+      if (timeout) clearTimeout(timeout);
+      reject(error);
+    });
     child.on("close", (status, signal) => {
+      settled = true;
+      if (timeout) clearTimeout(timeout);
       resolve({ status, signal, stdout, stderr });
     });
   });
@@ -109,7 +191,7 @@ describe("clawhub e2e", () => {
     const cfg = await makeTempConfig(registry, token);
     try {
       const workdir = await mkdtemp(join(tmpdir(), "clawhub-e2e-workdir-"));
-      const result = spawnSync(
+      const result = await spawnCommand(
         "bun",
         [
           "clawhub",
@@ -697,6 +779,115 @@ describe("clawhub e2e", () => {
     expect(output.family).toBe("code-plugin");
     expect(Number(output.files)).toBeGreaterThan(0);
     expect(output).not.toHaveProperty("releaseId");
+  }, 30_000);
+
+  it("package publish exits non-zero when Plugin Inspector hard errors block publish", async () => {
+    const root = await mkdtemp(join(tmpdir(), "clawhub-cli-inspector-hard-"));
+    const registry = await startPackagePublishRegistry(() => ({
+      status: 400,
+      text: true,
+      body: "Plugin Inspector blocked publish: missing-expected-seam: missing expected registration registerTool",
+    }));
+    const cfg = await makeTempConfig(registry.registry, "test-token");
+    try {
+      const plugin = await writeCodePluginFixture(root, "cli-inspector-hard-plugin");
+      const result = await spawnCommand(
+        "node",
+        [
+          join(process.cwd(), "packages/clawhub/dist/cli.js"),
+          "package",
+          "publish",
+          plugin,
+          "--registry",
+          registry.registry,
+          "--site",
+          registry.registry,
+          "--source-repo",
+          "openclaw/cli-inspector-hard-plugin",
+          "--source-commit",
+          "deadbeef",
+        ],
+        {
+          cwd: process.cwd(),
+          env: {
+            ...process.env,
+            CLAWHUB_CONFIG_PATH: cfg.path,
+            CLAWHUB_DISABLE_TELEMETRY: "1",
+            NO_COLOR: "1",
+          },
+          timeoutMs: 25_000,
+        },
+      );
+
+      expect(result.status).not.toBe(0);
+      expect(`${result.stdout}\n${result.stderr}`).toMatch(/Plugin Inspector blocked publish/);
+      expect(`${result.stdout}\n${result.stderr}`).toMatch(/missing-expected-seam/);
+    } finally {
+      await registry.close();
+      await rm(root, { recursive: true, force: true });
+      await rm(cfg.dir, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it("package publish exits zero and prints Plugin Inspector warnings", async () => {
+    const root = await mkdtemp(join(tmpdir(), "clawhub-cli-inspector-warning-"));
+    const registry = await startPackagePublishRegistry(() => ({
+      status: 200,
+      body: {
+        ok: true,
+        packageId: "pkg_cli_warning",
+        releaseId: "rel_cli_warning",
+        inspectorFindings: [
+          {
+            findingKind: "warning",
+            code: "legacy-before-agent-start",
+            issueClass: "deprecation-warning",
+            message: "legacy before_agent_start hook is deprecated",
+          },
+        ],
+      },
+    }));
+    const cfg = await makeTempConfig(registry.registry, "test-token");
+    try {
+      const plugin = await writeCodePluginFixture(root, "cli-inspector-warning-plugin");
+      const result = await spawnCommand(
+        "node",
+        [
+          join(process.cwd(), "packages/clawhub/dist/cli.js"),
+          "package",
+          "publish",
+          plugin,
+          "--registry",
+          registry.registry,
+          "--site",
+          registry.registry,
+          "--source-repo",
+          "openclaw/cli-inspector-warning-plugin",
+          "--source-commit",
+          "abc123",
+        ],
+        {
+          cwd: process.cwd(),
+          env: {
+            ...process.env,
+            CLAWHUB_CONFIG_PATH: cfg.path,
+            CLAWHUB_DISABLE_TELEMETRY: "1",
+            NO_COLOR: "1",
+          },
+          timeoutMs: 25_000,
+        },
+      );
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toMatch(/Plugin Inspector findings: 1 warning/);
+      expect(result.stdout).toMatch(
+        /WARNING legacy-before-agent-start \(deprecation-warning\): legacy before_agent_start hook is deprecated/,
+      );
+    } finally {
+      await registry.close();
+      await rm(root, { recursive: true, force: true });
+      await rm(cfg.dir, { recursive: true, force: true });
+    }
   }, 30_000);
 
   it("package publish help shows the new source argument and flags", async () => {

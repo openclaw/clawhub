@@ -79,7 +79,6 @@ type DashboardPackage = {
   summary?: string | null;
   latestVersion?: string | null;
   inspectorWarningCount?: number;
-  canViewInspectorWarnings?: boolean;
   updatedAt: number;
   stats: {
     downloads: number;
@@ -360,7 +359,7 @@ function PackageRow({ pkg }: { pkg: DashboardPackage }) {
       status={status}
       stats={stats}
       actions={
-        pkg.canViewInspectorWarnings && warningCount > 0 ? (
+        warningCount > 0 ? (
           <div className="dashboard-row-action">
             <Button asChild variant="ghost" size="sm">
               <a

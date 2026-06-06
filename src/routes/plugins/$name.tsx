@@ -1,7 +1,7 @@
 import { createFileRoute, Link, Outlet, redirect, useRouterState } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
 import { AlertTriangle, Download, Upload } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { api } from "../../../convex/_generated/api";
 import { DetailHero, DetailPageShell } from "../../components/DetailPageShell";
 import {
@@ -47,7 +47,23 @@ type PluginDetailRateLimitState = {
   retryAfterSeconds: number | null;
 } | null;
 
-type PluginDetailTab = "readme" | "capabilities" | "compatibility" | "verification";
+type PluginDetailTab = "readme" | "capabilities" | "compatibility" | "verification" | "warnings";
+
+type PluginInspectorFinding = {
+  packageName: string;
+  version: string;
+  findingKind?: "warning" | "error";
+  code: string;
+  severity?: string;
+  level?: string;
+  issueClass?: string;
+  message: string;
+  evidence?: string[];
+  inspectorVersion?: string;
+  targetOpenClawVersion?: string;
+  scanSource?: "publish" | "nightly";
+  createdAt: number;
+};
 
 export type PluginDetailLoaderData = {
   detail: PackageDetailResponse;
@@ -227,6 +243,16 @@ function isEmptyObject(obj: unknown): boolean {
   return Object.keys(obj).length === 0;
 }
 
+function pluginDetailTabFromHash(hashValue: string): PluginDetailTab {
+  const hash = hashValue.replace("#", "");
+  return hash === "capabilities" ||
+    hash === "compatibility" ||
+    hash === "verification" ||
+    hash === "warnings"
+    ? hash
+    : "readme";
+}
+
 function PluginDetailTabs({
   activeTab,
   setActiveTab,
@@ -234,6 +260,7 @@ function PluginDetailTabs({
   capabilitiesPanel,
   compatibilityPanel,
   verificationPanel,
+  warningsPanel,
 }: {
   activeTab: PluginDetailTab;
   setActiveTab: (tab: PluginDetailTab) => void;
@@ -241,6 +268,7 @@ function PluginDetailTabs({
   capabilitiesPanel: ReactNode | null;
   compatibilityPanel: ReactNode | null;
   verificationPanel: ReactNode | null;
+  warningsPanel: ReactNode | null;
 }) {
   const selectTab = (tab: PluginDetailTab) => {
     setActiveTab(tab);
@@ -260,7 +288,9 @@ function PluginDetailTabs({
         ? "compatibility"
         : activeTab === "verification" && verificationPanel
           ? "verification"
-          : "readme";
+          : activeTab === "warnings" && warningsPanel
+            ? "warnings"
+            : "readme";
   const activePanel =
     effectiveActiveTab === "capabilities" && capabilitiesPanel
       ? capabilitiesPanel
@@ -268,7 +298,9 @@ function PluginDetailTabs({
         ? compatibilityPanel
         : effectiveActiveTab === "verification" && verificationPanel
           ? verificationPanel
-          : readmePanel;
+          : effectiveActiveTab === "warnings" && warningsPanel
+            ? warningsPanel
+            : readmePanel;
 
   return (
     <div className="tab-card">
@@ -313,6 +345,17 @@ function PluginDetailTabs({
             onClick={() => selectTab("verification")}
           >
             Verification
+          </button>
+        ) : null}
+        {warningsPanel ? (
+          <button
+            className={`tab-button${effectiveActiveTab === "warnings" ? " is-active" : ""}`}
+            type="button"
+            role="tab"
+            aria-selected={effectiveActiveTab === "warnings"}
+            onClick={() => selectTab("warnings")}
+          >
+            Warnings
           </button>
         ) : null}
       </div>
@@ -363,16 +406,19 @@ export function PluginDetailPage({
       : "skip",
   );
   const inspectorWarnings = useQuery(
-    api.packages.listPackageInspectorWarningsForManager,
-    manageContext && detail.package ? { name: manageContext.package.name, limit: 100 } : "skip",
-  ) as Array<{ code: string }> | undefined;
+    api.packages.listPackageInspectorFindingsPublic,
+    detail.package ? { name: detail.package.name, limit: 100 } : "skip",
+  ) as PluginInspectorFinding[] | undefined;
   const [activeTab, setActiveTab] = useState<PluginDetailTab>(() => {
     if (typeof window === "undefined") return "readme";
-    const hash = window.location.hash.replace("#", "");
-    return hash === "capabilities" || hash === "compatibility" || hash === "verification"
-      ? hash
-      : "readme";
+    return pluginDetailTabFromHash(window.location.hash);
   });
+  useEffect(() => {
+    const syncTabFromHash = () => setActiveTab(pluginDetailTabFromHash(window.location.hash));
+    window.addEventListener("hashchange", syncTabFromHash);
+    syncTabFromHash();
+    return () => window.removeEventListener("hashchange", syncTabFromHash);
+  }, []);
   if (isNestedPluginRoute) {
     return <Outlet />;
   }
@@ -582,6 +628,69 @@ export function PluginDetailPage({
         </dl>
       </div>
     ) : null;
+  const warningsPanel =
+    inspectorWarnings && inspectorWarnings.length > 0 ? (
+      <div className="plugin-tab-panel plugin-warnings-panel">
+        <div className="plugin-warning-summary">
+          <strong>
+            {warningCount === 1 ? "1 inspector finding" : `${warningCount} inspector findings`}
+          </strong>
+          <span>
+            Plugin Inspector findings are public so stale compatibility issues stay visible after
+            OpenClaw or Plugin Inspector moves forward.
+          </span>
+        </div>
+        <div className="plugin-warning-list">
+          {inspectorWarnings.map((finding) => (
+            <article
+              key={`${finding.version}:${finding.code}:${finding.message}`}
+              className={`plugin-warning-item is-${finding.findingKind ?? "warning"}`}
+            >
+              <div className="plugin-warning-item-header">
+                <Badge variant={finding.findingKind === "error" ? "destructive" : "warning"}>
+                  {finding.findingKind === "error" ? "Error" : "Warning"}
+                </Badge>
+                <code>{finding.code}</code>
+                {finding.issueClass ? <span>{finding.issueClass}</span> : null}
+                {finding.severity ? <span>{finding.severity}</span> : null}
+              </div>
+              <p>{finding.message}</p>
+              <dl className="plugin-warning-meta">
+                <div>
+                  <dt>Plugin version</dt>
+                  <dd>v{finding.version}</dd>
+                </div>
+                {finding.targetOpenClawVersion ? (
+                  <div>
+                    <dt>Target</dt>
+                    <dd>OpenClaw {finding.targetOpenClawVersion}</dd>
+                  </div>
+                ) : null}
+                {finding.inspectorVersion ? (
+                  <div>
+                    <dt>Inspector</dt>
+                    <dd>{finding.inspectorVersion}</dd>
+                  </div>
+                ) : null}
+                {finding.scanSource ? (
+                  <div>
+                    <dt>Scan</dt>
+                    <dd>{finding.scanSource}</dd>
+                  </div>
+                ) : null}
+              </dl>
+              {finding.evidence && finding.evidence.length > 0 ? (
+                <ul className="plugin-warning-evidence">
+                  {finding.evidence.slice(0, 4).map((entry) => (
+                    <li key={entry}>{entry}</li>
+                  ))}
+                </ul>
+              ) : null}
+            </article>
+          ))}
+        </div>
+      </div>
+    ) : null;
   const sourceRepoLink = verification?.sourceRepo
     ? (() => {
         const raw = verification.sourceRepo;
@@ -776,6 +885,7 @@ export function PluginDetailPage({
             capabilitiesPanel={capabilitiesPanel}
             compatibilityPanel={compatibilityPanel}
             verificationPanel={verificationPanel}
+            warningsPanel={warningsPanel}
           />
         </DetailHero>
       </DetailPageShell>
