@@ -104,9 +104,12 @@ test("org owners can delete an org and hide its skills and plugins", async ({ pa
   await waitForHydration(page);
   await expect(page.getByText(`@${handle} · owner`)).toBeVisible();
   await page.getByRole("button", { name: "Delete organization" }).click();
-  await expect(page.getByText(`Delete @${handle}?`)).toBeVisible();
-  await page.getByRole("button", { name: "Delete organization" }).last().click();
-  await expect(page.getByText(`Delete @${handle}?`)).toHaveCount(0, { timeout: 20_000 });
+  await expect(page.getByText(`Permanently delete @${handle}`)).toBeVisible();
+  await expect(page.getByText("Resources permanently deleted")).toBeVisible();
+  await page.getByRole("button", { name: "Permanently delete organization" }).click();
+  await expect(page.getByText(`Permanently delete @${handle}`)).toHaveCount(0, {
+    timeout: 20_000,
+  });
 
   await page.goto(`/user/${handle}`, { waitUntil: "domcontentloaded" });
   await waitForHydration(page);

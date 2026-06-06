@@ -291,6 +291,10 @@ type PackageSoftDeletedReason = "user.banned" | "user.deactivated" | "publisher.
 const ownedPackageScanScopeValidator = v.optional(
   v.union(v.literal("ownerUserId"), v.literal("personalPublisher")),
 );
+const hardDeletePackageSourceValidator = v.union(
+  v.literal("account.delete"),
+  v.literal("publisher.delete"),
+);
 type OwnedPackageScanScope = "ownerUserId" | "personalPublisher";
 type PackagePublishActor =
   | {
@@ -3081,6 +3085,146 @@ async function softDeletePackageDoc(
   };
 }
 
+async function deletePackageModerationEventsForReport(
+  ctx: Pick<MutationCtx, "db">,
+  reportId: Id<"packageReports">,
+) {
+  const logs = await ctx.db
+    .query("packageModerationEventLogs")
+    .withIndex("by_report_createdAt", (q) => q.eq("reportId", reportId))
+    .collect();
+  for (const log of logs) await ctx.db.delete(log._id);
+}
+
+async function deletePackageModerationEventsForAppeal(
+  ctx: Pick<MutationCtx, "db">,
+  appealId: Id<"packageAppeals">,
+) {
+  const logs = await ctx.db
+    .query("packageModerationEventLogs")
+    .withIndex("by_appeal_createdAt", (q) => q.eq("appealId", appealId))
+    .collect();
+  for (const log of logs) await ctx.db.delete(log._id);
+}
+
+async function hardDeletePackageDoc(
+  ctx: Pick<MutationCtx, "db">,
+  pkg: Doc<"packages">,
+  params: {
+    actorUserId: Id<"users">;
+    deletedAt: number;
+    source: "account.delete" | "publisher.delete";
+  },
+) {
+  const releases = await ctx.db
+    .query("packageReleases")
+    .withIndex("by_package", (q) => q.eq("packageId", pkg._id))
+    .collect();
+  for (const release of releases) {
+    const jobs = await ctx.db
+      .query("securityScanJobs")
+      .withIndex("by_package_release", (q) => q.eq("packageReleaseId", release._id))
+      .collect();
+    for (const job of jobs) await ctx.db.delete(job._id);
+  }
+
+  const reports = await ctx.db
+    .query("packageReports")
+    .withIndex("by_package", (q) => q.eq("packageId", pkg._id))
+    .collect();
+  for (const report of reports) {
+    await deletePackageModerationEventsForReport(ctx, report._id);
+    await ctx.db.delete(report._id);
+  }
+
+  const appeals = await ctx.db
+    .query("packageAppeals")
+    .withIndex("by_package", (q) => q.eq("packageId", pkg._id))
+    .collect();
+  for (const appeal of appeals) {
+    await deletePackageModerationEventsForAppeal(ctx, appeal._id);
+    await ctx.db.delete(appeal._id);
+  }
+
+  const badges = await ctx.db
+    .query("packageBadges")
+    .withIndex("by_package", (q) => q.eq("packageId", pkg._id))
+    .collect();
+  for (const badge of badges) await ctx.db.delete(badge._id);
+
+  const trustedPublishers = await ctx.db
+    .query("packageTrustedPublishers")
+    .withIndex("by_package", (q) => q.eq("packageId", pkg._id))
+    .collect();
+  for (const trustedPublisher of trustedPublishers) await ctx.db.delete(trustedPublisher._id);
+
+  const tokens = await ctx.db
+    .query("packagePublishTokens")
+    .withIndex("by_package", (q) => q.eq("packageId", pkg._id))
+    .collect();
+  for (const token of tokens) {
+    const tickets = await ctx.db
+      .query("packagePublishUploadTickets")
+      .withIndex("by_publish_token", (q) => q.eq("publishTokenId", token._id))
+      .collect();
+    for (const ticket of tickets) await ctx.db.delete(ticket._id);
+    await ctx.db.delete(token._id);
+  }
+
+  const statEvents = await ctx.db
+    .query("packageStatEvents")
+    .withIndex("by_package", (q) => q.eq("packageId", pkg._id))
+    .collect();
+  for (const statEvent of statEvents) await ctx.db.delete(statEvent._id);
+
+  for (const release of releases) await ctx.db.delete(release._id);
+  await ctx.db.delete(pkg._id);
+  await ctx.db.insert("auditLogs", {
+    actorUserId: params.actorUserId,
+    action: "package.hard_delete",
+    targetType: "package",
+    targetId: pkg._id,
+    metadata: {
+      name: pkg.name,
+      normalizedName: pkg.normalizedName,
+      ownerUserId: pkg.ownerUserId,
+      ownerPublisherId: pkg.ownerPublisherId,
+      source: params.source,
+      releases: releases.length,
+      reports: reports.length,
+      appeals: appeals.length,
+      publishTokens: tokens.length,
+    },
+    createdAt: params.deletedAt,
+  });
+
+  return {
+    ok: true as const,
+    packageId: pkg._id,
+    releaseCount: releases.length,
+    revokedTokenCount: tokens.length,
+  };
+}
+
+export const hardDeletePackageInternal = internalMutation({
+  args: {
+    packageId: v.id("packages"),
+    actorUserId: v.id("users"),
+    deletedAt: v.number(),
+    source: hardDeletePackageSourceValidator,
+  },
+  handler: async (ctx, args) => {
+    const pkg = await ctx.db.get(args.packageId);
+    if (!pkg) return { ok: true as const, deleted: false as const };
+    const result = await hardDeletePackageDoc(ctx, pkg, {
+      actorUserId: args.actorUserId,
+      deletedAt: args.deletedAt,
+      source: args.source,
+    });
+    return { ...result, deleted: true as const };
+  },
+});
+
 function comparePackageRestoreLatestCandidates(
   family: Doc<"packages">["family"],
   a: Doc<"packageReleases">,
@@ -3615,16 +3759,11 @@ export const applyAccountDeletionToOwnedPackagesBatchInternal = internalMutation
     for (const pkg of page) {
       if (shouldSkipOwnedPackageScanRow(pkg, args)) continue;
       if (!(await isPackageOwnedByPersonalUser(ctx, pkg, owner))) continue;
-      const revokeResult = await revokePackagePublishTokensForPackage(ctx, pkg._id, args.deletedAt);
-      revokedTokenCount += revokeResult.revokedCount;
-      if (pkg.softDeletedAt) continue;
-
-      await softDeletePackageDoc(ctx, pkg, {
+      void ctx.scheduler.runAfter(0, internal.packages.hardDeletePackageInternal, {
+        packageId: pkg._id,
         actorUserId: args.ownerUserId,
-        actorRole: "user",
         deletedAt: args.deletedAt,
-        reason: "user.deactivated",
-        source: "dashboard",
+        source: "account.delete",
       });
       deletedCount += 1;
     }
@@ -3651,7 +3790,7 @@ export const applyPublisherDeletionToOwnedPackagesBatchInternal = internalMutati
   },
   handler: async (ctx, args) => {
     const publisher = await ctx.db.get(args.ownerPublisherId);
-    if (!publisher || publisher.deletedAt !== args.deletedAt) {
+    if (publisher && publisher.deletedAt !== args.deletedAt) {
       return {
         ok: true as const,
         deletedCount: 0,
@@ -3673,16 +3812,11 @@ export const applyPublisherDeletionToOwnedPackagesBatchInternal = internalMutati
     let deletedCount = 0;
     let revokedTokenCount = 0;
     for (const pkg of page) {
-      const revokeResult = await revokePackagePublishTokensForPackage(ctx, pkg._id, args.deletedAt);
-      revokedTokenCount += revokeResult.revokedCount;
-      if (pkg.softDeletedAt) continue;
-
-      await softDeletePackageDoc(ctx, pkg, {
+      void ctx.scheduler.runAfter(0, internal.packages.hardDeletePackageInternal, {
+        packageId: pkg._id,
         actorUserId: args.actorUserId,
-        actorRole: "user",
         deletedAt: args.deletedAt,
-        reason: "publisher.deleted",
-        source: "dashboard",
+        source: "publisher.delete",
       });
       deletedCount += 1;
     }

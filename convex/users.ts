@@ -51,10 +51,35 @@ const MALICIOUS_ARTIFACT_ATTEMPT_BAN_THRESHOLD = 3;
 const MALICIOUS_ARTIFACT_AUDIT_LOOKBACK = 100;
 const DEV_PERSONA_BANNED_REAUTH_MESSAGE =
   "This account has been banned and cannot sign in. If you believe this is a mistake, appeal this decision: https://appeals.openclaw.ai/.";
+const ACCOUNT_RECOVERY_PURGE_LIMIT_DEFAULT = 25;
+const ACCOUNT_RECOVERY_PURGE_LIMIT_MAX = 100;
+const accountRecoveryPurgeModeValidator = v.optional(
+  v.union(v.literal("deactivated"), v.literal("legacyDeleted")),
+);
 const autobanPackageScanScopeValidator = v.optional(
   v.union(v.literal("ownerUserId"), v.literal("personalPublisher")),
 );
 type AutobanPackageScanScope = "ownerUserId" | "personalPublisher";
+type DeletedAccountCleanupResult = {
+  authAccounts: number;
+  authVerificationCodes: number;
+  authSessions: number;
+  authRefreshTokens: number;
+  apiTokens: number;
+  personalPublisherDeleted: boolean;
+};
+type AccountRecoveryPurgeCandidate = {
+  userId: Id<"users">;
+  handle: string | null;
+  displayName: string | null;
+  emailPresent: boolean;
+  personalPublisherId: Id<"publishers"> | null;
+  deletedAt: number | null;
+  deactivatedAt: number | null;
+  purgedAt: number | null;
+  selfDeleteAuditLogId: Id<"auditLogs"> | null;
+  selfDeleteAuditCreatedAt: number | null;
+};
 
 type BanEmailTarget = Pick<Doc<"users">, "_id" | "email" | "handle">;
 type MaliciousArtifactKind = "skill" | "plugin";
@@ -161,6 +186,125 @@ async function isOwnedPersonalAutobanPackage(
   }
   const ownerPublisher = await ctx.db.get(pkg.ownerPublisherId);
   return ownerPublisher?.kind === "user" && ownerPublisher.linkedUserId === owner._id;
+}
+
+async function purgeAuthStateForUser(ctx: MutationCtx, userId: Id<"users">) {
+  const accounts = await ctx.db
+    .query("authAccounts")
+    .withIndex("userIdAndProvider", (q) => q.eq("userId", userId))
+    .collect();
+  let authVerificationCodes = 0;
+  for (const account of accounts) {
+    const codes = await ctx.db
+      .query("authVerificationCodes")
+      .withIndex("accountId", (q) => q.eq("accountId", account._id))
+      .collect();
+    authVerificationCodes += codes.length;
+    for (const code of codes) await ctx.db.delete(code._id);
+    await ctx.db.delete(account._id);
+  }
+
+  const sessions = await ctx.db
+    .query("authSessions")
+    .withIndex("userId", (q) => q.eq("userId", userId))
+    .collect();
+  let authRefreshTokens = 0;
+  for (const session of sessions) {
+    const refreshTokens = await ctx.db
+      .query("authRefreshTokens")
+      .withIndex("sessionId", (q) => q.eq("sessionId", session._id))
+      .collect();
+    authRefreshTokens += refreshTokens.length;
+    for (const refreshToken of refreshTokens) await ctx.db.delete(refreshToken._id);
+    await ctx.db.delete(session._id);
+  }
+
+  return {
+    authAccounts: accounts.length,
+    authVerificationCodes,
+    authSessions: sessions.length,
+    authRefreshTokens,
+  };
+}
+
+async function hardDeleteSelfDeletedAccountState(
+  ctx: MutationCtx,
+  user: Doc<"users">,
+  deletedAt: number,
+): Promise<DeletedAccountCleanupResult> {
+  const tokens = await ctx.db
+    .query("apiTokens")
+    .withIndex("by_user", (q) => q.eq("userId", user._id))
+    .collect();
+  for (const token of tokens) await ctx.db.delete(token._id);
+
+  const personalPublisher = user.personalPublisherId
+    ? await ctx.db.get(user.personalPublisherId)
+    : await getPersonalPublisherForUser(ctx, user._id);
+  let personalPublisherDeleted = false;
+  if (personalPublisher) {
+    const publisherDeletedAt = personalPublisher.deletedAt ?? deletedAt;
+    if (!personalPublisher.deletedAt || !personalPublisher.deactivatedAt) {
+      await ctx.db.patch(personalPublisher._id, {
+        deletedAt: publisherDeletedAt,
+        deactivatedAt: publisherDeletedAt,
+        updatedAt: deletedAt,
+      });
+    }
+    await ctx.runMutation(internal.skills.applyPublisherDeletionToOwnedSkillsBatchInternal, {
+      ownerPublisherId: personalPublisher._id,
+      actorUserId: user._id,
+      deletedAt: publisherDeletedAt,
+      cursor: undefined,
+    });
+    await ctx.runMutation(internal.packages.applyPublisherDeletionToOwnedPackagesBatchInternal, {
+      ownerPublisherId: personalPublisher._id,
+      actorUserId: user._id,
+      deletedAt: publisherDeletedAt,
+      cursor: undefined,
+    });
+    await ctx.runMutation(internal.publishers.hardDeletePublisherRowsInternal, {
+      publisherId: personalPublisher._id,
+    });
+    personalPublisherDeleted = true;
+  }
+
+  await ctx.runMutation(internal.packages.applyAccountDeletionToOwnedPackagesBatchInternal, {
+    ownerUserId: user._id,
+    deletedAt,
+    cursor: undefined,
+  });
+  await ctx.runMutation(internal.skills.applyAccountDeletionToOwnedSkillsBatchInternal, {
+    ownerUserId: user._id,
+    hiddenBy: user._id,
+    deletedAt,
+    cursor: undefined,
+  });
+  await ctx.runMutation(internal.telemetry.clearUserTelemetryInternal, { userId: user._id });
+  const authState = await purgeAuthStateForUser(ctx, user._id);
+  return { ...authState, apiTokens: tokens.length, personalPublisherDeleted };
+}
+
+async function scrubDeletedUserTombstone(ctx: MutationCtx, user: Doc<"users">, deletedAt: number) {
+  await ctx.db.patch(user._id, {
+    deactivatedAt: user.deactivatedAt ?? deletedAt,
+    purgedAt: user.purgedAt ?? deletedAt,
+    deletedAt: undefined,
+    banReason: undefined,
+    role: "user",
+    handle: undefined,
+    displayName: undefined,
+    name: undefined,
+    image: undefined,
+    email: undefined,
+    emailVerificationTime: undefined,
+    phone: undefined,
+    phoneVerificationTime: undefined,
+    isAnonymous: undefined,
+    bio: undefined,
+    githubCreatedAt: undefined,
+    updatedAt: deletedAt,
+  });
 }
 const autobanRemediationInternalRefs = internal as unknown as {
   users: {
@@ -801,57 +945,13 @@ export const deleteAccount = mutation({
     const { userId } = await requireUser(ctx);
     const now = Date.now();
     const user = await ctx.db.get(userId);
+    if (!user) throw new Error("User not found");
 
-    const tokens = await ctx.db
-      .query("apiTokens")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
-      .collect();
-    for (const token of tokens) {
-      if (!token.revokedAt) {
-        await ctx.db.patch(token._id, { revokedAt: now });
-      }
-    }
-
-    const personalPublisher = user
-      ? user.personalPublisherId
-        ? await ctx.db.get(user.personalPublisherId)
-        : await getPersonalPublisherForUser(ctx, userId)
-      : null;
-    if (personalPublisher && !personalPublisher.deletedAt && !personalPublisher.deactivatedAt) {
-      await ctx.db.patch(personalPublisher._id, {
-        deletedAt: now,
-        deactivatedAt: now,
-        updatedAt: now,
-      });
-      await ctx.runMutation(internal.skills.applyPublisherDeletionToOwnedSkillsBatchInternal, {
-        ownerPublisherId: personalPublisher._id,
-        actorUserId: userId,
-        deletedAt: now,
-        cursor: undefined,
-      });
-      await ctx.runMutation(internal.packages.applyPublisherDeletionToOwnedPackagesBatchInternal, {
-        ownerPublisherId: personalPublisher._id,
-        actorUserId: userId,
-        deletedAt: now,
-        cursor: undefined,
-      });
-    }
-
-    await ctx.runMutation(internal.packages.applyAccountDeletionToOwnedPackagesBatchInternal, {
-      ownerUserId: userId,
-      deletedAt: now,
-      cursor: undefined,
-    });
-    await ctx.runMutation(internal.skills.applyAccountDeletionToOwnedSkillsBatchInternal, {
-      ownerUserId: userId,
-      hiddenBy: userId,
-      deletedAt: now,
-      cursor: undefined,
-    });
     await ctx.runMutation(internal.publishers.deleteSoleOwnerOrgsForAccountDeletionInternal, {
       actorUserId: userId,
       deletedAt: now,
     });
+    const cleanup = await hardDeleteSelfDeletedAccountState(ctx, user, now);
 
     await ctx.db.patch(userId, {
       deactivatedAt: now,
@@ -872,7 +972,6 @@ export const deleteAccount = mutation({
       githubCreatedAt: undefined,
       updatedAt: now,
     });
-    await ctx.runMutation(internal.telemetry.clearUserTelemetryInternal, { userId });
     await ctx.db.insert("auditLogs", {
       actorUserId: userId,
       action: "user.delete",
@@ -887,9 +986,153 @@ export const deleteAccount = mutation({
           emailPresent: Boolean(user?.email),
           personalPublisherId: user?.personalPublisherId ?? null,
         },
+        cleanup,
       },
       createdAt: now,
     });
+  },
+});
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function optionalString(value: unknown) {
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function optionalPublisherId(value: unknown): Id<"publishers"> | null {
+  return typeof value === "string" && value.startsWith("publishers:")
+    ? (value as Id<"publishers">)
+    : null;
+}
+
+function getSelfDeletePreviousMetadata(log: Doc<"auditLogs"> | null) {
+  return asRecord(asRecord(log?.metadata)?.previous);
+}
+
+function buildAccountRecoveryPurgeCandidate(
+  user: Doc<"users">,
+  selfDeleteAuditLog: Doc<"auditLogs"> | null,
+): AccountRecoveryPurgeCandidate {
+  const previous = getSelfDeletePreviousMetadata(selfDeleteAuditLog);
+  return {
+    userId: user._id,
+    handle: optionalString(user.handle) ?? optionalString(previous?.handle),
+    displayName:
+      optionalString(user.displayName) ??
+      optionalString(user.name) ??
+      optionalString(previous?.displayName) ??
+      optionalString(previous?.name),
+    emailPresent: Boolean(user.email) || previous?.emailPresent === true,
+    personalPublisherId:
+      user.personalPublisherId ?? optionalPublisherId(previous?.personalPublisherId),
+    deletedAt: user.deletedAt ?? null,
+    deactivatedAt: user.deactivatedAt ?? null,
+    purgedAt: user.purgedAt ?? null,
+    selfDeleteAuditLogId: selfDeleteAuditLog?._id ?? null,
+    selfDeleteAuditCreatedAt: selfDeleteAuditLog?.createdAt ?? null,
+  };
+}
+
+async function getSelfDeletedAccountEligibility(ctx: MutationCtx, user: Doc<"users">) {
+  const hasModernTombstone = Boolean(user.deactivatedAt && user.purgedAt && !user.deletedAt);
+  const hasLegacySelfDeleteMarker = Boolean(user.deletedAt && !user.banReason);
+  if ((!hasModernTombstone && !hasLegacySelfDeleteMarker) || user.banReason) {
+    return { eligible: false, selfDeleteAuditLog: null };
+  }
+  const logs = await ctx.db
+    .query("auditLogs")
+    .withIndex("by_target", (q) => q.eq("targetType", "user").eq("targetId", user._id.toString()))
+    .collect();
+  const selfDeleteAuditLog =
+    logs.find((log) => log.action === "user.delete" && log.actorUserId === user._id) ?? null;
+  const hasBanAudit = logs.some((log) => BAN_AUDIT_ACTIONS.has(log.action));
+  return { eligible: Boolean(selfDeleteAuditLog && !hasBanAudit), selfDeleteAuditLog };
+}
+
+export const purgeSelfDeletedAccountRecoveryBatchInternal = internalMutation({
+  args: {
+    cursor: v.optional(v.string()),
+    limit: v.optional(v.number()),
+    dryRun: v.optional(v.boolean()),
+    mode: accountRecoveryPurgeModeValidator,
+  },
+  handler: async (ctx, args) => {
+    const limit = clampInt(
+      args.limit ?? ACCOUNT_RECOVERY_PURGE_LIMIT_DEFAULT,
+      1,
+      ACCOUNT_RECOVERY_PURGE_LIMIT_MAX,
+    );
+    const dryRun = args.dryRun !== false;
+    const mode = args.mode ?? "deactivated";
+    const { page, isDone, continueCursor } =
+      mode === "legacyDeleted"
+        ? await ctx.db
+            .query("users")
+            .withIndex("by_ban_reason_deleted_at", (q) =>
+              q.eq("banReason", undefined).gte("deletedAt", 0),
+            )
+            .paginate({ cursor: args.cursor ?? null, numItems: limit })
+        : await ctx.db
+            .query("users")
+            .withIndex("by_deactivated_purged_at", (q) => q.gte("deactivatedAt", 0))
+            .paginate({ cursor: args.cursor ?? null, numItems: limit });
+
+    let eligible = 0;
+    let purged = 0;
+    const skipped: Array<{ userId: Id<"users">; reason: string }> = [];
+    const candidates: AccountRecoveryPurgeCandidate[] = [];
+    const cleaned: Array<
+      DeletedAccountCleanupResult & { userId: Id<"users">; deactivatedAt: number }
+    > = [];
+
+    for (const user of page) {
+      const eligibility = await getSelfDeletedAccountEligibility(ctx, user);
+      if (!eligibility.eligible) {
+        skipped.push({ userId: user._id, reason: "not_self_deleted_or_security_blocked" });
+        continue;
+      }
+      eligible += 1;
+      candidates.push(buildAccountRecoveryPurgeCandidate(user, eligibility.selfDeleteAuditLog));
+      if (dryRun) continue;
+      const deletedAt = user.deactivatedAt ?? user.deletedAt ?? Date.now();
+      const cleanup = await hardDeleteSelfDeletedAccountState(ctx, user, deletedAt);
+      await scrubDeletedUserTombstone(ctx, user, deletedAt);
+      await ctx.db.insert("auditLogs", {
+        actorUserId: user._id,
+        action: "user.recovery_purge",
+        targetType: "user",
+        targetId: user._id,
+        metadata: {
+          deactivatedAt: user.deactivatedAt,
+          purgedAt: user.purgedAt,
+          deletedAt: user.deletedAt,
+          cleanup,
+          mode,
+          source: "backfill",
+        },
+        createdAt: Date.now(),
+      });
+      cleaned.push({ userId: user._id, deactivatedAt: deletedAt, ...cleanup });
+      purged += 1;
+    }
+
+    return {
+      ok: true as const,
+      dryRun,
+      mode,
+      scanned: page.length,
+      eligible,
+      purged,
+      skipped,
+      candidates,
+      cleaned,
+      isDone,
+      cursor: isDone ? null : continueCursor,
+    };
   },
 });
 

@@ -191,6 +191,7 @@ const users = defineTable({
   .index("phone", ["phone"])
   .index("handle", ["handle"])
   .index("by_ban_reason_deleted_at", ["banReason", "deletedAt"])
+  .index("by_deactivated_purged_at", ["deactivatedAt", "purgedAt"])
   .index("by_active_handle", ["deletedAt", "deactivatedAt", "handle"]);
 
 const publishers = defineTable({
@@ -1408,7 +1409,9 @@ const packageStatEvents = defineTable({
   kind: v.union(v.literal("download"), v.literal("install")),
   occurredAt: v.number(),
   processedAt: v.optional(v.number()),
-}).index("by_unprocessed", ["processedAt"]);
+})
+  .index("by_unprocessed", ["processedAt"])
+  .index("by_package", ["packageId"]);
 
 const packageTrustedPublishers = defineTable({
   packageId: v.id("packages"),
@@ -1463,7 +1466,7 @@ const packagePublishUploadTickets = defineTable({
   expiresAt: v.number(),
   usedAt: v.optional(v.number()),
   storageId: v.optional(v.id("_storage")),
-});
+}).index("by_publish_token", ["publishTokenId"]);
 
 const packageSearchDigest = defineTable({
   packageId: v.id("packages"),
@@ -2005,6 +2008,7 @@ const packageAppeals = defineTable({
   actionTaken: v.optional(v.union(v.literal("none"), v.literal("approve"))),
   createdAt: v.number(),
 })
+  .index("by_package", ["packageId"])
   .index("by_release_status_createdAt", ["releaseId", "status", "createdAt"])
   .index("by_createdAt", ["createdAt"])
   .index("by_status_createdAt", ["status", "createdAt"])

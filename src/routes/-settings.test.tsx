@@ -269,9 +269,8 @@ describe("Settings", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Delete organization" }));
 
-    expect(await screen.findByText(/Delete @openclaw\?/)).toBeTruthy();
-    const deleteButtons = screen.getAllByRole("button", { name: "Delete organization" });
-    fireEvent.click(deleteButtons.at(-1)!);
+    expect(await screen.findByText(/Permanently delete @openclaw/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Permanently delete organization" }));
 
     await waitFor(() =>
       expect(deleteOrg).toHaveBeenCalledWith({ publisherId: "publisher_openclaw" }),
