@@ -8396,6 +8396,13 @@ code {
   text-transform: uppercase;
 }
 
+.pa-subsection-label {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+
 .pa-reason-list {
   display: flex;
   flex-direction: column;
@@ -8416,6 +8423,72 @@ code {
   color: var(--ink-soft);
   font-size: var(--fs-xs);
   line-height: 1.45;
+}
+
+.pa-activity-evidence {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--line);
+}
+
+.pa-temporal-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.pa-temporal-card {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface-muted);
+}
+
+.pa-temporal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.pa-temporal-head > div:first-child {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pa-temporal-head strong {
+  overflow: hidden;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pa-temporal-head small {
+  overflow: hidden;
+  color: var(--ink-soft);
+  font-size: var(--fs-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pa-temporal-badges {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.pa-temporal-metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px var(--space-4);
 }
 
 .pa-history {

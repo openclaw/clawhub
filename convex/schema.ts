@@ -2122,6 +2122,17 @@ const publisherAbuseScoreRuns = defineTable({
   sumSquaredLogPressure: v.number(),
   meanLogPressure: v.optional(v.number()),
   stdDevLogPressure: v.optional(v.number()),
+  temporalBenchmark: v.optional(
+    v.object({
+      sampleSize: v.number(),
+      downloads30dAverage: v.number(),
+      downloads30dMedian: v.number(),
+      downloads30dP95: v.number(),
+      downloads30dP99: v.number(),
+      spikeMultiplier7dP95: v.number(),
+      spikeMultiplier7dP99: v.number(),
+    }),
+  ),
   errorMessage: v.optional(v.string()),
 })
   .index("by_status_and_updated_at", ["status", "updatedAt"])
@@ -2152,6 +2163,17 @@ const publisherAbuseScores = defineTable({
   temporalSpikeSkillCount: v.optional(v.number()),
   temporalSustainedSkillCount: v.optional(v.number()),
   temporalMaxPressure: v.optional(v.number()),
+  temporalBenchmark: v.optional(
+    v.object({
+      sampleSize: v.number(),
+      downloads30dAverage: v.number(),
+      downloads30dMedian: v.number(),
+      downloads30dP95: v.number(),
+      downloads30dP99: v.number(),
+      spikeMultiplier7dP95: v.number(),
+      spikeMultiplier7dP99: v.number(),
+    }),
+  ),
   temporalEvidence: v.optional(
     v.array(
       v.object({
@@ -2169,6 +2191,10 @@ const publisherAbuseScores = defineTable({
         recent30Downloads: v.number(),
         recent30Installs: v.number(),
         downloadInstallRatio30: v.number(),
+        downloads30dCohortBand: v.optional(v.union(v.literal("p95"), v.literal("p99"))),
+        spikeMultiplierCohortBand: v.optional(v.union(v.literal("p95"), v.literal("p99"))),
+        downloads30dVsPeerP95: v.optional(v.number()),
+        spikeMultiplierVsPeerP95: v.optional(v.number()),
         spikeWindowStartDay: v.optional(v.number()),
         spikeWindowEndDay: v.optional(v.number()),
         sustainedWindowStartDay: v.optional(v.number()),
