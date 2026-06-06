@@ -88,7 +88,11 @@ type AccountDeletionFixtureState = {
     | { exists: false };
   publisherExists: boolean;
   skillExists: boolean;
+  skillActive: boolean;
+  skillSoftDeletedAt: number | null;
   packageExists: boolean;
+  packageActive: boolean;
+  packageSoftDeletedAt: number | null;
   authAccountCount: number;
   authSessionCount: number;
 };
@@ -167,7 +171,8 @@ test("users can permanently delete their account and personal publisher resource
         deletedAt: null,
       },
       publisherExists: false,
-      packageExists: false,
+      skillActive: false,
+      packageActive: false,
       authAccountCount: 0,
       authSessionCount: 0,
     });
