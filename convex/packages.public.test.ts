@@ -9250,6 +9250,15 @@ describe("owned package sanction batches", () => {
     });
 
     expect(result).toMatchObject({ deletedCount: 1, revokedTokenCount: 0, scheduled: false });
+    expect(ctx.db.patch).toHaveBeenCalledWith(
+      "packages:org-plugin",
+      expect.objectContaining({
+        softDeletedAt: 3_000,
+        softDeletedReason: "publisher.deleted",
+        softDeletedBy: "users:owner",
+        softDeletedByRole: "user",
+      }),
+    );
     expect(runAfter).toHaveBeenCalledWith(0, expect.anything(), {
       packageId: "packages:org-plugin",
       actorUserId: "users:owner",
@@ -9755,6 +9764,15 @@ describe("owned package sanction batches", () => {
     });
 
     expect(result).toMatchObject({ deletedCount: 1, revokedTokenCount: 0, scheduled: false });
+    expect(ctx.db.patch).toHaveBeenCalledWith(
+      "packages:demo",
+      expect.objectContaining({
+        softDeletedAt: 3_000,
+        softDeletedReason: "user.deactivated",
+        softDeletedBy: "users:owner",
+        softDeletedByRole: "user",
+      }),
+    );
     expect(runAfter).toHaveBeenCalledWith(0, expect.anything(), {
       packageId: "packages:demo",
       actorUserId: "users:owner",
@@ -9800,6 +9818,15 @@ describe("owned package sanction batches", () => {
     });
 
     expect(result).toMatchObject({ deletedCount: 1, revokedTokenCount: 0, scheduled: false });
+    expect(ctx.db.patch).toHaveBeenCalledWith(
+      "packages:personal-publisher",
+      expect.objectContaining({
+        softDeletedAt: 3_000,
+        softDeletedReason: "user.deactivated",
+        softDeletedBy: "users:owner",
+        softDeletedByRole: "user",
+      }),
+    );
     expect(runAfter).toHaveBeenCalledWith(0, expect.anything(), {
       packageId: "packages:personal-publisher",
       actorUserId: "users:owner",

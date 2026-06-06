@@ -3759,6 +3759,12 @@ export const applyAccountDeletionToOwnedPackagesBatchInternal = internalMutation
     for (const pkg of page) {
       if (shouldSkipOwnedPackageScanRow(pkg, args)) continue;
       if (!(await isPackageOwnedByPersonalUser(ctx, pkg, owner))) continue;
+      await softDeletePackageDoc(ctx, pkg, {
+        actorUserId: args.ownerUserId,
+        deletedAt: args.deletedAt,
+        reason: "user.deactivated",
+        source: "dashboard",
+      });
       void ctx.scheduler.runAfter(0, internal.packages.hardDeletePackageInternal, {
         packageId: pkg._id,
         actorUserId: args.ownerUserId,
@@ -3812,6 +3818,12 @@ export const applyPublisherDeletionToOwnedPackagesBatchInternal = internalMutati
     let deletedCount = 0;
     let revokedTokenCount = 0;
     for (const pkg of page) {
+      await softDeletePackageDoc(ctx, pkg, {
+        actorUserId: args.actorUserId,
+        deletedAt: args.deletedAt,
+        reason: "publisher.deleted",
+        source: "dashboard",
+      });
       void ctx.scheduler.runAfter(0, internal.packages.hardDeletePackageInternal, {
         packageId: pkg._id,
         actorUserId: args.actorUserId,
