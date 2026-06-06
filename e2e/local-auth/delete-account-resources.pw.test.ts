@@ -167,6 +167,7 @@ test("users can permanently delete their account and personal publisher resource
         deletedAt: null,
       },
       publisherExists: false,
+      packageExists: false,
       authAccountCount: 0,
       authSessionCount: 0,
     });
