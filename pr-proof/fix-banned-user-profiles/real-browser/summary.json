@@ -1,21 +1,23 @@
 {
-  "baseURL": "http://127.0.0.1:3000",
-  "backend": "http://127.0.0.1:4210",
-  "fixture": "proofSeed:seedBannedPublisherProfileProof",
-  "screenshots": {
-    "banned": "/tmp/clawhub-real-browser-proof/real-local-banned-user-404.png",
-    "active": "/tmp/clawhub-real-browser-proof/real-local-active-user-profile.png"
-  },
-  "banned": {
-    "url": "http://127.0.0.1:3000/user/joelchance",
-    "status": 404,
-    "title": "ClawHub",
-    "text": "ClawHub\nSystem\nLight\nDark\nSkills\nPlugins\nPublishers\nDocs\nWe couldn't find that page.\n\nWe couldn't find a skill, plugin, or profile at this URL. Try search, browse the catalog, or publish the thing you expected to see here.\n\nBROWSE\nSkills\nPlugins\nAudits\nPUBLISH\nPublish Skill\nPublish Plugin\nCOMMUNITY\nGitHub\nOpenClaw\nPLATFORM\nDeployed on Vercel\nPowered by Convex"
-  },
-  "active": {
-    "url": "http://127.0.0.1:3000/user/proof-active-builder",
-    "status": 200,
-    "title": "@proof-active-builder — ClawHub",
-    "text": "ClawHub\nSystem\nLight\nDark\nSkills\nPlugins\nPublishers\nDocs\n@proof-active-builder\nProof Active Builder\n\nProof Active Builder proof fixture\n\n0\ndownloads\n0\nstars\n0\npublished\nDetails\nGitHub\n@proof-active-builder\nPublisher catalog\nSkills\n0\nPlugins\n0\nStars\n0\nBROWSE\nSkills\nPlugins\nAudits\nPUBLISH\nPublish Skill\nPublish Plugin\nCOMMUNITY\nGitHub\nOpenClaw\nPLATFORM\nDeployed on Vercel\nPowered by Convex"
-  }
+  "capturedAt": "2026-06-06T00:19:58.752Z",
+  "frontend": "http://127.0.0.1:3000",
+  "convex": "http://127.0.0.1:4210",
+  "results": [
+    {
+      "name": "real-local-banned-user-404",
+      "url": "http://127.0.0.1:3000/user/proof-banned-builder",
+      "status": 404,
+      "title": "ClawHub",
+      "screenshot": "/tmp/clawhub-real-browser-proof-neutral/real-local-banned-user-404.png",
+      "visibleTextSample": "ClawHub\nSystem\nLight\nDark\nSkills\nPlugins\nPublishers\nDocs\nWe couldn't find that page.\n\nWe couldn't find a skill, plugin, or profile at this URL. Try search, browse the catalog, or publish the thing you expected to see here.\n\nBROWSE\nSkills\nPlugins\nAudits\nPUBLISH\nPublish Skill\nPublish Plugin\nCOMMUNITY\nGitHub\nOpenClaw\nPLATFORM\nDeployed on Vercel\nPowered by Convex"
+    },
+    {
+      "name": "real-local-active-user-profile",
+      "url": "http://127.0.0.1:3000/user/proof-active-builder",
+      "status": 200,
+      "title": "@proof-active-builder — ClawHub",
+      "screenshot": "/tmp/clawhub-real-browser-proof-neutral/real-local-active-user-profile.png",
+      "visibleTextSample": "ClawHub\nSystem\nLight\nDark\nSign in with GitHub\nSkills\nPlugins\nPublishers\nDocs\n@proof-active-builder\nProof Active Builder\n0\ndownloads\n0\nstars\n0\npublished\nDetails\nGitHub\n@proof-active-builder\nPublisher catalog\nSkills\n0\nPlugins\n0\nStars\n0\nNo published skills yet\nBROWSE\nSkills\nPlugins\nAudits\nPUBLISH\nPublish Skill\nPublish Plugin\nCOMMUNITY\nGitHub\nOpenClaw\nPLATFORM\nDeployed on Vercel\nPowered by Convex"
+    }
+  ]
 }
