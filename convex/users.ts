@@ -62,6 +62,18 @@ type DeletedAccountCleanupResult = {
   apiTokens: number;
   personalPublisherDeleted: boolean;
 };
+type AccountRecoveryPurgeCandidate = {
+  userId: Id<"users">;
+  handle: string | null;
+  displayName: string | null;
+  emailPresent: boolean;
+  personalPublisherId: Id<"publishers"> | null;
+  deletedAt: number | null;
+  deactivatedAt: number | null;
+  purgedAt: number | null;
+  selfDeleteAuditLogId: Id<"auditLogs"> | null;
+  selfDeleteAuditCreatedAt: number | null;
+};
 
 async function getAutobanPersonalPublisherId(
   ctx: Pick<QueryCtx | MutationCtx, "db">,
@@ -875,19 +887,64 @@ export const deleteAccount = mutation({
   },
 });
 
-async function isEligibleSelfDeletedAccount(ctx: MutationCtx, user: Doc<"users">) {
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function optionalString(value: unknown) {
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function optionalPublisherId(value: unknown): Id<"publishers"> | null {
+  return typeof value === "string" && value.startsWith("publishers:")
+    ? (value as Id<"publishers">)
+    : null;
+}
+
+function getSelfDeletePreviousMetadata(log: Doc<"auditLogs"> | null) {
+  return asRecord(asRecord(log?.metadata)?.previous);
+}
+
+function buildAccountRecoveryPurgeCandidate(
+  user: Doc<"users">,
+  selfDeleteAuditLog: Doc<"auditLogs"> | null,
+): AccountRecoveryPurgeCandidate {
+  const previous = getSelfDeletePreviousMetadata(selfDeleteAuditLog);
+  return {
+    userId: user._id,
+    handle: optionalString(user.handle) ?? optionalString(previous?.handle),
+    displayName:
+      optionalString(user.displayName) ??
+      optionalString(user.name) ??
+      optionalString(previous?.displayName) ??
+      optionalString(previous?.name),
+    emailPresent: Boolean(user.email) || previous?.emailPresent === true,
+    personalPublisherId:
+      user.personalPublisherId ?? optionalPublisherId(previous?.personalPublisherId),
+    deletedAt: user.deletedAt ?? null,
+    deactivatedAt: user.deactivatedAt ?? null,
+    purgedAt: user.purgedAt ?? null,
+    selfDeleteAuditLogId: selfDeleteAuditLog?._id ?? null,
+    selfDeleteAuditCreatedAt: selfDeleteAuditLog?.createdAt ?? null,
+  };
+}
+
+async function getSelfDeletedAccountEligibility(ctx: MutationCtx, user: Doc<"users">) {
   const hasModernTombstone = Boolean(user.deactivatedAt && user.purgedAt && !user.deletedAt);
   const hasLegacySelfDeleteMarker = Boolean(user.deletedAt && !user.banReason);
-  if ((!hasModernTombstone && !hasLegacySelfDeleteMarker) || user.banReason) return false;
+  if ((!hasModernTombstone && !hasLegacySelfDeleteMarker) || user.banReason) {
+    return { eligible: false, selfDeleteAuditLog: null };
+  }
   const logs = await ctx.db
     .query("auditLogs")
     .withIndex("by_target", (q) => q.eq("targetType", "user").eq("targetId", user._id.toString()))
     .collect();
-  const hasSelfDeleteAudit = logs.some(
-    (log) => log.action === "user.delete" && log.actorUserId === user._id,
-  );
+  const selfDeleteAuditLog =
+    logs.find((log) => log.action === "user.delete" && log.actorUserId === user._id) ?? null;
   const hasBanAudit = logs.some((log) => BAN_AUDIT_ACTIONS.has(log.action));
-  return hasSelfDeleteAudit && !hasBanAudit;
+  return { eligible: Boolean(selfDeleteAuditLog && !hasBanAudit), selfDeleteAuditLog };
 }
 
 export const purgeSelfDeletedAccountRecoveryBatchInternal = internalMutation({
@@ -921,16 +978,19 @@ export const purgeSelfDeletedAccountRecoveryBatchInternal = internalMutation({
     let eligible = 0;
     let purged = 0;
     const skipped: Array<{ userId: Id<"users">; reason: string }> = [];
+    const candidates: AccountRecoveryPurgeCandidate[] = [];
     const cleaned: Array<
       DeletedAccountCleanupResult & { userId: Id<"users">; deactivatedAt: number }
     > = [];
 
     for (const user of page) {
-      if (!(await isEligibleSelfDeletedAccount(ctx, user))) {
+      const eligibility = await getSelfDeletedAccountEligibility(ctx, user);
+      if (!eligibility.eligible) {
         skipped.push({ userId: user._id, reason: "not_self_deleted_or_security_blocked" });
         continue;
       }
       eligible += 1;
+      candidates.push(buildAccountRecoveryPurgeCandidate(user, eligibility.selfDeleteAuditLog));
       if (dryRun) continue;
       const deletedAt = user.deactivatedAt ?? user.deletedAt ?? Date.now();
       const cleanup = await hardDeleteSelfDeletedAccountState(ctx, user, deletedAt);
@@ -962,6 +1022,7 @@ export const purgeSelfDeletedAccountRecoveryBatchInternal = internalMutation({
       eligible,
       purged,
       skipped,
+      candidates,
       cleaned,
       isDone,
       cursor: isDone ? null : continueCursor,
