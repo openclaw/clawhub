@@ -28,6 +28,7 @@ let loaderDataMock: {
     summary?: string | null;
     ownerHandle?: string | null;
     latestVersion?: string | null;
+    stats?: { downloads: number; installs: number; stars: number; versions: number };
     createdAt: number;
     updatedAt: number;
   }>;
@@ -299,6 +300,27 @@ describe("plugins route", () => {
     expect(fetchPluginCatalogMock.mock.calls[0]?.[0]).not.toHaveProperty("sort");
   });
 
+  it("forwards downloads sort for plugin browse", async () => {
+    fetchPluginCatalogMock.mockResolvedValue({ items: [], nextCursor: null });
+    const route = await loadRoute();
+    const loader = route.__config.loader as (args: {
+      deps: Record<string, unknown>;
+    }) => Promise<unknown>;
+
+    await loader({
+      deps: {
+        sort: "downloads",
+      },
+    });
+
+    expect(fetchPluginCatalogMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sort: "downloads",
+        limit: 100,
+      }),
+    );
+  });
+
   it("forwards category through the loader without changing the query", async () => {
     fetchPluginCatalogMock.mockResolvedValue({ items: [], nextCursor: null });
     const route = await loadRoute();
@@ -358,6 +380,33 @@ describe("plugins route", () => {
     expect(lastCall.search({})).toEqual({
       cursor: "cursor:next",
     });
+  });
+
+  it("renders plugin download counts in browse results", async () => {
+    loaderDataMock = {
+      items: [
+        {
+          name: "demo-plugin",
+          displayName: "Demo Plugin",
+          family: "code-plugin",
+          channel: "community",
+          isOfficial: false,
+          executesCode: true,
+          createdAt: 1,
+          updatedAt: 1,
+          stats: { downloads: 1_234, installs: 0, stars: 0, versions: 1 },
+        },
+      ],
+      nextCursor: null,
+      rateLimited: false,
+      retryAfterSeconds: null,
+    };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(screen.getByText("1.2k")).toBeTruthy();
   });
 
   it("uses singular shown text on non-first browse pages", async () => {

@@ -566,9 +566,10 @@ describe("maintenance legacy publisher ownership repair", () => {
     expect(tableMap.skillSlugAliases.get("skillSlugAliases:legacy")).toMatchObject({
       ownerPublisherId: createdPublisher?._id,
     });
-    expect(tableMap.skillEmbeddings.get("skillEmbeddings:legacy")).toMatchObject({
-      ownerPublisherId: createdPublisher?._id,
-    });
+    expect(tableMap.skillEmbeddings.get("skillEmbeddings:legacy")).not.toHaveProperty(
+      "ownerPublisherId",
+      createdPublisher?._id,
+    );
 
     const packagesResult = await repairLegacyPublisherOwnershipHandler({ db, scheduler } as never, {
       phase: "packages",
@@ -641,9 +642,10 @@ describe("maintenance legacy publisher ownership repair", () => {
     expect(tableMap.skillSlugAliases.get("skillSlugAliases:legacy")).toMatchObject({
       ownerPublisherId: createdPublisher?._id,
     });
-    expect(tableMap.skillEmbeddings.get("skillEmbeddings:legacy")).toMatchObject({
-      ownerPublisherId: createdPublisher?._id,
-    });
+    expect(tableMap.skillEmbeddings.get("skillEmbeddings:legacy")).not.toHaveProperty(
+      "ownerPublisherId",
+      createdPublisher?._id,
+    );
 
     const packagesResult = await repairLegacyPublisherOwnershipForUserHandler(
       { db, scheduler } as never,
@@ -670,7 +672,7 @@ describe("maintenance legacy publisher ownership repair", () => {
     });
   });
 
-  it("aborts apply-mode skill repair when owner projection sync fails", async () => {
+  it("does not touch skill embeddings during apply-mode skill repair", async () => {
     const { db } = makeLegacyPublisherOwnershipDb();
     const scheduler = { runAfter: vi.fn() };
 
@@ -694,7 +696,10 @@ describe("maintenance legacy publisher ownership repair", () => {
         batchSize: 10,
         scheduleNext: false,
       }),
-    ).rejects.toThrow("embedding sync failed");
+    ).resolves.toMatchObject({
+      phase: "skills",
+      repaired: 1,
+    });
   });
 
   it("propagates apply-mode package patch failures", async () => {

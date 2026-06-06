@@ -4,28 +4,23 @@ import { toPublicPublisher, type PublicPublisher } from "./public";
 
 type DbCtx = Pick<QueryCtx | MutationCtx, "db">;
 
-type OfficialPublisherCandidate = Pick<
-  Doc<"publishers">,
-  | "_id"
-  | "_creationTime"
-  | "kind"
-  | "handle"
-  | "displayName"
-  | "image"
-  | "bio"
-  | "linkedUserId"
-  | "deletedAt"
-  | "deactivatedAt"
->;
+type OfficialPublisherCandidate = Pick<Doc<"publishers">, "_id" | "deletedAt" | "deactivatedAt">;
 
 export async function isOfficialPublisher(
   ctx: DbCtx,
   publisher: OfficialPublisherCandidate | null | undefined,
 ): Promise<boolean> {
   if (!publisher || publisher.deletedAt || publisher.deactivatedAt) return false;
+  return await hasOfficialPublisherRow(ctx, publisher._id);
+}
+
+export async function hasOfficialPublisherRow(
+  ctx: DbCtx,
+  publisherId: Doc<"publishers">["_id"],
+): Promise<boolean> {
   const officialPublisher = await ctx.db
     .query("officialPublishers")
-    .withIndex("by_publisher", (q) => q.eq("publisherId", publisher._id))
+    .withIndex("by_publisher", (q) => q.eq("publisherId", publisherId))
     .unique();
   return Boolean(officialPublisher);
 }

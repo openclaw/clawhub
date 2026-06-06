@@ -2,7 +2,10 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  computeCurrentSkillTemporalAbuseScore,
+  computeHistoricalSkillTemporalAbuseScore,
   computePublisherAbuseRawScore,
+  computeTemporalPublisherAbuseZScore,
   DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG,
   labelForPublisherAbuseZScore,
   scorePublisherAbuseCohort,
@@ -16,6 +19,31 @@ describe("publisher abuse scoring", () => {
     expect(labelForPublisherAbuseZScore(2.5, DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG)).toBe(
       "potential_ban_candidate",
     );
+  });
+
+  it("maps temporal labels to review-compatible z-scores", () => {
+    const review = computeTemporalPublisherAbuseZScore({
+      label: "review",
+      highTemporalSkillCount: 1,
+      maxTemporalPressure: 20,
+    });
+    const potentialBan = computeTemporalPublisherAbuseZScore({
+      label: "potential_ban_candidate",
+      highTemporalSkillCount: 2,
+      maxTemporalPressure: 20,
+    });
+
+    expect(
+      computeTemporalPublisherAbuseZScore({
+        label: "pass",
+        highTemporalSkillCount: 0,
+        maxTemporalPressure: 0,
+      }),
+    ).toBe(0);
+    expect(review).toBeGreaterThanOrEqual(1.5);
+    expect(review).toBeLessThan(2.5);
+    expect(potentialBan).toBeGreaterThanOrEqual(2.5);
+    expect(potentialBan).toBeGreaterThan(review);
   });
 
   it("keeps a high-volume publisher with strong usage below low-engagement publishers", () => {
@@ -125,6 +153,75 @@ describe("publisher abuse scoring", () => {
       "pass",
     );
   });
+
+  it("flags a current 7-day download spike with flat installs", () => {
+    const todayDay = 100;
+    const score = computeCurrentSkillTemporalAbuseScore({
+      todayDay,
+      dailyStats: [
+        ...dailyRange(64, 30, { downloads: 5, installs: 0 }),
+        ...dailyRange(94, 7, { downloads: 200, installs: 0 }),
+      ],
+    });
+
+    expect(score.spike).toBe(true);
+    expect(score.sustained).toBe(false);
+    expect(score.recent7Downloads).toBe(1_400);
+    expect(score.recent7Installs).toBe(0);
+    expect(score.previous30Downloads).toBe(150);
+    expect(score.spikeMultiplier).toBeCloseTo(14);
+    expect(score.reasonCodes).toContain("temporal_download_spike_flat_installs");
+  });
+
+  it("flags sustained high downloads with flat installs", () => {
+    const todayDay = 100;
+    const score = computeCurrentSkillTemporalAbuseScore({
+      todayDay,
+      dailyStats: dailyRange(71, 30, { downloads: 120, installs: 0 }),
+    });
+
+    expect(score.spike).toBe(false);
+    expect(score.sustained).toBe(true);
+    expect(score.recent30Downloads).toBe(3_600);
+    expect(score.recent30Installs).toBe(0);
+    expect(score.downloadInstallRatio30).toBe(3_600);
+    expect(score.reasonCodes).toContain("temporal_sustained_downloads_flat_installs");
+  });
+
+  it("keeps ordinary steady download traffic below temporal thresholds", () => {
+    const todayDay = 100;
+    const score = computeCurrentSkillTemporalAbuseScore({
+      todayDay,
+      dailyStats: [
+        ...dailyRange(64, 30, { downloads: 80, installs: 1 }),
+        ...dailyRange(94, 7, { downloads: 85, installs: 1 }),
+      ],
+    });
+
+    expect(score.spike).toBe(false);
+    expect(score.sustained).toBe(false);
+    expect(score.pressure).toBe(0);
+    expect(score.reasonCodes).toEqual([]);
+  });
+
+  it("finds historical spike and sustained windows for backfill scans", () => {
+    const score = computeHistoricalSkillTemporalAbuseScore({
+      dailyStats: [
+        ...dailyRange(10, 30, { downloads: 3, installs: 0 }),
+        ...dailyRange(40, 7, { downloads: 220, installs: 0 }),
+        ...dailyRange(80, 30, { downloads: 150, installs: 0 }),
+      ],
+    });
+
+    expect(score.spike).toBe(true);
+    expect(score.sustained).toBe(true);
+    expect(score.spikeWindowStartDay).toBe(40);
+    expect(score.sustainedWindowStartDay).toBe(80);
+    expect(score.reasonCodes).toEqual([
+      "temporal_download_spike_flat_installs",
+      "temporal_sustained_downloads_flat_installs",
+    ]);
+  });
 });
 
 function publisher(
@@ -142,4 +239,16 @@ function publisher(
     ownerPublisherId: `publishers:${handleSnapshot}`,
     ...stats,
   };
+}
+
+function dailyRange(
+  startDay: number,
+  length: number,
+  stats: { downloads: number; installs: number },
+) {
+  return Array.from({ length }, (_, index) => ({
+    day: startDay + index,
+    downloads: stats.downloads,
+    installs: stats.installs,
+  }));
 }

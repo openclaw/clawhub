@@ -59,6 +59,17 @@ function seedOrgDeletionFixture(args: {
   }
 }
 
+function clearExpectedNotFoundNavigationErrors(errors: string[]) {
+  for (let index = errors.length - 1; index >= 0; index -= 1) {
+    if (
+      errors[index] ===
+      "console:Failed to load resource: the server responded with a status of 404 (Not Found)"
+    ) {
+      errors.splice(index, 1);
+    }
+  }
+}
+
 test("org owners can delete an org and hide its skills and plugins", async ({ page }) => {
   const errors = trackRuntimeErrors(page);
   const suffix = uniqueSuffix();
@@ -99,9 +110,10 @@ test("org owners can delete an org and hide its skills and plugins", async ({ pa
 
   await page.goto(`/user/${handle}`, { waitUntil: "domcontentloaded" });
   await waitForHydration(page);
-  await expect(page.getByRole("heading", { name: /publisher not found/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /we couldn't find that page/i })).toBeVisible();
   await expect(page.getByText(skillDisplayName)).toHaveCount(0);
   await expect(page.getByText(packageDisplayName)).toHaveCount(0);
+  clearExpectedNotFoundNavigationErrors(errors);
 
   await page.goto(`/skills?q=${encodeURIComponent(skillSlug)}`, { waitUntil: "domcontentloaded" });
   await waitForHydration(page);
@@ -119,6 +131,7 @@ test("org owners can delete an org and hide its skills and plugins", async ({ pa
   await waitForHydration(page);
   await expect(page.getByRole("heading", { name: "Plugin not found" })).toBeVisible();
   await expect(page.getByText(new RegExp(escapeRegExp(packageDisplayName)))).toHaveCount(0);
+  clearExpectedNotFoundNavigationErrors(errors);
 
   await expectHealthyPage(page, errors);
 });

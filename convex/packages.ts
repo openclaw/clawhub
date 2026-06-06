@@ -1,5 +1,6 @@
 import {
   ServerPackagePublishRequestSchema,
+  derivePluginCategoryTags,
   getPackageScopeOwnerMismatch,
   isPluginCategorySlug,
   parseArk,
@@ -331,6 +332,7 @@ type PublicPackageListItem = {
   capabilityTags: string[];
   executesCode: boolean;
   verificationTier: PackageVerificationTier | null;
+  stats: Doc<"packages">["stats"];
 };
 type PackageReleaseScanStatus = ReturnType<typeof resolvePackageReleaseScanStatus>;
 type PackageReleaseModerationQueueDoc = Omit<Doc<"packageReleases">, "createdAt"> & {
@@ -581,6 +583,7 @@ type PackageDigestLike = Pick<
   | "pluginCategoryTags"
   | "executesCode"
   | "verificationTier"
+  | "stats"
   | "scanStatus"
   | "softDeletedAt"
 > & {
@@ -968,6 +971,40 @@ function digestMatchesSearchFilters(
   return digestMatchesFilters(digest, args);
 }
 
+function packageMatchesListFilters(
+  pkg: Doc<"packages">,
+  args: {
+    family?: PackageFamily;
+    channel?: PackageChannel;
+    isOfficial?: boolean;
+    executesCode?: boolean;
+    capabilityTag?: string;
+    category?: string;
+  },
+) {
+  if (args.family && pkg.family !== args.family) return false;
+  if (args.channel && pkg.channel !== args.channel) return false;
+  if (typeof args.isOfficial === "boolean" && pkg.isOfficial !== args.isOfficial) return false;
+  if (typeof args.executesCode === "boolean" && Boolean(pkg.executesCode) !== args.executesCode) {
+    return false;
+  }
+  if (args.capabilityTag && !(pkg.capabilityTags ?? []).includes(args.capabilityTag)) {
+    return false;
+  }
+  if (args.category) {
+    const categories = derivePluginCategoryTags({
+      family: pkg.family,
+      name: pkg.name,
+      displayName: pkg.displayName,
+      runtimeId: pkg.runtimeId,
+      summary: pkg.summary,
+      capabilityTags: pkg.capabilityTags,
+    });
+    if (!categories.includes(args.category as PluginCategorySlug)) return false;
+  }
+  return true;
+}
+
 async function upsertPackageBadge(
   ctx: MutationCtx,
   packageId: Id<"packages">,
@@ -1003,7 +1040,22 @@ async function removePackageBadge(
   if (existing) await ctx.db.delete(existing._id);
 }
 
-function toPublicPackageListItem(digest: PackageDigestLike): PublicPackageListItem {
+function defaultPackageStats(): Doc<"packages">["stats"] {
+  return { downloads: 0, installs: 0, stars: 0, versions: 0 };
+}
+
+async function resolvePackageListStats(
+  ctx: DbReaderCtx,
+  digest: PackageDigestLike,
+): Promise<Doc<"packages">["stats"]> {
+  const pkg = await ctx.db.get(digest.packageId);
+  return pkg?.stats ?? digest.stats ?? defaultPackageStats();
+}
+
+async function toPublicPackageListItem(
+  ctx: DbReaderCtx,
+  digest: PackageDigestLike,
+): Promise<PublicPackageListItem> {
   return {
     name: digest.name,
     displayName: digest.displayName,
@@ -1019,6 +1071,36 @@ function toPublicPackageListItem(digest: PackageDigestLike): PublicPackageListIt
     capabilityTags: digest.capabilityTags ?? [],
     executesCode: digest.executesCode ?? false,
     verificationTier: digest.verificationTier ?? null,
+    stats: await resolvePackageListStats(ctx, digest),
+  };
+}
+
+async function toPublicPackageListItemFromPackage(
+  ctx: DbReaderCtx,
+  pkg: Doc<"packages">,
+): Promise<PublicPackageListItem> {
+  const owner = toPublicPublisher(
+    await getOwnerPublisher(ctx, {
+      ownerPublisherId: pkg.ownerPublisherId,
+      ownerUserId: pkg.ownerUserId,
+    }),
+  );
+  return {
+    name: pkg.name,
+    displayName: pkg.displayName,
+    family: pkg.family,
+    runtimeId: pkg.runtimeId ?? null,
+    channel: pkg.channel,
+    isOfficial: pkg.isOfficial,
+    summary: pkg.summary ?? null,
+    ownerHandle: owner?.handle ?? null,
+    createdAt: pkg.createdAt,
+    updatedAt: pkg.updatedAt,
+    latestVersion: pkg.latestVersionSummary?.version ?? null,
+    capabilityTags: pkg.capabilityTags ?? [],
+    executesCode: pkg.executesCode ?? false,
+    verificationTier: pkg.verification?.tier ?? null,
+    stats: pkg.stats,
   };
 }
 
@@ -1831,15 +1913,19 @@ async function fetchHighlightedPackagePage(
   },
 ) {
   const digests = await fetchHighlightedPackageDigests(ctx, args);
-  return digests
+  const page = digests
     .sort(
       (a, b) =>
         Number(b.isOfficial) - Number(a.isOfficial) ||
         b.updatedAt - a.updatedAt ||
         a.name.localeCompare(b.name),
     )
-    .slice(0, args.numItems)
-    .map(toPublicPackageListItem);
+    .slice(0, args.numItems);
+  const items: PublicPackageListItem[] = [];
+  for (const digest of page) {
+    items.push(await toPublicPackageListItem(ctx, digest));
+  }
+  return items;
 }
 
 async function getPackageByNormalizedName(ctx: DbReaderCtx, normalizedName: string) {
@@ -2231,6 +2317,7 @@ export const listPublicPage = query({
     executesCode: v.optional(v.boolean()),
     capabilityTag: v.optional(v.string()),
     category: v.optional(v.string()),
+    sort: v.optional(v.union(v.literal("updated"), v.literal("downloads"))),
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
@@ -2330,6 +2417,7 @@ export const listPageForViewerInternal = internalQuery({
     executesCode: v.optional(v.boolean()),
     capabilityTag: v.optional(v.string()),
     category: v.optional(v.string()),
+    sort: v.optional(v.union(v.literal("updated"), v.literal("downloads"))),
     viewerUserId: v.optional(v.id("users")),
     paginationOpts: paginationOptsValidator,
   },
@@ -2348,6 +2436,7 @@ async function listPackagePageImpl(
     executesCode?: boolean;
     capabilityTag?: string;
     category?: string;
+    sort?: "updated" | "downloads";
     viewerUserId?: Id<"users">;
     paginationOpts: { cursor: string | null; numItems: number };
   },
@@ -2392,6 +2481,68 @@ async function listPackagePageImpl(
   const isOfficial = args.isOfficial;
   const category = isPluginCategorySlug(args.category) ? args.category : undefined;
 
+  if (args.sort === "downloads") {
+    let cursor = pageCursor;
+    let pageOffset = offset;
+    let pageSize: number | null = decodedCursor.pageSize ?? null;
+    let done = decodedCursor.done;
+
+    while ((pageOffset > 0 || !done) && collected.length < targetCount) {
+      const scanPageSize = Math.min(
+        MAX_PUBLIC_LIST_PAGE_SIZE,
+        pageOffset > 0 && pageSize
+          ? Math.max(pageSize, pageOffset + targetCount)
+          : Math.max(targetCount * 5, targetCount, 50),
+      );
+      const currentCursor = cursor;
+      const page = await ctx.db
+        .query("packages")
+        .withIndex("by_active_downloads", (q) => q.eq("softDeletedAt", undefined))
+        .order("desc")
+        .paginate({ cursor: currentCursor, numItems: scanPageSize });
+
+      for (let index = pageOffset; index < page.page.length; index += 1) {
+        const pkg = page.page[index];
+        if (!(await canViewerReadPackage(ctx, pkg, viewerUserId, membershipCache))) continue;
+        if (!packageMatchesListFilters(pkg, { ...args, category })) continue;
+        collected.push(await toPublicPackageListItemFromPackage(ctx, pkg));
+        if (collected.length >= targetCount) {
+          const nextOffset = index + 1;
+          const nextState =
+            nextOffset < page.page.length
+              ? {
+                  cursor: currentCursor,
+                  offset: nextOffset,
+                  pageSize: scanPageSize,
+                  done: page.isDone,
+                }
+              : {
+                  cursor: page.continueCursor,
+                  offset: 0,
+                  pageSize: scanPageSize,
+                  done: page.isDone,
+                };
+          return {
+            page: collected,
+            isDone: nextState.done && nextState.offset === 0,
+            continueCursor: encodePublicPageCursor(nextState),
+          };
+        }
+      }
+
+      done = page.isDone;
+      cursor = page.continueCursor;
+      pageOffset = 0;
+      pageSize = scanPageSize;
+    }
+
+    return {
+      page: collected,
+      isDone: done,
+      continueCursor: encodePublicPageCursor({ cursor, offset: pageOffset, pageSize, done }),
+    };
+  }
+
   const builder = category
     ? buildPackagePluginCategoryDigestQuery(ctx, {
         category,
@@ -2427,7 +2578,7 @@ async function listPackagePageImpl(
       continue;
     }
     if (!digestMatchesFilters(digest, args)) continue;
-    collected.push(toPublicPackageListItem(digest));
+    collected.push(await toPublicPackageListItem(ctx, digest));
     if (collected.length >= targetCount) {
       const nextOffset = index + 1;
       const nextState =
@@ -2533,7 +2684,7 @@ async function searchPackagesImpl(
     await canViewerReadPackage(ctx, digest, viewerUserId, membershipCache);
   if (args.highlightedOnly) {
     const digests = await fetchHighlightedPackageDigests(ctx, args);
-    return digests
+    const entries = digests
       .map((digest) => {
         const match = packageSearchMatch(digest, queryText);
         return match ? { ...match, package: digest } : null;
@@ -2542,12 +2693,16 @@ async function searchPackagesImpl(
         Boolean(entry),
       )
       .sort(comparePackageSearchMatches)
-      .slice(0, targetCount)
-      .map((entry) => ({
+      .slice(0, targetCount);
+    const results: Array<PackageSearchMatch & { package: PublicPackageListItem }> = [];
+    for (const entry of entries) {
+      results.push({
         score: entry.score,
         rankTier: entry.rankTier,
-        package: toPublicPackageListItem(entry.package),
-      }));
+        package: await toPublicPackageListItem(ctx, entry.package),
+      });
+    }
+    return results;
   }
 
   const category = isPluginCategorySlug(args.category) ? args.category : undefined;
@@ -2588,7 +2743,7 @@ async function searchPackagesImpl(
     seen.add(digest.packageId);
     matches.push({
       ...match,
-      package: toPublicPackageListItem(digest),
+      package: await toPublicPackageListItem(ctx, digest),
     });
   }
 
@@ -2606,7 +2761,7 @@ async function searchPackagesImpl(
       seen.add(digest.packageId);
       matches.push({
         ...match,
-        package: toPublicPackageListItem(digest),
+        package: await toPublicPackageListItem(ctx, digest),
       });
       if (matches.length >= targetCount) break;
     }

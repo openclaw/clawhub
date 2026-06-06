@@ -933,7 +933,6 @@ export const seedPublicCorpusBatchMutation = internalMutation({
           skillId,
           versionId,
           ownerId: userId,
-          ownerPublisherId: publisherId,
           embedding: row.embedding,
           isLatest: true,
           isApproved: true,

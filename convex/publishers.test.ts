@@ -6,7 +6,10 @@ import {
   listPublicPage,
   listPublic,
   listMine,
+  getProfileByHandle,
+  listMembers,
   listPublishedPage,
+  listStarredPage,
   getPublishedDisplayManifest,
   migrateLegacyPublisherHandleToOrgInternal,
   ensureOrgPublisherHandleInternal,
@@ -155,6 +158,34 @@ const listPublishedPageHandler = (
   >
 )._handler;
 
+const listStarredPageHandler = (
+  listStarredPage as unknown as WrappedHandler<
+    {
+      handle: string;
+      paginationOpts: { cursor: string | null; numItems: number };
+    },
+    {
+      page: Array<{ displayName: string; href: string }>;
+      continueCursor: string;
+      isDone: boolean;
+    }
+  >
+)._handler;
+
+const listMembersHandler = (
+  listMembers as unknown as WrappedHandler<
+    { publisherHandle: string },
+    {
+      publisher: unknown;
+      members: Array<unknown>;
+    } | null
+  >
+)._handler;
+
+const getProfileByHandleHandler = (
+  getProfileByHandle as unknown as WrappedHandler<{ handle: string }>
+)._handler;
+
 const getPublishedDisplayManifestHandler = (
   getPublishedDisplayManifest as unknown as WrappedHandler<
     {
@@ -274,6 +305,7 @@ function indexedRows<T>(rows: T[]) {
   return {
     collect: vi.fn(async () => rows),
     order: vi.fn(() => ({
+      collect: vi.fn(async () => rows),
       take: vi.fn(async (limit: number) => rows.slice(0, limit)),
       paginate: vi.fn(async ({ cursor, numItems }: { cursor: string | null; numItems: number }) => {
         const offset = cursor ? Number(cursor) : 0;
@@ -287,6 +319,147 @@ function indexedRows<T>(rows: T[]) {
         };
       }),
     })),
+  };
+}
+
+function makePublicPublisherVisibilityCtx(options?: {
+  linkedUser?: Record<string, unknown> | null;
+  legacyPersonalPublisher?: boolean;
+}) {
+  const legacyPersonalPublisher = options?.legacyPersonalPublisher ?? false;
+  const publisher = {
+    _id: "publishers:proof-banned-builder",
+    _creationTime: 1,
+    kind: "user",
+    handle: "proof-banned-builder",
+    displayName: "Proof Banned Builder",
+    linkedUserId: legacyPersonalPublisher ? undefined : "users:proof-banned-builder",
+    trustedPublisher: false,
+    publishedSkills: 1,
+    publishedPackages: 0,
+    totalInstalls: 1,
+    totalDownloads: 4,
+    totalStars: 2,
+    createdAt: 1,
+    updatedAt: 2,
+  };
+  const linkedUser =
+    options && "linkedUser" in options
+      ? options.linkedUser
+      : {
+          _id: "users:proof-banned-builder",
+          _creationTime: 1,
+          handle: "proof-banned-builder",
+          displayName: "Proof Banned Builder",
+          createdAt: 1,
+          updatedAt: 2,
+        };
+  const githubSource = {
+    _id: "githubSkillSources:proof-banned-builder",
+    repo: "proof-banned-builder/skills",
+    ownerPublisherId: "publishers:proof-banned-builder",
+    displayManifestStatus: "ok",
+    displayManifest: {
+      groupings: [{ title: "Skills", skills: ["demo"] }],
+    },
+  };
+  const skill = {
+    _id: "skills:demo",
+    ownerPublisherId: "publishers:proof-banned-builder",
+    softDeletedAt: undefined,
+    slug: "demo",
+    displayName: "Demo Skill",
+    summary: "Demo summary",
+    icon: null,
+    installKind: "github",
+    githubSourceId: "githubSkillSources:proof-banned-builder",
+    githubPath: "skills/demo",
+    stats: {
+      downloads: 4,
+      downloadsAllTime: 4,
+      installs: 1,
+      installsAllTime: 1,
+      stars: 2,
+    },
+    updatedAt: 2,
+  };
+  const memberships = [
+    {
+      _id: "publisherMembers:owner",
+      publisherId: "publishers:proof-banned-builder",
+      userId: "users:proof-banned-builder",
+      role: "owner",
+    },
+  ];
+  const query = vi.fn((table: string) => ({
+    withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
+      const fields: Record<string, unknown> = {};
+      const q = {
+        eq: (field: string, value: unknown) => {
+          fields[field] = value;
+          return q;
+        },
+      };
+      buildQuery(q);
+
+      if (table === "publishers" && indexName === "by_handle") {
+        return {
+          unique: vi.fn(async () => (fields.handle === "proof-banned-builder" ? publisher : null)),
+        };
+      }
+      if (table === "publishers" && indexName === "by_linked_user") {
+        return {
+          unique: vi.fn(async () =>
+            fields.linkedUserId === "users:proof-banned-builder" ? publisher : null,
+          ),
+        };
+      }
+      if (table === "skills" && indexName === "by_owner_publisher_active_updated") {
+        return indexedRows(fields.ownerPublisherId === publisher._id ? [skill] : []);
+      }
+      if (table === "skills" && indexName === "by_owner_publisher_active_downloads") {
+        return indexedRows(fields.ownerPublisherId === publisher._id ? [skill] : []);
+      }
+      if (table === "packages" && indexName === "by_owner_publisher_active_updated") {
+        return indexedRows([]);
+      }
+      if (table === "packages" && indexName === "by_owner_publisher_active_downloads") {
+        return indexedRows([]);
+      }
+      if (table === "stars" && indexName === "by_user") {
+        return indexedRows(
+          fields.userId === "users:proof-banned-builder"
+            ? [{ _id: "stars:demo", userId: "users:proof-banned-builder", skillId: "skills:demo" }]
+            : [],
+        );
+      }
+      if (table === "publisherMembers" && indexName === "by_publisher") {
+        return indexedRows(fields.publisherId === publisher._id ? memberships : []);
+      }
+      if (table === "publisherMembers" && indexName === "by_user") {
+        return indexedRows([]);
+      }
+      if (table === "githubSkillSources" && indexName === "by_owner_publisher") {
+        return indexedRows(fields.ownerPublisherId === publisher._id ? [githubSource] : []);
+      }
+      if (table === "officialPublishers" && indexName === "by_publisher") {
+        return { unique: vi.fn(async () => null) };
+      }
+
+      throw new Error(`unexpected ${table} index ${indexName}`);
+    }),
+  }));
+
+  return {
+    db: {
+      get: vi.fn(async (id: string) => {
+        if (id === "users:proof-banned-builder") return linkedUser;
+        if (id === "publishers:proof-banned-builder") return publisher;
+        if (id === "skills:demo") return skill;
+        return null;
+      }),
+      query,
+    },
   };
 }
 
@@ -1099,6 +1272,114 @@ describe("publishers membership controls", () => {
     expect(result.page.map((item) => item.handle)).toEqual(["alice"]);
   });
 
+  it("filters hidden legacy user publishers before counting and paginating public publisher pages", async () => {
+    const publisherRows = [
+      {
+        _id: "publishers:proof-banned-builder",
+        _creationTime: 1,
+        kind: "user",
+        handle: "proof-banned-builder",
+        displayName: "Proof Banned Builder",
+        linkedUserId: undefined,
+        publishedSkills: 1,
+        publishedPackages: 0,
+        totalInstalls: 10,
+        totalDownloads: 100,
+        totalStars: 5,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        _id: "publishers:alice",
+        _creationTime: 1,
+        kind: "user",
+        handle: "alice",
+        displayName: "Alice Labs",
+        linkedUserId: "users:alice",
+        publishedSkills: 1,
+        publishedPackages: 0,
+        totalInstalls: 4,
+        totalDownloads: 10,
+        totalStars: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+    const get = vi.fn(async (id: string) => {
+      if (id === "users:proof-banned-builder") {
+        return { _id: id, deletedAt: 1_700_000_000_000 };
+      }
+      if (id === "users:alice") return { _id: id, image: "https://github.com/alice.png" };
+      return null;
+    });
+    const ownerPublisherQueries: string[] = [];
+    const ctx = {
+      db: {
+        get,
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
+            const fields: Record<string, unknown> = {};
+            const q = {
+              eq: (field: string, value: unknown) => {
+                fields[field] = value;
+                return q;
+              },
+            };
+            buildQuery(q);
+            if (table === "publishers" && indexName === "by_handle") {
+              return { unique: vi.fn(async () => null) };
+            }
+            if (table === "publishers" && indexName === "by_active_total_downloads") {
+              return {
+                order: vi.fn(() => ({
+                  take: vi.fn(async () => publisherRows),
+                })),
+              };
+            }
+            if (
+              (table === "skills" || table === "packages") &&
+              indexName === "by_owner_publisher_active_installs"
+            ) {
+              ownerPublisherQueries.push(String(fields.ownerPublisherId));
+              return indexedRows([]);
+            }
+            if (table === "publisherMembers" && indexName === "by_publisher") {
+              return indexedRows(
+                fields.publisherId === "publishers:proof-banned-builder"
+                  ? [
+                      {
+                        _id: "publisherMembers:proof-banned-builder",
+                        publisherId: "publishers:proof-banned-builder",
+                        userId: "users:proof-banned-builder",
+                        role: "owner",
+                      },
+                    ]
+                  : [],
+              );
+            }
+            if (table === "officialPublishers" && indexName === "by_publisher") {
+              return { unique: vi.fn(async () => null) };
+            }
+            throw new Error(`unexpected ${table} index ${indexName}`);
+          }),
+        })),
+      },
+    };
+
+    const result = await listPublicPageHandler(ctx as never, {
+      paginationOpts: { cursor: null, numItems: 1 },
+    });
+
+    expect(result.page.map((item) => item.handle)).toEqual(["alice"]);
+    expect(result.counts).toEqual({ all: 1, individuals: 1, organizations: 0 });
+    expect(result.globalCounts).toEqual({ all: 1, individuals: 1, organizations: 0 });
+    expect(result.continueCursor).toBe("");
+    expect(result.isDone).toBe(true);
+    expect(get).toHaveBeenCalledWith("users:proof-banned-builder");
+    expect(get).toHaveBeenCalledWith("users:alice");
+    expect(ownerPublisherQueries).toEqual(["publishers:alice", "publishers:alice"]);
+  });
+
   it("orders public publisher card previews by installs while rendering downloads", async () => {
     const publisherRows = [
       {
@@ -1241,7 +1522,7 @@ describe("publishers membership controls", () => {
     expect(result.page[0]?.publishedItems[0]).not.toHaveProperty("installs");
   });
 
-  it("does not hydrate every publisher before filtering public publisher pages", async () => {
+  it("does not hydrate every publisher catalog preview before filtering public publisher pages", async () => {
     const publisherRows = Array.from({ length: 120 }, (_, index) => ({
       _id: `publishers:user-${index}`,
       _creationTime: index,
@@ -1304,12 +1585,12 @@ describe("publishers membership controls", () => {
 
     expect(result.page.map((item) => item.handle)).toEqual(["user-0"]);
     expect(result.globalCounts).toEqual({ all: 120, individuals: 120, organizations: 0 });
-    expect(get).toHaveBeenCalledTimes(1);
+    expect(get).toHaveBeenCalledTimes(120);
     expect(get).toHaveBeenCalledWith("users:user-0");
     expect(ownerPublisherQueries).toEqual(["publishers:user-0", "publishers:user-0"]);
   });
 
-  it("does not hydrate publishers when a public publisher search has no matches", async () => {
+  it("does not hydrate publisher catalog previews when a public publisher search has no matches", async () => {
     const publisherRows = Array.from({ length: 120 }, (_, index) => ({
       _id: `publishers:user-${index}`,
       _creationTime: index,
@@ -1325,14 +1606,19 @@ describe("publishers membership controls", () => {
       createdAt: 1,
       updatedAt: 1,
     }));
-    const get = vi.fn();
+    const get = vi.fn(async (id: string) => ({ _id: id }));
+    const ownerPublisherQueries: string[] = [];
     const ctx = {
       db: {
         get,
         query: vi.fn((table: string) => ({
           withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
+            const fields: Record<string, unknown> = {};
             const q = {
-              eq: () => q,
+              eq: (field: string, value: unknown) => {
+                fields[field] = value;
+                return q;
+              },
             };
             buildQuery(q);
             if (table === "publishers" && indexName === "by_active_total_downloads") {
@@ -1341,6 +1627,13 @@ describe("publishers membership controls", () => {
                   take: vi.fn(async () => publisherRows),
                 })),
               };
+            }
+            if (
+              (table === "skills" || table === "packages") &&
+              indexName === "by_owner_publisher_active_installs"
+            ) {
+              ownerPublisherQueries.push(String(fields.ownerPublisherId));
+              return indexedRows([]);
             }
             throw new Error(`unexpected ${table} index ${indexName}`);
           }),
@@ -1356,7 +1649,8 @@ describe("publishers membership controls", () => {
     expect(result.page).toEqual([]);
     expect(result.counts).toEqual({ all: 0, individuals: 0, organizations: 0 });
     expect(result.globalCounts).toEqual({ all: 120, individuals: 120, organizations: 0 });
-    expect(get).not.toHaveBeenCalled();
+    expect(get).toHaveBeenCalledTimes(120);
+    expect(ownerPublisherQueries).toEqual([]);
   });
 
   it("builds scoped plugin profile links with route segments", async () => {
@@ -1840,6 +2134,132 @@ describe("publishers membership controls", () => {
         handle: "nvidia",
         kind: "skill",
       }),
+    ).resolves.toBeNull();
+  });
+
+  it.each([
+    ["missing", null],
+    ["deleted", { _id: "users:proof-banned-builder", deletedAt: 1_700_000_000_000 }],
+    ["deactivated", { _id: "users:proof-banned-builder", deactivatedAt: 1_700_000_000_000 }],
+  ])("hides user publisher profiles when the linked user is %s", async (_state, linkedUser) => {
+    const ctx = makePublicPublisherVisibilityCtx({ linkedUser });
+
+    await expect(
+      getProfileByHandleHandler(ctx as never, { handle: "proof-banned-builder" }),
+    ).resolves.toBeNull();
+  });
+
+  it.each([
+    ["missing", null],
+    ["deleted", { _id: "users:proof-banned-builder", deletedAt: 1_700_000_000_000 }],
+    ["deactivated", { _id: "users:proof-banned-builder", deactivatedAt: 1_700_000_000_000 }],
+  ])(
+    "hides legacy no-link user publisher profiles when the owner user is %s",
+    async (_state, linkedUser) => {
+      const ctx = makePublicPublisherVisibilityCtx({
+        legacyPersonalPublisher: true,
+        linkedUser,
+      });
+
+      await expect(
+        getProfileByHandleHandler(ctx as never, { handle: "proof-banned-builder" }),
+      ).resolves.toBeNull();
+    },
+  );
+
+  it("keeps active legacy no-link user publisher profiles visible through owner membership", async () => {
+    const ctx = makePublicPublisherVisibilityCtx({ legacyPersonalPublisher: true });
+
+    const profile = await getProfileByHandleHandler(ctx as never, {
+      handle: "proof-banned-builder",
+    });
+
+    expect(profile).toEqual(expect.objectContaining({ handle: "proof-banned-builder" }));
+    expect(profile).toEqual(expect.objectContaining({ starredCount: 1 }));
+  });
+
+  it("hides published items for a user publisher whose linked user is deleted", async () => {
+    const ctx = makePublicPublisherVisibilityCtx({
+      linkedUser: { _id: "users:proof-banned-builder", deletedAt: 1_700_000_000_000 },
+    });
+
+    await expect(
+      listPublishedPageHandler(ctx as never, {
+        handle: "proof-banned-builder",
+        paginationOpts: { cursor: null, numItems: 12 },
+      }),
+    ).resolves.toEqual({ page: [], continueCursor: "", isDone: true });
+  });
+
+  it("hides published items for a legacy no-link user publisher whose owner is deleted", async () => {
+    const ctx = makePublicPublisherVisibilityCtx({
+      legacyPersonalPublisher: true,
+      linkedUser: { _id: "users:proof-banned-builder", deletedAt: 1_700_000_000_000 },
+    });
+
+    await expect(
+      listPublishedPageHandler(ctx as never, {
+        handle: "proof-banned-builder",
+        paginationOpts: { cursor: null, numItems: 12 },
+      }),
+    ).resolves.toEqual({ page: [], continueCursor: "", isDone: true });
+  });
+
+  it("hides display manifests for a user publisher whose linked user is deleted", async () => {
+    const ctx = makePublicPublisherVisibilityCtx({
+      linkedUser: { _id: "users:proof-banned-builder", deletedAt: 1_700_000_000_000 },
+    });
+
+    await expect(
+      getPublishedDisplayManifestHandler(ctx as never, {
+        handle: "proof-banned-builder",
+        kind: "skill",
+      }),
+    ).resolves.toBeNull();
+  });
+
+  it("hides starred items for a user publisher whose linked user is deactivated", async () => {
+    const ctx = makePublicPublisherVisibilityCtx({
+      linkedUser: { _id: "users:proof-banned-builder", deactivatedAt: 1_700_000_000_000 },
+    });
+
+    await expect(
+      listStarredPageHandler(ctx as never, {
+        handle: "proof-banned-builder",
+        paginationOpts: { cursor: null, numItems: 12 },
+      }),
+    ).resolves.toEqual({ page: [], continueCursor: "", isDone: true });
+  });
+
+  it("uses the active legacy no-link user publisher owner for starred items", async () => {
+    const ctx = makePublicPublisherVisibilityCtx({ legacyPersonalPublisher: true });
+
+    const result = await listStarredPageHandler(ctx as never, {
+      handle: "proof-banned-builder",
+      paginationOpts: { cursor: null, numItems: 12 },
+    });
+
+    expect(result.page.map((item) => item.displayName)).toEqual(["Demo Skill"]);
+  });
+
+  it("hides members for a user publisher whose linked user is deleted", async () => {
+    const ctx = makePublicPublisherVisibilityCtx({
+      linkedUser: { _id: "users:proof-banned-builder", deletedAt: 1_700_000_000_000 },
+    });
+
+    await expect(
+      listMembersHandler(ctx as never, { publisherHandle: "proof-banned-builder" }),
+    ).resolves.toBeNull();
+  });
+
+  it("hides members for a legacy no-link user publisher whose owner is deleted", async () => {
+    const ctx = makePublicPublisherVisibilityCtx({
+      legacyPersonalPublisher: true,
+      linkedUser: { _id: "users:proof-banned-builder", deletedAt: 1_700_000_000_000 },
+    });
+
+    await expect(
+      listMembersHandler(ctx as never, { publisherHandle: "proof-banned-builder" }),
     ).resolves.toBeNull();
   });
 
