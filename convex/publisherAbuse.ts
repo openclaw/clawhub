@@ -14,9 +14,11 @@ import { assertModerator, requireUser, requireUserFromAction } from "./lib/acces
 import { toDayKey } from "./lib/leaderboards";
 import { hasOfficialPublisherRow } from "./lib/officialPublishers";
 import {
+  classifySkillTemporalAbuseScore,
   computeCurrentSkillTemporalAbuseScore,
   computeHistoricalSkillTemporalAbuseScore,
   computePublisherAbuseRawScore,
+  computeTemporalAbuseCohortBenchmark,
   computeTemporalPublisherAbuseZScore,
   DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG,
   labelForTemporalPublisherAbuse,
@@ -26,6 +28,7 @@ import {
   type PublisherAbuseInput,
   type PublisherAbuseLabel,
   type SkillTemporalAbuseScore,
+  type TemporalAbuseCohortBenchmark,
 } from "./lib/publisherAbuseScoring";
 import { getSkillPublisherContribution } from "./lib/publisherStats";
 import { readCanonicalStat } from "./lib/skillStats";
@@ -123,6 +126,7 @@ type TemporalPublisherAggregate = {
   ownerUserId?: Id<"users">;
   handleSnapshot: string;
   highTemporalSkillCount: number;
+  p99TemporalSkillCount: number;
   spikeSkillCount: number;
   sustainedSkillCount: number;
   maxTemporalPressure: number;
@@ -131,6 +135,18 @@ type TemporalPublisherAggregate = {
   reasonCodes: string[];
   evidence: TemporalSkillCandidate[];
 };
+
+const temporalCohortBandValidator = v.union(v.literal("p95"), v.literal("p99"));
+
+const temporalAbuseCohortBenchmarkValidator = v.object({
+  sampleSize: v.number(),
+  downloads30dAverage: v.number(),
+  downloads30dMedian: v.number(),
+  downloads30dP95: v.number(),
+  downloads30dP99: v.number(),
+  spikeMultiplier7dP95: v.number(),
+  spikeMultiplier7dP99: v.number(),
+});
 
 const temporalScoreValidator = v.object({
   spike: v.boolean(),
@@ -144,6 +160,10 @@ const temporalScoreValidator = v.object({
   recent30Downloads: v.number(),
   recent30Installs: v.number(),
   downloadInstallRatio30: v.number(),
+  downloads30dCohortBand: v.optional(temporalCohortBandValidator),
+  spikeMultiplierCohortBand: v.optional(temporalCohortBandValidator),
+  downloads30dVsPeerP95: v.optional(v.number()),
+  spikeMultiplierVsPeerP95: v.optional(v.number()),
   spikeWindowStartDay: v.optional(v.number()),
   spikeWindowEndDay: v.optional(v.number()),
   sustainedWindowStartDay: v.optional(v.number()),
@@ -457,6 +477,7 @@ export const persistTemporalPublisherAbuseCandidatesInternal = internalMutation(
     trigger: v.union(v.literal("cron"), v.literal("manual")),
     actorUserId: v.optional(v.id("users")),
     candidates: v.array(temporalCandidateValidator),
+    benchmark: temporalAbuseCohortBenchmarkValidator,
     scanComplete: v.boolean(),
   },
   handler: persistTemporalPublisherAbuseCandidatesInternalHandler,
@@ -587,7 +608,7 @@ export async function finalizePublisherAbuseScoresPageInternalHandler(
 
   const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
   const now = Date.now();
-  const cohortStats = await summarizePublisherAbuseFinalizationCohort(ctx, run);
+  const cohortStats = summarizePublisherAbuseFinalizationCohort(run);
   const { meanLogPressure, stdDevLogPressure } = summarizePublisherAbuseLogPressure(
     cohortStats.sumLogPressure,
     cohortStats.sumSquaredLogPressure,
@@ -807,7 +828,6 @@ export async function collectTemporalPublisherAbuseSkillCandidatesPageInternalHa
       args.mode === "backfill"
         ? computeHistoricalSkillTemporalAbuseScore({ dailyStats })
         : computeCurrentSkillTemporalAbuseScore({ todayDay, dailyStats });
-    if (!temporalScore.spike && !temporalScore.sustained) continue;
 
     const publisher = await ctx.db.get(skill.ownerPublisherId);
     if (!publisher || (await isPublisherExcludedFromPublisherAbuse(ctx, publisher))) continue;
@@ -840,6 +860,7 @@ export async function persistTemporalPublisherAbuseCandidatesInternalHandler(
     trigger: "cron" | "manual";
     actorUserId?: Id<"users">;
     candidates: TemporalSkillCandidate[];
+    benchmark: TemporalAbuseCohortBenchmark;
     scanComplete: boolean;
   },
 ): Promise<{
@@ -851,6 +872,7 @@ export async function persistTemporalPublisherAbuseCandidatesInternalHandler(
   const runId = await createTemporalPublisherAbuseScoreRun(ctx, {
     trigger: args.trigger,
     actorUserId: args.actorUserId,
+    benchmark: args.benchmark,
   });
   const run = await ctx.db.get(runId);
   if (!run) throw new Error("Temporal publisher abuse score run not found");
@@ -868,6 +890,7 @@ export async function persistTemporalPublisherAbuseCandidatesInternalHandler(
     rank += 1;
     const label = labelForTemporalPublisherAbuse({
       highTemporalSkillCount: aggregate.highTemporalSkillCount,
+      p99TemporalSkillCount: aggregate.p99TemporalSkillCount,
     });
     if (label === "pass") continue;
     const pressure = 1_000 + aggregate.highTemporalSkillCount * 100 + aggregate.maxTemporalPressure;
@@ -900,6 +923,7 @@ export async function persistTemporalPublisherAbuseCandidatesInternalHandler(
       temporalSpikeSkillCount: aggregate.spikeSkillCount,
       temporalSustainedSkillCount: aggregate.sustainedSkillCount,
       temporalMaxPressure: aggregate.maxTemporalPressure,
+      temporalBenchmark: args.benchmark,
       temporalEvidence: aggregate.evidence
         .sort((left, right) => right.temporalScore.pressure - left.temporalScore.pressure)
         .slice(0, MAX_TEMPORAL_EVIDENCE_SKILLS)
@@ -932,10 +956,19 @@ export async function persistTemporalPublisherAbuseCandidatesInternalHandler(
     finalizedScores: sortedAggregates.length + clearedNominations,
     nominatedPublishers: nominations,
     passCount: clearedNominations,
-    reviewCount: sortedAggregates.filter((aggregate) => aggregate.highTemporalSkillCount === 1)
-      .length,
+    reviewCount: sortedAggregates.filter(
+      (aggregate) =>
+        labelForTemporalPublisherAbuse({
+          highTemporalSkillCount: aggregate.highTemporalSkillCount,
+          p99TemporalSkillCount: aggregate.p99TemporalSkillCount,
+        }) === "review",
+    ).length,
     potentialBanCandidateCount: sortedAggregates.filter(
-      (aggregate) => aggregate.highTemporalSkillCount >= 2,
+      (aggregate) =>
+        labelForTemporalPublisherAbuse({
+          highTemporalSkillCount: aggregate.highTemporalSkillCount,
+          p99TemporalSkillCount: aggregate.p99TemporalSkillCount,
+        }) === "potential_ban_candidate",
     ).length,
     completedAt: now,
     updatedAt: now,
@@ -966,6 +999,7 @@ export async function runTemporalPublisherAbuseScanInternalHandler(
   flaggedPublishers: number;
   nominations: number;
   candidates?: TemporalSkillCandidate[];
+  benchmark: TemporalAbuseCohortBenchmark;
 }> {
   const mode = args.mode ?? "current";
   const dryRun = args.dryRun ?? false;
@@ -1007,17 +1041,30 @@ export async function runTemporalPublisherAbuseScanInternalHandler(
     }
   }
 
-  const flaggedPublishers = aggregateTemporalPublisherCandidates(candidates).length;
-  if (dryRun || (mode !== "current" && candidates.length === 0)) {
+  const benchmark = computeTemporalAbuseCohortBenchmark(
+    candidates.map((candidate) => candidate.temporalScore),
+  );
+  const highTemporalCandidates = candidates
+    .map((candidate) => ({
+      ...candidate,
+      temporalScore: classifySkillTemporalAbuseScore(candidate.temporalScore, benchmark),
+    }))
+    .filter((candidate) => candidate.temporalScore.spike || candidate.temporalScore.sustained);
+
+  const flaggedPublishers = aggregateTemporalPublisherCandidates(highTemporalCandidates).length;
+  if (dryRun || (mode !== "current" && highTemporalCandidates.length === 0)) {
     return {
       ok: true,
       dryRun,
       mode,
       scannedSkills,
-      highTemporalSkills: candidates.length,
+      highTemporalSkills: highTemporalCandidates.length,
       flaggedPublishers,
       nominations: 0,
-      ...(dryRun ? { candidates: candidates.slice(0, MAX_TEMPORAL_DRY_RUN_CANDIDATES) } : {}),
+      benchmark,
+      ...(dryRun
+        ? { candidates: highTemporalCandidates.slice(0, MAX_TEMPORAL_DRY_RUN_CANDIDATES) }
+        : {}),
     };
   }
 
@@ -1027,7 +1074,8 @@ export async function runTemporalPublisherAbuseScanInternalHandler(
       mode,
       trigger: args.trigger ?? "cron",
       actorUserId: args.actorUserId,
-      candidates,
+      candidates: highTemporalCandidates,
+      benchmark,
       scanComplete,
     },
   );
@@ -1036,9 +1084,10 @@ export async function runTemporalPublisherAbuseScanInternalHandler(
     dryRun,
     mode,
     scannedSkills,
-    highTemporalSkills: candidates.length,
+    highTemporalSkills: highTemporalCandidates.length,
     flaggedPublishers: persisted.flaggedPublishers,
     nominations: persisted.nominations,
+    benchmark,
   };
 }
 
@@ -1142,6 +1191,7 @@ async function createTemporalPublisherAbuseScoreRun(
   args: {
     trigger: "cron" | "manual";
     actorUserId?: Id<"users">;
+    benchmark?: TemporalAbuseCohortBenchmark;
   },
 ) {
   const now = Date.now();
@@ -1163,6 +1213,7 @@ async function createTemporalPublisherAbuseScoreRun(
     potentialBanCandidateCount: 0,
     sumLogPressure: 0,
     sumSquaredLogPressure: 0,
+    temporalBenchmark: args.benchmark,
   });
 }
 
@@ -1175,6 +1226,7 @@ function aggregateTemporalPublisherCandidates(candidates: TemporalSkillCandidate
       ownerUserId: candidate.ownerUserId,
       handleSnapshot: candidate.handleSnapshot,
       highTemporalSkillCount: 0,
+      p99TemporalSkillCount: 0,
       spikeSkillCount: 0,
       sustainedSkillCount: 0,
       maxTemporalPressure: 0,
@@ -1184,6 +1236,12 @@ function aggregateTemporalPublisherCandidates(candidates: TemporalSkillCandidate
       evidence: [],
     };
     existing.highTemporalSkillCount += 1;
+    if (
+      candidate.temporalScore.downloads30dCohortBand === "p99" ||
+      candidate.temporalScore.spikeMultiplierCohortBand === "p99"
+    ) {
+      existing.p99TemporalSkillCount += 1;
+    }
     if (candidate.temporalScore.spike) existing.spikeSkillCount += 1;
     if (candidate.temporalScore.sustained) existing.sustainedSkillCount += 1;
     existing.maxTemporalPressure = Math.max(
@@ -1218,6 +1276,10 @@ function temporalEvidenceFromCandidate(candidate: TemporalSkillCandidate) {
     recent30Downloads: candidate.temporalScore.recent30Downloads,
     recent30Installs: candidate.temporalScore.recent30Installs,
     downloadInstallRatio30: candidate.temporalScore.downloadInstallRatio30,
+    downloads30dCohortBand: candidate.temporalScore.downloads30dCohortBand,
+    spikeMultiplierCohortBand: candidate.temporalScore.spikeMultiplierCohortBand,
+    downloads30dVsPeerP95: candidate.temporalScore.downloads30dVsPeerP95,
+    spikeMultiplierVsPeerP95: candidate.temporalScore.spikeMultiplierVsPeerP95,
     spikeWindowStartDay: candidate.temporalScore.spikeWindowStartDay,
     spikeWindowEndDay: candidate.temporalScore.spikeWindowEndDay,
     sustainedWindowStartDay: candidate.temporalScore.sustainedWindowStartDay,
@@ -1312,48 +1374,16 @@ async function requirePublisherAbuseNominationNotExcluded(
   throw new Error("Official org publisher abuse nominations cannot be acted on.");
 }
 
-async function summarizePublisherAbuseFinalizationCohort(ctx: MutationCtx, run: ScoreRun) {
-  const exclusions = await summarizeOfficialPublisherAbuseScoreExclusions(ctx, run);
-  const scoredPublishers = Math.max(0, run.scoredPublishers - exclusions.scoredPublishers);
+function summarizePublisherAbuseFinalizationCohort(run: ScoreRun) {
+  const scoredPublishers = Math.max(0, run.scoredPublishers);
   if (scoredPublishers === 0) {
     return { scoredPublishers, sumLogPressure: 0, sumSquaredLogPressure: 0 };
   }
   return {
     scoredPublishers,
-    sumLogPressure: run.sumLogPressure - exclusions.sumLogPressure,
-    sumSquaredLogPressure: run.sumSquaredLogPressure - exclusions.sumSquaredLogPressure,
+    sumLogPressure: run.sumLogPressure,
+    sumSquaredLogPressure: run.sumSquaredLogPressure,
   };
-}
-
-async function summarizeOfficialPublisherAbuseScoreExclusions(ctx: MutationCtx, run: ScoreRun) {
-  let cursor: string | null = null;
-  let scoredPublishers = 0;
-  let sumLogPressure = 0;
-  let sumSquaredLogPressure = 0;
-
-  do {
-    const page = await ctx.db
-      .query("officialPublishers")
-      .withIndex("by_created")
-      .paginate({ cursor, numItems: MAX_BATCH_SIZE });
-    for (const officialPublisher of page.page) {
-      const publisher = await ctx.db.get(officialPublisher.publisherId);
-      if (!publisher || publisher.kind !== "org") continue;
-      const score = await ctx.db
-        .query("publisherAbuseScores")
-        .withIndex("by_run_and_owner_key", (q) =>
-          q.eq("runId", run._id).eq("ownerKey", `publisher:${officialPublisher.publisherId}`),
-        )
-        .first();
-      if (!score || score.publishedSkills <= 0) continue;
-      scoredPublishers += 1;
-      sumLogPressure += score.logPressure;
-      sumSquaredLogPressure += score.logPressure ** 2;
-    }
-    cursor = page.isDone ? null : page.continueCursor;
-  } while (cursor);
-
-  return { scoredPublishers, sumLogPressure, sumSquaredLogPressure };
 }
 
 type SkillMetricsForScoring = Pick<

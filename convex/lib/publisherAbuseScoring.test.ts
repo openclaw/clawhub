@@ -5,8 +5,10 @@ import {
   computeCurrentSkillTemporalAbuseScore,
   computeHistoricalSkillTemporalAbuseScore,
   computePublisherAbuseRawScore,
+  computeTemporalAbuseCohortBenchmark,
   computeTemporalPublisherAbuseZScore,
   DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG,
+  labelForTemporalPublisherAbuse,
   labelForPublisherAbuseZScore,
   scorePublisherAbuseCohort,
 } from "./publisherAbuseScoring";
@@ -44,6 +46,15 @@ describe("publisher abuse scoring", () => {
     expect(review).toBeLessThan(2.5);
     expect(potentialBan).toBeGreaterThanOrEqual(2.5);
     expect(potentialBan).toBeGreaterThan(review);
+  });
+
+  it("escalates one P99 temporal hit as a potential ban candidate", () => {
+    expect(
+      labelForTemporalPublisherAbuse({ highTemporalSkillCount: 1, p99TemporalSkillCount: 1 }),
+    ).toBe("potential_ban_candidate");
+    expect(
+      labelForTemporalPublisherAbuse({ highTemporalSkillCount: 1, p99TemporalSkillCount: 0 }),
+    ).toBe("review");
   });
 
   it("keeps a high-volume publisher with strong usage below low-engagement publishers", () => {
@@ -158,6 +169,12 @@ describe("publisher abuse scoring", () => {
     const todayDay = 100;
     const score = computeCurrentSkillTemporalAbuseScore({
       todayDay,
+      benchmark: temporalBenchmark({
+        downloads30dP95: 2_000,
+        downloads30dP99: 5_000,
+        spikeMultiplier7dP95: 5,
+        spikeMultiplier7dP99: 20,
+      }),
       dailyStats: [
         ...dailyRange(64, 30, { downloads: 5, installs: 0 }),
         ...dailyRange(94, 7, { downloads: 200, installs: 0 }),
@@ -170,6 +187,7 @@ describe("publisher abuse scoring", () => {
     expect(score.recent7Installs).toBe(0);
     expect(score.previous30Downloads).toBe(150);
     expect(score.spikeMultiplier).toBeCloseTo(14);
+    expect(score.spikeMultiplierCohortBand).toBe("p95");
     expect(score.reasonCodes).toContain("temporal_download_spike_flat_installs");
   });
 
@@ -177,6 +195,12 @@ describe("publisher abuse scoring", () => {
     const todayDay = 100;
     const score = computeCurrentSkillTemporalAbuseScore({
       todayDay,
+      benchmark: temporalBenchmark({
+        downloads30dP95: 3_000,
+        downloads30dP99: 6_000,
+        spikeMultiplier7dP95: 20,
+        spikeMultiplier7dP99: 50,
+      }),
       dailyStats: dailyRange(71, 30, { downloads: 120, installs: 0 }),
     });
 
@@ -185,6 +209,7 @@ describe("publisher abuse scoring", () => {
     expect(score.recent30Downloads).toBe(3_600);
     expect(score.recent30Installs).toBe(0);
     expect(score.downloadInstallRatio30).toBe(3_600);
+    expect(score.downloads30dCohortBand).toBe("p95");
     expect(score.reasonCodes).toContain("temporal_sustained_downloads_flat_installs");
   });
 
@@ -192,6 +217,12 @@ describe("publisher abuse scoring", () => {
     const todayDay = 100;
     const score = computeCurrentSkillTemporalAbuseScore({
       todayDay,
+      benchmark: temporalBenchmark({
+        downloads30dP95: 4_000,
+        downloads30dP99: 8_000,
+        spikeMultiplier7dP95: 20,
+        spikeMultiplier7dP99: 50,
+      }),
       dailyStats: [
         ...dailyRange(64, 30, { downloads: 80, installs: 1 }),
         ...dailyRange(94, 7, { downloads: 85, installs: 1 }),
@@ -206,6 +237,12 @@ describe("publisher abuse scoring", () => {
 
   it("finds historical spike and sustained windows for backfill scans", () => {
     const score = computeHistoricalSkillTemporalAbuseScore({
+      benchmark: temporalBenchmark({
+        downloads30dP95: 3_000,
+        downloads30dP99: 10_000,
+        spikeMultiplier7dP95: 5,
+        spikeMultiplier7dP99: 25,
+      }),
       dailyStats: [
         ...dailyRange(10, 30, { downloads: 3, installs: 0 }),
         ...dailyRange(40, 7, { downloads: 220, installs: 0 }),
@@ -222,7 +259,34 @@ describe("publisher abuse scoring", () => {
       "temporal_sustained_downloads_flat_installs",
     ]);
   });
+
+  it("computes cohort benchmark percentiles from scanned skill windows", () => {
+    const benchmark = computeTemporalAbuseCohortBenchmark([
+      ...Array.from({ length: 95 }, () => ({ recent30Downloads: 100, spikeMultiplier: 1 })),
+      ...Array.from({ length: 4 }, () => ({ recent30Downloads: 500, spikeMultiplier: 2 })),
+      { recent30Downloads: 10_000, spikeMultiplier: 30 },
+    ]);
+
+    expect(benchmark.sampleSize).toBe(100);
+    expect(benchmark.downloads30dMedian).toBe(100);
+    expect(benchmark.downloads30dP95).toBe(100);
+    expect(benchmark.downloads30dP99).toBe(500);
+    expect(benchmark.spikeMultiplier7dP99).toBe(2);
+  });
 });
+
+function temporalBenchmark(overrides = {}) {
+  return {
+    sampleSize: 100,
+    downloads30dAverage: 500,
+    downloads30dMedian: 100,
+    downloads30dP95: 1_000,
+    downloads30dP99: 5_000,
+    spikeMultiplier7dP95: 5,
+    spikeMultiplier7dP99: 25,
+    ...overrides,
+  };
+}
 
 function publisher(
   handleSnapshot: string,

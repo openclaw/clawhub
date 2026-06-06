@@ -69,11 +69,25 @@ export type SkillTemporalAbuseScore = {
   recent30Downloads: number;
   recent30Installs: number;
   downloadInstallRatio30: number;
+  downloads30dCohortBand?: "p95" | "p99";
+  spikeMultiplierCohortBand?: "p95" | "p99";
+  downloads30dVsPeerP95?: number;
+  spikeMultiplierVsPeerP95?: number;
   spikeWindowStartDay?: number;
   spikeWindowEndDay?: number;
   sustainedWindowStartDay?: number;
   sustainedWindowEndDay?: number;
   reasonCodes: string[];
+};
+
+export type TemporalAbuseCohortBenchmark = {
+  sampleSize: number;
+  downloads30dAverage: number;
+  downloads30dMedian: number;
+  downloads30dP95: number;
+  downloads30dP99: number;
+  spikeMultiplier7dP95: number;
+  spikeMultiplier7dP99: number;
 };
 
 export const DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG = {
@@ -99,12 +113,8 @@ const MIN_PRESSURE_FOR_LOG = 1e-9;
 const TEMPORAL_SPIKE_RECENT_DAYS = 7;
 const TEMPORAL_SPIKE_BASELINE_DAYS = 30;
 const TEMPORAL_SUSTAINED_DAYS = 30;
-const TEMPORAL_MIN_SPIKE_DOWNLOADS = 1_000;
 const TEMPORAL_MAX_SPIKE_INSTALLS = 2;
-const TEMPORAL_MIN_SPIKE_MULTIPLIER = 10;
-const TEMPORAL_MIN_SUSTAINED_DOWNLOADS = 3_000;
 const TEMPORAL_MAX_SUSTAINED_INSTALLS = 5;
-const TEMPORAL_MIN_SUSTAINED_DOWNLOAD_INSTALL_RATIO = 1_000;
 const TEMPORAL_MIN_BASELINE_7_DOWNLOADS = 100;
 
 export function labelForPublisherAbuseZScore(
@@ -258,17 +268,20 @@ export function summarizePublisherAbuseLogPressure(
 export function computeCurrentSkillTemporalAbuseScore(input: {
   todayDay: number;
   dailyStats: SkillTemporalAbuseDailyStat[];
+  benchmark?: TemporalAbuseCohortBenchmark;
 }): SkillTemporalAbuseScore {
   const statsByDay = aggregateSkillTemporalDailyStats(input.dailyStats);
-  return computeSkillTemporalAbuseScoreForWindows({
+  const score = computeSkillTemporalAbuseScoreForWindows({
     statsByDay,
     spikeStartDay: input.todayDay - TEMPORAL_SPIKE_RECENT_DAYS + 1,
     sustainedStartDay: input.todayDay - TEMPORAL_SUSTAINED_DAYS + 1,
   });
+  return classifySkillTemporalAbuseScore(score, input.benchmark);
 }
 
 export function computeHistoricalSkillTemporalAbuseScore(input: {
   dailyStats: SkillTemporalAbuseDailyStat[];
+  benchmark?: TemporalAbuseCohortBenchmark;
 }): SkillTemporalAbuseScore {
   const statsByDay = aggregateSkillTemporalDailyStats(input.dailyStats);
   const days = [...statsByDay.keys()];
@@ -281,23 +294,29 @@ export function computeHistoricalSkillTemporalAbuseScore(input: {
 
   for (let startDay = minDay; startDay <= maxDay; startDay += 1) {
     if (startDay + TEMPORAL_SPIKE_RECENT_DAYS - 1 <= maxDay) {
-      const score = computeSkillTemporalAbuseScoreForWindows({
-        statsByDay,
-        spikeStartDay: startDay,
-        sustainedStartDay: startDay,
-      });
+      const score = classifySkillTemporalAbuseScore(
+        computeSkillTemporalAbuseScoreForWindows({
+          statsByDay,
+          spikeStartDay: startDay,
+          sustainedStartDay: startDay,
+        }),
+        input.benchmark,
+      );
       if (score.spike && score.spikeMultiplier > bestSpike.spikeMultiplier) {
         bestSpike = score;
       }
     }
 
     if (startDay + TEMPORAL_SUSTAINED_DAYS - 1 <= maxDay) {
-      const score = computeSkillTemporalAbuseScoreForWindows({
-        statsByDay,
-        spikeStartDay: startDay,
-        sustainedStartDay: startDay,
-      });
-      if (score.sustained && score.downloadInstallRatio30 > bestSustained.downloadInstallRatio30) {
+      const score = classifySkillTemporalAbuseScore(
+        computeSkillTemporalAbuseScoreForWindows({
+          statsByDay,
+          spikeStartDay: startDay,
+          sustainedStartDay: startDay,
+        }),
+        input.benchmark,
+      );
+      if (score.sustained && score.recent30Downloads > bestSustained.recent30Downloads) {
         bestSustained = score;
       }
     }
@@ -308,10 +327,77 @@ export function computeHistoricalSkillTemporalAbuseScore(input: {
 
 export function labelForTemporalPublisherAbuse(input: {
   highTemporalSkillCount: number;
+  p99TemporalSkillCount?: number;
 }): PublisherAbuseLabel {
-  if (input.highTemporalSkillCount >= 2) return "potential_ban_candidate";
+  if ((input.p99TemporalSkillCount ?? 0) >= 1 || input.highTemporalSkillCount >= 2) {
+    return "potential_ban_candidate";
+  }
   if (input.highTemporalSkillCount >= 1) return "review";
   return "pass";
+}
+
+export function computeTemporalAbuseCohortBenchmark(
+  scores: Pick<SkillTemporalAbuseScore, "recent30Downloads" | "spikeMultiplier">[],
+): TemporalAbuseCohortBenchmark {
+  const downloads30d = scores.map((score) => nonNegative(score.recent30Downloads));
+  const spikeMultipliers = scores.map((score) => nonNegative(score.spikeMultiplier));
+  return {
+    sampleSize: scores.length,
+    downloads30dAverage: average(downloads30d),
+    downloads30dMedian: percentile(downloads30d, 0.5),
+    downloads30dP95: percentile(downloads30d, 0.95),
+    downloads30dP99: percentile(downloads30d, 0.99),
+    spikeMultiplier7dP95: percentile(spikeMultipliers, 0.95),
+    spikeMultiplier7dP99: percentile(spikeMultipliers, 0.99),
+  };
+}
+
+export function classifySkillTemporalAbuseScore(
+  score: SkillTemporalAbuseScore,
+  benchmark: TemporalAbuseCohortBenchmark | undefined,
+): SkillTemporalAbuseScore {
+  if (!benchmark || benchmark.sampleSize <= 0) return score;
+
+  const downloads30dVsPeerP95 = score.recent30Downloads / Math.max(1, benchmark.downloads30dP95);
+  const spikeMultiplierVsPeerP95 =
+    score.spikeMultiplier / Math.max(1, benchmark.spikeMultiplier7dP95);
+  const downloads30dCohortBand =
+    score.recent30Installs <= TEMPORAL_MAX_SUSTAINED_INSTALLS
+      ? percentileBand({
+          value: score.recent30Downloads,
+          p95: benchmark.downloads30dP95,
+          p99: benchmark.downloads30dP99,
+        })
+      : undefined;
+  const spikeMultiplierCohortBand =
+    score.recent7Installs <= TEMPORAL_MAX_SPIKE_INSTALLS && score.recent7Downloads > 0
+      ? percentileBand({
+          value: score.spikeMultiplier,
+          p95: benchmark.spikeMultiplier7dP95,
+          p99: benchmark.spikeMultiplier7dP99,
+        })
+      : undefined;
+  const spike = Boolean(spikeMultiplierCohortBand);
+  const sustained = Boolean(downloads30dCohortBand);
+  const reasonCodes: string[] = [];
+  if (spike) reasonCodes.push("temporal_download_spike_flat_installs");
+  if (sustained) reasonCodes.push("temporal_sustained_downloads_flat_installs");
+
+  return {
+    ...score,
+    spike,
+    sustained,
+    pressure: Math.max(spike ? spikeMultiplierVsPeerP95 : 0, sustained ? downloads30dVsPeerP95 : 0),
+    downloads30dCohortBand,
+    spikeMultiplierCohortBand,
+    downloads30dVsPeerP95,
+    spikeMultiplierVsPeerP95,
+    spikeWindowStartDay: spike ? score.spikeWindowStartDay : undefined,
+    spikeWindowEndDay: spike ? score.spikeWindowEndDay : undefined,
+    sustainedWindowStartDay: sustained ? score.sustainedWindowStartDay : undefined,
+    sustainedWindowEndDay: sustained ? score.sustainedWindowEndDay : undefined,
+    reasonCodes,
+  };
 }
 
 function reasonCodesForPublisher(input: {
@@ -363,22 +449,10 @@ function computeSkillTemporalAbuseScoreForWindows(input: {
   );
   const spikeMultiplier = baseline7Downloads > 0 ? recent7.downloads / baseline7Downloads : 0;
   const downloadInstallRatio30 = recent30.downloads / Math.max(1, recent30.installs);
-  const spike =
-    recent7.downloads >= TEMPORAL_MIN_SPIKE_DOWNLOADS &&
-    recent7.installs <= TEMPORAL_MAX_SPIKE_INSTALLS &&
-    spikeMultiplier >= TEMPORAL_MIN_SPIKE_MULTIPLIER;
-  const sustained =
-    recent30.downloads >= TEMPORAL_MIN_SUSTAINED_DOWNLOADS &&
-    recent30.installs <= TEMPORAL_MAX_SUSTAINED_INSTALLS &&
-    downloadInstallRatio30 >= TEMPORAL_MIN_SUSTAINED_DOWNLOAD_INSTALL_RATIO;
-  const reasonCodes: string[] = [];
-  if (spike) reasonCodes.push("temporal_download_spike_flat_installs");
-  if (sustained) reasonCodes.push("temporal_sustained_downloads_flat_installs");
-
   return {
-    spike,
-    sustained,
-    pressure: Math.max(spike ? spikeMultiplier : 0, sustained ? downloadInstallRatio30 / 1_000 : 0),
+    spike: false,
+    sustained: false,
+    pressure: 0,
     recent7Downloads: recent7.downloads,
     recent7Installs: recent7.installs,
     previous30Downloads: previous30.downloads,
@@ -387,11 +461,11 @@ function computeSkillTemporalAbuseScoreForWindows(input: {
     recent30Downloads: recent30.downloads,
     recent30Installs: recent30.installs,
     downloadInstallRatio30,
-    spikeWindowStartDay: spike ? input.spikeStartDay : undefined,
-    spikeWindowEndDay: spike ? spikeEndDay : undefined,
-    sustainedWindowStartDay: sustained ? input.sustainedStartDay : undefined,
-    sustainedWindowEndDay: sustained ? sustainedEndDay : undefined,
-    reasonCodes,
+    spikeWindowStartDay: input.spikeStartDay,
+    spikeWindowEndDay: spikeEndDay,
+    sustainedWindowStartDay: input.sustainedStartDay,
+    sustainedWindowEndDay: sustainedEndDay,
+    reasonCodes: [],
   };
 }
 
@@ -416,6 +490,10 @@ function mergeTemporalAbuseWindowScores(
     recent30Downloads: bestSustained.recent30Downloads,
     recent30Installs: bestSustained.recent30Installs,
     downloadInstallRatio30: bestSustained.downloadInstallRatio30,
+    downloads30dCohortBand: bestSustained.downloads30dCohortBand,
+    spikeMultiplierCohortBand: bestSpike.spikeMultiplierCohortBand,
+    downloads30dVsPeerP95: bestSustained.downloads30dVsPeerP95,
+    spikeMultiplierVsPeerP95: bestSpike.spikeMultiplierVsPeerP95,
     spikeWindowStartDay: bestSpike.spikeWindowStartDay,
     spikeWindowEndDay: bestSpike.spikeWindowEndDay,
     sustainedWindowStartDay: bestSustained.sustainedWindowStartDay,
@@ -477,6 +555,24 @@ function nonNegative(value: number) {
 function average(values: number[]) {
   if (values.length === 0) return 0;
   return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function percentile(values: number[], quantile: number) {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((left, right) => left - right);
+  const index = Math.max(0, Math.min(sorted.length - 1, Math.ceil(quantile * sorted.length) - 1));
+  return sorted[index] ?? 0;
+}
+
+function percentileBand(input: {
+  value: number;
+  p95: number;
+  p99: number;
+}): "p95" | "p99" | undefined {
+  if (input.value <= 0) return undefined;
+  if (input.p99 > 0 && input.value > input.p99) return "p99";
+  if (input.p95 > 0 && input.value > input.p95) return "p95";
+  return undefined;
 }
 
 function standardDeviation(values: number[], mean: number) {

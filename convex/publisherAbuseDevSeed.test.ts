@@ -263,12 +263,13 @@ describe("publisherAbuseDevSeed.seed", () => {
       (doc) => doc.label === "review" && doc.status === "pending",
     );
 
-    expect(pendingBan).toHaveLength(15);
+    expect(pendingBan).toHaveLength(16);
     expect(pendingReview).toHaveLength(124);
     expect(result.inserted).toBe(nominations.length);
     // Every ban candidate links a demo user so the inspector ban action is
     // exercisable; review nominations do not create users.
-    expect(tables.users ?? []).toHaveLength(15);
+    expect(tables.users ?? []).toHaveLength(16);
+    expect(tables.skills?.some((doc) => doc.slug === "demo-temporal-download-burst")).toBe(true);
   });
 
   it("clears existing demo rows before inserting repeatable seed data", async () => {
@@ -318,8 +319,8 @@ describe("publisherAbuseDevSeed.seed", () => {
     );
     expect(tables.users.map((doc) => doc._id)).not.toContain("users:old-demo");
     expect(tables.users.filter((doc) => doc.handle === "demo-abuse-pub-01")).toHaveLength(1);
-    expect(tables.users).toHaveLength(15);
-    expect(tables.publisherAbuseReviewNominations).toHaveLength(145);
+    expect(tables.users).toHaveLength(16);
+    expect(tables.publisherAbuseReviewNominations).toHaveLength(146);
   });
 });
 

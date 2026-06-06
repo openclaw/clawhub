@@ -186,7 +186,9 @@ test("users can permanently delete their account and personal publisher resource
 
   await page.goto(`/user/${fixture.handle}`, { waitUntil: "domcontentloaded" });
   await waitForHydration(page);
-  await expect(page.getByRole("heading", { name: "We couldn't find that page." })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: /publisher not found|we couldn't find that page/i }),
+  ).toBeVisible();
   await expect(page.getByText(skillDisplayName)).toHaveCount(0);
   await expect(page.getByText(packageDisplayName)).toHaveCount(0);
 
@@ -212,4 +214,7 @@ test("users can permanently delete their account and personal publisher resource
   });
 
   await expectNoFatalErrorUi(page);
+  expect(
+    errors.filter((error) => !error.includes("server responded with a status of 404 (Not Found)")),
+  ).toEqual([]);
 });

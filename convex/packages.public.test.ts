@@ -9212,13 +9212,13 @@ describe("owned package sanction batches", () => {
     });
   });
 
-  it("soft-deletes packages owned by a deleted publisher", async () => {
+  it("schedules hard deletes for packages owned by a deleted publisher", async () => {
     const orgPackage = makePackageDoc({
       _id: "packages:org-plugin",
       ownerUserId: "users:owner",
       ownerPublisherId: "publishers:org",
     });
-    const { ctx, runAfter } = makeOwnedPackageBatchCtx({
+    const { ctx, patch, runAfter } = makeOwnedPackageBatchCtx({
       publisherPackages: [orgPackage],
       releases: [
         makeReleaseDoc({
@@ -9250,7 +9250,7 @@ describe("owned package sanction batches", () => {
     });
 
     expect(result).toMatchObject({ deletedCount: 1, revokedTokenCount: 0, scheduled: false });
-    expect(ctx.db.patch).toHaveBeenCalledWith(
+    expect(patch).toHaveBeenCalledWith(
       "packages:org-plugin",
       expect.objectContaining({
         softDeletedAt: 3_000,
@@ -9265,6 +9265,7 @@ describe("owned package sanction batches", () => {
       deletedAt: 3_000,
       source: "publisher.delete",
     });
+    expect(patch).not.toHaveBeenCalledWith("packagePublishTokens:org-plugin", expect.anything());
   });
 
   it("schedules linked legacy personal publisher scans when the user row lacks the publisher id", async () => {
@@ -9755,8 +9756,8 @@ describe("owned package sanction batches", () => {
     expect(patch).not.toHaveBeenCalledWith("packages:demo", expect.anything());
   });
 
-  it("marks account-deleted packages separately from ban-restorable packages", async () => {
-    const { ctx, runAfter } = makeOwnedPackageBatchCtx();
+  it("hides and schedules hard deletes for account-deleted packages", async () => {
+    const { ctx, patch, runAfter } = makeOwnedPackageBatchCtx();
 
     const result = await applyAccountDeletionToOwnedPackagesBatchInternalHandler(ctx as never, {
       ownerUserId: "users:owner",
@@ -9764,7 +9765,7 @@ describe("owned package sanction batches", () => {
     });
 
     expect(result).toMatchObject({ deletedCount: 1, revokedTokenCount: 0, scheduled: false });
-    expect(ctx.db.patch).toHaveBeenCalledWith(
+    expect(patch).toHaveBeenCalledWith(
       "packages:demo",
       expect.objectContaining({
         softDeletedAt: 3_000,
@@ -9781,13 +9782,13 @@ describe("owned package sanction batches", () => {
     });
   });
 
-  it("marks account-deleted packages owned through the user's personal publisher", async () => {
+  it("schedules hard deletes for account-deleted packages owned through the user's personal publisher", async () => {
     const personalPublisherPackage = makePackageDoc({
       _id: "packages:personal-publisher",
       ownerUserId: "users:publishing-actor",
       ownerPublisherId: "publishers:personal",
     });
-    const { ctx, runAfter } = makeOwnedPackageBatchCtx({
+    const { ctx, patch, runAfter } = makeOwnedPackageBatchCtx({
       owner: {
         _id: "users:owner",
         deactivatedAt: 3_000,
@@ -9818,7 +9819,7 @@ describe("owned package sanction batches", () => {
     });
 
     expect(result).toMatchObject({ deletedCount: 1, revokedTokenCount: 0, scheduled: false });
-    expect(ctx.db.patch).toHaveBeenCalledWith(
+    expect(patch).toHaveBeenCalledWith(
       "packages:personal-publisher",
       expect.objectContaining({
         softDeletedAt: 3_000,

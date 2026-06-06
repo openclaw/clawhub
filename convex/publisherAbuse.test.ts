@@ -144,6 +144,7 @@ const persistTemporalHandler = (
       mode: "current" | "backfill";
       trigger: "cron" | "manual";
       scanComplete: boolean;
+      benchmark: ReturnType<typeof temporalBenchmark>;
       candidates: Array<{
         ownerKey: string;
         ownerPublisherId?: string;
@@ -3130,13 +3131,13 @@ describe("publisher abuse dry-run persistence", () => {
     );
     expect(patch).toHaveBeenCalledWith(
       communityScore._id,
-      expect.objectContaining({ label: "pass", rank: 1, zScore: 0 }),
+      expect.objectContaining({ label: "pass", rank: 1, zScore: -1 }),
     );
     expect(patch).toHaveBeenCalledWith(
       "publisherAbuseScoreRuns:run",
       expect.objectContaining({
-        meanLogPressure: communityScore.logPressure,
-        stdDevLogPressure: 0,
+        meanLogPressure: 4,
+        stdDevLogPressure: 2,
         passCount: 1,
       }),
     );
@@ -3774,10 +3775,19 @@ describe("publisher abuse dry-run persistence", () => {
       dryRun: true,
       mode: "backfill",
       scannedSkills: 1,
-      highTemporalSkills: 1,
-      flaggedPublishers: 1,
+      highTemporalSkills: 0,
+      flaggedPublishers: 0,
       nominations: 0,
-      candidates: [candidate],
+      candidates: [],
+      benchmark: {
+        sampleSize: 1,
+        downloads30dAverage: 2_000,
+        downloads30dMedian: 2_000,
+        downloads30dP95: 2_000,
+        downloads30dP99: 2_000,
+        spikeMultiplier7dP95: 20,
+        spikeMultiplier7dP99: 20,
+      },
     });
 
     expect(ctx.runQuery).toHaveBeenCalledTimes(1);
@@ -3934,7 +3944,7 @@ describe("publisher abuse dry-run persistence", () => {
 
     expect(paginate).toHaveBeenCalledWith({ cursor: null, numItems: 10 });
     expect(takeDailyStats).toHaveBeenCalledWith(730);
-    expect(ctx.db.get).not.toHaveBeenCalled();
+    expect(ctx.db.get).toHaveBeenCalledWith("publishers:quiet");
   });
 
   it("skips official org publishers during temporal candidate collection", async () => {
@@ -4106,6 +4116,7 @@ describe("publisher abuse dry-run persistence", () => {
         mode: "current",
         trigger: "cron",
         scanComplete: true,
+        benchmark: temporalBenchmark(),
         candidates: [
           temporalCandidate("skills:first", { slug: "first", displayName: "First" }),
           temporalCandidate("skills:second", { slug: "second", displayName: "Second" }),
@@ -4126,6 +4137,7 @@ describe("publisher abuse dry-run persistence", () => {
         temporalHighSkillCount: 2,
         temporalSpikeSkillCount: 2,
         temporalSustainedSkillCount: 0,
+        temporalBenchmark: temporalBenchmark(),
       }),
     );
     expect(insert).toHaveBeenCalledWith(
@@ -4186,6 +4198,7 @@ describe("publisher abuse dry-run persistence", () => {
         mode: "current",
         trigger: "cron",
         scanComplete: false,
+        benchmark: temporalBenchmark(),
         candidates: [],
       }),
     ).resolves.toEqual({
@@ -4295,6 +4308,7 @@ describe("publisher abuse dry-run persistence", () => {
         mode: "current",
         trigger: "cron",
         scanComplete: true,
+        benchmark: temporalBenchmark(),
         candidates: [],
       }),
     ).resolves.toEqual({
@@ -4356,5 +4370,17 @@ function temporalCandidate(skillId: string, skill: { slug: string; displayName: 
       spikeWindowEndDay: 100,
       reasonCodes: ["temporal_download_spike_flat_installs"],
     },
+  };
+}
+
+function temporalBenchmark() {
+  return {
+    sampleSize: 100,
+    downloads30dAverage: 900,
+    downloads30dMedian: 120,
+    downloads30dP95: 1_000,
+    downloads30dP99: 5_000,
+    spikeMultiplier7dP95: 5,
+    spikeMultiplier7dP99: 25,
   };
 }

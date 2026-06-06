@@ -11,6 +11,7 @@ import {
   computePublisherAbuseRawScore,
   DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG,
   PUBLISHER_ABUSE_MODEL_VERSION,
+  PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION,
   type PublisherAbuseLabel,
 } from "./lib/publisherAbuseScoring";
 
@@ -21,6 +22,9 @@ import {
 
 const DEMO_HANDLE_PREFIX = "demo-abuse-pub-";
 const DEMO_OWNER_KEY_PREFIX = "user:demo-";
+const TEMPORAL_DEMO_HANDLE = `${DEMO_HANDLE_PREFIX}temporal-cohort`;
+const TEMPORAL_DEMO_OWNER_KEY = `${DEMO_OWNER_KEY_PREFIX}temporal-cohort`;
+const TEMPORAL_DEMO_SKILL_SLUG = "demo-temporal-download-burst";
 const CLEAR_SEED_BATCH_SIZE = 100;
 
 type TriageStatus =
@@ -221,8 +225,14 @@ function demoOwnerKey(index: number): string {
   return `${DEMO_OWNER_KEY_PREFIX}${paddedIndex(index)}`;
 }
 
-const DEMO_HANDLES = SEED_PUBLISHERS.map((publisher) => demoHandle(publisher.index));
-const DEMO_OWNER_KEYS = SEED_PUBLISHERS.map((publisher) => demoOwnerKey(publisher.index));
+const DEMO_HANDLES = [
+  ...SEED_PUBLISHERS.map((publisher) => demoHandle(publisher.index)),
+  TEMPORAL_DEMO_HANDLE,
+];
+const DEMO_OWNER_KEYS = [
+  ...SEED_PUBLISHERS.map((publisher) => demoOwnerKey(publisher.index)),
+  TEMPORAL_DEMO_OWNER_KEY,
+];
 
 type ClearSeedCtx = Pick<MutationCtx, "db">;
 type ClearSeedResult = {
@@ -368,7 +378,9 @@ export const seed = internalMutation({
       });
     }
 
-    return { runId, inserted: SEED_PUBLISHERS.length };
+    await seedTemporalCohortDemoRows(ctx, { now });
+
+    return { runId, inserted: SEED_PUBLISHERS.length + 1 };
   },
 });
 
@@ -379,6 +391,176 @@ export const clearSeed = internalMutation({
     return await clearDemoRows(ctx);
   },
 });
+
+async function seedTemporalCohortDemoRows(ctx: ClearSeedCtx, args: { now: number }) {
+  const now = args.now;
+  const todayDay = Math.floor(now / DAY_MS);
+  const temporalBenchmark = {
+    sampleSize: 1000,
+    downloads30dAverage: 180,
+    downloads30dMedian: 45,
+    downloads30dP95: 900,
+    downloads30dP99: 3000,
+    spikeMultiplier7dP95: 4,
+    spikeMultiplier7dP99: 12,
+  };
+  const temporalUserId = await ctx.db.insert("users", {
+    handle: TEMPORAL_DEMO_HANDLE,
+    name: "Demo Temporal Abuse Publisher",
+    role: "user",
+    createdAt: now - DAY_MS,
+    updatedAt: now - DAY_MS,
+  });
+  const temporalPublisherId = await ctx.db.insert("publishers", {
+    kind: "user",
+    handle: TEMPORAL_DEMO_HANDLE,
+    displayName: "Demo Temporal Abuse Publisher",
+    linkedUserId: temporalUserId,
+    publishedSkills: 1,
+    publishedPackages: 0,
+    totalInstalls: 0,
+    totalDownloads: 16_200,
+    totalStars: 0,
+    skillTotalInstalls: 0,
+    skillTotalDownloads: 16_200,
+    skillTotalStars: 0,
+    createdAt: now - DAY_MS,
+    updatedAt: now - HOUR_MS,
+  });
+  const temporalSkillId = await ctx.db.insert("skills", {
+    slug: TEMPORAL_DEMO_SKILL_SLUG,
+    displayName: "Demo Temporal Download Burst",
+    summary: "Synthetic fixture: high 30-day downloads with zero installs.",
+    ownerUserId: temporalUserId,
+    ownerPublisherId: temporalPublisherId,
+    tags: {},
+    badges: {},
+    moderationStatus: "active",
+    statsDownloads: 16_200,
+    statsStars: 0,
+    statsInstallsCurrent: 0,
+    statsInstallsAllTime: 0,
+    stats: {
+      downloads: 16_200,
+      installsCurrent: 0,
+      installsAllTime: 0,
+      stars: 0,
+      versions: 1,
+      comments: 0,
+    },
+    createdAt: now - DAY_MS,
+    updatedAt: now - HOUR_MS,
+  });
+  for (let offset = 59; offset >= 30; offset -= 1) {
+    await ctx.db.insert("skillDailyStats", {
+      skillId: temporalSkillId,
+      day: todayDay - offset,
+      downloads: 4,
+      installs: 0,
+      updatedAt: now - HOUR_MS,
+    });
+  }
+  for (let offset = 29; offset >= 0; offset -= 1) {
+    await ctx.db.insert("skillDailyStats", {
+      skillId: temporalSkillId,
+      day: todayDay - offset,
+      downloads: 540,
+      installs: 0,
+      updatedAt: now - HOUR_MS,
+    });
+  }
+
+  const temporalStartedAt = now - 35 * 60_000;
+  const temporalCompletedAt = now - 30 * 60_000;
+  const temporalRunId = await ctx.db.insert("publisherAbuseScoreRuns", {
+    modelVersion: PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION,
+    modelConfig: DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG,
+    trigger: "manual",
+    status: "completed",
+    phase: "completed",
+    startedAt: temporalStartedAt,
+    completedAt: temporalCompletedAt,
+    updatedAt: temporalCompletedAt,
+    scannedPublishers: temporalBenchmark.sampleSize,
+    scoredPublishers: 1,
+    finalizedScores: 1,
+    nominatedPublishers: 1,
+    passCount: 0,
+    reviewCount: 0,
+    potentialBanCandidateCount: 1,
+    sumLogPressure: 0,
+    sumSquaredLogPressure: 0,
+    meanLogPressure: 0,
+    stdDevLogPressure: 0,
+    temporalBenchmark,
+  });
+  const temporalScoreId = await ctx.db.insert("publisherAbuseScores", {
+    runId: temporalRunId,
+    ownerKey: TEMPORAL_DEMO_OWNER_KEY,
+    ownerPublisherId: temporalPublisherId,
+    ownerUserId: temporalUserId,
+    handleSnapshot: TEMPORAL_DEMO_HANDLE,
+    modelVersion: PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION,
+    label: "potential_ban_candidate",
+    rank: 1,
+    pressure: 18,
+    logPressure: Math.log10(18),
+    zScore: 3.13,
+    publishedSkills: 1,
+    totalInstalls: 0,
+    totalStars: 0,
+    totalDownloads: 16_200,
+    installsPerSkill: 0,
+    starsPerSkill: 0,
+    downloadsPerSkill: 16_200,
+    reasonCodes: ["temporal_sustained_downloads_flat_installs"],
+    temporalHighSkillCount: 1,
+    temporalSpikeSkillCount: 0,
+    temporalSustainedSkillCount: 1,
+    temporalMaxPressure: 18,
+    temporalBenchmark,
+    temporalEvidence: [
+      {
+        skillId: temporalSkillId,
+        slug: TEMPORAL_DEMO_SKILL_SLUG,
+        displayName: "Demo Temporal Download Burst",
+        spike: false,
+        sustained: true,
+        pressure: 18,
+        recent7Downloads: 3_780,
+        recent7Installs: 0,
+        previous30Downloads: 120,
+        baseline7Downloads: 100,
+        spikeMultiplier: 8,
+        recent30Downloads: 16_200,
+        recent30Installs: 0,
+        downloadInstallRatio30: 16_200,
+        downloads30dCohortBand: "p99",
+        spikeMultiplierCohortBand: "p95",
+        downloads30dVsPeerP95: 18,
+        spikeMultiplierVsPeerP95: 2,
+        sustainedWindowStartDay: todayDay - 29,
+        sustainedWindowEndDay: todayDay,
+        reasonCodes: ["temporal_sustained_downloads_flat_installs"],
+      },
+    ],
+    createdAt: temporalCompletedAt,
+  });
+  await ctx.db.insert("publisherAbuseReviewNominations", {
+    ownerKey: TEMPORAL_DEMO_OWNER_KEY,
+    ownerPublisherId: temporalPublisherId,
+    ownerUserId: temporalUserId,
+    handleSnapshot: TEMPORAL_DEMO_HANDLE,
+    latestScoreId: temporalScoreId,
+    modelVersion: PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION,
+    label: "potential_ban_candidate",
+    status: "pending",
+    openedAt: temporalCompletedAt,
+    openedByRunId: temporalRunId,
+    lastScoredAt: temporalCompletedAt,
+    updatedAt: temporalCompletedAt,
+  });
+}
 
 async function clearDemoRows(ctx: ClearSeedCtx): Promise<ClearSeedResult> {
   let runs = 0;
@@ -423,6 +605,9 @@ async function clearDemoRows(ctx: ClearSeedCtx): Promise<ClearSeedResult> {
     }
   }
 
+  await clearTemporalDemoSkillRows(ctx);
+  await clearTemporalDemoPublisherRows(ctx);
+
   for (const runId of demoRunIds) {
     const run = await ctx.db.get(runId);
     if (!run) continue;
@@ -441,6 +626,33 @@ async function clearDemoRows(ctx: ClearSeedCtx): Promise<ClearSeedResult> {
   }
 
   return { runs, scores, nominations, events, users, hasMore };
+}
+
+async function clearTemporalDemoSkillRows(ctx: ClearSeedCtx) {
+  const rows = await ctx.db
+    .query("skills")
+    .withIndex("by_slug", (q) => q.eq("slug", TEMPORAL_DEMO_SKILL_SLUG))
+    .take(CLEAR_SEED_BATCH_SIZE);
+  for (const skill of rows) {
+    const dailyStats = await ctx.db
+      .query("skillDailyStats")
+      .withIndex("by_skill_day", (q) => q.eq("skillId", skill._id))
+      .take(CLEAR_SEED_BATCH_SIZE);
+    for (const stat of dailyStats) {
+      await ctx.db.delete(stat._id);
+    }
+    await ctx.db.delete(skill._id);
+  }
+}
+
+async function clearTemporalDemoPublisherRows(ctx: ClearSeedCtx) {
+  const rows = await ctx.db
+    .query("publishers")
+    .withIndex("by_handle", (q) => q.eq("handle", TEMPORAL_DEMO_HANDLE))
+    .take(CLEAR_SEED_BATCH_SIZE);
+  for (const publisher of rows) {
+    await ctx.db.delete(publisher._id);
+  }
 }
 
 async function queryDemoScoresPage(

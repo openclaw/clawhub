@@ -25,6 +25,7 @@ function makePublisherAbuseItem({
   ownerUserId = "users:spammy",
   openedByRun = null,
   rank = Number(id),
+  scoreOverrides = {},
   scoreRunId = "publisherAbuseScoreRuns:1",
   status = "pending",
   zScore = 3.1,
@@ -51,6 +52,7 @@ function makePublisherAbuseItem({
     downloadsPerSkill: 0.25,
     reasonCodes: ["extreme_volume_low_engagement", "low_installs_per_skill"],
     createdAt: 1716000000000,
+    ...scoreOverrides,
   };
   const nomination = {
     _id: `publisherAbuseReviewNominations:${id}`,
@@ -649,6 +651,78 @@ describe("Management", () => {
     expect(screen.getByText(/close to the ban line/i)).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Mark reviewed" })).toBeNull();
     expect(screen.queryByRole("button", { name: "False positive" })).toBeNull();
+  });
+
+  it("shows temporal download/install evidence in the abuse drawer", () => {
+    const item = makePublisherAbuseItem({
+      handle: "temporal-pub",
+      scoreOverrides: {
+        modelVersion: "publisher-abuse-temporal.v1",
+        reasonCodes: ["temporal_sustained_downloads_flat_installs"],
+        temporalBenchmark: {
+          sampleSize: 1000,
+          downloads30dAverage: 180,
+          downloads30dMedian: 45,
+          downloads30dP95: 900,
+          downloads30dP99: 3000,
+          spikeMultiplier7dP95: 4,
+          spikeMultiplier7dP99: 12,
+        },
+        temporalEvidence: [
+          {
+            skillId: "skills:burst",
+            slug: "download-burst",
+            displayName: "Download Burst",
+            spike: false,
+            sustained: true,
+            pressure: 18,
+            recent7Downloads: 5000,
+            recent7Installs: 0,
+            previous30Downloads: 120,
+            baseline7Downloads: 100,
+            spikeMultiplier: 8,
+            recent30Downloads: 16_200,
+            recent30Installs: 0,
+            downloadInstallRatio30: 16_200,
+            downloads30dCohortBand: "p99",
+            downloads30dVsPeerP95: 18,
+            spikeMultiplierVsPeerP95: 2,
+            sustainedWindowStartDay: 1,
+            sustainedWindowEndDay: 30,
+            reasonCodes: ["temporal_sustained_downloads_flat_installs"],
+          },
+        ],
+      },
+    });
+
+    useQueryMock.mockImplementation((query, args) => {
+      if (args === "skip") return undefined;
+      const name = getFunctionName(query);
+      if (name === "skills:listRecentVersions") return [];
+      if (name === "skills:listReportedSkills") return [];
+      if (name === "skills:listDuplicateCandidates") return [];
+      if (name === "publisherAbuse:listReviewDashboard") {
+        return {
+          latestRun: null,
+          pendingItems: [],
+          pendingPotentialBanCandidateItems: [item],
+          pendingReviewItems: [],
+          recentResolvedItems: [],
+        };
+      }
+      if (name === "users:list") return { items: [], total: 0 };
+      return undefined;
+    });
+
+    render(<Management />);
+
+    fireEvent.click(screen.getByText("temporal-pub"));
+
+    expect(screen.getByText("Temporal signal")).toBeTruthy();
+    expect(screen.getByText(/Compared with 1,000 scanned skills/)).toBeTruthy();
+    expect(screen.getByText("Download Burst")).toBeTruthy();
+    expect(screen.getByText("16,200")).toBeTruthy();
+    expect(screen.getByText("Peer 30d P95")).toBeTruthy();
   });
 
   it("marks the abuse nomination resolved after banning its linked user", async () => {
