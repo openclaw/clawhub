@@ -3672,6 +3672,77 @@ export const getAccountDeletionFixtureState: ReturnType<typeof rawInternalMutati
     },
   });
 
+export const getAccountRecreationState: ReturnType<typeof rawInternalMutation> =
+  rawInternalMutation({
+    args: {
+      handle: v.string(),
+      previousUserId: v.id("users"),
+      previousPublisherId: v.id("publishers"),
+      previousSkillId: v.id("skills"),
+      previousPackageId: v.id("packages"),
+    },
+    handler: async (ctx, args) => {
+      const previousUser = await ctx.db.get(args.previousUserId);
+      const previousPublisher = await ctx.db.get(args.previousPublisherId);
+      const previousSkill = await ctx.db.get(args.previousSkillId);
+      const previousPackage = await ctx.db.get(args.previousPackageId);
+      const user = await ctx.db
+        .query("users")
+        .withIndex("handle", (q) => q.eq("handle", args.handle))
+        .unique();
+      const activeUser = user && !user.deletedAt && !user.deactivatedAt ? user : null;
+      const publisher = await ctx.db
+        .query("publishers")
+        .withIndex("by_handle", (q) => q.eq("handle", args.handle))
+        .unique();
+      const activePublisher =
+        publisher && !publisher.deletedAt && !publisher.deactivatedAt ? publisher : null;
+      const linkedPublisherUser = activePublisher?.linkedUserId
+        ? await ctx.db.get(activePublisher.linkedUserId)
+        : null;
+      const activePublisherUser =
+        linkedPublisherUser && !linkedPublisherUser.deletedAt && !linkedPublisherUser.deactivatedAt
+          ? linkedPublisherUser
+          : null;
+      const activeResolvedUser = activeUser ?? activePublisherUser;
+
+      return {
+        ok: true as const,
+        previousUser: previousUser
+          ? {
+              exists: true,
+              handle: previousUser.handle ?? null,
+              deactivatedAt: previousUser.deactivatedAt ?? null,
+              purgedAt: previousUser.purgedAt ?? null,
+              deletedAt: previousUser.deletedAt ?? null,
+            }
+          : { exists: false },
+        previousPublisherExists: Boolean(previousPublisher),
+        previousSkillActive: Boolean(previousSkill && !previousSkill.softDeletedAt),
+        previousPackageActive: Boolean(previousPackage && !previousPackage.softDeletedAt),
+        activeUser: activeResolvedUser
+          ? {
+              userId: activeResolvedUser._id,
+              handle: activeResolvedUser.handle ?? activePublisher?.handle ?? "",
+              deactivatedAt: activeResolvedUser.deactivatedAt ?? null,
+              purgedAt: activeResolvedUser.purgedAt ?? null,
+              deletedAt: activeResolvedUser.deletedAt ?? null,
+              personalPublisherId: activeResolvedUser.personalPublisherId ?? null,
+            }
+          : null,
+        activePublisher: activePublisher
+          ? {
+              publisherId: activePublisher._id,
+              handle: activePublisher.handle,
+              linkedUserId: activePublisher.linkedUserId ?? null,
+              deactivatedAt: activePublisher.deactivatedAt ?? null,
+              deletedAt: activePublisher.deletedAt ?? null,
+            }
+          : null,
+      };
+    },
+  });
+
 async function upsertRoleHelpFixtureUser(ctx: MutationCtx, user: RoleHelpFixtureUser) {
   const now = Date.now();
   const existing = await ctx.db
