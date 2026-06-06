@@ -46,8 +46,8 @@ describe("user profile route loader", () => {
   it("returns not found when the publisher profile query returns null", async () => {
     queryMock.mockResolvedValueOnce(null);
 
-    await expect(runLoader("joelchance")).resolves.toEqual({ notFound: true });
-    expect(queryMock.mock.calls[0]?.[1]).toEqual({ handle: "joelchance" });
+    await expect(runLoader("proof-banned-builder")).resolves.toEqual({ notFound: true });
+    expect(queryMock.mock.calls[0]?.[1]).toEqual({ handle: "proof-banned-builder" });
   });
 
   it("returns the publisher profile for active handles", async () => {

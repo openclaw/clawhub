@@ -328,12 +328,12 @@ function makePublicPublisherVisibilityCtx(options?: {
 }) {
   const legacyPersonalPublisher = options?.legacyPersonalPublisher ?? false;
   const publisher = {
-    _id: "publishers:joelchance",
+    _id: "publishers:proof-banned-builder",
     _creationTime: 1,
     kind: "user",
-    handle: "joelchance",
-    displayName: "Joel Chance",
-    linkedUserId: legacyPersonalPublisher ? undefined : "users:joelchance",
+    handle: "proof-banned-builder",
+    displayName: "Proof Banned Builder",
+    linkedUserId: legacyPersonalPublisher ? undefined : "users:proof-banned-builder",
     trustedPublisher: false,
     publishedSkills: 1,
     publishedPackages: 0,
@@ -347,17 +347,17 @@ function makePublicPublisherVisibilityCtx(options?: {
     options && "linkedUser" in options
       ? options.linkedUser
       : {
-          _id: "users:joelchance",
+          _id: "users:proof-banned-builder",
           _creationTime: 1,
-          handle: "joelchance",
-          displayName: "Joel Chance",
+          handle: "proof-banned-builder",
+          displayName: "Proof Banned Builder",
           createdAt: 1,
           updatedAt: 2,
         };
   const githubSource = {
-    _id: "githubSkillSources:joelchance",
-    repo: "joelchance/skills",
-    ownerPublisherId: "publishers:joelchance",
+    _id: "githubSkillSources:proof-banned-builder",
+    repo: "proof-banned-builder/skills",
+    ownerPublisherId: "publishers:proof-banned-builder",
     displayManifestStatus: "ok",
     displayManifest: {
       groupings: [{ title: "Skills", skills: ["demo"] }],
@@ -365,14 +365,14 @@ function makePublicPublisherVisibilityCtx(options?: {
   };
   const skill = {
     _id: "skills:demo",
-    ownerPublisherId: "publishers:joelchance",
+    ownerPublisherId: "publishers:proof-banned-builder",
     softDeletedAt: undefined,
     slug: "demo",
     displayName: "Demo Skill",
     summary: "Demo summary",
     icon: null,
     installKind: "github",
-    githubSourceId: "githubSkillSources:joelchance",
+    githubSourceId: "githubSkillSources:proof-banned-builder",
     githubPath: "skills/demo",
     stats: {
       downloads: 4,
@@ -386,8 +386,8 @@ function makePublicPublisherVisibilityCtx(options?: {
   const memberships = [
     {
       _id: "publisherMembers:owner",
-      publisherId: "publishers:joelchance",
-      userId: "users:joelchance",
+      publisherId: "publishers:proof-banned-builder",
+      userId: "users:proof-banned-builder",
       role: "owner",
     },
   ];
@@ -404,13 +404,13 @@ function makePublicPublisherVisibilityCtx(options?: {
 
       if (table === "publishers" && indexName === "by_handle") {
         return {
-          unique: vi.fn(async () => (fields.handle === "joelchance" ? publisher : null)),
+          unique: vi.fn(async () => (fields.handle === "proof-banned-builder" ? publisher : null)),
         };
       }
       if (table === "publishers" && indexName === "by_linked_user") {
         return {
           unique: vi.fn(async () =>
-            fields.linkedUserId === "users:joelchance" ? publisher : null,
+            fields.linkedUserId === "users:proof-banned-builder" ? publisher : null,
           ),
         };
       }
@@ -428,8 +428,8 @@ function makePublicPublisherVisibilityCtx(options?: {
       }
       if (table === "stars" && indexName === "by_user") {
         return indexedRows(
-          fields.userId === "users:joelchance"
-            ? [{ _id: "stars:demo", userId: "users:joelchance", skillId: "skills:demo" }]
+          fields.userId === "users:proof-banned-builder"
+            ? [{ _id: "stars:demo", userId: "users:proof-banned-builder", skillId: "skills:demo" }]
             : [],
         );
       }
@@ -453,8 +453,8 @@ function makePublicPublisherVisibilityCtx(options?: {
   return {
     db: {
       get: vi.fn(async (id: string) => {
-        if (id === "users:joelchance") return linkedUser;
-        if (id === "publishers:joelchance") return publisher;
+        if (id === "users:proof-banned-builder") return linkedUser;
+        if (id === "publishers:proof-banned-builder") return publisher;
         if (id === "skills:demo") return skill;
         return null;
       }),
@@ -1275,11 +1275,11 @@ describe("publishers membership controls", () => {
   it("filters hidden legacy user publishers before counting and paginating public publisher pages", async () => {
     const publisherRows = [
       {
-        _id: "publishers:joelchance",
+        _id: "publishers:proof-banned-builder",
         _creationTime: 1,
         kind: "user",
-        handle: "joelchance",
-        displayName: "Joel Chance",
+        handle: "proof-banned-builder",
+        displayName: "Proof Banned Builder",
         linkedUserId: undefined,
         publishedSkills: 1,
         publishedPackages: 0,
@@ -1306,7 +1306,7 @@ describe("publishers membership controls", () => {
       },
     ];
     const get = vi.fn(async (id: string) => {
-      if (id === "users:joelchance") {
+      if (id === "users:proof-banned-builder") {
         return { _id: id, deletedAt: 1_700_000_000_000 };
       }
       if (id === "users:alice") return { _id: id, image: "https://github.com/alice.png" };
@@ -1345,12 +1345,12 @@ describe("publishers membership controls", () => {
             }
             if (table === "publisherMembers" && indexName === "by_publisher") {
               return indexedRows(
-                fields.publisherId === "publishers:joelchance"
+                fields.publisherId === "publishers:proof-banned-builder"
                   ? [
                       {
-                        _id: "publisherMembers:joelchance",
-                        publisherId: "publishers:joelchance",
-                        userId: "users:joelchance",
+                        _id: "publisherMembers:proof-banned-builder",
+                        publisherId: "publishers:proof-banned-builder",
+                        userId: "users:proof-banned-builder",
                         role: "owner",
                       },
                     ]
@@ -1375,7 +1375,7 @@ describe("publishers membership controls", () => {
     expect(result.globalCounts).toEqual({ all: 1, individuals: 1, organizations: 0 });
     expect(result.continueCursor).toBe("");
     expect(result.isDone).toBe(true);
-    expect(get).toHaveBeenCalledWith("users:joelchance");
+    expect(get).toHaveBeenCalledWith("users:proof-banned-builder");
     expect(get).toHaveBeenCalledWith("users:alice");
     expect(ownerPublisherQueries).toEqual(["publishers:alice", "publishers:alice"]);
   });
@@ -2139,20 +2139,20 @@ describe("publishers membership controls", () => {
 
   it.each([
     ["missing", null],
-    ["deleted", { _id: "users:joelchance", deletedAt: 1_700_000_000_000 }],
-    ["deactivated", { _id: "users:joelchance", deactivatedAt: 1_700_000_000_000 }],
+    ["deleted", { _id: "users:proof-banned-builder", deletedAt: 1_700_000_000_000 }],
+    ["deactivated", { _id: "users:proof-banned-builder", deactivatedAt: 1_700_000_000_000 }],
   ])("hides user publisher profiles when the linked user is %s", async (_state, linkedUser) => {
     const ctx = makePublicPublisherVisibilityCtx({ linkedUser });
 
     await expect(
-      getProfileByHandleHandler(ctx as never, { handle: "joelchance" }),
+      getProfileByHandleHandler(ctx as never, { handle: "proof-banned-builder" }),
     ).resolves.toBeNull();
   });
 
   it.each([
     ["missing", null],
-    ["deleted", { _id: "users:joelchance", deletedAt: 1_700_000_000_000 }],
-    ["deactivated", { _id: "users:joelchance", deactivatedAt: 1_700_000_000_000 }],
+    ["deleted", { _id: "users:proof-banned-builder", deletedAt: 1_700_000_000_000 }],
+    ["deactivated", { _id: "users:proof-banned-builder", deactivatedAt: 1_700_000_000_000 }],
   ])(
     "hides legacy no-link user publisher profiles when the owner user is %s",
     async (_state, linkedUser) => {
@@ -2162,7 +2162,7 @@ describe("publishers membership controls", () => {
       });
 
       await expect(
-        getProfileByHandleHandler(ctx as never, { handle: "joelchance" }),
+        getProfileByHandleHandler(ctx as never, { handle: "proof-banned-builder" }),
       ).resolves.toBeNull();
     },
   );
@@ -2170,20 +2170,22 @@ describe("publishers membership controls", () => {
   it("keeps active legacy no-link user publisher profiles visible through owner membership", async () => {
     const ctx = makePublicPublisherVisibilityCtx({ legacyPersonalPublisher: true });
 
-    const profile = await getProfileByHandleHandler(ctx as never, { handle: "joelchance" });
+    const profile = await getProfileByHandleHandler(ctx as never, {
+      handle: "proof-banned-builder",
+    });
 
-    expect(profile).toEqual(expect.objectContaining({ handle: "joelchance" }));
+    expect(profile).toEqual(expect.objectContaining({ handle: "proof-banned-builder" }));
     expect(profile).toEqual(expect.objectContaining({ starredCount: 1 }));
   });
 
   it("hides published items for a user publisher whose linked user is deleted", async () => {
     const ctx = makePublicPublisherVisibilityCtx({
-      linkedUser: { _id: "users:joelchance", deletedAt: 1_700_000_000_000 },
+      linkedUser: { _id: "users:proof-banned-builder", deletedAt: 1_700_000_000_000 },
     });
 
     await expect(
       listPublishedPageHandler(ctx as never, {
-        handle: "joelchance",
+        handle: "proof-banned-builder",
         paginationOpts: { cursor: null, numItems: 12 },
       }),
     ).resolves.toEqual({ page: [], continueCursor: "", isDone: true });
@@ -2192,12 +2194,12 @@ describe("publishers membership controls", () => {
   it("hides published items for a legacy no-link user publisher whose owner is deleted", async () => {
     const ctx = makePublicPublisherVisibilityCtx({
       legacyPersonalPublisher: true,
-      linkedUser: { _id: "users:joelchance", deletedAt: 1_700_000_000_000 },
+      linkedUser: { _id: "users:proof-banned-builder", deletedAt: 1_700_000_000_000 },
     });
 
     await expect(
       listPublishedPageHandler(ctx as never, {
-        handle: "joelchance",
+        handle: "proof-banned-builder",
         paginationOpts: { cursor: null, numItems: 12 },
       }),
     ).resolves.toEqual({ page: [], continueCursor: "", isDone: true });
@@ -2205,12 +2207,12 @@ describe("publishers membership controls", () => {
 
   it("hides display manifests for a user publisher whose linked user is deleted", async () => {
     const ctx = makePublicPublisherVisibilityCtx({
-      linkedUser: { _id: "users:joelchance", deletedAt: 1_700_000_000_000 },
+      linkedUser: { _id: "users:proof-banned-builder", deletedAt: 1_700_000_000_000 },
     });
 
     await expect(
       getPublishedDisplayManifestHandler(ctx as never, {
-        handle: "joelchance",
+        handle: "proof-banned-builder",
         kind: "skill",
       }),
     ).resolves.toBeNull();
@@ -2218,12 +2220,12 @@ describe("publishers membership controls", () => {
 
   it("hides starred items for a user publisher whose linked user is deactivated", async () => {
     const ctx = makePublicPublisherVisibilityCtx({
-      linkedUser: { _id: "users:joelchance", deactivatedAt: 1_700_000_000_000 },
+      linkedUser: { _id: "users:proof-banned-builder", deactivatedAt: 1_700_000_000_000 },
     });
 
     await expect(
       listStarredPageHandler(ctx as never, {
-        handle: "joelchance",
+        handle: "proof-banned-builder",
         paginationOpts: { cursor: null, numItems: 12 },
       }),
     ).resolves.toEqual({ page: [], continueCursor: "", isDone: true });
@@ -2233,7 +2235,7 @@ describe("publishers membership controls", () => {
     const ctx = makePublicPublisherVisibilityCtx({ legacyPersonalPublisher: true });
 
     const result = await listStarredPageHandler(ctx as never, {
-      handle: "joelchance",
+      handle: "proof-banned-builder",
       paginationOpts: { cursor: null, numItems: 12 },
     });
 
@@ -2242,22 +2244,22 @@ describe("publishers membership controls", () => {
 
   it("hides members for a user publisher whose linked user is deleted", async () => {
     const ctx = makePublicPublisherVisibilityCtx({
-      linkedUser: { _id: "users:joelchance", deletedAt: 1_700_000_000_000 },
+      linkedUser: { _id: "users:proof-banned-builder", deletedAt: 1_700_000_000_000 },
     });
 
     await expect(
-      listMembersHandler(ctx as never, { publisherHandle: "joelchance" }),
+      listMembersHandler(ctx as never, { publisherHandle: "proof-banned-builder" }),
     ).resolves.toBeNull();
   });
 
   it("hides members for a legacy no-link user publisher whose owner is deleted", async () => {
     const ctx = makePublicPublisherVisibilityCtx({
       legacyPersonalPublisher: true,
-      linkedUser: { _id: "users:joelchance", deletedAt: 1_700_000_000_000 },
+      linkedUser: { _id: "users:proof-banned-builder", deletedAt: 1_700_000_000_000 },
     });
 
     await expect(
-      listMembersHandler(ctx as never, { publisherHandle: "joelchance" }),
+      listMembersHandler(ctx as never, { publisherHandle: "proof-banned-builder" }),
     ).resolves.toBeNull();
   });
 

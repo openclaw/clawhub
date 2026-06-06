@@ -233,6 +233,13 @@ function isFunctionUnavailableOutput(output: string) {
   );
 }
 
+function isFunctionReadinessRetryableOutput(output: string) {
+  return (
+    isFunctionUnavailableOutput(output) ||
+    output.includes("Function execution timed out (maximum duration: 1s)")
+  );
+}
+
 async function setLocalConvexEnv(
   convexUrl: string,
   changes: Array<{ name: string; value: string }>,
@@ -289,14 +296,14 @@ async function runConvexFunctionWhenReady(
     }
 
     if (
-      !isFunctionUnavailableOutput(result.output) ||
+      !isFunctionReadinessRetryableOutput(result.output) ||
       Date.now() - startedAt >= FUNCTION_READY_TIMEOUT_MS
     ) {
       if (result.output) process.stdout.write(result.output);
       throw new Error(`Convex function ${functionName} failed with exit code ${result.status}.`);
     }
 
-    console.log(`Convex function ${functionName} is not queryable yet; retrying...`);
+    console.log(`Convex function ${functionName} is not ready yet; retrying...`);
     await sleep(POLL_MS);
   }
 }
