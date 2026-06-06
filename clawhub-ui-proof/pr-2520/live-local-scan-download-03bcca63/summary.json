@@ -1,0 +1,46 @@
+{
+  "status": "pass",
+  "mode": "feature",
+  "provider": "local ClawHub dev server",
+  "localServer": "bun run dev -> http://localhost:3000",
+  "commit": "03bcca63",
+  "generatedAt": "2026-06-06T00:39:17.133Z",
+  "screenshots": [
+    {
+      "slug": "account-banned-desktop",
+      "url": "http://localhost:3000/account-banned",
+      "viewport": {
+        "width": 1440,
+        "height": 980
+      },
+      "screenshot": "candidate/screenshots/account-banned-desktop.png"
+    },
+    {
+      "slug": "account-banned-mobile",
+      "url": "http://localhost:3000/account-banned",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "candidate/screenshots/account-banned-mobile.png"
+    },
+    {
+      "slug": "moderation-emails-desktop",
+      "url": "http://localhost:3000/__pr-2520-email-proof.html",
+      "viewport": {
+        "width": 1440,
+        "height": 1200
+      },
+      "screenshot": "candidate/screenshots/moderation-emails-desktop.png"
+    },
+    {
+      "slug": "moderation-emails-mobile",
+      "url": "http://localhost:3000/__pr-2520-email-proof.html",
+      "viewport": {
+        "width": 390,
+        "height": 1200
+      },
+      "screenshot": "candidate/screenshots/moderation-emails-mobile.png"
+    }
+  ]
+}
