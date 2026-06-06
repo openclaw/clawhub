@@ -608,7 +608,7 @@ export async function finalizePublisherAbuseScoresPageInternalHandler(
 
   const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
   const now = Date.now();
-  const cohortStats = await summarizePublisherAbuseFinalizationCohort(ctx, run);
+  const cohortStats = summarizePublisherAbuseFinalizationCohort(run);
   const { meanLogPressure, stdDevLogPressure } = summarizePublisherAbuseLogPressure(
     cohortStats.sumLogPressure,
     cohortStats.sumSquaredLogPressure,
@@ -1374,48 +1374,16 @@ async function requirePublisherAbuseNominationNotExcluded(
   throw new Error("Official org publisher abuse nominations cannot be acted on.");
 }
 
-async function summarizePublisherAbuseFinalizationCohort(ctx: MutationCtx, run: ScoreRun) {
-  const exclusions = await summarizeOfficialPublisherAbuseScoreExclusions(ctx, run);
-  const scoredPublishers = Math.max(0, run.scoredPublishers - exclusions.scoredPublishers);
+function summarizePublisherAbuseFinalizationCohort(run: ScoreRun) {
+  const scoredPublishers = Math.max(0, run.scoredPublishers);
   if (scoredPublishers === 0) {
     return { scoredPublishers, sumLogPressure: 0, sumSquaredLogPressure: 0 };
   }
   return {
     scoredPublishers,
-    sumLogPressure: run.sumLogPressure - exclusions.sumLogPressure,
-    sumSquaredLogPressure: run.sumSquaredLogPressure - exclusions.sumSquaredLogPressure,
+    sumLogPressure: run.sumLogPressure,
+    sumSquaredLogPressure: run.sumSquaredLogPressure,
   };
-}
-
-async function summarizeOfficialPublisherAbuseScoreExclusions(ctx: MutationCtx, run: ScoreRun) {
-  let cursor: string | null = null;
-  let scoredPublishers = 0;
-  let sumLogPressure = 0;
-  let sumSquaredLogPressure = 0;
-
-  do {
-    const page = await ctx.db
-      .query("officialPublishers")
-      .withIndex("by_created")
-      .paginate({ cursor, numItems: MAX_BATCH_SIZE });
-    for (const officialPublisher of page.page) {
-      const publisher = await ctx.db.get(officialPublisher.publisherId);
-      if (!publisher || publisher.kind !== "org") continue;
-      const score = await ctx.db
-        .query("publisherAbuseScores")
-        .withIndex("by_run_and_owner_key", (q) =>
-          q.eq("runId", run._id).eq("ownerKey", `publisher:${officialPublisher.publisherId}`),
-        )
-        .first();
-      if (!score || score.publishedSkills <= 0) continue;
-      scoredPublishers += 1;
-      sumLogPressure += score.logPressure;
-      sumSquaredLogPressure += score.logPressure ** 2;
-    }
-    cursor = page.isDone ? null : page.continueCursor;
-  } while (cursor);
-
-  return { scoredPublishers, sumLogPressure, sumSquaredLogPressure };
 }
 
 type SkillMetricsForScoring = Pick<
