@@ -1213,6 +1213,7 @@ async function getStoredSkillScanReportForUser(
     actor: args.actor,
     ownerUserId: skill.ownerUserId,
     ownerPublisherId: skill.ownerPublisherId,
+    allowedPublisherRoles: ["publisher"],
     allowPlatformModerator: true,
   });
 
@@ -1266,6 +1267,7 @@ async function getStoredPackageScanReportForUser(
     actor: args.actor,
     ownerUserId: pkg.ownerUserId,
     ownerPublisherId: pkg.ownerPublisherId,
+    allowedPublisherRoles: ["publisher"],
     allowPlatformModerator: true,
   });
 

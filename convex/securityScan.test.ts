@@ -900,6 +900,63 @@ describe("securityScan", () => {
     });
   });
 
+  it("returns stored scan reports for hidden org skill versions to publisher-role uploaders", async () => {
+    const ctx = makeStoredScanReportCtx({
+      actor: { _id: "users:member", role: "user" },
+      membership: {
+        _id: "publisherMembers:member",
+        publisherId: "publishers:org",
+        userId: "users:member",
+        role: "publisher",
+      },
+      docs: {
+        "publishers:org": {
+          _id: "publishers:org",
+          kind: "org",
+          handle: "org",
+        },
+        "skills:hidden": {
+          _id: "skills:hidden",
+          slug: "hidden-skill",
+          displayName: "Hidden Skill",
+          ownerUserId: "users:owner",
+          ownerPublisherId: "publishers:org",
+        },
+        "skillVersions:hidden": {
+          _id: "skillVersions:hidden",
+          skillId: "skills:hidden",
+          version: "1.2.3",
+          softDeletedAt: 1_700_000_100_000,
+          files: [],
+          sha256hash: "abc123",
+          llmAnalysis: {
+            status: "malicious",
+            summary: "Attempts to exfiltrate credentials.",
+            checkedAt: 1_700_000_000_000,
+          },
+          createdAt: 1_700_000_000_000,
+        },
+      },
+    });
+
+    const report = await getStoredScanReportForUserInternalHandler(ctx, {
+      actorUserId: "users:member",
+      kind: "skill",
+      name: "hidden-skill",
+      version: "1.2.3",
+    });
+
+    expect(report).toMatchObject({
+      ok: true,
+      artifact: {
+        kind: "skill",
+        slug: "hidden-skill",
+        displayName: "Hidden Skill",
+        version: "1.2.3",
+      },
+    });
+  });
+
   it("denies stored scan reports to non-owners", async () => {
     const ctx = makeStoredScanReportCtx({
       actor: { _id: "users:intruder", role: "user" },
@@ -981,6 +1038,64 @@ describe("securityScan", () => {
           status: "malicious",
           summary: "Runs unexpected shell commands.",
         },
+      },
+    });
+  });
+
+  it("returns stored scan reports for hidden org plugin releases to publisher-role uploaders", async () => {
+    const ctx = makeStoredScanReportCtx({
+      actor: { _id: "users:member", role: "user" },
+      membership: {
+        _id: "publisherMembers:member",
+        publisherId: "publishers:org",
+        userId: "users:member",
+        role: "publisher",
+      },
+      docs: {
+        "publishers:org": {
+          _id: "publishers:org",
+          kind: "org",
+          handle: "org",
+        },
+        "packages:plugin": {
+          _id: "packages:plugin",
+          name: "@org/demo",
+          normalizedName: "@org/demo",
+          displayName: "Org Plugin",
+          ownerUserId: "users:owner",
+          ownerPublisherId: "publishers:org",
+        },
+        "packageReleases:hidden": {
+          _id: "packageReleases:hidden",
+          packageId: "packages:plugin",
+          version: "2.0.0",
+          softDeletedAt: 1_700_000_100_000,
+          files: [],
+          integritySha256: "def456",
+          llmAnalysis: {
+            status: "malicious",
+            summary: "Runs unexpected shell commands.",
+            checkedAt: 1_700_000_000_000,
+          },
+          createdAt: 1_700_000_000_000,
+        },
+      },
+    });
+
+    const report = await getStoredScanReportForUserInternalHandler(ctx, {
+      actorUserId: "users:member",
+      kind: "plugin",
+      name: "@org/demo",
+      version: "2.0.0",
+    });
+
+    expect(report).toMatchObject({
+      ok: true,
+      artifact: {
+        kind: "plugin",
+        name: "@org/demo",
+        displayName: "Org Plugin",
+        version: "2.0.0",
       },
     });
   });

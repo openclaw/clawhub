@@ -169,15 +169,21 @@ test("malicious skill retries keep the clean latest visible, email the publisher
       changelog: `Synthetic malicious retry ${version}.`,
     });
     await completeScan(client, { slug, version, verdict: "malicious" });
-    await waitForCapturedEmails(
-      (emails) =>
-        emails.filter(
-          (email) =>
-            email.subject === "ClawHub blocked a skill version" &&
-            email.text.includes(`Version: ${version}`) &&
-            email.text.includes(`clawhub scan download ${slug} --version ${version}`),
-        ).length === 1,
-    );
+    if (version === finalMaliciousVersion) {
+      await waitForCapturedEmails((emails) =>
+        emails.some((email) => email.subject === "Your ClawHub account was disabled"),
+      );
+    } else {
+      await waitForCapturedEmails(
+        (emails) =>
+          emails.filter(
+            (email) =>
+              email.subject === "ClawHub blocked a skill version" &&
+              email.text.includes(`Version: ${version}`) &&
+              email.text.includes(`clawhub scan download ${slug} --version ${version}`),
+          ).length === 1,
+      );
+    }
     await page.goto(`/${ownerHandle}/${slug}`, { waitUntil: "domcontentloaded" });
     await waitForHydration(page);
     if (version !== finalMaliciousVersion) {
@@ -188,12 +194,12 @@ test("malicious skill retries keep the clean latest visible, email the publisher
   const emails = await waitForCapturedEmails(
     (captured) =>
       captured.filter((email) => email.subject === "ClawHub blocked a skill version").length ===
-        3 && captured.some((email) => email.subject === "Your ClawHub account was disabled"),
+        2 && captured.some((email) => email.subject === "Your ClawHub account was disabled"),
   );
   const artifactEmails = emails.filter(
     (email) => email.subject === "ClawHub blocked a skill version",
   );
-  expect(artifactEmails).toHaveLength(3);
+  expect(artifactEmails).toHaveLength(2);
   for (const email of artifactEmails) {
     expect(email.text).toContain("Your account can still sign in.");
     expect(email.text).toContain("Repeated malicious rejections may lead to account disablement");

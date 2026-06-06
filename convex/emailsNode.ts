@@ -12,7 +12,7 @@ import {
   type NotificationArtifact,
 } from "./lib/emails";
 
-const DEFAULT_FROM = "ClawHub Security <security@notifications.openclaw.ai>";
+const DEFAULT_FROM = "ClawHub Security <noreply@notifications.openclaw.ai>";
 const DEFAULT_REPLY_TO = "security@notifications.openclaw.ai";
 
 const notificationArtifactValidator = v.object({

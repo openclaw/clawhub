@@ -33,15 +33,14 @@ type ReportRecord = Record<string, unknown>;
 
 export async function cmdScan(opts: GlobalOpts, pathArg: string | undefined, options: ScanOptions) {
   validateScanOptions(pathArg, options);
+  if (pathArg?.trim()) rejectLocalScan();
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
   const spinner = createSpinner("Submitting scan");
 
   try {
-    const submitted = pathArg
-      ? rejectLocalScan()
-      : await submitPublishedScan(registry, token, options);
+    const submitted = await submitPublishedScan(registry, token, options);
 
     spinner.text = formatScanProgress("queued", submitted.scanId, submitted.queue);
     const status = await pollScan(registry, token, submitted.scanId, spinner);
@@ -89,7 +88,7 @@ export async function cmdScanDownload(
   const registry = await getRegistry(opts, { cache: true });
   const output = resolve(
     opts.workdir,
-    options.output ?? `clawhub-scan-${safeOutputName(name)}-${version}.zip`,
+    options.output ?? `clawhub-scan-${safeOutputName(name)}-${safeOutputName(version)}.zip`,
   );
   const query = new URLSearchParams({ version, kind });
   const bytes = await fetchBinary(registry, {

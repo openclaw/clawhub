@@ -2661,7 +2661,7 @@ describe("users.recordMaliciousArtifactFindingInternal", () => {
 
   it("escalates to account ban on the third malicious attempt for one artifact", async () => {
     vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
-    const { ctx, get, runMutation } = makeBanCtx({
+    const { ctx, get, runMutation, runAfter } = makeBanCtx({
       auditLogs: [
         {
           action: "user.malicious_artifact.finding",
@@ -2725,6 +2725,7 @@ describe("users.recordMaliciousArtifactFindingInternal", () => {
       artifactKind: "skill",
       artifactName: "demo-skill",
     });
+    expect(runAfter).not.toHaveBeenCalled();
   });
 
   it("does not escalate on the second malicious attempt for one artifact", async () => {
@@ -2783,7 +2784,7 @@ describe("users.recordMaliciousArtifactFindingInternal", () => {
 
   it("escalates to account ban on the second distinct malicious artifact", async () => {
     vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
-    const { ctx, get, runMutation } = makeBanCtx({
+    const { ctx, get, runMutation, runAfter } = makeBanCtx({
       auditLogs: [
         {
           action: "user.malicious_artifact.finding",
@@ -2844,6 +2845,7 @@ describe("users.recordMaliciousArtifactFindingInternal", () => {
       artifactKind: "plugin",
       artifactName: "@scope/second-plugin",
     });
+    expect(runAfter).not.toHaveBeenCalled();
   });
 });
 

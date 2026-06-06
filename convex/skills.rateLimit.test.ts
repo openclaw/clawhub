@@ -1502,7 +1502,7 @@ describe("skills anti-spam guards", () => {
       changelog: "Initial release",
       changelogSource: "user",
       parsed: {
-        frontmatter: { name: "Clean Skill", description: "Clean version" },
+        frontmatter: { description: "Clean version" },
         metadata: {},
         clawdis: { tools: [] },
       },
@@ -1521,6 +1521,7 @@ describe("skills anti-spam guards", () => {
       _id: "skillVersions:2",
       skillId: "skills:1",
       version: "2.0.0",
+      createdBy: "users:member",
       createdAt: Date.now(),
       changelog: "Bad release",
       changelogSource: "user",
@@ -1545,6 +1546,7 @@ describe("skills anti-spam guards", () => {
       slug: "spam-skill",
       displayName: "Bad Skill",
       summary: "Bad version",
+      icon: "lucide:Sparkles",
       ownerUserId: "users:owner",
       ownerPublisherId: undefined,
       latestVersionId: "skillVersions:2",
@@ -1681,8 +1683,9 @@ describe("skills anti-spam guards", () => {
     expect(patch).toHaveBeenCalledWith(
       "skills:1",
       expect.objectContaining({
-        displayName: "Clean Skill",
+        displayName: "spam-skill",
         summary: "Clean version",
+        icon: "lucide:Sparkles",
         latestVersionId: "skillVersions:1",
         tags: {
           latest: "skillVersions:1",
@@ -1711,12 +1714,151 @@ describe("skills anti-spam guards", () => {
       0,
       internal.users.recordMaliciousArtifactFindingInternal,
       expect.objectContaining({
-        ownerUserId: "users:owner",
+        ownerUserId: "users:member",
         artifactKind: "skill",
         artifactName: "spam-skill",
         version: "2.0.0",
         sha256hash: "h".repeat(64),
         trigger: "malicious.llm_malicious",
+      }),
+    );
+  });
+
+  it("quarantines a malicious non-latest skill version without changing the clean latest", async () => {
+    const latestVersion = {
+      _id: "skillVersions:latest",
+      skillId: "skills:1",
+      version: "2.0.0",
+      createdAt: Date.now(),
+      changelog: "Latest release",
+      changelogSource: "user",
+      parsed: {
+        frontmatter: { name: "Clean Latest", description: "Clean latest version" },
+        metadata: {},
+        clawdis: { tools: [] },
+      },
+      capabilityTags: ["automation"],
+      llmAnalysis: { status: "clean", checkedAt: Date.now() },
+    };
+    const backportVersion = {
+      _id: "skillVersions:backport",
+      skillId: "skills:1",
+      version: "1.5.0",
+      createdBy: "users:member",
+      createdAt: Date.now() - 1_000,
+      changelog: "Backport release",
+      changelogSource: "user",
+      parsed: {
+        frontmatter: { name: "Backport", description: "Backport version" },
+        metadata: {},
+        clawdis: { tools: [] },
+      },
+      capabilityTags: ["network"],
+      sha256hash: "b".repeat(64),
+    };
+    const skill = {
+      _id: "skills:1",
+      slug: "spam-skill",
+      displayName: "Clean Latest",
+      summary: "Clean latest version",
+      ownerUserId: "users:owner",
+      ownerPublisherId: undefined,
+      latestVersionId: "skillVersions:latest",
+      latestVersionSummary: {
+        version: "2.0.0",
+        createdAt: latestVersion.createdAt,
+        changelog: "Latest release",
+        changelogSource: "user",
+        clawdis: { tools: [] },
+        apiKeyRequired: undefined,
+      },
+      tags: {
+        latest: "skillVersions:latest",
+        beta: "skillVersions:backport",
+      },
+      stats: { downloads: 0, installsCurrent: 0, installsAllTime: 0, stars: 0, versions: 2 },
+      badges: {},
+      softDeletedAt: undefined,
+      moderationStatus: "active",
+      moderationFlags: undefined,
+      moderationReason: undefined,
+      createdAt: Date.now() - 20_000,
+      updatedAt: Date.now(),
+    };
+    const owner = {
+      _id: "users:owner",
+      handle: "owner",
+      role: "user",
+      _creationTime: Date.now() - 60 * 24 * 60 * 60 * 1000,
+      createdAt: Date.now() - 60 * 24 * 60 * 60 * 1000,
+      deletedAt: undefined,
+      deactivatedAt: undefined,
+    };
+    const patch = vi.fn();
+    const insert = vi.fn();
+    const runAfter = vi.fn();
+    const db = {
+      get: vi.fn(async (id: string) => {
+        if (id === "skillVersions:latest") return latestVersion;
+        if (id === "skillVersions:backport") return backportVersion;
+        if (id === "skills:1") return skill;
+        if (id === "users:owner") return owner;
+        return null;
+      }),
+      query: vi.fn((table: string) => {
+        const digestQuery = buildDigestQuery(table);
+        if (digestQuery) return digestQuery;
+        throw new Error(`unexpected table ${table}`);
+      }),
+      patch,
+      insert,
+      normalizeId: vi.fn(),
+    };
+
+    await updateVersionLlmAnalysisHandler(
+      { db, scheduler: { runAfter } } as never,
+      {
+        versionId: "skillVersions:backport",
+        llmAnalysis: {
+          status: "malicious",
+          verdict: "malicious",
+          confidence: "high",
+          summary: "ClawScan found malicious behavior.",
+          guidance: "Do not install.",
+          checkedAt: Date.now(),
+        },
+      } as never,
+    );
+
+    expect(patch).toHaveBeenCalledWith(
+      "skillVersions:backport",
+      expect.objectContaining({
+        llmAnalysis: expect.objectContaining({ verdict: "malicious" }),
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "skillVersions:backport",
+      expect.objectContaining({ softDeletedAt: expect.any(Number) }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "skills:1",
+      expect.objectContaining({
+        tags: { latest: "skillVersions:latest" },
+      }),
+    );
+    expect(patch).not.toHaveBeenCalledWith(
+      "skills:1",
+      expect.objectContaining({ latestVersionId: "skillVersions:backport" }),
+    );
+    expect(runAfter).toHaveBeenCalledWith(
+      0,
+      internal.users.recordMaliciousArtifactFindingInternal,
+      expect.objectContaining({
+        ownerUserId: "users:member",
+        artifactKind: "skill",
+        artifactName: "spam-skill",
+        version: "1.5.0",
+        sha256hash: "b".repeat(64),
       }),
     );
   });

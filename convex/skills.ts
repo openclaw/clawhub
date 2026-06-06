@@ -560,6 +560,10 @@ function skillDisplayNameFromSkillVersion(
     : undefined;
 }
 
+function skillIconFromSkillVersion(version: Pick<Doc<"skillVersions">, "icon"> | null | undefined) {
+  return version && "icon" in version ? version.icon : undefined;
+}
+
 function isKnownMaliciousSkillVersion(
   version: Pick<Doc<"skillVersions">, "_id" | "staticScan" | "vtAnalysis" | "llmAnalysis">,
 ) {
@@ -650,9 +654,10 @@ async function quarantineMaliciousLatestSkillVersion(
 
   const patch: Partial<Doc<"skills">> = {
     displayName: replacement
-      ? (skillDisplayNameFromSkillVersion(replacement) ?? skill.displayName)
+      ? (skillDisplayNameFromSkillVersion(replacement) ?? skill.slug)
       : skill.displayName,
     summary: replacement ? skillSummaryFromSkillVersion(replacement) : skill.summary,
+    icon: replacement ? (skillIconFromSkillVersion(replacement) ?? skill.icon) : skill.icon,
     latestVersionId: replacement?._id,
     latestVersionSummary: replacement
       ? latestVersionSummaryFromSkillVersion(replacement)
@@ -694,10 +699,32 @@ async function quarantineMaliciousLatestSkillVersion(
   await syncSkillSearchDigestForSkillDoc(ctx, nextSkill);
 }
 
+async function quarantineMaliciousNonLatestSkillVersion(
+  ctx: MutationCtx,
+  skill: Doc<"skills">,
+  versionId: Id<"skillVersions">,
+  now: number,
+) {
+  await ctx.db.patch(versionId, { softDeletedAt: now });
+  const nextTags = Object.fromEntries(
+    Object.entries(skill.tags ?? {}).filter(([, taggedVersionId]) => taggedVersionId !== versionId),
+  ) as Record<string, Id<"skillVersions">>;
+  if (Object.keys(nextTags).length === Object.keys(skill.tags ?? {}).length) return;
+
+  const patch: Partial<Doc<"skills">> = {
+    tags: nextTags,
+    updatedAt: now,
+  };
+  const nextSkill = { ...skill, ...patch } as Doc<"skills">;
+  await ctx.db.patch(skill._id, patch);
+  await syncSkillSearchDigestForSkillDoc(ctx, nextSkill);
+}
+
 async function scheduleClawScanMaliciousArtifactFinding(
   ctx: MutationCtx,
   skill: Doc<"skills">,
-  version: Pick<Doc<"skillVersions">, "llmAnalysis" | "sha256hash" | "version">,
+  version: Pick<Doc<"skillVersions">, "llmAnalysis" | "sha256hash" | "version"> &
+    Partial<Pick<Doc<"skillVersions">, "createdBy">>,
   patch: SkillModerationPatch,
 ) {
   if (
@@ -706,7 +733,7 @@ async function scheduleClawScanMaliciousArtifactFinding(
     isClawScanMaliciousAnalysis(version.llmAnalysis)
   ) {
     await ctx.scheduler.runAfter(0, internal.users.recordMaliciousArtifactFindingInternal, {
-      ownerUserId: skill.ownerUserId,
+      ownerUserId: version.createdBy ?? skill.ownerUserId,
       artifactKind: "skill",
       artifactName: skill.slug,
       version: version.version,
@@ -8216,7 +8243,30 @@ export const updateVersionLlmAnalysisInternal = internalMutation({
     if (args.moderationMode === "preserve") return;
 
     const skill = await ctx.db.get(version.skillId);
-    if (!skill || skill.latestVersionId !== version._id) return;
+    if (!skill) return;
+    if (skill.latestVersionId !== version._id) {
+      const owner = skill.ownerUserId ? await ctx.db.get(skill.ownerUserId) : null;
+      const now = Date.now();
+      const basePatch = buildScannerModerationPatchFromVersion({
+        owner,
+        version: nextVersion,
+        now,
+      });
+      const patch = applySkillManualOverrideToSkillPatch({
+        skill,
+        basePatch,
+        now,
+        stripUpdatedAt: true,
+      });
+      if (
+        patch.moderationVerdict === "malicious" &&
+        isClawScanMaliciousAnalysis(args.llmAnalysis)
+      ) {
+        await scheduleClawScanMaliciousArtifactFinding(ctx, skill, nextVersion, patch);
+        await quarantineMaliciousNonLatestSkillVersion(ctx, skill, version._id, now);
+      }
+      return;
+    }
     await patchStructuredModerationFromVersion(ctx, skill, nextVersion);
   },
 });
@@ -10857,6 +10907,7 @@ export const insertVersion = internalMutation({
     }
 
     if (!skill) throw new Error("Skill creation failed");
+    const versionIcon = args.icon !== undefined ? normalizeSkillIconValue(args.icon) : skill.icon;
 
     const existingVersion = await ctx.db
       .query("skillVersions")
@@ -10875,6 +10926,7 @@ export const insertVersion = internalMutation({
       sourceProvenance: args.sourceProvenance,
       changelog: args.changelog,
       changelogSource: args.changelogSource,
+      icon: versionIcon,
       files: args.files,
       parsed: args.parsed,
       capabilityTags: args.capabilityTags,
@@ -10933,8 +10985,7 @@ export const insertVersion = internalMutation({
     // displayName / summary so backport publishes can't surprise the card.
     // Only update when the publisher explicitly picked one this time —
     // omitting `args.icon` keeps the previously stored value.
-    const nextIcon =
-      isNewLatest && args.icon !== undefined ? normalizeSkillIconValue(args.icon) : skill.icon;
+    const nextIcon = isNewLatest ? versionIcon : skill.icon;
     const derivedFlags = deriveModerationFlags({
       skill: {
         slug: skill.slug,

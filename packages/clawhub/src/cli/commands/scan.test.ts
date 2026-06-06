@@ -99,6 +99,8 @@ describe("cmdScan", () => {
       await expect(cmdScan(makeGlobalOpts(workdir), "local-skill", {})).rejects.toThrow(
         "Local folder scans are no longer supported",
       );
+      expect(authTokenMocks.requireAuthToken).not.toHaveBeenCalled();
+      expect(registryMocks.getRegistry).not.toHaveBeenCalled();
       expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
       expect(httpMocks.apiRequest).not.toHaveBeenCalled();
     } finally {
@@ -203,6 +205,27 @@ describe("cmdScanDownload", () => {
     await expect(cmdScanDownload(makeGlobalOpts(), "demo-skill", {})).rejects.toThrow(
       "--version required",
     );
+  });
+
+  it("sanitizes the version in the default report filename", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      httpMocks.fetchBinary.mockResolvedValueOnce(new Uint8Array([80, 75, 3, 4]));
+
+      await cmdScanDownload(makeGlobalOpts(workdir), "demo-skill", {
+        version: "../../evil",
+      });
+
+      expect(httpMocks.fetchBinary).toHaveBeenCalledWith("https://clawhub.ai", {
+        path: `${ApiRoutes.skillScans}/download/demo-skill?version=..%2F..%2Fevil&kind=skill`,
+        token: "tkn",
+      });
+      expect(await readFile(join(workdir, "clawhub-scan-demo-skill-..-..-evil.zip"))).toEqual(
+        Buffer.from([80, 75, 3, 4]),
+      );
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
   });
 
   it("supports plugin scan report downloads with an explicit kind", async () => {

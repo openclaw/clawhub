@@ -2847,15 +2847,14 @@ export const recordMaliciousArtifactFindingInternal = internalMutation({
       createdAt: now,
     });
 
-    await scheduleMaliciousArtifactNotificationEmail(ctx, {
-      target,
-      findingAt: now,
-      artifact: { kind: args.artifactKind, name: artifactName },
-      version,
-      trigger,
-    });
-
     if (target.role === "admin" || target.role === "moderator") {
+      await scheduleMaliciousArtifactNotificationEmail(ctx, {
+        target,
+        findingAt: now,
+        artifact: { kind: args.artifactKind, name: artifactName },
+        version,
+        trigger,
+      });
       return { ok: true as const, escalated: false as const, reason: "protected_role" as const };
     }
 
@@ -2869,6 +2868,13 @@ export const recordMaliciousArtifactFindingInternal = internalMutation({
       .filter((finding): finding is MaliciousArtifactFinding => Boolean(finding));
     const escalationReason = getMaliciousArtifactEscalationReason(priorFindings);
     if (!escalationReason) {
+      await scheduleMaliciousArtifactNotificationEmail(ctx, {
+        target,
+        findingAt: now,
+        artifact: { kind: args.artifactKind, name: artifactName },
+        version,
+        trigger,
+      });
       return { ok: true as const, escalated: false as const };
     }
 

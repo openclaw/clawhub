@@ -166,7 +166,7 @@ export async function selectOwnerHandle(page: Page, selector: string, ownerHandl
     await ownerControl.click();
     await page
       .getByRole("option", {
-        name: new RegExp(`@${escapeRegExp(ownerHandle)}(?:\\b|\\s|·)`, "i"),
+        name: new RegExp(`@${escapeRegExp(ownerHandle)}(?:\\s|·|$)`, "i"),
       })
       .click();
   }
