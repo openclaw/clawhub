@@ -68,12 +68,29 @@ type DeletedAccountCleanupResult = {
   apiTokens: number;
   personalPublisherDeleted: boolean;
 };
+type AccountRecoveryPurgeEligibilityReason =
+  | "self_delete_audit"
+  | "auth_locked_purged_user"
+  | "auth_locked_legacy_deleted_user";
+type AccountRecoveryPurgeEligibility =
+  | {
+      eligible: true;
+      reason: AccountRecoveryPurgeEligibilityReason;
+      selfDeleteAuditLog: Doc<"auditLogs"> | null;
+      authAccountCount: number | null;
+    }
+  | {
+      eligible: false;
+      selfDeleteAuditLog: null;
+    };
 type AccountRecoveryPurgeCandidate = {
   userId: Id<"users">;
+  eligibilityReason: AccountRecoveryPurgeEligibilityReason;
   handle: string | null;
   displayName: string | null;
   emailPresent: boolean;
   personalPublisherId: Id<"publishers"> | null;
+  authAccountCount: number | null;
   deletedAt: number | null;
   deactivatedAt: number | null;
   purgedAt: number | null;
@@ -1015,11 +1032,16 @@ function getSelfDeletePreviousMetadata(log: Doc<"auditLogs"> | null) {
 
 function buildAccountRecoveryPurgeCandidate(
   user: Doc<"users">,
-  selfDeleteAuditLog: Doc<"auditLogs"> | null,
+  eligibility: {
+    reason: AccountRecoveryPurgeEligibilityReason;
+    selfDeleteAuditLog: Doc<"auditLogs"> | null;
+    authAccountCount: number | null;
+  },
 ): AccountRecoveryPurgeCandidate {
-  const previous = getSelfDeletePreviousMetadata(selfDeleteAuditLog);
+  const previous = getSelfDeletePreviousMetadata(eligibility.selfDeleteAuditLog);
   return {
     userId: user._id,
+    eligibilityReason: eligibility.reason,
     handle: optionalString(user.handle) ?? optionalString(previous?.handle),
     displayName:
       optionalString(user.displayName) ??
@@ -1029,15 +1051,19 @@ function buildAccountRecoveryPurgeCandidate(
     emailPresent: Boolean(user.email) || previous?.emailPresent === true,
     personalPublisherId:
       user.personalPublisherId ?? optionalPublisherId(previous?.personalPublisherId),
+    authAccountCount: eligibility.authAccountCount,
     deletedAt: user.deletedAt ?? null,
     deactivatedAt: user.deactivatedAt ?? null,
     purgedAt: user.purgedAt ?? null,
-    selfDeleteAuditLogId: selfDeleteAuditLog?._id ?? null,
-    selfDeleteAuditCreatedAt: selfDeleteAuditLog?.createdAt ?? null,
+    selfDeleteAuditLogId: eligibility.selfDeleteAuditLog?._id ?? null,
+    selfDeleteAuditCreatedAt: eligibility.selfDeleteAuditLog?.createdAt ?? null,
   };
 }
 
-async function getSelfDeletedAccountEligibility(ctx: MutationCtx, user: Doc<"users">) {
+async function getSelfDeletedAccountEligibility(
+  ctx: MutationCtx,
+  user: Doc<"users">,
+): Promise<AccountRecoveryPurgeEligibility> {
   const hasModernTombstone = Boolean(user.deactivatedAt && user.purgedAt && !user.deletedAt);
   const hasLegacySelfDeleteMarker = Boolean(user.deletedAt && !user.banReason);
   if ((!hasModernTombstone && !hasLegacySelfDeleteMarker) || user.banReason) {
@@ -1050,7 +1076,44 @@ async function getSelfDeletedAccountEligibility(ctx: MutationCtx, user: Doc<"use
   const selfDeleteAuditLog =
     logs.find((log) => log.action === "user.delete" && log.actorUserId === user._id) ?? null;
   const hasBanAudit = logs.some((log) => BAN_AUDIT_ACTIONS.has(log.action));
-  return { eligible: Boolean(selfDeleteAuditLog && !hasBanAudit), selfDeleteAuditLog };
+  if (selfDeleteAuditLog && !hasBanAudit) {
+    return {
+      eligible: true,
+      reason: "self_delete_audit" as const,
+      selfDeleteAuditLog,
+      authAccountCount: null,
+    };
+  }
+  if (hasBanAudit) {
+    return { eligible: false, selfDeleteAuditLog: null };
+  }
+
+  const authAccounts = await ctx.db
+    .query("authAccounts")
+    .withIndex("userIdAndProvider", (q) => q.eq("userId", user._id))
+    .collect();
+  if (authAccounts.length === 0) return { eligible: false, selfDeleteAuditLog: null };
+
+  if (hasLegacySelfDeleteMarker) {
+    return {
+      eligible: true,
+      reason: "auth_locked_legacy_deleted_user" as const,
+      selfDeleteAuditLog: null,
+      authAccountCount: authAccounts.length,
+    };
+  }
+
+  if (!hasModernTombstone) return { eligible: false, selfDeleteAuditLog: null };
+
+  const profileIdentityScrubbed = !user.handle && !user.email && !user.name && !user.displayName;
+  if (!profileIdentityScrubbed) return { eligible: false, selfDeleteAuditLog: null };
+
+  return {
+    eligible: true,
+    reason: "auth_locked_purged_user" as const,
+    selfDeleteAuditLog: null,
+    authAccountCount: authAccounts.length,
+  };
 }
 
 export const purgeSelfDeletedAccountRecoveryBatchInternal = internalMutation({
@@ -1096,7 +1159,7 @@ export const purgeSelfDeletedAccountRecoveryBatchInternal = internalMutation({
         continue;
       }
       eligible += 1;
-      candidates.push(buildAccountRecoveryPurgeCandidate(user, eligibility.selfDeleteAuditLog));
+      candidates.push(buildAccountRecoveryPurgeCandidate(user, eligibility));
       if (dryRun) continue;
       const deletedAt = user.deactivatedAt ?? user.deletedAt ?? Date.now();
       const cleanup = await hardDeleteSelfDeletedAccountState(ctx, user, deletedAt);

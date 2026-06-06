@@ -3661,11 +3661,15 @@ export const getAccountDeletionFixtureState: ReturnType<typeof rawInternalMutati
           : { exists: false },
         publisherExists: Boolean(publisher),
         skillExists: Boolean(skill),
+        skillActive: Boolean(skill && !skill.softDeletedAt),
+        skillSoftDeletedAt: skill?.softDeletedAt ?? null,
         packageExists: Boolean(pkg),
         skillPubliclyVisible: Boolean(
           skill && !skill.softDeletedAt && !skill.hiddenAt && skill.moderationStatus !== "removed",
         ),
         packagePubliclyVisible: Boolean(pkg && !pkg.softDeletedAt),
+        packageActive: Boolean(pkg && !pkg.softDeletedAt),
+        packageSoftDeletedAt: pkg?.softDeletedAt ?? null,
         authAccountCount: authAccounts.length,
         authSessionCount: authSessions.length,
       };

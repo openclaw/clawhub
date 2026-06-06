@@ -1843,6 +1843,330 @@ describe("users.purgeSelfDeletedAccountRecoveryBatchInternal", () => {
     expect(insert).not.toHaveBeenCalled();
     expect(runMutation).not.toHaveBeenCalled();
   });
+
+  it("dry-runs auth-locked purged users without self-delete audit proof", async () => {
+    const users = [
+      {
+        _id: "users:auth-locked",
+        _creationTime: 1,
+        deactivatedAt: 1_700_000_000_000,
+        purgedAt: 1_700_000_000_000,
+        deletedAt: undefined,
+        banReason: undefined,
+        handle: undefined,
+        displayName: undefined,
+        name: undefined,
+        email: undefined,
+        personalPublisherId: undefined,
+      },
+      {
+        _id: "users:active-publisher",
+        _creationTime: 2,
+        deactivatedAt: 1_700_000_000_001,
+        purgedAt: 1_700_000_000_001,
+        deletedAt: undefined,
+        banReason: undefined,
+        handle: undefined,
+        displayName: undefined,
+        name: undefined,
+        email: undefined,
+        personalPublisherId: "publishers:active",
+      },
+    ];
+    const authAccountsByUser = new Map([
+      [
+        "users:auth-locked",
+        [
+          {
+            _id: "authAccounts:github",
+            userId: "users:auth-locked",
+            provider: "github",
+            providerAccountId: "550978",
+          },
+        ],
+      ],
+      [
+        "users:active-publisher",
+        [
+          {
+            _id: "authAccounts:active-publisher",
+            userId: "users:active-publisher",
+            provider: "github",
+            providerAccountId: "123",
+          },
+        ],
+      ],
+    ]);
+    const patch = vi.fn();
+    const insert = vi.fn();
+    const runMutation = vi.fn();
+    const query = vi.fn((table: string) => {
+      if (table === "users") {
+        return {
+          withIndex: vi.fn((indexName: string) => {
+            if (indexName !== "by_deactivated_purged_at") {
+              throw new Error(`Unexpected users index ${indexName}`);
+            }
+            return {
+              paginate: vi.fn(async () => ({
+                page: users,
+                isDone: true,
+                continueCursor: "",
+              })),
+            };
+          }),
+        };
+      }
+      if (table === "auditLogs") {
+        return {
+          withIndex: vi.fn((_indexName: string) => ({
+            collect: vi.fn(async () => []),
+          })),
+        };
+      }
+      if (table === "authAccounts") {
+        return {
+          withIndex: vi.fn((_indexName: string, buildQuery: (q: unknown) => unknown) => {
+            const fields: Record<string, string> = {};
+            const q = {
+              eq: (field: string, value: string) => {
+                fields[field] = value;
+                return q;
+              },
+            };
+            buildQuery(q);
+            return {
+              collect: vi.fn(async () => authAccountsByUser.get(fields.userId) ?? []),
+            };
+          }),
+        };
+      }
+      if (table === "publishers") {
+        return {
+          withIndex: vi.fn((_indexName: string) => ({
+            unique: vi.fn(async () => null),
+          })),
+        };
+      }
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    const result = (await purgeSelfDeletedAccountRecoveryBatchInternalHandler(
+      {
+        db: {
+          query,
+          patch,
+          insert,
+          delete: vi.fn(),
+          get: vi.fn(),
+          normalizeId: vi.fn(),
+        },
+        runMutation,
+      } as never,
+      { dryRun: true, mode: "deactivated", limit: 10 },
+    )) as {
+      dryRun: boolean;
+      eligible: number;
+      purged: number;
+      candidates: Array<Record<string, unknown>>;
+      skipped: Array<Record<string, unknown>>;
+    };
+
+    expect(result).toMatchObject({
+      dryRun: true,
+      eligible: 2,
+      purged: 0,
+      candidates: [
+        {
+          userId: "users:auth-locked",
+          eligibilityReason: "auth_locked_purged_user",
+          authAccountCount: 1,
+          handle: null,
+          displayName: null,
+          emailPresent: false,
+          personalPublisherId: null,
+          deactivatedAt: 1_700_000_000_000,
+          purgedAt: 1_700_000_000_000,
+          selfDeleteAuditLogId: null,
+        },
+        {
+          userId: "users:active-publisher",
+          eligibilityReason: "auth_locked_purged_user",
+          authAccountCount: 1,
+          personalPublisherId: "publishers:active",
+          deactivatedAt: 1_700_000_000_001,
+          purgedAt: 1_700_000_000_001,
+          selfDeleteAuditLogId: null,
+        },
+      ],
+      skipped: [],
+    });
+    expect(patch).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+    expect(runMutation).not.toHaveBeenCalled();
+  });
+
+  it("dry-runs auth-locked legacy deleted users without ban evidence", async () => {
+    const users = [
+      {
+        _id: "users:legacy-deleted",
+        _creationTime: 1,
+        deletedAt: 1_700_000_000_000,
+        deactivatedAt: undefined,
+        purgedAt: undefined,
+        banReason: undefined,
+        handle: "legacy-user",
+        displayName: "Legacy User",
+        name: "Legacy User",
+        email: "legacy@example.test",
+        personalPublisherId: undefined,
+      },
+      {
+        _id: "users:legacy-banned",
+        _creationTime: 2,
+        deletedAt: 1_700_000_000_001,
+        deactivatedAt: undefined,
+        purgedAt: undefined,
+        banReason: undefined,
+        handle: "legacy-banned",
+        displayName: "Legacy Banned",
+        name: "Legacy Banned",
+        email: "legacy-banned@example.test",
+        personalPublisherId: undefined,
+      },
+    ];
+    const logsByUser = new Map([
+      [
+        "users:legacy-banned",
+        [
+          {
+            _id: "auditLogs:ban",
+            actorUserId: "users:admin",
+            action: "user.ban",
+            targetType: "user",
+            targetId: "users:legacy-banned",
+          },
+        ],
+      ],
+    ]);
+    const authAccountsByUser = new Map([
+      [
+        "users:legacy-deleted",
+        [
+          {
+            _id: "authAccounts:legacy",
+            userId: "users:legacy-deleted",
+            provider: "github",
+            providerAccountId: "1175050",
+          },
+        ],
+      ],
+      [
+        "users:legacy-banned",
+        [
+          {
+            _id: "authAccounts:banned",
+            userId: "users:legacy-banned",
+            provider: "github",
+            providerAccountId: "2",
+          },
+        ],
+      ],
+    ]);
+    const query = vi.fn((table: string) => {
+      if (table === "users") {
+        return {
+          withIndex: vi.fn((indexName: string) => {
+            if (indexName !== "by_ban_reason_deleted_at") {
+              throw new Error(`Unexpected users index ${indexName}`);
+            }
+            return {
+              paginate: vi.fn(async () => ({
+                page: users,
+                isDone: true,
+                continueCursor: "",
+              })),
+            };
+          }),
+        };
+      }
+      if (table === "auditLogs") {
+        return {
+          withIndex: vi.fn((_indexName: string, buildQuery: (q: unknown) => unknown) => {
+            const fields: Record<string, string> = {};
+            const q = {
+              eq: (field: string, value: string) => {
+                fields[field] = value;
+                return q;
+              },
+            };
+            buildQuery(q);
+            return {
+              collect: vi.fn(async () => logsByUser.get(fields.targetId) ?? []),
+            };
+          }),
+        };
+      }
+      if (table === "authAccounts") {
+        return {
+          withIndex: vi.fn((_indexName: string, buildQuery: (q: unknown) => unknown) => {
+            const fields: Record<string, string> = {};
+            const q = {
+              eq: (field: string, value: string) => {
+                fields[field] = value;
+                return q;
+              },
+            };
+            buildQuery(q);
+            return {
+              collect: vi.fn(async () => authAccountsByUser.get(fields.userId) ?? []),
+            };
+          }),
+        };
+      }
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    const result = (await purgeSelfDeletedAccountRecoveryBatchInternalHandler(
+      {
+        db: {
+          query,
+          patch: vi.fn(),
+          insert: vi.fn(),
+          delete: vi.fn(),
+          get: vi.fn(),
+          normalizeId: vi.fn(),
+        },
+        runMutation: vi.fn(),
+      } as never,
+      { dryRun: true, mode: "legacyDeleted", limit: 10 },
+    )) as {
+      dryRun: boolean;
+      eligible: number;
+      purged: number;
+      candidates: Array<Record<string, unknown>>;
+      skipped: Array<Record<string, unknown>>;
+    };
+
+    expect(result).toMatchObject({
+      dryRun: true,
+      eligible: 1,
+      purged: 0,
+      candidates: [
+        {
+          userId: "users:legacy-deleted",
+          eligibilityReason: "auth_locked_legacy_deleted_user",
+          authAccountCount: 1,
+          handle: "legacy-user",
+          displayName: "Legacy User",
+          emailPresent: true,
+          deletedAt: 1_700_000_000_000,
+          selfDeleteAuditLogId: null,
+        },
+      ],
+      skipped: [{ userId: "users:legacy-banned", reason: "not_self_deleted_or_security_blocked" }],
+    });
+  });
 });
 
 describe("users.list", () => {
