@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import { getCliBuildLabel, getCliVersion } from "./cli/buildInfo.js";
 import { resolveClawdbotDefaultWorkspace } from "./cli/clawdbotConfig.js";
 import { cmdLoginFlow, cmdLogout, cmdToken, cmdWhoami } from "./cli/commands/auth.js";
@@ -454,6 +454,7 @@ registerCommand(skill, ["skill", "verify"])
   .option("--version <version>", "Version to verify")
   .option("--tag <tag>", "Tag to verify")
   .option("--card", "Output generated skill-card.md Markdown")
+  .addOption(new Option("--json", "Output JSON").hideHelp())
   .action(async (slug, options) => {
     const opts = await resolveGlobalOpts();
     await cmdVerifySkill(opts, slug, options);

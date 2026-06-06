@@ -28,6 +28,7 @@ const {
   me,
   placeUserUnderModerationInternal,
   liftModerationHoldInternal,
+  purgeSelfDeletedAccountRecoveryBatchInternal,
   reserveHandleInternal,
   syncGitHubProfileInternal,
   updateProfile,
@@ -47,6 +48,12 @@ const updateProfileHandler = (
 )._handler;
 const deleteAccountHandler = (
   deleteAccount as unknown as WrappedHandler<Record<string, never>, void>
+)._handler;
+const purgeSelfDeletedAccountRecoveryBatchInternalHandler = (
+  purgeSelfDeletedAccountRecoveryBatchInternal as unknown as WrappedHandler<
+    { cursor?: string; limit?: number; dryRun?: boolean; mode?: "deactivated" | "legacyDeleted" },
+    unknown
+  >
 )._handler;
 const upsertDevPersonaInternalHandler = (
   upsertDevPersonaInternal as unknown as WrappedHandler<
@@ -1607,6 +1614,13 @@ describe("users profile audit logs", () => {
           }),
         };
       }
+      if (table === "authAccounts" || table === "authSessions") {
+        return {
+          withIndex: () => ({
+            collect: vi.fn(async () => []),
+          }),
+        };
+      }
       throw new Error(`Unexpected table ${table}`);
     }) as never);
 
@@ -1628,6 +1642,143 @@ describe("users profile audit logs", () => {
         }),
       }),
     );
+  });
+});
+
+describe("users.purgeSelfDeletedAccountRecoveryBatchInternal", () => {
+  it("dry-runs eligible self-deleted account candidates with reviewable metadata", async () => {
+    const users = [
+      {
+        _id: "users:self-deleted",
+        _creationTime: 1,
+        deactivatedAt: 1_700_000_000_000,
+        purgedAt: 1_700_000_000_000,
+        deletedAt: undefined,
+        handle: undefined,
+        displayName: undefined,
+        email: undefined,
+        personalPublisherId: "publishers:self-deleted",
+      },
+      {
+        _id: "users:banned",
+        _creationTime: 2,
+        deactivatedAt: 1_700_000_000_001,
+        purgedAt: 1_700_000_000_001,
+        deletedAt: undefined,
+        banReason: "bulk publishing spam",
+      },
+    ];
+    const logsByUser = new Map([
+      [
+        "users:self-deleted",
+        [
+          {
+            _id: "auditLogs:self-delete",
+            _creationTime: 3,
+            actorUserId: "users:self-deleted",
+            action: "user.delete",
+            targetType: "user",
+            targetId: "users:self-deleted",
+            createdAt: 1_700_000_000_000,
+            metadata: {
+              previous: {
+                handle: "octo",
+                displayName: "Octo User",
+                emailPresent: true,
+                personalPublisherId: "publishers:self-deleted",
+              },
+            },
+          },
+        ],
+      ],
+      [
+        "users:banned",
+        [
+          {
+            _id: "auditLogs:ban",
+            actorUserId: "users:admin",
+            action: "user.ban",
+            targetType: "user",
+            targetId: "users:banned",
+          },
+        ],
+      ],
+    ]);
+    const patch = vi.fn();
+    const insert = vi.fn();
+    const runMutation = vi.fn();
+    const query = vi.fn((table: string) => {
+      if (table === "users") {
+        return {
+          withIndex: vi.fn((indexName: string) => {
+            if (indexName !== "by_deactivated_purged_at") {
+              throw new Error(`Unexpected users index ${indexName}`);
+            }
+            return {
+              paginate: vi.fn(async () => ({
+                page: users,
+                isDone: true,
+                continueCursor: "",
+              })),
+            };
+          }),
+        };
+      }
+      if (table === "auditLogs") {
+        return {
+          withIndex: vi.fn((_indexName: string, buildQuery: (q: unknown) => unknown) => {
+            const fields: Record<string, string> = {};
+            const q = {
+              eq: (field: string, value: string) => {
+                fields[field] = value;
+                return q;
+              },
+            };
+            buildQuery(q);
+            return {
+              collect: vi.fn(async () => logsByUser.get(fields.targetId) ?? []),
+            };
+          }),
+        };
+      }
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    const result = (await purgeSelfDeletedAccountRecoveryBatchInternalHandler(
+      {
+        db: { query, patch, insert, delete: vi.fn(), get: vi.fn(), normalizeId: vi.fn() },
+        runMutation,
+      } as never,
+      { dryRun: true, mode: "deactivated", limit: 10 },
+    )) as {
+      dryRun: boolean;
+      eligible: number;
+      purged: number;
+      candidates: Array<Record<string, unknown>>;
+      skipped: Array<Record<string, unknown>>;
+    };
+
+    expect(result).toMatchObject({
+      dryRun: true,
+      eligible: 1,
+      purged: 0,
+      candidates: [
+        {
+          userId: "users:self-deleted",
+          handle: "octo",
+          displayName: "Octo User",
+          emailPresent: true,
+          personalPublisherId: "publishers:self-deleted",
+          deactivatedAt: 1_700_000_000_000,
+          purgedAt: 1_700_000_000_000,
+          selfDeleteAuditLogId: "auditLogs:self-delete",
+        },
+      ],
+      skipped: [{ userId: "users:banned", reason: "not_self_deleted_or_security_blocked" }],
+    });
+    expect(patch).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+    expect(runMutation).not.toHaveBeenCalled();
   });
 });
 

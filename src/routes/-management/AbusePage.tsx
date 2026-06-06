@@ -385,6 +385,7 @@ export function AbusePage({
                       ratio
                     />
                   </div>
+                  <PublisherTemporalEvidence score={selectedScore} />
                 </section>
 
                 {detail?.scoreHistory.length ? (
@@ -526,6 +527,70 @@ function PublisherAbuseMetric({
   );
 }
 
+function PublisherTemporalEvidence({ score }: { score: PublisherAbuseReviewScore | null }) {
+  const evidence = score?.temporalEvidence ?? [];
+  if (!evidence.length) return null;
+
+  const benchmark = score?.temporalBenchmark;
+  return (
+    <div className="pa-activity-evidence">
+      <div className="pa-subsection-label">Temporal signal</div>
+      {benchmark ? (
+        <p className="pa-hint">
+          Compared with {formatWholeNumber(benchmark.sampleSize)} scanned skills: 30d download P95{" "}
+          {formatWholeNumber(benchmark.downloads30dP95)}, P99{" "}
+          {formatWholeNumber(benchmark.downloads30dP99)}.
+        </p>
+      ) : null}
+      <div className="pa-temporal-list">
+        {evidence.map((item) => (
+          <div key={`${item.skillId}:${item.slug}`} className="pa-temporal-card">
+            <div className="pa-temporal-head">
+              <div>
+                <strong>{item.displayName}</strong>
+                <small>{item.slug}</small>
+              </div>
+              <div className="pa-temporal-badges">
+                {item.downloads30dCohortBand ? (
+                  <Badge variant="compact">{item.downloads30dCohortBand.toUpperCase()} 30d</Badge>
+                ) : null}
+                {item.spikeMultiplierCohortBand ? (
+                  <Badge variant="compact">
+                    {item.spikeMultiplierCohortBand.toUpperCase()} spike
+                  </Badge>
+                ) : null}
+              </div>
+            </div>
+            <div className="pa-temporal-metrics">
+              <PublisherAbuseMetric label="30d downloads" value={item.recent30Downloads} />
+              {benchmark ? (
+                <PublisherAbuseMetric label="Peer 30d P95" value={benchmark.downloads30dP95} />
+              ) : null}
+              {benchmark ? (
+                <PublisherAbuseMetric label="Peer 30d P99" value={benchmark.downloads30dP99} />
+              ) : null}
+              <PublisherAbuseMetric label="30d vs P95" value={item.downloads30dVsPeerP95} ratio />
+              <PublisherAbuseMetric label="7d spike multiple" value={item.spikeMultiplier} ratio />
+              {benchmark ? (
+                <PublisherAbuseMetric
+                  label="Peer spike P95"
+                  value={benchmark.spikeMultiplier7dP95}
+                  ratio
+                />
+              ) : null}
+              <PublisherAbuseMetric
+                label="Spike vs P95"
+                value={item.spikeMultiplierVsPeerP95}
+                ratio
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function publisherAbuseLabelVariant(label: string) {
   if (label === "potential_ban_candidate") return "destructive" as const;
   if (label === "review") return "review" as const;
@@ -661,7 +726,12 @@ function formatReasonCode(reason: string) {
     .replace("Extreme / Volume / Low / Engagement", "Extreme Volume, Low Engagement")
     .replace("Low / Installs / Per / Skill", "Low Installs / Skill")
     .replace("Low / Stars / Per / Skill", "Low Stars / Skill")
-    .replace("Low / Downloads / Per / Skill", "Low Downloads / Skill");
+    .replace("Low / Downloads / Per / Skill", "Low Downloads / Skill")
+    .replace("Temporal / Download / Spike / Flat / Installs", "Temporal Spike, Flat Installs")
+    .replace(
+      "Temporal / Sustained / Downloads / Flat / Installs",
+      "Temporal Sustained Downloads, Flat Installs",
+    );
 }
 
 function describeReasonCode(reason: string) {
@@ -679,6 +749,12 @@ function describeReasonCode(reason: string) {
   }
   if (reason === "low_downloads_per_skill") {
     return "Downloads per skill are far below the platform median.";
+  }
+  if (reason === "temporal_download_spike_flat_installs") {
+    return "The skill's 7-day download spike is above the peer cohort while installs stayed flat.";
+  }
+  if (reason === "temporal_sustained_downloads_flat_installs") {
+    return "The skill's 30-day downloads are above the peer cohort while installs stayed flat.";
   }
   return "Model reason emitted by the publisher abuse scorer.";
 }

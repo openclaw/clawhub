@@ -1373,6 +1373,15 @@ const HARD_DELETE_PHASES = [
 ] as const;
 
 type HardDeletePhase = (typeof HARD_DELETE_PHASES)[number];
+type HardDeleteSource = "admin" | "account.delete" | "publisher.delete";
+type HardDeleteScope = {
+  source?: HardDeleteSource;
+  ownerPublisherId?: Id<"publishers">;
+};
+
+const hardDeleteSourceValidator = v.optional(
+  v.union(v.literal("admin"), v.literal("account.delete"), v.literal("publisher.delete")),
+);
 
 function isHardDeletePhase(value: string | undefined): value is HardDeletePhase {
   if (!value) return false;
@@ -1384,11 +1393,14 @@ async function scheduleHardDelete(
   skillId: Id<"skills">,
   actorUserId: Id<"users">,
   phase: HardDeletePhase,
+  scope: HardDeleteScope = {},
 ) {
   await ctx.scheduler.runAfter(0, internal.skills.hardDeleteInternal, {
     skillId,
     actorUserId,
     phase,
+    source: scope.source,
+    ownerPublisherId: scope.ownerPublisherId,
   });
 }
 
@@ -1397,6 +1409,7 @@ async function hardDeleteSkillStep(
   skill: Doc<"skills">,
   actorUserId: Id<"users">,
   phase: HardDeletePhase,
+  scope: HardDeleteScope = {},
 ) {
   const now = Date.now();
   const patch: Partial<Doc<"skills">> = {};
@@ -1423,10 +1436,10 @@ async function hardDeleteSkillStep(
         await ctx.db.delete(version._id);
       }
       if (versions.length === HARD_DELETE_VERSION_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "versions");
+        await scheduleHardDelete(ctx, skill._id, actorUserId, "versions", scope);
         return;
       }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "fingerprints");
+      await scheduleHardDelete(ctx, skill._id, actorUserId, "fingerprints", scope);
       return;
     }
     case "fingerprints": {
@@ -1438,10 +1451,10 @@ async function hardDeleteSkillStep(
         await ctx.db.delete(fingerprint._id);
       }
       if (fingerprints.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "fingerprints");
+        await scheduleHardDelete(ctx, skill._id, actorUserId, "fingerprints", scope);
         return;
       }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "skillCardJobs");
+      await scheduleHardDelete(ctx, skill._id, actorUserId, "skillCardJobs", scope);
       return;
     }
     case "skillCardJobs": {
@@ -1453,10 +1466,10 @@ async function hardDeleteSkillStep(
         await ctx.db.delete(job._id);
       }
       if (jobs.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "skillCardJobs");
+        await scheduleHardDelete(ctx, skill._id, actorUserId, "skillCardJobs", scope);
         return;
       }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "embeddings");
+      await scheduleHardDelete(ctx, skill._id, actorUserId, "embeddings", scope);
       return;
     }
     case "embeddings": {
@@ -1465,13 +1478,18 @@ async function hardDeleteSkillStep(
         .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
         .take(HARD_DELETE_BATCH_SIZE);
       for (const embedding of embeddings) {
+        const maps = await ctx.db
+          .query("embeddingSkillMap")
+          .withIndex("by_embedding", (q) => q.eq("embeddingId", embedding._id))
+          .collect();
+        for (const map of maps) await ctx.db.delete(map._id);
         await ctx.db.delete(embedding._id);
       }
       if (embeddings.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "embeddings");
+        await scheduleHardDelete(ctx, skill._id, actorUserId, "embeddings", scope);
         return;
       }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "comments");
+      await scheduleHardDelete(ctx, skill._id, actorUserId, "comments", scope);
       return;
     }
     case "comments": {
@@ -1483,10 +1501,10 @@ async function hardDeleteSkillStep(
         await ctx.db.delete(comment._id);
       }
       if (comments.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "comments");
+        await scheduleHardDelete(ctx, skill._id, actorUserId, "comments", scope);
         return;
       }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "commentReports");
+      await scheduleHardDelete(ctx, skill._id, actorUserId, "commentReports", scope);
       return;
     }
     case "commentReports": {
@@ -1498,10 +1516,10 @@ async function hardDeleteSkillStep(
         await ctx.db.delete(report._id);
       }
       if (commentReports.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "commentReports");
+        await scheduleHardDelete(ctx, skill._id, actorUserId, "commentReports", scope);
         return;
       }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "reports");
+      await scheduleHardDelete(ctx, skill._id, actorUserId, "reports", scope);
       return;
     }
     case "reports": {
@@ -1513,10 +1531,10 @@ async function hardDeleteSkillStep(
         await ctx.db.delete(report._id);
       }
       if (reports.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "reports");
+        await scheduleHardDelete(ctx, skill._id, actorUserId, "reports", scope);
         return;
       }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "stars");
+      await scheduleHardDelete(ctx, skill._id, actorUserId, "stars", scope);
       return;
     }
     case "stars": {
@@ -1528,10 +1546,10 @@ async function hardDeleteSkillStep(
         await ctx.db.delete(star._id);
       }
       if (stars.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "stars");
+        await scheduleHardDelete(ctx, skill._id, actorUserId, "stars", scope);
         return;
       }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "badges");
+      await scheduleHardDelete(ctx, skill._id, actorUserId, "badges", scope);
       return;
     }
     case "badges": {
@@ -1543,10 +1561,10 @@ async function hardDeleteSkillStep(
         await ctx.db.delete(badge._id);
       }
       if (badges.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "badges");
+        await scheduleHardDelete(ctx, skill._id, actorUserId, "badges", scope);
         return;
       }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "dailyStats");
+      await scheduleHardDelete(ctx, skill._id, actorUserId, "dailyStats", scope);
       return;
     }
     case "dailyStats": {
@@ -1558,10 +1576,10 @@ async function hardDeleteSkillStep(
         await ctx.db.delete(stat._id);
       }
       if (dailyStats.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "dailyStats");
+        await scheduleHardDelete(ctx, skill._id, actorUserId, "dailyStats", scope);
         return;
       }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "statEvents");
+      await scheduleHardDelete(ctx, skill._id, actorUserId, "statEvents", scope);
       return;
     }
     case "statEvents": {
@@ -1573,10 +1591,10 @@ async function hardDeleteSkillStep(
         await ctx.db.delete(statEvent._id);
       }
       if (statEvents.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "statEvents");
+        await scheduleHardDelete(ctx, skill._id, actorUserId, "statEvents", scope);
         return;
       }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "installs");
+      await scheduleHardDelete(ctx, skill._id, actorUserId, "installs", scope);
       return;
     }
     case "installs": {
@@ -1588,10 +1606,10 @@ async function hardDeleteSkillStep(
         await ctx.db.delete(install._id);
       }
       if (installs.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "installs");
+        await scheduleHardDelete(ctx, skill._id, actorUserId, "installs", scope);
         return;
       }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "rootInstalls");
+      await scheduleHardDelete(ctx, skill._id, actorUserId, "rootInstalls", scope);
       return;
     }
     case "rootInstalls": {
@@ -1603,10 +1621,10 @@ async function hardDeleteSkillStep(
         await ctx.db.delete(rootInstall._id);
       }
       if (rootInstalls.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "rootInstalls");
+        await scheduleHardDelete(ctx, skill._id, actorUserId, "rootInstalls", scope);
         return;
       }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "leaderboards");
+      await scheduleHardDelete(ctx, skill._id, actorUserId, "leaderboards", scope);
       return;
     }
     case "leaderboards": {
@@ -1620,10 +1638,10 @@ async function hardDeleteSkillStep(
         }
       }
       if (leaderboards.length === HARD_DELETE_LEADERBOARD_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "leaderboards");
+        await scheduleHardDelete(ctx, skill._id, actorUserId, "leaderboards", scope);
         return;
       }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "canonical");
+      await scheduleHardDelete(ctx, skill._id, actorUserId, "canonical", scope);
       return;
     }
     case "canonical": {
@@ -1638,10 +1656,10 @@ async function hardDeleteSkillStep(
         });
       }
       if (canonicalRefs.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "canonical");
+        await scheduleHardDelete(ctx, skill._id, actorUserId, "canonical", scope);
         return;
       }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "forks");
+      await scheduleHardDelete(ctx, skill._id, actorUserId, "forks", scope);
       return;
     }
     case "forks": {
@@ -1656,10 +1674,10 @@ async function hardDeleteSkillStep(
         });
       }
       if (forkRefs.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "forks");
+        await scheduleHardDelete(ctx, skill._id, actorUserId, "forks", scope);
         return;
       }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "finalize");
+      await scheduleHardDelete(ctx, skill._id, actorUserId, "finalize", scope);
       return;
     }
     case "finalize": {
@@ -5422,6 +5440,7 @@ type PublicSkillCatalogItem = {
   capabilityTags: string[];
   executesCode: false;
   verificationTier: null;
+  stats: { downloads: number; installs: number; stars: number; versions: number };
 };
 
 type SkillCatalogCursorState = {
@@ -5515,6 +5534,12 @@ async function toPublicSkillCatalogItem(
     capabilityTags: digest.capabilityTags ?? [],
     executesCode: false,
     verificationTier: null,
+    stats: {
+      downloads: readDigestRankStat(digest, "downloads"),
+      installs: readDigestRankStat(digest, "installsAllTime"),
+      stars: readDigestRankStat(digest, "stars"),
+      versions: digest.stats.versions,
+    },
   };
 }
 
@@ -5608,6 +5633,7 @@ export const listPackageCatalogPage = query({
     highlightedOnly: v.optional(v.boolean()),
     executesCode: v.optional(v.boolean()),
     capabilityTag: v.optional(v.string()),
+    sort: v.optional(v.union(v.literal("updated"), v.literal("downloads"))),
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
@@ -5645,9 +5671,11 @@ export const listPackageCatalogPage = query({
       if (effectivePageSize <= 0) break;
       remainingScanBudget -= effectivePageSize;
       const pageCursor = cursor;
+      const indexName =
+        args.sort === "downloads" ? "by_active_stats_downloads" : "by_active_updated";
       const page = await paginator(ctx.db, schema)
         .query("skillSearchDigest")
-        .withIndex("by_active_updated", (q) => q.eq("softDeletedAt", undefined))
+        .withIndex(indexName, (q) => q.eq("softDeletedAt", undefined))
         .order("desc")
         .paginate({ cursor: pageCursor, numItems: effectivePageSize });
 
@@ -7436,7 +7464,7 @@ export const applyPublisherDeletionToOwnedSkillsBatchInternal = internalMutation
   },
   handler: async (ctx, args) => {
     const publisher = await ctx.db.get(args.ownerPublisherId);
-    if (!publisher || publisher.deletedAt !== args.deletedAt) {
+    if (publisher && publisher.deletedAt !== args.deletedAt) {
       return { ok: true as const, hiddenCount: 0, scheduled: false, stale: true as const };
     }
 
@@ -7451,29 +7479,10 @@ export const applyPublisherDeletionToOwnedSkillsBatchInternal = internalMutation
 
     let hiddenCount = 0;
     for (const skill of page) {
-      if (skill.softDeletedAt) continue;
-
-      const patch: Partial<Doc<"skills">> = {
-        softDeletedAt: args.deletedAt,
-        moderationStatus: "hidden",
-        moderationReason: "publisher.deleted",
-        hiddenAt: args.deletedAt,
-        hiddenBy: args.actorUserId,
-        lastReviewedAt: args.deletedAt,
-        unpublishedSlugReservedUntil: undefined,
-        unpublishedSlugReleasedAt: undefined,
-        unpublishedOriginalSlug: undefined,
-        updatedAt: args.deletedAt,
-        isSuspicious: computeIsSuspicious({
-          moderationFlags: skill.moderationFlags,
-          moderationReason: "publisher.deleted",
-        }),
-      };
-      const nextSkill = { ...skill, ...patch };
-      await ctx.db.patch(skill._id, patch);
-      await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
-      await adjustUserSkillStatsForSkillChange(ctx, skill, nextSkill);
-      await setSkillEmbeddingsSoftDeleted(ctx, skill._id, true, args.deletedAt);
+      await hardDeleteSkillStep(ctx, skill, args.actorUserId, "versions", {
+        source: "publisher.delete",
+        ownerPublisherId: args.ownerPublisherId,
+      });
       hiddenCount += 1;
     }
 
@@ -7508,33 +7517,10 @@ export const applyAccountDeletionToOwnedSkillsBatchInternal = internalMutation({
 
     let hiddenCount = 0;
     for (const skill of page) {
-      if (skill.ownerPublisherId) {
-        const ownerPublisher = await ctx.db.get(skill.ownerPublisherId);
-        if (ownerPublisher?.kind === "org") continue;
-      }
-      if (skill.softDeletedAt) continue;
-
-      const patch: Partial<Doc<"skills">> = {
-        softDeletedAt: args.deletedAt,
-        moderationStatus: "hidden",
-        moderationReason: "user.deactivated",
-        hiddenAt: args.deletedAt,
-        hiddenBy: args.hiddenBy,
-        lastReviewedAt: args.deletedAt,
-        unpublishedSlugReservedUntil: undefined,
-        unpublishedSlugReleasedAt: undefined,
-        unpublishedOriginalSlug: undefined,
-        updatedAt: args.deletedAt,
-        isSuspicious: computeIsSuspicious({
-          moderationFlags: skill.moderationFlags,
-          moderationReason: "user.deactivated",
-        }),
-      };
-      const nextSkill = { ...skill, ...patch };
-      await ctx.db.patch(skill._id, patch);
-      await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
-      await adjustUserSkillStatsForSkillChange(ctx, skill, nextSkill);
-      await setSkillEmbeddingsSoftDeleted(ctx, skill._id, true, args.deletedAt);
+      if (skill.ownerPublisherId) continue;
+      await hardDeleteSkillStep(ctx, skill, args.hiddenBy ?? args.ownerUserId, "versions", {
+        source: "account.delete",
+      });
       hiddenCount += 1;
     }
 
@@ -10159,15 +10145,33 @@ export const hardDeleteInternal = internalMutation({
     skillId: v.id("skills"),
     actorUserId: v.id("users"),
     phase: v.optional(v.string()),
+    source: hardDeleteSourceValidator,
+    ownerPublisherId: v.optional(v.id("publishers")),
   },
   handler: async (ctx, args) => {
     const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new Error("User not found");
-    assertAdmin(actor);
     const skill = await ctx.db.get(args.skillId);
     if (!skill) return;
+    const source = args.source ?? "admin";
+    if (source === "admin") {
+      if (!actor || actor.deletedAt || actor.deactivatedAt) throw new Error("User not found");
+      assertAdmin(actor);
+    } else if (source === "account.delete") {
+      if (!actor) throw new Error("User not found");
+      if (skill.ownerUserId !== args.actorUserId || skill.ownerPublisherId) {
+        throw new Error("Skill is outside account deletion scope");
+      }
+    } else {
+      if (!actor) throw new Error("User not found");
+      if (!args.ownerPublisherId || skill.ownerPublisherId !== args.ownerPublisherId) {
+        throw new Error("Skill is outside publisher deletion scope");
+      }
+    }
     const phase = isHardDeletePhase(args.phase) ? args.phase : "versions";
-    await hardDeleteSkillStep(ctx, skill, actor._id, phase);
+    await hardDeleteSkillStep(ctx, skill, args.actorUserId, phase, {
+      source,
+      ownerPublisherId: args.ownerPublisherId,
+    });
   },
 });
 

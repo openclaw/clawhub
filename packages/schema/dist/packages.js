@@ -280,6 +280,7 @@ export const PackageListItemSchema = type({
     capabilityTags: "string[]?",
     executesCode: "boolean?",
     verificationTier: PackageVerificationTierSchema.or("null").optional(),
+    stats: PackageStatsSchema.optional(),
 });
 export const ApiV1PackageListResponseSchema = type({
     items: PackageListItemSchema.array(),

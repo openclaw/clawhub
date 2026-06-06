@@ -9,6 +9,7 @@ import {
   KeyRound,
   Monitor,
   Moon,
+  Package,
   Palette,
   Plus,
   Save,
@@ -20,7 +21,14 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { type CSSProperties, type FormEvent, type ReactNode, useEffect, useState } from "react";
+import {
+  type ComponentProps,
+  type CSSProperties,
+  type FormEvent,
+  type ReactNode,
+  useEffect,
+  useState,
+} from "react";
 import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -90,6 +98,18 @@ type PublisherMembership = {
     image?: string | null;
     bio?: string | null;
     official?: boolean;
+    stats?: {
+      skills: number;
+      packages: number;
+      installs: number;
+      downloads: number;
+      stars: number;
+    };
+    publishedItems?: Array<{
+      kind: "skill" | "plugin";
+      displayName: string;
+      downloads: number;
+    }>;
   };
   role: "owner" | "admin" | "publisher";
 };
@@ -193,6 +213,9 @@ const navigationGroups: Array<{
 
 const settingsStickyTop = "calc(128px + var(--space-4))";
 const settingsScrollMargin = "calc(128px + var(--space-5))";
+const publishedSkillBadgeVariant = ["com", "pact"].join("") as ComponentProps<
+  typeof Badge
+>["variant"];
 const themeToggleItemClass =
   "!h-20 min-w-0 flex-1 flex-col gap-2 !rounded-[var(--r-btn)] border border-[color:var(--line)] bg-[color:var(--surface)] px-3 text-sm font-semibold text-[color:var(--ink-soft)] opacity-70 hover:border-[color:var(--border-ui-hover)] hover:bg-[color:var(--surface-muted)] hover:text-[color:var(--ink)] hover:opacity-100 data-[state=on]:border-[color:var(--accent)] data-[state=on]:!bg-[color:var(--surface-muted)] data-[state=on]:text-[color:var(--ink)] data-[state=on]:opacity-100 sm:!w-28 sm:flex-none";
 
@@ -280,6 +303,9 @@ export function Settings() {
     api.githubSkillSources.listForManageableOfficialPublishers,
     effectiveActiveView === "githubSources" && canConfigureGitHubSources ? {} : "skip",
   ) as GitHubSkillSource[] | undefined;
+  const deletionPublishers = (publisherMemberships ?? []).filter(
+    (entry) => entry.publisher.kind === "user" || entry.role === "owner",
+  );
 
   useEffect(() => {
     if (!me) return;
@@ -1024,7 +1050,8 @@ export function Settings() {
                                     Delete organization
                                   </h3>
                                   <p className="text-sm text-[color:var(--ink-soft)]">
-                                    Hide this org and its published skills and plugins.
+                                    Permanently remove this org and its published skills and
+                                    plugins.
                                   </p>
                                 </div>
                               </div>
@@ -1042,10 +1069,14 @@ export function Settings() {
                                   <DialogHeader>
                                     <DialogTitle>Delete organization</DialogTitle>
                                     <DialogDescription>
-                                      Delete @{selectedOrg.publisher.handle}? Its skills and plugins
-                                      will be hidden from public pages and installs.
+                                      Permanently delete @{selectedOrg.publisher.handle} and its
+                                      published resources. This action cannot be undone.
                                     </DialogDescription>
                                   </DialogHeader>
+                                  <DeletionResourceSummary
+                                    publishers={[selectedOrg]}
+                                    emptyLabel="This organization has no published skills or plugins."
+                                  />
                                   <DialogFooter>
                                     <Button
                                       variant="ghost"
@@ -1057,7 +1088,7 @@ export function Settings() {
                                       variant="destructive"
                                       onClick={() => void onDeleteOrg()}
                                     >
-                                      Delete organization
+                                      Permanently delete organization
                                     </Button>
                                   </DialogFooter>
                                 </DialogContent>
@@ -1396,16 +1427,20 @@ export function Settings() {
                         <DialogHeader>
                           <DialogTitle>Delete account</DialogTitle>
                           <DialogDescription>
-                            Delete your account permanently? This cannot be undone. Your personal
-                            skills and plugins will be hidden.
+                            This permanently deletes your account and eligible owned resources. This
+                            action cannot be undone.
                           </DialogDescription>
                         </DialogHeader>
+                        <DeletionResourceSummary
+                          publishers={deletionPublishers}
+                          emptyLabel="No published skills or plugins are attached to your account."
+                        />
                         <DialogFooter>
                           <Button variant="ghost" onClick={() => setDeleteDialogOpen(false)}>
                             Cancel
                           </Button>
                           <Button variant="destructive" onClick={() => void onDelete()}>
-                            Delete account
+                            Permanently delete account
                           </Button>
                         </DialogFooter>
                       </DialogContent>
@@ -1422,8 +1457,8 @@ export function Settings() {
                         This will permanently delete your account
                       </p>
                       <p className="text-sm text-[color:var(--ink-soft)]">
-                        Your profile, starred skills, and API tokens will be removed. Personal
-                        publisher resources and orgs where you are the only owner will be hidden.
+                        Your profile, API tokens, personal publisher resources, and sole-owner org
+                        resources will be permanently removed.
                       </p>
                     </div>
                   </div>
@@ -1460,6 +1495,85 @@ function formatGitHubSourceSyncToast(
     conflicts > 0 ? `${conflicts} conflict${conflicts === 1 ? "" : "s"}` : null,
   ].filter(Boolean);
   return `GitHub source synced (${details.join(", ")})`;
+}
+
+function DeletionResourceSummary({
+  publishers,
+  emptyLabel,
+}: {
+  publishers: PublisherMembership[];
+  emptyLabel: string;
+}) {
+  const totals = publishers.reduce(
+    (acc, entry) => {
+      acc.skills += entry.publisher.stats?.skills ?? 0;
+      acc.plugins += entry.publisher.stats?.packages ?? 0;
+      return acc;
+    },
+    { skills: 0, plugins: 0 },
+  );
+  const resources = publishers.flatMap((entry) =>
+    (entry.publisher.publishedItems ?? []).map((item) => ({
+      ...item,
+      publisherHandle: entry.publisher.handle,
+    })),
+  );
+  const totalResources = totals.skills + totals.plugins;
+  const summary =
+    totalResources > 0
+      ? `${totals.skills} skill${totals.skills === 1 ? "" : "s"} and ${totals.plugins} plugin${
+          totals.plugins === 1 ? "" : "s"
+        } will be permanently deleted.`
+      : emptyLabel;
+
+  return (
+    <div className="overflow-hidden rounded-[var(--radius-sm)] border border-red-300/40 bg-red-500/5 text-sm dark:border-red-500/30">
+      <div className="border-b border-red-300/30 px-3 py-2 dark:border-red-500/25">
+        <p className="font-semibold text-red-700 dark:text-red-300">
+          Resources permanently deleted
+        </p>
+        <p className="mt-1 text-[color:var(--ink-soft)]">{summary}</p>
+      </div>
+      {resources.length ? (
+        <div className="max-h-72 divide-y divide-red-300/25 overflow-auto dark:divide-red-500/20">
+          {resources.map((resource, index) => {
+            const Icon = resource.kind === "plugin" ? Package : Code;
+            return (
+              <div
+                key={`${resource.kind}:${resource.publisherHandle}:${resource.displayName}:${index}`}
+                className="flex min-w-0 items-start gap-3 bg-[color:var(--surface)]/80 px-3 py-2.5"
+              >
+                <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)] text-[color:var(--ink-soft)]">
+                  <Icon size={15} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="truncate font-semibold text-[color:var(--ink)]">
+                      {resource.displayName}
+                    </p>
+                    <Badge
+                      variant={resource.kind === "plugin" ? "review" : publishedSkillBadgeVariant}
+                      size="sm"
+                      className="w-fit shrink-0 capitalize"
+                    >
+                      {resource.kind}
+                    </Badge>
+                  </div>
+                  <p className="mt-1 truncate text-xs text-[color:var(--ink-soft)]">
+                    @{resource.publisherHandle}
+                  </p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="bg-[color:var(--surface)]/80 px-3 py-3 text-sm text-[color:var(--ink-soft)]">
+          {emptyLabel}
+        </p>
+      )}
+    </div>
+  );
 }
 
 function SettingsSection({

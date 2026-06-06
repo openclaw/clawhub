@@ -28,11 +28,25 @@ describe("playwright local-auth runner config", () => {
 
   it("passes explicit Playwright args and defaults to the local-auth suite", () => {
     expect(resolveLocalAuthRunnerConfig({}, ["--", "e2e/example.pw.test.ts"])).toMatchObject({
-      playwrightArgs: ["e2e/example.pw.test.ts"],
+      playwrightArgs: ["--retries=1", "e2e/example.pw.test.ts"],
     });
     expect(resolveLocalAuthRunnerConfig({}).playwrightArgs).toEqual([
+      "--retries=1",
       "--project=chromium",
       "e2e/local-auth",
     ]);
+  });
+
+  it("preserves an explicit Playwright retries override", () => {
+    expect(
+      resolveLocalAuthRunnerConfig({}, ["--", "--retries=0", "e2e/example.pw.test.ts"]),
+    ).toMatchObject({
+      playwrightArgs: ["--retries=0", "e2e/example.pw.test.ts"],
+    });
+    expect(
+      resolveLocalAuthRunnerConfig({}, ["--", "--retries", "2", "e2e/example.pw.test.ts"]),
+    ).toMatchObject({
+      playwrightArgs: ["--retries", "2", "e2e/example.pw.test.ts"],
+    });
   });
 });

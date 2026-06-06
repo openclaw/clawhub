@@ -488,6 +488,24 @@ describe("fetchPluginCatalog", () => {
     expect(url.searchParams.get("isOfficial")).toBe("true");
   });
 
+  it("forwards downloads sort to the dedicated plugins browse endpoint", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 }),
+      );
+
+    await fetchPluginCatalog({
+      sort: "downloads",
+      limit: 20,
+    });
+
+    const url = new URL(fetchMock.mock.calls[0]?.[0] as string);
+    expect(url.pathname).toBe("/api/v1/plugins");
+    expect(url.searchParams.get("sort")).toBe("downloads");
+  });
+
   it("uses the dedicated plugins search endpoint for search mode", async () => {
     vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(

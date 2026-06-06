@@ -95,6 +95,7 @@ type PublisherListItem = NonNullable<ReturnType<typeof toPublicPublisher>> & {
 type PublisherListSummary = {
   publisher: Doc<"publishers">;
   item: PublisherListItem;
+  visibility?: PublicPublisherVisibility;
 };
 
 function isPublicPublishedSkill(skill: Doc<"skills">) {
@@ -156,6 +157,45 @@ function hasPublisherStats(publisher: Doc<"publishers">) {
     typeof publisher.totalDownloads === "number" &&
     typeof publisher.totalStars === "number"
   );
+}
+
+type PublicPublisherVisibility = {
+  publisher: Doc<"publishers">;
+  linkedUser: Doc<"users"> | null;
+};
+
+async function getPublicPublisherVisibility(
+  ctx: Pick<QueryCtx, "db">,
+  publisher: Doc<"publishers"> | null | undefined,
+): Promise<PublicPublisherVisibility | null> {
+  if (!publisher || publisher.deletedAt || publisher.deactivatedAt) return null;
+  if (publisher.kind !== "user") {
+    return { publisher, linkedUser: null };
+  }
+  if (!publisher.linkedUserId) {
+    const legacyOwner = await getLegacyPersonalPublisherOwner(ctx, publisher._id);
+    return legacyOwner ? { publisher, linkedUser: legacyOwner } : null;
+  }
+
+  const linkedUser = await ctx.db.get(publisher.linkedUserId);
+  if (!linkedUser || linkedUser.deletedAt || linkedUser.deactivatedAt) return null;
+  return { publisher, linkedUser };
+}
+
+async function getLegacyPersonalPublisherOwner(
+  ctx: Pick<QueryCtx, "db">,
+  publisherId: Id<"publishers">,
+) {
+  const memberships = await ctx.db
+    .query("publisherMembers")
+    .withIndex("by_publisher", (q) => q.eq("publisherId", publisherId))
+    .collect();
+  for (const membership of memberships) {
+    if (membership.role !== "owner") continue;
+    const user = await ctx.db.get(membership.userId);
+    if (user && !user.deletedAt && !user.deactivatedAt) return user;
+  }
+  return null;
 }
 
 function getPublisherDenormalizedStats(publisher: Doc<"publishers">): PublisherListStats {
@@ -237,7 +277,10 @@ function getIndexedPublisherStatsFromRows(rows: PublisherPublishedRows): Publish
   return stats;
 }
 
-function getPublisherPublishedItems(rows: PublisherPublishedRows): PublisherPublishedItem[] {
+function getPublisherPublishedItems(
+  rows: PublisherPublishedRows,
+  limit = PUBLISHER_LIST_PREVIEW_LIMIT,
+): PublisherPublishedItem[] {
   const items: PublisherPublishedPreviewItem[] = [
     ...rows.skills.map((skill) => ({
       kind: "skill" as const,
@@ -259,7 +302,7 @@ function getPublisherPublishedItems(rows: PublisherPublishedRows): PublisherPubl
         b.downloads - a.downloads ||
         a.displayName.localeCompare(b.displayName),
     )
-    .slice(0, 3)
+    .slice(0, limit)
     .map((item) => ({
       kind: item.kind,
       displayName: item.displayName,
@@ -379,16 +422,17 @@ async function toPublisherListItem(
   options: {
     forceComputedStats?: boolean;
     includePublishedItems?: boolean;
+    includeAllPublishedItems?: boolean;
     includeAffiliations?: boolean;
     includeStarredCount?: boolean;
+    visibility?: PublicPublisherVisibility;
   } = {},
 ): Promise<PublisherListItem | null> {
+  const visible = options.visibility ?? (await getPublicPublisherVisibility(ctx, publisher));
+  if (!visible) return null;
   const publicPublisher = await toPublicPublisherWithOfficial(ctx, publisher);
   if (!publicPublisher) return null;
-  const linkedUser =
-    publisher.kind === "user" && publisher.linkedUserId
-      ? await ctx.db.get(publisher.linkedUserId)
-      : null;
+  const linkedUser = visible.linkedUser;
   let publishedRows: PublisherPublishedRows | null = null;
   const getRows = async () => {
     publishedRows ??= await getPublisherPublishedRows(ctx, publisher._id);
@@ -401,15 +445,19 @@ async function toPublisherListItem(
       ? getPublisherDenormalizedStats(publisher)
       : getIndexedPublisherStatsFromRows(await getRows());
   const publishedItems = options.includePublishedItems
-    ? getPublisherPublishedItems(await getPreviewRows())
+    ? getPublisherPublishedItems(
+        await (options.includeAllPublishedItems ? getRows() : getPreviewRows()),
+        options.includeAllPublishedItems ? Number.POSITIVE_INFINITY : PUBLISHER_LIST_PREVIEW_LIMIT,
+      )
     : [];
+  const visibleUserId = publisher.kind === "user" ? linkedUser?._id : null;
   const affiliations =
-    options.includeAffiliations && publisher.kind === "user" && publisher.linkedUserId
-      ? await getUserPublisherAffiliations(ctx, publisher.linkedUserId, publisher._id)
+    options.includeAffiliations && visibleUserId
+      ? await getUserPublisherAffiliations(ctx, visibleUserId, publisher._id)
       : undefined;
   const starredCount =
-    options.includeStarredCount && publisher.kind === "user" && publisher.linkedUserId
-      ? await getUserStarredCount(ctx, publisher.linkedUserId)
+    options.includeStarredCount && visibleUserId
+      ? await getUserStarredCount(ctx, visibleUserId)
       : undefined;
   return {
     ...publicPublisher,
@@ -435,9 +483,32 @@ function toPublisherListSummary(publisher: Doc<"publishers">): PublisherListSumm
   };
 }
 
+async function toVisiblePublisherListSummary(
+  ctx: Pick<QueryCtx, "db">,
+  publisher: Doc<"publishers">,
+): Promise<PublisherListSummary | null> {
+  const visibility = await getPublicPublisherVisibility(ctx, publisher);
+  if (!visibility) return null;
+  const summary = toPublisherListSummary(visibility.publisher);
+  if (!summary) return null;
+  return { ...summary, visibility };
+}
+
 function hasPublisherListContent(summary: PublisherListSummary) {
   if (!hasPublisherStats(summary.publisher)) return true;
   return summary.item.stats.skills + summary.item.stats.packages > 0;
+}
+
+async function getVisiblePublisherListSummaries(
+  ctx: Pick<QueryCtx, "db">,
+  publishers: Doc<"publishers">[],
+) {
+  const summaries = await Promise.all(
+    publishers.map((publisher) => toVisiblePublisherListSummary(ctx, publisher)),
+  );
+  return summaries
+    .filter((summary): summary is PublisherListSummary => Boolean(summary))
+    .filter(hasPublisherListContent);
 }
 
 async function hydratePublisherListSummaries(
@@ -446,7 +517,10 @@ async function hydratePublisherListSummaries(
 ) {
   const items = await Promise.all(
     summaries.map((summary) =>
-      toPublisherListItem(ctx, summary.publisher, { includePublishedItems: true }),
+      toPublisherListItem(ctx, summary.publisher, {
+        includePublishedItems: true,
+        visibility: summary.visibility,
+      }),
     ),
   );
   return items
@@ -953,6 +1027,44 @@ async function createOrgPublisherForUser(
   };
 }
 
+async function hardDeletePublisherRows(ctx: MutationCtx, publisherId: Id<"publishers">) {
+  const sources = await ctx.db
+    .query("githubSkillSources")
+    .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", publisherId))
+    .collect();
+  let sourceContents = 0;
+  for (const source of sources) {
+    const contents = await ctx.db
+      .query("githubSkillContents")
+      .withIndex("by_github_source", (q) => q.eq("githubSourceId", source._id))
+      .collect();
+    sourceContents += contents.length;
+    for (const content of contents) await ctx.db.delete(content._id);
+    await ctx.db.delete(source._id);
+  }
+
+  const members = await ctx.db
+    .query("publisherMembers")
+    .withIndex("by_publisher", (q) => q.eq("publisherId", publisherId))
+    .collect();
+  for (const member of members) await ctx.db.delete(member._id);
+
+  const official = await ctx.db
+    .query("officialPublishers")
+    .withIndex("by_publisher", (q) => q.eq("publisherId", publisherId))
+    .unique();
+  if (official) await ctx.db.delete(official._id);
+
+  await ctx.db.delete(publisherId);
+
+  return {
+    sources: sources.length,
+    sourceContents,
+    members: members.length,
+    official: Boolean(official),
+  };
+}
+
 async function deleteOrgPublisherForOwner(
   ctx: MutationCtx,
   args: {
@@ -1015,6 +1127,7 @@ async function deleteOrgPublisherForOwner(
     },
     createdAt: args.deletedAt,
   });
+  const deletedPublisherRows = await hardDeletePublisherRows(ctx, publisher._id);
 
   return {
     ok: true as const,
@@ -1024,6 +1137,7 @@ async function deleteOrgPublisherForOwner(
     deletedPackages: packagesResult.deletedCount ?? 0,
     revokedPackageTokens: packagesResult.revokedTokenCount ?? 0,
     scheduled: Boolean(skillsResult.scheduled) || Boolean(packagesResult.scheduled),
+    deletedPublisherRows,
   };
 }
 
@@ -1166,7 +1280,12 @@ export const listMine = query({
             !publisher.linkedUserId && user.personalPublisherId === publisher._id;
           if (!isLinkedPersonal && !isLegacyPersonal) return null;
         }
-        const publicPublisher = await toPublicPublisherWithOfficial(ctx, publisher);
+        const publicPublisher = publisher
+          ? await toPublisherListItem(ctx, publisher, {
+              includePublishedItems: true,
+              includeAllPublishedItems: true,
+            })
+          : null;
         if (!publicPublisher) return null;
         return {
           publisher: publicPublisher,
@@ -1175,17 +1294,15 @@ export const listMine = query({
       }),
     );
     const visiblePublishers = publishers.filter(
-      (
-        item,
-      ): item is {
-        publisher: NonNullable<ReturnType<typeof toPublicPublisher>>;
-        role: Doc<"publisherMembers">["role"];
-      } => Boolean(item),
+      (item): item is NonNullable<(typeof publishers)[number]> => Boolean(item),
     );
-    const personalPublisher = await toPublicPublisherWithOfficial(
-      ctx,
-      await getPersonalPublisherForUserOrFallback(ctx, user),
-    );
+    const personalPublisherDoc = await getPersonalPublisherForUserOrFallback(ctx, user);
+    const personalPublisher = personalPublisherDoc
+      ? await toPublisherListItem(ctx, personalPublisherDoc, {
+          includePublishedItems: true,
+          includeAllPublishedItems: true,
+        })
+      : null;
     if (
       personalPublisher &&
       !visiblePublishers.some((entry) => entry.publisher._id === personalPublisher._id)
@@ -1227,17 +1344,12 @@ export const listStarredPage = query({
   },
   handler: async (ctx, args) => {
     const publisher = await getPublisherByHandle(ctx, args.handle);
-    if (
-      !publisher ||
-      publisher.kind !== "user" ||
-      !publisher.linkedUserId ||
-      publisher.deletedAt ||
-      publisher.deactivatedAt
-    ) {
+    const visible = await getPublicPublisherVisibility(ctx, publisher);
+    if (!visible?.linkedUser || visible.publisher.kind !== "user") {
       return { page: [], continueCursor: "", isDone: true };
     }
 
-    const linkedUserId = publisher.linkedUserId;
+    const linkedUserId = visible.linkedUser._id;
     const numItems = clampInt(args.paginationOpts.numItems, 1, 24);
     const offset = args.paginationOpts.cursor ? Number(args.paginationOpts.cursor) : 0;
     const safeOffset = Number.isFinite(offset) && offset > 0 ? Math.trunc(offset) : 0;
@@ -1297,17 +1409,19 @@ export const listPublishedPage = query({
   },
   handler: async (ctx, args) => {
     const publisher = await getPublisherByHandle(ctx, args.handle);
-    if (!publisher || publisher.deletedAt || publisher.deactivatedAt) {
+    const visible = await getPublicPublisherVisibility(ctx, publisher);
+    if (!visible) {
       return { page: [], continueCursor: "", isDone: true };
     }
+    const visiblePublisher = visible.publisher;
 
     const numItems = clampInt(args.paginationOpts.numItems, 1, 24);
     const offset = args.paginationOpts.cursor ? Number(args.paginationOpts.cursor) : 0;
     const safeOffset = Number.isFinite(offset) && offset > 0 ? Math.trunc(offset) : 0;
     const items = getPublisherCatalogItems(
-      publisher,
-      await getPublisherPublishedRows(ctx, publisher._id),
-      await isOfficialPublisher(ctx, publisher),
+      visiblePublisher,
+      await getPublisherPublishedRows(ctx, visiblePublisher._id),
+      await isOfficialPublisher(ctx, visiblePublisher),
       args.sort ?? "downloads",
     ).filter((item) => !args.kind || item.kind === args.kind);
     const nextOffset = safeOffset + numItems;
@@ -1331,22 +1445,24 @@ export const getPublishedDisplayManifest = query({
     if (args.kind === "plugin") return null;
 
     const publisher = await getPublisherByHandle(ctx, args.handle);
-    if (!publisher || publisher.deletedAt || publisher.deactivatedAt) return null;
+    const visible = await getPublicPublisherVisibility(ctx, publisher);
+    if (!visible) return null;
+    const visiblePublisher = visible.publisher;
 
     const sources = await ctx.db
       .query("githubSkillSources")
-      .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", publisher._id))
+      .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", visiblePublisher._id))
       .collect();
     if (sources.length === 0) return null;
 
-    const rows = await getPublisherPublishedRows(ctx, publisher._id);
+    const rows = await getPublisherPublishedRows(ctx, visiblePublisher._id);
     if (!args.kind && rows.packages.length > 0) return null;
 
     const sourceById = new Map(sources.map((source) => [String(source._id), source]));
     const items = getPublisherCatalogItems(
-      publisher,
+      visiblePublisher,
       rows,
-      await isOfficialPublisher(ctx, publisher),
+      await isOfficialPublisher(ctx, visiblePublisher),
       args.sort ?? "downloads",
     )
       .filter((item) => !args.kind || item.kind === args.kind)
@@ -1433,10 +1549,7 @@ export const listPublicPage = query({
           )
           .order("desc")
           .take(MAX_PUBLIC_PUBLISHER_LIST_LIMIT);
-    const publisherSummaries = activeRows
-      .map(toPublisherListSummary)
-      .filter((summary): summary is PublisherListSummary => Boolean(summary))
-      .filter(hasPublisherListContent);
+    const publisherSummaries = await getVisiblePublisherListSummaries(ctx, activeRows);
     const itemSummaries = publisherSummaries
       .filter(
         (summary) =>
@@ -1445,18 +1558,16 @@ export const listPublicPage = query({
       )
       .sort((a, b) => comparePublisherListItems(a.item, b.item));
     const globalPublisherSummaries = kindFilter
-      ? (
+      ? await getVisiblePublisherListSummaries(
+          ctx,
           await ctx.db
             .query("publishers")
             .withIndex("by_active_total_downloads", (q) =>
               q.eq("deletedAt", undefined).eq("deactivatedAt", undefined),
             )
             .order("desc")
-            .take(MAX_PUBLIC_PUBLISHER_LIST_LIMIT)
+            .take(MAX_PUBLIC_PUBLISHER_LIST_LIMIT),
         )
-          .map(toPublisherListSummary)
-          .filter((summary): summary is PublisherListSummary => Boolean(summary))
-          .filter(hasPublisherListContent)
       : publisherSummaries;
     const globalCounts = getPublisherListSummaryCounts(globalPublisherSummaries);
     const counts = queryText ? getPublisherListSummaryCounts(itemSummaries) : globalCounts;
@@ -1480,10 +1591,11 @@ export const listMembers = query({
   args: { publisherHandle: v.string() },
   handler: async (ctx, args) => {
     const publisher = await getPublisherByHandle(ctx, args.publisherHandle);
-    if (!publisher || publisher.deletedAt || publisher.deactivatedAt) return null;
+    const visible = await getPublicPublisherVisibility(ctx, publisher);
+    if (!visible) return null;
     const memberships = await ctx.db
       .query("publisherMembers")
-      .withIndex("by_publisher", (q) => q.eq("publisherId", publisher._id))
+      .withIndex("by_publisher", (q) => q.eq("publisherId", visible.publisher._id))
       .collect();
     const items = await Promise.all(
       memberships.map(async (membership) => {
@@ -1503,7 +1615,7 @@ export const listMembers = query({
       }),
     );
     return {
-      publisher: await toPublicPublisherWithOfficial(ctx, publisher),
+      publisher: await toPublicPublisherWithOfficial(ctx, visible.publisher),
       members: items.filter(Boolean),
     };
   },
@@ -1546,6 +1658,13 @@ export const deleteOrg = mutation({
       deletedAt: Date.now(),
       source: "settings",
     });
+  },
+});
+
+export const hardDeletePublisherRowsInternal = internalMutation({
+  args: { publisherId: v.id("publishers") },
+  handler: async (ctx, args) => {
+    return await hardDeletePublisherRows(ctx, args.publisherId);
   },
 });
 

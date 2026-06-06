@@ -71,6 +71,20 @@ crons.interval(
   { batchSize: 250, maxPages: 5, trigger: "cron" },
 );
 
+crons.interval(
+  "publisher-temporal-abuse-scan",
+  { hours: 24 },
+  internal.publisherAbuse.runTemporalPublisherAbuseScanInternal,
+  {
+    mode: "current",
+    dryRun: false,
+    candidateLimit: 1000,
+    batchSize: 50,
+    maxPages: 20,
+    trigger: "cron",
+  },
+);
+
 crons.interval("vt-pending-scans", { minutes: 5 }, internal.vt.pollPendingScans, {
   batchSize: 100,
 });

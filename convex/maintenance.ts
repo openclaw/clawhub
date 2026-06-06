@@ -2397,7 +2397,7 @@ async function repairLegacySkillOwnerPublisher(
   if (dryRun) return "repaired" as const;
 
   // The trigger-wrapped mutation syncs skill search digest and publisher stats.
-  // This repair only patches owner projections that triggers do not own.
+  // This repair only patches owner projections that remain source-of-truth.
   await ctx.db.patch(skill._id, { ownerPublisherId: publisher!._id });
 
   const aliases = await ctx.db
@@ -2407,15 +2407,6 @@ async function repairLegacySkillOwnerPublisher(
   for (const alias of aliases) {
     if (alias.ownerPublisherId === publisher!._id) continue;
     await ctx.db.patch(alias._id, { ownerPublisherId: publisher!._id });
-  }
-
-  const embeddings = await ctx.db
-    .query("skillEmbeddings")
-    .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
-    .collect();
-  for (const embedding of embeddings) {
-    if (embedding.ownerPublisherId === publisher!._id) continue;
-    await ctx.db.patch(embedding._id, { ownerPublisherId: publisher!._id });
   }
 
   return "repaired" as const;
@@ -2465,15 +2456,6 @@ async function patchLegacySkillOwnerPublisher(
   for (const alias of aliases) {
     if (alias.ownerPublisherId === publisherId) continue;
     await ctx.db.patch(alias._id, { ownerPublisherId: publisherId });
-  }
-
-  const embeddings = await ctx.db
-    .query("skillEmbeddings")
-    .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
-    .collect();
-  for (const embedding of embeddings) {
-    if (embedding.ownerPublisherId === publisherId) continue;
-    await ctx.db.patch(embedding._id, { ownerPublisherId: publisherId });
   }
 }
 
