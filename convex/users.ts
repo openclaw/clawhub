@@ -1076,7 +1076,11 @@ async function getSelfDeletedAccountEligibility(
   const selfDeleteAuditLog =
     logs.find((log) => log.action === "user.delete" && log.actorUserId === user._id) ?? null;
   const hasBanAudit = logs.some((log) => BAN_AUDIT_ACTIONS.has(log.action));
-  if (selfDeleteAuditLog && !hasBanAudit) {
+  const hasRecoveryPurgeAudit = logs.some((log) => log.action === "user.recovery_purge");
+  const selfDeleteAuditAlreadyCleaned = Boolean(
+    asRecord(selfDeleteAuditLog?.metadata)?.cleanup || hasRecoveryPurgeAudit,
+  );
+  if (selfDeleteAuditLog && !hasBanAudit && !selfDeleteAuditAlreadyCleaned) {
     return {
       eligible: true,
       reason: "self_delete_audit" as const,

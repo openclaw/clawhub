@@ -1844,6 +1844,146 @@ describe("users.purgeSelfDeletedAccountRecoveryBatchInternal", () => {
     expect(runMutation).not.toHaveBeenCalled();
   });
 
+  it("skips already-cleaned self-delete tombstones without auth locks", async () => {
+    const users = [
+      {
+        _id: "users:recovery-purged",
+        _creationTime: 1,
+        deactivatedAt: 1_700_000_000_000,
+        purgedAt: 1_700_000_000_000,
+        deletedAt: undefined,
+        banReason: undefined,
+        handle: undefined,
+        displayName: undefined,
+        name: undefined,
+        email: undefined,
+        personalPublisherId: undefined,
+      },
+      {
+        _id: "users:modern-cleanup",
+        _creationTime: 2,
+        deactivatedAt: 1_700_000_000_001,
+        purgedAt: 1_700_000_000_001,
+        deletedAt: undefined,
+        banReason: undefined,
+        handle: undefined,
+        displayName: undefined,
+        name: undefined,
+        email: undefined,
+        personalPublisherId: undefined,
+      },
+    ];
+    const logsByUser = new Map([
+      [
+        "users:recovery-purged",
+        [
+          {
+            _id: "auditLogs:self-delete",
+            actorUserId: "users:recovery-purged",
+            action: "user.delete",
+            targetType: "user",
+            targetId: "users:recovery-purged",
+            metadata: { previous: { handle: "gone" } },
+          },
+          {
+            _id: "auditLogs:recovery-purge",
+            actorUserId: "users:recovery-purged",
+            action: "user.recovery_purge",
+            targetType: "user",
+            targetId: "users:recovery-purged",
+            metadata: { source: "backfill" },
+          },
+        ],
+      ],
+      [
+        "users:modern-cleanup",
+        [
+          {
+            _id: "auditLogs:modern-delete",
+            actorUserId: "users:modern-cleanup",
+            action: "user.delete",
+            targetType: "user",
+            targetId: "users:modern-cleanup",
+            metadata: { cleanup: { authAccounts: 1 } },
+          },
+        ],
+      ],
+    ]);
+    const query = vi.fn((table: string) => {
+      if (table === "users") {
+        return {
+          withIndex: vi.fn((indexName: string) => {
+            if (indexName !== "by_deactivated_purged_at") {
+              throw new Error(`Unexpected users index ${indexName}`);
+            }
+            return {
+              paginate: vi.fn(async () => ({
+                page: users,
+                isDone: true,
+                continueCursor: "",
+              })),
+            };
+          }),
+        };
+      }
+      if (table === "auditLogs") {
+        return {
+          withIndex: vi.fn((_indexName: string, buildQuery: (q: unknown) => unknown) => {
+            const fields: Record<string, string> = {};
+            const q = {
+              eq: (field: string, value: string) => {
+                fields[field] = value;
+                return q;
+              },
+            };
+            buildQuery(q);
+            return {
+              collect: vi.fn(async () => logsByUser.get(fields.targetId) ?? []),
+            };
+          }),
+        };
+      }
+      if (table === "authAccounts") {
+        return {
+          withIndex: vi.fn((_indexName: string) => ({
+            collect: vi.fn(async () => []),
+          })),
+        };
+      }
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    const result = (await purgeSelfDeletedAccountRecoveryBatchInternalHandler(
+      {
+        db: {
+          query,
+          patch: vi.fn(),
+          insert: vi.fn(),
+          delete: vi.fn(),
+          get: vi.fn(),
+          normalizeId: vi.fn(),
+        },
+        runMutation: vi.fn(),
+      } as never,
+      { dryRun: true, mode: "deactivated", limit: 10 },
+    )) as {
+      dryRun: boolean;
+      eligible: number;
+      candidates: Array<Record<string, unknown>>;
+      skipped: Array<Record<string, unknown>>;
+    };
+
+    expect(result).toMatchObject({
+      dryRun: true,
+      eligible: 0,
+      candidates: [],
+      skipped: [
+        { userId: "users:recovery-purged", reason: "not_self_deleted_or_security_blocked" },
+        { userId: "users:modern-cleanup", reason: "not_self_deleted_or_security_blocked" },
+      ],
+    });
+  });
+
   it("dry-runs auth-locked purged users without self-delete audit proof", async () => {
     const users = [
       {
