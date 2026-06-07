@@ -644,16 +644,6 @@ type VerifySecurityVersion = {
     | "checkedAt"
   > &
     Partial<Pick<NonNullable<Doc<"skillVersions">["skillSpectorAnalysis"]>, "summary" | "error">>;
-  depRegistryAnalysis?: Pick<
-    NonNullable<Doc<"skillVersions">["depRegistryAnalysis"]>,
-    "status" | "summary" | "checkedAt"
-  > &
-    Partial<
-      Pick<
-        NonNullable<Doc<"skillVersions">["depRegistryAnalysis"]>,
-        "notFoundPackages" | "unresolvedPackages"
-      >
-    >;
 };
 
 type SecurityVerdictTargetResult = {
@@ -702,9 +692,6 @@ function buildVerifySecurity(version: VerifySecurityVersion) {
     : null;
   const skillSpectorStatus = version.skillSpectorAnalysis
     ? normalizeVerificationStatus(version.skillSpectorAnalysis.status)
-    : null;
-  const depStatus = version.depRegistryAnalysis
-    ? normalizeVerificationStatus(version.depRegistryAnalysis.status)
     : null;
   const status = clawStatus;
 
@@ -761,16 +748,7 @@ function buildVerifySecurity(version: VerifySecurityVersion) {
             checkedAt: version.skillSpectorAnalysis.checkedAt ?? null,
           }
         : null,
-      dependencyRegistry: version.depRegistryAnalysis
-        ? {
-            status: depStatus ?? "pending",
-            rawStatus: version.depRegistryAnalysis.status,
-            summary: version.depRegistryAnalysis.summary ?? null,
-            notFoundPackages: version.depRegistryAnalysis.notFoundPackages ?? [],
-            unresolvedPackages: version.depRegistryAnalysis.unresolvedPackages ?? [],
-            checkedAt: version.depRegistryAnalysis.checkedAt ?? null,
-          }
-        : null,
+      dependencyRegistry: null,
     },
   };
 }
@@ -837,7 +815,6 @@ function getVerifySecurityCheckedAt(security: ReturnType<typeof buildVerifySecur
     security.signals.staticScan?.checkedAt,
     security.signals.virusTotal?.checkedAt,
     security.signals.skillSpector?.checkedAt,
-    security.signals.dependencyRegistry?.checkedAt,
   ].filter((value): value is number => typeof value === "number");
   return candidates.length > 0 ? Math.max(...candidates) : null;
 }
@@ -884,14 +861,7 @@ function buildSecurityVerdictSummary(security: ReturnType<typeof buildVerifySecu
             checkedAt: security.signals.skillSpector.checkedAt,
           }
         : null,
-      dependencyRegistry: security.signals.dependencyRegistry
-        ? {
-            status: security.signals.dependencyRegistry.status,
-            rawStatus: security.signals.dependencyRegistry.rawStatus,
-            summary: security.signals.dependencyRegistry.summary,
-            checkedAt: security.signals.dependencyRegistry.checkedAt,
-          }
-        : null,
+      dependencyRegistry: null,
     },
   };
 }

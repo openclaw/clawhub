@@ -1,5 +1,9 @@
 /* @vitest-environment node */
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("@convex-dev/auth/server", () => ({
+  getAuthUserId: vi.fn(),
+}));
 
 vi.mock("./_generated/api", () => ({
   internal: {
@@ -21,6 +25,12 @@ vi.mock("./_generated/api", () => ({
       backfillSkillFingerprintsInternal: Symbol("backfillSkillFingerprintsInternal"),
       applySkillCapabilityTagsInternal: Symbol("applySkillCapabilityTagsInternal"),
       backfillSkillCapabilityTagsInternal: Symbol("backfillSkillCapabilityTagsInternal"),
+      getDependencyRegistryScanCleanupPageInternal: Symbol(
+        "getDependencyRegistryScanCleanupPageInternal",
+      ),
+      applyDependencyRegistryScanCleanupInternal: Symbol(
+        "applyDependencyRegistryScanCleanupInternal",
+      ),
       backfillDigestVersionSummary: Symbol("backfillDigestVersionSummary"),
       getEmptySkillCleanupPageInternal: Symbol("getEmptySkillCleanupPageInternal"),
       applyEmptySkillCleanupInternal: Symbol("applyEmptySkillCleanupInternal"),
@@ -34,6 +44,12 @@ vi.mock("./_generated/api", () => ({
       getVersionByIdInternal: Symbol("skills.getVersionByIdInternal"),
       getOwnerSkillActivityInternal: Symbol("skills.getOwnerSkillActivityInternal"),
     },
+    skillCards: {
+      enqueueForVersionInternal: Symbol("skillCards.enqueueForVersionInternal"),
+    },
+    securityScan: {
+      enqueueSkillVersionScanInternal: Symbol("securityScan.enqueueSkillVersionScanInternal"),
+    },
     users: {
       getByIdInternal: Symbol("users.getByIdInternal"),
     },
@@ -45,6 +61,9 @@ vi.mock("./lib/skillSummary", () => ({
 }));
 
 const {
+  applyDependencyRegistryScanCleanupInternalHandler,
+  cleanupDependencyRegistryScanDataHandler,
+  cleanupDependencyRegistryScanDataInternalHandler,
   applySkillCapabilityTagsInternal,
   backfillDigestVersionSummary,
   backfillLatestVersionSummaryInternal,
@@ -61,10 +80,479 @@ const {
 } = await import("./maintenance");
 const { internal } = await import("./_generated/api");
 const { generateSkillSummary } = await import("./lib/skillSummary");
+const { getAuthUserId } = await import("@convex-dev/auth/server");
+
+beforeEach(() => {
+  vi.mocked(getAuthUserId).mockReset();
+  vi.mocked(getAuthUserId).mockResolvedValue(null);
+});
 
 function makeBlob(text: string) {
   return { text: () => Promise.resolve(text) } as unknown as Blob;
 }
+
+describe("maintenance dependency registry scan cleanup", () => {
+  it("rejects non-admin public cleanup before scanning cleanup targets", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:caller" as never);
+    const runQuery = vi.fn(async () => ({
+      _id: "users:caller",
+      role: "user",
+      deletedAt: undefined,
+      deactivatedAt: undefined,
+    }));
+    const runMutation = vi.fn();
+
+    await expect(
+      cleanupDependencyRegistryScanDataHandler({ runQuery, runMutation } as never, {
+        batchSize: 25,
+      }),
+    ).rejects.toThrow("Forbidden");
+
+    expect(runQuery).toHaveBeenCalledOnce();
+    expect(runMutation).not.toHaveBeenCalled();
+  });
+
+  it("allows admin public cleanup to delegate to the internal cleanup runner", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:admin" as never);
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("userId" in args) {
+        return {
+          _id: "users:admin",
+          role: "admin",
+          deletedAt: undefined,
+          deactivatedAt: undefined,
+        };
+      }
+      return {
+        versionItems: [],
+        skillItems: [],
+        cacheRowIds: [],
+        versionCursor: null,
+        skillCursor: null,
+        cacheCursor: null,
+        versionsDone: true,
+        skillsDone: true,
+        cacheDone: true,
+      };
+    });
+    const runMutation = vi.fn();
+
+    const result = await cleanupDependencyRegistryScanDataHandler(
+      { runQuery, runMutation } as never,
+      { batchSize: 25 },
+    );
+
+    expect(result).toMatchObject({ ok: true, dryRun: true, isDone: true });
+    expect(runQuery).toHaveBeenCalledTimes(2);
+    expect(runMutation).not.toHaveBeenCalled();
+  });
+
+  it("dry-runs by default and does not write", async () => {
+    const runQuery = vi.fn(async () => ({
+      versionItems: [
+        {
+          id: "skillVersions:legacy",
+          hasDepRegistryAnalysis: true,
+          hasDepRegistryScanStatus: true,
+          hasLegacyStaticScan: true,
+        },
+      ],
+      skillItems: [{ id: "skills:legacy", hasLegacyModeration: true }],
+      cacheRowIds: ["depRegistryCache:1"],
+      versionCursor: null,
+      skillCursor: null,
+      cacheCursor: null,
+      versionsDone: true,
+      skillsDone: true,
+      cacheDone: true,
+    }));
+    const runMutation = vi.fn();
+
+    const result = await cleanupDependencyRegistryScanDataInternalHandler(
+      { runQuery, runMutation } as never,
+      { batchSize: 25, maxBatches: 1 },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      dryRun: true,
+      stats: {
+        versionRowsScanned: 1,
+        versionRowsMatched: 1,
+        staticScansMatched: 1,
+        skillRowsScanned: 1,
+        skillRowsMatched: 1,
+        cacheRowsScanned: 1,
+        versionRowsPatched: 0,
+        staticScansRewritten: 0,
+        skillRowsPatched: 0,
+        cacheRowsDeleted: 0,
+      },
+      samples: {
+        versionIds: ["skillVersions:legacy"],
+        skillIds: ["skills:legacy"],
+        cacheRowIds: ["depRegistryCache:1"],
+      },
+      isDone: true,
+    });
+    expect(runMutation).not.toHaveBeenCalled();
+  });
+
+  it("requires the confirmation token before applying", async () => {
+    await expect(
+      cleanupDependencyRegistryScanDataInternalHandler({ runQuery: vi.fn() } as never, {
+        dryRun: false,
+      }),
+    ).rejects.toThrow(/delete-dependency-registry-scan-data/);
+  });
+
+  it("applies only matched dependency registry cleanup targets", async () => {
+    const runQuery = vi.fn(async () => ({
+      versionItems: [
+        {
+          id: "skillVersions:legacy",
+          hasDepRegistryAnalysis: true,
+          hasDepRegistryScanStatus: true,
+          hasLegacyStaticScan: false,
+        },
+        {
+          id: "skillVersions:clean",
+          hasDepRegistryAnalysis: false,
+          hasDepRegistryScanStatus: false,
+          hasLegacyStaticScan: false,
+        },
+      ],
+      skillItems: [
+        { id: "skills:legacy", hasLegacyModeration: true },
+        { id: "skills:clean", hasLegacyModeration: false },
+      ],
+      cacheRowIds: ["depRegistryCache:1"],
+      versionCursor: "next-version",
+      skillCursor: "next-skill",
+      cacheCursor: null,
+      versionsDone: false,
+      skillsDone: false,
+      cacheDone: true,
+    }));
+    const runMutation = vi.fn(async () => ({
+      versionRowsPatched: 1,
+      staticScansRewritten: 0,
+      skillRowsPatched: 1,
+      cacheRowsDeleted: 1,
+    }));
+
+    const result = await cleanupDependencyRegistryScanDataInternalHandler(
+      { runQuery, runMutation } as never,
+      {
+        dryRun: false,
+        confirm: "delete-dependency-registry-scan-data",
+        batchSize: 25,
+        maxBatches: 1,
+      },
+    );
+
+    expect(result).toMatchObject({
+      dryRun: false,
+      stats: {
+        versionRowsScanned: 2,
+        versionRowsMatched: 1,
+        skillRowsScanned: 2,
+        skillRowsMatched: 1,
+        cacheRowsScanned: 1,
+        versionRowsPatched: 1,
+        skillRowsPatched: 1,
+        cacheRowsDeleted: 1,
+      },
+      cursors: { versionCursor: "next-version", skillCursor: "next-skill", cacheCursor: null },
+      isDone: false,
+    });
+    expect(runMutation).toHaveBeenCalledWith(
+      internal.maintenance.applyDependencyRegistryScanCleanupInternal,
+      {
+        confirm: "delete-dependency-registry-scan-data",
+        versionIds: ["skillVersions:legacy"],
+        skillIds: ["skills:legacy"],
+        cacheRowIds: ["depRegistryCache:1"],
+      },
+    );
+  });
+
+  it("requires the confirmation token at the internal write boundary", async () => {
+    const get = vi.fn();
+    const patch = vi.fn();
+    const deleteRow = vi.fn();
+
+    await expect(
+      applyDependencyRegistryScanCleanupInternalHandler(
+        {
+          db: {
+            get,
+            patch,
+            delete: deleteRow,
+          },
+        } as never,
+        {
+          versionIds: ["skillVersions:legacy" as never],
+          skillIds: [],
+          cacheRowIds: ["depRegistryCache:delete-me" as never],
+        } as never,
+      ),
+    ).rejects.toThrow(/delete-dependency-registry-scan-data/);
+
+    expect(get).not.toHaveBeenCalled();
+    expect(patch).not.toHaveBeenCalled();
+    expect(deleteRow).not.toHaveBeenCalled();
+  });
+
+  it("removes only targeted version scan fields and cache rows", async () => {
+    const skillVersions = new Map<string, Record<string, unknown>>([
+      [
+        "skillVersions:legacy",
+        {
+          _id: "skillVersions:legacy",
+          depRegistryAnalysis: { status: "suspicious", missing: [] },
+          depRegistryScanStatus: "suspicious",
+          staticScan: {
+            status: "suspicious",
+            reasonCodes: ["suspicious.dep_not_found_on_registry", "review.too_short"],
+            findings: [
+              { code: "suspicious.dep_not_found_on_registry", message: "missing package" },
+              { code: "review.too_short", message: "too short" },
+            ],
+            summary: "Detected: missing package",
+          },
+        },
+      ],
+      [
+        "skillVersions:untouched",
+        {
+          _id: "skillVersions:untouched",
+          depRegistryAnalysis: { status: "clean", missing: [] },
+          depRegistryScanStatus: "clean",
+        },
+      ],
+    ]);
+    const depRegistryCache = new Map<string, Record<string, unknown>>([
+      ["depRegistryCache:delete-me", { _id: "depRegistryCache:delete-me" }],
+      ["depRegistryCache:keep-me", { _id: "depRegistryCache:keep-me" }],
+    ]);
+    const tableMap: Record<string, Map<string, Record<string, unknown>>> = {
+      skillVersions,
+      depRegistryCache,
+    };
+    const getTableForId = (id: string) => id.split(":")[0];
+    const patch = vi.fn(async (id: string, value: Record<string, unknown>) => {
+      Object.assign(tableMap[getTableForId(id)].get(id) ?? {}, value);
+    });
+    const deleteRow = vi.fn(async (id: string) => {
+      tableMap[getTableForId(id)].delete(id);
+    });
+    const runAfter = vi.fn();
+
+    const result = await applyDependencyRegistryScanCleanupInternalHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => tableMap[getTableForId(id)]?.get(id) ?? null),
+          patch,
+          delete: deleteRow,
+        },
+        scheduler: { runAfter },
+      } as never,
+      {
+        confirm: "delete-dependency-registry-scan-data",
+        versionIds: ["skillVersions:legacy" as never],
+        skillIds: [],
+        cacheRowIds: ["depRegistryCache:delete-me" as never],
+      },
+    );
+
+    expect(result).toEqual({
+      versionRowsPatched: 1,
+      staticScansRewritten: 1,
+      skillRowsPatched: 0,
+      cacheRowsDeleted: 1,
+    });
+    expect(patch).toHaveBeenCalledWith("skillVersions:legacy", {
+      depRegistryAnalysis: undefined,
+      depRegistryScanStatus: undefined,
+      staticScan: {
+        status: "clean",
+        reasonCodes: ["review.too_short"],
+        findings: [{ code: "review.too_short", message: "too short" }],
+        summary: "Review: review.too_short",
+      },
+    });
+    expect(deleteRow).toHaveBeenCalledWith("depRegistryCache:delete-me");
+    expect(skillVersions.get("skillVersions:untouched")).toMatchObject({
+      depRegistryAnalysis: { status: "clean", missing: [] },
+      depRegistryScanStatus: "clean",
+    });
+    expect(depRegistryCache.has("depRegistryCache:keep-me")).toBe(true);
+    expect(runAfter).toHaveBeenCalledTimes(2);
+    expect(runAfter).toHaveBeenCalledWith(0, internal.skillCards.enqueueForVersionInternal, {
+      versionId: "skillVersions:legacy",
+      source: "scan",
+    });
+    expect(runAfter).toHaveBeenCalledWith(
+      0,
+      internal.securityScan.enqueueSkillVersionScanInternal,
+      {
+        versionId: "skillVersions:legacy",
+        source: "backfill",
+        waitForVtMs: 0,
+      },
+    );
+  });
+
+  it("recomputes a hidden skill when retired dependency registry moderation was the only finding", async () => {
+    const skill = {
+      _id: "skills:legacy",
+      _creationTime: 100,
+      slug: "legacy",
+      displayName: "Legacy",
+      summary: "Legacy dep registry-only finding.",
+      icon: undefined,
+      ownerUserId: undefined,
+      ownerPublisherId: undefined,
+      canonicalSkillId: undefined,
+      forkOf: undefined,
+      latestVersionId: "skillVersions:legacy",
+      installKind: undefined,
+      githubHasSkillCard: undefined,
+      githubCurrentStatus: undefined,
+      githubScanStatus: undefined,
+      latestVersionSummary: undefined,
+      tags: {},
+      capabilityTags: [],
+      badges: undefined,
+      stats: { downloads: 0, stars: 0, installsCurrent: 0, installsAllTime: 0 },
+      statsDownloads: 0,
+      statsStars: 0,
+      statsInstallsCurrent: 0,
+      statsInstallsAllTime: 0,
+      softDeletedAt: undefined,
+      moderationStatus: "hidden",
+      moderationFlags: ["flagged.suspicious"],
+      moderationReason: "scanner.aggregate.suspicious",
+      moderationVerdict: "suspicious",
+      moderationReasonCodes: ["suspicious.dep_not_found_on_registry"],
+      moderationEvidence: [
+        {
+          code: "suspicious.dep_not_found_on_registry",
+          severity: "warn",
+          message: "Dependency was not found on its registry.",
+        },
+      ],
+      moderationSummary: "Suspicious: suspicious.dep_not_found_on_registry",
+      isSuspicious: true,
+      hiddenAt: 111,
+      hiddenBy: "users:moderator",
+      createdAt: 100,
+      updatedAt: 110,
+    };
+    const skillVersions = new Map<string, Record<string, unknown>>([
+      [
+        "skillVersions:legacy",
+        {
+          _id: "skillVersions:legacy",
+          skillId: "skills:legacy",
+          softDeletedAt: undefined,
+        },
+      ],
+    ]);
+    const skills = new Map<string, Record<string, unknown>>([["skills:legacy", skill]]);
+    const skillSearchDigest = new Map<string, Record<string, unknown>>([
+      ["skillSearchDigest:legacy", { _id: "skillSearchDigest:legacy", skillId: "skills:legacy" }],
+    ]);
+    const globalStats = new Map<string, Record<string, unknown>>([
+      ["globalStats:default", { _id: "globalStats:default", key: "default", activeSkillsCount: 4 }],
+    ]);
+    const tables: Record<string, Map<string, Record<string, unknown>>> = {
+      skills,
+      skillVersions,
+      skillSearchDigest,
+      globalStats,
+      depRegistryCache: new Map(),
+    };
+    const getTableForId = (id: string) => id.split(":")[0];
+    const uniqueFromTable = (tableName: string, filters: Record<string, unknown>) => {
+      for (const row of tables[tableName]?.values() ?? []) {
+        const matches = Object.entries(filters).every(([field, value]) => row[field] === value);
+        if (matches) return row;
+      }
+      return null;
+    };
+    const patch = vi.fn(async (id: string, value: Record<string, unknown>) => {
+      Object.assign(tables[getTableForId(id)].get(id) ?? {}, value);
+    });
+    const runAfter = vi.fn();
+    const query = vi.fn((tableName: string) => ({
+      withIndex: (
+        _indexName: string,
+        build: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+      ) => {
+        const filters: Record<string, unknown> = {};
+        build({
+          eq: (field, value) => {
+            filters[field] = value;
+            return {
+              eq: (nextField: string, nextValue: unknown) => {
+                filters[nextField] = nextValue;
+                return filters;
+              },
+            };
+          },
+        });
+        return { unique: async () => uniqueFromTable(tableName, filters) };
+      },
+    }));
+
+    const result = await applyDependencyRegistryScanCleanupInternalHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => tables[getTableForId(id)]?.get(id) ?? null),
+          patch,
+          delete: vi.fn(),
+          query,
+        },
+        scheduler: { runAfter },
+      } as never,
+      {
+        confirm: "delete-dependency-registry-scan-data",
+        versionIds: [],
+        skillIds: ["skills:legacy" as never],
+        cacheRowIds: [],
+      },
+    );
+
+    expect(result).toEqual({
+      versionRowsPatched: 0,
+      staticScansRewritten: 0,
+      skillRowsPatched: 1,
+      cacheRowsDeleted: 0,
+    });
+    expect(skills.get("skills:legacy")).toMatchObject({
+      moderationStatus: "active",
+      moderationReason: "scanner.aggregate.clean",
+      moderationVerdict: "clean",
+      moderationReasonCodes: undefined,
+      moderationEvidence: undefined,
+      moderationFlags: undefined,
+      moderationSummary: "No suspicious patterns detected.",
+      isSuspicious: false,
+      hiddenAt: undefined,
+      hiddenBy: undefined,
+    });
+    expect(skillSearchDigest.get("skillSearchDigest:legacy")).toMatchObject({
+      moderationStatus: "active",
+      moderationReason: "scanner.aggregate.clean",
+      isSuspicious: false,
+      skillId: "skills:legacy",
+    });
+    expect(globalStats.get("globalStats:default")).toMatchObject({ activeSkillsCount: 5 });
+    expect(runAfter).not.toHaveBeenCalled();
+  });
+});
 
 type QueryEq = {
   eq: (field: string, value: unknown) => QueryEq;

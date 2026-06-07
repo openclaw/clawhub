@@ -57,7 +57,6 @@ import type * as lib_changelog from "../lib/changelog.js";
 import type * as lib_clawpack from "../lib/clawpack.js";
 import type * as lib_commentScamPrompt from "../lib/commentScamPrompt.js";
 import type * as lib_contentTypes from "../lib/contentTypes.js";
-import type * as lib_depRegistryScan from "../lib/depRegistryScan.js";
 import type * as lib_devAuth from "../lib/devAuth.js";
 import type * as lib_devSeed from "../lib/devSeed.js";
 import type * as lib_emails from "../lib/emails.js";
@@ -211,7 +210,6 @@ declare const fullApi: ApiFromModules<{
   "lib/clawpack": typeof lib_clawpack;
   "lib/commentScamPrompt": typeof lib_commentScamPrompt;
   "lib/contentTypes": typeof lib_contentTypes;
-  "lib/depRegistryScan": typeof lib_depRegistryScan;
   "lib/devAuth": typeof lib_devAuth;
   "lib/devSeed": typeof lib_devSeed;
   "lib/emails": typeof lib_emails;

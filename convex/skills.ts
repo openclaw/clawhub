@@ -34,7 +34,6 @@ import {
 import { getSkillBadgeMap, getSkillBadgeMaps, isSkillHighlighted } from "./lib/badges";
 import { scheduleNextBatchIfNeeded } from "./lib/batching";
 import { generateChangelogPreview as buildChangelogPreview } from "./lib/changelog";
-import { mergeDepRegistryFinding } from "./lib/depRegistryScan";
 import { embeddingVisibilityFor } from "./lib/embeddingVisibility";
 import {
   canHealSkillOwnershipByGitHubProviderAccountId,
@@ -225,31 +224,6 @@ const skillSpectorAnalysisValidator = v.object({
   scannerVersion: v.optional(v.string()),
   summary: v.optional(v.string()),
   error: v.optional(v.string()),
-  checkedAt: v.number(),
-});
-
-const depRegistryStatusValidator = v.union(
-  v.literal("clean"),
-  v.literal("suspicious"),
-  v.literal("error"),
-);
-
-const depRegistryValidator = v.union(v.literal("pypi"), v.literal("npm"), v.literal("cargo"));
-
-const depRegistryAnalysisValidator = v.object({
-  status: depRegistryStatusValidator,
-  results: v.array(
-    v.object({
-      name: v.string(),
-      registry: depRegistryValidator,
-      source: v.string(),
-      exists: v.boolean(),
-      httpStatus: v.optional(v.number()),
-    }),
-  ),
-  notFoundPackages: v.array(v.string()),
-  unresolvedPackages: v.array(v.string()),
-  summary: v.string(),
   checkedAt: v.number(),
 });
 
@@ -3041,15 +3015,6 @@ function compactSecurityVerdictVersion(version: Doc<"skillVersions">) {
               ? { scannerVersion: version.skillSpectorAnalysis.scannerVersion }
               : {}),
             checkedAt: version.skillSpectorAnalysis.checkedAt,
-          },
-        }
-      : {}),
-    ...(version.depRegistryAnalysis
-      ? {
-          depRegistryAnalysis: {
-            status: version.depRegistryAnalysis.status,
-            summary: version.depRegistryAnalysis.summary,
-            checkedAt: version.depRegistryAnalysis.checkedAt,
           },
         }
       : {}),
@@ -7132,36 +7097,6 @@ export const updateSkillVersionStaticScanInternal = internalMutation({
     });
 
     return { ok: true as const, status: args.staticScan.status };
-  },
-});
-
-export const updateVersionDepRegistryAnalysisInternal = internalMutation({
-  args: {
-    versionId: v.id("skillVersions"),
-    depRegistryAnalysis: depRegistryAnalysisValidator,
-  },
-  handler: async (ctx, args) => {
-    const version = await ctx.db.get(args.versionId);
-    if (!version) return { ok: true as const, skipped: "missing" as const };
-
-    const staticScan = mergeDepRegistryFinding({
-      staticScan: version.staticScan,
-      analysis: args.depRegistryAnalysis,
-      statusFromCodes: verdictFromCodes,
-      summarizeCodes: summarizeReasonCodes,
-    });
-    const versionPatch = {
-      depRegistryAnalysis: args.depRegistryAnalysis,
-      depRegistryScanStatus: args.depRegistryAnalysis.status,
-      staticScan,
-    };
-
-    await ctx.db.patch(version._id, versionPatch);
-    await ctx.scheduler?.runAfter(0, internal.skillCards.enqueueForVersionInternal, {
-      versionId: version._id,
-      source: "scan",
-    });
-    return { ok: true as const, status: args.depRegistryAnalysis.status };
   },
 });
 

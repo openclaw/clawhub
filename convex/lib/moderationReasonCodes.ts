@@ -45,7 +45,6 @@ export const REASON_CODES = {
   MALICIOUS_INSTALL_PROMPT: "malicious.install_terminal_payload",
   KNOWN_BLOCKED_SIGNATURE: "malicious.known_blocked_signature",
   STEALTH_BROWSER_ABUSE: "malicious.stealth_browser_abuse",
-  DEP_NOT_FOUND: "suspicious.dep_not_found_on_registry",
 } as const;
 
 const MALICIOUS_CODES = new Set<string>([

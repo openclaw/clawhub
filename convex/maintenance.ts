@@ -4,6 +4,12 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx } from "./_generated/server";
 import { action, internalAction, internalMutation, internalQuery } from "./functions";
 import { assertRole, requireUserFromAction } from "./lib/access";
+import { adjustGlobalPublicSkillsCount, getPublicSkillVisibilityDelta } from "./lib/globalStats";
+import {
+  legacyFlagsFromVerdict,
+  summarizeReasonCodes,
+  verdictFromCodes,
+} from "./lib/moderationReasonCodes";
 import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
 import {
   derivePersonalPublisherHandle,
@@ -30,6 +36,7 @@ import {
   extractValidatedDigestFields,
   getFirstSearchToken,
   normalizeSkillSearchText,
+  syncSkillSearchDigestForSkill,
   upsertSkillSearchDigest,
 } from "./lib/skillSearchDigest";
 import { generateSkillSummary } from "./lib/skillSummary";
@@ -42,6 +49,9 @@ const DEFAULT_EMPTY_SKILL_MAX_README_BYTES = 8000;
 const DEFAULT_EMPTY_SKILL_NOMINATION_THRESHOLD = 3;
 const DEFAULT_CAPABILITY_BACKFILL_DELAY_MS = 500;
 const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
+const DEP_REGISTRY_CLEANUP_CONFIRMATION = "delete-dependency-registry-scan-data" as const;
+const RETIRED_DEP_REGISTRY_REASON_CODE = "suspicious.dep_not_found_on_registry";
+const CLEANUP_SAMPLE_LIMIT = 5;
 
 type BackfillStats = {
   skillsScanned: number;
@@ -127,6 +137,587 @@ type LegacyPublisherOwnershipForUserRepairResult = Omit<
   publisherId: Id<"publishers"> | null;
   nextPhase?: LegacyPublisherOwnershipTargetPhase;
 };
+
+type SkillVersionStaticScan = NonNullable<Doc<"skillVersions">["staticScan"]>;
+
+type DependencyRegistryCleanupVersionItem = {
+  id: Id<"skillVersions">;
+  hasDepRegistryAnalysis: boolean;
+  hasDepRegistryScanStatus: boolean;
+  hasLegacyStaticScan: boolean;
+};
+
+type DependencyRegistryCleanupSkillItem = {
+  id: Id<"skills">;
+  hasLegacyModeration: boolean;
+};
+
+type DependencyRegistryCleanupPageResult = {
+  versionItems: DependencyRegistryCleanupVersionItem[];
+  skillItems: DependencyRegistryCleanupSkillItem[];
+  cacheRowIds: Id<"depRegistryCache">[];
+  versionCursor: string | null;
+  skillCursor: string | null;
+  cacheCursor: string | null;
+  versionsDone: boolean;
+  skillsDone: boolean;
+  cacheDone: boolean;
+};
+
+type DependencyRegistryCleanupStats = {
+  versionRowsScanned: number;
+  versionRowsMatched: number;
+  staticScansMatched: number;
+  skillRowsScanned: number;
+  skillRowsMatched: number;
+  versionRowsPatched: number;
+  staticScansRewritten: number;
+  skillRowsPatched: number;
+  cacheRowsScanned: number;
+  cacheRowsDeleted: number;
+};
+
+type DependencyRegistryCleanupSamples = {
+  versionIds: Id<"skillVersions">[];
+  skillIds: Id<"skills">[];
+  cacheRowIds: Id<"depRegistryCache">[];
+};
+
+type DependencyRegistryCleanupActionArgs = {
+  dryRun?: boolean;
+  confirm?: typeof DEP_REGISTRY_CLEANUP_CONFIRMATION;
+  batchSize?: number;
+  maxBatches?: number;
+  versionCursor?: string;
+  skillCursor?: string;
+  cacheCursor?: string;
+  versionsDone?: boolean;
+  skillsDone?: boolean;
+  cacheDone?: boolean;
+};
+
+type DependencyRegistryCleanupActionResult = {
+  ok: true;
+  dryRun: boolean;
+  stats: DependencyRegistryCleanupStats;
+  samples: DependencyRegistryCleanupSamples;
+  cursors: {
+    versionCursor: string | null;
+    skillCursor: string | null;
+    cacheCursor: string | null;
+  };
+  done: {
+    versionsDone: boolean;
+    skillsDone: boolean;
+    cacheDone: boolean;
+  };
+  isDone: boolean;
+};
+
+type DependencyRegistryCleanupApplyArgs = {
+  confirm: typeof DEP_REGISTRY_CLEANUP_CONFIRMATION;
+  versionIds: Id<"skillVersions">[];
+  skillIds: Id<"skills">[];
+  cacheRowIds: Id<"depRegistryCache">[];
+};
+
+function emptyDependencyRegistryCleanupStats(): DependencyRegistryCleanupStats {
+  return {
+    versionRowsScanned: 0,
+    versionRowsMatched: 0,
+    staticScansMatched: 0,
+    skillRowsScanned: 0,
+    skillRowsMatched: 0,
+    versionRowsPatched: 0,
+    staticScansRewritten: 0,
+    skillRowsPatched: 0,
+    cacheRowsScanned: 0,
+    cacheRowsDeleted: 0,
+  };
+}
+
+function emptyDependencyRegistryCleanupSamples(): DependencyRegistryCleanupSamples {
+  return {
+    versionIds: [],
+    skillIds: [],
+    cacheRowIds: [],
+  };
+}
+
+function pushSample<T>(samples: T[], value: T) {
+  if (samples.length < CLEANUP_SAMPLE_LIMIT) samples.push(value);
+}
+
+function stripRetiredDependencyRegistryReasonCodes(codes: string[]) {
+  return codes.filter((code) => code !== RETIRED_DEP_REGISTRY_REASON_CODE);
+}
+
+function isScannerMaliciousReason(reason: string | undefined) {
+  return Boolean(reason?.startsWith("scanner.") && reason.endsWith(".malicious"));
+}
+
+function isScannerSuspiciousReason(reason: string | undefined) {
+  return Boolean(reason?.startsWith("scanner.") && reason.endsWith(".suspicious"));
+}
+
+function isRetainedScannerSuspiciousReason(reason: string | undefined) {
+  return isScannerSuspiciousReason(reason) && reason !== "scanner.aggregate.suspicious";
+}
+
+function verdictFromCodesWithScannerReason(params: {
+  reasonCodes: string[];
+  scannerReason?: string;
+  isMalwareBlocked?: boolean;
+}) {
+  if (params.isMalwareBlocked) return "malicious";
+  const verdict = verdictFromCodes(params.reasonCodes);
+  if (verdict !== "clean") return verdict;
+  return isRetainedScannerSuspiciousReason(params.scannerReason) ? "suspicious" : "clean";
+}
+
+function summarizeReasonCodesWithScannerReason(params: {
+  reasonCodes: string[];
+  scannerReason?: string;
+  isMalwareBlocked?: boolean;
+}) {
+  if (params.isMalwareBlocked && params.reasonCodes.length === 0) {
+    return "Detected: malicious scanner verdict";
+  }
+  if (params.reasonCodes.length === 0 && isRetainedScannerSuspiciousReason(params.scannerReason)) {
+    return `Detected: ${params.scannerReason}`;
+  }
+  return summarizeReasonCodes(params.reasonCodes);
+}
+
+function hasLegacyDependencyRegistryStaticScan(
+  staticScan: Doc<"skillVersions">["staticScan"],
+): staticScan is SkillVersionStaticScan {
+  return Boolean(
+    staticScan &&
+    (staticScan.reasonCodes.includes(RETIRED_DEP_REGISTRY_REASON_CODE) ||
+      staticScan.findings.some((finding) => finding.code === RETIRED_DEP_REGISTRY_REASON_CODE)),
+  );
+}
+
+function stripDependencyRegistryStaticScan(staticScan: SkillVersionStaticScan) {
+  if (!hasLegacyDependencyRegistryStaticScan(staticScan)) return staticScan;
+
+  const reasonCodes = stripRetiredDependencyRegistryReasonCodes(staticScan.reasonCodes);
+  const findings = staticScan.findings.filter(
+    (finding) => finding.code !== RETIRED_DEP_REGISTRY_REASON_CODE,
+  );
+
+  return {
+    ...staticScan,
+    status: verdictFromCodes(reasonCodes),
+    reasonCodes,
+    findings,
+    summary: summarizeReasonCodes(reasonCodes),
+  };
+}
+
+function hasLegacyDependencyRegistrySkillModeration(
+  skill: Pick<Doc<"skills">, "moderationReasonCodes" | "moderationEvidence">,
+) {
+  return (
+    (skill.moderationReasonCodes ?? []).includes(RETIRED_DEP_REGISTRY_REASON_CODE) ||
+    (skill.moderationEvidence ?? []).some(
+      (finding) => finding.code === RETIRED_DEP_REGISTRY_REASON_CODE,
+    )
+  );
+}
+
+function isScannerModerationReason(reason: string | undefined) {
+  return reason?.startsWith("scanner.") === true;
+}
+
+function moderationReasonFromVerdict(
+  verdict: Doc<"skills">["moderationVerdict"],
+  reasonCodes: readonly string[],
+) {
+  if (verdict === "clean" && reasonCodes.some((code) => code.startsWith("review."))) {
+    return "scanner.llm.review";
+  }
+  if (verdict === "malicious") return "scanner.aggregate.malicious";
+  if (verdict === "suspicious") return "scanner.aggregate.suspicious";
+  return "scanner.aggregate.clean";
+}
+
+function stripDependencyRegistrySkillModeration(
+  skill: Doc<"skills">,
+  now: number,
+): Partial<Doc<"skills">> | null {
+  if (!hasLegacyDependencyRegistrySkillModeration(skill)) return null;
+
+  const reasonCodes = stripRetiredDependencyRegistryReasonCodes(skill.moderationReasonCodes ?? []);
+  const moderationEvidence = (skill.moderationEvidence ?? []).filter(
+    (finding) => finding.code !== RETIRED_DEP_REGISTRY_REASON_CODE,
+  );
+  if (skill.moderationStatus === "removed") {
+    return {
+      moderationReasonCodes: reasonCodes.length ? reasonCodes : undefined,
+      moderationEvidence: moderationEvidence.length ? moderationEvidence : undefined,
+    };
+  }
+
+  const shouldRecomputeScannerState = isScannerModerationReason(skill.moderationReason);
+  if (!shouldRecomputeScannerState) {
+    return {
+      moderationReasonCodes: reasonCodes.length ? reasonCodes : undefined,
+      moderationEvidence: moderationEvidence.length ? moderationEvidence : undefined,
+    };
+  }
+
+  const rawIsMalwareBlocked =
+    skill.moderationVerdict === "malicious" ||
+    skill.moderationFlags?.includes("blocked.malware") === true ||
+    isScannerMaliciousReason(skill.moderationReason);
+  const moderationVerdict = verdictFromCodesWithScannerReason({
+    reasonCodes,
+    scannerReason: skill.moderationReason,
+    isMalwareBlocked: rawIsMalwareBlocked,
+  });
+  const moderationFlags: Doc<"skills">["moderationFlags"] = rawIsMalwareBlocked
+    ? ["blocked.malware"]
+    : moderationVerdict === "clean" && reasonCodes.some((code) => code.startsWith("review."))
+      ? ["flagged.review"]
+      : legacyFlagsFromVerdict(moderationVerdict);
+  const moderationReason =
+    rawIsMalwareBlocked &&
+    skill.moderationReason?.startsWith("scanner.") &&
+    skill.moderationReason.endsWith(".malicious")
+      ? skill.moderationReason
+      : moderationVerdict === "suspicious" &&
+          reasonCodes.length === 0 &&
+          isRetainedScannerSuspiciousReason(skill.moderationReason)
+        ? skill.moderationReason
+        : moderationReasonFromVerdict(moderationVerdict, reasonCodes);
+  const moderationStatus =
+    rawIsMalwareBlocked || moderationVerdict === "malicious" ? "hidden" : "active";
+  const moderationSummary = summarizeReasonCodesWithScannerReason({
+    reasonCodes,
+    scannerReason: skill.moderationReason,
+    isMalwareBlocked: rawIsMalwareBlocked,
+  });
+
+  const patch: Partial<Doc<"skills">> = {
+    moderationVerdict,
+    moderationReasonCodes: reasonCodes.length ? reasonCodes : undefined,
+    moderationEvidence: moderationEvidence.length ? moderationEvidence : undefined,
+    moderationFlags,
+    moderationSummary,
+    moderationReason,
+    moderationStatus,
+    isSuspicious: computeIsSuspicious({
+      moderationFlags,
+      moderationReason,
+    }),
+  };
+
+  if (moderationStatus === "hidden") {
+    patch.hiddenAt = skill.hiddenAt ?? now;
+    patch.hiddenBy = undefined;
+  } else if (!skill.softDeletedAt) {
+    patch.hiddenAt = undefined;
+    patch.hiddenBy = undefined;
+  }
+
+  return patch;
+}
+
+export const getDependencyRegistryScanCleanupPageInternal = internalQuery({
+  args: {
+    versionCursor: v.optional(v.string()),
+    skillCursor: v.optional(v.string()),
+    cacheCursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    skipVersions: v.optional(v.boolean()),
+    skipSkills: v.optional(v.boolean()),
+    skipCache: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args): Promise<DependencyRegistryCleanupPageResult> => {
+    const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
+
+    const versionResult = args.skipVersions
+      ? { page: [], continueCursor: null, isDone: true }
+      : await ctx.db
+          .query("skillVersions")
+          .order("asc")
+          .paginate({ cursor: args.versionCursor ?? null, numItems: batchSize });
+    const skillResult = args.skipSkills
+      ? { page: [], continueCursor: null, isDone: true }
+      : await ctx.db
+          .query("skills")
+          .order("asc")
+          .paginate({ cursor: args.skillCursor ?? null, numItems: batchSize });
+    const cacheResult = args.skipCache
+      ? { page: [], continueCursor: null, isDone: true }
+      : await ctx.db
+          .query("depRegistryCache")
+          .order("asc")
+          .paginate({ cursor: args.cacheCursor ?? null, numItems: batchSize });
+
+    return {
+      versionItems: versionResult.page.map((version) => ({
+        id: version._id,
+        hasDepRegistryAnalysis: version.depRegistryAnalysis !== undefined,
+        hasDepRegistryScanStatus: version.depRegistryScanStatus !== undefined,
+        hasLegacyStaticScan: hasLegacyDependencyRegistryStaticScan(version.staticScan),
+      })),
+      skillItems: skillResult.page.map((skill) => ({
+        id: skill._id,
+        hasLegacyModeration: hasLegacyDependencyRegistrySkillModeration(skill),
+      })),
+      cacheRowIds: cacheResult.page.map((row) => row._id),
+      versionCursor: versionResult.continueCursor,
+      skillCursor: skillResult.continueCursor,
+      cacheCursor: cacheResult.continueCursor,
+      versionsDone: versionResult.isDone,
+      skillsDone: skillResult.isDone,
+      cacheDone: cacheResult.isDone,
+    };
+  },
+});
+
+export async function applyDependencyRegistryScanCleanupInternalHandler(
+  ctx: Pick<MutationCtx, "db"> & { scheduler?: Pick<MutationCtx["scheduler"], "runAfter"> },
+  args: DependencyRegistryCleanupApplyArgs,
+) {
+  if (args.confirm !== DEP_REGISTRY_CLEANUP_CONFIRMATION) {
+    throw new ConvexError(
+      'Set confirm to "delete-dependency-registry-scan-data" before applying cleanup.',
+    );
+  }
+
+  let versionRowsPatched = 0;
+  let staticScansRewritten = 0;
+  let skillRowsPatched = 0;
+  let cacheRowsDeleted = 0;
+  const now = Date.now();
+
+  for (const versionId of args.versionIds) {
+    const version = await ctx.db.get(versionId);
+    if (!version) continue;
+
+    const patch: Partial<Doc<"skillVersions">> = {};
+    if (version.depRegistryAnalysis !== undefined) {
+      patch.depRegistryAnalysis = undefined;
+    }
+    if (version.depRegistryScanStatus !== undefined) {
+      patch.depRegistryScanStatus = undefined;
+    }
+    if (version.staticScan) {
+      const staticScan = stripDependencyRegistryStaticScan(version.staticScan);
+      if (staticScan !== version.staticScan) {
+        patch.staticScan = staticScan;
+        staticScansRewritten++;
+      }
+    }
+
+    if (Object.keys(patch).length > 0) {
+      await ctx.db.patch(version._id, patch);
+      if (patch.staticScan) {
+        await ctx.scheduler?.runAfter(0, internal.skillCards.enqueueForVersionInternal, {
+          versionId: version._id,
+          source: "scan",
+        });
+        await ctx.scheduler?.runAfter(0, internal.securityScan.enqueueSkillVersionScanInternal, {
+          versionId: version._id,
+          source: "backfill",
+          waitForVtMs: 0,
+        });
+      }
+      versionRowsPatched++;
+    }
+  }
+
+  for (const skillId of args.skillIds) {
+    const skill = await ctx.db.get(skillId);
+    if (!skill) continue;
+
+    const patch = stripDependencyRegistrySkillModeration(skill, now);
+    if (!patch) continue;
+
+    const nextSkill: Doc<"skills"> = { ...skill, ...patch };
+    const visibilityDelta = getPublicSkillVisibilityDelta(skill, nextSkill);
+    await ctx.db.patch(skill._id, patch);
+    await syncSkillSearchDigestForSkill(ctx, nextSkill);
+    await adjustGlobalPublicSkillsCount(ctx, visibilityDelta, now);
+    skillRowsPatched++;
+  }
+
+  for (const cacheRowId of args.cacheRowIds) {
+    const row = await ctx.db.get(cacheRowId);
+    if (!row) continue;
+    await ctx.db.delete(row._id);
+    cacheRowsDeleted++;
+  }
+
+  return { versionRowsPatched, staticScansRewritten, skillRowsPatched, cacheRowsDeleted };
+}
+
+export const applyDependencyRegistryScanCleanupInternal = internalMutation({
+  args: {
+    confirm: v.literal(DEP_REGISTRY_CLEANUP_CONFIRMATION),
+    versionIds: v.array(v.id("skillVersions")),
+    skillIds: v.array(v.id("skills")),
+    cacheRowIds: v.array(v.id("depRegistryCache")),
+  },
+  handler: applyDependencyRegistryScanCleanupInternalHandler,
+});
+
+export async function cleanupDependencyRegistryScanDataInternalHandler(
+  ctx: ActionCtx,
+  args: DependencyRegistryCleanupActionArgs,
+): Promise<DependencyRegistryCleanupActionResult> {
+  const dryRun = args.dryRun !== false;
+  if (!dryRun && args.confirm !== DEP_REGISTRY_CLEANUP_CONFIRMATION) {
+    throw new ConvexError(
+      'Set confirm to "delete-dependency-registry-scan-data" before applying cleanup.',
+    );
+  }
+
+  const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
+  const maxBatches = clampInt(
+    args.maxBatches ?? (dryRun ? DEFAULT_MAX_BATCHES : 1),
+    1,
+    MAX_MAX_BATCHES,
+  );
+  const stats = emptyDependencyRegistryCleanupStats();
+  const samples = emptyDependencyRegistryCleanupSamples();
+  let versionsDone = args.versionsDone === true;
+  let skillsDone = args.skillsDone === true;
+  let cacheDone = args.cacheDone === true;
+  let versionCursor = versionsDone ? null : (args.versionCursor ?? null);
+  let skillCursor = skillsDone ? null : (args.skillCursor ?? null);
+  let cacheCursor = cacheDone ? null : (args.cacheCursor ?? null);
+
+  for (let batchIndex = 0; batchIndex < maxBatches; batchIndex++) {
+    const page = (await ctx.runQuery(
+      internal.maintenance.getDependencyRegistryScanCleanupPageInternal,
+      {
+        versionCursor: versionCursor ?? undefined,
+        skillCursor: skillCursor ?? undefined,
+        cacheCursor: dryRun ? (cacheCursor ?? undefined) : undefined,
+        batchSize,
+        skipVersions: versionsDone,
+        skipSkills: skillsDone,
+        skipCache: cacheDone,
+      },
+    )) as DependencyRegistryCleanupPageResult;
+
+    stats.versionRowsScanned += page.versionItems.length;
+    stats.skillRowsScanned += page.skillItems.length;
+    stats.cacheRowsScanned += page.cacheRowIds.length;
+
+    const matchedVersionIds = page.versionItems
+      .filter(
+        (item) =>
+          item.hasDepRegistryAnalysis || item.hasDepRegistryScanStatus || item.hasLegacyStaticScan,
+      )
+      .map((item) => item.id);
+    const matchedSkillIds = page.skillItems
+      .filter((item) => item.hasLegacyModeration)
+      .map((item) => item.id);
+    const staticScanMatches = page.versionItems.filter((item) => item.hasLegacyStaticScan).length;
+
+    stats.versionRowsMatched += matchedVersionIds.length;
+    stats.staticScansMatched += staticScanMatches;
+    stats.skillRowsMatched += matchedSkillIds.length;
+    for (const id of matchedVersionIds) pushSample(samples.versionIds, id);
+    for (const id of matchedSkillIds) pushSample(samples.skillIds, id);
+    for (const id of page.cacheRowIds) pushSample(samples.cacheRowIds, id);
+
+    if (
+      !dryRun &&
+      (matchedVersionIds.length > 0 || matchedSkillIds.length > 0 || page.cacheRowIds.length > 0)
+    ) {
+      const result = (await ctx.runMutation(
+        internal.maintenance.applyDependencyRegistryScanCleanupInternal,
+        {
+          confirm: DEP_REGISTRY_CLEANUP_CONFIRMATION,
+          versionIds: matchedVersionIds,
+          skillIds: matchedSkillIds,
+          cacheRowIds: page.cacheRowIds,
+        },
+      )) as {
+        versionRowsPatched: number;
+        staticScansRewritten: number;
+        skillRowsPatched: number;
+        cacheRowsDeleted: number;
+      };
+      stats.versionRowsPatched += result.versionRowsPatched;
+      stats.staticScansRewritten += result.staticScansRewritten;
+      stats.skillRowsPatched += result.skillRowsPatched;
+      stats.cacheRowsDeleted += result.cacheRowsDeleted;
+    }
+
+    versionCursor = page.versionCursor;
+    skillCursor = page.skillCursor;
+    versionsDone = page.versionsDone;
+    skillsDone = page.skillsDone;
+    if (dryRun) {
+      cacheCursor = page.cacheCursor;
+      cacheDone = page.cacheDone;
+    } else {
+      cacheCursor = null;
+      cacheDone = page.cacheDone;
+    }
+
+    if (versionsDone && skillsDone && cacheDone) break;
+  }
+
+  return {
+    ok: true,
+    dryRun,
+    stats,
+    samples,
+    cursors: { versionCursor, skillCursor, cacheCursor },
+    done: { versionsDone, skillsDone, cacheDone },
+    isDone: versionsDone && skillsDone && cacheDone,
+  };
+}
+
+export const cleanupDependencyRegistryScanDataInternal = internalAction({
+  args: {
+    dryRun: v.optional(v.boolean()),
+    confirm: v.optional(v.literal(DEP_REGISTRY_CLEANUP_CONFIRMATION)),
+    batchSize: v.optional(v.number()),
+    maxBatches: v.optional(v.number()),
+    versionCursor: v.optional(v.string()),
+    skillCursor: v.optional(v.string()),
+    cacheCursor: v.optional(v.string()),
+    versionsDone: v.optional(v.boolean()),
+    skillsDone: v.optional(v.boolean()),
+    cacheDone: v.optional(v.boolean()),
+  },
+  handler: cleanupDependencyRegistryScanDataInternalHandler,
+});
+
+export async function cleanupDependencyRegistryScanDataHandler(
+  ctx: ActionCtx,
+  args: DependencyRegistryCleanupActionArgs,
+): Promise<DependencyRegistryCleanupActionResult> {
+  const { user } = await requireUserFromAction(ctx);
+  assertRole(user, ["admin"]);
+  return cleanupDependencyRegistryScanDataInternalHandler(ctx, args);
+}
+
+export const cleanupDependencyRegistryScanData: ReturnType<typeof action> = action({
+  args: {
+    dryRun: v.optional(v.boolean()),
+    confirm: v.optional(v.literal(DEP_REGISTRY_CLEANUP_CONFIRMATION)),
+    batchSize: v.optional(v.number()),
+    maxBatches: v.optional(v.number()),
+    versionCursor: v.optional(v.string()),
+    skillCursor: v.optional(v.string()),
+    cacheCursor: v.optional(v.string()),
+    versionsDone: v.optional(v.boolean()),
+    skillsDone: v.optional(v.boolean()),
+    cacheDone: v.optional(v.boolean()),
+  },
+  handler: cleanupDependencyRegistryScanDataHandler,
+});
 
 export const getSkillBackfillPageInternal = internalQuery({
   args: {

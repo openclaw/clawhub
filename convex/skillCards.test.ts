@@ -199,14 +199,6 @@ describe("skillCards queue", () => {
         engineVersion: "test",
         checkedAt: 1,
       },
-      depRegistryAnalysis: {
-        status: "suspicious",
-        results: [],
-        notFoundPackages: ["leftpad"],
-        unresolvedPackages: [],
-        summary: "raw dependency detail",
-        checkedAt: 3,
-      },
       vtAnalysis: {
         status: "suspicious",
         verdict: "suspicious",

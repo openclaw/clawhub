@@ -365,10 +365,6 @@ export async function publishVersionForUser(
     source: "publish",
   });
 
-  await ctx.scheduler.runAfter(0, internal.depRegistryScan.checkDependencyRegistries, {
-    versionId: publishResult.versionId,
-  });
-
   // Schedule the async "API key required?" analyser; non-fatal on failure
   // (UI treats `apiKeyRequired === undefined` as "no badge"). Mirrors the
   // `backupSkillForPublishInternal` pattern below: `void runAfter(...).catch(...)`

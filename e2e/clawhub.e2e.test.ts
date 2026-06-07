@@ -916,7 +916,7 @@ describe("clawhub e2e", () => {
                   recommendation: "SAFE",
                   issueCount: 0,
                 },
-                dependencyRegistry: { status: "clean" },
+                dependencyRegistry: null,
               },
             },
             signature: { status: "unsigned" },
