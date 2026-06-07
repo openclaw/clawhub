@@ -5,6 +5,10 @@ import { DocsLinks } from "clawhub-schema";
 import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const { toastErrorMock } = vi.hoisted(() => ({
+  toastErrorMock: vi.fn(),
+}));
+
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: (path: string) => (config: { component: unknown }) => ({
     __config: config,
@@ -22,6 +26,12 @@ vi.mock("@tanstack/react-router", () => ({
 
 vi.mock("@convex-dev/auth/react", () => ({
   useAuthActions: () => ({ signIn: vi.fn() }),
+}));
+
+vi.mock("sonner", () => ({
+  toast: {
+    error: toastErrorMock,
+  },
 }));
 
 const generateUploadUrl = vi.fn();
@@ -88,6 +98,7 @@ describe("plugins publish route", () => {
     fetchMock.mockReset();
     useAuthStatusMock.mockReset();
     useQueryMock.mockReset();
+    toastErrorMock.mockReset();
 
     useAuthStatusMock.mockReturnValue({
       isAuthenticated: true,
@@ -285,7 +296,7 @@ describe("plugins publish route", () => {
   it("shows backend publish failures inline on the upload form", async () => {
     publishRelease.mockRejectedValueOnce(
       new Error(
-        "Plugin Inspector blocked publish: 1 breakage. missing expected registration registerTool",
+        "Plugin Inspector blocked publish: 1 breakage. missing-expected-seam: missing expected registration registerTool",
       ),
     );
     renderPublishRoute();
@@ -328,6 +339,11 @@ describe("plugins publish route", () => {
     await waitFor(() => {
       expect(screen.getByRole("alert").textContent).toContain("Plugin Inspector blocked publish");
     });
+    expect(screen.getByRole("columnheader", { name: "Code" })).toBeTruthy();
+    expect(screen.getByRole("columnheader", { name: "Message" })).toBeTruthy();
+    expect(screen.getByText("missing-expected-seam")).toBeTruthy();
+    expect(screen.getByText("missing expected registration registerTool")).toBeTruthy();
+    expect(toastErrorMock).not.toHaveBeenCalled();
   });
 
   it("surfaces missing OpenClaw compatibility metadata before publish", async () => {

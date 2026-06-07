@@ -3955,6 +3955,79 @@ code {
   font-size: 0.78rem;
 }
 
+.plugin-publish-error-text {
+  color: var(--status-error-fg);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.plugin-publish-error-panel {
+  display: grid;
+  gap: var(--space-3);
+  width: min(100%, 720px);
+  border: 1px solid color-mix(in srgb, var(--status-error-fg) 30%, var(--line));
+  border-radius: var(--radius-md);
+  background: var(--status-error-bg);
+  padding: var(--space-4);
+  color: var(--ink);
+}
+
+.plugin-publish-error-heading {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.plugin-publish-error-heading strong {
+  color: var(--status-error-fg);
+  font-size: 0.92rem;
+}
+
+.plugin-publish-error-heading span {
+  color: var(--ink-soft);
+  font-size: 0.86rem;
+}
+
+.plugin-publish-error-table-wrap {
+  overflow-x: auto;
+  border: 1px solid color-mix(in srgb, var(--status-error-fg) 20%, var(--line));
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.plugin-publish-error-table {
+  width: 100%;
+  min-width: 420px;
+  border-collapse: collapse;
+  font-size: 0.84rem;
+}
+
+.plugin-publish-error-table th,
+.plugin-publish-error-table td {
+  border-bottom: 1px solid var(--line);
+  padding: 0.65rem 0.75rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.plugin-publish-error-table th {
+  color: var(--ink-muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.plugin-publish-error-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.plugin-publish-error-table code {
+  border-radius: 4px;
+  background: var(--surface-muted);
+  padding: 0.125rem 0.35rem;
+  color: var(--ink);
+  font-size: 0.8rem;
+}
+
 .plugin-tab-panel-header {
   display: flex;
   align-items: center;
