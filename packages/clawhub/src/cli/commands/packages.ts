@@ -1623,7 +1623,7 @@ async function uploadClawPackToStorage(
   registry: string,
   publishToken: string,
   file: PackageFile,
-  spinner: ReturnType<typeof createSpinner> | null,
+  spinner: ReturnType<typeof createCrabLoader> | null,
 ) {
   if (spinner) spinner.text = `Uploading ${file.relPath}`;
   const { uploadUrl, uploadTicket } = await apiRequest(
