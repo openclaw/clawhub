@@ -2599,6 +2599,7 @@ export const getBySlug = query({
           summary: publicModerationSummary,
           engineVersion: skill.moderationEngineVersion,
           updatedAt: skill.moderationEvaluatedAt,
+          sourceVersionId: skill.moderationSourceVersionId ?? null,
           reason: isOwner ? skill.moderationReason : undefined,
         }
       : null;
@@ -3119,6 +3120,7 @@ export const getSecurityVerdictTargetInternal = internalQuery({
             summary: publicModerationSummary,
             engineVersion: skill.moderationEngineVersion,
             updatedAt: skill.moderationEvaluatedAt,
+            sourceVersionId: skill.moderationSourceVersionId ?? null,
           }
         : null,
       version: version ? compactSecurityVerdictVersion(version) : null,

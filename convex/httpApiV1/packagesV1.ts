@@ -54,7 +54,12 @@ import {
   MAX_PUBLISH_FILE_BYTES,
   MAX_PUBLISH_TOTAL_BYTES,
 } from "../lib/publishLimits";
-import { getPublicSkillFileAccessBlock, isSkillVersionForSkill } from "../lib/skillFileAccess";
+import {
+  getPublicSkillFileAccessBlock,
+  getPublicSkillVersionAccessBlock,
+  getSkillFileModerationInfoFromSkill,
+  isSkillVersionForSkill,
+} from "../lib/skillFileAccess";
 import { isMacJunkPath, isTextFile } from "../lib/skills";
 import {
   buildDeterministicPackageZip,
@@ -2875,8 +2880,47 @@ async function getSkillDetailForRequest(ctx: ActionCtx, slug: string) {
       isMalwareBlocked?: boolean | null;
       isHiddenByMod?: boolean | null;
       isRemoved?: boolean | null;
+      sourceVersionId?: Id<"skillVersions"> | null;
     } | null;
   } | null;
+}
+
+type PackageExactVersionModeratedSkill = Pick<
+  Doc<"skills">,
+  | "_id"
+  | "softDeletedAt"
+  | "latestVersionId"
+  | "tags"
+  | "moderationStatus"
+  | "moderationReason"
+  | "moderationFlags"
+  | "moderationSourceVersionId"
+>;
+
+async function getUnavailableSkillPackageVersionBlock(
+  ctx: ActionCtx,
+  slug: string,
+  versionName: string,
+) {
+  const skill = await runQueryRef<PackageExactVersionModeratedSkill | null>(
+    ctx,
+    internalRefs.skills.getSkillBySlugInternal,
+    { slug },
+  );
+  if (!skill || skill.softDeletedAt) return null;
+
+  const version = (await runQueryRef(ctx, internalRefs.skills.getVersionBySkillAndVersionInternal, {
+    skillId: skill._id,
+    version: versionName,
+  })) as SkillVersionLike | null;
+  if (!version || !isSkillVersionForSkill(version, skill._id)) return null;
+  if (version.softDeletedAt) return { status: 410, message: "Version not available" };
+
+  return getPublicSkillVersionAccessBlock(
+    getSkillFileModerationInfoFromSkill(skill),
+    version._id,
+    skill.latestVersionId ?? skill.tags?.latest,
+  );
 }
 
 async function getSkillVersionForRequest(
@@ -3238,7 +3282,21 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
   const skillDetail = detail?.package
     ? null
     : await getSkillDetailForRequest(ctx, normalizedPackageName);
-  if (!detail?.package && !skillDetail?.skill) return text("Package not found", 404, rate.headers);
+  const isExactVersionRequest =
+    packageSegments[0] === "versions" && packageSegments[1] && packageSegments.length === 2;
+  if (!detail?.package && !skillDetail?.skill) {
+    if (isExactVersionRequest) {
+      const moderationBlock = await getUnavailableSkillPackageVersionBlock(
+        ctx,
+        normalizedPackageName,
+        packageSegments[1],
+      );
+      if (moderationBlock) {
+        return text(moderationBlock.message, moderationBlock.status, rate.headers);
+      }
+    }
+    return text("Package not found", 404, rate.headers);
+  }
   const packageDetail = detail?.package ? detail : null;
   const publicPackage = packageDetail?.package ?? null;
   const packageOwner = packageDetail?.owner ?? null;
@@ -3420,6 +3478,15 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
         },
       )) as SkillVersionLike | null;
       if (!version || version.softDeletedAt) return text("Version not found", 404, rate.headers);
+      const effectiveLatestVersionId =
+        skillDetail.skill.latestVersionId ?? skillDetail.skill.tags?.latest;
+      const moderationBlock = getPublicSkillVersionAccessBlock(
+        skillDetail.moderationInfo,
+        version._id,
+        effectiveLatestVersionId,
+      );
+      if (moderationBlock)
+        return text(moderationBlock.message, moderationBlock.status, rate.headers);
       const tags = await resolveSkillTags(ctx, skillDetail.skill._id, skillDetail.skill.tags);
       return json(
         {

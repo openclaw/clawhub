@@ -1,16 +1,49 @@
 import type { Id } from "../_generated/dataModel";
 
-type SkillFileModerationInfo = {
+export type SkillFileModerationInfo = {
   isPendingScan?: boolean | null;
   isMalwareBlocked?: boolean | null;
   isHiddenByMod?: boolean | null;
   isRemoved?: boolean | null;
+  sourceVersionId?: Id<"skillVersions"> | string | null;
+};
+
+type SkillModerationSource = {
+  moderationStatus?: string | null;
+  moderationReason?: string | null;
+  moderationFlags?: string[] | null;
+  moderationSourceVersionId?: Id<"skillVersions"> | string | null;
 };
 
 type SkillFileAccessBlock = {
   status: number;
   message: string;
 };
+
+function isPendingSkillModerationReason(reason: string | null | undefined) {
+  const normalized = reason?.trim().toLowerCase();
+  return (
+    normalized === "pending.scan" ||
+    normalized === "pending.scan.stale" ||
+    normalized === "scanner.vt.pending" ||
+    normalized === "scanner.llm.pending"
+  );
+}
+
+export function getSkillFileModerationInfoFromSkill(
+  skill: SkillModerationSource,
+): SkillFileModerationInfo {
+  const isPendingScan =
+    skill.moderationStatus === "hidden" && isPendingSkillModerationReason(skill.moderationReason);
+  const isMalwareBlocked = skill.moderationFlags?.includes("blocked.malware") ?? false;
+  return {
+    isPendingScan,
+    isMalwareBlocked,
+    isHiddenByMod: skill.moderationStatus === "hidden" && !isPendingScan && !isMalwareBlocked,
+    isRemoved: skill.moderationStatus === "removed",
+    sourceVersionId: skill.moderationSourceVersionId ?? null,
+  };
+}
 
 export function getPublicSkillFileAccessBlock(
   moderationInfo: SkillFileModerationInfo | null | undefined,
@@ -36,6 +69,19 @@ export function getPublicSkillFileAccessBlock(
     return { status: 403, message: "This skill is currently unavailable." };
   }
   return null;
+}
+
+export function getPublicSkillVersionAccessBlock(
+  moderationInfo: SkillFileModerationInfo | null | undefined,
+  versionId: Id<"skillVersions"> | string,
+  fallbackModeratedVersionId?: Id<"skillVersions"> | string | null,
+): SkillFileAccessBlock | null {
+  const block = getPublicSkillFileAccessBlock(moderationInfo);
+  if (!block) return null;
+  if (moderationInfo?.isRemoved || moderationInfo?.isHiddenByMod) return block;
+
+  const moderatedVersionId = moderationInfo?.sourceVersionId ?? fallbackModeratedVersionId;
+  return moderatedVersionId === versionId ? block : null;
 }
 
 export function isSkillVersionForSkill(

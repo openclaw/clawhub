@@ -33,7 +33,12 @@ import type {
   LlmRiskSummary,
 } from "../lib/securityPrompt";
 import { selectGeneratedSkillCardFile, sourceSkillVersionFiles } from "../lib/skillCards";
-import { getPublicSkillFileAccessBlock, isSkillVersionForSkill } from "../lib/skillFileAccess";
+import {
+  getPublicSkillFileAccessBlock,
+  getPublicSkillVersionAccessBlock,
+  getSkillFileModerationInfoFromSkill,
+  isSkillVersionForSkill,
+} from "../lib/skillFileAccess";
 import {
   buildDeterministicZip,
   buildMergedExportZip,
@@ -191,6 +196,7 @@ type GetBySlugResult = {
     summary?: string;
     engineVersion?: string;
     updatedAt?: number;
+    sourceVersionId?: Id<"skillVersions"> | null;
     reason?: string;
   } | null;
 } | null;
@@ -306,6 +312,8 @@ const internalRefs = internal as unknown as {
   skills: {
     getSecurityVerdictTargetInternal: unknown;
     getSkillBySlugInternal: unknown;
+    getVersionByIdInternal: unknown;
+    getVersionBySkillAndVersionInternal: unknown;
     reportSkillForUserInternal: unknown;
     listSkillReportsInternal: unknown;
     triageSkillReportForUserInternal: unknown;
@@ -1518,6 +1526,60 @@ function shouldExposeHiddenGitHubInstallBlock(
   );
 }
 
+type ExactVersionModeratedSkill = Pick<
+  Doc<"skills">,
+  | "_id"
+  | "softDeletedAt"
+  | "latestVersionId"
+  | "tags"
+  | "moderationStatus"
+  | "moderationReason"
+  | "moderationFlags"
+  | "moderationSourceVersionId"
+>;
+
+async function getUnavailableSkillVersionBlock(
+  ctx: ActionCtx,
+  slug: string,
+  selector?: { versionName?: string; tagName?: string },
+) {
+  const skill = await runQueryRef<ExactVersionModeratedSkill | null>(
+    ctx,
+    internalRefs.skills.getSkillBySlugInternal,
+    { slug },
+  );
+  if (!skill || skill.softDeletedAt) return null;
+
+  const latestVersionId = skill.latestVersionId ?? skill.tags?.latest;
+  const selectedVersionId = selector?.tagName ? skill.tags?.[selector.tagName] : latestVersionId;
+  if (!selector?.versionName && !selectedVersionId) return null;
+
+  const version = selector?.versionName
+    ? await runQueryRef<PublicSkillVersionResponse | null>(
+        ctx,
+        internalRefs.skills.getVersionBySkillAndVersionInternal,
+        {
+          skillId: skill._id,
+          version: selector.versionName,
+        },
+      )
+    : await runQueryRef<PublicSkillVersionResponse | null>(
+        ctx,
+        internalRefs.skills.getVersionByIdInternal,
+        {
+          versionId: selectedVersionId,
+        },
+      );
+  if (!version || !isSkillVersionForSkill(version, skill._id)) return null;
+  if (version.softDeletedAt) return { status: 410, message: "Version not available" };
+
+  return getPublicSkillVersionAccessBlock(
+    getSkillFileModerationInfoFromSkill(skill),
+    version._id,
+    skill.latestVersionId ?? skill.tags?.latest,
+  );
+}
+
 export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request) {
   const rate = await applyRateLimit(ctx, request, "read");
   if (!rate.ok) return rate.response;
@@ -1810,7 +1872,15 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
 
   if (second === "versions" && third && segments.length === 3) {
     const skillResult = (await ctx.runQuery(api.skills.getBySlug, { slug })) as GetBySlugResult;
-    if (!skillResult?.skill) return text("Skill not found", 404, rate.headers);
+    if (!skillResult?.skill) {
+      const moderationBlock = await getUnavailableSkillVersionBlock(ctx, slug, {
+        versionName: third,
+      });
+      if (moderationBlock) {
+        return text(moderationBlock.message, moderationBlock.status, rate.headers);
+      }
+      return text("Skill not found", 404, rate.headers);
+    }
 
     const version = (await ctx.runQuery(api.skills.getVersionBySkillAndVersion, {
       skillId: skillResult.skill._id,
@@ -1818,6 +1888,16 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
     })) as PublicSkillVersionResponse | null;
     if (!version) return text("Version not found", 404, rate.headers);
     if (version.softDeletedAt) return text("Version not available", 410, rate.headers);
+    const effectiveLatestVersionId =
+      skillResult.skill.latestVersionId ?? skillResult.skill.tags?.latest;
+    const moderationBlock = getPublicSkillVersionAccessBlock(
+      skillResult.moderationInfo,
+      version._id,
+      effectiveLatestVersionId,
+    );
+    if (moderationBlock) {
+      return text(moderationBlock.message, moderationBlock.status, rate.headers);
+    }
     const security = buildSkillSecuritySnapshot(version);
 
     return json(
@@ -1850,6 +1930,13 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
 
     const result = (await ctx.runQuery(api.skills.getBySlug, { slug })) as GetBySlugResult;
     if (!result?.skill) {
+      const moderationBlock = await getUnavailableSkillVersionBlock(ctx, slug, {
+        versionName: versionParam,
+        tagName: tagParam,
+      });
+      if (moderationBlock) {
+        return text(moderationBlock.message, moderationBlock.status, rate.headers);
+      }
       const hidden = await describeOwnerVisibleSkillState(ctx, request, slug);
       if (hidden) return text(hidden.message, hidden.status, rate.headers);
       return text("Skill not found", 404, rate.headers);
@@ -1875,9 +1962,33 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
     }
     if (version.softDeletedAt) return text("Version not available", 410, rate.headers);
 
+    const effectiveLatestVersionId = result.skill.latestVersionId ?? result.skill.tags?.latest;
+    const moderationBlock = getPublicSkillVersionAccessBlock(
+      result.moderationInfo,
+      version._id,
+      effectiveLatestVersionId,
+    );
+    if (moderationBlock) {
+      return text(moderationBlock.message, moderationBlock.status, rate.headers);
+    }
+
+    let moderationSourceVersion: PublicSkillVersionResponse | null = result.latestVersion;
+    const moderationSourceVersionId = result.moderationInfo?.sourceVersionId;
+    if (moderationSourceVersionId) {
+      if (version._id === moderationSourceVersionId) {
+        moderationSourceVersion = version;
+      } else if (result.latestVersion?._id !== moderationSourceVersionId) {
+        const sourceVersion = (await ctx.runQuery(api.skills.getVersionById, {
+          versionId: moderationSourceVersionId,
+        })) as PublicSkillVersionResponse | null;
+        moderationSourceVersion = isSkillVersionForSkill(sourceVersion, result.skill._id)
+          ? sourceVersion
+          : null;
+      }
+    }
     const security = buildSkillSecuritySnapshot(version);
     const moderationMatchesRequestedVersion = Boolean(
-      result.latestVersion && result.latestVersion._id === version._id,
+      moderationSourceVersion && moderationSourceVersion._id === version._id,
     );
 
     return json(
@@ -1894,10 +2005,10 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
         moderation: result.moderationInfo
           ? {
               scope: "skill",
-              sourceVersion: result.latestVersion
+              sourceVersion: moderationSourceVersion
                 ? {
-                    version: result.latestVersion.version,
-                    createdAt: result.latestVersion.createdAt,
+                    version: moderationSourceVersion.version,
+                    createdAt: moderationSourceVersion.createdAt,
                   }
                 : null,
               matchesRequestedVersion: moderationMatchesRequestedVersion,

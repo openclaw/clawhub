@@ -3188,6 +3188,45 @@ describe("httpApiV1 handlers", () => {
     expect(json.version.files[0].path).toBe("SKILL.md");
   });
 
+  it("blocks version detail for moderated skills", async () => {
+    let slugLookupCount = 0;
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        slugLookupCount += 1;
+        if (slugLookupCount === 1) return null;
+        return {
+          _id: "skills:1",
+          slug: "demo",
+          displayName: "Demo",
+          tags: { latest: "skillVersions:1" },
+          moderationStatus: "removed",
+          moderationReason: "policy.violation",
+          moderationFlags: [],
+          moderationSourceVersionId: "skillVersions:1",
+        };
+      }
+      if ("skillId" in args && "version" in args) {
+        return {
+          _id: "skillVersions:1",
+          skillId: "skills:1",
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "c",
+          changelogSource: "auto",
+          files: [],
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/versions/1.0.0"),
+    );
+    expect(response.status).toBe(410);
+    expect(await response.text()).toBe("This skill has been removed by a moderator.");
+  });
+
   it("returns 404 for version detail when the owner is banned", async () => {
     const runQuery = vi.fn(async () => null);
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -3549,6 +3588,89 @@ describe("httpApiV1 handlers", () => {
     expect(json.security.scanners.llm.normalizedStatus).toBe("error");
   });
 
+  it("blocks latest scan status while security review is pending", async () => {
+    let slugLookupCount = 0;
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        slugLookupCount += 1;
+        if (slugLookupCount === 1) return null;
+        return {
+          _id: "skills:1",
+          slug: "demo",
+          displayName: "Demo",
+          latestVersionId: "skillVersions:1",
+          tags: { latest: "skillVersions:1" },
+          moderationStatus: "hidden",
+          moderationReason: "pending.scan",
+          moderationFlags: [],
+          moderationSourceVersionId: "skillVersions:1",
+        };
+      }
+      if ("versionId" in args) {
+        return {
+          _id: "skillVersions:1",
+          skillId: "skills:1",
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "c",
+          changelogSource: "auto",
+          capabilityTags: ["posts-externally", "requires-oauth-token"],
+          files: [],
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/scan"),
+    );
+    expect(response.status).toBe(423);
+    expect(await response.text()).toContain("pending a ClawScan security review");
+  });
+
+  for (const moderationReason of ["pending.scan.stale", "scanner.llm.pending"] as const) {
+    it(`blocks latest scan status for ${moderationReason} when unavailable publicly`, async () => {
+      let slugLookupCount = 0;
+      const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+        if ("slug" in args) {
+          slugLookupCount += 1;
+          if (slugLookupCount === 1) return null;
+          return {
+            _id: "skills:1",
+            slug: "demo",
+            displayName: "Demo",
+            latestVersionId: "skillVersions:1",
+            tags: { latest: "skillVersions:1" },
+            moderationStatus: "hidden",
+            moderationReason,
+            moderationFlags: [],
+            moderationSourceVersionId: "skillVersions:1",
+          };
+        }
+        if ("versionId" in args) {
+          return {
+            _id: "skillVersions:1",
+            skillId: "skills:1",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "c",
+            changelogSource: "auto",
+            files: [],
+          };
+        }
+        return null;
+      });
+      const runMutation = vi.fn().mockResolvedValue(okRate());
+      const response = await __handlers.skillsGetRouterV1Handler(
+        makeCtx({ runQuery, runMutation }),
+        new Request("https://example.com/api/v1/skills/demo/scan"),
+      );
+      expect(response.status).toBe(423);
+      expect(await response.text()).toContain("pending a ClawScan security review");
+    });
+  }
+
   it("returns capability tags even when no scanner result exists yet", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("slug" in args) {
@@ -3558,7 +3680,7 @@ describe("httpApiV1 handlers", () => {
             slug: "demo",
             displayName: "Demo",
             summary: "s",
-            tags: { latest: "versions:1" },
+            tags: { latest: "skillVersions:1" },
             stats: {},
             createdAt: 1,
             updatedAt: 2,
@@ -3575,7 +3697,7 @@ describe("httpApiV1 handlers", () => {
           },
           owner: { _id: "users:1", handle: "owner", displayName: "Owner" },
           moderationInfo: {
-            isPendingScan: true,
+            isPendingScan: false,
             isMalwareBlocked: false,
             isSuspicious: false,
             isHiddenByMod: false,
@@ -3594,6 +3716,277 @@ describe("httpApiV1 handlers", () => {
     const json = await response.json();
     expect(json.security.capabilityTags).toEqual(["posts-externally", "requires-oauth-token"]);
     expect(json.security.hasScanResult).toBe(false);
+  });
+
+  it("blocks exact scan status for moderated skills", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "demo",
+            displayName: "Demo",
+            summary: "s",
+            latestVersionId: "skillVersions:2",
+            tags: { latest: "skillVersions:2" },
+            stats: {},
+            createdAt: 1,
+            updatedAt: 2,
+          },
+          latestVersion: {
+            _id: "skillVersions:2",
+            skillId: "skills:1",
+            version: "2.0.0",
+            createdAt: 2,
+            changelog: "c2",
+            changelogSource: "auto",
+            files: [],
+          },
+          owner: { _id: "users:1", handle: "owner", displayName: "Owner" },
+          moderationInfo: {
+            isPendingScan: false,
+            isMalwareBlocked: true,
+            isSuspicious: false,
+            isHiddenByMod: false,
+            isRemoved: false,
+            sourceVersionId: "skillVersions:1",
+          },
+        };
+      }
+      if ("skillId" in args && "version" in args) {
+        return {
+          _id: "skillVersions:1",
+          skillId: "skills:1",
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "c1",
+          changelogSource: "auto",
+          files: [],
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/scan?version=1.0.0"),
+    );
+    expect(response.status).toBe(403);
+    expect(await response.text()).toContain("flagged as malicious");
+  });
+
+  it("blocks exact scan status when the moderated skill is unavailable publicly", async () => {
+    let slugLookupCount = 0;
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        slugLookupCount += 1;
+        if (slugLookupCount === 1) return null;
+        return {
+          _id: "skills:1",
+          slug: "demo",
+          displayName: "Demo",
+          latestVersionId: "skillVersions:1",
+          tags: { latest: "skillVersions:1" },
+          moderationStatus: "hidden",
+          moderationReason: "pending.scan",
+          moderationFlags: [],
+          moderationSourceVersionId: "skillVersions:1",
+        };
+      }
+      if ("skillId" in args && "version" in args) {
+        return {
+          _id: "skillVersions:1",
+          skillId: "skills:1",
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "c1",
+          changelogSource: "auto",
+          files: [],
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/scan?version=1.0.0"),
+    );
+    expect(response.status).toBe(423);
+    expect(await response.text()).toContain("pending a ClawScan security review");
+  });
+
+  it("blocks tagged scan status when the moderated skill is unavailable publicly", async () => {
+    let slugLookupCount = 0;
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        slugLookupCount += 1;
+        if (slugLookupCount === 1) return null;
+        return {
+          _id: "skills:1",
+          slug: "demo",
+          displayName: "Demo",
+          latestVersionId: "skillVersions:2",
+          tags: { latest: "skillVersions:2", old: "skillVersions:1" },
+          moderationStatus: "hidden",
+          moderationReason: "pending.scan",
+          moderationFlags: [],
+          moderationSourceVersionId: "skillVersions:1",
+        };
+      }
+      if ("versionId" in args) {
+        return {
+          _id: "skillVersions:1",
+          skillId: "skills:1",
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "c1",
+          changelogSource: "auto",
+          files: [],
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/scan?tag=old"),
+    );
+    expect(response.status).toBe(423);
+    expect(await response.text()).toContain("pending a ClawScan security review");
+  });
+
+  it("keeps historical scan status available when latest-version moderation is blocked", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "demo",
+            displayName: "Demo",
+            summary: "s",
+            latestVersionId: "skillVersions:2",
+            tags: { latest: "skillVersions:2" },
+            stats: {},
+            createdAt: 1,
+            updatedAt: 2,
+          },
+          latestVersion: {
+            _id: "skillVersions:2",
+            skillId: "skills:1",
+            version: "2.0.0",
+            createdAt: 2,
+            changelog: "c2",
+            changelogSource: "auto",
+            files: [],
+          },
+          owner: { _id: "users:1", handle: "owner", displayName: "Owner" },
+          moderationInfo: {
+            isPendingScan: false,
+            isMalwareBlocked: true,
+            isSuspicious: false,
+            isHiddenByMod: false,
+            isRemoved: false,
+          },
+        };
+      }
+      if ("skillId" in args && "version" in args) {
+        return {
+          _id: "skillVersions:1",
+          skillId: "skills:1",
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "c1",
+          changelogSource: "auto",
+          sha256hash: "f".repeat(64),
+          vtAnalysis: {
+            status: "clean",
+            checkedAt: 123,
+          },
+          llmAnalysis: {
+            status: "completed",
+            verdict: "benign",
+            checkedAt: 124,
+          },
+          files: [],
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/scan?version=1.0.0"),
+    );
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.version.version).toBe("1.0.0");
+    expect(json.security.status).toBe("clean");
+    expect(json.moderation.matchesRequestedVersion).toBe(false);
+  });
+
+  it("reports the moderation source version for historical scan matches", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "demo",
+            displayName: "Demo",
+            summary: "s",
+            latestVersionId: "skillVersions:2",
+            tags: { latest: "skillVersions:2" },
+            stats: {},
+            createdAt: 1,
+            updatedAt: 2,
+          },
+          latestVersion: {
+            _id: "skillVersions:2",
+            skillId: "skills:1",
+            version: "2.0.0",
+            createdAt: 2,
+            changelog: "c2",
+            changelogSource: "auto",
+            files: [],
+          },
+          owner: { _id: "users:1", handle: "owner", displayName: "Owner" },
+          moderationInfo: {
+            isPendingScan: false,
+            isMalwareBlocked: false,
+            isSuspicious: true,
+            isHiddenByMod: false,
+            isRemoved: false,
+            sourceVersionId: "skillVersions:1",
+          },
+        };
+      }
+      if ("skillId" in args && "version" in args) {
+        return {
+          _id: "skillVersions:1",
+          skillId: "skills:1",
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "c1",
+          changelogSource: "auto",
+          sha256hash: "f".repeat(64),
+          llmAnalysis: {
+            status: "completed",
+            verdict: "suspicious",
+            checkedAt: 123,
+          },
+          files: [],
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/scan?version=1.0.0"),
+    );
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.moderation.sourceVersion).toEqual({ version: "1.0.0", createdAt: 1 });
+    expect(json.moderation.matchesRequestedVersion).toBe(true);
   });
 
   it("keeps hasScanResult true when one scanner returns a definitive verdict", async () => {
@@ -8011,6 +8404,98 @@ describe("httpApiV1 handlers", () => {
         },
       },
     });
+  });
+
+  it("packages version detail blocks skill compatibility metadata for malware-blocked skills", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args) return null;
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:demo",
+            slug: "demo",
+            displayName: "Demo Skill",
+            summary: "Skill summary",
+            latestVersionId: "skillVersions:demo-2",
+            tags: { latest: "skillVersions:demo-2" },
+            badges: {},
+            createdAt: 1,
+            updatedAt: 2,
+          },
+          latestVersion: null,
+          owner: { handle: "steipete" },
+          moderationInfo: {
+            isPendingScan: false,
+            isMalwareBlocked: true,
+            isHiddenByMod: false,
+            isRemoved: false,
+            sourceVersionId: "skillVersions:demo-1",
+          },
+        };
+      }
+      if ("skillId" in args && "version" in args) {
+        return {
+          _id: "skillVersions:demo-1",
+          skillId: "skills:demo",
+          version: "1.0.0",
+          createdAt: 3,
+          changelog: "init",
+          files: [],
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages/demo/versions/1.0.0"),
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.text()).toContain("flagged as malicious");
+  });
+
+  it("packages version detail blocks moderated skills that are unavailable publicly", async () => {
+    let slugLookupCount = 0;
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args) return null;
+      if ("slug" in args) {
+        slugLookupCount += 1;
+        if (slugLookupCount === 1) return null;
+        return {
+          _id: "skills:demo",
+          slug: "demo",
+          displayName: "Demo Skill",
+          latestVersionId: "skillVersions:demo-1",
+          tags: { latest: "skillVersions:demo-1" },
+          moderationStatus: "hidden",
+          moderationReason: "pending.scan",
+          moderationFlags: [],
+          moderationSourceVersionId: "skillVersions:demo-1",
+        };
+      }
+      if ("skillId" in args && "version" in args) {
+        return {
+          _id: "skillVersions:demo-1",
+          skillId: "skills:demo",
+          version: "1.0.0",
+          createdAt: 3,
+          changelog: "init",
+          files: [],
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages/demo/versions/1.0.0"),
+    );
+
+    expect(response.status).toBe(423);
+    expect(await response.text()).toContain("pending a ClawScan security review");
   });
 
   it("packages version detail returns ClawPack artifact metadata", async () => {
