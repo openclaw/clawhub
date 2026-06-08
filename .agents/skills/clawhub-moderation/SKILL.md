@@ -5,7 +5,7 @@ description: "Use for ClawHub staff moderation actions with the repo-local clawh
 
 # ClawHub Moderation
 
-Use the repo-local `clawhub-mod` tool from a checked-out ClawHub repo. It wraps
+Use the repo-local admin tool from a checked-out ClawHub repo. It wraps
 the existing ClawHub CLI auth/config and HTTP API surfaces. Do not call Convex
 internal mutations directly for staff actions.
 
@@ -24,61 +24,69 @@ internal mutations directly for staff actions.
 Run from the ClawHub repo root:
 
 ```sh
-bun run mod -- --help
+bun run admin -- --help
 ```
 
 Authenticate or validate the current token:
 
 ```sh
-bun run mod -- login
-bun run mod -- whoami
+bun run admin -- login
+bun run admin -- whoami
 ```
 
 Unhide a skill after moderator review:
 
 ```sh
-bun run mod -- skills unhide <slug> --reason "<reason>" --yes
+bun run admin -- skills unhide <slug> --reason "<reason>" --yes
 ```
 
 List and triage skill reports:
 
 ```sh
-bun run mod -- skills reports --status open
-bun run mod -- skills triage-report <report-id> --status confirmed --action hide --note "<note>" --yes
+bun run admin -- skills reports --status open
+bun run admin -- skills triage-report <report-id> --status confirmed --action hide --note "<note>" --yes
 ```
 
 Ban a user:
 
 ```sh
-bun run mod -- users ban <handleOrId> --reason "<reason>" --yes
+bun run admin -- users ban <handleOrId> --reason "<reason>" --yes
 ```
 
 Unban a user:
 
 ```sh
-bun run mod -- users unban <handleOrId> --reason "<reason>" --yes
+bun run admin -- users unban <handleOrId> --reason "<reason>" --yes
 ```
 
 Change a user role:
 
 ```sh
-bun run mod -- users set-role <handleOrId> <user|moderator|admin> --yes
+bun run admin -- users set-role <handleOrId> <user|moderator|admin> --yes
 ```
 
 Use `--id` when `<handleOrId>` is a user id. Use `--fuzzy` only when the user
 has asked for fuzzy handle resolution or the exact handle is ambiguous.
 
+Manage official org publishers:
+
+```sh
+bun run admin -- org official list
+bun run admin -- org official add <handle> --reason "<reason>" --yes
+bun run admin -- org official remove <handle> --reason "<reason>" --yes
+```
+
 The old top-level aliases still exist for user commands:
 
 ```sh
-bun run mod -- ban-user <handleOrId> --reason "<reason>" --yes
-bun run mod -- unban-user <handleOrId> --reason "<reason>" --yes
+bun run admin -- ban-user <handleOrId> --reason "<reason>" --yes
+bun run admin -- unban-user <handleOrId> --reason "<reason>" --yes
 ```
 
 ## Verification
 
 - For skills, inspect the page/API status after `skills unhide`.
-- For users, prefer `bun run mod -- whoami` for the current token and user
+- For users, prefer `bun run admin -- whoami` for the current token and user
   search/admin surfaces for target accounts where available.
 - If verification is blocked by auth or missing admin access, report the command
   result and the verification blocker plainly.

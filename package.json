@@ -8,6 +8,7 @@
   ],
   "type": "module",
   "scripts": {
+    "admin": "bun packages/clawhub-mod/src/cli.ts",
     "build": "vite build && bun scripts/copy-og-assets.ts",
     "check": "bun run lint",
     "check:peers": "bun scripts/check-peer-deps.ts",
