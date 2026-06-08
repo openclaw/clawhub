@@ -120,10 +120,10 @@ export const listOwnedPublicGitHubRepos = action({
 export const previewGitHubImport = action({
   args: { url: v.string() },
   handler: async (ctx, args) => {
-    const { userId } = await requireUserFromAction(ctx);
+    await requireUserFromAction(ctx);
 
     const parsed = parseGitHubImportUrl(args.url);
-    await requireOwnedPublicGitHubRepoForImport(ctx, userId, parsed.owner, parsed.repo, fetch);
+    await requirePublicGitHubRepoForImport(parsed.owner, parsed.repo, fetch);
     const resolved = await resolveGitHubCommit(parsed, fetch);
     const entries = await fetchResolvedGitHubEntries(resolved, fetch);
     const candidates = detectGitHubImportCandidates(entries).filter((candidate) =>
@@ -150,7 +150,7 @@ export const previewGitHubImportCandidate = action({
     const { userId } = await requireUserFromAction(ctx);
 
     const parsed = parseGitHubImportUrl(args.url);
-    await requireOwnedPublicGitHubRepoForImport(ctx, userId, parsed.owner, parsed.repo, fetch);
+    await requirePublicGitHubRepoForImport(parsed.owner, parsed.repo, fetch);
     const resolved = await resolveGitHubCommit(parsed, fetch);
     const entries = await fetchResolvedGitHubEntries(resolved, fetch);
 
@@ -227,7 +227,7 @@ export const importGitHubSkill = action({
     }
 
     const parsed = parseGitHubImportUrl(args.url);
-    await requireOwnedPublicGitHubRepoForImport(ctx, userId, parsed.owner, parsed.repo, fetch);
+    await requirePublicGitHubRepoForImport(parsed.owner, parsed.repo, fetch);
     const resolved = await resolveGitHubCommit(parsed, fetch);
     if (!/^[a-f0-9]{40}$/i.test(args.commit)) throw new ConvexError("Invalid commit");
     if (args.commit.toLowerCase() !== resolved.commit.toLowerCase()) {
@@ -431,6 +431,25 @@ async function requireOwnedPublicGitHubRepoForImport(
 
   const metadata = await fetchGitHubRepoMetadata(owner, repo, fetcher);
   assertOwnedPublicGitHubRepoMetadata(metadata, identity);
+  if (metadata.archived === true) {
+    throw new ConvexError("Archived GitHub repositories cannot be imported.");
+  }
+  if (metadata.disabled === true) {
+    throw new ConvexError("Disabled GitHub repositories cannot be imported.");
+  }
+  if (metadata.fork === true) {
+    throw new ConvexError("Forked GitHub repositories cannot be imported.");
+  }
+  return metadata;
+}
+
+async function requirePublicGitHubRepoForImport(owner: string, repo: string, fetcher: typeof fetch) {
+  const metadata = await fetchGitHubRepoMetadata(owner, repo, fetcher);
+  const visibility = typeof metadata.visibility === "string" ? metadata.visibility : "";
+  const isPublicVisibility = visibility ? visibility === "public" : true;
+  if (metadata.private !== false || !isPublicVisibility) {
+    throw new ConvexError("Only public GitHub repositories can be imported.");
+  }
   if (metadata.archived === true) {
     throw new ConvexError("Archived GitHub repositories cannot be imported.");
   }
@@ -927,6 +946,7 @@ export const __test = {
   listOwnedPublicGitHubReposForUser,
   listSkillCandidatesForRepo,
   requireOwnedPublicGitHubRepoForImport,
+  requirePublicGitHubRepoForImport,
   toOwnedPublicSkillCandidate,
   toOwnedPublicRepoListItem,
   unzipToEntries,

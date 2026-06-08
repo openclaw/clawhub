@@ -155,6 +155,31 @@ describe("githubImport", () => {
     );
   });
 
+  it("allows direct URL imports from another public GitHub owner", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        name: "public-skill",
+        full_name: "someone-else/public-skill",
+        private: false,
+        visibility: "public",
+        owner: { id: 456, login: "someone-else" },
+      }),
+    });
+
+    await expect(
+      __test.requirePublicGitHubRepoForImport("someone-else", "public-skill", fetchMock as never),
+    ).resolves.toMatchObject({
+      private: false,
+      visibility: "public",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.github.com/repos/someone-else/public-skill",
+      expect.objectContaining({ headers: expect.any(Object) }),
+    );
+  });
+
   it("lists only owned public skill file candidates", async () => {
     const ctx = {
       runQuery: vi.fn().mockResolvedValue("123"),
