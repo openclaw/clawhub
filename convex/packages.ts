@@ -2157,8 +2157,15 @@ export const getManageContext = query({
     if (!latestRelease || latestRelease.softDeletedAt) return null;
 
     return {
-      package: pkg,
-      latestRelease: toPublicPackageRelease(latestRelease),
+      package: {
+        _id: pkg._id,
+        name: pkg.name,
+        displayName: pkg.displayName,
+      },
+      latestRelease: {
+        _id: latestRelease._id,
+        version: latestRelease.version,
+      },
     };
   },
 });
