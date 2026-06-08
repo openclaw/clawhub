@@ -481,6 +481,7 @@ export const evaluatePackageReleaseWithLlm = internalAction({
     }
 
     let readmeContent = "";
+    let primaryArtifactPath: string | undefined;
     const fileContents: Array<{ path: string; content: string }> = [];
     for (const f of release.files) {
       try {
@@ -494,6 +495,7 @@ export const evaluatePackageReleaseWithLlm = internalAction({
           (lower === "readme.md" || lower === "readme.mdx" || lower === "readme.markdown")
         ) {
           readmeContent = content;
+          primaryArtifactPath = f.path;
         }
       } catch {
         // Best-effort read.
@@ -501,11 +503,13 @@ export const evaluatePackageReleaseWithLlm = internalAction({
     }
 
     if (!readmeContent) {
-      const packageJsonText = fileContents.find(
+      const packageJsonFile = fileContents.find(
         (entry) => entry.path.toLowerCase() === "package.json",
-      )?.content;
+      );
+      const packageJsonText = packageJsonFile?.content;
       readmeContent =
         packageJsonText ?? `# ${pkg.displayName}\n\n${release.summary ?? pkg.summary ?? pkg.name}`;
+      primaryArtifactPath = packageJsonFile?.path ?? "package summary";
     }
 
     const allContent = [readmeContent, ...fileContents.map((f) => f.content)].join("\n");
@@ -535,6 +539,8 @@ export const evaluatePackageReleaseWithLlm = internalAction({
       },
       files: release.files.map((f) => ({ path: f.path, size: f.size })),
       skillMdContent: readmeContent,
+      primaryArtifactPath,
+      primaryArtifactTruncationKind: "file_truncated",
       fileContents,
       injectionSignals,
       staticScan: release.staticScan,

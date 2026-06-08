@@ -452,6 +452,22 @@ describe("securityPrompt", () => {
     expect(result.summary).toContain("could not review complete artifact text");
   });
 
+  it("uses package primary artifact names for package coverage diagnostics", () => {
+    const coverage = analyzeEvalArtifactCoverage({
+      ...baseCtx,
+      skillMdContent: "# Package README\n" + "x".repeat(100_000),
+      primaryArtifactPath: "README.md",
+      primaryArtifactTruncationKind: "file_truncated",
+      fileContents: [],
+      files: [{ path: "README.md", size: 100_000 }],
+    });
+
+    expect(coverage).toMatchObject({
+      complete: false,
+      issues: [expect.objectContaining({ kind: "file_truncated", path: "README.md" })],
+    });
+  });
+
   it("marks omitted file blocks and stripped hidden comments as incomplete coverage", () => {
     const fileContents = Array.from({ length: 7 }, (_, index) => ({
       path: `src/file-${index}.ts`,
