@@ -1,6 +1,6 @@
 # ClawHub
 
-> ClawHub is the public registry for OpenClaw skills, plugins, packages, and souls. Use it to discover, inspect, install, publish, update, and moderate agent-facing artifacts.
+> ClawHub is the public registry for OpenClaw skills, plugins, and packages. Use it to discover, inspect, install, publish, update, and moderate agent-facing artifacts.
 
 ClawHub is the registry layer for OpenClaw. Use native `openclaw` commands when installing skills or plugins into an OpenClaw workspace. Use the separate `clawhub` CLI for authenticated registry workflows such as login, publishing, sync, delete/undelete, transfer, package inspection, and moderation-aware diagnostics.
 
@@ -10,7 +10,7 @@ This file is a map for language models and agents. It is not an access-control p
 
 ## Primary
 
-- [ClawHub](https://clawhub.ai): Public registry app for browsing skills, packages, plugins, publishers, and souls.
+- [ClawHub](https://clawhub.ai): Public registry app for browsing skills, plugin/package records, and publishers.
 - [OpenClaw ClawHub docs](https://docs.openclaw.ai/clawhub): Canonical public documentation for ClawHub users, publishers, API clients, and operators.
 - [OpenClaw docs llms.txt](https://docs.openclaw.ai/llms.txt): Full OpenClaw documentation map, including the ClawHub documentation section.
 - [Markdown docs export](https://docs.openclaw.ai/clawhub.md): Clean Markdown export of the ClawHub overview. Append `.md` to any docs page URL for the Markdown version.
@@ -19,19 +19,17 @@ This file is a map for language models and agents. It is not an access-control p
 ## Public Registry Surfaces
 
 - [Skills](https://clawhub.ai/skills): Browse and search skill bundles centered on `SKILL.md`.
-- [Packages](https://clawhub.ai/packages): Browse OpenClaw package records, including code plugins and bundle plugins.
+- [Plugins and packages](https://clawhub.ai/plugins): Browse and search OpenClaw plugin/package records, including code plugins and bundle plugins.
 - [Publishers](https://clawhub.ai/publishers): Browse user and organization publishers.
-- [Souls](https://clawhub.ai/souls): Browse soul bundles centered on `SOUL.md`.
 - [Skill publish](https://clawhub.ai/skills/publish): Web publishing flow for new skill versions.
-- [Plugin publish](https://clawhub.ai/plugins/publish): Web publishing flow for plugin packages.
-- [Package publish](https://clawhub.ai/packages/new): Web publishing flow for package records.
+- [Plugin/package publish](https://clawhub.ai/plugins/publish): Web publishing flow for plugin package records.
 - [Search](https://clawhub.ai/search): Unified search entry point for public catalog discovery.
 
 ## Canonical URL Patterns
 
 - [Skill page pattern](https://clawhub.ai/skills): Skill detail pages use `https://clawhub.ai/<owner>/<slug>` when an owner handle is available, with `/skills/<slug>` compatibility routes for existing unscoped links.
 - [Skill security audit pattern](https://docs.openclaw.ai/clawhub/security-audits): Artifact audit pages use `/<owner>/<slug>/security-audit`.
-- [Package page](https://clawhub.ai/packages): Package pages use `/packages/<name>` for unscoped packages and `/packages/<scope>/<name>` for scoped packages.
+- [Plugin/package page pattern](https://clawhub.ai/plugins): Plugin package detail pages use `/plugins/<name>` for unscoped packages and `/plugins/<scope>/<name>` for scoped packages.
 - [Publisher page](https://clawhub.ai/publishers): Publisher profiles use public publisher routes and expose published artifacts.
 
 ## Documentation
@@ -42,12 +40,11 @@ This file is a map for language models and agents. It is not an access-control p
 - [CLI](https://docs.openclaw.ai/clawhub/cli): Complete `clawhub` CLI reference, global flags, config paths, auth, search, install, update, publish, transfer, package, and sync commands.
 - [Publishing](https://docs.openclaw.ai/clawhub/publishing): Owner-scoped skill and plugin publishing, package scope rules, dry-run workflows, and reusable GitHub Actions.
 - [Skill format](https://docs.openclaw.ai/clawhub/skill-format): `SKILL.md`, frontmatter metadata, runtime requirements, allowed files, size limits, slugs, versions, and tags.
-- [Soul format](https://docs.openclaw.ai/clawhub/soul-format): `SOUL.md` bundle format, required files, limits, versions, and tags.
 - [Auth](https://docs.openclaw.ai/clawhub/auth): GitHub sign-in, API tokens, CLI login, device login, token storage, and revocation.
 - [Telemetry](https://docs.openclaw.ai/clawhub/telemetry): Install telemetry sent by `clawhub sync`, opt-out behavior, and privacy expectations.
 - [Troubleshooting](https://docs.openclaw.ai/clawhub/troubleshooting): Fixes for sign-in, install, update, publish, sync, plugin install, and public API failures.
 - [API v1](https://docs.openclaw.ai/clawhub/api): Public REST API overview, rate limits, errors, auth rules, public read endpoints, and write endpoints.
-- [HTTP API](https://docs.openclaw.ai/clawhub/http-api): Detailed HTTP API reference for public, CLI, package, plugin, soul, and auth routes.
+- [HTTP API](https://docs.openclaw.ai/clawhub/http-api): Detailed HTTP API reference for public, CLI, package, plugin, and auth routes.
 - [Security audits](https://docs.openclaw.ai/clawhub/security-audits): How to interpret audit status, risk level, findings, SkillSpector, VirusTotal, and ClawScan results.
 - [Moderation and account safety](https://docs.openclaw.ai/clawhub/moderation): Reports, moderation holds, hidden or blocked listings, bans, account standing, and publisher guidance.
 - [Acceptable usage](https://docs.openclaw.ai/clawhub/acceptable-usage): Marketplace policy, allowed patterns, disallowed abuse workflows, reviewer notes, and enforcement.
@@ -56,9 +53,9 @@ This file is a map for language models and agents. It is not an access-control p
 
 - [Search skills](https://clawhub.ai/api/v1/search?q=calendar): Search public skills by query, with relevance based on text match, embeddings, and small popularity priors.
 - [List skills](https://clawhub.ai/api/v1/skills): List public skills with pagination, sort options, and public filtering.
-- [Skill detail](https://clawhub.ai/api/v1/skills/clawhub-publish): Fetch one public skill by slug, including latest version, owner, metadata, and visible moderation state.
-- [Skill file](https://clawhub.ai/api/v1/skills/clawhub-publish/file?path=SKILL.md): Fetch a text file from a skill version.
-- [Skill download](https://clawhub.ai/api/v1/download?slug=clawhub-publish): Download a skill archive.
+- Skill detail pattern: `https://clawhub.ai/api/v1/skills/<slug>` fetches one public skill by slug, including latest version, owner, metadata, and visible moderation state.
+- Skill file pattern: `https://clawhub.ai/api/v1/skills/<slug>/file?path=SKILL.md` fetches a text file from a skill version.
+- Skill download pattern: `https://clawhub.ai/api/v1/download?slug=<slug>` downloads a skill archive.
 - [List packages](https://clawhub.ai/api/v1/packages): List public package records across package families.
 - [Search plugins](https://clawhub.ai/api/v1/plugins/search?q=calendar): Search plugin package records.
 - [Whoami](https://clawhub.ai/api/v1/whoami): Verify a ClawHub API token with `Authorization: Bearer clh_...`.
@@ -80,7 +77,7 @@ This file is a map for language models and agents. It is not an access-control p
 - [Public docs source](https://github.com/openclaw/clawhub/tree/main/docs): Source for the ClawHub documentation mirrored into the OpenClaw docs site.
 - [Schema package](https://github.com/openclaw/clawhub/tree/main/packages/schema): Shared API route constants, types, package schemas, text-file rules, license rules, and OpenClaw compatibility contracts.
 - [ClawHub CLI package](https://github.com/openclaw/clawhub/tree/main/packages/clawhub): CLI implementation for auth, install, update, inspect, publish, packages, and sync.
-- [Convex backend](https://github.com/openclaw/clawhub/tree/main/convex): Database schema, HTTP API handlers, auth, publishing, search, downloads, telemetry, security scans, moderation, packages, souls, and publishers.
+- [Convex backend](https://github.com/openclaw/clawhub/tree/main/convex): Database schema, HTTP API handlers, auth, publishing, search, downloads, telemetry, security scans, moderation, packages, plugins, and publishers.
 
 ## Optional
 
