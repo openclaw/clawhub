@@ -3,7 +3,7 @@ import { requireAuthToken } from "../../../clawhub/src/cli/authToken.js";
 import { getRegistry } from "../../../clawhub/src/cli/registry.js";
 import type { GlobalOpts } from "../../../clawhub/src/cli/types.js";
 import {
-  createSpinner,
+  createCrabLoader,
   fail,
   formatError,
   isInteractive,
@@ -102,7 +102,7 @@ export async function cmdCreateOrg(opts: GlobalOpts, handle: string, options: Or
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = options.json ? null : createSpinner(`Creating @${orgHandle}`);
+  const spinner = options.json ? null : createCrabLoader(`Creating @${orgHandle}`);
   try {
     const result = await apiRequest(
       registry,
@@ -149,7 +149,7 @@ export async function cmdRemoveOrgMember(
   const registry = await getRegistry(opts, { cache: true });
   const spinner = options.json
     ? null
-    : createSpinner(`Removing @${normalizedMemberHandle} from @${orgHandle}`);
+    : createCrabLoader(`Removing @${normalizedMemberHandle} from @${orgHandle}`);
   try {
     const result = await apiRequest(
       registry,
@@ -183,7 +183,7 @@ export async function cmdRemoveOrgMember(
 export async function cmdListOfficialOrgs(opts: GlobalOpts, options: OrgOfficialListOptions = {}) {
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = options.json ? null : createSpinner("Listing official org publishers");
+  const spinner = options.json ? null : createCrabLoader("Listing official org publishers");
   try {
     const result = await apiRequest(
       registry,
@@ -237,7 +237,7 @@ export async function cmdAddOfficialOrg(
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = options.json ? null : createSpinner(`Marking @${orgHandle} official`);
+  const spinner = options.json ? null : createCrabLoader(`Marking @${orgHandle} official`);
   try {
     const result = await apiRequest(
       registry,
@@ -285,7 +285,7 @@ export async function cmdRemoveOfficialOrg(
   const registry = await getRegistry(opts, { cache: true });
   const spinner = options.json
     ? null
-    : createSpinner(`Removing @${orgHandle} from official org publishers`);
+    : createCrabLoader(`Removing @${orgHandle} from official org publishers`);
   try {
     const result = await apiRequest(
       registry,
@@ -333,7 +333,7 @@ export async function cmdRepairScopedPackages(
 
   const spinner = options.json
     ? null
-    : createSpinner(`${dryRun ? "Planning" : "Applying"} scoped package repairs`);
+    : createCrabLoader(`${dryRun ? "Planning" : "Applying"} scoped package repairs`);
 
   try {
     if (dryRun) {

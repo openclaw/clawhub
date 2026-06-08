@@ -9,7 +9,7 @@ vi.mock("node:child_process", () => ({
   spawn: (...args: unknown[]) => mockSpawn(...args),
 }));
 
-const { openInBrowser } = await import("./ui");
+const { createCrabLoader, openInBrowser } = await import("./ui");
 
 type ErrorHandler = (error: NodeJS.ErrnoException) => void;
 
@@ -73,5 +73,26 @@ describe("openInBrowser", () => {
     expect(logSpy).not.toHaveBeenCalledWith("Could not open browser automatically.");
     expect(child.unref).toHaveBeenCalledOnce();
     logSpy.mockRestore();
+  });
+});
+
+describe("createCrabLoader", () => {
+  it("keeps non-interactive spinner output stable", () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const spinner = createCrabLoader("Searching");
+    spinner.text = "Downloading";
+    spinner.stop();
+    expect(logSpy).not.toHaveBeenCalledWith("Searching");
+    expect(logSpy).not.toHaveBeenCalledWith("Downloading");
+
+    spinner.succeed("Done");
+    spinner.fail("Failed");
+
+    expect(logSpy).toHaveBeenCalledWith("Done");
+    expect(errorSpy).toHaveBeenCalledWith("Failed");
+    logSpy.mockRestore();
+    errorSpy.mockRestore();
   });
 });

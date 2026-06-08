@@ -8,7 +8,7 @@ import { requireAuthToken } from "../authToken.js";
 import { getRegistry } from "../registry.js";
 import { sanitizeSlug, titleCase } from "../slug.js";
 import type { GlobalOpts } from "../types.js";
-import { createSpinner, fail, formatError } from "../ui.js";
+import { createCrabLoader, fail, formatError } from "../ui.js";
 import { normalizeGitHubRepo } from "./github.js";
 
 export async function cmdPublish(
@@ -59,7 +59,7 @@ export async function cmdPublish(
   if (!displayName) fail("--name required");
   if (!version || !semver.valid(version)) fail("--version must be valid semver");
 
-  const spinner = createSpinner(`Preparing ${slug}@${version}`);
+  const spinner = createCrabLoader(`Preparing ${slug}@${version}`);
   try {
     const filesOnDisk = stripGeneratedSkillCards(
       await ensureRootManifestFile(folder, await listTextFiles(folder)),

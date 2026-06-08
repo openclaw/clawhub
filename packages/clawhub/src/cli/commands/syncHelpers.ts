@@ -17,8 +17,54 @@ import { hashSkillZip } from "../../skills.js";
 import { getRegistry } from "../registry.js";
 import { findSkillFolders, type SkillFolder } from "../scanSkills.js";
 import type { GlobalOpts } from "../types.js";
-import { fail, formatError } from "../ui.js";
+import { fail, formatError, styleText } from "../ui.js";
 import type { Candidate, LocalSkill } from "./syncTypes.js";
+
+const clawhubLogo = [
+  "  ██████╗██╗      █████╗ ██╗    ██╗██╗  ██╗██╗   ██╗██████╗",
+  " ██╔════╝██║     ██╔══██╗██║    ██║██║  ██║██║   ██║██╔══██╗",
+  " ██║     ██║     ███████║██║ █╗ ██║███████║██║   ██║██████╔╝",
+  " ██║     ██║     ██╔══██║██║███╗██║██╔══██║██║   ██║██╔══██╗",
+  " ╚██████╗███████╗██║  ██║╚███╔███╔╝██║  ██║╚██████╔╝██████╔╝",
+  "  ╚═════╝╚══════╝╚═╝  ╚═╝ ╚══╝╚══╝ ╚═╝  ╚═╝ ╚═════╝ ╚═════╝",
+];
+
+function brand(value: string) {
+  return styleText(value, "brand");
+}
+
+function strong(value: string) {
+  return styleText(value, "strong");
+}
+
+function muted(value: string) {
+  return styleText(value, "muted");
+}
+
+function rail(value: string) {
+  return brand(value);
+}
+
+function centerText(text: string, width: number) {
+  return `${" ".repeat(Math.max(0, Math.floor((width - text.length) / 2)))}${text}`;
+}
+
+export function printSyncBanner() {
+  console.log("");
+  for (const line of clawhubLogo) {
+    console.log(brand(line));
+  }
+  const logoWidth = Math.max(...clawhubLogo.map((line) => line.length));
+  const tagline = "ClawHub // sync";
+  const indent = centerText("", logoWidth - tagline.length);
+  console.log(`${indent}${strong("ClawHub")} ${brand("//")} ${muted("sync")}`);
+  console.log("");
+}
+
+export function printSyncOutro(message: string) {
+  console.log("");
+  console.log(`${rail("└")}  ${message}`);
+}
 
 export async function reportTelemetryIfEnabled(params: {
   token: string;
@@ -299,8 +345,8 @@ export async function selectToUpload(
     valueByKey.set(key, candidate);
     return {
       value: key,
-      label: `${candidate.slug}  ${formatActionableStatus(candidate, params.bump)}`,
-      hint: `${abbreviatePath(candidate.folder)} | ${candidate.fileCount} files`,
+      label: `${strong(candidate.slug)}  ${formatActionableStatus(candidate, params.bump)}`,
+      hint: `${muted(abbreviatePath(candidate.folder))} | ${candidate.fileCount} files`,
     };
   });
 
@@ -356,14 +402,19 @@ export function formatList(values: string[], max: number) {
 export function printSection(title: string, body?: string) {
   const trimmed = body?.trim();
   if (!trimmed) {
-    console.log(title);
+    console.log("");
+    console.log(`${rail("│")} ${strong(title)}`);
     return;
   }
+  console.log("");
+  console.log(`${rail("│")} ${strong(title)}`);
   if (trimmed.includes("\n")) {
-    console.log(`\n${title}\n${trimmed}`);
+    for (const line of trimmed.split("\n")) {
+      console.log(`${rail("│")}   ${line}`);
+    }
     return;
   }
-  console.log(`${title}: ${trimmed}`);
+  console.log(`${rail("│")}   ${trimmed}`);
 }
 
 function abbreviatePath(value: string) {
@@ -409,23 +460,27 @@ export function dedupeSkillsBySlug(skills: SkillFolder[]) {
 }
 
 function formatActionableStatus(candidate: Candidate, bump: "patch" | "minor" | "major"): string {
-  if (candidate.status === "new") return "NEW (publish 1.0.0)";
+  if (candidate.status === "new") return `${brand("NEW")} ${muted("(publish 1.0.0)")}`;
   const latest = candidate.latestVersion;
   const next = latest ? semver.inc(latest, bump) : null;
-  if (latest && next) return `LOCAL CHANGES latest ${latest}; publish ${next}`;
-  return "LOCAL CHANGES";
+  if (latest && next) {
+    return `${brand("LOCAL CHANGES")} ${muted(`latest ${latest}; publish ${next}`)}`;
+  }
+  return brand("LOCAL CHANGES");
 }
 
 export function formatActionableLine(
   candidate: Candidate,
   bump: "patch" | "minor" | "major",
 ): string {
-  return `${candidate.slug}  ${formatActionableStatus(candidate, bump)}  (${candidate.fileCount} files)`;
+  return `${strong(candidate.slug)}  ${formatActionableStatus(candidate, bump)}  ${muted(
+    `(${candidate.fileCount} files)`,
+  )}`;
 }
 
 function formatSyncedLine(candidate: Candidate): string {
   const version = candidate.matchVersion ?? candidate.latestVersion ?? "unknown";
-  return `${candidate.slug}  synced (${version})`;
+  return `${strong(candidate.slug)}  ${brand("synced")} ${muted(`v${version}`)}`;
 }
 
 export function formatSyncedSummary(candidate: Candidate): string {
@@ -434,10 +489,12 @@ export function formatSyncedSummary(candidate: Candidate): string {
 }
 
 export function formatBulletList(lines: string[], max: number): string {
-  if (lines.length <= max) return lines.map((line) => `- ${line}`).join("\n");
+  if (lines.length <= max) return lines.map((line) => `${brand("•")} ${line}`).join("\n");
   const head = lines.slice(0, max);
   const rest = lines.length - head.length;
-  return [...head, `... +${rest} more`].map((line) => `- ${line}`).join("\n");
+  return [...head, `${muted("...")} +${rest} more`]
+    .map((line) => `${brand("•")} ${line}`)
+    .join("\n");
 }
 
 export function formatSyncedDisplay(synced: Candidate[]) {

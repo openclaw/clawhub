@@ -9,7 +9,7 @@ import {
 import { requireAuthToken } from "../authToken.js";
 import { getRegistry } from "../registry.js";
 import type { GlobalOpts } from "../types.js";
-import { createSpinner, fail, formatError, isInteractive, promptConfirm } from "../ui.js";
+import { createCrabLoader, fail, formatError, isInteractive, promptConfirm } from "../ui.js";
 
 type ConfirmOptions = { yes?: boolean };
 
@@ -79,7 +79,7 @@ export async function cmdTransferRequest(
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = createSpinner(`Requesting transfer of ${slug} to @${toHandle}`);
+  const spinner = createCrabLoader(`Requesting transfer of ${slug} to @${toHandle}`);
 
   try {
     const result = await apiRequest(
@@ -115,7 +115,7 @@ export async function cmdTransferRequest(
 export async function cmdTransferList(opts: GlobalOpts, options: { outgoing?: boolean }) {
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = createSpinner("Fetching transfers");
+  const spinner = createCrabLoader("Fetching transfers");
 
   try {
     const path = options.outgoing
@@ -168,7 +168,7 @@ async function runTransferDecision(
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = createSpinner(`${spec.progress} transfer of ${slug}`);
+  const spinner = createCrabLoader(`${spec.progress} transfer of ${slug}`);
 
   try {
     const result = await apiRequest(
