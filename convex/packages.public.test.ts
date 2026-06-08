@@ -376,7 +376,10 @@ const getPackageModerationStatusForUserInternalHandler = (
 const getManageContextHandler = (
   getManageContext as unknown as WrappedHandler<
     { name: string; candidateNames?: string[] },
-    { package: { name: string }; latestRelease: { version: string } } | null
+    {
+      package: { _id: string; name: string; displayName: string };
+      latestRelease: { _id: string; version: string };
+    } | null
   >
 )._handler;
 const submitPackageAppealForUserInternalHandler = (
@@ -7442,6 +7445,76 @@ describe("packages public queries", () => {
     );
 
     expect(result).toBeNull();
+  });
+
+  it("returns only slim package identifiers for package manage context", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
+
+    const pkg = makePackageDoc({
+      name: "large-plugin",
+      displayName: "Large Plugin",
+      sourceRepo: "owner/large-plugin",
+      latestVersionSummary: {
+        version: "1.2.3",
+        changelog: "x".repeat(10_000),
+        artifact: { kind: "legacy-zip", sha256: "abc", format: "zip" },
+      },
+      tags: {
+        latest: "packageReleases:demo-1",
+        beta: "packageReleases:demo-beta",
+      },
+    });
+    const release = makeReleaseDoc({
+      version: "1.2.3",
+      files: [
+        {
+          path: "README.md",
+          size: 10_000,
+          sha256: "abc",
+          contentType: "text/plain; charset=utf-8",
+        },
+      ],
+      llmAnalysis: {
+        status: "clean",
+        checkedAt: 2,
+        findings: "x".repeat(10_000),
+      },
+    });
+
+    const result = await getManageContextHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "users:owner") return { _id: id, role: "user" };
+            if (id === "packageReleases:demo-1") return release;
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table === "packages") {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue(pkg),
+                })),
+              };
+            }
+            throw new Error(`Unexpected table ${table}`);
+          }),
+        },
+      } as never,
+      { name: "large-plugin" },
+    );
+
+    expect(result).toEqual({
+      package: {
+        _id: "packages:demo",
+        name: "large-plugin",
+        displayName: "Large Plugin",
+      },
+      latestRelease: {
+        _id: "packageReleases:demo-1",
+        version: "1.2.3",
+      },
+    });
   });
 
   it("lists package appeals for moderators", async () => {
