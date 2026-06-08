@@ -13,13 +13,20 @@ A skill is a folder.
 
 Required:
 
-- `SKILL.md` (or `skill.md`)
+- `SKILL.md` (or `skill.md`; legacy `skills.md` is also accepted)
 
 Optional:
 
 - any supporting _text-based_ files (see “Allowed files”)
 - `.clawhubignore` (ignore patterns for publish/sync, legacy `.clawdhubignore`)
 - `.gitignore` (also honored)
+
+## GitHub import
+
+The web GitHub importer is stricter than local publish/sync. It only discovers
+`SKILL.md` or legacy `skills.md` files in public, non-fork repositories owned by
+the signed-in GitHub account. It does not import private repos, forks,
+archived/disabled repos, or third-party public repos.
 
 Local install metadata (written by the CLI):
 
