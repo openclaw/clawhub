@@ -26,6 +26,7 @@ import { adjustGlobalPublicSkillsCount, getPublicSkillVisibilityDelta } from "./
 import { runStaticModerationScan } from "./lib/moderationEngine";
 import { Events, logErrorEvent, logEvent } from "./lib/observabilityEvents";
 import { isOfficialPublisher } from "./lib/officialPublishers";
+import { REASON_CODES } from "./lib/moderationReasonCodes";
 import { requirePublisherRole } from "./lib/publishers";
 import { isMacJunkPath, isTextFile, parseFrontmatter } from "./lib/skills";
 import { syncSkillSearchDigestForSkill } from "./lib/skillSearchDigest";
@@ -40,6 +41,17 @@ const MAX_STATIC_SCAN_TEXT_FILES = 200;
 const MAX_STATIC_SCAN_TEXT_FILE_BYTES = 256 * 1024;
 const DEFAULT_SOURCE_SYNC_BATCH_SIZE = 20;
 const MAX_SOURCE_SYNC_BATCH_SIZE = 50;
+
+function githubScanStatusFromStaticScan(staticScan: ReturnType<typeof runStaticModerationScan>) {
+  if (
+    staticScan.status === "suspicious" &&
+    staticScan.reasonCodes.length > 0 &&
+    staticScan.reasonCodes.every((code) => code === REASON_CODES.CONTEXT_PADDING_TRUNCATION)
+  ) {
+    return "clean" as const;
+  }
+  return staticScan.status;
+}
 
 type SourceForSync = Pick<
   Doc<"githubSkillSources">,
@@ -895,15 +907,17 @@ export async function verifyGitHubSkillHandler(
     fileContents: listGitHubSkillTextContents(entries, discovered.path),
   });
 
+  const scanStatus = githubScanStatusFromStaticScan(staticScan);
+
   await ctx.runMutation(internal.githubSkillSync.applyGitHubSkillVerificationResultInternal, {
     skillId: target.skill._id,
     contentHash: args.contentHash,
-    scanStatus: staticScan.status,
+    scanStatus,
   });
 
   return {
     ok: true as const,
-    scanStatus: staticScan.status,
+    scanStatus,
   };
 }
 
