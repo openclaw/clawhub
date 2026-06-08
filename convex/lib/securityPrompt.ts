@@ -89,6 +89,8 @@ export type SkillEvalContext = {
   };
   files: Array<{ path: string; size: number }>;
   skillMdContent: string;
+  primaryArtifactPath?: string;
+  primaryArtifactTruncationKind?: ArtifactCoverageIssue["kind"];
   fileContents: Array<{ path: string; content: string }>;
   injectionSignals: string[];
   staticScan?: {
@@ -158,6 +160,7 @@ export type LlmEvalResponse = {
   findings: string;
   agenticRiskFindings?: LlmAgenticRiskFinding[];
   riskSummary?: LlmRiskSummary;
+  artifactCoverage?: ArtifactCoverage;
 };
 
 export type PreparedArtifactText = {
@@ -165,6 +168,21 @@ export type PreparedArtifactText = {
   truncated: boolean;
   hiddenCommentBlocksRemoved: number;
   controlCharactersRemoved: number;
+};
+
+export type ArtifactCoverageIssue = {
+  kind: "skill_md_truncated" | "file_truncated" | "files_omitted" | "hidden_comments_removed";
+  path?: string;
+  detail: string;
+  originalChars?: number;
+  reviewedChars?: number;
+  omittedFileCount?: number;
+  hiddenCommentBlocksRemoved?: number;
+};
+
+export type ArtifactCoverage = {
+  complete: boolean;
+  issues: ArtifactCoverageIssue[];
 };
 
 // ---------------------------------------------------------------------------
@@ -404,7 +422,8 @@ export function detectInjectionPatterns(text: string): string[] {
   return found;
 }
 
-const HIDDEN_MARKDOWN_COMMENT_PATTERN = /^\s*\[[^\]\n]*\]:\s*#\s*\([^)]*\)\s*$/gim;
+const HIDDEN_MARKDOWN_COMMENT_PATTERN =
+  /^[^\S\r\n]*\[[^\]\r\n]*\]:[^\S\r\n]*#[^\S\r\n]*\([^)\r\n]*\)[^\S\r\n]*$/gim;
 const ARTIFACT_CONTROL_CHAR_PATTERN = /[\u200B-\u200F\u202A-\u202E\u2060-\u2064\uFEFF]/g;
 
 function stripHtmlCommentBlocks(content: string): { content: string; removed: number } {
@@ -503,6 +522,8 @@ const DIMENSION_META: Record<string, string> = {
 // ---------------------------------------------------------------------------
 
 const MAX_SKILL_MD_CHARS = 6000;
+const MAX_FILE_CHARS = 10000;
+const MAX_TOTAL_FILE_CHARS = 50000;
 
 function formatStaticScanForPrompt(staticScan: SkillEvalContext["staticScan"]) {
   if (!staticScan) return "No static scan result was provided.";
@@ -528,6 +549,107 @@ function formatStaticScanForPrompt(staticScan: SkillEvalContext["staticScan"]) {
 function formatCapabilitySignals(capabilityTags: string[] | undefined) {
   if (!capabilityTags || capabilityTags.length === 0) return "No capability tags were derived.";
   return capabilityTags.map((tag) => `- ${tag}`).join("\n");
+}
+
+function addCoverageIssuesForPreparedArtifact(
+  issues: ArtifactCoverageIssue[],
+  path: string,
+  prepared: PreparedArtifactText,
+  originalContent: string,
+  truncationKind: ArtifactCoverageIssue["kind"],
+) {
+  if (prepared.truncated) {
+    issues.push({
+      kind: truncationKind,
+      path,
+      detail: `${path} exceeded the ClawScan prompt review limit and was truncated before evaluation.`,
+      originalChars: originalContent.length,
+      reviewedChars: prepared.content.length,
+    });
+  }
+  if (prepared.hiddenCommentBlocksRemoved > 0) {
+    issues.push({
+      kind: "hidden_comments_removed",
+      path,
+      detail: `${path} had ${prepared.hiddenCommentBlocksRemoved} hidden comment block(s) removed before prompt review.`,
+      hiddenCommentBlocksRemoved: prepared.hiddenCommentBlocksRemoved,
+    });
+  }
+}
+
+export function analyzeEvalArtifactCoverage(ctx: SkillEvalContext): ArtifactCoverage {
+  const issues: ArtifactCoverageIssue[] = [];
+  const primaryArtifactPath = ctx.primaryArtifactPath ?? "SKILL.md";
+  const primaryArtifactTruncationKind = ctx.primaryArtifactTruncationKind ?? "skill_md_truncated";
+  const preparedSkillMd = prepareArtifactText(ctx.skillMdContent, MAX_SKILL_MD_CHARS);
+  addCoverageIssuesForPreparedArtifact(
+    issues,
+    primaryArtifactPath,
+    preparedSkillMd,
+    ctx.skillMdContent,
+    primaryArtifactTruncationKind,
+  );
+
+  let totalChars = 0;
+  for (let index = 0; index < ctx.fileContents.length; index += 1) {
+    const file = ctx.fileContents[index]!;
+    if (totalChars >= MAX_TOTAL_FILE_CHARS) {
+      const omittedFileCount = ctx.fileContents.length - index;
+      issues.push({
+        kind: "files_omitted",
+        detail: `${omittedFileCount} file(s) were omitted because aggregate artifact text exceeded the ClawScan prompt review limit.`,
+        omittedFileCount,
+      });
+      break;
+    }
+
+    const prepared = prepareArtifactText(file.content, MAX_FILE_CHARS);
+    addCoverageIssuesForPreparedArtifact(
+      issues,
+      file.path,
+      prepared,
+      file.content,
+      "file_truncated",
+    );
+    totalChars += prepared.content.length;
+  }
+
+  return {
+    complete: issues.length === 0,
+    issues,
+  };
+}
+
+function summarizeCoverageIssues(coverage: ArtifactCoverage) {
+  const labels = coverage.issues.slice(0, 3).map((issue) => {
+    if (issue.path) return `${issue.kind} in ${issue.path}`;
+    return issue.kind;
+  });
+  const extra = coverage.issues.length > 3 ? ` (+${coverage.issues.length - 3} more)` : "";
+  return `${labels.join(", ")}${extra}`;
+}
+
+export function applyArtifactCoverageFloor(
+  result: LlmEvalResponse,
+  coverage: ArtifactCoverage | undefined = result.artifactCoverage,
+): LlmEvalResponse {
+  if (!coverage || coverage.complete || coverage.issues.length === 0) return result;
+  if (result.verdict !== "benign") {
+    return { ...result, artifactCoverage: coverage };
+  }
+
+  const issueSummary = summarizeCoverageIssues(coverage);
+  const floorSummary = `ClawScan could not review complete artifact text (${issueSummary}); review is required before treating this artifact as clean.`;
+  const floorGuidance = result.guidance ? `${result.guidance} ${floorSummary}` : floorSummary;
+
+  return {
+    ...result,
+    verdict: "suspicious",
+    confidence: result.confidence === "low" ? "low" : "medium",
+    summary: floorSummary,
+    guidance: floorGuidance,
+    artifactCoverage: coverage,
+  };
 }
 
 export function assembleEvalUserMessage(ctx: SkillEvalContext): string {
@@ -670,15 +792,13 @@ ${formatArtifactBlock("SKILL.md", ctx.skillMdContent, MAX_SKILL_MD_CHARS)}
 
   // All file contents
   if (ctx.fileContents.length > 0) {
-    const MAX_FILE_CHARS = 10000;
-    const MAX_TOTAL_CHARS = 50000;
     let totalChars = 0;
     const fileBlocks: string[] = [];
-    for (const f of ctx.fileContents) {
-      if (totalChars >= MAX_TOTAL_CHARS) {
-        fileBlocks.push(
-          `\n…[remaining files truncated, ${ctx.fileContents.length - fileBlocks.length} file(s) omitted]`,
-        );
+    for (let index = 0; index < ctx.fileContents.length; index += 1) {
+      const f = ctx.fileContents[index]!;
+      if (totalChars >= MAX_TOTAL_FILE_CHARS) {
+        const omittedFileCount = ctx.fileContents.length - index;
+        fileBlocks.push(`\n…[remaining files truncated, ${omittedFileCount} file(s) omitted]`);
         break;
       }
       const prepared = prepareArtifactText(f.content, MAX_FILE_CHARS);
@@ -708,6 +828,12 @@ export function assembleSkillEvalUserMessage(ctx: SkillEvalContext): string {
 const VALID_VERDICTS = new Set(["benign", "suspicious", "malicious"]);
 const VALID_CONFIDENCES = new Set(["high", "medium", "low"]);
 const VALID_RISK_STATUSES = new Set(["none", "note", "concern"]);
+const VALID_ARTIFACT_COVERAGE_ISSUE_KINDS = new Set([
+  "skill_md_truncated",
+  "file_truncated",
+  "files_omitted",
+  "hidden_comments_removed",
+]);
 const VALID_CLAWSCAN_RISK_BUCKETS = new Set<ClawScanRiskBucket>(CLAWSCAN_RISK_BUCKETS);
 const VALID_ASI_CATEGORY_IDS = new Set<string>(
   AGENTIC_RISK_CATEGORIES.map((category) => category.id),
@@ -810,6 +936,69 @@ function parseRiskSummary(value: unknown): LlmRiskSummary | null | undefined {
   }
 
   return summary;
+}
+
+function optionalFiniteNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function assignOptionalNumber(
+  target: ArtifactCoverageIssue,
+  key: "originalChars" | "reviewedChars" | "omittedFileCount" | "hiddenCommentBlocksRemoved",
+  value: unknown,
+) {
+  const parsed = optionalFiniteNumber(value);
+  if (parsed !== undefined) target[key] = parsed;
+}
+
+function parseArtifactCoverage(value: unknown): ArtifactCoverage | null | undefined {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== "object") return null;
+  const obj = value as Record<string, unknown>;
+  if (typeof obj.complete !== "boolean" || !Array.isArray(obj.issues)) return null;
+
+  const issues: ArtifactCoverageIssue[] = [];
+  for (const issueValue of obj.issues) {
+    if (!issueValue || typeof issueValue !== "object") return null;
+    const issueObj = issueValue as Record<string, unknown>;
+    const kind = getStringField(issueObj, "kind");
+    const detail = getStringField(issueObj, "detail");
+    if (!kind || !VALID_ARTIFACT_COVERAGE_ISSUE_KINDS.has(kind) || !detail?.trim()) {
+      return null;
+    }
+    const path = getStringField(issueObj, "path");
+    const parsedIssue: ArtifactCoverageIssue = {
+      kind: kind as ArtifactCoverageIssue["kind"],
+      ...(path ? { path } : {}),
+      detail,
+    };
+    assignOptionalNumber(
+      parsedIssue,
+      "originalChars",
+      issueObj.originalChars ?? issueObj.original_chars,
+    );
+    assignOptionalNumber(
+      parsedIssue,
+      "reviewedChars",
+      issueObj.reviewedChars ?? issueObj.reviewed_chars,
+    );
+    assignOptionalNumber(
+      parsedIssue,
+      "omittedFileCount",
+      issueObj.omittedFileCount ?? issueObj.omitted_file_count,
+    );
+    assignOptionalNumber(
+      parsedIssue,
+      "hiddenCommentBlocksRemoved",
+      issueObj.hiddenCommentBlocksRemoved ?? issueObj.hidden_comment_blocks_removed,
+    );
+    issues.push(parsedIssue);
+  }
+
+  return {
+    complete: obj.complete,
+    issues,
+  };
 }
 
 function hasConcernDimension(dimensions: LlmEvalDimension[]) {
@@ -920,15 +1109,20 @@ export function parseLlmEvalResponse(raw: string): LlmEvalResponse | null {
 
   const riskSummary = parseRiskSummary(obj.risk_summary ?? obj.riskSummary);
   if (riskSummary === null) return null;
+  const artifactCoverage = parseArtifactCoverage(obj.artifact_coverage ?? obj.artifactCoverage);
+  if (artifactCoverage === null) return null;
 
-  return normalizeParsedLlmEvalResponse({
-    verdict: verdict as LlmEvalResponse["verdict"],
-    confidence: confidence as LlmEvalResponse["confidence"],
-    summary,
-    dimensions,
-    guidance,
-    findings,
-    agenticRiskFindings: agenticRiskFindings ?? undefined,
-    riskSummary: riskSummary ?? undefined,
-  });
+  return applyArtifactCoverageFloor(
+    normalizeParsedLlmEvalResponse({
+      verdict: verdict as LlmEvalResponse["verdict"],
+      confidence: confidence as LlmEvalResponse["confidence"],
+      summary,
+      dimensions,
+      guidance,
+      findings,
+      agenticRiskFindings: agenticRiskFindings ?? undefined,
+      riskSummary: riskSummary ?? undefined,
+      artifactCoverage: artifactCoverage ?? undefined,
+    }),
+  );
 }

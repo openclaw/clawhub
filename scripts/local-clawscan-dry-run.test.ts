@@ -28,7 +28,7 @@ async function writePlugin(root: string) {
 }
 
 function makeOpenAiFetch(result: Record<string, unknown>) {
-  return vi.fn(async () => {
+  return vi.fn(async (_input: Parameters<typeof fetch>[0], _init?: Parameters<typeof fetch>[1]) => {
     return new Response(
       JSON.stringify({
         output: [
@@ -166,6 +166,54 @@ describe("runLocalClawScanDryRun", () => {
           headers: expect.objectContaining({ Authorization: "Bearer test-key" }),
         }),
       );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("does not return clean when SKILL.md content is truncated before review", async () => {
+    const root = await makeTmpWorkdir();
+    try {
+      const folder = join(root, "skill");
+      const hiddenPayload = "AFTER_LIMIT_MARKER";
+      await mkdir(folder, { recursive: true });
+      await writeFile(
+        join(folder, "SKILL.md"),
+        `# Padded Skill\n${"\n".repeat(7_000)}${hiddenPayload}`,
+        "utf8",
+      );
+      await writeFile(join(root, ".env.local"), "OPENAI_API_KEY=test-key\n", "utf8");
+      const fetchImpl = makeOpenAiFetch({
+        verdict: "benign",
+        confidence: "high",
+        summary: "No concerning behavior found.",
+        dimensions: {},
+        user_guidance: "Looks fine for local testing.",
+      });
+
+      const result = await runLocalClawScanDryRun({
+        cwd: root,
+        path: folder,
+        kind: "skill",
+        env: {},
+        fetchImpl,
+        now: () => 123,
+      });
+      const requestBody = JSON.parse(String(fetchImpl.mock.calls[0]?.[1]?.body ?? "{}")) as {
+        input?: string;
+      };
+
+      expect(requestBody.input).not.toContain(hiddenPayload);
+      expect(result.llmAnalysis).toMatchObject({
+        status: "suspicious",
+        verdict: "suspicious",
+        confidence: "medium",
+        artifactCoverage: {
+          complete: false,
+          issues: [expect.objectContaining({ kind: "skill_md_truncated", path: "SKILL.md" })],
+        },
+      });
+      expect(result.llmAnalysis.summary).toContain("could not review complete artifact text");
     } finally {
       await rm(root, { recursive: true, force: true });
     }

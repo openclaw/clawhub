@@ -27,8 +27,10 @@ import {
 } from "./lib/parsedEnvSignals";
 import type { SkillEvalContext } from "./lib/securityPrompt";
 import {
+  analyzeEvalArtifactCoverage,
   assembleEvalUserMessage,
   assembleSkillEvalUserMessage,
+  applyArtifactCoverageFloor,
   applyInjectionSignalFloor,
   detectInjectionPatterns,
   getLlmEvalModel,
@@ -338,6 +340,8 @@ export const evaluateWithLlm = internalAction({
       capabilityTags: version.capabilityTags,
     };
 
+    const artifactCoverage = analyzeEvalArtifactCoverage(evalCtx);
+
     // 6. Assemble user message
     const userMessage = assembleSkillEvalUserMessage(evalCtx);
 
@@ -414,7 +418,10 @@ export const evaluateWithLlm = internalAction({
       return;
     }
 
-    const result = applyInjectionSignalFloor(parsedResult, injectionSignals);
+    const result = applyArtifactCoverageFloor(
+      applyInjectionSignalFloor(parsedResult, injectionSignals),
+      artifactCoverage,
+    );
 
     // 9. Store result
     await ctx.runMutation(internal.skills.updateVersionLlmAnalysisInternal, {
@@ -430,6 +437,7 @@ export const evaluateWithLlm = internalAction({
         findings: result.findings || undefined,
         agenticRiskFindings: result.agenticRiskFindings,
         riskSummary: result.riskSummary,
+        artifactCoverage: result.artifactCoverage,
         model,
         checkedAt: Date.now(),
       },
@@ -488,6 +496,7 @@ export const evaluatePackageReleaseWithLlm = internalAction({
     }
 
     let readmeContent = "";
+    let primaryArtifactPath: string | undefined;
     const fileContents: Array<{ path: string; content: string }> = [];
     for (const f of release.files) {
       try {
@@ -501,6 +510,7 @@ export const evaluatePackageReleaseWithLlm = internalAction({
           (lower === "readme.md" || lower === "readme.mdx" || lower === "readme.markdown")
         ) {
           readmeContent = content;
+          primaryArtifactPath = f.path;
         }
       } catch {
         // Best-effort read.
@@ -508,11 +518,13 @@ export const evaluatePackageReleaseWithLlm = internalAction({
     }
 
     if (!readmeContent) {
-      const packageJsonText = fileContents.find(
+      const packageJsonFile = fileContents.find(
         (entry) => entry.path.toLowerCase() === "package.json",
-      )?.content;
+      );
+      const packageJsonText = packageJsonFile?.content;
       readmeContent =
         packageJsonText ?? `# ${pkg.displayName}\n\n${release.summary ?? pkg.summary ?? pkg.name}`;
+      primaryArtifactPath = packageJsonFile?.path ?? "package summary";
     }
 
     const allContent = [readmeContent, ...fileContents.map((f) => f.content)].join("\n");
@@ -542,12 +554,15 @@ export const evaluatePackageReleaseWithLlm = internalAction({
       },
       files: release.files.map((f) => ({ path: f.path, size: f.size })),
       skillMdContent: readmeContent,
+      primaryArtifactPath,
+      primaryArtifactTruncationKind: "file_truncated",
       fileContents,
       injectionSignals,
       staticScan: release.staticScan,
       capabilityTags: pkg.capabilityTags,
     };
 
+    const artifactCoverage = analyzeEvalArtifactCoverage(evalCtx);
     const userMessage = assembleEvalUserMessage(evalCtx);
     const MAX_RETRIES = 3;
     let raw: string | null = null;
@@ -614,7 +629,10 @@ export const evaluatePackageReleaseWithLlm = internalAction({
       await storeError("Failed to parse LLM evaluation response");
       return;
     }
-    const result = applyInjectionSignalFloor(parsedResult, injectionSignals);
+    const result = applyArtifactCoverageFloor(
+      applyInjectionSignalFloor(parsedResult, injectionSignals),
+      artifactCoverage,
+    );
 
     await runMutationRef(ctx, internalRefs.packages.updateReleaseLlmAnalysisInternal, {
       releaseId: args.releaseId,
@@ -628,6 +646,7 @@ export const evaluatePackageReleaseWithLlm = internalAction({
         findings: result.findings || undefined,
         agenticRiskFindings: result.agenticRiskFindings,
         riskSummary: result.riskSummary,
+        artifactCoverage: result.artifactCoverage,
         model,
         checkedAt: Date.now(),
       },
