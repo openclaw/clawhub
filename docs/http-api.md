@@ -619,6 +619,42 @@ Query params:
   `channels`, `mcp-tooling`, `data`, `security`, `observability`,
   `automation`, `deployment`, `dev-tools`.
 
+### `GET /api/v1/plugins/export`
+
+Bulk export of latest public plugin releases for offline analysis.
+
+Auth:
+
+- API token required.
+
+Query params:
+
+- `startDate` (required): Unix milliseconds lower bound for plugin `updatedAt`.
+- `endDate` (required): Unix milliseconds upper bound for plugin `updatedAt`.
+- `limit` (optional): integer (1-250), default `250`.
+- `cursor` (optional): pagination cursor from the previous response.
+- `family` (optional): `code-plugin` or `bundle-plugin`. Omitted means both
+  plugin families.
+
+Response:
+
+- Body: ZIP archive.
+- Each exported plugin is rooted at `{family}/{packageName}/`.
+- Each exported plugin includes the latest release's stored files.
+- Per-plugin export metadata is stored at
+  `__clawhub_export/{family}/{packageName}/plugin_meta.json`.
+- `_manifest.json` is always included at the ZIP root.
+- `_errors.json` is included when individual plugins or files could not be
+  exported.
+
+Headers:
+
+- `X-Next-Cursor`
+- `X-Has-More`
+- `X-Total-Returned`
+- `X-Date-Range`
+- `X-Export-Errors`
+
 ### `GET /api/v1/plugins/search`
 
 Plugin-only search across code-plugin and bundle-plugin packages.

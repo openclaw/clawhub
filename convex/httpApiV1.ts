@@ -1,6 +1,7 @@
 import { httpAction } from "./functions";
 import { verifyDocsSessionV1Handler } from "./httpApiV1/docsSessionV1";
 import {
+  exportPluginsV1Handler,
   listBundlePluginsV1Handler,
   listCodePluginsV1Handler,
   listPackagesV1Handler,
@@ -48,6 +49,7 @@ import { whoamiV1Handler } from "./httpApiV1/whoamiV1";
 
 export const listPackagesV1Http = httpAction(listPackagesV1Handler);
 export const listPluginsV1Http = httpAction(listPluginsV1Handler);
+export const exportPluginsV1Http = httpAction(exportPluginsV1Handler);
 export const packagesGetRouterV1Http = httpAction(packagesGetRouterV1Handler);
 export const packagesPostRouterV1Http = httpAction(packagesPostRouterV1Handler);
 export const packagesDeleteRouterV1Http = httpAction(packagesDeleteRouterV1Handler);
@@ -93,6 +95,7 @@ export const banAppealContextV1Http = httpAction(banAppealContextV1Handler);
 export const __handlers = {
   listPackagesV1Handler,
   listPluginsV1Handler,
+  exportPluginsV1Handler,
   packagesGetRouterV1Handler,
   packagesPostRouterV1Handler,
   packagesDeleteRouterV1Handler,

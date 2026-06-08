@@ -26,6 +26,7 @@ import {
   getVersionSecurityByNameForViewerInternal,
   insertReleaseInternal,
   listPackageModerationQueueInternal,
+  listPluginExportPageInternal,
   reservePackageNameInternal,
   listPublicPage,
   listPageForViewerInternal,
@@ -47,6 +48,7 @@ import {
 } from "./packages";
 
 vi.mock("@convex-dev/auth/server", () => ({
+  authTables: {},
   getAuthUserId: vi.fn(),
 }));
 
@@ -138,6 +140,22 @@ const listPageForViewerInternalHandler = (
       paginationOpts: { cursor: string | null; numItems: number };
     },
     { page: Array<{ name: string }>; isDone: boolean; continueCursor: string }
+  >
+)._handler;
+const listPluginExportPageInternalHandler = (
+  listPluginExportPageInternal as unknown as WrappedHandler<
+    {
+      startDate: number;
+      endDate: number;
+      cursor?: string;
+      numItems?: number;
+      family?: "code-plugin" | "bundle-plugin";
+    },
+    {
+      page: Array<{ name: string; family: "code-plugin" | "bundle-plugin" }>;
+      nextCursor: string | null;
+      hasMore: boolean;
+    }
   >
 )._handler;
 const listVersionsHandler = (
@@ -1054,6 +1072,142 @@ function makeDigestCtx(options: {
   };
 }
 
+function makePluginExportDigest(
+  name: string,
+  family: "code-plugin" | "bundle-plugin",
+  updatedAt: number,
+) {
+  return makeDigest(name, {
+    _id: `packageSearchDigest:${name}`,
+    packageId: `packages:${name}`,
+    family,
+    scanStatus: "clean",
+    updatedAt,
+    _creationTime: updatedAt,
+  });
+}
+
+function readIndexField(row: Record<string, unknown>, field: string) {
+  return field.split(".").reduce<unknown>((value, segment) => {
+    if (!value || typeof value !== "object") return undefined;
+    return (value as Record<string, unknown>)[segment];
+  }, row);
+}
+
+function makePluginExportIndexKey(row: Record<string, unknown>) {
+  return [row.softDeletedAt, row.family, row.updatedAt, row._creationTime, row._id] as unknown[];
+}
+
+function makePluginExportCtx(digests: Array<Record<string, unknown>>) {
+  const packagesById = new Map(
+    digests.map((digest) => [
+      String(digest.packageId),
+      makePackageDoc({
+        _id: digest.packageId,
+        name: digest.name,
+        normalizedName: digest.normalizedName,
+        displayName: digest.displayName,
+        family: digest.family,
+        ownerUserId: digest.ownerUserId,
+        ownerPublisherId: digest.ownerPublisherId,
+        latestReleaseId: `packageReleases:${String(digest.name)}-1`,
+        latestVersionSummary: { version: digest.latestVersion },
+        stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
+        scanStatus: "clean",
+        createdAt: digest.createdAt,
+        updatedAt: digest.updatedAt,
+      }),
+    ]),
+  );
+
+  return {
+    db: {
+      get: vi.fn(async (id: string) => packagesById.get(id) ?? null),
+      query: vi.fn((table: string) => {
+        if (table !== "packageSearchDigest") throw new Error(`Unexpected table ${table}`);
+        return {
+          withIndex: vi.fn(
+            (
+              indexName: string,
+              builder?: (q: {
+                eq: (field: string, value: unknown) => unknown;
+                gt: (field: string, value: unknown) => unknown;
+                gte: (field: string, value: unknown) => unknown;
+                lt: (field: string, value: unknown) => unknown;
+                lte: (field: string, value: unknown) => unknown;
+              }) => unknown,
+            ) => {
+              if (indexName !== "by_active_family_updated") {
+                throw new Error(`Unexpected packageSearchDigest index ${indexName}`);
+              }
+              const filters: Array<{
+                op: "eq" | "gt" | "gte" | "lt" | "lte";
+                field: string;
+                value: unknown;
+              }> = [];
+              const queryBuilder = {
+                eq: (field: string, value: unknown) => {
+                  filters.push({ op: "eq", field, value });
+                  return queryBuilder;
+                },
+                gt: (field: string, value: unknown) => {
+                  filters.push({ op: "gt", field, value });
+                  return queryBuilder;
+                },
+                gte: (field: string, value: unknown) => {
+                  filters.push({ op: "gte", field, value });
+                  return queryBuilder;
+                },
+                lt: (field: string, value: unknown) => {
+                  filters.push({ op: "lt", field, value });
+                  return queryBuilder;
+                },
+                lte: (field: string, value: unknown) => {
+                  filters.push({ op: "lte", field, value });
+                  return queryBuilder;
+                },
+              };
+              builder?.(queryBuilder);
+              return {
+                order: vi.fn((order: "asc" | "desc") => {
+                  const matches = digests
+                    .filter((row) =>
+                      filters.every(({ op, field, value }) => {
+                        const current = readIndexField(row, field);
+                        if (op === "eq") return current === value;
+                        if (op === "gt") return (current as number) > (value as number);
+                        if (op === "gte") return (current as number) >= (value as number);
+                        if (op === "lt") return (current as number) < (value as number);
+                        return (current as number) <= (value as number);
+                      }),
+                    )
+                    .sort((a, b) => {
+                      const updatedDiff = Number(a.updatedAt) - Number(b.updatedAt);
+                      if (updatedDiff !== 0) return order === "desc" ? -updatedDiff : updatedDiff;
+                      return String(a._id).localeCompare(String(b._id));
+                    });
+                  return {
+                    async *[Symbol.asyncIterator]() {
+                      for (const row of matches) {
+                        yield row;
+                      }
+                    },
+                    async *iterWithKeys() {
+                      for (const row of matches) {
+                        yield [row, makePluginExportIndexKey(row)];
+                      }
+                    },
+                  };
+                }),
+              };
+            },
+          ),
+        };
+      }),
+    },
+  };
+}
+
 function makeInsertReleaseCtx(
   existing: Record<string, unknown> | null,
   priorReleases: Array<Record<string, unknown>> = [],
@@ -1714,6 +1868,42 @@ function makeSoftDeletePackageCtx(options?: {
 }
 
 describe("packages public queries", () => {
+  it("keeps partially consumed plugin export family pages active", async () => {
+    const ctx = makePluginExportCtx([
+      makePluginExportDigest("newer-code", "code-plugin", 300),
+      makePluginExportDigest("older-bundle-a", "bundle-plugin", 200),
+      makePluginExportDigest("older-bundle-b", "bundle-plugin", 100),
+    ]);
+
+    const first = await listPluginExportPageInternalHandler(ctx, {
+      startDate: 0,
+      endDate: 1_000,
+      numItems: 1,
+    });
+    const second = await listPluginExportPageInternalHandler(ctx, {
+      startDate: 0,
+      endDate: 1_000,
+      cursor: first.nextCursor ?? undefined,
+      numItems: 1,
+    });
+    const third = await listPluginExportPageInternalHandler(ctx, {
+      startDate: 0,
+      endDate: 1_000,
+      cursor: second.nextCursor ?? undefined,
+      numItems: 1,
+    });
+
+    expect(first.page.map((entry) => entry.name)).toEqual(["newer-code"]);
+    expect(first.hasMore).toBe(true);
+    expect(first.nextCursor).toBeTruthy();
+    expect(second.page.map((entry) => entry.name)).toEqual(["older-bundle-a"]);
+    expect(second.hasMore).toBe(true);
+    expect(second.nextCursor).toBeTruthy();
+    expect(third.page.map((entry) => entry.name)).toEqual(["older-bundle-b"]);
+    expect(third.hasMore).toBe(false);
+    expect(third.nextCursor).toBeNull();
+  });
+
   it("keeps buffered cursor items aligned across paginated public pages", async () => {
     const { ctx, paginate } = makeDigestCtx({
       pages: [

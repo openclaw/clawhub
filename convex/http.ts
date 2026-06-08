@@ -18,6 +18,7 @@ import {
 } from "./httpApi";
 import {
   exportSkillsV1Http,
+  exportPluginsV1Http,
   listBundlePluginsV1Http,
   listCodePluginsV1Http,
   listPackagesV1Http,
@@ -109,6 +110,12 @@ http.route({
   path: ApiRoutes.plugins,
   method: "GET",
   handler: listPluginsV1Http,
+});
+
+http.route({
+  path: ApiRoutes.pluginsExport,
+  method: "GET",
+  handler: exportPluginsV1Http,
 });
 
 http.route({
