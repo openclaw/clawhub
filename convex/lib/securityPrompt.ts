@@ -89,6 +89,8 @@ export type SkillEvalContext = {
   };
   files: Array<{ path: string; size: number }>;
   skillMdContent: string;
+  primaryArtifactPath?: string;
+  primaryArtifactTruncationKind?: ArtifactCoverageIssue["kind"];
   fileContents: Array<{ path: string; content: string }>;
   injectionSignals: string[];
   staticScan?: {
@@ -577,13 +579,15 @@ function addCoverageIssuesForPreparedArtifact(
 
 export function analyzeEvalArtifactCoverage(ctx: SkillEvalContext): ArtifactCoverage {
   const issues: ArtifactCoverageIssue[] = [];
+  const primaryArtifactPath = ctx.primaryArtifactPath ?? "SKILL.md";
+  const primaryArtifactTruncationKind = ctx.primaryArtifactTruncationKind ?? "skill_md_truncated";
   const preparedSkillMd = prepareArtifactText(ctx.skillMdContent, MAX_SKILL_MD_CHARS);
   addCoverageIssuesForPreparedArtifact(
     issues,
-    "SKILL.md",
+    primaryArtifactPath,
     preparedSkillMd,
     ctx.skillMdContent,
-    "skill_md_truncated",
+    primaryArtifactTruncationKind,
   );
 
   let totalChars = 0;
