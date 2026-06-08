@@ -33,7 +33,6 @@ import { copyText } from "../components/InstallCopyButton";
 import { Container } from "../components/layout/Container";
 import { SignInPrompt } from "../components/SignInPrompt";
 import { ImportGitHubSkeleton } from "../components/skeletons/ProtectedPageSkeletons";
-import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardTitle } from "../components/ui/card";
 import {

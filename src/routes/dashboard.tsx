@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { usePaginatedQuery, useQuery } from "convex/react";
 import { Box, Download, Loader2, Package, Plus, Settings } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 import { ArtifactCard } from "../components/artifacts/ArtifactCard";
