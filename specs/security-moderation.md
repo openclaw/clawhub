@@ -98,6 +98,17 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   `GET /api/v1/packages/{name}/versions/{version}/security` without owner or
   moderator credentials. The endpoint returns only package identity, exact
   release artifact identifiers, and the install-consumable trust summary.
+- Moderators can revoke or restore one exact skill version without hiding other
+  versions of the skill. Revocation blocks every public artifact-byte delivery
+  path for that version, including ZIP, raw-file, Skill Card, and export paths,
+  while preserving the version and audit evidence for investigation.
+- `POST /api/v1/skills/-/security-verdicts` is the machine-readable exact-version
+  revocation lookup for install clients. Each successfully resolved item includes
+  `revocation.revoked` and `revocation.revokedAt`; clients must only remove or
+  quarantine an installed skill when the matching exact-version item explicitly
+  returns `revocation.revoked = true`. Missing versions, malformed responses,
+  authentication failures, timeouts, and other lookup failures are not revocation
+  signals.
 - `trust.blockedFromDownload` is the canonical install block signal for package
   releases. OpenClaw must use it instead of re-deriving blocking behavior from
   individual scan or moderation fields. `trust.reasons` is the compact user and
