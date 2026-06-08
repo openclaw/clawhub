@@ -443,7 +443,11 @@ async function requireOwnedPublicGitHubRepoForImport(
   return metadata;
 }
 
-async function requirePublicGitHubRepoForImport(owner: string, repo: string, fetcher: typeof fetch) {
+async function requirePublicGitHubRepoForImport(
+  owner: string,
+  repo: string,
+  fetcher: typeof fetch,
+) {
   const metadata = await fetchGitHubRepoMetadata(owner, repo, fetcher);
   const visibility = typeof metadata.visibility === "string" ? metadata.visibility : "";
   const isPublicVisibility = visibility ? visibility === "public" : true;
