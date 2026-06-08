@@ -890,28 +890,31 @@ describe("publishers membership controls", () => {
     });
   });
 
-  it("rejects org handles reserved for public routes", async () => {
-    const ctx = {
-      db: {
-        get: vi.fn(async (id: string) =>
-          id === "users:admin" ? { _id: id, role: "admin" } : null,
-        ),
-        query: vi.fn(),
-        insert: vi.fn(),
-        patch: vi.fn(),
-        delete: vi.fn(),
-        replace: vi.fn(),
-        normalizeId: vi.fn(),
-      },
-    };
+  it.each(["admin", "skills"])(
+    "rejects org handle %s reserved for public routes",
+    async (handle) => {
+      const ctx = {
+        db: {
+          get: vi.fn(async (id: string) =>
+            id === "users:admin" ? { _id: id, role: "admin" } : null,
+          ),
+          query: vi.fn(),
+          insert: vi.fn(),
+          patch: vi.fn(),
+          delete: vi.fn(),
+          replace: vi.fn(),
+          normalizeId: vi.fn(),
+        },
+      };
 
-    await expect(
-      migrateLegacyPublisherHandleToOrgInternalHandler(ctx, {
-        actorUserId: "users:admin",
-        handle: "skills",
-      }),
-    ).rejects.toThrow('Handle "@skills" is reserved for ClawHub routes');
-  });
+      await expect(
+        migrateLegacyPublisherHandleToOrgInternalHandler(ctx, {
+          actorUserId: "users:admin",
+          handle,
+        }),
+      ).rejects.toThrow(`Handle "@${handle}" is reserved for ClawHub routes`);
+    },
+  );
 
   it("lists individual and org publishers ranked by aggregate downloads", async () => {
     const publisherRows = [
