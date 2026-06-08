@@ -139,6 +139,7 @@ export const sendMaliciousArtifactNotificationInternal = internalAction({
     artifact: notificationArtifactValidator,
     version: v.optional(v.string()),
     trigger: v.optional(v.string()),
+    findingSummary: v.optional(v.string()),
   },
   handler: async (_ctx, args) => {
     const email = buildMaliciousArtifactEmail({
@@ -146,6 +147,7 @@ export const sendMaliciousArtifactNotificationInternal = internalAction({
       artifact: args.artifact as NotificationArtifact,
       version: args.version,
       trigger: args.trigger,
+      findingSummary: args.findingSummary,
     });
     return await sendTransactionalEmail({
       idempotencyKey: `malicious-artifact:${args.userId}:${args.findingAt}:${args.artifact.kind}:${args.artifact.name}:${args.version ?? ""}`,

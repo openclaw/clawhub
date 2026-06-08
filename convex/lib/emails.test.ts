@@ -90,9 +90,12 @@ describe("moderation notification email copy", () => {
       artifact: { kind: "skill", name: "demo-skill" },
       version: "1.2.3",
       trigger: "malicious.llm_malicious",
+      findingSummary: "Attempts to exfiltrate credentials.",
     });
 
     expect(email.subject).toBe("ClawHub blocked a skill version");
+    expect(email.text).toContain("Reason: Attempts to exfiltrate credentials.");
+    expect(email.html).toContain("Attempts to exfiltrate credentials.");
     expect(email.text).toContain("Skill: demo-skill");
     expect(email.text).toContain("Version: 1.2.3");
     expect(email.text).toContain("clawhub scan download demo-skill --version 1.2.3");
@@ -105,6 +108,32 @@ describe("moderation notification email copy", () => {
     expect(email.text).not.toContain(APPEALS_URL);
     expect(email.html).not.toContain(APPEALS_URL);
     expect(email.html).not.toContain("appeal this decision");
+  });
+
+  it("falls back to generic malicious artifact copy when no ClawScan summary is available", () => {
+    const email = buildMaliciousArtifactEmail({
+      handle: "publisher",
+      artifact: { kind: "skill", name: "demo-skill" },
+      version: "1.2.3",
+      trigger: "malicious.llm_malicious",
+    });
+
+    expect(email.text).toContain("Reason: ClawScan classified the uploaded artifact as malicious.");
+  });
+
+  it("keeps supplied ClawScan summaries to one email-safe line", () => {
+    const email = buildMaliciousArtifactEmail({
+      handle: "publisher",
+      artifact: { kind: "skill", name: "demo-skill" },
+      version: "1.2.3",
+      findingSummary: `  ${"credential exfiltration ".repeat(30)}\nwith hidden tooling  `,
+    });
+
+    const reasonLine = email.text.split("\n").find((line) => line.startsWith("Reason: "));
+    expect(reasonLine).toBeDefined();
+    expect(reasonLine).not.toContain("\n");
+    expect(reasonLine?.length).toBeLessThanOrEqual("Reason: ".length + 280);
+    expect(reasonLine).toContain("...");
   });
 
   it("builds plugin scan download copy with an explicit artifact kind", () => {

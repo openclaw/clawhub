@@ -3080,6 +3080,7 @@ describe("users.recordMaliciousArtifactFindingInternal", () => {
             version?: string;
             trigger?: string;
             sha256hash?: string;
+            findingSummary?: string;
           },
         ) => Promise<unknown>;
       }
@@ -3092,6 +3093,7 @@ describe("users.recordMaliciousArtifactFindingInternal", () => {
       version: "1.0.0",
       trigger: "malicious.llm_malicious",
       sha256hash: "abc123",
+      findingSummary: "Attempts to exfiltrate credentials.",
     });
 
     expect(result).toMatchObject({ ok: true, escalated: false });
@@ -3108,6 +3110,7 @@ describe("users.recordMaliciousArtifactFindingInternal", () => {
           version: "1.0.0",
           trigger: "malicious.llm_malicious",
           sha256hash: "abc123",
+          findingSummary: "Attempts to exfiltrate credentials.",
         }),
       }),
     );
@@ -3119,6 +3122,7 @@ describe("users.recordMaliciousArtifactFindingInternal", () => {
       artifact: { kind: "skill", name: "demo-skill" },
       version: "1.0.0",
       trigger: "malicious.llm_malicious",
+      findingSummary: "Attempts to exfiltrate credentials.",
     });
     expect(runMutation).not.toHaveBeenCalled();
   });

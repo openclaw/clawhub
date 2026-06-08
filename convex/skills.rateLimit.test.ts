@@ -1720,6 +1720,7 @@ describe("skills anti-spam guards", () => {
         version: "2.0.0",
         sha256hash: "h".repeat(64),
         trigger: "malicious.llm_malicious",
+        findingSummary: "ClawScan found malicious behavior.",
       }),
     );
   });
@@ -2193,6 +2194,7 @@ describe("skills anti-spam guards", () => {
         version: "1.0.0",
         sha256hash: "h".repeat(64),
         trigger: "malicious.llm_malicious",
+        findingSummary: "ClawScan found malicious behavior.",
       }),
     );
   });

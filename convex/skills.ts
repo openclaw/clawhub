@@ -738,6 +738,7 @@ async function scheduleClawScanMaliciousArtifactFinding(
       artifactName: skill.slug,
       version: version.version,
       ...(version.sha256hash ? { sha256hash: version.sha256hash } : {}),
+      ...(version.llmAnalysis?.summary ? { findingSummary: version.llmAnalysis.summary } : {}),
       trigger:
         patch.moderationReasonCodes?.find((code) => code.startsWith("malicious.llm_")) ??
         "malicious.llm_malicious",

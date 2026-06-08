@@ -2,6 +2,7 @@ export const APPEALS_URL = "https://appeals.openclaw.ai/";
 export const MODERATION_GUIDELINES_URL = "https://docs.openclaw.ai/clawhub/moderation";
 export const MALICIOUS_REJECTION_ACCOUNT_WARNING =
   "Repeated malicious rejections may lead to account disablement.";
+const MAX_EMAIL_FINDING_SUMMARY_LENGTH = 280;
 
 export type NotificationArtifact = {
   kind: "skill" | "plugin";
@@ -42,6 +43,7 @@ export type MaliciousArtifactEmailArgs = {
   artifact: NotificationArtifact;
   version?: string;
   trigger?: string;
+  findingSummary?: string;
 };
 
 type BanReasonSummary = {
@@ -176,6 +178,13 @@ function buildScanDownloadCommand(args: MaliciousArtifactEmailArgs) {
   return `clawhub scan download ${args.artifact.name} --version ${version}${kindFlag}`;
 }
 
+function normalizeEmailFindingSummary(value: string | undefined) {
+  const normalized = value?.replace(/\s+/g, " ").trim();
+  if (!normalized) return undefined;
+  if (normalized.length <= MAX_EMAIL_FINDING_SUMMARY_LENGTH) return normalized;
+  return `${normalized.slice(0, MAX_EMAIL_FINDING_SUMMARY_LENGTH - 3).trimEnd()}...`;
+}
+
 export function buildBanNotificationEmail(args: BanNotificationEmailArgs): TransactionalEmail {
   const summary = summarizeBanReason(args);
   const artifact = args.artifact ?? null;
@@ -284,11 +293,12 @@ export function buildMaliciousArtifactEmail(args: MaliciousArtifactEmailArgs) {
   const artifactLabelText = artifactLabel(args.artifact);
   const scanDownloadCommand = buildScanDownloadCommand(args);
   const findingSummary =
-    args.trigger?.includes("static") === true
+    normalizeEmailFindingSummary(args.findingSummary) ??
+    (args.trigger?.includes("static") === true
       ? "Static analysis flagged malicious upload patterns."
       : args.trigger?.includes("virustotal") === true || args.trigger?.includes("vt_") === true
         ? "VirusTotal telemetry contributed to a malicious upload finding."
-        : "ClawScan classified the uploaded artifact as malicious.";
+        : "ClawScan classified the uploaded artifact as malicious.");
   const subject = `ClawHub blocked a ${artifactKind} version`;
 
   const lines = [

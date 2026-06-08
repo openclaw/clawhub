@@ -1,5 +1,5 @@
 /* @vitest-environment node */
-import { gzipSync, unzipSync } from "fflate";
+import { gzipSync, strFromU8, unzipSync } from "fflate";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { internal } from "./_generated/api";
 import { RATE_LIMITS } from "./lib/httpRateLimit";
@@ -324,7 +324,14 @@ describe("httpApiV1 handlers", () => {
     expect(response.headers.get("Content-Disposition")).toBe(
       'attachment; filename="clawhub-scan-demo-skill-1.2.3.zip"',
     );
-    expect((await response.arrayBuffer()).byteLength).toBeGreaterThan(0);
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    expect(bytes.byteLength).toBeGreaterThan(0);
+    const entries = unzipSync(bytes);
+    const readme = entries["README.md"] ? strFromU8(entries["README.md"]) : "";
+    expect(readme).toContain("ClawScan is the primary security verdict");
+    expect(readme).toContain("`malicious` means ClawHub blocked the submitted version");
+    expect(readme).toContain("VirusTotal results are supporting reputation telemetry");
+    expect(readme).toContain("`clawscan.json`: final ClawScan verdict");
   });
 
   it("search returns empty results for blank query", async () => {

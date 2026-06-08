@@ -159,6 +159,7 @@ async function scheduleMaliciousArtifactNotificationEmail(
     artifact: { kind: MaliciousArtifactKind; name: string };
     version?: string;
     trigger?: string;
+    findingSummary?: string;
   },
 ) {
   const to = args.target.email?.trim();
@@ -172,6 +173,7 @@ async function scheduleMaliciousArtifactNotificationEmail(
     artifact: args.artifact,
     version: args.version,
     trigger: args.trigger,
+    findingSummary: args.findingSummary,
   });
 }
 
@@ -2885,6 +2887,7 @@ export const recordMaliciousArtifactFindingInternal = internalMutation({
     version: v.optional(v.string()),
     trigger: v.optional(v.string()),
     sha256hash: v.optional(v.string()),
+    findingSummary: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const target = await ctx.db.get(args.ownerUserId);
@@ -2899,6 +2902,7 @@ export const recordMaliciousArtifactFindingInternal = internalMutation({
     const trigger = args.trigger?.trim() || "scanner.malicious";
     const version = args.version?.trim() || undefined;
     const sha256hash = args.sha256hash?.trim() || undefined;
+    const findingSummary = args.findingSummary?.trim() || undefined;
     await ctx.db.insert("auditLogs", {
       actorUserId: args.ownerUserId,
       action: MALICIOUS_ARTIFACT_FINDING_ACTION,
@@ -2910,6 +2914,7 @@ export const recordMaliciousArtifactFindingInternal = internalMutation({
         version,
         trigger,
         sha256hash,
+        findingSummary,
       },
       createdAt: now,
     });
@@ -2921,6 +2926,7 @@ export const recordMaliciousArtifactFindingInternal = internalMutation({
         artifact: { kind: args.artifactKind, name: artifactName },
         version,
         trigger,
+        findingSummary,
       });
       return { ok: true as const, escalated: false as const, reason: "protected_role" as const };
     }
@@ -2941,6 +2947,7 @@ export const recordMaliciousArtifactFindingInternal = internalMutation({
         artifact: { kind: args.artifactKind, name: artifactName },
         version,
         trigger,
+        findingSummary,
       });
       return { ok: true as const, escalated: false as const };
     }
