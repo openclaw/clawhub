@@ -393,6 +393,7 @@ describe("llm eval prompt assembly", () => {
       },
     });
     expect((result.llmAnalysis as Record<string, unknown>).verdict).toBeUndefined();
+    expect(Object.hasOwn(result.llmAnalysis as Record<string, unknown>, "findings")).toBe(false);
   });
 
   it("ignores legacy skill version clawScanNote text", async () => {

@@ -193,9 +193,11 @@ function legacyArtifactEvalToAdvisoryAnalysis(params: {
     guidance: original.guidance
       ? `${LEGACY_ARTIFACT_EVAL_ADVISORY} Legacy guidance: ${original.guidance}`
       : LEGACY_ARTIFACT_EVAL_ADVISORY,
-    findings: original.findings
-      ? `Legacy advisory findings, not authoritative ClawScan findings:\n${original.findings}`
-      : undefined,
+    ...(original.findings
+      ? {
+          findings: `Legacy advisory findings, not authoritative ClawScan findings:\n${original.findings}`,
+        }
+      : {}),
     model: params.model,
     checkedAt: params.checkedAt,
   };
