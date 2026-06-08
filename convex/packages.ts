@@ -2098,6 +2098,28 @@ async function requireTrustedPublisherEditor(
   });
 }
 
+type PackageManageContext = {
+  package: Pick<Doc<"packages">, "_id" | "name" | "displayName">;
+  latestRelease: Pick<Doc<"packageReleases">, "_id" | "version">;
+};
+
+function toPackageManageContext(
+  pkg: Doc<"packages">,
+  latestRelease: Doc<"packageReleases">,
+): PackageManageContext {
+  return {
+    package: {
+      _id: pkg._id,
+      name: pkg.name,
+      displayName: pkg.displayName,
+    },
+    latestRelease: {
+      _id: latestRelease._id,
+      version: latestRelease.version,
+    },
+  };
+}
+
 export const getByName = query({
   args: { name: v.string() },
   handler: async (ctx, args) => {
@@ -2156,17 +2178,7 @@ export const getManageContext = query({
     const latestRelease = await ctx.db.get(pkg.latestReleaseId);
     if (!latestRelease || latestRelease.softDeletedAt) return null;
 
-    return {
-      package: {
-        _id: pkg._id,
-        name: pkg.name,
-        displayName: pkg.displayName,
-      },
-      latestRelease: {
-        _id: latestRelease._id,
-        version: latestRelease.version,
-      },
-    };
+    return toPackageManageContext(pkg, latestRelease);
   },
 });
 
