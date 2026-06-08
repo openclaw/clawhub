@@ -24,9 +24,9 @@ import {
 } from "./lib/githubSkillSync";
 import { adjustGlobalPublicSkillsCount, getPublicSkillVisibilityDelta } from "./lib/globalStats";
 import { runStaticModerationScan } from "./lib/moderationEngine";
+import { REASON_CODES } from "./lib/moderationReasonCodes";
 import { Events, logErrorEvent, logEvent } from "./lib/observabilityEvents";
 import { isOfficialPublisher } from "./lib/officialPublishers";
-import { REASON_CODES } from "./lib/moderationReasonCodes";
 import { requirePublisherRole } from "./lib/publishers";
 import { isMacJunkPath, isTextFile, parseFrontmatter } from "./lib/skills";
 import { syncSkillSearchDigestForSkill } from "./lib/skillSearchDigest";
