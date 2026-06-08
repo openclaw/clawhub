@@ -7,7 +7,11 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
-import { getUserFacingAuthError } from "../lib/authErrorMessage";
+import {
+  getUserFacingAuthError,
+  isBannedAccountAuthError,
+  routeToBannedAccountPage,
+} from "../lib/authErrorMessage";
 import { getSkillCategoryForSkill } from "../lib/categories";
 import { getUserFacingConvexError } from "../lib/convexError";
 import { canManageSkill, isModerator } from "../lib/roles";
@@ -685,7 +689,12 @@ export function SkillDetailPage({
         ? "/"
         : `${window.location.pathname}${window.location.search}${window.location.hash}`;
     void signIn("github", redirectTo ? { redirectTo } : undefined).catch((error) => {
-      setAuthError(getUserFacingAuthError(error, "Sign in failed. Please try again."));
+      const message = getUserFacingAuthError(error, "Sign in failed. Please try again.");
+      if (isBannedAccountAuthError(message)) {
+        routeToBannedAccountPage();
+        return;
+      }
+      setAuthError(message);
     });
   };
 

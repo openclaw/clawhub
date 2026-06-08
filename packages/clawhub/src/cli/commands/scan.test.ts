@@ -23,7 +23,7 @@ vi.mock("../registry.js", () => registryMocks.moduleFactory());
 vi.mock("../../http.js", () => httpMocks.moduleFactory());
 vi.mock("../ui.js", () => uiMocks.moduleFactory());
 
-const { cmdScan } = await import("./scan");
+const { cmdScan, cmdScanDownload } = await import("./scan");
 
 const mockLog = vi.spyOn(console, "log").mockImplementation(() => {});
 const mockWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
@@ -88,7 +88,7 @@ afterEach(() => {
 });
 
 describe("cmdScan", () => {
-  it("uploads a local skill bundle and polls until complete", async () => {
+  it("rejects local folder scans because stored submitted-version reports are canonical", async () => {
     const workdir = await makeTmpWorkdir();
     try {
       const folder = join(workdir, "local-skill");
@@ -96,47 +96,13 @@ describe("cmdScan", () => {
       await writeFile(join(folder, "SKILL.md"), "# Local Skill\n", "utf8");
       await writeFile(join(folder, "notes.md"), "notes\n", "utf8");
 
-      httpMocks.apiRequestForm.mockResolvedValueOnce({
-        ok: true,
-        scanId: "scan_123",
-        jobId: "job_123",
-        status: "queued",
-        sourceKind: "upload",
-        update: false,
-      });
-      httpMocks.apiRequest.mockResolvedValueOnce(completedScan({ sourceKind: "upload" }));
-
-      await cmdScan(makeGlobalOpts(workdir), "local-skill", {});
-
-      const submitCall = httpMocks.apiRequestForm.mock.calls[0];
-      expect(submitCall?.[1]).toMatchObject({
-        method: "POST",
-        path: ApiRoutes.skillScans,
-        token: "tkn",
-      });
-      if (!submitCall) throw new Error("missing scan submit call");
-      const form = (submitCall[1] as { form: FormData }).form;
-      const payloadRaw = form.get("payload");
-      expect(typeof payloadRaw).toBe("string");
-      expect(JSON.parse(payloadRaw as string)).toEqual({
-        source: { kind: "upload" },
-        update: false,
-      });
-      const files = form?.getAll("files") as Array<Blob & { name?: string }>;
-      expect(files.map((file) => file.name ?? "").sort()).toEqual(["SKILL.md", "notes.md"]);
-      expect(httpMocks.apiRequest).toHaveBeenCalledWith(
-        "https://clawhub.ai",
-        expect.objectContaining({
-          method: "GET",
-          path: `${ApiRoutes.skillScans}/scan_123`,
-          token: "tkn",
-        }),
-        expect.anything(),
+      await expect(cmdScan(makeGlobalOpts(workdir), "local-skill", {})).rejects.toThrow(
+        "Local folder scans are no longer supported",
       );
-      expect(mockLog).toHaveBeenCalledWith(expect.stringContaining("ClawScan"));
-      expect(mockLog).toHaveBeenCalledWith(
-        expect.stringContaining("No suspicious behavior found."),
-      );
+      expect(authTokenMocks.requireAuthToken).not.toHaveBeenCalled();
+      expect(registryMocks.getRegistry).not.toHaveBeenCalled();
+      expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
+      expect(httpMocks.apiRequest).not.toHaveBeenCalled();
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }
@@ -210,5 +176,75 @@ describe("cmdScan", () => {
     await expect(cmdScan(makeGlobalOpts(), undefined, {})).rejects.toThrow(
       "Provide a local path or --slug",
     );
+  });
+});
+
+describe("cmdScanDownload", () => {
+  it("downloads stored scan results for a submitted skill version", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      httpMocks.fetchBinary.mockResolvedValueOnce(new Uint8Array([80, 75, 3, 4]));
+
+      await cmdScanDownload(makeGlobalOpts(workdir), "demo-skill", {
+        version: "1.2.3",
+        output: "scan.zip",
+      });
+
+      expect(httpMocks.fetchBinary).toHaveBeenCalledWith("https://clawhub.ai", {
+        path: `${ApiRoutes.skillScans}/download/demo-skill?version=1.2.3&kind=skill`,
+        token: "tkn",
+      });
+      expect(await readFile(join(workdir, "scan.zip"))).toEqual(Buffer.from([80, 75, 3, 4]));
+      expect(mockLog).toHaveBeenCalledWith(`Report ZIP: ${join(workdir, "scan.zip")}`);
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("requires a version because rejected versions must be addressed explicitly", async () => {
+    await expect(cmdScanDownload(makeGlobalOpts(), "demo-skill", {})).rejects.toThrow(
+      "--version required",
+    );
+  });
+
+  it("sanitizes the version in the default report filename", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      httpMocks.fetchBinary.mockResolvedValueOnce(new Uint8Array([80, 75, 3, 4]));
+
+      await cmdScanDownload(makeGlobalOpts(workdir), "demo-skill", {
+        version: "../../evil",
+      });
+
+      expect(httpMocks.fetchBinary).toHaveBeenCalledWith("https://clawhub.ai", {
+        path: `${ApiRoutes.skillScans}/download/demo-skill?version=..%2F..%2Fevil&kind=skill`,
+        token: "tkn",
+      });
+      expect(await readFile(join(workdir, "clawhub-scan-demo-skill-..-..-evil.zip"))).toEqual(
+        Buffer.from([80, 75, 3, 4]),
+      );
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("supports plugin scan report downloads with an explicit kind", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      httpMocks.fetchBinary.mockResolvedValueOnce(new Uint8Array([80, 75, 3, 4]));
+
+      await cmdScanDownload(makeGlobalOpts(workdir), "@scope/demo", {
+        kind: "plugin",
+        version: "2.0.0",
+        output: "plugin-scan.zip",
+      });
+
+      expect(httpMocks.fetchBinary).toHaveBeenCalledWith("https://clawhub.ai", {
+        path: `${ApiRoutes.skillScans}/download/%40scope%2Fdemo?version=2.0.0&kind=plugin`,
+        token: "tkn",
+      });
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
   });
 });

@@ -214,9 +214,138 @@ describe("clawhub e2e", () => {
       );
       await rm(workdir, { recursive: true, force: true });
 
-      expect(result.status).toBe(0);
+      expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
       expect(result.stderr).not.toMatch(/API response:/);
     } finally {
+      await rm(cfg.dir, { recursive: true, force: true });
+    }
+  });
+
+  it("cli scan rejects local folders before submitting a scan", async () => {
+    let requestCount = 0;
+    const server = createServer(async (_req, res) => {
+      requestCount += 1;
+      res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+      res.end("not found");
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+
+    const registry = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const cfg = await makeTempConfig(registry, "test-token");
+    const workdir = await mkdtemp(join(tmpdir(), "clawhub-e2e-scan-"));
+    try {
+      const skillDir = join(workdir, "my-skill");
+      await mkdir(skillDir, { recursive: true });
+      await writeFile(join(skillDir, "SKILL.md"), "# Local Skill\n", "utf8");
+
+      const result = await spawnCommand(
+        "bun",
+        [
+          "clawhub",
+          "scan",
+          "./my-skill",
+          "--workdir",
+          workdir,
+          "--site",
+          registry,
+          "--registry",
+          registry,
+        ],
+        {
+          cwd: process.cwd(),
+          env: {
+            ...process.env,
+            CLAWHUB_CONFIG_PATH: cfg.path,
+            CLAWHUB_DISABLE_TELEMETRY: "1",
+          },
+        },
+      );
+
+      expect(result.status).not.toBe(0);
+      expect(requestCount).toBe(0);
+      expect(result.stderr).toContain("Local folder scans are no longer supported");
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await rm(workdir, { recursive: true, force: true });
+      await rm(cfg.dir, { recursive: true, force: true });
+    }
+  });
+
+  it("cli scan download fetches a stored submitted-version scan report", async () => {
+    const reportZip = zipSync({
+      "manifest.json": strToU8(
+        `${JSON.stringify({
+          scanId: "skill:demo-skill:1.2.3",
+          sourceKind: "published",
+          status: "succeeded",
+        })}\n`,
+      ),
+      "clawscan.json": strToU8(`${JSON.stringify({ status: "malicious" })}\n`),
+    });
+    let requestedAuthorization = "";
+    let requestedPath = "";
+    const server = createServer(async (req, res) => {
+      const url = new URL(req.url ?? "/", "http://127.0.0.1");
+      requestedPath = `${url.pathname}${url.search}`;
+      if (
+        req.method === "GET" &&
+        url.pathname === `${ApiRoutes.skillScans}/download/demo-skill` &&
+        url.searchParams.get("version") === "1.2.3" &&
+        url.searchParams.get("kind") === "skill"
+      ) {
+        requestedAuthorization = req.headers.authorization ?? "";
+        res.writeHead(200, { "Content-Type": "application/zip" });
+        res.end(Buffer.from(reportZip));
+        return;
+      }
+      res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+      res.end("not found");
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+
+    const registry = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const cfg = await makeTempConfig(registry, "test-token");
+    const workdir = await mkdtemp(join(tmpdir(), "clawhub-e2e-scan-download-"));
+    try {
+      const result = await spawnCommand(
+        "bun",
+        [
+          "clawhub",
+          "scan",
+          "download",
+          "demo-skill",
+          "--version",
+          "1.2.3",
+          "--output",
+          "report.zip",
+          "--workdir",
+          workdir,
+          "--site",
+          registry,
+          "--registry",
+          registry,
+        ],
+        {
+          cwd: process.cwd(),
+          env: {
+            ...process.env,
+            CLAWHUB_CONFIG_PATH: cfg.path,
+            CLAWHUB_DISABLE_TELEMETRY: "1",
+          },
+        },
+      );
+
+      expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+      expect(requestedAuthorization).toBe("Bearer test-token");
+      expect(requestedPath).toBe(
+        `${ApiRoutes.skillScans}/download/demo-skill?version=1.2.3&kind=skill`,
+      );
+      expect(result.stdout).toContain("Report ZIP:");
+      const downloaded = await readFile(join(workdir, "report.zip"));
+      expect(unzipSync(downloaded)).toHaveProperty("manifest.json");
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await rm(workdir, { recursive: true, force: true });
       await rm(cfg.dir, { recursive: true, force: true });
     }
   });

@@ -102,6 +102,12 @@ Ensure Convex env is set (auth + embeddings):
 - `JWT_PRIVATE_KEY`
 - `JWKS`
 - `OPENAI_API_KEY`
+- `RESEND_API_KEY` for account-ban notification email
+- `CLAWHUB_SECURITY_EMAIL` for account-action replies, defaulting to
+  `security@notifications.openclaw.ai`
+- `CLAWHUB_SECURITY_EMAIL_FROM` for the outbound From header, defaulting to
+  `ClawHub Security <noreply@notifications.openclaw.ai>` on the verified Resend
+  domain
 - `SITE_URL` (your web app URL)
 - Optional webhook env (see `docs/webhook.md`)
 - Recommended GitHub App env for authenticated GitHub API reads used by publish

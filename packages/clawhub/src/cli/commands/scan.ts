@@ -1,13 +1,12 @@
-import { mkdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import { apiRequest, apiRequestForm, fetchBinary } from "../../http.js";
+import { apiRequest, fetchBinary } from "../../http.js";
 import {
   ApiRoutes,
   ApiV1SkillScanStatusResponseSchema,
   ApiV1SkillScanSubmitResponseSchema,
   type ApiV1SkillScanStatusResponse,
 } from "../../schema/index.js";
-import { listTextFiles } from "../../skills.js";
 import { requireAuthToken } from "../authToken.js";
 import { getRegistry } from "../registry.js";
 import type { GlobalOpts } from "../types.js";
@@ -24,19 +23,24 @@ type ScanOptions = {
   json?: boolean;
 };
 
+type ScanDownloadOptions = {
+  kind?: "skill" | "plugin";
+  version?: string;
+  output?: string;
+};
+
 type ReportRecord = Record<string, unknown>;
 
 export async function cmdScan(opts: GlobalOpts, pathArg: string | undefined, options: ScanOptions) {
   validateScanOptions(pathArg, options);
+  if (pathArg?.trim()) rejectLocalScan();
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
   const spinner = createSpinner("Submitting scan");
 
   try {
-    const submitted = pathArg
-      ? await submitLocalScan(opts, registry, token, pathArg)
-      : await submitPublishedScan(registry, token, options);
+    const submitted = await submitPublishedScan(registry, token, options);
 
     spinner.text = formatScanProgress("queued", submitted.scanId, submitted.queue);
     const status = await pollScan(registry, token, submitted.scanId, spinner);
@@ -68,6 +72,34 @@ export async function cmdScan(opts: GlobalOpts, pathArg: string | undefined, opt
   }
 }
 
+export async function cmdScanDownload(
+  opts: GlobalOpts,
+  nameArg: string,
+  options: ScanDownloadOptions,
+) {
+  const name = nameArg.trim();
+  if (!name) fail("Skill or plugin name required");
+  const version = options.version?.trim();
+  if (!version) fail("--version required");
+  const kind = options.kind ?? "skill";
+  if (kind !== "skill" && kind !== "plugin") fail('--kind must be "skill" or "plugin"');
+
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const output = resolve(
+    opts.workdir,
+    options.output ?? `clawhub-scan-${safeOutputName(name)}-${safeOutputName(version)}.zip`,
+  );
+  const query = new URLSearchParams({ version, kind });
+  const bytes = await fetchBinary(registry, {
+    path: `${ApiRoutes.skillScans}/download/${encodeURIComponent(name)}?${query.toString()}`,
+    token,
+  });
+  await mkdir(dirname(output), { recursive: true });
+  await writeFile(output, bytes);
+  console.log(`Report ZIP: ${output}`);
+}
+
 function validateScanOptions(pathArg: string | undefined, options: ScanOptions) {
   const hasPath = Boolean(pathArg?.trim());
   const hasSlug = Boolean(options.slug?.trim());
@@ -76,33 +108,9 @@ function validateScanOptions(pathArg: string | undefined, options: ScanOptions) 
   if (hasPath && options.update) fail("--update is only valid with --slug");
 }
 
-async function submitLocalScan(opts: GlobalOpts, registry: string, token: string, pathArg: string) {
-  const folder = resolve(opts.workdir, pathArg);
-  const folderStat = await stat(folder).catch(() => null);
-  if (!folderStat?.isDirectory()) fail("Path must be a folder");
-
-  const files = await listTextFiles(folder);
-  if (
-    !files.some((file) => {
-      const lower = file.relPath.toLowerCase();
-      return lower === "skill.md";
-    })
-  ) {
-    fail("SKILL.md required");
-  }
-  if (files.length === 0) fail("No files found");
-
-  const form = new FormData();
-  form.set("payload", JSON.stringify({ source: { kind: "upload" }, update: false }));
-  for (const file of files) {
-    const blob = new Blob([Buffer.from(file.bytes)], { type: file.contentType ?? "text/plain" });
-    form.append("files", blob, file.relPath);
-  }
-
-  return await apiRequestForm(
-    registry,
-    { method: "POST", path: ApiRoutes.skillScans, token, form },
-    ApiV1SkillScanSubmitResponseSchema,
+function rejectLocalScan(): never {
+  fail(
+    "Local folder scans are no longer supported. Upload a new version, then run `clawhub scan download <slug> --version <version>` to retrieve stored scan results.",
   );
 }
 
@@ -320,4 +328,12 @@ function dateValue(value: unknown) {
   return typeof value === "number" && Number.isFinite(value)
     ? new Date(value).toISOString()
     : undefined;
+}
+
+function safeOutputName(value: string) {
+  return value
+    .replace(/^@/, "")
+    .replaceAll("/", "-")
+    .replaceAll(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }

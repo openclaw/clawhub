@@ -88,6 +88,8 @@ type SkillSpectorAnalysisForStorage = {
   checkedAt: number;
 };
 
+type StoredScanArtifactKind = "skill" | "plugin";
+
 const jobSourceValidator = v.union(
   v.literal("publish"),
   v.literal("clawscan-note"),
@@ -793,6 +795,54 @@ function skillScanReportFromRequest(request: Doc<"skillScanRequests">) {
   };
 }
 
+function storedScanReportFromArtifact(
+  artifact: Pick<
+    Doc<"skillVersions"> | Doc<"packageReleases">,
+    "llmAnalysis" | "skillSpectorAnalysis" | "staticScan" | "vtAnalysis"
+  >,
+) {
+  return {
+    clawscan: artifact.llmAnalysis ?? null,
+    skillspector: artifact.skillSpectorAnalysis ?? null,
+    staticAnalysis: artifact.staticScan ?? null,
+    virustotal: artifact.vtAnalysis
+      ? {
+          ...artifact.vtAnalysis,
+          ...artifact.vtAnalysis.engineStats,
+        }
+      : null,
+  };
+}
+
+function hasStoredScanReport(
+  artifact: Pick<
+    Doc<"skillVersions"> | Doc<"packageReleases">,
+    "llmAnalysis" | "skillSpectorAnalysis" | "staticScan" | "vtAnalysis"
+  >,
+) {
+  return Boolean(
+    artifact.llmAnalysis ||
+    artifact.skillSpectorAnalysis ||
+    artifact.staticScan ||
+    artifact.vtAnalysis,
+  );
+}
+
+function completedAtFromStoredScanReport(
+  artifact: Pick<
+    Doc<"skillVersions"> | Doc<"packageReleases">,
+    "llmAnalysis" | "skillSpectorAnalysis" | "staticScan" | "vtAnalysis"
+  >,
+) {
+  const checkedAtValues = [
+    artifact.llmAnalysis?.checkedAt,
+    artifact.skillSpectorAnalysis?.checkedAt,
+    artifact.staticScan?.checkedAt,
+    artifact.vtAnalysis?.checkedAt,
+  ].filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  return checkedAtValues.length > 0 ? Math.max(...checkedAtValues) : undefined;
+}
+
 function skillScanArtifactFromRequest(request: Doc<"skillScanRequests">) {
   return {
     ...(request.slug ? { slug: request.slug } : {}),
@@ -1110,6 +1160,146 @@ export const getSkillScanRequestForUserInternal = internalQuery({
     return await skillScanStatusResponse(ctx, request, job);
   },
 });
+
+export const getStoredScanReportForUserInternal = internalQuery({
+  args: {
+    actorUserId: v.id("users"),
+    kind: v.union(v.literal("skill"), v.literal("plugin")),
+    name: v.string(),
+    version: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+
+    const name = args.name.trim();
+    const versionLabel = args.version.trim();
+    if (!name) throw new ConvexError("Name required");
+    if (!versionLabel) throw new ConvexError("Version required");
+
+    return args.kind === "plugin"
+      ? await getStoredPackageScanReportForUser(ctx, {
+          actor,
+          kind: args.kind,
+          name,
+          version: versionLabel,
+        })
+      : await getStoredSkillScanReportForUser(ctx, {
+          actor,
+          kind: args.kind,
+          name,
+          version: versionLabel,
+        });
+  },
+});
+
+async function getStoredSkillScanReportForUser(
+  ctx: QueryCtx,
+  args: {
+    actor: Doc<"users">;
+    kind: StoredScanArtifactKind;
+    name: string;
+    version: string;
+  },
+) {
+  const slug = args.name.toLowerCase();
+  const skill = await ctx.db
+    .query("skills")
+    .withIndex("by_slug", (q) => q.eq("slug", slug))
+    .unique();
+  if (!skill) throw new ConvexError("Skill not found");
+
+  await assertCanManageOwnedResource(ctx, {
+    actor: args.actor,
+    ownerUserId: skill.ownerUserId,
+    ownerPublisherId: skill.ownerPublisherId,
+    allowedPublisherRoles: ["publisher"],
+    allowPlatformModerator: true,
+  });
+
+  const version = await ctx.db
+    .query("skillVersions")
+    .withIndex("by_skill_version", (q) => q.eq("skillId", skill._id).eq("version", args.version))
+    .unique();
+  if (!version) throw new ConvexError("Skill version not found");
+  if (!hasStoredScanReport(version)) throw new ConvexError("Scan results not found");
+
+  const completedAt = completedAtFromStoredScanReport(version);
+  return {
+    ok: true as const,
+    scanId: `skill:${skill.slug}:${version.version}`,
+    status: "succeeded" as const,
+    sourceKind: "published" as const,
+    update: false,
+    writtenBack: true,
+    artifact: {
+      kind: args.kind,
+      slug: skill.slug,
+      displayName: skill.displayName,
+      version: version.version,
+      ...(version.sha256hash ? { sha256hash: version.sha256hash } : {}),
+      fileCount: version.files.length,
+    },
+    report: storedScanReportFromArtifact(version),
+    createdAt: version.createdAt,
+    updatedAt: Math.max(version.createdAt, completedAt ?? version.createdAt),
+    completedAt,
+  };
+}
+
+async function getStoredPackageScanReportForUser(
+  ctx: QueryCtx,
+  args: {
+    actor: Doc<"users">;
+    kind: StoredScanArtifactKind;
+    name: string;
+    version: string;
+  },
+) {
+  const normalizedName = normalizePackageName(args.name);
+  const pkg = await ctx.db
+    .query("packages")
+    .withIndex("by_name", (q) => q.eq("normalizedName", normalizedName))
+    .unique();
+  if (!pkg || pkg.family === "skill") throw new ConvexError("Plugin not found");
+
+  await assertCanManageOwnedResource(ctx, {
+    actor: args.actor,
+    ownerUserId: pkg.ownerUserId,
+    ownerPublisherId: pkg.ownerPublisherId,
+    allowedPublisherRoles: ["publisher"],
+    allowPlatformModerator: true,
+  });
+
+  const release = await ctx.db
+    .query("packageReleases")
+    .withIndex("by_package_version", (q) => q.eq("packageId", pkg._id).eq("version", args.version))
+    .unique();
+  if (!release) throw new ConvexError("Plugin version not found");
+  if (!hasStoredScanReport(release)) throw new ConvexError("Scan results not found");
+
+  const completedAt = completedAtFromStoredScanReport(release);
+  return {
+    ok: true as const,
+    scanId: `plugin:${pkg.normalizedName}:${release.version}`,
+    status: "succeeded" as const,
+    sourceKind: "published" as const,
+    update: false,
+    writtenBack: true,
+    artifact: {
+      kind: args.kind,
+      name: pkg.name,
+      displayName: pkg.displayName,
+      version: release.version,
+      ...(release.integritySha256 ? { sha256hash: release.integritySha256 } : {}),
+      fileCount: release.files.length,
+    },
+    report: storedScanReportFromArtifact(release),
+    createdAt: release.createdAt,
+    updatedAt: Math.max(release.createdAt, completedAt ?? release.createdAt),
+    completedAt,
+  };
+}
 
 export const recordSkillScanRequestSucceededInternal = internalMutation({
   args: {

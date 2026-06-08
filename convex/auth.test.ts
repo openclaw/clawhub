@@ -128,7 +128,7 @@ describe("handleDeletedUserSignIn", () => {
     expect(ctx.db.patch).not.toHaveBeenCalled();
   });
 
-  it("includes the moderator ban reason in the sign-in error", async () => {
+  it("does not leak the moderator ban reason in the sign-in error", async () => {
     const { ctx } = makeCtx({
       user: { deletedAt: 123, banReason: "Chargeback fraud" },
       banRecords: [{ action: "user.ban" }],
@@ -136,6 +136,6 @@ describe("handleDeletedUserSignIn", () => {
 
     await expect(
       handleDeletedUserSignIn(ctx as never, { userId, existingUserId: userId }),
-    ).rejects.toThrow(`${BANNED_REAUTH_MESSAGE} Reason: Chargeback fraud`);
+    ).rejects.toThrow(BANNED_REAUTH_MESSAGE);
   });
 });

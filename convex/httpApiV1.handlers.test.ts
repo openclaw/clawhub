@@ -257,6 +257,76 @@ beforeEach(() => {
 });
 
 describe("httpApiV1 handlers", () => {
+  it("rejects local scan upload submissions with scan-download guidance", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:owner",
+      user: { _id: "users:owner", role: "user" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      throw new Error(`unexpected mutation ${JSON.stringify(args)}`);
+    });
+    const response = await __handlers.skillScanSubmitV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/skills/-/scan", {
+        method: "POST",
+        body: JSON.stringify({ source: { kind: "upload" } }),
+      }),
+    );
+
+    expect(response.status).toBe(410);
+    expect(await response.text()).toContain("clawhub scan download <slug> --version <version>");
+  });
+
+  it("downloads stored scan reports for submitted skill versions", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:owner",
+      user: { _id: "users:owner", role: "user" },
+    } as never);
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      expect(args).toMatchObject({
+        actorUserId: "users:owner",
+        kind: "skill",
+        name: "demo-skill",
+        version: "1.2.3",
+      });
+      return {
+        ok: true,
+        scanId: "skill:demo-skill:1.2.3",
+        status: "succeeded",
+        sourceKind: "published",
+        update: false,
+        writtenBack: true,
+        artifact: {
+          kind: "skill",
+          slug: "demo-skill",
+          version: "1.2.3",
+        },
+        report: {
+          clawscan: { status: "malicious", checkedAt: 1 },
+          skillspector: null,
+          staticAnalysis: null,
+          virustotal: null,
+        },
+        createdAt: 1,
+        updatedAt: 1,
+        completedAt: 1,
+      };
+    });
+    const response = await __handlers.skillScanGetRouterV1Handler(
+      makeCtx({ runQuery }),
+      new Request("https://example.com/api/v1/skills/-/scan/download/demo-skill?version=1.2.3"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toBe("application/zip");
+    expect(response.headers.get("Content-Disposition")).toBe(
+      'attachment; filename="clawhub-scan-demo-skill-1.2.3.zip"',
+    );
+    expect((await response.arrayBuffer()).byteLength).toBeGreaterThan(0);
+  });
+
   it("search returns empty results for blank query", async () => {
     const runAction = vi.fn();
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -718,6 +788,354 @@ describe("httpApiV1 handlers", () => {
     } finally {
       consoleError.mockRestore();
     }
+  });
+
+  it("plugins export defaults to both plugin families with the proven 250 item page limit", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "user" },
+    } as never);
+    vi.mocked(getOptionalApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "user" },
+    } as never);
+
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("startDate" in args) return { page: [], nextCursor: null, hasMore: false };
+      return null;
+    });
+
+    const response = await __handlers.exportPluginsV1Handler(
+      makeCtx({ runQuery }),
+      new Request("https://example.com/api/v1/plugins/export?startDate=1&endDate=2", {
+        headers: { authorization: "Bearer user-token" },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    const listCall = runQuery.mock.calls.find(([, args]) => "startDate" in args);
+    expect(listCall?.[1]).toMatchObject({
+      family: undefined,
+      numItems: 250,
+      startDate: 1,
+      endDate: 2,
+    });
+  });
+
+  it("plugins export accepts a single plugin family filter", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "user" },
+    } as never);
+    vi.mocked(getOptionalApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "user" },
+    } as never);
+
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("startDate" in args) return { page: [], nextCursor: null, hasMore: false };
+      return null;
+    });
+
+    const response = await __handlers.exportPluginsV1Handler(
+      makeCtx({ runQuery }),
+      new Request(
+        "https://example.com/api/v1/plugins/export?startDate=1&endDate=2&family=code-plugin",
+        { headers: { authorization: "Bearer user-token" } },
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    const listCall = runQuery.mock.calls.find(([, args]) => "startDate" in args);
+    expect(listCall?.[1]).toMatchObject({ family: "code-plugin" });
+  });
+
+  it("plugins export rejects non-plugin family filters", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "user" },
+    } as never);
+
+    const runQuery = vi.fn();
+    const response = await __handlers.exportPluginsV1Handler(
+      makeCtx({ runQuery }),
+      new Request("https://example.com/api/v1/plugins/export?startDate=1&endDate=2&family=skill", {
+        headers: { authorization: "Bearer user-token" },
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toBe("family must be code-plugin or bundle-plugin");
+    expect(runQuery).not.toHaveBeenCalled();
+  });
+
+  it("plugins export namespaces latest release files by family and package name", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "user" },
+    } as never);
+    vi.mocked(getOptionalApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "user" },
+    } as never);
+
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("startDate" in args) {
+        return {
+          page: [
+            {
+              packageId: "packages:code",
+              name: "@scope/demo-plugin",
+              displayName: "Demo Plugin",
+              family: "code-plugin",
+              latestReleaseId: "packageReleases:code",
+              latestVersion: "1.0.0",
+              createdAt: 1,
+              updatedAt: 2,
+              stats: { downloads: 1, installs: 0, stars: 0, versions: 1 },
+              ownerUserId: "users:alice",
+              ownerHandle: "alice",
+              ownerDisplayName: "Alice",
+            },
+            {
+              packageId: "packages:bundle",
+              name: "demo-bundle",
+              displayName: "Demo Bundle",
+              family: "bundle-plugin",
+              latestReleaseId: "packageReleases:bundle",
+              latestVersion: "2.0.0",
+              createdAt: 1,
+              updatedAt: 3,
+              stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
+              ownerUserId: "users:bob",
+              ownerHandle: "bob",
+              ownerDisplayName: "Bob",
+            },
+          ],
+          nextCursor: null,
+          hasMore: false,
+        };
+      }
+      if (args.releaseId === "packageReleases:code") {
+        return {
+          packageId: "packages:code",
+          version: "1.0.0",
+          changelog: "Initial code plugin",
+          createdAt: 2,
+          files: [
+            {
+              storageId: "storage:package-json",
+              path: "package.json",
+              size: 2,
+              sha256: "sha-package-json",
+              contentType: "application/json",
+            },
+          ],
+          artifactKind: "npm-pack",
+          softDeletedAt: undefined,
+        };
+      }
+      if (args.releaseId === "packageReleases:bundle") {
+        return {
+          packageId: "packages:bundle",
+          version: "2.0.0",
+          changelog: "Initial bundle plugin",
+          createdAt: 3,
+          files: [
+            {
+              storageId: "storage:bundle",
+              path: "openclaw.bundle.json",
+              size: 2,
+              sha256: "sha-bundle",
+              contentType: "application/json",
+            },
+          ],
+          artifactKind: "legacy-zip",
+          softDeletedAt: undefined,
+        };
+      }
+      return null;
+    });
+
+    const response = await __handlers.exportPluginsV1Handler(
+      makeCtx({
+        runQuery,
+        storage: {
+          get: vi.fn(
+            async (storageId: string) =>
+              new Blob([storageId === "storage:package-json" ? "{}" : "[]"]),
+          ),
+        },
+      }),
+      new Request("https://example.com/api/v1/plugins/export?startDate=1&endDate=5", {
+        headers: { authorization: "Bearer user-token" },
+      }),
+    );
+
+    if (response.status !== 200) throw new Error(await response.text());
+    expect(response.headers.get("X-Total-Returned")).toBe("2");
+    expect(response.headers.get("X-Export-Errors")).toBe("0");
+    const zipEntries = unzipSync(new Uint8Array(await response.arrayBuffer()));
+    expect(Object.keys(zipEntries).sort()).toEqual([
+      "__clawhub_export/bundle-plugin/demo-bundle/plugin_meta.json",
+      "__clawhub_export/code-plugin/@scope/demo-plugin/plugin_meta.json",
+      "_manifest.json",
+      "bundle-plugin/demo-bundle/openclaw.bundle.json",
+      "code-plugin/@scope/demo-plugin/package.json",
+    ]);
+  });
+
+  it("plugins export skips releases blocked from normal downloads", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "user" },
+    } as never);
+    vi.mocked(getOptionalApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "user" },
+    } as never);
+
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("startDate" in args) {
+        return {
+          page: [
+            {
+              packageId: "packages:blocked",
+              name: "blocked-plugin",
+              displayName: "Blocked Plugin",
+              family: "code-plugin",
+              latestReleaseId: "packageReleases:blocked",
+              latestVersion: "1.0.0",
+              createdAt: 1,
+              updatedAt: 2,
+              stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
+              ownerUserId: "users:alice",
+              ownerHandle: "alice",
+              ownerDisplayName: "Alice",
+            },
+          ],
+          nextCursor: null,
+          hasMore: false,
+        };
+      }
+      if (args.releaseId === "packageReleases:blocked") {
+        return {
+          packageId: "packages:blocked",
+          version: "1.0.0",
+          changelog: "Blocked",
+          createdAt: 2,
+          files: [
+            {
+              storageId: "storage:blocked",
+              path: "package.json",
+              size: 2,
+              sha256: "sha-blocked",
+              contentType: "application/json",
+            },
+          ],
+          manualModeration: {
+            state: "quarantined",
+            reason: "malware",
+            reviewerUserId: "users:mod",
+            updatedAt: 2,
+          },
+          artifactKind: "npm-pack",
+          softDeletedAt: undefined,
+        };
+      }
+      return null;
+    });
+    const storageGet = vi.fn();
+
+    const response = await __handlers.exportPluginsV1Handler(
+      makeCtx({ runQuery, storage: { get: storageGet } }),
+      new Request("https://example.com/api/v1/plugins/export?startDate=1&endDate=5", {
+        headers: { authorization: "Bearer user-token" },
+      }),
+    );
+
+    if (response.status !== 200) throw new Error(await response.text());
+    expect(response.headers.get("X-Total-Returned")).toBe("0");
+    expect(response.headers.get("X-Export-Errors")).toBe("1");
+    expect(storageGet).not.toHaveBeenCalled();
+    const zipEntries = unzipSync(new Uint8Array(await response.arrayBuffer()));
+    expect(Object.keys(zipEntries).sort()).toEqual(["_errors.json", "_manifest.json"]);
+  });
+
+  it("plugins export metadata does not collide with plugin files", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "user" },
+    } as never);
+    vi.mocked(getOptionalApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "user" },
+    } as never);
+
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("startDate" in args) {
+        return {
+          page: [
+            {
+              packageId: "packages:collision",
+              name: "collision-plugin",
+              displayName: "Collision Plugin",
+              family: "code-plugin",
+              latestReleaseId: "packageReleases:collision",
+              latestVersion: "1.0.0",
+              createdAt: 1,
+              updatedAt: 2,
+              stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
+              ownerUserId: "users:alice",
+              ownerHandle: "alice",
+              ownerDisplayName: "Alice",
+            },
+          ],
+          nextCursor: null,
+          hasMore: false,
+        };
+      }
+      if (args.releaseId === "packageReleases:collision") {
+        return {
+          packageId: "packages:collision",
+          version: "1.0.0",
+          changelog: "Collision",
+          createdAt: 2,
+          files: [
+            {
+              storageId: "storage:plugin-meta-file",
+              path: "_export_plugin_meta.json",
+              size: 2,
+              sha256: "sha-plugin-meta-file",
+              contentType: "application/json",
+            },
+          ],
+          artifactKind: "npm-pack",
+          softDeletedAt: undefined,
+        };
+      }
+      return null;
+    });
+
+    const response = await __handlers.exportPluginsV1Handler(
+      makeCtx({
+        runQuery,
+        storage: { get: vi.fn(async () => new Blob(["{}"])) },
+      }),
+      new Request("https://example.com/api/v1/plugins/export?startDate=1&endDate=5", {
+        headers: { authorization: "Bearer user-token" },
+      }),
+    );
+
+    if (response.status !== 200) throw new Error(await response.text());
+    expect(response.headers.get("X-Total-Returned")).toBe("1");
+    expect(response.headers.get("X-Export-Errors")).toBe("0");
+    const zipEntries = unzipSync(new Uint8Array(await response.arrayBuffer()));
+    expect(Object.keys(zipEntries).sort()).toEqual([
+      "__clawhub_export/code-plugin/collision-plugin/plugin_meta.json",
+      "_manifest.json",
+      "code-plugin/collision-plugin/_export_plugin_meta.json",
+    ]);
   });
 
   it("users/reclaim forbids non-admin api tokens", async () => {

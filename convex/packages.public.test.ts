@@ -31,10 +31,12 @@ import {
   getVersionSecurityByNameForViewerInternal,
   insertReleaseInternal,
   listPackageModerationQueueInternal,
+  listPluginExportPageInternal,
   reservePackageNameInternal,
   listPublicPage,
   listPageForViewerInternal,
   listVersions,
+  updateReleaseLlmAnalysisInternal,
   updateReleaseStaticScanInternal,
   applyAccountDeletionToOwnedPackagesBatchInternal,
   applyPublisherDeletionToOwnedPackagesBatchInternal,
@@ -51,6 +53,7 @@ import {
 } from "./packages";
 
 vi.mock("@convex-dev/auth/server", () => ({
+  authTables: {},
   getAuthUserId: vi.fn(),
 }));
 
@@ -142,6 +145,22 @@ const listPageForViewerInternalHandler = (
       paginationOpts: { cursor: string | null; numItems: number };
     },
     { page: Array<{ name: string }>; isDone: boolean; continueCursor: string }
+  >
+)._handler;
+const listPluginExportPageInternalHandler = (
+  listPluginExportPageInternal as unknown as WrappedHandler<
+    {
+      startDate: number;
+      endDate: number;
+      cursor?: string;
+      numItems?: number;
+      family?: "code-plugin" | "bundle-plugin";
+    },
+    {
+      page: Array<{ name: string; family: "code-plugin" | "bundle-plugin" }>;
+      nextCursor: string | null;
+      hasMore: boolean;
+    }
   >
 )._handler;
 const listVersionsHandler = (
@@ -682,6 +701,23 @@ const updateReleaseStaticScanInternalHandler = (
     unknown
   >
 )._handler;
+const updateReleaseLlmAnalysisInternalHandler = (
+  updateReleaseLlmAnalysisInternal as unknown as WrappedHandler<
+    {
+      releaseId: string;
+      llmAnalysis: {
+        status: string;
+        verdict?: string;
+        confidence?: string;
+        summary?: string;
+        guidance?: string;
+        findings?: string;
+        checkedAt: number;
+      };
+    },
+    unknown
+  >
+)._handler;
 const softDeletePackageInternalHandler = (
   softDeletePackageInternal as unknown as WrappedHandler<
     { userId: string; name: string },
@@ -851,6 +887,8 @@ function makeReleaseDoc(overrides: Partial<Record<string, unknown>> = {}) {
     version: "1.0.0",
     createdAt: 1,
     softDeletedAt: undefined,
+    createdBy: "users:owner",
+    publishActor: { kind: "user", userId: "users:owner" },
     ...overrides,
   };
 }
@@ -1153,6 +1191,142 @@ function makeDigestCtx(options: {
           };
         }),
       },
+    },
+  };
+}
+
+function makePluginExportDigest(
+  name: string,
+  family: "code-plugin" | "bundle-plugin",
+  updatedAt: number,
+) {
+  return makeDigest(name, {
+    _id: `packageSearchDigest:${name}`,
+    packageId: `packages:${name}`,
+    family,
+    scanStatus: "clean",
+    updatedAt,
+    _creationTime: updatedAt,
+  });
+}
+
+function readIndexField(row: Record<string, unknown>, field: string) {
+  return field.split(".").reduce<unknown>((value, segment) => {
+    if (!value || typeof value !== "object") return undefined;
+    return (value as Record<string, unknown>)[segment];
+  }, row);
+}
+
+function makePluginExportIndexKey(row: Record<string, unknown>) {
+  return [row.softDeletedAt, row.family, row.updatedAt, row._creationTime, row._id] as unknown[];
+}
+
+function makePluginExportCtx(digests: Array<Record<string, unknown>>) {
+  const packagesById = new Map(
+    digests.map((digest) => [
+      String(digest.packageId),
+      makePackageDoc({
+        _id: digest.packageId,
+        name: digest.name,
+        normalizedName: digest.normalizedName,
+        displayName: digest.displayName,
+        family: digest.family,
+        ownerUserId: digest.ownerUserId,
+        ownerPublisherId: digest.ownerPublisherId,
+        latestReleaseId: `packageReleases:${String(digest.name)}-1`,
+        latestVersionSummary: { version: digest.latestVersion },
+        stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
+        scanStatus: "clean",
+        createdAt: digest.createdAt,
+        updatedAt: digest.updatedAt,
+      }),
+    ]),
+  );
+
+  return {
+    db: {
+      get: vi.fn(async (id: string) => packagesById.get(id) ?? null),
+      query: vi.fn((table: string) => {
+        if (table !== "packageSearchDigest") throw new Error(`Unexpected table ${table}`);
+        return {
+          withIndex: vi.fn(
+            (
+              indexName: string,
+              builder?: (q: {
+                eq: (field: string, value: unknown) => unknown;
+                gt: (field: string, value: unknown) => unknown;
+                gte: (field: string, value: unknown) => unknown;
+                lt: (field: string, value: unknown) => unknown;
+                lte: (field: string, value: unknown) => unknown;
+              }) => unknown,
+            ) => {
+              if (indexName !== "by_active_family_updated") {
+                throw new Error(`Unexpected packageSearchDigest index ${indexName}`);
+              }
+              const filters: Array<{
+                op: "eq" | "gt" | "gte" | "lt" | "lte";
+                field: string;
+                value: unknown;
+              }> = [];
+              const queryBuilder = {
+                eq: (field: string, value: unknown) => {
+                  filters.push({ op: "eq", field, value });
+                  return queryBuilder;
+                },
+                gt: (field: string, value: unknown) => {
+                  filters.push({ op: "gt", field, value });
+                  return queryBuilder;
+                },
+                gte: (field: string, value: unknown) => {
+                  filters.push({ op: "gte", field, value });
+                  return queryBuilder;
+                },
+                lt: (field: string, value: unknown) => {
+                  filters.push({ op: "lt", field, value });
+                  return queryBuilder;
+                },
+                lte: (field: string, value: unknown) => {
+                  filters.push({ op: "lte", field, value });
+                  return queryBuilder;
+                },
+              };
+              builder?.(queryBuilder);
+              return {
+                order: vi.fn((order: "asc" | "desc") => {
+                  const matches = digests
+                    .filter((row) =>
+                      filters.every(({ op, field, value }) => {
+                        const current = readIndexField(row, field);
+                        if (op === "eq") return current === value;
+                        if (op === "gt") return (current as number) > (value as number);
+                        if (op === "gte") return (current as number) >= (value as number);
+                        if (op === "lt") return (current as number) < (value as number);
+                        return (current as number) <= (value as number);
+                      }),
+                    )
+                    .sort((a, b) => {
+                      const updatedDiff = Number(a.updatedAt) - Number(b.updatedAt);
+                      if (updatedDiff !== 0) return order === "desc" ? -updatedDiff : updatedDiff;
+                      return String(a._id).localeCompare(String(b._id));
+                    });
+                  return {
+                    async *[Symbol.asyncIterator]() {
+                      for (const row of matches) {
+                        yield row;
+                      }
+                    },
+                    async *iterWithKeys() {
+                      for (const row of matches) {
+                        yield [row, makePluginExportIndexKey(row)];
+                      }
+                    },
+                  };
+                }),
+              };
+            },
+          ),
+        };
+      }),
     },
   };
 }
@@ -1817,6 +1991,42 @@ function makeSoftDeletePackageCtx(options?: {
 }
 
 describe("packages public queries", () => {
+  it("keeps partially consumed plugin export family pages active", async () => {
+    const ctx = makePluginExportCtx([
+      makePluginExportDigest("newer-code", "code-plugin", 300),
+      makePluginExportDigest("older-bundle-a", "bundle-plugin", 200),
+      makePluginExportDigest("older-bundle-b", "bundle-plugin", 100),
+    ]);
+
+    const first = await listPluginExportPageInternalHandler(ctx, {
+      startDate: 0,
+      endDate: 1_000,
+      numItems: 1,
+    });
+    const second = await listPluginExportPageInternalHandler(ctx, {
+      startDate: 0,
+      endDate: 1_000,
+      cursor: first.nextCursor ?? undefined,
+      numItems: 1,
+    });
+    const third = await listPluginExportPageInternalHandler(ctx, {
+      startDate: 0,
+      endDate: 1_000,
+      cursor: second.nextCursor ?? undefined,
+      numItems: 1,
+    });
+
+    expect(first.page.map((entry) => entry.name)).toEqual(["newer-code"]);
+    expect(first.hasMore).toBe(true);
+    expect(first.nextCursor).toBeTruthy();
+    expect(second.page.map((entry) => entry.name)).toEqual(["older-bundle-a"]);
+    expect(second.hasMore).toBe(true);
+    expect(second.nextCursor).toBeTruthy();
+    expect(third.page.map((entry) => entry.name)).toEqual(["older-bundle-b"]);
+    expect(third.hasMore).toBe(false);
+    expect(third.nextCursor).toBeNull();
+  });
+
   it("keeps buffered cursor items aligned across paginated public pages", async () => {
     const { ctx, paginate } = makeDigestCtx({
       pages: [
@@ -5101,7 +5311,7 @@ describe("packages public queries", () => {
         files: [],
         integritySha256: "abc123",
       }),
-    ).rejects.toThrow("Version 1.0.0 already exists");
+    ).rejects.toThrow("Version 1.0.0 already exists. Increment the version number and try again.");
   });
 
   it("treats matching workflow duplicate package releases as idempotent", async () => {
@@ -9555,6 +9765,383 @@ describe("package scan backfill", () => {
       expect.objectContaining({ scanStatus: "pending" }),
     );
   });
+
+  it("quarantines a malicious latest plugin release and restores the previous clean latest", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
+    const patch = vi.fn().mockResolvedValue(undefined);
+    const runAfter = vi.fn().mockResolvedValue(undefined);
+    const previousRelease = makeReleaseDoc({
+      _id: "packageReleases:demo-1",
+      packageId: "packages:demo",
+      version: "1.0.0",
+      distTags: [],
+      verification: { scanStatus: "clean" },
+      createdAt: 1_600_000_000_000,
+    });
+    const candidateRelease = makeReleaseDoc({
+      _id: "packageReleases:demo-2",
+      packageId: "packages:demo",
+      version: "2.0.0",
+      runtimeId: "demo.plugin",
+      sourceRepo: "openclaw/demo-malicious",
+      distTags: ["latest"],
+      verification: { scanStatus: "pending" },
+      createdBy: "users:member",
+      publishActor: { kind: "user", userId: "users:member" },
+      staticScan: {
+        status: "clean",
+        reasonCodes: [],
+        findings: [],
+        summary: "No static findings.",
+        engineVersion: "test",
+        checkedAt: 1,
+      },
+      createdAt: 1_700_000_000_000,
+    });
+    const pkg = makePackageDoc({
+      _id: "packages:demo",
+      ownerUserId: "users:owner",
+      ownerPublisherId: "publishers:org",
+      runtimeId: "malicious.plugin",
+      sourceRepo: "openclaw/demo-malicious",
+      latestReleaseId: "packageReleases:demo-2",
+      tags: { latest: "packageReleases:demo-2" },
+      latestVersionSummary: { version: "2.0.0", verification: { scanStatus: "pending" } },
+      verification: { scanStatus: "pending" },
+      scanStatus: "pending",
+    });
+
+    await updateReleaseLlmAnalysisInternalHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "packageReleases:demo-2") return candidateRelease;
+            if (id === "packages:demo") return pkg;
+            if (id === "publishers:org") {
+              return {
+                _id: "publishers:org",
+                kind: "org",
+                handle: "org",
+                deletedAt: undefined,
+                deactivatedAt: undefined,
+              };
+            }
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table === "packageReleases") {
+              return {
+                withIndex: vi.fn(() => ({
+                  collect: vi.fn().mockResolvedValue([previousRelease, candidateRelease]),
+                })),
+              };
+            }
+            if (table === "packageSearchDigest") {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue({
+                    _id: "packageSearchDigest:demo",
+                    packageId: "packages:demo",
+                    scanStatus: "pending",
+                  }),
+                })),
+              };
+            }
+            if (
+              table === "packageCapabilitySearchDigest" ||
+              table === "packagePluginCategorySearchDigest"
+            ) {
+              return {
+                withIndex: vi.fn(() => ({
+                  collect: vi.fn().mockResolvedValue([]),
+                })),
+              };
+            }
+            throw new Error(`Unexpected query table: ${table}`);
+          }),
+          insert: vi.fn(),
+          patch,
+          replace: vi.fn(),
+          delete: vi.fn(),
+          normalizeId: vi.fn(),
+        },
+        scheduler: { runAfter },
+      } as never,
+      {
+        releaseId: "packageReleases:demo-2",
+        llmAnalysis: {
+          status: "malicious",
+          verdict: "malicious",
+          confidence: "high",
+          summary: "ClawScan found malicious behavior.",
+          guidance: "Fix locally and rescan.",
+          checkedAt: 1_700_000_000_000,
+        },
+      },
+    );
+
+    expect(patch).toHaveBeenCalledWith(
+      "packageReleases:demo-2",
+      expect.objectContaining({
+        softDeletedAt: 1_700_000_000_000,
+        verification: expect.objectContaining({ scanStatus: "malicious" }),
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "packageReleases:demo-1",
+      expect.objectContaining({ distTags: ["latest"] }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "packages:demo",
+      expect.objectContaining({
+        latestReleaseId: "packageReleases:demo-1",
+        runtimeId: undefined,
+        sourceRepo: undefined,
+        scanStatus: "clean",
+        tags: { latest: "packageReleases:demo-1" },
+      }),
+    );
+    expect(runAfter).toHaveBeenCalledWith(
+      0,
+      expect.anything(),
+      expect.objectContaining({
+        ownerUserId: "users:member",
+        artifactKind: "plugin",
+        artifactName: "demo-plugin",
+        version: "2.0.0",
+      }),
+    );
+  });
+
+  it("quarantines a malicious non-latest plugin release without changing the clean latest", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
+    const patch = vi.fn().mockResolvedValue(undefined);
+    const runAfter = vi.fn().mockResolvedValue(undefined);
+    const candidateRelease = makeReleaseDoc({
+      _id: "packageReleases:demo-beta",
+      packageId: "packages:demo",
+      version: "1.5.0",
+      distTags: ["beta"],
+      verification: { scanStatus: "pending" },
+      createdBy: "users:member",
+      publishActor: { kind: "user", userId: "users:member" },
+      staticScan: {
+        status: "clean",
+        reasonCodes: [],
+        findings: [],
+        summary: "No static findings.",
+        engineVersion: "test",
+        checkedAt: 1,
+      },
+      createdAt: 1_650_000_000_000,
+    });
+    const pkg = makePackageDoc({
+      _id: "packages:demo",
+      ownerUserId: "users:owner",
+      ownerPublisherId: "publishers:org",
+      latestReleaseId: "packageReleases:demo-latest",
+      tags: {
+        latest: "packageReleases:demo-latest",
+        beta: "packageReleases:demo-beta",
+      },
+      latestVersionSummary: { version: "2.0.0", verification: { scanStatus: "clean" } },
+      verification: { scanStatus: "clean" },
+      scanStatus: "clean",
+    });
+
+    await updateReleaseLlmAnalysisInternalHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "packageReleases:demo-beta") return candidateRelease;
+            if (id === "packages:demo") return pkg;
+            if (id === "publishers:org") {
+              return {
+                _id: "publishers:org",
+                kind: "org",
+                handle: "org",
+                deletedAt: undefined,
+                deactivatedAt: undefined,
+              };
+            }
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table === "packageSearchDigest") {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue({
+                    _id: "packageSearchDigest:demo",
+                    packageId: "packages:demo",
+                    scanStatus: "clean",
+                  }),
+                })),
+              };
+            }
+            if (
+              table === "packageCapabilitySearchDigest" ||
+              table === "packagePluginCategorySearchDigest"
+            ) {
+              return {
+                withIndex: vi.fn(() => ({
+                  collect: vi.fn().mockResolvedValue([]),
+                })),
+              };
+            }
+            throw new Error(`Unexpected query table: ${table}`);
+          }),
+          insert: vi.fn(),
+          patch,
+          replace: vi.fn(),
+          delete: vi.fn(),
+          normalizeId: vi.fn(),
+        },
+        scheduler: { runAfter },
+      } as never,
+      {
+        releaseId: "packageReleases:demo-beta",
+        llmAnalysis: {
+          status: "malicious",
+          verdict: "malicious",
+          confidence: "high",
+          summary: "ClawScan found malicious behavior.",
+          guidance: "Fix locally and rescan.",
+          checkedAt: 1_700_000_000_000,
+        },
+      },
+    );
+
+    expect(patch).toHaveBeenCalledWith(
+      "packageReleases:demo-beta",
+      expect.objectContaining({
+        llmAnalysis: expect.objectContaining({ verdict: "malicious" }),
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "packageReleases:demo-beta",
+      expect.objectContaining({
+        softDeletedAt: 1_700_000_000_000,
+        verification: expect.objectContaining({ scanStatus: "malicious" }),
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "packages:demo",
+      expect.objectContaining({
+        tags: { latest: "packageReleases:demo-latest" },
+      }),
+    );
+    expect(patch).not.toHaveBeenCalledWith(
+      "packages:demo",
+      expect.objectContaining({ latestReleaseId: "packageReleases:demo-beta" }),
+    );
+    expect(runAfter).toHaveBeenCalledWith(
+      0,
+      expect.anything(),
+      expect.objectContaining({
+        ownerUserId: "users:member",
+        artifactKind: "plugin",
+        artifactName: "demo-plugin",
+        version: "1.5.0",
+      }),
+    );
+  });
+
+  it("keeps a first malicious plugin release out of public package lists", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
+    const patch = vi.fn().mockResolvedValue(undefined);
+    const candidateRelease = makeReleaseDoc({
+      _id: "packageReleases:demo-1",
+      packageId: "packages:demo",
+      version: "1.0.0",
+      distTags: ["latest"],
+      verification: { scanStatus: "pending" },
+      createdAt: 1_700_000_000_000,
+    });
+    const pkg = makePackageDoc({
+      _id: "packages:demo",
+      latestReleaseId: "packageReleases:demo-1",
+      tags: { latest: "packageReleases:demo-1" },
+      latestVersionSummary: { version: "1.0.0", verification: { scanStatus: "pending" } },
+      verification: { scanStatus: "pending" },
+      scanStatus: "pending",
+    });
+
+    await updateReleaseLlmAnalysisInternalHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "packageReleases:demo-1") return candidateRelease;
+            if (id === "packages:demo") return pkg;
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table === "packageReleases") {
+              return {
+                withIndex: vi.fn(() => ({
+                  collect: vi.fn().mockResolvedValue([candidateRelease]),
+                })),
+              };
+            }
+            if (table === "packageSearchDigest") {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue({
+                    _id: "packageSearchDigest:demo",
+                    packageId: "packages:demo",
+                    scanStatus: "pending",
+                  }),
+                })),
+              };
+            }
+            if (
+              table === "packageCapabilitySearchDigest" ||
+              table === "packagePluginCategorySearchDigest"
+            ) {
+              return {
+                withIndex: vi.fn(() => ({
+                  collect: vi.fn().mockResolvedValue([]),
+                })),
+              };
+            }
+            throw new Error(`Unexpected query table: ${table}`);
+          }),
+          insert: vi.fn(),
+          patch,
+          replace: vi.fn(),
+          delete: vi.fn(),
+          normalizeId: vi.fn(),
+        },
+      } as never,
+      {
+        releaseId: "packageReleases:demo-1",
+        llmAnalysis: {
+          status: "malicious",
+          verdict: "malicious",
+          confidence: "high",
+          summary: "ClawScan found malicious behavior.",
+          guidance: "Fix locally and rescan.",
+          checkedAt: 1_700_000_000_000,
+        },
+      },
+    );
+
+    expect(patch).toHaveBeenCalledWith(
+      "packages:demo",
+      expect.objectContaining({
+        latestReleaseId: undefined,
+        latestVersionSummary: undefined,
+        scanStatus: "malicious",
+        tags: {},
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "packageSearchDigest:demo",
+      expect.objectContaining({
+        latestVersion: undefined,
+        scanStatus: "malicious",
+      }),
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -10024,13 +10611,21 @@ describe("owned package sanction batches", () => {
     });
 
     expect(result).toMatchObject({ deletedCount: 1, revokedTokenCount: 0, scheduled: false });
+    expect(patch).toHaveBeenCalledWith(
+      "packages:org-plugin",
+      expect.objectContaining({
+        softDeletedAt: 3_000,
+        softDeletedReason: "publisher.deleted",
+        softDeletedBy: "users:owner",
+        softDeletedByRole: "user",
+      }),
+    );
     expect(runAfter).toHaveBeenCalledWith(0, expect.anything(), {
       packageId: "packages:org-plugin",
       actorUserId: "users:owner",
       deletedAt: 3_000,
       source: "publisher.delete",
     });
-    expect(patch).not.toHaveBeenCalledWith("packages:org-plugin", expect.anything());
     expect(patch).not.toHaveBeenCalledWith("packagePublishTokens:org-plugin", expect.anything());
   });
 
@@ -10522,7 +11117,7 @@ describe("owned package sanction batches", () => {
     expect(patch).not.toHaveBeenCalledWith("packages:demo", expect.anything());
   });
 
-  it("schedules hard deletes for account-deleted packages", async () => {
+  it("hides and schedules hard deletes for account-deleted packages", async () => {
     const { ctx, patch, runAfter } = makeOwnedPackageBatchCtx();
 
     const result = await applyAccountDeletionToOwnedPackagesBatchInternalHandler(ctx as never, {
@@ -10531,13 +11126,21 @@ describe("owned package sanction batches", () => {
     });
 
     expect(result).toMatchObject({ deletedCount: 1, revokedTokenCount: 0, scheduled: false });
+    expect(patch).toHaveBeenCalledWith(
+      "packages:demo",
+      expect.objectContaining({
+        softDeletedAt: 3_000,
+        softDeletedReason: "user.deactivated",
+        softDeletedBy: "users:owner",
+        softDeletedByRole: "user",
+      }),
+    );
     expect(runAfter).toHaveBeenCalledWith(0, expect.anything(), {
       packageId: "packages:demo",
       actorUserId: "users:owner",
       deletedAt: 3_000,
       source: "account.delete",
     });
-    expect(patch).not.toHaveBeenCalledWith("packages:demo", expect.anything());
   });
 
   it("schedules hard deletes for account-deleted packages owned through the user's personal publisher", async () => {
@@ -10577,13 +11180,21 @@ describe("owned package sanction batches", () => {
     });
 
     expect(result).toMatchObject({ deletedCount: 1, revokedTokenCount: 0, scheduled: false });
+    expect(patch).toHaveBeenCalledWith(
+      "packages:personal-publisher",
+      expect.objectContaining({
+        softDeletedAt: 3_000,
+        softDeletedReason: "user.deactivated",
+        softDeletedBy: "users:owner",
+        softDeletedByRole: "user",
+      }),
+    );
     expect(runAfter).toHaveBeenCalledWith(0, expect.anything(), {
       packageId: "packages:personal-publisher",
       actorUserId: "users:owner",
       deletedAt: 3_000,
       source: "account.delete",
     });
-    expect(patch).not.toHaveBeenCalledWith("packages:personal-publisher", expect.anything());
   });
 
   it("does not delete org-owned packages when deleting a member account", async () => {

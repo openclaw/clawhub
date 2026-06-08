@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Changes
+
+- CLI packages now require Node.js 22 or newer, dropping the EOL Node 20 runtime floor.
+
+## 0.20.0 - 2026-06-06
+
+### Changes
+
+- CLI/API: replace local `clawhub scan` uploads with stored submitted-version scan report downloads, including owner-authorized `clawhub scan download <name> --version <version>` support for blocked skill and plugin submissions.
+
 ## 0.19.2 - 2026-06-05
 
 ### Fixes

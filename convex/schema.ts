@@ -818,6 +818,7 @@ const skillVersions = defineTable({
   ),
   changelog: v.string(),
   changelogSource: v.optional(v.union(v.literal("auto"), v.literal("user"))),
+  icon: v.optional(v.string()),
   files: v.array(
     v.object({
       path: v.string(),
@@ -1242,6 +1243,8 @@ const packageReleases = defineTable({
   normalizedBundleManifest: v.optional(v.any()),
   compatibility: packageCompatibilityValidator,
   capabilities: packageCapabilitiesValidator,
+  runtimeId: v.optional(v.string()),
+  sourceRepo: v.optional(v.string()),
   verification: packageVerificationValidator,
   sha256hash: v.optional(v.string()),
   vtAnalysis: v.optional(vtAnalysisValidator),

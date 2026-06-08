@@ -25,6 +25,7 @@ const MAX_SLUG_LENGTH = 96;
 const RESERVED_SKILL_SLUGS: ReadonlySet<string> = new Set([
   // Current top-level route segments under src/routes/.
   "about",
+  "account-banned",
   "admin",
   "cli",
   "dashboard",

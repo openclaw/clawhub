@@ -108,10 +108,15 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   compatibility, but the first-class CLI and docs surface is deprecated.
   Publisher recovery for false positives should use reports or out-of-band
   support, while account bans require out-of-band support.
-- Any ClawScan path that determines a skill is malicious must hide the skill and
-  schedule the same account-level autoban/token-revocation workflow. Static
-  scan findings are ClawScan input context only and must not schedule autobans
-  or set public/install-blocking trust by themselves.
+- Any ClawScan path that determines a skill or plugin release is malicious must
+  block that candidate version and notify the publisher with local
+  `clawhub scan` remediation guidance. Scanner-triggered emails are
+  artifact-level and must not link to account appeals. Account-level autoban,
+  token revocation, and appeal email only happen after the silent escalation
+  thresholds: two distinct malicious artifacts or three malicious attempts on
+  the same artifact. Static scan findings are ClawScan input context only and
+  must not schedule account autobans or set public/install-blocking trust by
+  themselves.
 - Pending skill ownership transfers must not be accepted when the requesting
   owner is deleted/deactivated or when the skill is malicious, hidden, or
   removed. The accept path is the final shared gate before ownership changes,
@@ -216,7 +221,9 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   post-Codex veto. The release worker must not downgrade a benign Codex verdict
   solely from regex telemetry.
 - Artifacts remain visible while Codex runs unless another non-scanner moderation
-  hold applies. Codex malicious verdicts hide/block.
+  hold applies. Codex malicious verdicts block the candidate version. On updates,
+  the previous clean/current public version remains live; on first versions,
+  nothing public is promoted.
 - Plugins under `@openclaw/*` owned by the OpenClaw publisher are trusted by
   default. They may still be audited, but scanner telemetry alone must not
   downgrade them.
@@ -298,6 +305,13 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   on the restored user's package audit rows.
   Ban context lookup must tolerate duplicate Convex Auth account rows by
   selecting the currently banned user with matching ban audit evidence.
+- Ban notification emails must be public-safe: include the high-level action
+  reason, affected skill/plugin when known, the external appeals link, and
+  scanner context when the account was escalated from repeated malicious
+  artifacts. Artifact-level scanner emails must instead say the version was
+  blocked, keep appeals out of the copy, and link existing CLI scan docs. Emails
+  must not expose raw moderator notes, reporter identifiers, internal finding
+  ids, or other staff-only ban reason text.
 - Unban restore batches only restore packages/plugins hidden by the matching
   ban timestamp and must stop if the user has been banned again.
 - Stale unban restore batches must stop if the user was banned again before a

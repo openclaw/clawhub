@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
@@ -45,6 +45,12 @@ const AUTOBAN_AUDIT_MATCH_WINDOW_MS = 5_000;
 const BAN_AUDIT_ACTIONS = new Set(["user.ban", "user.autoban.malware"]);
 const BAN_APPEAL_AUTH_ACCOUNT_MATCH_LIMIT = 20;
 const AUTOBAN_REMEDIATION_COUNT_PAGE_SIZE = 100;
+const MALICIOUS_ARTIFACT_FINDING_ACTION = "user.malicious_artifact.finding";
+const MALICIOUS_ARTIFACT_DISTINCT_BAN_THRESHOLD = 2;
+const MALICIOUS_ARTIFACT_ATTEMPT_BAN_THRESHOLD = 3;
+const MALICIOUS_ARTIFACT_AUDIT_LOOKBACK = 100;
+const DEV_PERSONA_BANNED_REAUTH_MESSAGE =
+  "This account has been banned and cannot sign in. If you believe this is a mistake, appeal this decision: https://appeals.openclaw.ai/.";
 const ACCOUNT_RECOVERY_PURGE_LIMIT_DEFAULT = 25;
 const ACCOUNT_RECOVERY_PURGE_LIMIT_MAX = 100;
 const accountRecoveryPurgeModeValidator = v.optional(
@@ -62,18 +68,112 @@ type DeletedAccountCleanupResult = {
   apiTokens: number;
   personalPublisherDeleted: boolean;
 };
+type AccountRecoveryPurgeEligibilityReason =
+  | "self_delete_audit"
+  | "auth_locked_purged_user"
+  | "auth_locked_legacy_deleted_user";
+type AccountRecoveryPurgeEligibility =
+  | {
+      eligible: true;
+      reason: AccountRecoveryPurgeEligibilityReason;
+      selfDeleteAuditLog: Doc<"auditLogs"> | null;
+      authAccountCount: number | null;
+    }
+  | {
+      eligible: false;
+      selfDeleteAuditLog: null;
+    };
 type AccountRecoveryPurgeCandidate = {
   userId: Id<"users">;
+  eligibilityReason: AccountRecoveryPurgeEligibilityReason;
   handle: string | null;
   displayName: string | null;
   emailPresent: boolean;
   personalPublisherId: Id<"publishers"> | null;
+  authAccountCount: number | null;
   deletedAt: number | null;
   deactivatedAt: number | null;
   purgedAt: number | null;
   selfDeleteAuditLogId: Id<"auditLogs"> | null;
   selfDeleteAuditCreatedAt: number | null;
 };
+
+type BanEmailTarget = Pick<Doc<"users">, "_id" | "email" | "handle">;
+type MaliciousArtifactKind = "skill" | "plugin";
+type MaliciousArtifactFinding = {
+  artifactKind: MaliciousArtifactKind;
+  artifactName: string;
+};
+
+async function scheduleBanNotificationEmail(
+  ctx: Pick<MutationCtx, "scheduler">,
+  args: {
+    target: BanEmailTarget;
+    bannedAt: number;
+    source: "manual" | "autoban";
+    reason?: string;
+    trigger?: string;
+    artifact?: { kind: "skill" | "plugin"; name: string };
+  },
+) {
+  const to = args.target.email?.trim();
+  if (!to) return;
+
+  await ctx.scheduler.runAfter(0, internal.emailsNode.sendBanNotificationInternal, {
+    userId: args.target._id,
+    bannedAt: args.bannedAt,
+    to,
+    handle: args.target.handle,
+    source: args.source,
+    reason: args.reason,
+    trigger: args.trigger,
+    artifact: args.artifact,
+  });
+}
+
+async function scheduleRestoredAccountNotificationEmail(
+  ctx: Pick<MutationCtx, "scheduler">,
+  args: {
+    target: BanEmailTarget;
+    restoredAt: number;
+    restoredListings?: Array<{ kind: "skill" | "plugin"; name: string }>;
+  },
+) {
+  const to = args.target.email?.trim();
+  if (!to) return;
+
+  await ctx.scheduler.runAfter(0, internal.emailsNode.sendRestoredAccountNotificationInternal, {
+    userId: args.target._id,
+    restoredAt: args.restoredAt,
+    to,
+    handle: args.target.handle,
+    restoredListings: args.restoredListings,
+  });
+}
+
+async function scheduleMaliciousArtifactNotificationEmail(
+  ctx: Pick<MutationCtx, "scheduler">,
+  args: {
+    target: BanEmailTarget;
+    findingAt: number;
+    artifact: { kind: MaliciousArtifactKind; name: string };
+    version?: string;
+    trigger?: string;
+  },
+) {
+  const to = args.target.email?.trim();
+  if (!to) return;
+
+  await ctx.scheduler.runAfter(0, internal.emailsNode.sendMaliciousArtifactNotificationInternal, {
+    userId: args.target._id,
+    findingAt: args.findingAt,
+    to,
+    handle: args.target.handle,
+    artifact: args.artifact,
+    version: args.version,
+    trigger: args.trigger,
+  });
+}
 
 async function getAutobanPersonalPublisherId(
   ctx: Pick<QueryCtx | MutationCtx, "db">,
@@ -276,6 +376,12 @@ const DEV_PERSONAS = {
     displayName: "Local Official Org Member",
     role: "user",
   },
+  abusePublisher: {
+    handle: "local-abuse",
+    displayName: "Local Abuse Test Publisher",
+    email: "local-abuse@example.test",
+    role: "user",
+  },
 } as const;
 
 const DEV_OFFICIAL_ORG = {
@@ -285,6 +391,14 @@ const DEV_OFFICIAL_ORG = {
 } as const;
 
 type DevPersona = keyof typeof DEV_PERSONAS;
+
+async function hasBlockingBanAudit(ctx: Pick<MutationCtx, "db">, userId: Id<"users">) {
+  const banRecords = await ctx.db
+    .query("auditLogs")
+    .withIndex("by_target", (q) => q.eq("targetType", "user").eq("targetId", userId.toString()))
+    .collect();
+  return banRecords.some((record) => BAN_AUDIT_ACTIONS.has(record.action));
+}
 
 export const getById = query({
   args: { userId: v.id("users") },
@@ -303,6 +417,7 @@ export const upsertDevPersonaInternal = internalMutation({
       v.literal("user"),
       v.literal("admin"),
       v.literal("officialOrgMember"),
+      v.literal("abusePublisher"),
     ),
     devAuthSecret: v.optional(v.string()),
   },
@@ -317,7 +432,8 @@ export const upsertDevPersonaInternal = internalMutation({
     const patch = {
       handle: persona.handle,
       displayName: persona.displayName,
-      name: persona.displayName,
+      name: persona.handle,
+      email: "email" in persona ? persona.email : undefined,
       role: persona.role,
       githubCreatedAt: DEV_PERSONA_GITHUB_CREATED_AT,
       deletedAt: undefined,
@@ -326,6 +442,13 @@ export const upsertDevPersonaInternal = internalMutation({
       banReason: undefined,
       updatedAt: now,
     };
+    if (
+      existing &&
+      (existing.deletedAt || existing.deactivatedAt) &&
+      (await hasBlockingBanAudit(ctx, existing._id))
+    ) {
+      throw new ConvexError(DEV_PERSONA_BANNED_REAUTH_MESSAGE);
+    }
     const userId =
       existing?._id ??
       (await ctx.db.insert("users", {
@@ -909,11 +1032,16 @@ function getSelfDeletePreviousMetadata(log: Doc<"auditLogs"> | null) {
 
 function buildAccountRecoveryPurgeCandidate(
   user: Doc<"users">,
-  selfDeleteAuditLog: Doc<"auditLogs"> | null,
+  eligibility: {
+    reason: AccountRecoveryPurgeEligibilityReason;
+    selfDeleteAuditLog: Doc<"auditLogs"> | null;
+    authAccountCount: number | null;
+  },
 ): AccountRecoveryPurgeCandidate {
-  const previous = getSelfDeletePreviousMetadata(selfDeleteAuditLog);
+  const previous = getSelfDeletePreviousMetadata(eligibility.selfDeleteAuditLog);
   return {
     userId: user._id,
+    eligibilityReason: eligibility.reason,
     handle: optionalString(user.handle) ?? optionalString(previous?.handle),
     displayName:
       optionalString(user.displayName) ??
@@ -923,15 +1051,19 @@ function buildAccountRecoveryPurgeCandidate(
     emailPresent: Boolean(user.email) || previous?.emailPresent === true,
     personalPublisherId:
       user.personalPublisherId ?? optionalPublisherId(previous?.personalPublisherId),
+    authAccountCount: eligibility.authAccountCount,
     deletedAt: user.deletedAt ?? null,
     deactivatedAt: user.deactivatedAt ?? null,
     purgedAt: user.purgedAt ?? null,
-    selfDeleteAuditLogId: selfDeleteAuditLog?._id ?? null,
-    selfDeleteAuditCreatedAt: selfDeleteAuditLog?.createdAt ?? null,
+    selfDeleteAuditLogId: eligibility.selfDeleteAuditLog?._id ?? null,
+    selfDeleteAuditCreatedAt: eligibility.selfDeleteAuditLog?.createdAt ?? null,
   };
 }
 
-async function getSelfDeletedAccountEligibility(ctx: MutationCtx, user: Doc<"users">) {
+async function getSelfDeletedAccountEligibility(
+  ctx: MutationCtx,
+  user: Doc<"users">,
+): Promise<AccountRecoveryPurgeEligibility> {
   const hasModernTombstone = Boolean(user.deactivatedAt && user.purgedAt && !user.deletedAt);
   const hasLegacySelfDeleteMarker = Boolean(user.deletedAt && !user.banReason);
   if ((!hasModernTombstone && !hasLegacySelfDeleteMarker) || user.banReason) {
@@ -944,7 +1076,48 @@ async function getSelfDeletedAccountEligibility(ctx: MutationCtx, user: Doc<"use
   const selfDeleteAuditLog =
     logs.find((log) => log.action === "user.delete" && log.actorUserId === user._id) ?? null;
   const hasBanAudit = logs.some((log) => BAN_AUDIT_ACTIONS.has(log.action));
-  return { eligible: Boolean(selfDeleteAuditLog && !hasBanAudit), selfDeleteAuditLog };
+  const hasRecoveryPurgeAudit = logs.some((log) => log.action === "user.recovery_purge");
+  const selfDeleteAuditAlreadyCleaned = Boolean(
+    asRecord(selfDeleteAuditLog?.metadata)?.cleanup || hasRecoveryPurgeAudit,
+  );
+  if (selfDeleteAuditLog && !hasBanAudit && !selfDeleteAuditAlreadyCleaned) {
+    return {
+      eligible: true,
+      reason: "self_delete_audit" as const,
+      selfDeleteAuditLog,
+      authAccountCount: null,
+    };
+  }
+  if (hasBanAudit) {
+    return { eligible: false, selfDeleteAuditLog: null };
+  }
+
+  const authAccounts = await ctx.db
+    .query("authAccounts")
+    .withIndex("userIdAndProvider", (q) => q.eq("userId", user._id))
+    .collect();
+  if (authAccounts.length === 0) return { eligible: false, selfDeleteAuditLog: null };
+
+  if (hasLegacySelfDeleteMarker) {
+    return {
+      eligible: true,
+      reason: "auth_locked_legacy_deleted_user" as const,
+      selfDeleteAuditLog: null,
+      authAccountCount: authAccounts.length,
+    };
+  }
+
+  if (!hasModernTombstone) return { eligible: false, selfDeleteAuditLog: null };
+
+  const profileIdentityScrubbed = !user.handle && !user.email && !user.name && !user.displayName;
+  if (!profileIdentityScrubbed) return { eligible: false, selfDeleteAuditLog: null };
+
+  return {
+    eligible: true,
+    reason: "auth_locked_purged_user" as const,
+    selfDeleteAuditLog: null,
+    authAccountCount: authAccounts.length,
+  };
 }
 
 export const purgeSelfDeletedAccountRecoveryBatchInternal = internalMutation({
@@ -990,7 +1163,7 @@ export const purgeSelfDeletedAccountRecoveryBatchInternal = internalMutation({
         continue;
       }
       eligible += 1;
-      candidates.push(buildAccountRecoveryPurgeCandidate(user, eligibility.selfDeleteAuditLog));
+      candidates.push(buildAccountRecoveryPurgeCandidate(user, eligibility));
       if (dryRun) continue;
       const deletedAt = user.deactivatedAt ?? user.deletedAt ?? Date.now();
       const cleanup = await hardDeleteSelfDeletedAccountState(ctx, user, deletedAt);
@@ -2194,6 +2367,13 @@ async function banUserWithActor(
     createdAt: now,
   });
 
+  await scheduleBanNotificationEmail(ctx, {
+    target,
+    bannedAt: now,
+    source: "manual",
+    reason,
+  });
+
   return {
     ok: true as const,
     alreadyBanned: false,
@@ -2270,6 +2450,11 @@ async function unbanUserForBanAppealService(
       reviewerDiscordId: args.reviewerDiscordId,
     },
     createdAt: now,
+  });
+
+  await scheduleRestoredAccountNotificationEmail(ctx, {
+    target,
+    restoredAt: now,
   });
 
   return {
@@ -2349,6 +2534,11 @@ async function unbanUserWithActor(
       scheduledPackages,
     },
     createdAt: now,
+  });
+
+  await scheduleRestoredAccountNotificationEmail(ctx, {
+    target,
+    restoredAt: now,
   });
 
   return {
@@ -2642,6 +2832,132 @@ export const ensurePublisherHandleInternal = internalMutation({
   handler: async (ctx, args) => await ensurePublisherHandleWithActor(ctx, args),
 });
 
+function normalizeMaliciousArtifactName(name: string) {
+  return name.trim().toLowerCase();
+}
+
+function readMaliciousArtifactFindingFromAudit(
+  log: Doc<"auditLogs">,
+): MaliciousArtifactFinding | null {
+  if (log.action !== MALICIOUS_ARTIFACT_FINDING_ACTION) return null;
+  const metadata = log.metadata as
+    | {
+        artifactKind?: unknown;
+        artifactName?: unknown;
+      }
+    | undefined;
+  const artifactKind = metadata?.artifactKind;
+  const artifactName = typeof metadata?.artifactName === "string" ? metadata.artifactName : "";
+  if ((artifactKind !== "skill" && artifactKind !== "plugin") || !artifactName.trim()) {
+    return null;
+  }
+  return { artifactKind, artifactName };
+}
+
+function getMaliciousArtifactEscalationReason(findings: MaliciousArtifactFinding[]) {
+  const distinctArtifacts = new Set<string>();
+  const attemptsByArtifact = new Map<string, number>();
+
+  for (const finding of findings) {
+    const artifactKey = `${finding.artifactKind}:${normalizeMaliciousArtifactName(
+      finding.artifactName,
+    )}`;
+    distinctArtifacts.add(artifactKey);
+    attemptsByArtifact.set(artifactKey, (attemptsByArtifact.get(artifactKey) ?? 0) + 1);
+  }
+
+  if (distinctArtifacts.size >= MALICIOUS_ARTIFACT_DISTINCT_BAN_THRESHOLD) {
+    return "distinct_artifact_threshold" as const;
+  }
+  for (const attempts of attemptsByArtifact.values()) {
+    if (attempts >= MALICIOUS_ARTIFACT_ATTEMPT_BAN_THRESHOLD) {
+      return "attempt_threshold" as const;
+    }
+  }
+  return null;
+}
+
+export const recordMaliciousArtifactFindingInternal = internalMutation({
+  args: {
+    ownerUserId: v.id("users"),
+    artifactKind: v.union(v.literal("skill"), v.literal("plugin")),
+    artifactName: v.string(),
+    version: v.optional(v.string()),
+    trigger: v.optional(v.string()),
+    sha256hash: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const target = await ctx.db.get(args.ownerUserId);
+    if (!target) return { ok: false as const, reason: "user_not_found" as const };
+    if (target.deletedAt || target.deactivatedAt) return { ok: true as const, alreadyBanned: true };
+
+    const artifactName = args.artifactName.trim();
+    if (!artifactName) {
+      return { ok: false as const, reason: "missing_artifact" as const };
+    }
+    const now = Date.now();
+    const trigger = args.trigger?.trim() || "scanner.malicious";
+    const version = args.version?.trim() || undefined;
+    const sha256hash = args.sha256hash?.trim() || undefined;
+    await ctx.db.insert("auditLogs", {
+      actorUserId: args.ownerUserId,
+      action: MALICIOUS_ARTIFACT_FINDING_ACTION,
+      targetType: "user",
+      targetId: args.ownerUserId,
+      metadata: {
+        artifactKind: args.artifactKind,
+        artifactName,
+        version,
+        trigger,
+        sha256hash,
+      },
+      createdAt: now,
+    });
+
+    if (target.role === "admin" || target.role === "moderator") {
+      await scheduleMaliciousArtifactNotificationEmail(ctx, {
+        target,
+        findingAt: now,
+        artifact: { kind: args.artifactKind, name: artifactName },
+        version,
+        trigger,
+      });
+      return { ok: true as const, escalated: false as const, reason: "protected_role" as const };
+    }
+
+    const auditLogs = await ctx.db
+      .query("auditLogs")
+      .withIndex("by_target", (q) => q.eq("targetType", "user").eq("targetId", args.ownerUserId))
+      .order("desc")
+      .take(MALICIOUS_ARTIFACT_AUDIT_LOOKBACK);
+    const priorFindings = auditLogs
+      .map(readMaliciousArtifactFindingFromAudit)
+      .filter((finding): finding is MaliciousArtifactFinding => Boolean(finding));
+    const escalationReason = getMaliciousArtifactEscalationReason(priorFindings);
+    if (!escalationReason) {
+      await scheduleMaliciousArtifactNotificationEmail(ctx, {
+        target,
+        findingAt: now,
+        artifact: { kind: args.artifactKind, name: artifactName },
+        version,
+        trigger,
+      });
+      return { ok: true as const, escalated: false as const };
+    }
+
+    await ctx.runMutation(internal.users.autobanMalwareAuthorInternal, {
+      ownerUserId: args.ownerUserId,
+      slug: artifactName,
+      trigger,
+      ...(sha256hash ? { sha256hash } : {}),
+      artifactKind: args.artifactKind,
+      artifactName,
+    });
+
+    return { ok: true as const, escalated: true as const, reason: escalationReason };
+  },
+});
+
 /**
  * Auto-ban a user whose skill was flagged malicious by a scanner.
  * Skips moderators/admins. No actor required — this is a system-level action.
@@ -2652,6 +2968,8 @@ export const autobanMalwareAuthorInternal = internalMutation({
     sha256hash: v.optional(v.string()),
     slug: v.string(),
     trigger: v.optional(v.string()),
+    artifactKind: v.optional(v.union(v.literal("skill"), v.literal("plugin"))),
+    artifactName: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const target = await ctx.db.get(args.ownerUserId);
@@ -2742,6 +3060,18 @@ export const autobanMalwareAuthorInternal = internalMutation({
       targetId: args.ownerUserId,
       metadata,
       createdAt: now,
+    });
+
+    const trigger = args.trigger?.trim() || "scanner.malicious";
+    const artifactKind = args.artifactKind ?? "skill";
+    const artifactName = args.artifactName?.trim() || args.slug;
+    await scheduleBanNotificationEmail(ctx, {
+      target,
+      bannedAt: now,
+      source: "autoban",
+      reason: trigger,
+      trigger,
+      artifact: { kind: artifactKind, name: artifactName },
     });
 
     console.warn(

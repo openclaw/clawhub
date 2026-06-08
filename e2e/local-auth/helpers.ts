@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { expect, type Page, type TestInfo } from "@playwright/test";
 import { waitForHydration } from "../helpers/runtimeErrors";
 
-type DevPersona = "owner" | "user" | "admin";
+type DevPersona = "owner" | "user" | "admin" | "abusePublisher";
 
 // The quality gate fingerprints line shape, so vary local-auth fixtures by slug.
 const FINGERPRINT_SALT_LINES = [
@@ -38,12 +38,27 @@ function fingerprintSaltBlock(args: { slug: string; versionLabel: string }) {
 
 function devPersonaHeaderPattern(persona: DevPersona, expectedHandle: string) {
   const displayName =
-    persona === "owner" ? "Local Owner" : persona === "user" ? "Local User" : "Local Admin";
+    persona === "owner"
+      ? "Local Owner"
+      : persona === "user"
+        ? "Local User"
+        : persona === "abusePublisher"
+          ? "Local Abuse Test Publisher"
+          : "Local Admin";
+  const displayNamePattern =
+    persona === "abusePublisher"
+      ? `${escapeRegExp("Local Abuse Test Publishe")}.*`
+      : escapeRegExp(displayName);
   const exactHandle =
     persona === "owner"
       ? `${escapeRegExp(expectedHandle)}(?![-\\w])`
       : escapeRegExp(expectedHandle);
-  return new RegExp(`@(?:${exactHandle}|${escapeRegExp(displayName)})`, "i");
+  return new RegExp(`@(?:${exactHandle}|${displayNamePattern})`, "i");
+}
+
+function devPersonaMenuLabel(persona: DevPersona) {
+  if (persona === "abusePublisher") return "abuse publisher";
+  return persona;
 }
 
 export function skillMd(args: { slug: string; displayName: string; versionLabel: string }) {
@@ -80,7 +95,12 @@ export function escapeRegExp(value: string) {
 }
 
 export async function expectLocalPersonaActive(page: Page, persona: DevPersona) {
-  const expectedHandle = persona === "owner" ? "local" : `local-${persona}`;
+  const expectedHandle =
+    persona === "owner"
+      ? "local"
+      : persona === "abusePublisher"
+        ? "local-abuse"
+        : `local-${persona}`;
   await expect(page.locator("header .user-trigger")).toContainText(
     devPersonaHeaderPattern(persona, expectedHandle),
     { timeout: 15_000 },
@@ -92,7 +112,9 @@ export async function signInAsLocalPersona(page: Page, persona: DevPersona) {
   await waitForHydration(page);
 
   await page.getByRole("button", { name: "Open local dev personas" }).click();
-  await page.getByRole("menuitem", { name: new RegExp(`use ${persona}`, "i") }).click();
+  await page
+    .getByRole("menuitem", { name: new RegExp(`use ${devPersonaMenuLabel(persona)}`, "i") })
+    .click();
   try {
     await expectLocalPersonaActive(page, persona);
   } catch {
@@ -101,7 +123,11 @@ export async function signInAsLocalPersona(page: Page, persona: DevPersona) {
     await expectLocalPersonaActive(page, persona);
   }
 
-  return persona === "owner" ? "local" : `local-${persona}`;
+  return persona === "owner"
+    ? "local"
+    : persona === "abusePublisher"
+      ? "local-abuse"
+      : `local-${persona}`;
 }
 
 export async function signInAsLocalOwner(page: Page) {
@@ -140,7 +166,7 @@ export async function selectOwnerHandle(page: Page, selector: string, ownerHandl
     await ownerControl.click();
     await page
       .getByRole("option", {
-        name: new RegExp(`@${escapeRegExp(ownerHandle)}(?:\\b|\\s|·)`, "i"),
+        name: new RegExp(`@${escapeRegExp(ownerHandle)}(?:\\s|·|$)`, "i"),
       })
       .click();
   }

@@ -1,4 +1,10 @@
-import { createRootRoute, HeadContent, Scripts, useLocation } from "@tanstack/react-router";
+import {
+  createRootRoute,
+  HeadContent,
+  redirect,
+  Scripts,
+  useLocation,
+} from "@tanstack/react-router";
 import { Analytics } from "@vercel/analytics/react";
 import { useEffect } from "react";
 import { Toaster } from "sonner";
@@ -9,12 +15,29 @@ import { ErrorBoundary } from "../components/ErrorBoundary";
 import { Footer } from "../components/Footer";
 import { GenericNotFoundPage } from "../components/GenericNotFoundPage";
 import Header from "../components/Header";
+import {
+  BANNED_ACCOUNT_PATH,
+  isBannedAccountAuthError,
+  normalizeAuthErrorMessage,
+} from "../lib/authErrorMessage";
 import { getSiteDescription, getSiteMode, getSiteName, getSiteUrlForMode } from "../lib/site";
 import appCss from "../styles.css?url";
 
 const OG_IMAGE_VERSION = "20260420-12";
 
 export const Route = createRootRoute({
+  beforeLoad: ({ location }) => {
+    if (location.pathname === BANNED_ACCOUNT_PATH) return;
+    const authError = getAuthErrorDescription(location);
+    if (!authError) return;
+    const message = normalizeAuthErrorMessage(authError, "");
+    if (!isBannedAccountAuthError(message)) return;
+
+    throw redirect({
+      to: BANNED_ACCOUNT_PATH,
+      replace: true,
+    });
+  },
   head: () => {
     const mode = getSiteMode();
     const siteName = getSiteName(mode);
@@ -116,6 +139,22 @@ export const Route = createRootRoute({
   shellComponent: RootDocument,
   notFoundComponent: GenericNotFoundPage,
 });
+
+function getAuthErrorDescription(location: { search?: unknown; searchStr?: string }) {
+  const fromSearch =
+    getSearchStringValue(location.search, "error_description") ??
+    getSearchStringValue(location.search, "error");
+  if (fromSearch) return fromSearch;
+  if (!location.searchStr) return null;
+  const params = new URLSearchParams(location.searchStr);
+  return params.get("error_description")?.trim() || params.get("error")?.trim() || null;
+}
+
+function getSearchStringValue(search: unknown, key: string) {
+  if (!search || typeof search !== "object") return null;
+  const value = (search as Record<string, unknown>)[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
 
 function RootDocument({ children }: { children: React.ReactNode }) {
   useEffect(() => {

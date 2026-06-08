@@ -29,7 +29,7 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { buildDownloadMetricArgs, getDownloadIdentity } from "../downloadMetrics";
 import { getOptionalActiveAuthUserIdFromAction } from "../lib/access";
-import { getOptionalApiTokenUserId } from "../lib/apiTokenAuth";
+import { getOptionalApiTokenUserId, requireApiTokenUser } from "../lib/apiTokenAuth";
 import { parseClawPack, sha256Base64, sha256Hex } from "../lib/clawpack";
 import {
   fetchGitHubRepositoryIdentity,
@@ -56,7 +56,12 @@ import {
 } from "../lib/publishLimits";
 import { getPublicSkillFileAccessBlock, isSkillVersionForSkill } from "../lib/skillFileAccess";
 import { isMacJunkPath, isTextFile } from "../lib/skills";
-import { buildDeterministicPackageZip } from "../lib/skillZip";
+import {
+  buildDeterministicPackageZip,
+  buildMergedExportZip,
+  validateFilePath,
+  type MergedExportManifestEntry,
+} from "../lib/skillZip";
 import { generateToken, hashToken } from "../lib/tokens";
 import {
   MAX_RAW_FILE_BYTES,
@@ -89,6 +94,7 @@ const apiRefs = api as unknown as {
 const internalRefs = internal as unknown as {
   packages: {
     getByNameForViewerInternal: unknown;
+    listPluginExportPageInternal: unknown;
     listPageForViewerInternal: unknown;
     searchForViewerInternal: unknown;
     listVersionsForViewerInternal: unknown;
@@ -208,6 +214,20 @@ async function runMutationRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): P
   return (await ctx.runMutation(ref as never, args as never)) as T;
 }
 
+async function chunkedParallel<T, R>(
+  items: T[],
+  chunkSize: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = [];
+  for (let i = 0; i < items.length; i += chunkSize) {
+    const chunk = items.slice(i, i + chunkSize);
+    const chunkResults = await Promise.all(chunk.map(fn));
+    results.push(...chunkResults);
+  }
+  return results;
+}
+
 async function getOptionalViewerUserIdForRequest(ctx: ActionCtx, request: Request) {
   const apiTokenUserId = await getOptionalApiTokenUserId(ctx, request);
   if (apiTokenUserId) return apiTokenUserId;
@@ -230,8 +250,13 @@ function normalizeCapabilityTagSegment(value: string) {
 }
 
 const PACKAGE_FAMILY_VALUES = ["skill", "code-plugin", "bundle-plugin"] as const;
+const PLUGIN_EXPORT_FAMILY_VALUES = ["code-plugin", "bundle-plugin"] as const;
 const PACKAGE_CHANNEL_VALUES = ["official", "community", "private"] as const;
 const PACKAGE_LIST_SORT_VALUES = ["updated", "downloads"] as const;
+const MAX_PLUGIN_EXPORT_FILE_COUNT = 10_000;
+const MAX_PLUGIN_EXPORT_PAGE_LIMIT = 250;
+const DEFAULT_PLUGIN_EXPORT_PAGE_LIMIT = 250;
+const MAX_PLUGIN_EXPORT_TOTAL_BYTES = 256 * 1024 * 1024;
 
 function invalidQueryParamMessage(name: string) {
   return `Invalid ${name} query parameter`;
@@ -429,6 +454,7 @@ type SkillVersionLike = {
 
 type ReleaseLike = {
   _id: Id<"packageReleases">;
+  packageId: Id<"packages">;
   version: string;
   createdAt: number;
   changelog: string;
@@ -462,6 +488,23 @@ type ReleaseLike = {
   npmUnpackedSize?: number;
   npmFileCount?: number;
   softDeletedAt?: number;
+};
+
+type PluginExportFamily = (typeof PLUGIN_EXPORT_FAMILY_VALUES)[number];
+
+type PluginExportDigest = {
+  packageId: Id<"packages">;
+  name: string;
+  displayName: string;
+  family: PluginExportFamily;
+  latestReleaseId?: Id<"packageReleases">;
+  latestVersion?: string | null;
+  createdAt: number;
+  updatedAt: number;
+  stats?: Record<string, unknown> | null;
+  ownerUserId: Id<"users">;
+  ownerHandle?: string | null;
+  ownerDisplayName?: string | null;
 };
 
 type PackageTrustedPublisherLike = {
@@ -1601,6 +1644,388 @@ async function listPackages(
 
 export async function listPackagesV1Handler(ctx: ActionCtx, request: Request) {
   return await listPackages(ctx, request, undefined, { includeSkills: true });
+}
+
+type PluginsExportPhase =
+  | "list_plugins"
+  | "build_empty_zip"
+  | "load_releases"
+  | "plan_blobs"
+  | "load_blobs"
+  | "assemble_entries"
+  | "build_zip";
+
+type PluginsExportLogContext = {
+  phase: PluginsExportPhase;
+  startDate: number;
+  endDate: number;
+  family: PluginExportFamily | null;
+  limit: number;
+  cursorPresent: boolean;
+  pageLength: number;
+  hasMore: boolean | null;
+  nextCursorPresent: boolean | null;
+  releaseCount: number;
+  blobTaskCount: number;
+  blobCount: number;
+  zipEntryCount: number;
+  manifestCount: number;
+  exportErrorCount: number;
+  totalExportBytes: number;
+};
+
+function logPluginsExportFailure(context: PluginsExportLogContext, error: unknown) {
+  console.error("plugins_export_failed", {
+    ...context,
+    errorName: error instanceof Error ? error.name : typeof error,
+    errorMessage:
+      error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500),
+  });
+}
+
+function parsePluginExportFamily(value: string | null) {
+  const family = value?.trim();
+  if (!family) return undefined;
+  return PLUGIN_EXPORT_FAMILY_VALUES.includes(family as PluginExportFamily)
+    ? (family as PluginExportFamily)
+    : null;
+}
+
+function isReleaseForPackage(release: ReleaseLike, digest: PluginExportDigest) {
+  return release.packageId === digest.packageId;
+}
+
+function pluginExportRoot(digest: PluginExportDigest) {
+  return `${digest.family}/${digest.name}`;
+}
+
+function pluginExportMetaPath(digest: PluginExportDigest) {
+  return `__clawhub_export/${pluginExportRoot(digest)}/plugin_meta.json`;
+}
+
+export async function exportPluginsV1Handler(ctx: ActionCtx, request: Request) {
+  try {
+    await requireApiTokenUser(ctx, request);
+  } catch (err) {
+    return text(err instanceof Error ? err.message : "Unauthorized", 401);
+  }
+
+  const rate = await applyRateLimit(ctx, request, "export");
+  if (!rate.ok) return rate.response;
+
+  const url = new URL(request.url);
+  const startDate = toOptionalNumber(url.searchParams.get("startDate"));
+  const endDate = toOptionalNumber(url.searchParams.get("endDate"));
+  const requestedLimit = toOptionalNumber(url.searchParams.get("limit"));
+  const cursor = url.searchParams.get("cursor")?.trim() || undefined;
+  const family = parsePluginExportFamily(url.searchParams.get("family"));
+
+  if (family === null) {
+    return text("family must be code-plugin or bundle-plugin", 400, rate.headers);
+  }
+  if (startDate == null || endDate == null) {
+    return text(
+      "startDate and endDate query parameters are required (Unix milliseconds)",
+      400,
+      rate.headers,
+    );
+  }
+  if (startDate > endDate) {
+    return text("startDate must be <= endDate", 400, rate.headers);
+  }
+  if (requestedLimit != null && requestedLimit > MAX_PLUGIN_EXPORT_PAGE_LIMIT) {
+    return text(`limit must be <= ${MAX_PLUGIN_EXPORT_PAGE_LIMIT}`, 400, rate.headers);
+  }
+  const limit = Math.max(1, requestedLimit ?? DEFAULT_PLUGIN_EXPORT_PAGE_LIMIT);
+
+  const logContext: PluginsExportLogContext = {
+    phase: "list_plugins",
+    startDate,
+    endDate,
+    family: family ?? null,
+    limit,
+    cursorPresent: Boolean(cursor),
+    pageLength: 0,
+    hasMore: null,
+    nextCursorPresent: null,
+    releaseCount: 0,
+    blobTaskCount: 0,
+    blobCount: 0,
+    zipEntryCount: 0,
+    manifestCount: 0,
+    exportErrorCount: 0,
+    totalExportBytes: 0,
+  };
+
+  let result: {
+    page: PluginExportDigest[];
+    nextCursor: string | null;
+    hasMore: boolean;
+  };
+  try {
+    result = await runQueryRef(ctx, internalRefs.packages.listPluginExportPageInternal, {
+      startDate,
+      endDate,
+      cursor,
+      numItems: limit,
+      family,
+    });
+  } catch (err) {
+    if (err instanceof Error && err.message.includes("Invalid cursor format")) {
+      return text("Invalid cursor format", 400, rate.headers);
+    }
+    logPluginsExportFailure(logContext, err);
+    throw err;
+  }
+  logContext.pageLength = result.page.length;
+  logContext.hasMore = result.hasMore;
+  logContext.nextCursorPresent = Boolean(result.nextCursor);
+
+  const familyLabel = family ?? "all";
+  if (result.page.length === 0) {
+    try {
+      logContext.phase = "build_empty_zip";
+      const emptyZip = buildMergedExportZip([], []);
+      return new Response(emptyZip as unknown as BodyInit, {
+        status: 200,
+        headers: mergeHeaders(rate.headers, {
+          "Content-Type": "application/zip",
+          "Content-Disposition": `attachment; filename="plugins-export-${familyLabel}-${startDate}-${endDate}-empty.zip"`,
+          "X-Next-Cursor": result.nextCursor ?? "",
+          "X-Has-More": String(result.hasMore),
+          "X-Total-Returned": "0",
+          "X-Date-Range": `${startDate}-${endDate}`,
+          "X-Export-Errors": "0",
+        }),
+      });
+    } catch (err) {
+      logPluginsExportFailure(logContext, err);
+      throw err;
+    }
+  }
+
+  const exportErrors: Array<{ package: string; error: string }> = [];
+
+  try {
+    logContext.phase = "load_releases";
+    const releases = await chunkedParallel(result.page, 100, (digest) =>
+      digest.latestReleaseId
+        ? runQueryRef<ReleaseLike | null>(ctx, internalRefs.packages.getReleaseByIdInternal, {
+            releaseId: digest.latestReleaseId,
+          })
+        : Promise.resolve(null),
+    );
+    logContext.releaseCount = releases.filter(Boolean).length;
+    const exportableReleases: Array<ReleaseLike | null> = Array.from(
+      { length: result.page.length },
+      () => null,
+    );
+
+    type BlobTask = { digestIndex: number; fileIndex: number; storageId: Id<"_storage"> };
+    const blobTasks: BlobTask[] = [];
+
+    logContext.phase = "plan_blobs";
+    for (let i = 0; i < result.page.length; i++) {
+      const digest = result.page[i];
+      const release = releases[i] ?? null;
+
+      if (!digest.latestReleaseId || !release) {
+        exportErrors.push({
+          package: digest.name,
+          error: `release not found (latestReleaseId: ${digest.latestReleaseId ?? "null"})`,
+        });
+        continue;
+      }
+      if (!isReleaseForPackage(release, digest)) {
+        exportErrors.push({
+          package: digest.name,
+          error: `release not found (latestReleaseId: ${digest.latestReleaseId})`,
+        });
+        continue;
+      }
+      if (release.softDeletedAt) {
+        exportErrors.push({
+          package: digest.name,
+          error: `release not available (latestReleaseId: ${digest.latestReleaseId})`,
+        });
+        continue;
+      }
+      const securityBlock = getReleaseSecurityBlock(release);
+      if (securityBlock) {
+        exportErrors.push({
+          package: digest.name,
+          error: `release blocked: ${securityBlock.message}`,
+        });
+        continue;
+      }
+      if (!release.files || release.files.length === 0) {
+        exportErrors.push({
+          package: digest.name,
+          error: `release has no files (latestReleaseId: ${digest.latestReleaseId})`,
+        });
+        continue;
+      }
+      if (!validateFilePath(pluginExportRoot(digest))) {
+        exportErrors.push({
+          package: digest.name,
+          error: "invalid package export path (fails Zip Slip validation)",
+        });
+        continue;
+      }
+      exportableReleases[i] = release;
+
+      for (let j = 0; j < release.files.length; j++) {
+        if (blobTasks.length >= MAX_PLUGIN_EXPORT_FILE_COUNT) {
+          exportErrors.push({
+            package: digest.name,
+            error: `file count cap exceeded (${MAX_PLUGIN_EXPORT_FILE_COUNT})`,
+          });
+          break;
+        }
+        blobTasks.push({
+          digestIndex: i,
+          fileIndex: j,
+          storageId: release.files[j].storageId,
+        });
+      }
+    }
+    logContext.blobTaskCount = blobTasks.length;
+    logContext.exportErrorCount = exportErrors.length;
+
+    logContext.phase = "load_blobs";
+    const blobs = await chunkedParallel(blobTasks, 50, (task) => ctx.storage.get(task.storageId));
+    logContext.blobCount = blobs.length;
+
+    const zipEntries: Array<{ path: string; bytes: Uint8Array }> = [];
+    const manifest: Array<
+      MergedExportManifestEntry & {
+        family: PluginExportFamily;
+        packageName: string;
+        latestReleaseId: string | null;
+        artifactKind: ReleaseLike["artifactKind"] | null;
+      }
+    > = [];
+    let totalExportBytes = 0;
+
+    const blobsByDigest = new Map<number, Map<number, Blob | null>>();
+    for (let k = 0; k < blobTasks.length; k++) {
+      const task = blobTasks[k];
+      if (!blobsByDigest.has(task.digestIndex)) {
+        blobsByDigest.set(task.digestIndex, new Map());
+      }
+      blobsByDigest.get(task.digestIndex)!.set(task.fileIndex, blobs[k]);
+    }
+
+    logContext.phase = "assemble_entries";
+    for (let i = 0; i < result.page.length; i++) {
+      const digest = result.page[i];
+      const release = exportableReleases[i];
+      if (!release?.files) continue;
+      const exportRoot = pluginExportRoot(digest);
+      if (!validateFilePath(exportRoot)) continue;
+      const digestBlobs = blobsByDigest.get(i);
+      if (!digestBlobs) continue;
+
+      let fileCount = 0;
+      for (let j = 0; j < release.files.length; j++) {
+        const filePath = release.files[j].path;
+
+        if (!validateFilePath(filePath)) {
+          exportErrors.push({
+            package: digest.name,
+            error: `invalid file path: "${filePath}" (fails Zip Slip validation)`,
+          });
+          continue;
+        }
+
+        const blob = digestBlobs.get(j);
+        if (!blob) {
+          exportErrors.push({
+            package: digest.name,
+            error: `blob not found for file "${filePath}" (storageId: ${release.files[j].storageId})`,
+          });
+          continue;
+        }
+
+        const buffer = new Uint8Array(await blob.arrayBuffer());
+        if (totalExportBytes + buffer.byteLength > MAX_PLUGIN_EXPORT_TOTAL_BYTES) {
+          exportErrors.push({
+            package: digest.name,
+            error: `byte cap exceeded (${MAX_PLUGIN_EXPORT_TOTAL_BYTES}) at file "${filePath}"`,
+          });
+          continue;
+        }
+        totalExportBytes += buffer.byteLength;
+        zipEntries.push({ path: `${exportRoot}/${filePath}`, bytes: buffer });
+        fileCount++;
+      }
+
+      const pluginMeta = {
+        name: digest.name,
+        displayName: digest.displayName,
+        family: digest.family,
+        version: release.version ?? digest.latestVersion ?? null,
+        latestReleaseId: digest.latestReleaseId ?? null,
+        artifactKind: release.artifactKind ?? null,
+        createdAt: digest.createdAt,
+        updatedAt: digest.updatedAt,
+        stats: digest.stats ?? null,
+        owner: {
+          handle: digest.ownerHandle ?? null,
+          displayName: digest.ownerDisplayName ?? null,
+        },
+      };
+      zipEntries.push({
+        path: pluginExportMetaPath(digest),
+        bytes: new TextEncoder().encode(JSON.stringify(pluginMeta, null, 2)),
+      });
+
+      manifest.push({
+        publisher: digest.ownerHandle ?? String(digest.ownerUserId),
+        slug: digest.name,
+        packageName: digest.name,
+        family: digest.family,
+        version: release.version ?? digest.latestVersion ?? null,
+        displayName: digest.displayName,
+        createdAt: digest.createdAt,
+        updatedAt: digest.updatedAt,
+        stats: digest.stats ?? null,
+        fileCount,
+        latestReleaseId: digest.latestReleaseId ?? null,
+        artifactKind: release.artifactKind ?? null,
+      });
+    }
+
+    if (exportErrors.length > 0) {
+      zipEntries.push({
+        path: "_errors.json",
+        bytes: new TextEncoder().encode(JSON.stringify(exportErrors, null, 2)),
+      });
+    }
+    logContext.zipEntryCount = zipEntries.length;
+    logContext.manifestCount = manifest.length;
+    logContext.exportErrorCount = exportErrors.length;
+    logContext.totalExportBytes = totalExportBytes;
+
+    logContext.phase = "build_zip";
+    const zipBytes = buildMergedExportZip(zipEntries, manifest);
+
+    return new Response(zipBytes as unknown as BodyInit, {
+      status: 200,
+      headers: mergeHeaders(rate.headers, {
+        "Content-Type": "application/zip",
+        "Content-Disposition": `attachment; filename="plugins-export-${familyLabel}-${startDate}-${endDate}.zip"`,
+        "X-Next-Cursor": result.nextCursor ?? "",
+        "X-Has-More": String(result.hasMore),
+        "X-Total-Returned": String(manifest.length),
+        "X-Date-Range": `${startDate}-${endDate}`,
+        "X-Export-Errors": String(exportErrors.length),
+      }),
+    });
+  } catch (err) {
+    logPluginsExportFailure(logContext, err);
+    throw err;
+  }
 }
 
 export async function listPluginsV1Handler(ctx: ActionCtx, request: Request) {

@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 import {
+  expectHealthyPage,
   expectNoFatalErrorUi,
   trackRuntimeErrors,
   waitForHydration,
@@ -88,9 +89,45 @@ type AccountDeletionFixtureState = {
     | { exists: false };
   publisherExists: boolean;
   skillExists: boolean;
+  skillActive: boolean;
+  skillSoftDeletedAt: number | null;
   packageExists: boolean;
+  skillPubliclyVisible: boolean;
+  packagePubliclyVisible: boolean;
+  packageActive: boolean;
+  packageSoftDeletedAt: number | null;
   authAccountCount: number;
   authSessionCount: number;
+};
+
+type AccountRecreationState = {
+  previousUser:
+    | {
+        exists: true;
+        handle: string | null;
+        deactivatedAt: number | null;
+        purgedAt: number | null;
+        deletedAt: number | null;
+      }
+    | { exists: false };
+  previousPublisherExists: boolean;
+  previousSkillActive: boolean;
+  previousPackageActive: boolean;
+  activeUser: {
+    userId: string;
+    handle: string;
+    deactivatedAt: number | null;
+    purgedAt: number | null;
+    deletedAt: number | null;
+    personalPublisherId: string | null;
+  } | null;
+  activePublisher: {
+    publisherId: string;
+    handle: string;
+    linkedUserId: string | null;
+    deactivatedAt: number | null;
+    deletedAt: number | null;
+  } | null;
 };
 
 function seedAccountDeletionFixture(args: {
@@ -109,6 +146,21 @@ function getAccountDeletionFixtureState(fixture: AccountDeletionFixture) {
     skillId: fixture.skillId,
     packageId: fixture.packageId,
   });
+}
+
+function getAccountRecreationState(fixture: AccountDeletionFixture) {
+  return runDevSeed<AccountRecreationState>("devSeed:getAccountRecreationState", {
+    handle: fixture.handle,
+    previousUserId: fixture.userId,
+    previousPublisherId: fixture.publisherId,
+    previousSkillId: fixture.skillId,
+    previousPackageId: fixture.packageId,
+  });
+}
+
+function isExpectedAccountDeletionRuntimeError(error: string) {
+  if (error.includes("server responded with a status of 404 (Not Found)")) return true;
+  return error.includes("[CONVEX Q(users:me)]") && error.includes("Function execution timed out");
 }
 
 test("users can permanently delete their account and personal publisher resources", async ({
@@ -167,6 +219,10 @@ test("users can permanently delete their account and personal publisher resource
         deletedAt: null,
       },
       publisherExists: false,
+      skillPubliclyVisible: false,
+      packagePubliclyVisible: false,
+      skillActive: false,
+      packageActive: false,
       authAccountCount: 0,
       authSessionCount: 0,
     });
@@ -176,6 +232,8 @@ test("users can permanently delete their account and personal publisher resource
     expect(finalState.user.deactivatedAt).toEqual(expect.any(Number));
     expect(finalState.user.purgedAt).toEqual(expect.any(Number));
   }
+  await expectHealthyPage(page, errors);
+  errors.length = 0;
 
   await page.goto(`/user/${fixture.handle}`, { waitUntil: "domcontentloaded" });
   await waitForHydration(page);
@@ -206,8 +264,48 @@ test("users can permanently delete their account and personal publisher resource
     fullPage: true,
   });
 
+  await signInAsLocalPersona(page, "user");
+  await expect
+    .poll(() => getAccountRecreationState(fixture), {
+      timeout: 30_000,
+      intervals: [500, 1_000, 2_000],
+    })
+    .toMatchObject({
+      previousUser: {
+        exists: true,
+        handle: null,
+        deletedAt: null,
+      },
+      previousPublisherExists: false,
+      previousSkillActive: false,
+      previousPackageActive: false,
+      activeUser: {
+        deactivatedAt: null,
+        purgedAt: null,
+        deletedAt: null,
+      },
+      activePublisher: {
+        handle: fixture.handle,
+        deactivatedAt: null,
+        deletedAt: null,
+      },
+    });
+  const recreationState = getAccountRecreationState(fixture);
+  expect(recreationState.activeUser?.userId).toBeTruthy();
+  expect(recreationState.activeUser?.userId).not.toBe(fixture.userId);
+  expect(recreationState.activePublisher?.publisherId).toBeTruthy();
+  expect(recreationState.activePublisher?.publisherId).not.toBe(fixture.publisherId);
+  expect(recreationState.activePublisher?.linkedUserId).toBe(recreationState.activeUser?.userId);
+  expect(recreationState.activeUser?.personalPublisherId).toBe(
+    recreationState.activePublisher?.publisherId,
+  );
+
+  await page.goto(`/user/${fixture.handle}`, { waitUntil: "domcontentloaded" });
+  await waitForHydration(page);
+  await expect(page.getByRole("heading", { name: "Local User" })).toBeVisible();
+  await expect(page.getByText(skillDisplayName)).toHaveCount(0);
+  await expect(page.getByText(packageDisplayName)).toHaveCount(0);
+
   await expectNoFatalErrorUi(page);
-  expect(
-    errors.filter((error) => !error.includes("server responded with a status of 404 (Not Found)")),
-  ).toEqual([]);
+  expect(errors.filter((error) => !isExpectedAccountDeletionRuntimeError(error))).toEqual([]);
 });

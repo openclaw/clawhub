@@ -31,7 +31,7 @@ import {
 } from "./cli/commands/packages.js";
 import { cmdPublish } from "./cli/commands/publish.js";
 import { cmdCreatePublisher } from "./cli/commands/publishers.js";
-import { cmdScan } from "./cli/commands/scan.js";
+import { cmdScan, cmdScanDownload } from "./cli/commands/scan.js";
 import {
   cmdExplore,
   cmdInstall,
@@ -374,9 +374,9 @@ registerCommand(program, ["publish"])
     await cmdPublish(opts, folder, options);
   });
 
-registerCommand(program, ["scan"])
-  .description("Run ClawScan on a local skill bundle or one of your published skills")
-  .argument("[path]", "Local skill folder path")
+const scanCmd = registerCommand(program, ["scan"])
+  .description("Run or download ClawHub scan reports")
+  .argument("[path]", "Deprecated local skill folder path")
   .option("--slug <slug>", "Published skill slug to scan")
   .option("--version <version>", "Published skill version to scan")
   .option("--update", "Write published scan results back to the selected version")
@@ -385,6 +385,22 @@ registerCommand(program, ["scan"])
   .action(async (folder, options) => {
     const opts = await resolveGlobalOpts();
     await cmdScan(opts, folder, options);
+  });
+
+registerCommand(scanCmd, ["scan", "download"])
+  .description("Download stored scan results for a submitted skill or plugin version")
+  .argument("<name>", "Skill slug or plugin package name")
+  .option("--version <version>", "Submitted version to download scan results for")
+  .option("--kind <kind>", "Artifact kind: skill or plugin", "skill")
+  .option("-o, --output <path>", "Output ZIP file")
+  .action(async (name, options) => {
+    const opts = await resolveGlobalOpts();
+    const parentOptions = scanCmd.opts<{ version?: string; output?: string }>();
+    await cmdScanDownload(opts, name, {
+      ...options,
+      version: options.version ?? parentOptions.version,
+      output: options.output ?? parentOptions.output,
+    });
   });
 
 registerCommand(program, ["delete"])

@@ -189,23 +189,35 @@ Stores your API token + cached registry URL.
 clawhub skill publish ./my-skill --version 1.0.0
 ```
 
-### `scan [path]`
+### `scan --slug <slug>`
 
 - Requires `clawhub login`.
 - Runs ClawHub ClawScan through `POST /api/v1/skills/-/scan`, then polls until the scan is terminal.
 - Scans are asynchronous and may take time to complete. While queued, the terminal spinner shows the current prioritized scan position and how many scans are ahead.
-- Local path scans are always ephemeral. They upload the local skill bundle for scanning, print the security report, and never create or update a published skill/version.
 - Published scans require ownership or publisher management access. Moderators/admins can use the same backend through `clawhub-mod`.
 - `--update` is valid only with `--slug`; it writes successful published scan results back to the selected version.
 - `--output <file.zip>` downloads the full report archive with `manifest.json`, `clawscan.json`, `skillspector.json`, `static-analysis.json`, `virustotal.json`, and `README.md`.
 - `--json` prints the full poll response for automation.
+- Local path scans are no longer supported. Upload a new version, then use `scan download` to retrieve the stored scan results for that submitted version.
 
 ```bash
-clawhub scan ./my-skill
-clawhub scan ./my-skill --output report.zip
 clawhub scan --slug gifgrep
 clawhub scan --slug gifgrep --version 1.2.3
 clawhub scan --slug gifgrep --update --output report.zip
+```
+
+### `scan download <name>`
+
+- Requires `clawhub login`.
+- Downloads the stored scan report ZIP for a submitted skill or plugin version, including versions that were blocked or hidden by ClawHub security checks.
+- Skill downloads use the skill slug and default to `--kind skill`.
+- Plugin downloads use the package name and require `--kind plugin`.
+- `--version` is required so authors inspect the exact submitted version that ClawHub blocked.
+- `--output <file.zip>` chooses the destination path.
+
+```bash
+clawhub scan download gifgrep --version 1.2.3
+clawhub scan download @scope/demo --version 2.0.0 --kind plugin --output report.zip
 ```
 
 #### GitHub Actions

@@ -48,7 +48,6 @@ import {
   getPathSegments,
   json,
   parseJsonPayload,
-  parseMultipartSkillScan,
   parseMultipartPublish,
   parsePublishBody,
   publicApiOrigin,
@@ -294,9 +293,9 @@ const internalRefs = internal as unknown as {
     getByIdInternal: unknown;
   };
   securityScan: {
-    createUploadedSkillScanRequestInternal: unknown;
     createPublishedSkillScanRequestInternal: unknown;
     enqueueBulkSkillRescanBatchForAdminInternal: unknown;
+    getStoredScanReportForUserInternal: unknown;
     getSkillScanRequestForUserInternal: unknown;
     getBulkSkillRescanBatchStatusForAdminInternal: unknown;
     requestSkillRescanForUserInternal: unknown;
@@ -332,10 +331,6 @@ function isMultipartRequest(request: Request) {
   return (
     request.headers.get("content-type")?.toLowerCase().includes("multipart/form-data") === true
   );
-}
-
-async function deleteStoredScanFiles(ctx: ActionCtx, files: Array<{ storageId: Id<"_storage"> }>) {
-  await Promise.allSettled(files.map((file) => ctx.storage.delete(file.storageId)));
 }
 
 function encodeJsonEntry(value: unknown) {
@@ -394,6 +389,16 @@ function buildSkillScanReportZip(status: Record<string, unknown>) {
     { path: "virustotal.json", bytes: encodeJsonEntry(scanReportPart(status, "virustotal")) },
     { path: "README.md", bytes: encodeTextEntry(readme) },
   ]);
+}
+
+function safeScanReportFilenamePart(value: string) {
+  return (
+    value
+      .replace(/^@/, "")
+      .replaceAll("/", "-")
+      .replaceAll(/[^a-zA-Z0-9._-]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "artifact"
+  );
 }
 
 async function handleSkillScanBatchSubmit(ctx: ActionCtx, request: Request, headers: HeadersInit) {
@@ -1123,35 +1128,11 @@ export async function skillScanSubmitV1Handler(ctx: ActionCtx, request: Request)
 
   try {
     if (isMultipartRequest(request)) {
-      const multipart = await parseMultipartSkillScan(ctx, request, (payload) => {
-        const parsed = parseArk(
-          ApiV1SkillScanSubmitRequestSchema,
-          payload,
-          "Skill scan payload",
-        ) as {
-          source: { kind: "upload" } | { kind: "published"; slug: string; version?: string };
-          update?: boolean;
-        };
-        if (parsed.source.kind !== "upload") {
-          throw new Error("multipart scan payload must use source.kind=upload");
-        }
-        if (parsed.update === true) {
-          throw new Error("update is not valid for uploaded scans");
-        }
-        return parsed;
-      });
-      const result = await runMutationRef(
-        ctx,
-        internalRefs.securityScan.createUploadedSkillScanRequestInternal,
-        {
-          actorUserId: auth.userId,
-          files: multipart.files,
-        },
-      ).catch(async (error) => {
-        await deleteStoredScanFiles(ctx, multipart.files);
-        throw error;
-      });
-      return json(result, 202, rate.headers);
+      return text(
+        "Local upload scans are no longer supported. Upload a version, then use `clawhub scan download <slug> --version <version>` to retrieve stored scan results.",
+        410,
+        rate.headers,
+      );
     }
 
     const body = parseArk(
@@ -1163,7 +1144,11 @@ export async function skillScanSubmitV1Handler(ctx: ActionCtx, request: Request)
       update?: boolean;
     };
     if (body.source.kind === "upload") {
-      return text("uploaded scans must use multipart/form-data", 400, rate.headers);
+      return text(
+        "Local upload scans are no longer supported. Upload a version, then use `clawhub scan download <slug> --version <version>` to retrieve stored scan results.",
+        410,
+        rate.headers,
+      );
     }
     const result = await runMutationRef(
       ctx,
@@ -1197,6 +1182,32 @@ export async function skillScanGetRouterV1Handler(ctx: ActionCtx, request: Reque
   if (!scanId) return text("scanId required", 400, rate.headers);
 
   try {
+    if (segments.length === 2 && scanId === "download") {
+      const name = (segments[1] ?? "").trim();
+      const url = new URL(request.url);
+      const version = url.searchParams.get("version")?.trim() ?? "";
+      const kind = url.searchParams.get("kind")?.trim() === "plugin" ? "plugin" : "skill";
+      if (!name) return text("name required", 400, rate.headers);
+      if (!version) return text("version required", 400, rate.headers);
+
+      const status = (await runQueryRef(
+        ctx,
+        internalRefs.securityScan.getStoredScanReportForUserInternal,
+        {
+          actorUserId: auth.userId,
+          kind,
+          name,
+          version,
+        },
+      )) as Record<string, unknown>;
+      const zip = buildSkillScanReportZip(status);
+      const headers = mergeHeaders(rate.headers, {
+        "Content-Type": "application/zip",
+        "Content-Disposition": `attachment; filename="clawhub-scan-${safeScanReportFilenamePart(name)}-${safeScanReportFilenamePart(version)}.zip"`,
+      });
+      return new Response(zip, { status: 200, headers });
+    }
+
     const status = (await runQueryRef(
       ctx,
       internalRefs.securityScan.getSkillScanRequestForUserInternal,

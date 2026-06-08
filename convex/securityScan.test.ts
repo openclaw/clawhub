@@ -10,6 +10,7 @@ import {
   failCodexScanJob,
   getBulkSkillRescanBatchStatusForAdminInternal,
   getSkillScanRequestForUserInternal,
+  getStoredScanReportForUserInternal,
   pruneExpiredSkillScanRequestsInternal,
   requestPackageRescanForUserInternal,
   requestPackageRescan,
@@ -216,6 +217,28 @@ const getSkillScanRequestForUserInternalHandler = (
         running: number;
         runningIsEstimate?: boolean;
         note: string;
+      };
+    }
+  >
+)._handler;
+
+const getStoredScanReportForUserInternalHandler = (
+  getStoredScanReportForUserInternal as unknown as WrappedHandler<
+    {
+      actorUserId: string;
+      kind: "skill" | "plugin";
+      name: string;
+      version: string;
+    },
+    {
+      ok: true;
+      status: string;
+      artifact: Record<string, unknown>;
+      report: {
+        clawscan: Record<string, unknown> | null;
+        skillspector: Record<string, unknown> | null;
+        staticAnalysis: Record<string, unknown> | null;
+        virustotal: Record<string, unknown> | null;
       };
     }
   >
@@ -685,6 +708,77 @@ function makeSkillScanStatusCtx(options: {
   };
 }
 
+function makeStoredScanReportCtx(options: {
+  actor: Record<string, unknown>;
+  docs: Record<string, Record<string, unknown>>;
+  membership?: Record<string, unknown> | null;
+}) {
+  const docs = new Map<string, Record<string, unknown>>([
+    [String(options.actor._id), options.actor],
+    ...Object.entries(options.docs),
+  ]);
+  const get = vi.fn(async (id: string) => docs.get(id) ?? null);
+  const query = vi.fn((table: string) => ({
+    withIndex: vi.fn((_indexName: string, buildRange: (q: { eq: typeof eq }) => unknown) => {
+      const equals = new Map<string, unknown>();
+      function eq(field: string, value: unknown) {
+        equals.set(field, value);
+        return { eq };
+      }
+      buildRange({ eq });
+      return {
+        unique: vi.fn(async () => {
+          if (table === "publisherMembers") return options.membership ?? null;
+          if (table === "skills") {
+            return (
+              Array.from(docs.values()).find(
+                (doc) => String(doc._id).startsWith("skills:") && doc.slug === equals.get("slug"),
+              ) ?? null
+            );
+          }
+          if (table === "skillVersions") {
+            return (
+              Array.from(docs.values()).find(
+                (doc) =>
+                  String(doc._id).startsWith("skillVersions:") &&
+                  doc.skillId === equals.get("skillId") &&
+                  doc.version === equals.get("version"),
+              ) ?? null
+            );
+          }
+          if (table === "packages") {
+            return (
+              Array.from(docs.values()).find(
+                (doc) =>
+                  String(doc._id).startsWith("packages:") &&
+                  doc.normalizedName === equals.get("normalizedName"),
+              ) ?? null
+            );
+          }
+          if (table === "packageReleases") {
+            return (
+              Array.from(docs.values()).find(
+                (doc) =>
+                  String(doc._id).startsWith("packageReleases:") &&
+                  doc.packageId === equals.get("packageId") &&
+                  doc.version === equals.get("version"),
+              ) ?? null
+            );
+          }
+          return null;
+        }),
+      };
+    }),
+  }));
+
+  return {
+    db: {
+      get,
+      query,
+    },
+  };
+}
+
 describe("securityScan", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
@@ -741,6 +835,269 @@ describe("securityScan", () => {
         }),
       ]),
     );
+  });
+
+  it("returns stored scan reports for hidden skill versions to the owner", async () => {
+    const ctx = makeStoredScanReportCtx({
+      actor: { _id: "users:owner", role: "user" },
+      docs: {
+        "skills:hidden": {
+          _id: "skills:hidden",
+          slug: "hidden-skill",
+          displayName: "Hidden Skill",
+          ownerUserId: "users:owner",
+        },
+        "skillVersions:hidden": {
+          _id: "skillVersions:hidden",
+          skillId: "skills:hidden",
+          version: "1.2.3",
+          softDeletedAt: 1_700_000_100_000,
+          files: [],
+          sha256hash: "abc123",
+          llmAnalysis: {
+            status: "malicious",
+            summary: "Attempts to exfiltrate credentials.",
+            checkedAt: 1_700_000_000_000,
+          },
+          staticScan: {
+            status: "malicious",
+            reasonCodes: ["network.exfiltration"],
+            findings: [],
+            summary: "Credential exfiltration pattern.",
+            checkedAt: 1_700_000_000_000,
+          },
+          createdAt: 1_700_000_000_000,
+        },
+      },
+    });
+
+    const report = await getStoredScanReportForUserInternalHandler(ctx, {
+      actorUserId: "users:owner",
+      kind: "skill",
+      name: "hidden-skill",
+      version: "1.2.3",
+    });
+
+    expect(report).toMatchObject({
+      ok: true,
+      status: "succeeded",
+      artifact: {
+        kind: "skill",
+        slug: "hidden-skill",
+        displayName: "Hidden Skill",
+        version: "1.2.3",
+      },
+      report: {
+        clawscan: {
+          status: "malicious",
+          summary: "Attempts to exfiltrate credentials.",
+        },
+        staticAnalysis: {
+          status: "malicious",
+          summary: "Credential exfiltration pattern.",
+        },
+      },
+    });
+  });
+
+  it("returns stored scan reports for hidden org skill versions to publisher-role uploaders", async () => {
+    const ctx = makeStoredScanReportCtx({
+      actor: { _id: "users:member", role: "user" },
+      membership: {
+        _id: "publisherMembers:member",
+        publisherId: "publishers:org",
+        userId: "users:member",
+        role: "publisher",
+      },
+      docs: {
+        "publishers:org": {
+          _id: "publishers:org",
+          kind: "org",
+          handle: "org",
+        },
+        "skills:hidden": {
+          _id: "skills:hidden",
+          slug: "hidden-skill",
+          displayName: "Hidden Skill",
+          ownerUserId: "users:owner",
+          ownerPublisherId: "publishers:org",
+        },
+        "skillVersions:hidden": {
+          _id: "skillVersions:hidden",
+          skillId: "skills:hidden",
+          version: "1.2.3",
+          softDeletedAt: 1_700_000_100_000,
+          files: [],
+          sha256hash: "abc123",
+          llmAnalysis: {
+            status: "malicious",
+            summary: "Attempts to exfiltrate credentials.",
+            checkedAt: 1_700_000_000_000,
+          },
+          createdAt: 1_700_000_000_000,
+        },
+      },
+    });
+
+    const report = await getStoredScanReportForUserInternalHandler(ctx, {
+      actorUserId: "users:member",
+      kind: "skill",
+      name: "hidden-skill",
+      version: "1.2.3",
+    });
+
+    expect(report).toMatchObject({
+      ok: true,
+      artifact: {
+        kind: "skill",
+        slug: "hidden-skill",
+        displayName: "Hidden Skill",
+        version: "1.2.3",
+      },
+    });
+  });
+
+  it("denies stored scan reports to non-owners", async () => {
+    const ctx = makeStoredScanReportCtx({
+      actor: { _id: "users:intruder", role: "user" },
+      docs: {
+        "skills:hidden": {
+          _id: "skills:hidden",
+          slug: "hidden-skill",
+          displayName: "Hidden Skill",
+          ownerUserId: "users:owner",
+        },
+        "skillVersions:hidden": {
+          _id: "skillVersions:hidden",
+          skillId: "skills:hidden",
+          version: "1.2.3",
+          softDeletedAt: 1,
+          files: [],
+          llmAnalysis: { status: "malicious", checkedAt: 1 },
+          createdAt: 1,
+        },
+      },
+    });
+
+    await expect(
+      getStoredScanReportForUserInternalHandler(ctx, {
+        actorUserId: "users:intruder",
+        kind: "skill",
+        name: "hidden-skill",
+        version: "1.2.3",
+      }),
+    ).rejects.toThrow("Forbidden");
+  });
+
+  it("returns stored scan reports for hidden plugin releases to platform moderators", async () => {
+    const ctx = makeStoredScanReportCtx({
+      actor: { _id: "users:moderator", role: "moderator" },
+      docs: {
+        "packages:plugin": {
+          _id: "packages:plugin",
+          name: "@scope/demo",
+          normalizedName: "@scope/demo",
+          displayName: "Demo Plugin",
+          ownerUserId: "users:owner",
+        },
+        "packageReleases:hidden": {
+          _id: "packageReleases:hidden",
+          packageId: "packages:plugin",
+          version: "2.0.0",
+          softDeletedAt: 1_700_000_100_000,
+          files: [],
+          integritySha256: "def456",
+          llmAnalysis: {
+            status: "malicious",
+            summary: "Runs unexpected shell commands.",
+            checkedAt: 1_700_000_000_000,
+          },
+          createdAt: 1_700_000_000_000,
+        },
+      },
+    });
+
+    const report = await getStoredScanReportForUserInternalHandler(ctx, {
+      actorUserId: "users:moderator",
+      kind: "plugin",
+      name: "@scope/demo",
+      version: "2.0.0",
+    });
+
+    expect(report).toMatchObject({
+      ok: true,
+      status: "succeeded",
+      artifact: {
+        kind: "plugin",
+        name: "@scope/demo",
+        displayName: "Demo Plugin",
+        version: "2.0.0",
+      },
+      report: {
+        clawscan: {
+          status: "malicious",
+          summary: "Runs unexpected shell commands.",
+        },
+      },
+    });
+  });
+
+  it("returns stored scan reports for hidden org plugin releases to publisher-role uploaders", async () => {
+    const ctx = makeStoredScanReportCtx({
+      actor: { _id: "users:member", role: "user" },
+      membership: {
+        _id: "publisherMembers:member",
+        publisherId: "publishers:org",
+        userId: "users:member",
+        role: "publisher",
+      },
+      docs: {
+        "publishers:org": {
+          _id: "publishers:org",
+          kind: "org",
+          handle: "org",
+        },
+        "packages:plugin": {
+          _id: "packages:plugin",
+          name: "@org/demo",
+          normalizedName: "@org/demo",
+          displayName: "Org Plugin",
+          ownerUserId: "users:owner",
+          ownerPublisherId: "publishers:org",
+        },
+        "packageReleases:hidden": {
+          _id: "packageReleases:hidden",
+          packageId: "packages:plugin",
+          version: "2.0.0",
+          softDeletedAt: 1_700_000_100_000,
+          files: [],
+          integritySha256: "def456",
+          llmAnalysis: {
+            status: "malicious",
+            summary: "Runs unexpected shell commands.",
+            checkedAt: 1_700_000_000_000,
+          },
+          createdAt: 1_700_000_000_000,
+        },
+      },
+    });
+
+    const report = await getStoredScanReportForUserInternalHandler(ctx, {
+      actorUserId: "users:member",
+      kind: "plugin",
+      name: "@org/demo",
+      version: "2.0.0",
+    });
+
+    expect(report).toMatchObject({
+      ok: true,
+      artifact: {
+        kind: "plugin",
+        name: "@org/demo",
+        displayName: "Org Plugin",
+        version: "2.0.0",
+      },
+    });
   });
 
   it("lets skill owners request skill rescans through the API helper", async () => {

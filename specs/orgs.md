@@ -206,6 +206,10 @@ Handle reservation must move from user-centric to publisher-centric.
 Current reservation logic is anchored to rightful owner user id. Replace with
 publisher-aware reservations so org handles are first-class.
 
+Platform route/system handles such as `admin`, `plugins`, and `skills` are not
+owned by users or orgs. They must be blocked by route reservation policy instead
+of represented as empty publisher rows.
+
 ## Routing
 
 ### Web routes

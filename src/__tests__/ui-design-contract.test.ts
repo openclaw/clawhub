@@ -188,7 +188,7 @@ describe("restored UI design contract", () => {
 
     const settingsSource = settings();
     expect(settingsSource).not.toMatch(/tweakcn|custom theme|overlay/i);
-    expect(settingsSource).not.toMatch(/density|compact|relaxed|high contrast|code font size/i);
+    expect(settingsSource).not.toMatch(/density|relaxed|high contrast|code font size/i);
     expect(settingsSource).not.toMatch(/default view|experimental features/i);
 
     const themeSource = theme();

@@ -198,6 +198,7 @@ describe("skills anti-spam guards", () => {
                   _id: "skills:1",
                   slug: "taken-skill",
                   ownerUserId: "users:owner",
+                  latestVersionId: "skillVersions:1",
                   softDeletedAt: undefined,
                   moderationStatus: "active",
                   moderationFlags: undefined,
@@ -278,6 +279,7 @@ describe("skills anti-spam guards", () => {
                   _id: "skills:1",
                   slug: "taken-skill",
                   ownerUserId: "users:owner",
+                  latestVersionId: "skillVersions:1",
                   softDeletedAt: undefined,
                   moderationStatus: "active",
                   moderationFlags: undefined,
@@ -1491,11 +1493,44 @@ describe("skills anti-spam guards", () => {
     ).toBe(false);
   });
 
-  it("schedules owner autoban when the latest version ClawScan verdict becomes malicious", async () => {
-    const version = {
+  it("quarantines a malicious latest skill version and restores the previous clean latest", async () => {
+    const previousVersion = {
       _id: "skillVersions:1",
       skillId: "skills:1",
       version: "1.0.0",
+      createdAt: Date.now() - 10_000,
+      changelog: "Initial release",
+      changelogSource: "user",
+      parsed: {
+        frontmatter: { description: "Clean version" },
+        metadata: {},
+        clawdis: { tools: [] },
+      },
+      capabilityTags: ["automation"],
+      staticScan: {
+        status: "clean",
+        reasonCodes: [],
+        findings: [],
+        summary: "No issues",
+        engineVersion: "v2.2.0",
+        checkedAt: Date.now(),
+      },
+      llmAnalysis: { status: "clean", checkedAt: Date.now() },
+    };
+    const version = {
+      _id: "skillVersions:2",
+      skillId: "skills:1",
+      version: "2.0.0",
+      createdBy: "users:member",
+      createdAt: Date.now(),
+      changelog: "Bad release",
+      changelogSource: "user",
+      parsed: {
+        frontmatter: { name: "Bad Skill", description: "Bad version" },
+        metadata: {},
+        clawdis: { tools: [] },
+      },
+      capabilityTags: ["network"],
       staticScan: {
         status: "clean",
         reasonCodes: [],
@@ -1509,13 +1544,37 @@ describe("skills anti-spam guards", () => {
     const skill = {
       _id: "skills:1",
       slug: "spam-skill",
+      displayName: "Bad Skill",
+      summary: "Bad version",
+      icon: "lucide:Sparkles",
       ownerUserId: "users:owner",
-      latestVersionId: "skillVersions:1",
+      ownerPublisherId: undefined,
+      latestVersionId: "skillVersions:2",
+      latestVersionSummary: {
+        version: "2.0.0",
+        createdAt: version.createdAt,
+        changelog: "Bad release",
+        changelogSource: "user",
+        clawdis: { tools: [] },
+        apiKeyRequired: undefined,
+      },
+      tags: {
+        latest: "skillVersions:2",
+        beta: "skillVersions:2",
+        stable: "skillVersions:1",
+      },
+      stats: { downloads: 0, installsCurrent: 0, installsAllTime: 0, stars: 0, versions: 2 },
+      badges: {},
+      softDeletedAt: undefined,
+      moderationStatus: "active",
       moderationFlags: undefined,
       moderationReason: undefined,
+      createdAt: Date.now() - 20_000,
+      updatedAt: Date.now(),
     };
     const owner = {
       _id: "users:owner",
+      handle: "owner",
       role: "user",
       _creationTime: Date.now() - 60 * 24 * 60 * 60 * 1000,
       createdAt: Date.now() - 60 * 24 * 60 * 60 * 1000,
@@ -1523,6 +1582,348 @@ describe("skills anti-spam guards", () => {
       deactivatedAt: undefined,
     };
     const patch = vi.fn();
+    const insert = vi.fn();
+    const runAfter = vi.fn();
+    const db = {
+      get: vi.fn(async (id: string) => {
+        if (id === "skillVersions:1") return previousVersion;
+        if (id === "skillVersions:2") return version;
+        if (id === "skills:1") return skill;
+        if (id === "users:owner") return owner;
+        return null;
+      }),
+      query: vi.fn((table: string) => {
+        const globalStatsQuery = buildGlobalStatsQuery(table);
+        if (globalStatsQuery) return globalStatsQuery;
+        if (table === "skills") {
+          return {
+            withIndex: (name: string) => {
+              if (name === "by_owner") {
+                return {
+                  order: () => ({
+                    take: async () => [],
+                  }),
+                };
+              }
+              throw new Error(`unexpected skills index ${name}`);
+            },
+          };
+        }
+        if (table === "skillVersions") {
+          return {
+            withIndex: (name: string) => {
+              if (name !== "by_skill") throw new Error(`unexpected skillVersions index ${name}`);
+              return {
+                collect: async () => [version, previousVersion],
+              };
+            },
+          };
+        }
+        if (table === "skillEmbeddings") {
+          return {
+            withIndex: (name: string) => {
+              if (name !== "by_skill") throw new Error(`unexpected skillEmbeddings index ${name}`);
+              return {
+                collect: async () => [
+                  {
+                    _id: "skillEmbeddings:old",
+                    skillId: "skills:1",
+                    versionId: "skillVersions:1",
+                    isApproved: true,
+                    isLatest: false,
+                  },
+                  {
+                    _id: "skillEmbeddings:new",
+                    skillId: "skills:1",
+                    versionId: "skillVersions:2",
+                    isApproved: true,
+                    isLatest: true,
+                  },
+                ],
+              };
+            },
+          };
+        }
+        const digestQuery = buildDigestQuery(table);
+        if (digestQuery) return digestQuery;
+        throw new Error(`unexpected table ${table}`);
+      }),
+      patch,
+      insert,
+      normalizeId: vi.fn(),
+    };
+
+    await updateVersionLlmAnalysisHandler(
+      { db, scheduler: { runAfter } } as never,
+      {
+        versionId: "skillVersions:2",
+        llmAnalysis: {
+          status: "malicious",
+          verdict: "malicious",
+          confidence: "high",
+          summary: "ClawScan found malicious behavior.",
+          guidance: "Do not install.",
+          checkedAt: Date.now(),
+        },
+      } as never,
+    );
+
+    expect(patch).toHaveBeenCalledWith(
+      "skillVersions:2",
+      expect.objectContaining({
+        llmAnalysis: expect.objectContaining({ verdict: "malicious" }),
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "skillVersions:2",
+      expect.objectContaining({
+        softDeletedAt: expect.any(Number),
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "skills:1",
+      expect.objectContaining({
+        displayName: "spam-skill",
+        summary: "Clean version",
+        icon: "lucide:Sparkles",
+        latestVersionId: "skillVersions:1",
+        tags: {
+          latest: "skillVersions:1",
+          stable: "skillVersions:1",
+        },
+        latestVersionSummary: expect.objectContaining({
+          version: "1.0.0",
+          changelog: "Initial release",
+        }),
+        capabilityTags: ["automation"],
+        moderationStatus: "active",
+        moderationReason: "scanner.llm.clean",
+        moderationVerdict: "clean",
+        moderationFlags: undefined,
+      }),
+    );
+    expect(insert).toHaveBeenCalledWith(
+      "skillSearchDigest",
+      expect.objectContaining({
+        skillId: "skills:1",
+        latestVersionId: "skillVersions:1",
+        latestVersionSkillId: "skills:1",
+      }),
+    );
+    expect(runAfter).toHaveBeenCalledWith(
+      0,
+      internal.users.recordMaliciousArtifactFindingInternal,
+      expect.objectContaining({
+        ownerUserId: "users:member",
+        artifactKind: "skill",
+        artifactName: "spam-skill",
+        version: "2.0.0",
+        sha256hash: "h".repeat(64),
+        trigger: "malicious.llm_malicious",
+      }),
+    );
+  });
+
+  it("quarantines a malicious non-latest skill version without changing the clean latest", async () => {
+    const latestVersion = {
+      _id: "skillVersions:latest",
+      skillId: "skills:1",
+      version: "2.0.0",
+      createdAt: Date.now(),
+      changelog: "Latest release",
+      changelogSource: "user",
+      parsed: {
+        frontmatter: { name: "Clean Latest", description: "Clean latest version" },
+        metadata: {},
+        clawdis: { tools: [] },
+      },
+      capabilityTags: ["automation"],
+      llmAnalysis: { status: "clean", checkedAt: Date.now() },
+    };
+    const backportVersion = {
+      _id: "skillVersions:backport",
+      skillId: "skills:1",
+      version: "1.5.0",
+      createdBy: "users:member",
+      createdAt: Date.now() - 1_000,
+      changelog: "Backport release",
+      changelogSource: "user",
+      parsed: {
+        frontmatter: { name: "Backport", description: "Backport version" },
+        metadata: {},
+        clawdis: { tools: [] },
+      },
+      capabilityTags: ["network"],
+      sha256hash: "b".repeat(64),
+    };
+    const skill = {
+      _id: "skills:1",
+      slug: "spam-skill",
+      displayName: "Clean Latest",
+      summary: "Clean latest version",
+      ownerUserId: "users:owner",
+      ownerPublisherId: undefined,
+      latestVersionId: "skillVersions:latest",
+      latestVersionSummary: {
+        version: "2.0.0",
+        createdAt: latestVersion.createdAt,
+        changelog: "Latest release",
+        changelogSource: "user",
+        clawdis: { tools: [] },
+        apiKeyRequired: undefined,
+      },
+      tags: {
+        latest: "skillVersions:latest",
+        beta: "skillVersions:backport",
+      },
+      stats: { downloads: 0, installsCurrent: 0, installsAllTime: 0, stars: 0, versions: 2 },
+      badges: {},
+      softDeletedAt: undefined,
+      moderationStatus: "active",
+      moderationFlags: undefined,
+      moderationReason: undefined,
+      createdAt: Date.now() - 20_000,
+      updatedAt: Date.now(),
+    };
+    const owner = {
+      _id: "users:owner",
+      handle: "owner",
+      role: "user",
+      _creationTime: Date.now() - 60 * 24 * 60 * 60 * 1000,
+      createdAt: Date.now() - 60 * 24 * 60 * 60 * 1000,
+      deletedAt: undefined,
+      deactivatedAt: undefined,
+    };
+    const patch = vi.fn();
+    const insert = vi.fn();
+    const runAfter = vi.fn();
+    const db = {
+      get: vi.fn(async (id: string) => {
+        if (id === "skillVersions:latest") return latestVersion;
+        if (id === "skillVersions:backport") return backportVersion;
+        if (id === "skills:1") return skill;
+        if (id === "users:owner") return owner;
+        return null;
+      }),
+      query: vi.fn((table: string) => {
+        const digestQuery = buildDigestQuery(table);
+        if (digestQuery) return digestQuery;
+        throw new Error(`unexpected table ${table}`);
+      }),
+      patch,
+      insert,
+      normalizeId: vi.fn(),
+    };
+
+    await updateVersionLlmAnalysisHandler(
+      { db, scheduler: { runAfter } } as never,
+      {
+        versionId: "skillVersions:backport",
+        llmAnalysis: {
+          status: "malicious",
+          verdict: "malicious",
+          confidence: "high",
+          summary: "ClawScan found malicious behavior.",
+          guidance: "Do not install.",
+          checkedAt: Date.now(),
+        },
+      } as never,
+    );
+
+    expect(patch).toHaveBeenCalledWith(
+      "skillVersions:backport",
+      expect.objectContaining({
+        llmAnalysis: expect.objectContaining({ verdict: "malicious" }),
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "skillVersions:backport",
+      expect.objectContaining({ softDeletedAt: expect.any(Number) }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "skills:1",
+      expect.objectContaining({
+        tags: { latest: "skillVersions:latest" },
+      }),
+    );
+    expect(patch).not.toHaveBeenCalledWith(
+      "skills:1",
+      expect.objectContaining({ latestVersionId: "skillVersions:backport" }),
+    );
+    expect(runAfter).toHaveBeenCalledWith(
+      0,
+      internal.users.recordMaliciousArtifactFindingInternal,
+      expect.objectContaining({
+        ownerUserId: "users:member",
+        artifactKind: "skill",
+        artifactName: "spam-skill",
+        version: "1.5.0",
+        sha256hash: "b".repeat(64),
+      }),
+    );
+  });
+
+  it("quarantines a malicious first skill version without publishing a latest version", async () => {
+    const version = {
+      _id: "skillVersions:1",
+      skillId: "skills:1",
+      version: "1.0.0",
+      createdAt: Date.now(),
+      changelog: "Initial release",
+      changelogSource: "user",
+      parsed: {
+        frontmatter: { description: "Bad first version" },
+        metadata: {},
+        clawdis: { tools: [] },
+      },
+      capabilityTags: ["network"],
+      staticScan: {
+        status: "clean",
+        reasonCodes: [],
+        findings: [],
+        summary: "No issues",
+        engineVersion: "v2.2.0",
+        checkedAt: Date.now(),
+      },
+      sha256hash: "h".repeat(64),
+    };
+    const skill = {
+      _id: "skills:1",
+      slug: "new-spam-skill",
+      displayName: "New Spam Skill",
+      summary: "Bad first version",
+      ownerUserId: "users:owner",
+      ownerPublisherId: undefined,
+      latestVersionId: "skillVersions:1",
+      latestVersionSummary: {
+        version: "1.0.0",
+        createdAt: version.createdAt,
+        changelog: "Initial release",
+        changelogSource: "user",
+        clawdis: { tools: [] },
+        apiKeyRequired: undefined,
+      },
+      tags: { latest: "skillVersions:1" },
+      stats: { downloads: 0, installsCurrent: 0, installsAllTime: 0, stars: 0, versions: 1 },
+      badges: {},
+      softDeletedAt: undefined,
+      moderationStatus: "active",
+      moderationFlags: undefined,
+      moderationReason: undefined,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    const owner = {
+      _id: "users:owner",
+      handle: "owner",
+      role: "user",
+      _creationTime: Date.now() - 60 * 24 * 60 * 60 * 1000,
+      createdAt: Date.now() - 60 * 24 * 60 * 60 * 1000,
+      deletedAt: undefined,
+      deactivatedAt: undefined,
+    };
+    const patch = vi.fn();
+    const insert = vi.fn();
     const runAfter = vi.fn();
     const db = {
       get: vi.fn(async (id: string) => {
@@ -1548,10 +1949,40 @@ describe("skills anti-spam guards", () => {
             },
           };
         }
+        if (table === "skillVersions") {
+          return {
+            withIndex: (name: string) => {
+              if (name !== "by_skill") throw new Error(`unexpected skillVersions index ${name}`);
+              return {
+                collect: async () => [version],
+              };
+            },
+          };
+        }
+        if (table === "skillEmbeddings") {
+          return {
+            withIndex: (name: string) => {
+              if (name !== "by_skill") throw new Error(`unexpected skillEmbeddings index ${name}`);
+              return {
+                collect: async () => [
+                  {
+                    _id: "skillEmbeddings:1",
+                    skillId: "skills:1",
+                    versionId: "skillVersions:1",
+                    isApproved: true,
+                    isLatest: true,
+                  },
+                ],
+              };
+            },
+          };
+        }
+        const digestQuery = buildDigestQuery(table);
+        if (digestQuery) return digestQuery;
         throw new Error(`unexpected table ${table}`);
       }),
       patch,
-      insert: vi.fn(),
+      insert,
       normalizeId: vi.fn(),
     };
 
@@ -1571,31 +2002,62 @@ describe("skills anti-spam guards", () => {
     );
 
     expect(patch).toHaveBeenCalledWith(
+      "skillVersions:1",
+      expect.objectContaining({
+        softDeletedAt: expect.any(Number),
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith(
       "skills:1",
       expect.objectContaining({
+        latestVersionId: undefined,
+        latestVersionSummary: undefined,
+        tags: {},
+        capabilityTags: undefined,
         moderationStatus: "hidden",
         moderationReason: "scanner.llm.malicious",
         moderationVerdict: "malicious",
         moderationFlags: ["blocked.malware"],
       }),
     );
+    expect(patch).toHaveBeenCalledWith(
+      "globalStats:1",
+      expect.objectContaining({
+        activeSkillsCount: 99,
+      }),
+    );
+    expect(insert).toHaveBeenCalledWith(
+      "skillSearchDigest",
+      expect.objectContaining({
+        skillId: "skills:1",
+        latestVersionId: undefined,
+        latestVersionSkillId: undefined,
+      }),
+    );
     expect(runAfter).toHaveBeenCalledWith(
       0,
-      internal.users.autobanMalwareAuthorInternal,
+      internal.users.recordMaliciousArtifactFindingInternal,
       expect.objectContaining({
         ownerUserId: "users:owner",
-        slug: "spam-skill",
-        sha256hash: "h".repeat(64),
-        trigger: "malicious.llm_malicious",
+        artifactKind: "skill",
+        artifactName: "new-spam-skill",
+        version: "1.0.0",
       }),
     );
   });
 
-  it("persists ClawScan malware lock when malicious lands on an existing moderation hold", async () => {
+  it("quarantines ClawScan malware while preserving an existing moderation hold", async () => {
     const version = {
       _id: "skillVersions:1",
       skillId: "skills:1",
       version: "1.0.0",
+      createdAt: Date.now(),
+      changelog: "Initial release",
+      changelogSource: "user",
+      parsed: {
+        frontmatter: { description: "Held for review" },
+        metadata: {},
+      },
       staticScan: {
         status: "clean",
         reasonCodes: [],
@@ -1609,14 +2071,36 @@ describe("skills anti-spam guards", () => {
     const skill = {
       _id: "skills:1",
       slug: "quality-held-spam",
+      displayName: "Quality Held Spam",
+      summary: "Held for review",
       ownerUserId: "users:owner",
+      ownerPublisherId: undefined,
       latestVersionId: "skillVersions:1",
+      latestVersionSummary: {
+        version: "1.0.0",
+        createdAt: version.createdAt,
+        changelog: "Initial release",
+        changelogSource: "user",
+        clawdis: undefined,
+        apiKeyRequired: undefined,
+      },
+      tags: { latest: "skillVersions:1" },
+      badges: {},
+      softDeletedAt: undefined,
+      statsDownloads: 0,
+      statsStars: 0,
+      statsInstallsCurrent: 0,
+      statsInstallsAllTime: 0,
+      stats: { downloads: 0, installsCurrent: 0, installsAllTime: 0, stars: 0, versions: 1 },
       moderationStatus: "hidden",
       moderationReason: "user.moderation",
       moderationFlags: undefined,
+      createdAt: Date.now() - 20_000,
+      updatedAt: Date.now(),
     };
     const owner = {
       _id: "users:owner",
+      handle: "owner",
       role: "user",
       _creationTime: Date.now() - 60 * 24 * 60 * 60 * 1000,
       createdAt: Date.now() - 60 * 24 * 60 * 60 * 1000,
@@ -1635,6 +2119,26 @@ describe("skills anti-spam guards", () => {
       query: vi.fn((table: string) => {
         const globalStatsQuery = buildGlobalStatsQuery(table);
         if (globalStatsQuery) return globalStatsQuery;
+        const digestQuery = buildDigestQuery(table);
+        if (digestQuery) return digestQuery;
+        if (table === "skillVersions") {
+          return {
+            withIndex: (name: string) => {
+              if (name !== "by_skill") throw new Error(`unexpected skillVersions index ${name}`);
+              return {
+                collect: async () => [version],
+              };
+            },
+          };
+        }
+        if (table === "skillEmbeddings") {
+          return {
+            withIndex: (name: string) => {
+              if (name !== "by_skill") throw new Error(`unexpected skillEmbeddings index ${name}`);
+              return { collect: async () => [] };
+            },
+          };
+        }
         throw new Error(`unexpected table ${table}`);
       }),
       patch,
@@ -1659,21 +2163,34 @@ describe("skills anti-spam guards", () => {
 
     expect(patch).toHaveBeenCalledWith("skillVersions:1", expect.any(Object));
     expect(patch).toHaveBeenCalledWith(
-      "skills:1",
+      "skillVersions:1",
       expect.objectContaining({
-        moderationStatus: "hidden",
-        moderationReason: "scanner.llm.malicious",
-        moderationVerdict: "malicious",
-        moderationFlags: ["blocked.malware"],
-        moderationReasonCodes: ["malicious.llm_malicious"],
+        softDeletedAt: expect.any(Number),
       }),
     );
+    expect(patch).toHaveBeenCalledWith(
+      "skills:1",
+      expect.objectContaining({
+        latestVersionId: undefined,
+        latestVersionSummary: undefined,
+        tags: {},
+      }),
+    );
+    expect(
+      patch.mock.calls.some(
+        ([id, value]) =>
+          id === "skills:1" &&
+          (value as Record<string, unknown>).moderationReason === "scanner.llm.malicious",
+      ),
+    ).toBe(false);
     expect(runAfter).toHaveBeenCalledWith(
       0,
-      internal.users.autobanMalwareAuthorInternal,
+      internal.users.recordMaliciousArtifactFindingInternal,
       expect.objectContaining({
         ownerUserId: "users:owner",
-        slug: "quality-held-spam",
+        artifactKind: "skill",
+        artifactName: "quality-held-spam",
+        version: "1.0.0",
         sha256hash: "h".repeat(64),
         trigger: "malicious.llm_malicious",
       }),
