@@ -17,7 +17,7 @@ vi.mock("./packageApi", () => ({
   fetchPluginCatalog: (...args: unknown[]) => fetchPluginCatalogMock(...args),
 }));
 
-function makeSkill(slug: string) {
+function makeSkill(slug: string, overrides: Record<string, unknown> = {}) {
   return {
     skill: {
       _id: `skills:${slug}`,
@@ -30,6 +30,7 @@ function makeSkill(slug: string) {
     },
     ownerHandle: "owner",
     score: 1,
+    ...overrides,
   };
 }
 
@@ -84,6 +85,38 @@ describe("useUnifiedSearch", () => {
     ]);
     expect(result.current.skillHasMore).toBe(true);
     expect(result.current.pluginHasMore).toBe(true);
+  });
+
+  it("keeps owner metadata from skill search results", async () => {
+    searchSkillsMock.mockResolvedValue([
+      makeSkill("official", {
+        owner: {
+          _id: "publishers:openclaw",
+          _creationTime: 1,
+          kind: "org",
+          handle: "openclaw",
+          displayName: "OpenClaw",
+          official: true,
+        },
+      }),
+    ]);
+    fetchPluginCatalogMock.mockResolvedValue({ items: [], nextCursor: null });
+
+    const { result } = renderHook(() =>
+      useUnifiedSearch("official", "skills", {
+        debounceMs: 0,
+        limits: { skills: 2 },
+      }),
+    );
+
+    await waitFor(() => {
+      expect(result.current.skillResults).toHaveLength(1);
+    });
+
+    expect(result.current.skillResults[0]?.owner).toMatchObject({
+      handle: "openclaw",
+      official: true,
+    });
   });
 
   it("caps requested limits at the backend search maximum", async () => {

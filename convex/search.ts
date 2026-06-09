@@ -5,6 +5,12 @@ import type { QueryCtx } from "./_generated/server";
 import { action, internalQuery } from "./functions";
 import { isSkillHighlighted } from "./lib/badges";
 import { generateEmbedding } from "./lib/embeddings";
+import {
+  createOfficialPublisherLookupCache,
+  isActiveOfficialPublisherId,
+  isOfficialPublisher,
+  type OfficialPublisherLookupCache,
+} from "./lib/officialPublishers";
 import type { HydratableSkill, PublicPublisher } from "./lib/public";
 import { toPublicPublisher, toPublicSkill, toPublicSoul } from "./lib/public";
 import { getOwnerPublisher } from "./lib/publishers";
@@ -26,7 +32,18 @@ import { isSearchableSkillSlugShape, normalizeSkillSlug } from "./lib/skillSlugV
 
 type OwnerInfo = { ownerHandle: string | null; owner: PublicPublisher | null };
 
-function makeOwnerInfoGetter(ctx: Pick<QueryCtx, "db">) {
+async function markDigestOwnerInfoOfficial(
+  ctx: Pick<QueryCtx, "db">,
+  ownerInfo: OwnerInfo,
+  ownerPublisherId: Id<"publishers"> | null | undefined,
+  cache: OfficialPublisherLookupCache,
+): Promise<OwnerInfo> {
+  if (!ownerInfo.owner || !ownerPublisherId) return ownerInfo;
+  const official = await isActiveOfficialPublisherId(ctx, ownerPublisherId, cache);
+  return official ? { ...ownerInfo, owner: { ...ownerInfo.owner, official: true } } : ownerInfo;
+}
+
+function makeOwnerInfoGetter(ctx: Pick<QueryCtx, "db">, cache: OfficialPublisherLookupCache) {
   const ownerCache = new Map<string, Promise<OwnerInfo>>();
   return (ownerUserId: Id<"users">, ownerPublisherId?: Id<"publishers"> | null) => {
     const cacheKey = String(ownerPublisherId ?? ownerUserId);
@@ -35,8 +52,9 @@ function makeOwnerInfoGetter(ctx: Pick<QueryCtx, "db">) {
     const ownerPromise = getOwnerPublisher(ctx, {
       ownerPublisherId,
       ownerUserId,
-    }).then((ownerDoc) => {
-      const owner = toPublicPublisher(ownerDoc);
+    }).then(async (ownerDoc) => {
+      const official = await isOfficialPublisher(ctx, ownerDoc, cache);
+      const owner = toPublicPublisher(ownerDoc, { official });
       return {
         ownerHandle: owner?.handle ?? null,
         owner,
@@ -45,6 +63,21 @@ function makeOwnerInfoGetter(ctx: Pick<QueryCtx, "db">) {
     ownerCache.set(cacheKey, ownerPromise);
     return ownerPromise;
   };
+}
+
+type OwnerInfoGetter = ReturnType<typeof makeOwnerInfoGetter>;
+
+async function resolveDigestOwnerInfo(
+  ctx: Pick<QueryCtx, "db">,
+  digest: Doc<"skillSearchDigest">,
+  getOwnerInfo: OwnerInfoGetter,
+  cache: OfficialPublisherLookupCache,
+): Promise<OwnerInfo> {
+  const preResolved = digestToOwnerInfo(digest);
+  if (preResolved?.owner) {
+    return await markDigestOwnerInfoOfficial(ctx, preResolved, digest.ownerPublisherId, cache);
+  }
+  return await getOwnerInfo(digest.ownerUserId, digest.ownerPublisherId);
 }
 
 type SkillSearchEntry = {
@@ -412,7 +445,8 @@ export const getExactSkillSlugMatch = internalQuery({
     if (!skill || skill.softDeletedAt) return null;
     if (args.nonSuspiciousOnly && isSkillSuspicious(skill)) return null;
 
-    const getOwnerInfo = makeOwnerInfoGetter(ctx);
+    const officialPublisherCache = createOfficialPublisherLookupCache();
+    const getOwnerInfo = makeOwnerInfoGetter(ctx, officialPublisherCache);
     const resolved = await getOwnerInfo(skill.ownerUserId, skill.ownerPublisherId);
     const publicSkill = toPublicSkill(skill);
     if (!publicSkill || !resolved.owner) return null;
@@ -440,6 +474,7 @@ export const directPrefixSkillMatches = internalQuery({
     if (!normalizedQuery) return [];
     const firstToken = getFirstSearchToken(args.query);
     const queryTokens = tokenize(args.query);
+    const officialPublisherCache = createOfficialPublisherLookupCache();
 
     const upperBound = prefixUpperBound(normalizedQuery);
     const firstTokenUpperBound = firstToken ? prefixUpperBound(firstToken) : null;
@@ -594,17 +629,19 @@ export const directPrefixSkillMatches = internalQuery({
       .filter(passesAllQueryTokens);
     if (digests.length === 0) return [];
 
-    const getOwnerInfo = makeOwnerInfoGetter(ctx);
+    const getOwnerInfo = makeOwnerInfoGetter(ctx, officialPublisherCache);
     const entries = await Promise.all(
       digests.map(async (digest): Promise<SkillSearchEntry | null> => {
         const skill = digestToHydratableSkill(digest);
         if (args.nonSuspiciousOnly && isSkillSuspicious(skill)) return null;
         if (args.highlightedOnly && !isSkillHighlighted(skill)) return null;
         if (!matchesCapabilityTag(skill, args.capabilityTag)) return null;
-        const preResolved = digestToOwnerInfo(digest);
-        const resolved = preResolved?.owner
-          ? preResolved
-          : await getOwnerInfo(skill.ownerUserId, skill.ownerPublisherId);
+        const resolved = await resolveDigestOwnerInfo(
+          ctx,
+          digest,
+          getOwnerInfo,
+          officialPublisherCache,
+        );
         const publicSkill = toPublicSkill(skill);
         if (!publicSkill || !resolved.owner) return null;
         return {
@@ -628,7 +665,8 @@ export const hydrateResults = internalQuery({
   },
   handler: async (ctx, args): Promise<SkillSearchEntry[]> => {
     // Only used as fallback when digest doesn't have owner data.
-    const getOwnerInfo = makeOwnerInfoGetter(ctx);
+    const officialPublisherCache = createOfficialPublisherLookupCache();
+    const getOwnerInfo = makeOwnerInfoGetter(ctx, officialPublisherCache);
 
     const entries: Array<SkillSearchEntry | null> = await Promise.all(
       args.embeddingIds.map(async (embeddingId) => {
@@ -654,9 +692,8 @@ export const hydrateResults = internalQuery({
         if (args.nonSuspiciousOnly && isSkillSuspicious(skill)) return null;
         // Use pre-resolved owner from digest to avoid reading the users table.
         // Fall back to live lookup when digest owner is null (deactivated/deleted user).
-        const preResolved = digest ? digestToOwnerInfo(digest) : null;
-        const resolved = preResolved?.owner
-          ? preResolved
+        const resolved = digest
+          ? await resolveDigestOwnerInfo(ctx, digest, getOwnerInfo, officialPublisherCache)
           : await getOwnerInfo(skill.ownerUserId, skill.ownerPublisherId);
         const publicSkill = toPublicSkill(skill);
         if (!publicSkill || !resolved.owner) return null;
@@ -693,10 +730,15 @@ export const lexicalFallbackSkills = internalQuery({
     const scanLimit = limit;
     const seenSkillIds = new Set<Id<"skills">>();
     const candidates: HydratableSkill[] = [];
+    const officialPublisherCache = createOfficialPublisherLookupCache();
     // Keep digest rows around so we can resolve owner info without hitting users table.
     const preResolvedOwners = new Map<
       Id<"skills">,
-      { ownerHandle: string | null; owner: PublicPublisher | null }
+      {
+        ownerHandle: string | null;
+        owner: PublicPublisher | null;
+        ownerPublisherId?: Id<"publishers">;
+      }
     >();
 
     // Exact slug match via the skills table (only one row, cheap).
@@ -757,7 +799,12 @@ export const lexicalFallbackSkills = internalQuery({
         candidates.push(skill);
         // Pre-resolve owner from digest to avoid users table reads.
         const ownerInfo = digestToOwnerInfo(digest);
-        if (ownerInfo) preResolvedOwners.set(digest.skillId, ownerInfo);
+        if (ownerInfo) {
+          preResolvedOwners.set(digest.skillId, {
+            ...ownerInfo,
+            ownerPublisherId: digest.ownerPublisherId,
+          });
+        }
       }
     };
     addDigestCandidates(recentByUpdated);
@@ -769,13 +816,18 @@ export const lexicalFallbackSkills = internalQuery({
     if (matched.length === 0) return [];
 
     // Only used as fallback for the exact slug match (no digest available).
-    const getOwnerInfo = makeOwnerInfoGetter(ctx);
+    const getOwnerInfo = makeOwnerInfoGetter(ctx, officialPublisherCache);
 
     const entries = await Promise.all(
       matched.map(async (skill) => {
         const preResolved = preResolvedOwners.get(skill._id);
         const resolved = preResolved?.owner
-          ? preResolved
+          ? await markDigestOwnerInfoOfficial(
+              ctx,
+              preResolved,
+              preResolved.ownerPublisherId,
+              officialPublisherCache,
+            )
           : await getOwnerInfo(skill.ownerUserId, skill.ownerPublisherId);
         const publicSkill = toPublicSkill(skill);
         if (!publicSkill || !resolved.owner) return null;

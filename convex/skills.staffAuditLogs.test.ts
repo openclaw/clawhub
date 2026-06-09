@@ -31,6 +31,14 @@ const getBySlugForStaffHandler = (
   }>
 )._handler;
 
+function makeNoOfficialPublisherRowsTable() {
+  return {
+    withIndex: vi.fn(() => ({
+      unique: vi.fn(async () => null),
+    })),
+  };
+}
+
 function makeCtx() {
   const skill = {
     _id: "skills:1",
@@ -96,6 +104,8 @@ function makeCtx() {
         })),
       };
     }
+
+    if (table === "officialPublishers") return makeNoOfficialPublisherRowsTable();
 
     throw new Error(`Unexpected query table: ${table}`);
   });

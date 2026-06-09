@@ -202,6 +202,7 @@ export declare const ApiV1SearchResponseSchema: import("arktype/internal/variant
             handle?: string | null | undefined;
             displayName?: string | null | undefined;
             image?: string | null | undefined;
+            official?: boolean | undefined;
         } | null | undefined;
     }[];
 }, {}>;
@@ -243,6 +244,7 @@ export declare const ApiV1SkillResponseSchema: import("arktype/internal/variants
         handle: string | null;
         displayName?: string | null | undefined;
         image?: string | null | undefined;
+        official?: boolean | undefined;
     } | null;
     moderation?: {
         isSuspicious: boolean;

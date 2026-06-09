@@ -1600,6 +1600,7 @@ describe("httpApiV1 handlers", () => {
           handle: "openclaw",
           displayName: "OpenClaw",
           image: "https://example.com/avatar.png",
+          official: true,
           bio: "private-ish profile text",
         },
       },
@@ -1626,6 +1627,7 @@ describe("httpApiV1 handlers", () => {
             handle: "openclaw",
             displayName: "OpenClaw",
             image: "https://example.com/avatar.png",
+            official: true,
           },
         },
       ],
@@ -2245,7 +2247,7 @@ describe("httpApiV1 handlers", () => {
             changelog: "c",
             files: [],
           },
-          owner: { handle: "p", displayName: "Peter", image: null },
+          owner: { handle: "p", displayName: "Peter", image: null, official: true },
           moderationInfo: {
             isSuspicious: true,
             isMalwareBlocked: false,
@@ -2272,6 +2274,7 @@ describe("httpApiV1 handlers", () => {
     const json = await response.json();
     expect(json.skill.slug).toBe("demo");
     expect(json.latestVersion.version).toBe("1.0.0");
+    expect(json.owner).toMatchObject({ handle: "p", official: true });
     expect(json.moderation).toEqual({
       isSuspicious: true,
       isMalwareBlocked: false,
@@ -7924,7 +7927,7 @@ describe("httpApiV1 handlers", () => {
             changelog: "init",
             files: [],
           },
-          owner: { handle: "steipete", displayName: "Peter" },
+          owner: { handle: "steipete", displayName: "Peter", official: true },
         };
       }
       if ("versionIds" in args) {
@@ -7949,6 +7952,7 @@ describe("httpApiV1 handlers", () => {
       },
       owner: {
         handle: "steipete",
+        official: true,
       },
     });
   });
@@ -7989,7 +7993,7 @@ describe("httpApiV1 handlers", () => {
             updatedAt: 2,
           },
           latestRelease: null,
-          owner: { _id: "users:owner", handle: "owner", displayName: "Owner" },
+          owner: { _id: "publishers:owner", handle: "owner", displayName: "Owner", official: true },
         };
       }
       return null;
@@ -8010,6 +8014,7 @@ describe("httpApiV1 handlers", () => {
       },
       owner: {
         handle: "owner",
+        official: true,
       },
     });
   });

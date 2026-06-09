@@ -31,6 +31,29 @@ describe("SkillListItem", () => {
     expect(screen.queryByText("Official")).toBeNull();
     expect(container.querySelector(".official-badge")).toBeTruthy();
   });
+
+  it("renders owner-official skills with the compact official mark", () => {
+    const { container } = render(
+      <SkillListItem
+        skill={makeSkill()}
+        owner={{
+          _id: "publishers:openclaw" as Id<"publishers">,
+          _creationTime: 1,
+          kind: "org",
+          handle: "openclaw",
+          displayName: "OpenClaw",
+          image: undefined,
+          bio: undefined,
+          linkedUserId: undefined,
+          official: true,
+        }}
+      />,
+    );
+
+    expect(screen.getByLabelText("Official")).toBeTruthy();
+    expect(screen.queryByText("Official")).toBeNull();
+    expect(container.querySelector(".official-badge")).toBeTruthy();
+  });
 });
 
 function makeSkill(overrides: Partial<PublicSkill> = {}): PublicSkill {

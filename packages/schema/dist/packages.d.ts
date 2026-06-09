@@ -473,6 +473,7 @@ export declare const ApiV1PackageResponseSchema: import("arktype/internal/varian
         handle: string | null;
         displayName?: string | null | undefined;
         image?: string | null | undefined;
+        official?: boolean | undefined;
     } | null;
 }, {}>;
 export type ApiV1PackageResponse = (typeof ApiV1PackageResponseSchema)[inferred];

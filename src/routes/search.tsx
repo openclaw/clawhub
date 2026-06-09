@@ -296,7 +296,7 @@ function SearchResultSection({
 
 function SkillResultRow({ result }: { result: UnifiedSkillResult }) {
   const skill = result.skill as unknown as PublicSkill;
-  return <SkillListItem skill={skill} ownerHandle={result.ownerHandle} />;
+  return <SkillListItem skill={skill} ownerHandle={result.ownerHandle} owner={result.owner} />;
 }
 
 function PluginResultRow({ result }: { result: UnifiedPluginResult }) {

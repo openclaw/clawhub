@@ -49,7 +49,7 @@ import { sha256Hex } from "./lib/clawpack";
 import { buildPackageInspectorFindingsEmail } from "./lib/emails";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
-import { isOfficialPublisher } from "./lib/officialPublishers";
+import { isOfficialPublisher, toPublicPublisherWithOfficial } from "./lib/officialPublishers";
 import {
   assertPackageVersion,
   ensurePluginNameMatchesPackage,
@@ -2129,7 +2129,8 @@ export const getByName = query({
     const latestRelease = pkg.latestReleaseId ? await ctx.db.get(pkg.latestReleaseId) : null;
     const publicPackage = toPublicPackage(pkg, latestRelease);
     if (!publicPackage) return null;
-    const owner = toPublicPublisher(
+    const owner = await toPublicPublisherWithOfficial(
+      ctx,
       await getOwnerPublisher(ctx, {
         ownerPublisherId: pkg.ownerPublisherId,
         ownerUserId: pkg.ownerUserId,
@@ -2314,7 +2315,8 @@ export const getByNameForStaff = query({
       .withIndex("by_package_kind", (q) => q.eq("packageId", pkg._id).eq("kind", "highlighted"))
       .unique();
     const latestRelease = pkg.latestReleaseId ? await ctx.db.get(pkg.latestReleaseId) : null;
-    const owner = toPublicPublisher(
+    const owner = await toPublicPublisherWithOfficial(
+      ctx,
       await getOwnerPublisher(ctx, {
         ownerPublisherId: pkg.ownerPublisherId,
         ownerUserId: pkg.ownerUserId,
@@ -2349,7 +2351,8 @@ export const getByNameForViewerInternal = internalQuery({
     const latestRelease = pkg.latestReleaseId ? await ctx.db.get(pkg.latestReleaseId) : null;
     const publicPackage = toPublicPackage(pkg, latestRelease);
     if (!publicPackage) return null;
-    const owner = toPublicPublisher(
+    const owner = await toPublicPublisherWithOfficial(
+      ctx,
       await getOwnerPublisher(ctx, {
         ownerPublisherId: pkg.ownerPublisherId,
         ownerUserId: pkg.ownerUserId,

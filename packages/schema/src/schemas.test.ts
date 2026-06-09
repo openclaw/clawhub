@@ -3,11 +3,16 @@
 import { describe, expect, it } from "vitest";
 import { parseArk } from "./ark";
 import { DocsLinks, openClawDocsUrl } from "./docsLinks";
-import { getPackageScopeOwnerMismatch, inferPackageNameScope } from "./packages";
+import {
+  ApiV1PackageResponseSchema,
+  getPackageScopeOwnerMismatch,
+  inferPackageNameScope,
+} from "./packages";
 import {
   ApiSearchResponseSchema,
   ApiV1SkillInstallResolveResponseSchema,
   ApiV1SearchResponseSchema,
+  ApiV1SkillResponseSchema,
   ApiV1SkillVerifyResponseSchema,
   CliPublishRequestSchema,
   CliSkillDeleteRequestSchema,
@@ -250,6 +255,7 @@ describe("clawhub-schema", () => {
               handle: "openclaw",
               displayName: "OpenClaw",
               image: null,
+              official: true,
             },
           },
         ],
@@ -259,6 +265,64 @@ describe("clawhub-schema", () => {
 
     expect(parsed.results[0]?.ownerHandle).toBe("openclaw");
     expect(parsed.results[0]?.owner?.displayName).toBe("OpenClaw");
+    expect(parsed.results[0]?.owner?.official).toBe(true);
+  });
+
+  it("parses v1 package owner official metadata", () => {
+    const parsed = parseArk(
+      ApiV1PackageResponseSchema,
+      {
+        package: {
+          name: "@openclaw/whatsapp",
+          displayName: "WhatsApp",
+          family: "code-plugin",
+          channel: "official",
+          isOfficial: true,
+          summary: null,
+          ownerHandle: "openclaw",
+          createdAt: 1,
+          updatedAt: 2,
+          latestVersion: "1.0.0",
+          tags: {},
+        },
+        owner: {
+          handle: "openclaw",
+          displayName: "OpenClaw",
+          image: null,
+          official: true,
+        },
+      },
+      "Package detail",
+    );
+
+    expect(parsed.owner?.official).toBe(true);
+  });
+
+  it("parses v1 skill owner official metadata", () => {
+    const parsed = parseArk(
+      ApiV1SkillResponseSchema,
+      {
+        skill: {
+          slug: "demo",
+          displayName: "Demo",
+          summary: null,
+          tags: {},
+          stats: { downloads: 1 },
+          createdAt: 1,
+          updatedAt: 2,
+        },
+        latestVersion: null,
+        owner: {
+          handle: "openclaw",
+          displayName: "OpenClaw",
+          image: null,
+          official: true,
+        },
+      },
+      "Skill detail",
+    );
+
+    expect(parsed.owner?.official).toBe(true);
   });
 
   it("parses flattened skill verification envelopes", () => {

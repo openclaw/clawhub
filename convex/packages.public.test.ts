@@ -69,6 +69,7 @@ const getByNameHandler = (
     {
       package: { name: string; latestVersion: string | null };
       latestRelease: { version: string } | null;
+      owner: { official?: boolean } | null;
     } | null
   >
 )._handler;
@@ -1864,6 +1865,7 @@ function makePackageCtx(options: {
   };
   ownerPublisher?: Record<string, unknown> | null;
   viewerMembershipRole?: "owner" | "admin" | "publisher" | null;
+  officialPublisherIds?: string[];
 }) {
   const pkg = options.pkg ?? makePackageDoc();
   const latestRelease = options.latestRelease ?? makeReleaseDoc();
@@ -1939,6 +1941,36 @@ function makePackageCtx(options: {
                     : null,
                 ),
               })),
+            };
+          }
+          if (table === "officialPublishers") {
+            return {
+              withIndex: vi.fn(
+                (
+                  _indexName: string,
+                  buildQuery?: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+                ) => {
+                  const filters = new Map<string, unknown>();
+                  const q = {
+                    eq(field: string, value: unknown) {
+                      filters.set(field, value);
+                      return q;
+                    },
+                  };
+                  buildQuery?.(q);
+                  const publisherId = filters.get("publisherId");
+                  return {
+                    unique: vi
+                      .fn()
+                      .mockResolvedValue(
+                        typeof publisherId === "string" &&
+                          options.officialPublisherIds?.includes(publisherId)
+                          ? { _id: `officialPublishers:${publisherId}`, publisherId }
+                          : null,
+                      ),
+                  };
+                },
+              ),
             };
           }
           throw new Error(`Unexpected table ${table}`);
@@ -3286,6 +3318,30 @@ describe("packages public queries", () => {
         version: "1.0.0",
       }),
     ).resolves.toBeNull();
+  });
+
+  it("marks package owners with exact official publisher rows as official", async () => {
+    const { ctx } = makePackageCtx({
+      pkg: makePackageDoc({
+        ownerPublisherId: "publishers:openclaw",
+        ownerUserId: "users:owner",
+      }),
+      ownerPublisher: {
+        _id: "publishers:openclaw",
+        _creationTime: 1,
+        kind: "org",
+        handle: "openclaw",
+        displayName: "OpenClaw",
+        image: null,
+        createdAt: 1,
+        updatedAt: 2,
+      },
+      officialPublisherIds: ["publishers:openclaw"],
+    });
+
+    const result = await getByNameHandler(ctx, { name: "demo-plugin" });
+
+    expect(result?.owner?.official).toBe(true);
   });
 
   it("allows anonymous exact security reads for blocked public packages", async () => {
@@ -7601,6 +7657,13 @@ describe("packages public queries", () => {
           return null;
         }),
         query: vi.fn((table: string) => {
+          if (table === "officialPublishers") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue(null),
+              })),
+            };
+          }
           if (table !== "packages") throw new Error(`Unexpected table ${table}`);
           return {
             withIndex: vi.fn(() => ({
@@ -7628,6 +7691,13 @@ describe("packages public queries", () => {
             return null;
           }),
           query: vi.fn((table: string) => {
+            if (table === "officialPublishers") {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue(null),
+                })),
+              };
+            }
             if (table !== "packages") throw new Error(`Unexpected table ${table}`);
             return {
               withIndex: vi.fn(() => ({

@@ -45,6 +45,7 @@ const getBySlugHandler = (
         displayName: string | null;
         image: string | null;
         bio?: string | null;
+        official?: boolean;
       } | null;
       latestVersion?: {
         files?: Array<{
@@ -171,6 +172,7 @@ function makeCtx(args: {
   latestVersion?: Record<string, unknown> | null;
   skillsById?: Record<string, Record<string, unknown>>;
   ownersById?: Record<string, Record<string, unknown>>;
+  officialPublisherIds?: string[];
 }) {
   const unique = vi.fn().mockResolvedValue(args.skill);
   const withIndex = vi.fn(() => ({ unique }));
@@ -180,6 +182,36 @@ function makeCtx(args: {
         withIndex: vi.fn(() => ({
           unique: vi.fn().mockResolvedValue(args.membership ?? null),
         })),
+      };
+    }
+    if (table === "officialPublishers") {
+      return {
+        withIndex: vi.fn(
+          (
+            _indexName: string,
+            buildQuery?: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+          ) => {
+            const filters = new Map<string, unknown>();
+            const q = {
+              eq(field: string, value: unknown) {
+                filters.set(field, value);
+                return q;
+              },
+            };
+            buildQuery?.(q);
+            const publisherId = filters.get("publisherId");
+            return {
+              unique: vi
+                .fn()
+                .mockResolvedValue(
+                  typeof publisherId === "string" &&
+                    args.officialPublisherIds?.includes(publisherId)
+                    ? { _id: `officialPublishers:${publisherId}`, publisherId }
+                    : null,
+                ),
+            };
+          },
+        ),
       };
     }
     if (table !== "skills") throw new Error(`Unexpected query table: ${table}`);
@@ -340,6 +372,33 @@ describe("skills.getBySlug", () => {
     expect(result?.owner).not.toHaveProperty("githubCreatedAt");
     expect(result?.owner).not.toHaveProperty("githubFetchedAt");
     expect(result?.owner).not.toHaveProperty("githubProfileSyncedAt");
+  });
+
+  it("marks owners with exact official publisher rows as official", async () => {
+    const ctx = makeCtx({
+      skill: makeSkill({
+        ownerPublisherId: "publishers:openclaw",
+        ownerUserId: "users:1",
+      }),
+      owner: makeOwner("users:1", "openclaw"),
+      ownerPublisher: {
+        _id: "publishers:openclaw",
+        _creationTime: 1,
+        kind: "org",
+        handle: "openclaw",
+        displayName: "OpenClaw",
+        image: null,
+        bio: "Official OpenClaw publisher",
+        linkedUserId: undefined,
+        createdAt: 1,
+        updatedAt: 2,
+      },
+      officialPublisherIds: ["publishers:openclaw"],
+    });
+
+    const result = await getBySlugHandler(ctx, { slug: "demo" } as never);
+
+    expect(result?.owner?.official).toBe(true);
   });
 
   it("hides skills whose owner is deleted or banned", async () => {

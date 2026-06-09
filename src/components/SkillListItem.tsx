@@ -21,7 +21,7 @@ export function SkillListItem({ skill, ownerHandle, owner, apiKeyRequired }: Ski
   const handle = ownerHandle ?? owner?.handle ?? null;
   const ownerSegment = handle?.trim() || String(skill.ownerPublisherId ?? skill.ownerUserId);
   const href = `/${encodeURIComponent(ownerSegment)}/${encodeURIComponent(skill.slug)}`;
-  const badges = getSkillBadges(skill);
+  const badges = getSkillBadges(skill, owner);
 
   return (
     <Link to={href} className="skill-list-item">

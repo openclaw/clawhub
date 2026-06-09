@@ -211,6 +211,7 @@ export const ApiV1SearchResponseSchema = type({
       handle: "string|null?",
       displayName: "string|null?",
       image: "string|null?",
+      official: "boolean?",
     })
       .or("null")
       .optional(),
@@ -256,6 +257,7 @@ export const ApiV1SkillResponseSchema = type({
     handle: "string|null",
     displayName: "string|null?",
     image: "string|null?",
+    official: "boolean?",
   }).or("null"),
   moderation: type({
     isSuspicious: "boolean",

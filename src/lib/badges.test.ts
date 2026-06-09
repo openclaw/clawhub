@@ -38,6 +38,10 @@ describe("badges", () => {
         }),
       ).toBe(true);
     });
+
+    it("returns true when the owner is official", () => {
+      expect(isSkillOfficial({ badges: {} }, { official: true })).toBe(true);
+    });
   });
 
   describe("isSkillDeprecated", () => {
@@ -73,6 +77,10 @@ describe("badges", () => {
           badges: { official: { byUserId: "user1" as never, at: 123 } },
         }),
       ).toEqual(["Official"]);
+    });
+
+    it("returns Official when the owner is official", () => {
+      expect(getSkillBadges({ badges: {} }, { official: true })).toEqual(["Official"]);
     });
 
     it("does not surface Highlighted as a trust badge", () => {

@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Doc } from "../_generated/dataModel";
-import { hasOfficialPublisherRow, isOfficialPublisher } from "./officialPublishers";
+import {
+  createOfficialPublisherLookupCache,
+  hasOfficialPublisherRow,
+  isActiveOfficialPublisherId,
+  isOfficialPublisher,
+} from "./officialPublishers";
 
 function makePublisher(
   overrides: Partial<Record<keyof Doc<"publishers">, unknown>>,
@@ -27,9 +32,18 @@ function makeOfficialRow(publisherId: string) {
   };
 }
 
-function makeCtx({ officialPublisherIds = [] }: { officialPublisherIds?: string[] } = {}) {
+function makeCtx({
+  officialPublisherIds = [],
+  publishers = [],
+}: {
+  officialPublisherIds?: string[];
+  publishers?: Array<Doc<"publishers">>;
+} = {}) {
   return {
     db: {
+      get: vi.fn(
+        async (id: string) => publishers.find((publisher) => publisher._id === id) ?? null,
+      ),
       query: vi.fn((table: string) => {
         if (table !== "officialPublishers") {
           throw new Error(`Unexpected table ${table}`);
@@ -117,5 +131,44 @@ describe("isOfficialPublisher", () => {
     await expect(hasOfficialPublisherRow(ctx as never, "publishers:acme" as never)).resolves.toBe(
       true,
     );
+  });
+
+  it("checks the live publisher state when resolving by publisher id", async () => {
+    const publisher = makePublisher({
+      _id: "publishers:acme",
+      handle: "acme",
+      deactivatedAt: 123,
+    });
+    const ctx = makeCtx({
+      officialPublisherIds: ["publishers:acme"],
+      publishers: [publisher],
+    });
+
+    await expect(
+      isActiveOfficialPublisherId(ctx as never, "publishers:acme" as never),
+    ).resolves.toBe(false);
+    expect(ctx.db.get).toHaveBeenCalledWith("publishers:acme");
+  });
+
+  it("does not read the publisher document when no official row exists", async () => {
+    const ctx = makeCtx({
+      publishers: [makePublisher({ _id: "publishers:acme", handle: "acme" })],
+    });
+
+    await expect(
+      isActiveOfficialPublisherId(ctx as never, "publishers:acme" as never),
+    ).resolves.toBe(false);
+    expect(ctx.db.get).not.toHaveBeenCalled();
+  });
+
+  it("caches repeated official row lookups by publisher id", async () => {
+    const ctx = makeCtx({ officialPublisherIds: ["publishers:acme"] });
+    const cache = createOfficialPublisherLookupCache();
+    const publisher = makePublisher({ _id: "publishers:acme", handle: "acme" });
+
+    await expect(isOfficialPublisher(ctx as never, publisher, cache)).resolves.toBe(true);
+    await expect(isOfficialPublisher(ctx as never, publisher, cache)).resolves.toBe(true);
+
+    expect(ctx.db.query).toHaveBeenCalledTimes(1);
   });
 });

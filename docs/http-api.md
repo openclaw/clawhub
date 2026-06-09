@@ -114,7 +114,8 @@ Response:
       "owner": {
         "handle": "openclaw",
         "displayName": "OpenClaw",
-        "image": "https://example.com/avatar.png"
+        "image": "https://example.com/avatar.png",
+        "official": true
       }
     }
   ]
@@ -194,7 +195,7 @@ Response:
   },
   "latestVersion": { "version": "1.2.3", "createdAt": 0, "changelog": "…" },
   "metadata": { "os": ["macos"], "systems": ["aarch64-darwin"] },
-  "owner": { "handle": "steipete", "displayName": "Peter", "image": null },
+  "owner": { "handle": "steipete", "displayName": "Peter", "image": null, "official": true },
   "moderation": {
     "isSuspicious": false,
     "isMalwareBlocked": false,
@@ -685,6 +686,8 @@ Returns package detail metadata.
 Notes:
 
 - Skills can also resolve through this route in the unified catalog.
+- Owner metadata may include `official: true` when the exact owner publisher
+  has a ClawHub-managed `officialPublishers` row.
 - Private packages return `404` unless the caller can read the owning publisher.
 
 ### `DELETE /api/v1/packages/{name}`

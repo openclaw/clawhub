@@ -12,7 +12,7 @@ import { EmptyState } from "../../components/EmptyState";
 import { InstallCopyButton } from "../../components/InstallCopyButton";
 import { Container } from "../../components/layout/Container";
 import { MarkdownPreview } from "../../components/MarkdownPreview";
-import { OfficialTag } from "../../components/OfficialBadge";
+import { OfficialBadge, OfficialTag } from "../../components/OfficialBadge";
 import { SidebarMetadata } from "../../components/SidebarMetadata";
 import { SkillDetailSkeleton } from "../../components/skeletons/SkillDetailSkeleton";
 import { Alert, AlertDescription } from "../../components/ui/alert";
@@ -621,6 +621,7 @@ export function PluginDetailPage({
       ) : (
         <span className="user-name">{owner.displayName ?? "unknown"}</span>
       )}
+      {owner.official ? <OfficialBadge /> : null}
     </span>
   ) : null;
   const hasSourceMetadata = Boolean(

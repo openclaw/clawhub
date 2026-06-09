@@ -1070,7 +1070,7 @@ function isSkillOfficial(skill: SkillPackageDocLike) {
 function toSkillPackageDetail(
   skill: SkillPackageDocLike,
   latestVersion: SkillVersionLike | null,
-  owner: { handle?: string; displayName?: string; image?: string } | null,
+  owner: { handle?: string; displayName?: string; image?: string; official?: boolean } | null,
   resolvedTags: Record<string, string>,
 ) {
   return {
@@ -1096,6 +1096,7 @@ function toSkillPackageDetail(
           handle: owner.handle ?? null,
           displayName: owner.displayName ?? null,
           image: owner.image ?? null,
+          official: owner.official === true ? true : undefined,
         }
       : null,
   };
@@ -2874,7 +2875,7 @@ async function getSkillDetailForRequest(ctx: ActionCtx, slug: string) {
   return (await runQueryRef(ctx, apiRefs.skills.getBySlug, { slug })) as {
     skill: SkillPackageDocLike | null;
     latestVersion: SkillVersionLike | null;
-    owner: { handle?: string; displayName?: string; image?: string } | null;
+    owner: { handle?: string; displayName?: string; image?: string; official?: boolean } | null;
     moderationInfo?: {
       isPendingScan?: boolean | null;
       isMalwareBlocked?: boolean | null;
@@ -3277,7 +3278,13 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
   })) as {
     package: PublicPackageDocLike | null;
     latestRelease: ReleaseLike | null;
-    owner: { _id: Id<"users">; handle?: string; displayName?: string; image?: string } | null;
+    owner: {
+      _id: Id<"publishers">;
+      handle?: string;
+      displayName?: string;
+      image?: string;
+      official?: boolean;
+    } | null;
   } | null;
   const skillDetail = detail?.package
     ? null
@@ -3330,6 +3337,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
               handle: packageOwner.handle ?? null,
               displayName: packageOwner.displayName ?? null,
               image: packageOwner.image ?? null,
+              official: packageOwner.official === true ? true : undefined,
             }
           : null,
       },

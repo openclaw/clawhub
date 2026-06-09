@@ -393,6 +393,7 @@ export const ApiV1PackageResponseSchema = type({
     handle: "string|null",
     displayName: "string|null?",
     image: "string|null?",
+    official: "boolean?",
   }).or("null"),
 });
 

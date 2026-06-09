@@ -141,11 +141,20 @@ describe("public skill version queries", () => {
     vi.mocked(getSkillBadgeMaps).mockResolvedValue(new Map() as never);
   });
 
+  function makeNoOfficialPublisherRowsTable() {
+    return {
+      withIndex: vi.fn(() => ({
+        unique: vi.fn(async () => null),
+      })),
+    };
+  }
+
   it("sanitizes latestVersion returned by getBySlug", async () => {
     const version = makeVersion();
     const ctx = {
       db: {
         query: vi.fn((table: string) => {
+          if (table === "officialPublishers") return makeNoOfficialPublisherRowsTable();
           if (table !== "skills") throw new Error(`Unexpected table ${table}`);
           return {
             withIndex: vi.fn(() => ({
@@ -414,6 +423,7 @@ describe("public skill version queries", () => {
     const ctx = {
       db: {
         query: vi.fn((table: string) => {
+          if (table === "officialPublishers") return makeNoOfficialPublisherRowsTable();
           if (table !== "skillBadges") throw new Error(`Unexpected table ${table}`);
           return {
             withIndex: vi.fn(() => ({
