@@ -261,7 +261,6 @@ export function buildBanNotificationEmail(args: BanNotificationEmailArgs): Trans
       sectionHeading("What changed"),
       bulletList(impactItems),
       `<p style="margin:0 0 14px;font-size:15px;line-height:22px;color:#1f2328;">You can ${textLink(APPEALS_URL, "appeal this decision")} if you believe this was a mistake.</p>`,
-      `<p style="margin:18px 0 0;color:#6a737d;font-size:13px;line-height:20px;">If you already appealed, you do not need to send a separate support email.</p>`,
       paragraph("ClawHub Security"),
     ].join(""),
   });

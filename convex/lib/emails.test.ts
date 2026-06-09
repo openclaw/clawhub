@@ -32,6 +32,8 @@ describe("moderation notification email copy", () => {
     expect(email.text).not.toContain("To support your appeal, include scan results");
     expect(email.html).not.toContain("Include scan results with your appeal");
     expect(email.text).toContain("Appeal: https://appeals.openclaw.ai/");
+    expect(email.html).not.toContain("If you already appealed");
+    expect(email.html).not.toContain("separate support email");
     expect(email.text).not.toContain("clawhub scan ./my-skill --output clawhub-scan.zip");
     expect(email.text).not.toContain("https://docs.openclaw.ai/clawhub/cli#scan-path");
   });
