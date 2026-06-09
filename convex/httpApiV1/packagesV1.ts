@@ -800,7 +800,6 @@ type CatalogSourceCursorState = {
   offset: number;
   pageSize: number | null;
   done: boolean;
-  queryKey?: string;
 };
 
 type UnifiedCatalogCursorState = {
@@ -817,7 +816,6 @@ type CatalogPageResult<T> = {
   page: T[];
   isDone: boolean;
   continueCursor: string;
-  cursorReset?: boolean;
 };
 
 type CatalogSourceState<T> = {
@@ -829,7 +827,6 @@ type CatalogSourceState<T> = {
 
 const UNIFIED_CATALOG_CURSOR_PREFIX = "pkgcatalog:";
 const PLUGIN_CATALOG_CURSOR_PREFIX = "pkgplugins:";
-const CATALOG_SOURCE_CURSOR_KEY_PREFIX = "catalog-source:";
 const LEGACY_PLUGIN_SEARCH_CURSOR_PREFIX = "pkgpluginsearch:";
 const SKILL_CATALOG_CURSOR_PREFIX = "skillcat:";
 const PACKAGE_PAGE_CURSOR_PREFIX = "pkgpage:";
@@ -841,54 +838,8 @@ const CATALOG_CURSOR_PREFIXES = [
   PACKAGE_PAGE_CURSOR_PREFIX,
 ];
 
-type CatalogSourceCursorQueryArgs = {
-  source: "packages" | "skills" | "code-plugin" | "bundle-plugin";
-  sort?: (typeof PACKAGE_LIST_SORT_VALUES)[number];
-  channel?: (typeof PACKAGE_CHANNEL_VALUES)[number];
-  isOfficial?: boolean;
-  highlightedOnly?: boolean;
-  executesCode?: boolean;
-  capabilityTag?: string;
-  category?: string;
-};
-
-function defaultCatalogSourceCursorState(queryKey?: string): CatalogSourceCursorState {
-  return { cursor: null, offset: 0, pageSize: null, done: false, queryKey };
-}
-
-function getCatalogSourceCursorQueryKey(args: CatalogSourceCursorQueryArgs) {
-  return `${CATALOG_SOURCE_CURSOR_KEY_PREFIX}${JSON.stringify({
-    source: args.source,
-    sort: args.sort ?? "updated",
-    channel: args.channel ?? null,
-    isOfficial: args.isOfficial ?? null,
-    highlightedOnly: args.highlightedOnly === true,
-    executesCode: args.executesCode ?? null,
-    capabilityTag: args.capabilityTag ?? null,
-    category: args.category ?? null,
-  })}`;
-}
-
-function acceptsLegacyUnkeyedCatalogSourceCursor(args: CatalogSourceCursorQueryArgs) {
-  return (
-    (args.sort ?? "updated") === "updated" &&
-    !args.channel &&
-    typeof args.isOfficial !== "boolean" &&
-    args.highlightedOnly !== true &&
-    typeof args.executesCode !== "boolean" &&
-    !args.capabilityTag &&
-    !args.category
-  );
-}
-
-function normalizeCatalogSourceCursorForQuery(
-  state: CatalogSourceCursorState,
-  queryKey: string,
-  options?: { acceptLegacyUnkeyed?: boolean },
-) {
-  if (state.queryKey === queryKey) return state;
-  if (!state.queryKey && options?.acceptLegacyUnkeyed) return { ...state, queryKey };
-  return defaultCatalogSourceCursorState(queryKey);
+function defaultCatalogSourceCursorState(): CatalogSourceCursorState {
+  return { cursor: null, offset: 0, pageSize: null, done: false };
 }
 
 function encodeUnifiedCatalogCursor(state: UnifiedCatalogCursorState) {
@@ -920,7 +871,6 @@ function decodeUnifiedCatalogCursor(raw: string | null | undefined): UnifiedCata
       offset: typeof input?.offset === "number" && input.offset > 0 ? input.offset : 0,
       pageSize: typeof input?.pageSize === "number" && input.pageSize > 0 ? input.pageSize : null,
       done: input?.done === true,
-      queryKey: typeof input?.queryKey === "string" ? input.queryKey : undefined,
     });
     return {
       packages: normalize(parsed.packages),
@@ -949,7 +899,6 @@ function decodeMultiPluginCursor(
     offset: typeof input?.offset === "number" && input.offset > 0 ? input.offset : 0,
     pageSize: typeof input?.pageSize === "number" && input.pageSize > 0 ? input.pageSize : null,
     done: input?.done === true,
-    queryKey: typeof input?.queryKey === "string" ? input.queryKey : undefined,
   });
 
   if (!raw?.startsWith(prefix)) {
@@ -979,19 +928,12 @@ function decodePluginCatalogCursor(raw: string | null | undefined): PluginCatalo
   return decodeMultiPluginCursor(raw, PLUGIN_CATALOG_CURSOR_PREFIX);
 }
 
-function initCatalogSource<T>(
-  state: CatalogSourceCursorState,
-  queryArgs: CatalogSourceCursorQueryArgs,
-): CatalogSourceState<T> {
-  const queryKey = getCatalogSourceCursorQueryKey(queryArgs);
-  const normalizedState = normalizeCatalogSourceCursorForQuery(state, queryKey, {
-    acceptLegacyUnkeyed: acceptsLegacyUnkeyedCatalogSourceCursor(queryArgs),
-  });
+function initCatalogSource<T>(state: CatalogSourceCursorState): CatalogSourceState<T> {
   return {
-    state: { ...normalizedState },
+    state: { ...state },
     page: null,
-    pageCursor: normalizedState.cursor,
-    index: normalizedState.offset,
+    pageCursor: state.cursor,
+    index: state.offset,
   };
 }
 
@@ -1003,7 +945,6 @@ function finalizeCatalogSource<T>(source: CatalogSourceState<T>): CatalogSourceC
       offset: source.index,
       pageSize: source.state.pageSize,
       done: false,
-      queryKey: source.state.queryKey,
     };
   }
   return {
@@ -1011,7 +952,6 @@ function finalizeCatalogSource<T>(source: CatalogSourceState<T>): CatalogSourceC
     offset: 0,
     pageSize: source.state.pageSize,
     done: source.page.isDone,
-    queryKey: source.state.queryKey,
   };
 }
 
@@ -1026,11 +966,6 @@ async function ensureCatalogSourcePage<T>(
       const effectivePageSize = source.state.pageSize ?? pageSize;
       source.pageCursor = source.state.cursor;
       source.page = await fetchPage(source.pageCursor, effectivePageSize);
-      if (source.page.cursorReset) {
-        source.state.cursor = null;
-        source.state.offset = 0;
-        source.pageCursor = null;
-      }
       source.state.pageSize = effectivePageSize;
       source.index = source.state.offset;
     }
@@ -1521,28 +1456,9 @@ async function listPackages(
   if (!effectiveFamily && includeSkills) {
     const packageSource = initCatalogSource<CatalogListItem>(
       decodeUnifiedCatalogCursor(cursor).packages,
-      {
-        source: "packages",
-        channel: channelParam.value,
-        isOfficial: isOfficial.value,
-        highlightedOnly,
-        executesCode: executesCode.value,
-        capabilityTag,
-        category,
-        sort: sortParam.value,
-      },
     );
     const skillSource = initCatalogSource<CatalogListItem>(
       decodeUnifiedCatalogCursor(cursor).skills,
-      {
-        source: "skills",
-        channel: channelParam.value,
-        isOfficial: isOfficial.value,
-        highlightedOnly,
-        executesCode: executesCode.value,
-        capabilityTag,
-        sort: sortParam.value,
-      },
     );
     const pageSize = limit;
     const items: CatalogListItem[] = [];
@@ -1554,7 +1470,6 @@ async function listPackages(
             page: CatalogListItem[];
             isDone: boolean;
             continueCursor: string | null;
-            cursorReset?: boolean;
           }>(ctx, internalRefs.packages.listPageForViewerInternal, {
             channel: channelParam.value,
             isOfficial: isOfficial.value,
@@ -1570,7 +1485,6 @@ async function listPackages(
             page: result.page,
             isDone: result.isDone,
             continueCursor: result.continueCursor ?? "",
-            cursorReset: result.cursorReset,
           };
         }),
         ensureCatalogSourcePage(skillSource, pageSize, async (pageCursor, numItems) => {
@@ -1630,26 +1544,8 @@ async function listPackages(
 
   if (!effectiveFamily && options?.pluginFamilies?.length) {
     const decodedCursor = decodePluginCatalogCursor(cursor);
-    const codePluginSource = initCatalogSource<CatalogListItem>(decodedCursor.codePlugins, {
-      source: "code-plugin",
-      channel: channelParam.value,
-      isOfficial: isOfficial.value,
-      highlightedOnly,
-      executesCode: executesCode.value,
-      capabilityTag,
-      category,
-      sort: sortParam.value,
-    });
-    const bundlePluginSource = initCatalogSource<CatalogListItem>(decodedCursor.bundlePlugins, {
-      source: "bundle-plugin",
-      channel: channelParam.value,
-      isOfficial: isOfficial.value,
-      highlightedOnly,
-      executesCode: executesCode.value,
-      capabilityTag,
-      category,
-      sort: sortParam.value,
-    });
+    const codePluginSource = initCatalogSource<CatalogListItem>(decodedCursor.codePlugins);
+    const bundlePluginSource = initCatalogSource<CatalogListItem>(decodedCursor.bundlePlugins);
     const pageSize = limit;
     const items: CatalogListItem[] = [];
     const fetchPluginPage = async (
@@ -1661,7 +1557,6 @@ async function listPackages(
         page: CatalogListItem[];
         isDone: boolean;
         continueCursor: string | null;
-        cursorReset?: boolean;
       }>(ctx, internalRefs.packages.listPageForViewerInternal, {
         family: pluginFamily,
         channel: channelParam.value,
@@ -1678,7 +1573,6 @@ async function listPackages(
         page: result.page,
         isDone: result.isDone,
         continueCursor: result.continueCursor ?? "",
-        cursorReset: result.cursorReset,
       };
     };
 

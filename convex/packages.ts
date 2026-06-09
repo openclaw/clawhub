@@ -676,56 +676,8 @@ type PublicPageCursorState = {
   offset: number;
   pageSize: number | null;
   done: boolean;
-  queryKey?: string;
 };
 const PUBLIC_PAGE_CURSOR_PREFIX = "pkgpage:";
-const PACKAGE_LIST_CURSOR_KEY_PREFIX = "packages-list:";
-
-type PublicPackageListCursorQueryArgs = {
-  family?: PackageFamily;
-  channel?: PackageChannel;
-  isOfficial?: boolean;
-  executesCode?: boolean;
-  capabilityTag?: string;
-  category?: PluginCategorySlug;
-  sort?: "updated" | "downloads";
-};
-
-function getPublicPackageListCursorQueryKey(args: PublicPackageListCursorQueryArgs) {
-  const sort = args.sort ?? "updated";
-  const source =
-    sort === "downloads"
-      ? args.family
-        ? "packages.by_active_family_downloads"
-        : "packages.by_active_downloads"
-      : args.category
-        ? "packagePluginCategorySearchDigest"
-        : args.capabilityTag
-          ? "packageCapabilitySearchDigest"
-          : "packageSearchDigest";
-  return `${PACKAGE_LIST_CURSOR_KEY_PREFIX}${JSON.stringify({
-    source,
-    sort,
-    family: args.family ?? null,
-    channel: args.channel ?? null,
-    isOfficial: args.isOfficial ?? null,
-    executesCode: args.executesCode ?? null,
-    capabilityTag: args.capabilityTag ?? null,
-    category: args.category ?? null,
-  })}`;
-}
-
-function acceptsLegacyUnkeyedPublicPageCursor(args: PublicPackageListCursorQueryArgs) {
-  return (
-    (args.sort ?? "updated") === "updated" &&
-    !args.family &&
-    !args.channel &&
-    typeof args.isOfficial !== "boolean" &&
-    typeof args.executesCode !== "boolean" &&
-    !args.capabilityTag &&
-    !args.category
-  );
-}
 
 async function runQueryRef<T>(
   ctx: { runQuery: (ref: never, args: never) => Promise<unknown> },
@@ -1403,27 +1355,10 @@ function decodePublicPageCursor(raw: string | null | undefined): PublicPageCurso
       offset: typeof parsed.offset === "number" && parsed.offset > 0 ? parsed.offset : 0,
       pageSize: typeof parsed.pageSize === "number" && parsed.pageSize > 0 ? parsed.pageSize : null,
       done: parsed.done === true,
-      queryKey: typeof parsed.queryKey === "string" ? parsed.queryKey : undefined,
     };
   } catch {
     return { cursor: null, offset: 0, pageSize: null, done: false };
   }
-}
-
-function initialPublicPageCursorState(queryKey?: string): PublicPageCursorState {
-  return { cursor: null, offset: 0, pageSize: null, done: false, queryKey };
-}
-
-function normalizePublicPageCursorForQuery(
-  state: PublicPageCursorState,
-  queryKey: string,
-  options?: { acceptLegacyUnkeyed?: boolean },
-) {
-  if (state.queryKey === queryKey) return { state, reset: false };
-  if (!state.queryKey && options?.acceptLegacyUnkeyed) {
-    return { state: { ...state, queryKey }, reset: false };
-  }
-  return { state: initialPublicPageCursorState(queryKey), reset: true };
 }
 
 async function getOptionalViewerUserId(ctx: QueryCtx | MutationCtx) {
@@ -3107,10 +3042,10 @@ async function listPackagePageImpl(
   },
 ) {
   if (args.channel === "private" && !args.viewerUserId) {
-    return { page: [], isDone: true, continueCursor: "", cursorReset: false };
+    return { page: [], isDone: true, continueCursor: "" };
   }
   if (args.category && !isPluginCategorySlug(args.category)) {
-    return { page: [], isDone: true, continueCursor: "", cursorReset: false };
+    return { page: [], isDone: true, continueCursor: "" };
   }
   const viewerUserId = args.viewerUserId;
   const membershipCache = new Map<string, Promise<boolean>>();
@@ -3123,7 +3058,7 @@ async function listPackagePageImpl(
       ...args,
       numItems: targetCount,
     });
-    return { page, isDone: true, continueCursor: "", cursorReset: false };
+    return { page, isDone: true, continueCursor: "" };
   }
 
   const collected: PublicPackageListItem[] = [];
@@ -3131,31 +3066,9 @@ async function listPackagePageImpl(
   const channel = args.channel;
   const isOfficial = args.isOfficial;
   const category = isPluginCategorySlug(args.category) ? args.category : undefined;
-  const cursorQueryKey = getPublicPackageListCursorQueryKey({
-    family,
-    channel,
-    isOfficial,
-    executesCode: args.executesCode,
-    capabilityTag: args.capabilityTag,
-    category,
-    sort: args.sort,
-  });
-  const requestedCursor = decodePublicPageCursor(args.paginationOpts.cursor);
-  const normalizedCursor = normalizePublicPageCursorForQuery(requestedCursor, cursorQueryKey, {
-    acceptLegacyUnkeyed: acceptsLegacyUnkeyedPublicPageCursor({
-      family,
-      channel,
-      isOfficial,
-      executesCode: args.executesCode,
-      capabilityTag: args.capabilityTag,
-      category,
-      sort: args.sort,
-    }),
-  });
-  const cursorReset = Boolean(args.paginationOpts.cursor) && normalizedCursor.reset;
-  const decodedCursor = normalizedCursor.state;
+  const decodedCursor = decodePublicPageCursor(args.paginationOpts.cursor);
   if (decodedCursor.done && decodedCursor.offset === 0) {
-    return { page: collected, isDone: true, continueCursor: "", cursorReset };
+    return { page: collected, isDone: true, continueCursor: "" };
   }
   const pageCursor = decodedCursor.cursor;
   const offset = decodedCursor.offset;
@@ -3210,20 +3123,17 @@ async function listPackagePageImpl(
                   offset: nextOffset,
                   pageSize: scanPageSize,
                   done: page.isDone,
-                  queryKey: cursorQueryKey,
                 }
               : {
                   cursor: page.continueCursor,
                   offset: 0,
                   pageSize: scanPageSize,
                   done: page.isDone,
-                  queryKey: cursorQueryKey,
                 };
           return {
             page: collected,
             isDone: nextState.done && nextState.offset === 0,
             continueCursor: encodePublicPageCursor(nextState),
-            cursorReset,
           };
         }
       }
@@ -3242,9 +3152,7 @@ async function listPackagePageImpl(
         offset: pageOffset,
         pageSize,
         done,
-        queryKey: cursorQueryKey,
       }),
-      cursorReset,
     };
   }
 
@@ -3293,20 +3201,17 @@ async function listPackagePageImpl(
               offset: nextOffset,
               pageSize: effectivePageSize,
               done: page.isDone,
-              queryKey: cursorQueryKey,
             }
           : {
               cursor: page.continueCursor,
               offset: 0,
               pageSize: effectivePageSize,
               done: page.isDone,
-              queryKey: cursorQueryKey,
             };
       return {
         page: collected,
         isDone: nextState.done && nextState.offset === 0,
         continueCursor: encodePublicPageCursor(nextState),
-        cursorReset,
       };
     }
   }
@@ -3319,9 +3224,7 @@ async function listPackagePageImpl(
       offset: 0,
       pageSize: effectivePageSize,
       done: page.isDone,
-      queryKey: cursorQueryKey,
     }),
-    cursorReset,
   };
 }
 
