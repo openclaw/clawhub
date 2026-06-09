@@ -1,3 +1,5 @@
+import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import { expectHealthyPage, trackRuntimeErrors, waitForHydration } from "../helpers/runtimeErrors";
 import { signInAsLocalPersona } from "./helpers";
@@ -74,6 +76,45 @@ function isPackageManageContextPayload(value: unknown): value is PackageManageCo
   );
 }
 
+function localConvexDeployment() {
+  const raw = readFileSync(".convex/local/default/config.json", "utf8");
+  const parsed = JSON.parse(raw) as { deploymentName?: unknown };
+  if (typeof parsed.deploymentName !== "string" || !parsed.deploymentName) {
+    throw new Error("Local Convex deployment name was not available");
+  }
+  return `local:${parsed.deploymentName}`;
+}
+
+function seedLocalModerationFixtures() {
+  const result = spawnSync(
+    "bunx",
+    [
+      "convex",
+      "run",
+      "--typecheck",
+      "disable",
+      "--codegen",
+      "disable",
+      "devSeed:seedLocalFixtures",
+      JSON.stringify({ reset: true }),
+    ],
+    {
+      cwd: process.cwd(),
+      env: { ...process.env, CONVEX_DEPLOYMENT: localConvexDeployment() },
+      encoding: "utf8",
+    },
+  );
+  if (result.status !== 0) {
+    throw new Error(
+      [
+        "Failed to seed local moderation fixtures.",
+        result.stdout.trim(),
+        result.stderr.trim(),
+      ].join("\n"),
+    );
+  }
+}
+
 function findPackageManageContextPayload(value: unknown): PackageManageContextPayload | null {
   let payload: PackageManageContextPayload | null = null;
   collectObjects(value, (objectValue) => {
@@ -148,18 +189,21 @@ async function readConvexFrames(page: Page) {
   return await page.evaluate(() => window.__clawhubConvexFrames ?? []);
 }
 
-test("plugin manage context query returns only slim identifiers", async ({ page }) => {
-  await installConvexFrameCapture(page);
-  const errors = trackRuntimeErrors(page);
+function expectedManageContextPayload() {
+  return {
+    package: {
+      _id: expect.any(String),
+      name: "local-scanned-runtime-plugin",
+      displayName: "Local Scanned Runtime Plugin",
+    },
+    latestRelease: {
+      _id: expect.any(String),
+      version: "0.1.0",
+    },
+  };
+}
 
-  await signInAsLocalPersona(page, "owner");
-  await page.goto("/plugins/local-scanned-runtime-plugin", { waitUntil: "domcontentloaded" });
-  await waitForHydration(page);
-
-  await expect(page.getByRole("heading", { name: "Local Scanned Runtime Plugin" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "New version" })).toBeVisible();
-  await expect(page.getByRole("tab", { name: /Validation \(2\)/ })).toBeVisible();
-
+async function expectSlimManageContextPayload(page: Page) {
   await expect
     .poll(async () => extractManageContextValues(await readConvexFrames(page)), {
       timeout: 15_000,
@@ -167,39 +211,48 @@ test("plugin manage context query returns only slim identifiers", async ({ page 
     })
     .toMatchObject({
       querySeen: true,
-      values: expect.arrayContaining([
-        {
-          package: {
-            _id: expect.stringMatching(/^packages:/),
-            name: "local-scanned-runtime-plugin",
-            displayName: "Local Scanned Runtime Plugin",
-          },
-          latestRelease: {
-            _id: expect.stringMatching(/^packageReleases:/),
-            version: "0.1.0",
-          },
-        },
-      ]),
+      values: expect.arrayContaining([expectedManageContextPayload()]),
     });
   const capture = extractManageContextValues(await readConvexFrames(page));
   const latestValue = capture.values.at(-1);
 
-  expect(latestValue).toEqual({
-    package: {
-      _id: expect.stringMatching(/^packages:/),
-      name: "local-scanned-runtime-plugin",
-      displayName: "Local Scanned Runtime Plugin",
-    },
-    latestRelease: {
-      _id: expect.stringMatching(/^packageReleases:/),
-      version: "0.1.0",
-    },
-  });
+  expect(latestValue).toEqual(expectedManageContextPayload());
   expect(JSON.stringify(latestValue)).not.toContain("sourceRepo");
   expect(JSON.stringify(latestValue)).not.toContain("latestVersionSummary");
   expect(JSON.stringify(latestValue)).not.toContain("files");
   expect(JSON.stringify(latestValue)).not.toContain("llmAnalysis");
   expect(JSON.stringify(latestValue)).not.toContain("staticScan");
+}
+
+test("plugin manage context query returns only slim identifiers", async ({ page }) => {
+  seedLocalModerationFixtures();
+  await installConvexFrameCapture(page);
+  const errors = trackRuntimeErrors(page);
+
+  await signInAsLocalPersona(page, "owner");
+  await page.goto("/plugins/local-scanned-runtime-plugin", { waitUntil: "domcontentloaded" });
+  await waitForHydration(page);
+
+  await expect(
+    page.getByRole("heading", { name: "Local Scanned Runtime Plugin" }).first(),
+  ).toBeVisible();
+  await expect(page.getByRole("link", { name: "New version" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: /Validation \(2\)/ })).toBeVisible();
+
+  await expectSlimManageContextPayload(page);
+
+  await page.goto("/plugins/local-scanned-runtime-plugin/security-audit", {
+    waitUntil: "domcontentloaded",
+  });
+  await waitForHydration(page);
+
+  await expect(
+    page.getByRole("heading", { name: "Local Scanned Runtime Plugin" }).first(),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Rescan" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Download security audit" })).toBeVisible();
+
+  await expectSlimManageContextPayload(page);
 
   await expectHealthyPage(page, errors);
 });

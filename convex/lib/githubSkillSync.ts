@@ -633,8 +633,7 @@ function decodeUtf8(bytes: Uint8Array) {
 
 async function sha256Hex(bytes: Uint8Array) {
   const safe = new Uint8Array(bytes);
-  const buffer = safe.buffer.slice(safe.byteOffset, safe.byteOffset + safe.byteLength);
-  const digest = await crypto.subtle.digest("SHA-256", buffer);
+  const digest = await crypto.subtle.digest("SHA-256", safe);
   return toHex(new Uint8Array(digest));
 }
 
