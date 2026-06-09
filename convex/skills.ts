@@ -508,6 +508,7 @@ function latestVersionSummaryFromSkillVersion(
     createdAt: version.createdAt,
     changelog: version.changelog,
     changelogSource: version.changelogSource,
+    description: skillSummaryFromSkillVersion(version),
     clawdis: version.parsed?.clawdis,
     apiKeyRequired: version.apiKeyRequired,
   };
@@ -2295,7 +2296,13 @@ function toPublicSkillListVersionFromSummary(
     createdAt: summary.createdAt,
     changelog: summary.changelog,
     changelogSource: summary.changelogSource,
-    parsed: summary.clawdis ? { clawdis: summary.clawdis } : undefined,
+    parsed:
+      summary.description || summary.clawdis
+        ? {
+            ...(summary.description ? { description: summary.description } : {}),
+            ...(summary.clawdis ? { clawdis: summary.clawdis } : {}),
+          }
+        : undefined,
     apiKeyRequired: summary.apiKeyRequired,
   };
 }
@@ -8881,6 +8888,7 @@ export const updateTags = mutation({
         createdAt: version.createdAt,
         changelog: version.changelog,
         changelogSource: version.changelogSource,
+        description: skillSummaryFromSkillVersion(version),
         clawdis: version.parsed?.clawdis,
         apiKeyRequired: version.apiKeyRequired,
       };
@@ -10935,6 +10943,7 @@ export const insertVersion = internalMutation({
             createdAt: now,
             changelog: args.changelog,
             changelogSource: args.changelogSource,
+            description: getFrontmatterValue(args.parsed.frontmatter, "description")?.trim(),
             clawdis: args.parsed.clawdis,
             // Filled later by the async analyser via
             // `updateVersionApiKeyRequiredInternal`.
@@ -11507,6 +11516,7 @@ export const backfillLatestVersionSummaryApiKeyRequiredInternal = internalMutati
             createdAt: version.createdAt,
             changelog: version.changelog,
             changelogSource: version.changelogSource,
+            description: skillSummaryFromSkillVersion(version),
             clawdis: version.parsed?.clawdis,
             apiKeyRequired: version.apiKeyRequired,
           },

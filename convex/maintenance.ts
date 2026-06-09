@@ -22,7 +22,7 @@ import {
   getTrustTier,
   type TrustTier,
 } from "./lib/skillQuality";
-import { hashSkillFiles, isTextFile } from "./lib/skills";
+import { getFrontmatterValue, hashSkillFiles, isTextFile } from "./lib/skills";
 import { computeIsSuspicious } from "./lib/skillSafety";
 import { generateSkillSummary } from "./lib/skillSummary";
 
@@ -2395,6 +2395,9 @@ export const backfillLatestVersionSummaryInternal = internalMutation({
         createdAt: version.createdAt,
         changelog: version.changelog,
         changelogSource: version.changelogSource,
+        description: version.parsed?.frontmatter
+          ? getFrontmatterValue(version.parsed.frontmatter, "description")?.trim() || undefined
+          : undefined,
         clawdis: version.parsed?.clawdis,
       };
 
@@ -2406,6 +2409,7 @@ export const backfillLatestVersionSummaryInternal = internalMutation({
         existing.createdAt === expected.createdAt &&
         existing.changelog === expected.changelog &&
         existing.changelogSource === expected.changelogSource &&
+        existing.description === expected.description &&
         JSON.stringify(existing.clawdis ?? null) === JSON.stringify(expected.clawdis ?? null)
       ) {
         continue;

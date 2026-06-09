@@ -1788,6 +1788,77 @@ describe("httpApiV1 handlers", () => {
     expect(json.items[0].tags.latest).toBe("1.0.0");
   });
 
+  it("lists skills with long description metadata and setup requirements", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("cursor" in args || "numItems" in args) {
+        return {
+          page: [
+            {
+              skill: {
+                _id: "skills:1",
+                slug: "home-assistant",
+                displayName: "Home Assistant",
+                summary: "Control Home Assistant.",
+                tags: {},
+                stats: { downloads: 0, stars: 0, versions: 1, comments: 0 },
+                createdAt: 1,
+                updatedAt: 2,
+              },
+              latestVersion: {
+                version: "1.0.0",
+                createdAt: 3,
+                changelog: "c",
+                parsed: {
+                  description: "Long-form manifest description.",
+                  clawdis: {
+                    requires: { env: ["HA_TOKEN"], config: ["HA_URL"] },
+                    envVars: [
+                      {
+                        name: "HA_TOKEN",
+                        required: true,
+                        description: "Long-lived access token.",
+                      },
+                    ],
+                    os: ["linux"],
+                    nix: { systems: ["x86_64-linux"] },
+                  },
+                },
+              },
+            },
+          ],
+          nextCursor: null,
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.listSkillsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills?limit=1"),
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.items[0].description).toBe("Long-form manifest description.");
+    expect(json.items[0].metadata.setup).toEqual([
+      {
+        key: "HA_TOKEN",
+        label: "Ha Token",
+        type: "secret",
+        required: true,
+        target: "env",
+        help: "Long-lived access token.",
+      },
+      {
+        key: "HA_URL",
+        label: "Ha Url",
+        type: "url",
+        required: true,
+        target: "config",
+      },
+    ]);
+  });
+
   it("lists skills keeps the v1 no-sort default on updated ranking", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("cursor" in args || "numItems" in args) {
@@ -2092,6 +2163,137 @@ describe("httpApiV1 handlers", () => {
       summary: "Detected: suspicious.dynamic_code_execution",
       engineVersion: "v2.0.0",
       updatedAt: 4,
+    });
+  });
+
+  it("get skill includes readme markdown description and setup requirements", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "home-assistant",
+            displayName: "Home Assistant",
+            summary: "Control Home Assistant.",
+            latestVersionId: "skillVersions:1",
+            tags: {},
+            stats: { downloads: 0, stars: 0, versions: 1, comments: 0 },
+            createdAt: 1,
+            updatedAt: 2,
+          },
+          latestVersion: {
+            _id: "skillVersions:1",
+            skillId: "skills:1",
+            version: "1.0.0",
+            createdAt: 3,
+            changelog: "c",
+            files: [],
+            parsed: {
+              description: "Frontmatter description.",
+              clawdis: {
+                requires: { env: ["HA_TOKEN"], config: ["HA_URL"] },
+                envVars: [{ name: "HA_TOKEN", description: "Long-lived access token." }],
+              },
+            },
+          },
+          owner: { handle: "p", displayName: "Peter", image: null },
+          moderationInfo: null,
+        };
+      }
+      if ("versionIds" in args) return [];
+      if ("versionId" in args) {
+        return {
+          _id: "skillVersions:1",
+          skillId: "skills:1",
+          version: "1.0.0",
+          files: [
+            {
+              path: "SKILL.md",
+              size: 21,
+              storageId: "_storage:skill-readme",
+              sha256: "abc123",
+              contentType: "text/markdown",
+            },
+          ],
+          softDeletedAt: undefined,
+        };
+      }
+      return null;
+    });
+    const storageGet = vi.fn().mockResolvedValue({
+      text: vi.fn().mockResolvedValue("# Home Assistant\nSetup."),
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation, storage: { get: storageGet } }),
+      new Request("https://example.com/api/v1/skills/home-assistant"),
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.skill.description).toBe("# Home Assistant\nSetup.");
+    expect(json.metadata.setup).toEqual([
+      {
+        key: "HA_TOKEN",
+        label: "Ha Token",
+        type: "secret",
+        required: true,
+        target: "env",
+        help: "Long-lived access token.",
+      },
+      {
+        key: "HA_URL",
+        label: "Ha Url",
+        type: "url",
+        required: true,
+        target: "config",
+      },
+    ]);
+    expect(storageGet).toHaveBeenCalledWith("_storage:skill-readme");
+  });
+
+  it("get skill uses GitHub-backed cached markdown when no hosted version exists", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:github",
+            slug: "aiq-deploy",
+            displayName: "AIQ Deploy",
+            summary: "Deploy workflows.",
+            tags: {},
+            stats: { downloads: 0, stars: 0, versions: 0, comments: 0 },
+            createdAt: 1,
+            updatedAt: 2,
+          },
+          latestVersion: null,
+          owner: { handle: "nvidia", displayName: "NVIDIA", image: null },
+          moderationInfo: null,
+        };
+      }
+      if ("versionIds" in args) return [];
+      if (args.skillId === "skills:github" && args.kind === "readme") {
+        return {
+          path: "skills/aiq-deploy/SKILL.md",
+          text: "# AIQ Deploy\n\nLong GitHub-backed README.",
+          sourceBaseUrl:
+            "https://github.com/NVIDIA/skills/blob/1111111111111111111111111111111111111111/skills/aiq-deploy",
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/aiq-deploy"),
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.skill.description).toBe("# AIQ Deploy\n\nLong GitHub-backed README.");
+    expect(runQuery).toHaveBeenCalledWith(expect.anything(), {
+      skillId: "skills:github",
+      kind: "readme",
     });
   });
 

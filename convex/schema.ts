@@ -632,6 +632,7 @@ const skills = defineTable({
       createdAt: v.number(),
       changelog: v.string(),
       changelogSource: v.optional(v.union(v.literal("auto"), v.literal("user"))),
+      description: v.optional(v.string()),
       clawdis: v.optional(v.any()),
       // Denormalised mirror of the latest version's `apiKeyRequired`.
       apiKeyRequired: v.optional(v.boolean()),
@@ -993,6 +994,7 @@ const skillSearchDigest = defineTable({
       createdAt: v.number(),
       changelog: v.string(),
       changelogSource: v.optional(v.union(v.literal("auto"), v.literal("user"))),
+      description: v.optional(v.string()),
       clawdis: v.optional(v.any()),
       // Mirrors `skills.latestVersionSummary.apiKeyRequired`.
       apiKeyRequired: v.optional(v.boolean()),

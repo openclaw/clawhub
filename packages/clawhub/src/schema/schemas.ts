@@ -303,6 +303,7 @@ export const ApiV1SkillListResponseSchema = type({
     slug: "string",
     displayName: "string",
     summary: "string|null?",
+    description: "string|null?",
     tags: "unknown",
     stats: "unknown",
     createdAt: "number",
@@ -313,6 +314,20 @@ export const ApiV1SkillListResponseSchema = type({
       changelog: "string",
       license: '"MIT-0"|null?',
     }).optional(),
+    metadata: type({
+      setup: type({
+        key: "string",
+        label: "string",
+        type: '"secret"|"url"|"bool"|"string"',
+        required: "boolean",
+        target: '"env"|"config"',
+        help: "string?",
+      }).array(),
+      os: "string[]|null?",
+      systems: "string[]|null?",
+    })
+      .or("null")
+      .optional(),
   }).array(),
   nextCursor: "string|null",
 });
@@ -322,6 +337,7 @@ export const ApiV1SkillResponseSchema = type({
     slug: "string",
     displayName: "string",
     summary: "string|null?",
+    description: "string|null?",
     tags: "unknown",
     stats: "unknown",
     createdAt: "number",
@@ -333,6 +349,20 @@ export const ApiV1SkillResponseSchema = type({
     changelog: "string",
     license: '"MIT-0"|null?',
   }).or("null"),
+  metadata: type({
+    setup: type({
+      key: "string",
+      label: "string",
+      type: '"secret"|"url"|"bool"|"string"',
+      required: "boolean",
+      target: '"env"|"config"',
+      help: "string?",
+    }).array(),
+    os: "string[]|null?",
+    systems: "string[]|null?",
+  })
+    .or("null")
+    .optional(),
   owner: type({
     handle: "string|null",
     displayName: "string|null?",

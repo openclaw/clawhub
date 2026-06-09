@@ -489,6 +489,44 @@ describe("public skill list deterministic cursors", () => {
     });
   });
 
+  it("carries denormalized latest-version descriptions through the public API list", async () => {
+    getPageMock.mockResolvedValueOnce({
+      page: [
+        makeSearchDigest({
+          latestVersionSummary: {
+            version: "1.0.0",
+            createdAt: 9,
+            changelog: "initial",
+            changelogSource: "user",
+            description: "Long-form frontmatter description.",
+            clawdis: {
+              requires: { env: ["HA_TOKEN"] },
+            },
+          },
+        }),
+      ],
+      hasMore: false,
+      indexKeys: [],
+    });
+
+    const result = await listPublicApiPageV1Handler({} as never, {
+      numItems: 10,
+      sort: "updated",
+    });
+
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({
+      latestVersion: {
+        parsed: {
+          description: "Long-form frontmatter description.",
+          clawdis: {
+            requires: { env: ["HA_TOKEN"] },
+          },
+        },
+      },
+    });
+  });
+
   it("drops stale trending latest versions that belong to another skill", async () => {
     const staleDigest = makeSearchDigest({
       latestVersionId: "skillVersions:other",
