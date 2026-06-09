@@ -1,0 +1,205 @@
+import { expect, test, type Page } from "@playwright/test";
+import { expectHealthyPage, trackRuntimeErrors, waitForHydration } from "../helpers/runtimeErrors";
+import { signInAsLocalPersona } from "./helpers";
+
+test.skip(
+  process.env.VITE_ENABLE_DEV_AUTH !== "1",
+  "local-auth manage context proof requires the local dev auth runner",
+);
+
+type CapturedConvexFrame = {
+  direction: "in" | "out";
+  data: string;
+};
+
+type PackageManageContextPayload = {
+  package: {
+    _id: string;
+    name: string;
+    displayName: string;
+  };
+  latestRelease: {
+    _id: string;
+    version: string;
+  };
+};
+
+declare global {
+  interface Window {
+    __clawhubConvexFrames?: CapturedConvexFrame[];
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parseFrameData(data: string) {
+  try {
+    return JSON.parse(data) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+function collectObjects(value: unknown, visit: (value: Record<string, unknown>) => void) {
+  if (Array.isArray(value)) {
+    for (const item of value) collectObjects(item, visit);
+    return;
+  }
+  if (!isRecord(value)) return;
+  visit(value);
+  for (const item of Object.values(value)) collectObjects(item, visit);
+}
+
+function objectHasStringValue(value: Record<string, unknown>, needle: string) {
+  return Object.values(value).some((item) => typeof item === "string" && item.includes(needle));
+}
+
+function readQueryId(value: Record<string, unknown>) {
+  const queryId = value.queryId;
+  return typeof queryId === "string" || typeof queryId === "number" ? String(queryId) : null;
+}
+
+function isPackageManageContextPayload(value: unknown): value is PackageManageContextPayload {
+  if (!isRecord(value) || !isRecord(value.package) || !isRecord(value.latestRelease)) {
+    return false;
+  }
+  return (
+    typeof value.package._id === "string" &&
+    typeof value.package.name === "string" &&
+    typeof value.package.displayName === "string" &&
+    typeof value.latestRelease._id === "string" &&
+    typeof value.latestRelease.version === "string"
+  );
+}
+
+function findPackageManageContextPayload(value: unknown): PackageManageContextPayload | null {
+  let payload: PackageManageContextPayload | null = null;
+  collectObjects(value, (objectValue) => {
+    if (!payload && isPackageManageContextPayload(objectValue)) {
+      payload = objectValue;
+    }
+  });
+  return payload;
+}
+
+function extractManageContextValues(frames: CapturedConvexFrame[]) {
+  const queryIds = new Set<string>();
+  for (const frame of frames) {
+    if (frame.direction !== "out") continue;
+    const parsed = parseFrameData(frame.data);
+    collectObjects(parsed, (objectValue) => {
+      if (!objectHasStringValue(objectValue, "packages:getManageContext")) return;
+      const queryId = readQueryId(objectValue);
+      if (queryId) queryIds.add(queryId);
+    });
+  }
+
+  const values: PackageManageContextPayload[] = [];
+  for (const frame of frames) {
+    if (frame.direction !== "in") continue;
+    const parsed = parseFrameData(frame.data);
+    collectObjects(parsed, (objectValue) => {
+      const queryId = readQueryId(objectValue);
+      if (!queryId || !queryIds.has(queryId)) return;
+      const payload = findPackageManageContextPayload(objectValue);
+      if (payload) values.push(payload);
+    });
+  }
+  return { querySeen: queryIds.size > 0, values };
+}
+
+async function installConvexFrameCapture(page: Page) {
+  await page.addInitScript(() => {
+    const originalWebSocket = window.WebSocket;
+    window.__clawhubConvexFrames = [];
+
+    function capture(direction: "in" | "out", data: unknown) {
+      if (typeof data !== "string") return;
+      window.__clawhubConvexFrames?.push({ direction, data });
+    }
+
+    class CapturedWebSocket extends originalWebSocket {
+      constructor(url: string | URL, protocols?: string | string[]) {
+        if (protocols === undefined) {
+          super(url);
+        } else {
+          super(url, protocols);
+        }
+        this.addEventListener("message", (event) => capture("in", event.data));
+      }
+
+      override send(data: string | Blob | BufferSource) {
+        capture("out", data);
+        return super.send(data);
+      }
+    }
+
+    Object.defineProperty(window, "WebSocket", {
+      configurable: true,
+      writable: true,
+      value: CapturedWebSocket,
+    });
+  });
+}
+
+async function readConvexFrames(page: Page) {
+  return await page.evaluate(() => window.__clawhubConvexFrames ?? []);
+}
+
+test("plugin manage context query returns only slim identifiers", async ({ page }) => {
+  await installConvexFrameCapture(page);
+  const errors = trackRuntimeErrors(page);
+
+  await signInAsLocalPersona(page, "owner");
+  await page.goto("/plugins/local-scanned-runtime-plugin", { waitUntil: "domcontentloaded" });
+  await waitForHydration(page);
+
+  await expect(page.getByRole("heading", { name: "Local Scanned Runtime Plugin" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "New version" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: /Validation \(2\)/ })).toBeVisible();
+
+  await expect
+    .poll(async () => extractManageContextValues(await readConvexFrames(page)), {
+      timeout: 15_000,
+      intervals: [500, 1_000, 2_000],
+    })
+    .toMatchObject({
+      querySeen: true,
+      values: expect.arrayContaining([
+        {
+          package: {
+            _id: expect.stringMatching(/^packages:/),
+            name: "local-scanned-runtime-plugin",
+            displayName: "Local Scanned Runtime Plugin",
+          },
+          latestRelease: {
+            _id: expect.stringMatching(/^packageReleases:/),
+            version: "0.1.0",
+          },
+        },
+      ]),
+    });
+  const capture = extractManageContextValues(await readConvexFrames(page));
+  const latestValue = capture.values.at(-1);
+
+  expect(latestValue).toEqual({
+    package: {
+      _id: expect.stringMatching(/^packages:/),
+      name: "local-scanned-runtime-plugin",
+      displayName: "Local Scanned Runtime Plugin",
+    },
+    latestRelease: {
+      _id: expect.stringMatching(/^packageReleases:/),
+      version: "0.1.0",
+    },
+  });
+  expect(JSON.stringify(latestValue)).not.toContain("sourceRepo");
+  expect(JSON.stringify(latestValue)).not.toContain("latestVersionSummary");
+  expect(JSON.stringify(latestValue)).not.toContain("files");
+  expect(JSON.stringify(latestValue)).not.toContain("llmAnalysis");
+  expect(JSON.stringify(latestValue)).not.toContain("staticScan");
+
+  await expectHealthyPage(page, errors);
+});
