@@ -46,6 +46,7 @@ import {
   appendPackageModerationEventLog,
 } from "./lib/artifactModeration";
 import { sha256Hex } from "./lib/clawpack";
+import { buildPackageInspectorFindingsEmail } from "./lib/emails";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
 import { isOfficialPublisher } from "./lib/officialPublishers";
@@ -7246,11 +7247,12 @@ export const sendPackageInspectorFindingsEmailInternal = internalAction({
         message: string;
         inspectorVersion?: string;
         targetOpenClawVersion?: string;
+        scanSource?: "publish" | "nightly";
       }>;
     } | null>(ctx, internalRefs.packages.getPackageInspectorEmailContextInternal, args);
     if (!context) return { ok: true as const, sent: false, reason: "no-context" as const };
 
-    const email = renderPackageInspectorFindingsEmail({
+    const email = buildPackageInspectorFindingsEmail({
       packageName: context.packageName,
       version: context.version,
       findings: context.findings,
@@ -7478,88 +7480,6 @@ function buildPublicPluginValidationPath(packageName: string) {
   return `/plugins/${encodedName}#validation`;
 }
 
-function renderPackageInspectorFindingsEmail(args: {
-  packageName: string;
-  version: string;
-  warningUrl: string;
-  findings: Array<{
-    findingKind: "warning" | "error";
-    code: string;
-    issueClass?: string;
-    level?: string;
-    severity?: string;
-    message: string;
-    inspectorVersion?: string;
-    targetOpenClawVersion?: string;
-  }>;
-}) {
-  const hasErrors = args.findings.some((finding) => finding.findingKind === "error");
-  const inspectorVersion = args.findings.find(
-    (finding) => finding.inspectorVersion,
-  )?.inspectorVersion;
-  const targetOpenClawVersion = args.findings.find(
-    (finding) => finding.targetOpenClawVersion,
-  )?.targetOpenClawVersion;
-  const subject = `Plugin Inspector findings for ${args.packageName}@${args.version}`;
-  const intro = hasErrors
-    ? "Plugin Inspector found compatibility errors or warnings for an already published plugin."
-    : "Your plugin was published, but Plugin Inspector found non-blocking warnings.";
-  const findingLines = args.findings.map((finding) => {
-    const label = finding.issueClass ? `${finding.code} (${finding.issueClass})` : finding.code;
-    return `- ${finding.findingKind.toUpperCase()} ${label}: ${finding.message}`;
-  });
-  const text = [
-    intro,
-    "",
-    `Plugin: ${args.packageName}@${args.version}`,
-    inspectorVersion ? `Plugin Inspector: ${inspectorVersion}` : null,
-    targetOpenClawVersion ? `Target OpenClaw: ${targetOpenClawVersion}` : null,
-    "",
-    "Review the findings:",
-    args.warningUrl,
-    "",
-    ...findingLines,
-  ]
-    .filter((line): line is string => line !== null)
-    .join("\n");
-  const html = `<!doctype html>
-<html>
-  <body style="margin:0;background:#f6f7f9;color:#1f2933;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
-    <main style="max-width:640px;margin:0 auto;padding:32px 18px;">
-      <section style="background:#ffffff;border:1px solid #d8dee6;border-radius:8px;padding:24px;">
-        <p style="margin:0 0 8px;color:#5b6472;font-size:13px;">ClawHub Plugin Inspector</p>
-        <h1 style="margin:0 0 14px;font-size:24px;line-height:1.25;">Plugin Inspector findings</h1>
-        <p style="margin:0 0 18px;line-height:1.55;">${escapeHtml(intro)}</p>
-        <div style="margin:0 0 18px;padding:12px;border:1px solid #e2e8f0;border-radius:6px;background:#f8fafc;">
-          <p style="margin:0 0 6px;"><strong>Plugin:</strong> ${escapeHtml(args.packageName)}@${escapeHtml(args.version)}</p>
-          ${inspectorVersion ? `<p style="margin:0 0 6px;"><strong>Plugin Inspector:</strong> ${escapeHtml(inspectorVersion)}</p>` : ""}
-          ${targetOpenClawVersion ? `<p style="margin:0;"><strong>Target OpenClaw:</strong> ${escapeHtml(targetOpenClawVersion)}</p>` : ""}
-        </div>
-        <ul style="margin:0 0 20px;padding:0;list-style:none;">
-          ${args.findings.map(renderEmailFindingHtml).join("")}
-        </ul>
-        <p style="margin:0;"><a href="${escapeHtml(args.warningUrl)}" style="display:inline-block;border-radius:6px;background:#111827;color:#ffffff;text-decoration:none;padding:10px 14px;font-weight:700;">View plugin validation</a></p>
-      </section>
-    </main>
-  </body>
-</html>`;
-  return { subject, text, html };
-}
-
-function renderEmailFindingHtml(finding: {
-  findingKind: "warning" | "error";
-  code: string;
-  issueClass?: string;
-  severity?: string;
-  message: string;
-}) {
-  const color = finding.findingKind === "error" ? "#b42318" : "#a15c07";
-  return `<li style="margin:0 0 10px;padding:12px;border:1px solid #e2e8f0;border-radius:6px;">
-    <p style="margin:0 0 6px;"><span style="display:inline-block;margin-right:8px;color:${color};font-weight:700;text-transform:uppercase;">${escapeHtml(finding.findingKind)}</span><code>${escapeHtml(finding.code)}</code>${finding.issueClass ? ` <span style="color:#5b6472;">${escapeHtml(finding.issueClass)}</span>` : ""}${finding.severity ? ` <span style="color:#5b6472;">${escapeHtml(finding.severity)}</span>` : ""}</p>
-    <p style="margin:0;line-height:1.5;">${escapeHtml(finding.message)}</p>
-  </li>`;
-}
-
 async function sendResendEmail(args: { to: string; subject: string; text: string; html: string }) {
   const apiKey = process.env.RESEND_API_KEY?.trim();
   const from = process.env.RESEND_FROM_EMAIL?.trim() || process.env.CLAWHUB_EMAIL_FROM?.trim();
@@ -7588,14 +7508,6 @@ async function sendResendEmail(args: { to: string; subject: string; text: string
     console.error("Resend email failed", error);
     return false;
   }
-}
-
-function escapeHtml(value: string) {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
 }
 
 export const insertReleaseInternal = internalMutation({

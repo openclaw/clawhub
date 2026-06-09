@@ -79,6 +79,13 @@ describe("package publish workflow", () => {
     expect(workflow).toContain("tar -xzf");
     expect(workflow).toContain("cmd_source = prebuilt_artifact_path or source");
     expect(workflow).toContain("if source_path and prebuilt_artifact_path:");
+    expect(workflow).toContain("if prebuilt_artifact_path:");
+    expect(workflow).toContain("if not source_repo and not source_commit:");
+    expect(workflow).toContain('source_repo = os.environ["GITHUB_REPOSITORY"].strip()');
+    expect(workflow).toContain('source_commit = os.environ["GITHUB_SHA"].strip()');
+    expect(workflow).toContain(
+      "Prebuilt artifact mode requires source_repo and source_commit together",
+    );
     expect(workflow).toContain("Prebuilt artifact mode does not accept source_path");
   });
 });

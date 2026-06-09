@@ -452,6 +452,16 @@ jobs:
           source_repo = os.environ["INPUT_SOURCE_REPO"].strip()
           source_commit = os.environ["INPUT_SOURCE_COMMIT"].strip()
           source_ref = os.environ["INPUT_SOURCE_REF"].strip()
+          if prebuilt_artifact_path:
+              if not source_repo and not source_commit:
+                  source_repo = os.environ["GITHUB_REPOSITORY"].strip()
+                  source_commit = os.environ["GITHUB_SHA"].strip()
+              elif not source_repo or not source_commit:
+                  raise SystemExit(
+                      "Prebuilt artifact mode requires source_repo and source_commit together when overriding source attribution."
+                  )
+              if not source_ref:
+                  source_ref = os.environ["GITHUB_REF"].strip()
           if source_repo:
               cmd += ["--source-repo", source_repo]
           if source_commit:

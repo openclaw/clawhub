@@ -46,6 +46,25 @@ export type MaliciousArtifactEmailArgs = {
   findingSummary?: string;
 };
 
+export type PackageInspectorEmailFinding = {
+  findingKind: "warning" | "error";
+  code: string;
+  issueClass?: string;
+  level?: string;
+  severity?: string;
+  message: string;
+  inspectorVersion?: string;
+  targetOpenClawVersion?: string;
+  scanSource?: "publish" | "nightly";
+};
+
+export type PackageInspectorFindingsEmailArgs = {
+  packageName: string;
+  version: string;
+  warningUrl: string;
+  findings: PackageInspectorEmailFinding[];
+};
+
 type BanReasonSummary = {
   scannerLabel: string | null;
   findingSummary: string;
@@ -176,6 +195,10 @@ function buildScanDownloadCommand(args: MaliciousArtifactEmailArgs) {
   const version = args.version?.trim() || "<version>";
   const kindFlag = args.artifact.kind === "plugin" ? " --kind plugin" : "";
   return `clawhub scan download ${args.artifact.name} --version ${version}${kindFlag}`;
+}
+
+function buildPluginValidateCommand() {
+  return "clawhub package validate <path-to-plugin>";
 }
 
 function normalizeEmailFindingSummary(value: string | undefined) {
@@ -359,4 +382,86 @@ export function buildMaliciousArtifactEmail(args: MaliciousArtifactEmailArgs) {
     text: lines.join("\n"),
     html,
   };
+}
+
+export function buildPackageInspectorFindingsEmail(args: PackageInspectorFindingsEmailArgs) {
+  const hasErrors = args.findings.some((finding) => finding.findingKind === "error");
+  const inspectorVersion = args.findings.find(
+    (finding) => finding.inspectorVersion,
+  )?.inspectorVersion;
+  const targetOpenClawVersion = args.findings.find(
+    (finding) => finding.targetOpenClawVersion,
+  )?.targetOpenClawVersion;
+  const validateCommand = buildPluginValidateCommand();
+  const subject = `Plugin Inspector findings for ${args.packageName}@${args.version}`;
+  const intro = `We found issues with version ${args.version} of ${args.packageName}.`;
+  const nextSteps = [
+    hasErrors
+      ? "Some findings are errors for the target OpenClaw version shown below."
+      : "The findings are warnings for the target OpenClaw version shown below.",
+    "Run the validation command locally against your plugin changes.",
+    "When you have a fix, upload a new version.",
+  ];
+  const findingLines = formatPackageInspectorFindings(args.findings);
+  const metadataLines = [
+    `Plugin: ${args.packageName}@${args.version}`,
+    inspectorVersion ? `Plugin Inspector: ${inspectorVersion}` : null,
+    targetOpenClawVersion ? `Target OpenClaw: ${targetOpenClawVersion}` : null,
+  ].filter((line): line is string => line !== null);
+  const lines = [
+    intro,
+    "",
+    ...metadataLines,
+    "",
+    "Next steps:",
+    ...nextSteps.map((item) => `- ${item}`),
+    "",
+    "Findings:",
+    ...findingLines,
+    "",
+    "Validate a local fix:",
+    validateCommand,
+    "",
+    "Review the findings:",
+    args.warningUrl,
+    "",
+    "ClawHub Plugin Inspector",
+  ];
+
+  const detailLines = [
+    detailLine("Plugin", `${args.packageName}@${args.version}`),
+    ...(inspectorVersion ? [detailLine("Plugin Inspector", inspectorVersion)] : []),
+    ...(targetOpenClawVersion ? [detailLine("Target OpenClaw", targetOpenClawVersion)] : []),
+  ].join("");
+  const html = emailShell({
+    title: "Plugin Inspector findings",
+    preheader: intro,
+    body: [
+      paragraph(intro),
+      detailLines,
+      sectionHeading("Next steps"),
+      bulletList(nextSteps),
+      sectionHeading("Findings"),
+      bulletList(findingLines.map((finding) => finding.replace(/^- /, ""))),
+      sectionHeading("Validate a local fix"),
+      commandBlock(validateCommand),
+      `<p style="margin:0 0 14px;font-size:15px;line-height:22px;color:#1f2328;">Review: ${textLink(args.warningUrl, "plugin validation findings")}</p>`,
+      paragraph("ClawHub Plugin Inspector"),
+    ].join(""),
+  });
+
+  return {
+    subject,
+    text: lines.join("\n"),
+    html,
+  };
+}
+
+function formatPackageInspectorFindings(findings: PackageInspectorEmailFinding[]) {
+  if (findings.length === 0) return ["- No findings were included."];
+  return findings.map((finding) => {
+    const label = finding.issueClass ? `${finding.code} (${finding.issueClass})` : finding.code;
+    const severity = finding.severity ? ` ${finding.severity}` : "";
+    return `- ${finding.findingKind.toUpperCase()} ${label}${severity}: ${finding.message}`;
+  });
 }
