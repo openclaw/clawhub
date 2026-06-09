@@ -1218,7 +1218,8 @@ const packages = defineTable({
   .index("by_family_official_updated", ["family", "isOfficial", "updatedAt"])
   .index("by_runtime_id", ["runtimeId"])
   .index("by_active_updated", ["softDeletedAt", "updatedAt"])
-  .index("by_active_downloads", ["softDeletedAt", "stats.downloads", "updatedAt"]);
+  .index("by_active_downloads", ["softDeletedAt", "stats.downloads", "updatedAt"])
+  .index("by_active_family_downloads", ["softDeletedAt", "family", "stats.downloads", "updatedAt"]);
 
 const packageReleases = defineTable({
   packageId: v.id("packages"),

@@ -1098,7 +1098,10 @@ function makeDigestCtx(options: {
                     },
                   };
                   builder?.(queryBuilder);
-                  if (indexName === "by_active_downloads") {
+                  if (
+                    indexName === "by_active_downloads" ||
+                    indexName === "by_active_family_downloads"
+                  ) {
                     return withIndex(table, indexName);
                   }
                   if (indexName !== "by_name" && indexName !== "by_runtime_id") {
@@ -2201,32 +2204,26 @@ describe("packages public queries", () => {
     expect((result.page[0] as { stats?: unknown }).stats).toEqual(currentStats);
   });
 
-  it("continues scanning download-sorted pages until filtered public results are filled", async () => {
-    const { ctx, paginate } = makeDigestCtx({
+  it("uses a family-scoped downloads index for download-sorted family pages", async () => {
+    const { ctx, indexNames, paginate } = makeDigestCtx({
       packagePages: [
         {
           page: [
             makePackageDoc({
-              _id: "packages:bundle-plugin",
-              name: "bundle-plugin",
-              normalizedName: "bundle-plugin",
-              displayName: "Bundle Plugin",
-              family: "bundle-plugin",
-              stats: { downloads: 500, installs: 0, stars: 0, versions: 1 },
-            }),
-          ],
-          isDone: false,
-          continueCursor: "cursor:next",
-        },
-        {
-          page: [
-            makePackageDoc({
-              _id: "packages:code-plugin",
-              name: "code-plugin",
-              normalizedName: "code-plugin",
-              displayName: "Code Plugin",
+              _id: "packages:code-plugin-a",
+              name: "code-plugin-a",
+              normalizedName: "code-plugin-a",
+              displayName: "Code Plugin A",
               family: "code-plugin",
               stats: { downloads: 200, installs: 0, stars: 0, versions: 1 },
+            }),
+            makePackageDoc({
+              _id: "packages:code-plugin-b",
+              name: "code-plugin-b",
+              normalizedName: "code-plugin-b",
+              displayName: "Code Plugin B",
+              family: "code-plugin",
+              stats: { downloads: 100, installs: 0, stars: 0, versions: 1 },
             }),
           ],
           isDone: true,
@@ -2241,8 +2238,58 @@ describe("packages public queries", () => {
       paginationOpts: { cursor: null, numItems: 1 },
     });
 
+    expect(result.page.map((entry) => entry.name)).toEqual(["code-plugin-a"]);
+    expect(result.isDone).toBe(false);
+    expect(indexNames).toEqual(["by_active_family_downloads"]);
+    expect(paginate).toHaveBeenCalledTimes(1);
+    expect(paginate).toHaveBeenCalledWith({ cursor: null, numItems: 50 });
+  });
+
+  it("continues scanning global download-sorted pages for non-indexed filters", async () => {
+    const { ctx, indexNames, paginate } = makeDigestCtx({
+      packagePages: [
+        {
+          page: [
+            makePackageDoc({
+              _id: "packages:bundle-plugin",
+              name: "bundle-plugin",
+              normalizedName: "bundle-plugin",
+              displayName: "Bundle Plugin",
+              family: "bundle-plugin",
+              executesCode: false,
+              stats: { downloads: 500, installs: 0, stars: 0, versions: 1 },
+            }),
+          ],
+          isDone: false,
+          continueCursor: "cursor:next",
+        },
+        {
+          page: [
+            makePackageDoc({
+              _id: "packages:code-plugin",
+              name: "code-plugin",
+              normalizedName: "code-plugin",
+              displayName: "Code Plugin",
+              family: "code-plugin",
+              executesCode: true,
+              stats: { downloads: 200, installs: 0, stars: 0, versions: 1 },
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      executesCode: true,
+      sort: "downloads",
+      paginationOpts: { cursor: null, numItems: 1 },
+    });
+
     expect(result.page.map((entry) => entry.name)).toEqual(["code-plugin"]);
     expect(result.isDone).toBe(true);
+    expect(indexNames).toEqual(["by_active_downloads", "by_active_downloads"]);
     expect(paginate).toHaveBeenCalledTimes(2);
   });
 

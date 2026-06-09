@@ -3086,6 +3086,16 @@ async function listPackagePageImpl(
     let pageOffset = offset;
     let pageSize: number | null = decodedCursor.pageSize ?? null;
     let done = decodedCursor.done;
+    const buildDownloadsQuery = () =>
+      family
+        ? ctx.db
+            .query("packages")
+            .withIndex("by_active_family_downloads", (q) =>
+              q.eq("softDeletedAt", undefined).eq("family", family),
+            )
+        : ctx.db
+            .query("packages")
+            .withIndex("by_active_downloads", (q) => q.eq("softDeletedAt", undefined));
 
     while ((pageOffset > 0 || !done) && collected.length < targetCount) {
       const scanPageSize = Math.min(
@@ -3095,9 +3105,7 @@ async function listPackagePageImpl(
           : Math.max(targetCount * 5, targetCount, 50),
       );
       const currentCursor = cursor;
-      const page = await ctx.db
-        .query("packages")
-        .withIndex("by_active_downloads", (q) => q.eq("softDeletedAt", undefined))
+      const page = await buildDownloadsQuery()
         .order("desc")
         .paginate({ cursor: currentCursor, numItems: scanPageSize });
 
