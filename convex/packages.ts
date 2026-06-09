@@ -7217,6 +7217,7 @@ export const getPackageInspectorEmailContextInternal = internalQuery({
       ownerUserId: pkg.ownerUserId,
       ownerPublisherId: pkg.ownerPublisherId,
       ownerEmail: owner.email,
+      ownerHandle: owner.handle,
       packageName: pkg.name,
       version: release.version,
       findings: findings.map(toPublicPackageInspectorFinding),
@@ -7236,6 +7237,7 @@ export const sendPackageInspectorFindingsEmailInternal = internalAction({
       ownerUserId: Id<"users">;
       ownerPublisherId?: Id<"publishers">;
       ownerEmail: string;
+      ownerHandle?: string;
       packageName: string;
       version: string;
       findings: Array<{
@@ -7253,6 +7255,7 @@ export const sendPackageInspectorFindingsEmailInternal = internalAction({
     if (!context) return { ok: true as const, sent: false, reason: "no-context" as const };
 
     const email = buildPackageInspectorFindingsEmail({
+      handle: context.ownerHandle,
       packageName: context.packageName,
       version: context.version,
       findings: context.findings,

@@ -152,6 +152,7 @@ describe("moderation notification email copy", () => {
 
   it("builds plugin inspector warning copy with local validation guidance", () => {
     const email = buildPackageInspectorFindingsEmail({
+      handle: "octocat",
       packageName: "demo-plugin",
       version: "1.0.0",
       warningUrl: "https://clawhub.ai/plugins/demo-plugin#validation",
@@ -170,16 +171,30 @@ describe("moderation notification email copy", () => {
     });
 
     expect(email.subject).toBe("Plugin Inspector findings for demo-plugin@1.0.0");
-    expect(email.text).toContain("We found issues with version 1.0.0 of demo-plugin.");
-    expect(email.text).toContain(
-      "The findings are warnings for the target OpenClaw version shown below.",
-    );
-    expect(email.text).toContain("Run the validation command locally against your plugin changes.");
+    expect(email.text).toContain("Hi octocat,");
+    expect(email.text).toContain("We found 1 issue with version 1.0.0 of demo-plugin.");
+    expect(email.text).toContain("OpenClaw Version: 0.9.0");
+    expect(email.text).toContain("Address the findings below in your plugin package.");
+    expect(email.text).toContain("Run the validation command locally against your changes.");
     expect(email.text).toContain("clawhub package validate <path-to-plugin>");
-    expect(email.text).toContain("WARNING legacy-before-agent-start (deprecation-warning) P2");
+    expect(email.text).toContain(
+      "- **WARNING** `legacy-before-agent-start` (deprecation-warning, P2)",
+    );
+    expect(email.text).toContain("  legacy before_agent_start hook is deprecated");
+    expect(email.text).toContain("ClawHub Security");
     expect(email.html).toContain("Validate a local fix");
+    expect(email.html).toContain("Hi octocat,");
+    expect(email.html).toContain("<strong>OpenClaw Version:</strong> 0.9.0");
     expect(email.html).toContain("clawhub package validate &lt;path-to-plugin&gt;");
-    expect(email.html).toContain("plugin validation findings");
+    expect(email.html).toContain("legacy-before-agent-start");
+    expect(email.html).toContain("deprecation-warning · P2");
+    expect(email.html).toContain("ClawHub Security");
+    expect(email.text).not.toContain("Plugin Inspector: 0.4.0");
+    expect(email.text).not.toContain("Target OpenClaw:");
+    expect(email.html).not.toContain("<strong>Plugin Inspector:</strong>");
+    expect(email.html).not.toContain("<strong>Target OpenClaw:</strong>");
+    expect(email.html).not.toContain("Review:");
+    expect(email.html).not.toContain("plugin validation findings");
     expect(email.html).not.toContain("Your plugin was published");
     expect(email.html).not.toContain("published successfully");
   });
@@ -204,15 +219,16 @@ describe("moderation notification email copy", () => {
       ],
     });
 
-    expect(email.text).toContain("We found issues with version 1.0.1 of demo-plugin.");
-    expect(email.text).toContain(
-      "Some findings are errors for the target OpenClaw version shown below.",
-    );
-    expect(email.text).toContain("Run the validation command locally against your plugin changes.");
+    expect(email.text).toContain("We found 1 issue with version 1.0.1 of demo-plugin.");
+    expect(email.text).toContain("Address the findings below in your plugin package.");
+    expect(email.text).toContain("Run the validation command locally against your changes.");
     expect(email.text).toContain("clawhub package validate <path-to-plugin>");
+    expect(email.text).toContain("- **ERROR** `missing-expected-seam` (compatibility-error, P0)");
     expect(email.text).not.toContain("Your plugin was published");
     expect(email.text).not.toContain("was published, but");
+    expect(email.text).not.toContain("Some findings are errors");
     expect(email.text).not.toContain("nightly");
-    expect(email.html).toContain("ERROR missing-expected-seam (compatibility-error) P0");
+    expect(email.html).toContain("missing-expected-seam");
+    expect(email.html).toContain("compatibility-error · P0");
   });
 });
