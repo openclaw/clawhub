@@ -16,8 +16,9 @@ on:
         description: "Maximum preview batches to scan when dry_run is enabled"
         required: false
         default: "20"
-  schedule:
-    - cron: "41 8 * * *"
+  # Temporarily disabled; keep workflow_dispatch available for manual dry runs.
+  # schedule:
+  #   - cron: "41 8 * * *"
 
 permissions:
   contents: read
