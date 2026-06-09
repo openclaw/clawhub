@@ -61,6 +61,14 @@ on:
         description: Optional source path inside the repository for monorepo package publishes.
         required: false
         type: string
+      package_artifact_name:
+        description: Optional Actions artifact name containing a prebuilt ClawPack .tgz to publish.
+        required: false
+        type: string
+      package_artifact_path:
+        description: Optional path to the .tgz inside package_artifact_name. Defaults to the only .tgz in the artifact.
+        required: false
+        type: string
     secrets:
       clawhub_token:
         required: false
@@ -82,6 +90,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
+      actions: read
       contents: read
       id-token: write
     outputs:
@@ -213,6 +222,54 @@ jobs:
           PY
           echo "CLAWHUB_CONFIG_PATH=$RUNNER_TEMP/clawhub-config.json" >> "$GITHUB_ENV"
 
+      - name: Download prebuilt package artifact
+        if: inputs.package_artifact_name != ''
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.package_artifact_name }}
+          path: ${{ runner.temp }}/prebuilt-package-artifact
+
+      - name: Resolve prebuilt package artifact
+        id: resolve_artifact
+        env:
+          INPUT_PACKAGE_ARTIFACT_NAME: ${{ inputs.package_artifact_name }}
+          INPUT_PACKAGE_ARTIFACT_PATH: ${{ inputs.package_artifact_path }}
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          artifact_name = os.environ["INPUT_PACKAGE_ARTIFACT_NAME"].strip()
+          output_path = Path(os.environ["GITHUB_OUTPUT"])
+          if not artifact_name:
+              with output_path.open("a", encoding="utf-8") as fh:
+                  fh.write("package_artifact_path=\n")
+              raise SystemExit(0)
+
+          artifact_root = Path(os.environ["RUNNER_TEMP"]) / "prebuilt-package-artifact"
+          requested_path = os.environ["INPUT_PACKAGE_ARTIFACT_PATH"].strip()
+          if requested_path:
+              candidate = (artifact_root / requested_path).resolve()
+              if artifact_root.resolve() not in candidate.parents and candidate != artifact_root.resolve():
+                  raise SystemExit(f"Prebuilt artifact path escapes downloaded artifact: {requested_path}")
+              if not candidate.is_file():
+                  raise SystemExit(f"Prebuilt package artifact path not found: {requested_path}")
+          else:
+              candidates = sorted(path for path in artifact_root.rglob("*.tgz") if path.is_file())
+              if not candidates:
+                  raise SystemExit(f"Prebuilt package artifact {artifact_name!r} did not contain a .tgz file.")
+              if len(candidates) > 1:
+                  joined = ", ".join(str(path.relative_to(artifact_root)) for path in candidates)
+                  raise SystemExit(
+                      "Prebuilt package artifact contains multiple .tgz files; set package_artifact_path. "
+                      f"Found: {joined}"
+                  )
+              candidate = candidates[0]
+
+          with output_path.open("a", encoding="utf-8") as fh:
+              fh.write(f"package_artifact_path={candidate}\n")
+          PY
+
       - name: Resolve publish command
         id: resolve_publish
         env:
@@ -226,6 +283,7 @@ jobs:
           INPUT_SOURCE_COMMIT: ${{ inputs.source_commit }}
           INPUT_SOURCE_REF: ${{ inputs.source_ref }}
           INPUT_SOURCE_PATH: ${{ inputs.source_path }}
+          PREBUILT_PACKAGE_ARTIFACT_PATH: ${{ steps.resolve_artifact.outputs.package_artifact_path }}
           INPUT_SITE: ${{ inputs.site }}
           INPUT_REGISTRY: ${{ inputs.registry }}
           CLAWHUB_TOKEN: ${{ secrets.clawhub_token }}
@@ -324,12 +382,18 @@ jobs:
           if ref and "@" not in source and not source.startswith("http") and not is_local_source:
               source = f"{source}@{ref}"
           source_path = os.environ["INPUT_SOURCE_PATH"].strip()
+          prebuilt_artifact_path = os.environ["PREBUILT_PACKAGE_ARTIFACT_PATH"].strip()
+          if source_path and prebuilt_artifact_path:
+              raise SystemExit("Prebuilt artifact mode does not accept source_path; publish the already-packed artifact instead.")
 
           inspect_checkout_repository = ""
           inspect_checkout_ref = ""
           inspect_local_root = str(Path(os.environ["GITHUB_WORKSPACE"]).resolve())
           inspect_subdir = source_path
-          if is_local_source:
+          if prebuilt_artifact_path:
+              inspect_local_root = str((Path(os.environ["RUNNER_TEMP"]) / "prebuilt-package-inspect").resolve())
+              inspect_subdir = ""
+          elif is_local_source:
               inspect_local_root = str(Path(source).resolve())
           else:
               github_source = parse_github_source(source)
@@ -359,12 +423,13 @@ jobs:
           if not cli_entry.exists():
               raise SystemExit(f"Missing ClawHub CLI entrypoint at {cli_entry}")
 
+          cmd_source = prebuilt_artifact_path or source
           cmd = [
               "bun",
               str(cli_entry),
               "package",
               "publish",
-              source,
+              cmd_source,
               "--site",
               os.environ["INPUT_SITE"],
               "--registry",
@@ -418,6 +483,16 @@ jobs:
               fh.write(f"inspect_local_root={inspect_local_root}\n")
               fh.write(f"inspect_subdir={inspect_subdir}\n")
           PY
+
+      - name: Extract prebuilt package artifact for plugin validation
+        if: steps.resolve_artifact.outputs.package_artifact_path != ''
+        env:
+          PREBUILT_PACKAGE_ARTIFACT_PATH: ${{ steps.resolve_artifact.outputs.package_artifact_path }}
+          INSPECT_LOCAL_ROOT: ${{ steps.resolve_publish.outputs.inspect_local_root }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$INSPECT_LOCAL_ROOT"
+          tar -xzf "$PREBUILT_PACKAGE_ARTIFACT_PATH" -C "$INSPECT_LOCAL_ROOT" --strip-components=1
 
       - name: Checkout publish source for plugin inspector
         if: steps.resolve_publish.outputs.inspect_checkout_repository != ''

@@ -62,4 +62,23 @@ describe("package publish workflow", () => {
     expect(script).toContain("if (!dryRun) {");
     expect(workflow).toContain("actions/upload-artifact");
   });
+
+  it("supports publishing a prebuilt ClawPack artifact from a caller workflow", () => {
+    const workflow = readFileSync(resolve(".github/workflows/package-publish.yml"), "utf8");
+
+    expect(workflow).toContain("package_artifact_name:");
+    expect(workflow).toContain("package_artifact_path:");
+    expect(workflow).toContain("actions: read");
+    expect(workflow).toContain("Download prebuilt package artifact");
+    expect(workflow).toContain("actions/download-artifact");
+    expect(workflow).toContain("Resolve prebuilt package artifact");
+    expect(workflow).toContain("Extract prebuilt package artifact for plugin validation");
+    expect(workflow).toContain("INPUT_PACKAGE_ARTIFACT_PATH");
+    expect(workflow).toContain("package_artifact_path=");
+    expect(workflow).toContain("PREBUILT_PACKAGE_ARTIFACT_PATH");
+    expect(workflow).toContain("tar -xzf");
+    expect(workflow).toContain("cmd_source = prebuilt_artifact_path or source");
+    expect(workflow).toContain("if source_path and prebuilt_artifact_path:");
+    expect(workflow).toContain("Prebuilt artifact mode does not accept source_path");
+  });
 });
