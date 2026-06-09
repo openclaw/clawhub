@@ -7085,7 +7085,9 @@ async function insertPackageInspectorFindings(
     warnings?: PackageInspectorFinding[];
   },
 ) {
-  const findings = args.findings ?? args.warnings ?? [];
+  const findings = (args.findings ?? args.warnings ?? []).filter(
+    (finding) => finding.issueClass !== "inspector-gap",
+  );
   if (findings.length === 0) return { ok: true as const, inserted: 0, shouldEmailOwner: false };
   const existingWarnings = await ctx.db
     .query("packageInspectorWarnings")

@@ -249,14 +249,17 @@ function isPlainObject(value: unknown) {
 
 function normalizeFindings(report: Record<string, unknown>): NormalizedFinding[] {
   const issues = Array.isArray(report.issues)
-    ? report.issues.map((issue) => normalizeFinding(issue, "warning")).filter(isFinding)
+    ? report.issues
+        .map((issue) => normalizeFinding(issue, "warning"))
+        .filter(isFinding)
+        .filter(isAuthorFacingFinding)
     : [];
   if (issues.length > 0) return issues;
   return [
     ...normalizeFindingArray(report.breakages, "breakage"),
     ...normalizeFindingArray(report.warnings, "warning"),
     ...normalizeFindingArray(report.suggestions, "warning"),
-  ];
+  ].filter(isAuthorFacingFinding);
 }
 
 function normalizeFindingArray(value: unknown, fallbackLevel: string) {
@@ -291,6 +294,10 @@ function normalizeFinding(value: unknown, fallbackLevel: string): NormalizedFind
 
 function isFinding(value: NormalizedFinding | null): value is NormalizedFinding {
   return value !== null;
+}
+
+function isAuthorFacingFinding(value: NormalizedFinding) {
+  return value.issueClass !== "inspector-gap";
 }
 
 function toImpactEntry(

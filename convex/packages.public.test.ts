@@ -469,6 +469,7 @@ const insertPackageInspectorWarningsInternalHandler = (
         code: string;
         message: string;
         level?: string;
+        issueClass?: string;
         evidence?: string[];
         fixture?: string;
       }>;
@@ -476,6 +477,7 @@ const insertPackageInspectorWarningsInternalHandler = (
         id?: string;
         code: string;
         message: string;
+        issueClass?: string;
         evidence?: string[];
         fixture?: string;
       }>;
@@ -6554,6 +6556,68 @@ describe("packages public queries", () => {
         inspectorVersion: "0.5.0",
         targetOpenClawVersion: "0.10.0",
         code: "missing-expected-seam",
+      }),
+    );
+  });
+
+  it("drops plugin inspector coverage gaps before storing public findings", async () => {
+    const insert = vi.fn();
+    const ctx = {
+      db: {
+        get: vi.fn(),
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({
+            collect: vi.fn().mockResolvedValue([]),
+            unique: vi.fn().mockResolvedValue(null),
+          })),
+        })),
+        insert,
+        patch: vi.fn(),
+        replace: vi.fn(),
+        delete: vi.fn(),
+        normalizeId: vi.fn((tableName: string, id: string) =>
+          id.startsWith(`${tableName}:`) ? id : null,
+        ),
+      },
+    };
+
+    await expect(
+      insertPackageInspectorWarningsInternalHandler(ctx as never, {
+        packageId: "packages:demo",
+        releaseId: "packageReleases:demo-1",
+        ownerUserId: "users:owner",
+        packageName: "demo-plugin",
+        version: "1.0.0",
+        scanSource: "nightly",
+        inspectorVersion: "0.5.0",
+        targetOpenClawVersion: "0.10.0",
+        findings: [
+          {
+            id: "demo:runtime-tool-capture",
+            code: "runtime-tool-capture",
+            issueClass: "inspector-gap",
+            message: "runtime tools need capture before contract judgment",
+            evidence: ["src/index.ts:2"],
+            fixture: "demo",
+          },
+          {
+            id: "demo:legacy-before-agent-start",
+            code: "legacy-before-agent-start",
+            issueClass: "deprecation-warning",
+            message: "legacy before_agent_start hook is deprecated",
+            evidence: ["src/index.ts:4"],
+            fixture: "demo",
+          },
+        ],
+      }),
+    ).resolves.toMatchObject({ ok: true, inserted: 1, shouldEmailOwner: true });
+
+    expect(insert).toHaveBeenCalledTimes(1);
+    expect(insert).toHaveBeenCalledWith(
+      "packageInspectorWarnings",
+      expect.objectContaining({
+        code: "legacy-before-agent-start",
+        issueClass: "deprecation-warning",
       }),
     );
   });
