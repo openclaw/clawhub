@@ -38,6 +38,7 @@ Policy, API, and trust docs:
 - `docs/acceptable-usage.md`: marketplace policy and enforcement boundaries.
 - `docs/api.md`: public REST API overview.
 - `docs/http-api.md`: detailed HTTP API reference.
+- `docs/security.md`: reporting ClawHub security issues and vulnerability disclosure policy.
 - `docs/security-audits.md`: user-facing security audit status, risk levels, findings, and interpretation.
 - `docs/moderation.md`: reports, moderation holds, hidden listings, bans, and account standing.
 

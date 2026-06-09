@@ -144,6 +144,7 @@ remaining visible to their owner in `/dashboard`.
 
 Signed-in users can report skills and packages. Moderators can review reports,
 hide or restore content, and ban abusive accounts. See
+[Security](./security.md),
 [Security Audits](./security-audits.md),
 [Moderation and Account Safety](./moderation.md), and
 [Acceptable usage](./acceptable-usage.md) for policy and enforcement details.

@@ -19,7 +19,8 @@ This page covers moderation and account standing. For audit labels such as
 `Pass`, `Review`, `Warn`, `Malicious`, and risk level, see
 [Security Audits](./security-audits.md).
 
-See also [Acceptable usage](./acceptable-usage.md).
+See also [Security](./security.md) and
+[Acceptable usage](./acceptable-usage.md).
 
 ## Reports
 

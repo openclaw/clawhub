@@ -18,8 +18,8 @@ credentials, code, or external services.
 Audits are strong safety signals, but they are not a guarantee that a release is
 risk-free. Always use judgment before granting sensitive access.
 
-See also [Acceptable usage](./acceptable-usage.md) and
-[Moderation and Account Safety](./moderation.md).
+See also [Security](./security.md), [Acceptable usage](./acceptable-usage.md),
+and [Moderation and Account Safety](./moderation.md).
 
 ## What to check before installing
 
