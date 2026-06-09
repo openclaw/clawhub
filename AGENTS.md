@@ -51,6 +51,7 @@ Specialized corpus, scanner, security-worker, UI proof, proof publishing, Crabbo
 - Tests live in `src/**` and `convex/lib/**`.
 - Coverage threshold: 80% global (lines/functions/branches/statements).
 - Example: `convex/lib/skills.test.ts`.
+- When adding or changing Convex functions, do not rely only on mocked `ctx` tests for behavior that depends on Convex runtime semantics such as pagination, indexes, validators, auth identity, internal/public function boundaries, scheduler/cron behavior, actions calling queries/mutations, HTTP actions, storage, or OCC/transaction behavior. Add or run a real Convex validation path, such as `convex dev --once`, `convex run`, an HTTP action smoke, or a local-auth Playwright flow, covering the changed behavior. Mocked `ctx.db` / `ctx.runQuery` tests are still fine for pure business logic, but they do not count as Convex runtime validation.
 - For local UI state testing, prefer creating realistic backend state through seed logic plus a DevPersonaFab entry for the associated test user. Avoid one-off manual DB edits when the state is likely to be reused, such as org membership, official publisher access, moderation holds, or publishing permissions.
 
 ## Commit & Pull Request Guidelines

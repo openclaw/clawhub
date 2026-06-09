@@ -25,8 +25,14 @@ vi.mock("./_generated/api", () => ({
       backfillSkillFingerprintsInternal: Symbol("backfillSkillFingerprintsInternal"),
       applySkillCapabilityTagsInternal: Symbol("applySkillCapabilityTagsInternal"),
       backfillSkillCapabilityTagsInternal: Symbol("backfillSkillCapabilityTagsInternal"),
-      getDependencyRegistryScanCleanupPageInternal: Symbol(
-        "getDependencyRegistryScanCleanupPageInternal",
+      getDependencyRegistryScanCleanupVersionPageInternal: Symbol(
+        "getDependencyRegistryScanCleanupVersionPageInternal",
+      ),
+      getDependencyRegistryScanCleanupSkillPageInternal: Symbol(
+        "getDependencyRegistryScanCleanupSkillPageInternal",
+      ),
+      getDependencyRegistryScanCleanupCachePageInternal: Symbol(
+        "getDependencyRegistryScanCleanupCachePageInternal",
       ),
       applyDependencyRegistryScanCleanupInternal: Symbol(
         "applyDependencyRegistryScanCleanupInternal",
@@ -91,6 +97,50 @@ function makeBlob(text: string) {
   return { text: () => Promise.resolve(text) } as unknown as Blob;
 }
 
+function makeDependencyRegistryCleanupRunQuery({
+  user,
+  versionPage,
+  skillPage,
+  cachePage,
+}: {
+  user?: Record<string, unknown>;
+  versionPage?: Record<string, unknown>;
+  skillPage?: Record<string, unknown>;
+  cachePage?: Record<string, unknown>;
+}) {
+  return vi.fn(async (query: unknown, args: Record<string, unknown>) => {
+    if ("userId" in args) return user ?? null;
+    if (query === internal.maintenance.getDependencyRegistryScanCleanupVersionPageInternal) {
+      return (
+        versionPage ?? {
+          versionItems: [],
+          versionCursor: null,
+          versionsDone: true,
+        }
+      );
+    }
+    if (query === internal.maintenance.getDependencyRegistryScanCleanupSkillPageInternal) {
+      return (
+        skillPage ?? {
+          skillItems: [],
+          skillCursor: null,
+          skillsDone: true,
+        }
+      );
+    }
+    if (query === internal.maintenance.getDependencyRegistryScanCleanupCachePageInternal) {
+      return (
+        cachePage ?? {
+          cacheRowIds: [],
+          cacheCursor: null,
+          cacheDone: true,
+        }
+      );
+    }
+    throw new Error(`Unexpected query ${String(query)}`);
+  });
+}
+
 describe("maintenance dependency registry scan cleanup", () => {
   it("rejects non-admin public cleanup before scanning cleanup targets", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:caller" as never);
@@ -114,26 +164,13 @@ describe("maintenance dependency registry scan cleanup", () => {
 
   it("allows admin public cleanup to delegate to the internal cleanup runner", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:admin" as never);
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("userId" in args) {
-        return {
-          _id: "users:admin",
-          role: "admin",
-          deletedAt: undefined,
-          deactivatedAt: undefined,
-        };
-      }
-      return {
-        versionItems: [],
-        skillItems: [],
-        cacheRowIds: [],
-        versionCursor: null,
-        skillCursor: null,
-        cacheCursor: null,
-        versionsDone: true,
-        skillsDone: true,
-        cacheDone: true,
-      };
+    const runQuery = makeDependencyRegistryCleanupRunQuery({
+      user: {
+        _id: "users:admin",
+        role: "admin",
+        deletedAt: undefined,
+        deactivatedAt: undefined,
+      },
     });
     const runMutation = vi.fn();
 
@@ -143,29 +180,35 @@ describe("maintenance dependency registry scan cleanup", () => {
     );
 
     expect(result).toMatchObject({ ok: true, dryRun: true, isDone: true });
-    expect(runQuery).toHaveBeenCalledTimes(2);
+    expect(runQuery).toHaveBeenCalledTimes(4);
     expect(runMutation).not.toHaveBeenCalled();
   });
 
   it("dry-runs by default and does not write", async () => {
-    const runQuery = vi.fn(async () => ({
-      versionItems: [
-        {
-          id: "skillVersions:legacy",
-          hasDepRegistryAnalysis: true,
-          hasDepRegistryScanStatus: true,
-          hasLegacyStaticScan: true,
-        },
-      ],
-      skillItems: [{ id: "skills:legacy", hasLegacyModeration: true }],
-      cacheRowIds: ["depRegistryCache:1"],
-      versionCursor: null,
-      skillCursor: null,
-      cacheCursor: null,
-      versionsDone: true,
-      skillsDone: true,
-      cacheDone: true,
-    }));
+    const runQuery = makeDependencyRegistryCleanupRunQuery({
+      versionPage: {
+        versionItems: [
+          {
+            id: "skillVersions:legacy",
+            hasDepRegistryAnalysis: true,
+            hasDepRegistryScanStatus: true,
+            hasLegacyStaticScan: true,
+          },
+        ],
+        versionCursor: null,
+        versionsDone: true,
+      },
+      skillPage: {
+        skillItems: [{ id: "skills:legacy", hasLegacyModeration: true }],
+        skillCursor: null,
+        skillsDone: true,
+      },
+      cachePage: {
+        cacheRowIds: ["depRegistryCache:1"],
+        cacheCursor: null,
+        cacheDone: true,
+      },
+    });
     const runMutation = vi.fn();
 
     const result = await cleanupDependencyRegistryScanDataInternalHandler(
@@ -198,6 +241,29 @@ describe("maintenance dependency registry scan cleanup", () => {
     expect(runMutation).not.toHaveBeenCalled();
   });
 
+  it("scans cleanup targets with separate paginated Convex queries", async () => {
+    const runQuery = makeDependencyRegistryCleanupRunQuery({});
+    const runMutation = vi.fn();
+
+    await cleanupDependencyRegistryScanDataInternalHandler({ runQuery, runMutation } as never, {
+      batchSize: 25,
+      maxBatches: 1,
+    });
+
+    expect(runQuery).toHaveBeenCalledWith(
+      internal.maintenance.getDependencyRegistryScanCleanupVersionPageInternal,
+      { cursor: undefined, batchSize: 25 },
+    );
+    expect(runQuery).toHaveBeenCalledWith(
+      internal.maintenance.getDependencyRegistryScanCleanupSkillPageInternal,
+      { cursor: undefined, batchSize: 25 },
+    );
+    expect(runQuery).toHaveBeenCalledWith(
+      internal.maintenance.getDependencyRegistryScanCleanupCachePageInternal,
+      { cursor: undefined, batchSize: 25 },
+    );
+  });
+
   it("requires the confirmation token before applying", async () => {
     await expect(
       cleanupDependencyRegistryScanDataInternalHandler({ runQuery: vi.fn() } as never, {
@@ -207,33 +273,39 @@ describe("maintenance dependency registry scan cleanup", () => {
   });
 
   it("applies only matched dependency registry cleanup targets", async () => {
-    const runQuery = vi.fn(async () => ({
-      versionItems: [
-        {
-          id: "skillVersions:legacy",
-          hasDepRegistryAnalysis: true,
-          hasDepRegistryScanStatus: true,
-          hasLegacyStaticScan: false,
-        },
-        {
-          id: "skillVersions:clean",
-          hasDepRegistryAnalysis: false,
-          hasDepRegistryScanStatus: false,
-          hasLegacyStaticScan: false,
-        },
-      ],
-      skillItems: [
-        { id: "skills:legacy", hasLegacyModeration: true },
-        { id: "skills:clean", hasLegacyModeration: false },
-      ],
-      cacheRowIds: ["depRegistryCache:1"],
-      versionCursor: "next-version",
-      skillCursor: "next-skill",
-      cacheCursor: null,
-      versionsDone: false,
-      skillsDone: false,
-      cacheDone: true,
-    }));
+    const runQuery = makeDependencyRegistryCleanupRunQuery({
+      versionPage: {
+        versionItems: [
+          {
+            id: "skillVersions:legacy",
+            hasDepRegistryAnalysis: true,
+            hasDepRegistryScanStatus: true,
+            hasLegacyStaticScan: false,
+          },
+          {
+            id: "skillVersions:clean",
+            hasDepRegistryAnalysis: false,
+            hasDepRegistryScanStatus: false,
+            hasLegacyStaticScan: false,
+          },
+        ],
+        versionCursor: "next-version",
+        versionsDone: false,
+      },
+      skillPage: {
+        skillItems: [
+          { id: "skills:legacy", hasLegacyModeration: true },
+          { id: "skills:clean", hasLegacyModeration: false },
+        ],
+        skillCursor: "next-skill",
+        skillsDone: false,
+      },
+      cachePage: {
+        cacheRowIds: ["depRegistryCache:1"],
+        cacheCursor: null,
+        cacheDone: true,
+      },
+    });
     const runMutation = vi.fn(async () => ({
       versionRowsPatched: 1,
       staticScansRewritten: 0,

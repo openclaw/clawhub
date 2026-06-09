@@ -164,6 +164,24 @@ type DependencyRegistryCleanupPageResult = {
   cacheDone: boolean;
 };
 
+type DependencyRegistryCleanupVersionPageResult = {
+  versionItems: DependencyRegistryCleanupVersionItem[];
+  versionCursor: string | null;
+  versionsDone: boolean;
+};
+
+type DependencyRegistryCleanupSkillPageResult = {
+  skillItems: DependencyRegistryCleanupSkillItem[];
+  skillCursor: string | null;
+  skillsDone: boolean;
+};
+
+type DependencyRegistryCleanupCachePageResult = {
+  cacheRowIds: Id<"depRegistryCache">[];
+  cacheCursor: string | null;
+  cacheDone: boolean;
+};
+
 type DependencyRegistryCleanupStats = {
   versionRowsScanned: number;
   versionRowsMatched: number;
@@ -425,56 +443,70 @@ function stripDependencyRegistrySkillModeration(
   return patch;
 }
 
-export const getDependencyRegistryScanCleanupPageInternal = internalQuery({
+export const getDependencyRegistryScanCleanupVersionPageInternal = internalQuery({
   args: {
-    versionCursor: v.optional(v.string()),
-    skillCursor: v.optional(v.string()),
-    cacheCursor: v.optional(v.string()),
+    cursor: v.optional(v.string()),
     batchSize: v.optional(v.number()),
-    skipVersions: v.optional(v.boolean()),
-    skipSkills: v.optional(v.boolean()),
-    skipCache: v.optional(v.boolean()),
   },
-  handler: async (ctx, args): Promise<DependencyRegistryCleanupPageResult> => {
+  handler: async (ctx, args): Promise<DependencyRegistryCleanupVersionPageResult> => {
     const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
-
-    const versionResult = args.skipVersions
-      ? { page: [], continueCursor: null, isDone: true }
-      : await ctx.db
-          .query("skillVersions")
-          .order("asc")
-          .paginate({ cursor: args.versionCursor ?? null, numItems: batchSize });
-    const skillResult = args.skipSkills
-      ? { page: [], continueCursor: null, isDone: true }
-      : await ctx.db
-          .query("skills")
-          .order("asc")
-          .paginate({ cursor: args.skillCursor ?? null, numItems: batchSize });
-    const cacheResult = args.skipCache
-      ? { page: [], continueCursor: null, isDone: true }
-      : await ctx.db
-          .query("depRegistryCache")
-          .order("asc")
-          .paginate({ cursor: args.cacheCursor ?? null, numItems: batchSize });
+    const result = await ctx.db
+      .query("skillVersions")
+      .order("asc")
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
 
     return {
-      versionItems: versionResult.page.map((version) => ({
+      versionItems: result.page.map((version) => ({
         id: version._id,
         hasDepRegistryAnalysis: version.depRegistryAnalysis !== undefined,
         hasDepRegistryScanStatus: version.depRegistryScanStatus !== undefined,
         hasLegacyStaticScan: hasLegacyDependencyRegistryStaticScan(version.staticScan),
       })),
-      skillItems: skillResult.page.map((skill) => ({
+      versionCursor: result.continueCursor,
+      versionsDone: result.isDone,
+    };
+  },
+});
+
+export const getDependencyRegistryScanCleanupSkillPageInternal = internalQuery({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args): Promise<DependencyRegistryCleanupSkillPageResult> => {
+    const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
+    const result = await ctx.db
+      .query("skills")
+      .order("asc")
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+
+    return {
+      skillItems: result.page.map((skill) => ({
         id: skill._id,
         hasLegacyModeration: hasLegacyDependencyRegistrySkillModeration(skill),
       })),
-      cacheRowIds: cacheResult.page.map((row) => row._id),
-      versionCursor: versionResult.continueCursor,
-      skillCursor: skillResult.continueCursor,
-      cacheCursor: cacheResult.continueCursor,
-      versionsDone: versionResult.isDone,
-      skillsDone: skillResult.isDone,
-      cacheDone: cacheResult.isDone,
+      skillCursor: result.continueCursor,
+      skillsDone: result.isDone,
+    };
+  },
+});
+
+export const getDependencyRegistryScanCleanupCachePageInternal = internalQuery({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args): Promise<DependencyRegistryCleanupCachePageResult> => {
+    const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
+    const result = await ctx.db
+      .query("depRegistryCache")
+      .order("asc")
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+
+    return {
+      cacheRowIds: result.page.map((row) => row._id),
+      cacheCursor: result.continueCursor,
+      cacheDone: result.isDone,
     };
   },
 });
@@ -593,18 +625,56 @@ export async function cleanupDependencyRegistryScanDataInternalHandler(
   let cacheCursor = cacheDone ? null : (args.cacheCursor ?? null);
 
   for (let batchIndex = 0; batchIndex < maxBatches; batchIndex++) {
-    const page = (await ctx.runQuery(
-      internal.maintenance.getDependencyRegistryScanCleanupPageInternal,
-      {
-        versionCursor: versionCursor ?? undefined,
-        skillCursor: skillCursor ?? undefined,
-        cacheCursor: dryRun ? (cacheCursor ?? undefined) : undefined,
-        batchSize,
-        skipVersions: versionsDone,
-        skipSkills: skillsDone,
-        skipCache: cacheDone,
-      },
-    )) as DependencyRegistryCleanupPageResult;
+    const page: DependencyRegistryCleanupPageResult = {
+      versionItems: [],
+      skillItems: [],
+      cacheRowIds: [],
+      versionCursor,
+      skillCursor,
+      cacheCursor,
+      versionsDone,
+      skillsDone,
+      cacheDone,
+    };
+
+    if (!versionsDone) {
+      const result = (await ctx.runQuery(
+        internal.maintenance.getDependencyRegistryScanCleanupVersionPageInternal,
+        {
+          cursor: versionCursor ?? undefined,
+          batchSize,
+        },
+      )) as DependencyRegistryCleanupVersionPageResult;
+      page.versionItems = result.versionItems;
+      page.versionCursor = result.versionCursor;
+      page.versionsDone = result.versionsDone;
+    }
+
+    if (!skillsDone) {
+      const result = (await ctx.runQuery(
+        internal.maintenance.getDependencyRegistryScanCleanupSkillPageInternal,
+        {
+          cursor: skillCursor ?? undefined,
+          batchSize,
+        },
+      )) as DependencyRegistryCleanupSkillPageResult;
+      page.skillItems = result.skillItems;
+      page.skillCursor = result.skillCursor;
+      page.skillsDone = result.skillsDone;
+    }
+
+    if (!cacheDone) {
+      const result = (await ctx.runQuery(
+        internal.maintenance.getDependencyRegistryScanCleanupCachePageInternal,
+        {
+          cursor: dryRun ? (cacheCursor ?? undefined) : undefined,
+          batchSize,
+        },
+      )) as DependencyRegistryCleanupCachePageResult;
+      page.cacheRowIds = result.cacheRowIds;
+      page.cacheCursor = result.cacheCursor;
+      page.cacheDone = result.cacheDone;
+    }
 
     stats.versionRowsScanned += page.versionItems.length;
     stats.skillRowsScanned += page.skillItems.length;
