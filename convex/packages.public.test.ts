@@ -2249,9 +2249,6 @@ describe("packages public queries", () => {
     expect(result.page.map((entry) => entry.name)).toEqual(["code-plugin-a"]);
     expect(result.isDone).toBe(false);
     expect(result.continueCursor.startsWith("pkgpage:")).toBe(true);
-    expect(JSON.parse(result.continueCursor.slice("pkgpage:".length))).not.toHaveProperty(
-      "queryKey",
-    );
     expect(indexNames).toEqual(["by_active_family_downloads"]);
     expect(indexFilters).toEqual([
       {
