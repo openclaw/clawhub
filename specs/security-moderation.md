@@ -229,6 +229,14 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Plugins under `@openclaw/*` owned by the OpenClaw publisher are trusted by
   default. They may still be audited, but scanner telemetry alone must not
   downgrade them.
+- Operators can schedule ClawScan rescans after scanner policy changes or bypass
+  reports. `clawhub-mod skills rescan-all --mode all-active-latest` queues a
+  broad active-skill sweep. `--mode truncation-risk-latest` narrows the sweep to
+  active latest skill versions whose primary `SKILL.md`/`skills.md` size meets
+  the ClawScan prompt truncation-risk threshold; use `--dry-run --json` first to
+  estimate scope and sample matched slugs. These modes only queue fresh
+  ClawScan work; they must not change scanner verdict logic or moderation state
+  directly.
 - Operators can schedule targeted ClawScan rescans for suspicious skills by bucket
   (`all`, `llm-only`, `vt-only`, `both`) and for suspicious plugin releases.
 - Package/plugin scan backfills may recompute deterministic static scan results for older releases,

@@ -166,9 +166,10 @@ const enqueueBulkSkillRescanBatchForAdminInternalHandler = (
   enqueueBulkSkillRescanBatchForAdminInternal as unknown as WrappedHandler<
     {
       actorUserId: string;
-      mode?: "all-active-latest";
+      mode?: "all-active-latest" | "truncation-risk-latest";
       cursor?: string | null;
       batchSize?: number;
+      minSkillMdBytes?: number;
       dryRun?: boolean;
     },
     {
@@ -1235,6 +1236,147 @@ describe("securityScan", () => {
       skipped: 0,
       jobIds: ["securityScanJobs:1"],
     });
+  });
+
+  it("queues truncation-risk bulk rescans only for active latest skills with large primary skill files", async () => {
+    const { ctx, inserts } = makeBulkRescanCtx({
+      skills: [
+        {
+          _id: "skills:large",
+          slug: "large-skill",
+          moderationStatus: "active",
+          latestVersionId: "skillVersions:large",
+        },
+        {
+          _id: "skills:small",
+          slug: "small-skill",
+          moderationStatus: "active",
+          latestVersionId: "skillVersions:small",
+        },
+        {
+          _id: "skills:hidden",
+          slug: "hidden-large",
+          moderationStatus: "hidden",
+          latestVersionId: "skillVersions:hidden",
+        },
+        {
+          _id: "skills:supporting",
+          slug: "supporting-large",
+          moderationStatus: "active",
+          latestVersionId: "skillVersions:supporting",
+        },
+      ],
+      versions: [
+        {
+          _id: "skillVersions:large",
+          skillId: "skills:large",
+          version: "1.0.0",
+          files: [{ path: "SKILL.md", size: 6000, storageId: "storage:large", sha256: "large" }],
+        },
+        {
+          _id: "skillVersions:small",
+          skillId: "skills:small",
+          version: "1.0.0",
+          files: [{ path: "SKILL.md", size: 5999, storageId: "storage:small", sha256: "small" }],
+        },
+        {
+          _id: "skillVersions:hidden",
+          skillId: "skills:hidden",
+          version: "1.0.0",
+          files: [{ path: "SKILL.md", size: 9000, storageId: "storage:hidden", sha256: "hidden" }],
+        },
+        {
+          _id: "skillVersions:supporting",
+          skillId: "skills:supporting",
+          version: "1.0.0",
+          files: [
+            { path: "README.md", size: 9000, storageId: "storage:support", sha256: "support" },
+          ],
+        },
+      ],
+    });
+
+    const result = await enqueueBulkSkillRescanBatchForAdminInternalHandler(ctx, {
+      actorUserId: "users:admin",
+      mode: "truncation-risk-latest",
+      batchSize: 4,
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      queued: 1,
+      alreadyQueued: 0,
+      skipped: 3,
+      sampleSlugs: ["large-skill"],
+    });
+    expect(result.jobIds).toEqual(["securityScanJobs:1"]);
+    expect(inserts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          table: "securityScanJobs",
+          doc: expect.objectContaining({
+            skillVersionId: "skillVersions:large",
+            source: "bulk-rescan",
+          }),
+        }),
+        expect.objectContaining({
+          table: "auditLogs",
+          doc: expect.objectContaining({
+            action: "skill.clawscan.bulk_rescan_batch",
+            metadata: expect.objectContaining({
+              mode: "truncation-risk-latest",
+              minSkillMdBytes: 6000,
+              sampleSlugs: ["large-skill"],
+            }),
+          }),
+        }),
+      ]),
+    );
+  });
+
+  it("dry-runs truncation-risk bulk rescans with a custom threshold and existing active jobs", async () => {
+    const { ctx, inserts } = makeBulkRescanCtx({
+      skills: [
+        {
+          _id: "skills:large",
+          slug: "large-skill",
+          moderationStatus: "active",
+          latestVersionId: "skillVersions:large",
+        },
+      ],
+      versions: [
+        {
+          _id: "skillVersions:large",
+          skillId: "skills:large",
+          version: "1.0.0",
+          files: [{ path: "skills.md", size: 4500, storageId: "storage:large", sha256: "large" }],
+        },
+      ],
+      jobs: [
+        makeScanJob({
+          _id: "securityScanJobs:active-large",
+          skillVersionId: "skillVersions:large",
+          status: "running",
+        }),
+      ],
+    });
+
+    const result = await enqueueBulkSkillRescanBatchForAdminInternalHandler(ctx, {
+      actorUserId: "users:admin",
+      mode: "truncation-risk-latest",
+      batchSize: 1,
+      minSkillMdBytes: 4000,
+      dryRun: true,
+    });
+
+    expect(result).toMatchObject({
+      queued: 0,
+      alreadyQueued: 1,
+      skipped: 0,
+      jobIds: [],
+      sampleSlugs: ["large-skill"],
+    });
+    expect(inserts).toEqual([]);
   });
 
   it("does not demote existing active jobs during bulk rescans", async () => {

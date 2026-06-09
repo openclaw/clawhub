@@ -670,6 +670,7 @@ function registerSkillModerationCommands(command: Command) {
   command
     .command("rescan-all")
     .description("Queue admin ClawScan rescans for active latest skills in paced batches")
+    .option("--mode <mode>", "all-active-latest|truncation-risk-latest", "all-active-latest")
     .option("--batch-size <n>", "Batch size; backend caps at 100", (value) =>
       Number.parseInt(value, 10),
     )
@@ -678,6 +679,9 @@ function registerSkillModerationCommands(command: Command) {
     )
     .option("--cursor <cursor>", "Resume from a backend pagination cursor")
     .option("--max-skills <n>", "Stop after this many scanned/queued/skipped skills", (value) =>
+      Number.parseInt(value, 10),
+    )
+    .option("--min-skill-md-bytes <n>", "Minimum SKILL.md size for truncation-risk mode", (value) =>
       Number.parseInt(value, 10),
     )
     .option("--dry-run", "Page eligible skills without queueing jobs")

@@ -420,14 +420,15 @@ export const ApiV1SkillScanDownloadManifestSchema = type({
     writtenBack: "boolean?",
 });
 export const ApiV1SkillBulkRescanBatchRequestSchema = type({
-    mode: '"all-active-latest"?',
+    mode: '"all-active-latest"|"truncation-risk-latest"?',
     cursor: "string|null?",
     batchSize: "number?",
+    minSkillMdBytes: "number?",
     dryRun: "boolean?",
 });
 export const ApiV1SkillBulkRescanBatchResponseSchema = type({
     ok: "true",
-    mode: '"all-active-latest"',
+    mode: '"all-active-latest"|"truncation-risk-latest"',
     queued: "number",
     alreadyQueued: "number",
     skipped: "number",
@@ -452,14 +453,15 @@ export const ApiV1SkillBulkRescanStatusResponseSchema = type({
     failedJobIds: "string[]",
 });
 export const ApiV1SkillScanBatchRequestSchema = type({
-    mode: '"all-active-latest"?',
+    mode: '"all-active-latest"|"truncation-risk-latest"?',
     cursor: "string|null?",
     batchSize: "number?",
+    minSkillMdBytes: "number?",
     dryRun: "boolean?",
 });
 export const ApiV1SkillScanBatchResponseSchema = type({
     ok: "true",
-    mode: '"all-active-latest"',
+    mode: '"all-active-latest"|"truncation-risk-latest"',
     queued: "number",
     alreadyQueued: "number",
     skipped: "number",

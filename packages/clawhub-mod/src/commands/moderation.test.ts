@@ -271,6 +271,100 @@ describe("cmdRescanAllSkills", () => {
     );
   });
 
+  it("passes truncation-risk mode and threshold to bulk rescan batches", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      mode: "truncation-risk-latest",
+      queued: 1,
+      alreadyQueued: 0,
+      skipped: 2,
+      jobIds: [],
+      nextCursor: null,
+      done: true,
+      sampleSlugs: ["large-skill"],
+    });
+
+    const result = await cmdRescanAllSkills(
+      makeGlobalOpts(),
+      {
+        dryRun: true,
+        mode: "truncation-risk-latest",
+        batchSize: 10,
+        minSkillMdBytes: 4000,
+      },
+      false,
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      batches: 1,
+      queued: 1,
+      skipped: 2,
+      mode: "truncation-risk-latest",
+    });
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({
+        method: "POST",
+        path: "/api/v1/skills/-/scan/batch",
+        body: {
+          mode: "truncation-risk-latest",
+          cursor: null,
+          batchSize: 10,
+          minSkillMdBytes: 4000,
+          dryRun: true,
+        },
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("lets the backend choose the default truncation-risk threshold", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      mode: "truncation-risk-latest",
+      queued: 1,
+      alreadyQueued: 0,
+      skipped: 2,
+      jobIds: [],
+      nextCursor: null,
+      done: true,
+      sampleSlugs: ["large-skill"],
+    });
+
+    await cmdRescanAllSkills(
+      makeGlobalOpts(),
+      {
+        dryRun: true,
+        mode: "truncation-risk-latest",
+        batchSize: 10,
+      },
+      false,
+    );
+
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({
+        method: "POST",
+        path: "/api/v1/skills/-/scan/batch",
+        body: {
+          mode: "truncation-risk-latest",
+          cursor: null,
+          batchSize: 10,
+          dryRun: true,
+        },
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("rejects unknown bulk rescan modes before calling the API", async () => {
+    await expect(
+      cmdRescanAllSkills(makeGlobalOpts(), { dryRun: true, mode: "near-miss" }, false),
+    ).rejects.toThrow(/mode must be/i);
+    expect(httpMocks.apiRequest).not.toHaveBeenCalled();
+  });
+
   it("queues a batch and polls until drained", async () => {
     httpMocks.apiRequest
       .mockResolvedValueOnce({
