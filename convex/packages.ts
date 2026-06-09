@@ -1240,7 +1240,7 @@ async function toDashboardPackageListItem(
 ): Promise<DashboardPackageListItem | null> {
   if (pkg.softDeletedAt) return null;
   const latestRelease = pkg.latestReleaseId ? await ctx.db.get(pkg.latestReleaseId) : null;
-  const inspectorWarningCount = await countPackageInspectorFindings(ctx, pkg._id);
+  const inspectorWarningCount = await countPackageInspectorFindings(ctx, pkg.latestReleaseId);
   return {
     _id: pkg._id,
     name: pkg.name,
@@ -1274,9 +1274,13 @@ async function toDashboardPackageListItem(
   };
 }
 
-async function countPackageInspectorFindings(ctx: DbReaderCtx, packageId: Id<"packages">) {
-  const authorFindings = await takeAuthorRemediationWarningsByPackage(ctx, packageId, 101);
-  return authorFindings.length > 100 ? 100 : authorFindings.length;
+async function countPackageInspectorFindings(
+  ctx: DbReaderCtx,
+  latestReleaseId?: Id<"packageReleases">,
+) {
+  if (!latestReleaseId) return 0;
+  const findings = await takeAuthorRemediationWarningsByRelease(ctx, latestReleaseId, 101);
+  return findings.length > 100 ? 100 : findings.length;
 }
 
 async function listDashboardPackagesForOwnerPublisher(
@@ -1979,8 +1983,9 @@ export const listPackageInspectorFindingsPublic = query({
       if (!canManage) return [];
     }
 
+    if (!pkg.latestReleaseId) return [];
     const limit = Math.max(1, Math.min(args.limit ?? 50, 100));
-    const warnings = await takeAuthorRemediationWarningsByPackage(ctx, pkg._id, limit);
+    const warnings = await takeAuthorRemediationWarningsByRelease(ctx, pkg.latestReleaseId, limit);
     return warnings.map(toPublicPackageInspectorFinding);
   },
 });
@@ -2001,7 +2006,9 @@ export const getPackageInspectorValidationSummaryPublic = query({
       };
     }
 
-    const findings = await takeAuthorRemediationWarningsByPackage(ctx, pkg._id, 100);
+    const findings = pkg.latestReleaseId
+      ? await takeAuthorRemediationWarningsByRelease(ctx, pkg.latestReleaseId, 100)
+      : [];
     const errorFindings = findings.filter((finding) => {
       const kind =
         finding.findingKind ??
@@ -2035,24 +2042,12 @@ export const listPackageInspectorWarningsForManager = query({
       const canManage = await viewerCanManagePackageOwner(ctx, pkg, viewerUserId);
       if (!canManage) return [];
     }
+    if (!pkg.latestReleaseId) return [];
     const limit = Math.max(1, Math.min(args.limit ?? 50, 100));
-    const warnings = await takeAuthorRemediationWarningsByPackage(ctx, pkg._id, limit);
+    const warnings = await takeAuthorRemediationWarningsByRelease(ctx, pkg.latestReleaseId, limit);
     return warnings.map(toPublicPackageInspectorFinding);
   },
 });
-
-async function takeAuthorRemediationWarningsByPackage(
-  ctx: DbReaderCtx,
-  packageId: Id<"packages">,
-  limit: number,
-) {
-  const findings = await ctx.db
-    .query("packageInspectorWarnings")
-    .withIndex("by_package_created", (q) => q.eq("packageId", packageId))
-    .order("desc")
-    .take(authorRemediationScanLimit(limit));
-  return findings.filter(hasStoredAuthorRemediation).slice(0, limit);
-}
 
 async function takeAuthorRemediationWarningsByRelease(
   ctx: DbReaderCtx,

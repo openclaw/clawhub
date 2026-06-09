@@ -7519,6 +7519,57 @@ describe("packages public queries", () => {
     });
   });
 
+  it("summarizes only latest-release plugin inspector findings", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue(null);
+    const warningIndexEq = vi.fn(() => ({}));
+    const warningWithIndex = vi.fn(
+      (_indexName: string, build: (q: { eq: typeof warningIndexEq }) => unknown) => {
+        build({ eq: warningIndexEq });
+        return {
+          order: vi.fn(() => ({
+            take: vi.fn().mockResolvedValue([]),
+          })),
+        };
+      },
+    );
+    const ctx = {
+      db: {
+        get: vi.fn(),
+        query: vi.fn((table: string) => {
+          if (table === "packages") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue({
+                  _id: "packages:demo",
+                  name: "demo-plugin",
+                  normalizedName: "demo-plugin",
+                  family: "code-plugin",
+                  latestReleaseId: "packageReleases:demo-2",
+                }),
+              })),
+            };
+          }
+          if (table === "packageInspectorWarnings") {
+            return { withIndex: warningWithIndex };
+          }
+          throw new Error(`Unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await expect(
+      getPackageInspectorValidationSummaryPublicHandler(ctx as never, { name: "demo-plugin" }),
+    ).resolves.toEqual({
+      findingCount: 0,
+      errorCount: 0,
+      warningCount: 0,
+      incompatibleAfterOpenClawVersion: null,
+    });
+    expect(warningWithIndex).toHaveBeenCalledWith("by_release_created", expect.any(Function));
+    expect(warningIndexEq).toHaveBeenCalledWith("releaseId", "packageReleases:demo-2");
+    expect(warningIndexEq).not.toHaveBeenCalledWith("packageId", "packages:demo");
+  });
+
   it("does not list detailed plugin inspector findings for signed-out viewers", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue(null);
     const ctx = {
@@ -8072,6 +8123,71 @@ describe("packages public queries", () => {
       }),
     ).resolves.toEqual([]);
     expect(ctx.db.query).not.toHaveBeenCalled();
+  });
+
+  it("lists manager plugin inspector findings only for the latest release", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
+    const warningIndexEq = vi.fn(() => ({}));
+    const warningWithIndex = vi.fn(
+      (_indexName: string, build: (q: { eq: typeof warningIndexEq }) => unknown) => {
+        build({ eq: warningIndexEq });
+        return {
+          order: vi.fn(() => ({
+            take: vi.fn().mockResolvedValue([
+              {
+                _id: "packageInspectorWarnings:latest",
+                packageName: "demo-plugin",
+                version: "2.0.0",
+                findingKind: "warning",
+                code: "latest-warning",
+                message: "latest release warning",
+                createdAt: 2,
+                authorRemediation: {
+                  summary: "Update the plugin API usage.",
+                },
+              },
+            ]),
+          })),
+        };
+      },
+    );
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:owner") return { _id: "users:owner", role: "user" };
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table === "packages") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue({
+                  _id: "packages:demo",
+                  name: "demo-plugin",
+                  normalizedName: "demo-plugin",
+                  family: "code-plugin",
+                  ownerUserId: "users:owner",
+                  latestReleaseId: "packageReleases:demo-2",
+                }),
+              })),
+            };
+          }
+          if (table === "packageInspectorWarnings") {
+            return { withIndex: warningWithIndex };
+          }
+          throw new Error(`Unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await expect(
+      listPackageInspectorWarningsForManagerHandler(ctx as never, {
+        name: "demo-plugin",
+      }),
+    ).resolves.toMatchObject([{ code: "latest-warning", version: "2.0.0" }]);
+    expect(warningWithIndex).toHaveBeenCalledWith("by_release_created", expect.any(Function));
+    expect(warningIndexEq).toHaveBeenCalledWith("releaseId", "packageReleases:demo-2");
+    expect(warningIndexEq).not.toHaveBeenCalledWith("packageId", "packages:demo");
   });
 
   it("infers owner handle from scoped package names for user package publishes", async () => {
