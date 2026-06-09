@@ -140,6 +140,7 @@ const badBarnacleLabel = "bad-barnacle";
 const maintainerAuthorLabel = "maintainer";
 const activePrLimitLabel = "r: too-many-prs";
 const activePrLimitOverrideLabel = "r: too-many-prs-override";
+const cliReleaseLabel = "needs-cli-release";
 const candidateLabelValues = Object.values(candidateLabels);
 const maintainerTeam = "maintainer";
 const mentionRegex = /@([A-Za-z0-9-]+)/g;
@@ -407,7 +408,27 @@ export function classifyPullRequestCandidateLabels(pullRequest, files) {
     labelsToAdd.push(candidateLabels.dirtyCandidate);
   }
 
+  if (isPluginInspectorDependabotPullRequest(pullRequest, files)) {
+    labelsToAdd.push(cliReleaseLabel);
+  }
+
   return [...new Set(labelsToAdd)];
+}
+
+export function isPluginInspectorDependabotPullRequest(pullRequest, files) {
+  const author = normalizeLogin(pullRequest.user?.login ?? pullRequest.author?.login ?? "");
+  if (author !== "dependabot[bot]" && author !== "dependabot") {
+    return false;
+  }
+
+  const text = `${pullRequest.title ?? ""}\n${pullRequest.body ?? ""}`;
+  if (!/(?:@openclaw\/plugin-inspector|plugin-inspector)/i.test(text)) {
+    return false;
+  }
+
+  return files.some((file) =>
+    /(^|\/)(?:package\.json|bun\.lockb?|bun\.lock)$/i.test(file.filename ?? ""),
+  );
 }
 
 async function ensureLabelSynced(github, context, name, color, description) {

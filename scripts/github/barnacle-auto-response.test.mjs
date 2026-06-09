@@ -1,5 +1,7 @@
 /* @vitest-environment node */
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { parse } from "yaml";
 import {
   candidateLabels,
   classifyPullRequestCandidateLabels,
@@ -160,6 +162,27 @@ function barnacleGithub(files) {
 }
 
 describe("barnacle-auto-response", () => {
+  it("keeps one Bun root Dependabot config with Plugin Inspector grouped first", () => {
+    const config = parse(readFileSync(".github/dependabot.yml", "utf8"));
+    const bunRootUpdates = (config.updates ?? []).filter(
+      (update) => update["package-ecosystem"] === "bun" && update.directory === "/",
+    );
+
+    expect(bunRootUpdates).toHaveLength(1);
+
+    const [bunRootUpdate] = bunRootUpdates;
+    expect(bunRootUpdate["open-pull-requests-limit"]).toBe(13);
+
+    const groups = bunRootUpdate.groups ?? {};
+    expect(Object.keys(groups)[0]).toBe("plugin-inspector");
+    expect(groups["plugin-inspector"].patterns).toContain("@openclaw/plugin-inspector");
+
+    const ignoredDependencies = (bunRootUpdate.ignore ?? []).map(
+      (entry) => entry["dependency-name"],
+    );
+    expect(ignoredDependencies).not.toContain("@openclaw/plugin-inspector");
+  });
+
   it("keeps Barnacle-owned labels documented for ClawHub", () => {
     expect(managedLabelSpecs["r: support"].description).toContain("support requests");
     expect(managedLabelSpecs["r: direct-skill-content"].description).toContain("published");
@@ -204,6 +227,42 @@ describe("barnacle-auto-response", () => {
     ]);
 
     expect(labels).toContain(candidateLabels.directSkillContent);
+  });
+
+  it("labels Dependabot plugin-inspector bumps for CLI release follow-up", () => {
+    const labels = classifyPullRequestCandidateLabels(
+      {
+        ...pr("Bump the plugin-inspector group with 1 update"),
+        user: { login: "dependabot[bot]" },
+      },
+      [file("package.json"), file("packages/clawhub/package.json"), file("bun.lock")],
+    );
+
+    expect(labels).toContain("needs-cli-release");
+  });
+
+  it("does not label human Plugin Inspector mentions for CLI release follow-up", () => {
+    const labels = classifyPullRequestCandidateLabels(
+      {
+        ...pr("Update plugin-inspector docs and lockfile"),
+        user: { login: "contributor" },
+      },
+      [file("package.json"), file("bun.lock")],
+    );
+
+    expect(labels).not.toContain("needs-cli-release");
+  });
+
+  it("does not label unrelated Dependabot bumps for CLI release follow-up", () => {
+    const labels = classifyPullRequestCandidateLabels(
+      {
+        ...pr("Bump the production-minor-and-patch group with 3 updates"),
+        user: { login: "dependabot[bot]" },
+      },
+      [file("package.json"), file("bun.lock")],
+    );
+
+    expect(labels).not.toContain("needs-cli-release");
   });
 
   it("does not treat repo-local developer skills as published skill content", () => {
