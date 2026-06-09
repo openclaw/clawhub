@@ -249,7 +249,7 @@ export async function cmdInstall(
       registry,
       slug: trimmed,
       installedVersion: resolvedVersion!,
-      installedAt: installedAt,
+      installedAt,
       fingerprint: installedFingerprint,
     });
 
