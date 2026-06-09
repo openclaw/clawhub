@@ -104,6 +104,11 @@ Specialized corpus, scanner, security-worker, UI proof, proof publishing, Crabbo
 - For non-interactive prod deploys, use `bunx convex deploy -y` to skip confirmation.
 - If `bunx convex run --env-file .env.local ...` returns `401 MissingAccessToken` despite `bunx convex login`, workaround: omit `--env-file` and use `--deployment-name <name>` / `--prod`.
 
+## Convex Migrations & Backfills
+
+- Any Convex production data migration, backfill, destructive cleanup, schema narrowing, or table reshaping must start with the `convex-migration-helper` skill. Default to `@convex-dev/migrations` for production data changes because it provides batching, dry runs, resume/progress tracking, and safer operator UX. Exceptions require an explicit note explaining why the component is unnecessary, plus equivalent dry-run support, cursor batching, resume/progress behavior, confirmation for destructive writes, and real Convex runtime validation.
+- After a migration or cleanup is verified complete, remove temporary migration functions/code in a follow-up PR unless they are intentionally retained as ongoing maintenance tooling.
+
 ## Convex Query & Bandwidth Rules
 
 - **Always use `.withIndex()` instead of `.filter()` for fields that can be indexed.** `.filter()` causes full table scans — every doc is read and billed. Even a single `.filter()` on a 16K-row table reads ~16 MB per call.
