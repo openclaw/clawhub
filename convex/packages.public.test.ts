@@ -917,6 +917,39 @@ function makePackageDoc(overrides: Partial<Record<string, unknown>> = {}) {
   };
 }
 
+function makePackageListCursorQueryKey(
+  overrides: Partial<{
+    source: string;
+    sort: "updated" | "downloads";
+    family: string | null;
+    channel: string | null;
+    isOfficial: boolean | null;
+    executesCode: boolean | null;
+    capabilityTag: string | null;
+    category: string | null;
+  }> = {},
+) {
+  return `packages-list:${JSON.stringify({
+    source: "packageSearchDigest",
+    sort: "updated",
+    family: null,
+    channel: null,
+    isOfficial: null,
+    executesCode: null,
+    capabilityTag: null,
+    category: null,
+    ...overrides,
+  })}`;
+}
+
+function readPackageListCursorQueryKey(cursor: string) {
+  expect(cursor.startsWith("pkgpage:")).toBe(true);
+  const parsed: unknown = JSON.parse(cursor.slice("pkgpage:".length));
+  if (typeof parsed !== "object" || parsed === null) return undefined;
+  const queryKey = Object.getOwnPropertyDescriptor(parsed, "queryKey")?.value;
+  return typeof queryKey === "string" ? queryKey : undefined;
+}
+
 function makeReleaseDoc(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     _id: "packageReleases:demo-1",
@@ -969,6 +1002,10 @@ function makeDigestCtx(options: {
   >();
   const rowsByTable = new Map<string, Array<Record<string, unknown>>>();
   const indexNames: string[] = [];
+  const indexFilters: Array<{
+    indexName: string;
+    filters: Array<{ field: string; value: string | undefined }>;
+  }> = [];
   const tableNames: string[] = [];
 
   const setPages = (
@@ -1056,6 +1093,7 @@ function makeDigestCtx(options: {
 
   return {
     indexNames,
+    indexFilters,
     tableNames,
     paginate,
     take,
@@ -1075,7 +1113,7 @@ function makeDigestCtx(options: {
                 (
                   indexName: string,
                   builder?: (q: {
-                    eq: (field: string, value: string) => unknown;
+                    eq: (field: string, value: string | undefined) => unknown;
                     gte: (field: string, value: string) => unknown;
                     lt: (field: string, value: string) => unknown;
                   }) => unknown,
@@ -1083,9 +1121,11 @@ function makeDigestCtx(options: {
                   let matchedValue = "";
                   let lowerBound = "";
                   let upperBound = "";
+                  const filters: Array<{ field: string; value: string | undefined }> = [];
                   const queryBuilder = {
-                    eq: (_field: string, value: string) => {
-                      matchedValue = value;
+                    eq: (field: string, value: string | undefined) => {
+                      filters.push({ field, value });
+                      matchedValue = value ?? "";
                       return queryBuilder;
                     },
                     gte: (_field: string, value: string) => {
@@ -1102,6 +1142,7 @@ function makeDigestCtx(options: {
                     indexName === "by_active_downloads" ||
                     indexName === "by_active_family_downloads"
                   ) {
+                    indexFilters.push({ indexName, filters });
                     return withIndex(table, indexName);
                   }
                   if (indexName !== "by_name" && indexName !== "by_runtime_id") {
@@ -2205,7 +2246,7 @@ describe("packages public queries", () => {
   });
 
   it("uses a family-scoped downloads index for download-sorted family pages", async () => {
-    const { ctx, indexNames, paginate } = makeDigestCtx({
+    const { ctx, indexFilters, indexNames, paginate } = makeDigestCtx({
       packagePages: [
         {
           page: [
@@ -2240,9 +2281,188 @@ describe("packages public queries", () => {
 
     expect(result.page.map((entry) => entry.name)).toEqual(["code-plugin-a"]);
     expect(result.isDone).toBe(false);
+    expect(readPackageListCursorQueryKey(result.continueCursor)).toBe(
+      makePackageListCursorQueryKey({
+        source: "packages.by_active_family_downloads",
+        sort: "downloads",
+        family: "code-plugin",
+      }),
+    );
     expect(indexNames).toEqual(["by_active_family_downloads"]);
+    expect(indexFilters).toEqual([
+      {
+        indexName: "by_active_family_downloads",
+        filters: [
+          { field: "softDeletedAt", value: undefined },
+          { field: "family", value: "code-plugin" },
+        ],
+      },
+    ]);
     expect(paginate).toHaveBeenCalledTimes(1);
     expect(paginate).toHaveBeenCalledWith({ cursor: null, numItems: 50 });
+  });
+
+  it("resets legacy download cursors before using the family-scoped downloads index", async () => {
+    const legacyDownloadsCursor = `pkgpage:${JSON.stringify({
+      cursor: "cursor:old-global-downloads",
+      offset: 0,
+      pageSize: 50,
+      done: false,
+    })}`;
+    const { ctx, paginate } = makeDigestCtx({
+      packagePages: [
+        {
+          page: [
+            makePackageDoc({
+              _id: "packages:code-plugin-a",
+              name: "code-plugin-a",
+              normalizedName: "code-plugin-a",
+              displayName: "Code Plugin A",
+              family: "code-plugin",
+              stats: { downloads: 200, installs: 0, stars: 0, versions: 1 },
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      family: "code-plugin",
+      sort: "downloads",
+      paginationOpts: { cursor: legacyDownloadsCursor, numItems: 1 },
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual(["code-plugin-a"]);
+    expect(paginate).toHaveBeenCalledWith({ cursor: null, numItems: 50 });
+  });
+
+  it("resets family-scoped download cursors before using the global downloads index", async () => {
+    const familyDownloadsCursor = `pkgpage:${JSON.stringify({
+      cursor: "cursor:family-downloads",
+      offset: 0,
+      pageSize: 50,
+      done: false,
+      queryKey: makePackageListCursorQueryKey({
+        source: "packages.by_active_family_downloads",
+        sort: "downloads",
+        family: "code-plugin",
+      }),
+    })}`;
+    const { ctx, paginate } = makeDigestCtx({
+      packagePages: [
+        {
+          page: [
+            makePackageDoc({
+              _id: "packages:skill-a",
+              name: "skill-a",
+              normalizedName: "skill-a",
+              displayName: "Skill A",
+              family: "skill",
+              stats: { downloads: 300, installs: 0, stars: 0, versions: 1 },
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      sort: "downloads",
+      paginationOpts: { cursor: familyDownloadsCursor, numItems: 1 },
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual(["skill-a"]);
+    expect(paginate).toHaveBeenCalledWith({ cursor: null, numItems: 50 });
+  });
+
+  it("resets global download cursors before using updated digest pages", async () => {
+    const globalDownloadsCursor = `pkgpage:${JSON.stringify({
+      cursor: "cursor:global-downloads",
+      offset: 0,
+      pageSize: 50,
+      done: false,
+      queryKey: makePackageListCursorQueryKey({
+        source: "packages.by_active_downloads",
+        sort: "downloads",
+      }),
+    })}`;
+    const { ctx, paginate } = makeDigestCtx({
+      pages: [
+        {
+          page: [makeDigest("updated-plugin")],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      paginationOpts: { cursor: globalDownloadsCursor, numItems: 1 },
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual(["updated-plugin"]);
+    expect(paginate).toHaveBeenCalledWith({ cursor: null, numItems: 1 });
+  });
+
+  it("resets updated-list cursors before using category digest pages", async () => {
+    const updatedCursor = `pkgpage:${JSON.stringify({
+      cursor: "cursor:updated",
+      offset: 0,
+      pageSize: 1,
+      done: false,
+      queryKey: makePackageListCursorQueryKey(),
+    })}`;
+    const { ctx, paginate } = makeDigestCtx({
+      categoryPages: [
+        {
+          page: [makeDigest("category-plugin", { pluginCategory: "data" })],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      family: "code-plugin",
+      category: "data",
+      paginationOpts: { cursor: updatedCursor, numItems: 1 },
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual(["category-plugin"]);
+    expect(paginate).toHaveBeenCalledWith({ cursor: null, numItems: 1 });
+  });
+
+  it("preserves legacy updated-list cursors for updated digest pages", async () => {
+    const legacyUpdatedCursor = `pkgpage:${JSON.stringify({
+      cursor: "cursor:updated",
+      offset: 0,
+      pageSize: 1,
+      done: false,
+    })}`;
+    const { ctx, paginate } = makeDigestCtx({
+      pages: [
+        {
+          page: [makeDigest("first-page-plugin")],
+          isDone: false,
+          continueCursor: "cursor:updated",
+        },
+        {
+          page: [makeDigest("second-page-plugin")],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      paginationOpts: { cursor: legacyUpdatedCursor, numItems: 1 },
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual(["second-page-plugin"]);
+    expect(paginate).toHaveBeenCalledWith({ cursor: "cursor:updated", numItems: 1 });
   });
 
   it("continues scanning global download-sorted pages for non-indexed filters", async () => {
