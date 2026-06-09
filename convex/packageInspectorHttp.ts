@@ -8,6 +8,7 @@ import { buildDeterministicPackageZip } from "./lib/skillZip";
 const internalRefs = internal as unknown as {
   packages: {
     claimPackageInspectorScanBatchInternal: unknown;
+    previewPackageInspectorScanBatchInternal: unknown;
     getPackageInspectorArtifactInternal: unknown;
     ingestPackageInspectorScanResultsInternal: unknown;
     sendPackageInspectorFindingsEmailInternal: unknown;
@@ -38,6 +39,11 @@ export function absolutePackageArtifactUrl(request: Request, releaseId: string) 
   return url.toString();
 }
 
+function isTruthyParam(value: string | null) {
+  if (!value) return false;
+  return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
+}
+
 async function runMutationRef<T>(ctx: Pick<ActionCtx, "runMutation">, ref: unknown, args: unknown) {
   return (await ctx.runMutation(ref as never, args as never)) as T;
 }
@@ -55,22 +61,40 @@ export const packageInspectorClaimHttp = httpAction(async (ctx, request) => {
   if (!auth.ok) return auth.response;
   const url = new URL(request.url);
   const batchSize = Number(url.searchParams.get("batchSize") ?? "25");
-  const result = await runMutationRef<{
+  const cursor = url.searchParams.get("cursor");
+  const dryRun = isTruthyParam(url.searchParams.get("dryRun"));
+  type ClaimResult = {
     ok: true;
     leased: boolean;
     nextCursor: string | null;
     items: Array<{
       packageId: string;
       releaseId: string;
+      ownerUserId?: string;
+      ownerPublisherId?: string;
       packageName: string;
       version: string;
       artifactKind: string;
     }>;
-  }>(ctx, internalRefs.packages.claimPackageInspectorScanBatchInternal, {
+  };
+  const claimArgs = {
     batchSize: Number.isFinite(batchSize) ? batchSize : undefined,
-  });
+    ...(dryRun ? { cursor } : {}),
+  };
+  const result = dryRun
+    ? await runQueryRef<ClaimResult>(
+        ctx,
+        internalRefs.packages.previewPackageInspectorScanBatchInternal,
+        claimArgs,
+      )
+    : await runMutationRef<ClaimResult>(
+        ctx,
+        internalRefs.packages.claimPackageInspectorScanBatchInternal,
+        claimArgs,
+      );
   return json({
     ...result,
+    dryRun,
     items: result.items.map((item) => ({
       ...item,
       downloadUrl: absolutePackageArtifactUrl(request, item.releaseId),

@@ -7278,6 +7278,68 @@ export const sendPackageInspectorFindingsEmailInternal = internalAction({
   },
 });
 
+type PackageInspectorScanBatchItem = {
+  packageId: Id<"packages">;
+  releaseId: Id<"packageReleases">;
+  ownerUserId: Id<"users">;
+  ownerPublisherId?: Id<"publishers">;
+  packageName: string;
+  version: string;
+  artifactKind: "legacy-zip" | "npm-pack";
+};
+
+async function listPackageInspectorScanBatch(
+  ctx: Pick<QueryCtx | MutationCtx, "db">,
+  args: { cursor?: string | null; batchSize?: number },
+) {
+  const batchSize = Math.max(1, Math.min(Math.round(args.batchSize ?? 25), 50));
+  const page = await ctx.db
+    .query("packageReleases")
+    .withIndex("by_active_created", (q) => q.eq("softDeletedAt", undefined))
+    .order("asc")
+    .paginate({
+      cursor: args.cursor ?? null,
+      numItems: batchSize,
+    });
+  const items: PackageInspectorScanBatchItem[] = [];
+  for (const release of page.page) {
+    if (items.length >= batchSize) break;
+    const pkg = await ctx.db.get(release.packageId);
+    if (
+      !pkg ||
+      pkg.softDeletedAt ||
+      (pkg.family !== "code-plugin" && pkg.family !== "bundle-plugin") ||
+      pkg.channel === "private" ||
+      isPackageBlockedFromPublic(resolvePublicPackageScanStatus(pkg, release))
+    ) {
+      continue;
+    }
+    const latestReleaseId = pkg.latestReleaseId ?? pkg.tags?.latest;
+    if (latestReleaseId !== release._id) continue;
+    items.push({
+      packageId: pkg._id,
+      releaseId: release._id,
+      ownerUserId: pkg.ownerUserId,
+      ownerPublisherId: pkg.ownerPublisherId,
+      packageName: pkg.name,
+      version: release.version,
+      artifactKind: release.artifactKind ?? "legacy-zip",
+    });
+  }
+  return { items, nextCursor: page.isDone ? null : page.continueCursor };
+}
+
+export const previewPackageInspectorScanBatchInternal = internalQuery({
+  args: {
+    batchSize: v.optional(v.number()),
+    cursor: v.optional(v.union(v.string(), v.null())),
+  },
+  handler: async (ctx, args) => {
+    const result = await listPackageInspectorScanBatch(ctx, args);
+    return { ok: true as const, leased: false as const, ...result };
+  },
+});
+
 export const claimPackageInspectorScanBatchInternal = internalMutation({
   args: {
     batchSize: v.optional(v.number()),
@@ -7285,7 +7347,6 @@ export const claimPackageInspectorScanBatchInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     const now = Date.now();
-    const batchSize = Math.max(1, Math.min(Math.round(args.batchSize ?? 25), 50));
     const leaseMs = Math.max(
       60_000,
       Math.min(Math.round(args.leaseMs ?? 30 * 60_000), 2 * 60 * 60_000),
@@ -7304,44 +7365,10 @@ export const claimPackageInspectorScanBatchInternal = internalMutation({
       };
     }
 
-    const page = await ctx.db
-      .query("packageReleases")
-      .withIndex("by_active_created", (q) => q.eq("softDeletedAt", undefined))
-      .order("asc")
-      .paginate({
-        cursor: cursorDoc?.cursor ?? null,
-        numItems: batchSize,
-      });
-    const items: Array<{
-      packageId: Id<"packages">;
-      releaseId: Id<"packageReleases">;
-      packageName: string;
-      version: string;
-      artifactKind: "legacy-zip" | "npm-pack";
-    }> = [];
-    for (const release of page.page) {
-      if (items.length >= batchSize) break;
-      const pkg = await ctx.db.get(release.packageId);
-      if (
-        !pkg ||
-        pkg.softDeletedAt ||
-        (pkg.family !== "code-plugin" && pkg.family !== "bundle-plugin") ||
-        pkg.channel === "private" ||
-        isPackageBlockedFromPublic(resolvePublicPackageScanStatus(pkg, release))
-      ) {
-        continue;
-      }
-      const latestReleaseId = pkg.latestReleaseId ?? pkg.tags?.latest;
-      if (latestReleaseId !== release._id) continue;
-      items.push({
-        packageId: pkg._id,
-        releaseId: release._id,
-        packageName: pkg.name,
-        version: release.version,
-        artifactKind: release.artifactKind ?? "legacy-zip",
-      });
-    }
-    const nextCursor = page.isDone ? null : page.continueCursor;
+    const { items, nextCursor } = await listPackageInspectorScanBatch(ctx, {
+      cursor: cursorDoc?.cursor ?? null,
+      batchSize: args.batchSize,
+    });
     if (cursorDoc) {
       await ctx.db.patch(cursorDoc._id, {
         cursor: nextCursor,

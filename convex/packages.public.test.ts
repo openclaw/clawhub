@@ -20,6 +20,7 @@ import {
   listPackageInspectorFindingsPublic,
   insertPackageInspectorWarningsInternal,
   claimPackageInspectorScanBatchInternal,
+  previewPackageInspectorScanBatchInternal,
   markPackageInspectorFindingsEmailedInternal,
   reportPackageForUserInternal,
   triagePackageReportForUserInternal,
@@ -492,6 +493,25 @@ const claimPackageInspectorScanBatchInternalHandler = (
       items: Array<{
         packageId: string;
         releaseId: string;
+        packageName: string;
+        version: string;
+        artifactKind: "legacy-zip" | "npm-pack";
+      }>;
+    }
+  >
+)._handler;
+const previewPackageInspectorScanBatchInternalHandler = (
+  previewPackageInspectorScanBatchInternal as unknown as WrappedHandler<
+    { batchSize?: number; cursor?: string | null },
+    {
+      ok: true;
+      leased: false;
+      nextCursor: string | null;
+      items: Array<{
+        packageId: string;
+        releaseId: string;
+        ownerUserId: string;
+        ownerPublisherId?: string;
         packageName: string;
         version: string;
         artifactKind: "legacy-zip" | "npm-pack";
@@ -6937,6 +6957,86 @@ describe("packages public queries", () => {
         { releaseId: "packageReleases:legacy-latest", packageName: "legacy-plugin" },
       ],
     });
+  });
+
+  it("previews nightly plugin inspector batches without leasing or advancing the cursor", async () => {
+    const paginate = vi.fn(async () => ({
+      page: [
+        {
+          _id: "packageReleases:old",
+          packageId: "packages:modern",
+          version: "1.0.0",
+          artifactKind: "legacy-zip",
+        },
+        {
+          _id: "packageReleases:current",
+          packageId: "packages:modern",
+          version: "2.0.0",
+          artifactKind: "npm-pack",
+        },
+      ],
+      isDone: false,
+      continueCursor: "cursor-after-preview",
+    }));
+    const insert = vi.fn();
+    const patch = vi.fn();
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "packages:modern") {
+            return {
+              _id: "packages:modern",
+              name: "modern-plugin",
+              family: "code-plugin",
+              channel: "community",
+              ownerUserId: "users:owner",
+              ownerPublisherId: "publishers:owner",
+              latestReleaseId: "packageReleases:current",
+            };
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table === "packageReleases") {
+            return {
+              withIndex: vi.fn(() => ({
+                order: vi.fn(() => ({
+                  paginate,
+                })),
+              })),
+            };
+          }
+          throw new Error(`Unexpected table ${table}`);
+        }),
+        insert,
+        patch,
+        replace: vi.fn(),
+        delete: vi.fn(),
+        normalizeId: vi.fn(() => null),
+      },
+    };
+
+    await expect(
+      previewPackageInspectorScanBatchInternalHandler(ctx as never, {
+        cursor: "cursor-before-preview",
+        batchSize: 2,
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      leased: false,
+      nextCursor: "cursor-after-preview",
+      items: [
+        {
+          releaseId: "packageReleases:current",
+          packageName: "modern-plugin",
+          ownerUserId: "users:owner",
+          ownerPublisherId: "publishers:owner",
+        },
+      ],
+    });
+    expect(paginate).toHaveBeenCalledWith({ cursor: "cursor-before-preview", numItems: 2 });
+    expect(insert).not.toHaveBeenCalled();
+    expect(patch).not.toHaveBeenCalled();
   });
 
   it("does not claim private or public-blocked releases for unauthenticated nightly scans", async () => {

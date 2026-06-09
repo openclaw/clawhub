@@ -52,6 +52,14 @@ describe("package publish workflow", () => {
     expect(script).toContain('path.join(pluginRoot, "package")');
     expect(script).not.toContain("plugin-inspector-nightly-error");
     expect(script).toContain("pluginInspector");
+    expect(workflow).toContain("dry_run:");
+    expect(workflow).toContain("PLUGIN_INSPECTOR_DRY_RUN");
+    expect(workflow).toContain("PLUGIN_INSPECTOR_DRY_RUN_MAX_BATCHES");
+    expect(script).toContain("const dryRun =");
+    expect(script).toContain('dryRun ? "true" : "false"');
+    expect(script).toContain("impact-summary.json");
+    expect(script).toContain("summarizeImpact");
+    expect(script).toContain("if (!dryRun) {");
     expect(workflow).toContain("actions/upload-artifact");
   });
 });

@@ -8,6 +8,8 @@ import path from "node:path";
 type ClaimItem = {
   packageId: string;
   releaseId: string;
+  ownerUserId?: string;
+  ownerPublisherId?: string;
   packageName: string;
   version: string;
   artifactKind: string;
@@ -17,12 +19,48 @@ type ClaimItem = {
 type ClaimResponse = {
   ok: true;
   leased: boolean;
+  dryRun?: boolean;
+  nextCursor?: string | null;
   items: ClaimItem[];
+};
+
+type NormalizedFinding = {
+  id?: string;
+  code: string;
+  level: string;
+  severity?: string;
+  issueClass?: string;
+  compatStatus?: string;
+  deprecated?: boolean;
+  message: string;
+  evidence?: string[];
+  fixture?: string;
+  decision?: string;
+};
+
+type ImpactEntry = {
+  packageName: string;
+  version: string;
+  ownerUserId?: string;
+  ownerPublisherId?: string;
+  findingCount: number;
+  errorCount: number;
+  warningCount: number;
+  targetOpenClawVersion?: string;
+  findings: NormalizedFinding[];
 };
 
 const siteUrl = (process.env.CLAWHUB_SITE_URL ?? "https://clawhub.ai").replace(/\/+$/, "");
 const token = process.env.CLAWHUB_PLUGIN_INSPECTOR_WORKER_TOKEN;
 const batchSize = process.env.PLUGIN_INSPECTOR_BATCH_SIZE ?? "25";
+const dryRun = parseBoolean(process.env.PLUGIN_INSPECTOR_DRY_RUN);
+const dryRunMaxBatches = Math.max(
+  1,
+  Math.min(
+    Number.parseInt(process.env.PLUGIN_INSPECTOR_DRY_RUN_MAX_BATCHES ?? "20", 10) || 20,
+    100,
+  ),
+);
 const inspectorVersion =
   process.env.PLUGIN_INSPECTOR_VERSION ?? resolveBundledPluginInspectorVersion();
 const artifactRoot =
@@ -32,83 +70,134 @@ const clawhubCliEntry = path.join(repoRoot, "packages", "clawhub", "src", "cli.t
 
 if (!token) throw new Error("CLAWHUB_PLUGIN_INSPECTOR_WORKER_TOKEN is required");
 
-const claim = await postJson<ClaimResponse>(
-  `${siteUrl}/api/v1/package-inspector/claim?batchSize=${encodeURIComponent(batchSize)}`,
-  {},
-);
-
 await mkdir(artifactRoot, { recursive: true });
 
 let hadWorkerFailure = false;
+const impactEntries: ImpactEntry[] = [];
+let claimed = 0;
+let scanned = 0;
+let cursor: string | null = null;
+let batches = 0;
+let truncated = false;
 
-for (const item of claim.items) {
-  const workRoot = path.join(
-    tmpdir(),
-    `clawhub-plugin-inspector-nightly-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-  );
-  const pluginRoot = path.join(workRoot, "plugin");
-  const reportDir = path.resolve(
-    artifactRoot,
-    safeArtifactName(`${item.packageName}-${item.version}`),
-  );
-  await mkdir(pluginRoot, { recursive: true });
-  await mkdir(reportDir, { recursive: true });
-  try {
-    const artifactPath = path.join(
-      workRoot,
-      item.artifactKind === "npm-pack" ? "plugin.tgz" : "plugin.zip",
+do {
+  const claim = await claimBatch(cursor);
+  batches += 1;
+  cursor = claim.nextCursor ?? null;
+  claimed += claim.items.length;
+
+  for (const item of claim.items) {
+    const workRoot = path.join(
+      tmpdir(),
+      `clawhub-plugin-inspector-nightly-${Date.now()}-${Math.random().toString(16).slice(2)}`,
     );
-    const artifact = await fetch(item.downloadUrl, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!artifact.ok) {
-      throw new Error(`download failed ${artifact.status}: ${await artifact.text()}`);
-    }
-    await writeFile(artifactPath, Buffer.from(await artifact.arrayBuffer()));
-    if (item.artifactKind === "npm-pack") {
-      run("tar", ["-xzf", artifactPath, "-C", pluginRoot, "--strip-components=1"]);
-    } else {
-      run("unzip", ["-q", artifactPath, "-d", pluginRoot]);
-    }
-    const scanRoot =
-      item.artifactKind === "legacy-zip" && existsSync(path.join(pluginRoot, "package"))
-        ? path.join(pluginRoot, "package")
-        : pluginRoot;
-    await writeSyntheticConfigIfNeeded(scanRoot, item.packageName);
-    const scan = spawnSync(
-      "bun",
-      [clawhubCliEntry, "package", "validate", scanRoot, "--out", reportDir, "--json"],
-      { cwd: repoRoot, encoding: "utf8" },
+    const pluginRoot = path.join(workRoot, "plugin");
+    const reportDir = path.resolve(
+      artifactRoot,
+      safeArtifactName(`${item.packageName}-${item.version}`),
     );
-    await writeFile(path.join(reportDir, "stdout.txt"), scan.stdout ?? "");
-    await writeFile(path.join(reportDir, "stderr.txt"), scan.stderr ?? "");
-    const reportPath = path.join(reportDir, "plugin-inspector-report.json");
-    if (!existsSync(reportPath)) {
-      throw new Error(
-        scan.stderr || scan.stdout || `clawhub package validate exited ${scan.status}`,
+    await mkdir(pluginRoot, { recursive: true });
+    await mkdir(reportDir, { recursive: true });
+    try {
+      const artifactPath = path.join(
+        workRoot,
+        item.artifactKind === "npm-pack" ? "plugin.tgz" : "plugin.zip",
       );
+      const artifact = await fetch(item.downloadUrl, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!artifact.ok) {
+        throw new Error(`download failed ${artifact.status}: ${await artifact.text()}`);
+      }
+      await writeFile(artifactPath, Buffer.from(await artifact.arrayBuffer()));
+      if (item.artifactKind === "npm-pack") {
+        run("tar", ["-xzf", artifactPath, "-C", pluginRoot, "--strip-components=1"]);
+      } else {
+        run("unzip", ["-q", artifactPath, "-d", pluginRoot]);
+      }
+      const scanRoot =
+        item.artifactKind === "legacy-zip" && existsSync(path.join(pluginRoot, "package"))
+          ? path.join(pluginRoot, "package")
+          : pluginRoot;
+      await writeSyntheticConfigIfNeeded(scanRoot, item.packageName);
+      const scan = spawnSync(
+        "bun",
+        [clawhubCliEntry, "package", "validate", scanRoot, "--out", reportDir, "--json"],
+        { cwd: repoRoot, encoding: "utf8" },
+      );
+      await writeFile(path.join(reportDir, "stdout.txt"), scan.stdout ?? "");
+      await writeFile(path.join(reportDir, "stderr.txt"), scan.stderr ?? "");
+      const reportPath = path.join(reportDir, "plugin-inspector-report.json");
+      if (!existsSync(reportPath)) {
+        throw new Error(
+          scan.stderr || scan.stdout || `clawhub package validate exited ${scan.status}`,
+        );
+      }
+      const report = JSON.parse(await readFile(reportPath, "utf8"));
+      const findings = normalizeFindings(report);
+      const targetOpenClawVersion = extractTargetOpenClawVersion(report.targetOpenClaw);
+      scanned += 1;
+      if (dryRun) {
+        impactEntries.push(toImpactEntry(item, findings, targetOpenClawVersion));
+      }
+      if (!dryRun) {
+        await postJson(`${siteUrl}/api/v1/package-inspector/results`, {
+          packageId: item.packageId,
+          releaseId: item.releaseId,
+          inspectorVersion,
+          targetOpenClawVersion,
+          findings,
+        });
+      }
+    } catch (error) {
+      hadWorkerFailure = true;
+      const message = error instanceof Error ? error.message : String(error);
+      await writeFile(path.join(reportDir, "error.txt"), message);
+      console.error(
+        `Nightly Plugin Inspector worker failed for ${item.packageName}@${item.version}`,
+      );
+      console.error(message);
+    } finally {
+      await rm(workRoot, { recursive: true, force: true });
     }
-    const report = JSON.parse(await readFile(reportPath, "utf8"));
-    await postJson(`${siteUrl}/api/v1/package-inspector/results`, {
-      packageId: item.packageId,
-      releaseId: item.releaseId,
-      inspectorVersion,
-      targetOpenClawVersion: extractTargetOpenClawVersion(report.targetOpenClaw),
-      findings: normalizeFindings(report),
-    });
-  } catch (error) {
-    hadWorkerFailure = true;
-    const message = error instanceof Error ? error.message : String(error);
-    await writeFile(path.join(reportDir, "error.txt"), message);
-    console.error(`Nightly Plugin Inspector worker failed for ${item.packageName}@${item.version}`);
-    console.error(message);
-  } finally {
-    await rm(workRoot, { recursive: true, force: true });
   }
+
+  if (!dryRun) break;
+  if (cursor && batches >= dryRunMaxBatches) {
+    truncated = true;
+    break;
+  }
+} while (dryRun && cursor);
+
+if (dryRun) {
+  const summary = summarizeImpact({
+    claimed,
+    scanned,
+    batches,
+    truncated,
+    nextCursor: cursor,
+    entries: impactEntries,
+  });
+  await writeFile(
+    path.join(artifactRoot, "impact-summary.json"),
+    `${JSON.stringify(summary, null, 2)}\n`,
+  );
+  await writeFile(path.join(artifactRoot, "impact-summary.md"), renderImpactMarkdown(summary));
+  console.log(
+    `Dry run scanned ${summary.scannedReleases} latest plugin releases: ${summary.pluginsWithErrors} with errors, ${summary.pluginsWithWarnings} with warnings, ${summary.impactedOwners} owner(s) impacted.`,
+  );
 }
 
 if (hadWorkerFailure) {
   process.exitCode = 1;
+}
+
+async function claimBatch(cursor: string | null) {
+  const url = new URL(`${siteUrl}/api/v1/package-inspector/claim`);
+  url.searchParams.set("batchSize", batchSize);
+  url.searchParams.set("dryRun", dryRun ? "true" : "false");
+  if (dryRun && cursor) url.searchParams.set("cursor", cursor);
+  return await postJson<ClaimResponse>(url.toString(), {});
 }
 
 async function postJson<T = unknown>(url: string, body: unknown): Promise<T> {
@@ -158,9 +247,9 @@ function isPlainObject(value: unknown) {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
-function normalizeFindings(report: Record<string, unknown>) {
+function normalizeFindings(report: Record<string, unknown>): NormalizedFinding[] {
   const issues = Array.isArray(report.issues)
-    ? report.issues.map((issue) => normalizeFinding(issue, "warning")).filter(Boolean)
+    ? report.issues.map((issue) => normalizeFinding(issue, "warning")).filter(isFinding)
     : [];
   if (issues.length > 0) return issues;
   return [
@@ -172,11 +261,11 @@ function normalizeFindings(report: Record<string, unknown>) {
 
 function normalizeFindingArray(value: unknown, fallbackLevel: string) {
   return Array.isArray(value)
-    ? value.map((finding) => normalizeFinding(finding, fallbackLevel)).filter(Boolean)
+    ? value.map((finding) => normalizeFinding(finding, fallbackLevel)).filter(isFinding)
     : [];
 }
 
-function normalizeFinding(value: unknown, fallbackLevel: string) {
+function normalizeFinding(value: unknown, fallbackLevel: string): NormalizedFinding | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
   const message = stringValue(record.message) ?? stringValue(record.title);
@@ -198,6 +287,139 @@ function normalizeFinding(value: unknown, fallbackLevel: string) {
     fixture: stringValue(record.fixture),
     decision: stringValue(record.decision),
   };
+}
+
+function isFinding(value: NormalizedFinding | null): value is NormalizedFinding {
+  return value !== null;
+}
+
+function toImpactEntry(
+  item: ClaimItem,
+  findings: NormalizedFinding[],
+  targetOpenClawVersion: string | undefined,
+): ImpactEntry {
+  let errorCount = 0;
+  let warningCount = 0;
+  for (const finding of findings) {
+    if (isErrorFinding(finding)) errorCount += 1;
+    else warningCount += 1;
+  }
+  return {
+    packageName: item.packageName,
+    version: item.version,
+    ownerUserId: item.ownerUserId,
+    ownerPublisherId: item.ownerPublisherId,
+    findingCount: findings.length,
+    errorCount,
+    warningCount,
+    targetOpenClawVersion,
+    findings,
+  };
+}
+
+function isErrorFinding(finding: Pick<NormalizedFinding, "level" | "severity">) {
+  return finding.level === "breakage" || finding.level === "error" || finding.severity === "P0";
+}
+
+function summarizeImpact(args: {
+  claimed: number;
+  scanned: number;
+  batches: number;
+  truncated: boolean;
+  nextCursor: string | null;
+  entries: ImpactEntry[];
+}) {
+  const impactedOwners = new Set<string>();
+  const frequency = new Map<
+    string,
+    { code: string; count: number; errorCount: number; warningCount: number }
+  >();
+  let pluginsWithErrors = 0;
+  let pluginsWithWarnings = 0;
+  let totalErrors = 0;
+  let totalWarnings = 0;
+  for (const entry of args.entries) {
+    if (entry.findingCount > 0 && entry.ownerUserId) impactedOwners.add(entry.ownerUserId);
+    if (entry.errorCount > 0) pluginsWithErrors += 1;
+    if (entry.warningCount > 0) pluginsWithWarnings += 1;
+    totalErrors += entry.errorCount;
+    totalWarnings += entry.warningCount;
+    for (const finding of entry.findings) {
+      const current = frequency.get(finding.code) ?? {
+        code: finding.code,
+        count: 0,
+        errorCount: 0,
+        warningCount: 0,
+      };
+      current.count += 1;
+      if (isErrorFinding(finding)) current.errorCount += 1;
+      else current.warningCount += 1;
+      frequency.set(finding.code, current);
+    }
+  }
+  return {
+    dryRun,
+    generatedAt: new Date().toISOString(),
+    siteUrl,
+    inspectorVersion,
+    batchSize: Number.parseInt(batchSize, 10) || batchSize,
+    batches: args.batches,
+    truncated: args.truncated,
+    nextCursor: args.nextCursor,
+    claimedReleases: args.claimed,
+    scannedReleases: args.scanned,
+    pluginsWithFindings: args.entries.filter((entry) => entry.findingCount > 0).length,
+    pluginsWithErrors,
+    pluginsWithWarnings,
+    impactedOwners: impactedOwners.size,
+    totalErrors,
+    totalWarnings,
+    findingFrequency: [...frequency.values()].sort((a, b) => b.count - a.count),
+    packages: args.entries.filter((entry) => entry.findingCount > 0),
+  };
+}
+
+function renderImpactMarkdown(summary: ReturnType<typeof summarizeImpact>) {
+  const lines = [
+    "# Plugin Inspector Nightly Dry Run",
+    "",
+    `- Generated: ${summary.generatedAt}`,
+    `- Site: ${summary.siteUrl}`,
+    `- Inspector: ${summary.inspectorVersion}`,
+    `- Scanned latest releases: ${summary.scannedReleases}`,
+    `- Plugins with errors: ${summary.pluginsWithErrors}`,
+    `- Plugins with warnings: ${summary.pluginsWithWarnings}`,
+    `- Impacted owners: ${summary.impactedOwners}`,
+    `- Truncated: ${summary.truncated ? "yes" : "no"}`,
+    "",
+    "## Finding Frequency",
+    "",
+  ];
+  if (summary.findingFrequency.length === 0) {
+    lines.push("No findings.");
+  } else {
+    lines.push("| Code | Count | Errors | Warnings |", "| --- | ---: | ---: | ---: |");
+    for (const finding of summary.findingFrequency) {
+      lines.push(
+        `| ${finding.code} | ${finding.count} | ${finding.errorCount} | ${finding.warningCount} |`,
+      );
+    }
+  }
+  lines.push("", "## Impacted Plugins", "");
+  if (summary.packages.length === 0) {
+    lines.push("No impacted plugins.");
+  } else {
+    lines.push(
+      "| Plugin | Version | Errors | Warnings | Target OpenClaw |",
+      "| --- | --- | ---: | ---: | --- |",
+    );
+    for (const entry of summary.packages) {
+      lines.push(
+        `| ${entry.packageName} | ${entry.version} | ${entry.errorCount} | ${entry.warningCount} | ${entry.targetOpenClawVersion ?? ""} |`,
+      );
+    }
+  }
+  return `${lines.join("\n")}\n`;
 }
 
 function extractTargetOpenClawVersion(value: unknown) {
@@ -222,6 +444,10 @@ function safeArtifactName(value: string) {
       .replace(/[^a-z0-9._-]+/g, "-")
       .replace(/^-+|-+$/g, "") || "plugin"
   );
+}
+
+function parseBoolean(value: string | undefined) {
+  return ["1", "true", "yes", "on"].includes((value ?? "").trim().toLowerCase());
 }
 
 function run(command: string, args: string[]) {
