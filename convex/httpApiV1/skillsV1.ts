@@ -1804,11 +1804,18 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
       [result.latestVersion],
       [result.skill._id],
     );
-    const description = await readSkillDescriptionMarkdown(
-      ctx,
-      result.skill._id,
-      result.skill.latestVersionId,
-    );
+    const latestVersionId =
+      result.skill.latestVersionId ?? result.skill.tags?.latest ?? result.latestVersion?._id;
+    const descriptionAccessBlock = result.latestVersion
+      ? getPublicSkillVersionAccessBlock(
+          result.moderationInfo,
+          result.latestVersion._id,
+          latestVersionId,
+        )
+      : getPublicSkillFileAccessBlock(result.moderationInfo);
+    const description = descriptionAccessBlock
+      ? null
+      : await readSkillDescriptionMarkdown(ctx, result.skill._id, latestVersionId);
     const setup = buildSkillSetup(result.latestVersion?.parsed);
 
     return json(

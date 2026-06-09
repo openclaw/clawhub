@@ -2252,6 +2252,72 @@ describe("httpApiV1 handlers", () => {
     expect(storageGet).toHaveBeenCalledWith("_storage:skill-readme");
   });
 
+  it("get skill does not read raw markdown descriptions for malware-blocked skills", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "home-assistant",
+            displayName: "Home Assistant",
+            summary: "Control Home Assistant.",
+            latestVersionId: "skillVersions:1",
+            tags: {},
+            stats: { downloads: 0, stars: 0, versions: 1, comments: 0 },
+            createdAt: 1,
+            updatedAt: 2,
+          },
+          latestVersion: {
+            _id: "skillVersions:1",
+            skillId: "skills:1",
+            version: "1.0.0",
+            createdAt: 3,
+            changelog: "c",
+            files: [
+              {
+                path: "SKILL.md",
+                size: 21,
+                storageId: "_storage:skill-readme",
+                sha256: "abc123",
+                contentType: "text/markdown",
+              },
+            ],
+            parsed: {
+              description: "Frontmatter description.",
+            },
+          },
+          owner: null,
+          moderationInfo: {
+            isPendingScan: false,
+            isMalwareBlocked: true,
+            isSuspicious: false,
+            isHiddenByMod: false,
+            isRemoved: false,
+            verdict: "malicious",
+            reasonCodes: ["blocked.malware"],
+            summary: "Malware detected.",
+            sourceVersionId: "skillVersions:1",
+          },
+        };
+      }
+      if ("versionIds" in args) return [];
+      if ("versionId" in args) throw new Error("unexpected raw version lookup");
+      return null;
+    });
+    const storageGet = vi.fn();
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation, storage: { get: storageGet } }),
+      new Request("https://example.com/api/v1/skills/home-assistant"),
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.skill.description).toBe("Frontmatter description.");
+    expect(json.moderation.isMalwareBlocked).toBe(true);
+    expect(storageGet).not.toHaveBeenCalled();
+  });
+
   it("get skill uses GitHub-backed cached markdown when no hosted version exists", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("slug" in args) {
