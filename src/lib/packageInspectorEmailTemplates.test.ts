@@ -27,7 +27,7 @@ describe("package inspector email templates", () => {
     const email = renderPluginInspectorWarningsEmail({
       packageName: "demo-plugin",
       version: "1.0.0",
-      warningUrl: "https://clawhub.ai/plugins/demo-plugin#warnings",
+      warningUrl: "https://clawhub.ai/plugins/demo-plugin#validation",
       inspectorVersion: "0.4.0",
       targetOpenClawVersion: "0.9.0",
       warnings: [
@@ -42,7 +42,7 @@ describe("package inspector email templates", () => {
     expect(email.subject).toContain("findings");
     expect(email.text).toContain("published");
     expect(email.text).toContain("legacy-before-agent-start");
-    expect(email.text).toContain("https://clawhub.ai/plugins/demo-plugin#warnings");
+    expect(email.text).toContain("https://clawhub.ai/plugins/demo-plugin#validation");
     expect(email.html).toContain("<html");
     expect(email.html).toContain("Plugin Inspector findings");
     expect(email.html).toContain("0.4.0");
@@ -53,7 +53,7 @@ describe("package inspector email templates", () => {
     const email = renderPluginInspectorWarningsEmail({
       packageName: "demo-plugin",
       version: "1.0.1",
-      warningUrl: "https://clawhub.ai/plugins/demo-plugin#warnings",
+      warningUrl: "https://clawhub.ai/plugins/demo-plugin#validation",
       inspectorVersion: "0.5.0",
       targetOpenClawVersion: "0.10.0",
       intro:

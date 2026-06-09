@@ -449,54 +449,7 @@ jobs:
             echo "::warning::Plugin Inspector skipped because $inspect_root is not a plugin root."
             exit 0
           fi
-          generated_config_path="$RUNNER_TEMP/plugin-inspector-generated-config-path"
-          rm -f "$generated_config_path"
-          cleanup_generated_inspector_config() {
-            if [ -s "$generated_config_path" ]; then
-              generated_config="$(cat "$generated_config_path")"
-              if [ -f "$generated_config" ]; then
-                rm -f "$generated_config"
-              fi
-            fi
-          }
-          trap cleanup_generated_inspector_config EXIT
-          INSPECT_ROOT="$inspect_root" GENERATED_CONFIG_PATH="$generated_config_path" python3 - <<'PY'
-          import json
-          import os
-          import re
-          from pathlib import Path
-
-          root = Path(os.environ["INSPECT_ROOT"])
-          generated_config_path = Path(os.environ["GENERATED_CONFIG_PATH"])
-          if (root / "plugin-inspector.config.json").exists() or (root / ".plugin-inspector.json").exists():
-              raise SystemExit(0)
-
-          package_json = {}
-          package_json_path = root / "package.json"
-          if package_json_path.exists():
-              package_json = json.loads(package_json_path.read_text(encoding="utf-8"))
-              for key in ("pluginInspector", "plugin-inspector"):
-                  if isinstance(package_json.get(key), dict):
-                      raise SystemExit(0)
-
-          manifest = {}
-          manifest_path = root / "openclaw.plugin.json"
-          if manifest_path.exists():
-              manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-
-          raw_name = package_json.get("name") or manifest.get("id") or root.name
-          base = str(raw_name).split("/")[-1].lower()
-          fixture_id = re.sub(r"[^a-z0-9]+", "-", base).strip("-") or "published-plugin"
-          config_path = root / ".plugin-inspector.json"
-          config_path.write_text(
-              json.dumps({"version": 1, "plugin": {"id": fixture_id}}, indent=2) + "\n",
-              encoding="utf-8",
-          )
-          generated_config_path.write_text(str(config_path), encoding="utf-8")
-          PY
           bun "$GITHUB_WORKSPACE/clawhub-source/packages/clawhub/src/cli.ts" package validate "$inspect_root" --out "$RUNNER_TEMP/plugin-inspector"
-          cleanup_generated_inspector_config
-          trap - EXIT
 
       - name: Upload plugin inspector reports
         if: always()

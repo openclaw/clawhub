@@ -113,7 +113,7 @@ function renderHtml(args: {
         <ul style="margin:0 0 20px;padding:0;list-style:none;">
           ${args.findings.map(renderFindingHtml).join("")}
         </ul>
-        ${args.warningUrl ? `<p style="margin:0;"><a href="${escapeHtml(args.warningUrl)}" style="display:inline-block;border-radius:6px;background:#111827;color:#ffffff;text-decoration:none;padding:10px 14px;font-weight:700;">View plugin warnings</a></p>` : ""}
+        ${args.warningUrl ? `<p style="margin:0;"><a href="${escapeHtml(args.warningUrl)}" style="display:inline-block;border-radius:6px;background:#111827;color:#ffffff;text-decoration:none;padding:10px 14px;font-weight:700;">View plugin validation</a></p>` : ""}
       </section>
     </main>
   </body>

@@ -17,7 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../components/ui/select";
-import { buildPluginDetailHref, buildPluginWarningsHref } from "../lib/pluginRoutes";
+import { buildPluginDetailHref, buildPluginValidationHref } from "../lib/pluginRoutes";
 import { useAuthStatus } from "../lib/useAuthStatus";
 
 const emptyPluginPublishSearch = {
@@ -342,7 +342,7 @@ function SkillRow({ skill, ownerHandle }: { skill: DashboardSkill; ownerHandle: 
 function PackageRow({ pkg }: { pkg: DashboardPackage }) {
   const status = packageArtifactStatus(pkg);
   const detailHref = buildPluginDetailHref(pkg.name);
-  const warningCount = pkg.inspectorWarningCount ?? 0;
+  const validationCount = pkg.inspectorWarningCount ?? 0;
   const titleId = `dashboard-package-title-${pkg._id}`;
   const stats = [
     { label: "Downloads", value: formatCompactNumber(pkg.stats.downloads ?? 0) },
@@ -359,16 +359,16 @@ function PackageRow({ pkg }: { pkg: DashboardPackage }) {
       status={status}
       stats={stats}
       actions={
-        warningCount > 0 ? (
+        validationCount > 0 ? (
           <div className="dashboard-row-action">
             <Button asChild variant="ghost" size="sm">
               <a
-                href={buildPluginWarningsHref(pkg.name)}
-                aria-label={`View ${warningCount} warnings for ${pkg.displayName}`}
-                title="Warnings"
+                href={buildPluginValidationHref(pkg.name)}
+                aria-label={`View ${validationCount} validation findings for ${pkg.displayName}`}
+                title="Validation"
               >
                 <AlertTriangle className="h-4 w-4" aria-hidden="true" />
-                {warningCount}
+                {validationCount}
               </a>
             </Button>
           </div>

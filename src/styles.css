@@ -3807,6 +3807,12 @@ code {
   margin-top: 16px;
 }
 
+.plugin-install-stack {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
 .plugin-install-bar {
   display: flex;
   align-items: center;
@@ -3869,20 +3875,6 @@ code {
 
 .plugin-warnings-panel {
   gap: var(--space-4);
-}
-
-.plugin-warning-summary {
-  display: grid;
-  gap: var(--space-1);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  background: var(--surface-muted);
-  padding: var(--space-4);
-  color: var(--ink-soft);
-}
-
-.plugin-warning-summary strong {
-  color: var(--ink);
 }
 
 .plugin-warning-list {

@@ -311,7 +311,7 @@ describe("Dashboard rows", () => {
     ).toBeNull();
   });
 
-  it("links public plugin finding counts to the plugin warnings tab", () => {
+  it("links public plugin finding counts to the plugin validation tab", () => {
     arrangeDashboard({
       packages: [
         createPackage({
@@ -330,11 +330,11 @@ describe("Dashboard rows", () => {
 
     renderDashboard();
 
-    const warningsLink = screen.getByRole("link", {
-      name: "View 2 warnings for Local Flagged Runtime Plugin",
+    const validationLink = screen.getByRole("link", {
+      name: "View 2 validation findings for Local Flagged Runtime Plugin",
     });
-    expect(warningsLink.getAttribute("href")).toBe(
-      "/plugins/local-flagged-runtime-plugin#warnings",
+    expect(validationLink.getAttribute("href")).toBe(
+      "/plugins/local-flagged-runtime-plugin#validation",
     );
   });
 

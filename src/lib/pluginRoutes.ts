@@ -25,8 +25,8 @@ export function buildPluginSecurityAuditHref(name: string) {
   return `${buildPluginDetailHref(name)}/security-audit`;
 }
 
-export function buildPluginWarningsHref(name: string) {
-  return `${buildPluginDetailHref(name)}#warnings`;
+export function buildPluginValidationHref(name: string) {
+  return `${buildPluginDetailHref(name)}#validation`;
 }
 
 export function packageNameFromScopedRoute(scope: string, name: string) {

@@ -136,13 +136,13 @@ test("plugin inspector blocks hard publish errors and publishes warning findings
 
   await page.goto("/dashboard", { waitUntil: "domcontentloaded" });
   await waitForHydration(page);
-  const dashboardWarningLink = page.locator(`a[href="/plugins/${warningName}#warnings"]`);
+  const dashboardWarningLink = page.locator(`a[href="/plugins/${warningName}#validation"]`);
   await expect(dashboardWarningLink).toBeVisible({ timeout: 30_000 });
   await captureProof(page, testInfo, "03-dashboard-warning-count");
   await dashboardWarningLink.click();
 
-  await expect(page).toHaveURL(new RegExp(`/plugins/${warningName}#warnings$`));
-  await expect(page.getByRole("tab", { name: "Warnings" })).toHaveAttribute(
+  await expect(page).toHaveURL(new RegExp(`/plugins/${warningName}#validation$`));
+  await expect(page.getByRole("tab", { name: /Validation \\(\\d+\\)/ })).toHaveAttribute(
     "aria-selected",
     "true",
   );

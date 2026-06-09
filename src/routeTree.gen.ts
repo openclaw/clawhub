@@ -45,12 +45,10 @@ import { Route as CliDeviceRouteImport } from './routes/cli/device'
 import { Route as CliAuthRouteImport } from './routes/cli/auth'
 import { Route as OwnerSlugRouteImport } from './routes/$owner/$slug'
 import { Route as PluginsScopeNameRouteImport } from './routes/plugins/$scope/$name'
-import { Route as PluginsNameSettingsRouteImport } from './routes/plugins/$name/settings'
 import { Route as PluginsNameSecurityAuditRouteImport } from './routes/plugins/$name/security-audit'
 import { Route as PackagesScopeNameRouteImport } from './routes/packages/$scope/$name'
 import { Route as OwnerSlugSettingsRouteImport } from './routes/$owner/$slug/settings'
 import { Route as OwnerSlugSecurityAuditRouteImport } from './routes/$owner/$slug/security-audit'
-import { Route as PluginsScopeNameSettingsRouteImport } from './routes/plugins/$scope/$name/settings'
 import { Route as PluginsScopeNameSecurityAuditRouteImport } from './routes/plugins/$scope/$name/security-audit'
 import { Route as PluginsNameSecurityScannerRouteImport } from './routes/plugins/$name/security/$scanner'
 import { Route as OwnerSlugSecurityScannerRouteImport } from './routes/$owner/$slug/security/$scanner'
@@ -236,11 +234,6 @@ const PluginsScopeNameRoute = PluginsScopeNameRouteImport.update({
   path: '/plugins/$scope/$name',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PluginsNameSettingsRoute = PluginsNameSettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => PluginsNameRoute,
-} as any)
 const PluginsNameSecurityAuditRoute =
   PluginsNameSecurityAuditRouteImport.update({
     id: '/security-audit',
@@ -262,12 +255,6 @@ const OwnerSlugSecurityAuditRoute = OwnerSlugSecurityAuditRouteImport.update({
   path: '/security-audit',
   getParentRoute: () => OwnerSlugRoute,
 } as any)
-const PluginsScopeNameSettingsRoute =
-  PluginsScopeNameSettingsRouteImport.update({
-    id: '/settings',
-    path: '/settings',
-    getParentRoute: () => PluginsScopeNameRoute,
-  } as any)
 const PluginsScopeNameSecurityAuditRoute =
   PluginsScopeNameSecurityAuditRouteImport.update({
     id: '/security-audit',
@@ -333,12 +320,10 @@ export interface FileRoutesByFullPath {
   '/$owner/$slug/settings': typeof OwnerSlugSettingsRoute
   '/packages/$scope/$name': typeof PackagesScopeNameRoute
   '/plugins/$name/security-audit': typeof PluginsNameSecurityAuditRoute
-  '/plugins/$name/settings': typeof PluginsNameSettingsRoute
   '/plugins/$scope/$name': typeof PluginsScopeNameRouteWithChildren
   '/$owner/$slug/security/$scanner': typeof OwnerSlugSecurityScannerRoute
   '/plugins/$name/security/$scanner': typeof PluginsNameSecurityScannerRoute
   '/plugins/$scope/$name/security-audit': typeof PluginsScopeNameSecurityAuditRoute
-  '/plugins/$scope/$name/settings': typeof PluginsScopeNameSettingsRoute
   '/plugins/$scope/$name/security/$scanner': typeof PluginsScopeNameSecurityScannerRoute
 }
 export interface FileRoutesByTo {
@@ -381,12 +366,10 @@ export interface FileRoutesByTo {
   '/$owner/$slug/settings': typeof OwnerSlugSettingsRoute
   '/packages/$scope/$name': typeof PackagesScopeNameRoute
   '/plugins/$name/security-audit': typeof PluginsNameSecurityAuditRoute
-  '/plugins/$name/settings': typeof PluginsNameSettingsRoute
   '/plugins/$scope/$name': typeof PluginsScopeNameRouteWithChildren
   '/$owner/$slug/security/$scanner': typeof OwnerSlugSecurityScannerRoute
   '/plugins/$name/security/$scanner': typeof PluginsNameSecurityScannerRoute
   '/plugins/$scope/$name/security-audit': typeof PluginsScopeNameSecurityAuditRoute
-  '/plugins/$scope/$name/settings': typeof PluginsScopeNameSettingsRoute
   '/plugins/$scope/$name/security/$scanner': typeof PluginsScopeNameSecurityScannerRoute
 }
 export interface FileRoutesById {
@@ -430,12 +413,10 @@ export interface FileRoutesById {
   '/$owner/$slug/settings': typeof OwnerSlugSettingsRoute
   '/packages/$scope/$name': typeof PackagesScopeNameRoute
   '/plugins/$name/security-audit': typeof PluginsNameSecurityAuditRoute
-  '/plugins/$name/settings': typeof PluginsNameSettingsRoute
   '/plugins/$scope/$name': typeof PluginsScopeNameRouteWithChildren
   '/$owner/$slug/security/$scanner': typeof OwnerSlugSecurityScannerRoute
   '/plugins/$name/security/$scanner': typeof PluginsNameSecurityScannerRoute
   '/plugins/$scope/$name/security-audit': typeof PluginsScopeNameSecurityAuditRoute
-  '/plugins/$scope/$name/settings': typeof PluginsScopeNameSettingsRoute
   '/plugins/$scope/$name/security/$scanner': typeof PluginsScopeNameSecurityScannerRoute
 }
 export interface FileRouteTypes {
@@ -480,12 +461,10 @@ export interface FileRouteTypes {
     | '/$owner/$slug/settings'
     | '/packages/$scope/$name'
     | '/plugins/$name/security-audit'
-    | '/plugins/$name/settings'
     | '/plugins/$scope/$name'
     | '/$owner/$slug/security/$scanner'
     | '/plugins/$name/security/$scanner'
     | '/plugins/$scope/$name/security-audit'
-    | '/plugins/$scope/$name/settings'
     | '/plugins/$scope/$name/security/$scanner'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -528,12 +507,10 @@ export interface FileRouteTypes {
     | '/$owner/$slug/settings'
     | '/packages/$scope/$name'
     | '/plugins/$name/security-audit'
-    | '/plugins/$name/settings'
     | '/plugins/$scope/$name'
     | '/$owner/$slug/security/$scanner'
     | '/plugins/$name/security/$scanner'
     | '/plugins/$scope/$name/security-audit'
-    | '/plugins/$scope/$name/settings'
     | '/plugins/$scope/$name/security/$scanner'
   id:
     | '__root__'
@@ -576,12 +553,10 @@ export interface FileRouteTypes {
     | '/$owner/$slug/settings'
     | '/packages/$scope/$name'
     | '/plugins/$name/security-audit'
-    | '/plugins/$name/settings'
     | '/plugins/$scope/$name'
     | '/$owner/$slug/security/$scanner'
     | '/plugins/$name/security/$scanner'
     | '/plugins/$scope/$name/security-audit'
-    | '/plugins/$scope/$name/settings'
     | '/plugins/$scope/$name/security/$scanner'
   fileRoutesById: FileRoutesById
 }
@@ -879,13 +854,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PluginsScopeNameRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/plugins/$name/settings': {
-      id: '/plugins/$name/settings'
-      path: '/settings'
-      fullPath: '/plugins/$name/settings'
-      preLoaderRoute: typeof PluginsNameSettingsRouteImport
-      parentRoute: typeof PluginsNameRoute
-    }
     '/plugins/$name/security-audit': {
       id: '/plugins/$name/security-audit'
       path: '/security-audit'
@@ -913,13 +881,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/$owner/$slug/security-audit'
       preLoaderRoute: typeof OwnerSlugSecurityAuditRouteImport
       parentRoute: typeof OwnerSlugRoute
-    }
-    '/plugins/$scope/$name/settings': {
-      id: '/plugins/$scope/$name/settings'
-      path: '/settings'
-      fullPath: '/plugins/$scope/$name/settings'
-      preLoaderRoute: typeof PluginsScopeNameSettingsRouteImport
-      parentRoute: typeof PluginsScopeNameRoute
     }
     '/plugins/$scope/$name/security-audit': {
       id: '/plugins/$scope/$name/security-audit'
@@ -970,13 +931,11 @@ const OwnerSlugRouteWithChildren = OwnerSlugRoute._addFileChildren(
 
 interface PluginsNameRouteChildren {
   PluginsNameSecurityAuditRoute: typeof PluginsNameSecurityAuditRoute
-  PluginsNameSettingsRoute: typeof PluginsNameSettingsRoute
   PluginsNameSecurityScannerRoute: typeof PluginsNameSecurityScannerRoute
 }
 
 const PluginsNameRouteChildren: PluginsNameRouteChildren = {
   PluginsNameSecurityAuditRoute: PluginsNameSecurityAuditRoute,
-  PluginsNameSettingsRoute: PluginsNameSettingsRoute,
   PluginsNameSecurityScannerRoute: PluginsNameSecurityScannerRoute,
 }
 
@@ -986,13 +945,11 @@ const PluginsNameRouteWithChildren = PluginsNameRoute._addFileChildren(
 
 interface PluginsScopeNameRouteChildren {
   PluginsScopeNameSecurityAuditRoute: typeof PluginsScopeNameSecurityAuditRoute
-  PluginsScopeNameSettingsRoute: typeof PluginsScopeNameSettingsRoute
   PluginsScopeNameSecurityScannerRoute: typeof PluginsScopeNameSecurityScannerRoute
 }
 
 const PluginsScopeNameRouteChildren: PluginsScopeNameRouteChildren = {
   PluginsScopeNameSecurityAuditRoute: PluginsScopeNameSecurityAuditRoute,
-  PluginsScopeNameSettingsRoute: PluginsScopeNameSettingsRoute,
   PluginsScopeNameSecurityScannerRoute: PluginsScopeNameSecurityScannerRoute,
 }
 

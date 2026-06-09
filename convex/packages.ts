@@ -2195,8 +2195,15 @@ export const listPackageInspectorFindingsPublic = query({
   },
   handler: async (ctx, args) => {
     const viewerUserId = await getOptionalActiveAuthUserId(ctx);
-    const pkg = await getReadablePackageByName(ctx, args.name, viewerUserId ?? undefined);
+    if (!viewerUserId) return [];
+    const pkg = await getReadablePackageByName(ctx, args.name, viewerUserId);
     if (!pkg || pkg.softDeletedAt || pkg.family === "skill") return [];
+    const actor = await ctx.db.get(viewerUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) return [];
+    if (actor.role !== "admin" && actor.role !== "moderator") {
+      const canManage = await viewerCanManagePackageOwner(ctx, pkg, viewerUserId);
+      if (!canManage) return [];
+    }
 
     const limit = Math.max(1, Math.min(args.limit ?? 50, 100));
     const warnings = await ctx.db
@@ -2206,6 +2213,44 @@ export const listPackageInspectorFindingsPublic = query({
       .take(limit);
 
     return warnings.map(toPublicPackageInspectorFinding);
+  },
+});
+
+export const getPackageInspectorValidationSummaryPublic = query({
+  args: {
+    name: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const viewerUserId = await getOptionalActiveAuthUserId(ctx);
+    const pkg = await getReadablePackageByName(ctx, args.name, viewerUserId ?? undefined);
+    if (!pkg || pkg.softDeletedAt || pkg.family === "skill") {
+      return {
+        findingCount: 0,
+        errorCount: 0,
+        warningCount: 0,
+        incompatibleAfterOpenClawVersion: null,
+      };
+    }
+
+    const findings = await ctx.db
+      .query("packageInspectorWarnings")
+      .withIndex("by_package_created", (q) => q.eq("packageId", pkg._id))
+      .order("desc")
+      .take(100);
+    const errorFindings = findings.filter((finding) => {
+      const kind =
+        finding.findingKind ??
+        (finding.level === "breakage" || finding.severity === "P0" ? "error" : "warning");
+      return kind === "error";
+    });
+    return {
+      findingCount: findings.length,
+      errorCount: errorFindings.length,
+      warningCount: findings.length - errorFindings.length,
+      incompatibleAfterOpenClawVersion:
+        errorFindings.find((finding) => finding.targetOpenClawVersion)?.targetOpenClawVersion ??
+        null,
+    };
   },
 });
 
@@ -7209,7 +7254,7 @@ export const sendPackageInspectorFindingsEmailInternal = internalAction({
       packageName: context.packageName,
       version: context.version,
       findings: context.findings,
-      warningUrl: `${getPublicSiteOrigin()}${buildPublicPluginWarningsPath(context.packageName)}`,
+      warningUrl: `${getPublicSiteOrigin()}${buildPublicPluginValidationPath(context.packageName)}`,
     });
     const sent = await sendResendEmail({
       to: context.ownerEmail,
@@ -7392,7 +7437,7 @@ function getPublicSiteOrigin() {
   ).replace(/\/+$/, "");
 }
 
-function buildPublicPluginWarningsPath(packageName: string) {
+function buildPublicPluginValidationPath(packageName: string) {
   const encodedName = packageName
     .split("/")
     .map((segment) =>
@@ -7401,7 +7446,7 @@ function buildPublicPluginWarningsPath(packageName: string) {
         : encodeURIComponent(segment),
     )
     .join("/");
-  return `/plugins/${encodedName}#warnings`;
+  return `/plugins/${encodedName}#validation`;
 }
 
 function renderPackageInspectorFindingsEmail(args: {
@@ -7464,7 +7509,7 @@ function renderPackageInspectorFindingsEmail(args: {
         <ul style="margin:0 0 20px;padding:0;list-style:none;">
           ${args.findings.map(renderEmailFindingHtml).join("")}
         </ul>
-        <p style="margin:0;"><a href="${escapeHtml(args.warningUrl)}" style="display:inline-block;border-radius:6px;background:#111827;color:#ffffff;text-decoration:none;padding:10px 14px;font-weight:700;">View plugin warnings</a></p>
+        <p style="margin:0;"><a href="${escapeHtml(args.warningUrl)}" style="display:inline-block;border-radius:6px;background:#111827;color:#ffffff;text-decoration:none;padding:10px 14px;font-weight:700;">View plugin validation</a></p>
       </section>
     </main>
   </body>

@@ -15,6 +15,7 @@ import {
   listPackageReportsInternal,
   getPackageModerationStatusForUserInternal,
   getManageContext,
+  getPackageInspectorValidationSummaryPublic,
   listPackageInspectorWarningsForManager,
   listPackageInspectorFindingsPublic,
   insertPackageInspectorWarningsInternal,
@@ -437,6 +438,17 @@ const listPackageInspectorFindingsPublicHandler = (
       targetOpenClawVersion?: string;
       scanSource?: "publish" | "nightly";
     }>
+  >
+)._handler;
+const getPackageInspectorValidationSummaryPublicHandler = (
+  getPackageInspectorValidationSummaryPublic as unknown as WrappedHandler<
+    { name: string },
+    {
+      findingCount: number;
+      errorCount: number;
+      warningCount: number;
+      incompatibleAfterOpenClawVersion: string | null;
+    }
   >
 )._handler;
 const insertPackageInspectorWarningsInternalHandler = (
@@ -6582,7 +6594,7 @@ describe("packages public queries", () => {
     expect(insert).not.toHaveBeenCalled();
   });
 
-  it("lists plugin inspector findings publicly for signed-out viewers", async () => {
+  it("summarizes plugin inspector validation findings for signed-out viewers", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue(null);
     const ctx = {
       db: {
@@ -6642,17 +6654,31 @@ describe("packages public queries", () => {
     };
 
     await expect(
-      listPackageInspectorFindingsPublicHandler(ctx as never, { name: "demo-plugin" }),
-    ).resolves.toEqual([
-      expect.objectContaining({
-        findingKind: "error",
-        code: "missing-expected-seam",
-        targetOpenClawVersion: "0.10.0",
-      }),
-    ]);
+      getPackageInspectorValidationSummaryPublicHandler(ctx as never, { name: "demo-plugin" }),
+    ).resolves.toEqual({
+      findingCount: 1,
+      errorCount: 1,
+      warningCount: 0,
+      incompatibleAfterOpenClawVersion: "0.10.0",
+    });
   });
 
-  it("does not expose plugin inspector findings for private packages", async () => {
+  it("does not list detailed plugin inspector findings for signed-out viewers", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue(null);
+    const ctx = {
+      db: {
+        get: vi.fn(),
+        query: vi.fn(),
+      },
+    };
+
+    await expect(
+      listPackageInspectorFindingsPublicHandler(ctx as never, { name: "demo-plugin" }),
+    ).resolves.toEqual([]);
+    expect(ctx.db.query).not.toHaveBeenCalled();
+  });
+
+  it("does not expose detailed plugin inspector findings for private packages", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue(null);
     const ctx = {
       db: {
@@ -6681,7 +6707,7 @@ describe("packages public queries", () => {
     await expect(
       listPackageInspectorFindingsPublicHandler(ctx as never, { name: "private-plugin" }),
     ).resolves.toEqual([]);
-    expect(ctx.db.query).toHaveBeenCalledWith("packages");
+    expect(ctx.db.query).not.toHaveBeenCalled();
     expect(ctx.db.query).not.toHaveBeenCalledWith("packageInspectorWarnings");
   });
 

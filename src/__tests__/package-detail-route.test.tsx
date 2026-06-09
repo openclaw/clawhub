@@ -421,26 +421,13 @@ describe("plugin detail route", () => {
       sidebarMetadata?.querySelectorAll(".sidebar-metadata-label") ?? [],
       (label) => label.textContent?.trim(),
     );
-    const capabilitiesTab = screen.getByRole("tab", { name: "Capabilities" });
     const securityAuditLabelIndex = sidebarLabels.findIndex((label) =>
       label?.startsWith("Security audit"),
     );
     expect(securityAuditLabelIndex).toBeGreaterThanOrEqual(0);
     expect(securityAuditLabelIndex).toBeGreaterThan(sidebarLabels.indexOf("Downloads"));
-    fireEvent.click(capabilitiesTab);
-    expect(screen.getByText("Tags")).toBeTruthy();
-  });
-
-  it("renders the nested settings route for plugin settings paths", async () => {
-    pathnameMock = "/plugins/demo-plugin/settings";
-
-    const route = await loadRoute();
-    const Component = route.__config.component as ComponentType;
-
-    render(<Component />);
-
-    expect(screen.getByTestId("nested-plugin-route")).toBeTruthy();
-    expect(screen.queryByText("Demo Plugin")).toBeNull();
+    expect(screen.queryByRole("tab", { name: "Capabilities" })).toBeNull();
+    expect(screen.queryByRole("tab", { name: "Verification" })).toBeNull();
   });
 
   it("does not render owner-only plugin scanner rerun state in the detail security summary", async () => {
@@ -610,7 +597,7 @@ describe("plugin detail route", () => {
     );
   });
 
-  it("shows public plugin inspector warnings on the plugin detail warnings tab", async () => {
+  it("shows a public incompatibility alert without exposing validation outputs", async () => {
     useAuthStatusMock.mockReturnValue({
       isAuthenticated: false,
       isLoading: false,
@@ -618,7 +605,84 @@ describe("plugin detail route", () => {
     });
     useQueryMock.mockImplementation((query: unknown) => {
       const name = getFunctionName(query as never);
-      if (name === "packages:listPackageInspectorFindingsPublic") {
+      if (name === "packages:getPackageInspectorValidationSummaryPublic") {
+        return {
+          findingCount: 2,
+          errorCount: 1,
+          warningCount: 1,
+          incompatibleAfterOpenClawVersion: "0.9.0",
+        };
+      }
+      return null;
+    });
+    loaderDataMock = {
+      detail: {
+        package: {
+          ...loaderDataMock.detail.package!,
+          latestVersion: "1.0.0",
+        },
+        owner: null,
+      },
+      version: {
+        package: {
+          name: "demo-plugin",
+          displayName: "Demo Plugin",
+          family: "code-plugin",
+        },
+        version: {
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "Initial release",
+          distTags: ["latest"],
+          files: [],
+          compatibility: null,
+          capabilities: null,
+          verification: null,
+          artifact: null,
+          sha256hash: null,
+          vtAnalysis: null,
+          llmAnalysis: null,
+          staticScan: null,
+        },
+      },
+      readme: null,
+      rateLimited: null,
+    };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(
+      screen.getByText("This plugin is incompatible with OpenClaw versions greater than 0.9.0."),
+    ).toBeTruthy();
+    expect(screen.queryByRole("tab", { name: /Validation/ })).toBeNull();
+    expect(screen.queryByText("missing-expected-seam")).toBeNull();
+  });
+
+  it("shows validation outputs to plugin managers on the validation tab", async () => {
+    useAuthStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: { _id: "users:owner" },
+    });
+    useQueryMock.mockImplementation((query: unknown) => {
+      const name = getFunctionName(query as never);
+      if (name === "packages:getManageContext") {
+        return {
+          package: { name: "demo-plugin", displayName: "Demo Plugin" },
+          latestRelease: { version: "1.0.0" },
+        };
+      }
+      if (name === "packages:getPackageInspectorValidationSummaryPublic") {
+        return {
+          findingCount: 2,
+          errorCount: 1,
+          warningCount: 1,
+          incompatibleAfterOpenClawVersion: "0.9.0",
+        };
+      }
+      if (name === "packages:listPackageInspectorWarningsForManager") {
         return [
           {
             packageName: "demo-plugin",
@@ -685,37 +749,36 @@ describe("plugin detail route", () => {
       readme: null,
       rateLimited: null,
     };
-    window.location.hash = "#warnings";
+    window.location.hash = "#validation";
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
 
     render(<Component />);
 
-    expect(screen.getByRole("tab", { name: "Warnings" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "2 warnings" }).getAttribute("href")).toBe(
-      "/plugins/demo-plugin#warnings",
-    );
+    expect(screen.getByRole("tab", { name: "Validation (2)" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "2 warnings" })).toBeNull();
+    expect(
+      screen.getByText(
+        /Validation outputs are only visible to plugin owners and admins. Run locally using the CLI:/,
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText("clawhub package validate <path-to-plugin>")).toBeTruthy();
     expect(screen.getByText("legacy-before-agent-start")).toBeTruthy();
     expect(screen.getByText("missing-expected-seam")).toBeTruthy();
     expect(screen.getByText("registerTool is no longer available")).toBeTruthy();
     expect(screen.getAllByText("OpenClaw 0.9.0").length).toBeGreaterThan(0);
   });
 
-  it("switches to public warnings when the detail-page hash changes", async () => {
+  it("does not show validation outputs to signed-out viewers when the hash changes", async () => {
     useQueryMock.mockImplementation((query: unknown) => {
       const name = getFunctionName(query as never);
-      if (name === "packages:listPackageInspectorFindingsPublic") {
-        return [
-          {
-            packageName: "demo-plugin",
-            version: "1.0.0",
-            findingKind: "warning",
-            code: "legacy-before-agent-start",
-            message: "legacy before_agent_start hook is deprecated",
-            scanSource: "publish",
-            createdAt: 1,
-          },
-        ];
+      if (name === "packages:getPackageInspectorValidationSummaryPublic") {
+        return {
+          findingCount: 1,
+          errorCount: 0,
+          warningCount: 1,
+          incompatibleAfterOpenClawVersion: null,
+        };
       }
       return null;
     });
@@ -726,11 +789,11 @@ describe("plugin detail route", () => {
     expect(screen.queryByText("legacy-before-agent-start")).toBeNull();
 
     await act(async () => {
-      window.location.hash = "#warnings";
+      window.location.hash = "#validation";
       window.dispatchEvent(new HashChangeEvent("hashchange"));
     });
 
-    expect(await screen.findByText("legacy-before-agent-start")).toBeTruthy();
+    expect(screen.queryByText("legacy-before-agent-start")).toBeNull();
   });
 
   it("shows a retryable empty state when the detail lookup is rate limited", async () => {
