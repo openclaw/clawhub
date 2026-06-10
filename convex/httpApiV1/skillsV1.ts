@@ -132,11 +132,7 @@ type PublicSkillVersionParsed = {
 
 type SkillSetupEntry = {
   key: string;
-  label: string;
-  type: "secret" | "url" | "bool" | "string";
   required: boolean;
-  target: "env" | "config";
-  help?: string;
 };
 
 type PublicSkillVersionStaticScan = Pick<
@@ -1013,45 +1009,19 @@ function buildSecurityAuditUrl(
   return url.toString();
 }
 
-function setupLabelFromKey(key: string) {
-  return key
-    .split(/[_\s.-]+/g)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
-    .join(" ");
-}
-
-function inferSetupType(key: string): SkillSetupEntry["type"] {
-  const normalized = key.toLowerCase();
-  if (
-    /(token|secret|password|passwd|api[_-]?key|apikey|credential|private[_-]?key)/.test(normalized)
-  ) {
-    return "secret";
-  }
-  if (/(url|uri|endpoint|base[_-]?url|host)/.test(normalized)) return "url";
-  if (/^(is_|has_|enable_|disable_|allow_|use_)/.test(normalized)) return "bool";
-  return "string";
-}
-
 function addSetupEntry(
   entries: SkillSetupEntry[],
   seen: Set<string>,
   key: string,
-  target: SkillSetupEntry["target"],
-  options: { required?: boolean; help?: string } = {},
+  options: { required?: boolean } = {},
 ) {
   const normalizedKey = key.trim();
   if (!normalizedKey) return;
-  const seenKey = `${target}:${normalizedKey}`;
-  if (seen.has(seenKey)) return;
-  seen.add(seenKey);
+  if (seen.has(normalizedKey)) return;
+  seen.add(normalizedKey);
   entries.push({
     key: normalizedKey,
-    label: setupLabelFromKey(normalizedKey),
-    type: inferSetupType(normalizedKey),
     required: options.required ?? true,
-    target,
-    ...(options.help ? { help: options.help } : {}),
   });
 }
 
@@ -1062,26 +1032,17 @@ function buildSkillSetup(parsed: PublicSkillVersionParsed | undefined): SkillSet
   const entries: SkillSetupEntry[] = [];
   const seen = new Set<string>();
   const envVarDetails = new Map(
-    (clawdis.envVars ?? []).map((entry) => [
-      entry.name,
-      {
-        required: entry.required ?? true,
-        help: entry.description?.trim() || undefined,
-      },
-    ]),
+    (clawdis.envVars ?? []).map((entry) => [entry.name, { required: entry.required ?? true }]),
   );
 
   for (const key of clawdis.requires?.env ?? []) {
-    addSetupEntry(entries, seen, key, "env", envVarDetails.get(key) ?? { required: true });
+    addSetupEntry(entries, seen, key, envVarDetails.get(key) ?? { required: true });
   }
   for (const key of clawdis.requires?.config ?? []) {
-    addSetupEntry(entries, seen, key, "config", { required: true });
+    addSetupEntry(entries, seen, key, { required: true });
   }
   for (const entry of clawdis.envVars ?? []) {
-    addSetupEntry(entries, seen, entry.name, "env", {
-      required: entry.required ?? true,
-      help: entry.description?.trim() || undefined,
-    });
+    addSetupEntry(entries, seen, entry.name, { required: entry.required ?? true });
   }
 
   return entries;

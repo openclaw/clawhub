@@ -221,11 +221,7 @@ export const ApiV1SkillListResponseSchema = type({
         metadata: type({
             setup: type({
                 key: "string",
-                label: "string",
-                type: '"secret"|"url"|"bool"|"string"',
                 required: "boolean",
-                target: '"env"|"config"',
-                help: "string?",
             }).array(),
             os: "string[]|null?",
             systems: "string[]|null?",
@@ -255,11 +251,7 @@ export const ApiV1SkillResponseSchema = type({
     metadata: type({
         setup: type({
             key: "string",
-            label: "string",
-            type: '"secret"|"url"|"bool"|"string"',
             required: "boolean",
-            target: '"env"|"config"',
-            help: "string?",
         }).array(),
         os: "string[]|null?",
         systems: "string[]|null?",

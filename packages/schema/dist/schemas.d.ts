@@ -245,11 +245,7 @@ export declare const ApiV1SkillListResponseSchema: import("arktype/internal/vari
         metadata?: {
             setup: {
                 key: string;
-                label: string;
-                type: "string" | "url" | "bool" | "secret";
                 required: boolean;
-                target: "env" | "config";
-                help?: string | undefined;
             }[];
             os?: string[] | null | undefined;
             systems?: string[] | null | undefined;
@@ -282,11 +278,7 @@ export declare const ApiV1SkillResponseSchema: import("arktype/internal/variants
     metadata?: {
         setup: {
             key: string;
-            label: string;
-            type: "string" | "url" | "bool" | "secret";
             required: boolean;
-            target: "env" | "config";
-            help?: string | undefined;
         }[];
         os?: string[] | null | undefined;
         systems?: string[] | null | undefined;

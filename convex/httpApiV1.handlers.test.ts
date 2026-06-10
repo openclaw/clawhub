@@ -1843,18 +1843,11 @@ describe("httpApiV1 handlers", () => {
     expect(json.items[0].metadata.setup).toEqual([
       {
         key: "HA_TOKEN",
-        label: "Ha Token",
-        type: "secret",
         required: true,
-        target: "env",
-        help: "Long-lived access token.",
       },
       {
         key: "HA_URL",
-        label: "Ha Url",
-        type: "url",
         required: true,
-        target: "config",
       },
     ]);
   });
@@ -2235,18 +2228,11 @@ describe("httpApiV1 handlers", () => {
     expect(json.metadata.setup).toEqual([
       {
         key: "HA_TOKEN",
-        label: "Ha Token",
-        type: "secret",
         required: true,
-        target: "env",
-        help: "Long-lived access token.",
       },
       {
         key: "HA_URL",
-        label: "Ha Url",
-        type: "url",
         required: true,
-        target: "config",
       },
     ]);
     expect(storageGet).toHaveBeenCalledWith("_storage:skill-readme");
