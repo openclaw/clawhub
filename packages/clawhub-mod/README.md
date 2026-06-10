@@ -125,7 +125,6 @@ bun run admin -- plugins triage-report <report-id> --status open|confirmed|dismi
 
 bun run admin -- plugins migrations [--phase <phase>]
 bun run admin -- plugins set-migration <bundled-plugin-id> --package <name>
-bun run admin -- plugins backfill-artifacts [--all] [--apply]
 bun run admin -- plugins repair-name <name> --next-name <name> --reason <text> [--retire-target] [--owner <handle>] [--apply]
 bun run admin -- plugins trusted-publisher get <name>
 bun run admin -- plugins trusted-publisher set <name> --repository <owner/repo> --workflow-filename <file>

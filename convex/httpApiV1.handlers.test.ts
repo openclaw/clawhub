@@ -9878,54 +9878,6 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
-  it("package artifact backfill posts admin dry-run requests", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:admin",
-      user: { _id: "users:admin", role: "admin" },
-    } as never);
-    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
-      if (isRateLimitArgs(args)) return okRate();
-      return {
-        ok: true,
-        scanned: 50,
-        updated: 7,
-        nextCursor: "cursor-1",
-        done: false,
-        dryRun: true,
-      };
-    });
-
-    const response = await __handlers.packagesPostRouterV1Handler(
-      makeCtx({ runMutation }),
-      new Request("https://example.com/api/v1/packages/backfill/artifacts", {
-        method: "POST",
-        headers: { Authorization: "Bearer clh_test" },
-        body: JSON.stringify({
-          cursor: "cursor-0",
-          batchSize: 50,
-          dryRun: true,
-        }),
-      }),
-    );
-
-    expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({
-      ok: true,
-      scanned: 50,
-      updated: 7,
-      dryRun: true,
-    });
-    expect(runMutation).toHaveBeenCalledWith(
-      internal.packages.backfillPackageArtifactKindsInternal,
-      {
-        actorUserId: "users:admin",
-        cursor: "cursor-0",
-        batchSize: 50,
-        dryRun: true,
-      },
-    );
-  });
-
   it("npm mirror packument lists only ClawPack-backed releases", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("name" in args && !("paginationOpts" in args)) {

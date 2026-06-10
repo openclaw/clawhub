@@ -645,25 +645,6 @@ export const ApiV1PackageModerationStatusResponseSchema = type({
 export type ApiV1PackageModerationStatusResponse =
   (typeof ApiV1PackageModerationStatusResponseSchema)[inferred];
 
-export const PackageArtifactBackfillRequestSchema = type({
-  cursor: "string|null?",
-  batchSize: "number?",
-  dryRun: "boolean?",
-});
-export type PackageArtifactBackfillRequest =
-  (typeof PackageArtifactBackfillRequestSchema)[inferred];
-
-export const ApiV1PackageArtifactBackfillResponseSchema = type({
-  ok: "true",
-  scanned: "number",
-  updated: "number",
-  nextCursor: "string|null",
-  done: "boolean",
-  dryRun: "boolean",
-});
-export type ApiV1PackageArtifactBackfillResponse =
-  (typeof ApiV1PackageArtifactBackfillResponseSchema)[inferred];
-
 export const PackageReadinessCheckSchema = type({
   id: "string",
   label: "string",

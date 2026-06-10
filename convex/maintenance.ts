@@ -4,13 +4,11 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx } from "./_generated/server";
 import { action, internalAction, internalMutation, internalQuery } from "./functions";
 import { assertRole, requireUserFromAction } from "./lib/access";
-import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
 import {
   derivePersonalPublisherHandle,
   ensurePersonalPublisherForUser,
   getPersonalPublisherForUser,
   getPublisherByHandle,
-  getPublisherMembership,
   getUserByHandleOrPersonalPublisher,
   isPublisherActive,
 } from "./lib/publishers";
@@ -26,12 +24,6 @@ import {
 } from "./lib/skillQuality";
 import { hashSkillFiles, isTextFile } from "./lib/skills";
 import { computeIsSuspicious } from "./lib/skillSafety";
-import {
-  extractValidatedDigestFields,
-  getFirstSearchToken,
-  normalizeSkillSearchText,
-  upsertSkillSearchDigest,
-} from "./lib/skillSearchDigest";
 import { generateSkillSummary } from "./lib/skillSummary";
 
 const DEFAULT_BATCH_SIZE = 50;
@@ -102,29 +94,20 @@ type UserOwnedSkillsBackfillPageResult = {
   isDone: boolean;
 };
 
-type LegacyPublisherOwnershipPhase = "users" | "skills" | "packages";
-type LegacyPublisherOwnershipTargetPhase = Exclude<LegacyPublisherOwnershipPhase, "users">;
+type LegacyPublisherOwnershipTargetPhase = "skills" | "packages";
 
-type LegacyPublisherOwnershipRepairResult = {
-  phase: LegacyPublisherOwnershipPhase;
+type LegacyPublisherOwnershipForUserRepairResult = {
+  phase: LegacyPublisherOwnershipTargetPhase;
   dryRun: boolean;
+  userId: Id<"users">;
+  handle?: string;
+  publisherId: Id<"publishers"> | null;
   scanned: number;
   repaired: number;
   skipped: number;
   errors: string[];
   cursor: string | null;
   isDone: boolean;
-  nextPhase?: LegacyPublisherOwnershipPhase;
-};
-
-type LegacyPublisherOwnershipForUserRepairResult = Omit<
-  LegacyPublisherOwnershipRepairResult,
-  "phase" | "nextPhase"
-> & {
-  phase: LegacyPublisherOwnershipTargetPhase;
-  userId: Id<"users">;
-  handle?: string;
-  publisherId: Id<"publishers"> | null;
   nextPhase?: LegacyPublisherOwnershipTargetPhase;
 };
 
@@ -2033,46 +2016,6 @@ export const nominateEmptySkillSpammers: ReturnType<typeof action> = action({
   },
 });
 
-// Backfill embeddingSkillMap from existing skillEmbeddings.
-// Run once after deploying the schema change:
-//   npx convex run maintenance:backfillEmbeddingSkillMapInternal --prod
-export const backfillEmbeddingSkillMapInternal = internalMutation({
-  args: {
-    cursor: v.optional(v.string()),
-    batchSize: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const batchSize = clampInt(args.batchSize ?? 200, 10, 500);
-    const { page, continueCursor, isDone } = await ctx.db
-      .query("skillEmbeddings")
-      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
-
-    let inserted = 0;
-    for (const embedding of page) {
-      const existing = await ctx.db
-        .query("embeddingSkillMap")
-        .withIndex("by_embedding", (q) => q.eq("embeddingId", embedding._id))
-        .unique();
-      if (!existing) {
-        await ctx.db.insert("embeddingSkillMap", {
-          embeddingId: embedding._id,
-          skillId: embedding.skillId,
-        });
-        inserted++;
-      }
-    }
-
-    if (!isDone) {
-      await ctx.scheduler.runAfter(0, internal.maintenance.backfillEmbeddingSkillMapInternal, {
-        cursor: continueCursor,
-        batchSize: args.batchSize,
-      });
-    }
-
-    return { inserted, isDone, scanned: page.length };
-  },
-});
-
 // Sync skillBadges table → denormalized skill.badges field.
 // Run after deploying the badge-read removal to ensure all skills
 // have up-to-date badges on the skill doc itself.
@@ -2244,85 +2187,10 @@ export const backfillIsSuspiciousInternal = internalMutation({
   },
 });
 
-// Backfill skillSearchDigest from existing skills.
-// Run once after deploying the schema change:
-//   npx convex run maintenance:backfillSkillSearchDigestInternal --prod
-export const backfillSkillSearchDigestInternal = internalMutation({
-  args: {
-    cursor: v.optional(v.string()),
-    batchSize: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const batchSize = clampInt(args.batchSize ?? 200, 10, 500);
-    const { page, continueCursor, isDone } = await ctx.db
-      .query("skills")
-      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
-
-    let upserted = 0;
-    for (const skill of page) {
-      await upsertSkillSearchDigest(ctx, await extractValidatedDigestFields(ctx, skill));
-      upserted++;
-    }
-
-    if (!isDone) {
-      await ctx.scheduler.runAfter(0, internal.maintenance.backfillSkillSearchDigestInternal, {
-        cursor: continueCursor,
-        batchSize: args.batchSize,
-      });
-    }
-
-    return { upserted, isDone, scanned: page.length };
-  },
-});
-
-// Backfill plugin category digest rows for existing active packages.
-// Run once after deploying the schema change:
-//   npx convex run maintenance:backfillPackagePluginCategoryDigestsInternal --prod
-export const backfillPackagePluginCategoryDigestsInternal = internalMutation({
-  args: {
-    cursor: v.optional(v.string()),
-    batchSize: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const batchSize = clampInt(args.batchSize ?? 200, 10, 500);
-    const { page, continueCursor, isDone } = await ctx.db
-      .query("packages")
-      .withIndex("by_active_updated", (q) => q.eq("softDeletedAt", undefined))
-      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
-
-    let synced = 0;
-    for (const pkg of page) {
-      await upsertPackageSearchDigest(ctx, extractPackageDigestFields(pkg));
-      synced++;
-    }
-
-    if (!isDone) {
-      await ctx.scheduler.runAfter(
-        0,
-        internal.maintenance.backfillPackagePluginCategoryDigestsInternal,
-        {
-          cursor: continueCursor,
-          batchSize: args.batchSize,
-        },
-      );
-    }
-
-    return { synced, isDone, scanned: page.length };
-  },
-});
-
 function isActiveLegacyPublisherRepairUser(
   user: Doc<"users"> | null | undefined,
 ): user is Doc<"users"> {
   return Boolean(user && !user.deletedAt && !user.deactivatedAt && !user.purgedAt);
-}
-
-function nextLegacyPublisherOwnershipPhase(
-  phase: LegacyPublisherOwnershipPhase,
-): LegacyPublisherOwnershipPhase | undefined {
-  if (phase === "users") return "skills";
-  if (phase === "skills") return "packages";
-  return undefined;
 }
 
 function nextLegacyPublisherOwnershipTargetPhase(
@@ -2343,26 +2211,6 @@ async function getExistingActivePersonalPublisher(
   return isPublisherActive(publisher) ? publisher : null;
 }
 
-async function needsPersonalPublisherRepair(ctx: Pick<MutationCtx, "db">, user: Doc<"users">) {
-  const publisher = await getExistingActivePersonalPublisher(ctx, user);
-  if (!publisher) return true;
-  if (user.personalPublisherId !== publisher._id) return true;
-  if (publisher.kind !== "user" || publisher.linkedUserId !== user._id) return true;
-  const member = await getPublisherMembership(ctx, publisher._id, user._id);
-  return !member;
-}
-
-function pushRepairError(errors: string[], label: string, error: unknown) {
-  if (errors.length >= 10) return;
-  const message = error instanceof Error ? error.message : String(error);
-  errors.push(`${label}: ${message}`);
-}
-
-function isPublisherHandleConflictError(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
-  return /Publisher handle "@[^"]+" is already claimed/.test(message);
-}
-
 async function resolvePersonalPublisherForOwnershipRepair(
   ctx: Pick<MutationCtx, "db">,
   user: Doc<"users">,
@@ -2381,53 +2229,6 @@ async function resolvePersonalPublisherForOwnershipRepair(
   return await ensurePersonalPublisherForUser(ctx, user, {
     source: "maintenance.legacy_publisher_ownership",
   });
-}
-
-async function repairLegacySkillOwnerPublisher(
-  ctx: Pick<MutationCtx, "db">,
-  skill: Doc<"skills">,
-  dryRun: boolean,
-) {
-  if (skill.ownerPublisherId) return "skipped" as const;
-  const owner = await ctx.db.get(skill.ownerUserId);
-  if (!isActiveLegacyPublisherRepairUser(owner)) return "skipped" as const;
-
-  const publisher = await resolvePersonalPublisherForOwnershipRepair(ctx, owner, dryRun);
-  if (!dryRun && (!publisher || !isPublisherActive(publisher))) return "skipped" as const;
-  if (dryRun) return "repaired" as const;
-
-  // The trigger-wrapped mutation syncs skill search digest and publisher stats.
-  // This repair only patches owner projections that remain source-of-truth.
-  await ctx.db.patch(skill._id, { ownerPublisherId: publisher!._id });
-
-  const aliases = await ctx.db
-    .query("skillSlugAliases")
-    .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
-    .collect();
-  for (const alias of aliases) {
-    if (alias.ownerPublisherId === publisher!._id) continue;
-    await ctx.db.patch(alias._id, { ownerPublisherId: publisher!._id });
-  }
-
-  return "repaired" as const;
-}
-
-async function repairLegacyPackageOwnerPublisher(
-  ctx: Pick<MutationCtx, "db">,
-  pkg: Doc<"packages">,
-  dryRun: boolean,
-) {
-  if (pkg.ownerPublisherId) return "skipped" as const;
-  const owner = await ctx.db.get(pkg.ownerUserId);
-  if (!isActiveLegacyPublisherRepairUser(owner)) return "skipped" as const;
-
-  const publisher = await resolvePersonalPublisherForOwnershipRepair(ctx, owner, dryRun);
-  if (!dryRun && (!publisher || !isPublisherActive(publisher))) return "skipped" as const;
-  if (dryRun) return "repaired" as const;
-
-  // The trigger-wrapped mutation syncs package search digests and publisher stats.
-  await ctx.db.patch(pkg._id, { ownerPublisherId: publisher!._id });
-  return "repaired" as const;
 }
 
 async function resolveLegacyPublisherOwnershipTargetUser(
@@ -2465,127 +2266,6 @@ async function patchLegacyPackageOwnerPublisher(
   publisherId: Id<"publishers">,
 ) {
   await ctx.db.patch(pkg._id, { ownerPublisherId: publisherId });
-}
-
-export async function repairLegacyPublisherOwnershipHandler(
-  ctx: MutationCtx,
-  args: {
-    phase?: LegacyPublisherOwnershipPhase;
-    cursor?: string;
-    batchSize?: number;
-    delayMs?: number;
-    dryRun?: boolean;
-    scheduleNext?: boolean;
-  },
-): Promise<LegacyPublisherOwnershipRepairResult> {
-  const phase = args.phase ?? "users";
-  const dryRun = args.dryRun === true;
-  const batchSize = clampInt(args.batchSize ?? 50, 1, 200);
-  const delayMs = clampInt(args.delayMs ?? 500, 0, 60_000);
-  const errors: string[] = [];
-
-  let scanned = 0;
-  let repaired = 0;
-  let skipped = 0;
-  let continueCursor: string | null = null;
-  let isDone = true;
-
-  if (phase === "users") {
-    const page = await ctx.db
-      .query("users")
-      .withIndex("by_active_handle", (q) =>
-        q.eq("deletedAt", undefined).eq("deactivatedAt", undefined),
-      )
-      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
-    continueCursor = page.continueCursor;
-    isDone = page.isDone;
-
-    for (const user of page.page) {
-      scanned++;
-      if (!isActiveLegacyPublisherRepairUser(user)) {
-        skipped++;
-        continue;
-      }
-      try {
-        if (!(await needsPersonalPublisherRepair(ctx, user))) continue;
-        if (dryRun) {
-          await resolvePersonalPublisherForOwnershipRepair(ctx, user, true);
-        } else {
-          await ensurePersonalPublisherForUser(ctx, user, {
-            source: "maintenance.legacy_publisher_ownership",
-          });
-        }
-        repaired++;
-      } catch (error) {
-        if (!dryRun && !isPublisherHandleConflictError(error)) throw error;
-        skipped++;
-        pushRepairError(errors, `user:${user._id}`, error);
-      }
-    }
-  } else if (phase === "skills") {
-    const page = await ctx.db
-      .query("skills")
-      .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", undefined))
-      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
-    continueCursor = page.continueCursor;
-    isDone = page.isDone;
-
-    for (const skill of page.page) {
-      scanned++;
-      try {
-        const result = await repairLegacySkillOwnerPublisher(ctx, skill, dryRun);
-        if (result === "repaired") repaired++;
-        else skipped++;
-      } catch (error) {
-        if (!dryRun && !isPublisherHandleConflictError(error)) throw error;
-        skipped++;
-        pushRepairError(errors, `skill:${skill._id}`, error);
-      }
-    }
-  } else {
-    const page = await ctx.db
-      .query("packages")
-      .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", undefined))
-      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
-    continueCursor = page.continueCursor;
-    isDone = page.isDone;
-
-    for (const pkg of page.page) {
-      scanned++;
-      try {
-        const result = await repairLegacyPackageOwnerPublisher(ctx, pkg, dryRun);
-        if (result === "repaired") repaired++;
-        else skipped++;
-      } catch (error) {
-        if (!dryRun && !isPublisherHandleConflictError(error)) throw error;
-        skipped++;
-        pushRepairError(errors, `package:${pkg._id}`, error);
-      }
-    }
-  }
-
-  const nextPhase = isDone ? nextLegacyPublisherOwnershipPhase(phase) : phase;
-  if (!dryRun && args.scheduleNext !== false && nextPhase) {
-    await ctx.scheduler.runAfter(delayMs, internal.maintenance.repairLegacyPublisherOwnership, {
-      phase: nextPhase,
-      cursor: isDone ? undefined : (continueCursor ?? undefined),
-      batchSize: args.batchSize,
-      delayMs: args.delayMs,
-      scheduleNext: args.scheduleNext,
-    });
-  }
-
-  return {
-    phase,
-    dryRun,
-    scanned,
-    repaired,
-    skipped,
-    errors,
-    cursor: continueCursor,
-    isDone,
-    ...(nextPhase ? { nextPhase } : {}),
-  };
 }
 
 export async function repairLegacyPublisherOwnershipForUserHandler(
@@ -2676,23 +2356,6 @@ export async function repairLegacyPublisherOwnershipForUserHandler(
   };
 }
 
-// Repair legacy personal publisher ownership after the publisher model rollout.
-// Dry run one phase:
-//   npx convex run maintenance:repairLegacyPublisherOwnership '{"phase":"skills","dryRun":true,"scheduleNext":false}' --prod
-// Apply all phases, scheduled batch-by-batch:
-//   npx convex run maintenance:repairLegacyPublisherOwnership '{"phase":"users","batchSize":50}' --prod
-export const repairLegacyPublisherOwnership = internalMutation({
-  args: {
-    phase: v.optional(v.union(v.literal("users"), v.literal("skills"), v.literal("packages"))),
-    cursor: v.optional(v.string()),
-    batchSize: v.optional(v.number()),
-    delayMs: v.optional(v.number()),
-    dryRun: v.optional(v.boolean()),
-    scheduleNext: v.optional(v.boolean()),
-  },
-  handler: repairLegacyPublisherOwnershipHandler,
-});
-
 // Targeted variant for production canaries and one-off account repair.
 // Example:
 //   npx convex run maintenance:repairLegacyPublisherOwnershipForUser '{"handle":"harrylabsj","dryRun":true,"scheduleNext":false}' --prod
@@ -2708,275 +2371,6 @@ export const repairLegacyPublisherOwnershipForUser = internalMutation({
     scheduleNext: v.optional(v.boolean()),
   },
   handler: repairLegacyPublisherOwnershipForUserHandler,
-});
-
-const DIGEST_OWNER_BACKFILL_KEY = "digest-owner-backfill";
-
-// Start/resume backfill:
-//   npx convex run maintenance:backfillDigestOwnerFields '{"batchSize":50,"delayMs":5000}' --prod
-// Stop:
-//   npx convex run maintenance:stopBackfillDigestOwnerFields --prod
-// Check status:
-//   npx convex run maintenance:backfillDigestOwnerFieldsStatus --prod
-export const backfillDigestOwnerFields = internalMutation({
-  args: {
-    batchSize: v.optional(v.number()),
-    delayMs: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    // Clear any previous stop flag and store config
-    const existing = await ctx.db
-      .query("skillStatBackfillState")
-      .withIndex("by_key", (q) => q.eq("key", DIGEST_OWNER_BACKFILL_KEY))
-      .unique();
-    if (existing) {
-      await ctx.db.patch(existing._id, {
-        cursor: undefined,
-        doneAt: undefined,
-        updatedAt: Date.now(),
-      });
-    } else {
-      await ctx.db.insert("skillStatBackfillState", {
-        key: DIGEST_OWNER_BACKFILL_KEY,
-        updatedAt: Date.now(),
-      });
-    }
-    // Kick off first batch
-    await ctx.scheduler.runAfter(0, internal.maintenance.backfillDigestOwnerFieldsInternal, {
-      batchSize: args.batchSize,
-      delayMs: args.delayMs,
-    });
-    return { started: true };
-  },
-});
-
-export const stopBackfillDigestOwnerFields = internalMutation({
-  args: {},
-  handler: async (ctx) => {
-    const state = await ctx.db
-      .query("skillStatBackfillState")
-      .withIndex("by_key", (q) => q.eq("key", DIGEST_OWNER_BACKFILL_KEY))
-      .unique();
-    if (state) {
-      await ctx.db.patch(state._id, { doneAt: Date.now(), updatedAt: Date.now() });
-    }
-    return { stopped: true };
-  },
-});
-
-export const backfillDigestOwnerFieldsStatus = internalQuery({
-  args: {},
-  handler: async (ctx) => {
-    const state = await ctx.db
-      .query("skillStatBackfillState")
-      .withIndex("by_key", (q) => q.eq("key", DIGEST_OWNER_BACKFILL_KEY))
-      .unique();
-    if (!state) return { status: "never_started" };
-    if (state.doneAt) return { status: "stopped", cursor: state.cursor, stoppedAt: state.doneAt };
-    return { status: "running", cursor: state.cursor };
-  },
-});
-
-export const backfillDigestOwnerFieldsInternal = internalMutation({
-  args: {
-    cursor: v.optional(v.string()),
-    batchSize: v.optional(v.number()),
-    delayMs: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    // Check stop flag
-    const state = await ctx.db
-      .query("skillStatBackfillState")
-      .withIndex("by_key", (q) => q.eq("key", DIGEST_OWNER_BACKFILL_KEY))
-      .unique();
-    if (state?.doneAt) {
-      return { patched: 0, isDone: false, scanned: 0, stopped: true };
-    }
-
-    const batchSize = clampInt(args.batchSize ?? 200, 10, 500);
-    const delayMs = clampInt(args.delayMs ?? 0, 0, 60_000);
-    const { page, continueCursor, isDone } = await ctx.db
-      .query("skillSearchDigest")
-      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
-
-    let patched = 0;
-    for (const digest of page) {
-      if (digest.ownerHandle !== undefined) continue;
-      const owner = await ctx.db.get(digest.ownerUserId);
-      const isOwnerVisible = owner && !owner.deletedAt && !owner.deactivatedAt;
-      await ctx.db.patch(digest._id, {
-        ownerHandle: isOwnerVisible ? (owner.handle ?? "") : "",
-        ownerName: isOwnerVisible ? owner.name : undefined,
-        ownerDisplayName: isOwnerVisible ? owner.displayName : undefined,
-        ownerImage: isOwnerVisible ? owner.image : undefined,
-      });
-      patched++;
-    }
-
-    // Save cursor progress
-    if (state) {
-      await ctx.db.patch(state._id, {
-        cursor: continueCursor,
-        doneAt: isDone ? Date.now() : undefined,
-        updatedAt: Date.now(),
-      });
-    }
-
-    if (!isDone) {
-      await ctx.scheduler.runAfter(
-        delayMs,
-        internal.maintenance.backfillDigestOwnerFieldsInternal,
-        {
-          cursor: continueCursor,
-          batchSize: args.batchSize,
-          delayMs: args.delayMs,
-        },
-      );
-    }
-
-    return { patched, isDone, scanned: page.length, stopped: false };
-  },
-});
-
-// Backfill latestVersionSummary from skills into existing skillSearchDigest rows.
-// Run:
-//   npx convex run maintenance:backfillDigestVersionSummary '{"batchSize":100}' --prod
-export const backfillDigestVersionSummary = internalMutation({
-  args: {
-    cursor: v.optional(v.string()),
-    batchSize: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const batchSize = clampInt(args.batchSize ?? 200, 10, 500);
-    const { page, continueCursor, isDone } = await ctx.db
-      .query("skillSearchDigest")
-      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
-
-    let patched = 0;
-    for (const digest of page) {
-      const skill = await ctx.db.get(digest.skillId);
-      if (!skill) continue;
-      const fields = await extractValidatedDigestFields(ctx, skill);
-      const patch = {
-        latestVersionId: fields.latestVersionId,
-        latestVersionSkillId: fields.latestVersionSkillId,
-        latestVersionSummary: fields.latestVersionSummary,
-        capabilityTags: fields.capabilityTags,
-      };
-      if (
-        digest.latestVersionId === patch.latestVersionId &&
-        digest.latestVersionSkillId === patch.latestVersionSkillId &&
-        JSON.stringify(digest.latestVersionSummary) ===
-          JSON.stringify(patch.latestVersionSummary) &&
-        JSON.stringify(digest.capabilityTags ?? []) === JSON.stringify(patch.capabilityTags ?? [])
-      ) {
-        continue;
-      }
-      await ctx.db.patch(digest._id, patch);
-      patched++;
-    }
-
-    if (!isDone) {
-      await ctx.scheduler.runAfter(0, internal.maintenance.backfillDigestVersionSummary, {
-        cursor: continueCursor,
-        batchSize: args.batchSize,
-      });
-    }
-
-    return { patched, isDone, scanned: page.length };
-  },
-});
-
-// Backfill isSuspicious on skillSearchDigest rows where it's undefined.
-// Computes from digest's own moderationFlags/moderationReason — no skills table read.
-// Run: npx convex run maintenance:backfillDigestIsSuspicious --prod
-export const backfillDigestIsSuspicious = internalMutation({
-  args: {
-    cursor: v.optional(v.string()),
-    batchSize: v.optional(v.number()),
-    delayMs: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const batchSize = clampInt(args.batchSize ?? 100, 10, 200);
-    const delayMs = args.delayMs ?? 500;
-    const { page, continueCursor, isDone } = await ctx.db
-      .query("skillSearchDigest")
-      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
-
-    let patched = 0;
-    for (const digest of page) {
-      if (digest.isSuspicious !== undefined) continue;
-      const isSuspicious = computeIsSuspicious(digest);
-      await ctx.db.patch(digest._id, { isSuspicious });
-      patched++;
-    }
-
-    if (!isDone) {
-      await ctx.scheduler.runAfter(delayMs, internal.maintenance.backfillDigestIsSuspicious, {
-        cursor: continueCursor,
-        batchSize: args.batchSize,
-        delayMs: args.delayMs,
-      });
-    }
-
-    return { patched, isDone, scanned: page.length };
-  },
-});
-
-// Backfill normalized search fields on skillSearchDigest for indexed prefix search.
-// Run: npx convex run maintenance:backfillDigestNormalizedSearchFields --prod
-export const backfillDigestNormalizedSearchFields = internalMutation({
-  args: {
-    cursor: v.optional(v.string()),
-    batchSize: v.optional(v.number()),
-    delayMs: v.optional(v.number()),
-    scheduleNext: v.optional(v.boolean()),
-  },
-  handler: async (ctx, args) => {
-    const batchSize = clampInt(args.batchSize ?? 100, 10, 200);
-    const delayMs = args.delayMs ?? 500;
-    const { page, continueCursor, isDone } = await ctx.db
-      .query("skillSearchDigest")
-      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
-
-    let patched = 0;
-    for (const digest of page) {
-      const normalizedSlug = normalizeSkillSearchText(digest.slug);
-      const normalizedSlugFirstToken = getFirstSearchToken(digest.slug);
-      const normalizedDisplayName = normalizeSkillSearchText(digest.displayName);
-      const normalizedDisplayNameFirstToken = getFirstSearchToken(digest.displayName);
-      if (
-        digest.normalizedSlug === normalizedSlug &&
-        digest.normalizedSlugFirstToken === normalizedSlugFirstToken &&
-        digest.normalizedDisplayName === normalizedDisplayName &&
-        digest.normalizedDisplayNameFirstToken === normalizedDisplayNameFirstToken
-      ) {
-        continue;
-      }
-      await ctx.db.patch(digest._id, {
-        normalizedSlug,
-        normalizedSlugFirstToken,
-        normalizedDisplayName,
-        normalizedDisplayNameFirstToken,
-      });
-      patched++;
-    }
-
-    if (!isDone && args.scheduleNext !== false) {
-      await ctx.scheduler.runAfter(
-        delayMs,
-        internal.maintenance.backfillDigestNormalizedSearchFields,
-        {
-          cursor: continueCursor,
-          batchSize: args.batchSize,
-          delayMs: args.delayMs,
-          scheduleNext: args.scheduleNext,
-        },
-      );
-    }
-
-    return { patched, isDone, scanned: page.length, cursor: continueCursor };
-  },
 });
 
 function clampInt(value: number, min: number, max: number) {

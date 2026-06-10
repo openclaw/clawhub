@@ -41,7 +41,6 @@ import {
   cmdRepairScopedPackages,
 } from "./commands/orgs.js";
 import {
-  cmdBackfillPackageArtifacts,
   cmdDeletePackageTrustedPublisher,
   cmdListPackageMigrations,
   cmdListPackageReports,
@@ -448,19 +447,6 @@ function registerPluginGovernanceCommands(command: Command) {
     .action(async (name, options) => {
       const opts = await resolveGlobalOpts();
       await cmdTransferPackageOwner(opts, name, options);
-    });
-
-  command
-    .command("backfill-artifacts")
-    .description("Backfill missing plugin artifact-kind metadata")
-    .option("--cursor <cursor>", "Resume cursor")
-    .option("--batch-size <n>", "Batch size", (value) => Number.parseInt(value, 10))
-    .option("--all", "Continue until all pages are processed")
-    .option("--apply", "Write changes; defaults to dry-run")
-    .option("--json", "Output JSON")
-    .action(async (options) => {
-      const opts = await resolveGlobalOpts();
-      await cmdBackfillPackageArtifacts(opts, options);
     });
 
   command

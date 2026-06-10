@@ -9,7 +9,6 @@ import { createSpinner, fail, formatError } from "../../../clawhub/src/cli/ui.js
 import { apiRequest, registryUrl } from "../../../clawhub/src/http.js";
 import {
   ApiRoutes,
-  ApiV1PackageArtifactBackfillResponseSchema,
   ApiV1PackageModerationQueueResponseSchema,
   ApiV1PackageOfficialMigrationListResponseSchema,
   ApiV1PackageOfficialMigrationResponseSchema,
@@ -65,14 +64,6 @@ type PackageModerationQueueOptions = {
   status?: PackageModerationQueueStatus;
   cursor?: string;
   limit?: number;
-  json?: boolean;
-};
-
-type PackageBackfillArtifactsOptions = {
-  cursor?: string;
-  batchSize?: number;
-  apply?: boolean;
-  all?: boolean;
   json?: boolean;
 };
 
@@ -393,66 +384,6 @@ export async function cmdPackageModerationQueue(
   }
   if (!result.done && result.nextCursor) {
     console.log(`Next cursor: ${result.nextCursor}`);
-  }
-}
-
-export async function cmdBackfillPackageArtifacts(
-  opts: GlobalOpts,
-  options: PackageBackfillArtifactsOptions = {},
-) {
-  const token = await requireAuthToken();
-  const registry = await getRegistry(opts, { cache: true });
-  const batchSize = clampLimit(options.batchSize ?? 100, 500);
-  const dryRun = options.apply !== true;
-  let cursor = options.cursor?.trim() || null;
-  const batches: Array<{
-    scanned: number;
-    updated: number;
-    nextCursor: string | null;
-    done: boolean;
-    dryRun: boolean;
-  }> = [];
-
-  do {
-    const result = await apiRequest(
-      registry,
-      {
-        method: "POST",
-        path: `${ApiRoutes.packages}/backfill/artifacts`,
-        token,
-        body: {
-          cursor,
-          batchSize,
-          dryRun,
-        },
-      },
-      ApiV1PackageArtifactBackfillResponseSchema,
-    );
-    batches.push(result);
-    cursor = result.nextCursor;
-    if (!options.all || result.done) break;
-  } while (cursor);
-
-  const summary = {
-    ok: true as const,
-    dryRun,
-    batches: batches.length,
-    scanned: batches.reduce((sum, batch) => sum + batch.scanned, 0),
-    updated: batches.reduce((sum, batch) => sum + batch.updated, 0),
-    nextCursor: batches.at(-1)?.nextCursor ?? null,
-    done: batches.at(-1)?.done ?? true,
-  };
-
-  if (options.json) {
-    process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
-    return;
-  }
-
-  console.log(
-    `${dryRun ? "Dry run" : "Applied"} package artifact backfill: scanned ${summary.scanned}, ${dryRun ? "would update" : "updated"} ${summary.updated}.`,
-  );
-  if (!summary.done && summary.nextCursor) {
-    console.log(`Next cursor: ${summary.nextCursor}`);
   }
 }
 

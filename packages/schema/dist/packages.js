@@ -532,19 +532,6 @@ export const ApiV1PackageModerationStatusResponseSchema = type({
         createdAt: "number",
     }).or("null"),
 });
-export const PackageArtifactBackfillRequestSchema = type({
-    cursor: "string|null?",
-    batchSize: "number?",
-    dryRun: "boolean?",
-});
-export const ApiV1PackageArtifactBackfillResponseSchema = type({
-    ok: "true",
-    scanned: "number",
-    updated: "number",
-    nextCursor: "string|null",
-    done: "boolean",
-    dryRun: "boolean",
-});
 export const PackageReadinessCheckSchema = type({
     id: "string",
     label: "string",

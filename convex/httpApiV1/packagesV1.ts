@@ -1,5 +1,4 @@
 import {
-  PackageArtifactBackfillRequestSchema,
   ApiV1PackageOfficialMigrationListResponseSchema,
   ApiV1PackageOfficialMigrationResponseSchema,
   ApiV1PackageModerationStatusResponseSchema,
@@ -132,7 +131,6 @@ const internalRefs = internal as unknown as {
     resolvePackageAppealForUserInternal: unknown;
     listOfficialPluginMigrationsInternal: unknown;
     upsertOfficialPluginMigrationForUserInternal: unknown;
-    backfillPackageArtifactKindsInternal: unknown;
     listPackageModerationQueueInternal: unknown;
   };
   downloadMetrics: {
@@ -2205,42 +2203,6 @@ export async function mintPublishTokenV1Handler(ctx: ActionCtx, request: Request
 
 export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Request) {
   const segments = getPathSegments(request, "/api/v1/packages/");
-  if (segments[0] === "backfill" && segments[1] === "artifacts" && segments.length === 2) {
-    const rate = await applyRateLimit(ctx, request, "write");
-    if (!rate.ok) return rate.response;
-    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
-    if (!auth.ok) return auth.response;
-
-    try {
-      const body = parseArk(
-        PackageArtifactBackfillRequestSchema,
-        await request.json().catch(() => ({})),
-        "Package artifact backfill payload",
-      ) as {
-        cursor?: string | null;
-        batchSize?: number;
-        dryRun?: boolean;
-      };
-      const result = await runMutationRef(
-        ctx,
-        internalRefs.packages.backfillPackageArtifactKindsInternal,
-        {
-          actorUserId: auth.userId,
-          ...(body.cursor !== undefined ? { cursor: body.cursor } : {}),
-          ...(typeof body.batchSize === "number" ? { batchSize: body.batchSize } : {}),
-          ...(typeof body.dryRun === "boolean" ? { dryRun: body.dryRun } : {}),
-        },
-      );
-      return json(result, 200, rate.headers);
-    } catch (error) {
-      return text(
-        error instanceof Error ? error.message : "Package artifact backfill failed",
-        400,
-        rate.headers,
-      );
-    }
-  }
-
   if (segments[0] === "migrations" && segments.length === 1) {
     const rate = await applyRateLimit(ctx, request, "write");
     if (!rate.ok) return rate.response;

@@ -1159,42 +1159,6 @@ Supported states:
 Quarantined and revoked releases return `403` from artifact download routes.
 Every change writes an audit log entry.
 
-### `POST /api/v1/packages/backfill/artifacts`
-
-Admin-only maintenance endpoint for labeling older package releases with
-explicit artifact-kind metadata.
-
-Request body:
-
-```json
-{
-  "cursor": null,
-  "batchSize": 100,
-  "dryRun": true
-}
-```
-
-Response:
-
-```json
-{
-  "ok": true,
-  "scanned": 100,
-  "updated": 12,
-  "nextCursor": "cursor...",
-  "done": false,
-  "dryRun": true
-}
-```
-
-Notes:
-
-- Defaults to dry-run.
-- Releases without ClawPack storage are labeled `legacy-zip`.
-- Existing ClawPack-backed rows missing `artifactKind` are repaired as
-  `npm-pack`.
-- This does not generate ClawPacks or mutate artifact bytes.
-
 ### `GET /api/v1/packages/{name}/file`
 
 Returns raw text content for a package file.

@@ -4732,69 +4732,6 @@ export const softDeletePackage = mutation({
   },
 });
 
-export const backfillPackageArtifactKindsInternal = internalMutation({
-  args: {
-    actorUserId: v.id("users"),
-    cursor: v.optional(v.union(v.string(), v.null())),
-    batchSize: v.optional(v.number()),
-    dryRun: v.optional(v.boolean()),
-  },
-  handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
-    assertAdmin(actor);
-
-    const batchSize = Math.max(1, Math.min(Math.round(args.batchSize ?? 100), 500));
-    const result = await ctx.db
-      .query("packageReleases")
-      .withIndex("by_active_created", (q) => q.eq("softDeletedAt", undefined))
-      .order("asc")
-      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
-
-    let updated = 0;
-    const dryRun = args.dryRun ?? true;
-
-    for (const release of result.page) {
-      if (release.artifactKind) continue;
-      const artifactKind = release.clawpackStorageId
-        ? ("npm-pack" as const)
-        : ("legacy-zip" as const);
-      updated += 1;
-      if (dryRun) continue;
-
-      const updatedRelease = { ...release, artifactKind };
-      const nextCapabilities = withArtifactCapabilityTags(release.capabilities, updatedRelease);
-      const patch: Partial<Doc<"packageReleases">> = { artifactKind };
-      if (nextCapabilities !== release.capabilities) patch.capabilities = nextCapabilities;
-      await ctx.db.patch(release._id, patch);
-
-      const pkg = await ctx.db.get(release.packageId);
-      if (pkg?.latestReleaseId !== release._id || !pkg.latestVersionSummary) continue;
-      await ctx.db.patch(pkg._id, {
-        capabilityTags: mergeArtifactCapabilityTags(
-          [...(pkg.capabilityTags ?? []), ...(nextCapabilities?.capabilityTags ?? [])],
-          updatedRelease,
-        ),
-        capabilities: nextCapabilities ?? pkg.capabilities,
-        latestVersionSummary: {
-          ...pkg.latestVersionSummary,
-          capabilities: nextCapabilities ?? pkg.latestVersionSummary.capabilities,
-          artifact: packageArtifactSummary(updatedRelease),
-        },
-      });
-    }
-
-    return {
-      ok: true as const,
-      scanned: result.page.length,
-      updated,
-      nextCursor: result.continueCursor,
-      done: result.isDone,
-      dryRun,
-    };
-  },
-});
-
 export const moderatePackageReleaseForUserInternal = internalMutation({
   args: {
     actorUserId: v.id("users"),
