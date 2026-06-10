@@ -102,6 +102,7 @@
     "fflate": "0.8.3",
     "h3": "2.0.1-rc.22",
     "ignore": "7.0.5",
+    "launchdarkly-react-client-sdk": "3.9.2",
     "lucide-react": "1.17.0",
     "mime": "4.1.0",
     "monaco-editor": "0.55.1",

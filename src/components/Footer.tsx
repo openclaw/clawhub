@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { ChevronDown } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useFeatureFlags } from "../lib/featureFlagContext";
 import { FOOTER_NAV_SECTIONS } from "../lib/nav-items";
 
 function sectionId(title: string) {
@@ -13,6 +14,7 @@ const MOBILE_BREAKPOINT = 760;
 
 export function Footer() {
   const [openSections, setOpenSections] = useState<ReadonlySet<string>>(() => new Set());
+  const featureFlags = useFeatureFlags();
   // Track whether the mobile disclosure behavior is active so aria-expanded matches
   // actual link visibility. Initialized to false (= desktop assumption) so that
   // SSR and the first client render agree: on desktop links are always visible and
@@ -73,7 +75,7 @@ export function Footer() {
                 </h4>
                 <div className="footer-col-links" id={`${id}-links`} data-open={isOpen}>
                   {section.items
-                    .filter((item) => item.featureFlag !== false)
+                    .filter((item) => !item.featureFlag || featureFlags[item.featureFlag])
                     .map((item) => {
                       if (item.kind === "link") {
                         return (

@@ -6,8 +6,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const siteModeMock = vi.fn(() => "skills");
 const navigateMock = vi.fn();
-const { convexQueryMock, fetchFeaturedPluginsMock } = vi.hoisted(() => ({
+const { convexQueryMock, featureFlagMock, fetchFeaturedPluginsMock } = vi.hoisted(() => ({
   convexQueryMock: vi.fn(),
+  featureFlagMock: vi.fn(),
   fetchFeaturedPluginsMock: vi.fn(),
 }));
 
@@ -47,6 +48,10 @@ vi.mock("../lib/featuredCatalog", () => ({
   fetchFeaturedPlugins: fetchFeaturedPluginsMock,
 }));
 
+vi.mock("../lib/featureFlagContext", () => ({
+  useFeatureFlag: (key: string) => featureFlagMock(key),
+}));
+
 vi.mock("../lib/site", () => ({
   getSiteMode: () => siteModeMock(),
 }));
@@ -63,6 +68,7 @@ describe("home route", () => {
   beforeEach(() => {
     siteModeMock.mockReturnValue("skills");
     convexQueryMock.mockResolvedValue([]);
+    featureFlagMock.mockReturnValue(false);
     fetchFeaturedPluginsMock.mockResolvedValue([]);
     navigateMock.mockReset();
   });
@@ -108,6 +114,17 @@ describe("home route", () => {
     expect(screen.getByText("Skills")).toBeTruthy();
     expect(screen.getByText("Plugins")).toBeTruthy();
     expect(screen.getByText("Publishers")).toBeTruthy();
+  });
+
+  it("shows the Souls home category when the Souls feature flag is enabled", async () => {
+    featureFlagMock.mockImplementation((key: string) => key === "souls");
+
+    await renderHome();
+
+    const grid = document.querySelector(".home-v2-categories-grid");
+    expect(grid?.getAttribute("data-count")).toBe("4");
+    expect(grid?.getAttribute("data-layout")).toBe("1-2-4");
+    expect(screen.getByText("Souls")).toBeTruthy();
   });
 
   it("keeps the featured skill carousel as a duplicated scrolling track", async () => {

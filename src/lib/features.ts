@@ -1,15 +1,31 @@
-import { getRuntimeEnv } from "./runtimeEnv";
+type FeatureFlagDefinition = {
+  launchDarklyKey: string;
+  defaultValue: boolean;
+};
 
-/**
- * Feature flags — controlled via VITE_FEATURE_* env vars.
- * Default values are the fallback when the env var is unset.
- */
+export const featureFlags = {
+  souls: {
+    launchDarklyKey: "clawhub-souls",
+    defaultValue: false,
+  },
+} as const satisfies Record<string, FeatureFlagDefinition>;
 
-function flag(name: string, defaultValue: boolean): boolean {
-  const raw = getRuntimeEnv(name);
-  if (raw === undefined) return defaultValue;
-  return raw === "true" || raw === "1";
+export type FeatureFlagKey = keyof typeof featureFlags;
+export type FeatureFlagValues = { [Key in FeatureFlagKey]: boolean };
+
+export function getFeatureFlagFallback(key: FeatureFlagKey): boolean {
+  return featureFlags[key].defaultValue;
 }
 
-/** Show the Souls section (nav, footer, homepage category, routes). Default: false */
-export const FEATURE_SOULS = flag("VITE_FEATURE_SOULS", false);
+export function getFeatureFlagFallbacks(): FeatureFlagValues {
+  return {
+    souls: getFeatureFlagFallback("souls"),
+  };
+}
+
+export function resolveBooleanFeatureFlag(
+  key: FeatureFlagKey,
+  remoteValue: boolean | undefined,
+): boolean {
+  return typeof remoteValue === "boolean" ? remoteValue : getFeatureFlagFallback(key);
+}

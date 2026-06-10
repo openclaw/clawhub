@@ -124,7 +124,7 @@ describe("restored UI design contract", () => {
       'data-source={carouselUsesHighlighted ? "highlighted" : "popular"}',
     );
     expect(homeSource).toContain("Featured skills");
-    expect(homeSource).toContain("const categoryCount = FEATURE_SOULS ? 4 : 3");
+    expect(homeSource).toContain("const categoryCount = soulsEnabled ? 4 : 3");
     expect(homeSource).toContain("data-layout={categoryLayout}");
     expect(homeSource).toContain("Trending Now");
     expect(homeSource).toContain('className="home-v2-trending-grid"');

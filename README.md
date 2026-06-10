@@ -128,6 +128,7 @@ database seeding), see [CONTRIBUTING.md](CONTRIBUTING.md).
 - `VITE_SOULHUB_SITE_URL`: SoulHub site URL.
 - `VITE_SOULHUB_HOST`: SoulHub host match.
 - `VITE_SITE_MODE`: Optional override (`skills` or `souls`) for SSR builds.
+- `VITE_LAUNCHDARKLY_CLIENT_SIDE_ID`: optional LaunchDarkly client-side ID for browser feature flags.
 - `CONVEX_SITE_URL`: same as `VITE_CONVEX_SITE_URL` (auth + cookies).
 - `SITE_URL`: App URL (local: `http://localhost:3000`).
 - `AUTH_GITHUB_ID` / `AUTH_GITHUB_SECRET`: GitHub OAuth App.

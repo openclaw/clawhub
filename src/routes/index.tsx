@@ -18,7 +18,7 @@ import { SoulCard } from "../components/SoulCard";
 import { SoulStatsTripletLine } from "../components/SoulStats";
 import { convexHttp } from "../convex/client";
 import { fetchFeaturedPlugins } from "../lib/featuredCatalog";
-import { FEATURE_SOULS } from "../lib/features";
+import { useFeatureFlag } from "../lib/featureFlagContext";
 import type { PackageListItem } from "../lib/packageApi";
 import type { PublicSkill, PublicSoul, PublicUser } from "../lib/publicUser";
 import { getSiteMode } from "../lib/site";
@@ -62,6 +62,7 @@ function SkillsHome() {
   const [featuredPlugins, setFeaturedPlugins] = useState<PackageListItem[]>([]);
   const [query, setQuery] = useState("");
   const navigate = useNavigate();
+  const soulsEnabled = useFeatureFlag("souls");
 
   useEffect(() => {
     let cancelled = false;
@@ -128,7 +129,7 @@ function SkillsHome() {
     highlightedCarouselCards.length > 0 ? highlightedCarouselCards : fallbackCarouselCards;
   const carouselUsesHighlighted = highlightedCarouselCards.length > 0;
   const trendingCards = popular.slice(0, 6);
-  const categoryCount = FEATURE_SOULS ? 4 : 3;
+  const categoryCount = soulsEnabled ? 4 : 3;
   const categoryLayout = categoryCount === 4 ? "1-2-4" : "1-3";
 
   const clickTimesRef = useRef<number[]>([]);
@@ -715,7 +716,7 @@ function SkillsHome() {
               <ChevronRight size={16} />
             </span>
           </Link>
-          {FEATURE_SOULS ? (
+          {soulsEnabled ? (
             <Link
               to="/souls"
               search={{
