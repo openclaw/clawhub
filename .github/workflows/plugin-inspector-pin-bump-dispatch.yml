@@ -8,6 +8,7 @@ on:
       - closed
     paths:
       - package.json
+      - packages/clawhub/package.json
       - bun.lock
 
 permissions:

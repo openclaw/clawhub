@@ -96,7 +96,11 @@ describe("package publish workflow", () => {
 
     expect(workflow.on?.pull_request_target?.branches).toEqual(["main"]);
     expect(workflow.on?.pull_request_target?.types).toEqual(["closed"]);
-    expect(workflow.on?.pull_request_target?.paths).toEqual(["package.json", "bun.lock"]);
+    expect(workflow.on?.pull_request_target?.paths).toEqual([
+      "package.json",
+      "packages/clawhub/package.json",
+      "bun.lock",
+    ]);
     expect(workflow.permissions?.actions).toBe("write");
 
     const job = workflow.jobs?.["dispatch-plugin-inspector-bulk-scan"];

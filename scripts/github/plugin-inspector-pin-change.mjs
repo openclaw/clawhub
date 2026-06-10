@@ -4,7 +4,8 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const DEPENDENCY_NAME = "@openclaw/plugin-inspector";
-const PACKAGE_MANAGER_FILES = new Set(["package.json", "bun.lock"]);
+const PACKAGE_MANIFEST_FILES = ["package.json", "packages/clawhub/package.json"];
+const PACKAGE_MANAGER_FILES = new Set([...PACKAGE_MANIFEST_FILES, "bun.lock"]);
 
 export function readPinnedPluginInspectorVersion(packageJsonText) {
   const parsed = JSON.parse(packageJsonText);
@@ -24,6 +25,8 @@ export function detectPinnedPluginInspectorChange({
   changedFiles,
   basePackageJson,
   headPackageJson,
+  basePackageJsonByPath,
+  headPackageJsonByPath,
 }) {
   const normalizedChangedFiles = changedFiles.map((file) => file.replace(/^\.\//, ""));
   if (!normalizedChangedFiles.some((file) => PACKAGE_MANAGER_FILES.has(file))) {
@@ -35,32 +38,49 @@ export function detectPinnedPluginInspectorChange({
     };
   }
 
-  const oldVersion = readPinnedPluginInspectorVersion(basePackageJson);
-  const newVersion = readPinnedPluginInspectorVersion(headPackageJson);
-  if (!oldVersion || !newVersion) {
+  const baseManifests = normalizeManifestInputs(basePackageJsonByPath, basePackageJson);
+  const headManifests = normalizeManifestInputs(headPackageJsonByPath, headPackageJson);
+  const versions = PACKAGE_MANIFEST_FILES.map((file) => ({
+    file,
+    oldVersion: readPinnedPluginInspectorVersion(baseManifests[file] ?? "{}"),
+    newVersion: readPinnedPluginInspectorVersion(headManifests[file] ?? "{}"),
+  }));
+
+  const changedPin = versions.find(
+    (entry) => entry.oldVersion && entry.newVersion && entry.oldVersion !== entry.newVersion,
+  );
+  if (changedPin) {
+    return {
+      changed: true,
+      oldVersion: changedPin.oldVersion,
+      newVersion: changedPin.newVersion,
+      reason: `pinned ${DEPENDENCY_NAME} changed in ${changedPin.file} from ${changedPin.oldVersion} to ${changedPin.newVersion}`,
+    };
+  }
+
+  const comparablePin = versions.find((entry) => entry.oldVersion && entry.newVersion);
+  if (!comparablePin) {
     return {
       changed: false,
-      oldVersion,
-      newVersion,
+      oldVersion: undefined,
+      newVersion: undefined,
       reason: `pinned ${DEPENDENCY_NAME} is missing from package.json`,
     };
   }
 
-  if (oldVersion === newVersion) {
-    return {
-      changed: false,
-      oldVersion,
-      newVersion,
-      reason: `pinned ${DEPENDENCY_NAME} did not change`,
-    };
-  }
-
   return {
-    changed: true,
-    oldVersion,
-    newVersion,
-    reason: `pinned ${DEPENDENCY_NAME} changed from ${oldVersion} to ${newVersion}`,
+    changed: false,
+    oldVersion: comparablePin.oldVersion,
+    newVersion: comparablePin.newVersion,
+    reason: `pinned ${DEPENDENCY_NAME} did not change`,
   };
+}
+
+function normalizeManifestInputs(manifestsByPath, fallbackPackageJson) {
+  if (manifestsByPath && typeof manifestsByPath === "object") {
+    return manifestsByPath;
+  }
+  return fallbackPackageJson ? { "package.json": fallbackPackageJson } : {};
 }
 
 function parseArgs(argv) {
@@ -82,12 +102,14 @@ function git(args) {
   return execFileSync("git", args, { encoding: "utf8" }).trim();
 }
 
-function readPackageJsonAt(ref) {
-  return git(["show", `${ref}:package.json`]);
+function readPackageJsonsAt(ref) {
+  return Object.fromEntries(
+    PACKAGE_MANIFEST_FILES.map((file) => [file, git(["show", `${ref}:${file}`])]),
+  );
 }
 
 function changedFilesBetween(base, head) {
-  const output = git(["diff", "--name-only", base, head, "--", "package.json", "bun.lock"]);
+  const output = git(["diff", "--name-only", base, head, "--", ...PACKAGE_MANAGER_FILES]);
   return output ? output.split(/\r?\n/).filter(Boolean) : [];
 }
 
@@ -109,8 +131,8 @@ export function main(argv = process.argv.slice(2)) {
   const { base, head } = parseArgs(argv);
   const result = detectPinnedPluginInspectorChange({
     changedFiles: changedFilesBetween(base, head),
-    basePackageJson: readPackageJsonAt(base),
-    headPackageJson: readPackageJsonAt(head),
+    basePackageJsonByPath: readPackageJsonsAt(base),
+    headPackageJsonByPath: readPackageJsonsAt(head),
   });
   writeOutput(result);
   return result;

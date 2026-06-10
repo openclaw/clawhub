@@ -12,6 +12,11 @@ const packageJson = (version) =>
     },
   });
 
+const packageJsonsByPath = (rootVersion, cliVersion = rootVersion) => ({
+  "package.json": packageJson(rootVersion),
+  "packages/clawhub/package.json": packageJson(cliVersion),
+});
+
 describe("plugin inspector pin change detection", () => {
   it("detects merged changes to the pinned plugin inspector dependency", () => {
     expect(
@@ -24,7 +29,23 @@ describe("plugin inspector pin change detection", () => {
       changed: true,
       oldVersion: "0.3.12",
       newVersion: "0.3.13",
-      reason: "pinned @openclaw/plugin-inspector changed from 0.3.12 to 0.3.13",
+      reason: "pinned @openclaw/plugin-inspector changed in package.json from 0.3.12 to 0.3.13",
+    });
+  });
+
+  it("detects merged changes to the CLI package inspector pin", () => {
+    expect(
+      detectPinnedPluginInspectorChange({
+        changedFiles: ["packages/clawhub/package.json", "bun.lock"],
+        basePackageJsonByPath: packageJsonsByPath("0.3.12"),
+        headPackageJsonByPath: packageJsonsByPath("0.3.12", "0.3.13"),
+      }),
+    ).toEqual({
+      changed: true,
+      oldVersion: "0.3.12",
+      newVersion: "0.3.13",
+      reason:
+        "pinned @openclaw/plugin-inspector changed in packages/clawhub/package.json from 0.3.12 to 0.3.13",
     });
   });
 
