@@ -3158,14 +3158,13 @@ export const placeUserUnderModerationInternal = internalMutation({
   },
 });
 
-export const recordStaffEmailAuditInternal = internalMutation({
+export const recordStaffEmailAttemptAuditInternal = internalMutation({
   args: {
     actorUserId: v.id("users"),
     toEmail: v.string(),
     recipientUserId: v.optional(v.id("users")),
     recipientHandle: v.optional(v.string()),
     subject: v.string(),
-    providerId: v.optional(v.union(v.string(), v.null())),
   },
   handler: async (ctx, args) => {
     const actor = await ctx.db.get(args.actorUserId);
@@ -3173,7 +3172,7 @@ export const recordStaffEmailAuditInternal = internalMutation({
       throw new Error("Unauthorized");
     }
     assertAdmin(actor);
-    await ctx.db.insert("auditLogs", {
+    const auditLogId = await ctx.db.insert("auditLogs", {
       actorUserId: args.actorUserId,
       action: "staff.email.send",
       targetType: args.recipientUserId ? "user" : "email",
@@ -3182,10 +3181,44 @@ export const recordStaffEmailAuditInternal = internalMutation({
         toEmail: args.toEmail,
         recipientHandle: args.recipientHandle ?? null,
         subject: args.subject,
-        providerId: args.providerId ?? null,
+        providerId: null,
+        status: "attempted",
         source: "clawhub-mod.email",
       },
       createdAt: Date.now(),
+    });
+    return { ok: true as const, auditLogId };
+  },
+});
+
+export const recordStaffEmailSentAuditInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    auditLogId: v.id("auditLogs"),
+    providerId: v.optional(v.union(v.string(), v.null())),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) {
+      throw new Error("Unauthorized");
+    }
+    assertAdmin(actor);
+    const auditLog = await ctx.db.get(args.auditLogId);
+    if (!auditLog || auditLog.action !== "staff.email.send") {
+      throw new Error("Staff email audit log not found");
+    }
+    const metadata =
+      auditLog.metadata &&
+      typeof auditLog.metadata === "object" &&
+      !Array.isArray(auditLog.metadata)
+        ? auditLog.metadata
+        : {};
+    await ctx.db.patch(args.auditLogId, {
+      metadata: {
+        ...metadata,
+        providerId: args.providerId ?? null,
+        status: "sent",
+      },
     });
     return { ok: true as const };
   },

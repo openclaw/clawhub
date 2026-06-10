@@ -827,6 +827,9 @@ async function ensureOrgPublisherHandleWithActor(
     });
 
   if (existingPublisher?.kind === "org") {
+    if (existingPublisher.deletedAt || existingPublisher.deactivatedAt) {
+      throw new ConvexError(`Publisher "@${handle}" was deleted and cannot be updated`);
+    }
     await ctx.db.patch(existingPublisher._id, {
       displayName: args.displayName?.trim() || existingPublisher.displayName,
       trustedPublisher: args.trusted ?? existingPublisher.trustedPublisher,
@@ -1901,18 +1904,11 @@ export const deleteEmptyOrgPublisherInternal = internalMutation({
         deleted: false,
         activeSkills: activeSkills.length,
         activePackages: activePackages.length,
-        removedMembers: members.length,
+        memberCount: members.length,
       };
     }
 
     const now = Date.now();
-    for (const member of members) {
-      await ctx.db.delete(member._id);
-    }
-    await ctx.db.patch(publisher._id, {
-      deletedAt: now,
-      updatedAt: now,
-    });
     await ctx.db.insert("auditLogs", {
       actorUserId: args.actorUserId,
       action: "publisher.org.delete_empty",
@@ -1921,10 +1917,15 @@ export const deleteEmptyOrgPublisherInternal = internalMutation({
       metadata: {
         handle,
         reason,
-        removedMembers: members.length,
+        memberCount: members.length,
         source: "publisher.org.mod",
       },
       createdAt: now,
+    });
+    await ctx.db.patch(publisher._id, {
+      deletedAt: now,
+      deactivatedAt: now,
+      updatedAt: now,
     });
 
     return {
@@ -1935,7 +1936,7 @@ export const deleteEmptyOrgPublisherInternal = internalMutation({
       deleted: true,
       activeSkills: 0,
       activePackages: 0,
-      removedMembers: members.length,
+      memberCount: members.length,
     };
   },
 });

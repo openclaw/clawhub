@@ -173,7 +173,7 @@ export const ApiV1PublisherDeleteResponseSchema = type({
     deleted: "boolean",
     activeSkills: "number",
     activePackages: "number",
-    removedMembers: "number",
+    memberCount: "number",
 });
 export const ApiV1StaffEmailSendResponseSchema = type({
     ok: "true",

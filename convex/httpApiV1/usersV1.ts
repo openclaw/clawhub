@@ -23,7 +23,8 @@ const usersV1InternalRefs = internal as unknown as {
   users: {
     getBanAppealContextByGitHubProviderAccountIdInternal: unknown;
     getByHandleInternal: unknown;
-    recordStaffEmailAuditInternal: unknown;
+    recordStaffEmailAttemptAuditInternal: unknown;
+    recordStaffEmailSentAuditInternal: unknown;
     remediateAutobansInternal: unknown;
     reclassifyBanInternal: unknown;
     unbanUserForBanAppealServiceInternal: unknown;
@@ -360,6 +361,18 @@ async function handleAdminStaffEmail(
     process.env.NOREPLY_EMAIL_FROM?.trim() ||
     "ClawHub <noreply@clawhub.ai>";
 
+  const emailAudit = await runUsersV1MutationRef<{ auditLogId: Id<"auditLogs"> }>(
+    ctx,
+    usersV1InternalRefs.users.recordStaffEmailAttemptAuditInternal,
+    {
+      actorUserId,
+      toEmail: recipientEmail,
+      ...(recipientUserId ? { recipientUserId } : {}),
+      ...(recipientHandle ? { recipientHandle } : {}),
+      subject,
+    },
+  );
+
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
@@ -385,12 +398,9 @@ async function handleAdminStaffEmail(
   const providerJson = (await response.json().catch(() => null)) as { id?: unknown } | null;
   const providerId = typeof providerJson?.id === "string" ? providerJson.id : null;
 
-  await runUsersV1MutationRef(ctx, usersV1InternalRefs.users.recordStaffEmailAuditInternal, {
+  await runUsersV1MutationRef(ctx, usersV1InternalRefs.users.recordStaffEmailSentAuditInternal, {
     actorUserId,
-    toEmail: recipientEmail,
-    ...(recipientUserId ? { recipientUserId } : {}),
-    ...(recipientHandle ? { recipientHandle } : {}),
-    subject,
+    auditLogId: emailAudit.auditLogId,
     providerId,
   });
 

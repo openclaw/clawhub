@@ -197,7 +197,7 @@ export declare const ApiV1PublisherDeleteResponseSchema: import("arktype/interna
     deleted: boolean;
     activeSkills: number;
     activePackages: number;
-    removedMembers: number;
+    memberCount: number;
 }, {}>;
 export type ApiV1PublisherDeleteResponse = (typeof ApiV1PublisherDeleteResponseSchema)[inferred];
 export declare const ApiV1StaffEmailSendResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{

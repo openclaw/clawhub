@@ -206,7 +206,7 @@ export const ApiV1PublisherDeleteResponseSchema = type({
   deleted: "boolean",
   activeSkills: "number",
   activePackages: "number",
-  removedMembers: "number",
+  memberCount: "number",
 });
 export type ApiV1PublisherDeleteResponse = (typeof ApiV1PublisherDeleteResponseSchema)[inferred];
 

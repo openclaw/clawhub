@@ -221,8 +221,8 @@ export async function cmdDeleteOrg(
 
     spinner?.succeed(
       result.deleted
-        ? `Deleted @${result.handle} and removed ${result.removedMembers} member(s)`
-        : `Dry run OK for @${result.handle}: ${result.activeSkills} active skill(s), ${result.activePackages} active package(s), ${result.removedMembers} member(s) would be removed`,
+        ? `Deleted @${result.handle}; ${result.memberCount} member(s) retained for history`
+        : `Dry run OK for @${result.handle}: ${result.activeSkills} active skill(s), ${result.activePackages} active package(s), ${result.memberCount} member(s)`,
     );
     if (options.json) {
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);

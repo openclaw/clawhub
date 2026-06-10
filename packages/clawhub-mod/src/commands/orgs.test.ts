@@ -187,7 +187,7 @@ describe("cmdDeleteOrg", () => {
       deleted: false,
       activeSkills: 0,
       activePackages: 0,
-      removedMembers: 1,
+      memberCount: 1,
     });
 
     const result = await cmdDeleteOrg(makeGlobalOpts(), "ClawHub", {
@@ -222,7 +222,7 @@ describe("cmdDeleteOrg", () => {
       deleted: true,
       activeSkills: 0,
       activePackages: 0,
-      removedMembers: 1,
+      memberCount: 1,
     });
 
     await cmdDeleteOrg(makeGlobalOpts(), "clawhub", {
