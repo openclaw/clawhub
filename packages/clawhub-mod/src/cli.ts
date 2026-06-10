@@ -22,6 +22,7 @@ import { DEFAULT_REGISTRY, DEFAULT_SITE } from "../../clawhub/src/cli/registry.j
 import type { GlobalOpts } from "../../clawhub/src/cli/types.js";
 import { fail } from "../../clawhub/src/cli/ui.js";
 import { getModeratorCliBuildLabel, getModeratorCliVersion } from "./buildInfo.js";
+import { cmdSendStaffEmail } from "./commands/email.js";
 import {
   cmdBanUser,
   cmdReclassifyBan,
@@ -35,6 +36,7 @@ import {
 import {
   cmdAddOfficialOrg,
   cmdCreateOrg,
+  cmdDeleteOrg,
   cmdListOfficialOrgs,
   cmdRemoveOfficialOrg,
   cmdRemoveOrgMember,
@@ -336,6 +338,12 @@ const org = program
   .showHelpAfterError()
   .showSuggestionAfterError();
 
+const email = program
+  .command("email")
+  .description("Guarded staff email operations")
+  .showHelpAfterError()
+  .showSuggestionAfterError();
+
 const skills = program
   .command("skills")
   .alias("skill")
@@ -350,7 +358,30 @@ registerPluginOperations(packages);
 registerPluginModerationCommands(packages);
 registerPluginGovernanceCommands(packages);
 registerOrgCommands(org);
+registerEmailCommands(email);
 registerSkillModerationCommands(skills);
+
+function registerEmailCommands(command: Command) {
+  command
+    .command("send")
+    .description("Send a staff email from ClawHub noreply after explicit user sign-off")
+    .option("--to <email>", "Recipient email address")
+    .option("--user <handle>", "Recipient ClawHub user handle; server resolves their email")
+    .requiredOption("--subject <subject>", "Email subject")
+    .option("--body-file <path>", "Plain text email body file")
+    .option("--body <text>", "Plain text email body")
+    .option("--send", "Actually send; defaults to dry-run preview")
+    .option("--confirm-user-request", "Confirm the user explicitly asked for this email")
+    .option(
+      "--confirm-user-signoff",
+      "Confirm the user approved the final recipient, subject, and body",
+    )
+    .option("--json", "Output JSON")
+    .action(async (options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdSendStaffEmail(opts, options);
+    });
+}
 
 function registerOrgCommands(command: Command) {
   const official = command
@@ -415,6 +446,18 @@ function registerOrgCommands(command: Command) {
     .action(async (handle, member, options) => {
       const opts = await resolveGlobalOpts();
       await cmdRemoveOrgMember(opts, handle, member, options);
+    });
+
+  command
+    .command("delete")
+    .description("Soft-delete an empty org publisher; defaults to dry-run")
+    .argument("<handle>", "Org publisher handle")
+    .requiredOption("--reason <reason>", "Audit reason")
+    .option("--apply", "Write changes; defaults to dry-run")
+    .option("--json", "Output JSON")
+    .action(async (handle, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdDeleteOrg(opts, handle, options);
     });
 
   command

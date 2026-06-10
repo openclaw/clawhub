@@ -3158,6 +3158,39 @@ export const placeUserUnderModerationInternal = internalMutation({
   },
 });
 
+export const recordStaffEmailAuditInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    toEmail: v.string(),
+    recipientUserId: v.optional(v.id("users")),
+    recipientHandle: v.optional(v.string()),
+    subject: v.string(),
+    providerId: v.optional(v.union(v.string(), v.null())),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) {
+      throw new Error("Unauthorized");
+    }
+    assertAdmin(actor);
+    await ctx.db.insert("auditLogs", {
+      actorUserId: args.actorUserId,
+      action: "staff.email.send",
+      targetType: args.recipientUserId ? "user" : "email",
+      targetId: args.recipientUserId ?? args.toEmail,
+      metadata: {
+        toEmail: args.toEmail,
+        recipientHandle: args.recipientHandle ?? null,
+        subject: args.subject,
+        providerId: args.providerId ?? null,
+        source: "clawhub-mod.email",
+      },
+      createdAt: Date.now(),
+    });
+    return { ok: true as const };
+  },
+});
+
 async function softDeleteUserCommentsForBan(
   ctx: MutationCtx,
   args: { userId: Id<"users">; deletedBy: Id<"users">; deletedAt: number },

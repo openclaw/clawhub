@@ -1841,6 +1841,105 @@ export const removeOrgPublisherMemberInternal = internalMutation({
   },
 });
 
+export const deleteEmptyOrgPublisherInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    handle: v.string(),
+    reason: v.string(),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    assertAdmin(actor);
+
+    const handle = normalizePublisherHandle(args.handle);
+    if (!handle || !PUBLISHER_HANDLE_PATTERN.test(handle)) {
+      throw new ConvexError("Handle must be lowercase, url-safe, and 2-40 characters");
+    }
+    const reason = args.reason.trim();
+    if (!reason) throw new ConvexError("Reason is required");
+    if (reason.length > 500) throw new ConvexError("Reason too long (max 500 chars)");
+
+    const publisher = await getPublisherByHandle(ctx, handle);
+    if (!publisher || publisher.kind !== "org" || publisher.deletedAt || publisher.deactivatedAt) {
+      throw new ConvexError("Publisher not found");
+    }
+
+    const [activeSkills, activePackages, members] = await Promise.all([
+      ctx.db
+        .query("skills")
+        .withIndex("by_owner_publisher_active_updated", (q) =>
+          q.eq("ownerPublisherId", publisher._id).eq("softDeletedAt", undefined),
+        )
+        .collect(),
+      ctx.db
+        .query("packages")
+        .withIndex("by_owner_publisher_active_updated", (q) =>
+          q.eq("ownerPublisherId", publisher._id).eq("softDeletedAt", undefined),
+        )
+        .collect(),
+      ctx.db
+        .query("publisherMembers")
+        .withIndex("by_publisher", (q) => q.eq("publisherId", publisher._id))
+        .collect(),
+    ]);
+
+    if (activeSkills.length > 0 || activePackages.length > 0) {
+      throw new ConvexError(
+        `Publisher has ${activeSkills.length} active skills and ${activePackages.length} active packages`,
+      );
+    }
+
+    const dryRun = args.dryRun !== false;
+    if (dryRun) {
+      return {
+        ok: true as const,
+        publisherId: publisher._id,
+        handle,
+        dryRun: true,
+        deleted: false,
+        activeSkills: activeSkills.length,
+        activePackages: activePackages.length,
+        removedMembers: members.length,
+      };
+    }
+
+    const now = Date.now();
+    for (const member of members) {
+      await ctx.db.delete(member._id);
+    }
+    await ctx.db.patch(publisher._id, {
+      deletedAt: now,
+      updatedAt: now,
+    });
+    await ctx.db.insert("auditLogs", {
+      actorUserId: args.actorUserId,
+      action: "publisher.org.delete_empty",
+      targetType: "publisher",
+      targetId: publisher._id,
+      metadata: {
+        handle,
+        reason,
+        removedMembers: members.length,
+        source: "publisher.org.mod",
+      },
+      createdAt: now,
+    });
+
+    return {
+      ok: true as const,
+      publisherId: publisher._id,
+      handle,
+      dryRun: false,
+      deleted: true,
+      activeSkills: 0,
+      activePackages: 0,
+      removedMembers: members.length,
+    };
+  },
+});
+
 export const listOfficialPublishersInternal = internalQuery({
   args: {
     actorUserId: v.id("users"),

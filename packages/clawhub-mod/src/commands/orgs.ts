@@ -16,6 +16,7 @@ import {
   ApiV1OfficialPublisherUpdateResponseSchema,
   ApiV1PackageRepairNameResponseSchema,
   ApiRoutes,
+  ApiV1PublisherDeleteResponseSchema,
   ApiV1PublisherEnsureResponseSchema,
   ApiV1PublisherRemoveMemberResponseSchema,
 } from "../../../clawhub/src/schema/index.js";
@@ -31,6 +32,12 @@ type OrgCreateOptions = {
 };
 
 type OrgRemoveMemberOptions = {
+  json?: boolean;
+};
+
+type OrgDeleteOptions = {
+  apply?: boolean;
+  reason?: string;
   json?: boolean;
 };
 
@@ -169,6 +176,52 @@ export async function cmdRemoveOrgMember(
       result.removed
         ? `Removed @${result.member.handle} from @${result.handle}`
         : `@${result.member.handle} is not a member of @${result.handle}`,
+    );
+    if (options.json) {
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    }
+    return result;
+  } catch (error) {
+    spinner?.fail(formatError(error));
+    throw error;
+  }
+}
+
+export async function cmdDeleteOrg(
+  opts: GlobalOpts,
+  handle: string,
+  options: OrgDeleteOptions = {},
+) {
+  const orgHandle = normalizeHandleOrFail(handle, "Org handle");
+  const reason = options.reason?.trim();
+  if (!reason) fail("--reason required");
+  const dryRun = options.apply !== true;
+
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const spinner = options.json
+    ? null
+    : createSpinner(`${dryRun ? "Planning delete for" : "Deleting"} @${orgHandle}`);
+  try {
+    const result = await apiRequest(
+      registry,
+      {
+        method: "POST",
+        path: `${ApiRoutes.users}/publisher-delete`,
+        token,
+        body: {
+          handle: orgHandle,
+          reason,
+          dryRun,
+        },
+      },
+      ApiV1PublisherDeleteResponseSchema,
+    );
+
+    spinner?.succeed(
+      result.deleted
+        ? `Deleted @${result.handle} and removed ${result.removedMembers} member(s)`
+        : `Dry run OK for @${result.handle}: ${result.activeSkills} active skill(s), ${result.activePackages} active package(s), ${result.removedMembers} member(s) would be removed`,
     );
     if (options.json) {
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);

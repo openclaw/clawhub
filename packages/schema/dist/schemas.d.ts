@@ -189,6 +189,29 @@ export declare const ApiV1PublisherCreateResponseSchema: import("arktype/interna
     trusted: false;
 }, {}>;
 export type ApiV1PublisherCreateResponse = (typeof ApiV1PublisherCreateResponseSchema)[inferred];
+export declare const ApiV1PublisherDeleteResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    publisherId: string;
+    handle: string;
+    dryRun: boolean;
+    deleted: boolean;
+    activeSkills: number;
+    activePackages: number;
+    removedMembers: number;
+}, {}>;
+export type ApiV1PublisherDeleteResponse = (typeof ApiV1PublisherDeleteResponseSchema)[inferred];
+export declare const ApiV1StaffEmailSendResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    sent: true;
+    recipient: {
+        email: string;
+        userId?: string | undefined;
+        handle?: string | null | undefined;
+    };
+    subject: string;
+    providerId: string | null;
+}, {}>;
+export type ApiV1StaffEmailSendResponse = (typeof ApiV1StaffEmailSendResponseSchema)[inferred];
 export declare const ApiV1SearchResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     results: {
         score: number;

@@ -15,6 +15,7 @@ import {
 const usersV1InternalRefs = internal as unknown as {
   publishers: {
     addOfficialPublisherInternal: unknown;
+    deleteEmptyOrgPublisherInternal: unknown;
     listOfficialPublishersInternal: unknown;
     removeOrgPublisherMemberInternal: unknown;
     removeOfficialPublisherInternal: unknown;
@@ -22,6 +23,7 @@ const usersV1InternalRefs = internal as unknown as {
   users: {
     getBanAppealContextByGitHubProviderAccountIdInternal: unknown;
     getByHandleInternal: unknown;
+    recordStaffEmailAuditInternal: unknown;
     remediateAutobansInternal: unknown;
     reclassifyBanInternal: unknown;
     unbanUserForBanAppealServiceInternal: unknown;
@@ -86,7 +88,9 @@ export async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request)
     action !== "ban-appeal-unban" &&
     action !== "reclaim" &&
     action !== "reserve" &&
+    action !== "email" &&
     action !== "publisher" &&
+    action !== "publisher-delete" &&
     action !== "publisher-official" &&
     action !== "publisher-member"
   ) {
@@ -137,10 +141,22 @@ export async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request)
     return handleAdminReserve(ctx, payload, actorUserId, rate.headers);
   }
 
+  if (action === "email") {
+    const admin = requireAdminOrResponse(actorUser, rate.headers);
+    if (!admin.ok) return admin.response;
+    return handleAdminStaffEmail(ctx, payload, actorUserId, rate.headers);
+  }
+
   if (action === "publisher") {
     const admin = requireAdminOrResponse(actorUser, rate.headers);
     if (!admin.ok) return admin.response;
     return handleAdminEnsurePublisher(ctx, payload, actorUserId, rate.headers);
+  }
+
+  if (action === "publisher-delete") {
+    const admin = requireAdminOrResponse(actorUser, rate.headers);
+    if (!admin.ok) return admin.response;
+    return handleAdminDeletePublisher(ctx, payload, actorUserId, rate.headers);
   }
 
   if (action === "publisher-official") {
@@ -249,6 +265,150 @@ export async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request)
     }
     return text(message, 400, rate.headers);
   }
+}
+
+async function handleAdminDeletePublisher(
+  ctx: ActionCtx,
+  payload: Record<string, unknown>,
+  actorUserId: Id<"users">,
+  headers: HeadersInit,
+) {
+  const handle = typeof payload.handle === "string" ? payload.handle.trim().toLowerCase() : "";
+  const reason = typeof payload.reason === "string" ? payload.reason.trim() : "";
+  const dryRun = payload.dryRun !== false;
+  if (!handle) return text("Missing handle", 400, headers);
+  if (!reason) return text("Missing reason", 400, headers);
+  if (reason.length > 500) return text("Reason too long (max 500 chars)", 400, headers);
+
+  try {
+    const result = await runUsersV1MutationRef(
+      ctx,
+      usersV1InternalRefs.publishers.deleteEmptyOrgPublisherInternal,
+      {
+        actorUserId,
+        handle,
+        reason,
+        dryRun,
+      },
+    );
+    return json(result, 200, headers);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Publisher delete failed";
+    if (message.toLowerCase().includes("forbidden")) {
+      return text("Forbidden", 403, headers);
+    }
+    if (message.toLowerCase().includes("not found")) {
+      return text(message, 404, headers);
+    }
+    return text(message, 400, headers);
+  }
+}
+
+async function handleAdminStaffEmail(
+  ctx: ActionCtx,
+  payload: Record<string, unknown>,
+  actorUserId: Id<"users">,
+  headers: HeadersInit,
+) {
+  const toEmail = typeof payload.toEmail === "string" ? payload.toEmail.trim().toLowerCase() : "";
+  const userHandle =
+    typeof payload.userHandle === "string"
+      ? payload.userHandle.trim().replace(/^@+/, "").toLowerCase()
+      : "";
+  const subject = typeof payload.subject === "string" ? payload.subject.trim() : "";
+  const body = typeof payload.body === "string" ? payload.body.trim() : "";
+  const confirmUserRequest = payload.confirmUserRequest === true;
+  const confirmUserSignoff = payload.confirmUserSignoff === true;
+
+  if (toEmail && userHandle) return text("Pass toEmail or userHandle, not both", 400, headers);
+  if (!toEmail && !userHandle) return text("Missing toEmail or userHandle", 400, headers);
+  if (toEmail && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(toEmail)) {
+    return text("Invalid toEmail", 400, headers);
+  }
+  if (!subject) return text("Missing subject", 400, headers);
+  if (subject.length > 200) return text("Subject too long (max 200 chars)", 400, headers);
+  if (!body) return text("Missing body", 400, headers);
+  if (body.length > 20_000) return text("Body too long (max 20000 chars)", 400, headers);
+  if (!confirmUserRequest || !confirmUserSignoff) {
+    return text(
+      "Staff email requires explicit user request and user sign-off on final recipient, subject, and body.",
+      400,
+      headers,
+    );
+  }
+
+  let recipientEmail = toEmail;
+  let recipientUserId: Id<"users"> | undefined;
+  let recipientHandle: string | null | undefined;
+  if (userHandle) {
+    const user = await runUsersV1QueryRef<{
+      _id?: Id<"users">;
+      handle?: string | null;
+      email?: string | null;
+    } | null>(ctx, usersV1InternalRefs.users.getByHandleInternal, { handle: userHandle });
+    if (!user?._id) return text("User not found", 404, headers);
+    if (!user.email?.trim()) return text("User has no email address", 400, headers);
+    recipientEmail = user.email.trim().toLowerCase();
+    recipientUserId = user._id;
+    recipientHandle = user.handle ?? userHandle;
+  }
+
+  const apiKey = process.env.RESEND_API_KEY?.trim();
+  if (!apiKey) return text("RESEND_API_KEY is not configured", 500, headers);
+  const from =
+    process.env.CLAWHUB_NOREPLY_FROM?.trim() ||
+    process.env.NOREPLY_EMAIL_FROM?.trim() ||
+    "ClawHub <noreply@clawhub.ai>";
+
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from,
+      to: [recipientEmail],
+      subject,
+      text: body,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "");
+    return text(
+      `Email provider failed (${response.status})${errorText ? `: ${errorText}` : ""}`,
+      502,
+      headers,
+    );
+  }
+  const providerJson = (await response.json().catch(() => null)) as { id?: unknown } | null;
+  const providerId = typeof providerJson?.id === "string" ? providerJson.id : null;
+
+  await runUsersV1MutationRef(ctx, usersV1InternalRefs.users.recordStaffEmailAuditInternal, {
+    actorUserId,
+    toEmail: recipientEmail,
+    ...(recipientUserId ? { recipientUserId } : {}),
+    ...(recipientHandle ? { recipientHandle } : {}),
+    subject,
+    providerId,
+  });
+
+  return json(
+    {
+      ok: true,
+      sent: true,
+      recipient: {
+        email: recipientEmail,
+        ...(recipientUserId ? { userId: recipientUserId } : {}),
+        ...(recipientHandle ? { handle: recipientHandle } : {}),
+      },
+      subject,
+      providerId,
+    },
+    200,
+    headers,
+  );
 }
 
 async function handleAdminReclassifyBan(

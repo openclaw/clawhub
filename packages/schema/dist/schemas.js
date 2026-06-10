@@ -165,6 +165,27 @@ export const ApiV1PublisherCreateResponseSchema = type({
     created: "true",
     trusted: "false",
 });
+export const ApiV1PublisherDeleteResponseSchema = type({
+    ok: "true",
+    publisherId: "string",
+    handle: "string",
+    dryRun: "boolean",
+    deleted: "boolean",
+    activeSkills: "number",
+    activePackages: "number",
+    removedMembers: "number",
+});
+export const ApiV1StaffEmailSendResponseSchema = type({
+    ok: "true",
+    sent: "true",
+    recipient: type({
+        email: "string",
+        "userId?": "string",
+        "handle?": "string|null",
+    }),
+    subject: "string",
+    providerId: "string|null",
+});
 export const ApiV1SearchResponseSchema = type({
     results: type({
         slug: "string?",

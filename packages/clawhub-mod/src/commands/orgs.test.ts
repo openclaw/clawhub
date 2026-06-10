@@ -25,6 +25,7 @@ vi.mock("../../../clawhub/src/cli/ui.js", () => uiMocks.moduleFactory());
 const {
   cmdAddOfficialOrg,
   cmdCreateOrg,
+  cmdDeleteOrg,
   cmdListOfficialOrgs,
   cmdRemoveOfficialOrg,
   cmdRemoveOrgMember,
@@ -171,6 +172,79 @@ describe("cmdRemoveOrgMember", () => {
   it("requires an explicit member handle", async () => {
     await expect(cmdRemoveOrgMember(makeGlobalOpts(), "opik", "  ")).rejects.toThrow(
       /Member handle required/i,
+    );
+    expect(httpMocks.apiRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe("cmdDeleteOrg", () => {
+  it("plans deletion of an empty org publisher by default", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      publisherId: "publishers:clawhub",
+      handle: "clawhub",
+      dryRun: true,
+      deleted: false,
+      activeSkills: 0,
+      activePackages: 0,
+      removedMembers: 1,
+    });
+
+    const result = await cmdDeleteOrg(makeGlobalOpts(), "ClawHub", {
+      reason: "Reserved platform handle",
+      json: true,
+    });
+
+    expect(result).toMatchObject({ ok: true, dryRun: true, deleted: false });
+    expect(authTokenMocks.requireAuthToken).toHaveBeenCalled();
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({
+        method: "POST",
+        path: "/api/v1/users/publisher-delete",
+        token: "tkn",
+        body: {
+          handle: "clawhub",
+          reason: "Reserved platform handle",
+          dryRun: true,
+        },
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("applies deletion only when --apply is passed", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      publisherId: "publishers:clawhub",
+      handle: "clawhub",
+      dryRun: false,
+      deleted: true,
+      activeSkills: 0,
+      activePackages: 0,
+      removedMembers: 1,
+    });
+
+    await cmdDeleteOrg(makeGlobalOpts(), "clawhub", {
+      reason: "Reserved platform handle",
+      apply: true,
+    });
+
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({
+        body: expect.objectContaining({
+          handle: "clawhub",
+          dryRun: false,
+        }),
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("requires an audit reason", async () => {
+    await expect(cmdDeleteOrg(makeGlobalOpts(), "clawhub", {})).rejects.toThrow(
+      /--reason required/i,
     );
     expect(httpMocks.apiRequest).not.toHaveBeenCalled();
   });
