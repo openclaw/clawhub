@@ -1872,13 +1872,13 @@ export const deleteEmptyOrgPublisherInternal = internalMutation({
         .withIndex("by_owner_publisher_active_updated", (q) =>
           q.eq("ownerPublisherId", publisher._id).eq("softDeletedAt", undefined),
         )
-        .collect(),
+        .take(1),
       ctx.db
         .query("packages")
         .withIndex("by_owner_publisher_active_updated", (q) =>
           q.eq("ownerPublisherId", publisher._id).eq("softDeletedAt", undefined),
         )
-        .collect(),
+        .take(1),
       ctx.db
         .query("publisherMembers")
         .withIndex("by_publisher", (q) => q.eq("publisherId", publisher._id))
@@ -1887,7 +1887,7 @@ export const deleteEmptyOrgPublisherInternal = internalMutation({
 
     if (activeSkills.length > 0 || activePackages.length > 0) {
       throw new ConvexError(
-        `Publisher has ${activeSkills.length} active skills and ${activePackages.length} active packages`,
+        `Publisher has active skills or packages and cannot be deleted with this empty-org command`,
       );
     }
 

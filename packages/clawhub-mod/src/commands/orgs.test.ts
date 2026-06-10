@@ -237,6 +237,7 @@ describe("cmdDeleteOrg", () => {
           handle: "clawhub",
           dryRun: false,
         }),
+        retryCount: 0,
       }),
       expect.anything(),
     );

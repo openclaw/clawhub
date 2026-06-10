@@ -209,6 +209,7 @@ export async function cmdDeleteOrg(
         method: "POST",
         path: `${ApiRoutes.users}/publisher-delete`,
         token,
+        ...(dryRun ? {} : { retryCount: 0 }),
         body: {
           handle: orgHandle,
           reason,
