@@ -51,19 +51,19 @@ describe("cliDeviceAuth approval", () => {
     const now = Date.now();
     const { ctx, order, patch, take } = makeCtx([
       {
-        _id: "cliDeviceCodes:old",
-        _creationTime: now - 10_000,
-        status: "pending",
-        userCode: "Q639-NBSX",
-        createdAt: now - 10_000,
-        expiresAt: now + 60_000,
-      },
-      {
         _id: "cliDeviceCodes:new",
         _creationTime: now - 1_000,
         status: "pending",
         userCode: "Q639-NBSX",
         createdAt: now - 1_000,
+        expiresAt: now + 60_000,
+      },
+      {
+        _id: "cliDeviceCodes:old",
+        _creationTime: now - 10_000,
+        status: "pending",
+        userCode: "Q639-NBSX",
+        createdAt: now - 10_000,
         expiresAt: now + 60_000,
       },
     ]);
@@ -78,6 +78,36 @@ describe("cliDeviceAuth approval", () => {
     expect(order).toHaveBeenCalledWith("desc");
     expect(take).toHaveBeenCalledWith(50);
     expect(patch).toHaveBeenCalledTimes(1);
+    expect(patch).toHaveBeenCalledWith("cliDeviceCodes:new", {
+      status: "approved",
+      approvedByUserId: "users:approver",
+      approvedAt: now,
+    });
+  });
+
+  it("uses descending index order when duplicate creation timestamps disagree", async () => {
+    const now = Date.now();
+    const { ctx, patch } = makeCtx([
+      {
+        _id: "cliDeviceCodes:new",
+        _creationTime: now - 1_000,
+        status: "pending",
+        userCode: "Q639-NBSX",
+        createdAt: now - 20_000,
+        expiresAt: now + 60_000,
+      },
+      {
+        _id: "cliDeviceCodes:old",
+        _creationTime: now - 10_000,
+        status: "pending",
+        userCode: "Q639-NBSX",
+        createdAt: now - 500,
+        expiresAt: now + 60_000,
+      },
+    ]);
+
+    await approveHandler(ctx, { userCode: "Q639-NBSX" });
+
     expect(patch).toHaveBeenCalledWith("cliDeviceCodes:new", {
       status: "approved",
       approvedByUserId: "users:approver",
@@ -182,19 +212,19 @@ describe("cliDeviceAuth approval", () => {
     const now = Date.now();
     const { ctx, patch } = makeCtx([
       {
-        _id: "cliDeviceCodes:old",
-        _creationTime: now - 10_000,
-        status: "pending",
-        userCode: "Q639-NBSX",
-        createdAt: now - 10_000,
-        expiresAt: now + 60_000,
-      },
-      {
         _id: "cliDeviceCodes:new",
         _creationTime: now - 1_000,
         status: "pending",
         userCode: "Q639-NBSX",
         createdAt: now - 1_000,
+        expiresAt: now + 60_000,
+      },
+      {
+        _id: "cliDeviceCodes:old",
+        _creationTime: now - 10_000,
+        status: "pending",
+        userCode: "Q639-NBSX",
+        createdAt: now - 10_000,
         expiresAt: now + 60_000,
       },
     ]);

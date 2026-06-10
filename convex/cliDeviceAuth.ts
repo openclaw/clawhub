@@ -164,15 +164,10 @@ function pickLatestRow(
   now?: number,
   status?: Doc<"cliDeviceCodes">["status"],
 ) {
-  const candidates = rows.filter(
+  return rows.find(
     (row) =>
       (now === undefined || row.expiresAt > now) && (status === undefined || row.status === status),
   );
-  return candidates.reduce<Doc<"cliDeviceCodes"> | null>((best, row) => {
-    if (!best) return row;
-    if (row.createdAt !== best.createdAt) return row.createdAt > best.createdAt ? row : best;
-    return row._creationTime > best._creationTime ? row : best;
-  }, null);
 }
 
 function generateUserCode() {
