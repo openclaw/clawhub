@@ -1042,6 +1042,10 @@ export declare const ApiV1PackagePublishResponseSchema: import("arktype/internal
         severity?: string | undefined;
         level?: string | undefined;
         issueClass?: string | undefined;
+        authorRemediation?: {
+            summary: string;
+            docsUrl?: string | undefined;
+        } | undefined;
         inspectorVersion?: string | undefined;
         targetOpenClawVersion?: string | undefined;
     }[] | undefined;

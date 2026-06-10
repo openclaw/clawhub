@@ -16,8 +16,14 @@ type InspectorFinding = {
   deprecated?: boolean;
   message: string;
   evidence?: string[];
+  authorRemediation?: InspectorAuthorRemediation;
   fixture?: string;
   decision?: string;
+};
+
+type InspectorAuthorRemediation = {
+  summary: string;
+  docsUrl?: string;
 };
 
 type InspectorReport = {
@@ -34,6 +40,49 @@ type InspectorReport = {
   suggestions?: unknown[];
   issues?: unknown[];
 };
+
+const AUTHOR_REMEDIATION_DOCS_BASE = "https://docs.openclaw.ai/clawhub/plugin-validation-fixes";
+
+const LEGACY_AUTHOR_REMEDIATION_SUMMARIES = {
+  "channel-env-vars":
+    "Move legacy channel environment variable metadata into the current setup/config metadata.",
+  "legacy-before-agent-start":
+    "Replace the legacy before_agent_start hook with the current prompt/model hooks.",
+  "legacy-root-sdk-import":
+    "Prefer focused public plugin SDK subpath imports instead of the legacy root barrel.",
+  "manifest-name-missing": "Add a display name to the plugin manifest.",
+  "manifest-unknown-contracts":
+    "Remove unsupported manifest contract keys or move them to a documented OpenClaw contract field.",
+  "manifest-unknown-fields":
+    "Move unsupported top-level manifest fields into supported package metadata or remove them.",
+  "package-entrypoint-missing":
+    "Publish the entrypoint declared in OpenClaw package metadata or update the metadata to point at an existing file.",
+  "package-install-metadata-incomplete":
+    "Complete the OpenClaw install metadata so ClawHub can identify the install target.",
+  "package-json-missing": "Add a package.json to the plugin package.",
+  "package-manifest-version-drift":
+    "Align the plugin version declared in package.json and openclaw.plugin.json.",
+  "package-min-host-version-drift":
+    "Set the package minimum host version to the OpenClaw version range the plugin was built and tested against.",
+  "package-npm-pack-entrypoint-missing":
+    "Include the declared OpenClaw entrypoints in the npm-packed artifact.",
+  "package-npm-pack-metadata-missing":
+    "Include OpenClaw metadata files in the npm-packed artifact.",
+  "package-npm-pack-unavailable": "Make the package packable before publishing it through ClawHub.",
+  "package-openclaw-entry-missing":
+    "Declare the plugin runtime entrypoint in package.json OpenClaw metadata.",
+  "package-openclaw-metadata-missing": "Add the package.json openclaw metadata block.",
+  "package-openclaw-unsupported-metadata": "Remove unsupported OpenClaw package metadata fields.",
+  "package-plugin-api-compat-missing":
+    "Declare the OpenClaw plugin API range this package supports.",
+  "provider-auth-env-vars":
+    "Move legacy provider authentication environment variables into current provider setup metadata.",
+  "reserved-sdk-import": "Stop importing reserved bundled-plugin SDK compatibility paths.",
+  "security-manifest-schema-unavailable":
+    "Remove or update the unsupported security manifest schema reference.",
+  "unrecognized-security-manifest":
+    "Remove unsupported security manifest files until OpenClaw documents a versioned security manifest schema.",
+} satisfies Record<string, string>;
 
 const publishFileValidator = v.object({
   path: v.string(),
@@ -53,6 +102,12 @@ const findingValidator = v.object({
   deprecated: v.optional(v.boolean()),
   message: v.string(),
   evidence: v.optional(v.array(v.string())),
+  authorRemediation: v.optional(
+    v.object({
+      summary: v.string(),
+      docsUrl: v.optional(v.string()),
+    }),
+  ),
   fixture: v.optional(v.string()),
   decision: v.optional(v.string()),
 });
@@ -99,17 +154,22 @@ export const runPackageInspectorForPublishInternal = internalAction({
       await writeSyntheticInspectorConfigIfNeeded(root, args.files, args.packageName);
 
       const { pluginRoot } = await import("@openclaw/plugin-inspector");
-      const { report } = await pluginRoot.runCheck({
+      const runCheckOptions = {
         pluginRoot: root,
         openclawPath: false,
         outDir: "reports",
         capture: false,
         mockSdk: true,
         allowExecution: false,
+        authorFacing: true,
         generatedAt: new Date().toISOString(),
-      });
+      } as Parameters<typeof pluginRoot.runCheck>[0] & {
+        authorFacing: true;
+        generatedAt: string;
+      };
+      const { report } = await pluginRoot.runCheck(runCheckOptions);
 
-      return normalizeInspectorReport(report);
+      return normalizeInspectorReportForPublish(report);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return {
@@ -209,21 +269,26 @@ function safeFilePath(root: string, filePath: string) {
   return target;
 }
 
-function normalizeInspectorReport(report: unknown) {
+export function normalizeInspectorReportForPublish(report: unknown) {
   const parsed = isRecord(report) ? (report as InspectorReport) : {};
-  const breakages = normalizeFindings(parsed.breakages, "breakage");
-  const warnings = normalizeWarnings(parsed);
+  const issues = normalizeFindings(parsed.issues, "warning").filter(hasAuthorRemediation);
+  const issueBreakages = issues.filter((finding) => isBreakageFinding(finding));
+  const issueWarnings = issues.filter((finding) => !isBreakageFinding(finding));
+  const breakages =
+    issues.length > 0
+      ? issueBreakages
+      : normalizeFindings(parsed.breakages, "breakage").filter(hasAuthorRemediation);
+  const warnings =
+    issues.length > 0 ? issueWarnings : normalizeWarnings(parsed).filter(hasAuthorRemediation);
   return {
-    status:
-      breakages.length > 0 || parsed.status === "fail" ? ("fail" as const) : ("pass" as const),
+    status: breakages.length > 0 ? ("fail" as const) : ("pass" as const),
     summary: {
-      breakageCount: numberValue(parsed.summary?.breakageCount, breakages.length),
-      warningCount: numberValue(parsed.summary?.warningCount, warnings.length),
-      deprecationWarningCount: numberValue(
-        parsed.summary?.deprecationWarningCount,
-        warnings.filter((finding) => finding.issueClass === "deprecation-warning").length,
-      ),
-      issueCount: numberValue(parsed.summary?.issueCount, warnings.length + breakages.length),
+      breakageCount: breakages.length,
+      warningCount: warnings.length,
+      deprecationWarningCount: warnings.filter(
+        (finding) => finding.issueClass === "deprecation-warning",
+      ).length,
+      issueCount: warnings.length + breakages.length,
     },
     breakages,
     warnings,
@@ -236,7 +301,7 @@ function normalizeInspectorReport(report: unknown) {
 
 function normalizeWarnings(report: InspectorReport) {
   const issueWarnings = normalizeFindings(report.issues, "warning").filter(
-    (finding) => finding.level !== "breakage",
+    (finding) => !isBreakageFinding(finding),
   );
   if (issueWarnings.length > 0) return issueWarnings;
   return [
@@ -269,9 +334,39 @@ function normalizeFinding(value: unknown, defaultLevel: string): InspectorFindin
     evidence: Array.isArray(value.evidence)
       ? value.evidence.map((entry) => String(entry)).slice(0, 12)
       : undefined,
+    authorRemediation:
+      normalizeAuthorRemediation(value.authorRemediation) ?? legacyAuthorRemediation(code),
     fixture: stringValue(value.fixture),
     decision: stringValue(value.decision),
   };
+}
+
+function normalizeAuthorRemediation(value: unknown): InspectorAuthorRemediation | undefined {
+  if (!isRecord(value)) return undefined;
+  const summary = stringValue(value.summary);
+  if (!summary) return undefined;
+  return {
+    summary,
+    docsUrl: stringValue(value.docsUrl),
+  };
+}
+
+function hasAuthorRemediation(finding: InspectorFinding) {
+  return Boolean(finding.authorRemediation?.summary);
+}
+
+function legacyAuthorRemediation(code: string): InspectorAuthorRemediation | undefined {
+  const summary =
+    LEGACY_AUTHOR_REMEDIATION_SUMMARIES[code as keyof typeof LEGACY_AUTHOR_REMEDIATION_SUMMARIES];
+  if (!summary) return undefined;
+  return {
+    summary,
+    docsUrl: `${AUTHOR_REMEDIATION_DOCS_BASE}#${code}`,
+  };
+}
+
+function isBreakageFinding(finding: InspectorFinding) {
+  return finding.level === "breakage" || finding.level === "error" || finding.severity === "P0";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -280,10 +375,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function stringValue(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
-function numberValue(value: unknown, fallback: number) {
-  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
 function getBundledInspectorVersion() {

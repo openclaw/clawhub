@@ -1333,6 +1333,12 @@ const packageInspectorWarnings = defineTable({
   deprecated: v.optional(v.boolean()),
   message: v.string(),
   evidence: v.optional(v.array(v.string())),
+  authorRemediation: v.optional(
+    v.object({
+      summary: v.string(),
+      docsUrl: v.optional(v.string()),
+    }),
+  ),
   fixture: v.optional(v.string()),
   decision: v.optional(v.string()),
   inspectorFindingId: v.optional(v.string()),

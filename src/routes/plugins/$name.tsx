@@ -59,6 +59,10 @@ type PluginInspectorFinding = {
   issueClass?: string;
   message: string;
   evidence?: string[];
+  authorRemediation?: {
+    summary: string;
+    docsUrl?: string;
+  };
   inspectorVersion?: string;
   targetOpenClawVersion?: string;
   scanSource?: "publish" | "nightly";
@@ -306,12 +310,9 @@ function PluginDetailTabs({
 }
 
 function PluginDetailRoute() {
-  return (
-    <PluginDetailPage
-      name={Route.useParams().name}
-      loaderData={Route.useLoaderData() as PluginDetailLoaderData}
-    />
-  );
+  const { name } = Route.useParams();
+  const loaderData = Route.useLoaderData() as PluginDetailLoaderData;
+  return <PluginDetailPage name={name} loaderData={loaderData} />;
 }
 
 export function PluginDetailPending() {
@@ -352,6 +353,9 @@ export function PluginDetailPage({
     api.packages.listPackageInspectorWarningsForManager,
     manageContext ? { name: manageContext.package.name, limit: 100 } : "skip",
   ) as PluginInspectorFinding[] | undefined;
+  const authorInspectorFindings = Array.isArray(inspectorFindings)
+    ? inspectorFindings.filter((finding) => finding.authorRemediation?.summary)
+    : undefined;
   const [activeTab, setActiveTab] = useState<PluginDetailTab>(() => {
     if (typeof window === "undefined") return "readme";
     return pluginDetailTabFromHash(window.location.hash);
@@ -504,7 +508,7 @@ export function PluginDetailPage({
         </dl>
       </div>
     ) : null;
-  const validationCount = inspectorFindings?.length ?? validationSummary?.findingCount ?? 0;
+  const validationCount = authorInspectorFindings?.length ?? validationSummary?.findingCount ?? 0;
   const incompatibilityAlert =
     validationSummary &&
     validationSummary.errorCount > 0 &&
@@ -518,17 +522,22 @@ export function PluginDetailPage({
       </Alert>
     ) : null;
   const validationPanel =
-    inspectorFindings && inspectorFindings.length > 0 ? (
+    authorInspectorFindings && authorInspectorFindings.length > 0 ? (
       <div className="plugin-tab-panel plugin-warnings-panel">
         <Alert variant="info" role="status">
           <Info size={16} aria-hidden="true" />
           <AlertDescription>
-            Validation outputs are only visible to plugin owners and admins. Run locally using the
-            CLI: <code>clawhub package validate &lt;path-to-plugin&gt;</code>
+            <span>
+              Validation outputs are only visible to plugin owners and admins. Run locally using the
+              CLI:
+            </span>
+            <code className="plugin-validation-command">
+              clawhub package validate &lt;path-to-plugin&gt;
+            </code>
           </AlertDescription>
         </Alert>
         <div className="plugin-warning-list">
-          {inspectorFindings.map((finding) => (
+          {authorInspectorFindings.map((finding) => (
             <article
               key={`${finding.version}:${finding.code}:${finding.message}`}
               className={`plugin-warning-item is-${finding.findingKind ?? "warning"}`}
@@ -553,18 +562,6 @@ export function PluginDetailPage({
                     <dd>OpenClaw {finding.targetOpenClawVersion}</dd>
                   </div>
                 ) : null}
-                {finding.inspectorVersion ? (
-                  <div>
-                    <dt>Inspector</dt>
-                    <dd>{finding.inspectorVersion}</dd>
-                  </div>
-                ) : null}
-                {finding.scanSource ? (
-                  <div>
-                    <dt>Scan</dt>
-                    <dd>{finding.scanSource}</dd>
-                  </div>
-                ) : null}
               </dl>
               {finding.evidence && finding.evidence.length > 0 ? (
                 <ul className="plugin-warning-evidence">
@@ -572,6 +569,20 @@ export function PluginDetailPage({
                     <li key={entry}>{entry}</li>
                   ))}
                 </ul>
+              ) : null}
+              {finding.authorRemediation?.summary ? (
+                <div className="plugin-warning-remediation">
+                  <h4>Fix</h4>
+                  <p>{finding.authorRemediation.summary}</p>
+                  {finding.authorRemediation.docsUrl ? (
+                    <>
+                      <h4>Docs</h4>
+                      <a href={finding.authorRemediation.docsUrl} target="_blank" rel="noreferrer">
+                        {finding.authorRemediation.docsUrl}
+                      </a>
+                    </>
+                  ) : null}
+                </div>
               ) : null}
             </article>
           ))}

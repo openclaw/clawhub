@@ -829,6 +829,10 @@ export const ApiV1PackagePublishResponseSchema = type({
     level: "string?",
     issueClass: "string?",
     message: "string",
+    authorRemediation: type({
+      summary: "string",
+      docsUrl: "string?",
+    }).optional(),
     inspectorVersion: "string?",
     targetOpenClawVersion: "string?",
   })

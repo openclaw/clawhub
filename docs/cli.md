@@ -426,6 +426,9 @@ Example:
 clawhub package validate ./example-plugin
 ```
 
+If validation reports a package, manifest, SDK import, or artifact finding, see
+[Plugin validation fixes](./plugin-validation-fixes.md), then rerun the command.
+
 ### `package delete <name>`
 
 - Soft-deletes a package and all releases.
@@ -643,6 +646,8 @@ Notes:
   more detailed compatibility metadata.
 - If you are using an older `clawhub` CLI release, upgrade before publishing so
   the local preflight checks run before upload.
+- If validation reports a remediation code, see
+  [Plugin validation fixes](./plugin-validation-fixes.md).
 
 #### GitHub Actions
 

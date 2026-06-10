@@ -162,6 +162,9 @@ not control.
   `openclaw.compat.pluginApi` and `openclaw.build.openclawVersion`.
 - Include source repository and exact commit metadata, or use the CLI from a
   GitHub-backed checkout so it can detect them.
+- Run `clawhub package validate <source>` before publishing. For package,
+  manifest, SDK import, or artifact findings, see
+  [Plugin validation fixes](./plugin-validation-fixes.md).
 - Run `clawhub package publish <source> --dry-run` before creating a release.
 - Expect new releases to stay out of public install surfaces until automated
   security checks and verification finish.

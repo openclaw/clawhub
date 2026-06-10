@@ -53,6 +53,10 @@ export type PackageInspectorEmailFinding = {
   level?: string;
   severity?: string;
   message: string;
+  authorRemediation?: {
+    summary: string;
+    docsUrl?: string;
+  };
   inspectorVersion?: string;
   targetOpenClawVersion?: string;
   scanSource?: "publish" | "nightly";
@@ -62,7 +66,6 @@ export type PackageInspectorFindingsEmailArgs = {
   handle?: string;
   packageName: string;
   version: string;
-  warningUrl: string;
   findings: PackageInspectorEmailFinding[];
 };
 
@@ -417,8 +420,6 @@ export function buildPackageInspectorFindingsEmail(args: PackageInspectorFinding
     "",
     "Validate a local fix:",
     validateCommand,
-    "",
-    "ClawHub Security",
   ];
 
   const detailLines = [
@@ -438,7 +439,6 @@ export function buildPackageInspectorFindingsEmail(args: PackageInspectorFinding
       formatPackageInspectorFindingsHtml(args.findings),
       sectionHeading("Validate a local fix"),
       commandBlock(validateCommand),
-      paragraph("ClawHub Security"),
     ].join(""),
   });
 
@@ -451,10 +451,21 @@ export function buildPackageInspectorFindingsEmail(args: PackageInspectorFinding
 
 function formatPackageInspectorFindingsText(findings: PackageInspectorEmailFinding[]) {
   if (findings.length === 0) return ["- No findings were included."];
-  return findings.flatMap((finding) => [
-    `- **${finding.findingKind.toUpperCase()}** \`${finding.code}\`${formatFindingMetaText(finding)}`,
-    `  ${finding.message}`,
-  ]);
+  return findings.flatMap((finding) => {
+    const lines = [
+      `- **${finding.findingKind.toUpperCase()}** \`${finding.code}\`${formatFindingMetaText(finding)}`,
+      `  ${finding.message}`,
+    ];
+    if (finding.authorRemediation?.summary) {
+      lines.push("  Fix:");
+      lines.push(`  ${finding.authorRemediation.summary}`);
+      if (finding.authorRemediation.docsUrl) {
+        lines.push("  Docs:");
+        lines.push(`  ${finding.authorRemediation.docsUrl}`);
+      }
+    }
+    return lines;
+  });
 }
 
 function formatFindingMetaText(finding: PackageInspectorEmailFinding) {
@@ -467,6 +478,18 @@ function formatPackageInspectorFindingsHtml(findings: PackageInspectorEmailFindi
   return findings
     .map((finding) => {
       const meta = [finding.issueClass, finding.severity].filter(Boolean).join(" · ");
+      const remediation = finding.authorRemediation?.summary
+        ? `<div style="margin:10px 0 0;padding-top:10px;border-top:1px solid #d8dee4;">
+            <p style="margin:0 0 6px;font-size:15px;line-height:22px;color:#1f2328;"><strong>Fix</strong></p>
+            <p style="margin:0 0 6px;font-size:15px;line-height:22px;color:#1f2328;">${escapeHtml(finding.authorRemediation.summary)}</p>
+            ${
+              finding.authorRemediation.docsUrl
+                ? `<p style="margin:10px 0 6px;font-size:15px;line-height:22px;color:#1f2328;"><strong>Docs</strong></p>
+                  <p style="margin:0;font-size:15px;line-height:22px;color:#1f2328;word-break:break-word;">${textLink(finding.authorRemediation.docsUrl, finding.authorRemediation.docsUrl)}</p>`
+                : ""
+            }
+          </div>`
+        : "";
       return `<div style="margin:0 0 10px;padding:10px 12px;border:1px solid #d8dee4;border-radius:6px;background:#ffffff;">
         <p style="margin:0 0 6px;font-size:15px;line-height:22px;color:#1f2328;">
           <strong>${escapeHtml(finding.findingKind.toUpperCase())}</strong>
@@ -474,6 +497,7 @@ function formatPackageInspectorFindingsHtml(findings: PackageInspectorEmailFindi
           ${meta ? `<span style="color:#57606a;">${escapeHtml(meta)}</span>` : ""}
         </p>
         <p style="margin:0;font-size:15px;line-height:22px;color:#1f2328;">${escapeHtml(finding.message)}</p>
+        ${remediation}
       </div>`;
     })
     .join("");

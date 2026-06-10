@@ -607,9 +607,9 @@ describe("plugin detail route", () => {
       const name = getFunctionName(query as never);
       if (name === "packages:getPackageInspectorValidationSummaryPublic") {
         return {
-          findingCount: 2,
+          findingCount: 1,
           errorCount: 1,
-          warningCount: 1,
+          warningCount: 0,
           incompatibleAfterOpenClawVersion: "0.9.0",
         };
       }
@@ -696,6 +696,11 @@ describe("plugin detail route", () => {
             inspectorVersion: "0.4.0",
             targetOpenClawVersion: "0.9.0",
             scanSource: "nightly",
+            authorRemediation: {
+              summary: "Replace the legacy before_agent_start hook with current prompt hooks.",
+              docsUrl:
+                "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start",
+            },
             createdAt: 1,
           },
           {
@@ -755,7 +760,7 @@ describe("plugin detail route", () => {
 
     render(<Component />);
 
-    expect(screen.getByRole("tab", { name: "Validation (2)" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Validation (1)" })).toBeTruthy();
     expect(screen.queryByRole("link", { name: "2 warnings" })).toBeNull();
     expect(
       screen.getByText(
@@ -764,8 +769,22 @@ describe("plugin detail route", () => {
     ).toBeTruthy();
     expect(screen.getByText("clawhub package validate <path-to-plugin>")).toBeTruthy();
     expect(screen.getByText("legacy-before-agent-start")).toBeTruthy();
-    expect(screen.getByText("missing-expected-seam")).toBeTruthy();
-    expect(screen.getByText("registerTool is no longer available")).toBeTruthy();
+    expect(screen.queryByText("missing-expected-seam")).toBeNull();
+    expect(screen.queryByText("registerTool is no longer available")).toBeNull();
+    expect(screen.queryByText("Inspector")).toBeNull();
+    expect(screen.queryByText("Scan")).toBeNull();
+    expect(screen.getByText("Fix")).toBeTruthy();
+    expect(
+      screen.getByText("Replace the legacy before_agent_start hook with current prompt hooks."),
+    ).toBeTruthy();
+    expect(
+      screen
+        .getByRole("link", {
+          name: "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start",
+        })
+        .getAttribute("href"),
+    ).toBe("https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start");
+    expect(screen.getByText("Docs")).toBeTruthy();
     expect(screen.getAllByText("OpenClaw 0.9.0").length).toBeGreaterThan(0);
   });
 

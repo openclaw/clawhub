@@ -250,13 +250,17 @@ describe("package commands", () => {
           openclawPath: false,
           outDir: "reports",
           pluginRoot: folder,
+          authorFacing: true,
         }),
       );
       expect(inspectorMocks.ci.writeOutputs).toHaveBeenCalledWith(
         { status: "pass", summary: { breakageCount: 0 } },
         { cwd: join(folder, "reports"), outDir: "." },
       );
-      expect(mockLog).toHaveBeenCalledWith("Plugin Inspector: pass");
+      const output = mockLog.mock.calls.join("\n");
+      expect(output).toContain("Plugin Inspector: PASS");
+      expect(output).toContain("Findings: none");
+      expect(output).toContain("Reports written:");
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }
@@ -277,7 +281,120 @@ describe("package commands", () => {
         "Plugin Inspector found 1 hard error",
       );
 
-      expect(mockLog).toHaveBeenCalledWith("Plugin Inspector: fail");
+      expect(mockLog.mock.calls.join("\n")).toContain("Plugin Inspector: FAIL");
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("fails package validation for legacy author-facing hard breakages without remediation metadata", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "legacy-broken-plugin");
+      await mkdir(folder, { recursive: true });
+      await writeFile(
+        join(folder, "package.json"),
+        '{"name":"legacy-broken-plugin","version":"1.0.0"}\n',
+      );
+      inspectorMocks.pluginRoot.runCheck.mockResolvedValueOnce({
+        report: {
+          status: "fail",
+          summary: { breakageCount: 1, warningCount: 0, issueCount: 1 },
+          issues: [
+            {
+              code: "package-entrypoint-missing",
+              level: "breakage",
+              message: "declared OpenClaw entrypoint does not exist",
+            },
+            {
+              code: "runtime-tool-capture",
+              level: "warning",
+              message: "internal capture coverage gap",
+            },
+          ],
+        },
+        paths: { jsonPath: join(folder, "reports", "plugin-inspector-report.json") },
+      });
+
+      await expect(
+        cmdValidatePackage(makeOpts(workdir), "legacy-broken-plugin", {}),
+      ).rejects.toThrow("Plugin Inspector found 1 hard error");
+
+      const output = mockLog.mock.calls.join("\n");
+      expect(output).toContain("Plugin Inspector: FAIL");
+      expect(output).toContain("ERROR package-entrypoint-missing");
+      expect(output).toContain("Fix: Publish the entrypoint declared in OpenClaw package metadata");
+      expect(output).not.toContain("runtime-tool-capture");
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("prints author-facing package validation findings before report paths by default", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "warning-plugin");
+      await mkdir(folder, { recursive: true });
+      await writeFile(
+        join(folder, "package.json"),
+        '{"name":"warning-plugin","version":"1.0.0"}\n',
+      );
+      inspectorMocks.pluginRoot.runCheck.mockResolvedValueOnce({
+        report: {
+          status: "pass",
+          summary: {
+            breakageCount: 0,
+            warningCount: 2,
+            issueCount: 2,
+          },
+          issues: [
+            {
+              code: "legacy-hook",
+              level: "warning",
+              issueClass: "deprecation-warning",
+              severity: "P2",
+              title: "legacy hook is deprecated",
+              evidence: ["src/index.ts:4", { hook: "before_agent_start" }],
+              authorRemediation: {
+                summary: "Move the hook to before_prompt_build.",
+                docsUrl: "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-hook",
+              },
+            },
+            {
+              code: "runtime-tool-capture",
+              level: "warning",
+              message: "internal capture coverage gap",
+            },
+          ],
+        },
+        paths: {
+          jsonPath: join(folder, "reports", "plugin-inspector-report.json"),
+          markdownPath: join(folder, "reports", "plugin-inspector-report.md"),
+          issuesPath: join(folder, "reports", "plugin-inspector-issues.md"),
+        },
+      });
+
+      await cmdValidatePackage(makeOpts(workdir), "warning-plugin", {});
+
+      const output = mockLog.mock.calls.join("\n");
+      expect(output).toContain("Plugin Inspector: PASS");
+      expect(output).toContain("Breakages: 0");
+      expect(output).toContain("Warnings: 1");
+      expect(output).toContain("Findings:");
+      expect(output).toContain(
+        "WARNING legacy-hook (deprecation-warning) P2: legacy hook is deprecated",
+      );
+      expect(output).toContain("Fix: Move the hook to before_prompt_build.");
+      expect(output).toContain(
+        "Docs: https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-hook",
+      );
+      expect(output).toContain("Evidence:");
+      expect(output).toContain("- src/index.ts:4");
+      expect(output).not.toContain("runtime-tool-capture");
+      expect(output).not.toContain("undefined");
+      expect(output.trim()).toMatch(
+        /Reports written: json=.*plugin-inspector-report\.json, markdown=.*plugin-inspector-report\.md, issues=.*plugin-inspector-issues\.md$/,
+      );
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }
@@ -294,27 +411,81 @@ describe("package commands", () => {
       );
       const report = {
         status: "pass",
-        summary: { breakageCount: 0, warningCount: 1 },
-        issues: [{ code: "legacy-hook", level: "warning" }],
+        summary: {
+          breakageCount: 0,
+          warningCount: 3,
+          issueCount: 3,
+          inspectorGapCount: 1,
+        },
+        issues: [
+          {
+            code: "legacy-hook",
+            level: "warning",
+            message: "legacy hook is deprecated",
+            authorRemediation: {
+              summary: "Move the hook to before_prompt_build.",
+              docsUrl: "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-hook",
+            },
+          },
+          {
+            code: "runtime-tool-capture",
+            level: "warning",
+            message: "runtime tools need capture before contract judgment",
+          },
+          {
+            code: "package-plugin-api-compat-missing",
+            level: "warning",
+            message: "package.json is missing openclaw.compat.pluginApi",
+          },
+        ],
       };
       inspectorMocks.pluginRoot.runCheck.mockResolvedValueOnce({
         report,
         paths: { jsonPath: join(folder, "reports", "plugin-inspector-report.json") },
       });
-      inspectorMocks.reports.sanitizeArtifact.mockReturnValueOnce({
-        status: "pass",
-        issues: [{ code: "legacy-hook", level: "warning" }],
-      });
 
       await cmdValidatePackage(makeOpts(workdir), "warning-plugin", { json: true });
 
-      expect(mockWrite).toHaveBeenCalledWith(
-        `${JSON.stringify(
-          { status: "pass", issues: [{ code: "legacy-hook", level: "warning" }] },
-          null,
-          2,
-        )}\n`,
+      const stdoutReport = JSON.parse(String(mockWrite.mock.calls[0]?.[0]));
+      expect(stdoutReport).toEqual({
+        status: "pass",
+        summary: {
+          breakageCount: 0,
+          warningCount: 2,
+          deprecationWarningCount: 0,
+          issueCount: 2,
+        },
+        issues: [
+          {
+            code: "legacy-hook",
+            level: "warning",
+            message: "legacy hook is deprecated",
+            authorRemediation: {
+              summary: "Move the hook to before_prompt_build.",
+              docsUrl: "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-hook",
+            },
+          },
+          {
+            code: "package-plugin-api-compat-missing",
+            level: "warning",
+            message: "package.json is missing openclaw.compat.pluginApi",
+            authorRemediation: {
+              summary: "Declare the OpenClaw plugin API range this package supports.",
+              docsUrl:
+                "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#package-plugin-api-compat-missing",
+            },
+          },
+        ],
+      });
+      expect(mockWrite.mock.calls.join("\n")).not.toContain("runtime-tool-capture");
+      expect(mockWrite.mock.calls.join("\n")).not.toContain("inspectorGapCount");
+      const artifactReport = await readFile(
+        join(folder, "reports", "plugin-inspector-report.json"),
+        "utf8",
       );
+      expect(artifactReport).toContain("package-plugin-api-compat-missing");
+      expect(artifactReport).not.toContain("runtime-tool-capture");
+      expect(artifactReport).not.toContain("inspectorGapCount");
       expect(mockLog).not.toHaveBeenCalled();
     } finally {
       await rm(workdir, { recursive: true, force: true });
@@ -2289,6 +2460,11 @@ describe("package commands", () => {
             code: "legacy-before-agent-start",
             issueClass: "deprecation-warning",
             message: "legacy before_agent_start hook is deprecated",
+            authorRemediation: {
+              summary: "Replace the legacy before_agent_start hook with current prompt hooks.",
+              docsUrl:
+                "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start",
+            },
           },
         ],
       });
@@ -2304,6 +2480,12 @@ describe("package commands", () => {
       expect(mockLog).toHaveBeenCalledWith("Plugin Inspector findings: 1 warning");
       expect(mockLog).toHaveBeenCalledWith(
         "- WARNING legacy-before-agent-start (deprecation-warning): legacy before_agent_start hook is deprecated",
+      );
+      expect(mockLog).toHaveBeenCalledWith(
+        "  Fix: Replace the legacy before_agent_start hook with current prompt hooks.",
+      );
+      expect(mockLog).toHaveBeenCalledWith(
+        "  Docs: https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start",
       );
     } finally {
       await rm(workdir, { recursive: true, force: true });

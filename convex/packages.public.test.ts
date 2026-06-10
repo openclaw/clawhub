@@ -20,6 +20,7 @@ import {
   insertPackageInspectorWarningsInternal,
   claimPackageInspectorScanBatchInternal,
   previewPackageInspectorScanBatchInternal,
+  getPackageInspectorEmailContextInternal,
   markPackageInspectorFindingsEmailedInternal,
   reportPackageForUserInternal,
   triagePackageReportForUserInternal,
@@ -60,6 +61,10 @@ vi.mock("@convex-dev/auth/server", () => ({
 
 type WrappedHandler<TArgs, TResult> = {
   _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
+};
+type TestPackageInspectorAuthorRemediation = {
+  summary: string;
+  docsUrl?: string;
 };
 
 const getByNameHandler = (
@@ -337,6 +342,7 @@ function makeEmptyPackageInspectorWarningsQuery() {
       unique: vi.fn().mockResolvedValue(null),
       order: vi.fn(() => ({
         take: vi.fn().mockResolvedValue([]),
+        paginate: vi.fn().mockResolvedValue({ page: [], isDone: true, continueCursor: "" }),
       })),
     })),
   };
@@ -474,6 +480,7 @@ const insertPackageInspectorWarningsInternalHandler = (
         issueClass?: string;
         evidence?: string[];
         fixture?: string;
+        authorRemediation?: TestPackageInspectorAuthorRemediation;
       }>;
       warnings?: Array<{
         id?: string;
@@ -482,6 +489,7 @@ const insertPackageInspectorWarningsInternalHandler = (
         issueClass?: string;
         evidence?: string[];
         fixture?: string;
+        authorRemediation?: TestPackageInspectorAuthorRemediation;
       }>;
     },
     { ok: true; inserted: number; shouldEmailOwner: boolean }
@@ -521,6 +529,19 @@ const previewPackageInspectorScanBatchInternalHandler = (
         artifactKind: "legacy-zip" | "npm-pack";
       }>;
     }
+  >
+)._handler;
+const getPackageInspectorEmailContextInternalHandler = (
+  getPackageInspectorEmailContextInternal as unknown as WrappedHandler<
+    { packageId: string; releaseId: string },
+    {
+      packageName: string;
+      version: string;
+      findings: Array<{
+        code: string;
+        authorRemediation?: TestPackageInspectorAuthorRemediation;
+      }>;
+    } | null
   >
 )._handler;
 const markPackageInspectorFindingsEmailedInternalHandler = (
@@ -6329,6 +6350,11 @@ describe("packages public queries", () => {
             compatStatus: "deprecated",
             message: "legacy before_agent_start hook is deprecated",
             evidence: ["src/index.ts:4"],
+            authorRemediation: {
+              summary: "Move prompt mutation work to before_prompt_build.",
+              docsUrl:
+                "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start",
+            },
           },
         ],
       })),
@@ -6419,6 +6445,11 @@ describe("packages public queries", () => {
           code: "legacy-before-agent-start",
           issueClass: "deprecation-warning",
           message: "legacy before_agent_start hook is deprecated",
+          authorRemediation: {
+            summary: "Move prompt mutation work to before_prompt_build.",
+            docsUrl:
+              "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start",
+          },
         }),
       ],
     });
@@ -6475,6 +6506,11 @@ describe("packages public queries", () => {
             message: "openclaw.plugin.json does not declare a display name",
             evidence: ["openclaw.plugin.json"],
             fixture: "demo",
+            authorRemediation: {
+              summary: "Add a display name to the plugin manifest.",
+              docsUrl:
+                "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#manifest-name-missing",
+            },
           },
         ],
       }),
@@ -6486,6 +6522,10 @@ describe("packages public queries", () => {
       expect.objectContaining({
         code: "manifest-name-missing",
         inspectorFindingId: "demo:manifest-name-missing",
+        authorRemediation: {
+          summary: "Add a display name to the plugin manifest.",
+          docsUrl: "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#manifest-name-missing",
+        },
       }),
     );
   });
@@ -6538,6 +6578,11 @@ describe("packages public queries", () => {
             message: "legacy before_agent_start hook is deprecated",
             evidence: ["src/index.ts:4"],
             fixture: "demo",
+            authorRemediation: {
+              summary: "Move prompt mutation work to before_prompt_build.",
+              docsUrl:
+                "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start",
+            },
           },
         ],
       }),
@@ -6592,6 +6637,11 @@ describe("packages public queries", () => {
             message: "registerTool is no longer available",
             evidence: ["dist/index.js:2"],
             fixture: "demo",
+            authorRemediation: {
+              summary: "Replace registerTool with the current plugin API.",
+              docsUrl:
+                "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#missing-expected-seam",
+            },
           },
         ],
       }),
@@ -6656,6 +6706,11 @@ describe("packages public queries", () => {
             message: "legacy before_agent_start hook is deprecated",
             evidence: ["src/index.ts:4"],
             fixture: "demo",
+            authorRemediation: {
+              summary: "Move prompt mutation work to before_prompt_build.",
+              docsUrl:
+                "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start",
+            },
           },
         ],
       }),
@@ -6667,6 +6722,11 @@ describe("packages public queries", () => {
       expect.objectContaining({
         code: "legacy-before-agent-start",
         issueClass: "deprecation-warning",
+        authorRemediation: {
+          summary: "Move prompt mutation work to before_prompt_build.",
+          docsUrl:
+            "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start",
+        },
       }),
     );
   });
@@ -6687,6 +6747,11 @@ describe("packages public queries", () => {
                 fixture: "demo",
                 inspectorVersion: "0.5.0",
                 targetOpenClawVersion: "0.10.0",
+                authorRemediation: {
+                  summary: "Move prompt mutation work to before_prompt_build.",
+                  docsUrl:
+                    "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start",
+                },
               },
             ]),
             unique: vi.fn().mockResolvedValue(null),
@@ -6761,22 +6826,31 @@ describe("packages public queries", () => {
             return {
               withIndex: vi.fn(() => ({
                 order: vi.fn(() => ({
-                  take: vi.fn().mockResolvedValue([
-                    {
-                      _id: "packageInspectorWarnings:1",
-                      packageName: "demo-plugin",
-                      version: "1.0.0",
-                      findingKind: "error",
-                      code: "missing-expected-seam",
-                      issueClass: "compatibility-error",
-                      message: "registerTool is no longer available",
-                      evidence: ["dist/index.js:2"],
-                      inspectorVersion: "0.5.0",
-                      targetOpenClawVersion: "0.10.0",
-                      scanSource: "nightly",
-                      createdAt: 2,
-                    },
-                  ]),
+                  paginate: vi.fn().mockResolvedValue({
+                    page: [
+                      {
+                        _id: "packageInspectorWarnings:1",
+                        packageName: "demo-plugin",
+                        version: "1.0.0",
+                        findingKind: "error",
+                        code: "missing-expected-seam",
+                        issueClass: "compatibility-error",
+                        message: "registerTool is no longer available",
+                        evidence: ["dist/index.js:2"],
+                        inspectorVersion: "0.5.0",
+                        targetOpenClawVersion: "0.10.0",
+                        scanSource: "nightly",
+                        authorRemediation: {
+                          summary: "Replace registerTool with the current plugin API.",
+                          docsUrl:
+                            "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#missing-expected-seam",
+                        },
+                        createdAt: 2,
+                      },
+                    ],
+                    isDone: true,
+                    continueCursor: "",
+                  }),
                 })),
               })),
             };
@@ -6890,6 +6964,104 @@ describe("packages public queries", () => {
       }),
     ).resolves.toEqual({ ok: true, created: false });
     expect(insert).toHaveBeenCalledTimes(1);
+  });
+
+  it("excludes internal package inspector findings from owner emails", async () => {
+    let packageInspectorWarningPage = 0;
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "packages:demo") {
+            return makePackageDoc({
+              _id: "packages:demo",
+              name: "demo-plugin",
+              ownerUserId: "users:owner",
+            });
+          }
+          if (id === "packageReleases:demo-1") {
+            return makeReleaseDoc({
+              _id: "packageReleases:demo-1",
+              packageId: "packages:demo",
+              version: "1.0.0",
+            });
+          }
+          if (id === "users:owner") {
+            return { _id: "users:owner", handle: "owner", email: "owner@example.com" };
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table === "packageInspectorWarnings") {
+            return {
+              withIndex: vi.fn(() => ({
+                order: vi.fn(() => ({
+                  paginate: vi.fn().mockImplementation(async () => {
+                    packageInspectorWarningPage += 1;
+                    if (packageInspectorWarningPage === 1) {
+                      return {
+                        page: [
+                          {
+                            _id: "packageInspectorWarnings:internal",
+                            packageName: "demo-plugin",
+                            version: "1.0.0",
+                            findingKind: "warning",
+                            code: "runtime-tool-capture",
+                            issueClass: "inspector-gap",
+                            message: "runtime tool schema needs registration capture",
+                            createdAt: 2,
+                          },
+                        ],
+                        isDone: false,
+                        continueCursor: "next",
+                      };
+                    }
+                    return {
+                      page: [
+                        {
+                          _id: "packageInspectorWarnings:author",
+                          packageName: "demo-plugin",
+                          version: "1.0.0",
+                          findingKind: "warning",
+                          code: "legacy-before-agent-start",
+                          issueClass: "deprecation-warning",
+                          message: "legacy before_agent_start hook is deprecated",
+                          authorRemediation: {
+                            summary: "Move prompt mutation work to before_prompt_build.",
+                            docsUrl:
+                              "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start",
+                          },
+                          createdAt: 1,
+                        },
+                      ],
+                      isDone: true,
+                      continueCursor: "",
+                    };
+                  }),
+                })),
+              })),
+            };
+          }
+          if (table === "packageInspectorFindingNotifications") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue(null),
+              })),
+            };
+          }
+          throw new Error(`Unexpected table ${table}`);
+        }),
+      },
+    };
+
+    const result = await getPackageInspectorEmailContextInternalHandler(ctx as never, {
+      packageId: "packages:demo",
+      releaseId: "packageReleases:demo-1",
+    });
+    expect(result?.packageName).toBe("demo-plugin");
+    expect(result?.findings.map((finding) => finding.code)).toEqual(["legacy-before-agent-start"]);
+    expect(result?.findings[0]?.authorRemediation).toMatchObject({
+      summary: "Move prompt mutation work to before_prompt_build.",
+    });
   });
 
   it("claims only the scan page it can safely advance past", async () => {
@@ -7758,7 +7930,33 @@ describe("packages public queries", () => {
               };
             }
             if (table === "packageInspectorWarnings") {
-              return makeEmptyPackageInspectorWarningsQuery();
+              return {
+                withIndex: vi.fn(() => ({
+                  order: vi.fn(() => ({
+                    paginate: vi.fn().mockResolvedValue({
+                      page: [
+                        {
+                          _id: "packageInspectorWarnings:internal",
+                          code: "runtime-tool-capture",
+                          issueClass: "inspector-gap",
+                          message: "runtime tool schema needs registration capture",
+                        },
+                        {
+                          _id: "packageInspectorWarnings:author",
+                          code: "legacy-before-agent-start",
+                          issueClass: "deprecation-warning",
+                          message: "legacy before_agent_start hook is deprecated",
+                          authorRemediation: {
+                            summary: "Move prompt mutation work to before_prompt_build.",
+                          },
+                        },
+                      ],
+                      isDone: true,
+                      continueCursor: "",
+                    }),
+                  })),
+                })),
+              };
             }
             throw new Error(`Unexpected table ${table}`);
           }),
@@ -7772,6 +7970,7 @@ describe("packages public queries", () => {
         name: "demo-plugin",
         pendingReview: true,
         scanStatus: "pending",
+        inspectorWarningCount: 1,
         latestRelease: expect.objectContaining({
           vtStatus: "pending",
           staticScanStatus: "clean",

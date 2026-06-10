@@ -307,6 +307,12 @@ const packageInspectorWarningInputValidator = v.object({
   deprecated: v.optional(v.boolean()),
   message: v.string(),
   evidence: v.optional(v.array(v.string())),
+  authorRemediation: v.optional(
+    v.object({
+      summary: v.string(),
+      docsUrl: v.optional(v.string()),
+    }),
+  ),
   fixture: v.optional(v.string()),
   decision: v.optional(v.string()),
 });
@@ -321,9 +327,20 @@ const packageInspectorFindingInputValidator = v.object({
   deprecated: v.optional(v.boolean()),
   message: v.string(),
   evidence: v.optional(v.array(v.string())),
+  authorRemediation: v.optional(
+    v.object({
+      summary: v.string(),
+      docsUrl: v.optional(v.string()),
+    }),
+  ),
   fixture: v.optional(v.string()),
   decision: v.optional(v.string()),
 });
+
+type PackageInspectorAuthorRemediation = {
+  summary: string;
+  docsUrl?: string;
+};
 
 type PackageInspectorFinding = {
   id?: string;
@@ -335,6 +352,7 @@ type PackageInspectorFinding = {
   deprecated?: boolean;
   message: string;
   evidence?: string[];
+  authorRemediation?: PackageInspectorAuthorRemediation;
   fixture?: string;
   decision?: string;
 };
@@ -354,6 +372,11 @@ type PackageInspectorPublishResult = {
     targetOpenClawVersion?: string;
   };
 };
+
+function hasAuthorRemediation(finding: PackageInspectorFinding) {
+  return Boolean(finding.authorRemediation?.summary);
+}
+
 const packageAutobanRemediationInternalRefs = internal as unknown as {
   packages: {
     restoreOwnedPackagesForAutobanRemediationBatchInternal: never;
@@ -1226,11 +1249,8 @@ async function toDashboardPackageListItem(
 }
 
 async function countPackageInspectorFindings(ctx: DbReaderCtx, packageId: Id<"packages">) {
-  const warnings = await ctx.db
-    .query("packageInspectorWarnings")
-    .withIndex("by_package_created", (q) => q.eq("packageId", packageId))
-    .take(101);
-  return warnings.length > 100 ? 100 : warnings.length;
+  const authorFindings = await takeAuthorRemediationWarningsByPackage(ctx, packageId, 101);
+  return authorFindings.length > 100 ? 100 : authorFindings.length;
 }
 
 async function listDashboardPackagesForOwnerPublisher(
@@ -2199,6 +2219,7 @@ function toPublicPackageInspectorFinding(warning: Doc<"packageInspectorWarnings"
     deprecated: warning.deprecated,
     message: warning.message,
     evidence: warning.evidence ?? [],
+    authorRemediation: warning.authorRemediation,
     fixture: warning.fixture,
     decision: warning.decision,
     inspectorVersion: warning.inspectorVersion,
@@ -2226,12 +2247,7 @@ export const listPackageInspectorFindingsPublic = query({
     }
 
     const limit = Math.max(1, Math.min(args.limit ?? 50, 100));
-    const warnings = await ctx.db
-      .query("packageInspectorWarnings")
-      .withIndex("by_package_created", (q) => q.eq("packageId", pkg._id))
-      .order("desc")
-      .take(limit);
-
+    const warnings = await takeAuthorRemediationWarningsByPackage(ctx, pkg._id, limit);
     return warnings.map(toPublicPackageInspectorFinding);
   },
 });
@@ -2252,11 +2268,7 @@ export const getPackageInspectorValidationSummaryPublic = query({
       };
     }
 
-    const findings = await ctx.db
-      .query("packageInspectorWarnings")
-      .withIndex("by_package_created", (q) => q.eq("packageId", pkg._id))
-      .order("desc")
-      .take(100);
+    const findings = await takeAuthorRemediationWarningsByPackage(ctx, pkg._id, 100);
     const errorFindings = findings.filter((finding) => {
       const kind =
         finding.findingKind ??
@@ -2291,14 +2303,54 @@ export const listPackageInspectorWarningsForManager = query({
       if (!canManage) return [];
     }
     const limit = Math.max(1, Math.min(args.limit ?? 50, 100));
-    const warnings = await ctx.db
-      .query("packageInspectorWarnings")
-      .withIndex("by_package_created", (q) => q.eq("packageId", pkg._id))
-      .order("desc")
-      .take(limit);
+    const warnings = await takeAuthorRemediationWarningsByPackage(ctx, pkg._id, limit);
     return warnings.map(toPublicPackageInspectorFinding);
   },
 });
+
+async function takeAuthorRemediationWarningsByPackage(
+  ctx: DbReaderCtx,
+  packageId: Id<"packages">,
+  limit: number,
+) {
+  const findings: Doc<"packageInspectorWarnings">[] = [];
+  let cursor: string | null = null;
+  for (let page = 0; findings.length < limit && page < 10; page += 1) {
+    const result = await ctx.db
+      .query("packageInspectorWarnings")
+      .withIndex("by_package_created", (q) => q.eq("packageId", packageId))
+      .order("desc")
+      .paginate({ cursor, numItems: Math.max(limit, 50) });
+    findings.push(...result.page.filter(hasStoredAuthorRemediation));
+    if (result.isDone) break;
+    cursor = result.continueCursor;
+  }
+  return findings.slice(0, limit);
+}
+
+async function takeAuthorRemediationWarningsByRelease(
+  ctx: DbReaderCtx,
+  releaseId: Id<"packageReleases">,
+  limit: number,
+) {
+  const findings: Doc<"packageInspectorWarnings">[] = [];
+  let cursor: string | null = null;
+  for (let page = 0; findings.length < limit && page < 10; page += 1) {
+    const result = await ctx.db
+      .query("packageInspectorWarnings")
+      .withIndex("by_release_created", (q) => q.eq("releaseId", releaseId))
+      .order("desc")
+      .paginate({ cursor, numItems: Math.max(limit, 50) });
+    findings.push(...result.page.filter(hasStoredAuthorRemediation));
+    if (result.isDone) break;
+    cursor = result.continueCursor;
+  }
+  return findings.slice(0, limit);
+}
+
+function hasStoredAuthorRemediation(warning: Doc<"packageInspectorWarnings">) {
+  return Boolean(warning.authorRemediation?.summary);
+}
 
 export const getByNameForStaff = query({
   args: { name: v.string() },
@@ -6539,6 +6591,7 @@ function toPackageInspectorPublishResponseFinding(
     level: finding.level,
     issueClass: finding.issueClass,
     message: finding.message,
+    authorRemediation: finding.authorRemediation,
     inspectorVersion: metadata?.inspectorVersion,
     targetOpenClawVersion: metadata?.targetOpenClawVersion,
   };
@@ -7054,16 +7107,17 @@ async function insertPackageInspectorFindings(
     warnings?: PackageInspectorFinding[];
   },
 ) {
-  const findings = (args.findings ?? args.warnings ?? []).filter(
-    (finding) => finding.issueClass !== "inspector-gap",
-  );
-  if (findings.length === 0) return { ok: true as const, inserted: 0, shouldEmailOwner: false };
+  const findings = (args.findings ?? args.warnings ?? []).filter(hasAuthorRemediation);
   const existingWarnings = await ctx.db
     .query("packageInspectorWarnings")
     .withIndex("by_release", (q) => q.eq("releaseId", args.releaseId))
     .collect();
+  const existingAuthorWarnings = existingWarnings.filter(hasStoredAuthorRemediation);
+  if (findings.length === 0 && existingAuthorWarnings.length === 0) {
+    return { ok: true as const, inserted: 0, shouldEmailOwner: false };
+  }
   const existingWarningKeys = new Set(
-    existingWarnings.map((warning) =>
+    existingAuthorWarnings.map((warning) =>
       packageInspectorWarningDedupeKey({
         id: warning.inspectorFindingId,
         code: warning.code,
@@ -7111,6 +7165,7 @@ async function insertPackageInspectorFindings(
       deprecated: warning.deprecated,
       message: warning.message,
       evidence: warning.evidence,
+      authorRemediation: warning.authorRemediation,
       fixture: warning.fixture,
       decision: warning.decision,
       inspectorFindingId: warning.id,
@@ -7122,7 +7177,7 @@ async function insertPackageInspectorFindings(
   return {
     ok: true as const,
     inserted,
-    shouldEmailOwner: !existingNotification && (inserted > 0 || existingWarnings.length > 0),
+    shouldEmailOwner: !existingNotification && (inserted > 0 || existingAuthorWarnings.length > 0),
   };
 }
 
@@ -7171,11 +7226,7 @@ export const getPackageInspectorEmailContextInternal = internalQuery({
     if (!pkg || pkg.softDeletedAt || !release || release.softDeletedAt) return null;
     const owner = await ctx.db.get(pkg.ownerUserId);
     if (!owner || owner.deletedAt || owner.deactivatedAt || !owner.email) return null;
-    const findings = await ctx.db
-      .query("packageInspectorWarnings")
-      .withIndex("by_release_created", (q) => q.eq("releaseId", release._id))
-      .order("desc")
-      .take(100);
+    const findings = await takeAuthorRemediationWarningsByRelease(ctx, release._id, 100);
     if (findings.length === 0) return null;
     const notification = await ctx.db
       .query("packageInspectorFindingNotifications")
@@ -7218,6 +7269,7 @@ export const sendPackageInspectorFindingsEmailInternal = internalAction({
         level?: string;
         severity?: string;
         message: string;
+        authorRemediation?: PackageInspectorAuthorRemediation;
         inspectorVersion?: string;
         targetOpenClawVersion?: string;
         scanSource?: "publish" | "nightly";
@@ -7230,7 +7282,6 @@ export const sendPackageInspectorFindingsEmailInternal = internalAction({
       packageName: context.packageName,
       version: context.version,
       findings: context.findings,
-      warningUrl: `${getPublicSiteOrigin()}${buildPublicPluginValidationPath(context.packageName)}`,
     });
     const sent = await sendResendEmail({
       to: context.ownerEmail,
@@ -7433,26 +7484,6 @@ export const ingestPackageInspectorScanResultsInternal = internalMutation({
     });
   },
 });
-
-function getPublicSiteOrigin() {
-  return (
-    process.env.CLAWHUB_PUBLIC_SITE_URL?.trim() ||
-    process.env.VITE_CONVEX_SITE_URL?.trim() ||
-    "https://clawhub.ai"
-  ).replace(/\/+$/, "");
-}
-
-function buildPublicPluginValidationPath(packageName: string) {
-  const encodedName = packageName
-    .split("/")
-    .map((segment) =>
-      segment.startsWith("@")
-        ? `@${encodeURIComponent(segment.slice(1))}`
-        : encodeURIComponent(segment),
-    )
-    .join("/");
-  return `/plugins/${encodedName}#validation`;
-}
 
 async function sendResendEmail(args: { to: string; subject: string; text: string; html: string }) {
   const apiKey = process.env.RESEND_API_KEY?.trim();

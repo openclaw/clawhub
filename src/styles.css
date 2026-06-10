@@ -3914,6 +3914,12 @@ code {
   color: var(--ink);
 }
 
+.plugin-validation-command {
+  display: block;
+  margin-top: var(--space-1);
+  overflow-wrap: anywhere;
+}
+
 .plugin-warning-meta {
   display: flex;
   flex-wrap: wrap;
@@ -3945,6 +3951,32 @@ code {
   color: var(--ink-soft);
   font-family: var(--font-mono);
   font-size: 0.78rem;
+}
+
+.plugin-warning-remediation {
+  display: grid;
+  gap: var(--space-2);
+  border-top: 1px solid var(--line);
+  padding-top: var(--space-3);
+}
+
+.plugin-warning-remediation h4 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.9rem;
+  font-weight: 750;
+}
+
+.plugin-warning-remediation a {
+  color: var(--accent);
+  font-size: 0.9rem;
+  font-weight: 700;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.plugin-warning-remediation a:hover {
+  text-decoration: underline;
 }
 
 .plugin-publish-error-text {
