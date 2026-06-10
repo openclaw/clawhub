@@ -248,6 +248,92 @@ describe("skills ban/unban batches", () => {
     );
   });
 
+  it("reschedules install telemetry dedupe cleanup when a hard-delete batch fills", async () => {
+    const skill = {
+      _id: "skills:deleted",
+      ownerUserId: "users:owner",
+      softDeletedAt: 1_000,
+      hiddenAt: 1_000,
+      hiddenBy: "users:admin",
+      moderationStatus: "removed",
+      stats: {
+        downloads: 0,
+        stars: 0,
+        comments: 0,
+        versions: 1,
+        installsCurrent: 0,
+        installsAllTime: 0,
+      },
+    };
+    const dedupeRows = Array.from({ length: 100 }, (_, index) => ({
+      _id: `installTelemetryDedupes:${index}`,
+    }));
+    const delete_ = vi.fn();
+    const query = vi.fn((table: string) => {
+      if (table === "installTelemetryDedupes") {
+        return {
+          withIndex: (indexName: string) => {
+            expect(indexName).toBe("by_skill");
+            return { take: async () => dedupeRows };
+          },
+        };
+      }
+      throw new Error(`Unexpected table ${table}`);
+    });
+    const scheduler = { runAfter: vi.fn() };
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:admin") {
+            return {
+              _id: "users:admin",
+              role: "admin",
+              deletedAt: undefined,
+              deactivatedAt: undefined,
+            };
+          }
+          if (id === "skills:deleted") return skill;
+          return null;
+        }),
+        insert: vi.fn(),
+        patch: vi.fn(),
+        replace: vi.fn(),
+        delete: delete_,
+        query,
+        normalizeId: vi.fn(),
+      },
+      scheduler,
+    } as never;
+
+    await expect(
+      hardDeleteHandler(ctx, {
+        skillId: "skills:deleted",
+        actorUserId: "users:admin",
+        phase: "installTelemetryDedupes",
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(delete_).toHaveBeenCalledTimes(100);
+    expect(scheduler.runAfter).toHaveBeenCalledWith(
+      0,
+      expect.anything(),
+      expect.objectContaining({
+        skillId: "skills:deleted",
+        actorUserId: "users:admin",
+        phase: "installTelemetryDedupes",
+      }),
+    );
+    expect(scheduler.runAfter).not.toHaveBeenCalledWith(
+      0,
+      expect.anything(),
+      expect.objectContaining({
+        skillId: "skills:deleted",
+        actorUserId: "users:admin",
+        phase: "leaderboards",
+      }),
+    );
+  });
+
   it("retimestamps earlier ban-hidden skills during a later ban", async () => {
     const { ctx, patch, scheduler } = makeCtx({
       user: { _id: "users:owner", deletedAt: 2_000 },

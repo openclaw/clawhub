@@ -303,6 +303,81 @@ describe("telemetry install events", () => {
     expect(patch).not.toHaveBeenCalled();
   });
 
+  it("records the same skill in a different root on the same day", async () => {
+    vi.setSystemTime(86_500_000);
+    const skill = { _id: "skills:demo", slug: "demo" };
+    const existingInstall = {
+      _id: "userSkillInstalls:one",
+      userId: "users:one",
+      skillId: "skills:demo",
+      activeRoots: 1,
+      lastVersion: "1.0.0",
+    };
+    const insert = vi.fn();
+    const patch = vi.fn();
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn(
+            (indexName: string, callback: (q: ReturnType<typeof makeIndexBuilder>) => unknown) => {
+              const builder = makeIndexBuilder();
+              callback(builder);
+              if (table === "skills" && indexName === "by_slug") {
+                return { unique: async () => skill };
+              }
+              if (table === "installTelemetryDedupes" && indexName === "by_user_skill_root_day") {
+                expect(builder.eq).toHaveBeenCalledWith("rootKey", "root-two");
+                return { unique: async () => null };
+              }
+              if (table === "userSyncRoots" && indexName === "by_user_root") {
+                return { unique: async () => null };
+              }
+              if (table === "userSkillRootInstalls" && indexName === "by_user_root_skill") {
+                return { unique: async () => null };
+              }
+              if (table === "userSkillInstalls" && indexName === "by_user_skill") {
+                return { unique: async () => existingInstall };
+              }
+              throw new Error(`unexpected query ${table}.${indexName}`);
+            },
+          ),
+        })),
+        insert,
+        patch,
+      },
+    };
+
+    await reportCliInstallHandler(ctx, {
+      userId: "users:one",
+      slug: "demo",
+      version: "1.0.1",
+      rootId: "root-two",
+      rootLabel: "~/other-skills",
+    });
+
+    expect(insert).toHaveBeenCalledWith(
+      "installTelemetryDedupes",
+      expect.objectContaining({
+        userId: "users:one",
+        skillId: "skills:demo",
+        rootKey: "root-two",
+        dayStart: 86_400_000,
+      }),
+    );
+    expect(insert).toHaveBeenCalledWith(
+      "userSkillRootInstalls",
+      expect.objectContaining({
+        userId: "users:one",
+        skillId: "skills:demo",
+        rootId: "root-two",
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "userSkillInstalls:one",
+      expect.objectContaining({ activeRoots: 2, lastVersion: "1.0.1" }),
+    );
+  });
+
   it("prunes stale install telemetry dedupe rows by day bucket", async () => {
     vi.setSystemTime(15 * 86_400_000 + 123);
     const delete_ = vi.fn();
@@ -468,4 +543,67 @@ describe("telemetry install events", () => {
     expect(delete_).toHaveBeenCalledTimes(10_000);
     expect(runAfter).toHaveBeenCalledWith(0, expect.any(Symbol), { userId: "users:one" });
   });
+
+  it.each([
+    {
+      table: "userSkillInstalls",
+      batchSize: 5_000,
+      laterTables: ["userSyncRoots", "userSkillRootInstalls", "installTelemetryDedupes"],
+    },
+    {
+      table: "userSyncRoots",
+      batchSize: 5_000,
+      laterTables: ["userSkillRootInstalls", "installTelemetryDedupes"],
+    },
+    {
+      table: "userSkillRootInstalls",
+      batchSize: 10_000,
+      laterTables: ["installTelemetryDedupes"],
+    },
+  ])(
+    "reschedules user telemetry clearing after a full $table batch before reading later tables",
+    async ({ table, batchSize, laterTables }) => {
+      const rows = Array.from({ length: batchSize }, (_, index) => ({
+        _id: `${table}:${index}`,
+        skillId: "skills:demo",
+        activeRoots: 1,
+      }));
+      const queriedTables: string[] = [];
+      const delete_ = vi.fn();
+      const runAfter = vi.fn();
+      const ctx = {
+        db: {
+          get: vi.fn(async () => ({ _id: "skills:demo" })),
+          query: vi.fn((queriedTable: string) => {
+            queriedTables.push(queriedTable);
+            return {
+              withIndex: vi.fn(
+                (
+                  indexName: string,
+                  callback: (q: ReturnType<typeof makeIndexBuilder>) => unknown,
+                ) => {
+                  expect(indexName).toBe("by_user");
+                  callback(makeIndexBuilder());
+                  return {
+                    take: async () => (queriedTable === table ? rows : []),
+                  };
+                },
+              ),
+            };
+          }),
+          insert: vi.fn(),
+          delete: delete_,
+        },
+        scheduler: { runAfter },
+      };
+
+      await clearUserTelemetryHandler(ctx, { userId: "users:one" });
+
+      expect(delete_).toHaveBeenCalledTimes(batchSize);
+      expect(runAfter).toHaveBeenCalledWith(0, expect.any(Symbol), { userId: "users:one" });
+      for (const laterTable of laterTables) {
+        expect(queriedTables).not.toContain(laterTable);
+      }
+    },
+  );
 });

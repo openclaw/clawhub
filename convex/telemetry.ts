@@ -236,6 +236,10 @@ async function clearTelemetryForUser(ctx: MutationCtx, params: { userId: Id<"use
     });
     await ctx.db.delete(entry._id);
   }
+  if (installs.length === CLEAR_INSTALLS_BATCH_SIZE) {
+    await scheduleClearUserTelemetry(ctx, params.userId);
+    return;
+  }
 
   const roots = await ctx.db
     .query("userSyncRoots")
@@ -244,6 +248,10 @@ async function clearTelemetryForUser(ctx: MutationCtx, params: { userId: Id<"use
   for (const root of roots) {
     await ctx.db.delete(root._id);
   }
+  if (roots.length === CLEAR_ROOTS_BATCH_SIZE) {
+    await scheduleClearUserTelemetry(ctx, params.userId);
+    return;
+  }
 
   const rootInstalls = await ctx.db
     .query("userSkillRootInstalls")
@@ -251,6 +259,10 @@ async function clearTelemetryForUser(ctx: MutationCtx, params: { userId: Id<"use
     .take(CLEAR_ROOT_INSTALLS_BATCH_SIZE);
   for (const entry of rootInstalls) {
     await ctx.db.delete(entry._id);
+  }
+  if (rootInstalls.length === CLEAR_ROOT_INSTALLS_BATCH_SIZE) {
+    await scheduleClearUserTelemetry(ctx, params.userId);
+    return;
   }
 
   const dedupes = await ctx.db
@@ -261,16 +273,13 @@ async function clearTelemetryForUser(ctx: MutationCtx, params: { userId: Id<"use
     await ctx.db.delete(entry._id);
   }
 
-  const hasMore =
-    installs.length === CLEAR_INSTALLS_BATCH_SIZE ||
-    roots.length === CLEAR_ROOTS_BATCH_SIZE ||
-    rootInstalls.length === CLEAR_ROOT_INSTALLS_BATCH_SIZE ||
-    dedupes.length === CLEAR_DEDUPES_BATCH_SIZE;
-  if (hasMore) {
-    await ctx.scheduler.runAfter(0, internal.telemetry.clearUserTelemetryInternal, {
-      userId: params.userId,
-    });
+  if (dedupes.length === CLEAR_DEDUPES_BATCH_SIZE) {
+    await scheduleClearUserTelemetry(ctx, params.userId);
   }
+}
+
+async function scheduleClearUserTelemetry(ctx: MutationCtx, userId: Id<"users">) {
+  await ctx.scheduler.runAfter(0, internal.telemetry.clearUserTelemetryInternal, { userId });
 }
 
 async function markInstallTelemetrySeen(
