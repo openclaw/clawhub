@@ -1606,6 +1606,7 @@ const HARD_DELETE_PHASES = [
   "statEvents",
   "installs",
   "rootInstalls",
+  "installTelemetryDedupes",
   "leaderboards",
   "canonical",
   "forks",
@@ -1875,6 +1876,21 @@ async function hardDeleteSkillStep(
       }
       if (rootInstalls.length === HARD_DELETE_BATCH_SIZE) {
         await scheduleHardDelete(ctx, skill._id, actorUserId, "rootInstalls", scope);
+        return;
+      }
+      await scheduleHardDelete(ctx, skill._id, actorUserId, "installTelemetryDedupes", scope);
+      return;
+    }
+    case "installTelemetryDedupes": {
+      const dedupeRows = await ctx.db
+        .query("installTelemetryDedupes")
+        .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
+        .take(HARD_DELETE_BATCH_SIZE);
+      for (const row of dedupeRows) {
+        await ctx.db.delete(row._id);
+      }
+      if (dedupeRows.length === HARD_DELETE_BATCH_SIZE) {
+        await scheduleHardDelete(ctx, skill._id, actorUserId, "installTelemetryDedupes", scope);
         return;
       }
       await scheduleHardDelete(ctx, skill._id, actorUserId, "leaderboards", scope);
@@ -12087,6 +12103,7 @@ export const listByDateRange = internalQuery({
           indexName: "by_active_updated",
           maxIndexKeyLength: 2,
           eqPrefix: [undefined],
+          allowAnonymousCursor: true,
         })
       : null;
     if (args.cursor && !decodedCursor) {

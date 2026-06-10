@@ -1,7 +1,9 @@
+/* @vitest-environment node */
 import { describe, expect, it, vi } from "vitest";
 import {
   applyBanToOwnedSkillsBatchInternal,
   applyPublisherDeletionToOwnedSkillsBatchInternal,
+  hardDeleteInternal,
   restoreOwnedSkillsForUnbanBatchInternal,
 } from "./skills";
 
@@ -27,6 +29,19 @@ const applyPublisherDeletionHandler = (
   applyPublisherDeletionToOwnedSkillsBatchInternal as unknown as WrappedHandler<
     { ownerPublisherId: string; actorUserId: string; deletedAt: number; cursor?: string },
     { hiddenCount: number; scheduled: boolean; stale?: boolean }
+  >
+)._handler;
+
+const hardDeleteHandler = (
+  hardDeleteInternal as unknown as WrappedHandler<
+    {
+      skillId: string;
+      actorUserId: string;
+      phase?: string;
+      source?: "admin" | "account.delete" | "publisher.delete";
+      ownerPublisherId?: string;
+    },
+    void
   >
 )._handler;
 
@@ -150,6 +165,85 @@ describe("skills ban/unban batches", () => {
         phase: "fingerprints",
         source: "publisher.delete",
         ownerPublisherId: "publishers:org",
+      }),
+    );
+  });
+
+  it("removes install telemetry dedupe rows during skill hard delete", async () => {
+    const skill = {
+      _id: "skills:deleted",
+      ownerUserId: "users:owner",
+      softDeletedAt: 1_000,
+      hiddenAt: 1_000,
+      hiddenBy: "users:admin",
+      moderationStatus: "removed",
+      stats: {
+        downloads: 0,
+        stars: 0,
+        comments: 0,
+        versions: 1,
+        installsCurrent: 0,
+        installsAllTime: 0,
+      },
+    };
+    const dedupeRows = [
+      { _id: "installTelemetryDedupes:one" },
+      { _id: "installTelemetryDedupes:two" },
+    ];
+    const delete_ = vi.fn();
+    const query = vi.fn((table: string) => {
+      if (table === "installTelemetryDedupes") {
+        return {
+          withIndex: (indexName: string) => {
+            expect(indexName).toBe("by_skill");
+            return { take: async () => dedupeRows };
+          },
+        };
+      }
+      throw new Error(`Unexpected table ${table}`);
+    });
+    const scheduler = { runAfter: vi.fn() };
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:admin") {
+            return {
+              _id: "users:admin",
+              role: "admin",
+              deletedAt: undefined,
+              deactivatedAt: undefined,
+            };
+          }
+          if (id === "skills:deleted") return skill;
+          return null;
+        }),
+        insert: vi.fn(),
+        patch: vi.fn(),
+        replace: vi.fn(),
+        delete: delete_,
+        query,
+        normalizeId: vi.fn(),
+      },
+      scheduler,
+    } as never;
+
+    await expect(
+      hardDeleteHandler(ctx, {
+        skillId: "skills:deleted",
+        actorUserId: "users:admin",
+        phase: "installTelemetryDedupes",
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(delete_).toHaveBeenCalledWith("installTelemetryDedupes:one");
+    expect(delete_).toHaveBeenCalledWith("installTelemetryDedupes:two");
+    expect(scheduler.runAfter).toHaveBeenCalledWith(
+      0,
+      expect.anything(),
+      expect.objectContaining({
+        skillId: "skills:deleted",
+        actorUserId: "users:admin",
+        phase: "leaderboards",
       }),
     );
   });
