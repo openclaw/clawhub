@@ -2392,6 +2392,7 @@ const installTelemetryDedupes = defineTable({
 })
   .index("by_user_skill_root_day", ["userId", "skillId", "rootKey", "dayStart"])
   .index("by_user", ["userId"])
+  .index("by_skill", ["skillId"])
   .index("by_day", ["dayStart"]);
 
 const reservedSlugs = defineTable({
