@@ -5,6 +5,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { internalMutation, internalQuery, mutation, query } from "./functions";
 import { assertAdmin, getOptionalActiveAuthUserId, requireUser } from "./lib/access";
+import { isPublicSkillDoc } from "./lib/globalStats";
 import { isOfficialPublisher, toPublicPublisherWithOfficial } from "./lib/officialPublishers";
 import { toPublicPublisher } from "./lib/public";
 import {
@@ -99,7 +100,7 @@ type PublisherListSummary = {
 };
 
 function isPublicPublishedSkill(skill: Doc<"skills">) {
-  return !skill.softDeletedAt && (!skill.moderationStatus || skill.moderationStatus === "active");
+  return isPublicSkillDoc(skill);
 }
 
 type PublicPublisherKindFilter = "user" | "org";

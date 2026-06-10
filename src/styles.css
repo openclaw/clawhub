@@ -4700,7 +4700,7 @@ code {
 
 .security-audit-meter {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
   height: 6px;
 }
@@ -4718,11 +4718,7 @@ code {
   background: #f1b85a;
 }
 
-.security-audit-meter[data-level="3"] span:nth-child(-n + 3) {
-  background: #6aa9ff;
-}
-
-.security-audit-meter[data-level="4"] span {
+.security-audit-meter[data-level="3"] span {
   background: #79e68e;
 }
 

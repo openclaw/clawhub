@@ -1069,6 +1069,9 @@ const skillSearchDigest = defineTable({
   softDeletedAt: v.optional(v.number()),
   moderationStatus: moderationStatusValidator,
   moderationFlags: v.optional(v.array(v.string())),
+  moderationVerdict: v.optional(
+    v.union(v.literal("clean"), v.literal("suspicious"), v.literal("malicious")),
+  ),
   moderationReason: v.optional(v.string()),
   isSuspicious: v.optional(v.boolean()),
   createdAt: v.number(),

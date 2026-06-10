@@ -5420,6 +5420,7 @@ describe("httpApiV1 handlers", () => {
     expect(json.ok).toBe(false);
     expect(json.decision).toBe("fail");
     expect(json.reasons).toEqual(["moderation.malware_blocked"]);
+    expect(json.card).toMatchObject({ available: false, url: null });
     expect(json.security).toMatchObject({ status: "clean", passed: true });
   });
 

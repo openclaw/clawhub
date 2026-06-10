@@ -2542,16 +2542,19 @@ export const getBySlug = query({
     const overrideActive = Boolean(skill.manualOverride);
     const isPendingScan =
       skill.moderationStatus === "hidden" && skill.moderationReason === "pending.scan";
-    const isMalwareBlocked = skill.moderationFlags?.includes("blocked.malware") ?? false;
+    const isMalwareBlocked =
+      skill.moderationVerdict === "malicious" ||
+      (skill.moderationFlags?.includes("blocked.malware") ?? false);
     const isSuspicious = skill.moderationFlags?.includes("flagged.suspicious") ?? false;
     const isReviewFlagged = isSkillReviewFlagged(skill);
     const isHiddenByMod =
       skill.moderationStatus === "hidden" && !isPendingScan && !isMalwareBlocked;
     const isRemoved = skill.moderationStatus === "removed";
 
-    // Non-owners can see malware-blocked skills (transparency), but not other hidden states
-    // Owners can see all their moderated skills
-    if (!publicSkill && !isOwner && !isMalwareBlocked) return null;
+    if (isMalwareBlocked) return null;
+
+    // Owners can see their non-malicious moderated skills.
+    if (!publicSkill && !isOwner) return null;
 
     // For owners viewing their moderated skill, construct the response manually
     const skillData = publicSkill ?? {
@@ -2644,6 +2647,70 @@ export const getBySlug = query({
             },
           }
         : null,
+    };
+  },
+});
+
+export const getVerifyTargetBySlugInternal = internalQuery({
+  args: { slug: v.string() },
+  handler: async (ctx, args) => {
+    const resolved = await resolveSkillBySlugOrAlias(ctx, args.slug);
+    const skill = resolved.skill;
+    if (!skill) return null;
+
+    const isMalwareBlocked =
+      skill.moderationVerdict === "malicious" ||
+      (skill.moderationFlags?.includes("blocked.malware") ?? false);
+    if (!isMalwareBlocked && !isPublicSkillDoc(skill)) return null;
+
+    const owner = toPublicPublisher(
+      await getOwnerPublisher(ctx, {
+        ownerPublisherId: skill.ownerPublisherId,
+        ownerUserId: skill.ownerUserId,
+      }),
+    );
+    if (!owner) return null;
+
+    const isPendingScan =
+      skill.moderationStatus === "hidden" && skill.moderationReason === "pending.scan";
+    const isSuspicious = skill.moderationFlags?.includes("flagged.suspicious") ?? false;
+    const isReviewFlagged = isSkillReviewFlagged(skill);
+    const overrideActive = Boolean(skill.manualOverride);
+    const isHiddenByMod =
+      skill.moderationStatus === "hidden" && !isPendingScan && !isMalwareBlocked;
+    const isRemoved = skill.moderationStatus === "removed";
+
+    return {
+      requestedSlug: resolved.requestedSlug,
+      resolvedSlug: resolved.resolvedSlug,
+      skill: {
+        _id: skill._id,
+        slug: skill.slug,
+        displayName: skill.displayName,
+        summary: skill.summary,
+        tags: skill.tags,
+        stats: skill.stats,
+        createdAt: skill.createdAt,
+        updatedAt: skill.updatedAt,
+        latestVersionId: skill.latestVersionId,
+      },
+      latestVersion: null,
+      owner,
+      moderationInfo: {
+        isPendingScan,
+        isMalwareBlocked,
+        isSuspicious,
+        isReviewFlagged,
+        isHiddenByMod,
+        isRemoved,
+        overrideActive,
+        verdict: skill.moderationVerdict,
+        reasonCodes: skill.moderationReasonCodes,
+        summary: skill.moderationSummary,
+        engineVersion: skill.moderationEngineVersion,
+        updatedAt: skill.moderationEvaluatedAt,
+        sourceVersionId: skill.moderationSourceVersionId ?? null,
+      },
     };
   },
 });
@@ -3068,11 +3135,13 @@ export const getSecurityVerdictTargetInternal = internalQuery({
     const skill = resolved.skill;
     if (!skill) return null;
 
-    const isMalwareBlocked = skill.moderationFlags?.includes("blocked.malware") ?? false;
+    const isMalwareBlocked =
+      skill.moderationVerdict === "malicious" ||
+      (skill.moderationFlags?.includes("blocked.malware") ?? false);
     const isSuspicious = skill.moderationFlags?.includes("flagged.suspicious") ?? false;
     const isReviewFlagged = isSkillReviewFlagged(skill);
     const overrideActive = Boolean(skill.manualOverride);
-    if (!isPublicSkillDoc(skill) && !isMalwareBlocked) return null;
+    if (!isMalwareBlocked && !isPublicSkillDoc(skill)) return null;
 
     const owner = toPublicPublisher(
       await getOwnerPublisher(ctx, {
