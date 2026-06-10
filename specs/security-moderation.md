@@ -258,7 +258,7 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   - user-directed provider uploads are not exfiltration unless the source is broad/private/sensitive, automatic, or sent to an unrelated/hidden destination.
   - Basic Auth/base64 credential encoding and provider-response base64 decoding are normal integration behavior.
   - scoped uninstall cleanup under a skill-owned `.openclaw` path is not a destructive-delete finding unless it deletes a broad/protected path or hides impact.
-  - stealth/anti-detection browser automation becomes malicious only when paired with bot-protection bypass and persistent sessions.
+  - Browser automation, stealth browsing, and anti-bot/crawling behavior are not classified by ClawHub's static scanner. SkillSpector owns that browser-automation analysis lane; ClawHub static rules should only preserve non-browser-specific concrete source/sink evidence.
 - Static malware detection still records deterministic findings such as
   obfuscated shell payload prompts, but those findings are context for ClawScan,
   not a standalone hard block or uploader moderation trigger.
