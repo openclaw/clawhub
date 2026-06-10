@@ -35,7 +35,7 @@ describe("package publish workflow", () => {
 
   it("runs manual plugin inspector bulk scans with the bundled CLI validator", () => {
     const workflow = readFileSync(
-      resolve(".github/workflows/plugin-inspector-nightly.yml"),
+      resolve(".github/workflows/plugin-inspector-bulk-scan.yml"),
       "utf8",
     );
     const script = readFileSync(resolve("scripts/package-inspector-nightly-scan.ts"), "utf8");
@@ -58,7 +58,7 @@ describe("package publish workflow", () => {
     expect(script).toContain("package-inspector/results");
     expect(script).toContain("Authorization: `Bearer ${token}`");
     expect(script).toContain('path.join(pluginRoot, "package")');
-    expect(script).not.toContain("plugin-inspector-nightly-error");
+    expect(script).not.toContain("plugin-inspector-bulk-scan-error");
     expect(script).toContain("pluginInspector");
     expect(workflow).toContain("dry_run:");
     expect(workflow).toContain("PLUGIN_INSPECTOR_DRY_RUN");
@@ -102,7 +102,7 @@ describe("package publish workflow", () => {
     const job = workflow.jobs?.["dispatch-plugin-inspector-bulk-scan"];
     expect(job?.if).toContain("github.event.pull_request.merged == true");
     expect(workflowText).toContain("scripts/github/plugin-inspector-pin-change.mjs");
-    expect(workflowText).toContain("gh workflow run plugin-inspector-nightly.yml");
+    expect(workflowText).toContain("gh workflow run plugin-inspector-bulk-scan.yml");
     expect(workflowText).toContain("--ref main");
     expect(workflowText).toContain("batch_size=25");
     expect(workflowText).toContain("dry_run=false");

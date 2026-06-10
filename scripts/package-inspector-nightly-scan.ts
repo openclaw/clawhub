@@ -89,7 +89,7 @@ do {
   for (const item of claim.items) {
     const workRoot = path.join(
       tmpdir(),
-      `clawhub-plugin-inspector-nightly-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      `clawhub-plugin-inspector-bulk-scan-${Date.now()}-${Math.random().toString(16).slice(2)}`,
     );
     const pluginRoot = path.join(workRoot, "plugin");
     const reportDir = path.resolve(

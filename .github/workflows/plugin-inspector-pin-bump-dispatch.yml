@@ -44,7 +44,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh workflow run plugin-inspector-nightly.yml \
+          gh workflow run plugin-inspector-bulk-scan.yml \
             --ref main \
             -f batch_size=25 \
             -f dry_run=false \
