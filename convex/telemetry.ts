@@ -336,12 +336,20 @@ async function upsertSingleRootInstall(
 
   if (existing) {
     const wasRemoved = Boolean(existing.removedAt);
+    const aggregateInstall = wasRemoved
+      ? null
+      : await ctx.db
+          .query("userSkillInstalls")
+          .withIndex("by_user_skill", (q) =>
+            q.eq("userId", params.userId).eq("skillId", params.skillId),
+          )
+          .unique();
     await ctx.db.patch(existing._id, {
       lastSeenAt: params.now,
       lastVersion: params.version ?? existing.lastVersion,
       removedAt: undefined,
     });
-    if (wasRemoved) {
+    if (wasRemoved || !aggregateInstall) {
       await incrementActiveRoots(ctx, {
         userId: params.userId,
         skillId: params.skillId,

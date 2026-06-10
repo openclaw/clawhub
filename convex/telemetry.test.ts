@@ -378,6 +378,82 @@ describe("telemetry install events", () => {
     );
   });
 
+  it("recreates a missing aggregate install when a stale root row remains", async () => {
+    vi.setSystemTime(172_900_000);
+    const skill = { _id: "skills:demo", slug: "demo" };
+    const existingRootInstall = {
+      _id: "userSkillRootInstalls:stale",
+      userId: "users:one",
+      rootId: "root",
+      skillId: "skills:demo",
+      lastVersion: "1.0.0",
+      removedAt: undefined,
+    };
+    const insert = vi.fn();
+    const patch = vi.fn();
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn(
+            (indexName: string, callback: (q: ReturnType<typeof makeIndexBuilder>) => unknown) => {
+              const builder = makeIndexBuilder();
+              callback(builder);
+              if (table === "skills" && indexName === "by_slug") {
+                return { unique: async () => skill };
+              }
+              if (table === "installTelemetryDedupes" && indexName === "by_user_skill_root_day") {
+                return { unique: async () => null };
+              }
+              if (table === "userSyncRoots" && indexName === "by_user_root") {
+                return { unique: async () => ({ _id: "userSyncRoots:root" }) };
+              }
+              if (table === "userSkillRootInstalls" && indexName === "by_user_root_skill") {
+                return { unique: async () => existingRootInstall };
+              }
+              if (table === "userSkillInstalls" && indexName === "by_user_skill") {
+                expect(builder.eq).toHaveBeenCalledWith("userId", "users:one");
+                expect(builder.eq).toHaveBeenCalledWith("skillId", "skills:demo");
+                return { unique: async () => null };
+              }
+              throw new Error(`unexpected query ${table}.${indexName}`);
+            },
+          ),
+        })),
+        insert,
+        patch,
+      },
+    };
+
+    await reportCliInstallHandler(ctx, {
+      userId: "users:one",
+      slug: "demo",
+      version: "1.0.1",
+      rootId: "root",
+      rootLabel: "~/skills",
+    });
+
+    expect(patch).toHaveBeenCalledWith(
+      "userSkillRootInstalls:stale",
+      expect.objectContaining({ lastVersion: "1.0.1", removedAt: undefined }),
+    );
+    expect(insert).toHaveBeenCalledWith(
+      "userSkillInstalls",
+      expect.objectContaining({
+        userId: "users:one",
+        skillId: "skills:demo",
+        activeRoots: 1,
+        lastVersion: "1.0.1",
+      }),
+    );
+    expect(insert).toHaveBeenCalledWith(
+      "skillStatEvents",
+      expect.objectContaining({
+        skillId: "skills:demo",
+        kind: "install_new",
+      }),
+    );
+  });
+
   it("prunes stale install telemetry dedupe rows by day bucket", async () => {
     vi.setSystemTime(15 * 86_400_000 + 123);
     const delete_ = vi.fn();
