@@ -382,6 +382,48 @@ describe("telemetry install events", () => {
     });
   });
 
+  it("reschedules telemetry clear when a dedupe batch fills", async () => {
+    const dedupes = Array.from({ length: 10_000 }, (_, index) => ({
+      _id: `installTelemetryDedupes:${index}`,
+    }));
+    const runAfter = vi.fn();
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn(
+            (indexName: string, callback: (q: ReturnType<typeof makeIndexBuilder>) => unknown) => {
+              callback(makeIndexBuilder());
+              if (table === "userSkillInstalls" && indexName === "by_user_lastSeenAt") {
+                return { take: async () => [] };
+              }
+              if (table === "userSyncRoots" && indexName === "by_user_lastSeenAt") {
+                return { take: async () => [] };
+              }
+              if (table === "userSkillRootInstalls" && indexName === "by_user_lastSeenAt") {
+                return { take: async () => [] };
+              }
+              if (table === "installTelemetryDedupes" && indexName === "by_user_createdAt") {
+                return { take: async () => dedupes };
+              }
+              throw new Error(`unexpected query ${table}.${indexName}`);
+            },
+          ),
+        })),
+        get: vi.fn(),
+        insert: vi.fn(),
+        delete: vi.fn(),
+      },
+      scheduler: { runAfter },
+    };
+
+    await clearUserTelemetryHandler(ctx, { userId: "users:one", clearStartedAt: 123 });
+
+    expect(runAfter).toHaveBeenCalledWith(0, telemetryRefs.clearUserTelemetryInternal, {
+      userId: "users:one",
+      clearStartedAt: 123,
+    });
+  });
+
   it("prunes stale install telemetry dedupe rows by day bucket", async () => {
     vi.setSystemTime(20 * 86_400_000);
     const stale = [
