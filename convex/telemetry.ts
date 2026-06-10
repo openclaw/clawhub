@@ -10,6 +10,10 @@ import { insertStatEvent } from "./skillStatEvents";
 const DAY_MS = 86_400_000;
 const INSTALL_TELEMETRY_DEDUPE_RETENTION_MS = 14 * DAY_MS;
 const PRUNE_BATCH_SIZE = 200;
+const CLEAR_INSTALLS_BATCH_SIZE = 5_000;
+const CLEAR_ROOTS_BATCH_SIZE = 5_000;
+const CLEAR_ROOT_INSTALLS_BATCH_SIZE = 10_000;
+const CLEAR_DEDUPES_BATCH_SIZE = 10_000;
 
 export const reportCliInstallInternal = internalMutation({
   args: {
@@ -214,7 +218,7 @@ async function clearTelemetryForUser(ctx: MutationCtx, params: { userId: Id<"use
   const installs = await ctx.db
     .query("userSkillInstalls")
     .withIndex("by_user", (q) => q.eq("userId", params.userId))
-    .take(5000);
+    .take(CLEAR_INSTALLS_BATCH_SIZE);
 
   for (const entry of installs) {
     const skill = await ctx.db.get(entry.skillId);
@@ -236,7 +240,7 @@ async function clearTelemetryForUser(ctx: MutationCtx, params: { userId: Id<"use
   const roots = await ctx.db
     .query("userSyncRoots")
     .withIndex("by_user", (q) => q.eq("userId", params.userId))
-    .take(5000);
+    .take(CLEAR_ROOTS_BATCH_SIZE);
   for (const root of roots) {
     await ctx.db.delete(root._id);
   }
@@ -244,7 +248,7 @@ async function clearTelemetryForUser(ctx: MutationCtx, params: { userId: Id<"use
   const rootInstalls = await ctx.db
     .query("userSkillRootInstalls")
     .withIndex("by_user", (q) => q.eq("userId", params.userId))
-    .take(10000);
+    .take(CLEAR_ROOT_INSTALLS_BATCH_SIZE);
   for (const entry of rootInstalls) {
     await ctx.db.delete(entry._id);
   }
@@ -252,9 +256,20 @@ async function clearTelemetryForUser(ctx: MutationCtx, params: { userId: Id<"use
   const dedupes = await ctx.db
     .query("installTelemetryDedupes")
     .withIndex("by_user", (q) => q.eq("userId", params.userId))
-    .take(10000);
+    .take(CLEAR_DEDUPES_BATCH_SIZE);
   for (const entry of dedupes) {
     await ctx.db.delete(entry._id);
+  }
+
+  const hasMore =
+    installs.length === CLEAR_INSTALLS_BATCH_SIZE ||
+    roots.length === CLEAR_ROOTS_BATCH_SIZE ||
+    rootInstalls.length === CLEAR_ROOT_INSTALLS_BATCH_SIZE ||
+    dedupes.length === CLEAR_DEDUPES_BATCH_SIZE;
+  if (hasMore) {
+    await ctx.scheduler.runAfter(0, internal.telemetry.clearUserTelemetryInternal, {
+      userId: params.userId,
+    });
   }
 }
 

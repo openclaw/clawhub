@@ -16,6 +16,7 @@ vi.mock("./_generated/api", () => ({
       processSkillStatEventsInternal: Symbol("processSkillStatEventsInternal"),
     },
     telemetry: {
+      clearUserTelemetryInternal: Symbol("clearUserTelemetryInternal"),
       pruneInstallTelemetryDedupesInternal: Symbol("pruneInstallTelemetryDedupesInternal"),
     },
   },
@@ -425,5 +426,46 @@ describe("telemetry install events", () => {
     );
     expect(delete_).toHaveBeenCalledWith("installTelemetryDedupes:one");
     expect(delete_).toHaveBeenCalledWith("installTelemetryDedupes:two");
+  });
+
+  it("reschedules user telemetry clearing when one dedupe batch fills", async () => {
+    const dedupeRows = Array.from({ length: 10_000 }, (_, index) => ({
+      _id: `installTelemetryDedupes:${index}`,
+    }));
+    const delete_ = vi.fn();
+    const runAfter = vi.fn();
+    const ctx = {
+      db: {
+        get: vi.fn(),
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn(
+            (indexName: string, callback: (q: ReturnType<typeof makeIndexBuilder>) => unknown) => {
+              callback(makeIndexBuilder());
+              if (table === "userSkillInstalls" && indexName === "by_user") {
+                return { take: async () => [] };
+              }
+              if (table === "userSyncRoots" && indexName === "by_user") {
+                return { take: async () => [] };
+              }
+              if (table === "userSkillRootInstalls" && indexName === "by_user") {
+                return { take: async () => [] };
+              }
+              if (table === "installTelemetryDedupes" && indexName === "by_user") {
+                return { take: async () => dedupeRows };
+              }
+              throw new Error(`unexpected query ${table}.${indexName}`);
+            },
+          ),
+        })),
+        insert: vi.fn(),
+        delete: delete_,
+      },
+      scheduler: { runAfter },
+    };
+
+    await clearUserTelemetryHandler(ctx, { userId: "users:one" });
+
+    expect(delete_).toHaveBeenCalledTimes(10_000);
+    expect(runAfter).toHaveBeenCalledWith(0, expect.any(Symbol), { userId: "users:one" });
   });
 });
