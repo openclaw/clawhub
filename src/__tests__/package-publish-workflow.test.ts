@@ -71,16 +71,15 @@ describe("package publish workflow", () => {
     expect(workflow).toContain("actions/upload-artifact");
   });
 
-  it("dispatches plugin inspector bulk scans after merged inspector pin bumps", () => {
+  it("dispatches plugin inspector bulk scans after main inspector pin bumps", () => {
     const workflowText = readFileSync(
       resolve(".github/workflows/plugin-inspector-pin-bump-dispatch.yml"),
       "utf8",
     );
     const workflow = parseYaml(workflowText) as {
       on?: {
-        pull_request_target?: {
+        push?: {
           branches?: string[];
-          types?: string[];
           paths?: string[];
         };
       };
@@ -94,24 +93,23 @@ describe("package publish workflow", () => {
       >;
     };
 
-    expect(workflow.on?.pull_request_target?.branches).toEqual(["main"]);
-    expect(workflow.on?.pull_request_target?.types).toEqual(["closed"]);
-    expect(workflow.on?.pull_request_target?.paths).toEqual([
+    expect(workflow.on?.push?.branches).toEqual(["main"]);
+    expect(workflow.on?.push?.paths).toEqual([
       "package.json",
       "packages/clawhub/package.json",
       "bun.lock",
     ]);
     expect(workflow.permissions?.actions).toBe("write");
 
-    const job = workflow.jobs?.["dispatch-plugin-inspector-bulk-scan"];
-    expect(job?.if).toContain("github.event.pull_request.merged == true");
     expect(workflowText).toContain("scripts/github/plugin-inspector-pin-change.mjs");
     expect(workflowText).toContain("gh workflow run plugin-inspector-bulk-scan.yml");
     expect(workflowText).toContain("--ref main");
     expect(workflowText).toContain("batch_size=25");
     expect(workflowText).toContain("dry_run=false");
-    expect(workflowText).toContain("source_pr=${{ github.event.pull_request.number }}");
-    expect(workflowText).toContain("source_sha=${{ github.event.pull_request.merge_commit_sha");
+    expect(workflowText).toContain("BASE_SHA: ${{ github.event.before }}");
+    expect(workflowText).toContain("HEAD_SHA: ${{ github.sha }}");
+    expect(workflowText).toContain("source_sha=${{ github.sha }}");
+    expect(workflowText).not.toContain("pull_request_target");
   });
 
   it("supports publishing a prebuilt ClawPack artifact from a caller workflow", () => {
