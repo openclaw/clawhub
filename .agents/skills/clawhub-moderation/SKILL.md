@@ -216,5 +216,5 @@ only after admin auth succeeds.
   hidden by the matching ban flow; revoked API tokens stay revoked.
 - `packages transfer` preserves the package row, stats, releases, and history;
   it changes the owner publisher.
-- `org delete` soft-deletes an empty org publisher and removes member rows; it
-  refuses orgs with active skills or packages.
+- `org delete` soft-deletes an empty org publisher and retains member rows for
+  history; it refuses orgs with active skills or packages.
