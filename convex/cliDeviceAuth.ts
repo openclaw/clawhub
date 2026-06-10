@@ -1,4 +1,6 @@
 import { v } from "convex/values";
+import type { Doc } from "./_generated/dataModel";
+import type { MutationCtx } from "./_generated/server";
 import { internalMutation, mutation } from "./functions";
 import { requireUser } from "./lib/access";
 import { generateToken, hashToken } from "./lib/tokens";
@@ -88,17 +90,13 @@ export const approve = mutation({
     if (!normalized) throw new Error("Code required");
 
     const userCodeHash = await hashToken(normalized);
-    const row = await ctx.db
-      .query("cliDeviceCodes")
-      .withIndex("by_user_code_hash", (q) => q.eq("userCodeHash", userCodeHash))
-      .unique();
-    if (!row) throw new Error("Device code not found");
-
     const now = Date.now();
-    if (row.expiresAt <= now) {
-      if (row.status !== "expired") await ctx.db.patch(row._id, { status: "expired" });
-      throw new Error("Device code expired");
-    }
+    const rows = await getRowsByUserCodeHash(ctx, userCodeHash);
+    await expireStaleRows(ctx, rows, now);
+    const row =
+      pickLatestRow(rows, now, "pending") ?? pickLatestRow(rows, now) ?? pickLatestRow(rows);
+    if (!row) throw new Error("Device code not found");
+    if (row.expiresAt <= now) throw new Error("Device code expired");
     if (row.status === "consumed") throw new Error("Device code already used");
     if (row.status === "approved") throw new Error("Device code already authorized");
     if (row.status === "denied") throw new Error("Device code was denied");
@@ -119,12 +117,13 @@ export const deny = mutation({
     const normalized = normalizeUserCode(args.userCode);
     if (!normalized) throw new Error("Code required");
     const userCodeHash = await hashToken(normalized);
-    const row = await ctx.db
-      .query("cliDeviceCodes")
-      .withIndex("by_user_code_hash", (q) => q.eq("userCodeHash", userCodeHash))
-      .unique();
-    if (!row) throw new Error("Device code not found");
     const now = Date.now();
+    const rows = await getRowsByUserCodeHash(ctx, userCodeHash);
+    await expireStaleRows(ctx, rows, now);
+    const row =
+      pickLatestRow(rows, now, "pending") ?? pickLatestRow(rows, now) ?? pickLatestRow(rows);
+    if (!row) throw new Error("Device code not found");
+    if (row.expiresAt <= now) return { ok: true };
     if (row.status === "approved") throw new Error("Device code already authorized");
     if (row.status === "pending") {
       await ctx.db.patch(row._id, { status: "denied", deniedAt: now });
@@ -138,6 +137,37 @@ function normalizeUserCode(value: string) {
     .trim()
     .toUpperCase()
     .replace(/[^A-Z0-9]/g, "");
+}
+
+async function getRowsByUserCodeHash(ctx: MutationCtx, userCodeHash: string) {
+  return await ctx.db
+    .query("cliDeviceCodes")
+    .withIndex("by_user_code_hash", (q) => q.eq("userCodeHash", userCodeHash))
+    .collect();
+}
+
+async function expireStaleRows(ctx: MutationCtx, rows: Array<Doc<"cliDeviceCodes">>, now: number) {
+  for (const row of rows) {
+    if (row.expiresAt <= now && row.status !== "expired") {
+      await ctx.db.patch(row._id, { status: "expired" });
+    }
+  }
+}
+
+function pickLatestRow(
+  rows: Array<Doc<"cliDeviceCodes">>,
+  now?: number,
+  status?: Doc<"cliDeviceCodes">["status"],
+) {
+  const candidates = rows.filter(
+    (row) =>
+      (now === undefined || row.expiresAt > now) && (status === undefined || row.status === status),
+  );
+  return candidates.reduce<Doc<"cliDeviceCodes"> | null>((best, row) => {
+    if (!best) return row;
+    if (row.createdAt !== best.createdAt) return row.createdAt > best.createdAt ? row : best;
+    return row._creationTime > best._creationTime ? row : best;
+  }, null);
 }
 
 function generateUserCode() {
