@@ -108,7 +108,7 @@ describe("search route", () => {
     expect(screen.queryByText("Searching...")).toBeNull();
   });
 
-  it("shows zero counts consistently for active search tabs", async () => {
+  it("does not render count chips in active search tabs", async () => {
     useUnifiedSearchMock.mockReturnValue({
       results: [],
       skillResults: [],
@@ -124,9 +124,11 @@ describe("search route", () => {
 
     render(<Component />);
 
-    expect(screen.getByRole("button", { name: "All 3" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Skills 0" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Plugins 3" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "All" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Skills" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Plugins" })).toBeTruthy();
+    expect(screen.queryByText("0")).toBeNull();
+    expect(screen.queryByText("3")).toBeNull();
   });
 
   it("clears the active search query from the input", async () => {
@@ -186,7 +188,7 @@ describe("search route", () => {
     });
   });
 
-  it("keeps inactive tab counts honest while rendering the active tab", async () => {
+  it("keeps inactive tab labels visible while rendering the active tab", async () => {
     searchMock = { q: "weather", type: "skills" };
     useUnifiedSearchMock.mockReturnValue({
       results: [
@@ -234,13 +236,13 @@ describe("search route", () => {
 
     render(<Component />);
 
-    expect(screen.getByRole("button", { name: "All 2" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Plugins 1" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "All" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Plugins" })).toBeTruthy();
     expect(screen.getByText("weather")).toBeTruthy();
     expect(screen.queryByText("weather-plugin")).toBeNull();
   });
 
-  it("marks tab counts as partial when more results are available", async () => {
+  it("does not render partial count labels when more results are available", async () => {
     useUnifiedSearchMock.mockReturnValue({
       results: [],
       skillResults: [],
@@ -256,8 +258,9 @@ describe("search route", () => {
 
     render(<Component />);
 
-    expect(screen.getByRole("button", { name: "All 25+" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Plugins 25+" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "All" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Plugins" })).toBeTruthy();
+    expect(screen.queryByText("25+")).toBeNull();
   });
 
   it("does not show load more only because the current page is full", async () => {

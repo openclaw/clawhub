@@ -104,18 +104,6 @@ function sortPluginSearchItems(items: PackageListItem[], sort: PluginSort) {
   return sorted;
 }
 
-function formatPluginHeadingCount(count: number, hasNextPage: boolean, hasPreviousPage: boolean) {
-  if (hasPreviousPage) return `${count} shown`;
-  if (hasNextPage) return `${count}+`;
-  return String(count);
-}
-
-function formatPluginResultsCount(count: number, hasNextPage: boolean, hasPreviousPage: boolean) {
-  if (hasPreviousPage) return `${count} result${count === 1 ? "" : "s"} shown`;
-  if (hasNextPage) return `${count}+ results`;
-  return `${count} result${count === 1 ? "" : "s"}`;
-}
-
 export const Route = createFileRoute("/plugins/")({
   pendingComponent: PluginsIndexPending,
   validateSearch: (search): PluginSearchState => ({
@@ -224,10 +212,23 @@ function PluginsIndexPending() {
           Filters
         </button>
         <h1 className="browse-title">Plugins</h1>
+        <div className="browse-view-toggle">
+          <button className="browse-view-btn is-active" type="button" disabled>
+            List
+          </button>
+          <button className="browse-view-btn" type="button" disabled>
+            Grid
+          </button>
+        </div>
       </div>
       <div className="browse-page-search">
         <Search size={15} className="navbar-search-icon" aria-hidden="true" />
-        <input className="browse-search-input" placeholder="Search plugins..." disabled />
+        <input
+          className="browse-search-input"
+          aria-label="Search plugins"
+          placeholder="Search plugins..."
+          disabled
+        />
       </div>
       <div className="browse-layout">
         <BrowseSidebar
@@ -250,14 +251,6 @@ function PluginsIndexPending() {
         <div className="browse-results">
           <div className="browse-results-toolbar">
             <span className="browse-results-count">Loading results</span>
-            <div className="browse-view-toggle">
-              <button className="browse-view-btn is-active" type="button" disabled>
-                List
-              </button>
-              <button className="browse-view-btn" type="button" disabled>
-                Grid
-              </button>
-            </div>
           </div>
           <BrowseResultsSkeleton />
         </div>
@@ -299,10 +292,6 @@ function PluginsIndex() {
     () => (hasQuery ? sortPluginSearchItems(items, activeSort as PluginSort) : items),
     [activeSort, hasQuery, items],
   );
-  const hasPreviousPage = Boolean(!hasQuery && search.cursor);
-  const hasNextPage = Boolean(!hasQuery && nextCursor);
-  const headingCount = formatPluginHeadingCount(visibleItems.length, hasNextPage, hasPreviousPage);
-  const resultsCount = formatPluginResultsCount(visibleItems.length, hasNextPage, hasPreviousPage);
 
   const sortOptions = useMemo(() => {
     if (hasQuery) {
@@ -450,14 +439,29 @@ function PluginsIndex() {
         >
           Filters
         </button>
-        <h1 className="browse-title">
-          Plugins <span className="browse-count">{headingCount}</span>
-        </h1>
+        <h1 className="browse-title">Plugins</h1>
+        <div className="browse-view-toggle">
+          <button
+            className={`browse-view-btn${view === "list" ? " is-active" : ""}`}
+            type="button"
+            onClick={view === "grid" ? handleToggleView : undefined}
+          >
+            List
+          </button>
+          <button
+            className={`browse-view-btn${view === "grid" ? " is-active" : ""}`}
+            type="button"
+            onClick={view === "list" ? handleToggleView : undefined}
+          >
+            Grid
+          </button>
+        </div>
       </div>
       <form className="browse-page-search" onSubmit={handleSearch}>
         <Search size={15} className="navbar-search-icon" aria-hidden="true" />
         <input
           className="browse-search-input"
+          aria-label="Search plugins"
           placeholder="Search plugins..."
           value={query}
           onChange={(event) => setQuery(event.target.value)}
@@ -479,34 +483,17 @@ function PluginsIndex() {
         />
         <div className="browse-results">
           <div className="browse-results-toolbar">
-            <span className="browse-results-count">
-              {resultsCount}
-              {hasQuery ||
-              search.category ||
-              search.official ||
-              search.executesCode ||
-              search.featured ? (
+            {hasQuery ||
+            search.category ||
+            search.official ||
+            search.executesCode ||
+            search.featured ? (
+              <span className="browse-results-count">
                 <button className="browse-clear-btn" type="button" onClick={handleClear}>
                   Clear
                 </button>
-              ) : null}
-            </span>
-            <div className="browse-view-toggle">
-              <button
-                className={`browse-view-btn${view === "list" ? " is-active" : ""}`}
-                type="button"
-                onClick={view === "grid" ? handleToggleView : undefined}
-              >
-                List
-              </button>
-              <button
-                className={`browse-view-btn${view === "grid" ? " is-active" : ""}`}
-                type="button"
-                onClick={view === "list" ? handleToggleView : undefined}
-              >
-                Grid
-              </button>
-            </div>
+              </span>
+            ) : null}
           </div>
 
           {apiError ? (

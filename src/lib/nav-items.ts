@@ -70,7 +70,7 @@ const PUBLISHERS_SEARCH = { q: undefined } as const;
 
 // ---------------------------------------------------------------------------
 // Primary nav items (desktop tabs row + mobile dropdown top section)
-// These map to the "content-type" tabs: Skills | Plugins | Souls
+// These map to the "content-type" tabs: Skills | Plugins | Publishers | Souls
 // In soul-mode the order is: ClawHub (external), Souls
 // In skills-mode: Skills, Plugins, Souls
 // ---------------------------------------------------------------------------
@@ -98,6 +98,15 @@ export const PRIMARY_NAV_ITEMS: NavItem[] = [
     activePathPrefixes: ["/plugin/"],
   },
   {
+    label: "Publishers",
+    to: "/publishers",
+    search: PUBLISHERS_SEARCH,
+    authRequired: false,
+    staffOnly: false,
+    soulModeOnly: false,
+    soulModeHide: true,
+  },
+  {
     label: "Souls",
     to: "/souls",
     search: SOULS_SEARCH,
@@ -116,15 +125,6 @@ export const PRIMARY_NAV_ITEMS: NavItem[] = [
 // ---------------------------------------------------------------------------
 
 export const SECONDARY_NAV_ITEMS: NavItem[] = [
-  {
-    label: "Publishers",
-    to: "/publishers",
-    search: PUBLISHERS_SEARCH,
-    authRequired: false,
-    staffOnly: false,
-    soulModeOnly: false,
-    soulModeHide: true,
-  },
   {
     label: "Docs",
     href: "https://docs.openclaw.ai/clawhub/",

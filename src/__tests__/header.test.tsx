@@ -236,6 +236,8 @@ describe("Header", () => {
     expect(screen.queryByText("Dashboard")).toBeNull();
     expect(screen.queryByText("Manage")).toBeNull();
     expect(screen.getByPlaceholderText("Search skills and plugins")).toBeTruthy();
+    expect(document.querySelector(".navbar-tabs")?.textContent).toContain("Publishers");
+    expect(document.querySelector(".navbar-tabs-secondary")?.textContent).toBe("Docs");
 
     fireEvent.click(screen.getByRole("button", { name: /Cycle theme mode/i }));
     expect(setModeMock).toHaveBeenCalledWith("light");
@@ -435,8 +437,8 @@ describe("Header", () => {
       .map((element) => element.textContent?.trim())
       .filter((label): label is string => Boolean(label));
 
-    expect(labels.slice(0, 2)).toEqual(["Home", "Skills"]);
-    expect(labels.slice(3, 5)).toEqual(["Publishers", "Docs"]);
+    expect(labels.slice(0, 4)).toEqual(["Home", "Skills", "Plugins", "Publishers"]);
+    expect(labels[4]).toBe("Docs");
   });
 
   it("links starred skills from the signed-in avatar menu", () => {

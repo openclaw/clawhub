@@ -368,8 +368,8 @@ describe("plugins route", () => {
 
     render(<Component />);
 
-    expect(screen.getByRole("heading", { name: "Plugins 1+" })).toBeTruthy();
-    expect(screen.getByText("1+ results")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Plugins" })).toBeTruthy();
+    expect(screen.queryByText("1+ results")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Next page" }));
 
@@ -409,7 +409,7 @@ describe("plugins route", () => {
     expect(screen.getByText("1.2k")).toBeTruthy();
   });
 
-  it("uses singular shown text on non-first browse pages", async () => {
+  it("keeps plugin count copy hidden on non-first browse pages", async () => {
     searchMock = { cursor: "cursor:current" };
     loaderDataMock = {
       items: [
@@ -433,11 +433,12 @@ describe("plugins route", () => {
 
     render(<Component />);
 
-    expect(screen.getByRole("heading", { name: "Plugins 1 shown" })).toBeTruthy();
-    expect(screen.getByText("1 result shown")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Plugins" })).toBeTruthy();
+    expect(screen.queryByText("1 shown")).toBeNull();
+    expect(screen.queryByText("1 result shown")).toBeNull();
   });
 
-  it("renders a title count and switches to grid view", async () => {
+  it("renders a label-only title and switches to grid view", async () => {
     loaderDataMock = {
       items: [
         {
@@ -460,7 +461,12 @@ describe("plugins route", () => {
 
     render(<Component />);
 
-    expect(screen.getByRole("heading", { name: "Plugins 1" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Plugins" })).toBeTruthy();
+    expect(screen.queryByText("1")).toBeNull();
+    expect(screen.getByRole("button", { name: "List" }).closest(".browse-page-header")).toBe(
+      document.querySelector(".browse-page-header"),
+    );
+    expect(document.querySelector(".browse-results-toolbar .browse-view-toggle")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Grid" }));
 

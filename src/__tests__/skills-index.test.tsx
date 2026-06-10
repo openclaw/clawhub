@@ -86,6 +86,59 @@ describe("SkillsIndex", () => {
     render(<SkillsIndex />);
     await act(async () => {});
     expect(screen.getByText("No skills found")).toBeTruthy();
+    expect(screen.queryByText(/\d+ loaded/)).toBeNull();
+  });
+
+  it("does not render the total skills count in the page title", async () => {
+    convexReactMocks.useQuery.mockReturnValue(0);
+
+    render(<SkillsIndex />);
+    await act(async () => {});
+
+    expect(screen.getByRole("heading", { name: "Skills" })).toBeTruthy();
+    expect(screen.queryByText("0")).toBeNull();
+  });
+
+  it("does not render a browse count when more pages exist", async () => {
+    convexHttpMock.query.mockResolvedValue({
+      page: [makeListResult("skill-0", "Skill 0")],
+      hasMore: true,
+      nextCursor: "cursor-1",
+    });
+
+    render(<SkillsIndex />);
+    await act(async () => {});
+
+    expect(screen.getByText("Skill 0")).toBeTruthy();
+    expect(screen.queryByText(/\d+ loaded/)).toBeNull();
+  });
+
+  it("keeps browse counts hidden after loading another page", async () => {
+    vi.stubGlobal("IntersectionObserver", undefined);
+    convexHttpMock.query
+      .mockResolvedValueOnce({
+        page: [makeListResult("skill-0", "Skill 0")],
+        hasMore: true,
+        nextCursor: "cursor-1",
+      })
+      .mockResolvedValueOnce({
+        page: [makeListResult("skill-1", "Skill 1")],
+        hasMore: false,
+        nextCursor: null,
+      });
+
+    render(<SkillsIndex />);
+    await act(async () => {});
+
+    expect(screen.getByText("Skill 0")).toBeTruthy();
+    expect(screen.queryByText(/\d+ loaded/)).toBeNull();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    });
+
+    expect(screen.getByText("Skill 1")).toBeTruthy();
+    expect(screen.queryByText(/\d+ loaded/)).toBeNull();
   });
 
   it("does not render the publish CTA on the skills browse page", async () => {
@@ -101,8 +154,8 @@ describe("SkillsIndex", () => {
     convexHttpMock.query.mockReturnValue(new Promise(() => {}));
     render(<SkillsIndex />);
     await act(async () => {});
-    // Results area shows skeleton or dash while loading
-    expect(screen.getByText("\u2014")).toBeTruthy();
+    // Results area shows skeletons while loading, without count copy.
+    expect(screen.queryByText(/\d+ loaded/)).toBeNull();
     expect(screen.getByRole("status", { name: "Loading results" })).toBeTruthy();
     expect(screen.queryByText("No skills found")).toBeNull();
   });
@@ -118,6 +171,19 @@ describe("SkillsIndex", () => {
     };
     expect(lastCall.replace).toBe(true);
     expect(lastCall.search({})).toEqual({ view: "grid" });
+  });
+
+  it("renders the view toggle above the skills search input", async () => {
+    render(<SkillsIndex />);
+    await act(async () => {});
+
+    const listButton = screen.getByRole("button", { name: "List" });
+    const searchInput = screen.getByPlaceholderText("Search skills...");
+
+    expect(listButton.closest(".browse-page-header")).not.toBeNull();
+    expect(
+      Boolean(listButton.compareDocumentPosition(searchInput) & Node.DOCUMENT_POSITION_FOLLOWING),
+    ).toBe(true);
   });
 
   it("keeps legacy cards URLs compatible with the grid view", async () => {
@@ -150,6 +216,7 @@ describe("SkillsIndex", () => {
 
     // Should show empty state, not loading
     expect(screen.getByText("No skills found")).toBeTruthy();
+    expect(screen.queryByText(/\d+ loaded/)).toBeNull();
     expect(screen.queryByText(/Loading skills/)).toBeNull();
   });
 
@@ -315,6 +382,8 @@ describe("SkillsIndex", () => {
       await vi.runAllTimersAsync();
     });
 
+    expect(screen.queryByText(/\d+ loaded/)).toBeNull();
+
     const loadMoreButton = screen.getByRole("button", { name: "Load more" });
     await act(async () => {
       fireEvent.click(loadMoreButton);
@@ -326,6 +395,7 @@ describe("SkillsIndex", () => {
       highlightedOnly: false,
       limit: 50,
     });
+    expect(screen.queryByText(/\d+ loaded/)).toBeNull();
   });
 
   it("sorts search results by stars and breaks ties by updatedAt", async () => {
@@ -407,6 +477,8 @@ describe("SkillsIndex", () => {
     );
     expect(screen.queryByText("Blockscout for Web3 Dev")).toBeNull();
     expect(screen.getByText("Developer Utils")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Clear" })).toBeTruthy();
+    expect(screen.queryByText(/\d+ loaded/)).toBeNull();
   });
 
   it("does not render the warning filter", async () => {
