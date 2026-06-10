@@ -389,6 +389,7 @@ describe("telemetry install events", () => {
       { _id: "installTelemetryDedupes:two" },
     ];
     const deleteDoc = vi.fn();
+    const take = vi.fn(async () => stale);
     const ctx = {
       db: {
         query: vi.fn((table: string) => ({
@@ -399,7 +400,7 @@ describe("telemetry install events", () => {
               const builder = makeIndexBuilder();
               callback(builder);
               expect(builder.lt).toHaveBeenCalledWith("dayStart", 6 * 86_400_000);
-              return { take: async () => stale };
+              return { take };
             },
           ),
         })),
@@ -410,6 +411,7 @@ describe("telemetry install events", () => {
 
     const result = await pruneInstallTelemetryDedupesHandler(ctx);
 
+    expect(take).toHaveBeenCalledWith(200);
     expect(result).toEqual({ deleted: 2, hasMore: false });
     expect(deleteDoc).toHaveBeenCalledWith("installTelemetryDedupes:one");
     expect(deleteDoc).toHaveBeenCalledWith("installTelemetryDedupes:two");

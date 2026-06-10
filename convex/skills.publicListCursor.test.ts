@@ -212,6 +212,28 @@ describe("public skill list deterministic cursors", () => {
     });
   });
 
+  it("uses the non-suspicious install-rank index when recommended stats are complete", async () => {
+    const { ctx, withIndex } = makeCompleteRecommendedRankStatsCtx();
+
+    await listPublicPageV4Handler(ctx, {
+      numItems: 10,
+      sort: "recommended",
+      nonSuspiciousOnly: true,
+    });
+
+    expect(withIndex.mock.calls.map(([indexName]) => indexName)).toEqual([
+      "by_nonsuspicious_stars",
+      "by_nonsuspicious_installs",
+    ]);
+    expect(getPageMock).toHaveBeenCalledTimes(1);
+    expect(getPageMock.mock.calls[0]?.[1]).toMatchObject({
+      index: "by_nonsuspicious_recommended_installs_rank",
+      startIndexKey: [undefined, false],
+      endIndexKey: [undefined, false],
+      startInclusive: true,
+    });
+  });
+
   it("ignores stale legacy cursors that are longer than the selected index", async () => {
     const staleDownloadsCursor = legacyCursor([{ __undef: 1 }, false, 100, 200]);
 
