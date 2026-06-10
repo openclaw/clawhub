@@ -15,10 +15,17 @@ vi.mock("./_generated/api", () => ({
       processSkillStatEventsAction: Symbol("processSkillStatEventsAction"),
       processSkillStatEventsInternal: Symbol("processSkillStatEventsInternal"),
     },
+    telemetry: {
+      pruneInstallTelemetryDedupesInternal: Symbol("pruneInstallTelemetryDedupesInternal"),
+    },
   },
 }));
 
-const { reportCliInstallInternal } = await import("./telemetry");
+const {
+  clearUserTelemetryInternal,
+  pruneInstallTelemetryDedupesInternal,
+  reportCliInstallInternal,
+} = await import("./telemetry");
 
 const reportCliInstallHandler = (
   reportCliInstallInternal as unknown as {
@@ -35,9 +42,25 @@ const reportCliInstallHandler = (
   }
 )._handler;
 
+const pruneInstallTelemetryDedupesHandler = (
+  pruneInstallTelemetryDedupesInternal as unknown as {
+    _handler: (
+      ctx: unknown,
+      args: Record<string, never>,
+    ) => Promise<{ deleted: number; hasMore: boolean }>;
+  }
+)._handler;
+
+const clearUserTelemetryHandler = (
+  clearUserTelemetryInternal as unknown as {
+    _handler: (ctx: unknown, args: { userId: string }) => Promise<void>;
+  }
+)._handler;
+
 function makeIndexBuilder() {
   const builder = {
     eq: vi.fn(() => builder),
+    lt: vi.fn(() => builder),
   };
   return builder;
 }
@@ -48,6 +71,7 @@ describe("telemetry install events", () => {
   });
 
   it("records the first CLI install as an install stat event", async () => {
+    vi.setSystemTime(86_500_000);
     const skill = { _id: "skills:demo", slug: "demo" };
     const insert = vi.fn();
     const ctx = {
@@ -94,6 +118,8 @@ describe("telemetry install events", () => {
         userId: "users:one",
         skillId: "skills:demo",
         rootKey: "root",
+        dayStart: 86_400_000,
+        createdAt: 86_500_000,
       }),
     );
     expect(insert).toHaveBeenCalledWith(
@@ -274,5 +300,130 @@ describe("telemetry install events", () => {
 
     expect(insert).not.toHaveBeenCalled();
     expect(patch).not.toHaveBeenCalled();
+  });
+
+  it("prunes stale install telemetry dedupe rows by day bucket", async () => {
+    vi.setSystemTime(15 * 86_400_000 + 123);
+    const delete_ = vi.fn();
+    const take = vi.fn(async () => [
+      { _id: "installTelemetryDedupes:one" },
+      { _id: "installTelemetryDedupes:two" },
+    ]);
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn(
+            (indexName: string, callback: (q: ReturnType<typeof makeIndexBuilder>) => unknown) => {
+              const builder = makeIndexBuilder();
+              callback(builder);
+              expect(table).toBe("installTelemetryDedupes");
+              expect(indexName).toBe("by_day");
+              expect(builder.lt).toHaveBeenCalledWith("dayStart", 86_400_000);
+              return { take };
+            },
+          ),
+        })),
+        delete: delete_,
+      },
+      scheduler: { runAfter: vi.fn() },
+    };
+
+    const result = await pruneInstallTelemetryDedupesHandler(ctx, {});
+
+    expect(take).toHaveBeenCalledWith(200);
+    expect(delete_).toHaveBeenCalledWith("installTelemetryDedupes:one");
+    expect(delete_).toHaveBeenCalledWith("installTelemetryDedupes:two");
+    expect(ctx.scheduler.runAfter).not.toHaveBeenCalled();
+    expect(result).toEqual({ deleted: 2, hasMore: false });
+  });
+
+  it("reschedules install telemetry dedupe pruning when one bounded batch fills", async () => {
+    const rows = Array.from({ length: 200 }, (_, index) => ({
+      _id: `installTelemetryDedupes:${index}`,
+    }));
+    const delete_ = vi.fn();
+    const runAfter = vi.fn();
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          withIndex: vi.fn(
+            (_indexName: string, callback: (q: ReturnType<typeof makeIndexBuilder>) => unknown) => {
+              callback(makeIndexBuilder());
+              return { take: vi.fn(async () => rows) };
+            },
+          ),
+        })),
+        delete: delete_,
+      },
+      scheduler: { runAfter },
+    };
+
+    const result = await pruneInstallTelemetryDedupesHandler(ctx, {});
+
+    expect(delete_).toHaveBeenCalledTimes(200);
+    expect(runAfter).toHaveBeenCalledTimes(1);
+    expect(runAfter.mock.calls[0]?.[0]).toBe(0);
+    expect(typeof runAfter.mock.calls[0]?.[1]).toBe("symbol");
+    expect(runAfter.mock.calls[0]?.[2]).toEqual({});
+    expect(result).toEqual({ deleted: 200, hasMore: true });
+  });
+
+  it("clears install telemetry dedupe rows when clearing user telemetry", async () => {
+    const delete_ = vi.fn();
+    const insert = vi.fn();
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => (id === "skills:demo" ? { _id: "skills:demo" } : null)),
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn(
+            (indexName: string, callback: (q: ReturnType<typeof makeIndexBuilder>) => unknown) => {
+              const builder = makeIndexBuilder();
+              callback(builder);
+              if (table === "userSkillInstalls" && indexName === "by_user") {
+                return {
+                  take: async () => [
+                    {
+                      _id: "userSkillInstalls:one",
+                      skillId: "skills:demo",
+                      activeRoots: 1,
+                    },
+                  ],
+                };
+              }
+              if (table === "userSyncRoots" && indexName === "by_user") {
+                return { take: async () => [{ _id: "userSyncRoots:one" }] };
+              }
+              if (table === "userSkillRootInstalls" && indexName === "by_user") {
+                return { take: async () => [{ _id: "userSkillRootInstalls:one" }] };
+              }
+              if (table === "installTelemetryDedupes" && indexName === "by_user") {
+                expect(builder.eq).toHaveBeenCalledWith("userId", "users:one");
+                return {
+                  take: async () => [
+                    { _id: "installTelemetryDedupes:one" },
+                    { _id: "installTelemetryDedupes:two" },
+                  ],
+                };
+              }
+              throw new Error(`unexpected query ${table}.${indexName}`);
+            },
+          ),
+        })),
+        insert,
+        delete: delete_,
+      },
+    };
+
+    await clearUserTelemetryHandler(ctx, { userId: "users:one" });
+
+    expect(insert).toHaveBeenCalledWith(
+      "skillStatEvents",
+      expect.objectContaining({
+        skillId: "skills:demo",
+        kind: "install_clear",
+      }),
+    );
+    expect(delete_).toHaveBeenCalledWith("installTelemetryDedupes:one");
+    expect(delete_).toHaveBeenCalledWith("installTelemetryDedupes:two");
   });
 });

@@ -58,4 +58,15 @@ describe("crons", () => {
       {},
     );
   });
+
+  it("prunes install telemetry dedupe rows daily", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "install-telemetry-dedupe-prune",
+      { hours: 24 },
+      expect.any(Symbol),
+      {},
+    );
+  });
 });
