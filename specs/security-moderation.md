@@ -238,6 +238,19 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   stored artifact entries instead of metadata-only `package.json` / `openclaw.plugin.json` rows.
   VirusTotal still scans the exact uploaded `.tgz`; ClawHub also retains the stored ClawPack artifact
   so scanner workers can download/extract it for artifact-backed review.
+- Historical ClawPack releases whose stored file rows are shorter than the artifact `npmFileCount`
+  are production data repair candidates, not normal scan-backfill work. Operators repair them through
+  the explicit `packages:repairHistoricalClawPackReleaseFiles` migration action:
+  - default to `dryRun: true` and inspect the returned `logLines`, candidate samples, parsed
+    artifact file counts, hashes, and resume `cursor` before writing.
+  - target narrowly with `releaseId`, or with `packageName` and optional `version`, before running
+    an all-release pass.
+  - pass `dryRun: false` plus `confirmation: "repair-historical-clawpack-files"` before any row
+    rewrite; the action replaces `release.files`, recomputes `integritySha256`, resets stale scan
+    analysis, and queues fresh static/Codex package scans for repaired releases.
+  - resume incomplete runs by passing the returned `cursor`; set `scheduleNext: true` only when an
+    operator intentionally wants the action to enqueue the next batch.
+    The ordinary package scan backfill must not schedule this repair implicitly.
 - Packages cache VirusTotal undetected-only engine results as clean VT telemetry.
   ClawHub does not request or consume VirusTotal AI/code-insight results; VT is
   engine/vendor telemetry only.
