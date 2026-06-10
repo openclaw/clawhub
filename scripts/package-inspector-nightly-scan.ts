@@ -64,7 +64,7 @@ const dryRunMaxBatches = Math.max(
 const inspectorVersion =
   process.env.PLUGIN_INSPECTOR_VERSION ?? resolveBundledPluginInspectorVersion();
 const artifactRoot =
-  process.env.PLUGIN_INSPECTOR_ARTIFACT_DIR ?? "plugin-inspector-nightly-reports";
+  process.env.PLUGIN_INSPECTOR_ARTIFACT_DIR ?? "plugin-inspector-bulk-scan-reports";
 const repoRoot = path.resolve(process.env.GITHUB_WORKSPACE ?? process.cwd());
 const clawhubCliEntry = path.join(repoRoot, "packages", "clawhub", "src", "cli.ts");
 
@@ -153,9 +153,7 @@ do {
       hadWorkerFailure = true;
       const message = error instanceof Error ? error.message : String(error);
       await writeFile(path.join(reportDir, "error.txt"), message);
-      console.error(
-        `Nightly Plugin Inspector worker failed for ${item.packageName}@${item.version}`,
-      );
+      console.error(`Plugin Inspector bulk scan failed for ${item.packageName}@${item.version}`);
       console.error(message);
     } finally {
       await rm(workRoot, { recursive: true, force: true });
@@ -388,7 +386,7 @@ function summarizeImpact(args: {
 
 function renderImpactMarkdown(summary: ReturnType<typeof summarizeImpact>) {
   const lines = [
-    "# Plugin Inspector Nightly Dry Run",
+    "# Plugin Inspector Bulk Scan Dry Run",
     "",
     `- Generated: ${summary.generatedAt}`,
     `- Site: ${summary.siteUrl}`,
