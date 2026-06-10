@@ -348,81 +348,82 @@ describe("telemetry install events", () => {
     expect(deleteDoc).toHaveBeenCalledWith("installTelemetryDedupes:one");
   });
 
-  it("reschedules telemetry clear when an install batch fills", async () => {
-    const installs = Array.from({ length: 5_000 }, (_, index) => ({
-      _id: `installs:${index}`,
-      skillId: `skills:${index}`,
-    }));
-    const runAfter = vi.fn();
-    const ctx = {
-      db: {
-        query: vi.fn((table: string) => ({
-          withIndex: vi.fn(
-            (indexName: string, callback: (q: ReturnType<typeof makeIndexBuilder>) => unknown) => {
-              callback(makeIndexBuilder());
-              if (table === "userSkillInstalls" && indexName === "by_user_lastSeenAt") {
-                return { take: async () => installs };
-              }
-              throw new Error(`unexpected query ${table}.${indexName}`);
-            },
-          ),
-        })),
-        get: vi.fn(async (id: string) => ({ _id: id })),
-        insert: vi.fn(),
-        delete: vi.fn(),
-      },
-      scheduler: { runAfter },
-    };
+  it.each([
+    {
+      table: "userSkillInstalls",
+      indexName: "by_user_lastSeenAt",
+      batchSize: 5_000,
+      laterTables: ["userSyncRoots", "userSkillRootInstalls", "installTelemetryDedupes"],
+    },
+    {
+      table: "userSyncRoots",
+      indexName: "by_user_lastSeenAt",
+      batchSize: 5_000,
+      laterTables: ["userSkillRootInstalls", "installTelemetryDedupes"],
+    },
+    {
+      table: "userSkillRootInstalls",
+      indexName: "by_user_lastSeenAt",
+      batchSize: 10_000,
+      laterTables: ["installTelemetryDedupes"],
+    },
+    {
+      table: "installTelemetryDedupes",
+      indexName: "by_user_createdAt",
+      batchSize: 10_000,
+      laterTables: [],
+    },
+  ])(
+    "reschedules user telemetry clearing after a full $table batch before reading later tables",
+    async ({ table, indexName, batchSize, laterTables }) => {
+      const rows = Array.from({ length: batchSize }, (_, index) => ({
+        _id: `${table}:${index}`,
+        skillId: "skills:demo",
+        activeRoots: 1,
+      }));
+      const queriedTables: string[] = [];
+      const deleteDoc = vi.fn();
+      const runAfter = vi.fn();
+      const ctx = {
+        db: {
+          get: vi.fn(async () => ({ _id: "skills:demo" })),
+          query: vi.fn((queriedTable: string) => {
+            queriedTables.push(queriedTable);
+            return {
+              withIndex: vi.fn(
+                (
+                  actualIndexName: string,
+                  callback: (q: ReturnType<typeof makeIndexBuilder>) => unknown,
+                ) => {
+                  if (queriedTable === table) {
+                    expect(actualIndexName).toBe(indexName);
+                  }
+                  callback(makeIndexBuilder());
+                  return {
+                    take: async () => (queriedTable === table ? rows : []),
+                  };
+                },
+              ),
+            };
+          }),
+          insert: vi.fn(),
+          delete: deleteDoc,
+        },
+        scheduler: { runAfter },
+      };
 
-    await clearUserTelemetryHandler(ctx, { userId: "users:one", clearStartedAt: 123 });
+      await clearUserTelemetryHandler(ctx, { userId: "users:one", clearStartedAt: 123 });
 
-    expect(runAfter).toHaveBeenCalledWith(0, telemetryRefs.clearUserTelemetryInternal, {
-      userId: "users:one",
-      clearStartedAt: 123,
-    });
-  });
-
-  it("reschedules telemetry clear when a dedupe batch fills", async () => {
-    const dedupes = Array.from({ length: 10_000 }, (_, index) => ({
-      _id: `installTelemetryDedupes:${index}`,
-    }));
-    const runAfter = vi.fn();
-    const ctx = {
-      db: {
-        query: vi.fn((table: string) => ({
-          withIndex: vi.fn(
-            (indexName: string, callback: (q: ReturnType<typeof makeIndexBuilder>) => unknown) => {
-              callback(makeIndexBuilder());
-              if (table === "userSkillInstalls" && indexName === "by_user_lastSeenAt") {
-                return { take: async () => [] };
-              }
-              if (table === "userSyncRoots" && indexName === "by_user_lastSeenAt") {
-                return { take: async () => [] };
-              }
-              if (table === "userSkillRootInstalls" && indexName === "by_user_lastSeenAt") {
-                return { take: async () => [] };
-              }
-              if (table === "installTelemetryDedupes" && indexName === "by_user_createdAt") {
-                return { take: async () => dedupes };
-              }
-              throw new Error(`unexpected query ${table}.${indexName}`);
-            },
-          ),
-        })),
-        get: vi.fn(),
-        insert: vi.fn(),
-        delete: vi.fn(),
-      },
-      scheduler: { runAfter },
-    };
-
-    await clearUserTelemetryHandler(ctx, { userId: "users:one", clearStartedAt: 123 });
-
-    expect(runAfter).toHaveBeenCalledWith(0, telemetryRefs.clearUserTelemetryInternal, {
-      userId: "users:one",
-      clearStartedAt: 123,
-    });
-  });
+      expect(deleteDoc).toHaveBeenCalledTimes(batchSize);
+      expect(runAfter).toHaveBeenCalledWith(0, telemetryRefs.clearUserTelemetryInternal, {
+        userId: "users:one",
+        clearStartedAt: 123,
+      });
+      for (const laterTable of laterTables) {
+        expect(queriedTables).not.toContain(laterTable);
+      }
+    },
+  );
 
   it("prunes stale install telemetry dedupe rows by day bucket", async () => {
     vi.setSystemTime(20 * 86_400_000);
