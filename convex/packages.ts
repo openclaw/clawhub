@@ -1191,7 +1191,7 @@ async function toDashboardPackageListItem(
 ): Promise<DashboardPackageListItem | null> {
   if (pkg.softDeletedAt) return null;
   const latestRelease = pkg.latestReleaseId ? await ctx.db.get(pkg.latestReleaseId) : null;
-  const inspectorWarningCount = await countPackageInspectorFindings(ctx, pkg._id);
+  const inspectorWarningCount = await countPackageInspectorFindings(ctx, pkg.latestReleaseId);
   return {
     _id: pkg._id,
     name: pkg.name,
@@ -1225,12 +1225,25 @@ async function toDashboardPackageListItem(
   };
 }
 
-async function countPackageInspectorFindings(ctx: DbReaderCtx, packageId: Id<"packages">) {
-  const warnings = await ctx.db
+async function countPackageInspectorFindings(
+  ctx: DbReaderCtx,
+  latestReleaseId?: Id<"packageReleases">,
+) {
+  if (!latestReleaseId) return 0;
+  const findings = await listPackageInspectorFindingsForRelease(ctx, latestReleaseId, 101);
+  return findings.length > 100 ? 100 : findings.length;
+}
+
+async function listPackageInspectorFindingsForRelease(
+  ctx: DbReaderCtx,
+  releaseId: Id<"packageReleases">,
+  limit: number,
+) {
+  return await ctx.db
     .query("packageInspectorWarnings")
-    .withIndex("by_package_created", (q) => q.eq("packageId", packageId))
-    .take(101);
-  return warnings.length > 100 ? 100 : warnings.length;
+    .withIndex("by_release_created", (q) => q.eq("releaseId", releaseId))
+    .order("desc")
+    .take(limit);
 }
 
 async function listDashboardPackagesForOwnerPublisher(
@@ -2225,12 +2238,9 @@ export const listPackageInspectorFindingsPublic = query({
       if (!canManage) return [];
     }
 
+    if (!pkg.latestReleaseId) return [];
     const limit = Math.max(1, Math.min(args.limit ?? 50, 100));
-    const warnings = await ctx.db
-      .query("packageInspectorWarnings")
-      .withIndex("by_package_created", (q) => q.eq("packageId", pkg._id))
-      .order("desc")
-      .take(limit);
+    const warnings = await listPackageInspectorFindingsForRelease(ctx, pkg.latestReleaseId, limit);
 
     return warnings.map(toPublicPackageInspectorFinding);
   },
@@ -2252,11 +2262,9 @@ export const getPackageInspectorValidationSummaryPublic = query({
       };
     }
 
-    const findings = await ctx.db
-      .query("packageInspectorWarnings")
-      .withIndex("by_package_created", (q) => q.eq("packageId", pkg._id))
-      .order("desc")
-      .take(100);
+    const findings = pkg.latestReleaseId
+      ? await listPackageInspectorFindingsForRelease(ctx, pkg.latestReleaseId, 100)
+      : [];
     const errorFindings = findings.filter((finding) => {
       const kind =
         finding.findingKind ??
@@ -2290,12 +2298,9 @@ export const listPackageInspectorWarningsForManager = query({
       const canManage = await viewerCanManagePackageOwner(ctx, pkg, viewerUserId);
       if (!canManage) return [];
     }
+    if (!pkg.latestReleaseId) return [];
     const limit = Math.max(1, Math.min(args.limit ?? 50, 100));
-    const warnings = await ctx.db
-      .query("packageInspectorWarnings")
-      .withIndex("by_package_created", (q) => q.eq("packageId", pkg._id))
-      .order("desc")
-      .take(limit);
+    const warnings = await listPackageInspectorFindingsForRelease(ctx, pkg.latestReleaseId, limit);
     return warnings.map(toPublicPackageInspectorFinding);
   },
 });
