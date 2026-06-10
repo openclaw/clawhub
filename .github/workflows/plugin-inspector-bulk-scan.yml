@@ -24,9 +24,6 @@ on:
         description: "Merged commit SHA that triggered this scan, when dispatched automatically"
         required: false
         default: ""
-  # Nightly schedule disabled; keep workflow_dispatch available for manual and pin-bump scans.
-  # schedule:
-  #   - cron: "41 8 * * *"
 
 permissions:
   contents: read
