@@ -102,13 +102,6 @@ function SkillsHome() {
     });
   };
 
-  const handleSuggestion = (term: string) => {
-    void navigate({
-      to: "/search",
-      search: { q: term },
-    });
-  };
-
   // Format stat numbers
   const formatStat = (n: number | undefined): string => {
     if (!n) return "0";
@@ -494,37 +487,6 @@ function SkillsHome() {
               <span className="home-v2-search-go-label">Search</span> <ArrowRight size={16} />
             </button>
           </form>
-        </div>
-
-        <div className="home-v2-suggestions">
-          <button
-            type="button"
-            className="home-v2-suggestion"
-            onClick={() => handleSuggestion("self-improving agent")}
-          >
-            self-improving agent
-          </button>
-          <button
-            type="button"
-            className="home-v2-suggestion"
-            onClick={() => handleSuggestion("GitHub integration")}
-          >
-            GitHub integration
-          </button>
-          <button
-            type="button"
-            className="home-v2-suggestion"
-            onClick={() => handleSuggestion("security soul")}
-          >
-            security soul
-          </button>
-          <button
-            type="button"
-            className="home-v2-suggestion"
-            onClick={() => handleSuggestion("dashboard builder")}
-          >
-            dashboard builder
-          </button>
         </div>
       </section>
 
