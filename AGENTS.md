@@ -65,7 +65,6 @@ Specialized corpus, scanner, security-worker, UI proof, proof publishing, Crabbo
 - Screenshot proof MUST come from a real running ClawHub instance in a real browser. Do not use generated HTML mockups, synthetic terminal cards, or manually composed images as proof. For route/status/backend visibility bugs, run ClawHub locally with the relevant Convex code and fixture state, capture the actual browser page, and state the local URL and fixture used.
 - Before merging any PR, verify TypeScript cleanly with `bunx tsc -p packages/schema/tsconfig.json --noEmit` and `bunx tsc -p packages/clawhub/tsconfig.json --noEmit`; if Convex code changed, also run the repo typecheck path used by deploy so `bunx convex deploy` will not fail on `tsc`.
 - GitHub comments: for multiline `gh` comments/close messages, use `--body-file`, `--input`, or stdin/heredoc with real newlines; never pass literal `\\n` in shell strings.
-- Reject PRs that add skills into source code/repo content directly (for example under `skills/` or seed-only additions intended as published skills). Skills must be uploaded/published via CLI.
 - Repo-local developer skills under `.agents/skills/` are allowed only when they are ClawHub-specific, such as Convex, moderation, PR maintainer, or UI proof workflows. Keep generic shared skills such as `crabbox` and `autoreview` in the global `agent-skills` install, not this repo. Keep top-level `skills/` reserved for installed/published skill content and ignored by git.
 
 ## Production Release
