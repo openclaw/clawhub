@@ -1,9 +1,18 @@
 import { v } from "convex/values";
+import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { internalMutation, mutation } from "./functions";
 import { requireUser } from "./lib/access";
 import { insertStatEvent } from "./skillStatEvents";
+
+const DAY_MS = 86_400_000;
+const INSTALL_TELEMETRY_DEDUPE_RETENTION_MS = 14 * DAY_MS;
+const PRUNE_BATCH_SIZE = 200;
+const CLEAR_INSTALLS_BATCH_SIZE = 5_000;
+const CLEAR_ROOTS_BATCH_SIZE = 5_000;
+const CLEAR_ROOT_INSTALLS_BATCH_SIZE = 10_000;
+const CLEAR_DEDUPES_BATCH_SIZE = 10_000;
 
 export const reportCliInstallInternal = internalMutation({
   args: {
@@ -41,18 +50,43 @@ export const reportCliLegacyInstallBatchInternal = internalMutation({
   },
 });
 
+export const pruneInstallTelemetryDedupesInternal = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const cutoffDayStart = getDayStart(Date.now() - INSTALL_TELEMETRY_DEDUPE_RETENTION_MS);
+    const stale = await ctx.db
+      .query("installTelemetryDedupes")
+      .withIndex("by_day", (q) => q.lt("dayStart", cutoffDayStart))
+      .take(PRUNE_BATCH_SIZE);
+
+    for (const entry of stale) {
+      await ctx.db.delete(entry._id);
+    }
+
+    const hasMore = stale.length === PRUNE_BATCH_SIZE;
+    if (hasMore) {
+      await ctx.scheduler.runAfter(0, internal.telemetry.pruneInstallTelemetryDedupesInternal, {});
+    }
+
+    return { deleted: stale.length, hasMore };
+  },
+});
+
 export const clearMyTelemetry = mutation({
   args: {},
   handler: async (ctx) => {
     const { userId } = await requireUser(ctx);
-    await clearTelemetryForUser(ctx, { userId });
+    await clearTelemetryForUser(ctx, { userId, clearStartedAt: Date.now() });
   },
 });
 
 export const clearUserTelemetryInternal = internalMutation({
-  args: { userId: v.id("users") },
+  args: { userId: v.id("users"), clearStartedAt: v.optional(v.number()) },
   handler: async (ctx, args) => {
-    await clearTelemetryForUser(ctx, { userId: args.userId });
+    await clearTelemetryForUser(ctx, {
+      userId: args.userId,
+      clearStartedAt: args.clearStartedAt ?? Date.now(),
+    });
   },
 });
 
@@ -70,6 +104,13 @@ async function upsertUserSkillInstall(
   if (!skill || skill.softDeletedAt) return;
 
   const now = Date.now();
+  const duplicate = await markInstallTelemetrySeen(ctx, {
+    userId: params.userId,
+    skillId: skill._id,
+    now,
+  });
+  if (duplicate) return;
+
   const version = params.version?.trim() || undefined;
   const existing = await ctx.db
     .query("userSkillInstalls")
@@ -99,11 +140,16 @@ async function upsertUserSkillInstall(
   await insertStatEvent(ctx, { skillId: skill._id, kind: "install_new" });
 }
 
-async function clearTelemetryForUser(ctx: MutationCtx, params: { userId: Id<"users"> }) {
+async function clearTelemetryForUser(
+  ctx: MutationCtx,
+  params: { userId: Id<"users">; clearStartedAt: number },
+) {
   const installs = await ctx.db
     .query("userSkillInstalls")
-    .withIndex("by_user", (q) => q.eq("userId", params.userId))
-    .take(5000);
+    .withIndex("by_user_lastSeenAt", (q) =>
+      q.eq("userId", params.userId).lte("lastSeenAt", params.clearStartedAt),
+    )
+    .take(CLEAR_INSTALLS_BATCH_SIZE);
 
   for (const entry of installs) {
     const skill = await ctx.db.get(entry.skillId);
@@ -122,21 +168,91 @@ async function clearTelemetryForUser(ctx: MutationCtx, params: { userId: Id<"use
     });
     await ctx.db.delete(entry._id);
   }
+  if (installs.length === CLEAR_INSTALLS_BATCH_SIZE) {
+    await scheduleClearUserTelemetry(ctx, params.userId, params.clearStartedAt);
+    return;
+  }
 
   // Keep per-user privacy deletion complete until the global cleanup removes these tables.
   const roots = await ctx.db
     .query("userSyncRoots")
-    .withIndex("by_user", (q) => q.eq("userId", params.userId))
-    .take(5000);
+    .withIndex("by_user_lastSeenAt", (q) =>
+      q.eq("userId", params.userId).lte("lastSeenAt", params.clearStartedAt),
+    )
+    .take(CLEAR_ROOTS_BATCH_SIZE);
   for (const root of roots) {
     await ctx.db.delete(root._id);
+  }
+  if (roots.length === CLEAR_ROOTS_BATCH_SIZE) {
+    await scheduleClearUserTelemetry(ctx, params.userId, params.clearStartedAt);
+    return;
   }
 
   const rootInstalls = await ctx.db
     .query("userSkillRootInstalls")
-    .withIndex("by_user", (q) => q.eq("userId", params.userId))
-    .take(10000);
+    .withIndex("by_user_lastSeenAt", (q) =>
+      q.eq("userId", params.userId).lte("lastSeenAt", params.clearStartedAt),
+    )
+    .take(CLEAR_ROOT_INSTALLS_BATCH_SIZE);
   for (const entry of rootInstalls) {
     await ctx.db.delete(entry._id);
   }
+  if (rootInstalls.length === CLEAR_ROOT_INSTALLS_BATCH_SIZE) {
+    await scheduleClearUserTelemetry(ctx, params.userId, params.clearStartedAt);
+    return;
+  }
+
+  const dedupes = await ctx.db
+    .query("installTelemetryDedupes")
+    .withIndex("by_user_createdAt", (q) =>
+      q.eq("userId", params.userId).lte("createdAt", params.clearStartedAt),
+    )
+    .take(CLEAR_DEDUPES_BATCH_SIZE);
+  for (const entry of dedupes) {
+    await ctx.db.delete(entry._id);
+  }
+  if (dedupes.length === CLEAR_DEDUPES_BATCH_SIZE) {
+    await scheduleClearUserTelemetry(ctx, params.userId, params.clearStartedAt);
+  }
 }
+
+async function scheduleClearUserTelemetry(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  clearStartedAt: number,
+) {
+  await ctx.scheduler.runAfter(0, internal.telemetry.clearUserTelemetryInternal, {
+    userId,
+    clearStartedAt,
+  });
+}
+
+async function markInstallTelemetrySeen(
+  ctx: MutationCtx,
+  params: { userId: Id<"users">; skillId: Id<"skills">; now: number },
+) {
+  const dayStart = getDayStart(params.now);
+  const existing = await ctx.db
+    .query("installTelemetryDedupes")
+    .withIndex("by_user_skill_day", (q) =>
+      q.eq("userId", params.userId).eq("skillId", params.skillId).eq("dayStart", dayStart),
+    )
+    .unique();
+  if (existing) return true;
+
+  await ctx.db.insert("installTelemetryDedupes", {
+    userId: params.userId,
+    skillId: params.skillId,
+    dayStart,
+    createdAt: params.now,
+  });
+  return false;
+}
+
+function getDayStart(timestamp: number) {
+  return Math.floor(timestamp / DAY_MS) * DAY_MS;
+}
+
+export const __test = {
+  getDayStart,
+};

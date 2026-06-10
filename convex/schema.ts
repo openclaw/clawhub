@@ -1054,10 +1054,10 @@ const skillSearchDigest = defineTable({
     "statsInstallsAllTime",
     "updatedAt",
   ])
-  .index("by_active_recommended_rank", [
+  .index("by_active_recommended_installs_rank", [
     "softDeletedAt",
     "statsStars",
-    "statsDownloads",
+    "statsInstallsAllTime",
     "updatedAt",
   ])
   .index("by_active_recommended_score", ["softDeletedAt", "recommendedScore", "updatedAt"])
@@ -1094,11 +1094,11 @@ const skillSearchDigest = defineTable({
     "statsInstallsAllTime",
     "updatedAt",
   ])
-  .index("by_nonsuspicious_recommended_rank", [
+  .index("by_nonsuspicious_recommended_installs_rank", [
     "softDeletedAt",
     "isSuspicious",
     "statsStars",
-    "statsDownloads",
+    "statsInstallsAllTime",
     "updatedAt",
   ])
   .index("by_nonsuspicious_recommended_score", [
@@ -2450,6 +2450,18 @@ const packageInstallMetricDedupes = defineTable({
   ])
   .index("by_day", ["dayStart"]);
 
+const installTelemetryDedupes = defineTable({
+  userId: v.id("users"),
+  skillId: v.id("skills"),
+  dayStart: v.number(),
+  createdAt: v.number(),
+})
+  .index("by_user_skill_day", ["userId", "skillId", "dayStart"])
+  .index("by_user", ["userId"])
+  .index("by_user_createdAt", ["userId", "createdAt"])
+  .index("by_skill", ["skillId"])
+  .index("by_day", ["dayStart"]);
+
 const reservedSlugs = defineTable({
   slug: v.string(),
   originalOwnerUserId: v.id("users"),
@@ -2521,6 +2533,7 @@ const userSyncRoots = defineTable({
   expiredAt: v.optional(v.number()),
 })
   .index("by_user", ["userId"])
+  .index("by_user_lastSeenAt", ["userId", "lastSeenAt"])
   .index("by_user_root", ["userId", "rootId"]);
 
 const userSkillInstalls = defineTable({
@@ -2533,6 +2546,7 @@ const userSkillInstalls = defineTable({
   lastVersion: v.optional(v.string()),
 })
   .index("by_user", ["userId"])
+  .index("by_user_lastSeenAt", ["userId", "lastSeenAt"])
   .index("by_user_skill", ["userId", "skillId"])
   .index("by_skill", ["skillId"]);
 
@@ -2547,6 +2561,7 @@ const userSkillRootInstalls = defineTable({
   removedAt: v.optional(v.number()),
 })
   .index("by_user", ["userId"])
+  .index("by_user_lastSeenAt", ["userId", "lastSeenAt"])
   .index("by_user_root", ["userId", "rootId"])
   .index("by_user_root_skill", ["userId", "rootId", "skillId"])
   .index("by_user_skill", ["userId", "skillId"])
@@ -2640,6 +2655,7 @@ export default defineSchema({
   downloadDedupes,
   downloadMetricDedupes,
   packageInstallMetricDedupes,
+  installTelemetryDedupes,
   reservedSlugs,
   reservedHandles,
   githubBackupSyncState,

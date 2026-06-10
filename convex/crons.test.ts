@@ -44,6 +44,9 @@ vi.mock("./_generated/api", () => ({
     downloadMetrics: {
       pruneDownloadMetricDedupesInternal: Symbol("download-metric-dedupe-prune"),
     },
+    telemetry: {
+      pruneInstallTelemetryDedupesInternal: Symbol("install-telemetry-dedupe-prune"),
+    },
   },
 }));
 
