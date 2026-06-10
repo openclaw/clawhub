@@ -1,6 +1,7 @@
 import {
   ServerPackagePublishRequestSchema,
   derivePluginCategoryTags,
+  guessTextContentType,
   getPackageScopeOwnerMismatch,
   isPluginCategorySlug,
   parseArk,
@@ -45,7 +46,7 @@ import {
   readArtifactReportStatus,
   appendPackageModerationEventLog,
 } from "./lib/artifactModeration";
-import { sha256Hex } from "./lib/clawpack";
+import { parseClawPack, sha256Hex } from "./lib/clawpack";
 import { buildPackageInspectorFindingsEmail } from "./lib/emails";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
@@ -249,7 +250,9 @@ function isTrustedOpenClawPluginPackage(params: {
 const internalRefs = internal as unknown as {
   packages: {
     backfillPackageReleaseScansInternal: unknown;
+    repairClawPackReleaseFilesInternal: unknown;
     scanPackageReleaseStaticallyInternal: unknown;
+    replaceReleaseFilesAfterClawPackRepairInternal: unknown;
     insertReleaseInternal: unknown;
     getPackageByNameInternal: unknown;
     getTrustedPublisherByPackageIdInternal: unknown;
@@ -338,6 +341,38 @@ type PackageInspectorFinding = {
   fixture?: string;
   decision?: string;
 };
+
+type PackageReleaseFilePatch = Array<{
+  path: string;
+  size: number;
+  storageId: Id<"_storage">;
+  sha256: string;
+  contentType?: string;
+}>;
+
+function bytesToArrayBuffer(bytes: Uint8Array) {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy.buffer;
+}
+
+function inferClawPackEntryContentType(path: string) {
+  return guessTextContentType(path) ?? "application/octet-stream";
+}
+
+function needsClawPackReleaseFileRepair(
+  release: Pick<
+    Doc<"packageReleases">,
+    "artifactKind" | "clawpackStorageId" | "npmFileCount" | "files"
+  >,
+) {
+  return (
+    release.artifactKind === "npm-pack" &&
+    Boolean(release.clawpackStorageId) &&
+    typeof release.npmFileCount === "number" &&
+    release.npmFileCount > release.files.length
+  );
+}
 
 type PackageInspectorPublishResult = {
   status: "pass" | "fail";
@@ -5931,6 +5966,7 @@ export const getPackageReleaseScanBackfillBatchInternal = internalQuery({
     const results: Array<{
       releaseId: Id<"packageReleases">;
       packageId: Id<"packages">;
+      needsClawPackFileRepair: boolean;
       needsVt: boolean;
       needsLlm: boolean;
       needsStatic: boolean;
@@ -5945,14 +5981,16 @@ export const getPackageReleaseScanBackfillBatchInternal = internalQuery({
       const pkg = await ctx.db.get(release.packageId);
       if (!pkg || pkg.softDeletedAt || pkg.family === "skill") continue;
 
+      const needsClawPackFileRepair = needsClawPackReleaseFileRepair(release);
       const needsVt = !release.sha256hash || !release.vtAnalysis;
       const needsLlm = !release.llmAnalysis || release.llmAnalysis.status === "error";
       const needsStatic = !release.staticScan;
-      if (!needsVt && !needsLlm && !needsStatic) continue;
+      if (!needsClawPackFileRepair && !needsVt && !needsLlm && !needsStatic) continue;
 
       results.push({
         releaseId: release._id,
         packageId: release.packageId,
+        needsClawPackFileRepair,
         needsVt,
         needsLlm,
         needsStatic,
@@ -8398,6 +8436,167 @@ export const updateReleaseStaticScanInternal = internalMutation({
   },
 });
 
+export const replaceReleaseFilesAfterClawPackRepairInternal = internalMutation({
+  args: {
+    releaseId: v.id("packageReleases"),
+    files: v.array(
+      v.object({
+        path: v.string(),
+        size: v.number(),
+        storageId: v.id("_storage"),
+        sha256: v.string(),
+        contentType: v.optional(v.string()),
+      }),
+    ),
+    clawpackSha256: v.string(),
+    npmIntegrity: v.string(),
+    npmShasum: v.string(),
+    npmTarballName: v.string(),
+    npmUnpackedSize: v.number(),
+    npmFileCount: v.number(),
+    integritySha256: v.string(),
+    extractedPackageJson: v.any(),
+    extractedPluginManifest: v.any(),
+    checkedAt: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const release = await ctx.db.get(args.releaseId);
+    if (!isReleaseActive(release) || !needsClawPackReleaseFileRepair(release)) {
+      return { repaired: false as const };
+    }
+
+    const nextVerification = release.verification
+      ? {
+          ...release.verification,
+          scanStatus: "pending" as const,
+        }
+      : release.verification;
+    const patch: Partial<Doc<"packageReleases">> = {
+      files: args.files,
+      integritySha256: args.integritySha256,
+      clawpackSha256: args.clawpackSha256,
+      npmIntegrity: args.npmIntegrity,
+      npmShasum: args.npmShasum,
+      npmTarballName: args.npmTarballName,
+      npmUnpackedSize: args.npmUnpackedSize,
+      npmFileCount: args.npmFileCount,
+      extractedPackageJson: args.extractedPackageJson,
+      extractedPluginManifest: args.extractedPluginManifest,
+      verification: nextVerification,
+      staticScan: undefined,
+      skillSpectorAnalysis: undefined,
+      llmAnalysis: {
+        status: "pending",
+        summary: "ClawPack file listing repaired from the stored artifact; fresh review queued.",
+        checkedAt: args.checkedAt,
+      },
+    };
+    await ctx.db.patch(args.releaseId, patch);
+
+    await syncLatestPackageVerification(ctx, {
+      ...release,
+      ...patch,
+    } as Doc<"packageReleases">);
+
+    return { repaired: true as const };
+  },
+});
+
+export const repairClawPackReleaseFilesInternal = internalAction({
+  args: {
+    releaseId: v.id("packageReleases"),
+  },
+  handler: async (ctx, args) => {
+    const release = await runQueryRef<Doc<"packageReleases"> | null>(
+      ctx,
+      internalRefs.packages.getReleaseByIdInternal,
+      { releaseId: args.releaseId },
+    );
+    if (!release || release.softDeletedAt) {
+      return { ok: true as const, repaired: false as const, skipped: "missing_release" as const };
+    }
+    if (!needsClawPackReleaseFileRepair(release) || !release.clawpackStorageId) {
+      return { ok: true as const, repaired: false as const, skipped: "not_needed" as const };
+    }
+
+    const pkg = await runQueryRef<Doc<"packages"> | null>(
+      ctx,
+      internalRefs.packages.getPackageByIdInternal,
+      { packageId: release.packageId },
+    );
+    if (!pkg || pkg.softDeletedAt || pkg.family === "skill") {
+      return { ok: true as const, repaired: false as const, skipped: "missing_package" as const };
+    }
+
+    const blob = await ctx.storage.get(release.clawpackStorageId);
+    if (!blob) {
+      return { ok: false as const, repaired: false as const, error: "ClawPack artifact missing" };
+    }
+
+    const artifactBytes = new Uint8Array(await blob.arrayBuffer());
+    const parsed = await parseClawPack(artifactBytes);
+    if (release.clawpackSha256 && parsed.artifactSha256 !== release.clawpackSha256) {
+      throw new Error("Stored ClawPack artifact digest does not match package release metadata");
+    }
+    if (
+      normalizePackageName(parsed.packageName) !== pkg.name ||
+      parsed.packageVersion !== release.version
+    ) {
+      throw new Error("Stored ClawPack artifact identity does not match package release metadata");
+    }
+
+    const files: PackageReleaseFilePatch = [];
+    for (const entry of parsed.entries) {
+      const contentType = inferClawPackEntryContentType(entry.path);
+      const storageId = await ctx.storage.store(
+        new Blob([bytesToArrayBuffer(entry.bytes)], { type: contentType }),
+      );
+      files.push({
+        path: entry.path,
+        size: entry.bytes.byteLength,
+        storageId,
+        sha256: await sha256Hex(entry.bytes),
+        contentType,
+      });
+    }
+
+    const result = await runMutationRef<{ repaired: boolean }>(
+      ctx,
+      internalRefs.packages.replaceReleaseFilesAfterClawPackRepairInternal,
+      {
+        releaseId: args.releaseId,
+        files,
+        clawpackSha256: parsed.artifactSha256,
+        npmIntegrity: parsed.npmIntegrity,
+        npmShasum: parsed.npmShasum,
+        npmTarballName: parsed.npmTarballName,
+        npmUnpackedSize: parsed.unpackedSize,
+        npmFileCount: parsed.fileCount,
+        integritySha256: await hashSkillFiles(files),
+        extractedPackageJson: parsed.packageJson,
+        extractedPluginManifest: parsed.pluginManifest,
+        checkedAt: Date.now(),
+      },
+    );
+
+    if (result.repaired) {
+      await runAfterRef(ctx, 0, internalRefs.packages.scanPackageReleaseStaticallyInternal, {
+        releaseId: args.releaseId,
+      });
+      await runMutationRef(ctx, internalRefs.securityScan.enqueuePackageReleaseScanInternal, {
+        releaseId: args.releaseId,
+        source: "backfill",
+      });
+    }
+
+    return {
+      ok: true as const,
+      repaired: result.repaired,
+      files: files.length,
+    };
+  },
+});
+
 export const scanPackageReleaseStaticallyInternal = internalAction({
   args: {
     releaseId: v.id("packageReleases"),
@@ -8466,6 +8665,7 @@ export const backfillPackageReleaseScansInternal = internalAction({
     )) as {
       releases: Array<{
         releaseId: Id<"packageReleases">;
+        needsClawPackFileRepair: boolean;
         needsVt: boolean;
         needsLlm: boolean;
         needsStatic: boolean;
@@ -8477,6 +8677,13 @@ export const backfillPackageReleaseScansInternal = internalAction({
     let scheduled = args.scheduled ?? 0;
     const vtEnabled = Boolean(process.env.VT_API_KEY);
     for (const release of batch.releases) {
+      if (release.needsClawPackFileRepair) {
+        await runAfterRef(ctx, 0, internalRefs.packages.repairClawPackReleaseFilesInternal, {
+          releaseId: release.releaseId,
+        });
+        scheduled += 1;
+        continue;
+      }
       if (release.needsVt && vtEnabled) {
         await runAfterRef(ctx, 0, internalRefs.vt.scanPackageReleaseWithVirusTotal, {
           releaseId: release.releaseId,

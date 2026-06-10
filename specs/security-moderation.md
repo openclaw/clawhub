@@ -233,10 +233,11 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   (`all`, `llm-only`, `vt-only`, `both`) and for suspicious plugin releases.
 - Package/plugin scan backfills may recompute deterministic static scan results for older releases,
   but those results remain ClawScan context and are not public trust status.
-- ClawPack package releases keep static/LLM scan inputs intentionally metadata-only for now:
-  `package.json`, `openclaw.plugin.json`, package/source metadata, and release facts. VirusTotal
-  scans the exact uploaded `.tgz`; ClawHub does not currently run deep static/LLM scans across every
-  tarball file.
+- ClawPack package releases materialize parsed npm-pack artifact entries into the release file
+  surface. Static scan, LLM review, package inspect/file APIs, and Codex package ClawScan use those
+  stored artifact entries instead of metadata-only `package.json` / `openclaw.plugin.json` rows.
+  VirusTotal still scans the exact uploaded `.tgz`; ClawHub also retains the stored ClawPack artifact
+  so scanner workers can download/extract it for artifact-backed review.
 - Packages cache VirusTotal undetected-only engine results as clean VT telemetry.
   ClawHub does not request or consume VirusTotal AI/code-insight results; VT is
   engine/vendor telemetry only.

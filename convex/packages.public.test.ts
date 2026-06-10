@@ -1,6 +1,7 @@
 /* @vitest-environment node */
 
 import { getAuthUserId } from "@convex-dev/auth/server";
+import { gzipSync } from "fflate";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MAX_PUBLISH_FILE_BYTES } from "./lib/publishLimits";
 import {
@@ -37,6 +38,7 @@ import {
   listPublicPage,
   listPageForViewerInternal,
   listVersions,
+  repairClawPackReleaseFilesInternal,
   updateReleaseLlmAnalysisInternal,
   updateReleaseStaticScanInternal,
   applyAccountDeletionToOwnedPackagesBatchInternal,
@@ -602,6 +604,7 @@ const getPackageReleaseScanBackfillBatchInternalHandler = (
       releases: Array<{
         releaseId: string;
         packageId: string;
+        needsClawPackFileRepair: boolean;
         needsVt: boolean;
         needsLlm: boolean;
         needsStatic: boolean;
@@ -632,6 +635,12 @@ const backfillPackageReleaseScansInternalHandler = (
       scheduled?: number;
     },
     { scheduled: number; nextCursor: number; done: boolean }
+  >
+)._handler;
+const repairClawPackReleaseFilesInternalHandler = (
+  repairClawPackReleaseFilesInternal as unknown as WrappedHandler<
+    { releaseId: string },
+    { ok: boolean; repaired: boolean; files?: number; skipped?: string; error?: string }
   >
 )._handler;
 const listOfficialPluginMigrationsInternalHandler = (
@@ -909,6 +918,63 @@ function makeReleaseDoc(overrides: Partial<Record<string, unknown>> = {}) {
     publishActor: { kind: "user", userId: "users:owner" },
     ...overrides,
   };
+}
+
+const TAR_BLOCK_SIZE = 512;
+
+function tarOctal(value: number, width: number) {
+  return `${value.toString(8).padStart(width - 1, "0")}\0`;
+}
+
+function writeTarString(target: Uint8Array, offset: number, width: number, value: string) {
+  const encoded = new TextEncoder().encode(value);
+  target.set(encoded.subarray(0, width), offset);
+}
+
+function tarFile(path: string, content: string | Uint8Array) {
+  const bytes = typeof content === "string" ? new TextEncoder().encode(content) : content;
+  const header = new Uint8Array(TAR_BLOCK_SIZE);
+  writeTarString(header, 0, 100, path);
+  writeTarString(header, 100, 8, tarOctal(0o644, 8));
+  writeTarString(header, 108, 8, tarOctal(0, 8));
+  writeTarString(header, 116, 8, tarOctal(0, 8));
+  writeTarString(header, 124, 12, tarOctal(bytes.byteLength, 12));
+  writeTarString(header, 136, 12, tarOctal(0, 12));
+  header.fill(0x20, 148, 156);
+  header[156] = "0".charCodeAt(0);
+  writeTarString(header, 257, 6, "ustar");
+  writeTarString(header, 263, 2, "00");
+
+  let checksum = 0;
+  for (const byte of header) checksum += byte;
+  writeTarString(header, 148, 8, tarOctal(checksum, 8));
+
+  const paddedSize = Math.ceil(bytes.byteLength / TAR_BLOCK_SIZE) * TAR_BLOCK_SIZE;
+  const body = new Uint8Array(paddedSize);
+  body.set(bytes);
+  return [header, body];
+}
+
+function npmPackFixture(files: Record<string, string | Uint8Array>) {
+  const parts: Uint8Array[] = [];
+  for (const [path, content] of Object.entries(files)) {
+    parts.push(...tarFile(path, content));
+  }
+  parts.push(new Uint8Array(TAR_BLOCK_SIZE), new Uint8Array(TAR_BLOCK_SIZE));
+  const size = parts.reduce((sum, part) => sum + part.byteLength, 0);
+  const tar = new Uint8Array(size);
+  let offset = 0;
+  for (const part of parts) {
+    tar.set(part, offset);
+    offset += part.byteLength;
+  }
+  return gzipSync(tar);
+}
+
+function bytesToArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy.buffer;
 }
 
 function makeDigestCtx(options: {
@@ -9536,6 +9602,7 @@ describe("package scan backfill", () => {
       {
         releaseId: "packageReleases:missing-static",
         packageId: "packages:demo",
+        needsClawPackFileRepair: false,
         needsVt: false,
         needsLlm: false,
         needsStatic: true,
@@ -9593,6 +9660,7 @@ describe("package scan backfill", () => {
       {
         releaseId: "packageReleases:recent-vt",
         packageId: "packages:demo",
+        needsClawPackFileRepair: false,
         needsVt: true,
         needsLlm: false,
         needsStatic: false,
@@ -9600,9 +9668,69 @@ describe("package scan backfill", () => {
       {
         releaseId: "packageReleases:old-static",
         packageId: "packages:demo",
+        needsClawPackFileRepair: false,
         needsVt: false,
         needsLlm: false,
         needsStatic: true,
+      },
+    ]);
+  });
+
+  it("includes historical ClawPack releases with truncated stored file rows in the backfill batch", async () => {
+    const result = await getPackageReleaseScanBackfillBatchInternalHandler(
+      {
+        db: {
+          query: vi.fn((table: string) => {
+            if (table !== "packageReleases") throw new Error(`Unexpected table ${table}`);
+            return {
+              order: vi.fn(() => ({
+                take: vi.fn().mockResolvedValue([]),
+              })),
+              withIndex: vi.fn(() => ({
+                order: vi.fn(() => ({
+                  take: vi.fn().mockResolvedValue([
+                    {
+                      _id: "packageReleases:truncated-clawpack",
+                      _creationTime: 10,
+                      packageId: "packages:demo",
+                      artifactKind: "npm-pack",
+                      clawpackStorageId: "storage:clawpack",
+                      npmFileCount: 4,
+                      files: [
+                        { path: "package.json", size: 10, storageId: "storage:package" },
+                        {
+                          path: "openclaw.plugin.json",
+                          size: 10,
+                          storageId: "storage:plugin",
+                        },
+                      ],
+                      sha256hash: "hash",
+                      vtAnalysis: { status: "clean" },
+                      llmAnalysis: { status: "clean" },
+                      staticScan: { status: "clean" },
+                    },
+                  ]),
+                })),
+              })),
+            };
+          }),
+          get: vi.fn(async (id: string) => {
+            if (id === "packages:demo") return makePackageDoc();
+            return null;
+          }),
+        },
+      } as never,
+      { batchSize: 10 },
+    );
+
+    expect(result.releases).toEqual([
+      {
+        releaseId: "packageReleases:truncated-clawpack",
+        packageId: "packages:demo",
+        needsClawPackFileRepair: true,
+        needsVt: false,
+        needsLlm: false,
+        needsStatic: false,
       },
     ]);
   });
@@ -9646,6 +9774,122 @@ describe("package scan backfill", () => {
         process.env.VT_API_KEY = originalVtApiKey;
       }
     }
+  });
+
+  it("schedules ClawPack file repair before stale metadata-only review backfill work", async () => {
+    const runAfter = vi.fn().mockResolvedValue(undefined);
+    const runMutation = vi.fn();
+    const result = await backfillPackageReleaseScansInternalHandler(
+      {
+        runQuery: vi.fn().mockResolvedValue({
+          releases: [
+            {
+              releaseId: "packageReleases:truncated-clawpack",
+              needsClawPackFileRepair: true,
+              needsVt: false,
+              needsLlm: true,
+              needsStatic: true,
+            },
+          ],
+          nextCursor: 123,
+          done: true,
+        }),
+        runMutation,
+        scheduler: { runAfter },
+      } as never,
+      { batchSize: 10 },
+    );
+
+    expect(result).toEqual({ scheduled: 1, nextCursor: 123, done: true });
+    expect(runAfter).toHaveBeenCalledTimes(1);
+    expect(runAfter).toHaveBeenCalledWith(
+      0,
+      expect.anything(),
+      expect.objectContaining({ releaseId: "packageReleases:truncated-clawpack" }),
+    );
+    expect(runMutation).not.toHaveBeenCalled();
+  });
+
+  it("repairs historical ClawPack release file rows from the stored npm-pack artifact", async () => {
+    const pack = npmPackFixture({
+      "package/package.json": JSON.stringify({ name: "@scope/demo", version: "1.0.0" }),
+      "package/openclaw.plugin.json": JSON.stringify({ id: "scope.demo" }),
+      "package/README.md": "# Demo\n",
+      "package/dist/index.js": "export const demo = true;\n",
+    });
+    const storageGet = vi.fn(async (storageId: string) =>
+      storageId === "storage:clawpack"
+        ? new Blob([bytesToArrayBuffer(pack)], { type: "application/octet-stream" })
+        : null,
+    );
+    const storageStore = vi.fn(async () => `storage:repaired-${storageStore.mock.calls.length}`);
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if (Array.isArray(args.files)) return { repaired: true };
+      return { jobId: "securityScanJobs:1" };
+    });
+    const runAfter = vi.fn().mockResolvedValue(undefined);
+
+    const result = await repairClawPackReleaseFilesInternalHandler(
+      {
+        runQuery: vi.fn(async (_ref: unknown, args: { packageId?: string; releaseId?: string }) => {
+          if (args.releaseId) {
+            return makeReleaseDoc({
+              _id: args.releaseId,
+              packageId: "packages:demo",
+              version: "1.0.0",
+              artifactKind: "npm-pack",
+              clawpackStorageId: "storage:clawpack",
+              npmFileCount: 4,
+              files: [
+                { path: "package.json", size: 10, storageId: "storage:package" },
+                {
+                  path: "openclaw.plugin.json",
+                  size: 10,
+                  storageId: "storage:plugin",
+                },
+              ],
+            });
+          }
+          if (args.packageId === "packages:demo") {
+            return makePackageDoc({ _id: "packages:demo", name: "@scope/demo" });
+          }
+          return null;
+        }),
+        runMutation,
+        scheduler: { runAfter },
+        storage: { get: storageGet, store: storageStore },
+      } as never,
+      { releaseId: "packageReleases:truncated-clawpack" },
+    );
+
+    expect(result).toEqual({ ok: true, repaired: true, files: 4 });
+    expect(storageStore).toHaveBeenCalledTimes(4);
+    const repairCall = runMutation.mock.calls.find(([, args]) => Array.isArray(args.files));
+    expect(repairCall?.[1]).toEqual(
+      expect.objectContaining({
+        releaseId: "packageReleases:truncated-clawpack",
+        npmFileCount: 4,
+        integritySha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+        files: [
+          expect.objectContaining({ path: "package.json" }),
+          expect.objectContaining({ path: "openclaw.plugin.json" }),
+          expect.objectContaining({ path: "README.md", contentType: "text/markdown" }),
+          expect.objectContaining({ path: "dist/index.js", contentType: "application/javascript" }),
+        ],
+      }),
+    );
+    expect(runAfter).toHaveBeenCalledWith(
+      0,
+      expect.anything(),
+      expect.objectContaining({ releaseId: "packageReleases:truncated-clawpack" }),
+    );
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        releaseId: "packageReleases:truncated-clawpack",
+        source: "backfill",
+      }),
+    );
   });
 
   it("backfills legacy static-only package scan status into the package search digest", async () => {
