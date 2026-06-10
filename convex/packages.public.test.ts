@@ -6826,31 +6826,27 @@ describe("packages public queries", () => {
             return {
               withIndex: vi.fn(() => ({
                 order: vi.fn(() => ({
-                  paginate: vi.fn().mockResolvedValue({
-                    page: [
-                      {
-                        _id: "packageInspectorWarnings:1",
-                        packageName: "demo-plugin",
-                        version: "1.0.0",
-                        findingKind: "error",
-                        code: "missing-expected-seam",
-                        issueClass: "compatibility-error",
-                        message: "registerTool is no longer available",
-                        evidence: ["dist/index.js:2"],
-                        inspectorVersion: "0.5.0",
-                        targetOpenClawVersion: "0.10.0",
-                        scanSource: "nightly",
-                        authorRemediation: {
-                          summary: "Replace registerTool with the current plugin API.",
-                          docsUrl:
-                            "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#missing-expected-seam",
-                        },
-                        createdAt: 2,
+                  take: vi.fn().mockResolvedValue([
+                    {
+                      _id: "packageInspectorWarnings:1",
+                      packageName: "demo-plugin",
+                      version: "1.0.0",
+                      findingKind: "error",
+                      code: "missing-expected-seam",
+                      issueClass: "compatibility-error",
+                      message: "registerTool is no longer available",
+                      evidence: ["dist/index.js:2"],
+                      inspectorVersion: "0.5.0",
+                      targetOpenClawVersion: "0.10.0",
+                      scanSource: "nightly",
+                      authorRemediation: {
+                        summary: "Replace registerTool with the current plugin API.",
+                        docsUrl:
+                          "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#missing-expected-seam",
                       },
-                    ],
-                    isDone: true,
-                    continueCursor: "",
-                  }),
+                      createdAt: 2,
+                    },
+                  ]),
                 })),
               })),
             };
@@ -6967,7 +6963,6 @@ describe("packages public queries", () => {
   });
 
   it("excludes internal package inspector findings from owner emails", async () => {
-    let packageInspectorWarningPage = 0;
     const ctx = {
       db: {
         get: vi.fn(async (id: string) => {
@@ -6995,48 +6990,33 @@ describe("packages public queries", () => {
             return {
               withIndex: vi.fn(() => ({
                 order: vi.fn(() => ({
-                  paginate: vi.fn().mockImplementation(async () => {
-                    packageInspectorWarningPage += 1;
-                    if (packageInspectorWarningPage === 1) {
-                      return {
-                        page: [
-                          {
-                            _id: "packageInspectorWarnings:internal",
-                            packageName: "demo-plugin",
-                            version: "1.0.0",
-                            findingKind: "warning",
-                            code: "runtime-tool-capture",
-                            issueClass: "inspector-gap",
-                            message: "runtime tool schema needs registration capture",
-                            createdAt: 2,
-                          },
-                        ],
-                        isDone: false,
-                        continueCursor: "next",
-                      };
-                    }
-                    return {
-                      page: [
-                        {
-                          _id: "packageInspectorWarnings:author",
-                          packageName: "demo-plugin",
-                          version: "1.0.0",
-                          findingKind: "warning",
-                          code: "legacy-before-agent-start",
-                          issueClass: "deprecation-warning",
-                          message: "legacy before_agent_start hook is deprecated",
-                          authorRemediation: {
-                            summary: "Move prompt mutation work to before_prompt_build.",
-                            docsUrl:
-                              "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start",
-                          },
-                          createdAt: 1,
-                        },
-                      ],
-                      isDone: true,
-                      continueCursor: "",
-                    };
-                  }),
+                  take: vi.fn().mockResolvedValue([
+                    {
+                      _id: "packageInspectorWarnings:internal",
+                      packageName: "demo-plugin",
+                      version: "1.0.0",
+                      findingKind: "warning",
+                      code: "runtime-tool-capture",
+                      issueClass: "inspector-gap",
+                      message: "runtime tool schema needs registration capture",
+                      createdAt: 2,
+                    },
+                    {
+                      _id: "packageInspectorWarnings:author",
+                      packageName: "demo-plugin",
+                      version: "1.0.0",
+                      findingKind: "warning",
+                      code: "legacy-before-agent-start",
+                      issueClass: "deprecation-warning",
+                      message: "legacy before_agent_start hook is deprecated",
+                      authorRemediation: {
+                        summary: "Move prompt mutation work to before_prompt_build.",
+                        docsUrl:
+                          "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start",
+                      },
+                      createdAt: 1,
+                    },
+                  ]),
                 })),
               })),
             };
@@ -7933,27 +7913,23 @@ describe("packages public queries", () => {
               return {
                 withIndex: vi.fn(() => ({
                   order: vi.fn(() => ({
-                    paginate: vi.fn().mockResolvedValue({
-                      page: [
-                        {
-                          _id: "packageInspectorWarnings:internal",
-                          code: "runtime-tool-capture",
-                          issueClass: "inspector-gap",
-                          message: "runtime tool schema needs registration capture",
+                    take: vi.fn().mockResolvedValue([
+                      {
+                        _id: "packageInspectorWarnings:internal",
+                        code: "runtime-tool-capture",
+                        issueClass: "inspector-gap",
+                        message: "runtime tool schema needs registration capture",
+                      },
+                      {
+                        _id: "packageInspectorWarnings:author",
+                        code: "legacy-before-agent-start",
+                        issueClass: "deprecation-warning",
+                        message: "legacy before_agent_start hook is deprecated",
+                        authorRemediation: {
+                          summary: "Move prompt mutation work to before_prompt_build.",
                         },
-                        {
-                          _id: "packageInspectorWarnings:author",
-                          code: "legacy-before-agent-start",
-                          issueClass: "deprecation-warning",
-                          message: "legacy before_agent_start hook is deprecated",
-                          authorRemediation: {
-                            summary: "Move prompt mutation work to before_prompt_build.",
-                          },
-                        },
-                      ],
-                      isDone: true,
-                      continueCursor: "",
-                    }),
+                      },
+                    ]),
                   })),
                 })),
               };

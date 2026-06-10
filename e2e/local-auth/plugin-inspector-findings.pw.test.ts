@@ -146,7 +146,11 @@ test("plugin inspector blocks hard publish errors and publishes warning findings
     "aria-selected",
     "true",
   );
-  await expect(page.getByText("legacy-before-agent-start")).toBeVisible();
+  await expect(
+    page.locator(".plugin-warning-item-header code").filter({
+      hasText: /^legacy-before-agent-start$/,
+    }),
+  ).toBeVisible();
   await expect(page.getByText("deprecation-warning")).toBeVisible();
   await expect(page.getByText(/before_agent_start hook compatibility/i)).toBeVisible();
   await captureProof(page, testInfo, "04-plugin-public-warnings");

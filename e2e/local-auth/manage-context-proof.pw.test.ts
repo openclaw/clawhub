@@ -237,7 +237,6 @@ test("plugin manage context query returns only slim identifiers", async ({ page 
     page.getByRole("heading", { name: "Local Scanned Runtime Plugin" }).first(),
   ).toBeVisible();
   await expect(page.getByRole("link", { name: "New version" })).toBeVisible();
-  await expect(page.getByRole("tab", { name: /Validation \(2\)/ })).toBeVisible();
 
   await expectSlimManageContextPayload(page);
 

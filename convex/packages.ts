@@ -2313,19 +2313,12 @@ async function takeAuthorRemediationWarningsByPackage(
   packageId: Id<"packages">,
   limit: number,
 ) {
-  const findings: Doc<"packageInspectorWarnings">[] = [];
-  let cursor: string | null = null;
-  for (let page = 0; findings.length < limit && page < 10; page += 1) {
-    const result = await ctx.db
-      .query("packageInspectorWarnings")
-      .withIndex("by_package_created", (q) => q.eq("packageId", packageId))
-      .order("desc")
-      .paginate({ cursor, numItems: Math.max(limit, 50) });
-    findings.push(...result.page.filter(hasStoredAuthorRemediation));
-    if (result.isDone) break;
-    cursor = result.continueCursor;
-  }
-  return findings.slice(0, limit);
+  const findings = await ctx.db
+    .query("packageInspectorWarnings")
+    .withIndex("by_package_created", (q) => q.eq("packageId", packageId))
+    .order("desc")
+    .take(authorRemediationScanLimit(limit));
+  return findings.filter(hasStoredAuthorRemediation).slice(0, limit);
 }
 
 async function takeAuthorRemediationWarningsByRelease(
@@ -2333,19 +2326,16 @@ async function takeAuthorRemediationWarningsByRelease(
   releaseId: Id<"packageReleases">,
   limit: number,
 ) {
-  const findings: Doc<"packageInspectorWarnings">[] = [];
-  let cursor: string | null = null;
-  for (let page = 0; findings.length < limit && page < 10; page += 1) {
-    const result = await ctx.db
-      .query("packageInspectorWarnings")
-      .withIndex("by_release_created", (q) => q.eq("releaseId", releaseId))
-      .order("desc")
-      .paginate({ cursor, numItems: Math.max(limit, 50) });
-    findings.push(...result.page.filter(hasStoredAuthorRemediation));
-    if (result.isDone) break;
-    cursor = result.continueCursor;
-  }
-  return findings.slice(0, limit);
+  const findings = await ctx.db
+    .query("packageInspectorWarnings")
+    .withIndex("by_release_created", (q) => q.eq("releaseId", releaseId))
+    .order("desc")
+    .take(authorRemediationScanLimit(limit));
+  return findings.filter(hasStoredAuthorRemediation).slice(0, limit);
+}
+
+function authorRemediationScanLimit(limit: number) {
+  return Math.min(500, Math.max(limit * 5, 50));
 }
 
 function hasStoredAuthorRemediation(warning: Doc<"packageInspectorWarnings">) {
