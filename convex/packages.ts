@@ -6064,12 +6064,13 @@ export const getHistoricalClawPackRepairBatchInternal = internalQuery({
     const batchSize = Math.max(1, Math.min(Math.floor(args.batchSize ?? 25), 100));
     const targetName = args.packageName ? normalizePackageName(args.packageName) : undefined;
 
-    const toCandidate = async (release: Doc<"packageReleases">) => {
+    const toCandidateForPackage = (
+      release: Doc<"packageReleases">,
+      pkg: Doc<"packages">,
+    ): ClawPackRepairCandidate | null => {
       if (!isReleaseActive(release)) return null;
       if (!needsClawPackReleaseFileRepair(release)) return null;
       if (args.version && release.version !== args.version) return null;
-
-      const pkg = await ctx.db.get(release.packageId);
       if (!pkg || pkg.softDeletedAt || pkg.family === "skill") return null;
       if (targetName && pkg.normalizedName !== targetName) return null;
 
@@ -6085,6 +6086,12 @@ export const getHistoricalClawPackRepairBatchInternal = internalQuery({
       };
     };
 
+    const toCandidate = async (release: Doc<"packageReleases">) => {
+      const pkg = await ctx.db.get(release.packageId);
+      if (!pkg) return null;
+      return toCandidateForPackage(release, pkg);
+    };
+
     if (args.releaseId) {
       const release = await ctx.db.get(args.releaseId);
       const candidate = release ? await toCandidate(release) : null;
@@ -6093,6 +6100,56 @@ export const getHistoricalClawPackRepairBatchInternal = internalQuery({
         scanned: release ? 1 : 0,
         cursor: null,
         isDone: true,
+      };
+    }
+
+    if (targetName) {
+      const pkg = await getPackageByNormalizedName(ctx, targetName);
+      if (!pkg || pkg.softDeletedAt || pkg.family === "skill") {
+        return {
+          candidates: [],
+          scanned: 0,
+          cursor: null,
+          isDone: true,
+        };
+      }
+
+      if (args.version) {
+        const targetVersion = args.version;
+        const release = await ctx.db
+          .query("packageReleases")
+          .withIndex("by_package_version", (q) =>
+            q.eq("packageId", pkg._id).eq("version", targetVersion),
+          )
+          .unique();
+        const candidate = release ? toCandidateForPackage(release, pkg) : null;
+        return {
+          candidates: candidate ? [candidate] : [],
+          scanned: release ? 1 : 0,
+          cursor: null,
+          isDone: true,
+        };
+      }
+
+      const { page, continueCursor, isDone } = await ctx.db
+        .query("packageReleases")
+        .withIndex("by_package_active_created", (q) =>
+          q.eq("packageId", pkg._id).eq("softDeletedAt", undefined),
+        )
+        .order("asc")
+        .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+
+      const candidates: ClawPackRepairCandidate[] = [];
+      for (const release of page) {
+        const candidate = toCandidateForPackage(release, pkg);
+        if (candidate) candidates.push(candidate);
+      }
+
+      return {
+        candidates,
+        scanned: page.length,
+        cursor: isDone ? null : continueCursor,
+        isDone,
       };
     }
 

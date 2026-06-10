@@ -9871,6 +9871,15 @@ describe("package scan backfill", () => {
   });
 
   it("lists historical ClawPack repair candidates with cursor progress and package targeting", async () => {
+    const packageWithIndex = vi.fn(() => ({
+      unique: vi.fn().mockResolvedValue(
+        makePackageDoc({
+          _id: "packages:demo",
+          name: "@scope/demo",
+          normalizedName: "@scope/demo",
+        }),
+      ),
+    }));
     const paginate = vi.fn().mockResolvedValue({
       page: [
         makeReleaseDoc({
@@ -9909,6 +9918,9 @@ describe("package scan backfill", () => {
       {
         db: {
           query: vi.fn((table: string) => {
+            if (table === "packages") {
+              return { withIndex: packageWithIndex };
+            }
             if (table !== "packageReleases") throw new Error(`Unexpected table ${table}`);
             return {
               withIndex: vi.fn(() => ({
@@ -9916,21 +9928,13 @@ describe("package scan backfill", () => {
               })),
             };
           }),
-          get: vi.fn(async (id: string) => {
-            if (id === "packages:demo") {
-              return makePackageDoc({
-                _id: "packages:demo",
-                name: "@scope/demo",
-                normalizedName: "@scope/demo",
-              });
-            }
-            return null;
-          }),
+          get: vi.fn(),
         },
       } as never,
       { cursor: "cursor:start", batchSize: 2, packageName: "@scope/demo" },
     );
 
+    expect(packageWithIndex).toHaveBeenCalledWith("by_name", expect.any(Function));
     expect(paginate).toHaveBeenCalledWith({ cursor: "cursor:start", numItems: 2 });
     expect(result).toEqual({
       candidates: [
@@ -9945,6 +9949,83 @@ describe("package scan backfill", () => {
       scanned: 2,
       cursor: "cursor:next",
       isDone: false,
+    });
+  });
+
+  it("uses package/version indexes for targeted ClawPack repair beyond the first global page", async () => {
+    const packageWithIndex = vi.fn(() => ({
+      unique: vi.fn().mockResolvedValue(
+        makePackageDoc({
+          _id: "packages:target",
+          name: "@scope/target",
+          normalizedName: "@scope/target",
+        }),
+      ),
+    }));
+    const releaseWithIndex = vi.fn(() => ({
+      unique: vi.fn().mockResolvedValue(
+        makeReleaseDoc({
+          _id: "packageReleases:target-2",
+          _creationTime: 9999,
+          packageId: "packages:target",
+          version: "2.0.0",
+          artifactKind: "npm-pack",
+          clawpackStorageId: "storage:clawpack",
+          npmFileCount: 4,
+          files: [
+            { path: "package.json", size: 10, storageId: "storage:package" },
+            { path: "openclaw.plugin.json", size: 10, storageId: "storage:plugin" },
+          ],
+        }),
+      ),
+    }));
+    const globalPaginate = vi.fn().mockResolvedValue({
+      page: [
+        makeReleaseDoc({
+          _id: "packageReleases:unrelated",
+          packageId: "packages:other",
+          version: "1.0.0",
+        }),
+      ],
+      continueCursor: "cursor:global-next",
+      isDone: false,
+    });
+
+    const result = await getHistoricalClawPackRepairBatchInternalHandler(
+      {
+        db: {
+          query: vi.fn((table: string) => {
+            if (table === "packages") {
+              return { withIndex: packageWithIndex };
+            }
+            if (table !== "packageReleases") throw new Error(`Unexpected table ${table}`);
+            return {
+              withIndex: releaseWithIndex,
+              order: vi.fn(() => ({ paginate: globalPaginate })),
+            };
+          }),
+          get: vi.fn(),
+        },
+      } as never,
+      { batchSize: 1, packageName: "@scope/target", version: "2.0.0" },
+    );
+
+    expect(packageWithIndex).toHaveBeenCalledWith("by_name", expect.any(Function));
+    expect(releaseWithIndex).toHaveBeenCalledWith("by_package_version", expect.any(Function));
+    expect(globalPaginate).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      candidates: [
+        expect.objectContaining({
+          releaseId: "packageReleases:target-2",
+          packageName: "@scope/target",
+          version: "2.0.0",
+          existingFileCount: 2,
+          npmFileCount: 4,
+        }),
+      ],
+      scanned: 1,
+      cursor: null,
+      isDone: true,
     });
   });
 
