@@ -121,4 +121,11 @@ crons.interval(
   {},
 );
 
+crons.interval(
+  "install-telemetry-dedupe-prune",
+  { hours: 24 },
+  internal.telemetry.pruneInstallTelemetryDedupesInternal,
+  {},
+);
+
 export default crons;

@@ -1,10 +1,15 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
+import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { internalMutation, mutation, query } from "./functions";
 import { requireUser } from "./lib/access";
 import { insertStatEvent } from "./skillStatEvents";
+
+const DAY_MS = 86_400_000;
+const INSTALL_TELEMETRY_DEDUPE_RETENTION_MS = 14 * DAY_MS;
+const PRUNE_BATCH_SIZE = 200;
 
 export const reportCliInstallInternal = internalMutation({
   args: {
@@ -26,6 +31,14 @@ export const reportCliInstallInternal = internalMutation({
 
     const now = Date.now();
     const rootId = args.rootId?.trim();
+    const duplicate = await markInstallTelemetrySeen(ctx, {
+      userId: args.userId,
+      skillId: skill._id,
+      rootKey: rootId || "",
+      now,
+    });
+    if (duplicate) return;
+
     if (rootId) {
       await upsertSingleRootInstall(ctx, {
         userId: args.userId,
@@ -64,6 +77,28 @@ export const reportCliInstallInternal = internalMutation({
       lastVersion: args.version,
     });
     await insertStatEvent(ctx, { skillId: skill._id, kind: "install_new" });
+  },
+});
+
+export const pruneInstallTelemetryDedupesInternal = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const cutoffDayStart = getDayStart(Date.now() - INSTALL_TELEMETRY_DEDUPE_RETENTION_MS);
+    const stale = await ctx.db
+      .query("installTelemetryDedupes")
+      .withIndex("by_day", (q) => q.lt("dayStart", cutoffDayStart))
+      .take(PRUNE_BATCH_SIZE);
+
+    for (const entry of stale) {
+      await ctx.db.delete(entry._id);
+    }
+
+    const hasMore = stale.length === PRUNE_BATCH_SIZE;
+    if (hasMore) {
+      await ctx.scheduler.runAfter(0, internal.telemetry.pruneInstallTelemetryDedupesInternal, {});
+    }
+
+    return { deleted: stale.length, hasMore };
   },
 });
 
@@ -213,6 +248,41 @@ async function clearTelemetryForUser(ctx: MutationCtx, params: { userId: Id<"use
   for (const entry of rootInstalls) {
     await ctx.db.delete(entry._id);
   }
+
+  const dedupes = await ctx.db
+    .query("installTelemetryDedupes")
+    .withIndex("by_user", (q) => q.eq("userId", params.userId))
+    .take(10000);
+  for (const entry of dedupes) {
+    await ctx.db.delete(entry._id);
+  }
+}
+
+async function markInstallTelemetrySeen(
+  ctx: MutationCtx,
+  params: { userId: Id<"users">; skillId: Id<"skills">; rootKey: string; now: number },
+) {
+  const dayStart = getDayStart(params.now);
+  const existing = await ctx.db
+    .query("installTelemetryDedupes")
+    .withIndex("by_user_skill_root_day", (q) =>
+      q
+        .eq("userId", params.userId)
+        .eq("skillId", params.skillId)
+        .eq("rootKey", params.rootKey)
+        .eq("dayStart", dayStart),
+    )
+    .unique();
+  if (existing) return true;
+
+  await ctx.db.insert("installTelemetryDedupes", {
+    userId: params.userId,
+    skillId: params.skillId,
+    rootKey: params.rootKey,
+    dayStart,
+    createdAt: params.now,
+  });
+  return false;
 }
 
 async function upsertSingleRootInstall(
@@ -351,3 +421,11 @@ async function bumpSkillInstallCounts(
     await insertStatEvent(ctx, { skillId: params.skillId, kind: "install_reactivate" });
   }
 }
+
+function getDayStart(timestamp: number) {
+  return Math.floor(timestamp / DAY_MS) * DAY_MS;
+}
+
+export const __test = {
+  getDayStart,
+};

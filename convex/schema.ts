@@ -1034,10 +1034,10 @@ const skillSearchDigest = defineTable({
     "statsInstallsAllTime",
     "updatedAt",
   ])
-  .index("by_active_recommended_rank", [
+  .index("by_active_recommended_installs_rank", [
     "softDeletedAt",
     "statsStars",
-    "statsDownloads",
+    "statsInstallsAllTime",
     "updatedAt",
   ])
   .index("by_active_recommended_score", ["softDeletedAt", "recommendedScore", "updatedAt"])
@@ -1074,11 +1074,11 @@ const skillSearchDigest = defineTable({
     "statsInstallsAllTime",
     "updatedAt",
   ])
-  .index("by_nonsuspicious_recommended_rank", [
+  .index("by_nonsuspicious_recommended_installs_rank", [
     "softDeletedAt",
     "isSuspicious",
     "statsStars",
-    "statsDownloads",
+    "statsInstallsAllTime",
     "updatedAt",
   ])
   .index("by_nonsuspicious_recommended_score", [
@@ -2383,6 +2383,17 @@ const downloadMetricDedupes = defineTable({
   ])
   .index("by_day", ["dayStart"]);
 
+const installTelemetryDedupes = defineTable({
+  userId: v.id("users"),
+  skillId: v.id("skills"),
+  rootKey: v.string(),
+  dayStart: v.number(),
+  createdAt: v.number(),
+})
+  .index("by_user_skill_root_day", ["userId", "skillId", "rootKey", "dayStart"])
+  .index("by_user", ["userId"])
+  .index("by_day", ["dayStart"]);
+
 const reservedSlugs = defineTable({
   slug: v.string(),
   originalOwnerUserId: v.id("users"),
@@ -2537,6 +2548,7 @@ export default defineSchema({
   rateLimitShards,
   downloadDedupes,
   downloadMetricDedupes,
+  installTelemetryDedupes,
   reservedSlugs,
   reservedHandles,
   githubBackupSyncState,

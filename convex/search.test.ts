@@ -1199,7 +1199,7 @@ describe("search helpers", () => {
     expect(nameMatchScore).toBeGreaterThan(popularVectorScore);
   });
 
-  it("adds stars and downloads popularity but ignores installs for equally relevant matches", () => {
+  it("adds stars and installs popularity but ignores downloads for equally relevant matches", () => {
     const queryTokens = tokenize("notion");
     const highDownloadsOnly = __test.scoreSkillResult(
       queryTokens,
@@ -1215,10 +1215,61 @@ describe("search helpers", () => {
       "notion-helper",
       { downloads: 0, installsAllTime: 1000, stars: 0 },
     );
-    expect(highDownloadsOnly).toBeGreaterThan(highInstallsOnly);
+    expect(highInstallsOnly).toBeGreaterThan(highDownloadsOnly);
   });
 
-  it("breaks capped popularity ties by stars and downloads before installs", async () => {
+  it("uses installs popularity in live skill search scoring", async () => {
+    generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
+    const installed = {
+      embeddingId: "skillEmbeddings:installed",
+      skill: makePublicSkill({
+        id: "skills:installed",
+        slug: "tool-installed",
+        displayName: "Tool",
+        downloads: 0,
+        installsAllTime: 1_000,
+        stars: 0,
+      }),
+      version: null,
+      ownerHandle: "owner",
+      owner: null,
+    };
+    const downloaded = {
+      embeddingId: "skillEmbeddings:downloaded",
+      skill: makePublicSkill({
+        id: "skills:downloaded",
+        slug: "tool-downloaded",
+        displayName: "Tool",
+        downloads: 1_000_000_000,
+        installsAllTime: 0,
+        stars: 0,
+      }),
+      version: null,
+      ownerHandle: "owner",
+      owner: null,
+    };
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce(null) // getExactSkillSlugMatch
+      .mockResolvedValueOnce([]) // directPrefixSkillMatches
+      .mockResolvedValueOnce([installed, downloaded]) // hydrateResults
+      .mockResolvedValueOnce([]); // lexicalFallbackSkills
+
+    const result = await searchSkillsHandler(
+      {
+        vectorSearch: vi.fn().mockResolvedValue([
+          { _id: "skillEmbeddings:installed", _score: 0.5 },
+          { _id: "skillEmbeddings:downloaded", _score: 0.52 },
+        ]),
+        runQuery,
+      },
+      { query: "tool", limit: 2 },
+    );
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["tool-installed", "tool-downloaded"]);
+  });
+
+  it("breaks capped popularity ties by stars and installs before downloads", async () => {
     generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
     const installedOnly = {
       skill: makePublicSkill({
@@ -1260,7 +1311,7 @@ describe("search helpers", () => {
       { query: "tool", limit: 2 },
     );
 
-    expect(result.map((entry) => entry.skill.slug)).toEqual(["tool-downloaded", "tool-installed"]);
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["tool-installed", "tool-downloaded"]);
   });
 
   it("uses digest doc instead of full skill doc in hydrateResults but revalidates the owner", async () => {
