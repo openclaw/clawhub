@@ -1,10 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.20.2 - 2026-06-11
 
 ### Changes
 
 - CLI packages now require Node.js 22 or newer, dropping the EOL Node 20 runtime floor.
+- CLI: add `clawhub package validate <source>` for local plugin validation with author-facing Plugin Inspector findings, remediation text, and report artifacts.
 
 ## 0.20.0 - 2026-06-06
 
