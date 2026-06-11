@@ -219,6 +219,7 @@ export const ApiV1StaffEmailSendResponseSchema = type({
     "handle?": "string|null",
   }),
   subject: "string",
+  template: "string",
   providerId: "string|null",
 });
 export type ApiV1StaffEmailSendResponse = (typeof ApiV1StaffEmailSendResponseSchema)[inferred];

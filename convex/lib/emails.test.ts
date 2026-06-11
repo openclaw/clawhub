@@ -1,11 +1,21 @@
 import { describe, expect, it } from "vitest";
 import {
   APPEALS_URL,
+  buildAdminOneOffEmail,
   buildMaliciousArtifactEmail,
   buildBanNotificationEmail,
   buildPackageInspectorFindingsEmail,
   buildRestoredAccountEmail,
 } from "./emails";
+
+function expectFooterLinksUnderlined(html: string) {
+  expect(html).toMatch(
+    /href="https:\/\/clawhub\.ai"[^>]*style="color:#8a8a8e;\s*text-decoration:underline;">ClawHub<\/a>/,
+  );
+  expect(html).toMatch(
+    /href="https:\/\/(?:clawhub\.ai\/docs|docs\.openclaw\.ai)"[^>]*style="color:#8a8a8e;\s*text-decoration:underline;">Docs<\/a>/,
+  );
+}
 
 describe("moderation notification email copy", () => {
   it("builds public-safe malicious skill context with appeal but no local scan guidance", () => {
@@ -17,7 +27,7 @@ describe("moderation notification email copy", () => {
       trigger: "scanner.llm.malicious",
     });
 
-    expect(email.subject).toBe("Your ClawHub account was disabled");
+    expect(email.subject).toBe("Your ClawHub account has been suspended");
     expect(email.context).toMatchObject({
       appealUrl: APPEALS_URL,
       artifact: { kind: "skill", name: "gingiris-launch" },
@@ -26,6 +36,8 @@ describe("moderation notification email copy", () => {
     });
     expect(email.text).toContain("Skill: gingiris-launch");
     expect(email.text).not.toContain("Scanner:");
+    expect(email.html).toContain("background-color:#0a0a0b");
+    expect(email.html).toContain("ClawHub");
     expect(email.html).not.toContain("<strong>Scanner:</strong>");
     expect(email.text).not.toContain("republishing");
     expect(email.html).not.toContain("republishing");
@@ -34,6 +46,9 @@ describe("moderation notification email copy", () => {
     expect(email.text).toContain("Appeal: https://appeals.openclaw.ai/");
     expect(email.html).not.toContain("If you already appealed");
     expect(email.html).not.toContain("separate support email");
+    expect(email.html).not.toContain("You received this email because");
+    expect(email.html).toContain("https://clawhub.ai/docs");
+    expectFooterLinksUnderlined(email.html);
     expect(email.text).not.toContain("clawhub scan ./my-skill --output clawhub-scan.zip");
     expect(email.text).not.toContain("https://docs.openclaw.ai/clawhub/cli#scan-path");
   });
@@ -80,11 +95,31 @@ describe("moderation notification email copy", () => {
       ],
     });
 
-    expect(email.subject).toBe("Your ClawHub account was restored");
+    expect(email.subject).toBe("Your ClawHub account has been reinstated");
     expect(email.text).toContain("Your ClawHub account can sign in again.");
     expect(email.text).toContain("Skill: safe-one");
     expect(email.text).toContain("Plugin: @scope/demo");
     expect(email.text).toContain("Previously revoked API tokens stay revoked.");
+    expect(email.html).toContain("ACCOUNT&nbsp;REINSTATED");
+    expect(email.html).toContain("API tokens issued before the suspension");
+    expect(email.html).not.toContain("You received this email because");
+    expect(email.html).toContain("https://clawhub.ai/docs");
+    expectFooterLinksUnderlined(email.html);
+  });
+
+  it("omits restored count rows when batch totals are not complete", () => {
+    const email = buildRestoredAccountEmail({
+      handle: "restored",
+      restoredAt: 1_700_000_000_000,
+      skillsRestored: 5,
+      packagesRestored: undefined,
+    });
+
+    expect(email.html).not.toContain("Skills restored");
+    expect(email.html).not.toContain("Packages restored");
+    expect(email.html).not.toContain(">12<");
+    expect(email.html).not.toContain(">3<");
+    expect(email.html).toContain("Your account is active again.");
   });
 
   it("builds malicious artifact copy without account appeal language", () => {
@@ -108,6 +143,10 @@ describe("moderation notification email copy", () => {
     expect(email.text).not.toContain("fixed local copy");
     expect(email.text).toContain("Repeated malicious rejections may lead to account disablement");
     expect(email.html).toContain("Repeated malicious rejections may lead to account disablement");
+    expect(email.html).toContain("Plugin Review");
+    expect(email.html).toContain("ClawHub blocked a skill version");
+    expect(email.html).not.toContain("Open ClawHub");
+    expect(email.html).not.toContain('href="https://clawhub.ai" style="display:inline-block');
     expect(email.text).not.toContain(APPEALS_URL);
     expect(email.html).not.toContain(APPEALS_URL);
     expect(email.html).not.toContain("appeal this decision");
@@ -197,14 +236,21 @@ describe("moderation notification email copy", () => {
     );
     expect(email.text).not.toContain("ClawHub Security");
     expect(email.html).toContain("Validate a local fix");
-    expect(email.html).toContain("Hi octocat,");
-    expect(email.html).toContain("<strong>OpenClaw Version:</strong> 0.9.0");
+    expect(email.html).toContain("Plugin Review");
+    expect(email.html).not.toContain("Open ClawHub");
+    expect(email.html).not.toContain('href="https://clawhub.ai" style="display:inline-block');
+    expect(email.html).not.toContain("You&#39;re receiving this because");
+    expect(email.html).not.toContain("You're receiving this because");
+    expect(email.html).toContain("https://docs.openclaw.ai");
+    expectFooterLinksUnderlined(email.html);
+    expect(email.html).toContain("OpenClaw Version");
+    expect(email.html).toContain(">0.9.0</span>");
     expect(email.html).toContain("clawhub package validate &lt;path-to-plugin&gt;");
     expect(email.html).toContain("legacy-before-agent-start");
-    expect(email.html).toContain("deprecation-warning · P2");
+    expect(email.html).toContain("legacy-before-agent-start · deprecation-warning · P2");
     expect(email.html).toContain("Fix");
     expect(email.html).toContain("Replace the legacy before_agent_start hook");
-    expect(email.html).toContain("<strong>Docs</strong>");
+    expect(email.html).toContain("Docs →");
     expect(email.html).toContain("plugin-validation-fixes#legacy-before-agent-start");
     expect(email.html).not.toContain("plugin validation fix docs");
     expect(email.html).not.toContain("ClawHub Security");
@@ -249,5 +295,72 @@ describe("moderation notification email copy", () => {
     expect(email.text).not.toContain("nightly");
     expect(email.html).toContain("missing-expected-seam");
     expect(email.html).toContain("compatibility-error · P0");
+  });
+
+  it("does not rewrite inserted package names, versions, or issue counts", () => {
+    const findings = Array.from({ length: 11 }, (_, index) => ({
+      findingKind: "warning" as const,
+      code: `finding-${index + 1}`,
+      issueClass: "compatibility-warning",
+      severity: "P2",
+      message: "review finding",
+    }));
+    const email = buildPackageInspectorFindingsEmail({
+      packageName: "my-demo-plugin",
+      version: "1.0.0-beta",
+      findings,
+    });
+
+    expect(email.text).toContain("We found 11 issues with version 1.0.0-beta of my-demo-plugin.");
+    expect(email.html).toContain("⚠ 11 issues found");
+    expect(email.html).toContain("my-demo-plugin@1.0.0-beta");
+    expect(email.html).not.toContain("my-my-demo-plugin");
+    expect(email.html).not.toContain("1.0.0-beta-beta");
+    expect(email.html).not.toContain("11 issueses");
+  });
+
+  it("builds a templated admin one-off email with escaped staff-authored content", () => {
+    const email = buildAdminOneOffEmail({
+      recipientHandle: "octocat",
+      subject: "Content rights report",
+      title: "Action required: content rights report",
+      body: "We received a report about <package>. Please reply with context.",
+      primaryActionLabel: "Open appeal",
+      primaryActionUrl: "https://appeals.openclaw.ai/case-123",
+    });
+
+    expect(email.subject).toBe("Content rights report");
+    expect(email.text).toContain("Hi octocat,");
+    expect(email.text).toContain("Action required: content rights report");
+    expect(email.text).toContain("Open appeal: https://appeals.openclaw.ai/case-123");
+    expect(email.html).toContain(
+      '<span style="font-family:Helvetica, Arial, sans-serif; font-size:19px; font-weight:bold; color:#f5f5f5; vertical-align:middle; padding-left:8px;">ClawHub</span>',
+    );
+    expect(email.html).toContain("Action required: content rights report");
+    expect(email.html).toContain("We received a report about &lt;package&gt;.");
+    expect(email.html).toContain("Open appeal");
+    expect(email.html).not.toContain("<package>");
+    expect(email.html).not.toContain("You received this email because");
+    expect(email.html).toContain("https://clawhub.ai/docs");
+    expectFooterLinksUnderlined(email.html);
+  });
+
+  it("omits the admin one-off button when no action is provided", () => {
+    const email = buildAdminOneOffEmail({
+      recipientHandle: "octocat",
+      subject: "Content rights report",
+      title: "Action required: content rights report",
+      body: "We received a report about <package>. Please reply with context.",
+    });
+
+    expect(email.text).not.toContain("Open ClawHub:");
+    expect(email.html).toContain("Action required: content rights report");
+    expect(email.html).not.toContain("Open ClawHub");
+    expect(email.html).not.toContain("{{primary_action_label}}");
+    expect(email.html).not.toContain("{{primary_action_url}}");
+    expect(email.html).not.toContain('href="https://clawhub.ai" style="display:inline-block');
+    expect(email.html).not.toContain("You received this email because");
+    expect(email.html).toContain("https://clawhub.ai/docs");
+    expectFooterLinksUnderlined(email.html);
   });
 });

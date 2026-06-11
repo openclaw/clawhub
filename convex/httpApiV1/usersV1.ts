@@ -1,6 +1,7 @@
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
+import { ADMIN_ONE_OFF_TEMPLATE, buildAdminOneOffEmail } from "../lib/emails";
 import { applyRateLimit } from "../lib/httpRateLimit";
 import {
   getPathSegments,
@@ -316,11 +317,27 @@ async function handleAdminStaffEmail(
     typeof payload.userHandle === "string"
       ? payload.userHandle.trim().replace(/^@+/, "").toLowerCase()
       : "";
+  const suppliedRecipientHandle =
+    typeof payload.recipientHandle === "string"
+      ? payload.recipientHandle.trim().replace(/^@+/, "").toLowerCase()
+      : "";
   const subject = typeof payload.subject === "string" ? payload.subject.trim() : "";
+  const title = typeof payload.title === "string" ? payload.title.trim() : "";
   const body = typeof payload.body === "string" ? payload.body.trim() : "";
+  const template =
+    typeof payload.template === "string" && payload.template.trim()
+      ? payload.template.trim()
+      : ADMIN_ONE_OFF_TEMPLATE;
+  const primaryActionLabel =
+    typeof payload.primaryActionLabel === "string" ? payload.primaryActionLabel.trim() : "";
+  const primaryActionUrl =
+    typeof payload.primaryActionUrl === "string" ? payload.primaryActionUrl.trim() : "";
   const confirmUserRequest = payload.confirmUserRequest === true;
   const confirmUserSignoff = payload.confirmUserSignoff === true;
 
+  if (template !== ADMIN_ONE_OFF_TEMPLATE) {
+    return text(`Unsupported staff email template: ${template || "missing"}`, 400, headers);
+  }
   if (toEmail && userHandle) return text("Pass toEmail or userHandle, not both", 400, headers);
   if (!toEmail && !userHandle) return text("Missing toEmail or userHandle", 400, headers);
   if (toEmail && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(toEmail)) {
@@ -328,8 +345,32 @@ async function handleAdminStaffEmail(
   }
   if (!subject) return text("Missing subject", 400, headers);
   if (subject.length > 200) return text("Subject too long (max 200 chars)", 400, headers);
+  if (title.length > 160) return text("Title too long (max 160 chars)", 400, headers);
+  if (suppliedRecipientHandle.length > 80) {
+    return text("Recipient handle too long (max 80 chars)", 400, headers);
+  }
   if (!body) return text("Missing body", 400, headers);
   if (body.length > 20_000) return text("Body too long (max 20000 chars)", 400, headers);
+  if ((primaryActionLabel && !primaryActionUrl) || (!primaryActionLabel && primaryActionUrl)) {
+    return text("Pass primaryActionLabel and primaryActionUrl together", 400, headers);
+  }
+  if (primaryActionLabel.length > 80) {
+    return text("Primary action label too long (max 80 chars)", 400, headers);
+  }
+  if (primaryActionUrl.length > 2_000) {
+    return text("Primary action URL too long (max 2000 chars)", 400, headers);
+  }
+  if (primaryActionUrl) {
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(primaryActionUrl);
+    } catch {
+      return text("Primary action URL must be an http(s) URL", 400, headers);
+    }
+    if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+      return text("Primary action URL must be an http(s) URL", 400, headers);
+    }
+  }
   if (!confirmUserRequest || !confirmUserSignoff) {
     return text(
       "Staff email requires explicit user request and user sign-off on final recipient, subject, and body.",
@@ -340,7 +381,7 @@ async function handleAdminStaffEmail(
 
   let recipientEmail = toEmail;
   let recipientUserId: Id<"users"> | undefined;
-  let recipientHandle: string | null | undefined;
+  let recipientHandle: string | null | undefined = suppliedRecipientHandle || undefined;
   if (userHandle) {
     const user = await runUsersV1QueryRef<{
       _id?: Id<"users">;
@@ -370,8 +411,16 @@ async function handleAdminStaffEmail(
       ...(recipientUserId ? { recipientUserId } : {}),
       ...(recipientHandle ? { recipientHandle } : {}),
       subject,
+      template,
     },
   );
+  const email = buildAdminOneOffEmail({
+    recipientHandle: recipientHandle ?? (userHandle || undefined),
+    subject,
+    ...(title ? { title } : {}),
+    body,
+    ...(primaryActionLabel && primaryActionUrl ? { primaryActionLabel, primaryActionUrl } : {}),
+  });
 
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
@@ -382,8 +431,9 @@ async function handleAdminStaffEmail(
     body: JSON.stringify({
       from,
       to: [recipientEmail],
-      subject,
-      text: body,
+      subject: email.subject,
+      text: email.text,
+      html: email.html,
     }),
   });
 
@@ -414,6 +464,7 @@ async function handleAdminStaffEmail(
         ...(recipientHandle ? { handle: recipientHandle } : {}),
       },
       subject,
+      template,
       providerId,
     },
     200,
