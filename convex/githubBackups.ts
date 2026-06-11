@@ -89,10 +89,24 @@ export type SyncGitHubBackupsResult = {
     skillsDeleted: number;
     skillsMissingVersion: number;
     skillsMissingOwner: number;
+    packagesScanned: number;
+    packagesSkipped: number;
+    packagesBackedUp: number;
+    packagesMissingArtifact: number;
+    packagesMissingPackage: number;
+    packagesMissingOwner: number;
+    retryJobsProcessed: number;
+    retryJobsSucceeded: number;
+    retryJobsFailed: number;
+    staleJobs: number;
+    exhaustedJobs: number;
     errors: number;
   };
   cursor: string | null;
   pruneCursor: string | null;
+  packageCursor: string | null;
+  skillsIsDone: boolean;
+  packageIsDone: boolean;
   isDone: boolean;
 };
 
