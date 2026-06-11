@@ -175,10 +175,10 @@ export function getScanStatusInfo(status: string) {
         badgeVariant: "destructive",
       };
     case "review":
-      return { label: "Review", className: "scan-status-review", badgeVariant: "review" };
+    case "suspicious":
+      return { label: "Review", className: "scan-status-warn", badgeVariant: "warning" };
     case "warn":
     case "warning":
-    case "suspicious":
       return { label: "Warn", className: "scan-status-warn", badgeVariant: "warning" };
     case "advisory":
       return { label: "Advisory", className: "scan-status-unknown", badgeVariant: "compact" };
@@ -237,7 +237,7 @@ export function getClawScanDisplayStatus(analysis?: LlmAnalysis | null) {
   if (!status) return "pending";
   const highestSeverity = highestVisibleFindingSeverityRank(analysis);
   if (status === "suspicious") {
-    return highestSeverity >= severityRank("high") ? "warn" : "review";
+    return "review";
   }
   if ((status === "clean" || status === "benign") && highestSeverity >= severityRank("medium")) {
     return "review";
@@ -276,16 +276,13 @@ export function ScanResultBadge({
   status,
   label,
   className,
-  tone,
 }: {
   status: string;
   label?: string;
   className?: string;
-  tone?: "review";
 }) {
   const statusInfo = getScanStatusInfo(status);
-  const variant =
-    tone === "review" && statusInfo.label === "Review" ? "review" : statusInfo.badgeVariant;
+  const variant = statusInfo.badgeVariant;
   return (
     <Badge
       variant={variant as BadgeProps["variant"]}
@@ -712,7 +709,7 @@ export function SecurityScanResults({
         {llmStatusInfo ? (
           <div className="version-scan-badge">
             <ClawScanIcon className="version-scan-icon version-scan-icon-oc" />
-            <ScanResultBadge status={llmDisplayStatus} tone="review" />
+            <ScanResultBadge status={llmDisplayStatus} />
           </div>
         ) : null}
       </>
@@ -764,7 +761,7 @@ export function SecurityScanResults({
               <ClawScanIcon className="scan-result-icon scan-result-icon-oc" />
               <span className="scan-result-scanner-name">ClawScan</span>
             </div>
-            <ScanResultBadge status={llmDisplayStatus} tone="review" />
+            <ScanResultBadge status={llmDisplayStatus} />
           </div>
         ) : null}
         {llmAnalysis &&

@@ -12,6 +12,7 @@ type SkillModerationSource = {
   moderationStatus?: string | null;
   moderationReason?: string | null;
   moderationFlags?: string[] | null;
+  moderationVerdict?: string | null;
   moderationSourceVersionId?: Id<"skillVersions"> | string | null;
 };
 
@@ -35,7 +36,9 @@ export function getSkillFileModerationInfoFromSkill(
 ): SkillFileModerationInfo {
   const isPendingScan =
     skill.moderationStatus === "hidden" && isPendingSkillModerationReason(skill.moderationReason);
-  const isMalwareBlocked = skill.moderationFlags?.includes("blocked.malware") ?? false;
+  const isMalwareBlocked =
+    skill.moderationVerdict === "malicious" ||
+    (skill.moderationFlags?.includes("blocked.malware") ?? false);
   return {
     isPendingScan,
     isMalwareBlocked,

@@ -4700,7 +4700,7 @@ code {
 
 .security-audit-meter {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
   height: 6px;
 }
@@ -4718,11 +4718,7 @@ code {
   background: #f1b85a;
 }
 
-.security-audit-meter[data-level="3"] span:nth-child(-n + 3) {
-  background: #6aa9ff;
-}
-
-.security-audit-meter[data-level="4"] span {
+.security-audit-meter[data-level="3"] span {
   background: #79e68e;
 }
 
@@ -13095,8 +13091,7 @@ a.publisher-profile-detail:hover {
 }
 
 .about-grid,
-.about-patterns,
-.souls-coming-grid {
+.about-patterns {
   display: grid;
   grid-template-columns: 1fr;
   gap: 20px;
@@ -13285,16 +13280,6 @@ a.publisher-profile-detail:hover {
   gap: 12px;
 }
 
-.souls-coming-page {
-  display: grid;
-  gap: 24px;
-}
-
-.souls-coming-hero {
-  display: grid;
-  gap: 20px;
-}
-
 @media (min-width: 641px) {
   .about-bento {
     grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -13449,8 +13434,7 @@ a.publisher-profile-detail:hover {
   .about-grid,
   .about-patterns,
   .about-pattern-lanes,
-  .about-panel-categories .about-grid,
-  .souls-coming-grid {
+  .about-panel-categories .about-grid {
     grid-template-columns: 1fr;
   }
 
@@ -14010,57 +13994,6 @@ a.publisher-profile-detail:hover {
   transform: scale(0.97);
 }
 
-/* Suggestions */
-.home-v2-suggestions {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 16px;
-  flex-wrap: wrap;
-}
-.home-v2-suggestion {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--hv2-text-secondary);
-  font-size: 13px;
-  font-weight: 500;
-  padding: 6px 14px;
-  border-radius: 100px;
-  cursor: pointer;
-  transition:
-    color 0.15s,
-    background 0.15s,
-    border-color 0.15s;
-  border: 1px solid var(--hv2-border);
-  background: transparent;
-}
-.home-v2-suggestion:hover {
-  color: var(--hv2-text);
-  background: var(--hv2-surface-hover);
-  border-color: var(--hv2-border-hover);
-}
-.home-v2-suggestion svg {
-  color: var(--hv2-text-tertiary);
-}
-.home-v2-suggestion:hover svg {
-  color: var(--hv2-accent);
-}
-
-@media (max-width: 760px) {
-  .home-v2-suggestions {
-    gap: 6px;
-    margin-top: 12px;
-  }
-
-  .home-v2-suggestion {
-    font-size: 12px;
-    padding: 5px 10px;
-    gap: 4px;
-  }
-}
-
 /* ═══ CAROUSEL ═══ */
 .home-v2-carousel-section {
   padding: 48px 0 0;
@@ -14338,9 +14271,6 @@ a.publisher-profile-detail:hover {
   margin: 0 auto;
   border-top: 1px solid var(--hv2-border);
 }
-.home-v2-categories-grid[data-count="4"] {
-  --home-v2-category-columns: 4;
-}
 .home-v2-cat-item {
   display: flex;
   align-items: center;
@@ -14599,9 +14529,6 @@ a.publisher-profile-detail:hover {
 
 /* ═══ RESPONSIVE ═══ */
 @media (max-width: 1024px) {
-  .home-v2-categories-grid[data-count="4"] {
-    --home-v2-category-columns: 2;
-  }
   .home-v2-discovery-grid {
     grid-template-columns: 1fr;
   }
@@ -14631,8 +14558,7 @@ a.publisher-profile-detail:hover {
   .home-v2-cycle-wrap {
     min-width: 200px;
   }
-  .home-v2-categories-grid,
-  .home-v2-categories-grid[data-count="4"] {
+  .home-v2-categories-grid {
     --home-v2-category-columns: 1;
   }
   .home-v2-cat-item + .home-v2-cat-item::before {
@@ -14876,18 +14802,6 @@ a.publisher-profile-detail:hover {
   box-shadow: 0 0 20px rgba(196, 58, 47, 0.06);
 }
 
-/* Light — suggestion pills */
-[data-theme-resolved="light"] .home-v2-suggestion {
-  background: #fff8f2;
-  border-color: rgba(170, 125, 80, 0.18);
-  color: #6b5c4e;
-  box-shadow: inset 0 0 8px rgba(170, 125, 80, 0.03);
-}
-[data-theme-resolved="light"] .home-v2-suggestion:hover {
-  background: #fff4ea;
-  border-color: rgba(170, 125, 80, 0.3);
-}
-
 /* Light — category icons */
 [data-theme-resolved="light"] .home-v2-cat-icon {
   background: rgba(196, 58, 47, 0.06);
@@ -15011,11 +14925,6 @@ a.publisher-profile-detail:hover {
     0 0 0 3px var(--hv2-accent-glow);
 }
 
-/* Dark — suggestion pills */
-[data-theme-resolved="dark"] .home-v2-suggestion {
-  box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.12);
-}
-
 /* Dark — cat icons */
 [data-theme-resolved="dark"] .home-v2-cat-icon {
   box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.15);
@@ -15054,11 +14963,6 @@ a.publisher-profile-detail:hover {
 }
 .home-v2-cat-icon {
   border-radius: 8px;
-}
-
-/* Suggestion pills — were likely pill-shaped, soften */
-.home-v2-suggestion {
-  border-radius: 20px;
 }
 
 /* Hero rings — circles, keep as-is (border-radius: 50%) */

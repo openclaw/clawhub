@@ -109,6 +109,14 @@ describe("public skill mapping", () => {
     });
     expect(toPublicSkill(skill)).toBeNull();
   });
+
+  it("filters out skills with a malicious moderation verdict", () => {
+    const skill = makeSkill({
+      moderationStatus: "active",
+      moderationVerdict: "malicious",
+    });
+    expect(toPublicSkill(skill)).toBeNull();
+  });
 });
 
 describe("public publisher mapping", () => {

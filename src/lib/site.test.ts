@@ -1,26 +1,7 @@
 /* @vitest-environment node */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  detectSiteMode,
-  detectSiteModeFromUrl,
-  getClawHubSiteUrl,
-  getOnlyCrabsHost,
-  getOnlyCrabsSiteUrl,
-  isClawHubHost,
-  getSiteDescription,
-  getSiteMode,
-  getSiteName,
-  getSiteUrlForMode,
-} from "./site";
-
-const SITE_ENV_KEYS = [
-  "SITE_URL",
-  "VITE_SITE_MODE",
-  "VITE_SITE_URL",
-  "VITE_SOULHUB_HOST",
-  "VITE_SOULHUB_SITE_URL",
-];
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { getClawHubSiteUrl, normalizeClawHubSiteOrigin } from "./site";
 
 function withServerEnv<T>(values: Record<string, string | undefined>, run: () => T): T {
   const previous = new Map<string, string | undefined>();
@@ -40,9 +21,7 @@ function withServerEnv<T>(values: Record<string, string | undefined>, run: () =>
 }
 
 function clearSiteEnv() {
-  for (const key of SITE_ENV_KEYS) {
-    delete process.env[key];
-  }
+  delete process.env.VITE_SITE_URL;
 }
 
 beforeEach(() => {
@@ -50,12 +29,24 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  vi.unstubAllGlobals();
-  vi.unstubAllEnvs();
   clearSiteEnv();
 });
 
 describe("site helpers", () => {
+  it("normalizes origins and maps legacy clawdhub hosts to clawhub.ai", () => {
+    expect(normalizeClawHubSiteOrigin("https://example.com/some/path")).toBe("https://example.com");
+    expect(normalizeClawHubSiteOrigin("https://clawdhub.com")).toBe("https://clawhub.ai");
+    expect(normalizeClawHubSiteOrigin("https://www.clawdhub.com")).toBe("https://clawhub.ai");
+    expect(normalizeClawHubSiteOrigin("https://auth.clawdhub.com")).toBe("https://clawhub.ai");
+  });
+
+  it("returns null for missing or invalid origins", () => {
+    expect(normalizeClawHubSiteOrigin(null)).toBeNull();
+    expect(normalizeClawHubSiteOrigin(undefined)).toBeNull();
+    expect(normalizeClawHubSiteOrigin("")).toBeNull();
+    expect(normalizeClawHubSiteOrigin("not a url")).toBeNull();
+  });
+
   it("returns default and env configured site URLs", () => {
     expect(getClawHubSiteUrl()).toBe("https://clawhub.ai");
     withServerEnv({ VITE_SITE_URL: "https://example.com" }, () => {
@@ -67,93 +58,8 @@ describe("site helpers", () => {
     withServerEnv({ VITE_SITE_URL: "https://auth.clawdhub.com" }, () => {
       expect(getClawHubSiteUrl()).toBe("https://clawhub.ai");
     });
-  });
-
-  it("picks SoulHub URL from explicit env", () => {
-    withServerEnv({ VITE_SOULHUB_SITE_URL: "https://souls.example.com" }, () => {
-      expect(getOnlyCrabsSiteUrl()).toBe("https://souls.example.com");
-    });
-  });
-
-  it("derives SoulHub URL from local VITE_SITE_URL", () => {
-    withServerEnv({ VITE_SITE_URL: "http://localhost:3000" }, () => {
-      expect(getOnlyCrabsSiteUrl()).toBe("http://localhost:3000");
-    });
-    withServerEnv({ VITE_SITE_URL: "http://127.0.0.1:3000" }, () => {
-      expect(getOnlyCrabsSiteUrl()).toBe("http://127.0.0.1:3000");
-    });
-    withServerEnv({ VITE_SITE_URL: "http://0.0.0.0:3000" }, () => {
-      expect(getOnlyCrabsSiteUrl()).toBe("http://0.0.0.0:3000");
-    });
-  });
-
-  it("falls back to default SoulHub URL for invalid VITE_SITE_URL", () => {
     withServerEnv({ VITE_SITE_URL: "not a url" }, () => {
-      expect(getOnlyCrabsSiteUrl()).toBe("https://onlycrabs.ai");
+      expect(getClawHubSiteUrl()).toBe("https://clawhub.ai");
     });
-  });
-
-  it("detects site mode from host and URLs", () => {
-    expect(detectSiteMode(null)).toBe("skills");
-
-    withServerEnv({ VITE_SOULHUB_HOST: "souls.example.com" }, () => {
-      expect(getOnlyCrabsHost()).toBe("souls.example.com");
-      expect(detectSiteMode("souls.example.com")).toBe("souls");
-      expect(detectSiteMode("sub.souls.example.com")).toBe("souls");
-      expect(detectSiteMode("clawhub.ai")).toBe("skills");
-
-      expect(detectSiteModeFromUrl("https://souls.example.com/x")).toBe("souls");
-      expect(detectSiteModeFromUrl("souls.example.com")).toBe("souls");
-      expect(detectSiteModeFromUrl("https://clawhub.ai")).toBe("skills");
-    });
-  });
-
-  it("accepts both ClawHub domains as ClawHub hosts", () => {
-    expect(isClawHubHost("clawhub.ai")).toBe(true);
-    expect(isClawHubHost("www.clawhub.ai")).toBe(true);
-    expect(isClawHubHost("hub.openclaw.ai")).toBe(true);
-    expect(isClawHubHost("clawdhub.com")).toBe(false);
-    expect(isClawHubHost("example.com")).toBe(false);
-  });
-
-  it("detects site mode from window when available", () => {
-    withServerEnv({ VITE_SOULHUB_HOST: "onlycrabs.ai" }, () => {
-      vi.stubGlobal("window", { location: { hostname: "onlycrabs.ai" } } as unknown as Window);
-      expect(getSiteMode()).toBe("souls");
-    });
-  });
-
-  it("detects site mode from env on the server", () => {
-    withServerEnv({ VITE_SITE_MODE: "souls", VITE_SOULHUB_HOST: "onlycrabs.ai" }, () => {
-      expect(getSiteMode()).toBe("souls");
-    });
-    withServerEnv({ VITE_SITE_MODE: "skills", VITE_SOULHUB_HOST: "onlycrabs.ai" }, () => {
-      expect(getSiteMode()).toBe("skills");
-    });
-  });
-
-  it("detects site mode from VITE_SOULHUB_SITE_URL and SITE_URL fallback", () => {
-    withServerEnv(
-      { VITE_SITE_MODE: undefined, VITE_SOULHUB_SITE_URL: "https://onlycrabs.ai" },
-      () => {
-        expect(getSiteMode()).toBe("souls");
-      },
-    );
-
-    withServerEnv({ VITE_SOULHUB_SITE_URL: undefined, VITE_SITE_URL: undefined }, () => {
-      vi.stubEnv("SITE_URL", "https://onlycrabs.ai");
-      expect(getSiteMode()).toBe("souls");
-    });
-  });
-
-  it("derives site metadata from mode", () => {
-    expect(getSiteName("skills")).toBe("ClawHub");
-    expect(getSiteName("souls")).toBe("SoulHub");
-
-    expect(getSiteDescription("skills")).toContain("ClawHub");
-    expect(getSiteDescription("souls")).toContain("SoulHub");
-
-    expect(getSiteUrlForMode("skills")).toBe("https://clawhub.ai");
-    expect(getSiteUrlForMode("souls")).toBe("https://onlycrabs.ai");
   });
 });

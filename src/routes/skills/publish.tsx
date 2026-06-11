@@ -38,7 +38,6 @@ import { Label } from "../../components/ui/label";
 import { Textarea } from "../../components/ui/textarea";
 import { UploadDropzoneDecor } from "../../components/UploadDropzoneDecor";
 import { VersionInput } from "../../components/VersionInput";
-import { getSiteMode } from "../../lib/site";
 import { ALLOWED_LUCIDE_ICONS, makeLucideIconValue, parseSkillIcon } from "../../lib/skillIcon";
 import { getPublicSlugCollision } from "../../lib/slugCollision";
 import { expandDroppedItems, expandFilesWithReport } from "../../lib/uploadFiles";
@@ -54,7 +53,14 @@ import {
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const SKILL_PUBLISHING_GUIDE_URL = "https://docs.openclaw.ai/clawhub/skill-format";
-const SOUL_PUBLISHING_GUIDE_URL = "https://docs.openclaw.ai/clawhub/soul-format";
+const REQUIRED_FILE_LABEL = "SKILL.md";
+const REQUIRED_FILE_ISSUE = `${REQUIRED_FILE_LABEL} is required.`;
+// Ordered by sort priority: the canonical name first, the legacy alias second.
+const REQUIRED_SKILL_FILE_NAMES = ["skill.md", "skills.md"];
+
+function isRequiredSkillFile(path: string) {
+  return REQUIRED_SKILL_FILE_NAMES.includes(path.trim().toLowerCase());
+}
 
 type SkillPublishField = "slug" | "displayName" | "version" | "tags" | "license";
 
@@ -69,41 +75,12 @@ export const Route = createFileRoute("/skills/publish")({
 export function Upload() {
   const { isAuthenticated, isLoading: isAuthLoading, me } = useAuthStatus();
   const { updateSlug, ownerHandle: searchOwnerHandle } = useSearch({ from: "/skills/publish" });
-  const siteMode = getSiteMode();
-  const isSoulMode = siteMode === "souls";
-  const requiredFileLabel = isSoulMode ? "SOUL.md" : "SKILL.md";
-  const contentLabel = isSoulMode ? "soul" : "skill";
-  const publishingGuideUrl = isSoulMode ? SOUL_PUBLISHING_GUIDE_URL : SKILL_PUBLISHING_GUIDE_URL;
-  const publishingGuideLabel = isSoulMode ? "Soul publishing guide" : "Skill publishing guide";
   const showChangelogField = Boolean(updateSlug);
 
   const generateUploadUrl = useMutation(api.uploads.generateUploadUrl);
-  const publishVersion = useAction(
-    isSoulMode ? api.souls.publishVersion : api.skills.publishVersion,
-  );
-  const generateChangelogPreview = useAction(
-    isSoulMode ? api.souls.generateChangelogPreview : api.skills.generateChangelogPreview,
-  );
-  const existingSkill = useQuery(
-    api.skills.getBySlug,
-    !isSoulMode && updateSlug ? { slug: updateSlug } : "skip",
-  );
-  const existingSoul = useQuery(
-    api.souls.getBySlug,
-    isSoulMode && updateSlug ? { slug: updateSlug } : "skip",
-  );
-  const existing = (isSoulMode ? existingSoul : existingSkill) as
-    | {
-        skill?: { slug: string; displayName: string; icon?: string | null };
-        soul?: { slug: string; displayName: string };
-        latestVersion?: { version: string };
-        // Present on skills.getBySlug; absent on souls.getBySlug. Used to
-        // default the Owner selector to the skill's current owner in update
-        // mode so a New Version publish does not silently re-own the skill.
-        owner?: { handle: string; displayName?: string };
-      }
-    | null
-    | undefined;
+  const publishVersion = useAction(api.skills.publishVersion);
+  const generateChangelogPreview = useAction(api.skills.generateChangelogPreview);
+  const existing = useQuery(api.skills.getBySlug, updateSlug ? { slug: updateSlug } : "skip");
 
   const [hasAttempted, setHasAttempted] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
@@ -119,8 +96,7 @@ export function Upload() {
     license: false,
   });
   const [metadataPrefillNote, setMetadataPrefillNote] = useState<string | null>(null);
-  // Selected lucide icon name (e.g. `Plug`) or null when "no icon". Skills only;
-  // souls don't expose a custom icon yet.
+  // Selected lucide icon name (e.g. `Plug`) or null when "no icon".
   const [iconName, setIconName] = useState<string | null>(null);
   const [version, setVersion] = useState("1.0.0");
   const [tags, setTags] = useState("latest");
@@ -212,23 +188,19 @@ export function Upload() {
   const visibleFileEntries = useMemo(
     () =>
       [...normalizedFileEntries].sort((left, right) => {
-        const leftRank = requiredFileSortRank(left.path, isSoulMode);
-        const rightRank = requiredFileSortRank(right.path, isSoulMode);
+        const leftRank = requiredFileSortRank(left.path);
+        const rightRank = requiredFileSortRank(right.path);
         return leftRank === rightRank ? left.index - right.index : leftRank - rightRank;
       }),
-    [isSoulMode, normalizedFileEntries],
+    [normalizedFileEntries],
   );
   const unsupportedFileEntries = useMemo(
     () => normalizedFileEntries.filter((entry) => !isTextFile(entry.file)),
     [normalizedFileEntries],
   );
   const hasRequiredFile = useMemo(
-    () =>
-      normalizedPaths.some((path) => {
-        const lower = path.trim().toLowerCase();
-        return isSoulMode ? lower === "soul.md" : lower === "skill.md" || lower === "skills.md";
-      }),
-    [isSoulMode, normalizedPaths],
+    () => normalizedPaths.some((path) => isRequiredSkillFile(path)),
+    [normalizedPaths],
   );
   const sizeLabel = totalBytes ? formatBytes(totalBytes) : "0 B";
   const oversizedFiles = useMemo(
@@ -254,7 +226,7 @@ export function Upload() {
   const trimmedVersion = version.trim();
   const slugAvailability = useQuery(
     api.skills.checkSlugAvailability,
-    !isSoulMode && isAuthenticated && ownerHandle && trimmedSlug && SLUG_PATTERN.test(trimmedSlug)
+    isAuthenticated && ownerHandle && trimmedSlug && SLUG_PATTERN.test(trimmedSlug)
       ? { slug: trimmedSlug.toLowerCase(), ownerHandle }
       : "skip",
   ) as
@@ -269,32 +241,29 @@ export function Upload() {
   const slugCollision = useMemo(
     () =>
       getPublicSlugCollision({
-        isSoulMode,
         slug: trimmedSlug,
         result: slugAvailability,
       }),
-    [isSoulMode, slugAvailability, trimmedSlug],
+    [slugAvailability, trimmedSlug],
   );
 
   useEffect(() => {
-    if (!existing?.latestVersion || (!existing?.skill && !existing?.soul)) return;
-    const name = existing.skill?.displayName ?? existing.soul?.displayName;
-    const nextSlug = existing.skill?.slug ?? existing.soul?.slug;
+    if (!existing?.latestVersion || !existing?.skill) return;
+    const name = existing.skill.displayName;
+    const nextSlug = existing.skill.slug;
     if (nextSlug) setSlug(nextSlug);
     if (name) setDisplayName(name);
     // Pre-populate the icon picker from the existing skill so a New Version
     // publish keeps the previously selected icon unless the user changes it.
-    if (!isSoulMode && existing.skill?.icon !== undefined) {
+    if (existing.skill.icon !== undefined) {
       const parsed = parseSkillIcon(existing.skill.icon ?? null);
       setIconName(parsed?.kind === "lucide" ? parsed.name : null);
     }
     const nextVersion = semver.inc(existing.latestVersion.version, "patch");
     if (nextVersion) setVersion(nextVersion);
-  }, [existing, isSoulMode]);
+  }, [existing]);
 
   useEffect(() => {
-    if (isSoulMode) return;
-
     // In update mode, default the Owner selector to the skill's current owner
     // so the New Version flow is a same-owner republish by default and does
     // not require an ownership-migration opt-in for the common case.
@@ -333,7 +302,7 @@ export function Upload() {
     // a stale handle while the DOM displays the replacement option.
     setOwnerHandle(nextOwnerHandle);
     setConfirmMigrateOwner(false);
-  }, [ownerHandle, publisherMemberships, existing?.owner?.handle, updateSlug, isSoulMode]);
+  }, [ownerHandle, publisherMemberships, existing?.owner?.handle, updateSlug]);
 
   useEffect(() => {
     if (!showChangelogField) return;
@@ -344,10 +313,7 @@ export function Upload() {
     if (!hasRequiredFile) return;
     if (files.length === 0) return;
 
-    const requiredIndex = normalizedPaths.findIndex((path) => {
-      const lower = path.trim().toLowerCase();
-      return isSoulMode ? lower === "soul.md" : lower === "skill.md" || lower === "skills.md";
-    });
+    const requiredIndex = normalizedPaths.findIndex((path) => isRequiredSkillFile(path));
     if (requiredIndex < 0) return;
 
     const requiredFile = files[requiredIndex];
@@ -385,7 +351,6 @@ export function Upload() {
     files,
     generateChangelogPreview,
     hasRequiredFile,
-    isSoulMode,
     normalizedPaths,
     showChangelogField,
     trimmedChangelog,
@@ -394,18 +359,13 @@ export function Upload() {
   ]);
   // Detect ownership migration intent. We only treat it as a migration when:
   //   * updating an existing skill (`updateSlug` + loaded existing),
-  //   * the caller has picked a different Owner than the skill currently has,
-  //   * not in soul mode (souls don't carry a publisher owner).
+  //   * the caller has picked a different Owner than the skill currently has.
   // The submit button is disabled until the user ticks the explicit
   // `confirmMigrateOwner` checkbox, mirroring the backend's `migrateOwner`
   // contract.
-  const existingOwnerHandle = !isSoulMode ? (existing?.owner?.handle ?? null) : null;
+  const existingOwnerHandle = existing?.owner?.handle ?? null;
   const isOwnerMigration = Boolean(
-    !isSoulMode &&
-    updateSlug &&
-    existingOwnerHandle &&
-    ownerHandle &&
-    ownerHandle !== existingOwnerHandle,
+    updateSlug && existingOwnerHandle && ownerHandle && ownerHandle !== existingOwnerHandle,
   );
   const effectiveSlugCollision = isOwnerMigration && confirmMigrateOwner ? null : slugCollision;
   const parsedTags = useMemo(
@@ -432,14 +392,14 @@ export function Upload() {
     if (parsedTags.length === 0) {
       issues.push("At least one tag is required.");
     }
-    if (!isSoulMode && !acceptedLicenseTerms) {
+    if (!acceptedLicenseTerms) {
       issues.push("Accept the MIT-0 license terms to publish this skill.");
     }
     if (files.length === 0) {
       issues.push("Add at least one file.");
     }
     if (!hasRequiredFile) {
-      issues.push(`${requiredFileLabel} is required.`);
+      issues.push(REQUIRED_FILE_ISSUE);
     }
     if (isOwnerMigration && !confirmMigrateOwner) {
       issues.push(
@@ -476,11 +436,9 @@ export function Upload() {
     files,
     unsupportedFileEntries,
     hasRequiredFile,
-    isSoulMode,
     totalBytes,
     oversizedFiles.length,
     oversizedFileNames,
-    requiredFileLabel,
     effectiveSlugCollision,
     isOwnerMigration,
     confirmMigrateOwner,
@@ -529,7 +487,7 @@ export function Upload() {
   });
   const visibleFileIssues = validation.issues.filter((issue) => {
     if (issue.startsWith("Add at least one file")) return hasAttempted;
-    if (issue === `${requiredFileLabel} is required.`) return false;
+    if (issue === REQUIRED_FILE_ISSUE) return false;
     if (issue.startsWith("Remove unsupported files")) return shouldShowFileIssues;
     if (issue.startsWith("Each file")) return shouldShowFileIssues;
     if (issue.startsWith("Total file size")) return shouldShowFileIssues;
@@ -537,9 +495,7 @@ export function Upload() {
   });
   const hasFilePanelFooter = Boolean(ignoredLocalMetadataNote || visibleFileIssues.length > 0);
   const publishBlockerSummary =
-    !validation.ready && !isSubmitting
-      ? summarizePublishBlockers(validation.issues, requiredFileLabel)
-      : null;
+    !validation.ready && !isSubmitting ? summarizePublishBlockers(validation.issues) : null;
 
   // webkitdirectory/directory attributes are set via the ref callback (setFileInputRef)
   // to ensure they persist across hydration and re-renders (#58)
@@ -553,7 +509,7 @@ export function Upload() {
       <main className="py-10">
         <Container size="narrow">
           <EmptyState
-            title={`Sign in to publish a ${contentLabel}`}
+            title="Sign in to publish a skill"
             description="You need to be signed in to publish skills on ClawHub."
           >
             <SignInButton />
@@ -638,7 +594,7 @@ export function Upload() {
       toast.error(effectiveSlugCollision.message);
       return;
     }
-    if (!isSoulMode && !acceptedLicenseTerms) {
+    if (!acceptedLicenseTerms) {
       const msg = "Accept the MIT-0 license terms to publish this skill.";
       setError(msg);
       toast.error(msg);
@@ -658,7 +614,7 @@ export function Upload() {
       return;
     }
     if (!hasRequiredFile) {
-      const msg = `${requiredFileLabel} is required.`;
+      const msg = REQUIRED_FILE_ISSUE;
       setError(msg);
       toast.error(msg);
       return;
@@ -698,14 +654,14 @@ export function Upload() {
       // source of truth for the tri-state contract:
       //   * touched + whitelisted name → `lucide:<Name>` (set)
       //   * touched + None / unparseable selection → `""` (clear)
-      //   * untouched (or soul mode) → field omitted (keep existing)
+      //   * untouched → field omitted (keep existing)
       // The backend treats blank input as "clear the icon" and a missing
       // key as "keep whatever is already stored", so the omit branch is
       // what protects routine version bumps from silently wiping an
       // existing custom icon when pre-population fails (e.g. the stored
       // lucide name was pruned from `ALLOWED_LUCIDE_ICONS`).
       let iconPayload: string | undefined;
-      if (isSoulMode || !iconTouchedRef.current) {
+      if (!iconTouchedRef.current) {
         iconPayload = undefined;
       } else if (iconName && Object.hasOwn(ALLOWED_LUCIDE_ICONS, iconName)) {
         iconPayload = makeLucideIconValue(iconName as keyof typeof ALLOWED_LUCIDE_ICONS);
@@ -713,17 +669,17 @@ export function Upload() {
         iconPayload = "";
       }
       const result = await publishVersion({
-        ownerHandle: isSoulMode ? undefined : ownerHandle || undefined,
+        ownerHandle: ownerHandle || undefined,
         // Only propagate the migration opt-in when the user is actually
         // changing the skill's owner AND has explicitly confirmed the move.
         // Same-owner republishes must never carry `migrateOwner: true`.
-        migrateOwner: !isSoulMode && isOwnerMigration && confirmMigrateOwner ? true : undefined,
+        migrateOwner: isOwnerMigration && confirmMigrateOwner ? true : undefined,
         slug: trimmedSlug,
         displayName: trimmedName,
         ...(iconPayload !== undefined ? { icon: iconPayload } : {}),
         version: trimmedVersion,
         changelog: trimmedChangelog,
-        acceptLicenseTerms: isSoulMode ? undefined : acceptedLicenseTerms,
+        acceptLicenseTerms: acceptedLicenseTerms,
         tags: parsedTags,
         files: uploaded,
       });
@@ -735,8 +691,8 @@ export function Upload() {
         toast.success(`Published ${trimmedSlug}@${trimmedVersion}`);
         const ownerParam = ownerHandle || me?.handle || (me?._id ? String(me._id) : "unknown");
         void navigate({
-          to: isSoulMode ? "/souls/$slug" : "/$owner/$slug",
-          params: isSoulMode ? { slug: trimmedSlug } : { owner: ownerParam, slug: trimmedSlug },
+          to: "/$owner/$slug",
+          params: { owner: ownerParam, slug: trimmedSlug },
         });
       }
     } catch (publishError) {
@@ -753,15 +709,13 @@ export function Upload() {
         <header className="flex flex-col gap-3 mb-6 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="font-display text-2xl font-bold text-[color:var(--ink)]">
-              Publish a {contentLabel}
+              Publish a skill
             </h1>
-            <p className="text-sm text-[color:var(--ink-soft)]">
-              Drop or select a {contentLabel} folder
-            </p>
+            <p className="text-sm text-[color:var(--ink-soft)]">Drop or select a skill folder</p>
           </div>
           <Button asChild variant="outline" size="sm" className="w-fit">
-            <a href={publishingGuideUrl} target="_blank" rel="noreferrer">
-              {publishingGuideLabel}
+            <a href={SKILL_PUBLISHING_GUIDE_URL} target="_blank" rel="noreferrer">
+              Skill publishing guide
               <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
             </a>
           </Button>
@@ -854,7 +808,9 @@ export function Upload() {
                 <div className="flex max-h-[300px] flex-col gap-1 overflow-y-auto p-3">
                   {!hasRequiredFile ? (
                     <div className="flex items-center gap-2 rounded-[var(--radius-sm)] border border-status-error-fg/35 bg-status-error-bg px-3 py-1.5 text-sm text-status-error-fg">
-                      <span className="min-w-0 flex-1 truncate font-mono">{requiredFileLabel}</span>
+                      <span className="min-w-0 flex-1 truncate font-mono">
+                        {REQUIRED_FILE_LABEL}
+                      </span>
                       <Badge variant="destructive" size="sm">
                         Missing
                       </Badge>
@@ -1001,7 +957,7 @@ export function Upload() {
                       setMetadataPrefillNote(null);
                       setDisplayName(event.target.value);
                     }}
-                    placeholder={`My ${contentLabel}`}
+                    placeholder="My skill"
                   />
                   <InlineValidationMessage
                     id="display-name-validation-error"
@@ -1023,7 +979,7 @@ export function Upload() {
                         setMetadataPrefillNote(null);
                         setSlug(event.target.value);
                       }}
-                      placeholder={`${contentLabel}-name`}
+                      placeholder="skill-name"
                     />
                     {showSlugAvailableIcon ? (
                       <Check
@@ -1063,62 +1019,58 @@ export function Upload() {
                 </p>
               ) : null}
 
-              {!isSoulMode ? (
-                <div className="flex flex-col gap-3">
-                  {/* The picker is a custom radiogroup; the visible "Icon"
-                      heading is decorative and does not need `htmlFor` —
-                      `SkillIconPicker` exposes its own `aria-label`. */}
-                  <Label>Icon</Label>
-                  <SkillIconPicker
-                    value={iconName}
-                    onChange={(next) => {
-                      // Mark the picker as user-touched so the submit
-                      // handler knows it can forward the resulting value
-                      // (including `null` → "") instead of falling back
-                      // to the omit-key branch.
-                      iconTouchedRef.current = true;
-                      setIconName(next);
-                    }}
-                  />
-                </div>
-              ) : null}
+              <div className="flex flex-col gap-3">
+                {/* The picker is a custom radiogroup; the visible "Icon"
+                    heading is decorative and does not need `htmlFor` —
+                    `SkillIconPicker` exposes its own `aria-label`. */}
+                <Label>Icon</Label>
+                <SkillIconPicker
+                  value={iconName}
+                  onChange={(next) => {
+                    // Mark the picker as user-touched so the submit
+                    // handler knows it can forward the resulting value
+                    // (including `null` → "") instead of falling back
+                    // to the omit-key branch.
+                    iconTouchedRef.current = true;
+                    setIconName(next);
+                  }}
+                />
+              </div>
 
-              {!isSoulMode ? (
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="ownerHandle">Owner</Label>
-                  <PublisherOwnerSelect
-                    id="ownerHandle"
-                    value={ownerHandle}
-                    memberships={publisherMemberships}
-                    onValueChange={(nextOwnerHandle) => {
-                      ownerTouchedRef.current = true;
-                      setOwnerHandle(nextOwnerHandle);
-                      // Reset the migration confirmation any time the Owner
-                      // selector changes; the user must re-acknowledge the move
-                      // after picking a different target to avoid a stale tick
-                      // turning into a silent transfer.
-                      setConfirmMigrateOwner(false);
-                    }}
-                  />
-                  {isOwnerMigration ? (
-                    <label className="flex items-start gap-2 text-sm cursor-pointer mt-2">
-                      <input
-                        type="checkbox"
-                        className="mt-0.5"
-                        checked={confirmMigrateOwner}
-                        onChange={(event) => setConfirmMigrateOwner(event.target.checked)}
-                      />
-                      <span>
-                        Move ownership of <strong>{trimmedSlug || "this skill"}</strong> from{" "}
-                        <strong>@{existingOwnerHandle}</strong> to <strong>@{ownerHandle}</strong>.
-                        Versions, tags, stats, comments and stars are preserved; the old URL
-                        redirects to the new one.
-                      </span>
-                    </label>
-                  ) : null}
-                  <InlineValidationMessage id="owner-validation-error" message={ownerIssue} />
-                </div>
-              ) : null}
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="ownerHandle">Owner</Label>
+                <PublisherOwnerSelect
+                  id="ownerHandle"
+                  value={ownerHandle}
+                  memberships={publisherMemberships}
+                  onValueChange={(nextOwnerHandle) => {
+                    ownerTouchedRef.current = true;
+                    setOwnerHandle(nextOwnerHandle);
+                    // Reset the migration confirmation any time the Owner
+                    // selector changes; the user must re-acknowledge the move
+                    // after picking a different target to avoid a stale tick
+                    // turning into a silent transfer.
+                    setConfirmMigrateOwner(false);
+                  }}
+                />
+                {isOwnerMigration ? (
+                  <label className="flex items-start gap-2 text-sm cursor-pointer mt-2">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5"
+                      checked={confirmMigrateOwner}
+                      onChange={(event) => setConfirmMigrateOwner(event.target.checked)}
+                    />
+                    <span>
+                      Move ownership of <strong>{trimmedSlug || "this skill"}</strong> from{" "}
+                      <strong>@{existingOwnerHandle}</strong> to <strong>@{ownerHandle}</strong>.
+                      Versions, tags, stats, comments and stars are preserved; the old URL redirects
+                      to the new one.
+                    </span>
+                  </label>
+                ) : null}
+                <InlineValidationMessage id="owner-validation-error" message={ownerIssue} />
+              </div>
 
               <div className="flex flex-col gap-2">
                 <Label htmlFor="version">Version</Label>
@@ -1159,42 +1111,40 @@ export function Upload() {
             </CardContent>
           </Card>
 
-          {!isSoulMode ? (
-            <Card>
-              <CardContent className="gap-4">
-                <div>
-                  <CardTitle>License</CardTitle>
-                  <p className="text-sm text-[color:var(--ink-soft)]">
-                    {PLATFORM_SKILL_LICENSE} · {PLATFORM_SKILL_LICENSE_NAME}
-                  </p>
-                </div>
-                <div className="flex flex-col gap-1 text-sm text-[color:var(--ink-soft)]">
-                  <p>
-                    All skills published on ClawHub are licensed under {PLATFORM_SKILL_LICENSE}.{" "}
-                    {PLATFORM_SKILL_LICENSE_SUMMARY}
-                  </p>
-                  <p>
-                    ClawHub does not support paid skills, per-skill pricing, or paywalled releases.
-                  </p>
-                </div>
-                <div className="flex flex-col gap-2">
-                  <label className="flex cursor-pointer items-start gap-3 rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)] p-3 text-sm">
-                    <input
-                      type="checkbox"
-                      className="mt-0.5 h-4 w-4 accent-[color:var(--accent)]"
-                      checked={acceptedLicenseTerms}
-                      onChange={(event) => {
-                        setAcceptedLicenseTerms(event.target.checked);
-                      }}
-                    />
-                    <span>
-                      I have the rights to publish this skill under {PLATFORM_SKILL_LICENSE}.
-                    </span>
-                  </label>
-                </div>
-              </CardContent>
-            </Card>
-          ) : null}
+          <Card>
+            <CardContent className="gap-4">
+              <div>
+                <CardTitle>License</CardTitle>
+                <p className="text-sm text-[color:var(--ink-soft)]">
+                  {PLATFORM_SKILL_LICENSE} · {PLATFORM_SKILL_LICENSE_NAME}
+                </p>
+              </div>
+              <div className="flex flex-col gap-1 text-sm text-[color:var(--ink-soft)]">
+                <p>
+                  All skills published on ClawHub are licensed under {PLATFORM_SKILL_LICENSE}.{" "}
+                  {PLATFORM_SKILL_LICENSE_SUMMARY}
+                </p>
+                <p>
+                  ClawHub does not support paid skills, per-skill pricing, or paywalled releases.
+                </p>
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="flex cursor-pointer items-start gap-3 rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)] p-3 text-sm">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 h-4 w-4 accent-[color:var(--accent)]"
+                    checked={acceptedLicenseTerms}
+                    onChange={(event) => {
+                      setAcceptedLicenseTerms(event.target.checked);
+                    }}
+                  />
+                  <span>
+                    I have the rights to publish this skill under {PLATFORM_SKILL_LICENSE}.
+                  </span>
+                </label>
+              </div>
+            </CardContent>
+          </Card>
 
           {showChangelogField ? (
             <Card>
@@ -1217,7 +1167,7 @@ export function Upload() {
                     setChangelogSource("user");
                     setChangelog(event.target.value);
                   }}
-                  placeholder={`Describe what changed in this ${contentLabel}...`}
+                  placeholder="Describe what changed in this skill..."
                 />
                 {changelogStatus === "loading" ? (
                   <div className="text-sm text-[color:var(--ink-soft)]">Generating changelog…</div>
@@ -1261,7 +1211,7 @@ export function Upload() {
               {!validation.ready && !isSubmitting ? (
                 <Lock className="h-4 w-4" aria-hidden="true" />
               ) : null}
-              Publish {contentLabel}
+              Publish skill
             </Button>
           </div>
         </form>
@@ -1279,8 +1229,8 @@ function InlineValidationMessage(props: { id: string; message?: string }) {
   );
 }
 
-function summarizePublishBlockers(issues: string[], requiredFileLabel: string) {
-  const missing = issues.flatMap((issue) => missingPublishLabel(issue, requiredFileLabel));
+function summarizePublishBlockers(issues: string[]) {
+  const missing = issues.flatMap((issue) => missingPublishLabel(issue));
   const uniqueMissing = [...new Set(missing)];
   if (uniqueMissing.length > 0) {
     return `Complete ${formatInlineList(uniqueMissing)} to publish.`;
@@ -1294,7 +1244,7 @@ function formatInlineList(items: string[]) {
   return `${items.slice(0, -1).join(", ")}, and ${items.at(-1)}`;
 }
 
-function missingPublishLabel(issue: string, requiredFileLabel: string) {
+function missingPublishLabel(issue: string) {
   if (issue === "Slug is required.") return ["slug"];
   if (issue === "Display name is required.") return ["display name"];
   if (issue === "At least one tag is required.") return ["tags"];
@@ -1302,16 +1252,13 @@ function missingPublishLabel(issue: string, requiredFileLabel: string) {
     return ["MIT-0 acceptance"];
   }
   if (issue === "Add at least one file.") return ["files"];
-  if (issue === `${requiredFileLabel} is required.`) return [requiredFileLabel];
+  if (issue === REQUIRED_FILE_ISSUE) return [REQUIRED_FILE_LABEL];
   return [];
 }
 
-function requiredFileSortRank(path: string, isSoulMode: boolean) {
-  const normalized = path.trim().toLowerCase();
-  if (isSoulMode) return normalized === "soul.md" ? 0 : 1;
-  if (normalized === "skill.md") return 0;
-  if (normalized === "skills.md") return 1;
-  return 2;
+function requiredFileSortRank(path: string) {
+  const rank = REQUIRED_SKILL_FILE_NAMES.indexOf(path.trim().toLowerCase());
+  return rank === -1 ? REQUIRED_SKILL_FILE_NAMES.length : rank;
 }
 
 function getSharedTopLevelFolderName(files: File[]) {

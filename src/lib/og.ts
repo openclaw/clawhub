@@ -1,5 +1,5 @@
 import { getRuntimeEnv } from "./runtimeEnv";
-import { getClawHubSiteUrl, getOnlyCrabsSiteUrl } from "./site";
+import { getClawHubSiteUrl, SITE_DESCRIPTION } from "./site";
 
 type SkillMetaSource = {
   slug: string;
@@ -11,22 +11,6 @@ type SkillMetaSource = {
 };
 
 type SkillMeta = {
-  title: string;
-  description: string;
-  image: string;
-  url: string;
-  owner: string | null;
-};
-
-type SoulMetaSource = {
-  slug: string;
-  owner?: string | null;
-  displayName?: string | null;
-  summary?: string | null;
-  version?: string | null;
-};
-
-type SoulMeta = {
   title: string;
   description: string;
   image: string;
@@ -55,19 +39,12 @@ type BasicMeta = {
   url: string;
 };
 
-const DEFAULT_DESCRIPTION = "ClawHub — a fast skill registry for agents, with vector search.";
-const DEFAULT_SOUL_DESCRIPTION = "SoulHub — the home for SOUL.md bundles and personal system lore.";
 const OG_SKILL_IMAGE_LAYOUT_VERSION = "7";
-const OG_SOUL_IMAGE_LAYOUT_VERSION = "1";
 const OG_PLUGIN_IMAGE_LAYOUT_VERSION = "2";
 const OG_PUBLISHER_IMAGE_LAYOUT_VERSION = "2";
 
 function getSiteUrl() {
   return getClawHubSiteUrl();
-}
-
-function getSoulSiteUrl() {
-  return getOnlyCrabsSiteUrl();
 }
 
 function getApiBase() {
@@ -98,28 +75,6 @@ export async function fetchSkillMeta(slug: string) {
   }
 }
 
-export async function fetchSoulMeta(slug: string) {
-  try {
-    const apiBase = getApiBase();
-    const url = new URL(`/api/v1/souls/${encodeURIComponent(slug)}`, apiBase);
-    const response = await fetch(url.toString(), { headers: { Accept: "application/json" } });
-    if (!response.ok) return null;
-    const payload = (await response.json()) as {
-      soul?: { displayName?: string; summary?: string | null } | null;
-      owner?: { handle?: string | null } | null;
-      latestVersion?: { version?: string | null } | null;
-    };
-    return {
-      displayName: payload.soul?.displayName ?? null,
-      summary: payload.soul?.summary ?? null,
-      owner: payload.owner?.handle ?? null,
-      version: payload.latestVersion?.version ?? null,
-    };
-  } catch {
-    return null;
-  }
-}
-
 export function buildSkillMeta(source: SkillMetaSource): SkillMeta {
   const siteUrl = getSiteUrl();
   const owner = clean(source.owner);
@@ -129,7 +84,7 @@ export function buildSkillMeta(source: SkillMetaSource): SkillMeta {
   const version = clean(source.version);
   const title = `${displayName} — ClawHub`;
   const description =
-    summary || (owner ? `Agent skill by @${owner} on ClawHub.` : DEFAULT_DESCRIPTION);
+    summary || (owner ? `Agent skill by @${owner} on ClawHub.` : SITE_DESCRIPTION);
   const ownerPath = owner || ownerId || "unknown";
   const url = `${siteUrl}/${ownerPath}/${source.slug}`;
   const imageParams = new URLSearchParams();
@@ -146,30 +101,6 @@ export function buildSkillMeta(source: SkillMetaSource): SkillMeta {
   };
 }
 
-export function buildSoulMeta(source: SoulMetaSource): SoulMeta {
-  const siteUrl = getSoulSiteUrl();
-  const owner = clean(source.owner);
-  const displayName = clean(source.displayName) || clean(source.slug);
-  const summary = clean(source.summary);
-  const version = clean(source.version);
-  const title = `${displayName} — SoulHub`;
-  const description =
-    summary || (owner ? `Soul by @${owner} on SoulHub.` : DEFAULT_SOUL_DESCRIPTION);
-  const url = `${siteUrl}/souls/${source.slug}`;
-  const imageParams = new URLSearchParams();
-  imageParams.set("v", OG_SOUL_IMAGE_LAYOUT_VERSION);
-  imageParams.set("slug", source.slug);
-  if (owner) imageParams.set("owner", owner);
-  if (version) imageParams.set("version", version);
-  return {
-    title,
-    description: truncate(description, 200),
-    image: `${siteUrl}/og/soul?${imageParams.toString()}`,
-    url,
-    owner: owner || null,
-  };
-}
-
 export function buildPluginMeta(source: PluginMetaSource): BasicMeta {
   const siteUrl = getSiteUrl();
   const displayName = clean(source.displayName) || clean(source.name);
@@ -177,7 +108,7 @@ export function buildPluginMeta(source: PluginMetaSource): BasicMeta {
   const owner = clean(source.owner);
   const latestVersion = clean(source.latestVersion);
   const title = `${displayName} — ClawHub Plugins`;
-  const description = summary || (owner ? `Plugin by @${owner} on ClawHub.` : DEFAULT_DESCRIPTION);
+  const description = summary || (owner ? `Plugin by @${owner} on ClawHub.` : SITE_DESCRIPTION);
   const url = `${siteUrl}/plugins/${source.name.startsWith("@") ? source.name : encodeURIComponent(source.name)}`;
   const imageParams = new URLSearchParams();
   imageParams.set("v", OG_PLUGIN_IMAGE_LAYOUT_VERSION);

@@ -10,7 +10,6 @@ read_when:
 
 ## Goals
 
-- onlycrabs.ai mode for sharing `SOUL.md` bundles (host-based entry point).
 - Minimal, fast SPA for browsing and publishing agent skills.
 - Skills stored in Convex (files + metadata + versions + stats).
 - GitHub OAuth login; GitHub App backs up skills to `clawdbot/skills`.
@@ -80,41 +79,6 @@ From SKILL.md frontmatter + AgentSkills + Clawdis extensions:
   - Nix plugins are different from regular skills; they bundle the skill pack, the CLI binary, and config flags/requirements together.
   - `metadata` in frontmatter is YAML (object) preferred; legacy JSON-string accepted.
 
-### Soul
-
-- `slug` (unique)
-- `displayName`
-- `ownerUserId`
-- `summary` (from SOUL.md frontmatter `description`)
-- `latestVersionId`
-- `tags` map: `{ tag -> versionId }`
-- `stats`: `{ downloads, stars, versions, comments }`
-- `status`: `active` only (soft-delete on version/comment only)
-- `createdAt`, `updatedAt`
-
-### SoulVersion
-
-- `soulId`
-- `version` (semver string)
-- `tag` (string, optional; `latest` always maintained separately)
-- `changelog` (required)
-- `files`: list of file metadata (SOUL.md only)
-  - `path`, `size`, `storageId`, `sha256`
-- `parsed` (metadata extracted from SOUL.md)
-- `vectorDocId` (if using RAG component) OR `embeddingId`
-- `createdBy`, `createdAt`
-- `softDeletedAt` (nullable)
-
-### SoulComment
-
-- `soulId`, `userId`, `body`
-- `softDeletedAt`, `deletedBy`
-- `createdAt`
-
-### SoulStar
-
-- `soulId`, `userId`, `createdAt`
-
 ### Comment
 
 - `skillId`, `userId`, `body`
@@ -140,7 +104,7 @@ From SKILL.md frontmatter + AgentSkills + Clawdis extensions:
 - Management console: moderators can hide/restore skills + mark duplicates + ban users; admins can change owners, approve badges, hard-delete skills, and ban users (deletes owned skills).
 - Role changes are admin-only and audited.
 - Reporting: any user can report skills/comments; per-user cap 20 active reports; targets auto-hide after >3 unique reports (mods can review/unhide/delete/ban).
-- Commenting (skills + souls) requires GitHub account age ≥ 14 days.
+- Commenting (skills) requires GitHub account age ≥ 14 days.
 
 ## Upload flow (50MB per version)
 
@@ -155,7 +119,6 @@ From SKILL.md frontmatter + AgentSkills + Clawdis extensions:
    - GitHub account age ≥ 14 days
 5. Server stores files + metadata, sets `latest` tag, updates stats.
 
-Soul upload flow: same as skills (including GitHub account age checks), but only `SOUL.md` is allowed.
 Local fixture data lives in `convex/devSeed.ts` and `fixtures/public-corpus/`.
 
 ## Versioning + tags
@@ -167,7 +130,7 @@ Local fixture data lives in `convex/devSeed.ts` and `fixtures/public-corpus/`.
 
 ## Search
 
-- Vector search over: SKILL.md + other text files + metadata summary (souls index SOUL.md).
+- Vector search over: SKILL.md + other text files + metadata summary.
 - Convex embeddings + vector index.
 - Filters: tag, owner, `redactionApproved` only, min stars, updatedAt.
 

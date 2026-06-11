@@ -127,17 +127,14 @@ export const ApiV1SkillInstallResolveResponseSchema = type({
     message: "string",
     status: "number",
 });
-export const CliTelemetrySyncRequestSchema = type({
-    roots: type({
-        rootId: "string",
-        label: "string",
-        skills: type({
-            slug: "string",
-            version: "string|null?",
-        }).array(),
-    }).array(),
+export const CliTelemetryInstallRequestSchema = type({
+    event: '"install"',
+    slug: "string",
+    version: "string?",
+    rootId: "string?",
+    rootLabel: "string?",
 });
-export const ApiCliTelemetrySyncResponseSchema = type({
+export const ApiCliTelemetryInstallResponseSchema = type({
     ok: "true",
 });
 export const ApiV1WhoamiResponseSchema = type({

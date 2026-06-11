@@ -40,7 +40,6 @@ migration.
 
 - Skills: yes
 - Packages: yes
-- Souls: probably yes, for consistency, even if lower priority in UI
 
 Avoid split models like "skills stay user-owned, packages become org-owned".
 That creates permanent complexity in auth, routes, and migrations.
@@ -125,7 +124,6 @@ Content tables should move to `ownerPublisherId`.
 Affected tables:
 
 - `skills`
-- `souls`
 - `packages`
 - search digest tables
 - slug/name alias tables
@@ -184,7 +182,6 @@ Use dual fields during rollout:
 
 - Skill uniqueness: `(ownerPublisherId, slug)`
 - Package uniqueness: `(ownerPublisherId, normalizedName)`
-- Soul uniqueness: `(ownerPublisherId, slug)`
 
 ### Legacy compatibility
 

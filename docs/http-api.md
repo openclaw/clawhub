@@ -123,10 +123,10 @@ Response:
 
 Notes:
 
-- Results are returned in relevance order (embedding similarity + exact slug/name token boosts + a small popularity prior from stars, all-time installs, and downloads).
+- Results are returned in relevance order (embedding similarity + exact slug/name token boosts + a small popularity prior from stars and downloads).
 - Relevance is stronger than popularity. A precise slug or display-name token match can outrank a looser match with many more downloads.
 - ASCII text is tokenized on word and punctuation boundaries. For example, `personal-map` contains a standalone `map` token, while `amap-jsapi-skill` contains `amap`, `jsapi`, and `skill`; searching for `map` therefore gives `personal-map` a stronger lexical match than `amap-jsapi-skill`.
-- Popularity is log-scaled and capped. Stars carry the strongest weight, all-time installs carry a smaller weight, and downloads are only a tiny fallback signal. High-download skills can rank lower when the query text is a weaker match.
+- Popularity is log-scaled and capped. Stars carry the strongest weight, and downloads are the fallback popularity signal. High-download skills can rank lower when the query text is a weaker match.
 - Suspicious or hidden moderation state can remove a skill from public search depending on caller filters and current moderation status.
 
 Publisher discoverability guidance:
@@ -150,7 +150,7 @@ Invalid `sort` values return `400`.
 
 Notes:
 
-- `recommended` ranks by stars, then all-time installs, then downloads, then `updatedAt`.
+- `recommended` ranks by stars, then downloads, then `updatedAt`.
 - `trending` ranks by installs in the last 7 days (telemetry-based).
 - `createdAt` is stable for new-skill crawls; `updated` changes when existing skills are republished.
 - When `nonSuspiciousOnly=true`, cursor-based sorts may return fewer than `limit` items on a page because suspicious skills are filtered after page retrieval.
@@ -1540,7 +1540,7 @@ Still supported for older CLI versions:
 - `GET /api/cli/whoami`
 - `POST /api/cli/upload-url`
 - `POST /api/cli/publish`
-- `POST /api/cli/telemetry/sync`
+- `POST /api/cli/telemetry/install`
 - `POST /api/cli/skill/delete`
 - `POST /api/cli/skill/undelete`
 

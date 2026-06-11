@@ -436,15 +436,6 @@ function makeBanCtx(options: { auditLogs?: Array<Record<string, unknown>> } = {}
       softDeletedAt: 123,
     },
   ];
-  const soulComments = [
-    {
-      _id: "soulComments:active",
-      userId: "users:target",
-      soulId: "souls:1",
-      softDeletedAt: undefined,
-    },
-  ];
-
   const query = vi.fn((table: string) => ({
     withIndex: (_index: string, _cb: unknown) => {
       if (table === "auditLogs") {
@@ -452,7 +443,6 @@ function makeBanCtx(options: { auditLogs?: Array<Record<string, unknown>> } = {}
       }
       if (table === "apiTokens") return { collect: vi.fn().mockResolvedValue(apiTokens) };
       if (table === "comments") return { collect: vi.fn().mockResolvedValue(userComments) };
-      if (table === "soulComments") return { collect: vi.fn().mockResolvedValue(soulComments) };
       throw new Error(`Unexpected table ${table}`);
     },
   }));
@@ -2848,14 +2838,13 @@ describe("users.banUserInternal", () => {
     vi.restoreAllMocks();
   });
 
-  it("soft-deletes target user comments (skill + soul) during ban", async () => {
+  it("soft-deletes target user skill comments during ban", async () => {
     vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
     const { ctx, get, patch, insert, runMutation } = makeBanCtx();
 
     get.mockImplementation(async (id: string) => {
       if (id === "users:actor") return { _id: "users:actor", role: "moderator" };
       if (id === "users:target") return { _id: "users:target", role: "user" };
-      if (id === "souls:1") return { _id: "souls:1", stats: { comments: 3 } };
       return null;
     });
 
@@ -2879,26 +2868,18 @@ describe("users.banUserInternal", () => {
     })) as {
       ok: boolean;
       alreadyBanned: boolean;
-      deletedComments: { skillComments: number; soulComments: number };
+      deletedSkillComments: number;
     };
 
     expect(result).toMatchObject({
       ok: true,
       alreadyBanned: false,
-      deletedComments: { skillComments: 1, soulComments: 1 },
+      deletedSkillComments: 1,
     });
 
     expect(patch).toHaveBeenCalledWith("comments:active", {
       softDeletedAt: 1_700_000_000_000,
       deletedBy: "users:actor",
-    });
-    expect(patch).toHaveBeenCalledWith("soulComments:active", {
-      softDeletedAt: 1_700_000_000_000,
-      deletedBy: "users:actor",
-    });
-    expect(patch).toHaveBeenCalledWith("souls:1", {
-      stats: { comments: 2 },
-      updatedAt: 1_700_000_000_000,
     });
 
     expect(insertStatEvent).toHaveBeenCalledWith(expect.anything(), {
@@ -2911,7 +2892,6 @@ describe("users.banUserInternal", () => {
         action: "user.ban",
         metadata: expect.objectContaining({
           deletedSkillComments: 1,
-          deletedSoulComments: 1,
         }),
       }),
     );
@@ -2931,7 +2911,6 @@ describe("users.banUserInternal", () => {
           email: "target@example.com",
         };
       }
-      if (id === "souls:1") return { _id: "souls:1", stats: { comments: 3 } };
       return null;
     });
 
@@ -2974,7 +2953,6 @@ describe("users.banUserInternal", () => {
       if (id === "users:actor") return { _id: "users:actor", role: "moderator" };
       if (id === "users:target")
         return { _id: "users:target", role: "user", deletedAt: 1_600_000_000_000 };
-      if (id === "souls:1") return { _id: "souls:1", stats: { comments: 3 } };
       return null;
     });
 
@@ -2994,7 +2972,7 @@ describe("users.banUserInternal", () => {
     })) as {
       ok: boolean;
       alreadyBanned: boolean;
-      deletedComments: { skillComments: number; soulComments: number };
+      deletedSkillComments: number;
       deletedSkills: number;
     };
 
@@ -3002,7 +2980,7 @@ describe("users.banUserInternal", () => {
       ok: true,
       alreadyBanned: true,
       deletedSkills: 0,
-      deletedComments: { skillComments: 1, soulComments: 1 },
+      deletedSkillComments: 1,
     });
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
@@ -3038,7 +3016,6 @@ describe("users.autobanMalwareAuthorInternal", () => {
           email: "target@example.com",
         };
       }
-      if (id === "souls:1") return { _id: "souls:1", stats: { comments: 3 } };
       return null;
     });
     runMutation

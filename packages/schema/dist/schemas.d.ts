@@ -149,18 +149,15 @@ export declare const ApiV1SkillInstallResolveResponseSchema: import("arktype/int
     status: number;
 }, {}>;
 export type ApiV1SkillInstallResolveResponse = (typeof ApiV1SkillInstallResolveResponseSchema)[inferred];
-export declare const CliTelemetrySyncRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
-    roots: {
-        rootId: string;
-        label: string;
-        skills: {
-            slug: string;
-            version?: string | null | undefined;
-        }[];
-    }[];
+export declare const CliTelemetryInstallRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    event: "install";
+    slug: string;
+    version?: string | undefined;
+    rootId?: string | undefined;
+    rootLabel?: string | undefined;
 }, {}>;
-export type CliTelemetrySyncRequest = (typeof CliTelemetrySyncRequestSchema)[inferred];
-export declare const ApiCliTelemetrySyncResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+export type CliTelemetryInstallRequest = (typeof CliTelemetryInstallRequestSchema)[inferred];
+export declare const ApiCliTelemetryInstallResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     ok: true;
 }, {}>;
 export declare const ApiV1WhoamiResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{

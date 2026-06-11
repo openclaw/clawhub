@@ -10,23 +10,15 @@ vi.mock("./lib/skillPublish", () => ({
   fetchText: vi.fn().mockResolvedValue("# skill"),
 }));
 
-vi.mock("./lib/soulPublish", () => ({
-  fetchText: vi.fn().mockResolvedValue("# soul"),
-  publishSoulVersionForUser: vi.fn(),
-}));
-
 const { getAuthUserId } = await import("@convex-dev/auth/server");
 const {
   getReadme: getSkillReadme,
   getFileText: getSkillFileText,
   getGitHubSkillContent,
 } = await import("./skills");
-const { getReadme: getSoulReadme, getFileText: getSoulFileText } = await import("./souls");
 const getSkillReadmeHandler = getSkillReadme as unknown as { _handler: Function };
 const getSkillFileTextHandler = getSkillFileText as unknown as { _handler: Function };
 const getGitHubSkillContentHandler = getGitHubSkillContent as unknown as { _handler: Function };
-const getSoulReadmeHandler = getSoulReadme as unknown as { _handler: Function };
-const getSoulFileTextHandler = getSoulFileText as unknown as { _handler: Function };
 
 function makeSkillVersion() {
   return {
@@ -49,7 +41,6 @@ function makeSkillVersion() {
 
 function makeActionCtx(args: {
   skill?: Record<string, unknown> | null;
-  soul?: Record<string, unknown> | null;
   version?: Record<string, unknown> | null;
   actor?: Record<string, unknown> | null;
   publisherMemberRole?: "owner" | "admin" | "publisher" | null;
@@ -59,7 +50,6 @@ function makeActionCtx(args: {
     runQuery: vi.fn(async (_endpoint: unknown, payload: Record<string, unknown>) => {
       if (payload.versionId && args.version) return args.version ?? null;
       if (payload.skillId && args.skill) return args.skill ?? null;
-      if (payload.soulId && args.soul) return args.soul ?? null;
       if (payload.publisherId && payload.userId === args.actor?._id) {
         if (Array.isArray(payload.allowedPublisherRoles)) {
           if (args.publisherAccess !== undefined) return args.publisherAccess;
@@ -385,68 +375,5 @@ describe("version file access actions", () => {
         path: "SKILL.md",
       } as never),
     ).resolves.toMatchObject({ path: "SKILL.md", text: "# skill" });
-  });
-
-  it("blocks unauthenticated access to deleted soul versions", async () => {
-    const ctx = makeActionCtx({
-      version: {
-        _id: "soulVersions:1",
-        _creationTime: 1,
-        soulId: "souls:1",
-        version: "1.0.0",
-        changelog: "init",
-        files: [
-          {
-            path: "SOUL.md",
-            size: 10,
-            storageId: "_storage:1",
-            sha256: "abc",
-            contentType: "text/markdown",
-          },
-        ],
-      },
-      soul: {
-        _id: "souls:1",
-        ownerUserId: "users:owner",
-        softDeletedAt: 123,
-      },
-    });
-
-    await expect(
-      getSoulReadmeHandler._handler(ctx, { versionId: "soulVersions:1" } as never),
-    ).rejects.toThrow("Version not available");
-  });
-
-  it("blocks file reads from deleted soul versions", async () => {
-    const ctx = makeActionCtx({
-      version: {
-        _id: "soulVersions:1",
-        _creationTime: 1,
-        soulId: "souls:1",
-        version: "1.0.0",
-        changelog: "init",
-        files: [
-          {
-            path: "SOUL.md",
-            size: 10,
-            storageId: "_storage:1",
-            sha256: "abc",
-            contentType: "text/markdown",
-          },
-        ],
-      },
-      soul: {
-        _id: "souls:1",
-        ownerUserId: "users:owner",
-        softDeletedAt: 123,
-      },
-    });
-
-    await expect(
-      getSoulFileTextHandler._handler(ctx, {
-        versionId: "soulVersions:1",
-        path: "SOUL.md",
-      } as never),
-    ).rejects.toThrow("Version not available");
   });
 });

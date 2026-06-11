@@ -2137,6 +2137,77 @@ export const backfillLatestVersionSummaryInternal = internalMutation({
   },
 });
 
+export const backfillSkillSearchDigestModerationVerdictsInternal = internalMutation({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const batchSize = clampInt(args.batchSize ?? 100, 10, 200);
+    const dryRun = args.dryRun ?? false;
+    const { page, continueCursor, isDone } = await ctx.db
+      .query("skillSearchDigest")
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+
+    let patched = 0;
+    let missingSkills = 0;
+    for (const digest of page) {
+      const skill = await ctx.db.get(digest.skillId);
+      if (!skill) {
+        missingSkills++;
+        continue;
+      }
+      if (digest.moderationVerdict === skill.moderationVerdict) continue;
+
+      patched++;
+      if (!dryRun) {
+        await ctx.db.patch(digest._id, {
+          moderationVerdict: skill.moderationVerdict,
+          updatedAt: skill.updatedAt,
+        });
+      }
+    }
+
+    if (!dryRun && !isDone) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.maintenance.backfillSkillSearchDigestModerationVerdictsInternal,
+        {
+          cursor: continueCursor,
+          batchSize: args.batchSize,
+          dryRun,
+        },
+      );
+    }
+
+    return {
+      scanned: page.length,
+      patched,
+      missingSkills,
+      cursor: continueCursor,
+      isDone,
+      dryRun,
+    };
+  },
+});
+
+export const backfillSkillSearchDigestModerationVerdicts: ReturnType<typeof action> = action({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUserFromAction(ctx);
+    assertRole(user, ["admin"]);
+    return await ctx.runMutation(
+      internal.maintenance.backfillSkillSearchDigestModerationVerdictsInternal,
+      args,
+    );
+  },
+});
+
 // Repair stale skill-level moderation that was sourced from a non-latest version.
 // Run once after deploying the latest-version moderation fix:
 //   npx convex run maintenance:backfillLatestSkillModeration --prod

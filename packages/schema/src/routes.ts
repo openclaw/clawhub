@@ -7,7 +7,6 @@ export const LegacyApiRoutes = {
   cliUploadUrl: "/api/cli/upload-url",
   cliPublish: "/api/cli/publish",
   cliTelemetryInstall: "/api/cli/telemetry/install",
-  cliTelemetrySync: "/api/cli/telemetry/sync",
   cliSkillDelete: "/api/cli/skill/delete",
   cliSkillUndelete: "/api/cli/skill/undelete",
 } as const;
@@ -27,7 +26,6 @@ export const ApiRoutes = {
   stars: "/api/v1/stars",
   transfers: "/api/v1/transfers",
   publishers: "/api/v1/publishers",
-  souls: "/api/v1/souls",
   users: "/api/v1/users",
   whoami: "/api/v1/whoami",
   skillsExport: "/api/v1/skills/export",

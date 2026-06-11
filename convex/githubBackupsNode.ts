@@ -14,6 +14,7 @@ import {
   listGitHubSkillBackupEntries,
   normalizeOwner,
 } from "./lib/githubBackup";
+import { isPublicSkillDoc } from "./lib/globalStats";
 
 const DEFAULT_BATCH_SIZE = 50;
 const MAX_BATCH_SIZE = 200;
@@ -273,12 +274,7 @@ async function pruneDeletedSkillBackups(
 }
 
 function isMirrorEligibleSkill(skill: Doc<"skills"> | null): skill is Doc<"skills"> {
-  if (!skill || skill.softDeletedAt) return false;
-  return (
-    skill.moderationStatus === undefined ||
-    skill.moderationStatus === null ||
-    skill.moderationStatus === "active"
-  );
+  return isPublicSkillDoc(skill);
 }
 
 async function deleteBackupIfNeeded(

@@ -42,9 +42,8 @@ vi.mock("../components/PublisherListItem", () => ({
 }));
 
 vi.mock("../lib/site", () => ({
-  getSiteMode: () => "skills",
-  getSiteName: () => "ClawHub",
-  getSiteUrlForMode: () => "https://clawhub.ai",
+  SITE_NAME: "ClawHub",
+  getClawHubSiteUrl: () => "https://clawhub.ai",
 }));
 
 async function loadRoute() {

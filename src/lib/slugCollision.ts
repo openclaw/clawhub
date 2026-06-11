@@ -19,11 +19,9 @@ function publicCollisionMessage(message: string | null) {
 }
 
 export function getPublicSlugCollision(params: {
-  isSoulMode: boolean;
   slug: string;
   result: SlugAvailabilityResult | undefined;
 }): PublicSlugCollision | null {
-  if (params.isSoulMode) return null;
   const normalizedSlug = params.slug.trim().toLowerCase();
   if (!normalizedSlug) return null;
   if (!params.result || params.result.available) return null;

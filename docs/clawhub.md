@@ -14,7 +14,7 @@ sidebarTitle: "ClawHub"
 ClawHub is the public registry for OpenClaw skills and plugins.
 
 - Use native `openclaw` commands to search, install, and update skills and to install plugins from ClawHub.
-- Use the separate `clawhub` CLI for registry auth, publishing, delete/undelete, and sync workflows.
+- Use the separate `clawhub` CLI for registry auth, publishing, sync, and delete/undelete workflows.
 
 Site: [clawhub.ai](https://clawhub.ai)
 
@@ -52,7 +52,6 @@ pnpm add -g clawhub
 | Skills         | Versioned text bundles with `SKILL.md` plus supporting files | `openclaw skills install <slug>`             |
 | Code plugins   | OpenClaw plugin packages with compatibility metadata         | `openclaw plugins install clawhub:<package>` |
 | Bundle plugins | Packaged plugin bundles for OpenClaw distribution            | `clawhub package publish <source>`           |
-| Souls          | `SOUL.md` bundles shown on onlycrabs.ai                      | Web and API publish flows                    |
 
 ClawHub tracks semver versions, tags such as `latest`, changelogs, files,
 downloads, stars, and security scan summaries. Public pages show current registry
@@ -151,8 +150,8 @@ hide or restore content, and ban abusive accounts. See
 
 ## Telemetry and environment
 
-When you run `clawhub sync` while logged in, the CLI sends a minimal snapshot so
-ClawHub can compute install counts. Disable this with:
+When you run `clawhub install` while logged in, the CLI may send a best-effort
+install event so ClawHub can compute aggregate install counts. Disable this with:
 
 ```bash
 export CLAWHUB_DISABLE_TELEMETRY=1
@@ -166,7 +165,7 @@ Useful environment overrides:
 | `CLAWHUB_REGISTRY`            | Override the registry API URL.                    |
 | `CLAWHUB_CONFIG_PATH`         | Override where the CLI stores token/config state. |
 | `CLAWHUB_WORKDIR`             | Override the default working directory.           |
-| `CLAWHUB_DISABLE_TELEMETRY=1` | Disable telemetry on `sync`.                      |
+| `CLAWHUB_DISABLE_TELEMETRY=1` | Disable install telemetry.                        |
 
 See [Telemetry](./telemetry.md), [HTTP API](./http-api.md), and
 [Troubleshooting](./troubleshooting.md) for deeper reference material.

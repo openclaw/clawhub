@@ -20,9 +20,8 @@ import {
 } from "../lib/authErrorMessage";
 import { gravatarUrl } from "../lib/gravatar";
 import { NAV_ICONS } from "../lib/marketplaceIcons";
-import { filterNavItems, PRIMARY_NAV_ITEMS, SECONDARY_NAV_ITEMS } from "../lib/nav-items";
-import { isModerator } from "../lib/roles";
-import { getClawHubSiteUrl, getSiteMode, getSiteName } from "../lib/site";
+import { PRIMARY_NAV_ITEMS, SECONDARY_NAV_ITEMS } from "../lib/nav-items";
+import { SITE_NAME } from "../lib/site";
 import { applyTheme, useThemeMode } from "../lib/theme";
 import { clearAuthError, setAuthError } from "../lib/useAuthError";
 import { useAuthStatus } from "../lib/useAuthStatus";
@@ -81,10 +80,6 @@ export default function Header() {
   const { isAuthenticated, isLoading, me } = useAuthStatus();
   const { signIn, signOut } = useAuthActions();
   const { theme, mode, setMode } = useThemeMode();
-  const siteMode = getSiteMode();
-  const siteName = useMemo(() => getSiteName(siteMode), [siteMode]);
-  const isSoulMode = siteMode === "souls";
-  const clawHubUrl = getClawHubSiteUrl();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -92,15 +87,7 @@ export default function Header() {
   const rawHandle = me?.handle ?? me?.displayName ?? "user";
   const handle = rawHandle.length > 25 ? `${rawHandle.slice(0, 25)}…` : rawHandle;
   const initial = (me?.displayName ?? me?.name ?? rawHandle).charAt(0).toUpperCase();
-  const isStaff = isModerator(me);
-  const hasResolvedUser = Boolean(me);
   const isAuthResolving = isLoading || (isAuthenticated && me === undefined);
-  const navCtx = useMemo(
-    () => ({ isSoulMode, isAuthenticated: hasResolvedUser, isStaff }),
-    [hasResolvedUser, isSoulMode, isStaff],
-  );
-  const primaryItems = useMemo(() => filterNavItems(PRIMARY_NAV_ITEMS, navCtx), [navCtx]);
-  const secondaryItems = useMemo(() => filterNavItems(SECONDARY_NAV_ITEMS, navCtx), [navCtx]);
   const signInRedirectTo = getCurrentRelativeUrl();
 
   const [navSearchQuery, setNavSearchQuery] = useState("");
@@ -111,7 +98,7 @@ export default function Header() {
   const searchWrapRef = useRef<HTMLDivElement | null>(null);
   const ThemeModeIcon = getThemeModeIcon(mode);
   const trimmedNavSearchQuery = navSearchQuery.trim();
-  const showTypeahead = !isSoulMode && typeaheadOpen && trimmedNavSearchQuery.length > 0;
+  const showTypeahead = typeaheadOpen && trimmedNavSearchQuery.length > 0;
   const {
     skillResults,
     pluginResults,
@@ -186,16 +173,8 @@ export default function Header() {
     const q = navSearchQuery.trim();
     if (!q) return;
     void navigate({
-      to: isSoulMode ? "/souls" : "/search",
-      search: isSoulMode
-        ? {
-            q,
-            sort: undefined,
-            dir: undefined,
-            view: undefined,
-            focus: undefined,
-          }
-        : { q, type: undefined },
+      to: "/search",
+      search: { q, type: undefined },
     });
     setNavSearchQuery("");
     setTypeaheadOpen(false);
@@ -235,7 +214,6 @@ export default function Header() {
   };
 
   const handleSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (isSoulMode) return;
     if (event.key === "Escape") {
       setTypeaheadOpen(false);
       return;
@@ -291,7 +269,7 @@ export default function Header() {
                           className="mobile-nav-brand-mark-image"
                         />
                       </span>
-                      <span className="mobile-nav-brand-name">{siteName}</span>
+                      <span className="mobile-nav-brand-name">{SITE_NAME}</span>
                     </span>
                   </SheetTitle>
                   <SheetDescription>
@@ -304,14 +282,7 @@ export default function Header() {
                       Home
                     </Link>
                   </SheetClose>
-                  {isSoulMode ? (
-                    <SheetClose asChild>
-                      <a href={clawHubUrl} className="mobile-nav-link">
-                        ClawHub
-                      </a>
-                    </SheetClose>
-                  ) : null}
-                  {primaryItems.map((item) => (
+                  {PRIMARY_NAV_ITEMS.map((item) => (
                     <SheetClose key={item.to + item.label} asChild>
                       <Link
                         to={item.to}
@@ -322,7 +293,7 @@ export default function Header() {
                       </Link>
                     </SheetClose>
                   ))}
-                  {secondaryItems.map((item) => (
+                  {SECONDARY_NAV_ITEMS.map((item) => (
                     <SheetClose key={(item.href ?? item.to ?? "") + item.label} asChild>
                       {item.href ? (
                         <a href={item.href} className="mobile-nav-link">
@@ -366,7 +337,7 @@ export default function Header() {
             <span className="brand-mark">
               <img src="/clawd-logo.png" alt="" aria-hidden="true" className="brand-mark-image" />
             </span>
-            <span className="brand-name brand-name-responsive">{siteName}</span>
+            <span className="brand-name brand-name-responsive">{SITE_NAME}</span>
           </Link>
 
           <div className="navbar-search-wrap" ref={searchWrapRef}>
@@ -381,7 +352,7 @@ export default function Header() {
                 className="navbar-search-input"
                 type="search"
                 role="combobox"
-                placeholder={isSoulMode ? "Search souls..." : "Search skills and plugins"}
+                placeholder="Search skills and plugins"
                 value={navSearchQuery}
                 onChange={(e) => {
                   setNavSearchQuery(e.target.value);
@@ -545,7 +516,7 @@ export default function Header() {
             <input
               className="navbar-search-input"
               type="text"
-              placeholder={isSoulMode ? "Search souls..." : "Search skills and plugins"}
+              placeholder="Search skills and plugins"
               value={navSearchQuery}
               onChange={(e) => setNavSearchQuery(e.target.value)}
               autoFocus
@@ -555,12 +526,7 @@ export default function Header() {
 
         <nav className="navbar-tabs" aria-label="Content types">
           <div className="navbar-tabs-primary">
-            {isSoulMode ? (
-              <a href={clawHubUrl} className="navbar-tab">
-                ClawHub
-              </a>
-            ) : null}
-            {primaryItems.map((item) => {
+            {PRIMARY_NAV_ITEMS.map((item) => {
               const Icon = item.icon ? NAV_ICONS[item.icon] : null;
               const isActiveByPrefix = item.activePathPrefixes?.some((prefix) =>
                 location.pathname.startsWith(prefix),
@@ -580,7 +546,7 @@ export default function Header() {
             })}
           </div>
           <div className="navbar-tabs-secondary">
-            {secondaryItems.map((item) => {
+            {SECONDARY_NAV_ITEMS.map((item) => {
               const isActiveByPrefix = item.activePathPrefixes?.some((prefix) =>
                 location.pathname.startsWith(prefix),
               );
