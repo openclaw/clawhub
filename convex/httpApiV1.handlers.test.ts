@@ -1815,8 +1815,13 @@ describe("httpApiV1 handlers", () => {
                     envVars: [
                       {
                         name: "HA_TOKEN",
-                        required: true,
+                        required: false,
                         description: "Long-lived access token.",
+                      },
+                      {
+                        name: "HA_THEME",
+                        required: false,
+                        description: "Optional dashboard theme.",
                       },
                     ],
                     os: ["linux"],
@@ -1848,6 +1853,10 @@ describe("httpApiV1 handlers", () => {
       {
         key: "HA_URL",
         required: true,
+      },
+      {
+        key: "HA_THEME",
+        required: false,
       },
     ]);
   });

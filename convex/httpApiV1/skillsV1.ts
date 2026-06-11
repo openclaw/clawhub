@@ -1031,12 +1031,9 @@ function buildSkillSetup(parsed: PublicSkillVersionParsed | undefined): SkillSet
 
   const entries: SkillSetupEntry[] = [];
   const seen = new Set<string>();
-  const envVarDetails = new Map(
-    (clawdis.envVars ?? []).map((entry) => [entry.name, { required: entry.required ?? true }]),
-  );
 
   for (const key of clawdis.requires?.env ?? []) {
-    addSetupEntry(entries, seen, key, envVarDetails.get(key) ?? { required: true });
+    addSetupEntry(entries, seen, key, { required: true });
   }
   for (const key of clawdis.requires?.config ?? []) {
     addSetupEntry(entries, seen, key, { required: true });
