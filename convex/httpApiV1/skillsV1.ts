@@ -34,8 +34,8 @@ import type {
 } from "../lib/securityPrompt";
 import { selectGeneratedSkillCardFile, sourceSkillVersionFiles } from "../lib/skillCards";
 import {
-  getPublicSkillFileAccessBlock,
   getPublicSkillVersionAccessBlock,
+  getPublicSkillVersionDownloadBlock,
   getSkillFileModerationInfoFromSkill,
   isSkillVersionForSkill,
 } from "../lib/skillFileAccess";
@@ -2122,10 +2122,6 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
       if (hidden) return text(hidden.message, hidden.status, rate.headers);
       return text("Skill not found", 404, rate.headers);
     }
-    const moderationBlock = getPublicSkillFileAccessBlock(skillResult.moderationInfo);
-    if (moderationBlock) {
-      return text(moderationBlock.message, moderationBlock.status, rate.headers);
-    }
 
     let version: Doc<"skillVersions"> | null = skillResult.skill.latestVersionId
       ? await ctx.runQuery(internal.skills.getVersionByIdInternal, {
@@ -2148,6 +2144,16 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
       return text("Version not found", 404, rate.headers);
     }
     if (version.softDeletedAt) return text("Version not available", 410, rate.headers);
+    const effectiveLatestVersionId =
+      skillResult.skill.latestVersionId ?? skillResult.skill.tags?.latest;
+    const moderationBlock = getPublicSkillVersionDownloadBlock(
+      skillResult.moderationInfo,
+      version,
+      effectiveLatestVersionId,
+    );
+    if (moderationBlock) {
+      return text(moderationBlock.message, moderationBlock.status, rate.headers);
+    }
 
     const fingerprintEntries = ((await ctx.runQuery(
       internal.skills.listVersionFingerprintsInternal,
@@ -2181,10 +2187,6 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
 
     const skillResult = (await ctx.runQuery(api.skills.getBySlug, { slug })) as GetBySlugResult;
     if (!skillResult?.skill) return text("Skill not found", 404, rate.headers);
-    const moderationBlock = getPublicSkillFileAccessBlock(skillResult.moderationInfo);
-    if (moderationBlock) {
-      return text(moderationBlock.message, moderationBlock.status, rate.headers);
-    }
 
     let version: Doc<"skillVersions"> | null = skillResult.skill.latestVersionId
       ? await ctx.runQuery(internal.skills.getVersionByIdInternal, {
@@ -2207,6 +2209,16 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
       return text("Version not found", 404, rate.headers);
     }
     if (version.softDeletedAt) return text("Version not available", 410, rate.headers);
+    const effectiveLatestVersionId =
+      skillResult.skill.latestVersionId ?? skillResult.skill.tags?.latest;
+    const moderationBlock = getPublicSkillVersionDownloadBlock(
+      skillResult.moderationInfo,
+      version,
+      effectiveLatestVersionId,
+    );
+    if (moderationBlock) {
+      return text(moderationBlock.message, moderationBlock.status, rate.headers);
+    }
 
     const normalized = path.trim();
     const normalizedLower = normalized.toLowerCase();

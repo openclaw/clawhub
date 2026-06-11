@@ -7,7 +7,7 @@ import { getOptionalActiveAuthUserIdFromAction } from "./lib/access";
 import { getOptionalApiTokenUserId } from "./lib/apiTokenAuth";
 import { corsHeaders, mergeHeaders } from "./lib/httpHeaders";
 import { applyRateLimit, getClientIp } from "./lib/httpRateLimit";
-import { getPublicSkillFileAccessBlock, isSkillVersionForSkill } from "./lib/skillFileAccess";
+import { getPublicSkillVersionDownloadBlock, isSkillVersionForSkill } from "./lib/skillFileAccess";
 import { buildDeterministicZip } from "./lib/skillZip";
 import { insertStatEvent } from "./skillStatEvents";
 
@@ -44,14 +44,6 @@ export async function downloadZipHandler(
     });
   }
 
-  const moderationBlock = getPublicSkillFileAccessBlock(skillResult.moderationInfo);
-  if (moderationBlock) {
-    return new Response(moderationBlock.message, {
-      status: moderationBlock.status,
-      headers: mergeHeaders(rate.headers, corsHeaders()),
-    });
-  }
-
   const skill = skillResult.skill;
   let version = skill.latestVersionId
     ? await ctx.runQuery(internal.skills.getVersionByIdInternal, {
@@ -80,6 +72,18 @@ export async function downloadZipHandler(
   if (version.softDeletedAt) {
     return new Response("Version not available", {
       status: 410,
+      headers: mergeHeaders(rate.headers, corsHeaders()),
+    });
+  }
+
+  const moderationBlock = getPublicSkillVersionDownloadBlock(
+    skillResult.moderationInfo,
+    version,
+    skill.latestVersionId ?? skill.tags.latest,
+  );
+  if (moderationBlock) {
+    return new Response(moderationBlock.message, {
+      status: moderationBlock.status,
       headers: mergeHeaders(rate.headers, corsHeaders()),
     });
   }

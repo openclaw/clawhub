@@ -54,8 +54,8 @@ import {
   MAX_PUBLISH_TOTAL_BYTES,
 } from "../lib/publishLimits";
 import {
-  getPublicSkillFileAccessBlock,
   getPublicSkillVersionAccessBlock,
+  getPublicSkillVersionDownloadBlock,
   getSkillFileModerationInfoFromSkill,
   isSkillVersionForSkill,
 } from "../lib/skillFileAccess";
@@ -3530,11 +3530,17 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     const path = new URL(request.url).searchParams.get("path")?.trim();
     if (!path) return text("Missing path", 400, rate.headers);
     if (skillDetail?.skill) {
-      const moderationBlock = getPublicSkillFileAccessBlock(skillDetail.moderationInfo);
-      if (moderationBlock)
-        return text(moderationBlock.message, moderationBlock.status, rate.headers);
       const version = await getSkillVersionForRequest(ctx, skillDetail.skill, request);
       if (!version || version.softDeletedAt) return text("Version not found", 404, rate.headers);
+      const effectiveLatestVersionId =
+        skillDetail.skill.latestVersionId ?? skillDetail.skill.tags?.latest;
+      const moderationBlock = getPublicSkillVersionDownloadBlock(
+        skillDetail.moderationInfo,
+        version,
+        effectiveLatestVersionId,
+      );
+      if (moderationBlock)
+        return text(moderationBlock.message, moderationBlock.status, rate.headers);
       const file = resolveSkillFilePath(version, path);
       if (!file) return text("File not found", 404, rate.headers);
       if (!("storageId" in file) || !file.storageId)
