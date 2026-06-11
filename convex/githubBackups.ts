@@ -12,6 +12,8 @@ const MAX_BATCH_SIZE = 200;
 const SYNC_STATE_KEY = "default";
 const PACKAGE_SYNC_STATE_KEY = "packageReleases";
 const MAX_BACKUP_JOB_ERROR_LENGTH = 4000;
+const DEFAULT_BACKUP_HEALTH_SAMPLE_LIMIT = 500;
+const MAX_BACKUP_HEALTH_SAMPLE_LIMIT = 1000;
 
 type BackupPageItem =
   | {
@@ -417,6 +419,7 @@ export const getRegistryArtifactBackupHealthInternal = internalQuery({
   args: {
     now: v.optional(v.number()),
     staleAfterMs: v.optional(v.number()),
+    sampleLimit: v.optional(v.number()),
   },
   handler: getRegistryArtifactBackupHealthHandler,
 });
@@ -437,6 +440,9 @@ export const syncGitHubBackups: ReturnType<typeof action> = action({
       await ctx.runMutation(internal.githubBackups.setGitHubBackupSyncStateInternal, {
         cursor: undefined,
         pruneCursor: undefined,
+      });
+      await ctx.runMutation(internal.githubBackups.setGitHubPackageBackupSyncStateInternal, {
+        cursor: undefined,
       });
     }
 
@@ -509,30 +515,39 @@ export async function enqueueRegistryArtifactBackupJobHandler(
 
 export async function getRegistryArtifactBackupHealthHandler(
   ctx: Pick<QueryCtx, "db">,
-  args: { now?: number; staleAfterMs?: number },
+  args: { now?: number; staleAfterMs?: number; sampleLimit?: number },
 ) {
   const now = args.now ?? Date.now();
   const staleAfterMs = args.staleAfterMs ?? 24 * 60 * 60 * 1000;
+  const sampleLimit = clampInt(
+    args.sampleLimit ?? DEFAULT_BACKUP_HEALTH_SAMPLE_LIMIT,
+    1,
+    MAX_BACKUP_HEALTH_SAMPLE_LIMIT,
+  );
   const pending = await ctx.db
     .query("registryArtifactBackupJobs")
     .withIndex("by_status_nextRunAt", (q) => q.eq("status", "pending").lte("nextRunAt", now))
-    .collect();
+    .take(sampleLimit + 1);
   const exhausted = await ctx.db
     .query("registryArtifactBackupJobs")
     .withIndex("by_status_nextRunAt", (q) => q.eq("status", "exhausted"))
-    .collect();
-  const oldestPendingAgeMs = pending.reduce(
+    .take(sampleLimit + 1);
+  const pendingSample = pending.slice(0, sampleLimit);
+  const exhaustedSample = exhausted.slice(0, sampleLimit);
+  const oldestPendingAgeMs = pendingSample.reduce(
     (max: number, job: { createdAt: number }) => Math.max(max, now - job.createdAt),
     0,
   );
-  const stale = pending.filter(
+  const stale = pendingSample.filter(
     (job: { createdAt: number }) => now - job.createdAt >= staleAfterMs,
   ).length;
   return {
-    pending: pending.length,
+    pending: pendingSample.length,
     stale,
-    exhausted: exhausted.length,
+    exhausted: exhaustedSample.length,
     oldestPendingAgeMs,
+    pendingCapped: pending.length > sampleLimit,
+    exhaustedCapped: exhausted.length > sampleLimit,
   };
 }
 

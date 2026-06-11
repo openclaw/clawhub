@@ -359,6 +359,16 @@ describe("registry artifact backup jobs", () => {
         updatedAt: now - 60 * 60 * 1000,
         nextRunAt: now - 1000,
       },
+      {
+        _id: "registryArtifactBackupJobs:extra",
+        targetKind: "packageRelease",
+        packageReleaseId: "packageReleases:extra",
+        status: "pending",
+        attempts: 1,
+        createdAt: now - 60 * 60 * 1000,
+        updatedAt: now - 1000,
+        nextRunAt: now - 1000,
+      },
     ];
     const exhaustedJobs = [
       {
@@ -372,17 +382,15 @@ describe("registry artifact backup jobs", () => {
         nextRunAt: now - 1000,
       },
     ];
+    const take = vi.fn((limit: number) => {
+      if (take.mock.calls.length === 1) return Promise.resolve(pendingJobs.slice(0, limit));
+      return Promise.resolve(exhaustedJobs.slice(0, limit));
+    });
     const ctx = {
       db: {
-        query: vi.fn((table: string) => ({
-          withIndex: vi.fn((indexName: string) => ({
-            collect: vi
-              .fn()
-              .mockResolvedValue(
-                table === "registryArtifactBackupJobs" && indexName === "by_status_nextRunAt"
-                  ? pendingJobs
-                  : exhaustedJobs,
-              ),
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({
+            take,
           })),
         })),
       },
@@ -391,13 +399,18 @@ describe("registry artifact backup jobs", () => {
     const result = await getRegistryArtifactBackupHealthHandler(ctx as never, {
       now,
       staleAfterMs: 24 * 60 * 60 * 1000,
+      sampleLimit: 1,
     });
 
+    expect(take).toHaveBeenNthCalledWith(1, 2);
+    expect(take).toHaveBeenNthCalledWith(2, 2);
     expect(result).toMatchObject({
       pending: 1,
       stale: 1,
       exhausted: 1,
       oldestPendingAgeMs: 49 * 60 * 60 * 1000,
+      pendingCapped: true,
+      exhaustedCapped: false,
     });
   });
 });
