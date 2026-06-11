@@ -414,7 +414,7 @@ async function handleAdminStaffEmail(
       template,
     },
   );
-  const email = buildAdminOneOffEmail({
+  const email = await buildAdminOneOffEmail({
     recipientHandle: recipientHandle ?? (userHandle || undefined),
     subject,
     ...(title ? { title } : {}),

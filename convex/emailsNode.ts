@@ -91,7 +91,7 @@ export const sendBanNotificationInternal = internalAction({
     hiddenArtifacts: v.optional(v.number()),
   },
   handler: async (_ctx, args) => {
-    const email = buildBanNotificationEmail({
+    const email = await buildBanNotificationEmail({
       handle: args.handle,
       source: args.source,
       reason: args.reason,
@@ -121,7 +121,7 @@ export const sendRestoredAccountNotificationInternal = internalAction({
     packagesRestored: v.optional(v.number()),
   },
   handler: async (_ctx, args) => {
-    const email = buildRestoredAccountEmail({
+    const email = await buildRestoredAccountEmail({
       handle: args.handle,
       restoredListings: args.restoredListings as NotificationArtifact[] | undefined,
       restoredAt: args.restoredAt,
@@ -150,7 +150,7 @@ export const sendMaliciousArtifactNotificationInternal = internalAction({
     findingSummary: v.optional(v.string()),
   },
   handler: async (_ctx, args) => {
-    const email = buildMaliciousArtifactEmail({
+    const email = await buildMaliciousArtifactEmail({
       handle: args.handle,
       artifact: args.artifact as NotificationArtifact,
       version: args.version,

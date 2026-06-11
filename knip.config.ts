@@ -37,6 +37,7 @@ const config = {
         "src/routes/**/*.{ts,tsx}!",
         "src/styles.css!",
         "server/**/*.{ts,tsx}!",
+        "emails/**/*.{ts,tsx}!",
         "scripts/**/*.{ts,mjs,js}!",
         "*.{config,setup}.{ts,mjs,js}!",
         ...convexRegisteredFunctionEntries,
@@ -45,12 +46,16 @@ const config = {
               "src/**/*.test.{ts,tsx}!",
               "src/__tests__/**/*.{ts,tsx}!",
               "convex/**/*.test.{ts,tsx}!",
+              "emails/**/*.test.{ts,tsx}!",
               "scripts/**/*.test.{ts,mjs,js}!",
               "server/**/*.test.{ts,tsx}!",
             ]
           : []),
       ],
       ignoreDependencies: [
+        // Production email rendering imports the React Email TSX templates from Convex;
+        // Knip's production dependency pass does not trace that cross-root preview tree.
+        "@react-email/components",
         "@fontsource/bricolage-grotesque",
         "@fontsource/ibm-plex-mono",
         "@fontsource/manrope",
@@ -62,6 +67,7 @@ const config = {
         "src/**/*.{ts,tsx}!",
         "src/**/*.css!",
         "convex/**/*.{ts,tsx}!",
+        "emails/**/*.{ts,tsx}!",
         "server/**/*.{ts,tsx}!",
         "scripts/**/*.{ts,mjs,js}!",
         "*.{config,setup}.{ts,mjs,js}!",
