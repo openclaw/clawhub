@@ -21,8 +21,8 @@ describe("github backup settings", () => {
 
     expect(getGitHubBackupSettings()).toEqual({
       repo: "openclaw/clawhub-backup",
-      root: "hosted-skills",
-      packageRoot: "package-releases",
+      root: "skills",
+      packageRoot: "packages",
     });
   });
 
@@ -33,7 +33,7 @@ describe("github backup settings", () => {
     expect(getGitHubBackupSettings()).toEqual({
       repo: "example/backups",
       root: "mirror/skills",
-      packageRoot: "package-releases",
+      packageRoot: "packages",
     });
   });
 
@@ -47,7 +47,7 @@ describe("github backup settings", () => {
 
   it("builds package release backup paths and restore metadata", () => {
     const manifest = buildPackageReleaseBackupManifest({
-      root: "package-releases",
+      root: "packages",
       repo: "openclaw/clawhub-backup",
       ownerHandle: "OpenClaw Team",
       packageId: "packages:demo" as Id<"packages">,
@@ -77,12 +77,12 @@ describe("github backup settings", () => {
     });
 
     expect(manifest).toMatchObject({
-      packageRoot: "package-releases/openclaw-team/%40openclaw%2Fdemo-plugin",
-      releaseRoot: "package-releases/openclaw-team/%40openclaw%2Fdemo-plugin/1%2E2%2E3",
+      packageRoot: "packages/openclaw-team/%40openclaw%2Fdemo-plugin",
+      releaseRoot: "packages/openclaw-team/%40openclaw%2Fdemo-plugin/1%2E2%2E3",
       artifactPath:
-        "package-releases/openclaw-team/%40openclaw%2Fdemo-plugin/1%2E2%2E3/demo-plugin-1.2.3.tgz",
-      metaPath: "package-releases/openclaw-team/%40openclaw%2Fdemo-plugin/1%2E2%2E3/_meta.json",
-      indexPath: "package-releases/openclaw-team/%40openclaw%2Fdemo-plugin/_index.json",
+        "packages/openclaw-team/%40openclaw%2Fdemo-plugin/1%2E2%2E3/demo-plugin-1.2.3.tgz",
+      metaPath: "packages/openclaw-team/%40openclaw%2Fdemo-plugin/1%2E2%2E3/_meta.json",
+      indexPath: "packages/openclaw-team/%40openclaw%2Fdemo-plugin/_index.json",
       meta: {
         kind: "packageRelease",
         owner: "openclaw-team",
@@ -119,7 +119,7 @@ describe("github backup settings", () => {
 
   it("marks artifacts above the GitHub blob limit without retrying a doomed blob upload", () => {
     const manifest = buildPackageReleaseBackupManifest({
-      root: "package-releases",
+      root: "packages",
       repo: "openclaw/clawhub-backup",
       ownerHandle: "OpenClaw Team",
       packageId: "packages:demo" as Id<"packages">,
@@ -144,7 +144,7 @@ describe("github backup settings", () => {
 
   it("keeps the package index latest pointer on the newest published release", () => {
     const olderManifest = buildPackageReleaseBackupManifest({
-      root: "package-releases",
+      root: "packages",
       repo: "openclaw/clawhub-backup",
       ownerHandle: "OpenClaw Team",
       packageId: "packages:demo" as Id<"packages">,
@@ -171,7 +171,7 @@ describe("github backup settings", () => {
           version: "2.0.0",
           publishedAt: 1_800_000_000_000,
           releaseId: "packageReleases:demo-2" as Id<"packageReleases">,
-          path: "package-releases/openclaw-team/%40openclaw%2Fdemo-plugin/2%2E0%2E0/_meta.json",
+          path: "packages/openclaw-team/%40openclaw%2Fdemo-plugin/2%2E0%2E0/_meta.json",
           commit: "newer-commit",
         },
         releases: [],

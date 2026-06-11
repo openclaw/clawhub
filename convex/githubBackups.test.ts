@@ -34,8 +34,8 @@ beforeEach(() => {
     repoOwner: "openclaw",
     repoName: "clawhub-backup",
     branch: "main",
-    root: "hosted-skills",
-    packageRoot: "package-releases",
+    root: "skills",
+    packageRoot: "packages",
   });
   githubBackupMocks.isGitHubBackupConfigured.mockReturnValue(true);
   githubBackupMocks.listGitHubSkillBackupEntries.mockResolvedValue([]);

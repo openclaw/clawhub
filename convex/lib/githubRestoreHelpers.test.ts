@@ -11,7 +11,7 @@ function makeContext(): GitHubBackupContext {
     repoName: "repo",
     branch: "main",
     root: "skills",
-    packageRoot: "package-releases",
+    packageRoot: "packages",
   };
 }
 

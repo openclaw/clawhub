@@ -6,8 +6,8 @@ import { buildGitHubHeaders, createGitHubAppInstallationToken } from "./githubAu
 
 const GITHUB_API = "https://api.github.com";
 const DEFAULT_REPO = "openclaw/clawhub-backup";
-const DEFAULT_ROOT = "hosted-skills";
-const DEFAULT_PACKAGE_ROOT = "package-releases";
+const DEFAULT_ROOT = "skills";
+const DEFAULT_PACKAGE_ROOT = "packages";
 const META_FILENAME = "_meta.json";
 const PACKAGE_INDEX_FILENAME = "_index.json";
 const GITHUB_BLOB_BACKUP_MAX_BYTES = 100 * 1024 * 1024;
