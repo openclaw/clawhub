@@ -777,20 +777,6 @@ export const ApiV1ReclassifyBanResponseSchema = type({
   changed: "boolean",
 });
 
-export const ApiV1RemediateAutobansResponseSchema = type({
-  ok: "true",
-  dryRun: "boolean",
-  scanned: "number",
-  wouldUnban: "number",
-  unbanned: "number",
-  skipped: "number",
-  restoredSkills: "number",
-  restoredPackages: "number",
-  items: "unknown[]",
-  "nextCursor?": "string|null",
-  "done?": "boolean",
-});
-
 export const ApiV1StarResponseSchema = type({
   ok: "true",
   starred: "boolean",

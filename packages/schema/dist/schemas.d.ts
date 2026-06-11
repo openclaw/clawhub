@@ -733,19 +733,6 @@ export declare const ApiV1ReclassifyBanResponseSchema: import("arktype/internal/
     nextReason: string;
     changed: boolean;
 }, {}>;
-export declare const ApiV1RemediateAutobansResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
-    ok: true;
-    dryRun: boolean;
-    scanned: number;
-    wouldUnban: number;
-    unbanned: number;
-    skipped: number;
-    restoredSkills: number;
-    restoredPackages: number;
-    items: unknown[];
-    nextCursor?: string | null | undefined;
-    done?: boolean | undefined;
-}, {}>;
 export declare const ApiV1StarResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     ok: true;
     starred: boolean;

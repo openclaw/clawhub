@@ -61,8 +61,7 @@ describe("cmdPublish", () => {
         version: "1.0.0",
         changelog: "",
         tags: "latest",
-        clawscanNote: "This skill needs network access to call the user's configured API.",
-      } as Parameters<typeof cmdPublish>[2] & { clawscanNote?: string };
+      } as Parameters<typeof cmdPublish>[2];
 
       await cmdPublish(makeOpts(workdir), "my-skill", options);
 
@@ -79,7 +78,6 @@ describe("cmdPublish", () => {
       expect(payload.displayName).toBe("My Skill");
       expect(payload.version).toBe("1.0.0");
       expect(payload.changelog).toBe("");
-      expect(payload).not.toHaveProperty("clawScanNote");
       expect(payload.acceptLicenseTerms).toBe(true);
       expect(payload.tags).toEqual(["latest"]);
       const files = publishForm.getAll("files") as Array<Blob & { name?: string }>;

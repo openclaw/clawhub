@@ -220,7 +220,6 @@ describe("Upload route", () => {
     fireEvent.change(screen.getByPlaceholderText("latest, stable"), {
       target: { value: "latest" },
     });
-    expect(screen.queryByLabelText("ClawScan note")).toBeNull();
 
     const file = new File(["hello"], "SKILL.md", { type: "text/markdown" });
     Object.defineProperty(file, "webkitRelativePath", { value: "ynab/SKILL.md" });
@@ -250,7 +249,6 @@ describe("Upload route", () => {
       .map((call) => call[0] as { files?: Array<{ path: string }> })
       .find((call) => Array.isArray(call.files));
     expect(args?.files?.[0]?.path).toBe("SKILL.md");
-    expect(args).not.toHaveProperty("clawScanNote");
   });
 
   it("blocks non-text folder uploads (png)", async () => {

@@ -86,7 +86,6 @@ bun run admin -- users ban <handleOrId> [--id] [--fuzzy] [--reason <text>] [--ye
 bun run admin -- users unban <handleOrId> [--id] [--fuzzy] [--reason <text>] [--yes]
 bun run admin -- users set-role <handleOrId> <user|moderator|admin> [--id] [--fuzzy] [--yes]
 bun run admin -- users reclassify-ban <handleOrId> --reason <text> [--id] [--fuzzy] [--dry-run|--apply] [--yes] [--json]
-bun run admin -- users remediate-autobans [--dry-run|--apply] [--user <handleOrId>] [--id] [--since <date>] [--limit <n>] [--cursor <cursor>] [--all] [--json]
 ```
 
 Org publisher administration:

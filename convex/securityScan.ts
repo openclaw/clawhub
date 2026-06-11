@@ -92,27 +92,28 @@ type StoredScanArtifactKind = "skill" | "plugin";
 
 const jobSourceValidator = v.union(
   v.literal("publish"),
-  v.literal("clawscan-note"),
   v.literal("vt-update"),
   v.literal("backfill"),
   v.literal("bulk-rescan"),
   v.literal("manual"),
+  // Deprecated source retained so old queued jobs can drain after feature removal.
+  v.literal("clawscan-note"),
 );
 
 type SecurityScanJobSource =
   | "publish"
-  | "clawscan-note"
   | "vt-update"
   | "backfill"
   | "bulk-rescan"
-  | "manual";
+  | "manual"
+  | "clawscan-note";
 
 const CLAIM_SOURCE_ORDER: SecurityScanJobSource[] = [
-  "clawscan-note",
   "backfill",
   "publish",
   "vt-update",
   "bulk-rescan",
+  "clawscan-note",
 ];
 
 type EnqueueSkillVersionScanArgs = {

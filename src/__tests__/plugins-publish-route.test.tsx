@@ -598,7 +598,6 @@ describe("plugins publish route", () => {
       expect(screen.getByText(/Ignored: node_modules\/dep\/index\.js/i)).toBeTruthy();
     });
 
-    expect(screen.queryByLabelText("ClawScan note")).toBeNull();
     fireEvent.change(screen.getByPlaceholderText("owner/repo"), {
       target: { value: "openclaw/demo-plugin" },
     });
@@ -623,7 +622,6 @@ describe("plugins publish route", () => {
       "package.json",
       "src/index.js",
     ]);
-    expect(payload).not.toHaveProperty("clawScanNote");
   });
 
   it("blocks plugin publish when a file exceeds 10MB", async () => {
