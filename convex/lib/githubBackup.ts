@@ -5,8 +5,8 @@ import type { ActionCtx } from "../_generated/server";
 import { buildGitHubHeaders, createGitHubAppInstallationToken } from "./githubAuth";
 
 const GITHUB_API = "https://api.github.com";
-const DEFAULT_REPO = "clawdbot/skills";
-const DEFAULT_ROOT = "skills";
+const DEFAULT_REPO = "openclaw/clawhub-backup";
+const DEFAULT_ROOT = "hosted-skills";
 const META_FILENAME = "_meta.json";
 const USER_AGENT = "clawhub/skills-backup";
 
@@ -89,9 +89,15 @@ export function isGitHubBackupConfigured() {
   );
 }
 
+export function getGitHubBackupSettings() {
+  return {
+    repo: process.env.GITHUB_SKILLS_REPO ?? DEFAULT_REPO,
+    root: process.env.GITHUB_SKILLS_ROOT ?? DEFAULT_ROOT,
+  };
+}
+
 export async function getGitHubBackupContext(): Promise<GitHubBackupContext> {
-  const repo = process.env.GITHUB_SKILLS_REPO ?? DEFAULT_REPO;
-  const root = process.env.GITHUB_SKILLS_ROOT ?? DEFAULT_ROOT;
+  const { repo, root } = getGitHubBackupSettings();
   const [repoOwner, repoName] = parseRepo(repo);
   const { token } = await createGitHubAppInstallationToken({ userAgent: USER_AGENT });
   const repoInfo = await githubGet<RepoInfo>(token, `/repos/${repoOwner}/${repoName}`);

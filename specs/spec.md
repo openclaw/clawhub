@@ -12,7 +12,8 @@ read_when:
 
 - Minimal, fast SPA for browsing and publishing agent skills.
 - Skills stored in Convex (files + metadata + versions + stats).
-- GitHub OAuth login; GitHub App backs up skills to `clawdbot/skills`.
+- GitHub OAuth login; GitHub App backs up hosted registry artifacts to
+  `openclaw/clawhub-backup`.
 - Vector-based search over skill text + metadata.
 - Versioning, tags (`latest` + user tags), changelog, rollback (tag movement).
 - Public read access; upload requires auth.
