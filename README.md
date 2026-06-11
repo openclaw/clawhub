@@ -74,7 +74,7 @@ Docs: [`docs/quickstart.md`](docs/quickstart.md), [`docs/cli.md`](docs/cli.md).
 
 ## Telemetry
 
-ClawHub tracks minimal **install telemetry** (to compute install counts) when you run `clawhub sync` while logged in.
+ClawHub tracks minimal **install telemetry** (to compute install counts) when you run `clawhub install` while logged in.
 Disable via:
 
 ```bash

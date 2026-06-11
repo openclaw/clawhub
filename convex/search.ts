@@ -76,7 +76,6 @@ const SLUG_PREFIX_BOOST = 0.8;
 const NAME_EXACT_BOOST = 1.1;
 const NAME_PREFIX_BOOST = 0.6;
 const STAR_POPULARITY_WEIGHT = 0.12;
-const INSTALL_POPULARITY_WEIGHT = 0.04;
 const DOWNLOAD_POPULARITY_WEIGHT = 0.005;
 const MAX_POPULARITY_BOOST = 0.09;
 const FALLBACK_SCAN_LIMIT = 2000;
@@ -124,6 +123,7 @@ function getLexicalBoost(queryTokens: string[], displayName: string, slug: strin
 
 type PopularityStats = {
   downloads: number;
+  /** Accepted for compatibility with existing callers, but ignored for ranking. */
   installsAllTime?: number;
   stars: number;
 };
@@ -131,7 +131,6 @@ type PopularityStats = {
 function getPopularityBoost(stats: PopularityStats) {
   const rawBoost =
     Math.log1p(Math.max(stats.stars, 0)) * STAR_POPULARITY_WEIGHT +
-    Math.log1p(Math.max(stats.installsAllTime ?? 0, 0)) * INSTALL_POPULARITY_WEIGHT +
     Math.log1p(Math.max(stats.downloads, 0)) * DOWNLOAD_POPULARITY_WEIGHT;
   return Math.min(rawBoost, MAX_POPULARITY_BOOST);
 }
@@ -197,11 +196,7 @@ function classifySkillMatch(
 }
 
 function comparePopularityStats(a: PopularityStats, b: PopularityStats) {
-  return (
-    b.stars - a.stars ||
-    (b.installsAllTime ?? 0) - (a.installsAllTime ?? 0) ||
-    b.downloads - a.downloads
-  );
+  return b.stars - a.stars || b.downloads - a.downloads;
 }
 
 function mergeUniqueBySkillId(primary: SkillSearchEntry[], fallback: SkillSearchEntry[]) {
@@ -380,7 +375,6 @@ export const searchSkills: ReturnType<typeof action> = action({
             entry.skill.slug,
             {
               downloads: entry.skill.stats.downloads,
-              installsAllTime: entry.skill.stats.installsAllTime,
               stars: entry.skill.stats.stars,
             },
           ),

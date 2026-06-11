@@ -30,7 +30,7 @@ Reading order:
 6. `docs/skill-format.md`: skill bundle metadata and package shape.
 7. `docs/soul-format.md`: SOUL.md bundle format.
 8. `docs/auth.md`: GitHub OAuth, API tokens, and CLI login.
-9. `docs/telemetry.md`: what `clawhub sync` reports and how to opt out.
+9. `docs/telemetry.md`: install telemetry and how to opt out.
 10. `docs/troubleshooting.md`: user-facing CLI, install, publish, sync, update, and API fixes.
 
 Policy, API, and trust docs:

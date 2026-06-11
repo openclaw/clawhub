@@ -158,6 +158,7 @@ const persistTemporalHandler = (
         temporalScore: {
           spike: boolean;
           sustained: boolean;
+          nearConversion: boolean;
           pressure: number;
           recent7Downloads: number;
           recent7Installs: number;
@@ -167,6 +168,10 @@ const persistTemporalHandler = (
           recent30Downloads: number;
           recent30Installs: number;
           downloadInstallRatio30: number;
+          installDownloadRatio7: number;
+          installDownloadRatio30: number;
+          installDownloadExcessZScore7: number;
+          installDownloadExcessZScore30: number;
           spikeWindowStartDay?: number;
           spikeWindowEndDay?: number;
           sustainedWindowStartDay?: number;
@@ -3947,6 +3952,105 @@ describe("publisher abuse dry-run persistence", () => {
     expect(ctx.db.get).toHaveBeenCalledWith("publishers:quiet");
   });
 
+  it("keeps near-conversion-only temporal candidates", async () => {
+    const indexBuilder = {
+      eq: vi.fn(() => indexBuilder),
+      gte: vi.fn(() => indexBuilder),
+      lte: vi.fn(() => indexBuilder),
+    };
+    const publisher = {
+      _id: "publishers:pollyreach",
+      kind: "user",
+      handle: "pollyreach",
+      linkedUserId: "users:joel",
+    };
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === publisher._id) return publisher;
+          throw new Error(`unexpected get ${id}`);
+        }),
+        query: vi.fn((table: string) => {
+          if (table === "skills") {
+            return {
+              withIndex: (indexName: string, callback: (q: typeof indexBuilder) => unknown) => {
+                expect(indexName).toBe("by_active_stats_downloads");
+                callback(indexBuilder);
+                return {
+                  order: () => ({
+                    paginate: async () => ({
+                      page: [
+                        {
+                          _id: "skills:tracked-installs",
+                          ownerPublisherId: publisher._id,
+                          slug: "tracked-installs",
+                          displayName: "Tracked Installs",
+                          softDeletedAt: undefined,
+                          statsDownloads: 1_400,
+                          statsInstallsAllTime: 1_190,
+                          stats: {
+                            downloads: 1_400,
+                            stars: 0,
+                            installsCurrent: 1_190,
+                            installsAllTime: 1_190,
+                          },
+                        },
+                      ],
+                      isDone: true,
+                      continueCursor: "",
+                    }),
+                  }),
+                };
+              },
+            };
+          }
+          if (table === "skillDailyStats") {
+            return {
+              withIndex: (indexName: string, callback: (q: typeof indexBuilder) => unknown) => {
+                expect(indexName).toBe("by_skill_day");
+                callback(indexBuilder);
+                return {
+                  take: async () =>
+                    Array.from({ length: 7 }, (_, index) => ({
+                      skillId: "skills:tracked-installs",
+                      day: 94 + index,
+                      downloads: 200,
+                      installs: 170,
+                      updatedAt: 1,
+                    })),
+                };
+              },
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await expect(
+      collectTemporalHandler(ctx, {
+        mode: "current",
+        batchSize: 1,
+        todayDay: 100,
+      }),
+    ).resolves.toMatchObject({
+      cursor: undefined,
+      isDone: true,
+      scannedSkills: 1,
+      candidates: [
+        {
+          slug: "tracked-installs",
+          temporalScore: {
+            spike: false,
+            sustained: false,
+            nearConversion: true,
+            reasonCodes: ["temporal_installs_track_downloads"],
+          },
+        },
+      ],
+    });
+  });
+
   it("skips official org publishers during temporal candidate collection", async () => {
     const indexBuilder = {
       eq: vi.fn(() => indexBuilder),
@@ -4357,6 +4461,7 @@ function temporalCandidate(skillId: string, skill: { slug: string; displayName: 
     temporalScore: {
       spike: true,
       sustained: false,
+      nearConversion: false,
       pressure: 20,
       recent7Downloads: 2_000,
       recent7Installs: 0,
@@ -4366,6 +4471,10 @@ function temporalCandidate(skillId: string, skill: { slug: string; displayName: 
       recent30Downloads: 2_000,
       recent30Installs: 0,
       downloadInstallRatio30: 2_000,
+      installDownloadRatio7: 0,
+      installDownloadRatio30: 0,
+      installDownloadExcessZScore7: 0,
+      installDownloadExcessZScore30: 0,
       spikeWindowStartDay: 94,
       spikeWindowEndDay: 100,
       reasonCodes: ["temporal_download_spike_flat_installs"],

@@ -806,17 +806,23 @@ registerCommand(program, ["sync"])
   .option("--bump <type>", "Version bump for updates (patch|minor|major)", "patch")
   .option("--changelog <text>", "Changelog to use for updates (non-interactive)")
   .option("--tags <tags>", "Comma-separated tags", "latest")
-  .option("--concurrency <n>", "Concurrent registry checks (default: 4)", "4")
-  .option("--no-clawdbot-roots", "Only scan the configured workdir/dir and --root values")
-  .option("--source-repo <repo>", "GitHub repo (owner/repo or URL)")
-  .option("--source-commit <sha>", "Git commit SHA")
-  .option("--source-ref <ref>", "Git ref/tag/branch")
+  .option("--concurrency <n>", "Concurrent registry/file checks", (value) =>
+    Number.parseInt(value, 10),
+  )
+  .option("--source-repo <repo>", "GitHub repo URL or owner/name for source provenance")
+  .option("--source-commit <sha>", "Git commit SHA for source provenance")
+  .option("--source-ref <ref>", "Git ref for source provenance")
+  .addOption(
+    new Option("--clawdbot-roots", "Include Clawdbot-configured roots").default(true, "enabled"),
+  )
+  .addOption(new Option("--no-clawdbot-roots", "Disable Clawdbot-configured roots"))
   .action(async (options) => {
     const opts = await resolveGlobalOpts();
-    const bump = String(options.bump ?? "patch") as "patch" | "minor" | "major";
-    if (!["patch", "minor", "major"].includes(bump)) fail("--bump must be patch|minor|major");
-    const concurrencyRaw = Number(options.concurrency ?? 4);
-    const concurrency = Number.isFinite(concurrencyRaw) ? Math.round(concurrencyRaw) : 4;
+    const bump =
+      options.bump === "patch" || options.bump === "minor" || options.bump === "major"
+        ? options.bump
+        : fail("--bump must be patch, minor, or major");
+    const concurrency = options.concurrency ?? 6;
     if (concurrency < 1 || concurrency > 32) fail("--concurrency must be between 1 and 32");
     await cmdSync(
       opts,

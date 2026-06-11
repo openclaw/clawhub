@@ -9,7 +9,6 @@ import {
   cliSkillDeleteHttp,
   cliSkillUndeleteHttp,
   cliTelemetryInstallHttp,
-  cliTelemetrySyncHttp,
   cliUploadUrlHttp,
   cliWhoamiHttp,
   getSkillHttp,
@@ -397,12 +396,6 @@ http.route({
   path: LegacyApiRoutes.cliTelemetryInstall,
   method: "POST",
   handler: cliTelemetryInstallHttp,
-});
-
-http.route({
-  path: LegacyApiRoutes.cliTelemetrySync,
-  method: "POST",
-  handler: cliTelemetrySyncHttp,
 });
 
 http.route({

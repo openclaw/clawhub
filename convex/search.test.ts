@@ -1210,7 +1210,7 @@ describe("search helpers", () => {
     expect(nameMatchScore).toBeGreaterThan(popularVectorScore);
   });
 
-  it("adds a stars and installs popularity prior for equally relevant matches", () => {
+  it("adds stars and downloads popularity but ignores installs for equally relevant matches", () => {
     const queryTokens = tokenize("notion");
     const highDownloadsOnly = __test.scoreSkillResult(
       queryTokens,
@@ -1219,22 +1219,22 @@ describe("search helpers", () => {
       "notion-helper",
       { downloads: 1000, installsAllTime: 0, stars: 0 },
     );
-    const trustedUsage = __test.scoreSkillResult(
+    const highInstallsOnly = __test.scoreSkillResult(
       queryTokens,
       0.5,
       "Notion Helper",
       "notion-helper",
-      { downloads: 0, installsAllTime: 20, stars: 5 },
+      { downloads: 0, installsAllTime: 1000, stars: 0 },
     );
-    expect(trustedUsage).toBeGreaterThan(highDownloadsOnly);
+    expect(highDownloadsOnly).toBeGreaterThan(highInstallsOnly);
   });
 
-  it("breaks capped popularity ties by stars and installs before downloads", async () => {
+  it("breaks capped popularity ties by stars and downloads before installs", async () => {
     generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
-    const trustedUsage = {
+    const installedOnly = {
       skill: makePublicSkill({
-        id: "skills:trusted",
-        slug: "tool-trusted",
+        id: "skills:installed",
+        slug: "tool-installed",
         displayName: "Tool",
         downloads: 0,
         installsAllTime: 1_000,
@@ -1251,7 +1251,7 @@ describe("search helpers", () => {
         displayName: "Tool",
         downloads: 1_000_000_000,
         installsAllTime: 0,
-        stars: 0,
+        stars: 1_000,
       }),
       version: null,
       ownerHandle: "owner",
@@ -1261,7 +1261,7 @@ describe("search helpers", () => {
       .fn()
       .mockResolvedValueOnce(null) // getExactSkillSlugMatch
       .mockResolvedValueOnce([]) // directPrefixSkillMatches
-      .mockResolvedValueOnce([downloadedOnly, trustedUsage]); // lexicalFallbackSkills
+      .mockResolvedValueOnce([installedOnly, downloadedOnly]); // lexicalFallbackSkills
 
     const result = await searchSkillsHandler(
       {
@@ -1271,7 +1271,7 @@ describe("search helpers", () => {
       { query: "tool", limit: 2 },
     );
 
-    expect(result.map((entry) => entry.skill.slug)).toEqual(["tool-trusted", "tool-downloaded"]);
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["tool-downloaded", "tool-installed"]);
   });
 
   it("uses digest doc instead of full skill doc in hydrateResults but revalidates the owner", async () => {
