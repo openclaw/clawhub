@@ -23,7 +23,6 @@ describe("skills.listPublicPageV4", () => {
     expect(getSkillSearchDigestIndexFields("by_active_recommended_rank")).toEqual([
       "softDeletedAt",
       "statsStars",
-      "statsInstallsAllTime",
       "statsDownloads",
       "updatedAt",
     ]);
@@ -31,7 +30,6 @@ describe("skills.listPublicPageV4", () => {
       "softDeletedAt",
       "isSuspicious",
       "statsStars",
-      "statsInstallsAllTime",
       "statsDownloads",
       "updatedAt",
     ]);
@@ -74,7 +72,7 @@ describe("skills.listPublicPageV4", () => {
     ).toBe("updated");
     expect(
       __test.resolveRecommendedPublicListSort({
-        decodedCursor: [undefined, 10, 20, 30, 123, 456, "skillSearchDigest:recommended"],
+        decodedCursor: [undefined, 10, 20, 123, 456, "skillSearchDigest:recommended"],
         hasMissingRankStats: true,
       }),
     ).toBe("recommended");
@@ -85,7 +83,6 @@ describe("skills.listPublicPageV4", () => {
           false,
           10,
           20,
-          30,
           123,
           456,
           "skillSearchDigest:nonsuspicious-recommended",
@@ -95,7 +92,7 @@ describe("skills.listPublicPageV4", () => {
     ).toBe("recommended");
   });
 
-  it("sorts highlighted recommended results by stars, installs, downloads, then updatedAt", async () => {
+  it("sorts highlighted recommended results by stars, downloads, then updatedAt", async () => {
     const result = await listPublicPageV4Handler(
       makeHighlightedCtx([
         makeDigest({
@@ -136,9 +133,9 @@ describe("skills.listPublicPageV4", () => {
 
     expect(result.page.map((entry) => entry.skill.slug)).toEqual([
       "stars-skill",
-      "installs-skill",
       "downloads-skill",
       "updated-skill",
+      "installs-skill",
     ]);
   });
 });

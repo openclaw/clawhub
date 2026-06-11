@@ -76,6 +76,7 @@ export type HydratableSkill = Pick<
   | "softDeletedAt"
   | "moderationStatus"
   | "moderationFlags"
+  | "moderationVerdict"
   | "moderationReason"
   | "isSuspicious"
   | "createdAt"

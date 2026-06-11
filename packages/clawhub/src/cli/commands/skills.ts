@@ -259,7 +259,8 @@ export async function cmdInstall(
       token,
       registry,
       root: opts.dir,
-      skills: lock.skills,
+      slug: skillMeta.skill?.slug ?? trimmed,
+      version: resolvedVersion,
     });
     spinner.succeed(`OK. Installed ${trimmed} -> ${target}`);
   } catch (error) {

@@ -311,6 +311,7 @@ const internalRefs = internal as unknown as {
   };
   skills: {
     getSecurityVerdictTargetInternal: unknown;
+    getVerifyTargetBySlugInternal: unknown;
     getSkillBySlugInternal: unknown;
     getVersionByIdInternal: unknown;
     getVersionBySkillAndVersionInternal: unknown;
@@ -801,7 +802,7 @@ function buildVerifyReasons(args: {
   securityStatus: NormalizedSecurityStatus;
 }) {
   const reasons: string[] = [];
-  if (!args.cardAvailable) reasons.push("card.missing");
+  if (!args.cardAvailable && !args.isMalwareBlocked) reasons.push("card.missing");
   reasons.push(
     ...buildSecurityVerdictReasons({
       isMalwareBlocked: args.isMalwareBlocked,
@@ -1505,6 +1506,7 @@ type ExactVersionModeratedSkill = Pick<
   | "moderationStatus"
   | "moderationReason"
   | "moderationFlags"
+  | "moderationVerdict"
   | "moderationSourceVersionId"
 >;
 
@@ -2002,7 +2004,11 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
     const tagParam = url.searchParams.get("tag")?.trim();
     if (versionParam && tagParam) return text("Use either version or tag", 400, rate.headers);
 
-    const skillResult = (await ctx.runQuery(api.skills.getBySlug, { slug })) as GetBySlugResult;
+    const skillResult = (await runQueryRef<GetBySlugResult>(
+      ctx,
+      internalRefs.skills.getVerifyTargetBySlugInternal,
+      { slug },
+    )) as GetBySlugResult;
     if (!skillResult?.skill) {
       const hidden = await describeOwnerVisibleSkillState(ctx, request, slug);
       if (hidden) return text(hidden.message, hidden.status, rate.headers);
@@ -2041,11 +2047,14 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
     const bundleFingerprints = fingerprintEntries
       .filter((entry) => entry.kind === "generated-bundle")
       .map((entry) => entry.fingerprint);
-    const generatedCardFile = await selectGeneratedSkillCardFile(version.files, bundleFingerprints);
+    const isMalwareBlocked = skillResult.moderationInfo?.isMalwareBlocked ?? false;
+    const generatedCardFile = isMalwareBlocked
+      ? null
+      : await selectGeneratedSkillCardFile(version.files, bundleFingerprints);
     const security = buildVerifySecurity(version);
     const reasons = buildVerifyReasons({
       cardAvailable: Boolean(generatedCardFile),
-      isMalwareBlocked: skillResult.moderationInfo?.isMalwareBlocked ?? false,
+      isMalwareBlocked,
       securityPassed: security.passed,
       securityStatus: security.status,
     });
@@ -2082,7 +2091,9 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
           : {
               available: false,
               path: "skill-card.md",
-              url: buildCardUrl(request, skillResult.skill.slug, version.version),
+              url: isMalwareBlocked
+                ? null
+                : buildCardUrl(request, skillResult.skill.slug, version.version),
               sha256: null,
               size: null,
               contentType: null,

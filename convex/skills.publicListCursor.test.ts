@@ -181,7 +181,6 @@ describe("public skill list deterministic cursors", () => {
 
     expect(withIndex.mock.calls.map(([indexName]) => indexName)).toEqual([
       "by_active_stats_stars",
-      "by_active_stats_installs_all_time",
       "by_active_stats_downloads",
     ]);
     expect(getPageMock).toHaveBeenCalledTimes(1);
@@ -204,7 +203,6 @@ describe("public skill list deterministic cursors", () => {
 
     expect(withIndex.mock.calls.map(([indexName]) => indexName)).toEqual([
       "by_nonsuspicious_stars",
-      "by_nonsuspicious_installs",
       "by_nonsuspicious_downloads",
     ]);
     expect(getPageMock).toHaveBeenCalledTimes(1);

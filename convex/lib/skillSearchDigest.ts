@@ -42,6 +42,7 @@ const SHARED_KEYS = [
   "softDeletedAt",
   "moderationStatus",
   "moderationFlags",
+  "moderationVerdict",
   "moderationReason",
   "isSuspicious",
   "createdAt",

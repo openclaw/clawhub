@@ -18,13 +18,12 @@ function auditVerdictMeterLevel(status: string) {
     case "warn":
     case "warning":
     case "suspicious":
-      return 2;
     case "review":
-      return 3;
+      return 2;
     case "benign":
     case "clean":
     case "cleared":
-      return 4;
+      return 3;
     default:
       return 0;
   }
@@ -54,7 +53,6 @@ export function DetailSecuritySummary({
           {auditVerdictInfo.label}
         </span>
         <div className="security-audit-meter" data-level={meterLevel} aria-hidden="true">
-          <span />
           <span />
           <span />
           <span />

@@ -152,19 +152,16 @@ export const ApiV1SkillInstallResolveResponseSchema = type({
 export type ApiV1SkillInstallResolveResponse =
   (typeof ApiV1SkillInstallResolveResponseSchema)[inferred];
 
-export const CliTelemetrySyncRequestSchema = type({
-  roots: type({
-    rootId: "string",
-    label: "string",
-    skills: type({
-      slug: "string",
-      version: "string|null?",
-    }).array(),
-  }).array(),
+export const CliTelemetryInstallRequestSchema = type({
+  event: '"install"',
+  slug: "string",
+  version: "string?",
+  rootId: "string?",
+  rootLabel: "string?",
 });
-export type CliTelemetrySyncRequest = (typeof CliTelemetrySyncRequestSchema)[inferred];
+export type CliTelemetryInstallRequest = (typeof CliTelemetryInstallRequestSchema)[inferred];
 
-export const ApiCliTelemetrySyncResponseSchema = type({
+export const ApiCliTelemetryInstallResponseSchema = type({
   ok: "true",
 });
 

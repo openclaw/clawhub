@@ -7,7 +7,6 @@ export declare const LegacyApiRoutes: {
     readonly cliUploadUrl: "/api/cli/upload-url";
     readonly cliPublish: "/api/cli/publish";
     readonly cliTelemetryInstall: "/api/cli/telemetry/install";
-    readonly cliTelemetrySync: "/api/cli/telemetry/sync";
     readonly cliSkillDelete: "/api/cli/skill/delete";
     readonly cliSkillUndelete: "/api/cli/skill/undelete";
 };

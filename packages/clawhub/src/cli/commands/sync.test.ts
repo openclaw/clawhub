@@ -779,9 +779,8 @@ describe("cmdSync", () => {
     expect(mockCmdPublish).not.toHaveBeenCalled();
   });
 
-  it("skips telemetry when CLAWHUB_DISABLE_TELEMETRY is set", async () => {
+  it("does not report install telemetry from sync", async () => {
     interactive = false;
-    process.env.CLAWHUB_DISABLE_TELEMETRY = "1";
     mockApiRequest.mockImplementation(async (_registry: string, args: { path: string }) => {
       if (args.path === "/api/v1/whoami") return { user: { handle: "steipete" } };
       if (args.path.startsWith("/api/v1/resolve?")) {
@@ -794,6 +793,5 @@ describe("cmdSync", () => {
     expect(
       mockApiRequest.mock.calls.some((call) => call[1]?.path === "/api/cli/telemetry/install"),
     ).toBe(false);
-    delete process.env.CLAWHUB_DISABLE_TELEMETRY;
   });
 });

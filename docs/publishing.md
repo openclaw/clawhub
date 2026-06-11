@@ -18,22 +18,30 @@ normal install and download surfaces until review finishes.
 
 ## Skills
 
-The simplest publishing path is the CLI. Sign in, preview the sync plan, then
-publish the new or changed skills:
+The simplest publishing path is the CLI. Sign in, then publish a local skill
+folder:
 
 ```bash
 clawhub login
+clawhub skill publish ./my-skill \
+  --slug my-skill \
+  --name "My Skill" \
+  --version 1.0.0 \
+  --owner <owner>
+```
+
+Use `--owner <handle>` when publishing to an org owner. Omit it to publish as
+the authenticated user.
+
+For catalog repos, use `sync` to scan folders containing `SKILL.md` and publish
+new or changed skills:
+
+```bash
 clawhub sync --dry-run --owner <owner>
 clawhub sync --all --owner <owner>
 ```
 
-`sync` scans for folders containing `SKILL.md` and compares them with ClawHub.
-When you run it without `--dry-run`, it publishes anything new or changed.
-
 Use `--dry-run` first to see the plan without uploading.
-
-Use `--owner <handle>` when publishing to an org owner. Omit it to publish as
-the authenticated user.
 
 ### GitHub Actions for Skills
 

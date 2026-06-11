@@ -14,6 +14,7 @@ import {
   httpAction,
 } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
+import { isPublicSkillDoc } from "./lib/globalStats";
 import {
   deletePackageSearchDigests,
   extractPackageDigestFields,
@@ -229,21 +230,28 @@ async function syncSkillSearchDigestForSkill(
 }
 
 export function isGitHubMirrorEligibleSkillDoc(
-  skill: Pick<Doc<"skills">, "softDeletedAt" | "moderationStatus"> | null | undefined,
+  skill:
+    | Pick<
+        Doc<"skills">,
+        "softDeletedAt" | "moderationStatus" | "moderationFlags" | "moderationVerdict"
+      >
+    | null
+    | undefined,
 ) {
-  if (!skill || skill.softDeletedAt) return false;
-  return (
-    skill.moderationStatus === undefined ||
-    skill.moderationStatus === null ||
-    skill.moderationStatus === "active"
-  );
+  return isPublicSkillDoc(skill);
 }
 
 export async function scheduleGitHubBackupDeletionForSkill(
   ctx: GitHubBackupDeletionCtx,
   skill: Pick<
     Doc<"skills">,
-    "slug" | "ownerPublisherId" | "ownerUserId" | "softDeletedAt" | "moderationStatus"
+    | "slug"
+    | "ownerPublisherId"
+    | "ownerUserId"
+    | "softDeletedAt"
+    | "moderationStatus"
+    | "moderationFlags"
+    | "moderationVerdict"
   >,
 ) {
   const owner = await getOwnerPublisher(ctx, {

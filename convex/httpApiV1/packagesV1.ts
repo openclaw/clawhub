@@ -2856,6 +2856,7 @@ type PackageExactVersionModeratedSkill = Pick<
   | "moderationStatus"
   | "moderationReason"
   | "moderationFlags"
+  | "moderationVerdict"
   | "moderationSourceVersionId"
 >;
 

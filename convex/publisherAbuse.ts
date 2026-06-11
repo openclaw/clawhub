@@ -151,6 +151,7 @@ const temporalAbuseCohortBenchmarkValidator = v.object({
 const temporalScoreValidator = v.object({
   spike: v.boolean(),
   sustained: v.boolean(),
+  nearConversion: v.boolean(),
   pressure: v.number(),
   recent7Downloads: v.number(),
   recent7Installs: v.number(),
@@ -164,10 +165,16 @@ const temporalScoreValidator = v.object({
   spikeMultiplierCohortBand: v.optional(temporalCohortBandValidator),
   downloads30dVsPeerP95: v.optional(v.number()),
   spikeMultiplierVsPeerP95: v.optional(v.number()),
+  installDownloadRatio7: v.number(),
+  installDownloadRatio30: v.number(),
+  installDownloadExcessZScore7: v.number(),
+  installDownloadExcessZScore30: v.number(),
   spikeWindowStartDay: v.optional(v.number()),
   spikeWindowEndDay: v.optional(v.number()),
   sustainedWindowStartDay: v.optional(v.number()),
   sustainedWindowEndDay: v.optional(v.number()),
+  nearConversionWindowStartDay: v.optional(v.number()),
+  nearConversionWindowEndDay: v.optional(v.number()),
   reasonCodes: v.array(v.string()),
 });
 
@@ -1049,7 +1056,12 @@ export async function runTemporalPublisherAbuseScanInternalHandler(
       ...candidate,
       temporalScore: classifySkillTemporalAbuseScore(candidate.temporalScore, benchmark),
     }))
-    .filter((candidate) => candidate.temporalScore.spike || candidate.temporalScore.sustained);
+    .filter(
+      (candidate) =>
+        candidate.temporalScore.spike ||
+        candidate.temporalScore.sustained ||
+        candidate.temporalScore.nearConversion,
+    );
 
   const flaggedPublishers = aggregateTemporalPublisherCandidates(highTemporalCandidates).length;
   if (dryRun || (mode !== "current" && highTemporalCandidates.length === 0)) {
@@ -1267,6 +1279,7 @@ function temporalEvidenceFromCandidate(candidate: TemporalSkillCandidate) {
     displayName: candidate.displayName,
     spike: candidate.temporalScore.spike,
     sustained: candidate.temporalScore.sustained,
+    nearConversion: candidate.temporalScore.nearConversion,
     pressure: candidate.temporalScore.pressure,
     recent7Downloads: candidate.temporalScore.recent7Downloads,
     recent7Installs: candidate.temporalScore.recent7Installs,
@@ -1280,10 +1293,16 @@ function temporalEvidenceFromCandidate(candidate: TemporalSkillCandidate) {
     spikeMultiplierCohortBand: candidate.temporalScore.spikeMultiplierCohortBand,
     downloads30dVsPeerP95: candidate.temporalScore.downloads30dVsPeerP95,
     spikeMultiplierVsPeerP95: candidate.temporalScore.spikeMultiplierVsPeerP95,
+    installDownloadRatio7: candidate.temporalScore.installDownloadRatio7,
+    installDownloadRatio30: candidate.temporalScore.installDownloadRatio30,
+    installDownloadExcessZScore7: candidate.temporalScore.installDownloadExcessZScore7,
+    installDownloadExcessZScore30: candidate.temporalScore.installDownloadExcessZScore30,
     spikeWindowStartDay: candidate.temporalScore.spikeWindowStartDay,
     spikeWindowEndDay: candidate.temporalScore.spikeWindowEndDay,
     sustainedWindowStartDay: candidate.temporalScore.sustainedWindowStartDay,
     sustainedWindowEndDay: candidate.temporalScore.sustainedWindowEndDay,
+    nearConversionWindowStartDay: candidate.temporalScore.nearConversionWindowStartDay,
+    nearConversionWindowEndDay: candidate.temporalScore.nearConversionWindowEndDay,
     reasonCodes: candidate.temporalScore.reasonCodes,
   };
 }
