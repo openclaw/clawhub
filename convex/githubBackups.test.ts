@@ -1,7 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
-import { getGitHubBackupPageInternal } from "./githubBackups";
+import type { Id } from "./_generated/dataModel";
+import {
+  enqueueRegistryArtifactBackupJobHandler,
+  getRegistryArtifactBackupHealthHandler,
+  getGitHubBackupPageInternal,
+  getPackageGitHubBackupPageInternal,
+} from "./githubBackups";
 
 const handler = (getGitHubBackupPageInternal as unknown as { _handler: Function })._handler;
+const packagePageHandler = (getPackageGitHubBackupPageInternal as unknown as { _handler: Function })
+  ._handler;
 
 describe("githubBackups page filtering", () => {
   it("skips non-public digests (soft-deleted, hidden, removed)", async () => {
@@ -200,5 +208,196 @@ describe("githubBackups page filtering", () => {
     expect(result).toMatchObject({ items: [], isDone: true, cursor: null });
     expect(paginate).toHaveBeenNthCalledWith(1, { cursor: "stale-cursor", numItems: 50 });
     expect(paginate).toHaveBeenNthCalledWith(2, { cursor: null, numItems: 50 });
+  });
+});
+
+describe("package github backup page filtering", () => {
+  it("returns backup-ready package releases and marks missing artifact rows", async () => {
+    const backupableRelease = {
+      _id: "packageReleases:ready",
+      packageId: "packages:ready",
+      version: "1.0.0",
+      createdAt: 1_700_000_000_000,
+      files: [{ path: "package.json", size: 10, sha256: "sha256:package" }],
+      artifactKind: "npm-pack",
+      clawpackStorageId: "storage:clawpack",
+      clawpackSha256: "sha256:clawpack",
+      clawpackSize: 123,
+      clawpackFormat: "tgz",
+      npmTarballName: "ready-1.0.0.tgz",
+      compatibility: { openclaw: ">=2026.1.0" },
+      capabilities: { executesCode: true },
+      extractedPackageJson: { name: "ready" },
+      extractedPluginManifest: { id: "ready" },
+      softDeletedAt: undefined,
+    };
+    const missingArtifactRelease = {
+      _id: "packageReleases:missing-artifact",
+      packageId: "packages:missing-artifact",
+      version: "1.0.0",
+      createdAt: 1_700_000_000_100,
+      files: [],
+      softDeletedAt: undefined,
+    };
+    const readyPackage = {
+      _id: "packages:ready",
+      ownerUserId: "users:owner",
+      ownerPublisherId: "publishers:openclaw",
+      name: "@openclaw/ready",
+      normalizedName: "@openclaw/ready",
+      displayName: "Ready",
+      family: "code-plugin",
+      softDeletedAt: undefined,
+    };
+    const missingArtifactPackage = {
+      ...readyPackage,
+      _id: "packages:missing-artifact",
+      name: "@openclaw/missing-artifact",
+      normalizedName: "@openclaw/missing-artifact",
+    };
+    const owner = {
+      _id: "publishers:openclaw",
+      handle: "openclaw",
+      deletedAt: undefined,
+      deactivatedAt: undefined,
+    };
+
+    const paginate = vi.fn().mockResolvedValue({
+      page: [backupableRelease, missingArtifactRelease],
+      isDone: true,
+      continueCursor: null,
+    });
+    const order = vi.fn().mockReturnValue({ paginate });
+    const withIndex = vi.fn().mockReturnValue({ order });
+    const query = vi.fn().mockReturnValue({ withIndex });
+    const get = vi.fn(async (id: string) => {
+      if (id === "packages:ready") return readyPackage;
+      if (id === "packages:missing-artifact") return missingArtifactPackage;
+      if (id === "publishers:openclaw") return owner;
+      return null;
+    });
+
+    const result = await packagePageHandler({ db: { query, get } } as never, { batchSize: 50 });
+
+    expect(query).toHaveBeenCalledWith("packageReleases");
+    expect(result).toMatchObject({
+      isDone: true,
+      cursor: null,
+      items: [
+        {
+          kind: "ok",
+          releaseId: "packageReleases:ready",
+          packageName: "@openclaw/ready",
+          ownerHandle: "openclaw",
+          artifactStorageId: "storage:clawpack",
+          artifactFileName: "ready-1.0.0.tgz",
+        },
+        {
+          kind: "missingArtifact",
+          releaseId: "packageReleases:missing-artifact",
+          packageId: "packages:missing-artifact",
+        },
+      ],
+    });
+  });
+});
+
+describe("registry artifact backup jobs", () => {
+  it("upserts package release backup failures into a retryable backlog", async () => {
+    const now = 1_700_000_000_000;
+    const existing = {
+      _id: "registryArtifactBackupJobs:existing",
+      targetKind: "packageRelease",
+      packageReleaseId: "packageReleases:demo" as Id<"packageReleases">,
+      status: "pending",
+      attempts: 1,
+      createdAt: now - 1000,
+      updatedAt: now - 1000,
+      nextRunAt: now - 1000,
+    };
+    const patch = vi.fn();
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({ unique: vi.fn().mockResolvedValue(existing) })),
+        })),
+        insert: vi.fn(),
+        patch,
+      },
+    };
+
+    await enqueueRegistryArtifactBackupJobHandler(ctx as never, {
+      targetKind: "packageRelease",
+      packageReleaseId: "packageReleases:demo" as Id<"packageReleases">,
+      reason: "publish",
+      error: "GitHub 500",
+      now,
+    });
+
+    expect(ctx.db.insert).not.toHaveBeenCalled();
+    expect(patch).toHaveBeenCalledWith("registryArtifactBackupJobs:existing", {
+      status: "pending",
+      reason: "publish",
+      lastError: "GitHub 500",
+      nextRunAt: now,
+      updatedAt: now,
+      exhaustedAt: undefined,
+      completedAt: undefined,
+    });
+  });
+
+  it("reports stale and exhausted backup jobs for alerting", async () => {
+    const now = 1_700_000_000_000;
+    const pendingJobs = [
+      {
+        _id: "registryArtifactBackupJobs:stale",
+        targetKind: "packageRelease",
+        packageReleaseId: "packageReleases:stale",
+        status: "pending",
+        attempts: 2,
+        createdAt: now - 49 * 60 * 60 * 1000,
+        updatedAt: now - 60 * 60 * 1000,
+        nextRunAt: now - 1000,
+      },
+    ];
+    const exhaustedJobs = [
+      {
+        _id: "registryArtifactBackupJobs:exhausted",
+        targetKind: "skillVersion",
+        skillVersionId: "skillVersions:exhausted",
+        status: "exhausted",
+        attempts: 8,
+        createdAt: now - 10 * 60 * 60 * 1000,
+        updatedAt: now - 1000,
+        nextRunAt: now - 1000,
+      },
+    ];
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn((indexName: string) => ({
+            collect: vi
+              .fn()
+              .mockResolvedValue(
+                table === "registryArtifactBackupJobs" && indexName === "by_status_nextRunAt"
+                  ? pendingJobs
+                  : exhaustedJobs,
+              ),
+          })),
+        })),
+      },
+    };
+
+    const result = await getRegistryArtifactBackupHealthHandler(ctx as never, {
+      now,
+      staleAfterMs: 24 * 60 * 60 * 1000,
+    });
+
+    expect(result).toMatchObject({
+      pending: 1,
+      stale: 1,
+      exhausted: 1,
+      oldestPendingAgeMs: 49 * 60 * 60 * 1000,
+    });
   });
 });

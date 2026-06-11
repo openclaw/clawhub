@@ -367,6 +367,9 @@ const internalRefs = internal as unknown as {
   packageInspectorNode: {
     runPackageInspectorForPublishInternal: unknown;
   };
+  githubBackupsNode: {
+    backupPackageForPublishInternal: unknown;
+  };
   packagePublishTokens: {
     createInternal: unknown;
     getByIdInternal: unknown;
@@ -6523,6 +6526,50 @@ async function publishPackageImpl(
     releaseId: publishResult.releaseId,
     source: "publish",
   });
+
+  if (payload.artifact?.storageId) {
+    const backupOwner =
+      ownerPublisher ??
+      ((await runQueryRef<Doc<"users"> | null>(ctx, internalRefs.users.getByIdInternal, {
+        userId: ownerUserId,
+      })) as Doc<"users"> | null);
+    const ownerHandle = backupOwner?.handle ?? String(ownerPublisherId ?? ownerUserId);
+    void runAfterRef(ctx, 0, internalRefs.githubBackupsNode.backupPackageForPublishInternal, {
+      ownerHandle,
+      packageId: publishResult.packageId,
+      releaseId: publishResult.releaseId,
+      packageName: name,
+      normalizedName: name,
+      displayName,
+      family,
+      version,
+      publishedAt: Date.now(),
+      artifactKind: payload.artifact.kind ?? "legacy-zip",
+      artifactStorageId: payload.artifact.storageId,
+      artifactFileName: payload.artifact.npmTarballName,
+      artifactSha256: payload.artifact.sha256,
+      artifactSize: payload.artifact.size,
+      artifactFormat: payload.artifact.format,
+      npmIntegrity: payload.artifact.npmIntegrity,
+      npmShasum: payload.artifact.npmShasum,
+      npmUnpackedSize: payload.artifact.npmUnpackedSize,
+      npmFileCount: payload.artifact.npmFileCount,
+      runtimeId: codeArtifacts?.runtimeId ?? bundleArtifacts?.runtimeId,
+      sourceRepo: effectiveSource?.repo || effectiveSource?.url,
+      compatibility: codeArtifacts?.compatibility ?? bundleArtifacts?.compatibility,
+      capabilities: codeArtifacts?.capabilities ?? bundleArtifacts?.capabilities,
+      extractedPackageJson: storedPackageJson,
+      extractedPluginManifest: family === "code-plugin" ? storedPluginManifest : undefined,
+      normalizedBundleManifest: family === "bundle-plugin" ? storedBundleManifest : undefined,
+      files: files.map((file) => ({
+        path: file.path,
+        size: file.size,
+        sha256: file.sha256,
+      })),
+    }).catch((error) => {
+      console.error("GitHub package backup scheduling failed", error);
+    });
+  }
 
   return inspectorFindings.length > 0 ? { ...publishResult, inspectorFindings } : publishResult;
 }

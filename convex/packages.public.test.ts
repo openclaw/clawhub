@@ -6078,6 +6078,17 @@ describe("packages public queries", () => {
         ]),
       }),
     );
+    expect(ctx.scheduler.runAfter).toHaveBeenCalledWith(
+      0,
+      expect.anything(),
+      expect.objectContaining({
+        releaseId: "releases:demo-1",
+        packageName: "demo-plugin",
+        artifactStorageId: "storage:clawpack",
+        artifactSha256: "clawpack",
+        artifactFileName: "demo-plugin-1.0.0.tgz",
+      }),
+    );
   });
 
   it("rejects trusted publish tokens after trusted publisher rotation or deletion", async () => {

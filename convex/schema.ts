@@ -2415,6 +2415,26 @@ const githubBackupSyncState = defineTable({
   updatedAt: v.number(),
 }).index("by_key", ["key"]);
 
+const registryArtifactBackupJobs = defineTable({
+  targetKind: v.union(v.literal("skillVersion"), v.literal("packageRelease")),
+  skillVersionId: v.optional(v.id("skillVersions")),
+  packageReleaseId: v.optional(v.id("packageReleases")),
+  status: v.union(v.literal("pending"), v.literal("succeeded"), v.literal("exhausted")),
+  reason: v.union(v.literal("publish"), v.literal("sync"), v.literal("retry")),
+  attempts: v.number(),
+  nextRunAt: v.number(),
+  lastAttemptAt: v.optional(v.number()),
+  lastError: v.optional(v.string()),
+  completedAt: v.optional(v.number()),
+  exhaustedAt: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_status_nextRunAt", ["status", "nextRunAt"])
+  .index("by_skill_version", ["skillVersionId"])
+  .index("by_package_release", ["packageReleaseId"])
+  .index("by_updatedAt", ["updatedAt"]);
+
 const userSyncRoots = defineTable({
   userId: v.id("users"),
   rootId: v.string(),
@@ -2540,6 +2560,7 @@ export default defineSchema({
   reservedSlugs,
   reservedHandles,
   githubBackupSyncState,
+  registryArtifactBackupJobs,
   userSyncRoots,
   userSkillInstalls,
   userSkillRootInstalls,

@@ -390,6 +390,7 @@ export async function publishVersionForUser(
   if (!options.skipBackup) {
     void ctx.scheduler
       .runAfter(0, internal.githubBackupsNode.backupSkillForPublishInternal, {
+        versionId: publishResult.versionId,
         slug,
         version,
         displayName,

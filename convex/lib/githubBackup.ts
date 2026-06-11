@@ -7,7 +7,9 @@ import { buildGitHubHeaders, createGitHubAppInstallationToken } from "./githubAu
 const GITHUB_API = "https://api.github.com";
 const DEFAULT_REPO = "openclaw/clawhub-backup";
 const DEFAULT_ROOT = "hosted-skills";
+const DEFAULT_PACKAGE_ROOT = "package-releases";
 const META_FILENAME = "_meta.json";
+const PACKAGE_INDEX_FILENAME = "_index.json";
 const USER_AGENT = "clawhub/skills-backup";
 
 type BackupFile = {
@@ -25,6 +27,36 @@ type BackupParams = {
   ownerHandle: string;
   files: BackupFile[];
   publishedAt: number;
+};
+
+type PackageBackupParams = {
+  ownerHandle: string;
+  packageId: Id<"packages">;
+  releaseId: Id<"packageReleases">;
+  packageName: string;
+  normalizedName: string;
+  displayName: string;
+  family: "code-plugin" | "bundle-plugin";
+  version: string;
+  publishedAt: number;
+  artifactKind?: "legacy-zip" | "npm-pack";
+  artifactStorageId: Id<"_storage">;
+  artifactFileName?: string;
+  artifactSha256?: string;
+  artifactSize?: number;
+  artifactFormat?: "tgz";
+  npmIntegrity?: string;
+  npmShasum?: string;
+  npmUnpackedSize?: number;
+  npmFileCount?: number;
+  runtimeId?: string;
+  sourceRepo?: string;
+  compatibility?: unknown;
+  capabilities?: unknown;
+  extractedPackageJson?: unknown;
+  extractedPluginManifest?: unknown;
+  normalizedBundleManifest?: unknown;
+  files: Array<{ path: string; size: number; sha256: string }>;
 };
 
 type RepoInfo = {
@@ -65,6 +97,65 @@ type MetaFile = {
   }>;
 };
 
+type PackageReleaseMetaFile = {
+  kind: "packageRelease";
+  owner: string;
+  packageName: string;
+  normalizedName: string;
+  displayName: string;
+  family: PackageBackupParams["family"];
+  version: string;
+  publishedAt: number;
+  runtimeId?: string;
+  sourceRepo?: string;
+  artifactKind?: PackageBackupParams["artifactKind"];
+  artifact: {
+    path: string;
+    sha256?: string;
+    size?: number;
+    format?: "tgz";
+    npmIntegrity?: string;
+    npmShasum?: string;
+    npmUnpackedSize?: number;
+    npmFileCount?: number;
+  };
+  restore: {
+    packageId: string;
+    releaseId: string;
+  };
+  metadata: {
+    compatibility?: unknown;
+    capabilities?: unknown;
+    extractedPackageJson?: unknown;
+    extractedPluginManifest?: unknown;
+    normalizedBundleManifest?: unknown;
+    files: Array<{ path: string; size: number; sha256: string }>;
+  };
+};
+
+type PackageIndexFile = {
+  kind: "package";
+  owner: string;
+  packageName: string;
+  normalizedName: string;
+  displayName: string;
+  family: PackageBackupParams["family"];
+  latest: {
+    version: string;
+    publishedAt: number;
+    releaseId: string;
+    path: string;
+    commit: string | null;
+  };
+  releases: Array<{
+    version: string;
+    publishedAt: number;
+    releaseId: string;
+    path: string;
+    commit: string | null;
+  }>;
+};
+
 export type GitHubBackupContext = {
   token: string;
   repo: string;
@@ -72,6 +163,7 @@ export type GitHubBackupContext = {
   repoName: string;
   branch: string;
   root: string;
+  packageRoot: string;
 };
 
 export type GitHubSkillBackupEntry = {
@@ -93,17 +185,18 @@ export function getGitHubBackupSettings() {
   return {
     repo: process.env.GITHUB_SKILLS_REPO ?? DEFAULT_REPO,
     root: process.env.GITHUB_SKILLS_ROOT ?? DEFAULT_ROOT,
+    packageRoot: process.env.GITHUB_PACKAGE_ARTIFACTS_ROOT ?? DEFAULT_PACKAGE_ROOT,
   };
 }
 
 export async function getGitHubBackupContext(): Promise<GitHubBackupContext> {
-  const { repo, root } = getGitHubBackupSettings();
+  const { repo, root, packageRoot } = getGitHubBackupSettings();
   const [repoOwner, repoName] = parseRepo(repo);
   const { token } = await createGitHubAppInstallationToken({ userAgent: USER_AGENT });
   const repoInfo = await githubGet<RepoInfo>(token, `/repos/${repoOwner}/${repoName}`);
   const branch = repoInfo.default_branch ?? "main";
 
-  return { token, repo, repoOwner, repoName, branch, root };
+  return { token, repo, repoOwner, repoName, branch, root, packageRoot };
 }
 
 export async function fetchGitHubSkillMeta(
@@ -117,6 +210,24 @@ export async function fetchGitHubSkillMeta(
     context.repoOwner,
     context.repoName,
     `${skillRoot}/${META_FILENAME}`,
+    context.branch,
+  );
+}
+
+export async function fetchGitHubPackageReleaseMeta(
+  context: GitHubBackupContext,
+  ownerHandle: string,
+  normalizedName: string,
+  version: string,
+): Promise<PackageReleaseMetaFile | null> {
+  const owner = normalizeOwner(ownerHandle);
+  const packageSegment = normalizePackagePathSegment(normalizedName);
+  const metaPath = `${context.packageRoot}/${owner}/${packageSegment}/${version}/${META_FILENAME}`;
+  return fetchJsonFile<PackageReleaseMetaFile>(
+    context.token,
+    context.repoOwner,
+    context.repoName,
+    metaPath,
     context.branch,
   );
 }
@@ -386,6 +497,188 @@ export async function backupSkillToGitHub(
   }
 }
 
+export async function backupPackageReleaseToGitHub(
+  ctx: ActionCtx,
+  params: PackageBackupParams,
+  context?: GitHubBackupContext,
+) {
+  if (!isGitHubBackupConfigured()) return;
+
+  const resolved = context ?? (await getGitHubBackupContext());
+  const planned = buildPackageReleaseBackupManifest({
+    root: resolved.packageRoot,
+    repo: resolved.repo,
+    ...params,
+    artifactFileName: params.artifactFileName ?? defaultPackageArtifactFileName(params),
+  });
+  const artifactContent = await fetchStorageBase64(ctx, params.artifactStorageId);
+  const artifactBlobSha = await createBlob(
+    resolved.token,
+    resolved.repoOwner,
+    resolved.repoName,
+    artifactContent,
+  );
+
+  for (let attempt = 0; attempt < MAX_PUSH_RETRIES; attempt++) {
+    const ref = await githubGet<GitRef>(
+      resolved.token,
+      `/repos/${resolved.repoOwner}/${resolved.repoName}/git/ref/heads/${resolved.branch}`,
+    );
+    const baseCommitSha = ref.object.sha;
+    const baseCommit = await githubGet<GitCommit>(
+      resolved.token,
+      `/repos/${resolved.repoOwner}/${resolved.repoName}/git/commits/${baseCommitSha}`,
+    );
+    const baseTreeSha = baseCommit.tree.sha;
+    const existingIndex = await fetchJsonFile<PackageIndexFile>(
+      resolved.token,
+      resolved.repoOwner,
+      resolved.repoName,
+      planned.indexPath,
+      resolved.branch,
+    );
+
+    const metaContent = `${JSON.stringify(planned.meta, null, 2)}\n`;
+    const metaBlobSha = await createBlob(
+      resolved.token,
+      resolved.repoOwner,
+      resolved.repoName,
+      toBase64(metaContent),
+    );
+    const indexDraft = buildPackageIndexFile(planned, existingIndex, null);
+    const indexBlobSha = await createBlob(
+      resolved.token,
+      resolved.repoOwner,
+      resolved.repoName,
+      toBase64(`${JSON.stringify(indexDraft, null, 2)}\n`),
+    );
+
+    const newTree = await githubPost<{ sha: string }>(
+      resolved.token,
+      `/repos/${resolved.repoOwner}/${resolved.repoName}/git/trees`,
+      {
+        base_tree: baseTreeSha,
+        tree: [
+          { path: planned.artifactPath, mode: "100644", type: "blob", sha: artifactBlobSha },
+          { path: planned.metaPath, mode: "100644", type: "blob", sha: metaBlobSha },
+          { path: planned.indexPath, mode: "100644", type: "blob", sha: indexBlobSha },
+        ],
+      },
+    );
+
+    const commit = await githubPost<GitCommit>(
+      resolved.token,
+      `/repos/${resolved.repoOwner}/${resolved.repoName}/git/commits`,
+      {
+        message: `package: ${params.packageName} v${params.version}`,
+        tree: newTree.sha,
+        parents: [baseCommitSha],
+      },
+    );
+
+    const finalIndex = buildPackageIndexFile(
+      planned,
+      existingIndex,
+      commitUrl(resolved.repo, commit.sha),
+    );
+    const finalIndexBlobSha = await createBlob(
+      resolved.token,
+      resolved.repoOwner,
+      resolved.repoName,
+      toBase64(`${JSON.stringify(finalIndex, null, 2)}\n`),
+    );
+    const finalTree = await githubPost<{ sha: string }>(
+      resolved.token,
+      `/repos/${resolved.repoOwner}/${resolved.repoName}/git/trees`,
+      {
+        base_tree: commit.tree.sha,
+        tree: [{ path: planned.indexPath, mode: "100644", type: "blob", sha: finalIndexBlobSha }],
+      },
+    );
+    const finalCommit = await githubPost<GitCommit>(
+      resolved.token,
+      `/repos/${resolved.repoOwner}/${resolved.repoName}/git/commits`,
+      {
+        message: `index: ${params.packageName} v${params.version}`,
+        tree: finalTree.sha,
+        parents: [commit.sha],
+      },
+    );
+
+    try {
+      await githubPatch(
+        resolved.token,
+        `/repos/${resolved.repoOwner}/${resolved.repoName}/git/refs/heads/${resolved.branch}`,
+        { sha: finalCommit.sha },
+      );
+      return;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("not a fast forward") && attempt < MAX_PUSH_RETRIES - 1) {
+        console.warn(
+          `GitHub package backup push conflict for ${params.packageName}@${params.version}, retrying (attempt ${attempt + 1})`,
+        );
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
+export function buildPackageReleaseBackupManifest(
+  params: Omit<PackageBackupParams, "artifactStorageId"> & { root: string; repo: string },
+) {
+  const owner = normalizeOwner(params.ownerHandle);
+  const packageSegment = normalizePackagePathSegment(params.normalizedName || params.packageName);
+  const artifactFileName = params.artifactFileName ?? defaultPackageArtifactFileName(params);
+  const packageRoot = `${params.root}/${owner}/${packageSegment}`;
+  const releaseRoot = `${packageRoot}/${params.version}`;
+  const meta: PackageReleaseMetaFile = {
+    kind: "packageRelease",
+    owner,
+    packageName: params.packageName,
+    normalizedName: params.normalizedName,
+    displayName: params.displayName,
+    family: params.family,
+    version: params.version,
+    publishedAt: params.publishedAt,
+    runtimeId: params.runtimeId,
+    sourceRepo: params.sourceRepo,
+    artifactKind: params.artifactKind,
+    artifact: {
+      path: artifactFileName,
+      sha256: params.artifactSha256,
+      size: params.artifactSize,
+      format: params.artifactFormat,
+      npmIntegrity: params.npmIntegrity,
+      npmShasum: params.npmShasum,
+      npmUnpackedSize: params.npmUnpackedSize,
+      npmFileCount: params.npmFileCount,
+    },
+    restore: {
+      packageId: params.packageId,
+      releaseId: params.releaseId,
+    },
+    metadata: {
+      compatibility: params.compatibility,
+      capabilities: params.capabilities,
+      extractedPackageJson: params.extractedPackageJson,
+      extractedPluginManifest: params.extractedPluginManifest,
+      normalizedBundleManifest: params.normalizedBundleManifest,
+      files: params.files,
+    },
+  };
+
+  return {
+    packageRoot,
+    releaseRoot,
+    artifactPath: `${releaseRoot}/${artifactFileName}`,
+    metaPath: `${releaseRoot}/${META_FILENAME}`,
+    indexPath: `${packageRoot}/${PACKAGE_INDEX_FILENAME}`,
+    meta,
+  };
+}
+
 function buildMetaFile(
   params: BackupParams,
   existing: MetaFile | null,
@@ -432,6 +725,26 @@ async function fetchMetaFile(
     if (!response.content) return null;
     const raw = fromBase64(response.content);
     return JSON.parse(raw) as MetaFile;
+  } catch (error) {
+    if (isNotFoundError(error)) return null;
+    throw error;
+  }
+}
+
+async function fetchJsonFile<T>(
+  token: string,
+  repoOwner: string,
+  repoName: string,
+  path: string,
+  branch: string,
+): Promise<T | null> {
+  try {
+    const response = await githubGet<{ content?: string }>(
+      token,
+      `/repos/${repoOwner}/${repoName}/contents/${encodePath(path)}?ref=${branch}`,
+    );
+    if (!response.content) return null;
+    return JSON.parse(fromBase64(response.content)) as T;
   } catch (error) {
     if (isNotFoundError(error)) return null;
     throw error;
@@ -521,6 +834,45 @@ function commitUrl(repo: string, sha: string) {
 function buildSkillRoot(root: string, ownerHandle: string, slug: string) {
   const ownerSegment = normalizeOwner(ownerHandle);
   return `${root}/${ownerSegment}/${slug}`;
+}
+
+function normalizePackagePathSegment(value: string) {
+  return normalizeOwner(value.replace(/^@/, "").replace("/", "-"));
+}
+
+function defaultPackageArtifactFileName(
+  params: Pick<PackageBackupParams, "normalizedName" | "version">,
+) {
+  return `${normalizePackagePathSegment(params.normalizedName)}-${params.version}.tgz`;
+}
+
+function buildPackageIndexFile(
+  planned: ReturnType<typeof buildPackageReleaseBackupManifest>,
+  existing: PackageIndexFile | null,
+  commit: string | null,
+): PackageIndexFile {
+  const nextRelease = {
+    version: planned.meta.version,
+    publishedAt: planned.meta.publishedAt,
+    releaseId: planned.meta.restore.releaseId,
+    path: planned.metaPath,
+    commit,
+  };
+  const releases = [
+    nextRelease,
+    ...(existing?.releases ?? []).filter((release) => release.releaseId !== nextRelease.releaseId),
+  ].slice(0, 500);
+
+  return {
+    kind: "package",
+    owner: planned.meta.owner,
+    packageName: planned.meta.packageName,
+    normalizedName: planned.meta.normalizedName,
+    displayName: planned.meta.displayName,
+    family: planned.meta.family,
+    latest: nextRelease,
+    releases,
+  };
 }
 
 function encodePath(path: string) {
