@@ -686,12 +686,6 @@ async function retireLegacyLocalOwnerPublishers(
       .collect();
     for (const alias of aliases) await ctx.db.patch(alias._id, ownerPatch);
 
-    const souls = await ctx.db
-      .query("souls")
-      .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", publisher._id))
-      .collect();
-    for (const soul of souls) await ctx.db.patch(soul._id, ownerPatch);
-
     const packages = await ctx.db
       .query("packages")
       .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", publisher._id))

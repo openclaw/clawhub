@@ -52,7 +52,6 @@ pnpm add -g clawhub
 | Skills         | Versioned text bundles with `SKILL.md` plus supporting files | `openclaw skills install <slug>`             |
 | Code plugins   | OpenClaw plugin packages with compatibility metadata         | `openclaw plugins install clawhub:<package>` |
 | Bundle plugins | Packaged plugin bundles for OpenClaw distribution            | `clawhub package publish <source>`           |
-| Souls          | `SOUL.md` bundles shown on onlycrabs.ai                      | Web and API publish flows                    |
 
 ClawHub tracks semver versions, tags such as `latest`, changelogs, files,
 downloads, stars, and security scan summaries. Public pages show current registry

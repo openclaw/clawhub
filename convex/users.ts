@@ -2277,7 +2277,7 @@ async function banUserWithActor(
       ok: true as const,
       alreadyBanned: true,
       deletedSkills: 0,
-      deletedComments: { skillComments: 0, soulComments: 0 },
+      deletedSkillComments: 0,
     };
   }
   if (target.deletedAt) {
@@ -2288,7 +2288,7 @@ async function banUserWithActor(
       deletedByRole: actor.role === "admin" ? "admin" : "moderator",
       cursor: undefined,
     });
-    const deletedComments = await softDeleteUserCommentsForBan(ctx, {
+    const deletedSkillComments = await softDeleteUserCommentsForBan(ctx, {
       userId: targetUserId,
       deletedBy: actor._id,
       deletedAt: target.deletedAt,
@@ -2297,7 +2297,7 @@ async function banUserWithActor(
       ok: true as const,
       alreadyBanned: true,
       deletedSkills: 0,
-      deletedComments,
+      deletedSkillComments,
     };
   }
 
@@ -2323,7 +2323,7 @@ async function banUserWithActor(
     }
   }
 
-  const deletedComments = await softDeleteUserCommentsForBan(ctx, {
+  const deletedSkillComments = await softDeleteUserCommentsForBan(ctx, {
     userId: targetUserId,
     deletedBy: actor._id,
     deletedAt: now,
@@ -2362,8 +2362,7 @@ async function banUserWithActor(
       deletedPackages: deletedPackageCount,
       revokedPackagePublishTokens,
       scheduledPackages,
-      deletedSkillComments: deletedComments.skillComments,
-      deletedSoulComments: deletedComments.soulComments,
+      deletedSkillComments,
       reason: reason || undefined,
     },
     createdAt: now,
@@ -2380,7 +2379,7 @@ async function banUserWithActor(
     ok: true as const,
     alreadyBanned: false,
     deletedSkills: hiddenCount,
-    deletedComments,
+    deletedSkillComments,
     scheduledSkills,
   };
 }
@@ -3013,7 +3012,7 @@ export const autobanMalwareAuthorInternal = internalMutation({
       }
     }
 
-    const deletedComments = await softDeleteUserCommentsForBan(ctx, {
+    const deletedSkillComments = await softDeleteUserCommentsForBan(ctx, {
       userId: args.ownerUserId,
       deletedBy: args.ownerUserId,
       deletedAt: now,
@@ -3052,8 +3051,7 @@ export const autobanMalwareAuthorInternal = internalMutation({
       deletedPackages: deletedPackageCount,
       revokedPackagePublishTokens,
       scheduledPackages,
-      deletedSkillComments: deletedComments.skillComments,
-      deletedSoulComments: deletedComments.soulComments,
+      deletedSkillComments,
     };
     if (args.sha256hash?.trim()) {
       metadata.sha256hash = args.sha256hash.trim();
@@ -3089,7 +3087,7 @@ export const autobanMalwareAuthorInternal = internalMutation({
       ok: true,
       alreadyBanned: false,
       deletedSkills: hiddenCount,
-      deletedComments,
+      deletedSkillComments,
       scheduledSkills,
     };
   },
@@ -3227,9 +3225,8 @@ export const recordStaffEmailSentAuditInternal = internalMutation({
 async function softDeleteUserCommentsForBan(
   ctx: MutationCtx,
   args: { userId: Id<"users">; deletedBy: Id<"users">; deletedAt: number },
-) {
+): Promise<number> {
   let skillComments = 0;
-  let soulComments = 0;
 
   const comments = await ctx.db
     .query("comments")
@@ -3245,29 +3242,5 @@ async function softDeleteUserCommentsForBan(
     skillComments += 1;
   }
 
-  const soulCommentDocs = await ctx.db
-    .query("soulComments")
-    .withIndex("by_user", (q) => q.eq("userId", args.userId))
-    .collect();
-  const soulCommentCounts = new Map<Id<"souls">, number>();
-  for (const comment of soulCommentDocs) {
-    if (comment.softDeletedAt) continue;
-    await ctx.db.patch(comment._id, {
-      softDeletedAt: args.deletedAt,
-      deletedBy: args.deletedBy,
-    });
-    soulCommentCounts.set(comment.soulId, (soulCommentCounts.get(comment.soulId) ?? 0) + 1);
-    soulComments += 1;
-  }
-
-  for (const [soulId, count] of soulCommentCounts.entries()) {
-    const soul = await ctx.db.get(soulId);
-    if (!soul) continue;
-    await ctx.db.patch(soulId, {
-      stats: { ...soul.stats, comments: Math.max(0, soul.stats.comments - count) },
-      updatedAt: args.deletedAt,
-    });
-  }
-
-  return { skillComments, soulComments };
+  return skillComments;
 }

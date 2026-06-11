@@ -106,13 +106,6 @@ function publicRouteCases(): PublicRouteCase[] {
       },
     },
     {
-      label: "souls browse",
-      path: () => "/souls",
-      assert: async (page) => {
-        await expect(page.getByRole("heading", { name: /SOUL\.md discovery/i })).toBeVisible();
-      },
-    },
-    {
       label: "search results",
       path: () => "/search?q=gifgrep",
       assert: async (page) => {

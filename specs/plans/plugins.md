@@ -63,7 +63,7 @@ Additional product decision:
 
 ### ClawHub today
 
-ClawHub is currently a text-bundle registry for skills and souls.
+ClawHub is currently a text-bundle registry for skills.
 
 Implications:
 
@@ -105,8 +105,6 @@ Top-level families:
 - `skills`
 - `code plugins`
 - `bundle plugins`
-- `souls` may remain as a legacy/internal family if still needed, but they
-  should not drive the long-term package model
 
 This lets ClawHub support:
 
@@ -153,8 +151,8 @@ Current OpenClaw evidence supports this:
 Current ClawHub gap:
 
 - current skill flows already normalize many slugs to lowercase
-- current uniqueness is still family-specific rather than global because skills
-  and souls live in separate tables and routes
+- current uniqueness is still family-specific rather than global because each
+  content family lives in separate tables and routes
 - moving to one case-insensitive global namespace will require a schema and
   data migration, not just UI changes
 - current version handling in some skill flows still assumes semver, so

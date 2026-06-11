@@ -1,11 +1,12 @@
 /* @vitest-environment node */
 import { describe, expect, it, vi } from "vitest";
+import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
 import {
   formatUserFacingErrorMessage,
   parseMultipartSkillScan,
-  resolveVersionTagsBatch,
+  resolveTagsBatch,
   softDeleteErrorToResponse,
 } from "./httpApiV1/shared";
 
@@ -64,7 +65,7 @@ describe("http API v1 shared helpers", () => {
   });
 
   it("keeps unknown soft-delete failures generic 500s", async () => {
-    const response = softDeleteErrorToResponse("soul", new Error("boom"), {});
+    const response = softDeleteErrorToResponse("skill", new Error("boom"), {});
 
     expect(response.status).toBe(500);
     await expect(response.text()).resolves.toBe("Internal Server Error");
@@ -86,10 +87,9 @@ describe("http API v1 shared helpers", () => {
     const versionId = "skillVersions:latest" as Id<"skillVersions">;
     const skillId = "skills:demo" as Id<"skills">;
 
-    const result = await resolveVersionTagsBatch(
+    const result = await resolveTagsBatch(
       ctx,
       [{ latest: versionId }],
-      {} as never,
       [{ _id: versionId, skillId, version: "2.0.0" }],
       [skillId],
     );
@@ -102,16 +102,19 @@ describe("http API v1 shared helpers", () => {
     const ctx = makeCtx();
     const latestId = "skillVersions:latest" as Id<"skillVersions">;
     const stableId = "skillVersions:stable" as Id<"skillVersions">;
-    ctx.runQuery.mockResolvedValueOnce([{ _id: stableId, version: "1.5.0" }]);
+    const skillId = "skills:demo" as Id<"skills">;
+    ctx.runQuery.mockResolvedValueOnce([{ _id: stableId, skillId, version: "1.5.0" }]);
 
-    const result = await resolveVersionTagsBatch(
+    const result = await resolveTagsBatch(
       ctx,
       [{ latest: latestId, stable: stableId }],
-      {} as never,
-      [{ _id: latestId, version: "2.0.0" }],
+      [{ _id: latestId, skillId, version: "2.0.0" }],
+      [skillId],
     );
 
-    expect(ctx.runQuery).toHaveBeenCalledWith({}, { versionIds: [stableId] });
+    expect(ctx.runQuery).toHaveBeenCalledWith(internal.skills.getVersionsByIdsInternal, {
+      versionIds: [stableId],
+    });
     expect(result).toEqual([{ latest: "2.0.0", stable: "1.5.0" }]);
   });
 
@@ -125,10 +128,9 @@ describe("http API v1 shared helpers", () => {
       { _id: stableId, skillId, version: "1.5.0" },
     ]);
 
-    const result = await resolveVersionTagsBatch(
+    const result = await resolveTagsBatch(
       ctx,
       [{ latest: otherId, stable: stableId }],
-      {} as never,
       [{ _id: otherId, skillId: "skills:other" as Id<"skills">, version: "9.9.9" }],
       [skillId],
     );

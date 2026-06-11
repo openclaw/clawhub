@@ -4,4 +4,3 @@ import { internal } from "./_generated/api";
 // Public exposure is prevented at runtime by `internalMutation`; this file
 // just pins the public references that *should* exist.
 void internal.downloads.recordDownloadInternal;
-void internal.soulDownloads.incrementInternal;
