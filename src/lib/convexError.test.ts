@@ -21,8 +21,8 @@ describe("getUserFacingConvexError", () => {
 
   it("preserves ownership errors as-is after cleanup", () => {
     expect(
-      getUserFacingConvexError(new Error("Only the owner can publish soul updates"), "fallback"),
-    ).toBe("Only the owner can publish soul updates");
+      getUserFacingConvexError(new Error("Only the owner can publish skill updates"), "fallback"),
+    ).toBe("Only the owner can publish skill updates");
   });
 
   it("expands generic authz denials into account-status aware messages", () => {

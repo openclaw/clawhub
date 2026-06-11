@@ -777,30 +777,6 @@ const skillSlugAliases = defineTable({
   .index("by_owner_slug", ["ownerUserId", "slug"])
   .index("by_owner_publisher_slug", ["ownerPublisherId", "slug"]);
 
-const souls = defineTable({
-  slug: v.string(),
-  displayName: v.string(),
-  summary: v.optional(v.string()),
-  ownerUserId: v.id("users"),
-  ownerPublisherId: v.optional(v.id("publishers")),
-  latestVersionId: v.optional(v.id("soulVersions")),
-  tags: v.record(v.string(), v.id("soulVersions")),
-  softDeletedAt: v.optional(v.number()),
-  stats: v.object({
-    downloads: v.number(),
-    stars: v.number(),
-    versions: v.number(),
-    comments: v.number(),
-  }),
-  createdAt: v.number(),
-  updatedAt: v.number(),
-})
-  .index("by_slug", ["slug"])
-  .index("by_owner", ["ownerUserId"])
-  .index("by_owner_publisher", ["ownerPublisherId"])
-  .index("by_updated", ["updatedAt"])
-  .index("by_active_updated", ["softDeletedAt", "updatedAt"]);
-
 const skillVersions = defineTable({
   skillId: v.id("skills"),
   version: v.string(),
@@ -914,34 +890,6 @@ const depRegistryCache = defineTable({
   checkedAt: v.number(),
 }).index("by_registry_name", ["registry", "name"]);
 
-const soulVersions = defineTable({
-  soulId: v.id("souls"),
-  version: v.string(),
-  fingerprint: v.optional(v.string()),
-  changelog: v.string(),
-  changelogSource: v.optional(v.union(v.literal("auto"), v.literal("user"))),
-  files: v.array(
-    v.object({
-      path: v.string(),
-      size: v.number(),
-      storageId: v.id("_storage"),
-      sha256: v.string(),
-      contentType: v.optional(v.string()),
-    }),
-  ),
-  parsed: v.object({
-    frontmatter: v.record(v.string(), v.any()),
-    metadata: v.optional(v.any()),
-    clawdis: v.optional(v.any()),
-    moltbot: v.optional(v.any()),
-  }),
-  createdBy: v.id("users"),
-  createdAt: v.number(),
-  softDeletedAt: v.optional(v.number()),
-})
-  .index("by_soul", ["soulId"])
-  .index("by_soul_version", ["soulId", "version"]);
-
 const skillVersionFingerprints = defineTable({
   skillId: v.id("skills"),
   versionId: v.id("skillVersions"),
@@ -978,16 +926,6 @@ const packageBadges = defineTable({
   .index("by_package", ["packageId"])
   .index("by_package_kind", ["packageId", "kind"])
   .index("by_kind_at", ["kind", "at"]);
-
-const soulVersionFingerprints = defineTable({
-  soulId: v.id("souls"),
-  versionId: v.id("soulVersions"),
-  fingerprint: v.string(),
-  createdAt: v.number(),
-})
-  .index("by_version", ["versionId"])
-  .index("by_fingerprint", ["fingerprint"])
-  .index("by_soul_fingerprint", ["soulId", "fingerprint"]);
 
 const skillEmbeddings = defineTable({
   skillId: v.id("skills"),
@@ -1917,24 +1855,6 @@ const skillStatUpdateCursors = defineTable({
   updatedAt: v.number(),
 }).index("by_key", ["key"]);
 
-const soulEmbeddings = defineTable({
-  soulId: v.id("souls"),
-  versionId: v.id("soulVersions"),
-  ownerId: v.id("users"),
-  embedding: v.array(v.number()),
-  isLatest: v.boolean(),
-  isApproved: v.boolean(),
-  visibility: v.string(),
-  updatedAt: v.number(),
-})
-  .index("by_soul", ["soulId"])
-  .index("by_version", ["versionId"])
-  .vectorIndex("by_embedding", {
-    vectorField: "embedding",
-    dimensions: EMBEDDING_DIMENSIONS,
-    filterFields: ["visibility"],
-  });
-
 const comments = defineTable({
   skillId: v.id("skills"),
   userId: v.id("users"),
@@ -2119,17 +2039,6 @@ const officialPluginMigrations = defineTable({
   .index("by_phase_updatedAt", ["phase", "updatedAt"])
   .index("by_updatedAt", ["updatedAt"]);
 
-const soulComments = defineTable({
-  soulId: v.id("souls"),
-  userId: v.id("users"),
-  body: v.string(),
-  createdAt: v.number(),
-  softDeletedAt: v.optional(v.number()),
-  deletedBy: v.optional(v.id("users")),
-})
-  .index("by_soul", ["soulId"])
-  .index("by_user", ["userId"]);
-
 const stars = defineTable({
   skillId: v.id("skills"),
   userId: v.id("users"),
@@ -2138,15 +2047,6 @@ const stars = defineTable({
   .index("by_skill", ["skillId"])
   .index("by_user", ["userId"])
   .index("by_skill_user", ["skillId", "userId"]);
-
-const soulStars = defineTable({
-  soulId: v.id("souls"),
-  userId: v.id("users"),
-  createdAt: v.number(),
-})
-  .index("by_soul", ["soulId"])
-  .index("by_user", ["userId"])
-  .index("by_soul_user", ["soulId", "userId"]);
 
 const auditLogs = defineTable({
   actorUserId: v.optional(v.id("users")),
@@ -2551,17 +2451,13 @@ export default defineSchema({
   packageSearchDigest,
   packageCapabilitySearchDigest,
   packagePluginCategorySearchDigest,
-  souls,
   skillVersions,
   depRegistryCache,
-  soulVersions,
   skillVersionFingerprints,
   skillBadges,
-  soulVersionFingerprints,
   skillEmbeddings,
   embeddingSkillMap,
   skillSearchDigest,
-  soulEmbeddings,
   skillDailyStats,
   skillLeaderboards,
   skillStatBackfillState,
@@ -2577,9 +2473,7 @@ export default defineSchema({
   packageAppeals,
   packageModerationEventLogs,
   officialPluginMigrations,
-  soulComments,
   stars,
-  soulStars,
   auditLogs,
   publisherAbuseScoreRuns,
   publisherAbuseScores,

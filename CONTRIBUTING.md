@@ -205,10 +205,9 @@ bun run --cwd packages/clawhub verify
 
 Manual smoke tests are documented in [`specs/manual-testing.md`](specs/manual-testing.md).
 
-## Skill & Soul Publishing
+## Skill Publishing
 
 - Skill format reference: [`docs/skill-format.md`](docs/skill-format.md)
-- Soul format reference: [`docs/soul-format.md`](docs/soul-format.md)
 - End-to-end walkthrough (search, install, publish, sync): [`docs/quickstart.md`](docs/quickstart.md)
 
 Quick publish:

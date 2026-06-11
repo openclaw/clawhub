@@ -12,7 +12,7 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 
 ## Roles + permissions
 
-- user: upload skills/souls (subject to GitHub age gate), report skills/comments/packages.
+- user: upload skills (subject to GitHub age gate), report skills/comments/packages.
 - moderator: hide/restore skills, view hidden skills, unhide, soft-delete, ban users (except admins).
 - admin: all moderator actions + hard delete skills, change owners, change roles.
 
@@ -290,7 +290,7 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
       current ban so the next matching unban can restore them
   - retimestamps already ban-hidden owned skills to the current ban marker so
     a later matching unban can restore them
-  - soft-deletes all authored skill comments + soul comments
+  - soft-deletes all authored skill comments
   - revokes API tokens
   - sets `deletedAt` on the user
 - Admins can manually unban (`deletedAt` + `banReason` cleared); revoked API tokens
@@ -339,8 +339,8 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 
 ## Upload gate (GitHub account age)
 
-- Skill + soul publish actions require GitHub account age ≥ 14 days.
-- Skill + soul comment creation also requires GitHub account age ≥ 14 days.
+- Skill publish actions require GitHub account age ≥ 14 days.
+- Skill comment creation also requires GitHub account age ≥ 14 days.
 - Lookup uses GitHub `created_at` fetched by the immutable GitHub numeric ID (`providerAccountId`)
   and caches on the user:
   - `githubCreatedAt` (source of truth)

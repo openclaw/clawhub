@@ -17,7 +17,6 @@ vi.mock("./functions", () => ({
 }));
 
 const { insertStatEvent } = await import("./skillStatEvents");
-const { isStarred: isSoulStarred } = await import("./soulStars");
 const { addStarInternal, isStarred, removeStarInternal, toggle } = await import("./stars");
 
 type WrappedHandler<TArgs, TResult> = {
@@ -41,9 +40,6 @@ const removeStarInternalHandler = (
 )._handler;
 const isStarredHandler = (isStarred as unknown as WrappedHandler<{ skillId: string }, boolean>)
   ._handler;
-const isSoulStarredHandler = (
-  isSoulStarred as unknown as WrappedHandler<{ soulId: string }, boolean>
-)._handler;
 
 function makeSkill(overrides: Record<string, unknown> = {}) {
   return {
@@ -89,7 +85,7 @@ function makeCtx(params: {
   const deleteDoc = vi.fn();
   const patch = vi.fn();
   const query = vi.fn((table: string) => {
-    if (table !== "stars" && table !== "soulStars") throw new Error(`unexpected table ${table}`);
+    if (table !== "stars") throw new Error(`unexpected table ${table}`);
     return {
       withIndex: () => ({
         unique: async () => params.existingStar ?? null,
@@ -231,30 +227,12 @@ describe("stars queries", () => {
     ).resolves.toBe(false);
   });
 
-  it("returns false instead of throwing when soul star auth is stale", async () => {
-    vi.mocked(getAuthUserId).mockResolvedValue("users:viewer" as never);
-
-    await expect(
-      isSoulStarredHandler(makeCtx({ user: null }), { soulId: "souls:demo" }),
-    ).resolves.toBe(false);
-  });
-
   it("still reports existing stars for active users", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:viewer" as never);
 
     await expect(
       isStarredHandler(makeCtx({ existingStar: { _id: "stars:demo" } }), {
         skillId: "skills:demo",
-      }),
-    ).resolves.toBe(true);
-  });
-
-  it("still reports existing soul stars for active users", async () => {
-    vi.mocked(getAuthUserId).mockResolvedValue("users:viewer" as never);
-
-    await expect(
-      isSoulStarredHandler(makeCtx({ existingStar: { _id: "soulStars:demo" } }), {
-        soulId: "souls:demo",
       }),
     ).resolves.toBe(true);
   });

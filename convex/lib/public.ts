@@ -83,22 +83,6 @@ export type HydratableSkill = Pick<
 > &
   Partial<Pick<Doc<"skills">, "githubPath" | "githubCurrentCommit">>;
 
-export type PublicSoul = Pick<
-  Doc<"souls">,
-  | "_id"
-  | "_creationTime"
-  | "slug"
-  | "displayName"
-  | "summary"
-  | "ownerUserId"
-  | "ownerPublisherId"
-  | "latestVersionId"
-  | "tags"
-  | "stats"
-  | "createdAt"
-  | "updatedAt"
->;
-
 export function toPublicUser(user: Doc<"users"> | null | undefined): PublicUser | null {
   if (!user || user.deletedAt || user.deactivatedAt) return null;
   return {
@@ -175,23 +159,5 @@ export function toPublicSkill(skill: HydratableSkill | null | undefined): Public
     isSuspicious: skill.isSuspicious,
     createdAt: skill.createdAt,
     updatedAt: skill.updatedAt,
-  };
-}
-
-export function toPublicSoul(soul: Doc<"souls"> | null | undefined): PublicSoul | null {
-  if (!soul || soul.softDeletedAt) return null;
-  return {
-    _id: soul._id,
-    _creationTime: soul._creationTime,
-    slug: soul.slug,
-    displayName: soul.displayName,
-    summary: soul.summary,
-    ownerUserId: soul.ownerUserId,
-    ownerPublisherId: soul.ownerPublisherId,
-    latestVersionId: soul.latestVersionId,
-    tags: soul.tags,
-    stats: soul.stats,
-    createdAt: soul.createdAt,
-    updatedAt: soul.updatedAt,
   };
 }

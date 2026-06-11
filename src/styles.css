@@ -13095,8 +13095,7 @@ a.publisher-profile-detail:hover {
 }
 
 .about-grid,
-.about-patterns,
-.souls-coming-grid {
+.about-patterns {
   display: grid;
   grid-template-columns: 1fr;
   gap: 20px;
@@ -13285,16 +13284,6 @@ a.publisher-profile-detail:hover {
   gap: 12px;
 }
 
-.souls-coming-page {
-  display: grid;
-  gap: 24px;
-}
-
-.souls-coming-hero {
-  display: grid;
-  gap: 20px;
-}
-
 @media (min-width: 641px) {
   .about-bento {
     grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -13449,8 +13438,7 @@ a.publisher-profile-detail:hover {
   .about-grid,
   .about-patterns,
   .about-pattern-lanes,
-  .about-panel-categories .about-grid,
-  .souls-coming-grid {
+  .about-panel-categories .about-grid {
     grid-template-columns: 1fr;
   }
 
@@ -14338,9 +14326,6 @@ a.publisher-profile-detail:hover {
   margin: 0 auto;
   border-top: 1px solid var(--hv2-border);
 }
-.home-v2-categories-grid[data-count="4"] {
-  --home-v2-category-columns: 4;
-}
 .home-v2-cat-item {
   display: flex;
   align-items: center;
@@ -14599,9 +14584,6 @@ a.publisher-profile-detail:hover {
 
 /* ═══ RESPONSIVE ═══ */
 @media (max-width: 1024px) {
-  .home-v2-categories-grid[data-count="4"] {
-    --home-v2-category-columns: 2;
-  }
   .home-v2-discovery-grid {
     grid-template-columns: 1fr;
   }
@@ -14631,8 +14613,7 @@ a.publisher-profile-detail:hover {
   .home-v2-cycle-wrap {
     min-width: 200px;
   }
-  .home-v2-categories-grid,
-  .home-v2-categories-grid[data-count="4"] {
+  .home-v2-categories-grid {
     --home-v2-category-columns: 1;
   }
   .home-v2-cat-item + .home-v2-cat-item::before {

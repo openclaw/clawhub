@@ -124,8 +124,6 @@ describe("restored UI design contract", () => {
       'data-source={carouselUsesHighlighted ? "highlighted" : "popular"}',
     );
     expect(homeSource).toContain("Featured skills");
-    expect(homeSource).toContain("const categoryCount = FEATURE_SOULS ? 4 : 3");
-    expect(homeSource).toContain("data-layout={categoryLayout}");
     expect(homeSource).toContain("Trending Now");
     expect(homeSource).toContain('className="home-v2-trending-grid"');
 
@@ -139,9 +137,6 @@ describe("restored UI design contract", () => {
     const categories = cssRule(css, ".home-v2-categories-grid");
     expect(categories).toContain("--home-v2-category-columns: 3");
     expect(categories).toContain("grid-template-columns: repeat(var(--home-v2-category-columns)");
-    expect(cssRule(css, '.home-v2-categories-grid[data-count="4"]')).toContain(
-      "--home-v2-category-columns: 4",
-    );
 
     const trending = cssRule(css, ".home-v2-trending-grid");
     expect(trending).toContain("grid-template-columns: repeat(3, 1fr)");
