@@ -672,7 +672,7 @@ on:
 jobs:
   dry-run:
     if: github.event_name == 'pull_request'
-    uses: openclaw/clawhub/.github/workflows/package-publish.yml@v0.12.0
+    uses: openclaw/clawhub/.github/workflows/package-publish.yml@{{CLAWHUB_NPM_RELEASE_TAG}}
     with:
       dry_run: true
 
@@ -681,19 +681,35 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    uses: openclaw/clawhub/.github/workflows/package-publish.yml@v0.12.0
+    uses: openclaw/clawhub/.github/workflows/package-publish.yml@{{CLAWHUB_NPM_RELEASE_TAG}}
     with:
       dry_run: false
     secrets:
       clawhub_token: ${{ secrets.CLAWHUB_TOKEN }}
 ```
 
+Dependabot updates:
+
+```yaml
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+```
+
+Enable GitHub Actions Dependabot updates so your repository gets a Dependabot PR
+when ClawHub publishes a newer official workflow version.
+
 Notes:
 
+- `{{CLAWHUB_NPM_RELEASE_TAG}}` is filled by the docs sync from the current
+  `packages/clawhub/package.json` version with a `v` prefix.
 - The reusable workflow defaults `source` to the caller repo.
 - For monorepos, pass `source_path` so the workflow publishes the plugin
   package folder, for example `source_path: extensions/codex`.
-- Pin the reusable workflow to a stable tag or full commit SHA. Do not run release publishing from `@main`.
+- Pin the reusable workflow to a stable ClawHub release tag. Do not run release publishing from `@main`.
 - `pull_request` should use `dry_run: true` so CI stays non-polluting.
 - Real publishes should be limited to trusted events such as `workflow_dispatch` or tag pushes.
 - Trusted publishing without a secret only works on `workflow_dispatch`; tag pushes still need `clawhub_token`.

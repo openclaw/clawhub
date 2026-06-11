@@ -120,17 +120,6 @@ Minimal example:
 `openclaw.build.pluginSdkVersion` when you want richer compatibility metadata,
 but they are not required for publish.
 
-## GitHub Actions
-
-This repo also provides an official reusable workflow for plugin repos:
-
-- [`.github/workflows/package-publish.yml`](../../.github/workflows/package-publish.yml)
-
-Use `dry_run: true` on pull requests and reserve real publishes for trusted events
-such as `workflow_dispatch` or tag pushes with a `CLAWHUB_TOKEN` secret.
-For monorepos, pass `source_path` to publish the plugin package folder, for
-example `source_path: extensions/codex`.
-
 ## Maintainers
 
 The `clawhub` npm package is released separately from the ClawHub app deploy.
