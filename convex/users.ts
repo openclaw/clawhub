@@ -3197,7 +3197,7 @@ export const recordStaffEmailAttemptAuditInternal = internalMutation({
         template: args.template ?? "raw",
         providerId: null,
         status: "attempted",
-        source: "clawhub-mod.email",
+        source: "clawhub-admin.email",
       },
       createdAt: Date.now(),
     });

@@ -4126,6 +4126,15 @@ describe("httpApiV1 handlers", () => {
           },
         };
       }
+      if (args.versionId === "skillVersions:1") {
+        return {
+          _id: "skillVersions:1",
+          skillId: "skills:1",
+          version: "1.0.0",
+          files: [{ path: "SKILL.md", size: 5, storageId: "storage:1", sha256: "abcd" }],
+          softDeletedAt: undefined,
+        };
+      }
       throw new Error("unexpected version lookup");
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -4271,6 +4280,15 @@ describe("httpApiV1 handlers", () => {
             isHiddenByMod: false,
             isRemoved: false,
           },
+        };
+      }
+      if (args.versionId === "skillVersions:1") {
+        return {
+          _id: "skillVersions:1",
+          skillId: "skills:1",
+          version: "1.0.0",
+          files: [{ path: "skill-card.md", size: 5, storageId: "storage:card", sha256: "card" }],
+          softDeletedAt: undefined,
         };
       }
       throw new Error("unexpected version lookup");
@@ -7948,6 +7966,15 @@ describe("httpApiV1 handlers", () => {
             isHiddenByMod: false,
             isRemoved: false,
           },
+        };
+      }
+      if (args.versionId === "skillVersions:demo-1") {
+        return {
+          _id: "skillVersions:demo-1",
+          skillId: "skills:demo",
+          version: "1.0.0",
+          files: [{ path: "SKILL.md", size: 5, storageId: "storage:skill", sha256: "skill" }],
+          softDeletedAt: undefined,
         };
       }
       throw new Error("unexpected version lookup");

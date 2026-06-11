@@ -28,7 +28,11 @@ function runNode(args: string[], envOverrides: NodeJS.ProcessEnv = {}) {
   return spawnSync("node", args, {
     cwd: repoRoot,
     encoding: "utf8",
-    env: { ...env, ...envOverrides },
+    env: {
+      ...env,
+      CLAWHUB_CONFIG_PATH: join(tmpdir(), `clawhub-artifact-empty-config-${process.pid}.json`),
+      ...envOverrides,
+    },
   });
 }
 
@@ -36,7 +40,11 @@ async function runNodeAsync(args: string[], envOverrides: NodeJS.ProcessEnv = {}
   const { FORCE_COLOR: _forceColor, ...env } = process.env;
   const child = spawn("node", args, {
     cwd: repoRoot,
-    env: { ...env, ...envOverrides },
+    env: {
+      ...env,
+      CLAWHUB_CONFIG_PATH: join(tmpdir(), `clawhub-artifact-empty-config-${process.pid}.json`),
+      ...envOverrides,
+    },
     stdio: ["ignore", "pipe", "pipe"],
   });
   let stdout = "";
@@ -232,7 +240,8 @@ describe("built CLI artifact", () => {
   });
 
   it("prints help by default", async () => {
-    const result = runNode([binPath]);
+    const workdir = await makeTmpDir("clawhub-artifact-default-help-");
+    const result = runNode([binPath], { CLAWHUB_CONFIG_PATH: join(workdir, "config.json") });
 
     expect(result.status).toBe(0);
     expect(result.stderr).toBe("");

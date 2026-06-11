@@ -91,9 +91,9 @@ const config = {
         "vitest*.ts!",
       ],
     },
-    "packages/clawhub-mod": {
+    "packages/clawhub-admin": {
       entry: [
-        "bin/clawhub-mod.js!",
+        "bin/clawhub-admin.js!",
         "scripts/build.mjs!",
         "scripts/typecheck.mjs!",
         "src/cli.ts!",
@@ -110,7 +110,7 @@ const config = {
         "../clawhub/src/**/*.ts!",
         "vitest*.ts!",
       ],
-      // The moderator build emits selected public CLI helpers into its own dist.
+      // The admin build emits selected public CLI helpers into its own dist.
       ignoreDependencies: [
         "arktype",
         "fflate",

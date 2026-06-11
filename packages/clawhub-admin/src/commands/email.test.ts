@@ -29,7 +29,7 @@ afterEach(() => {
 });
 
 async function withBody(content: string) {
-  const dir = await mkdtemp(join(tmpdir(), "clawhub-mod-email-"));
+  const dir = await mkdtemp(join(tmpdir(), "clawhub-admin-email-"));
   const path = join(dir, "body.txt");
   await writeFile(path, content, "utf8");
   return {

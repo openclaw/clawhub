@@ -2,7 +2,7 @@
 
 - Date: 2026-06-03
 - Status: Approved for implementation
-- Scope: authenticated ClawScan job API, public CLI scan command, moderator CLI rescan routing, and scan report export shape
+- Scope: authenticated ClawScan job API, public CLI scan command, admin CLI rescan routing, and scan report export shape
 
 ## Problem
 
@@ -25,7 +25,7 @@ The command should upload a local skill bundle, run ClawHub's scan pipeline, wai
 5. Let published-skill scans run read-only by default and update stored ClawScan state only with an explicit `--update`.
 6. Use submit-and-poll behavior so the CLI feels synchronous without holding one long HTTP request open.
 7. Reuse the security-audit download shape: `manifest.json`, `clawscan.json`, `skillspector.json`, `static-analysis.json`, `virustotal.json`, and `README.md`.
-8. Update `clawhub-mod` to use the canonical scan API for staff rescans while preserving moderator/admin semantics.
+8. Update `clawhub-admin` to use the canonical scan API for staff rescans while preserving moderator/admin semantics.
 9. Update schema and docs so the scan API routes are canonical and the older rescan routes are either compatibility aliases or clearly deprecated.
 
 ## Non-Goals
@@ -97,7 +97,7 @@ Published skill scans:
 - allowed only for the skill owner or a publisher member with management rights
 - `update: false` runs a fresh scan and returns the result without writing it back
 - `update: true` writes the final ClawScan result back to the selected published version
-- moderators/admins may use the same backend through `clawhub-mod`, preserving the existing operator capability
+- moderators/admins may use the same backend through `clawhub-admin`, preserving the existing operator capability
 
 ### Existing Route Cleanup
 
@@ -195,11 +195,11 @@ Recommended implementation:
 
 This keeps worker behavior shared while preventing local uploads from leaking into public artifact state.
 
-## Moderator CLI
+## Admin CLI
 
-Update `clawhub-mod skills rescan <slug>` to call the canonical scan API in published update mode, using moderator/admin authorization. Keep its existing prompt, `--version`, `--yes`, and `--json` behavior.
+Update `clawhub-admin skills rescan <slug>` to call the canonical scan API in published update mode, using moderator/admin authorization. Keep its existing prompt, `--version`, `--yes`, and `--json` behavior.
 
-Update `clawhub-mod skills rescan-all` to call the new canonical batch route. If compatibility aliases remain for older callers, tests should still prove the moderator CLI uses the canonical route.
+Update `clawhub-admin skills rescan-all` to call the new canonical batch route. Tests should prove the admin CLI uses the canonical route.
 
 ## Tests
 
@@ -222,7 +222,7 @@ CLI tests should cover:
 3. `clawhub scan --slug demo --update` sends update mode
 4. `--output report.zip` writes the downloaded ZIP bytes
 5. invalid combinations fail clearly
-6. `clawhub-mod skills rescan` uses the canonical route
+6. `clawhub-admin skills rescan` uses the canonical route
 
 ## Rollout Notes
 
@@ -230,7 +230,7 @@ This is a behavior and API change, so update:
 
 - `packages/schema`
 - `packages/clawhub`
-- `packages/clawhub-mod`
+- `packages/clawhub-admin`
 - `docs/cli.md`
 - `docs/http-api.md`
 - `specs/security-moderation.md`

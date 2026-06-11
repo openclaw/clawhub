@@ -111,11 +111,11 @@
         "typescript": "6.0.3",
       },
     },
-    "packages/clawhub-mod": {
-      "name": "@openclaw/clawhub-mod",
+    "packages/clawhub-admin": {
+      "name": "@openclaw/clawhub-admin",
       "version": "0.1.2",
       "bin": {
-        "clawhub-mod": "bin/clawhub-mod.js",
+        "clawhub-admin": "bin/clawhub-admin.js",
       },
       "dependencies": {
         "@clack/prompts": "1.5.1",
@@ -393,7 +393,7 @@
 
     "@oozcitak/util": ["@oozcitak/util@10.0.0", "", {}, "sha512-hAX0pT/73190NLqBPPWSdBVGtbY6VOhWYK3qqHqtXQ1gK7kS2yz4+ivsN07hpJ6I3aeMtKP6J6npsEKOAzuTLA=="],
 
-    "@openclaw/clawhub-mod": ["@openclaw/clawhub-mod@workspace:packages/clawhub-mod"],
+    "@openclaw/clawhub-admin": ["@openclaw/clawhub-admin@workspace:packages/clawhub-admin"],
 
     "@openclaw/plugin-inspector": ["@openclaw/plugin-inspector@0.3.12", "", { "bin": { "plugin-inspector": "src/cli.js" } }, "sha512-Odj7qfvaz9ZC7BUGvbB5i9nSnhaXWn+DVl1a/D+hHpSwq8NAhWNs9j0XKSZPZUVRi8MT67tiNeIkXuBJ3hc8Aw=="],
 

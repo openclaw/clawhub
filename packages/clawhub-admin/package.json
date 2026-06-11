@@ -1,17 +1,17 @@
 {
-  "name": "@openclaw/clawhub-mod",
+  "name": "@openclaw/clawhub-admin",
   "version": "0.1.2",
   "private": true,
-  "description": "Moderator-only ClawHub operator CLI for platform moderation and package operations.",
+  "description": "Admin-only ClawHub operator CLI for platform moderation and package operations.",
   "homepage": "https://clawhub.ai",
   "license": "UNLICENSED",
   "repository": {
     "type": "git",
     "url": "https://github.com/openclaw/clawhub.git",
-    "directory": "packages/clawhub-mod"
+    "directory": "packages/clawhub-admin"
   },
   "bin": {
-    "clawhub-mod": "bin/clawhub-mod.js"
+    "clawhub-admin": "bin/clawhub-admin.js"
   },
   "files": [
     "bin",
@@ -21,7 +21,7 @@
   "type": "module",
   "scripts": {
     "build": "node ./scripts/build.mjs",
-    "dev": "node --enable-source-maps dist/clawhub-mod/src/cli.js",
+    "dev": "node --enable-source-maps dist/clawhub-admin/src/cli.js",
     "test": "vitest run -c vitest.config.ts",
     "typecheck": "node ./scripts/typecheck.mjs",
     "verify": "bun run test && bun run typecheck && bun run build"

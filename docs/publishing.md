@@ -177,6 +177,43 @@ not control.
 - Expect new releases to stay out of public install surfaces until automated
   security checks and verification finish.
 
+### Trusted Publishing for Packages
+
+Package trusted publishing is a two-step setup:
+
+1. Publish the package once through normal manual or token-authenticated
+   `clawhub package publish`. This creates the package row and establishes the
+   package managers who can change its trusted publisher config.
+2. A package manager sets the GitHub Actions trusted publisher config:
+
+```bash
+clawhub package trusted-publisher set @owner/package-name \
+  --repository owner/repo \
+  --workflow-filename package-publish.yml
+```
+
+After config is set, future supported GitHub Actions publishes can use
+OIDC/trusted publishing without storing a long-lived ClawHub token in the
+repository. The configured repository and workflow filename must match the
+GitHub Actions OIDC claim. If you also pass `--environment <name>`, the GitHub
+Actions environment claim must match that name exactly.
+
+The current reusable package publish workflow supports secretless trusted
+publishing for `workflow_dispatch` publishes when `id-token: write` is
+available. Tag-push real publishes still need `clawhub_token`, so keep
+`CLAWHUB_TOKEN` available for tag releases, first publishes, untrusted packages,
+or break-glass publishes.
+
+Inspect or remove the config with:
+
+```bash
+clawhub package trusted-publisher get @owner/package-name
+clawhub package trusted-publisher delete @owner/package-name
+```
+
+Deleting trusted publisher config is the rollback path. It disables future
+trusted publish token minting until a package manager sets config again.
+
 ## FAQ
 
 ### Package scope must match selected owner

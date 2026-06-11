@@ -15,6 +15,7 @@ import { cmdInspect, cmdVerifySkill } from "./cli/commands/inspect.js";
 import { cmdMergeSkill, cmdRenameSkill } from "./cli/commands/ownership.js";
 import {
   cmdDeletePackage,
+  cmdDeletePackageTrustedPublisher,
   cmdDownloadPackage,
   cmdExplorePackages,
   cmdGetPackageTrustedPublisher,
@@ -25,6 +26,7 @@ import {
   cmdPackPackage,
   cmdPublishPackage,
   cmdReportPackage,
+  cmdSetPackageTrustedPublisher,
   cmdTransferPackage,
   cmdUndeletePackage,
   cmdValidatePackage,
@@ -706,6 +708,27 @@ registerCommand(trustedPublisherCmd, ["package", "trusted-publisher", "get"])
   .action(async (name, options) => {
     const opts = await resolveGlobalOpts();
     await cmdGetPackageTrustedPublisher(opts, name, options);
+  });
+
+registerCommand(trustedPublisherCmd, ["package", "trusted-publisher", "set"])
+  .description("Set trusted publisher config for a package")
+  .argument("<name>", "Package name")
+  .requiredOption("--repository <repo>", "GitHub repository, for example openclaw/openclaw")
+  .requiredOption("--workflow-filename <file>", "GitHub Actions workflow filename")
+  .option("--environment <name>", "GitHub Actions environment name")
+  .option("--json", "Output JSON")
+  .action(async (name, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdSetPackageTrustedPublisher(opts, name, options);
+  });
+
+registerCommand(trustedPublisherCmd, ["package", "trusted-publisher", "delete"])
+  .description("Delete trusted publisher config for a package")
+  .argument("<name>", "Package name")
+  .option("--json", "Output JSON")
+  .action(async (name, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdDeletePackageTrustedPublisher(opts, name, options);
   });
 
 registerCommand(skill, ["skill", "rename"])

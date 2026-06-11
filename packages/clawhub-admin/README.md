@@ -1,12 +1,12 @@
-# ClawHub Moderator CLI
+# ClawHub Admin CLI
 
-Private operator CLI for ClawHub platform moderation and moderator-only package operations.
+Private operator CLI for ClawHub platform moderation and staff-only package operations.
 
 This package is intentionally marked `private: true`. Do not publish it to npm.
 Run it from a checked-out ClawHub repo so maintainers always use the current
 repo code.
 
-`clawhub-mod` reuses the public CLI's auth, config, HTTP, and schema helpers,
+`clawhub-admin` reuses the public CLI's auth, config, HTTP, and schema helpers,
 but it is a separate maintainer command surface. Commands call the existing
 RBAC-gated entity endpoints, such as `/api/v1/users/*` and `/api/v1/packages/*`;
 there is no separate moderator API namespace.
@@ -29,8 +29,8 @@ bun run admin -- skills unhide maxhub-pipixia --reason "VT false positive; reana
 ## Build and Verify
 
 ```bash
-bun run --cwd packages/clawhub-mod build
-bun run --cwd packages/clawhub-mod verify
+bun run --cwd packages/clawhub-admin build
+bun run --cwd packages/clawhub-admin verify
 ```
 
 For full package coverage from the repo root:
@@ -41,11 +41,11 @@ bun run ci:packages
 
 ## Local E2E
 
-Use an isolated config path so moderator testing never overwrites your normal
+Use an isolated config path so admin testing never overwrites your normal
 `clawhub` CLI login:
 
 ```bash
-export CLAWHUB_CONFIG_PATH=/tmp/clawhub-mod-local-config.json
+export CLAWHUB_CONFIG_PATH=/tmp/clawhub-admin-local-config.json
 ```
 
 Point `--registry` at the Convex HTTP actions URL, usually
@@ -64,7 +64,7 @@ CONVEX_AGENT_MODE=anonymous bunx convex dev --local --typecheck=disable
 ```
 
 In another shell, seed the local role fixture and use the returned admin token
-for moderator commands:
+for admin commands:
 
 ```bash
 CONVEX_AGENT_MODE=anonymous bunx convex run --no-push devSeed:seedCliRoleHelpFixtures
@@ -89,14 +89,6 @@ bun run admin -- users reclassify-ban <handleOrId> --reason <text> [--id] [--fuz
 bun run admin -- users remediate-autobans [--dry-run|--apply] [--user <handleOrId>] [--id] [--since <date>] [--limit <n>] [--cursor <cursor>] [--all] [--json]
 ```
 
-The old top-level names are also available on the moderator binary:
-
-```bash
-bun run admin -- ban-user <handleOrId>
-bun run admin -- unban-user <handleOrId>
-bun run admin -- set-role <handleOrId> <user|moderator|admin>
-```
-
 Org publisher administration:
 
 ```bash
@@ -107,7 +99,7 @@ bun run admin -- org official remove <handle> --reason <text> [--yes] [--json]
 ```
 
 `org create` requires `--member` and defaults that member to `owner`; it does
-not add the moderator running the command as an org member.
+not add the admin running the command as an org member.
 
 Package moderation and operations:
 

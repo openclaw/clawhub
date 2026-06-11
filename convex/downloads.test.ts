@@ -210,6 +210,83 @@ describe("downloads helpers", () => {
     expect(storageGet).not.toHaveBeenCalled();
   });
 
+  it("blocks the exact requested skill version when its ClawScan verdict is malicious", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            ownerUserId: "users:1",
+            slug: "demo",
+            tags: {},
+            latestVersionId: "skillVersions:2",
+          },
+          moderationInfo: {
+            isMalwareBlocked: false,
+            isPendingScan: false,
+            isHiddenByMod: false,
+            isRemoved: false,
+          },
+        };
+      }
+      if ("skillId" in args && "version" in args) {
+        return {
+          _id: "skillVersions:1",
+          skillId: "skills:1",
+          version: "1.0.0",
+          createdAt: 3,
+          files: [{ path: "SKILL.md", storageId: "_storage:bad" }],
+          softDeletedAt: undefined,
+          llmAnalysis: {
+            status: "completed",
+            verdict: "malicious",
+            checkedAt: 4,
+          },
+        };
+      }
+      if (args.versionId === "skillVersions:2") {
+        return {
+          _id: "skillVersions:2",
+          skillId: "skills:1",
+          version: "1.0.1",
+          createdAt: 5,
+          files: [],
+          softDeletedAt: undefined,
+          llmAnalysis: {
+            status: "completed",
+            verdict: "clean",
+            checkedAt: 6,
+          },
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return null;
+    });
+    const storageGet = vi.fn();
+
+    const response = await downloadZipHandler(
+      {
+        runQuery,
+        runMutation,
+        scheduler: { runAfter: vi.fn() },
+        storage: { get: storageGet },
+      } as unknown as ActionCtx,
+      new Request("https://example.com/api/v1/download?slug=demo&version=1.0.0", {
+        headers: { "cf-connecting-ip": "1.2.3.4" },
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.text()).toBe(
+      "Blocked: this skill version has been flagged as malicious by ClawScan and cannot be downloaded.",
+    );
+    expect(storageGet).not.toHaveBeenCalled();
+  });
+
   it("uses API token user identity for zip download stats when present", async () => {
     stubZipResponse();
 
