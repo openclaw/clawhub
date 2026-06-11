@@ -23,7 +23,7 @@ function findPackageJson(start: string) {
     if (existsSync(candidate)) {
       try {
         const pkg = JSON.parse(readFileSync(candidate, "utf8")) as { name?: string };
-        if (pkg.name === "@openclaw/clawhub-mod") return candidate;
+        if (pkg.name === "@openclaw/clawhub-admin") return candidate;
       } catch {
         // keep walking
       }
@@ -43,7 +43,7 @@ function shortCommit(value: string) {
 
 function getCliCommit() {
   const candidates = [
-    process.env.CLAWHUB_MOD_COMMIT,
+    process.env.CLAWHUB_ADMIN_COMMIT,
     process.env.CLAWHUB_COMMIT,
     process.env.CLAWDHUB_COMMIT,
     process.env.VERCEL_GIT_COMMIT_SHA,
@@ -58,12 +58,12 @@ function getCliCommit() {
   return readGitCommitFromCwd();
 }
 
-export function getModeratorCliVersion() {
+export function getAdminCliVersion() {
   return readPackageVersion();
 }
 
-export function getModeratorCliBuildLabel() {
-  const version = getModeratorCliVersion();
+export function getAdminCliBuildLabel() {
+  const version = getAdminCliVersion();
   const commit = getCliCommit();
   return commit ? `v${version} (${commit})` : `v${version}`;
 }

@@ -37,7 +37,7 @@ afterEach(() => {
 });
 
 async function withCsv(content: string) {
-  const dir = await mkdtemp(join(tmpdir(), "clawhub-mod-orgs-"));
+  const dir = await mkdtemp(join(tmpdir(), "clawhub-admin-orgs-"));
   const path = join(dir, "repairs.csv");
   await writeFile(path, content, "utf8");
   return {

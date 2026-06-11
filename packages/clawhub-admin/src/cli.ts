@@ -21,7 +21,7 @@ import {
 import { DEFAULT_REGISTRY, DEFAULT_SITE } from "../../clawhub/src/cli/registry.js";
 import type { GlobalOpts } from "../../clawhub/src/cli/types.js";
 import { fail } from "../../clawhub/src/cli/ui.js";
-import { getModeratorCliBuildLabel, getModeratorCliVersion } from "./buildInfo.js";
+import { getAdminCliBuildLabel, getAdminCliVersion } from "./buildInfo.js";
 import { cmdSendStaffEmail } from "./commands/email.js";
 import {
   cmdBanUser,
@@ -56,13 +56,13 @@ import {
 } from "./commands/packages.js";
 
 const program = new Command()
-  .name("clawhub-mod")
+  .name("clawhub-admin")
   .description(
-    `${styleTitle(`ClawHub Moderator CLI ${getModeratorCliBuildLabel()}`)}\n${styleEnvBlock(
+    `${styleTitle(`ClawHub Admin CLI ${getAdminCliBuildLabel()}`)}\n${styleEnvBlock(
       "platform-only moderation, user administration, and package operations.",
     )}`,
   )
-  .version(getModeratorCliVersion(), "-V, --cli-version", "Show CLI version")
+  .version(getAdminCliVersion(), "-V, --cli-version", "Show CLI version")
   .option("--workdir <dir>", "Working directory (default: cwd)")
   .option("--dir <dir>", "Skills directory (relative to workdir, default: skills)")
   .option("--site <url>", "Site base URL (for browser login)")
@@ -73,7 +73,7 @@ const program = new Command()
   .addHelpText(
     "after",
     styleEnvBlock(
-      "\nEnv:\n  CLAWHUB_SITE\n  CLAWHUB_REGISTRY\n  CLAWHUB_WORKDIR\n  CLAWHUB_MOD_COMMIT\n",
+      "\nEnv:\n  CLAWHUB_SITE\n  CLAWHUB_REGISTRY\n  CLAWHUB_WORKDIR\n  CLAWHUB_ADMIN_COMMIT\n",
     ),
   );
 
@@ -144,7 +144,7 @@ program
   .command("login")
   .description("Log in (opens browser or stores token)")
   .option("--token <token>", "API token")
-  .option("--label <label>", "Token label (browser flow only)", "Moderator CLI token")
+  .option("--label <label>", "Token label (browser flow only)", "Admin CLI token")
   .option("--no-browser", "Do not open browser (requires --token)")
   .action(async (options) => {
     const opts = await resolveGlobalOpts();
@@ -177,7 +177,7 @@ auth
   .command("login")
   .description("Log in (opens browser or stores token)")
   .option("--token <token>", "API token")
-  .option("--label <label>", "Token label (browser flow only)", "Moderator CLI token")
+  .option("--label <label>", "Token label (browser flow only)", "Admin CLI token")
   .option("--no-browser", "Do not open browser (requires --token)")
   .action(async (options) => {
     const opts = await resolveGlobalOpts();
@@ -277,45 +277,6 @@ users
   .action(async (options) => {
     const opts = await resolveGlobalOpts();
     await cmdRemediateAutobans(opts, options, isInputAllowed());
-  });
-
-program
-  .command("ban-user")
-  .description("Alias for users ban")
-  .argument("<handleOrId>", "User handle (default) or user id")
-  .option("--id", "Treat argument as user id")
-  .option("--fuzzy", "Resolve handle via fuzzy user search")
-  .option("--reason <reason>", "Ban reason")
-  .option("--yes", "Skip confirmation")
-  .action(async (handleOrId, options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdBanUser(opts, handleOrId, options, isInputAllowed());
-  });
-
-program
-  .command("unban-user")
-  .description("Alias for users unban")
-  .argument("<handleOrId>", "User handle (default) or user id")
-  .option("--id", "Treat argument as user id")
-  .option("--fuzzy", "Resolve handle via fuzzy user search")
-  .option("--reason <reason>", "Unban reason")
-  .option("--yes", "Skip confirmation")
-  .action(async (handleOrId, options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdUnbanUser(opts, handleOrId, options, isInputAllowed());
-  });
-
-program
-  .command("set-role")
-  .description("Alias for users set-role")
-  .argument("<handleOrId>", "User handle (default) or user id")
-  .argument("<role>", "user | moderator | admin")
-  .option("--id", "Treat argument as user id")
-  .option("--fuzzy", "Resolve handle via fuzzy user search")
-  .option("--yes", "Skip confirmation")
-  .action(async (handleOrId, role, options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdSetRole(opts, handleOrId, role, options, isInputAllowed());
   });
 
 const plugins = program

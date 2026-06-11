@@ -1,6 +1,6 @@
 ---
 name: clawhub-moderation
-description: "Use for ClawHub staff moderation actions with the repo-local clawhub-mod/admin tool: skills, users, org publishers, plugin packages, trusted publishers, official publishers, and guarded staff email."
+description: "Use for ClawHub staff moderation actions with the repo-local ClawHub admin tool: skills, users, org publishers, plugin packages, trusted publishers, official publishers, and guarded staff email."
 ---
 
 # ClawHub Moderation
@@ -94,13 +94,6 @@ bun run admin -- users remediate-autobans --apply --reason "<reason>"
 
 Use `--id` when `<handleOrId>` is a user id. Use `--fuzzy` only when the user
 has asked for fuzzy handle resolution or the exact handle is ambiguous.
-
-The old top-level aliases still exist for user commands:
-
-```sh
-bun run admin -- ban-user <handleOrId> --reason "<reason>" --yes
-bun run admin -- unban-user <handleOrId> --reason "<reason>" --yes
-```
 
 ### Org Publishers
 
@@ -208,11 +201,11 @@ only after admin auth succeeds.
 - `skills unhide` is a moderator manual restore. It clears skill hidden state,
   applies a clean manual override to top-level moderation fields, preserves
   version-level scanner records, updates public stats, and writes audit logs.
-- There is no standalone `skills hide` command in `clawhub-mod`; use report
+- There is no standalone `skills hide` command in `clawhub-admin`; use report
   triage with `--action hide` when resolving a report that should hide a skill.
-- `ban-user` is disruptive: it revokes API tokens, marks the user deleted,
+- `users ban` is disruptive: it revokes API tokens, marks the user deleted,
   hides owned skills, soft-deletes comments, and writes audit logs.
-- `unban-user` is admin-only. It clears ban state and restores skills that were
+- `users unban` is admin-only. It clears ban state and restores skills that were
   hidden by the matching ban flow; revoked API tokens stay revoked.
 - `packages transfer` preserves the package row, stats, releases, and history;
   it changes the owner publisher.

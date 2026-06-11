@@ -75,7 +75,7 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
     - soft-delete comment (`softDeletedAt`)
     - decrement comment stat via `uncomment` stat event
     - audit log entry: `comment.auto_hide`
-- Package reports feed `clawhub-mod package moderation-queue` and audit `package.report`,
+- Package reports feed `clawhub-admin package moderation-queue` and audit `package.report`,
   but do not auto-hide or block downloads. Moderators can review a formal report
   with an explicit final action to quarantine or revoke the affected release.
 - Package reports can be moved to `confirmed` or `dismissed` with a moderator
@@ -142,7 +142,7 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   publisher set/unset. Personal publisher sync should log meaningful create,
   change, link, or membership events, not routine login refreshes.
 - Public queries hide non-active moderation statuses; moderators can still access via
-  moderator-only queries and unhide/restore/delete/ban.
+  admin-only queries and unhide/restore/delete/ban.
 - Public skill raw-file, README, package-compat file, and zip download reads must
   honor the same malware/pending/hidden/removed download block. Metadata routes
   may keep exposing malware-blocked skill summaries for transparency, but they

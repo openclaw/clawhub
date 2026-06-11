@@ -66,7 +66,7 @@ const {
   cmdSetPackageTrustedPublisher,
   cmdTriagePackageReport,
   cmdUpsertPackageMigration,
-} = await import("../../../../clawhub-mod/src/commands/packages");
+} = await import("../../../../clawhub-admin/src/commands/packages");
 const { parseClawPack } = await import("../../clawpack");
 
 const mockLog = vi.spyOn(console, "log").mockImplementation(() => {});

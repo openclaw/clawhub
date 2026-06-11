@@ -388,7 +388,7 @@ describe("clawhub e2e", () => {
     }
   });
 
-  itIfAdminAndUserTokens("shows moderator CLI commands only in admin help", async () => {
+  itIfAdminAndUserTokens("does not expose removed admin compatibility aliases", async () => {
     const registry = getRegistry();
     const site = getSite();
     const { adminToken, userToken } = await resolveRoleHelpTokens(registry);
@@ -434,9 +434,9 @@ describe("clawhub e2e", () => {
       );
 
       expect(adminResult.status).toBe(0);
-      expect(adminResult.stdout).toContain("ban-user");
-      expect(adminResult.stdout).toContain("unban-user");
-      expect(adminResult.stdout).toContain("set-role");
+      expect(adminResult.stdout).not.toContain("ban-user");
+      expect(adminResult.stdout).not.toContain("unban-user");
+      expect(adminResult.stdout).not.toContain("set-role");
       expect(userResult.status).toBe(0);
       expect(userResult.stdout).not.toContain("ban-user");
       expect(userResult.stdout).not.toContain("unban-user");
