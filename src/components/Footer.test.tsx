@@ -4,16 +4,25 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+const { featureFlagsMock } = vi.hoisted(() => ({
+  featureFlagsMock: vi.fn(),
+}));
+
 vi.mock("@tanstack/react-router", () => ({
   Link: (props: { children: ReactNode; to?: string }) => (
     <a href={props.to ?? "/"}>{props.children}</a>
   ),
 }));
 
+vi.mock("../lib/featureFlagContext", () => ({
+  useFeatureFlags: () => featureFlagsMock(),
+}));
+
 import { Footer } from "./Footer";
 
 describe("Footer", () => {
   afterEach(() => {
+    featureFlagsMock.mockReset();
     vi.unstubAllGlobals();
   });
 
@@ -29,6 +38,7 @@ describe("Footer", () => {
   }
 
   it("renders the restored four-column public footer", () => {
+    featureFlagsMock.mockReturnValue({ souls: false });
     const { container } = render(<Footer />);
 
     const columns = container.querySelectorAll(".footer-col");
@@ -87,7 +97,16 @@ describe("Footer", () => {
     ).toBe("https://www.convex.dev");
   });
 
+  it("shows the Souls footer link when the Souls feature flag is enabled", () => {
+    featureFlagsMock.mockReturnValue({ souls: true });
+
+    render(<Footer />);
+
+    expect(screen.getByRole("link", { name: "Souls" }).getAttribute("href")).toBe("/souls");
+  });
+
   it("collapses footer sections by heading until toggled open", async () => {
+    featureFlagsMock.mockReturnValue({ souls: false });
     mockMatchMedia(true);
     render(<Footer />);
 

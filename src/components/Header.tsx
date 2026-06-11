@@ -18,6 +18,7 @@ import {
   isBannedAccountAuthError,
   routeToBannedAccountPage,
 } from "../lib/authErrorMessage";
+import { useFeatureFlags } from "../lib/featureFlagContext";
 import { gravatarUrl } from "../lib/gravatar";
 import { NAV_ICONS } from "../lib/marketplaceIcons";
 import { filterNavItems, PRIMARY_NAV_ITEMS, SECONDARY_NAV_ITEMS } from "../lib/nav-items";
@@ -93,14 +94,21 @@ export default function Header() {
   const handle = rawHandle.length > 25 ? `${rawHandle.slice(0, 25)}…` : rawHandle;
   const initial = (me?.displayName ?? me?.name ?? rawHandle).charAt(0).toUpperCase();
   const isStaff = isModerator(me);
+  const featureFlags = useFeatureFlags();
   const hasResolvedUser = Boolean(me);
   const isAuthResolving = isLoading || (isAuthenticated && me === undefined);
   const navCtx = useMemo(
     () => ({ isSoulMode, isAuthenticated: hasResolvedUser, isStaff }),
     [hasResolvedUser, isSoulMode, isStaff],
   );
-  const primaryItems = useMemo(() => filterNavItems(PRIMARY_NAV_ITEMS, navCtx), [navCtx]);
-  const secondaryItems = useMemo(() => filterNavItems(SECONDARY_NAV_ITEMS, navCtx), [navCtx]);
+  const primaryItems = useMemo(
+    () => filterNavItems(PRIMARY_NAV_ITEMS, navCtx, featureFlags),
+    [featureFlags, navCtx],
+  );
+  const secondaryItems = useMemo(
+    () => filterNavItems(SECONDARY_NAV_ITEMS, navCtx, featureFlags),
+    [featureFlags, navCtx],
+  );
   const signInRedirectTo = getCurrentRelativeUrl();
 
   const [navSearchQuery, setNavSearchQuery] = useState("");

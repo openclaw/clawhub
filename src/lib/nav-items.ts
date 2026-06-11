@@ -1,4 +1,4 @@
-import { FEATURE_SOULS } from "./features";
+import type { FeatureFlagKey, FeatureFlagValues } from "./features";
 
 /**
  * Shared navigation configuration used by Header and Footer to eliminate
@@ -22,7 +22,7 @@ interface NavItemBase {
   /** Additional path prefixes that should also highlight this nav item (e.g. /skill for /skills) */
   activePathPrefixes?: string[];
   /** Feature flag that must be truthy for this item to show */
-  featureFlag?: boolean;
+  featureFlag?: FeatureFlagKey;
 }
 
 interface RouteNavItem extends NavItemBase {
@@ -107,7 +107,7 @@ export const PRIMARY_NAV_ITEMS: NavItem[] = [
     soulModeOnly: false,
     soulModeHide: false,
     activePathPrefixes: ["/soul/"],
-    featureFlag: FEATURE_SOULS,
+    featureFlag: "souls",
   },
 ];
 
@@ -150,10 +150,10 @@ type FooterNavItem =
       label: string;
       to: string;
       search?: Record<string, unknown>;
-      featureFlag?: boolean;
+      featureFlag?: FeatureFlagKey;
     }
-  | { kind: "external"; label: string; href: string; featureFlag?: boolean }
-  | { kind: "text"; label: string; featureFlag?: boolean };
+  | { kind: "external"; label: string; href: string; featureFlag?: FeatureFlagKey }
+  | { kind: "text"; label: string; featureFlag?: FeatureFlagKey };
 
 export const FOOTER_NAV_SECTIONS: FooterNavSection[] = [
   {
@@ -167,7 +167,7 @@ export const FOOTER_NAV_SECTIONS: FooterNavSection[] = [
         label: "Souls",
         to: "/souls",
         search: SOULS_SEARCH,
-        featureFlag: FEATURE_SOULS,
+        featureFlag: "souls",
       },
     ],
   },
@@ -219,13 +219,14 @@ export const FOOTER_NAV_SECTIONS: FooterNavSection[] = [
 export function filterNavItems(
   items: NavItem[],
   ctx: { isSoulMode: boolean; isAuthenticated: boolean; isStaff: boolean },
+  flags: FeatureFlagValues,
 ): NavItem[] {
   return items.filter((item) => {
     if (item.soulModeOnly && !ctx.isSoulMode) return false;
     if (item.soulModeHide && ctx.isSoulMode) return false;
     if (item.authRequired && !ctx.isAuthenticated) return false;
     if (item.staffOnly && !ctx.isStaff) return false;
-    if (item.featureFlag === false) return false;
+    if (item.featureFlag && !flags[item.featureFlag]) return false;
     return true;
   });
 }

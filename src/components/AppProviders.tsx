@@ -9,6 +9,7 @@ import {
   normalizeAuthErrorMessage,
   routeToBannedAccountPage as navigateToBannedAccountPage,
 } from "../lib/authErrorMessage";
+import { FeatureFlagProvider } from "../lib/featureFlagContext";
 import { clearAuthError, setAuthError, useAuthError } from "../lib/useAuthError";
 import { AuthErrorMessage } from "./AuthErrorMessage";
 import { ClientOnly } from "./ClientOnly";
@@ -180,16 +181,18 @@ export function AuthErrorToast() {
 export function AppProviders({ children }: { children: React.ReactNode }) {
   return (
     <ConvexAuthProvider client={convex} shouldHandleCode={false}>
-      <TooltipProvider delayDuration={400}>
-        <AuthCodeHandler />
-        <AuthErrorHandler />
-        <AuthErrorToast />
-        <UserBootstrap />
-        {children}
-        <ClientOnly>
-          <DevPersonaFab />
-        </ClientOnly>
-      </TooltipProvider>
+      <FeatureFlagProvider>
+        <TooltipProvider delayDuration={400}>
+          <AuthCodeHandler />
+          <AuthErrorHandler />
+          <AuthErrorToast />
+          <UserBootstrap />
+          {children}
+          <ClientOnly>
+            <DevPersonaFab />
+          </ClientOnly>
+        </TooltipProvider>
+      </FeatureFlagProvider>
     </ConvexAuthProvider>
   );
 }

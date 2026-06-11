@@ -14,7 +14,8 @@ type HeaderAuthStatus = {
 
 const siteModeMock = vi.fn(() => "souls");
 const navigateMock = vi.fn();
-const { signInMock, useUnifiedSearchMock } = vi.hoisted(() => ({
+const { featureFlagsMock, signInMock, useUnifiedSearchMock } = vi.hoisted(() => ({
+  featureFlagsMock: vi.fn(),
   signInMock: vi.fn(),
   useUnifiedSearchMock: vi.fn(),
 }));
@@ -131,6 +132,10 @@ vi.mock("../lib/gravatar", () => ({
   gravatarUrl: vi.fn(),
 }));
 
+vi.mock("../lib/featureFlagContext", () => ({
+  useFeatureFlags: () => featureFlagsMock(),
+}));
+
 vi.mock("../lib/useUnifiedSearch", () => ({
   useUnifiedSearch: () => useUnifiedSearchMock(),
 }));
@@ -201,6 +206,7 @@ describe("Header", () => {
       me: null,
     });
     siteModeMock.mockReturnValue("souls");
+    featureFlagsMock.mockReturnValue({ souls: false });
     useUnifiedSearchMock.mockReturnValue(defaultUnifiedSearchResult);
     signInMock.mockReset();
     signInMock.mockResolvedValue({ signingIn: true });
@@ -248,6 +254,19 @@ describe("Header", () => {
     expect(screen.getAllByText("Publishers")).toHaveLength(2);
     expect(screen.getAllByText("Docs")).toHaveLength(2);
     expect(screen.queryByText("About")).toBeNull();
+  });
+
+  it("shows Souls navigation when the Souls feature flag is enabled", () => {
+    siteModeMock.mockReturnValue("skills");
+    featureFlagsMock.mockReturnValue({ souls: true });
+
+    render(<Header />);
+
+    expect(screen.getAllByText("Souls")).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Open menu" }));
+
+    expect(screen.getAllByText("Souls")).toHaveLength(2);
   });
 
   it("renders the GitHub sign-in button with desktop and compact labels", () => {
