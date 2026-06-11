@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Id } from "./_generated/dataModel";
 import {
   enqueueRegistryArtifactBackupJobHandler,
@@ -6,10 +6,40 @@ import {
   getGitHubBackupPageInternal,
   getPackageGitHubBackupPageInternal,
 } from "./githubBackups";
+import { syncGitHubBackupsInternalHandler } from "./githubBackupsNode";
+
+const githubBackupMocks = vi.hoisted(() => ({
+  backupPackageReleaseToGitHub: vi.fn(),
+  backupSkillToGitHub: vi.fn(),
+  deleteGitHubSkillBackup: vi.fn(),
+  fetchGitHubPackageReleaseMeta: vi.fn(),
+  fetchGitHubSkillMeta: vi.fn(),
+  getGitHubBackupContext: vi.fn(),
+  isGitHubBackupConfigured: vi.fn(),
+  listGitHubSkillBackupEntries: vi.fn(),
+  normalizeOwner: vi.fn((value: string) => value),
+}));
+
+vi.mock("./lib/githubBackup", () => githubBackupMocks);
 
 const handler = (getGitHubBackupPageInternal as unknown as { _handler: Function })._handler;
 const packagePageHandler = (getPackageGitHubBackupPageInternal as unknown as { _handler: Function })
   ._handler;
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  githubBackupMocks.getGitHubBackupContext.mockResolvedValue({
+    token: "token",
+    repo: "openclaw/clawhub-backup",
+    repoOwner: "openclaw",
+    repoName: "clawhub-backup",
+    branch: "main",
+    root: "hosted-skills",
+    packageRoot: "package-releases",
+  });
+  githubBackupMocks.isGitHubBackupConfigured.mockReturnValue(true);
+  githubBackupMocks.listGitHubSkillBackupEntries.mockResolvedValue([]);
+});
 
 describe("githubBackups page filtering", () => {
   it("skips non-public digests (soft-deleted, hidden, removed)", async () => {
@@ -298,6 +328,32 @@ describe("package github backup page filtering", () => {
           packageId: "packages:missing-artifact",
         },
       ],
+    });
+  });
+});
+
+describe("syncGitHubBackupsInternalHandler", () => {
+  it("reports package cursor progress when skills are done but package releases remain", async () => {
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce({ items: [], cursor: null, isDone: true })
+      .mockResolvedValueOnce({ items: [], cursor: "package-cursor", isDone: false })
+      .mockResolvedValueOnce({ stale: 0, exhausted: 0 });
+
+    const result = await syncGitHubBackupsInternalHandler(
+      {
+        runQuery,
+        runMutation: vi.fn(),
+      } as never,
+      { dryRun: true, batchSize: 1, maxBatches: 1 },
+    );
+
+    expect(result).toMatchObject({
+      cursor: null,
+      packageCursor: "package-cursor",
+      skillsIsDone: true,
+      packageIsDone: false,
+      isDone: false,
     });
   });
 });

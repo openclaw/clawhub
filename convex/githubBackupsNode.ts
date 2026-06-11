@@ -107,6 +107,9 @@ export type SyncGitHubBackupsInternalResult = {
   stats: GitHubBackupSyncStats;
   cursor: string | null;
   pruneCursor: string | null;
+  packageCursor: string | null;
+  skillsIsDone: boolean;
+  packageIsDone: boolean;
   isDone: boolean;
 };
 
@@ -227,7 +230,15 @@ export async function syncGitHubBackupsInternalHandler(
   };
 
   if (!isGitHubBackupConfigured()) {
-    return { stats, cursor: null, pruneCursor: null, isDone: true };
+    return {
+      stats,
+      cursor: null,
+      pruneCursor: null,
+      packageCursor: null,
+      skillsIsDone: true,
+      packageIsDone: true,
+      isDone: true,
+    };
   }
 
   const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
@@ -326,7 +337,7 @@ export async function syncGitHubBackupsInternalHandler(
     pruneBatchSize,
   );
 
-  await syncPackageReleaseBackups(ctx, context, args, dryRun, stats);
+  const packageSync = await syncPackageReleaseBackups(ctx, context, args, dryRun, stats);
   await alertOnUnhealthyBackupBacklog(ctx, stats);
 
   if (!dryRun) {
@@ -336,7 +347,15 @@ export async function syncGitHubBackupsInternalHandler(
     });
   }
 
-  return { stats, cursor, pruneCursor, isDone };
+  return {
+    stats,
+    cursor,
+    pruneCursor,
+    packageCursor: packageSync.cursor,
+    skillsIsDone: isDone,
+    packageIsDone: packageSync.isDone,
+    isDone: isDone && packageSync.isDone,
+  };
 }
 
 async function syncPackageReleaseBackups(
@@ -345,7 +364,7 @@ async function syncPackageReleaseBackups(
   args: SyncGitHubBackupsInternalArgs,
   dryRun: boolean,
   stats: GitHubBackupSyncStats,
-) {
+): Promise<{ cursor: string | null; isDone: boolean }> {
   const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
   const maxBatches = clampInt(args.maxBatches ?? DEFAULT_MAX_BATCHES, 1, MAX_MAX_BATCHES);
 
@@ -413,6 +432,7 @@ async function syncPackageReleaseBackups(
     }
     if (isDone) break;
   }
+  return { cursor, isDone };
 }
 
 async function processDueRegistryArtifactBackupJobs(
