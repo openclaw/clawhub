@@ -6954,6 +6954,103 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("staff email uses the configured ClawHub noreply sender", async () => {
+    vi.stubEnv("RESEND_API_KEY", "resend_test");
+    vi.stubEnv("CLAWHUB_NOREPLY_FROM", "ClawHub <noreply@notifications.openclaw.ai>");
+    vi.stubEnv("NOREPLY_EMAIL_FROM", "Legacy <legacy@example.com>");
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runQuery = vi.fn().mockResolvedValueOnce({
+      _id: "users:recipient",
+      handle: "demo",
+      email: "demo@example.com",
+    });
+    const runMutation = vi
+      .fn()
+      .mockResolvedValueOnce(okRate())
+      .mockResolvedValueOnce({
+        auditLogId: "auditLogs:staff-email",
+      })
+      .mockResolvedValueOnce({ ok: true });
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ id: "email_123" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await __handlers.usersPostRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/users/email", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          userHandle: "demo",
+          subject: "Notice",
+          body: "Hello",
+          confirmUserRequest: true,
+          confirmUserSignoff: true,
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    const resendBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(resendBody.from).toBe("ClawHub <noreply@notifications.openclaw.ai>");
+    expect(resendBody.from).not.toBe("Legacy <legacy@example.com>");
+  });
+
+  it("staff email ignores legacy noreply sender env names", async () => {
+    vi.stubEnv("RESEND_API_KEY", "resend_test");
+    vi.stubEnv("CLAWHUB_NOREPLY_FROM", "");
+    vi.stubEnv("NOREPLY_EMAIL_FROM", "Legacy <legacy@example.com>");
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runQuery = vi.fn().mockResolvedValueOnce({
+      _id: "users:recipient",
+      handle: "demo",
+      email: "demo@example.com",
+    });
+    const runMutation = vi
+      .fn()
+      .mockResolvedValueOnce(okRate())
+      .mockResolvedValueOnce({
+        auditLogId: "auditLogs:staff-email",
+      })
+      .mockResolvedValueOnce({ ok: true });
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ id: "email_123" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await __handlers.usersPostRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/users/email", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          userHandle: "demo",
+          subject: "Notice",
+          body: "Hello",
+          confirmUserRequest: true,
+          confirmUserSignoff: true,
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    const resendBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(resendBody.from).toBe("ClawHub <noreply@notifications.openclaw.ai>");
+  });
+
   it("set role requires auth", async () => {
     vi.mocked(requireApiTokenUser).mockRejectedValueOnce(new Error("Unauthorized"));
     const runMutation = vi.fn().mockResolvedValue(okRate());

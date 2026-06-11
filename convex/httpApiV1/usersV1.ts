@@ -12,6 +12,8 @@ import {
   toOptionalNumber,
 } from "./shared";
 
+const DEFAULT_CLAWHUB_NOREPLY_FROM = "ClawHub <noreply@notifications.openclaw.ai>";
+
 const usersV1InternalRefs = internal as unknown as {
   publishers: {
     addOfficialPublisherInternal: unknown;
@@ -356,10 +358,7 @@ async function handleAdminStaffEmail(
 
   const apiKey = process.env.RESEND_API_KEY?.trim();
   if (!apiKey) return text("RESEND_API_KEY is not configured", 500, headers);
-  const from =
-    process.env.CLAWHUB_NOREPLY_FROM?.trim() ||
-    process.env.NOREPLY_EMAIL_FROM?.trim() ||
-    "ClawHub <noreply@clawhub.ai>";
+  const from = process.env.CLAWHUB_NOREPLY_FROM?.trim() || DEFAULT_CLAWHUB_NOREPLY_FROM;
 
   const emailAudit = await runUsersV1MutationRef<{ auditLogId: Id<"auditLogs"> }>(
     ctx,
