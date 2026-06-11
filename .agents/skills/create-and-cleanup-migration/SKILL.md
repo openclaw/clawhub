@@ -110,29 +110,11 @@ or deployment plan explicitly compensate with an equivalent runtime proof.
 5. Merge only after required checks are green or the user explicitly accepts a
    documented risk.
 6. Deploy the relevant production target from `main`.
-7. Wait for deployment success before running production dry run.
+7. Wait for deployment success before starting the manual backup gate.
 
-## Phase 5: Production Dry Run
+## Phase 5: Manual Backup Gate
 
-1. Run the production dry run with bounded batch settings.
-2. Resume until either:
-   - `isDone: true`, or
-   - a clearly documented safety cap is reached.
-3. Present results to the user before apply:
-   - deployment name
-   - command shape
-   - `dryRun`
-   - `isDone`
-   - done/progress fields
-   - scanned/matched/patched/deleted stats
-   - sample IDs
-   - resume cursors if incomplete
-   - known user-visible or operational implications
-4. Stop and wait for explicit user confirmation before applying.
-
-## Phase 6: Manual Backup Gate
-
-Before any production migration apply:
+Before any production dry run or production migration apply:
 
 1. Tell the operator to open `https://dashboard.convex.dev/`.
 2. Tell the operator to select the target deployment and manually click
@@ -144,9 +126,29 @@ Before any production migration apply:
    partial screenshots, or "go ahead" messages that do not say the backup
    completed.
 
-## Phase 7: Production Apply
+## Phase 6: Production Dry Run
 
 1. Run only after explicit user confirmation from the manual backup gate.
+2. Run the production dry run with bounded batch settings.
+3. Resume until either:
+   - `isDone: true`, or
+   - a clearly documented safety cap is reached.
+4. Present results to the user before apply:
+   - deployment name
+   - command shape
+   - `dryRun`
+   - `isDone`
+   - done/progress fields
+   - scanned/matched/patched/deleted stats
+   - sample IDs
+   - resume cursors if incomplete
+   - known user-visible or operational implications
+5. Stop and wait for explicit user confirmation before applying.
+
+## Phase 7: Production Apply
+
+1. Run only after explicit user confirmation of the dry-run results and the
+   completed manual backup gate.
 2. Use the destructive confirmation token.
 3. Resume in bounded batches until complete or until a documented safety cap.
 4. Present apply results:
