@@ -1,0 +1,32 @@
+{
+  "status": "passed",
+  "mode": "feature",
+  "scenario": "Email template render proof",
+  "provider": "local ClawHub email preview render",
+  "candidate": "pe/claw-283-email-templates",
+  "lanes": [
+    {
+      "name": "candidate",
+      "steps": [
+        {
+          "name": "Rendered email template proof",
+          "slug": "email-template-render-proof",
+          "status": "passed",
+          "screenshot": "email-template-render-proof.png"
+        },
+        {
+          "name": "Generic one-off email proof",
+          "slug": "admin-one-off-email",
+          "status": "passed",
+          "screenshot": "admin-one-off-email.png"
+        },
+        {
+          "name": "Plugin Inspector findings proof",
+          "slug": "plugin-inspector-findings",
+          "status": "passed",
+          "screenshot": "plugin-inspector-findings.png"
+        }
+      ]
+    }
+  ]
+}
