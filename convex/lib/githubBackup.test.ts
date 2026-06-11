@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { Id } from "../_generated/dataModel";
-import { buildPackageReleaseBackupManifest, getGitHubBackupSettings } from "./githubBackup";
+import {
+  __githubBackupTestInternals,
+  buildPackageReleaseBackupManifest,
+  getGitHubBackupSettings,
+} from "./githubBackup";
 
 describe("github backup settings", () => {
   const originalRepo = process.env.GITHUB_SKILLS_REPO;
@@ -99,6 +103,51 @@ describe("github backup settings", () => {
         },
       },
     });
+  });
+
+  it("keeps the package index latest pointer on the newest published release", () => {
+    const olderManifest = buildPackageReleaseBackupManifest({
+      root: "package-releases",
+      repo: "openclaw/clawhub-backup",
+      ownerHandle: "OpenClaw Team",
+      packageId: "packages:demo" as Id<"packages">,
+      releaseId: "packageReleases:demo-1" as Id<"packageReleases">,
+      packageName: "@openclaw/demo-plugin",
+      normalizedName: "@openclaw/demo-plugin",
+      displayName: "Demo Plugin",
+      family: "code-plugin",
+      version: "1.0.0",
+      publishedAt: 1_700_000_000_000,
+      files: [],
+    });
+
+    const index = __githubBackupTestInternals.buildPackageIndexFile(
+      olderManifest,
+      {
+        kind: "package",
+        owner: "openclaw-team",
+        packageName: "@openclaw/demo-plugin",
+        normalizedName: "@openclaw/demo-plugin",
+        displayName: "Demo Plugin",
+        family: "code-plugin",
+        latest: {
+          version: "2.0.0",
+          publishedAt: 1_800_000_000_000,
+          releaseId: "packageReleases:demo-2" as Id<"packageReleases">,
+          path: "package-releases/openclaw-team/openclaw-demo-plugin/2.0.0/_meta.json",
+          commit: "newer-commit",
+        },
+        releases: [],
+      },
+      "older-commit",
+    );
+
+    expect(index.latest).toMatchObject({
+      version: "2.0.0",
+      releaseId: "packageReleases:demo-2",
+      commit: "newer-commit",
+    });
+    expect(index.releases.map((release) => release.version)).toEqual(["2.0.0", "1.0.0"]);
   });
 });
 

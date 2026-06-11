@@ -858,10 +858,16 @@ function buildPackageIndexFile(
     path: planned.metaPath,
     commit,
   };
-  const releases = [
-    nextRelease,
-    ...(existing?.releases ?? []).filter((release) => release.releaseId !== nextRelease.releaseId),
-  ].slice(0, 500);
+  const releaseById = new Map<string, PackageIndexFile["latest"]>();
+  for (const release of [nextRelease, existing?.latest, ...(existing?.releases ?? [])]) {
+    if (release && !releaseById.has(release.releaseId)) {
+      releaseById.set(release.releaseId, release);
+    }
+  }
+  const releases = Array.from(releaseById.values())
+    .sort((a, b) => b.publishedAt - a.publishedAt)
+    .slice(0, 500);
+  const latest = releases[0] ?? nextRelease;
 
   return {
     kind: "package",
@@ -870,10 +876,14 @@ function buildPackageIndexFile(
     normalizedName: planned.meta.normalizedName,
     displayName: planned.meta.displayName,
     family: planned.meta.family,
-    latest: nextRelease,
+    latest,
     releases,
   };
 }
+
+export const __githubBackupTestInternals = {
+  buildPackageIndexFile,
+};
 
 function encodePath(path: string) {
   return path
