@@ -65,11 +65,23 @@ const defaultUnifiedSearchResult = {
 };
 
 vi.mock("@tanstack/react-router", () => ({
-  Link: (props: { children: ReactNode; className?: string; hash?: string; to?: string }) => (
-    <a href={`${props.to ?? "/"}${props.hash ? `#${props.hash}` : ""}`} className={props.className}>
-      {props.children}
-    </a>
-  ),
+  Link: (props: {
+    children: ReactNode;
+    className?: string;
+    hash?: string;
+    params?: Record<string, string>;
+    to?: string;
+  }) => {
+    let href = props.to ?? "/";
+    for (const [key, value] of Object.entries(props.params ?? {})) {
+      href = href.replace(`$${key}`, encodeURIComponent(value));
+    }
+    return (
+      <a href={`${href}${props.hash ? `#${props.hash}` : ""}`} className={props.className}>
+        {props.children}
+      </a>
+    );
+  },
   useLocation: () => ({ pathname: "/" }),
   useNavigate: () => navigateMock,
 }));
@@ -439,7 +451,7 @@ describe("Header", () => {
     expect(labels.slice(3, 5)).toEqual(["Publishers", "Docs"]);
   });
 
-  it("links starred skills from the signed-in avatar menu", () => {
+  it("links account destinations from the signed-in avatar menu", () => {
     siteModeMock.mockReturnValue("skills");
     authStatusMock.mockReturnValue({
       isAuthenticated: true,
@@ -455,6 +467,7 @@ describe("Header", () => {
 
     render(<Header />);
 
+    expect(screen.getByText("Profile").closest("a")?.getAttribute("href")).toBe("/user/patrick");
     expect(screen.getByText("Stars").closest("a")?.getAttribute("href")).toBe("/stars");
     expect(screen.getAllByText("Dashboard").length).toBeGreaterThan(0);
     expect(screen.getByText("Settings")).toBeTruthy();
