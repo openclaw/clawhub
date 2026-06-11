@@ -10,6 +10,7 @@ const DEFAULT_ROOT = "hosted-skills";
 const DEFAULT_PACKAGE_ROOT = "package-releases";
 const META_FILENAME = "_meta.json";
 const PACKAGE_INDEX_FILENAME = "_index.json";
+const GITHUB_BLOB_BACKUP_MAX_BYTES = 100 * 1024 * 1024;
 const USER_AGENT = "clawhub/skills-backup";
 
 type BackupFile = {
@@ -118,6 +119,8 @@ type PackageReleaseMetaFile = {
     npmShasum?: string;
     npmUnpackedSize?: number;
     npmFileCount?: number;
+    mirrorStatus?: "mirrored" | "skipped-too-large";
+    githubBlobMaxBytes?: number;
   };
   restore: {
     packageId: string;
@@ -221,8 +224,10 @@ export async function fetchGitHubPackageReleaseMeta(
   version: string,
 ): Promise<PackageReleaseMetaFile | null> {
   const owner = normalizeOwner(ownerHandle);
-  const packageSegment = normalizePackagePathSegment(normalizedName);
-  const metaPath = `${context.packageRoot}/${owner}/${packageSegment}/${version}/${META_FILENAME}`;
+  const packageSegment = encodeBackupPathSegment(normalizedName);
+  const metaPath = `${context.packageRoot}/${owner}/${packageSegment}/${encodeBackupPathSegment(
+    version,
+  )}/${META_FILENAME}`;
   return fetchJsonFile<PackageReleaseMetaFile>(
     context.token,
     context.repoOwner,
@@ -511,13 +516,15 @@ export async function backupPackageReleaseToGitHub(
     ...params,
     artifactFileName: params.artifactFileName ?? defaultPackageArtifactFileName(params),
   });
-  const artifactContent = await fetchStorageBase64(ctx, params.artifactStorageId);
-  const artifactBlobSha = await createBlob(
-    resolved.token,
-    resolved.repoOwner,
-    resolved.repoName,
-    artifactContent,
-  );
+  const artifactTooLargeForGitHub = applyPackageArtifactMirrorStatus(planned, params.artifactSize);
+  const artifactBlobSha = artifactTooLargeForGitHub
+    ? null
+    : await createBlob(
+        resolved.token,
+        resolved.repoOwner,
+        resolved.repoName,
+        await fetchStorageBase64(ctx, params.artifactStorageId),
+      );
 
   for (let attempt = 0; attempt < MAX_PUSH_RETRIES; attempt++) {
     const ref = await githubGet<GitRef>(
@@ -559,7 +566,16 @@ export async function backupPackageReleaseToGitHub(
       {
         base_tree: baseTreeSha,
         tree: [
-          { path: planned.artifactPath, mode: "100644", type: "blob", sha: artifactBlobSha },
+          ...(artifactBlobSha
+            ? [
+                {
+                  path: planned.artifactPath,
+                  mode: "100644" as const,
+                  type: "blob" as const,
+                  sha: artifactBlobSha,
+                },
+              ]
+            : []),
           { path: planned.metaPath, mode: "100644", type: "blob", sha: metaBlobSha },
           { path: planned.indexPath, mode: "100644", type: "blob", sha: indexBlobSha },
         ],
@@ -629,10 +645,10 @@ export function buildPackageReleaseBackupManifest(
   params: Omit<PackageBackupParams, "artifactStorageId"> & { root: string; repo: string },
 ) {
   const owner = normalizeOwner(params.ownerHandle);
-  const packageSegment = normalizePackagePathSegment(params.normalizedName || params.packageName);
+  const packageSegment = encodeBackupPathSegment(params.normalizedName || params.packageName);
   const artifactFileName = params.artifactFileName ?? defaultPackageArtifactFileName(params);
   const packageRoot = `${params.root}/${owner}/${packageSegment}`;
-  const releaseRoot = `${packageRoot}/${params.version}`;
+  const releaseRoot = `${packageRoot}/${encodeBackupPathSegment(params.version)}`;
   const meta: PackageReleaseMetaFile = {
     kind: "packageRelease",
     owner,
@@ -840,10 +856,16 @@ function normalizePackagePathSegment(value: string) {
   return normalizeOwner(value.replace(/^@/, "").replace("/", "-"));
 }
 
+function encodeBackupPathSegment(value: string) {
+  return encodeURIComponent(value.trim()).replace(/\./g, "%2E");
+}
+
 function defaultPackageArtifactFileName(
   params: Pick<PackageBackupParams, "normalizedName" | "version">,
 ) {
-  return `${normalizePackagePathSegment(params.normalizedName)}-${params.version}.tgz`;
+  return `${normalizePackagePathSegment(params.normalizedName)}-${encodeBackupPathSegment(
+    params.version,
+  )}.tgz`;
 }
 
 function buildPackageIndexFile(
@@ -881,8 +903,24 @@ function buildPackageIndexFile(
   };
 }
 
+function applyPackageArtifactMirrorStatus(
+  planned: ReturnType<typeof buildPackageReleaseBackupManifest>,
+  artifactSize: number | undefined,
+) {
+  const tooLarge = artifactSize !== undefined && artifactSize > GITHUB_BLOB_BACKUP_MAX_BYTES;
+  if (tooLarge) {
+    planned.meta.artifact.mirrorStatus = "skipped-too-large";
+    planned.meta.artifact.githubBlobMaxBytes = GITHUB_BLOB_BACKUP_MAX_BYTES;
+    return true;
+  }
+  planned.meta.artifact.mirrorStatus = "mirrored";
+  return false;
+}
+
 export const __githubBackupTestInternals = {
+  applyPackageArtifactMirrorStatus,
   buildPackageIndexFile,
+  encodeBackupPathSegment,
 };
 
 function encodePath(path: string) {

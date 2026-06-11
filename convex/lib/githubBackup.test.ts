@@ -77,12 +77,12 @@ describe("github backup settings", () => {
     });
 
     expect(manifest).toMatchObject({
-      packageRoot: "package-releases/openclaw-team/openclaw-demo-plugin",
-      releaseRoot: "package-releases/openclaw-team/openclaw-demo-plugin/1.2.3",
+      packageRoot: "package-releases/openclaw-team/%40openclaw%2Fdemo-plugin",
+      releaseRoot: "package-releases/openclaw-team/%40openclaw%2Fdemo-plugin/1%2E2%2E3",
       artifactPath:
-        "package-releases/openclaw-team/openclaw-demo-plugin/1.2.3/demo-plugin-1.2.3.tgz",
-      metaPath: "package-releases/openclaw-team/openclaw-demo-plugin/1.2.3/_meta.json",
-      indexPath: "package-releases/openclaw-team/openclaw-demo-plugin/_index.json",
+        "package-releases/openclaw-team/%40openclaw%2Fdemo-plugin/1%2E2%2E3/demo-plugin-1.2.3.tgz",
+      metaPath: "package-releases/openclaw-team/%40openclaw%2Fdemo-plugin/1%2E2%2E3/_meta.json",
+      indexPath: "package-releases/openclaw-team/%40openclaw%2Fdemo-plugin/_index.json",
       meta: {
         kind: "packageRelease",
         owner: "openclaw-team",
@@ -102,6 +102,43 @@ describe("github backup settings", () => {
           releaseId: "packageReleases:demo-1",
         },
       },
+    });
+  });
+
+  it("uses lossless package path encoding to avoid package name collisions", () => {
+    expect(__githubBackupTestInternals.encodeBackupPathSegment("@openclaw/demo-plugin")).toBe(
+      "%40openclaw%2Fdemo-plugin",
+    );
+    expect(__githubBackupTestInternals.encodeBackupPathSegment("openclaw-demo-plugin")).toBe(
+      "openclaw-demo-plugin",
+    );
+    expect(__githubBackupTestInternals.encodeBackupPathSegment("foo.bar")).toBe("foo%2Ebar");
+    expect(__githubBackupTestInternals.encodeBackupPathSegment("foo_bar")).toBe("foo_bar");
+    expect(__githubBackupTestInternals.encodeBackupPathSegment("foo-bar")).toBe("foo-bar");
+  });
+
+  it("marks artifacts above the GitHub blob limit without retrying a doomed blob upload", () => {
+    const manifest = buildPackageReleaseBackupManifest({
+      root: "package-releases",
+      repo: "openclaw/clawhub-backup",
+      ownerHandle: "OpenClaw Team",
+      packageId: "packages:demo" as Id<"packages">,
+      releaseId: "packageReleases:demo-large" as Id<"packageReleases">,
+      packageName: "@openclaw/demo-plugin",
+      normalizedName: "@openclaw/demo-plugin",
+      displayName: "Demo Plugin",
+      family: "code-plugin",
+      version: "1.2.3",
+      publishedAt: 1_700_000_000_000,
+      files: [],
+    });
+
+    expect(
+      __githubBackupTestInternals.applyPackageArtifactMirrorStatus(manifest, 101 * 1024 * 1024),
+    ).toBe(true);
+    expect(manifest.meta.artifact).toMatchObject({
+      mirrorStatus: "skipped-too-large",
+      githubBlobMaxBytes: 100 * 1024 * 1024,
     });
   });
 
@@ -134,7 +171,7 @@ describe("github backup settings", () => {
           version: "2.0.0",
           publishedAt: 1_800_000_000_000,
           releaseId: "packageReleases:demo-2" as Id<"packageReleases">,
-          path: "package-releases/openclaw-team/openclaw-demo-plugin/2.0.0/_meta.json",
+          path: "package-releases/openclaw-team/%40openclaw%2Fdemo-plugin/2%2E0%2E0/_meta.json",
           commit: "newer-commit",
         },
         releases: [],
