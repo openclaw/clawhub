@@ -232,7 +232,8 @@ describe("built CLI artifact", () => {
   });
 
   it("prints help by default", async () => {
-    const result = runNode([binPath]);
+    const workdir = await makeTmpDir("clawhub-artifact-default-help-");
+    const result = runNode([binPath], { CLAWHUB_CONFIG_PATH: join(workdir, "config.json") });
 
     expect(result.status).toBe(0);
     expect(result.stderr).toBe("");
