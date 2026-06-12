@@ -1,7 +1,11 @@
 /* @vitest-environment node */
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildDocsAuthCallbackUrl, normalizeDocsReturnTo } from "./docsAuth";
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 describe("docs auth helpers", () => {
   it("allows documentation return URLs and rejects unrelated origins", () => {
@@ -25,8 +29,23 @@ describe("docs auth helpers", () => {
   });
 
   it("keeps local callbacks local for dev", () => {
+    vi.stubEnv("NODE_ENV", "development");
     expect(buildDocsAuthCallbackUrl("http://localhost:4173/start")).toBe(
       "http://localhost:4173/ask-molty/auth/callback",
+    );
+  });
+
+  it("rejects localhost docs origins in production", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    expect(normalizeDocsReturnTo("http://localhost:4173/start")).toBeNull();
+    expect(normalizeDocsReturnTo("http://127.0.0.1:4173/start")).toBeNull();
+    expect(buildDocsAuthCallbackUrl("http://localhost:4173/start")).toBeNull();
+  });
+
+  it("still allows production docs origins in production", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    expect(normalizeDocsReturnTo("https://docs.openclaw.ai/install")).toBe(
+      "https://docs.openclaw.ai/install",
     );
   });
 });
