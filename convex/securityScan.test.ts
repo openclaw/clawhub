@@ -1859,12 +1859,6 @@ describe("securityScan", () => {
         createdAt: 100,
         nextRunAt: 100,
       }),
-      makeScanJob({
-        _id: "securityScanJobs:legacy-clawscan-note",
-        source: "clawscan-note",
-        createdAt: 200,
-        nextRunAt: 200,
-      }),
     ]);
 
     const claimed = await claimQueuedJobsInternalHandler(ctx, {
@@ -1879,7 +1873,6 @@ describe("securityScan", () => {
       "securityScanJobs:publish",
       "securityScanJobs:vt-update",
       "securityScanJobs:bulk-rescan",
-      "securityScanJobs:legacy-clawscan-note",
     ]);
   });
 

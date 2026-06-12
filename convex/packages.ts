@@ -929,21 +929,11 @@ function toPublicPackage(
   };
 }
 
-function omitDeprecatedScanNoteFields(release: Doc<"packageReleases">) {
-  const {
-    clawScanNote: _deprecatedScanNote,
-    clawScanNoteUpdatedAt: _deprecatedScanNoteUpdatedAt,
-    ...publicRelease
-  } = release;
-  return publicRelease;
-}
-
 function toPublicPackageRelease(release: Doc<"packageReleases">) {
-  const publicRelease = omitDeprecatedScanNoteFields(release);
   const sourcePath = release.verification?.sourcePath ?? getReleaseSourcePath(release);
-  if (!release.verification || !sourcePath) return publicRelease;
+  if (!release.verification || !sourcePath) return release;
   return {
-    ...publicRelease,
+    ...release,
     verification: {
       ...release.verification,
       sourcePath,
@@ -2418,10 +2408,7 @@ export const listVersions = query({
       )
       .order("desc")
       .paginate(args.paginationOpts);
-    return {
-      ...result,
-      page: result.page.map(omitDeprecatedScanNoteFields),
-    };
+    return result;
   },
 });
 
@@ -2441,10 +2428,7 @@ export const listVersionsForViewerInternal = internalQuery({
       )
       .order("desc")
       .paginate(args.paginationOpts);
-    return {
-      ...result,
-      page: result.page.map(omitDeprecatedScanNoteFields),
-    };
+    return result;
   },
 });
 

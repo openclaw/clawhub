@@ -578,8 +578,6 @@ const securityScanJobSourceValidator = v.union(
   v.literal("backfill"),
   v.literal("bulk-rescan"),
   v.literal("manual"),
-  // Deprecated source retained so old queued jobs can drain after feature removal.
-  v.literal("clawscan-note"),
 );
 const skillCardGenerationJobStatusValidator = v.union(
   v.literal("queued"),
@@ -814,10 +812,6 @@ const skillVersions = defineTable({
   }),
   createdBy: v.id("users"),
   createdAt: v.number(),
-  // Deprecated persisted fields from the removed publisher scan-note flow.
-  // Keep until a production cleanup removes them from stored documents.
-  clawScanNote: v.optional(v.string()),
-  clawScanNoteUpdatedAt: v.optional(v.number()),
   softDeletedAt: v.optional(v.number()),
   sha256hash: v.optional(v.string()),
   vtAnalysis: v.optional(vtAnalysisValidator),
@@ -1246,10 +1240,6 @@ const packageReleases = defineTable({
   createdBy: v.id("users"),
   publishActor: packagePublishActorValidator,
   createdAt: v.number(),
-  // Deprecated persisted fields from the removed publisher scan-note flow.
-  // Keep until a production cleanup removes them from stored documents.
-  clawScanNote: v.optional(v.string()),
-  clawScanNoteUpdatedAt: v.optional(v.number()),
   softDeletedAt: v.optional(v.number()),
 })
   .index("by_package", ["packageId"])

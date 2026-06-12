@@ -96,24 +96,15 @@ const jobSourceValidator = v.union(
   v.literal("backfill"),
   v.literal("bulk-rescan"),
   v.literal("manual"),
-  // Deprecated source retained so old queued jobs can drain after feature removal.
-  v.literal("clawscan-note"),
 );
 
-type SecurityScanJobSource =
-  | "publish"
-  | "vt-update"
-  | "backfill"
-  | "bulk-rescan"
-  | "manual"
-  | "clawscan-note";
+type SecurityScanJobSource = "publish" | "vt-update" | "backfill" | "bulk-rescan" | "manual";
 
 const CLAIM_SOURCE_ORDER: SecurityScanJobSource[] = [
   "backfill",
   "publish",
   "vt-update",
   "bulk-rescan",
-  "clawscan-note",
 ];
 
 type EnqueueSkillVersionScanArgs = {

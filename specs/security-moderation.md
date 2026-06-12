@@ -121,11 +121,6 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   owner is deleted/deactivated or when the skill is malicious, hidden, or
   removed. The accept path is the final shared gate before ownership changes,
   so it must cancel the pending transfer before reporting the rejection.
-- Publisher-authored scan notes are no longer part of the ClawScan input
-  contract. ClawScan decisions must be based on submitted artifacts, scanner
-  signals, and staff moderation state, not publisher-supplied explanatory text.
-  Legacy persisted note fields may exist on old rows for schema compatibility,
-  but publish, rescan, API, UI, and prompt paths must ignore them.
 - User-submitted `POST /api/v1/skills/-/scan` upload scans are authenticated but
   ephemeral. They store uploaded files only on `skillScanRequests`, feed the
   normal ClawScan worker, and must never create or patch public `skills`,

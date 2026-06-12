@@ -1994,25 +1994,9 @@ type PublicSkillVersion = {
 
 type ManagementSkillEntry = {
   skill: Doc<"skills">;
-  latestVersion: SkillVersionWithoutDeprecatedScanNote | null;
+  latestVersion: Doc<"skillVersions"> | null;
   owner: Doc<"users"> | null;
 };
-
-type SkillVersionWithoutDeprecatedScanNote = Omit<
-  Doc<"skillVersions">,
-  "clawScanNote" | "clawScanNoteUpdatedAt"
->;
-
-function omitDeprecatedScanNoteFields(
-  version: Doc<"skillVersions">,
-): SkillVersionWithoutDeprecatedScanNote {
-  const {
-    clawScanNote: _deprecatedScanNote,
-    clawScanNoteUpdatedAt: _deprecatedScanNoteUpdatedAt,
-    ...publicVersion
-  } = version;
-  return publicVersion;
-}
 
 type DashboardSkillListItem = {
   _id: Id<"skills">;
@@ -2340,7 +2324,7 @@ async function buildManagementSkillEntries(ctx: QueryCtx, skills: Doc<"skills">[
       const badges = badgeMapBySkillId.get(skill._id) ?? {};
       return {
         skill: { ...skill, badges },
-        latestVersion: latestVersion ? omitDeprecatedScanNoteFields(latestVersion) : null,
+        latestVersion,
         owner,
       };
     }),
@@ -2980,9 +2964,7 @@ export const getBySlugForStaff = query({
       requestedSlug: resolved.requestedSlug,
       resolvedSlug: resolved.resolvedSlug,
       skill: { ...skill, badges },
-      latestVersion: latestVersion
-        ? { ...omitDeprecatedScanNoteFields(latestVersion), generatedSkillCard }
-        : null,
+      latestVersion: latestVersion ? { ...latestVersion, generatedSkillCard } : null,
       owner,
       overrideReviewer,
       auditLogs,
@@ -3816,7 +3798,7 @@ export const listRecentVersions = query({
     const entries = versions.filter((version) => !version.softDeletedAt).slice(0, limit);
 
     const results: Array<{
-      version: SkillVersionWithoutDeprecatedScanNote;
+      version: Doc<"skillVersions">;
       skill: Doc<"skills"> | null;
       owner: Doc<"users"> | null;
     }> = [];
@@ -3824,11 +3806,11 @@ export const listRecentVersions = query({
     for (const version of entries) {
       const skill = await ctx.db.get(version.skillId);
       if (!skill) {
-        results.push({ version: omitDeprecatedScanNoteFields(version), skill: null, owner: null });
+        results.push({ version, skill: null, owner: null });
         continue;
       }
       const owner = await ctx.db.get(skill.ownerUserId);
-      results.push({ version: omitDeprecatedScanNoteFields(version), skill, owner });
+      results.push({ version, skill, owner });
     }
 
     return results;
@@ -3895,7 +3877,7 @@ export const listDuplicateCandidates = query({
 
     const results: Array<{
       skill: Doc<"skills">;
-      latestVersion: SkillVersionWithoutDeprecatedScanNote | null;
+      latestVersion: Doc<"skillVersions"> | null;
       fingerprint: string | null;
       matches: Array<{ skill: Doc<"skills">; owner: Doc<"users"> | null }>;
       owner: Doc<"users"> | null;
@@ -3936,7 +3918,7 @@ export const listDuplicateCandidates = query({
       const owner = isUserId(skill.ownerUserId) ? await ctx.db.get(skill.ownerUserId) : null;
       results.push({
         skill,
-        latestVersion: latestVersion ? omitDeprecatedScanNoteFields(latestVersion) : null,
+        latestVersion,
         fingerprint,
         matches: matchEntries,
         owner,
