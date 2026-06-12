@@ -20,6 +20,14 @@ into strings such as `"undefined"` and used as `authAccounts.providerAccountId`.
 Malformed GitHub API responses during provider outages are authentication
 failures, not anonymous or linkable GitHub identities.
 
+When reading GitHub auth accounts for authorization-sensitive checks, duplicate
+`authAccounts` rows for the same ClawHub user may only be treated as recoverable
+when every row in a bounded reconciliation window has the same GitHub
+`providerAccountId`. Any disagreement or overflow beyond that bounded window
+means the account binding is ambiguous and must fail closed with
+operator-visible diagnostics instead of choosing by creation time or any other
+arbitrary tie breaker.
+
 `users.me`, protected mutations, ownership checks, and API token issuance must
 derive the actor server-side from Convex Auth (`getAuthUserId` via
 `requireUser`/`getOptionalActiveAuthUserId`). They must not accept client-supplied

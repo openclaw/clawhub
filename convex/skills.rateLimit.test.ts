@@ -212,11 +212,11 @@ describe("skills anti-spam guards", () => {
             withIndex: (name: string) => {
               if (name !== "userIdAndProvider") throw new Error(`unexpected auth index ${name}`);
               return {
-                unique: async () => {
+                take: async () => {
                   authAccountLookupCount += 1;
                   return authAccountLookupCount === 1
-                    ? { providerAccountId: "owner-gh" }
-                    : { providerAccountId: "caller-gh" };
+                    ? [{ providerAccountId: "owner-gh" }]
+                    : [{ providerAccountId: "caller-gh" }];
                 },
               };
             },
@@ -293,11 +293,11 @@ describe("skills anti-spam guards", () => {
             withIndex: (name: string) => {
               if (name !== "userIdAndProvider") throw new Error(`unexpected auth index ${name}`);
               return {
-                unique: async () => {
+                take: async () => {
                   authAccountLookupCount += 1;
                   return authAccountLookupCount === 1
-                    ? { providerAccountId: "owner-gh" }
-                    : { providerAccountId: "caller-gh" };
+                    ? [{ providerAccountId: "owner-gh" }]
+                    : [{ providerAccountId: "caller-gh" }];
                 },
               };
             },
@@ -361,11 +361,11 @@ describe("skills anti-spam guards", () => {
             withIndex: (name: string) => {
               if (name !== "userIdAndProvider") throw new Error(`unexpected auth index ${name}`);
               return {
-                unique: async () => {
+                take: async () => {
                   authAccountLookupCount += 1;
                   return authAccountLookupCount === 1
-                    ? { providerAccountId: "owner-gh" }
-                    : { providerAccountId: "caller-gh" };
+                    ? [{ providerAccountId: "owner-gh" }]
+                    : [{ providerAccountId: "caller-gh" }];
                 },
               };
             },
@@ -777,7 +777,7 @@ describe("skills anti-spam guards", () => {
           return {
             withIndex: (name: string) => {
               if (name !== "userIdAndProvider") throw new Error(`unexpected auth index ${name}`);
-              return { unique: async () => null };
+              return { take: async () => [] };
             },
           };
         }
@@ -945,9 +945,9 @@ describe("skills anti-spam guards", () => {
             withIndex: (name: string) => {
               if (name !== "userIdAndProvider") throw new Error(`unexpected auth index ${name}`);
               return {
-                unique: async () => {
+                take: async () => {
                   authAccountLookupCount += 1;
-                  return authAccountLookupCount <= 2 ? { providerAccountId: "shared-gh" } : null;
+                  return authAccountLookupCount <= 2 ? [{ providerAccountId: "shared-gh" }] : [];
                 },
               };
             },

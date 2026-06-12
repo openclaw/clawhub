@@ -268,16 +268,16 @@ function createCtx(options: {
               throw new Error(`unexpected authAccounts index ${name}`);
             }
             return {
-              unique: async () => {
+              take: async () => {
                 authAccountLookupCount += 1;
                 if (authAccountLookupCount === 1) {
                   return options.ownerProviderAccountId
-                    ? { providerAccountId: options.ownerProviderAccountId }
-                    : null;
+                    ? [{ providerAccountId: options.ownerProviderAccountId }]
+                    : [];
                 }
                 return options.callerProviderAccountId
-                  ? { providerAccountId: options.callerProviderAccountId }
-                  : null;
+                  ? [{ providerAccountId: options.callerProviderAccountId }]
+                  : [];
               },
             };
           },
