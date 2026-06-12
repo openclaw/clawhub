@@ -16,6 +16,7 @@ import {
   syncPackageSearchDigestsForOwnerUserId,
   syncSkillSearchDigestsForOwnerPublisherId,
 } from "./functions";
+import { computeRecommendationScore } from "./lib/recommendationScore";
 
 type WrappedHandler = {
   _handler: (ctx: unknown, args: Record<string, never>) => Promise<unknown>;
@@ -956,6 +957,7 @@ describe("publisher digest scheduling", () => {
         statsDownloads: 13,
         statsStars: 7,
         statsInstallsAllTime: 11,
+        recommendedScore: computeRecommendationScore({ downloads: 13, installs: 11, stars: 7 }),
         stats: expect.objectContaining({
           downloads: 13,
           stars: 7,

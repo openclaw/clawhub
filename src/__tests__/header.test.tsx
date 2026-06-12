@@ -465,8 +465,7 @@ describe("Header", () => {
       .map((element) => element.textContent?.trim())
       .filter((label): label is string => Boolean(label));
 
-    expect(labels.slice(0, 2)).toEqual(["Home", "Skills"]);
-    expect(labels.slice(3, 4)).toEqual(["Docs"]);
+    expect(labels.slice(0, 4)).toEqual(["Home", "Skills", "Plugins", "Docs"]);
   });
 
   it("links starred skills from the signed-in avatar menu", () => {

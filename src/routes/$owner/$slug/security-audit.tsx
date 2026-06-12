@@ -6,15 +6,14 @@ import {
   SecurityAuditPageSkeleton,
 } from "../../../components/SecurityAuditPage";
 import { buildSkillMeta } from "../../../lib/og";
+import { isOwnerRouteHandleOrIdSegment } from "../../../lib/ownerRoute";
 import { isModerator } from "../../../lib/roles";
 import { fetchSkillPageData } from "../../../lib/skillPage";
 import { useAuthStatus } from "../../../lib/useAuthStatus";
 
 export const Route = createFileRoute("/$owner/$slug/security-audit")({
   beforeLoad: ({ params }) => {
-    const isHandle = /^[a-zA-Z0-9_][a-zA-Z0-9_-]*$/.test(params.owner);
-    const isOwnerId = params.owner.startsWith("users:") || params.owner.startsWith("publishers:");
-    if (!isHandle && !isOwnerId) throw notFound();
+    if (!isOwnerRouteHandleOrIdSegment(params.owner)) throw notFound();
   },
   loader: async ({ params }) => {
     const data = await fetchSkillPageData(params.slug);

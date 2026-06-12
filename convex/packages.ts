@@ -49,6 +49,7 @@ import { sha256Hex } from "./lib/clawpack";
 import { buildPackageInspectorFindingsEmail } from "./lib/emails";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
+import { readGlobalPublicPluginsCount } from "./lib/globalStats";
 import { isOfficialPublisher } from "./lib/officialPublishers";
 import {
   assertPackageVersion,
@@ -78,6 +79,7 @@ import {
   getPublisherMembership,
   isPublisherActive,
   isPublisherRoleAllowed,
+  PUBLISHER_HANDLE_PATTERN,
   normalizePublisherHandle,
 } from "./lib/publishers";
 import {
@@ -86,6 +88,10 @@ import {
   getPublishTotalSizeError,
   MAX_PUBLISH_TOTAL_BYTES,
 } from "./lib/publishLimits";
+import {
+  computeRecommendationScore,
+  RECOMMENDATION_SCORE_VERSION,
+} from "./lib/recommendationScore";
 import { MAX_ACTIVE_REPORTS_PER_USER, MAX_REPORT_REASON_LENGTH } from "./lib/reporting";
 import { matchesAllTokens, matchesExploratoryTokenPrefixes, tokenize } from "./lib/searchText";
 import { hashSkillFiles } from "./lib/skills";
@@ -101,7 +107,6 @@ const MAX_OFFICIAL_MIGRATION_BLOCKERS = 20;
 const MAX_OFFICIAL_MIGRATION_FIELD_LENGTH = 300;
 const MAX_OFFICIAL_MIGRATION_NOTES_LENGTH = 2_000;
 const MAX_STORED_PACKAGE_METADATA_DEPTH = 10;
-const CLAWHUB_PUBLISHER_HANDLE_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
 const REAL_BUNDLE_MANIFESTS = [
   { path: ".codex-plugin/plugin.json", format: "codex" },
   { path: ".claude-plugin/plugin.json", format: "claude" },
@@ -110,6 +115,95 @@ const REAL_BUNDLE_MANIFESTS = [
 const INITIAL_PACKAGE_VT_SCAN_DELAY_MS = 30_000;
 const PLUGIN_EXPORT_FAMILIES = ["code-plugin", "bundle-plugin"] as const;
 const GET_PAGE_TIEBREAKER_FIELD_COUNT = 2;
+
+function computePackageRecommendationScore(stats: Doc<"packages">["stats"]) {
+  return computeRecommendationScore({
+    downloads: stats.downloads,
+    installs: stats.installs,
+    stars: stats.stars,
+  });
+}
+
+function computePackageRecommendationPatch(stats: Doc<"packages">["stats"]) {
+  return {
+    recommendedScore: computePackageRecommendationScore(stats),
+    recommendedScoreVersion: RECOMMENDATION_SCORE_VERSION,
+  };
+}
+
+function getPackageRecommendedScoreIndexName(family: Doc<"packages">["family"] | undefined) {
+  return family ? "by_active_family_recommended_score" : "by_active_recommended_score";
+}
+
+async function getPackageRecommendedIndexName(
+  ctx: Pick<QueryCtx, "db">,
+  family: Doc<"packages">["family"] | undefined,
+) {
+  const missingScore = await hasMissingPackageRecommendedScore(ctx, family);
+  if (missingScore) return null;
+  return getPackageRecommendedScoreIndexName(family);
+}
+
+async function hasMissingPackageRecommendedScore(
+  ctx: Pick<QueryCtx, "db">,
+  family: Doc<"packages">["family"] | undefined,
+) {
+  if (family) {
+    const missingScore = await ctx.db
+      .query("packages")
+      .withIndex("by_active_family_recommended_score", (q) =>
+        q.eq("softDeletedAt", undefined).eq("family", family).eq("recommendedScore", undefined),
+      )
+      .first();
+    if (missingScore) return true;
+
+    const missingVersion = await ctx.db
+      .query("packages")
+      .withIndex("by_active_family_recommended_score_version", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("family", family)
+          .eq("recommendedScoreVersion", undefined),
+      )
+      .first();
+    if (missingVersion) return true;
+
+    const staleVersion = await ctx.db
+      .query("packages")
+      .withIndex("by_active_family_recommended_score_version", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("family", family)
+          .lt("recommendedScoreVersion", RECOMMENDATION_SCORE_VERSION),
+      )
+      .first();
+    return Boolean(staleVersion);
+  }
+
+  const missingScore = await ctx.db
+    .query("packages")
+    .withIndex("by_active_recommended_score", (q) =>
+      q.eq("softDeletedAt", undefined).eq("recommendedScore", undefined),
+    )
+    .first();
+  if (missingScore) return true;
+
+  const missingVersion = await ctx.db
+    .query("packages")
+    .withIndex("by_active_recommended_score_version", (q) =>
+      q.eq("softDeletedAt", undefined).eq("recommendedScoreVersion", undefined),
+    )
+    .first();
+  if (missingVersion) return true;
+
+  const staleVersion = await ctx.db
+    .query("packages")
+    .withIndex("by_active_recommended_score_version", (q) =>
+      q.eq("softDeletedAt", undefined).lt("recommendedScoreVersion", RECOMMENDATION_SCORE_VERSION),
+    )
+    .first();
+  return Boolean(staleVersion);
+}
 
 const llmAgenticRiskEvidenceValidator = v.object({
   path: v.string(),
@@ -203,12 +297,12 @@ function getPackageSlugFromName(name: string) {
 function getClawHubPublisherHandleSuggestion(handle: string) {
   const suggestion = handle
     .toLowerCase()
-    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/[^a-z0-9._-]+/g, "-")
     .replace(/-+/g, "-")
-    .replace(/^-+|-+$/g, "")
+    .replace(/^[._-]+|[._-]+$/g, "")
     .slice(0, 40)
-    .replace(/-+$/g, "");
-  return CLAWHUB_PUBLISHER_HANDLE_PATTERN.test(suggestion) ? suggestion : null;
+    .replace(/[._-]+$/g, "");
+  return PUBLISHER_HANDLE_PATTERN.test(suggestion) ? suggestion : null;
 }
 
 function getScopedPackageMissingPublisherMessage(params: {
@@ -216,13 +310,13 @@ function getScopedPackageMissingPublisherMessage(params: {
   packageName: string;
   legacyPersonalOwnerHandle?: string;
 }) {
-  if (!CLAWHUB_PUBLISHER_HANDLE_PATTERN.test(params.scopedOwnerHandle)) {
+  if (!PUBLISHER_HANDLE_PATTERN.test(params.scopedOwnerHandle)) {
     const suggestedOwnerHandle = getClawHubPublisherHandleSuggestion(params.scopedOwnerHandle);
     const packageSlug = getPackageSlugFromName(params.packageName);
     const renameGuidance = suggestedOwnerHandle
       ? ` Rename package.json to a ClawHub-compatible scope, such as "@${suggestedOwnerHandle}/${packageSlug}", then publish again.`
-      : " Rename package.json to a ClawHub-compatible scope that uses lowercase letters, numbers, and hyphens, then publish again.";
-    return `Cannot publish ${params.packageName}: package.json name is scoped to "@${params.scopedOwnerHandle}", but ClawHub publisher handles may only use lowercase letters, numbers, and hyphens.${renameGuidance}`;
+      : " Rename package.json to a ClawHub-compatible scope that starts and ends with a lowercase letter or number and uses lowercase letters, numbers, hyphens, dots, or underscores, then publish again.";
+    return `Cannot publish ${params.packageName}: package.json name is scoped to "@${params.scopedOwnerHandle}", but ClawHub publisher handles must start and end with a lowercase letter or number and may only use lowercase letters, numbers, hyphens, dots, or underscores.${renameGuidance}`;
   }
   if (params.legacyPersonalOwnerHandle) {
     const displayName = params.scopedOwnerHandle
@@ -693,6 +787,7 @@ type PublicPageCursorState = {
   offset: number;
   pageSize: number | null;
   done: boolean;
+  mode?: "packages" | "digest";
 };
 const PUBLIC_PAGE_CURSOR_PREFIX = "pkgpage:";
 
@@ -1359,6 +1454,7 @@ function decodePublicPageCursor(raw: string | null | undefined): PublicPageCurso
       offset: typeof parsed.offset === "number" && parsed.offset > 0 ? parsed.offset : 0,
       pageSize: typeof parsed.pageSize === "number" && parsed.pageSize > 0 ? parsed.pageSize : null,
       done: parsed.done === true,
+      mode: parsed.mode === "packages" || parsed.mode === "digest" ? parsed.mode : undefined,
     };
   } catch {
     return { cursor: null, offset: 0, pageSize: null, done: false };
@@ -2569,7 +2665,9 @@ export const listPublicPage = query({
     executesCode: v.optional(v.boolean()),
     capabilityTag: v.optional(v.string()),
     category: v.optional(v.string()),
-    sort: v.optional(v.union(v.literal("updated"), v.literal("downloads"))),
+    sort: v.optional(
+      v.union(v.literal("updated"), v.literal("downloads"), v.literal("recommended")),
+    ),
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
@@ -3037,12 +3135,46 @@ export const listPageForViewerInternal = internalQuery({
     executesCode: v.optional(v.boolean()),
     capabilityTag: v.optional(v.string()),
     category: v.optional(v.string()),
-    sort: v.optional(v.union(v.literal("updated"), v.literal("downloads"))),
+    sort: v.optional(
+      v.union(v.literal("updated"), v.literal("downloads"), v.literal("recommended")),
+    ),
     viewerUserId: v.optional(v.id("users")),
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
     return await listPackagePageImpl(ctx, args);
+  },
+});
+
+export const countPublicPluginsInternal = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    return await readGlobalPublicPluginsCount(ctx);
+  },
+});
+
+export const hasMissingRecommendationScoresInternal = internalQuery({
+  args: {
+    families: v.optional(
+      v.array(v.union(v.literal("skill"), v.literal("code-plugin"), v.literal("bundle-plugin"))),
+    ),
+  },
+  handler: async (ctx, args) => {
+    if (!args.families || args.families.length === 0) {
+      return await hasMissingPackageRecommendedScore(ctx, undefined);
+    }
+    for (const family of args.families) {
+      if (await hasMissingPackageRecommendedScore(ctx, family)) return true;
+    }
+    return false;
+  },
+});
+
+export const countPublicPlugins = query({
+  args: {},
+  handler: async (ctx) => {
+    const statsCount = await readGlobalPublicPluginsCount(ctx);
+    return statsCount ?? 0;
   },
 });
 
@@ -3056,7 +3188,7 @@ async function listPackagePageImpl(
     executesCode?: boolean;
     capabilityTag?: string;
     category?: string;
-    sort?: "updated" | "downloads";
+    sort?: "updated" | "downloads" | "recommended";
     viewerUserId?: Id<"users">;
     paginationOpts: { cursor: string | null; numItems: number };
   },
@@ -3101,21 +3233,35 @@ async function listPackagePageImpl(
     ),
   );
 
-  if (args.sort === "downloads") {
+  const keepDigestCursor = args.sort === "recommended" && decodedCursor.mode === "digest";
+  const keepRecommendedPackageCursor =
+    args.sort === "recommended" &&
+    Boolean(args.paginationOpts.cursor) &&
+    decodedCursor.mode !== "digest";
+  const recommendedIndexName =
+    args.sort === "recommended" && !keepDigestCursor
+      ? keepRecommendedPackageCursor
+        ? getPackageRecommendedScoreIndexName(family)
+        : await getPackageRecommendedIndexName(ctx, family)
+      : null;
+
+  if (args.sort === "downloads" || recommendedIndexName) {
     let cursor = pageCursor;
     let pageOffset = offset;
     let pageSize: number | null = decodedCursor.pageSize ?? null;
     let done = decodedCursor.done;
-    const buildDownloadsQuery = () =>
+    const buildSortedQuery = () =>
       family
         ? ctx.db
             .query("packages")
-            .withIndex("by_active_family_downloads", (q) =>
+            .withIndex(recommendedIndexName ?? "by_active_family_downloads", (q) =>
               q.eq("softDeletedAt", undefined).eq("family", family),
             )
         : ctx.db
             .query("packages")
-            .withIndex("by_active_downloads", (q) => q.eq("softDeletedAt", undefined));
+            .withIndex(recommendedIndexName ?? "by_active_downloads", (q) =>
+              q.eq("softDeletedAt", undefined),
+            );
 
     while ((pageOffset > 0 || !done) && collected.length < targetCount) {
       const scanPageSize = Math.min(
@@ -3125,7 +3271,7 @@ async function listPackagePageImpl(
           : Math.max(targetCount * 5, targetCount, 50),
       );
       const currentCursor = cursor;
-      const page = await buildDownloadsQuery()
+      const page = await buildSortedQuery()
         .order("desc")
         .paginate({ cursor: currentCursor, numItems: scanPageSize });
 
@@ -3143,12 +3289,14 @@ async function listPackagePageImpl(
                   offset: nextOffset,
                   pageSize: scanPageSize,
                   done: page.isDone,
+                  mode: "packages" as const,
                 }
               : {
                   cursor: page.continueCursor,
                   offset: 0,
                   pageSize: scanPageSize,
                   done: page.isDone,
+                  mode: "packages" as const,
                 };
           return {
             page: collected,
@@ -3172,6 +3320,7 @@ async function listPackagePageImpl(
         offset: pageOffset,
         pageSize,
         done,
+        mode: "packages",
       }),
     };
   }
@@ -3221,12 +3370,14 @@ async function listPackagePageImpl(
               offset: nextOffset,
               pageSize: effectivePageSize,
               done: page.isDone,
+              mode: "digest" as const,
             }
           : {
               cursor: page.continueCursor,
               offset: 0,
               pageSize: effectivePageSize,
               done: page.isDone,
+              mode: "digest" as const,
             };
       return {
         page: collected,
@@ -3244,6 +3395,7 @@ async function listPackagePageImpl(
       offset: 0,
       pageSize: effectivePageSize,
       done: page.isDone,
+      mode: "digest",
     }),
   };
 }
@@ -3461,13 +3613,15 @@ export const processPackageStatEventsInternal = internalMutation({
     for (const [packageId, stats] of statsByPackage) {
       const pkg = await ctx.db.get(packageId);
       if (!pkg) continue;
+      const nextStats = {
+        downloads: (pkg.stats?.downloads ?? 0) + stats.downloads,
+        installs: (pkg.stats?.installs ?? 0) + stats.installs,
+        stars: pkg.stats?.stars ?? 0,
+        versions: pkg.stats?.versions ?? 0,
+      };
       await ctx.db.patch(pkg._id, {
-        stats: {
-          downloads: (pkg.stats?.downloads ?? 0) + stats.downloads,
-          installs: (pkg.stats?.installs ?? 0) + stats.installs,
-          stars: pkg.stats?.stars ?? 0,
-          versions: pkg.stats?.versions ?? 0,
-        },
+        stats: nextStats,
+        ...computePackageRecommendationPatch(nextStats),
       });
       packagesUpdated += 1;
     }
@@ -6528,6 +6682,12 @@ export const reservePackageNameInternal = internalMutation({
       capabilityTags: [],
       executesCode: false,
       stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
+      ...computePackageRecommendationPatch({
+        downloads: 0,
+        installs: 0,
+        stars: 0,
+        versions: 0,
+      }),
       createdAt: now,
       updatedAt: now,
     });
@@ -7512,6 +7672,12 @@ export const insertReleaseInternal = internalMutation({
         verification: args.verification,
         scanStatus: args.verification?.scanStatus,
         stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
+        ...computePackageRecommendationPatch({
+          downloads: 0,
+          installs: 0,
+          stars: 0,
+          versions: 0,
+        }),
         createdAt: now,
         updatedAt: now,
       }));

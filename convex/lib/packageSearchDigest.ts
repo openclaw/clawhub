@@ -1,6 +1,7 @@
 import { derivePluginCategoryTags } from "clawhub-schema";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
+import { adjustGlobalPublicPluginsCount, getPublicPluginVisibilityDelta } from "./globalStats";
 
 function pick<T extends Record<string, unknown>, K extends keyof T>(obj: T, keys: K[]): Pick<T, K> {
   return Object.fromEntries(keys.map((key) => [key, obj[key]])) as Pick<T, K>;
@@ -128,16 +129,19 @@ export async function upsertPackageSearchDigest(
     .withIndex("by_package", (q) => q.eq("packageId", fields.packageId))
     .unique();
   if (existing) {
+    const visibilityDelta = getPublicPluginVisibilityDelta(existing, fields);
     if (hasDigestChanged(existing, fields)) {
       await ctx.db.patch(existing._id, fields);
     }
     await syncPackageCapabilitySearchDigests(ctx, fields);
     await syncPackagePluginCategorySearchDigests(ctx, fields);
+    await adjustGlobalPublicPluginsCount(ctx, visibilityDelta);
     return;
   }
   await ctx.db.insert("packageSearchDigest", fields);
   await syncPackageCapabilitySearchDigests(ctx, fields);
   await syncPackagePluginCategorySearchDigests(ctx, fields);
+  await adjustGlobalPublicPluginsCount(ctx, getPublicPluginVisibilityDelta(null, fields));
 }
 
 async function syncPackageCapabilitySearchDigests(
@@ -216,7 +220,10 @@ export async function deletePackageSearchDigests(
     .query("packageSearchDigest")
     .withIndex("by_package", (q) => q.eq("packageId", packageId))
     .unique();
-  if (existing) await ctx.db.delete(existing._id);
+  if (existing) {
+    await adjustGlobalPublicPluginsCount(ctx, getPublicPluginVisibilityDelta(existing, null));
+    await ctx.db.delete(existing._id);
+  }
   for (const row of await ctx.db
     .query("packageCapabilitySearchDigest")
     .withIndex("by_package", (q) => q.eq("packageId", packageId))

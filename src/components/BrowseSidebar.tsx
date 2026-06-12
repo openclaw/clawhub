@@ -25,13 +25,27 @@ type SortOption = {
   label: string;
 };
 
+type RadioGroupOption = {
+  value: string | undefined;
+  label: string;
+};
+
+type RadioGroup = {
+  title: string;
+  ariaLabel: string;
+  options: RadioGroupOption[];
+  activeValue: string | undefined;
+  onChange: (value: string | undefined) => void;
+};
+
 type BrowseSidebarProps = {
   categories?: BrowseCategory[];
   activeCategory?: string;
   onCategoryChange?: (slug: string | undefined) => void;
-  sortOptions: SortOption[];
-  activeSort: string;
-  onSortChange: (value: string) => void;
+  sortOptions?: SortOption[];
+  activeSort?: string;
+  onSortChange?: (value: string) => void;
+  radioGroups?: RadioGroup[];
   filters?: FilterItem[];
   onFilterToggle?: (key: string) => void;
 };
@@ -62,6 +76,7 @@ export function BrowseSidebar({
   sortOptions,
   activeSort,
   onSortChange,
+  radioGroups = [],
   filters = [],
   onFilterToggle,
 }: BrowseSidebarProps) {
@@ -85,21 +100,46 @@ export function BrowseSidebar({
 
   return (
     <aside className="browse-sidebar" aria-label="Browse filters">
-      <fieldset className="sidebar-section" role="radiogroup" aria-label="Sort order">
-        <legend className="sidebar-title">Sort by</legend>
-        {sortOptions.map((opt) => (
-          <button
-            key={opt.value}
-            className={`sidebar-option${activeSort === opt.value ? " is-active" : ""}`}
-            type="button"
-            role="radio"
-            aria-checked={activeSort === opt.value}
-            onClick={() => onSortChange(opt.value)}
-          >
-            {opt.label}
-          </button>
-        ))}
-      </fieldset>
+      {sortOptions?.length && activeSort && onSortChange ? (
+        <fieldset className="sidebar-section" role="radiogroup" aria-label="Sort order">
+          <legend className="sidebar-title">Sort by</legend>
+          {sortOptions.map((opt) => (
+            <button
+              key={opt.value}
+              className={`sidebar-option${activeSort === opt.value ? " is-active" : ""}`}
+              type="button"
+              role="radio"
+              aria-checked={activeSort === opt.value}
+              onClick={() => onSortChange(opt.value)}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </fieldset>
+      ) : null}
+
+      {radioGroups.map((group) => (
+        <fieldset
+          key={group.title}
+          className="sidebar-section"
+          role="radiogroup"
+          aria-label={group.ariaLabel}
+        >
+          <legend className="sidebar-title">{group.title}</legend>
+          {group.options.map((opt) => (
+            <button
+              key={opt.value ?? "all"}
+              className={`sidebar-option${group.activeValue === opt.value ? " is-active" : ""}`}
+              type="button"
+              role="radio"
+              aria-checked={group.activeValue === opt.value}
+              onClick={() => group.onChange(opt.value)}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </fieldset>
+      ))}
 
       {categories && onCategoryChange ? (
         <fieldset className="sidebar-section" role="radiogroup" aria-label="Category filter">

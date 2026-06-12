@@ -53,6 +53,7 @@ import {
   MAX_PUBLISH_FILE_BYTES,
   MAX_PUBLISH_TOTAL_BYTES,
 } from "../lib/publishLimits";
+import { compareRecommendationStats } from "../lib/recommendationScore";
 import {
   getPublicSkillVersionAccessBlock,
   getPublicSkillVersionDownloadBlock,
@@ -97,7 +98,9 @@ const apiRefs = api as unknown as {
 };
 const internalRefs = internal as unknown as {
   packages: {
+    countPublicPluginsInternal: unknown;
     getByNameForViewerInternal: unknown;
+    hasMissingRecommendationScoresInternal: unknown;
     listPluginExportPageInternal: unknown;
     listPageForViewerInternal: unknown;
     searchForViewerInternal: unknown;
@@ -255,7 +258,7 @@ function normalizeCapabilityTagSegment(value: string) {
 const PACKAGE_FAMILY_VALUES = ["skill", "code-plugin", "bundle-plugin"] as const;
 const PLUGIN_EXPORT_FAMILY_VALUES = ["code-plugin", "bundle-plugin"] as const;
 const PACKAGE_CHANNEL_VALUES = ["official", "community", "private"] as const;
-const PACKAGE_LIST_SORT_VALUES = ["updated", "downloads"] as const;
+const PACKAGE_LIST_SORT_VALUES = ["updated", "downloads", "recommended"] as const;
 const MAX_PLUGIN_EXPORT_FILE_COUNT = 10_000;
 const MAX_PLUGIN_EXPORT_PAGE_LIMIT = 250;
 const DEFAULT_PLUGIN_EXPORT_PAGE_LIMIT = 250;
@@ -808,6 +811,7 @@ type UnifiedCatalogCursorState = {
 type PluginCatalogCursorState = {
   codePlugins: CatalogSourceCursorState;
   bundlePlugins: CatalogSourceCursorState;
+  recommendedFallback?: "updated";
 };
 
 type CatalogPageResult<T> = {
@@ -913,6 +917,7 @@ function decodeMultiPluginCursor(
     return {
       codePlugins: normalize(parsed.codePlugins),
       bundlePlugins: normalize(parsed.bundlePlugins),
+      recommendedFallback: parsed.recommendedFallback === "updated" ? "updated" : undefined,
     };
   } catch {
     return {
@@ -995,6 +1000,21 @@ function compareCatalogItemsForSort(
   b: CatalogListItem,
   sort: (typeof PACKAGE_LIST_SORT_VALUES)[number] | undefined,
 ) {
+  if (sort === "recommended") {
+    const score = compareRecommendationStats(
+      {
+        downloads: a.stats?.downloads ?? 0,
+        installs: a.stats?.installs ?? 0,
+        stars: a.stats?.stars ?? 0,
+      },
+      {
+        downloads: b.stats?.downloads ?? 0,
+        installs: b.stats?.installs ?? 0,
+        stars: b.stats?.stars ?? 0,
+      },
+    );
+    if (score !== 0) return score;
+  }
   if (sort === "downloads") {
     const downloads = (b.stats?.downloads ?? 0) - (a.stats?.downloads ?? 0);
     if (downloads !== 0) return downloads;
@@ -1541,9 +1561,35 @@ async function listPackages(
   }
 
   if (!effectiveFamily && options?.pluginFamilies?.length) {
+    const includeTotalCount =
+      !includeSkills &&
+      !category &&
+      !channelParam.value &&
+      typeof isOfficial.value !== "boolean" &&
+      !highlightedOnly &&
+      typeof executesCode.value !== "boolean" &&
+      !capabilityTag;
+    const totalCount = includeTotalCount
+      ? await runQueryRef<number | null>(ctx, internalRefs.packages.countPublicPluginsInternal, {})
+      : null;
     const decodedCursor = decodePluginCatalogCursor(cursor);
     const codePluginSource = initCatalogSource<CatalogListItem>(decodedCursor.codePlugins);
     const bundlePluginSource = initCatalogSource<CatalogListItem>(decodedCursor.bundlePlugins);
+    const isFreshRecommendedRequest = sortParam.value === "recommended" && !cursor;
+    const hasMissingRecommendationScores = isFreshRecommendedRequest
+      ? await runQueryRef<boolean>(
+          ctx,
+          internalRefs.packages.hasMissingRecommendationScoresInternal,
+          {
+            families: options.pluginFamilies,
+          },
+        )
+      : false;
+    const useUpdatedRecommendationFallback =
+      sortParam.value === "recommended" &&
+      (decodedCursor.recommendedFallback === "updated" ||
+        (isFreshRecommendedRequest && hasMissingRecommendationScores));
+    const pluginListSort = useUpdatedRecommendationFallback ? "updated" : sortParam.value;
     const pageSize = limit;
     const items: CatalogListItem[] = [];
     const fetchPluginPage = async (
@@ -1563,7 +1609,7 @@ async function listPackages(
         executesCode: executesCode.value,
         capabilityTag,
         category,
-        sort: sortParam.value,
+        sort: pluginListSort,
         viewerUserId: viewerUserId ?? undefined,
         paginationOpts: { cursor: pageCursor, numItems },
       });
@@ -1592,7 +1638,7 @@ async function listPackages(
       if (
         !bundlePluginCandidate ||
         (codePluginCandidate &&
-          compareCatalogItemsForSort(codePluginCandidate, bundlePluginCandidate, sortParam.value) <=
+          compareCatalogItemsForSort(codePluginCandidate, bundlePluginCandidate, pluginListSort) <=
             0)
       ) {
         items.push(codePluginCandidate!);
@@ -1606,6 +1652,7 @@ async function listPackages(
     const nextState = {
       codePlugins: finalizeCatalogSource(codePluginSource),
       bundlePlugins: finalizeCatalogSource(bundlePluginSource),
+      recommendedFallback: useUpdatedRecommendationFallback ? ("updated" as const) : undefined,
     };
     const isDoneAll =
       nextState.codePlugins.done &&
@@ -1616,6 +1663,7 @@ async function listPackages(
       {
         items,
         nextCursor: isDoneAll ? null : encodePluginCatalogCursor(nextState),
+        ...(totalCount !== null ? { totalCount } : {}),
       },
       200,
       rate.headers,

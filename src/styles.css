@@ -10391,37 +10391,10 @@ a.agentic-risk-finding-title:focus-visible {
   font-size: 0.82rem;
 }
 
-.publishers-results {
-  gap: 44px;
-}
-
-.browse-page-search + .publishers-results {
-  margin-top: 18px;
-}
-
-.publishers-toolbar {
-  align-items: center;
-  margin-top: 6px;
-}
-
-.publisher-listed-count {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.publisher-toolbar-controls {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  margin-left: auto;
-}
-
 .publisher-highlights {
   display: grid;
   gap: 18px;
-  margin-top: 22px;
-  margin-bottom: 26px;
+  margin-bottom: 14px;
 }
 
 .publisher-section-heading {
@@ -10811,43 +10784,6 @@ a.agentic-risk-finding-title:focus-visible {
     grid-template-columns: 1fr;
   }
 
-  .publishers-toolbar {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    align-items: end;
-  }
-
-  .publisher-listed-count {
-    display: none;
-  }
-
-  .publisher-toolbar-controls {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    grid-column: 1 / -1;
-    gap: 8px;
-    width: 100%;
-    margin-left: 0;
-  }
-
-  .publisher-filter-tabs {
-    min-width: 0;
-  }
-
-  .publisher-filter-tabs:not(.publisher-view-tabs) {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .publisher-filter-tab {
-    justify-content: center;
-    padding-inline: 8px;
-  }
-
-  .publisher-view-tabs {
-    display: none;
-  }
-
   .publisher-card {
     grid-template-columns: minmax(0, 1fr);
     align-items: start;
@@ -11162,12 +11098,6 @@ a.agentic-risk-finding-title:focus-visible {
   margin-bottom: var(--space-3);
 }
 
-.browse-page-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
 .browse-page-search {
   display: flex;
   align-items: center;
@@ -11184,6 +11114,33 @@ a.agentic-risk-finding-title:focus-visible {
 
 .browse-page-search:focus-within {
   border-color: var(--border-ui-active);
+}
+
+.browse-search-clear {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--r-sm);
+  color: var(--ink-soft);
+  background: transparent;
+  cursor: pointer;
+  transition:
+    color 150ms ease,
+    background-color 150ms ease;
+}
+
+.browse-search-clear:hover {
+  color: var(--ink);
+  background: var(--hover-bg);
+}
+
+.browse-search-clear:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  outline-offset: 2px;
 }
 
 .audits-page {
@@ -11697,9 +11654,15 @@ a.agentic-risk-finding-title:focus-visible {
   overflow: hidden;
 }
 
+.browse-page-header .browse-view-toggle {
+  margin-left: auto;
+}
+
 .browse-view-btn {
   all: unset;
-  padding: var(--space-1) var(--space-3);
+  box-sizing: border-box;
+  height: 36px;
+  padding: 0 var(--space-3);
   font-size: var(--fs-sm);
   color: var(--ink-soft);
   cursor: pointer;
@@ -11760,8 +11723,8 @@ a.agentic-risk-finding-title:focus-visible {
   }
 
   .browse-view-btn {
-    min-height: 44px;
-    padding: var(--space-2) var(--space-3);
+    height: 44px;
+    padding: 0 var(--space-3);
   }
 
   .browse-layout {

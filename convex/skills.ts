@@ -84,6 +84,10 @@ import {
   requirePublisherRole,
 } from "./lib/publishers";
 import {
+  computeRecommendationScore,
+  RECOMMENDATION_SCORE_VERSION,
+} from "./lib/recommendationScore";
+import {
   AUTO_HIDE_REPORT_THRESHOLD,
   MAX_ACTIVE_REPORTS_PER_USER,
   MAX_REPORT_REASON_LENGTH,
@@ -508,6 +512,7 @@ function latestVersionSummaryFromSkillVersion(
     createdAt: version.createdAt,
     changelog: version.changelog,
     changelogSource: version.changelogSource,
+    description: skillSummaryFromSkillVersion(version),
     clawdis: version.parsed?.clawdis,
     apiKeyRequired: version.apiKeyRequired,
   };
@@ -797,7 +802,7 @@ const NEW_SKILL_RATE_LIMITS = {
 } as const;
 
 const SORT_INDEXES = {
-  recommended: "by_active_recommended_rank",
+  recommended: "by_active_recommended_score",
   newest: "by_active_created",
   updated: "by_active_updated",
   name: "by_active_name",
@@ -808,13 +813,23 @@ const SORT_INDEXES = {
 
 // Compound indexes on skillSearchDigest that filter isSuspicious at the index level.
 const NONSUSPICIOUS_SORT_INDEXES = {
-  recommended: "by_nonsuspicious_recommended_rank",
+  recommended: "by_nonsuspicious_recommended_score",
   newest: "by_nonsuspicious_created",
   updated: "by_nonsuspicious_updated",
   name: "by_nonsuspicious_name",
   downloads: "by_nonsuspicious_downloads",
   stars: "by_nonsuspicious_stars",
   installs: "by_nonsuspicious_installs",
+} as const;
+
+const RECOMMENDED_RANK_INDEXES = {
+  active: "by_active_recommended_rank",
+  nonSuspicious: "by_nonsuspicious_recommended_rank",
+} as const;
+
+const RECOMMENDED_RANK_INDEX_FIELD_COUNTS = {
+  active: 5,
+  nonSuspicious: 6,
 } as const;
 const MAX_FILTERED_PUBLIC_LIST_SCAN_PAGES = 12;
 const MAX_FILTERED_PUBLIC_LIST_SCAN_ROWS = 500;
@@ -2295,7 +2310,13 @@ function toPublicSkillListVersionFromSummary(
     createdAt: summary.createdAt,
     changelog: summary.changelog,
     changelogSource: summary.changelogSource,
-    parsed: summary.clawdis ? { clawdis: summary.clawdis } : undefined,
+    parsed:
+      summary.description || summary.clawdis
+        ? {
+            ...(summary.description ? { description: summary.description } : {}),
+            ...(summary.clawdis ? { clawdis: summary.clawdis } : {}),
+          }
+        : undefined,
     apiKeyRequired: summary.apiKeyRequired,
   };
 }
@@ -4905,9 +4926,13 @@ export const listPublicPageV3 = query({
 });
 
 type PublicListSort = keyof typeof SORT_INDEXES;
+type SkillSearchDigestSortIndexName =
+  | (typeof SORT_INDEXES)[keyof typeof SORT_INDEXES]
+  | (typeof NONSUSPICIOUS_SORT_INDEXES)[keyof typeof NONSUSPICIOUS_SORT_INDEXES]
+  | (typeof RECOMMENDED_RANK_INDEXES)[keyof typeof RECOMMENDED_RANK_INDEXES];
 
 const SORT_INDEX_FIELD_COUNTS: Record<PublicListSort, number> = {
-  recommended: 4,
+  recommended: 3,
   newest: 2,
   updated: 2,
   name: 2,
@@ -4917,7 +4942,7 @@ const SORT_INDEX_FIELD_COUNTS: Record<PublicListSort, number> = {
 };
 
 const NONSUSPICIOUS_SORT_INDEX_FIELD_COUNTS: Record<PublicListSort, number> = {
-  recommended: 5,
+  recommended: 4,
   newest: 3,
   updated: 3,
   name: 3,
@@ -4956,11 +4981,13 @@ function decodePublicListCursor({
   indexName,
   maxIndexKeyLength,
   eqPrefix,
+  allowLegacyArray = true,
 }: {
   cursor?: string;
   indexName: string;
   maxIndexKeyLength: number;
   eqPrefix: IndexKey;
+  allowLegacyArray?: boolean;
 }): IndexKey | null {
   if (!cursor) return null;
   try {
@@ -4972,11 +4999,12 @@ function decodePublicListCursor({
       (parsed as { v?: unknown }).v === 1 &&
       (parsed as { index?: unknown }).index === indexName &&
       Array.isArray((parsed as { key?: unknown }).key);
-    const arr = Array.isArray(parsed)
-      ? parsed
-      : isSelfDescribingCursor
-        ? (parsed as { key: unknown[] }).key
-        : null;
+    const arr =
+      Array.isArray(parsed) && allowLegacyArray
+        ? parsed
+        : isSelfDescribingCursor
+          ? (parsed as { key: unknown[] }).key
+          : null;
     if (!Array.isArray(arr)) return null;
     const key = arr.map(decodeIndexKeyValue);
     // Self-describing cursors include the index name, so they can safely carry
@@ -4998,12 +5026,14 @@ function getPublicListCursorKey({
   nonSuspiciousOnly,
   indexName,
   eqPrefix,
+  allowLegacyArray,
 }: {
   cursor?: string;
   sort: PublicListSort;
   nonSuspiciousOnly: boolean;
   indexName: string;
   eqPrefix: IndexKey;
+  allowLegacyArray?: boolean;
 }): IndexKey | null {
   const fieldCounts = nonSuspiciousOnly
     ? NONSUSPICIOUS_SORT_INDEX_FIELD_COUNTS
@@ -5013,6 +5043,7 @@ function getPublicListCursorKey({
     indexName,
     maxIndexKeyLength: fieldCounts[sort],
     eqPrefix,
+    allowLegacyArray,
   });
 }
 
@@ -5061,6 +5092,7 @@ export const listPublicPageV4 = query({
     const recommendedIndexName = args.nonSuspiciousOnly
       ? NONSUSPICIOUS_SORT_INDEXES.recommended
       : SORT_INDEXES.recommended;
+    const recommendedRankIndexName = getRecommendedRankIndexName(args.nonSuspiciousOnly ?? false);
     const updatedIndexName = args.nonSuspiciousOnly
       ? NONSUSPICIOUS_SORT_INDEXES.updated
       : SORT_INDEXES.updated;
@@ -5069,6 +5101,12 @@ export const listPublicPageV4 = query({
       sort: "recommended",
       nonSuspiciousOnly: args.nonSuspiciousOnly ?? false,
       indexName: recommendedIndexName,
+      eqPrefix,
+      allowLegacyArray: false,
+    });
+    const recommendedRankCursor = getRecommendedRankCursorKey({
+      cursor: args.cursor,
+      nonSuspiciousOnly: args.nonSuspiciousOnly ?? false,
       eqPrefix,
     });
     const updatedCursor = getPublicListCursorKey({
@@ -5095,29 +5133,40 @@ export const listPublicPageV4 = query({
       });
     }
 
-    const sort =
+    const recommendedAnyCursor = recommendedCursor ?? recommendedRankCursor ?? updatedCursor;
+    const hasMissingRecommendedScore =
       requestedSort === "recommended"
-        ? resolveRecommendedPublicListSort({
-            decodedCursor: recommendedCursor ?? updatedCursor,
-            hasMissingRankStats: await hasMissingRecommendedRankStats(
-              ctx,
-              args.nonSuspiciousOnly ?? false,
-              recommendedCursor ?? updatedCursor,
-            ),
+        ? await hasMissingRecommendedScores(
+            ctx,
+            args.nonSuspiciousOnly ?? false,
+            recommendedAnyCursor,
+          )
+        : false;
+    const recommendedResolution =
+      requestedSort === "recommended"
+        ? resolveRecommendedPublicListQuery({
+            scoreIndexName: recommendedIndexName,
+            rankIndexName: recommendedRankIndexName,
+            updatedIndexName,
+            scoreCursor: recommendedCursor,
+            rankCursor: recommendedRankCursor,
+            updatedCursor,
+            hasMissingScores: hasMissingRecommendedScore,
           })
-        : requestedSort;
-
-    const indexName = args.nonSuspiciousOnly
-      ? NONSUSPICIOUS_SORT_INDEXES[sort]
-      : SORT_INDEXES[sort];
-
-    const decodedCursor = getPublicListCursorKey({
-      cursor: args.cursor,
-      sort,
-      nonSuspiciousOnly: args.nonSuspiciousOnly ?? false,
-      indexName,
-      eqPrefix,
-    });
+        : null;
+    const sort = recommendedResolution?.sort ?? requestedSort;
+    const indexName =
+      recommendedResolution?.indexName ??
+      (args.nonSuspiciousOnly ? NONSUSPICIOUS_SORT_INDEXES[sort] : SORT_INDEXES[sort]);
+    const decodedCursor =
+      recommendedResolution?.decodedCursor ??
+      getPublicListCursorKey({
+        cursor: args.cursor,
+        sort,
+        nonSuspiciousOnly: args.nonSuspiciousOnly ?? false,
+        indexName,
+        eqPrefix,
+      });
     const isFirstPage = !decodedCursor;
     const startIndexKey: IndexKey = decodedCursor ?? eqPrefix;
 
@@ -5614,6 +5663,7 @@ export const listPublicApiPageV1 = query({
     const recommendedIndexName = args.nonSuspiciousOnly
       ? NONSUSPICIOUS_SORT_INDEXES.recommended
       : SORT_INDEXES.recommended;
+    const recommendedRankIndexName = getRecommendedRankIndexName(args.nonSuspiciousOnly ?? false);
     const updatedIndexName = args.nonSuspiciousOnly
       ? NONSUSPICIOUS_SORT_INDEXES.updated
       : SORT_INDEXES.updated;
@@ -5623,6 +5673,12 @@ export const listPublicApiPageV1 = query({
       nonSuspiciousOnly: args.nonSuspiciousOnly ?? false,
       indexName: recommendedIndexName,
       eqPrefix,
+      allowLegacyArray: false,
+    });
+    const recommendedRankCursor = getRecommendedRankCursorKey({
+      cursor: args.cursor,
+      nonSuspiciousOnly: args.nonSuspiciousOnly ?? false,
+      eqPrefix,
     });
     const updatedCursor = getPublicListCursorKey({
       cursor: args.cursor,
@@ -5631,27 +5687,40 @@ export const listPublicApiPageV1 = query({
       indexName: updatedIndexName,
       eqPrefix,
     });
-    const sort =
+    const recommendedAnyCursor = recommendedCursor ?? recommendedRankCursor ?? updatedCursor;
+    const hasMissingRecommendedScore =
       requestedSort === "recommended"
-        ? resolveRecommendedPublicListSort({
-            decodedCursor: recommendedCursor ?? updatedCursor,
-            hasMissingRankStats: await hasMissingRecommendedRankStats(
-              ctx,
-              args.nonSuspiciousOnly ?? false,
-              recommendedCursor ?? updatedCursor,
-            ),
+        ? await hasMissingRecommendedScores(
+            ctx,
+            args.nonSuspiciousOnly ?? false,
+            recommendedAnyCursor,
+          )
+        : false;
+    const recommendedResolution =
+      requestedSort === "recommended"
+        ? resolveRecommendedPublicListQuery({
+            scoreIndexName: recommendedIndexName,
+            rankIndexName: recommendedRankIndexName,
+            updatedIndexName,
+            scoreCursor: recommendedCursor,
+            rankCursor: recommendedRankCursor,
+            updatedCursor,
+            hasMissingScores: hasMissingRecommendedScore,
           })
-        : requestedSort;
-    const indexName = args.nonSuspiciousOnly
-      ? NONSUSPICIOUS_SORT_INDEXES[sort]
-      : SORT_INDEXES[sort];
-    const decodedCursor = getPublicListCursorKey({
-      cursor: args.cursor,
-      sort,
-      nonSuspiciousOnly: args.nonSuspiciousOnly ?? false,
-      indexName,
-      eqPrefix,
-    });
+        : null;
+    const sort = recommendedResolution?.sort ?? requestedSort;
+    const indexName =
+      recommendedResolution?.indexName ??
+      (args.nonSuspiciousOnly ? NONSUSPICIOUS_SORT_INDEXES[sort] : SORT_INDEXES[sort]);
+    const decodedCursor =
+      recommendedResolution?.decodedCursor ??
+      getPublicListCursorKey({
+        cursor: args.cursor,
+        sort,
+        nonSuspiciousOnly: args.nonSuspiciousOnly ?? false,
+        indexName,
+        eqPrefix,
+      });
     const isFirstPage = !decodedCursor;
     const result = await getPage(ctx, {
       table: "skillSearchDigest",
@@ -6087,61 +6156,126 @@ function resolvePublicListDir(sort: SortKeyInput, dir: "asc" | "desc" | undefine
   return dir ?? (normalizedSort === "name" ? "asc" : "desc");
 }
 
-function resolveRecommendedPublicListSort({
-  decodedCursor,
-  hasMissingRankStats,
-}: {
-  decodedCursor: readonly unknown[] | null;
-  hasMissingRankStats: boolean;
-}): SortKey {
-  if (decodedCursor) {
-    return decodedCursor.length <= 5 ? "updated" : "recommended";
-  }
-  return hasMissingRankStats ? "updated" : "recommended";
+function getRecommendedRankIndexName(nonSuspiciousOnly: boolean) {
+  return nonSuspiciousOnly
+    ? RECOMMENDED_RANK_INDEXES.nonSuspicious
+    : RECOMMENDED_RANK_INDEXES.active;
 }
 
-async function hasMissingRecommendedRankStats(
+function getRecommendedRankCursorKey({
+  cursor,
+  nonSuspiciousOnly,
+  eqPrefix,
+}: {
+  cursor?: string;
+  nonSuspiciousOnly: boolean;
+  eqPrefix: IndexKey;
+}) {
+  const rankKey = nonSuspiciousOnly ? "nonSuspicious" : "active";
+  return decodePublicListCursor({
+    cursor,
+    indexName: RECOMMENDED_RANK_INDEXES[rankKey],
+    maxIndexKeyLength: RECOMMENDED_RANK_INDEX_FIELD_COUNTS[rankKey],
+    eqPrefix,
+  });
+}
+
+function resolveRecommendedPublicListQuery({
+  scoreIndexName,
+  rankIndexName,
+  updatedIndexName,
+  scoreCursor,
+  rankCursor,
+  updatedCursor,
+  hasMissingScores,
+}: {
+  scoreIndexName: SkillSearchDigestSortIndexName;
+  rankIndexName: SkillSearchDigestSortIndexName;
+  updatedIndexName: SkillSearchDigestSortIndexName;
+  scoreCursor: IndexKey | null;
+  rankCursor: IndexKey | null;
+  updatedCursor: IndexKey | null;
+  hasMissingScores: boolean;
+}): { sort: SortKey; indexName: SkillSearchDigestSortIndexName; decodedCursor: IndexKey | null } {
+  if (scoreCursor) {
+    return { sort: "recommended", indexName: scoreIndexName, decodedCursor: scoreCursor };
+  }
+  if (rankCursor) {
+    return { sort: "recommended", indexName: rankIndexName, decodedCursor: rankCursor };
+  }
+  if (updatedCursor) {
+    return { sort: "updated", indexName: updatedIndexName, decodedCursor: updatedCursor };
+  }
+  if (hasMissingScores) {
+    return { sort: "updated", indexName: updatedIndexName, decodedCursor: null };
+  }
+  return { sort: "recommended", indexName: scoreIndexName, decodedCursor: null };
+}
+
+async function hasMissingRecommendedScores(
   ctx: Pick<QueryCtx, "db">,
   nonSuspiciousOnly: boolean,
   decodedCursor: IndexKey | null,
 ) {
   if (decodedCursor) return false;
   if (nonSuspiciousOnly) {
-    const [missingStars, missingDownloads] = await Promise.all([
-      ctx.db
-        .query("skillSearchDigest")
-        .withIndex("by_nonsuspicious_stars", (q) =>
-          q.eq("softDeletedAt", undefined).eq("isSuspicious", false).eq("statsStars", undefined),
-        )
-        .first(),
-      ctx.db
-        .query("skillSearchDigest")
-        .withIndex("by_nonsuspicious_downloads", (q) =>
-          q
-            .eq("softDeletedAt", undefined)
-            .eq("isSuspicious", false)
-            .eq("statsDownloads", undefined),
-        )
-        .first(),
-    ]);
-    return Boolean(missingStars || missingDownloads);
+    const missingScore = await ctx.db
+      .query("skillSearchDigest")
+      .withIndex("by_nonsuspicious_recommended_score", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("isSuspicious", false)
+          .eq("recommendedScore", undefined),
+      )
+      .first();
+    if (missingScore) return true;
+
+    const missingVersion = await ctx.db
+      .query("skillSearchDigest")
+      .withIndex("by_nonsuspicious_recommended_score_version", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("isSuspicious", false)
+          .eq("recommendedScoreVersion", undefined),
+      )
+      .first();
+    if (missingVersion) return true;
+
+    const staleVersion = await ctx.db
+      .query("skillSearchDigest")
+      .withIndex("by_nonsuspicious_recommended_score_version", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("isSuspicious", false)
+          .lt("recommendedScoreVersion", RECOMMENDATION_SCORE_VERSION),
+      )
+      .first();
+    return Boolean(staleVersion);
   }
 
-  const [missingStars, missingDownloads] = await Promise.all([
-    ctx.db
-      .query("skillSearchDigest")
-      .withIndex("by_active_stats_stars", (q) =>
-        q.eq("softDeletedAt", undefined).eq("statsStars", undefined),
-      )
-      .first(),
-    ctx.db
-      .query("skillSearchDigest")
-      .withIndex("by_active_stats_downloads", (q) =>
-        q.eq("softDeletedAt", undefined).eq("statsDownloads", undefined),
-      )
-      .first(),
-  ]);
-  return Boolean(missingStars || missingDownloads);
+  const missingScore = await ctx.db
+    .query("skillSearchDigest")
+    .withIndex("by_active_recommended_score", (q) =>
+      q.eq("softDeletedAt", undefined).eq("recommendedScore", undefined),
+    )
+    .first();
+  if (missingScore) return true;
+
+  const missingVersion = await ctx.db
+    .query("skillSearchDigest")
+    .withIndex("by_active_recommended_score_version", (q) =>
+      q.eq("softDeletedAt", undefined).eq("recommendedScoreVersion", undefined),
+    )
+    .first();
+  if (missingVersion) return true;
+
+  const staleVersion = await ctx.db
+    .query("skillSearchDigest")
+    .withIndex("by_active_recommended_score_version", (q) =>
+      q.eq("softDeletedAt", undefined).lt("recommendedScoreVersion", RECOMMENDATION_SCORE_VERSION),
+    )
+    .first();
+  return Boolean(staleVersion);
 }
 
 function readDigestRankStat(
@@ -6151,6 +6285,19 @@ function readDigestRankStat(
   if (field === "downloads") return digest.statsDownloads ?? digest.stats.downloads ?? 0;
   if (field === "stars") return digest.statsStars ?? digest.stats.stars ?? 0;
   return digest.statsInstallsAllTime ?? digest.stats.installsAllTime ?? 0;
+}
+
+function readDigestRecommendationScore(digest: Doc<"skillSearchDigest">): number {
+  return (
+    (digest.recommendedScoreVersion === RECOMMENDATION_SCORE_VERSION
+      ? digest.recommendedScore
+      : undefined) ??
+    computeRecommendationScore({
+      downloads: readDigestRankStat(digest, "downloads"),
+      installs: readDigestRankStat(digest, "installsAllTime"),
+      stars: readDigestRankStat(digest, "stars"),
+    })
+  );
 }
 
 /** Fetch highlighted skills via the skillBadges index, then sort in JS. */
@@ -6206,8 +6353,7 @@ async function fetchHighlightedPage(
         );
       case "recommended":
         return (
-          (readDigestRankStat(a, "stars") - readDigestRankStat(b, "stars")) * multiplier ||
-          (readDigestRankStat(a, "downloads") - readDigestRankStat(b, "downloads")) * multiplier ||
+          (readDigestRecommendationScore(a) - readDigestRecommendationScore(b)) * multiplier ||
           (a.updatedAt - b.updatedAt) * multiplier
         );
       case "stars":
@@ -8881,6 +9027,7 @@ export const updateTags = mutation({
         createdAt: version.createdAt,
         changelog: version.changelog,
         changelogSource: version.changelogSource,
+        description: skillSummaryFromSkillVersion(version),
         clawdis: version.parsed?.clawdis,
         apiKeyRequired: version.apiKeyRequired,
       };
@@ -10935,6 +11082,7 @@ export const insertVersion = internalMutation({
             createdAt: now,
             changelog: args.changelog,
             changelogSource: args.changelogSource,
+            description: getFrontmatterValue(args.parsed.frontmatter, "description")?.trim(),
             clawdis: args.parsed.clawdis,
             // Filled later by the async analyser via
             // `updateVersionApiKeyRequiredInternal`.
@@ -11507,6 +11655,7 @@ export const backfillLatestVersionSummaryApiKeyRequiredInternal = internalMutati
             createdAt: version.createdAt,
             changelog: version.changelog,
             changelogSource: version.changelogSource,
+            description: skillSummaryFromSkillVersion(version),
             clawdis: version.parsed?.clawdis,
             apiKeyRequired: version.apiKeyRequired,
           },
@@ -11532,6 +11681,6 @@ export const backfillLatestVersionSummaryApiKeyRequiredInternal = internalMutati
 
 export const __test = {
   normalizePublicListSort,
-  resolveRecommendedPublicListSort,
+  resolveRecommendedPublicListQuery,
   resolvePublicListDir,
 };

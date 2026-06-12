@@ -1,11 +1,14 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { isPluginCategorySlug } from "clawhub-schema";
-import { PackageSearch, Search } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "convex/react";
+import { PackageSearch, Search, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { api } from "../../../convex/_generated/api";
 import { BrowseSidebar } from "../../components/BrowseSidebar";
 import { PluginListItem } from "../../components/PluginListItem";
 import { BrowseResultsSkeleton } from "../../components/skeletons/BrowseResultsSkeleton";
 import { Button } from "../../components/ui/button";
+import { formatBrowseCount } from "../../lib/browseCount";
 import { PLUGIN_CATEGORIES } from "../../lib/categories";
 import {
   fetchPluginCatalog,
@@ -13,9 +16,11 @@ import {
   type PackageListItem,
 } from "../../lib/packageApi";
 
-type PluginSort = "relevance" | "updated" | "downloads" | "newest" | "name";
+type VisiblePluginSort = "recommended" | "updated" | "downloads";
+type PluginSort = VisiblePluginSort | "relevance";
+type LegacyPluginSort = PluginSort | "newest" | "name";
 
-const PLUGINS_PAGE_SIZE = 100;
+const PLUGINS_PAGE_SIZE = 25;
 
 type PluginSearchState = {
   q?: string;
@@ -25,12 +30,18 @@ type PluginSearchState = {
   featured?: boolean;
   official?: boolean;
   executesCode?: boolean;
-  sort?: PluginSort;
+  sort?: LegacyPluginSort;
   view?: LegacyPluginView;
 };
 
 type PluginView = "list" | "grid";
 type LegacyPluginView = PluginView | "cards";
+
+const PLUGIN_SORT_OPTIONS = [
+  { value: "recommended", label: "Recommended" },
+  { value: "downloads", label: "Most downloaded" },
+  { value: "updated", label: "Recently updated" },
+];
 
 function normalizePluginView(value: unknown): PluginView | undefined {
   if (value === "list") return "list";
@@ -43,8 +54,33 @@ type PluginsLoaderData = {
   nextCursor: string | null;
   rateLimited: boolean;
   retryAfterSeconds: number | null;
+  totalCount?: number | null;
+  isLoading?: boolean;
   apiError?: boolean;
 };
+
+type PluginsPageDataRequest = {
+  q?: string;
+  category?: string;
+  cursor?: string;
+  featured?: boolean;
+  official?: boolean;
+  executesCode?: boolean;
+  sort?: PluginSort;
+  signal?: AbortSignal;
+};
+
+function createPluginsLoadingData(): PluginsLoaderData {
+  return {
+    items: [],
+    nextCursor: null,
+    rateLimited: false,
+    retryAfterSeconds: null,
+    totalCount: null,
+    isLoading: true,
+    apiError: false,
+  };
+}
 
 function formatRetryDelay(retryAfterSeconds: number | null) {
   if (!retryAfterSeconds || retryAfterSeconds <= 0) return "in a moment";
@@ -55,8 +91,9 @@ function formatRetryDelay(retryAfterSeconds: number | null) {
   return `in about ${minutes} minute${minutes === 1 ? "" : "s"}`;
 }
 
-function parsePluginSort(value: unknown): PluginSort | undefined {
+function parsePluginSort(value: unknown): LegacyPluginSort | undefined {
   if (
+    value === "recommended" ||
     value === "relevance" ||
     value === "updated" ||
     value === "downloads" ||
@@ -69,7 +106,7 @@ function parsePluginSort(value: unknown): PluginSort | undefined {
 }
 
 function sortPluginSearchItems(items: PackageListItem[], sort: PluginSort) {
-  if (sort === "relevance") return items;
+  if (sort === "recommended" || sort === "relevance") return items;
   const sorted = [...items];
   sorted.sort((a, b) => {
     const tieBreak = () =>
@@ -77,23 +114,6 @@ function sortPluginSearchItems(items: PackageListItem[], sort: PluginSort) {
       b.createdAt - a.createdAt ||
       a.family.localeCompare(b.family) ||
       a.name.localeCompare(b.name);
-
-    if (sort === "name") {
-      return (
-        a.displayName.localeCompare(b.displayName) ||
-        a.name.localeCompare(b.name) ||
-        a.family.localeCompare(b.family)
-      );
-    }
-
-    if (sort === "newest") {
-      return (
-        b.createdAt - a.createdAt ||
-        b.updatedAt - a.updatedAt ||
-        a.family.localeCompare(b.family) ||
-        a.name.localeCompare(b.name)
-      );
-    }
 
     if (sort === "downloads") {
       return (b.stats?.downloads ?? 0) - (a.stats?.downloads ?? 0) || tieBreak();
@@ -104,16 +124,67 @@ function sortPluginSearchItems(items: PackageListItem[], sort: PluginSort) {
   return sorted;
 }
 
-function formatPluginHeadingCount(count: number, hasNextPage: boolean, hasPreviousPage: boolean) {
-  if (hasPreviousPage) return `${count} shown`;
-  if (hasNextPage) return `${count}+`;
-  return String(count);
+function normalizeActivePluginSort(sort: LegacyPluginSort | undefined): PluginSort | undefined {
+  if (sort === "newest" || sort === "name") return undefined;
+  return sort;
 }
 
-function formatPluginResultsCount(count: number, hasNextPage: boolean, hasPreviousPage: boolean) {
-  if (hasPreviousPage) return `${count} result${count === 1 ? "" : "s"} shown`;
-  if (hasNextPage) return `${count}+ results`;
-  return `${count} result${count === 1 ? "" : "s"}`;
+function isNavigationAbortError(err: unknown, signal?: AbortSignal) {
+  if (signal?.aborted) return true;
+  return err instanceof Error && err.name === "AbortError";
+}
+
+export async function loadPluginsPageData(
+  args: PluginsPageDataRequest,
+): Promise<PluginsLoaderData> {
+  try {
+    const data = await fetchPluginCatalog({
+      q: args.q,
+      category: args.category,
+      cursor: args.q ? undefined : args.cursor,
+      featured: args.featured,
+      isOfficial: args.official,
+      executesCode: args.executesCode,
+      ...(!args.q && (args.sort === "downloads" || !args.sort || args.sort === "recommended")
+        ? { sort: args.sort ?? "recommended" }
+        : {}),
+      limit: PLUGINS_PAGE_SIZE,
+      signal: args.signal,
+    });
+
+    return {
+      items: data?.items ?? [],
+      nextCursor: data?.nextCursor ?? null,
+      totalCount: data?.totalCount ?? null,
+      rateLimited: false,
+      retryAfterSeconds: null,
+      isLoading: false,
+      apiError: false,
+    };
+  } catch (error) {
+    if (isNavigationAbortError(error, args.signal)) throw error;
+    if (isRateLimitedPackageApiError(error)) {
+      return {
+        items: [],
+        nextCursor: null,
+        rateLimited: true,
+        retryAfterSeconds: error.retryAfterSeconds,
+        totalCount: null,
+        isLoading: false,
+        apiError: false,
+      };
+    }
+
+    return {
+      items: [],
+      nextCursor: null,
+      rateLimited: false,
+      retryAfterSeconds: null,
+      totalCount: null,
+      isLoading: false,
+      apiError: true,
+    };
+  }
 }
 
 export const Route = createFileRoute("/plugins/")({
@@ -148,71 +219,27 @@ export const Route = createFileRoute("/plugins/")({
   beforeLoad: ({ search }) => {
     const hasQuery = Boolean(search.q?.trim());
     const incompatibleSort =
-      !hasQuery && search.sort && search.sort !== "updated" && search.sort !== "downloads";
-    const browseOnlyFeatured = hasQuery && search.featured;
+      search.sort &&
+      search.sort !== "recommended" &&
+      search.sort !== "updated" &&
+      search.sort !== "downloads" &&
+      !(hasQuery && search.sort === "relevance");
+    const staleFeatured = Boolean(search.featured);
     const invalidCategory = Boolean(search.category && !isPluginCategorySlug(search.category));
-    if (incompatibleSort || browseOnlyFeatured || invalidCategory) {
+    if (incompatibleSort || staleFeatured || invalidCategory) {
       throw redirect({
         to: "/plugins",
         search: {
           ...search,
           category: invalidCategory ? undefined : search.category,
-          featured: browseOnlyFeatured ? undefined : search.featured,
+          featured: staleFeatured ? undefined : search.featured,
           sort: incompatibleSort ? undefined : search.sort,
         },
         replace: true,
       });
     }
   },
-  loaderDeps: ({ search }) => ({
-    q: search.q,
-    category: search.category,
-    cursor: search.cursor,
-    featured: search.featured,
-    official: search.official,
-    executesCode: search.executesCode,
-    sort: search.sort,
-  }),
-  loader: async ({ deps }): Promise<PluginsLoaderData> => {
-    try {
-      const data = await fetchPluginCatalog({
-        q: deps.q,
-        category: deps.category,
-        cursor: deps.q ? undefined : deps.cursor,
-        featured: deps.featured,
-        isOfficial: deps.official,
-        executesCode: deps.executesCode,
-        ...(!deps.q && deps.sort === "downloads" ? { sort: deps.sort } : {}),
-        limit: PLUGINS_PAGE_SIZE,
-      });
-
-      return {
-        items: data?.items ?? [],
-        nextCursor: data?.nextCursor ?? null,
-        rateLimited: false,
-        retryAfterSeconds: null,
-        apiError: false,
-      };
-    } catch (error) {
-      if (isRateLimitedPackageApiError(error)) {
-        return {
-          items: [],
-          nextCursor: null,
-          rateLimited: true,
-          retryAfterSeconds: error.retryAfterSeconds,
-          apiError: false,
-        };
-      }
-
-      return {
-        items: [],
-        nextCursor: null,
-        rateLimited: false,
-        retryAfterSeconds: null,
-        apiError: true,
-      };
-    }
-  },
+  loader: (): PluginsLoaderData => createPluginsLoadingData(),
   component: PluginsIndex,
 });
 
@@ -224,22 +251,31 @@ function PluginsIndexPending() {
           Filters
         </button>
         <h1 className="browse-title">Plugins</h1>
+        <div className="browse-view-toggle">
+          <button className="browse-view-btn is-active" type="button" disabled>
+            List
+          </button>
+          <button className="browse-view-btn" type="button" disabled>
+            Grid
+          </button>
+        </div>
       </div>
       <div className="browse-page-search">
         <Search size={15} className="navbar-search-icon" aria-hidden="true" />
-        <input className="browse-search-input" placeholder="Search plugins..." disabled />
+        <input
+          className="browse-search-input"
+          aria-label="Search plugins"
+          placeholder="Search plugins..."
+          disabled
+        />
       </div>
       <div className="browse-layout">
         <BrowseSidebar
           categories={PLUGIN_CATEGORIES}
           activeCategory={undefined}
           onCategoryChange={() => {}}
-          sortOptions={[
-            { value: "featured", label: "Featured" },
-            { value: "downloads", label: "Most downloaded" },
-            { value: "updated", label: "Recently updated" },
-          ]}
-          activeSort="updated"
+          sortOptions={PLUGIN_SORT_OPTIONS}
+          activeSort="recommended"
           onSortChange={() => {}}
           filters={[
             { key: "official", label: "Official only", active: false },
@@ -250,14 +286,6 @@ function PluginsIndexPending() {
         <div className="browse-results">
           <div className="browse-results-toolbar">
             <span className="browse-results-count">Loading results</span>
-            <div className="browse-view-toggle">
-              <button className="browse-view-btn is-active" type="button" disabled>
-                List
-              </button>
-              <button className="browse-view-btn" type="button" disabled>
-                Grid
-              </button>
-            </div>
           </div>
           <BrowseResultsSkeleton />
         </div>
@@ -269,57 +297,94 @@ function PluginsIndexPending() {
 function PluginsIndex() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
-  const loaderData = Route.useLoaderData() as PluginsLoaderData | undefined;
+  const initialLoaderData = Route.useLoaderData() as PluginsLoaderData | undefined;
+  const [catalogData, setCatalogData] = useState<PluginsLoaderData>(
+    () => initialLoaderData ?? createPluginsLoadingData(),
+  );
+  const shouldKeepInitialDataRef = useRef(
+    Boolean(initialLoaderData && !initialLoaderData.isLoading),
+  );
 
   // Defensive handling for when loader data is unavailable (SSR errors, etc.)
-  const items = loaderData?.items ?? [];
-  const nextCursor = loaderData?.nextCursor ?? null;
-  const rateLimited = loaderData?.rateLimited ?? false;
-  const retryAfterSeconds = loaderData?.retryAfterSeconds ?? null;
-  const apiError = loaderData?.apiError ?? !loaderData;
+  const items = catalogData.items;
+  const nextCursor = catalogData.nextCursor;
+  const rateLimited = catalogData.rateLimited;
+  const retryAfterSeconds = catalogData.retryAfterSeconds;
+  const totalPluginsCount = useQuery(api.packages.countPublicPlugins, {});
+  const totalCount = catalogData.totalCount ?? totalPluginsCount ?? null;
+  const isLoading = catalogData.isLoading ?? false;
+  const apiError = catalogData.apiError ?? false;
   const view = normalizePluginView(search.view) ?? "list";
 
   const [query, setQuery] = useState(search.q ?? "");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchNavigateTimer = useRef<number>(0);
 
   useEffect(() => {
     setQuery(search.q ?? "");
   }, [search.q]);
 
   const hasQuery = Boolean(search.q?.trim());
+  const hasActiveFilters =
+    hasQuery ||
+    Boolean(search.category) ||
+    Boolean(search.official) ||
+    Boolean(search.executesCode) ||
+    Boolean(search.featured);
+  const formattedCount = !hasActiveFilters ? formatBrowseCount(totalCount) : null;
+
+  useEffect(() => {
+    if (shouldKeepInitialDataRef.current) {
+      shouldKeepInitialDataRef.current = false;
+      return () => {};
+    }
+    const controller = new AbortController();
+    setCatalogData(createPluginsLoadingData());
+    void loadPluginsPageData({
+      q: search.q,
+      category: search.category,
+      cursor: search.cursor,
+      featured: search.featured,
+      official: search.official,
+      executesCode: search.executesCode,
+      sort: normalizeActivePluginSort(search.sort),
+      signal: controller.signal,
+    })
+      .then((data) => setCatalogData(data))
+      .catch((error) => {
+        if (isNavigationAbortError(error, controller.signal)) return;
+        setCatalogData({
+          items: [],
+          nextCursor: null,
+          rateLimited: false,
+          retryAfterSeconds: null,
+          totalCount: null,
+          isLoading: false,
+          apiError: true,
+        });
+      });
+    return () => controller.abort();
+  }, [
+    search.category,
+    search.cursor,
+    search.executesCode,
+    search.featured,
+    search.official,
+    search.q,
+    search.sort,
+  ]);
 
   const activeCategory = search.category;
 
-  const activeSort = hasQuery
-    ? (search.sort ?? "relevance")
-    : search.featured
-      ? "featured"
-      : (search.sort ?? "updated");
+  const activeSort: PluginSort =
+    search.sort === "relevance" || search.sort === "newest" || search.sort === "name"
+      ? "recommended"
+      : (search.sort ?? "recommended");
   const visibleItems = useMemo(
-    () => (hasQuery ? sortPluginSearchItems(items, activeSort as PluginSort) : items),
+    () => (hasQuery ? sortPluginSearchItems(items, activeSort) : items),
     [activeSort, hasQuery, items],
   );
-  const hasPreviousPage = Boolean(!hasQuery && search.cursor);
-  const hasNextPage = Boolean(!hasQuery && nextCursor);
-  const headingCount = formatPluginHeadingCount(visibleItems.length, hasNextPage, hasPreviousPage);
-  const resultsCount = formatPluginResultsCount(visibleItems.length, hasNextPage, hasPreviousPage);
-
-  const sortOptions = useMemo(() => {
-    if (hasQuery) {
-      return [
-        { value: "relevance", label: "Relevance" },
-        { value: "downloads", label: "Most downloaded" },
-        { value: "updated", label: "Recently updated" },
-        { value: "newest", label: "Newest" },
-        { value: "name", label: "Name" },
-      ];
-    }
-    return [
-      { value: "featured", label: "Featured" },
-      { value: "downloads", label: "Most downloaded" },
-      { value: "updated", label: "Recently updated" },
-    ];
-  }, [hasQuery]);
 
   const handleFilterToggle = (key: string) => {
     if (key === "official") {
@@ -342,33 +407,14 @@ function PluginsIndex() {
   };
 
   const handleSortChange = (value: string) => {
-    if (value === "featured") {
-      void navigate({
-        search: (prev: PluginSearchState) => ({
-          ...prev,
-          cursor: undefined,
-          featured: true,
-          family: undefined,
-          q: undefined,
-          sort: undefined,
-        }),
-      });
-      return;
-    }
-
-    if (hasQuery) {
-      void navigate({
-        search: (prev: PluginSearchState) => ({
-          ...prev,
-          cursor: undefined,
-          family: undefined,
-          featured: undefined,
-          sort: parsePluginSort(value) === "relevance" ? undefined : parsePluginSort(value),
-        }),
-        replace: true,
-      });
-      return;
-    }
+    const nextSort = parsePluginSort(value);
+    const sort =
+      nextSort === "recommended" ||
+      nextSort === "relevance" ||
+      nextSort === "newest" ||
+      nextSort === "name"
+        ? undefined
+        : nextSort;
 
     void navigate({
       search: (prev: PluginSearchState) => ({
@@ -376,7 +422,7 @@ function PluginsIndex() {
         cursor: undefined,
         family: undefined,
         featured: undefined,
-        sort: parsePluginSort(value) === "updated" ? undefined : parsePluginSort(value),
+        sort,
       }),
       replace: true,
     });
@@ -397,17 +443,58 @@ function PluginsIndex() {
     });
   };
 
+  useEffect(() => {
+    return () => window.clearTimeout(searchNavigateTimer.current);
+  }, []);
+
+  const navigateToPluginSearch = useCallback(
+    (next: string, replace: boolean) => {
+      const trimmed = next.trim();
+      void navigate({
+        search: (prev: PluginSearchState) => ({
+          ...prev,
+          cursor: undefined,
+          family: undefined,
+          q: trimmed ? next : undefined,
+          featured: undefined,
+          sort: undefined,
+        }),
+        replace,
+      });
+    },
+    [navigate],
+  );
+
+  const handleQueryChange = useCallback(
+    (next: string) => {
+      setQuery(next);
+      window.clearTimeout(searchNavigateTimer.current);
+      searchNavigateTimer.current = window.setTimeout(() => {
+        navigateToPluginSearch(next, true);
+      }, 220);
+    },
+    [navigateToPluginSearch],
+  );
+
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
+    window.clearTimeout(searchNavigateTimer.current);
+    navigateToPluginSearch(query, false);
+  };
+
+  const handleClearSearch = () => {
+    window.clearTimeout(searchNavigateTimer.current);
+    setQuery("");
+    searchInputRef.current?.focus();
     void navigate({
       search: (prev: PluginSearchState) => ({
         ...prev,
+        q: undefined,
         cursor: undefined,
-        family: undefined,
-        q: query.trim() || undefined,
-        featured: undefined,
         sort: undefined,
+        featured: undefined,
       }),
+      replace: true,
     });
   };
 
@@ -419,24 +506,6 @@ function PluginsIndex() {
       }),
       replace: true,
     });
-  };
-
-  const handleClear = () => {
-    void navigate({
-      search: (prev: PluginSearchState) => ({
-        ...prev,
-        cursor: undefined,
-        family: undefined,
-        q: undefined,
-        category: undefined,
-        official: undefined,
-        executesCode: undefined,
-        featured: undefined,
-        sort: undefined,
-      }),
-      replace: true,
-    });
-    setQuery("");
   };
 
   return (
@@ -451,24 +520,58 @@ function PluginsIndex() {
           Filters
         </button>
         <h1 className="browse-title">
-          Plugins <span className="browse-count">{headingCount}</span>
+          Plugins
+          {formattedCount ? (
+            <>
+              {" "}
+              <span className="browse-count">{formattedCount}</span>
+            </>
+          ) : null}
         </h1>
+        <div className="browse-view-toggle">
+          <button
+            className={`browse-view-btn${view === "list" ? " is-active" : ""}`}
+            type="button"
+            onClick={view === "grid" ? handleToggleView : undefined}
+          >
+            List
+          </button>
+          <button
+            className={`browse-view-btn${view === "grid" ? " is-active" : ""}`}
+            type="button"
+            onClick={view === "list" ? handleToggleView : undefined}
+          >
+            Grid
+          </button>
+        </div>
       </div>
       <form className="browse-page-search" onSubmit={handleSearch}>
         <Search size={15} className="navbar-search-icon" aria-hidden="true" />
         <input
+          ref={searchInputRef}
           className="browse-search-input"
+          aria-label="Search plugins"
           placeholder="Search plugins..."
           value={query}
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={(event) => handleQueryChange(event.target.value)}
         />
+        {query ? (
+          <button
+            type="button"
+            className="browse-search-clear"
+            aria-label="Clear plugin search"
+            onClick={handleClearSearch}
+          >
+            <X size={14} aria-hidden="true" />
+          </button>
+        ) : null}
       </form>
       <div className={`browse-layout${sidebarOpen ? " sidebar-open" : ""}`}>
         <BrowseSidebar
           categories={PLUGIN_CATEGORIES}
           activeCategory={activeCategory}
           onCategoryChange={handleCategoryChange}
-          sortOptions={sortOptions}
+          sortOptions={PLUGIN_SORT_OPTIONS}
           activeSort={activeSort}
           onSortChange={handleSortChange}
           filters={[
@@ -478,38 +581,9 @@ function PluginsIndex() {
           onFilterToggle={handleFilterToggle}
         />
         <div className="browse-results">
-          <div className="browse-results-toolbar">
-            <span className="browse-results-count">
-              {resultsCount}
-              {hasQuery ||
-              search.category ||
-              search.official ||
-              search.executesCode ||
-              search.featured ? (
-                <button className="browse-clear-btn" type="button" onClick={handleClear}>
-                  Clear
-                </button>
-              ) : null}
-            </span>
-            <div className="browse-view-toggle">
-              <button
-                className={`browse-view-btn${view === "list" ? " is-active" : ""}`}
-                type="button"
-                onClick={view === "grid" ? handleToggleView : undefined}
-              >
-                List
-              </button>
-              <button
-                className={`browse-view-btn${view === "grid" ? " is-active" : ""}`}
-                type="button"
-                onClick={view === "list" ? handleToggleView : undefined}
-              >
-                Grid
-              </button>
-            </div>
-          </div>
-
-          {apiError ? (
+          {isLoading ? (
+            <BrowseResultsSkeleton variant={view} />
+          ) : apiError ? (
             <div className="empty-state">
               <PackageSearch size={22} className="empty-state-icon" aria-hidden="true" />
               <p className="empty-state-title">Unable to load plugins</p>
@@ -540,7 +614,7 @@ function PluginsIndex() {
             </div>
           )}
 
-          {!hasQuery && (search.cursor || nextCursor) ? (
+          {!isLoading && !hasQuery && (search.cursor || nextCursor) ? (
             <div className="mt-5 flex justify-center gap-3">
               {search.cursor ? (
                 <Button

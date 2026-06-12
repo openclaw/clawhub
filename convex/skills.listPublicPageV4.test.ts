@@ -1,5 +1,9 @@
 /* @vitest-environment node */
 import { describe, expect, it, vi } from "vitest";
+import {
+  computeRecommendationScore,
+  RECOMMENDATION_SCORE_VERSION,
+} from "./lib/recommendationScore";
 import schema from "./schema";
 
 vi.mock("@convex-dev/auth/server", () => ({
@@ -19,12 +23,21 @@ const listPublicPageV4Handler = (
 )._handler;
 
 describe("skills.listPublicPageV4", () => {
-  it("defines recommended rank indexes in contract order", () => {
+  it("defines recommended indexes in contract order", () => {
     expect(getSkillSearchDigestIndexFields("by_active_recommended_rank")).toEqual([
       "softDeletedAt",
       "statsStars",
       "statsDownloads",
       "updatedAt",
+    ]);
+    expect(getSkillSearchDigestIndexFields("by_active_recommended_score")).toEqual([
+      "softDeletedAt",
+      "recommendedScore",
+      "updatedAt",
+    ]);
+    expect(getSkillSearchDigestIndexFields("by_active_recommended_score_version")).toEqual([
+      "softDeletedAt",
+      "recommendedScoreVersion",
     ]);
     expect(getSkillSearchDigestIndexFields("by_nonsuspicious_recommended_rank")).toEqual([
       "softDeletedAt",
@@ -32,6 +45,17 @@ describe("skills.listPublicPageV4", () => {
       "statsStars",
       "statsDownloads",
       "updatedAt",
+    ]);
+    expect(getSkillSearchDigestIndexFields("by_nonsuspicious_recommended_score")).toEqual([
+      "softDeletedAt",
+      "isSuspicious",
+      "recommendedScore",
+      "updatedAt",
+    ]);
+    expect(getSkillSearchDigestIndexFields("by_nonsuspicious_recommended_score_version")).toEqual([
+      "softDeletedAt",
+      "isSuspicious",
+      "recommendedScoreVersion",
     ]);
   });
 
@@ -45,54 +69,43 @@ describe("skills.listPublicPageV4", () => {
     expect(__test.resolvePublicListDir("downloads", "asc")).toBe("asc");
   });
 
-  it("keeps recommended-rank cursors on the index that created them", () => {
+  it("uses the score index after recommendation scores are backfilled", () => {
     expect(
-      __test.resolveRecommendedPublicListSort({
-        decodedCursor: null,
-        hasMissingRankStats: false,
+      __test.resolveRecommendedPublicListQuery({
+        scoreIndexName: "by_active_recommended_score",
+        rankIndexName: "by_active_recommended_rank",
+        updatedIndexName: "by_active_updated",
+        scoreCursor: null,
+        rankCursor: null,
+        updatedCursor: null,
+        hasMissingScores: false,
       }),
-    ).toBe("recommended");
-    expect(
-      __test.resolveRecommendedPublicListSort({
-        decodedCursor: null,
-        hasMissingRankStats: true,
-      }),
-    ).toBe("updated");
-    expect(
-      __test.resolveRecommendedPublicListSort({
-        decodedCursor: [undefined, 123, 456, "skillSearchDigest:updated"],
-        hasMissingRankStats: false,
-      }),
-    ).toBe("updated");
-    expect(
-      __test.resolveRecommendedPublicListSort({
-        decodedCursor: [undefined, false, 123, 456, "skillSearchDigest:nonsuspicious-updated"],
-        hasMissingRankStats: false,
-      }),
-    ).toBe("updated");
-    expect(
-      __test.resolveRecommendedPublicListSort({
-        decodedCursor: [undefined, 10, 20, 123, 456, "skillSearchDigest:recommended"],
-        hasMissingRankStats: true,
-      }),
-    ).toBe("recommended");
-    expect(
-      __test.resolveRecommendedPublicListSort({
-        decodedCursor: [
-          undefined,
-          false,
-          10,
-          20,
-          123,
-          456,
-          "skillSearchDigest:nonsuspicious-recommended",
-        ],
-        hasMissingRankStats: true,
-      }),
-    ).toBe("recommended");
+    ).toEqual({
+      sort: "recommended",
+      indexName: "by_active_recommended_score",
+      decodedCursor: null,
+    });
   });
 
-  it("sorts highlighted recommended results by stars, downloads, then updatedAt", async () => {
+  it("falls back to updated results while recommendation scores are missing", () => {
+    expect(
+      __test.resolveRecommendedPublicListQuery({
+        scoreIndexName: "by_active_recommended_score",
+        rankIndexName: "by_active_recommended_rank",
+        updatedIndexName: "by_active_updated",
+        scoreCursor: null,
+        rankCursor: null,
+        updatedCursor: null,
+        hasMissingScores: true,
+      }),
+    ).toEqual({
+      sort: "updated",
+      indexName: "by_active_updated",
+      decodedCursor: null,
+    });
+  });
+
+  it("sorts highlighted recommended results by weighted score, then updatedAt", async () => {
     const result = await listPublicPageV4Handler(
       makeHighlightedCtx([
         makeDigest({
@@ -132,10 +145,47 @@ describe("skills.listPublicPageV4", () => {
     );
 
     expect(result.page.map((entry) => entry.skill.slug)).toEqual([
-      "stars-skill",
       "downloads-skill",
       "updated-skill",
       "installs-skill",
+      "stars-skill",
+    ]);
+  });
+
+  it("recomputes highlighted recommended scores when the stored score is stale", async () => {
+    const result = await listPublicPageV4Handler(
+      makeHighlightedCtx([
+        makeDigest({
+          id: "old-download-score",
+          slug: "old-download-score",
+          stars: 0,
+          installsAllTime: 2,
+          downloads: 43_080,
+          updatedAt: 100,
+          recommendedScore: computeRecommendationScore({
+            downloads: 43_080,
+            installs: 2,
+            stars: 0,
+          }),
+          recommendedScoreVersion: RECOMMENDATION_SCORE_VERSION,
+        }),
+        makeDigest({
+          id: "stale-install-score",
+          slug: "stale-install-score",
+          stars: 0,
+          installsAllTime: 74,
+          downloads: 393,
+          updatedAt: 100,
+          recommendedScore: 1,
+          recommendedScoreVersion: RECOMMENDATION_SCORE_VERSION - 1,
+        }),
+      ]),
+      { highlightedOnly: true, numItems: 10 },
+    );
+
+    expect(result.page.map((entry) => entry.skill.slug)).toEqual([
+      "old-download-score",
+      "stale-install-score",
     ]);
   });
 });
@@ -218,6 +268,8 @@ function makeDigest(params: {
   installsAllTime: number;
   downloads: number;
   updatedAt: number;
+  recommendedScore?: number;
+  recommendedScoreVersion?: number;
 }) {
   return {
     _id: `skillSearchDigest:${params.id}`,
@@ -252,6 +304,8 @@ function makeDigest(params: {
     statsStars: params.stars,
     statsInstallsCurrent: 0,
     statsInstallsAllTime: params.installsAllTime,
+    recommendedScore: params.recommendedScore,
+    recommendedScoreVersion: params.recommendedScoreVersion,
     softDeletedAt: undefined,
     moderationStatus: "active",
     moderationFlags: [],

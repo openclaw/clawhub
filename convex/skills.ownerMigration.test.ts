@@ -314,7 +314,7 @@ function createMigrationFixture(params: {
       if (table === "authAccounts") {
         return {
           withIndex: () => ({
-            unique: async () => null,
+            take: async () => [],
           }),
         };
       }

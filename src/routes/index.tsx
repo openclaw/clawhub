@@ -654,7 +654,7 @@ function SkillsHome() {
             </div>
             <div className="home-v2-cat-text">
               <div className="home-v2-cat-name">Publishers</div>
-              <div className="home-v2-cat-desc">Builders and orgs</div>
+              <div className="home-v2-cat-desc">People and organizations</div>
             </div>
             <span className="home-v2-cat-arrow">
               <ChevronRight size={16} />

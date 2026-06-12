@@ -1,14 +1,16 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { LayoutGrid, List, Search } from "lucide-react";
+import { createFileRoute } from "@tanstack/react-router";
+import { Search, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
+import { BrowseSidebar } from "../../components/BrowseSidebar";
 import { PublisherListItem } from "../../components/PublisherListItem";
 import { Button } from "../../components/ui/button";
 import { convexHttp } from "../../convex/client";
+import { formatBrowseCount } from "../../lib/browseCount";
 import type { PublicPublisherListItem } from "../../lib/publicUser";
 import { getClawHubSiteUrl, SITE_NAME } from "../../lib/site";
 
-type PublisherKindSearch = "orgs" | "builders";
+type PublisherKindSearch = "orgs" | "people";
 type PublisherViewSearch = "list" | "grid";
 
 type PublishersSearchState = {
@@ -35,31 +37,16 @@ type PublishersLoaderResult = {
 
 const PUBLISHER_PAGE_SIZE = 25;
 
-function listedCountLabel(value: number, total: number, kind?: PublisherKindSearch) {
-  const label =
-    kind === "orgs"
-      ? total === 1
-        ? "org"
-        : "orgs"
-      : kind === "builders"
-        ? total === 1
-          ? "builder"
-          : "builders"
-        : total === 1
-          ? "publisher"
-          : "publishers";
-  return total > value ? `Showing ${value} of ${total} ${label}` : `Showing all ${total} ${label}`;
+function normalizePublisherKind(value: unknown): PublisherKindSearch | undefined {
+  if (value === "orgs") return "orgs";
+  if (value === "people" || value === "builders" || value === "individuals") return "people";
+  return undefined;
 }
 
 export const Route = createFileRoute("/publishers/")({
   validateSearch: (search): PublishersSearchState => ({
-    kind:
-      search.kind === "orgs" || search.kind === "builders" || search.kind === "individuals"
-        ? search.kind === "individuals"
-          ? "builders"
-          : search.kind
-        : undefined,
-    q: typeof search.q === "string" && search.q.trim() ? search.q : undefined,
+    kind: normalizePublisherKind(search.kind),
+    q: typeof search.q === "string" && search.q.trim() ? search.q.trim() : undefined,
     view: search.view === "grid" ? "grid" : undefined,
   }),
   loaderDeps: ({ search }) => search,
@@ -90,7 +77,7 @@ export const Route = createFileRoute("/publishers/")({
   },
   loader: async ({ deps }): Promise<PublishersLoaderResult> =>
     (await convexHttp.query(api.publishers.listPublicPage, {
-      kind: deps.kind === "orgs" ? "org" : deps.kind === "builders" ? "user" : undefined,
+      kind: deps.kind === "orgs" ? "org" : deps.kind === "people" ? "user" : undefined,
       query: deps.q,
       paginationOpts: { cursor: null, numItems: PUBLISHER_PAGE_SIZE },
     })) as PublishersLoaderResult,
@@ -107,24 +94,18 @@ function PublishersIndex() {
     result.isDone ? null : result.continueCursor,
   );
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const loadMoreInFlightRef = useRef(false);
-  const counts = result.counts ?? {
-    all: publishers.length,
-    organizations: publishers.filter((publisher) => publisher.kind === "org").length,
-    individuals: publishers.filter((publisher) => publisher.kind === "user").length,
-  };
-  const globalCounts = result.globalCounts ?? counts;
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const activeKind = search.kind;
   const activeView = search.view ?? "list";
-  const activeTotal =
-    activeKind === "orgs"
-      ? counts.organizations
-      : activeKind === "builders"
-        ? counts.individuals
-        : counts.all;
   const canLoadMore = Boolean(nextCursor);
   const hasQuery = Boolean(search.q?.trim());
+  const hasActiveFilters = hasQuery || Boolean(activeKind);
+  const formattedCount = !hasActiveFilters
+    ? formatBrowseCount(result.globalCounts?.all ?? result.counts.all)
+    : null;
   const showHighlights = !hasQuery && !activeKind;
   const highlightedPublishers = showHighlights ? publishers.slice(0, 3) : [];
   const directoryPublishers = showHighlights ? publishers.slice(3) : publishers;
@@ -152,13 +133,36 @@ function PublishersIndex() {
     [navigate],
   );
 
-  const handleClear = useCallback(() => {
+  const handleClearQuery = useCallback(() => {
     setQuery("");
+    searchInputRef.current?.focus();
     void navigate({
       search: (prev: PublishersSearchState) => ({
         ...prev,
         q: undefined,
-        kind: undefined,
+      }),
+      replace: true,
+    });
+  }, [navigate]);
+
+  const handleKindChange = useCallback(
+    (kind: string | undefined) => {
+      void navigate({
+        search: (prev: PublishersSearchState) => ({
+          ...prev,
+          kind: normalizePublisherKind(kind),
+        }),
+        replace: true,
+      });
+    },
+    [navigate],
+  );
+
+  const handleToggleView = useCallback(() => {
+    void navigate({
+      search: (prev: PublishersSearchState) => ({
+        ...prev,
+        view: prev.view === "grid" ? undefined : "grid",
       }),
       replace: true,
     });
@@ -170,7 +174,7 @@ function PublishersIndex() {
     setIsLoadingMore(true);
     try {
       const page = (await convexHttp.query(api.publishers.listPublicPage, {
-        kind: activeKind === "orgs" ? "org" : activeKind === "builders" ? "user" : undefined,
+        kind: activeKind === "orgs" ? "org" : activeKind === "people" ? "user" : undefined,
         query: search.q,
         paginationOpts: { cursor: nextCursor, numItems: PUBLISHER_PAGE_SIZE },
       })) as PublishersLoaderResult;
@@ -202,113 +206,119 @@ function PublishersIndex() {
   return (
     <main className="browse-page">
       <div className="browse-page-header">
+        <button
+          className="browse-sidebar-toggle"
+          type="button"
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+          aria-label="Toggle filters"
+        >
+          Filters
+        </button>
         <h1 className="browse-title">
           Publishers
-          <span className="browse-count">{globalCounts.all}</span>
+          {formattedCount ? (
+            <>
+              {" "}
+              <span className="browse-count">{formattedCount}</span>
+            </>
+          ) : null}
         </h1>
+        <div className="browse-view-toggle">
+          <button
+            className={`browse-view-btn${activeView === "list" ? " is-active" : ""}`}
+            type="button"
+            onClick={activeView === "grid" ? handleToggleView : undefined}
+          >
+            List
+          </button>
+          <button
+            className={`browse-view-btn${activeView === "grid" ? " is-active" : ""}`}
+            type="button"
+            onClick={activeView === "list" ? handleToggleView : undefined}
+          >
+            Grid
+          </button>
+        </div>
       </div>
       <div className="browse-page-search">
         <Search size={15} className="navbar-search-icon" aria-hidden="true" />
         <input
+          ref={searchInputRef}
           className="browse-search-input"
+          aria-label="Search publishers"
           value={query}
           onChange={(event) => handleQueryChange(event.target.value)}
           placeholder="Search publishers..."
         />
+        {query ? (
+          <button
+            type="button"
+            className="browse-search-clear"
+            aria-label="Clear publisher search"
+            onClick={handleClearQuery}
+          >
+            <X size={14} aria-hidden="true" />
+          </button>
+        ) : null}
       </div>
 
-      <div className="browse-results publishers-results">
-        {highlightedPublishers.length > 0 ? (
-          <section className="publisher-highlights" aria-labelledby="publisher-highlights-title">
-            <div className="publisher-section-heading">
-              <h2 id="publisher-highlights-title">Popular publishers</h2>
+      <div className={`browse-layout${sidebarOpen ? " sidebar-open" : ""}`}>
+        <BrowseSidebar
+          radioGroups={[
+            {
+              title: "Type",
+              ariaLabel: "Publisher type",
+              activeValue: activeKind,
+              onChange: handleKindChange,
+              options: [
+                { value: undefined, label: "All" },
+                { value: "orgs", label: "Organizations" },
+                { value: "people", label: "People" },
+              ],
+            },
+          ]}
+        />
+        <div className="browse-results">
+          {highlightedPublishers.length > 0 ? (
+            <section className="publisher-highlights" aria-labelledby="publisher-highlights-title">
+              <div className="publisher-section-heading">
+                <h2 id="publisher-highlights-title">Popular publishers</h2>
+              </div>
+              <div className="publisher-highlight-grid">
+                {highlightedPublishers.map((publisher) => (
+                  <PublisherListItem
+                    key={publisher._id}
+                    publisher={publisher}
+                    variant="highlight"
+                  />
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {publishers.length === 0 ? (
+            <div className="empty-state">
+              <p className="empty-state-title">No publishers found</p>
             </div>
-            <div className="publisher-highlight-grid">
-              {highlightedPublishers.map((publisher) => (
-                <PublisherListItem key={publisher._id} publisher={publisher} variant="highlight" />
+          ) : (
+            <div className={`publisher-directory-list publisher-directory-${activeView}`}>
+              {directoryPublishers.map((publisher) => (
+                <PublisherListItem
+                  key={publisher._id}
+                  publisher={publisher}
+                  variant={activeView === "grid" ? "grid" : "list"}
+                />
               ))}
             </div>
-          </section>
-        ) : null}
-
-        <div className="browse-results-toolbar publishers-toolbar">
-          <span className="browse-results-count publisher-listed-count">
-            {listedCountLabel(publishers.length, activeTotal, activeKind)}
-            {hasQuery || activeKind ? (
-              <button className="browse-clear-btn" type="button" onClick={handleClear}>
-                Clear
-              </button>
-            ) : null}
-          </span>
-          <div className="publisher-toolbar-controls">
-            <nav className="publisher-filter-tabs" aria-label="Publisher type">
-              <Link
-                to="/publishers"
-                search={{ q: search.q, view: search.view }}
-                className={`publisher-filter-tab${!activeKind ? " is-active" : ""}`}
-              >
-                All <span>{counts.all}</span>
-              </Link>
-              <Link
-                to="/publishers"
-                search={{ q: search.q, kind: "orgs", view: search.view }}
-                className={`publisher-filter-tab${activeKind === "orgs" ? " is-active" : ""}`}
-              >
-                Orgs <span>{counts.organizations}</span>
-              </Link>
-              <Link
-                to="/publishers"
-                search={{ q: search.q, kind: "builders", view: search.view }}
-                className={`publisher-filter-tab${activeKind === "builders" ? " is-active" : ""}`}
-              >
-                Builders <span>{counts.individuals}</span>
-              </Link>
-            </nav>
-            <nav className="publisher-filter-tabs publisher-view-tabs" aria-label="Publisher view">
-              <Link
-                to="/publishers"
-                search={{ q: search.q, kind: search.kind }}
-                resetScroll={false}
-                aria-label="List view"
-                className={`publisher-filter-tab${activeView === "list" ? " is-active" : ""}`}
-              >
-                <List size={14} aria-hidden="true" />
-              </Link>
-              <Link
-                to="/publishers"
-                search={{ q: search.q, kind: search.kind, view: "grid" }}
-                resetScroll={false}
-                aria-label="Grid view"
-                className={`publisher-filter-tab${activeView === "grid" ? " is-active" : ""}`}
-              >
-                <LayoutGrid size={14} aria-hidden="true" />
-              </Link>
-            </nav>
-          </div>
+          )}
+          {canLoadMore || isLoadingMore ? (
+            <div ref={loadMoreRef} className="card mt-4 flex justify-center">
+              <Button type="button" onClick={loadMore} disabled={isLoadingMore}>
+                {isLoadingMore ? "Loading..." : "Load more"}
+              </Button>
+            </div>
+          ) : null}
         </div>
-
-        {publishers.length === 0 ? (
-          <div className="empty-state">
-            <p className="empty-state-title">No publishers found</p>
-          </div>
-        ) : (
-          <div className={`publisher-directory-list publisher-directory-${activeView}`}>
-            {directoryPublishers.map((publisher) => (
-              <PublisherListItem
-                key={publisher._id}
-                publisher={publisher}
-                variant={activeView === "grid" ? "grid" : "list"}
-              />
-            ))}
-          </div>
-        )}
-        {canLoadMore || isLoadingMore ? (
-          <div ref={loadMoreRef} className="card mt-4 flex justify-center">
-            <Button type="button" onClick={loadMore} disabled={isLoadingMore}>
-              {isLoadingMore ? "Loading..." : "Load more"}
-            </Button>
-          </div>
-        ) : null}
       </div>
     </main>
   );

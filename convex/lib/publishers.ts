@@ -7,6 +7,10 @@ export type PublisherRole = "owner" | "admin" | "publisher";
 
 type DbCtx = Pick<QueryCtx | MutationCtx, "db">;
 
+export const PUBLISHER_HANDLE_PATTERN = /^[a-z0-9](?:[a-z0-9._-]{0,38}[a-z0-9])?$/;
+export const PUBLISHER_HANDLE_REQUIREMENTS_MESSAGE =
+  "Handle must be 40 characters or fewer, start and end with a lowercase letter or number, and use only lowercase letters, numbers, hyphens, dots, or underscores";
+
 type PersonalPublisherAuditOptions = {
   actorUserId?: Id<"users">;
   source: string;

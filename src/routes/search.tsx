@@ -60,7 +60,6 @@ function UnifiedSearchPage() {
   });
   const results: Array<UnifiedSkillResult | UnifiedPluginResult> =
     activeType === "all" ? allResults : activeType === "skills" ? skillResults : pluginResults;
-  const showSearchCounts = Boolean(search.q);
   const allCount = skillCount + pluginCount;
   const allHasMore = skillHasMore || pluginHasMore;
   const canLoadMore =
@@ -144,32 +143,21 @@ function UnifiedSearchPage() {
           type="button"
           onClick={() => setType("all")}
         >
-          All{" "}
-          {showSearchCounts ? (
-            <span className="search-tab-count">{formatSearchCount(allCount, allHasMore)}</span>
-          ) : null}
+          All
         </button>
         <button
           className={`search-tab${activeType === "skills" ? " is-active" : ""}`}
           type="button"
           onClick={() => setType("skills")}
         >
-          Skills{" "}
-          {showSearchCounts ? (
-            <span className="search-tab-count">{formatSearchCount(skillCount, skillHasMore)}</span>
-          ) : null}
+          Skills
         </button>
         <button
           className={`search-tab${activeType === "plugins" ? " is-active" : ""}`}
           type="button"
           onClick={() => setType("plugins")}
         >
-          Plugins{" "}
-          {showSearchCounts ? (
-            <span className="search-tab-count">
-              {formatSearchCount(pluginCount, pluginHasMore)}
-            </span>
-          ) : null}
+          Plugins
         </button>
       </div>
 
@@ -191,20 +179,14 @@ function UnifiedSearchPage() {
           {activeType === "all" ? (
             <div className="search-results-sections">
               {skillResults.length > 0 ? (
-                <SearchResultSection
-                  countLabel={formatSearchCount(skillCount, skillHasMore)}
-                  title="Skills"
-                >
+                <SearchResultSection title="Skills">
                   {skillResults.map((item) => (
                     <SkillResultRow key={`skill-${item.skill._id}`} result={item} />
                   ))}
                 </SearchResultSection>
               ) : null}
               {pluginResults.length > 0 ? (
-                <SearchResultSection
-                  countLabel={formatSearchCount(pluginCount, pluginHasMore)}
-                  title="Plugins"
-                >
+                <SearchResultSection title="Plugins">
                   {pluginResults.map((item) => (
                     <PluginResultRow key={`plugin-${item.plugin.name}`} result={item} />
                   ))}
@@ -270,24 +252,11 @@ function SearchEmptyState({
   );
 }
 
-function formatSearchCount(count: number, hasMore: boolean) {
-  return hasMore ? `${count}+` : String(count);
-}
-
-function SearchResultSection({
-  children,
-  countLabel,
-  title,
-}: {
-  children: React.ReactNode;
-  countLabel: string;
-  title: string;
-}) {
+function SearchResultSection({ children, title }: { children: React.ReactNode; title: string }) {
   return (
     <section className="search-results-section" aria-label={title}>
       <div className="search-results-section-header">
         <h2 className="search-results-section-title">{title}</h2>
-        <span className="search-results-section-count">{countLabel}</span>
       </div>
       <div className="results-list">{children}</div>
     </section>

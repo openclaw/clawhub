@@ -42,7 +42,7 @@ const SKILLS_SEARCH = {
 
 // ---------------------------------------------------------------------------
 // Primary nav items (desktop tabs row + mobile dropdown top section)
-// These map to the "content-type" tabs: Skills | Plugins
+// These map to the content-type tabs: Skills | Plugins | Publishers
 // ---------------------------------------------------------------------------
 
 export const PRIMARY_NAV_ITEMS: NavItem[] = [

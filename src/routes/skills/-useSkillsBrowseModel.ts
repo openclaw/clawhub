@@ -4,7 +4,6 @@ import { api } from "../../../convex/_generated/api";
 import { convexHttp } from "../../convex/client";
 import {
   ALL_CATEGORY_KEYWORDS,
-  getSkillCategoryByKeyword,
   getSkillCategoryBySlug,
   getSkillCategoryForSkill,
 } from "../../lib/categories";
@@ -84,17 +83,13 @@ export function useSkillsBrowseModel({
   const searchSkills = useAction(api.search.searchSkills);
 
   const trimmedQuery = useMemo(() => query.trim(), [query]);
-  const legacyQueryCategory = useMemo(() => {
-    if (query === "__other__") return getSkillCategoryBySlug("other");
-    return getSkillCategoryByKeyword(trimmedQuery);
-  }, [query, trimmedQuery]);
   const urlCategory = useMemo(() => getSkillCategoryBySlug(search.category), [search.category]);
-  const activeCategory = urlCategory ?? legacyQueryCategory;
+  const activeCategory = urlCategory;
   const categoryKeywords =
     activeCategory && activeCategory.slug !== "other" ? activeCategory.keywords : undefined;
   const excludeCategoryKeywords =
     activeCategory?.slug === "other" ? ALL_CATEGORY_KEYWORDS : undefined;
-  const hasQuery = trimmedQuery.length > 0 && (Boolean(urlCategory) || !legacyQueryCategory);
+  const hasQuery = trimmedQuery.length > 0;
   const requestedSort = search.sort === "default" ? "recommended" : search.sort;
   const sort: SortKey =
     requestedSort === "relevance" && !hasQuery
@@ -408,11 +403,30 @@ export function useSkillsBrowseModel({
     });
   }, [navigate]);
 
+  const onClearQuery = useCallback(() => {
+    window.clearTimeout(navigateTimer.current);
+    setQuery("");
+    searchInputRef.current?.focus();
+    void navigate({
+      search: (prev) => {
+        const clearsSearchOnlySort = parseSort(prev.sort) === "relevance";
+        return {
+          ...prev,
+          q: undefined,
+          sort: clearsSearchOnlySort ? undefined : prev.sort,
+          dir: clearsSearchOnlySort ? undefined : prev.dir,
+        };
+      },
+      replace: true,
+    });
+  }, [navigate, searchInputRef]);
+
   const onSortChange = useCallback(
     (value: string) => {
       const nextSort = parseSort(value);
       void navigate({
         search: (prev) => {
+          const clearsDefaultSearchSort = hasQuery && nextSort === "recommended";
           const reusePreviousDir =
             prev.sort !== undefined &&
             prev.sort !== "recommended" &&
@@ -420,9 +434,9 @@ export function useSkillsBrowseModel({
             prev.sort !== "relevance";
           return {
             ...prev,
-            sort: nextSort,
+            sort: clearsDefaultSearchSort ? undefined : nextSort,
             dir:
-              nextSort === "recommended" || nextSort === "default"
+              clearsDefaultSearchSort || nextSort === "recommended" || nextSort === "default"
                 ? undefined
                 : parseDir(reusePreviousDir ? prev.dir : undefined, nextSort),
           };
@@ -430,7 +444,7 @@ export function useSkillsBrowseModel({
         replace: true,
       });
     },
-    [navigate],
+    [hasQuery, navigate],
   );
 
   const onToggleDir = useCallback(() => {
@@ -485,6 +499,7 @@ export function useSkillsBrowseModel({
     loadMoreRef,
     onCapabilityTagChange,
     onClearFilters,
+    onClearQuery,
     onQueryChange,
     onSortChange,
     onToggleDir,

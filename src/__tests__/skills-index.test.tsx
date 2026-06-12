@@ -64,6 +64,10 @@ describe("SkillsIndex", () => {
     expect(screen.getByRole("radio", { name: "Recommended" }).getAttribute("aria-checked")).toBe(
       "true",
     );
+    const sortOptions = Array.from(
+      screen.getByRole("radiogroup", { name: "Sort order" }).querySelectorAll('[role="radio"]'),
+    ).map((option) => option.textContent);
+    expect(sortOptions.slice(0, 2)).toEqual(["Recommended", "Featured"]);
   });
 
   it("keeps downloads as an explicit browse sort", async () => {
@@ -86,6 +90,97 @@ describe("SkillsIndex", () => {
     render(<SkillsIndex />);
     await act(async () => {});
     expect(screen.getByText("No skills found")).toBeTruthy();
+    expect(screen.queryByText(/\d+ loaded/)).toBeNull();
+  });
+
+  it("renders the total skills count in the unfiltered page title", async () => {
+    convexReactMocks.useQuery.mockReturnValue(70_300);
+
+    render(<SkillsIndex />);
+    await act(async () => {});
+
+    expect(screen.getByRole("heading", { name: "Skills 70.3K" })).toBeTruthy();
+  });
+
+  it("hides the total skills count when filters are active", async () => {
+    searchMock = { category: "dev-tools" };
+    convexReactMocks.useQuery.mockReturnValue(70_300);
+
+    render(<SkillsIndex />);
+    await act(async () => {});
+
+    expect(screen.getByRole("heading", { name: "Skills" })).toBeTruthy();
+    expect(screen.queryByText("70.3K")).toBeNull();
+  });
+
+  it("clears the skill search from the search field", async () => {
+    searchMock = { q: "agent", sort: "relevance", category: "dev-tools" };
+
+    render(<SkillsIndex />);
+    await act(async () => {});
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear skill search" }));
+
+    expect(navigateMock).toHaveBeenCalled();
+    const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
+      search: (prev: Record<string, unknown>) => Record<string, unknown>;
+      replace?: boolean;
+    };
+    expect(
+      lastCall.search({
+        q: "agent",
+        sort: "relevance",
+        category: "dev-tools",
+      }),
+    ).toEqual({
+      q: undefined,
+      sort: undefined,
+      category: "dev-tools",
+    });
+    expect(lastCall.replace).toBe(true);
+    expect(screen.queryByRole("button", { name: "Clear" })).toBeNull();
+  });
+
+  it("does not render a browse count when more pages exist", async () => {
+    convexHttpMock.query.mockResolvedValue({
+      page: [makeListResult("skill-0", "Skill 0")],
+      hasMore: true,
+      nextCursor: "cursor-1",
+    });
+
+    render(<SkillsIndex />);
+    await act(async () => {});
+
+    expect(screen.getByText("Skill 0")).toBeTruthy();
+    expect(screen.queryByText(/\d+ loaded/)).toBeNull();
+  });
+
+  it("keeps browse counts hidden after loading another page", async () => {
+    vi.stubGlobal("IntersectionObserver", undefined);
+    convexHttpMock.query
+      .mockResolvedValueOnce({
+        page: [makeListResult("skill-0", "Skill 0")],
+        hasMore: true,
+        nextCursor: "cursor-1",
+      })
+      .mockResolvedValueOnce({
+        page: [makeListResult("skill-1", "Skill 1")],
+        hasMore: false,
+        nextCursor: null,
+      });
+
+    render(<SkillsIndex />);
+    await act(async () => {});
+
+    expect(screen.getByText("Skill 0")).toBeTruthy();
+    expect(screen.queryByText(/\d+ loaded/)).toBeNull();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    });
+
+    expect(screen.getByText("Skill 1")).toBeTruthy();
+    expect(screen.queryByText(/\d+ loaded/)).toBeNull();
   });
 
   it("does not render the publish CTA on the skills browse page", async () => {
@@ -101,8 +196,8 @@ describe("SkillsIndex", () => {
     convexHttpMock.query.mockReturnValue(new Promise(() => {}));
     render(<SkillsIndex />);
     await act(async () => {});
-    // Results area shows skeleton or dash while loading
-    expect(screen.getByText("\u2014")).toBeTruthy();
+    // Results area shows skeletons while loading, without count copy.
+    expect(screen.queryByText(/\d+ loaded/)).toBeNull();
     expect(screen.getByRole("status", { name: "Loading results" })).toBeTruthy();
     expect(screen.queryByText("No skills found")).toBeNull();
   });
@@ -118,6 +213,19 @@ describe("SkillsIndex", () => {
     };
     expect(lastCall.replace).toBe(true);
     expect(lastCall.search({})).toEqual({ view: "grid" });
+  });
+
+  it("renders the view toggle above the skills search input", async () => {
+    render(<SkillsIndex />);
+    await act(async () => {});
+
+    const listButton = screen.getByRole("button", { name: "List" });
+    const searchInput = screen.getByPlaceholderText("Search skills...");
+
+    expect(listButton.closest(".browse-page-header")).not.toBeNull();
+    expect(
+      Boolean(listButton.compareDocumentPosition(searchInput) & Node.DOCUMENT_POSITION_FOLLOWING),
+    ).toBe(true);
   });
 
   it("keeps legacy cards URLs compatible with the grid view", async () => {
@@ -150,6 +258,7 @@ describe("SkillsIndex", () => {
 
     // Should show empty state, not loading
     expect(screen.getByText("No skills found")).toBeTruthy();
+    expect(screen.queryByText(/\d+ loaded/)).toBeNull();
     expect(screen.queryByText(/Loading skills/)).toBeNull();
   });
 
@@ -184,6 +293,80 @@ describe("SkillsIndex", () => {
       highlightedOnly: false,
       limit: 25,
     });
+  });
+
+  it("keeps recommended as the visible default search sort", async () => {
+    searchMock = { q: "notion" };
+    const actionFn = vi.fn().mockResolvedValue([]);
+    convexReactMocks.useAction.mockReturnValue(actionFn);
+    vi.useFakeTimers();
+
+    render(<SkillsIndex />);
+
+    expect(screen.getByRole("radio", { name: "Recommended" }).getAttribute("aria-checked")).toBe(
+      "true",
+    );
+    expect(screen.queryByRole("radio", { name: "Relevance" })).toBeNull();
+    const sortOptions = Array.from(
+      screen.getByRole("radiogroup", { name: "Sort order" }).querySelectorAll('[role="radio"]'),
+    ).map((option) => option.textContent);
+    expect(sortOptions[0]).toBe("Recommended");
+  });
+
+  it("keeps recommended sort stable while typing a search", async () => {
+    vi.useFakeTimers();
+
+    render(<SkillsIndex />);
+
+    const input = screen.getByPlaceholderText("Search skills...");
+    fireEvent.change(input, { target: { value: "agent" } });
+
+    expect(screen.getByRole("radio", { name: "Recommended" }).getAttribute("aria-checked")).toBe(
+      "true",
+    );
+    expect(screen.queryByRole("radio", { name: "Relevance" })).toBeNull();
+  });
+
+  it("keeps the skills sort option list stable while typing a search", async () => {
+    vi.useFakeTimers();
+
+    render(<SkillsIndex />);
+
+    const beforeTyping = Array.from(
+      screen.getByRole("radiogroup", { name: "Sort order" }).querySelectorAll('[role="radio"]'),
+    ).map((option) => option.textContent);
+    const input = screen.getByPlaceholderText("Search skills...");
+    fireEvent.change(input, { target: { value: "agent" } });
+    const whileTyping = Array.from(
+      screen.getByRole("radiogroup", { name: "Sort order" }).querySelectorAll('[role="radio"]'),
+    ).map((option) => option.textContent);
+
+    expect(whileTyping).toEqual(beforeTyping);
+    expect(screen.getByRole("radio", { name: "Featured" })).toBeTruthy();
+  });
+
+  it("does not treat category keywords typed in search as category filters", async () => {
+    const actionFn = vi.fn().mockResolvedValue([]);
+    convexReactMocks.useAction.mockReturnValue(actionFn);
+    vi.useFakeTimers();
+
+    render(<SkillsIndex />);
+
+    const input = screen.getByPlaceholderText("Search skills...");
+    await act(async () => {
+      fireEvent.change(input, { target: { value: "test" } });
+      await vi.runAllTimersAsync();
+    });
+
+    expect(screen.getByRole("radio", { name: "All" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("radio", { name: "Dev Tools" }).getAttribute("aria-checked")).toBe(
+      "false",
+    );
+    expect(actionFn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: "test",
+      }),
+    );
   });
 
   it("switches implicit recommended sorting back to relevance when entering search", async () => {
@@ -315,6 +498,8 @@ describe("SkillsIndex", () => {
       await vi.runAllTimersAsync();
     });
 
+    expect(screen.queryByText(/\d+ loaded/)).toBeNull();
+
     const loadMoreButton = screen.getByRole("button", { name: "Load more" });
     await act(async () => {
       fireEvent.click(loadMoreButton);
@@ -326,6 +511,7 @@ describe("SkillsIndex", () => {
       highlightedOnly: false,
       limit: 50,
     });
+    expect(screen.queryByText(/\d+ loaded/)).toBeNull();
   });
 
   it("sorts search results by stars and breaks ties by updatedAt", async () => {
@@ -407,6 +593,8 @@ describe("SkillsIndex", () => {
     );
     expect(screen.queryByText("Blockscout for Web3 Dev")).toBeNull();
     expect(screen.getByText("Developer Utils")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Clear" })).toBeNull();
+    expect(screen.queryByText(/\d+ loaded/)).toBeNull();
   });
 
   it("does not render the warning filter", async () => {

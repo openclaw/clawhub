@@ -118,6 +118,40 @@ describe("cmdCreateOrg", () => {
     );
   });
 
+  it("creates org publishers with npm-compatible handles", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      publisherId: "publishers:example.tools",
+      handle: "example.tools",
+      created: true,
+      migrated: false,
+      trusted: false,
+      member: {
+        userId: "users:vincent",
+        handle: "vincentkoc",
+        role: "owner",
+      },
+    });
+
+    await cmdCreateOrg(makeGlobalOpts(), "@Example.Tools", {
+      displayName: "Example Tools",
+      member: "vincentkoc",
+      json: true,
+    });
+
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({
+        body: expect.objectContaining({
+          handle: "example.tools",
+          displayName: "Example Tools",
+          memberHandle: "vincentkoc",
+        }),
+      }),
+      expect.anything(),
+    );
+  });
+
   it("requires a valid org member role", async () => {
     await expect(
       cmdCreateOrg(makeGlobalOpts(), "opik", {
@@ -396,14 +430,14 @@ describe("cmdRepairScopedPackages", () => {
     const csv = await withCsv(
       [
         "packageName,intendedOrg,legacyOwner,orgDisplayName",
-        "@opik/opik-openclaw,opik,vincentkoc,Opik",
+        "@example.tools/demo-plugin,example.tools,vincentkoc,Example Tools",
       ].join("\n"),
     );
     httpMocks.apiRequest
       .mockResolvedValueOnce({
         ok: true,
-        publisherId: "publishers:opik",
-        handle: "opik",
+        publisherId: "publishers:example.tools",
+        handle: "example.tools",
         created: false,
         migrated: false,
         trusted: false,
@@ -413,49 +447,53 @@ describe("cmdRepairScopedPackages", () => {
         ok: true,
         dryRun: true,
         source: {
-          packageId: "packages:opik",
-          name: "@opik/opik-openclaw",
-          runtimeId: "opik-openclaw",
+          packageId: "packages:example-tools",
+          name: "@example.tools/demo-plugin",
+          runtimeId: "demo-plugin",
           ownerUserId: "users:vincent",
           ownerPublisherId: "publishers:vincent",
           channel: "community",
           softDeletedAt: null,
         },
         target: {
-          packageId: "packages:opik",
-          name: "@opik/opik-openclaw",
-          runtimeId: "opik-openclaw",
+          packageId: "packages:example-tools",
+          name: "@example.tools/demo-plugin",
+          runtimeId: "demo-plugin",
           ownerUserId: "users:vincent",
           ownerPublisherId: "publishers:vincent",
           channel: "community",
           softDeletedAt: null,
         },
         retiredName: null,
-        operations: [{ action: "transfer-owner", packageId: "packages:opik", owner: "opik" }],
+        operations: [
+          { action: "transfer-owner", packageId: "packages:example-tools", owner: "example.tools" },
+        ],
       })
       .mockResolvedValueOnce({
         ok: true,
         dryRun: false,
         source: {
-          packageId: "packages:opik",
-          name: "@opik/opik-openclaw",
-          runtimeId: "opik-openclaw",
+          packageId: "packages:example-tools",
+          name: "@example.tools/demo-plugin",
+          runtimeId: "demo-plugin",
           ownerUserId: "users:vincent",
           ownerPublisherId: "publishers:vincent",
           channel: "community",
           softDeletedAt: null,
         },
         target: {
-          packageId: "packages:opik",
-          name: "@opik/opik-openclaw",
-          runtimeId: "opik-openclaw",
+          packageId: "packages:example-tools",
+          name: "@example.tools/demo-plugin",
+          runtimeId: "demo-plugin",
           ownerUserId: "users:vincent",
           ownerPublisherId: "publishers:vincent",
           channel: "community",
           softDeletedAt: null,
         },
         retiredName: null,
-        operations: [{ action: "transfer-owner", packageId: "packages:opik", owner: "opik" }],
+        operations: [
+          { action: "transfer-owner", packageId: "packages:example-tools", owner: "example.tools" },
+        ],
       });
 
     try {
@@ -472,8 +510,8 @@ describe("cmdRepairScopedPackages", () => {
           method: "POST",
           path: "/api/v1/users/publisher",
           body: {
-            handle: "opik",
-            displayName: "Opik",
+            handle: "example.tools",
+            displayName: "Example Tools",
             memberHandle: "vincentkoc",
             memberRole: "owner",
           },
@@ -484,11 +522,11 @@ describe("cmdRepairScopedPackages", () => {
         2,
         "https://clawhub.ai",
         expect.objectContaining({
-          path: "/api/v1/packages/%40opik%2Fopik-openclaw/repair-name",
+          path: "/api/v1/packages/%40example.tools%2Fdemo-plugin/repair-name",
           body: {
-            nextName: "@opik/opik-openclaw",
-            owner: "opik",
-            reason: "Move legacy personal package into @opik",
+            nextName: "@example.tools/demo-plugin",
+            owner: "example.tools",
+            reason: "Move legacy personal package into @example.tools",
             dryRun: true,
           },
         }),
@@ -498,7 +536,7 @@ describe("cmdRepairScopedPackages", () => {
         3,
         "https://clawhub.ai",
         expect.objectContaining({
-          path: "/api/v1/packages/%40opik%2Fopik-openclaw/repair-name",
+          path: "/api/v1/packages/%40example.tools%2Fdemo-plugin/repair-name",
           body: expect.objectContaining({ dryRun: false }),
         }),
         expect.anything(),

@@ -1,11 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
-import { Search } from "lucide-react";
+import { Search, X } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import { BrowseSidebar } from "../../components/BrowseSidebar";
+import { formatBrowseCount } from "../../lib/browseCount";
 import { SKILL_CATEGORIES } from "../../lib/categories";
-import { formatCompactStat } from "../../lib/numberFormat";
 import { parseDir, parseSort } from "./-params";
 import { SkillsResults } from "./-SkillsResults";
 import {
@@ -24,13 +24,11 @@ const BROWSE_SORT_OPTIONS = [
   { value: "name", label: "Name" },
 ];
 
-const SEARCH_SORT_OPTIONS = [
-  { value: "downloads", label: "Most downloaded" },
-  { value: "stars", label: "Most starred" },
-  { value: "installs", label: "Most installed" },
-  { value: "updated", label: "Recently updated" },
-  { value: "newest", label: "Newest" },
-  { value: "name", label: "Name" },
+const FEATURED_SORT_OPTION = { value: "featured", label: "Featured" };
+const SKILLS_SORT_OPTIONS = [
+  BROWSE_SORT_OPTIONS[0],
+  FEATURED_SORT_OPTION,
+  ...BROWSE_SORT_OPTIONS.slice(1),
 ];
 
 const SKILL_CATEGORY_SLUGS = new Set(SKILL_CATEGORIES.map((category) => category.slug));
@@ -65,8 +63,6 @@ export function SkillsIndex() {
   const navigate = Route.useNavigate();
   const search = Route.useSearch();
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const totalSkills = useQuery(api.skills.countPublicSkills);
-  const totalSkillsText = typeof totalSkills === "number" ? formatCompactStat(totalSkills) : null;
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const model = useSkillsBrowseModel({
@@ -75,9 +71,15 @@ export function SkillsIndex() {
     searchInputRef,
   });
 
-  const sortOptionsWithRelevance = model.hasQuery
-    ? [{ value: "relevance", label: "Relevance" }, ...SEARCH_SORT_OPTIONS]
-    : BROWSE_SORT_OPTIONS;
+  const activeSort = model.featuredOnly
+    ? "featured"
+    : model.sort === "relevance"
+      ? "recommended"
+      : model.sort;
+  const hasActiveFilters =
+    model.hasQuery || Boolean(model.activeCategory) || model.featuredOnly || Boolean(search.tag);
+  const totalSkillsCount = useQuery(api.skills.countPublicSkills, {});
+  const formattedCount = !hasActiveFilters ? formatBrowseCount(totalSkillsCount) : null;
 
   const handleSortChange = useCallback(
     (value: string) => {
@@ -116,10 +118,6 @@ export function SkillsIndex() {
     [model.featuredOnly, model.onSortChange, model.onToggleFeatured, navigate],
   );
 
-  const handleClear = useCallback(() => {
-    model.onClearFilters();
-  }, [model.onClearFilters]);
-
   const handleCategoryChange = useCallback(
     (slug: string | undefined) => {
       const category = parseSkillCategorySlug(slug);
@@ -149,57 +147,61 @@ export function SkillsIndex() {
         </button>
         <h1 className="browse-title">
           Skills
-          {totalSkillsText ? <span className="browse-count">{totalSkillsText}</span> : null}
+          {formattedCount ? (
+            <>
+              {" "}
+              <span className="browse-count">{formattedCount}</span>
+            </>
+          ) : null}
         </h1>
+        <div className="browse-view-toggle">
+          <button
+            className={`browse-view-btn${model.view === "list" ? " is-active" : ""}`}
+            type="button"
+            onClick={model.view === "grid" ? model.onToggleView : undefined}
+          >
+            List
+          </button>
+          <button
+            className={`browse-view-btn${model.view === "grid" ? " is-active" : ""}`}
+            type="button"
+            onClick={model.view === "list" ? model.onToggleView : undefined}
+          >
+            Grid
+          </button>
+        </div>
       </div>
       <div className="browse-page-search">
         <Search size={15} className="navbar-search-icon" aria-hidden="true" />
         <input
           ref={searchInputRef}
           className="browse-search-input"
+          aria-label="Search skills"
           value={model.query}
           onChange={(event) => model.onQueryChange(event.target.value)}
           placeholder="Search skills..."
         />
+        {model.query ? (
+          <button
+            type="button"
+            className="browse-search-clear"
+            aria-label="Clear skill search"
+            onClick={model.onClearQuery}
+          >
+            <X size={14} aria-hidden="true" />
+          </button>
+        ) : null}
       </div>
       <div className={`browse-layout${sidebarOpen ? " sidebar-open" : ""}`}>
         <BrowseSidebar
           categories={SKILL_CATEGORIES}
           activeCategory={model.activeCategory}
           onCategoryChange={handleCategoryChange}
-          sortOptions={[{ value: "featured", label: "Featured" }, ...sortOptionsWithRelevance]}
-          activeSort={model.featuredOnly ? "featured" : model.sort}
+          sortOptions={SKILLS_SORT_OPTIONS}
+          activeSort={activeSort}
           onSortChange={handleSortChange}
         />
         <div className="browse-results">
-          <div className="browse-results-toolbar">
-            <span className="browse-results-count">
-              {model.isLoadingSkills ? "\u2014" : `${model.sorted.length} results`}
-              {model.hasQuery || model.activeCategory || model.featuredOnly ? (
-                <button className="browse-clear-btn" type="button" onClick={handleClear}>
-                  Clear
-                </button>
-              ) : null}
-            </span>
-            <div className="browse-results-actions">
-              <div className="browse-view-toggle">
-                <button
-                  className={`browse-view-btn${model.view === "list" ? " is-active" : ""}`}
-                  type="button"
-                  onClick={model.view === "grid" ? model.onToggleView : undefined}
-                >
-                  List
-                </button>
-                <button
-                  className={`browse-view-btn${model.view === "grid" ? " is-active" : ""}`}
-                  type="button"
-                  onClick={model.view === "list" ? model.onToggleView : undefined}
-                >
-                  Grid
-                </button>
-              </div>
-            </div>
-          </div>
           <SkillsResults
             isLoadingSkills={model.isLoadingSkills}
             sorted={model.sorted}

@@ -630,6 +630,7 @@ const skills = defineTable({
       createdAt: v.number(),
       changelog: v.string(),
       changelogSource: v.optional(v.union(v.literal("auto"), v.literal("user"))),
+      description: v.optional(v.string()),
       clawdis: v.optional(v.any()),
       // Denormalised mirror of the latest version's `apiKeyRequired`.
       apiKeyRequired: v.optional(v.boolean()),
@@ -988,6 +989,7 @@ const skillSearchDigest = defineTable({
       createdAt: v.number(),
       changelog: v.string(),
       changelogSource: v.optional(v.union(v.literal("auto"), v.literal("user"))),
+      description: v.optional(v.string()),
       clawdis: v.optional(v.any()),
       // Mirrors `skills.latestVersionSummary.apiKeyRequired`.
       apiKeyRequired: v.optional(v.boolean()),
@@ -1001,6 +1003,8 @@ const skillSearchDigest = defineTable({
   statsStars: v.optional(v.number()),
   statsInstallsCurrent: v.optional(v.number()),
   statsInstallsAllTime: v.optional(v.number()),
+  recommendedScore: v.optional(v.number()),
+  recommendedScoreVersion: v.optional(v.number()),
   softDeletedAt: v.optional(v.number()),
   moderationStatus: moderationStatusValidator,
   moderationFlags: v.optional(v.array(v.string())),
@@ -1036,6 +1040,8 @@ const skillSearchDigest = defineTable({
     "statsDownloads",
     "updatedAt",
   ])
+  .index("by_active_recommended_score", ["softDeletedAt", "recommendedScore", "updatedAt"])
+  .index("by_active_recommended_score_version", ["softDeletedAt", "recommendedScoreVersion"])
   .index("by_nonsuspicious_updated", ["softDeletedAt", "isSuspicious", "updatedAt"])
   .index("by_nonsuspicious_created", ["softDeletedAt", "isSuspicious", "createdAt"])
   .index("by_nonsuspicious_name", ["softDeletedAt", "isSuspicious", "displayName"])
@@ -1074,6 +1080,17 @@ const skillSearchDigest = defineTable({
     "statsStars",
     "statsDownloads",
     "updatedAt",
+  ])
+  .index("by_nonsuspicious_recommended_score", [
+    "softDeletedAt",
+    "isSuspicious",
+    "recommendedScore",
+    "updatedAt",
+  ])
+  .index("by_nonsuspicious_recommended_score_version", [
+    "softDeletedAt",
+    "isSuspicious",
+    "recommendedScoreVersion",
   ])
   .searchIndex("search_by_display_name", {
     searchField: "displayName",
@@ -1116,6 +1133,8 @@ const packages = defineTable({
   verification: packageVerificationValidator,
   scanStatus: packageScanStatusValidator,
   stats: packageStatsValidator,
+  recommendedScore: v.optional(v.number()),
+  recommendedScoreVersion: v.optional(v.number()),
   reportCount: v.optional(v.number()),
   lastReportedAt: v.optional(v.number()),
   softDeletedAt: v.optional(v.number()),
@@ -1155,7 +1174,35 @@ const packages = defineTable({
   .index("by_runtime_id", ["runtimeId"])
   .index("by_active_updated", ["softDeletedAt", "updatedAt"])
   .index("by_active_downloads", ["softDeletedAt", "stats.downloads", "updatedAt"])
-  .index("by_active_family_downloads", ["softDeletedAt", "family", "stats.downloads", "updatedAt"]);
+  .index("by_active_family_downloads", ["softDeletedAt", "family", "stats.downloads", "updatedAt"])
+  .index("by_active_recommended_rank", [
+    "softDeletedAt",
+    "stats.stars",
+    "stats.downloads",
+    "stats.installs",
+    "updatedAt",
+  ])
+  .index("by_active_family_recommended_rank", [
+    "softDeletedAt",
+    "family",
+    "stats.stars",
+    "stats.downloads",
+    "stats.installs",
+    "updatedAt",
+  ])
+  .index("by_active_recommended_score", ["softDeletedAt", "recommendedScore", "updatedAt"])
+  .index("by_active_recommended_score_version", ["softDeletedAt", "recommendedScoreVersion"])
+  .index("by_active_family_recommended_score", [
+    "softDeletedAt",
+    "family",
+    "recommendedScore",
+    "updatedAt",
+  ])
+  .index("by_active_family_recommended_score_version", [
+    "softDeletedAt",
+    "family",
+    "recommendedScoreVersion",
+  ]);
 
 const packageReleases = defineTable({
   packageId: v.id("packages"),
@@ -1817,6 +1864,7 @@ const skillStatBackfillState = defineTable({
 const globalStats = defineTable({
   key: v.string(),
   activeSkillsCount: v.number(),
+  activePluginsCount: v.optional(v.number()),
   updatedAt: v.number(),
 }).index("by_key", ["key"]);
 

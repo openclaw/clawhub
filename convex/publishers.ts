@@ -27,12 +27,13 @@ import {
   getPersonalPublisherForUserOrFallback,
   getPersonalPublisherForUser,
   isPublisherRoleAllowed,
+  PUBLISHER_HANDLE_PATTERN,
+  PUBLISHER_HANDLE_REQUIREMENTS_MESSAGE,
   normalizePublisherHandle,
 } from "./lib/publishers";
 import { isHandleReservedForAnotherUser } from "./lib/reservedHandles";
 import { readCanonicalStat } from "./lib/skillStats";
 
-const PUBLISHER_HANDLE_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
 const MAX_PUBLIC_PUBLISHER_LIST_LIMIT = 500;
 const PUBLISHER_LIST_PREVIEW_LIMIT = 3;
 const publisherRoleValidator = v.union(
@@ -114,7 +115,7 @@ function validateHandle(rawHandle: string) {
   const handle = normalizePublisherHandle(rawHandle);
   if (!handle) throw new ConvexError("Handle is required");
   if (!PUBLISHER_HANDLE_PATTERN.test(handle)) {
-    throw new ConvexError("Handle must be lowercase, url-safe, and 2-40 characters");
+    throw new ConvexError(PUBLISHER_HANDLE_REQUIREMENTS_MESSAGE);
   }
   if (isReservedPublicOwnerHandle(handle)) {
     throw new ConvexError(formatReservedPublicOwnerHandleMessage(handle));
@@ -1777,7 +1778,7 @@ export const removeOrgPublisherMemberInternal = internalMutation({
 
     const handle = normalizePublisherHandle(args.handle);
     if (!handle || !PUBLISHER_HANDLE_PATTERN.test(handle)) {
-      throw new ConvexError("Handle must be lowercase, url-safe, and 2-40 characters");
+      throw new ConvexError(PUBLISHER_HANDLE_REQUIREMENTS_MESSAGE);
     }
     const memberHandle = normalizePublisherHandle(args.memberHandle);
     if (!memberHandle) throw new ConvexError("memberHandle is required");
@@ -1859,7 +1860,7 @@ export const deleteEmptyOrgPublisherInternal = internalMutation({
 
     const handle = normalizePublisherHandle(args.handle);
     if (!handle || !PUBLISHER_HANDLE_PATTERN.test(handle)) {
-      throw new ConvexError("Handle must be lowercase, url-safe, and 2-40 characters");
+      throw new ConvexError(PUBLISHER_HANDLE_REQUIREMENTS_MESSAGE);
     }
     const reason = args.reason.trim();
     if (!reason) throw new ConvexError("Reason is required");

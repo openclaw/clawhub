@@ -34,6 +34,7 @@ import type {
 } from "../lib/securityPrompt";
 import { selectGeneratedSkillCardFile, sourceSkillVersionFiles } from "../lib/skillCards";
 import {
+  getPublicSkillFileAccessBlock,
   getPublicSkillVersionAccessBlock,
   getPublicSkillVersionDownloadBlock,
   getSkillFileModerationInfoFromSkill,
@@ -106,10 +107,7 @@ type ListSkillsResult = {
       version: string;
       createdAt: number;
       changelog: string;
-      parsed?: {
-        license?: "MIT-0";
-        clawdis?: { os?: string[]; nix?: { plugin?: boolean; systems?: string[] } };
-      };
+      parsed?: PublicSkillVersionParsed;
     } | null;
   }>;
   nextCursor: string | null;
@@ -123,8 +121,19 @@ type PublicSkillVersionFile = {
 };
 
 type PublicSkillVersionParsed = {
+  description?: string;
   license?: "MIT-0";
-  clawdis?: { os?: string[]; nix?: { plugin?: boolean; systems?: string[] } };
+  clawdis?: {
+    os?: string[];
+    nix?: { plugin?: boolean; systems?: string[] };
+    requires?: { env?: string[]; config?: string[] };
+    envVars?: Array<{ name: string; required?: boolean; description?: string }>;
+  };
+};
+
+type SkillSetupEntry = {
+  key: string;
+  required: boolean;
 };
 
 type PublicSkillVersionStaticScan = Pick<
@@ -1001,6 +1010,74 @@ function buildSecurityAuditUrl(
   return url.toString();
 }
 
+function addSetupEntry(
+  entries: SkillSetupEntry[],
+  seen: Set<string>,
+  key: string,
+  options: { required?: boolean } = {},
+) {
+  const normalizedKey = key.trim();
+  if (!normalizedKey) return;
+  if (seen.has(normalizedKey)) return;
+  seen.add(normalizedKey);
+  entries.push({
+    key: normalizedKey,
+    required: options.required ?? true,
+  });
+}
+
+function buildSkillSetup(parsed: PublicSkillVersionParsed | undefined): SkillSetupEntry[] {
+  const clawdis = parsed?.clawdis;
+  if (!clawdis) return [];
+
+  const entries: SkillSetupEntry[] = [];
+  const seen = new Set<string>();
+
+  for (const key of clawdis.requires?.env ?? []) {
+    addSetupEntry(entries, seen, key, { required: true });
+  }
+  for (const key of clawdis.requires?.config ?? []) {
+    addSetupEntry(entries, seen, key, { required: true });
+  }
+  for (const entry of clawdis.envVars ?? []) {
+    addSetupEntry(entries, seen, entry.name, { required: entry.required ?? true });
+  }
+
+  return entries;
+}
+
+function selectSkillReadmeFile(version: Doc<"skillVersions"> | null | undefined) {
+  return version?.files.find((file) => {
+    const path = file.path.trim().toLowerCase();
+    return path === "skill.md" || path === "skills.md";
+  });
+}
+
+async function readSkillDescriptionMarkdown(
+  ctx: ActionCtx,
+  skillId: Id<"skills">,
+  versionId: Id<"skillVersions"> | undefined,
+) {
+  if (versionId) {
+    const version = (await ctx.runQuery(internal.skills.getVersionByIdInternal, {
+      versionId,
+    })) as Doc<"skillVersions"> | null;
+    if (version && isSkillVersionForSkill(version, skillId) && !version.softDeletedAt) {
+      const file = selectSkillReadmeFile(version);
+      if (file && file.size <= MAX_RAW_FILE_BYTES) {
+        const blob = await ctx.storage.get(file.storageId);
+        if (blob) return await blob.text();
+      }
+    }
+  }
+
+  const githubContent = (await ctx.runQuery(api.skills.getGitHubSkillContent, {
+    skillId,
+    kind: "readme",
+  })) as { text?: string } | null;
+  return githubContent?.text ?? null;
+}
+
 function buildSecurityVerdictError(
   item: SecurityVerdictRequestItem,
   code: string,
@@ -1404,6 +1481,7 @@ export async function listSkillsV1Handler(ctx: ActionCtx, request: Request) {
     slug: item.skill.slug,
     displayName: item.skill.displayName,
     summary: item.skill.summary ?? null,
+    description: item.latestVersion?.parsed?.description ?? null,
     tags: resolvedTagsList[idx],
     stats: item.skill.stats,
     createdAt: item.skill.createdAt,
@@ -1418,6 +1496,7 @@ export async function listSkillsV1Handler(ctx: ActionCtx, request: Request) {
       : null,
     metadata: item.latestVersion?.parsed?.clawdis
       ? {
+          setup: buildSkillSetup(item.latestVersion.parsed),
           os: item.latestVersion.parsed.clawdis.os ?? null,
           systems: item.latestVersion.parsed.clawdis.nix?.systems ?? null,
         }
@@ -1684,12 +1763,27 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
       [result.latestVersion],
       [result.skill._id],
     );
+    const latestVersionId =
+      result.skill.latestVersionId ?? result.skill.tags?.latest ?? result.latestVersion?._id;
+    const descriptionAccessBlock = result.latestVersion
+      ? getPublicSkillVersionAccessBlock(
+          result.moderationInfo,
+          result.latestVersion._id,
+          latestVersionId,
+        )
+      : getPublicSkillFileAccessBlock(result.moderationInfo);
+    const description = descriptionAccessBlock
+      ? null
+      : await readSkillDescriptionMarkdown(ctx, result.skill._id, latestVersionId);
+    const setup = buildSkillSetup(result.latestVersion?.parsed);
+
     return json(
       {
         skill: {
           slug: result.skill.slug,
           displayName: result.skill.displayName,
           summary: result.skill.summary ?? null,
+          description: description ?? result.latestVersion?.parsed?.description ?? null,
           tags,
           stats: result.skill.stats,
           createdAt: result.skill.createdAt,
@@ -1705,6 +1799,7 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
           : null,
         metadata: result.latestVersion?.parsed?.clawdis
           ? {
+              setup,
               os: result.latestVersion.parsed.clawdis.os ?? null,
               systems: result.latestVersion.parsed.clawdis.nix?.systems ?? null,
             }

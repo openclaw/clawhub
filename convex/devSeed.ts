@@ -7,6 +7,10 @@ import { internalAction, internalMutation } from "./functions";
 import { EMBEDDING_DIMENSIONS, generateEmbedding } from "./lib/embeddings";
 import { normalizePackageName } from "./lib/packageRegistry";
 import { ensurePersonalPublisherForUser } from "./lib/publishers";
+import {
+  computeRecommendationScore,
+  RECOMMENDATION_SCORE_VERSION,
+} from "./lib/recommendationScore";
 import { buildEmbeddingText, parseClawdisMetadata, parseFrontmatter } from "./lib/skills";
 import { generateToken, hashToken } from "./lib/tokens";
 
@@ -30,6 +34,25 @@ type SeedActionResult = {
 };
 
 type SeedMutationResult = Record<string, unknown>;
+
+function seededPackageRecommendationScore(stats: {
+  downloads: number;
+  installs: number;
+  stars: number;
+}) {
+  return computeRecommendationScore(stats);
+}
+
+function seededPackageRecommendationPatch(stats: {
+  downloads: number;
+  installs: number;
+  stars: number;
+}) {
+  return {
+    recommendedScore: seededPackageRecommendationScore(stats),
+    recommendedScoreVersion: RECOMMENDATION_SCORE_VERSION,
+  };
+}
 
 const displayManifestStatusValidator = v.union(
   v.literal("ok"),
@@ -1003,6 +1026,7 @@ export const seedPublicCorpusBatchMutation = internalMutation({
           verification,
           scanStatus: "clean",
           stats: { ...stats, versions: 0 },
+          ...seededPackageRecommendationPatch(stats),
           softDeletedAt: undefined,
           createdAt,
           updatedAt: now,
@@ -2317,6 +2341,7 @@ export async function seedLocalModerationFixturesHandler(
     },
     scanStatus: "malicious",
     stats: { downloads: 2, installs: 0, stars: 0, versions: 0 },
+    ...seededPackageRecommendationPatch({ downloads: 2, installs: 0, stars: 0 }),
     softDeletedAt: undefined,
     createdAt: now,
     updatedAt: now,
@@ -2402,6 +2427,7 @@ export async function seedLocalModerationFixturesHandler(
     },
     tags: { latest: packageReleaseId },
     stats: { downloads: 2, installs: 0, stars: 0, versions: 1 },
+    ...seededPackageRecommendationPatch({ downloads: 2, installs: 0, stars: 0 }),
     updatedAt: now,
   });
   const scannedPackageId = await ctx.db.insert("packages", {
@@ -2437,6 +2463,7 @@ export async function seedLocalModerationFixturesHandler(
     },
     scanStatus: "suspicious",
     stats: { downloads: 7, installs: 1, stars: 1, versions: 0 },
+    ...seededPackageRecommendationPatch({ downloads: 7, installs: 1, stars: 1 }),
     softDeletedAt: undefined,
     createdAt: now,
     updatedAt: now,
@@ -2514,6 +2541,7 @@ export async function seedLocalModerationFixturesHandler(
     },
     tags: { latest: scannedPackageReleaseId },
     stats: { downloads: 7, installs: 1, stars: 1, versions: 1 },
+    ...seededPackageRecommendationPatch({ downloads: 7, installs: 1, stars: 1 }),
     updatedAt: now,
   });
   await ctx.db.insert("packageInspectorWarnings", {
@@ -2952,6 +2980,7 @@ export const seedFeaturedPluginPackagesMutation = internalMutation({
         verification,
         scanStatus: "clean",
         stats: { ...spec.stats, versions: 0 },
+        ...seededPackageRecommendationPatch(spec.stats),
         softDeletedAt: undefined,
         createdAt: now,
         updatedAt: now,
@@ -3396,6 +3425,7 @@ export const seedOrgDeletionFixtureMutation = internalMutation({
       verification,
       scanStatus: "clean",
       stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
+      ...seededPackageRecommendationPatch({ downloads: 0, installs: 0, stars: 0 }),
       softDeletedAt: undefined,
       createdAt: now,
       updatedAt: now,
@@ -3611,6 +3641,7 @@ export const seedAccountDeletionFixtureMutation = internalMutation({
       verification,
       scanStatus: "clean",
       stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
+      ...seededPackageRecommendationPatch({ downloads: 0, installs: 0, stars: 0 }),
       softDeletedAt: undefined,
       createdAt: now,
       updatedAt: now,

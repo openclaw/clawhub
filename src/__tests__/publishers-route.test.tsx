@@ -1,6 +1,6 @@
 /* @vitest-environment jsdom */
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import type { ComponentType, ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -30,8 +30,20 @@ vi.mock("@tanstack/react-router", () => ({
       useNavigate: () => navigateMock,
       useSearch: () => searchMock(),
     }),
-  Link: ({ children, className, to }: { children: ReactNode; className?: string; to?: string }) => (
-    <a className={className} href={to}>
+  Link: ({
+    children,
+    className,
+    resetScroll: _resetScroll,
+    to,
+    ...props
+  }: {
+    children: ReactNode;
+    className?: string;
+    resetScroll?: boolean;
+    to?: string;
+    "aria-label"?: string;
+  }) => (
+    <a className={className} href={to} {...props}>
       {children}
     </a>
   ),
@@ -54,7 +66,8 @@ async function loadRoute() {
         links?: Array<{ rel: string; href: string }>;
         meta?: Array<Record<string, string>>;
       };
-      loader?: (args: { deps: { kind?: "orgs" | "builders"; q?: string } }) => Promise<unknown>;
+      loader?: (args: { deps: { kind?: "orgs" | "people"; q?: string } }) => Promise<unknown>;
+      validateSearch?: (search: Record<string, unknown>) => Record<string, unknown>;
     };
   };
 }
@@ -109,9 +122,24 @@ describe("publishers route", () => {
     });
   });
 
-  it("passes the builders filter and query to the public publishers query", async () => {
+  it("normalizes legacy builder URLs to people", async () => {
     const route = await loadRoute();
-    await route.__config.loader?.({ deps: { kind: "builders", q: "openclaw" } });
+
+    expect(route.__config.validateSearch?.({ kind: "builders" })).toEqual({
+      kind: "people",
+      q: undefined,
+      view: undefined,
+    });
+    expect(route.__config.validateSearch?.({ kind: "individuals" })).toEqual({
+      kind: "people",
+      q: undefined,
+      view: undefined,
+    });
+  });
+
+  it("passes the people filter and query to the public publishers query", async () => {
+    const route = await loadRoute();
+    await route.__config.loader?.({ deps: { kind: "people", q: "openclaw" } });
 
     expect(queryMock.mock.calls[0]?.[1]).toEqual({
       paginationOpts: { cursor: null, numItems: 25 },
@@ -128,6 +156,84 @@ describe("publishers route", () => {
 
     expect(screen.getByText("Publishers")).toBeTruthy();
     expect(screen.getByText("No publishers found")).toBeTruthy();
+  });
+
+  it("renders the total publisher count in the unfiltered page title", async () => {
+    loaderDataMock.mockReturnValue({
+      page: [],
+      counts: { all: 17, organizations: 6, individuals: 11 },
+      globalCounts: { all: 17, organizations: 6, individuals: 11 },
+      continueCursor: "",
+      isDone: true,
+    });
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(screen.getByRole("heading", { name: "Publishers 17" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "All" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "Organizations" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "People" })).toBeTruthy();
+    expect(screen.queryByText("Builders")).toBeNull();
+    expect(screen.queryByText(/Showing/i)).toBeNull();
+  });
+
+  it("hides the total publisher count when filters are active", async () => {
+    searchMock.mockReturnValue({ kind: "orgs" });
+    loaderDataMock.mockReturnValue({
+      page: [],
+      counts: { all: 6, organizations: 6, individuals: 0 },
+      globalCounts: { all: 17, organizations: 6, individuals: 11 },
+      continueCursor: "",
+      isDone: true,
+    });
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(screen.getByRole("heading", { name: "Publishers" })).toBeTruthy();
+    expect(screen.queryByText("17")).toBeNull();
+  });
+
+  it("keeps publisher view controls in the page header and type filters in the sidebar", async () => {
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    const allTab = screen.getByRole("radio", { name: "All" });
+    const listView = screen.getByRole("button", { name: "List" });
+    const searchInput = screen.getByPlaceholderText("Search publishers...");
+
+    expect(allTab.closest(".browse-sidebar")).not.toBeNull();
+    expect(listView.closest(".browse-page-header")).not.toBeNull();
+    expect(searchInput.compareDocumentPosition(listView) & Node.DOCUMENT_POSITION_PRECEDING).toBe(
+      Node.DOCUMENT_POSITION_PRECEDING,
+    );
+  });
+
+  it("clears publisher search from the search field", async () => {
+    searchMock.mockReturnValue({ q: "ope", kind: "orgs" });
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear publisher search" }));
+
+    expect(navigateMock).toHaveBeenCalled();
+    const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
+      search: (prev: Record<string, unknown>) => Record<string, unknown>;
+      replace?: boolean;
+    };
+    expect(lastCall.search({ q: "ope", kind: "orgs" })).toEqual({
+      q: undefined,
+      kind: "orgs",
+    });
+    expect(lastCall.replace).toBe(true);
+    expect(screen.queryByRole("button", { name: "Clear" })).toBeNull();
   });
 
   it("sets publisher-specific sharing metadata", async () => {

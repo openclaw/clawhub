@@ -64,6 +64,18 @@ function hasPackageNameArgs(args: unknown): args is { name: string } {
   return typeof value.name === "string";
 }
 
+function hasPluginRecommendedScoreReadinessArgs(
+  args: unknown,
+): args is { families: Array<"code-plugin" | "bundle-plugin"> } {
+  if (!args || typeof args !== "object") return false;
+  const value = args as Record<string, unknown>;
+  return (
+    Array.isArray(value.families) &&
+    value.families.includes("code-plugin") &&
+    value.families.includes("bundle-plugin")
+  );
+}
+
 function hasPackageDownloadMetricTarget(args: unknown, packageId: string) {
   if (!args || typeof args !== "object") return false;
   const value = args as Record<string, unknown>;
@@ -117,6 +129,7 @@ function makeCatalogItem(
     family: "code-plugin" | "bundle-plugin" | "skill";
     updatedAt: number;
     score?: number;
+    stats?: { downloads: number; installs: number; stars: number; versions: number };
   },
 ) {
   return {
@@ -128,6 +141,7 @@ function makeCatalogItem(
     createdAt: options.updatedAt,
     updatedAt: options.updatedAt,
     ...(typeof options.score === "number" ? { score: options.score } : {}),
+    ...(options.stats ? { stats: options.stats } : {}),
   };
 }
 
@@ -1788,6 +1802,79 @@ describe("httpApiV1 handlers", () => {
     expect(json.items[0].tags.latest).toBe("1.0.0");
   });
 
+  it("lists skills with long description metadata and setup requirements", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("cursor" in args || "numItems" in args) {
+        return {
+          page: [
+            {
+              skill: {
+                _id: "skills:1",
+                slug: "home-assistant",
+                displayName: "Home Assistant",
+                summary: "Control Home Assistant.",
+                tags: {},
+                stats: { downloads: 0, stars: 0, versions: 1, comments: 0 },
+                createdAt: 1,
+                updatedAt: 2,
+              },
+              latestVersion: {
+                version: "1.0.0",
+                createdAt: 3,
+                changelog: "c",
+                parsed: {
+                  description: "Long-form manifest description.",
+                  clawdis: {
+                    requires: { env: ["HA_TOKEN"], config: ["HA_URL"] },
+                    envVars: [
+                      {
+                        name: "HA_TOKEN",
+                        required: false,
+                        description: "Long-lived access token.",
+                      },
+                      {
+                        name: "HA_THEME",
+                        required: false,
+                        description: "Optional dashboard theme.",
+                      },
+                    ],
+                    os: ["linux"],
+                    nix: { systems: ["x86_64-linux"] },
+                  },
+                },
+              },
+            },
+          ],
+          nextCursor: null,
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.listSkillsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills?limit=1"),
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.items[0].description).toBe("Long-form manifest description.");
+    expect(json.items[0].metadata.setup).toEqual([
+      {
+        key: "HA_TOKEN",
+        required: true,
+      },
+      {
+        key: "HA_URL",
+        required: true,
+      },
+      {
+        key: "HA_THEME",
+        required: false,
+      },
+    ]);
+  });
+
   it("lists skills keeps the v1 no-sort default on updated ranking", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("cursor" in args || "numItems" in args) {
@@ -2092,6 +2179,196 @@ describe("httpApiV1 handlers", () => {
       summary: "Detected: suspicious.dynamic_code_execution",
       engineVersion: "v2.0.0",
       updatedAt: 4,
+    });
+  });
+
+  it("get skill includes readme markdown description and setup requirements", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "home-assistant",
+            displayName: "Home Assistant",
+            summary: "Control Home Assistant.",
+            latestVersionId: "skillVersions:1",
+            tags: {},
+            stats: { downloads: 0, stars: 0, versions: 1, comments: 0 },
+            createdAt: 1,
+            updatedAt: 2,
+          },
+          latestVersion: {
+            _id: "skillVersions:1",
+            skillId: "skills:1",
+            version: "1.0.0",
+            createdAt: 3,
+            changelog: "c",
+            files: [],
+            parsed: {
+              description: "Frontmatter description.",
+              clawdis: {
+                requires: { env: ["HA_TOKEN"], config: ["HA_URL"] },
+                envVars: [{ name: "HA_TOKEN", description: "Long-lived access token." }],
+              },
+            },
+          },
+          owner: { handle: "p", displayName: "Peter", image: null },
+          moderationInfo: null,
+        };
+      }
+      if ("versionIds" in args) return [];
+      if ("versionId" in args) {
+        return {
+          _id: "skillVersions:1",
+          skillId: "skills:1",
+          version: "1.0.0",
+          files: [
+            {
+              path: "SKILL.md",
+              size: 21,
+              storageId: "_storage:skill-readme",
+              sha256: "abc123",
+              contentType: "text/markdown",
+            },
+          ],
+          softDeletedAt: undefined,
+        };
+      }
+      return null;
+    });
+    const storageGet = vi.fn().mockResolvedValue({
+      text: vi.fn().mockResolvedValue("# Home Assistant\nSetup."),
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation, storage: { get: storageGet } }),
+      new Request("https://example.com/api/v1/skills/home-assistant"),
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.skill.description).toBe("# Home Assistant\nSetup.");
+    expect(json.metadata.setup).toEqual([
+      {
+        key: "HA_TOKEN",
+        required: true,
+      },
+      {
+        key: "HA_URL",
+        required: true,
+      },
+    ]);
+    expect(storageGet).toHaveBeenCalledWith("_storage:skill-readme");
+  });
+
+  it("get skill does not read raw markdown descriptions for malware-blocked skills", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "home-assistant",
+            displayName: "Home Assistant",
+            summary: "Control Home Assistant.",
+            latestVersionId: "skillVersions:1",
+            tags: {},
+            stats: { downloads: 0, stars: 0, versions: 1, comments: 0 },
+            createdAt: 1,
+            updatedAt: 2,
+          },
+          latestVersion: {
+            _id: "skillVersions:1",
+            skillId: "skills:1",
+            version: "1.0.0",
+            createdAt: 3,
+            changelog: "c",
+            files: [
+              {
+                path: "SKILL.md",
+                size: 21,
+                storageId: "_storage:skill-readme",
+                sha256: "abc123",
+                contentType: "text/markdown",
+              },
+            ],
+            parsed: {
+              description: "Frontmatter description.",
+            },
+          },
+          owner: null,
+          moderationInfo: {
+            isPendingScan: false,
+            isMalwareBlocked: true,
+            isSuspicious: false,
+            isHiddenByMod: false,
+            isRemoved: false,
+            verdict: "malicious",
+            reasonCodes: ["blocked.malware"],
+            summary: "Malware detected.",
+            sourceVersionId: "skillVersions:1",
+          },
+        };
+      }
+      if ("versionIds" in args) return [];
+      if ("versionId" in args) throw new Error("unexpected raw version lookup");
+      return null;
+    });
+    const storageGet = vi.fn();
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation, storage: { get: storageGet } }),
+      new Request("https://example.com/api/v1/skills/home-assistant"),
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.skill.description).toBe("Frontmatter description.");
+    expect(json.moderation.isMalwareBlocked).toBe(true);
+    expect(storageGet).not.toHaveBeenCalled();
+  });
+
+  it("get skill uses GitHub-backed cached markdown when no hosted version exists", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:github",
+            slug: "aiq-deploy",
+            displayName: "AIQ Deploy",
+            summary: "Deploy workflows.",
+            tags: {},
+            stats: { downloads: 0, stars: 0, versions: 0, comments: 0 },
+            createdAt: 1,
+            updatedAt: 2,
+          },
+          latestVersion: null,
+          owner: { handle: "nvidia", displayName: "NVIDIA", image: null },
+          moderationInfo: null,
+        };
+      }
+      if ("versionIds" in args) return [];
+      if (args.skillId === "skills:github" && args.kind === "readme") {
+        return {
+          path: "skills/aiq-deploy/SKILL.md",
+          text: "# AIQ Deploy\n\nLong GitHub-backed README.",
+          sourceBaseUrl:
+            "https://github.com/NVIDIA/skills/blob/1111111111111111111111111111111111111111/skills/aiq-deploy",
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/aiq-deploy"),
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.skill.description).toBe("# AIQ Deploy\n\nLong GitHub-backed README.");
+    expect(runQuery).toHaveBeenCalledWith(expect.anything(), {
+      skillId: "skills:github",
+      kind: "readme",
     });
   });
 
@@ -7251,6 +7528,12 @@ describe("httpApiV1 handlers", () => {
       updatedAt: 100,
     };
     const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if (Object.keys(args).length === 0) {
+        return 2;
+      }
+      if (hasPluginRecommendedScoreReadinessArgs(args)) {
+        return false;
+      }
       if (args.family === "code-plugin") {
         return { page: [codePlugin], isDone: true, continueCursor: "" };
       }
@@ -7267,13 +7550,18 @@ describe("httpApiV1 handlers", () => {
     );
 
     expect(response.status).toBe(200);
-    expect((await response.json()).items.map((entry: { name: string }) => entry.name)).toEqual([
+    const json = await response.json();
+    expect(json.items.map((entry: { name: string }) => entry.name)).toEqual([
       "code-plugin",
       "bundle-plugin",
     ]);
-    const families = runQuery.mock.calls.map(([, args]) => (args as { family?: string }).family);
+    expect(json.totalCount).toBe(2);
+    const families = runQuery.mock.calls
+      .map(([, args]) => (args as { family?: string }).family)
+      .filter(Boolean);
     expect(families).toEqual(["code-plugin", "bundle-plugin"]);
     for (const [, args] of runQuery.mock.calls) {
+      if (!("family" in (args as Record<string, unknown>))) continue;
       expect(args).toEqual(
         expect.objectContaining({
           category: undefined,
@@ -7284,7 +7572,12 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("plugins list forwards category to both plugin families", async () => {
-    const runQuery = vi.fn().mockResolvedValue({ page: [], isDone: true, continueCursor: "" });
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if (hasPluginRecommendedScoreReadinessArgs(args)) {
+        return false;
+      }
+      return { page: [], isDone: true, continueCursor: "" };
+    });
     const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.listPluginsV1Handler(
@@ -7294,6 +7587,7 @@ describe("httpApiV1 handlers", () => {
 
     expect(response.status).toBe(200);
     for (const [, args] of runQuery.mock.calls) {
+      if (hasPluginRecommendedScoreReadinessArgs(args)) continue;
       expect(args).toEqual(
         expect.objectContaining({
           category: "data",
@@ -7301,6 +7595,201 @@ describe("httpApiV1 handlers", () => {
         }),
       );
     }
+  });
+
+  it("plugins list recommended sort uses weighted scores across plugin families", async () => {
+    const codePlugin = makeCatalogItem("code-starred", {
+      family: "code-plugin",
+      updatedAt: 100,
+      stats: { downloads: 10, installs: 20, stars: 5, versions: 1 },
+    });
+    const bundlePlugin = makeCatalogItem("bundle-downloaded", {
+      family: "bundle-plugin",
+      updatedAt: 200,
+      stats: { downloads: 1_000, installs: 0, stars: 1, versions: 1 },
+    });
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if (Object.keys(args).length === 0) return 2;
+      if (hasPluginRecommendedScoreReadinessArgs(args)) return false;
+      expect(args).toEqual(expect.objectContaining({ sort: "recommended" }));
+      if (args.family === "code-plugin") {
+        return { page: [codePlugin], isDone: true, continueCursor: "" };
+      }
+      if (args.family === "bundle-plugin") {
+        return { page: [bundlePlugin], isDone: true, continueCursor: "" };
+      }
+      throw new Error(`unexpected family ${String(args.family)}`);
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.listPluginsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/plugins?limit=2&sort=recommended"),
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.items.map((entry: { name: string }) => entry.name)).toEqual([
+      "bundle-downloaded",
+      "code-starred",
+    ]);
+  });
+
+  it("plugins list recommended sort lets strong downloads beat smaller installs", async () => {
+    const codePlugin = makeCatalogItem("code-downloaded", {
+      family: "code-plugin",
+      updatedAt: 100,
+      stats: { downloads: 43_080, installs: 2, stars: 0, versions: 1 },
+    });
+    const bundlePlugin = makeCatalogItem("bundle-installed", {
+      family: "bundle-plugin",
+      updatedAt: 200,
+      stats: { downloads: 393, installs: 74, stars: 0, versions: 1 },
+    });
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if (Object.keys(args).length === 0) return 2;
+      if (hasPluginRecommendedScoreReadinessArgs(args)) return false;
+      expect(args).toEqual(expect.objectContaining({ sort: "recommended" }));
+      if (args.family === "code-plugin") {
+        return { page: [codePlugin], isDone: true, continueCursor: "" };
+      }
+      if (args.family === "bundle-plugin") {
+        return { page: [bundlePlugin], isDone: true, continueCursor: "" };
+      }
+      throw new Error(`unexpected family ${String(args.family)}`);
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.listPluginsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/plugins?limit=2&sort=recommended"),
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.items.map((entry: { name: string }) => entry.name)).toEqual([
+      "code-downloaded",
+      "bundle-installed",
+    ]);
+  });
+
+  it("plugins list falls back to updated sort while recommendation scores backfill", async () => {
+    const codePlugin = makeCatalogItem("code-older-high-score", {
+      family: "code-plugin",
+      updatedAt: 100,
+      stats: { downloads: 50_000, installs: 500, stars: 10, versions: 1 },
+    });
+    const bundlePlugin = makeCatalogItem("bundle-newer-low-score", {
+      family: "bundle-plugin",
+      updatedAt: 200,
+      stats: { downloads: 1, installs: 0, stars: 0, versions: 1 },
+    });
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if (Object.keys(args).length === 0) return 2;
+      if (hasPluginRecommendedScoreReadinessArgs(args)) return true;
+      expect(args).toEqual(expect.objectContaining({ sort: "updated" }));
+      if (args.family === "code-plugin") {
+        return { page: [codePlugin], isDone: true, continueCursor: "" };
+      }
+      if (args.family === "bundle-plugin") {
+        return { page: [bundlePlugin], isDone: true, continueCursor: "" };
+      }
+      throw new Error(`unexpected family ${String(args.family)}`);
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.listPluginsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/plugins?limit=2&sort=recommended"),
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.items.map((entry: { name: string }) => entry.name)).toEqual([
+      "bundle-newer-low-score",
+      "code-older-high-score",
+    ]);
+  });
+
+  it("plugins list keeps updated fallback sort from recommended pagination cursors", async () => {
+    const fallbackCursor = `pkgplugins:${JSON.stringify({
+      codePlugins: { cursor: null, offset: 0, pageSize: 1, done: false },
+      bundlePlugins: { cursor: null, offset: 0, pageSize: 1, done: true },
+      recommendedFallback: "updated",
+    })}`;
+    const codePlugin = makeCatalogItem("code-next", {
+      family: "code-plugin",
+      updatedAt: 100,
+      stats: { downloads: 50_000, installs: 500, stars: 10, versions: 1 },
+    });
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if (Object.keys(args).length === 0) return 1;
+      if (hasPluginRecommendedScoreReadinessArgs(args)) {
+        throw new Error("readiness should come from the pagination cursor");
+      }
+      expect(args).toEqual(expect.objectContaining({ sort: "updated" }));
+      if (args.family === "code-plugin") {
+        return { page: [codePlugin], isDone: true, continueCursor: "" };
+      }
+      throw new Error(`unexpected family ${String(args.family)}`);
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.listPluginsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        `https://example.com/api/v1/plugins?limit=1&sort=recommended&cursor=${encodeURIComponent(
+          fallbackCursor,
+        )}`,
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.items.map((entry: { name: string }) => entry.name)).toEqual(["code-next"]);
+  });
+
+  it("plugins list keeps legacy recommended cursors on recommended sort", async () => {
+    const legacyCursor = `pkgplugins:${JSON.stringify({
+      codePlugins: { cursor: "legacy-code-next", offset: 0, pageSize: 1, done: false },
+      bundlePlugins: { cursor: null, offset: 0, pageSize: 1, done: true },
+    })}`;
+    const codePlugin = makeCatalogItem("code-next", {
+      family: "code-plugin",
+      updatedAt: 100,
+      stats: { downloads: 50_000, installs: 500, stars: 10, versions: 1 },
+    });
+    const readinessCalls: unknown[] = [];
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if (Object.keys(args).length === 0) return 1;
+      if (hasPluginRecommendedScoreReadinessArgs(args)) {
+        readinessCalls.push(args);
+        return true;
+      }
+      expect(args).toEqual(
+        expect.objectContaining({
+          family: "code-plugin",
+          sort: "recommended",
+          paginationOpts: expect.objectContaining({ cursor: "legacy-code-next" }),
+        }),
+      );
+      return { page: [codePlugin], isDone: true, continueCursor: "" };
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.listPluginsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        `https://example.com/api/v1/plugins?limit=1&sort=recommended&cursor=${encodeURIComponent(
+          legacyCursor,
+        )}`,
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    expect(readinessCalls).toEqual([]);
+    const json = await response.json();
+    expect(json.items.map((entry: { name: string }) => entry.name)).toEqual(["code-next"]);
   });
 
   it("plugins list rejects invalid categories", async () => {
@@ -7331,6 +7820,8 @@ describe("httpApiV1 handlers", () => {
       updatedAt: 200,
     });
     const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if (Object.keys(args).length === 0) return 3;
+      if (hasPluginRecommendedScoreReadinessArgs(args)) return false;
       const pagination = args.paginationOpts as { cursor: string | null };
       if (args.family === "code-plugin" && pagination.cursor === null) {
         return { page: [codeNewest], isDone: false, continueCursor: "code-cursor" };
@@ -7384,7 +7875,11 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("plugins list ignores stale plugin search cursors", async () => {
-    const runQuery = vi.fn().mockResolvedValue({ page: [], isDone: true, continueCursor: "" });
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if (Object.keys(args).length === 0) return 0;
+      if (hasPluginRecommendedScoreReadinessArgs(args)) return false;
+      return { page: [], isDone: true, continueCursor: "" };
+    });
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const staleSearchCursor = `pkgpluginsearch:${JSON.stringify({
       codePlugins: { cursor: "code-search", offset: 0, pageSize: 2, done: false },
@@ -7406,7 +7901,10 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("package and plugin lists ignore stale skill cursors", async () => {
-    const runQuery = vi.fn().mockResolvedValue({ page: [], isDone: true, continueCursor: "" });
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if (hasPluginRecommendedScoreReadinessArgs(args)) return false;
+      return { page: [], isDone: true, continueCursor: "" };
+    });
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const staleSkillCursor = `skillcat:${JSON.stringify({
       cursor: "skill-cursor",

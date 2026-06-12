@@ -147,7 +147,7 @@ class TestEqBuilder {
   }
 }
 
-function makeMissingRecommendedRankStatsCtx() {
+function makeMissingRecommendedScoresCtx() {
   const first = vi.fn(async () => makeSearchDigest({ statsStars: undefined }));
   const withIndex = vi.fn((_indexName: string, build: (q: TestEqBuilder) => unknown) => {
     build(new TestEqBuilder());
@@ -172,16 +172,15 @@ describe("public skill list deterministic cursors", () => {
     getPageMock.mockResolvedValue({ page: [], hasMore: false, indexKeys: [] });
   });
 
-  it("falls back to the updated index while default rank stats are missing", async () => {
-    const { ctx, withIndex } = makeMissingRecommendedRankStatsCtx();
+  it("falls back to the updated index while recommendation scores are missing", async () => {
+    const { ctx, withIndex } = makeMissingRecommendedScoresCtx();
 
     await listPublicPageV4Handler(ctx, {
       numItems: 10,
     });
 
     expect(withIndex.mock.calls.map(([indexName]) => indexName)).toEqual([
-      "by_active_stats_stars",
-      "by_active_stats_downloads",
+      "by_active_recommended_score",
     ]);
     expect(getPageMock).toHaveBeenCalledTimes(1);
     expect(getPageMock.mock.calls[0]?.[1]).toMatchObject({
@@ -192,8 +191,8 @@ describe("public skill list deterministic cursors", () => {
     });
   });
 
-  it("falls back to the non-suspicious updated index while default rank stats are missing", async () => {
-    const { ctx, withIndex } = makeMissingRecommendedRankStatsCtx();
+  it("falls back to the non-suspicious updated index while recommendation scores are missing", async () => {
+    const { ctx, withIndex } = makeMissingRecommendedScoresCtx();
 
     await listPublicApiPageV1Handler(ctx, {
       numItems: 10,
@@ -202,8 +201,7 @@ describe("public skill list deterministic cursors", () => {
     });
 
     expect(withIndex.mock.calls.map(([indexName]) => indexName)).toEqual([
-      "by_nonsuspicious_stars",
-      "by_nonsuspicious_downloads",
+      "by_nonsuspicious_recommended_score",
     ]);
     expect(getPageMock).toHaveBeenCalledTimes(1);
     expect(getPageMock.mock.calls[0]?.[1]).toMatchObject({
@@ -485,6 +483,44 @@ describe("public skill list deterministic cursors", () => {
     expect(result.items[0]).toMatchObject({
       latestVersion: {
         version: "1.0.0",
+      },
+    });
+  });
+
+  it("carries denormalized latest-version descriptions through the public API list", async () => {
+    getPageMock.mockResolvedValueOnce({
+      page: [
+        makeSearchDigest({
+          latestVersionSummary: {
+            version: "1.0.0",
+            createdAt: 9,
+            changelog: "initial",
+            changelogSource: "user",
+            description: "Long-form frontmatter description.",
+            clawdis: {
+              requires: { env: ["HA_TOKEN"] },
+            },
+          },
+        }),
+      ],
+      hasMore: false,
+      indexKeys: [],
+    });
+
+    const result = await listPublicApiPageV1Handler({} as never, {
+      numItems: 10,
+      sort: "updated",
+    });
+
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({
+      latestVersion: {
+        parsed: {
+          description: "Long-form frontmatter description.",
+          clawdis: {
+            requires: { env: ["HA_TOKEN"] },
+          },
+        },
       },
     });
   });

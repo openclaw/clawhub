@@ -486,7 +486,7 @@ const publisherCmd = registerCommandGroup(program, ["publisher"])
 
 registerCommand(publisherCmd, ["publisher", "create"])
   .description("Create an org publisher you own")
-  .argument("<handle>", "Publisher handle, for example opik")
+  .argument("<handle>", "Publisher handle, for example example.tools")
   .option("--display-name <name>", "Publisher display name")
   .option("--json", "Output JSON")
   .action(async (handle, options) => {

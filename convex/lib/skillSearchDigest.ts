@@ -2,6 +2,7 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import type { HydratableSkill, PublicPublisher } from "./public";
 import { getOwnerPublisher } from "./publishers";
+import { computeRecommendationScore, RECOMMENDATION_SCORE_VERSION } from "./recommendationScore";
 import { tokenize } from "./searchText";
 import { readCanonicalStat } from "./skillStats";
 
@@ -62,16 +63,28 @@ export type SkillSearchDigestFields = Pick<Doc<"skills">, (typeof SHARED_KEYS)[n
   ownerName?: string;
   ownerDisplayName?: string;
   ownerImage?: string;
+  recommendedScore?: number;
+  recommendedScoreVersion?: number;
 };
 
 /** Pick the subset of fields from a full skill doc needed for the digest. */
 export function extractDigestFields(skill: Doc<"skills">): SkillSearchDigestFields {
+  const statsDownloads = readCanonicalStat(skill, "downloads");
+  const statsStars = readCanonicalStat(skill, "stars");
+  const statsInstallsCurrent = readCanonicalStat(skill, "installsCurrent");
+  const statsInstallsAllTime = readCanonicalStat(skill, "installsAllTime");
   return {
     ...pick(skill, [...SHARED_KEYS]),
-    statsDownloads: readCanonicalStat(skill, "downloads"),
-    statsStars: readCanonicalStat(skill, "stars"),
-    statsInstallsCurrent: readCanonicalStat(skill, "installsCurrent"),
-    statsInstallsAllTime: readCanonicalStat(skill, "installsAllTime"),
+    statsDownloads,
+    statsStars,
+    statsInstallsCurrent,
+    statsInstallsAllTime,
+    recommendedScore: computeRecommendationScore({
+      downloads: statsDownloads,
+      installs: statsInstallsAllTime,
+      stars: statsStars,
+    }),
+    recommendedScoreVersion: RECOMMENDATION_SCORE_VERSION,
     skillId: skill._id,
     normalizedSlug: normalizeSkillSearchText(skill.slug),
     normalizedSlugFirstToken: getFirstSearchToken(skill.slug),

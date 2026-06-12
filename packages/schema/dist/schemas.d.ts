@@ -235,12 +235,21 @@ export declare const ApiV1SkillListResponseSchema: import("arktype/internal/vari
         createdAt: number;
         updatedAt: number;
         summary?: string | null | undefined;
+        description?: string | null | undefined;
         latestVersion?: {
             version: string;
             createdAt: number;
             changelog: string;
             license?: "MIT-0" | null | undefined;
         } | undefined;
+        metadata?: {
+            setup: {
+                key: string;
+                required: boolean;
+            }[];
+            os?: string[] | null | undefined;
+            systems?: string[] | null | undefined;
+        } | null | undefined;
     }[];
     nextCursor: string | null;
 }, {}>;
@@ -253,6 +262,7 @@ export declare const ApiV1SkillResponseSchema: import("arktype/internal/variants
         createdAt: number;
         updatedAt: number;
         summary?: string | null | undefined;
+        description?: string | null | undefined;
     } | null;
     latestVersion: {
         version: string;
@@ -265,6 +275,14 @@ export declare const ApiV1SkillResponseSchema: import("arktype/internal/variants
         displayName?: string | null | undefined;
         image?: string | null | undefined;
     } | null;
+    metadata?: {
+        setup: {
+            key: string;
+            required: boolean;
+        }[];
+        os?: string[] | null | undefined;
+        systems?: string[] | null | undefined;
+    } | null | undefined;
     moderation?: {
         isSuspicious: boolean;
         isMalwareBlocked: boolean;
