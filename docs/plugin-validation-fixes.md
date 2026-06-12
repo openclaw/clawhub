@@ -45,6 +45,7 @@ clawhub package validate <path-to-plugin>
 | `manifest-unknown-contracts`            | [Remove unsupported contract keys](./plugin-validation-fixes.md#manifest-unknown-contracts)                                 |
 | `legacy-root-sdk-import`                | [Replace root SDK imports](./plugin-validation-fixes.md#legacy-root-sdk-import)                                             |
 | `reserved-sdk-import`                   | [Remove reserved SDK imports](./plugin-validation-fixes.md#reserved-sdk-import)                                             |
+| `sdk-load-session-store`                | [Replace whole-session-store access](./plugin-validation-fixes.md#sdk-load-session-store)                                   |
 | `legacy-before-agent-start`             | [Replace before_agent_start](./plugin-validation-fixes.md#legacy-before-agent-start)                                        |
 | `provider-auth-env-vars`                | [Move provider env vars to setup metadata](./plugin-validation-fixes.md#provider-auth-env-vars)                             |
 | `channel-env-vars`                      | [Mirror channel env vars in current metadata](./plugin-validation-fixes.md#channel-env-vars)                                |
@@ -259,6 +260,22 @@ compatibility.
   request a public OpenClaw API.
 - Use [Plugin SDK subpaths](/plugins/sdk-subpaths) and
   [SDK migration](/plugins/sdk-migration) to choose a supported import.
+- Rerun `clawhub package validate <path-to-plugin>`.
+
+### sdk-load-session-store
+
+The plugin still uses the deprecated whole-session-store helper
+`loadSessionStore`.
+
+- Use `getSessionEntry(...)` or `listSessionEntries(...)` when reading session
+  state.
+- Use `patchSessionEntry(...)` or `upsertSessionEntry(...)` when writing session
+  state.
+- Avoid loading, mutating, and saving the whole session store object.
+- Keep `loadSessionStore(...)` only while your declared compatibility range
+  still supports older OpenClaw versions that require it.
+- See [Runtime API](/plugins/sdk-runtime#agent-session-state) and
+  [Plugin SDK subpaths](/plugins/sdk-subpaths).
 - Rerun `clawhub package validate <path-to-plugin>`.
 
 ### legacy-before-agent-start
