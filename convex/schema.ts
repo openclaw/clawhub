@@ -574,7 +574,6 @@ const securityScanJobStatusValidator = v.union(
 );
 const securityScanJobSourceValidator = v.union(
   v.literal("publish"),
-  v.literal("clawscan-note"),
   v.literal("vt-update"),
   v.literal("backfill"),
   v.literal("bulk-rescan"),
@@ -631,6 +630,7 @@ const skills = defineTable({
       createdAt: v.number(),
       changelog: v.string(),
       changelogSource: v.optional(v.union(v.literal("auto"), v.literal("user"))),
+      description: v.optional(v.string()),
       clawdis: v.optional(v.any()),
       // Denormalised mirror of the latest version's `apiKeyRequired`.
       apiKeyRequired: v.optional(v.boolean()),
@@ -777,30 +777,6 @@ const skillSlugAliases = defineTable({
   .index("by_owner_slug", ["ownerUserId", "slug"])
   .index("by_owner_publisher_slug", ["ownerPublisherId", "slug"]);
 
-const souls = defineTable({
-  slug: v.string(),
-  displayName: v.string(),
-  summary: v.optional(v.string()),
-  ownerUserId: v.id("users"),
-  ownerPublisherId: v.optional(v.id("publishers")),
-  latestVersionId: v.optional(v.id("soulVersions")),
-  tags: v.record(v.string(), v.id("soulVersions")),
-  softDeletedAt: v.optional(v.number()),
-  stats: v.object({
-    downloads: v.number(),
-    stars: v.number(),
-    versions: v.number(),
-    comments: v.number(),
-  }),
-  createdAt: v.number(),
-  updatedAt: v.number(),
-})
-  .index("by_slug", ["slug"])
-  .index("by_owner", ["ownerUserId"])
-  .index("by_owner_publisher", ["ownerPublisherId"])
-  .index("by_updated", ["updatedAt"])
-  .index("by_active_updated", ["softDeletedAt", "updatedAt"]);
-
 const skillVersions = defineTable({
   skillId: v.id("skills"),
   version: v.string(),
@@ -837,8 +813,6 @@ const skillVersions = defineTable({
   }),
   createdBy: v.id("users"),
   createdAt: v.number(),
-  clawScanNote: v.optional(v.string()),
-  clawScanNoteUpdatedAt: v.optional(v.number()),
   softDeletedAt: v.optional(v.number()),
   sha256hash: v.optional(v.string()),
   vtAnalysis: v.optional(vtAnalysisValidator),
@@ -914,34 +888,6 @@ const depRegistryCache = defineTable({
   checkedAt: v.number(),
 }).index("by_registry_name", ["registry", "name"]);
 
-const soulVersions = defineTable({
-  soulId: v.id("souls"),
-  version: v.string(),
-  fingerprint: v.optional(v.string()),
-  changelog: v.string(),
-  changelogSource: v.optional(v.union(v.literal("auto"), v.literal("user"))),
-  files: v.array(
-    v.object({
-      path: v.string(),
-      size: v.number(),
-      storageId: v.id("_storage"),
-      sha256: v.string(),
-      contentType: v.optional(v.string()),
-    }),
-  ),
-  parsed: v.object({
-    frontmatter: v.record(v.string(), v.any()),
-    metadata: v.optional(v.any()),
-    clawdis: v.optional(v.any()),
-    moltbot: v.optional(v.any()),
-  }),
-  createdBy: v.id("users"),
-  createdAt: v.number(),
-  softDeletedAt: v.optional(v.number()),
-})
-  .index("by_soul", ["soulId"])
-  .index("by_soul_version", ["soulId", "version"]);
-
 const skillVersionFingerprints = defineTable({
   skillId: v.id("skills"),
   versionId: v.id("skillVersions"),
@@ -978,16 +924,6 @@ const packageBadges = defineTable({
   .index("by_package", ["packageId"])
   .index("by_package_kind", ["packageId", "kind"])
   .index("by_kind_at", ["kind", "at"]);
-
-const soulVersionFingerprints = defineTable({
-  soulId: v.id("souls"),
-  versionId: v.id("soulVersions"),
-  fingerprint: v.string(),
-  createdAt: v.number(),
-})
-  .index("by_version", ["versionId"])
-  .index("by_fingerprint", ["fingerprint"])
-  .index("by_soul_fingerprint", ["soulId", "fingerprint"]);
 
 const skillEmbeddings = defineTable({
   skillId: v.id("skills"),
@@ -1053,6 +989,7 @@ const skillSearchDigest = defineTable({
       createdAt: v.number(),
       changelog: v.string(),
       changelogSource: v.optional(v.union(v.literal("auto"), v.literal("user"))),
+      description: v.optional(v.string()),
       clawdis: v.optional(v.any()),
       // Mirrors `skills.latestVersionSummary.apiKeyRequired`.
       apiKeyRequired: v.optional(v.boolean()),
@@ -1071,6 +1008,9 @@ const skillSearchDigest = defineTable({
   softDeletedAt: v.optional(v.number()),
   moderationStatus: moderationStatusValidator,
   moderationFlags: v.optional(v.array(v.string())),
+  moderationVerdict: v.optional(
+    v.union(v.literal("clean"), v.literal("suspicious"), v.literal("malicious")),
+  ),
   moderationReason: v.optional(v.string()),
   isSuspicious: v.optional(v.boolean()),
   createdAt: v.number(),
@@ -1097,7 +1037,6 @@ const skillSearchDigest = defineTable({
   .index("by_active_recommended_rank", [
     "softDeletedAt",
     "statsStars",
-    "statsInstallsAllTime",
     "statsDownloads",
     "updatedAt",
   ])
@@ -1139,7 +1078,6 @@ const skillSearchDigest = defineTable({
     "softDeletedAt",
     "isSuspicious",
     "statsStars",
-    "statsInstallsAllTime",
     "statsDownloads",
     "updatedAt",
   ])
@@ -1349,8 +1287,6 @@ const packageReleases = defineTable({
   createdBy: v.id("users"),
   publishActor: packagePublishActorValidator,
   createdAt: v.number(),
-  clawScanNote: v.optional(v.string()),
-  clawScanNoteUpdatedAt: v.optional(v.number()),
   softDeletedAt: v.optional(v.number()),
 })
   .index("by_package", ["packageId"])
@@ -1963,24 +1899,6 @@ const skillStatUpdateCursors = defineTable({
   updatedAt: v.number(),
 }).index("by_key", ["key"]);
 
-const soulEmbeddings = defineTable({
-  soulId: v.id("souls"),
-  versionId: v.id("soulVersions"),
-  ownerId: v.id("users"),
-  embedding: v.array(v.number()),
-  isLatest: v.boolean(),
-  isApproved: v.boolean(),
-  visibility: v.string(),
-  updatedAt: v.number(),
-})
-  .index("by_soul", ["soulId"])
-  .index("by_version", ["versionId"])
-  .vectorIndex("by_embedding", {
-    vectorField: "embedding",
-    dimensions: EMBEDDING_DIMENSIONS,
-    filterFields: ["visibility"],
-  });
-
 const comments = defineTable({
   skillId: v.id("skills"),
   userId: v.id("users"),
@@ -2165,17 +2083,6 @@ const officialPluginMigrations = defineTable({
   .index("by_phase_updatedAt", ["phase", "updatedAt"])
   .index("by_updatedAt", ["updatedAt"]);
 
-const soulComments = defineTable({
-  soulId: v.id("souls"),
-  userId: v.id("users"),
-  body: v.string(),
-  createdAt: v.number(),
-  softDeletedAt: v.optional(v.number()),
-  deletedBy: v.optional(v.id("users")),
-})
-  .index("by_soul", ["soulId"])
-  .index("by_user", ["userId"]);
-
 const stars = defineTable({
   skillId: v.id("skills"),
   userId: v.id("users"),
@@ -2184,15 +2091,6 @@ const stars = defineTable({
   .index("by_skill", ["skillId"])
   .index("by_user", ["userId"])
   .index("by_skill_user", ["skillId", "userId"]);
-
-const soulStars = defineTable({
-  soulId: v.id("souls"),
-  userId: v.id("users"),
-  createdAt: v.number(),
-})
-  .index("by_soul", ["soulId"])
-  .index("by_user", ["userId"])
-  .index("by_soul_user", ["soulId", "userId"]);
 
 const auditLogs = defineTable({
   actorUserId: v.optional(v.id("users")),
@@ -2289,6 +2187,7 @@ const publisherAbuseScores = defineTable({
         displayName: v.string(),
         spike: v.boolean(),
         sustained: v.boolean(),
+        nearConversion: v.optional(v.boolean()),
         pressure: v.number(),
         recent7Downloads: v.number(),
         recent7Installs: v.number(),
@@ -2302,10 +2201,16 @@ const publisherAbuseScores = defineTable({
         spikeMultiplierCohortBand: v.optional(v.union(v.literal("p95"), v.literal("p99"))),
         downloads30dVsPeerP95: v.optional(v.number()),
         spikeMultiplierVsPeerP95: v.optional(v.number()),
+        installDownloadRatio7: v.optional(v.number()),
+        installDownloadRatio30: v.optional(v.number()),
+        installDownloadExcessZScore7: v.optional(v.number()),
+        installDownloadExcessZScore30: v.optional(v.number()),
         spikeWindowStartDay: v.optional(v.number()),
         spikeWindowEndDay: v.optional(v.number()),
         sustainedWindowStartDay: v.optional(v.number()),
         sustainedWindowEndDay: v.optional(v.number()),
+        nearConversionWindowStartDay: v.optional(v.number()),
+        nearConversionWindowEndDay: v.optional(v.number()),
         reasonCodes: v.array(v.string()),
       }),
     ),
@@ -2597,17 +2502,13 @@ export default defineSchema({
   packageSearchDigest,
   packageCapabilitySearchDigest,
   packagePluginCategorySearchDigest,
-  souls,
   skillVersions,
   depRegistryCache,
-  soulVersions,
   skillVersionFingerprints,
   skillBadges,
-  soulVersionFingerprints,
   skillEmbeddings,
   embeddingSkillMap,
   skillSearchDigest,
-  soulEmbeddings,
   skillDailyStats,
   skillLeaderboards,
   skillStatBackfillState,
@@ -2623,9 +2524,7 @@ export default defineSchema({
   packageAppeals,
   packageModerationEventLogs,
   officialPluginMigrations,
-  soulComments,
   stars,
-  soulStars,
   auditLogs,
   publisherAbuseScoreRuns,
   publisherAbuseScores,

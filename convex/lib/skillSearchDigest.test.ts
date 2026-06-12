@@ -1,6 +1,7 @@
 /* @vitest-environment node */
 
 import { describe, expect, it } from "vitest";
+import { toPublicSkill } from "./public";
 import { computeRecommendationScore, RECOMMENDATION_SCORE_VERSION } from "./recommendationScore";
 import {
   digestToHydratableSkill,
@@ -95,6 +96,7 @@ describe("extractDigestFields", () => {
       comments: 1,
     });
     expect(digest.moderationFlags).toEqual(["flagged.test"]);
+    expect(digest.moderationVerdict).toBeUndefined();
     expect(digest.isSuspicious).toBe(false);
     expect(digest.createdAt).toBe(1000);
     expect(digest.updatedAt).toBe(2000);
@@ -185,6 +187,14 @@ describe("extractDigestFields", () => {
     const hydratable = digestToHydratableSkill(digest as never);
 
     expect(hydratable.isSuspicious).toBe(true);
+  });
+
+  it("preserves malicious moderation verdicts through digest hydration", () => {
+    const digest = extractDigestFields(makeSkillDoc({ moderationVerdict: "malicious" }) as never);
+    const hydratable = digestToHydratableSkill(digest as never);
+
+    expect(hydratable.moderationVerdict).toBe("malicious");
+    expect(toPublicSkill(hydratable)).toBeNull();
   });
 });
 

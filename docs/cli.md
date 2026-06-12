@@ -1,5 +1,5 @@
 ---
-summary: "CLI reference: commands, flags, config, lockfile, sync behavior."
+summary: "CLI reference: commands, flags, config, lockfile, and sync behavior."
 read_when:
   - Using the ClawHub CLI
   - Debugging install, update, publish, or sync
@@ -141,6 +141,8 @@ Stores your API token + cached registry URL.
 ### `uninstall <slug>`
 
 - Removes `<workdir>/<dir>/<slug>` and deletes the lockfile entry.
+- Sends best-effort telemetry while logged in so current install counts can be
+  deactivated.
 - Interactive: asks for confirmation.
 - Non-interactive (`--no-input`): requires `--yes`.
 
@@ -194,7 +196,7 @@ clawhub skill publish ./my-skill --version 1.0.0
 - Requires `clawhub login`.
 - Runs ClawHub ClawScan through `POST /api/v1/skills/-/scan`, then polls until the scan is terminal.
 - Scans are asynchronous and may take time to complete. While queued, the terminal spinner shows the current prioritized scan position and how many scans are ahead.
-- Published scans require ownership or publisher management access. Moderators/admins can use the same backend through `clawhub-mod`.
+- Published scans require ownership or publisher management access. Moderators/admins can use the same backend through `clawhub-admin`.
 - `--update` is valid only with `--slug`; it writes successful published scan results back to the selected version.
 - `--output <file.zip>` downloads the full report archive with `manifest.json`, `clawscan.json`, `skillspector.json`, `static-analysis.json`, `virustotal.json`, and `README.md`.
 - `--json` prints the full poll response for automation.
@@ -698,6 +700,64 @@ Notes:
 - Keep `clawhub_token` available for first publish, untrusted packages, or break-glass publishes.
 - The workflow uploads the JSON result as an artifact and exposes it as workflow outputs.
 
+### `package trusted-publisher get <name>`
+
+- Shows the GitHub Actions trusted publisher config for a package.
+- Use this after setting config to confirm the repository, workflow filename,
+  and optional environment pin.
+- Flags:
+  - `--json`: machine-readable output.
+
+Example:
+
+```bash
+clawhub package trusted-publisher get @openclaw/example-plugin
+```
+
+### `package trusted-publisher set <name>`
+
+- Attaches or replaces GitHub Actions trusted publisher config for an existing
+  package.
+- The package must be created first through normal manual or token-authenticated
+  `clawhub package publish`.
+- After config is set, future supported GitHub Actions publishes can use
+  OIDC/trusted publishing without a long-lived ClawHub token.
+- `--repository <repo>` must be `owner/repo`.
+- `--workflow-filename <file>` must match the workflow file name in
+  `.github/workflows/`.
+- `--environment <name>` is optional. When configured, the GitHub Actions
+  environment in the OIDC claim must match exactly.
+- Flags:
+  - `--repository <repo>`: GitHub repository, for example `openclaw/example-plugin`.
+  - `--workflow-filename <file>`: workflow file name, for example `package-publish.yml`.
+  - `--environment <name>`: optional exact-match GitHub Actions environment.
+  - `--json`: machine-readable output.
+
+Example:
+
+```bash
+clawhub package trusted-publisher set @openclaw/example-plugin \
+  --repository openclaw/example-plugin \
+  --workflow-filename package-publish.yml \
+  --environment release
+```
+
+### `package trusted-publisher delete <name>`
+
+- Removes trusted publisher config from a package.
+- Use this as rollback if the workflow, repository, or environment pin needs to
+  be disabled or re-created.
+- Future real publishes must use normal authenticated publishing until config is
+  set again.
+- Flags:
+  - `--json`: machine-readable output.
+
+Example:
+
+```bash
+clawhub package trusted-publisher delete @openclaw/example-plugin
+```
+
 ### `sync`
 
 - Scans for local skill folders and publishes new/changed ones.
@@ -717,10 +777,15 @@ Notes:
   - `--bump patch|minor|major` (default: patch)
   - `--changelog <text>` (non-interactive)
   - `--tags a,b,c` (default: latest)
-  - `--concurrency <n>` (default: 4)
+  - `--concurrency <n>`
   - `--source-repo <repo>`, `--source-commit <sha>`, `--source-ref <ref>` for GitHub provenance
 
-Telemetry:
+`sync` does not report install telemetry.
 
-- Sent during `sync` when logged in, unless `CLAWHUB_DISABLE_TELEMETRY=1` (legacy `CLAWDHUB_DISABLE_TELEMETRY=1`).
+### Install telemetry
+
+- Sent after `clawhub install <slug>` when logged in, unless
+  `CLAWHUB_DISABLE_TELEMETRY=1` is set.
+- Reporting is best-effort. Install commands do not fail if telemetry is
+  unavailable.
 - Details: `docs/telemetry.md`.

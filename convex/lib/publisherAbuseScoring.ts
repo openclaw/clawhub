@@ -60,6 +60,7 @@ export type SkillTemporalAbuseDailyStat = {
 export type SkillTemporalAbuseScore = {
   spike: boolean;
   sustained: boolean;
+  nearConversion: boolean;
   pressure: number;
   recent7Downloads: number;
   recent7Installs: number;
@@ -73,10 +74,16 @@ export type SkillTemporalAbuseScore = {
   spikeMultiplierCohortBand?: "p95" | "p99";
   downloads30dVsPeerP95?: number;
   spikeMultiplierVsPeerP95?: number;
+  installDownloadRatio7: number;
+  installDownloadRatio30: number;
+  installDownloadExcessZScore7: number;
+  installDownloadExcessZScore30: number;
   spikeWindowStartDay?: number;
   spikeWindowEndDay?: number;
   sustainedWindowStartDay?: number;
   sustainedWindowEndDay?: number;
+  nearConversionWindowStartDay?: number;
+  nearConversionWindowEndDay?: number;
   reasonCodes: string[];
 };
 
@@ -116,6 +123,12 @@ const TEMPORAL_SUSTAINED_DAYS = 30;
 const TEMPORAL_MAX_SPIKE_INSTALLS = 2;
 const TEMPORAL_MAX_SUSTAINED_INSTALLS = 5;
 const TEMPORAL_MIN_BASELINE_7_DOWNLOADS = 100;
+const TEMPORAL_MIN_NEAR_CONVERSION_7_DOWNLOADS = 1_000;
+const TEMPORAL_MIN_NEAR_CONVERSION_30_DOWNLOADS = 2_000;
+const TEMPORAL_MIN_NEAR_CONVERSION_INSTALLS = 500;
+const TEMPORAL_EXPECTED_INSTALL_DOWNLOAD_RATIO = 0.012;
+const TEMPORAL_MIN_INSTALL_DOWNLOAD_RATIO = 0.5;
+const TEMPORAL_MIN_INSTALL_DOWNLOAD_EXCESS_Z_SCORE = 50;
 
 export function labelForPublisherAbuseZScore(
   zScore: number,
@@ -291,6 +304,7 @@ export function computeHistoricalSkillTemporalAbuseScore(input: {
   const maxDay = Math.max(...days);
   let bestSpike = emptySkillTemporalAbuseScore();
   let bestSustained = emptySkillTemporalAbuseScore();
+  let bestNearConversion = emptySkillTemporalAbuseScore();
 
   for (let startDay = minDay; startDay <= maxDay; startDay += 1) {
     if (startDay + TEMPORAL_SPIKE_RECENT_DAYS - 1 <= maxDay) {
@@ -304,6 +318,13 @@ export function computeHistoricalSkillTemporalAbuseScore(input: {
       );
       if (score.spike && score.spikeMultiplier > bestSpike.spikeMultiplier) {
         bestSpike = score;
+      }
+      if (
+        score.nearConversion &&
+        score.nearConversionWindowEndDay === startDay + TEMPORAL_SPIKE_RECENT_DAYS - 1 &&
+        score.installDownloadRatio7 > bestNearConversion.installDownloadRatio7
+      ) {
+        bestNearConversion = score;
       }
     }
 
@@ -319,10 +340,17 @@ export function computeHistoricalSkillTemporalAbuseScore(input: {
       if (score.sustained && score.recent30Downloads > bestSustained.recent30Downloads) {
         bestSustained = score;
       }
+      if (
+        score.nearConversion &&
+        score.nearConversionWindowEndDay === startDay + TEMPORAL_SUSTAINED_DAYS - 1 &&
+        score.installDownloadRatio30 > bestNearConversion.installDownloadRatio30
+      ) {
+        bestNearConversion = score;
+      }
     }
   }
 
-  return mergeTemporalAbuseWindowScores(bestSpike, bestSustained);
+  return mergeTemporalAbuseWindowScores(bestSpike, bestSustained, bestNearConversion);
 }
 
 export function labelForTemporalPublisherAbuse(input: {
@@ -379,15 +407,25 @@ export function classifySkillTemporalAbuseScore(
       : undefined;
   const spike = Boolean(spikeMultiplierCohortBand);
   const sustained = Boolean(downloads30dCohortBand);
+  const nearConversion = score.nearConversion;
+  const nearConversionPressure = nearConversion
+    ? Math.max(score.installDownloadExcessZScore7, score.installDownloadExcessZScore30)
+    : 0;
   const reasonCodes: string[] = [];
   if (spike) reasonCodes.push("temporal_download_spike_flat_installs");
   if (sustained) reasonCodes.push("temporal_sustained_downloads_flat_installs");
+  if (nearConversion) reasonCodes.push("temporal_installs_track_downloads");
 
   return {
     ...score,
     spike,
     sustained,
-    pressure: Math.max(spike ? spikeMultiplierVsPeerP95 : 0, sustained ? downloads30dVsPeerP95 : 0),
+    nearConversion,
+    pressure: Math.max(
+      spike ? spikeMultiplierVsPeerP95 : 0,
+      sustained ? downloads30dVsPeerP95 : 0,
+      nearConversionPressure,
+    ),
     downloads30dCohortBand,
     spikeMultiplierCohortBand,
     downloads30dVsPeerP95,
@@ -396,6 +434,8 @@ export function classifySkillTemporalAbuseScore(
     spikeWindowEndDay: spike ? score.spikeWindowEndDay : undefined,
     sustainedWindowStartDay: sustained ? score.sustainedWindowStartDay : undefined,
     sustainedWindowEndDay: sustained ? score.sustainedWindowEndDay : undefined,
+    nearConversionWindowStartDay: nearConversion ? score.nearConversionWindowStartDay : undefined,
+    nearConversionWindowEndDay: nearConversion ? score.nearConversionWindowEndDay : undefined,
     reasonCodes,
   };
 }
@@ -449,10 +489,37 @@ function computeSkillTemporalAbuseScoreForWindows(input: {
   );
   const spikeMultiplier = baseline7Downloads > 0 ? recent7.downloads / baseline7Downloads : 0;
   const downloadInstallRatio30 = recent30.downloads / Math.max(1, recent30.installs);
+  const installDownloadRatio7 = recent7.installs / Math.max(1, recent7.downloads);
+  const installDownloadRatio30 = recent30.installs / Math.max(1, recent30.downloads);
+  const installDownloadExcessZScore7 = installDownloadExcessZScore({
+    downloads: recent7.downloads,
+    installs: recent7.installs,
+  });
+  const installDownloadExcessZScore30 = installDownloadExcessZScore({
+    downloads: recent30.downloads,
+    installs: recent30.installs,
+  });
+  const nearConversion7 =
+    recent7.downloads >= TEMPORAL_MIN_NEAR_CONVERSION_7_DOWNLOADS &&
+    recent7.installs >= TEMPORAL_MIN_NEAR_CONVERSION_INSTALLS &&
+    installDownloadRatio7 >= TEMPORAL_MIN_INSTALL_DOWNLOAD_RATIO &&
+    installDownloadExcessZScore7 >= TEMPORAL_MIN_INSTALL_DOWNLOAD_EXCESS_Z_SCORE;
+  const nearConversion30 =
+    recent30.downloads >= TEMPORAL_MIN_NEAR_CONVERSION_30_DOWNLOADS &&
+    recent30.installs >= TEMPORAL_MIN_NEAR_CONVERSION_INSTALLS &&
+    installDownloadRatio30 >= TEMPORAL_MIN_INSTALL_DOWNLOAD_RATIO &&
+    installDownloadExcessZScore30 >= TEMPORAL_MIN_INSTALL_DOWNLOAD_EXCESS_Z_SCORE;
+  const nearConversion = nearConversion7 || nearConversion30;
+  const reasonCodes: string[] = [];
+  if (nearConversion) reasonCodes.push("temporal_installs_track_downloads");
+
   return {
     spike: false,
     sustained: false,
-    pressure: 0,
+    nearConversion,
+    pressure: nearConversion
+      ? Math.max(installDownloadExcessZScore7, installDownloadExcessZScore30)
+      : 0,
     recent7Downloads: recent7.downloads,
     recent7Installs: recent7.installs,
     previous30Downloads: previous30.downloads,
@@ -461,35 +528,74 @@ function computeSkillTemporalAbuseScoreForWindows(input: {
     recent30Downloads: recent30.downloads,
     recent30Installs: recent30.installs,
     downloadInstallRatio30,
+    installDownloadRatio7,
+    installDownloadRatio30,
+    installDownloadExcessZScore7,
+    installDownloadExcessZScore30,
     spikeWindowStartDay: input.spikeStartDay,
     spikeWindowEndDay: spikeEndDay,
     sustainedWindowStartDay: input.sustainedStartDay,
     sustainedWindowEndDay: sustainedEndDay,
-    reasonCodes: [],
+    nearConversionWindowStartDay: nearConversion7
+      ? input.spikeStartDay
+      : nearConversion30
+        ? input.sustainedStartDay
+        : undefined,
+    nearConversionWindowEndDay: nearConversion7
+      ? spikeEndDay
+      : nearConversion30
+        ? sustainedEndDay
+        : undefined,
+    reasonCodes,
   };
 }
 
 function mergeTemporalAbuseWindowScores(
   bestSpike: SkillTemporalAbuseScore,
   bestSustained: SkillTemporalAbuseScore,
+  bestNearConversion: SkillTemporalAbuseScore,
 ): SkillTemporalAbuseScore {
-  if (!bestSpike.spike && !bestSustained.sustained) return emptySkillTemporalAbuseScore();
+  if (!bestSpike.spike && !bestSustained.sustained && !bestNearConversion.nearConversion) {
+    return emptySkillTemporalAbuseScore();
+  }
   const reasonCodes: string[] = [];
   if (bestSpike.spike) reasonCodes.push("temporal_download_spike_flat_installs");
   if (bestSustained.sustained) reasonCodes.push("temporal_sustained_downloads_flat_installs");
+  if (bestNearConversion.nearConversion) reasonCodes.push("temporal_installs_track_downloads");
 
   return {
     spike: bestSpike.spike,
     sustained: bestSustained.sustained,
-    pressure: Math.max(bestSpike.pressure, bestSustained.pressure),
-    recent7Downloads: bestSpike.recent7Downloads,
-    recent7Installs: bestSpike.recent7Installs,
-    previous30Downloads: bestSpike.previous30Downloads,
-    baseline7Downloads: bestSpike.baseline7Downloads,
-    spikeMultiplier: bestSpike.spikeMultiplier,
-    recent30Downloads: bestSustained.recent30Downloads,
-    recent30Installs: bestSustained.recent30Installs,
-    downloadInstallRatio30: bestSustained.downloadInstallRatio30,
+    nearConversion: bestNearConversion.nearConversion,
+    pressure: Math.max(bestSpike.pressure, bestSustained.pressure, bestNearConversion.pressure),
+    recent7Downloads: bestSpike.spike
+      ? bestSpike.recent7Downloads
+      : bestNearConversion.recent7Downloads,
+    recent7Installs: bestSpike.spike
+      ? bestSpike.recent7Installs
+      : bestNearConversion.recent7Installs,
+    previous30Downloads: bestSpike.spike
+      ? bestSpike.previous30Downloads
+      : bestNearConversion.previous30Downloads,
+    baseline7Downloads: bestSpike.spike
+      ? bestSpike.baseline7Downloads
+      : bestNearConversion.baseline7Downloads,
+    spikeMultiplier: bestSpike.spike
+      ? bestSpike.spikeMultiplier
+      : bestNearConversion.spikeMultiplier,
+    recent30Downloads: bestSustained.sustained
+      ? bestSustained.recent30Downloads
+      : bestNearConversion.recent30Downloads,
+    recent30Installs: bestSustained.sustained
+      ? bestSustained.recent30Installs
+      : bestNearConversion.recent30Installs,
+    downloadInstallRatio30: bestSustained.sustained
+      ? bestSustained.downloadInstallRatio30
+      : bestNearConversion.downloadInstallRatio30,
+    installDownloadRatio7: bestNearConversion.installDownloadRatio7,
+    installDownloadRatio30: bestNearConversion.installDownloadRatio30,
+    installDownloadExcessZScore7: bestNearConversion.installDownloadExcessZScore7,
+    installDownloadExcessZScore30: bestNearConversion.installDownloadExcessZScore30,
     downloads30dCohortBand: bestSustained.downloads30dCohortBand,
     spikeMultiplierCohortBand: bestSpike.spikeMultiplierCohortBand,
     downloads30dVsPeerP95: bestSustained.downloads30dVsPeerP95,
@@ -498,6 +604,8 @@ function mergeTemporalAbuseWindowScores(
     spikeWindowEndDay: bestSpike.spikeWindowEndDay,
     sustainedWindowStartDay: bestSustained.sustainedWindowStartDay,
     sustainedWindowEndDay: bestSustained.sustainedWindowEndDay,
+    nearConversionWindowStartDay: bestNearConversion.nearConversionWindowStartDay,
+    nearConversionWindowEndDay: bestNearConversion.nearConversionWindowEndDay,
     reasonCodes,
   };
 }
@@ -535,6 +643,7 @@ function emptySkillTemporalAbuseScore(): SkillTemporalAbuseScore {
   return {
     spike: false,
     sustained: false,
+    nearConversion: false,
     pressure: 0,
     recent7Downloads: 0,
     recent7Installs: 0,
@@ -544,8 +653,23 @@ function emptySkillTemporalAbuseScore(): SkillTemporalAbuseScore {
     recent30Downloads: 0,
     recent30Installs: 0,
     downloadInstallRatio30: 0,
+    installDownloadRatio7: 0,
+    installDownloadRatio30: 0,
+    installDownloadExcessZScore7: 0,
+    installDownloadExcessZScore30: 0,
     reasonCodes: [],
   };
+}
+
+function installDownloadExcessZScore(input: { downloads: number; installs: number }) {
+  if (input.downloads <= 0) return 0;
+  const expected = input.downloads * TEMPORAL_EXPECTED_INSTALL_DOWNLOAD_RATIO;
+  const variance =
+    input.downloads *
+    TEMPORAL_EXPECTED_INSTALL_DOWNLOAD_RATIO *
+    (1 - TEMPORAL_EXPECTED_INSTALL_DOWNLOAD_RATIO);
+  const stdDev = Math.sqrt(Math.max(variance, 1));
+  return (input.installs - expected) / stdDev;
 }
 
 function nonNegative(value: number) {

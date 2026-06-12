@@ -31,6 +31,8 @@ type CapturedEmail = {
   capturedAt: number;
 };
 
+const ACCOUNT_SUSPENDED_SUBJECT = "Your ClawHub account has been suspended";
+
 function convexClient() {
   const convexUrl = process.env.VITE_CONVEX_URL;
   if (!convexUrl) throw new Error("VITE_CONVEX_URL is required");
@@ -171,7 +173,7 @@ test("malicious skill retries keep the clean latest visible, email the publisher
     await completeScan(client, { slug, version, verdict: "malicious" });
     if (version === finalMaliciousVersion) {
       await waitForCapturedEmails((emails) =>
-        emails.some((email) => email.subject === "Your ClawHub account was disabled"),
+        emails.some((email) => email.subject === ACCOUNT_SUSPENDED_SUBJECT),
       );
     } else {
       await waitForCapturedEmails(
@@ -194,7 +196,7 @@ test("malicious skill retries keep the clean latest visible, email the publisher
   const emails = await waitForCapturedEmails(
     (captured) =>
       captured.filter((email) => email.subject === "ClawHub blocked a skill version").length ===
-        2 && captured.some((email) => email.subject === "Your ClawHub account was disabled"),
+        2 && captured.some((email) => email.subject === ACCOUNT_SUSPENDED_SUBJECT),
   );
   const artifactEmails = emails.filter(
     (email) => email.subject === "ClawHub blocked a skill version",
@@ -206,9 +208,7 @@ test("malicious skill retries keep the clean latest visible, email the publisher
     expect(email.text).not.toContain("appeals.openclaw.ai");
   }
 
-  const accountBanEmail = emails.find(
-    (email) => email.subject === "Your ClawHub account was disabled",
-  );
+  const accountBanEmail = emails.find((email) => email.subject === ACCOUNT_SUSPENDED_SUBJECT);
   expect(accountBanEmail?.text).toContain("Appeal: https://appeals.openclaw.ai/");
   expect(accountBanEmail?.text).not.toContain("clawhub scan download");
 

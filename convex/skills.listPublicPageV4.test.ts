@@ -27,7 +27,6 @@ describe("skills.listPublicPageV4", () => {
     expect(getSkillSearchDigestIndexFields("by_active_recommended_rank")).toEqual([
       "softDeletedAt",
       "statsStars",
-      "statsInstallsAllTime",
       "statsDownloads",
       "updatedAt",
     ]);
@@ -44,7 +43,6 @@ describe("skills.listPublicPageV4", () => {
       "softDeletedAt",
       "isSuspicious",
       "statsStars",
-      "statsInstallsAllTime",
       "statsDownloads",
       "updatedAt",
     ]);
@@ -186,8 +184,8 @@ describe("skills.listPublicPageV4", () => {
     );
 
     expect(result.page.map((entry) => entry.skill.slug)).toEqual([
-      "stale-install-score",
       "old-download-score",
+      "stale-install-score",
     ]);
   });
 });

@@ -3,6 +3,7 @@ export const MODERATION_GUIDELINES_URL = "https://docs.openclaw.ai/clawhub/moder
 export const MALICIOUS_REJECTION_ACCOUNT_WARNING =
   "Repeated malicious rejections may lead to account disablement.";
 const MAX_EMAIL_FINDING_SUMMARY_LENGTH = 280;
+export const ADMIN_ONE_OFF_TEMPLATE = "generic-one-off";
 
 export type NotificationArtifact = {
   kind: "skill" | "plugin";
@@ -17,6 +18,8 @@ export type BanNotificationEmailArgs = {
   reason?: string;
   trigger?: string;
   artifact?: NotificationArtifact;
+  bannedAt?: number;
+  hiddenArtifacts?: number;
 };
 
 export type BanNotificationEmailContext = {
@@ -36,6 +39,9 @@ export type TransactionalEmail = {
 export type RestoredAccountEmailArgs = {
   handle?: string;
   restoredListings?: NotificationArtifact[];
+  restoredAt?: number;
+  skillsRestored?: number;
+  packagesRestored?: number;
 };
 
 export type MaliciousArtifactEmailArgs = {
@@ -69,19 +75,19 @@ export type PackageInspectorFindingsEmailArgs = {
   findings: PackageInspectorEmailFinding[];
 };
 
+export type AdminOneOffEmailArgs = {
+  recipientHandle?: string;
+  subject: string;
+  title?: string;
+  body: string;
+  primaryActionLabel?: string;
+  primaryActionUrl?: string;
+};
+
 type BanReasonSummary = {
   scannerLabel: string | null;
   findingSummary: string;
 };
-
-function escapeHtml(value: string) {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
 
 function normalizeReasonInput(args: Pick<BanNotificationEmailArgs, "reason" | "trigger">) {
   return `${args.reason ?? ""} ${args.trigger ?? ""}`.trim().toLowerCase();
@@ -140,59 +146,78 @@ function greeting(handle: string | undefined) {
   return handle?.trim() ? `Hi ${handle.trim()},` : "Hi,";
 }
 
-function emailShell(args: { preheader: string; title: string; body: string }) {
-  return `<!doctype html>
-<html>
-  <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
-    <title>${escapeHtml(args.title)}</title>
-  </head>
-  <body style="margin:0;background:#ffffff;color:#1f2328;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
-    <span style="display:none!important;visibility:hidden;opacity:0;color:transparent;height:0;width:0;overflow:hidden;">${escapeHtml(
-      args.preheader,
-    )}</span>
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#ffffff;margin:0;padding:24px 16px;">
-      <tr>
-        <td align="center">
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#ffffff;">
-            <tr>
-              <td style="padding:0;font-size:15px;line-height:22px;color:#1f2328;">
-                ${args.body}
-              </td>
-            </tr>
-          </table>
-        </td>
-      </tr>
-    </table>
-  </body>
-</html>`;
+function handleLabel(handle: string | undefined) {
+  const normalized = handle?.trim().replace(/^@+/, "");
+  return normalized ? `@${normalized}` : "your account";
 }
 
-function textLink(href: string, label: string) {
-  return `<a href="${escapeHtml(href)}" style="color:#0969da;text-decoration:underline;">${escapeHtml(label)}</a>`;
+function formatUtcTimestamp(value: number | undefined, fallback: string) {
+  if (!Number.isFinite(value)) return fallback;
+  return new Date(value as number)
+    .toISOString()
+    .replace("T", " ")
+    .replace(/\.\d{3}Z$/, " UTC");
 }
 
-function detailLine(label: string, value: string) {
-  return `<p style="margin:0 0 6px;font-size:15px;line-height:22px;color:#1f2328;"><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}</p>`;
+async function renderAccountSuspendedTemplate(args: {
+  handle?: string;
+  suspendedAt?: number;
+  hiddenArtifacts?: number;
+  findingSummary: string;
+  preheader: string;
+}) {
+  const { renderAccountSuspendedEmail } = await import("./emailRendering");
+  const hiddenArtifacts =
+    typeof args.hiddenArtifacts === "number" && Number.isFinite(args.hiddenArtifacts)
+      ? Math.max(0, Math.trunc(args.hiddenArtifacts))
+      : undefined;
+  const rendered = await renderAccountSuspendedEmail({
+    handle: handleLabel(args.handle),
+    suspendedAt: formatUtcTimestamp(args.suspendedAt, "moderation review"),
+    ...(hiddenArtifacts === undefined ? {} : { hiddenArtifacts }),
+    findingSummary: args.findingSummary,
+    preheader: args.preheader,
+  });
+  return rendered.html;
 }
 
-function sectionHeading(label: string) {
-  return `<p style="margin:18px 0 8px;font-size:15px;line-height:22px;color:#1f2328;"><strong>${escapeHtml(label)}</strong></p>`;
+async function renderAccountReinstatedTemplate(args: {
+  handle?: string;
+  restoredAt?: number;
+  skillsRestored?: number;
+  packagesRestored?: number;
+}) {
+  const { renderAccountReinstatedEmail } = await import("./emailRendering");
+  const hasRestoredCounts =
+    typeof args.skillsRestored === "number" && typeof args.packagesRestored === "number";
+  const preheader = hasRestoredCounts
+    ? `Your account is active again - ${args.skillsRestored} skills and ${args.packagesRestored} packages restored. Note: previous API tokens remain revoked.`
+    : "Your account is active again. Note: previous API tokens remain revoked.";
+  const rendered = await renderAccountReinstatedEmail({
+    handle: handleLabel(args.handle),
+    restoredAt: formatUtcTimestamp(args.restoredAt, "account review"),
+    ...(hasRestoredCounts
+      ? { skillsRestored: args.skillsRestored, packagesRestored: args.packagesRestored }
+      : {}),
+    preheader,
+  });
+  return rendered.html;
 }
 
-function paragraph(value: string) {
-  return `<p style="margin:0 0 14px;font-size:15px;line-height:22px;color:#1f2328;">${escapeHtml(value)}</p>`;
-}
-
-function bulletList(items: string[]) {
-  return `<ul style="margin:0 0 14px;padding-left:22px;font-size:15px;line-height:22px;color:#1f2328;">${items
-    .map((item) => `<li style="margin:0 0 6px;">${escapeHtml(item)}</li>`)
-    .join("")}</ul>`;
-}
-
-function commandBlock(command: string) {
-  return `<pre style="margin:8px 0 14px;padding:10px 12px;background:#f6f8fa;border:1px solid #d8dee4;border-radius:6px;white-space:pre-wrap;color:#1f2328;font-family:ui-monospace,SFMono-Regular,Consolas,'Liberation Mono',monospace;font-size:13px;line-height:20px;"><code>${escapeHtml(command)}</code></pre>`;
+async function renderGenericOneOffTemplate(args: AdminOneOffEmailArgs) {
+  const { renderAdminOneOffEmail } = await import("./emailRendering");
+  const subject = args.subject.trim();
+  const title = args.title?.trim() || subject;
+  const actionLabel = args.primaryActionLabel?.trim();
+  const actionUrl = args.primaryActionUrl?.trim();
+  const rendered = await renderAdminOneOffEmail({
+    recipientHandle: args.recipientHandle?.trim() || "there",
+    subject,
+    title,
+    body: args.body.trim(),
+    ...(actionLabel && actionUrl ? { primaryAction: { label: actionLabel, url: actionUrl } } : {}),
+  });
+  return rendered.html;
 }
 
 function buildScanDownloadCommand(args: MaliciousArtifactEmailArgs) {
@@ -212,7 +237,9 @@ function normalizeEmailFindingSummary(value: string | undefined) {
   return `${normalized.slice(0, MAX_EMAIL_FINDING_SUMMARY_LENGTH - 3).trimEnd()}...`;
 }
 
-export function buildBanNotificationEmail(args: BanNotificationEmailArgs): TransactionalEmail {
+export async function buildBanNotificationEmail(
+  args: BanNotificationEmailArgs,
+): Promise<TransactionalEmail> {
   const summary = summarizeBanReason(args);
   const artifact = args.artifact ?? null;
   const context: BanNotificationEmailContext = {
@@ -225,7 +252,7 @@ export function buildBanNotificationEmail(args: BanNotificationEmailArgs): Trans
   const lines = [
     greeting(args.handle),
     "",
-    "Your ClawHub account was disabled.",
+    "Your ClawHub account has been suspended.",
     `Reason: ${context.findingSummary}`,
   ];
   if (artifact) lines.push(artifactLabel(artifact));
@@ -248,35 +275,33 @@ export function buildBanNotificationEmail(args: BanNotificationEmailArgs): Trans
     "Published listings owned by the account may be hidden from public view.",
   ];
   const detailLines = [
-    detailLine("Reason", context.findingSummary),
-    ...(artifact
-      ? [detailLine(artifact.kind === "skill" ? "Skill" : "Plugin", artifact.name)]
-      : []),
-  ].join("");
-
-  const html = emailShell({
-    title: "Your ClawHub account was disabled",
-    preheader: context.findingSummary,
-    body: [
-      paragraph(greeting(args.handle)),
-      paragraph("We disabled your ClawHub account after an account-safety review."),
-      detailLines,
-      sectionHeading("What changed"),
-      bulletList(impactItems),
-      `<p style="margin:0 0 14px;font-size:15px;line-height:22px;color:#1f2328;">You can ${textLink(APPEALS_URL, "appeal this decision")} if you believe this was a mistake.</p>`,
-      paragraph("ClawHub Security"),
-    ].join(""),
+    context.findingSummary,
+    ...(artifact ? [artifact.name] : []),
+    ...impactItems,
+  ];
+  const hiddenArtifacts =
+    typeof args.hiddenArtifacts === "number" && Number.isFinite(args.hiddenArtifacts)
+      ? args.hiddenArtifacts
+      : artifact
+        ? 1
+        : undefined;
+  const html = await renderAccountSuspendedTemplate({
+    handle: args.handle,
+    suspendedAt: args.bannedAt,
+    hiddenArtifacts,
+    findingSummary: context.findingSummary,
+    preheader: detailLines.join(" "),
   });
 
   return {
-    subject: "Your ClawHub account was disabled",
+    subject: "Your ClawHub account has been suspended",
     context,
     text: lines.join("\n"),
     html,
   };
 }
 
-export function buildRestoredAccountEmail(args: RestoredAccountEmailArgs) {
+export async function buildRestoredAccountEmail(args: RestoredAccountEmailArgs) {
   const restoredListings = args.restoredListings ?? [];
   const listingLines = restoredListings.map(artifactLabel);
   const lines = [
@@ -290,31 +315,27 @@ export function buildRestoredAccountEmail(args: RestoredAccountEmailArgs) {
   }
   lines.push("", "ClawHub Security");
 
-  const html = emailShell({
-    title: "Your ClawHub account was restored",
-    preheader: "Your ClawHub account can sign in again.",
-    body: [
-      paragraph(greeting(args.handle)),
-      paragraph("Your ClawHub account can sign in again."),
-      paragraph(
-        "Previously revoked API tokens stay revoked. Create a new token before using the CLI or API again.",
-      ),
-      listingLines.length > 0
-        ? `${sectionHeading("Restored listings")}${bulletList(listingLines)}`
-        : "",
-      `<p style="margin:0 0 14px;font-size:15px;line-height:22px;color:#1f2328;">Settings: ${textLink("https://clawhub.ai/settings", "open ClawHub settings")}</p>`,
-      paragraph("ClawHub Security"),
-    ].join(""),
+  const skillsRestored = Object.hasOwn(args, "skillsRestored")
+    ? args.skillsRestored
+    : restoredListings.filter((listing) => listing.kind === "skill").length;
+  const packagesRestored = Object.hasOwn(args, "packagesRestored")
+    ? args.packagesRestored
+    : restoredListings.filter((listing) => listing.kind === "plugin").length;
+  const html = await renderAccountReinstatedTemplate({
+    handle: args.handle,
+    restoredAt: args.restoredAt,
+    skillsRestored,
+    packagesRestored,
   });
 
   return {
-    subject: "Your ClawHub account was restored",
+    subject: "Your ClawHub account has been reinstated",
     text: lines.join("\n"),
     html,
   };
 }
 
-export function buildMaliciousArtifactEmail(args: MaliciousArtifactEmailArgs) {
+export async function buildMaliciousArtifactEmail(args: MaliciousArtifactEmailArgs) {
   const artifactKind = args.artifact.kind === "skill" ? "skill" : "plugin";
   const artifactLabelText = artifactLabel(args.artifact);
   const scanDownloadCommand = buildScanDownloadCommand(args);
@@ -351,43 +372,25 @@ export function buildMaliciousArtifactEmail(args: MaliciousArtifactEmailArgs) {
     "ClawHub Security",
   );
 
-  const detailLines = [
-    detailLine("Reason", findingSummary),
-    detailLine(args.artifact.kind === "skill" ? "Skill" : "Plugin", args.artifact.name),
-    ...(args.version?.trim() ? [detailLine("Version", args.version.trim())] : []),
-  ].join("");
-
-  const html = emailShell({
-    title: subject,
+  const { renderBlockedVersionEmail } = await import("./emailRendering");
+  const rendered = await renderBlockedVersionEmail({
+    artifactKind,
+    artifactName: args.artifact.name,
+    version: args.version?.trim() || "<version>",
+    findingSummary,
+    validateCommand: scanDownloadCommand,
+    docsUrl: MODERATION_GUIDELINES_URL,
     preheader: `${artifactLabelText} was blocked by ClawHub security scans.`,
-    body: [
-      paragraph(greeting(args.handle)),
-      paragraph(`ClawHub blocked a ${artifactKind} version after a security scan.`),
-      detailLines,
-      sectionHeading("What changed"),
-      bulletList([
-        "This version was not made public.",
-        "Your account can still sign in.",
-        `You can upload a fixed version of this ${artifactKind}.`,
-        MALICIOUS_REJECTION_ACCOUNT_WARNING,
-      ]),
-      sectionHeading("Review the blocked-version scan results"),
-      paragraph("Download the scan results for the blocked submitted version."),
-      commandBlock(scanDownloadCommand),
-      paragraph(`Increment the version number before uploading the fixed ${artifactKind}.`),
-      `<p style="margin:0 0 14px;font-size:15px;line-height:22px;color:#1f2328;">Docs: ${textLink(MODERATION_GUIDELINES_URL, "moderation and account safety")}</p>`,
-      paragraph("ClawHub Security"),
-    ].join(""),
   });
 
   return {
     subject,
     text: lines.join("\n"),
-    html,
+    html: rendered.html,
   };
 }
 
-export function buildPackageInspectorFindingsEmail(args: PackageInspectorFindingsEmailArgs) {
+export async function buildPackageInspectorFindingsEmail(args: PackageInspectorFindingsEmailArgs) {
   const targetOpenClawVersion = args.findings.find(
     (finding) => finding.targetOpenClawVersion,
   )?.targetOpenClawVersion;
@@ -422,28 +425,42 @@ export function buildPackageInspectorFindingsEmail(args: PackageInspectorFinding
     validateCommand,
   ];
 
-  const detailLines = [
-    detailLine("Plugin", `${args.packageName}@${args.version}`),
-    ...(targetOpenClawVersion ? [detailLine("OpenClaw Version", targetOpenClawVersion)] : []),
-  ].join("");
-  const html = emailShell({
-    title: "Plugin Inspector findings",
+  const { renderPluginInspectorFindingsEmail } = await import("./emailRendering");
+  const rendered = await renderPluginInspectorFindingsEmail({
+    packageName: args.packageName,
+    version: args.version,
+    ...(targetOpenClawVersion ? { openClawVersion: targetOpenClawVersion } : {}),
+    findings: args.findings.map((finding) => ({
+      code: finding.code,
+      kind: finding.findingKind,
+      meta: [finding.code, finding.issueClass, finding.severity].filter(Boolean).join(" · "),
+      message: finding.message,
+      ...(finding.authorRemediation?.summary ? { fix: finding.authorRemediation.summary } : {}),
+      ...(finding.authorRemediation?.docsUrl ? { docsUrl: finding.authorRemediation.docsUrl } : {}),
+    })),
+    validateCommand,
     preheader: intro,
-    body: [
-      paragraph(greeting(args.handle)),
-      paragraph(intro),
-      detailLines,
-      sectionHeading("Next steps"),
-      bulletList(nextSteps),
-      sectionHeading("Findings"),
-      formatPackageInspectorFindingsHtml(args.findings),
-      sectionHeading("Validate a local fix"),
-      commandBlock(validateCommand),
-    ].join(""),
   });
 
   return {
     subject,
+    text: lines.join("\n"),
+    html: rendered.html,
+  };
+}
+
+export async function buildAdminOneOffEmail(args: AdminOneOffEmailArgs) {
+  const title = args.title?.trim() || args.subject.trim();
+  const lines = [greeting(args.recipientHandle), "", title, "", args.body.trim()];
+  if (args.primaryActionLabel?.trim() && args.primaryActionUrl?.trim()) {
+    lines.push("", `${args.primaryActionLabel.trim()}: ${args.primaryActionUrl.trim()}`);
+  }
+  lines.push("", "ClawHub Team");
+
+  const html = await renderGenericOneOffTemplate(args);
+
+  return {
+    subject: args.subject.trim(),
     text: lines.join("\n"),
     html,
   };
@@ -471,34 +488,4 @@ function formatPackageInspectorFindingsText(findings: PackageInspectorEmailFindi
 function formatFindingMetaText(finding: PackageInspectorEmailFinding) {
   const meta = [finding.issueClass, finding.severity].filter(Boolean).join(", ");
   return meta ? ` (${meta})` : "";
-}
-
-function formatPackageInspectorFindingsHtml(findings: PackageInspectorEmailFinding[]) {
-  if (findings.length === 0) return paragraph("No findings were included.");
-  return findings
-    .map((finding) => {
-      const meta = [finding.issueClass, finding.severity].filter(Boolean).join(" · ");
-      const remediation = finding.authorRemediation?.summary
-        ? `<div style="margin:10px 0 0;padding-top:10px;border-top:1px solid #d8dee4;">
-            <p style="margin:0 0 6px;font-size:15px;line-height:22px;color:#1f2328;"><strong>Fix</strong></p>
-            <p style="margin:0 0 6px;font-size:15px;line-height:22px;color:#1f2328;">${escapeHtml(finding.authorRemediation.summary)}</p>
-            ${
-              finding.authorRemediation.docsUrl
-                ? `<p style="margin:10px 0 6px;font-size:15px;line-height:22px;color:#1f2328;"><strong>Docs</strong></p>
-                  <p style="margin:0;font-size:15px;line-height:22px;color:#1f2328;word-break:break-word;">${textLink(finding.authorRemediation.docsUrl, finding.authorRemediation.docsUrl)}</p>`
-                : ""
-            }
-          </div>`
-        : "";
-      return `<div style="margin:0 0 10px;padding:10px 12px;border:1px solid #d8dee4;border-radius:6px;background:#ffffff;">
-        <p style="margin:0 0 6px;font-size:15px;line-height:22px;color:#1f2328;">
-          <strong>${escapeHtml(finding.findingKind.toUpperCase())}</strong>
-          <code style="font-family:ui-monospace,SFMono-Regular,Consolas,'Liberation Mono',monospace;font-size:13px;background:#f6f8fa;border:1px solid #d8dee4;border-radius:4px;padding:1px 4px;">${escapeHtml(finding.code)}</code>
-          ${meta ? `<span style="color:#57606a;">${escapeHtml(meta)}</span>` : ""}
-        </p>
-        <p style="margin:0;font-size:15px;line-height:22px;color:#1f2328;">${escapeHtml(finding.message)}</p>
-        ${remediation}
-      </div>`;
-    })
-    .join("");
 }

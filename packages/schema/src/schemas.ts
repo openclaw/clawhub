@@ -153,19 +153,16 @@ export const ApiV1SkillInstallResolveResponseSchema = type({
 export type ApiV1SkillInstallResolveResponse =
   (typeof ApiV1SkillInstallResolveResponseSchema)[inferred];
 
-export const CliTelemetrySyncRequestSchema = type({
-  roots: type({
-    rootId: "string",
-    label: "string",
-    skills: type({
-      slug: "string",
-      version: "string|null?",
-    }).array(),
-  }).array(),
+export const CliTelemetryInstallRequestSchema = type({
+  event: '"install"',
+  slug: "string",
+  version: "string?",
+  rootId: "string?",
+  rootLabel: "string?",
 });
-export type CliTelemetrySyncRequest = (typeof CliTelemetrySyncRequestSchema)[inferred];
+export type CliTelemetryInstallRequest = (typeof CliTelemetryInstallRequestSchema)[inferred];
 
-export const ApiCliTelemetrySyncResponseSchema = type({
+export const ApiCliTelemetryInstallResponseSchema = type({
   ok: "true",
 });
 
@@ -219,6 +216,7 @@ export const ApiV1StaffEmailSendResponseSchema = type({
     "handle?": "string|null",
   }),
   subject: "string",
+  template: "string",
   providerId: "string|null",
 });
 export type ApiV1StaffEmailSendResponse = (typeof ApiV1StaffEmailSendResponseSchema)[inferred];
@@ -247,6 +245,7 @@ export const ApiV1SkillListResponseSchema = type({
     slug: "string",
     displayName: "string",
     summary: "string|null?",
+    description: "string|null?",
     tags: "unknown",
     stats: "unknown",
     createdAt: "number",
@@ -257,6 +256,16 @@ export const ApiV1SkillListResponseSchema = type({
       changelog: "string",
       license: SkillPlatformLicenseSchema.or("null").optional(),
     }).optional(),
+    metadata: type({
+      setup: type({
+        key: "string",
+        required: "boolean",
+      }).array(),
+      os: "string[]|null?",
+      systems: "string[]|null?",
+    })
+      .or("null")
+      .optional(),
   }).array(),
   nextCursor: "string|null",
 });
@@ -266,6 +275,7 @@ export const ApiV1SkillResponseSchema = type({
     slug: "string",
     displayName: "string",
     summary: "string|null?",
+    description: "string|null?",
     tags: "unknown",
     stats: "unknown",
     createdAt: "number",
@@ -277,6 +287,16 @@ export const ApiV1SkillResponseSchema = type({
     changelog: "string",
     license: SkillPlatformLicenseSchema.or("null").optional(),
   }).or("null"),
+  metadata: type({
+    setup: type({
+      key: "string",
+      required: "boolean",
+    }).array(),
+    os: "string[]|null?",
+    systems: "string[]|null?",
+  })
+    .or("null")
+    .optional(),
   owner: type({
     handle: "string|null",
     displayName: "string|null?",
@@ -778,20 +798,6 @@ export const ApiV1ReclassifyBanResponseSchema = type({
   previousReason: "string|null",
   nextReason: "string",
   changed: "boolean",
-});
-
-export const ApiV1RemediateAutobansResponseSchema = type({
-  ok: "true",
-  dryRun: "boolean",
-  scanned: "number",
-  wouldUnban: "number",
-  unbanned: "number",
-  skipped: "number",
-  restoredSkills: "number",
-  restoredPackages: "number",
-  items: "unknown[]",
-  "nextCursor?": "string|null",
-  "done?": "boolean",
 });
 
 export const ApiV1StarResponseSchema = type({

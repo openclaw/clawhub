@@ -92,23 +92,15 @@ type StoredScanArtifactKind = "skill" | "plugin";
 
 const jobSourceValidator = v.union(
   v.literal("publish"),
-  v.literal("clawscan-note"),
   v.literal("vt-update"),
   v.literal("backfill"),
   v.literal("bulk-rescan"),
   v.literal("manual"),
 );
 
-type SecurityScanJobSource =
-  | "publish"
-  | "clawscan-note"
-  | "vt-update"
-  | "backfill"
-  | "bulk-rescan"
-  | "manual";
+type SecurityScanJobSource = "publish" | "vt-update" | "backfill" | "bulk-rescan" | "manual";
 
 const CLAIM_SOURCE_ORDER: SecurityScanJobSource[] = [
-  "clawscan-note",
   "backfill",
   "publish",
   "vt-update",

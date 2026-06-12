@@ -20,7 +20,7 @@ import {
   isBannedAccountAuthError,
   normalizeAuthErrorMessage,
 } from "../lib/authErrorMessage";
-import { getSiteDescription, getSiteMode, getSiteName, getSiteUrlForMode } from "../lib/site";
+import { getClawHubSiteUrl, SITE_DESCRIPTION, SITE_NAME } from "../lib/site";
 import appCss from "../styles.css?url";
 
 const OG_IMAGE_VERSION = "20260420-12";
@@ -39,10 +39,9 @@ export const Route = createRootRoute({
     });
   },
   head: () => {
-    const mode = getSiteMode();
-    const siteName = getSiteName(mode);
-    const siteDescription = getSiteDescription(mode);
-    const siteUrl = getSiteUrlForMode(mode);
+    const siteName = SITE_NAME;
+    const siteDescription = SITE_DESCRIPTION;
+    const siteUrl = getClawHubSiteUrl();
     const ogImage = `${siteUrl}/og.png?v=${OG_IMAGE_VERSION}`;
 
     return {

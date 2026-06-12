@@ -30,13 +30,6 @@ import {
   skillsGetRouterV1Handler,
   skillsPostRouterV1Handler,
 } from "./httpApiV1/skillsV1";
-import {
-  listSoulsV1Handler,
-  publishSoulV1Handler,
-  soulsDeleteRouterV1Handler,
-  soulsGetRouterV1Handler,
-  soulsPostRouterV1Handler,
-} from "./httpApiV1/soulsV1";
 import { starsDeleteRouterV1Handler, starsPostRouterV1Handler } from "./httpApiV1/starsV1";
 import { transfersGetRouterV1Handler } from "./httpApiV1/transfersV1";
 import {
@@ -76,12 +69,6 @@ export const skillsPostRouterV1Http = httpAction(skillsPostRouterV1Handler);
 export const skillsDeleteRouterV1Http = httpAction(skillsDeleteRouterV1Handler);
 export const exportSkillsV1Http = httpAction(exportSkillsV1Handler);
 
-export const listSoulsV1Http = httpAction(listSoulsV1Handler);
-export const soulsGetRouterV1Http = httpAction(soulsGetRouterV1Handler);
-export const publishSoulV1Http = httpAction(publishSoulV1Handler);
-export const soulsPostRouterV1Http = httpAction(soulsPostRouterV1Handler);
-export const soulsDeleteRouterV1Http = httpAction(soulsDeleteRouterV1Handler);
-
 export const starsPostRouterV1Http = httpAction(starsPostRouterV1Handler);
 export const starsDeleteRouterV1Http = httpAction(starsDeleteRouterV1Handler);
 export const transfersGetRouterV1Http = httpAction(transfersGetRouterV1Handler);
@@ -120,11 +107,6 @@ export const __handlers = {
   skillsPostRouterV1Handler,
   skillsDeleteRouterV1Handler,
   exportSkillsV1Handler,
-  listSoulsV1Handler,
-  soulsGetRouterV1Handler,
-  publishSoulV1Handler,
-  soulsPostRouterV1Handler,
-  soulsDeleteRouterV1Handler,
   starsPostRouterV1Handler,
   starsDeleteRouterV1Handler,
   transfersGetRouterV1Handler,

@@ -211,6 +211,17 @@ type PackageTrustedPublisherGetOptions = {
   json?: boolean;
 };
 
+type PackageTrustedPublisherSetOptions = {
+  repository?: string;
+  workflowFilename?: string;
+  environment?: string;
+  json?: boolean;
+};
+
+type PackageTrustedPublisherDeleteOptions = {
+  json?: boolean;
+};
+
 type PackageDeleteOptions = {
   yes?: boolean;
   json?: boolean;
@@ -545,6 +556,82 @@ export async function cmdGetPackageTrustedPublisher(
       return;
     }
     printTrustedPublisher(result.trustedPublisher);
+  } catch (error) {
+    spinner.fail(formatError(error));
+    throw error;
+  }
+}
+
+export async function cmdSetPackageTrustedPublisher(
+  opts: GlobalOpts,
+  packageName: string,
+  options: PackageTrustedPublisherSetOptions,
+) {
+  const trimmed = normalizePackageNameOrFail(packageName);
+  const repository = options.repository?.trim();
+  const workflowFilename = options.workflowFilename?.trim();
+  const environment = options.environment?.trim() || undefined;
+  if (!repository) fail("--repository required");
+  if (!workflowFilename) fail("--workflow-filename required");
+
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const spinner = createSpinner("Saving trusted publisher");
+  try {
+    const result = await apiRequest(
+      registry,
+      {
+        method: "POST",
+        path: `${ApiRoutes.packages}/${encodeURIComponent(trimmed)}/trusted-publisher`,
+        token,
+        body: {
+          repository,
+          workflowFilename,
+          ...(environment ? { environment } : {}),
+        },
+      },
+      ApiV1PackageTrustedPublisherResponseSchema,
+    );
+    spinner.stop();
+    if (options.json) {
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      return;
+    }
+    console.log(`Trusted publisher saved for ${trimmed}.`);
+    if (result.trustedPublisher) {
+      printTrustedPublisher(result.trustedPublisher);
+    }
+  } catch (error) {
+    spinner.fail(formatError(error));
+    throw error;
+  }
+}
+
+export async function cmdDeletePackageTrustedPublisher(
+  opts: GlobalOpts,
+  packageName: string,
+  options: PackageTrustedPublisherDeleteOptions = {},
+) {
+  const trimmed = normalizePackageNameOrFail(packageName);
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const spinner = createSpinner("Deleting trusted publisher");
+  try {
+    const result = await apiRequest(
+      registry,
+      {
+        method: "DELETE",
+        path: `${ApiRoutes.packages}/${encodeURIComponent(trimmed)}/trusted-publisher`,
+        token,
+      },
+      ApiV1DeleteResponseSchema,
+    );
+    spinner.stop();
+    if (options.json) {
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      return;
+    }
+    console.log(`Trusted publisher deleted for ${trimmed}.`);
   } catch (error) {
     spinner.fail(formatError(error));
     throw error;

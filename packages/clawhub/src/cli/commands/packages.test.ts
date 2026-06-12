@@ -42,6 +42,7 @@ vi.mock("@openclaw/plugin-inspector", () => inspectorMocks);
 
 const {
   cmdDeletePackage,
+  cmdDeletePackageTrustedPublisher,
   cmdDownloadPackage,
   cmdExplorePackages,
   cmdGetPackageTrustedPublisher,
@@ -52,21 +53,20 @@ const {
   cmdPackPackage,
   cmdPublishPackage,
   cmdReportPackage,
+  cmdSetPackageTrustedPublisher,
   cmdTransferPackage,
   cmdUndeletePackage,
   cmdValidatePackage,
   cmdVerifyPackage,
 } = await import("./packages");
 const {
-  cmdDeletePackageTrustedPublisher,
   cmdListPackageMigrations,
   cmdListPackageReports,
   cmdModeratePackageRelease,
   cmdPackageModerationQueue,
-  cmdSetPackageTrustedPublisher,
   cmdTriagePackageReport,
   cmdUpsertPackageMigration,
-} = await import("../../../../clawhub-mod/src/commands/packages");
+} = await import("../../../../clawhub-admin/src/commands/packages");
 const { parseClawPack } = await import("../../clawpack");
 
 const mockLog = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -1227,8 +1227,7 @@ describe("package commands", () => {
         sourceRepo: "openclaw/demo-plugin",
         sourceCommit: "abc123",
         sourceRef: "refs/tags/v1.0.0",
-        clawscanNote: "This plugin shells out only to the bundled helper binary.",
-      } as Parameters<typeof cmdPublishPackage>[2] & { clawscanNote?: string };
+      } as Parameters<typeof cmdPublishPackage>[2];
 
       await cmdPublishPackage(makeOpts(workdir), "demo-plugin", options);
 
@@ -2938,6 +2937,23 @@ describe("package commands", () => {
     expect(mockLog).not.toHaveBeenCalledWith(expect.stringContaining("Environment:"));
   });
 
+  it("owns trusted publisher set and delete commands in the public package CLI", async () => {
+    const testSource = await readFile(new URL("./packages.test.ts", import.meta.url), "utf8");
+    const cliSource = await readFile(new URL("../../cli.ts", import.meta.url), "utf8");
+    const modImportPrefix = testSource.split(
+      '} = await import("../../../../clawhub-mod/src/commands/packages");',
+    )[0];
+    const modImportBlock = modImportPrefix ? (modImportPrefix.split("const {").at(-1) ?? "") : "";
+
+    expect(modImportBlock).not.toEqual("");
+    expect(modImportBlock).not.toContain("cmdSetPackageTrustedPublisher");
+    expect(modImportBlock).not.toContain("cmdDeletePackageTrustedPublisher");
+    expect(cliSource).toContain('["package", "trusted-publisher", "set"]');
+    expect(cliSource).toContain('["package", "trusted-publisher", "delete"]');
+    expect(cliSource).toContain("cmdSetPackageTrustedPublisher(opts, name, options)");
+    expect(cliSource).toContain("cmdDeletePackageTrustedPublisher(opts, name, options)");
+  });
+
   it("sets trusted publisher config for a package", async () => {
     httpMocks.apiRequest.mockResolvedValueOnce({
       trustedPublisher: {
@@ -2972,6 +2988,11 @@ describe("package commands", () => {
       }),
       expect.anything(),
     );
+    expect(mockLog).toHaveBeenCalledWith("Trusted publisher saved for @openclaw/zalo.");
+    expect(mockLog).toHaveBeenCalledWith("Provider: github-actions");
+    expect(mockLog).toHaveBeenCalledWith("Repository: openclaw/openclaw");
+    expect(mockLog).toHaveBeenCalledWith("Workflow: plugin-clawhub-release.yml");
+    expect(mockLog).toHaveBeenCalledWith("Environment: clawhub-release");
   });
 
   it("sets trusted publisher config for a package without environment", async () => {
@@ -3020,8 +3041,9 @@ describe("package commands", () => {
         path: "/api/v1/packages/%40openclaw%2Fzalo/trusted-publisher",
         token: "tkn",
       }),
-      undefined,
+      expect.anything(),
     );
+    expect(mockLog).toHaveBeenCalledWith("Trusted publisher deleted for @openclaw/zalo.");
   });
 
   it("soft-deletes a package with confirmation bypass", async () => {

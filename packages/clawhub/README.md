@@ -131,6 +131,24 @@ such as `workflow_dispatch` or tag pushes with a `CLAWHUB_TOKEN` secret.
 For monorepos, pass `source_path` to publish the plugin package folder, for
 example `source_path: extensions/codex`.
 
+Package trusted publishing starts after the first normal authenticated publish
+creates the package row. Then a package manager can attach GitHub Actions OIDC
+config for future supported publishes:
+
+```bash
+clawhub package trusted-publisher set @openclaw/example-plugin \
+  --repository openclaw/example-plugin \
+  --workflow-filename package-publish.yml \
+  --environment release
+
+clawhub package trusted-publisher get @openclaw/example-plugin
+clawhub package trusted-publisher delete @openclaw/example-plugin
+```
+
+`--environment` is optional and exact-match sensitive. If configured, the
+GitHub Actions environment in the OIDC claim must match. Tag-push real publishes
+still need `clawhub_token` unless the reusable workflow adds tag OIDC support.
+
 ## Maintainers
 
 The `clawhub` npm package is released separately from the ClawHub app deploy.

@@ -4,7 +4,6 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const siteModeMock = vi.fn(() => "skills");
 const navigateMock = vi.fn();
 const { convexQueryMock, fetchFeaturedPluginsMock } = vi.hoisted(() => ({
   convexQueryMock: vi.fn(),
@@ -47,21 +46,8 @@ vi.mock("../lib/featuredCatalog", () => ({
   fetchFeaturedPlugins: fetchFeaturedPluginsMock,
 }));
 
-vi.mock("../lib/site", () => ({
-  getSiteMode: () => siteModeMock(),
-}));
-
-vi.mock("../components/SoulCard", () => ({
-  SoulCard: () => <div />,
-}));
-
-vi.mock("../components/SoulStats", () => ({
-  SoulStatsTripletLine: () => <div />,
-}));
-
 describe("home route", () => {
   beforeEach(() => {
-    siteModeMock.mockReturnValue("skills");
     convexQueryMock.mockResolvedValue([]);
     fetchFeaturedPluginsMock.mockResolvedValue([]);
     navigateMock.mockReset();
@@ -98,13 +84,9 @@ describe("home route", () => {
     expect(screen.getByText("Tools built by thousands, ready in one search.")).toBeTruthy();
   });
 
-  it("marks the three home category options for one-or-three-column breakpoints", async () => {
+  it("renders the three home category options", async () => {
     await renderHome();
 
-    const grid = document.querySelector(".home-v2-categories-grid");
-
-    expect(grid?.getAttribute("data-count")).toBe("3");
-    expect(grid?.getAttribute("data-layout")).toBe("1-3");
     expect(screen.getByText("Skills")).toBeTruthy();
     expect(screen.getByText("Plugins")).toBeTruthy();
     expect(screen.getByText("Publishers")).toBeTruthy();

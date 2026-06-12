@@ -72,25 +72,17 @@ export function Footer() {
                   </button>
                 </h4>
                 <div className="footer-col-links" id={`${id}-links`} data-open={isOpen}>
-                  {section.items
-                    .filter((item) => item.featureFlag !== false)
-                    .map((item) => {
-                      if (item.kind === "link") {
-                        return (
-                          <Link key={item.label} to={item.to} search={item.search ?? {}}>
-                            {item.label}
-                          </Link>
-                        );
-                      }
-                      if (item.kind === "external") {
-                        return (
-                          <a key={item.label} href={item.href} target="_blank" rel="noreferrer">
-                            {item.label}
-                          </a>
-                        );
-                      }
-                      return <span key={item.label}>{item.label}</span>;
-                    })}
+                  {section.items.map((item) =>
+                    item.kind === "link" ? (
+                      <Link key={item.label} to={item.to} search={item.search ?? {}}>
+                        {item.label}
+                      </Link>
+                    ) : (
+                      <a key={item.label} href={item.href} target="_blank" rel="noreferrer">
+                        {item.label}
+                      </a>
+                    ),
+                  )}
                 </div>
               </div>
             );

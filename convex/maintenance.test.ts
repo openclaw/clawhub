@@ -25,6 +25,9 @@ vi.mock("./_generated/api", () => ({
       backfillSkillFingerprintsInternal: Symbol("backfillSkillFingerprintsInternal"),
       applySkillCapabilityTagsInternal: Symbol("applySkillCapabilityTagsInternal"),
       backfillSkillCapabilityTagsInternal: Symbol("backfillSkillCapabilityTagsInternal"),
+      backfillSkillSearchDigestModerationVerdictsInternal: Symbol(
+        "backfillSkillSearchDigestModerationVerdictsInternal",
+      ),
       getEmptySkillCleanupPageInternal: Symbol("getEmptySkillCleanupPageInternal"),
       applyEmptySkillCleanupInternal: Symbol("applyEmptySkillCleanupInternal"),
       nominateUserForEmptySkillSpamInternal: Symbol("nominateUserForEmptySkillSpamInternal"),
@@ -49,6 +52,7 @@ vi.mock("./lib/skillSummary", () => ({
 const {
   applySkillCapabilityTagsInternal,
   backfillLatestVersionSummaryInternal,
+  backfillSkillSearchDigestModerationVerdictsInternal,
   backfillPublisherStatsInternalHandler,
   backfillSkillFingerprintsInternalHandler,
   backfillSkillSummariesInternalHandler,
@@ -701,6 +705,7 @@ describe("maintenance backfill", () => {
             changelog: "Same changelog",
             changelogSource: "user",
             clawdis: undefined,
+            apiKeyRequired: true,
           },
         },
       ],
@@ -714,6 +719,7 @@ describe("maintenance backfill", () => {
       changelog: "Same changelog",
       changelogSource: "auto",
       parsed: { clawdis: { emoji: "lobster" } },
+      apiKeyRequired: true,
     });
     const patch = vi.fn().mockResolvedValue(undefined);
     const runAfter = vi.fn();
@@ -745,6 +751,7 @@ describe("maintenance backfill", () => {
         changelog: "Same changelog",
         changelogSource: "auto",
         clawdis: { emoji: "lobster" },
+        apiKeyRequired: true,
       },
     });
     expect(runAfter).not.toHaveBeenCalled();
@@ -1121,6 +1128,125 @@ describe("maintenance capability tag backfill", () => {
       capabilityTags: ["financial-authority", "can-make-purchases"],
       updatedAt: 987,
     });
+  });
+});
+
+describe("skill search digest moderation verdict backfill", () => {
+  it("patches digest moderation verdicts from canonical skill rows and schedules the next page", async () => {
+    const paginate = vi.fn().mockResolvedValue({
+      page: [
+        {
+          _id: "skillSearchDigest:malicious",
+          skillId: "skills:malicious",
+          moderationVerdict: undefined,
+        },
+        {
+          _id: "skillSearchDigest:clean",
+          skillId: "skills:clean",
+          moderationVerdict: "clean",
+        },
+        {
+          _id: "skillSearchDigest:missing",
+          skillId: "skills:missing",
+          moderationVerdict: undefined,
+        },
+      ],
+      continueCursor: "next-page",
+      isDone: false,
+    });
+    const query = vi.fn().mockReturnValue({ paginate });
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({
+        _id: "skills:malicious",
+        moderationVerdict: "malicious",
+        updatedAt: 123,
+      })
+      .mockResolvedValueOnce({
+        _id: "skills:clean",
+        moderationVerdict: "clean",
+        updatedAt: 456,
+      })
+      .mockResolvedValueOnce(null);
+    const patch = vi.fn().mockResolvedValue(undefined);
+    const runAfter = vi.fn().mockResolvedValue(undefined);
+
+    const result = await (
+      backfillSkillSearchDigestModerationVerdictsInternal as unknown as { _handler: Function }
+    )._handler(
+      {
+        db: { query, get, patch, normalizeId: vi.fn() },
+        scheduler: { runAfter },
+      } as never,
+      { cursor: "start", batchSize: 25 },
+    );
+
+    expect(result).toEqual({
+      scanned: 3,
+      patched: 1,
+      missingSkills: 1,
+      cursor: "next-page",
+      isDone: false,
+      dryRun: false,
+    });
+    expect(query).toHaveBeenCalledWith("skillSearchDigest");
+    expect(paginate).toHaveBeenCalledWith({ cursor: "start", numItems: 25 });
+    expect(patch).toHaveBeenCalledWith("skillSearchDigest:malicious", {
+      moderationVerdict: "malicious",
+      updatedAt: 123,
+    });
+    expect(runAfter).toHaveBeenCalledWith(
+      0,
+      internal.maintenance.backfillSkillSearchDigestModerationVerdictsInternal,
+      {
+        cursor: "next-page",
+        batchSize: 25,
+        dryRun: false,
+      },
+    );
+  });
+
+  it("reports would-be patches without writing or scheduling in dry run mode", async () => {
+    const paginate = vi.fn().mockResolvedValue({
+      page: [
+        {
+          _id: "skillSearchDigest:malicious",
+          skillId: "skills:malicious",
+          moderationVerdict: undefined,
+        },
+      ],
+      continueCursor: "next-page",
+      isDone: false,
+    });
+    const query = vi.fn().mockReturnValue({ paginate });
+    const get = vi.fn().mockResolvedValue({
+      _id: "skills:malicious",
+      moderationVerdict: "malicious",
+      updatedAt: 123,
+    });
+    const patch = vi.fn().mockResolvedValue(undefined);
+    const runAfter = vi.fn().mockResolvedValue(undefined);
+
+    const result = await (
+      backfillSkillSearchDigestModerationVerdictsInternal as unknown as { _handler: Function }
+    )._handler(
+      {
+        db: { query, get, patch, normalizeId: vi.fn() },
+        scheduler: { runAfter },
+      } as never,
+      { batchSize: 25, dryRun: true },
+    );
+
+    expect(result).toEqual({
+      scanned: 1,
+      patched: 1,
+      missingSkills: 0,
+      cursor: "next-page",
+      isDone: false,
+      dryRun: true,
+    });
+    expect(patch).not.toHaveBeenCalled();
+    expect(runAfter).not.toHaveBeenCalled();
   });
 });
 

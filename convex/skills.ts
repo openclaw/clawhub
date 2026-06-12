@@ -180,11 +180,6 @@ const MAX_STAFF_AUDIT_LOG_LIMIT = 50;
 const USER_MODERATION_REASON = "user.moderation";
 const SKILL_CATALOG_CURSOR_PREFIX = "skillcat:";
 const SKILL_CAPABILITY_TAG_SET = new Set<string>(SKILL_CAPABILITY_TAGS);
-const skillAutobanRemediationInternalRefs = internal as unknown as {
-  skills: {
-    restoreOwnedSkillsForAutobanRemediationBatchInternal: never;
-  };
-};
 
 const vtEngineStatsValidator = v.object({
   malicious: v.optional(v.number()),
@@ -517,6 +512,7 @@ function latestVersionSummaryFromSkillVersion(
     createdAt: version.createdAt,
     changelog: version.changelog,
     changelogSource: version.changelogSource,
+    description: skillSummaryFromSkillVersion(version),
     clawdis: version.parsed?.clawdis,
     apiKeyRequired: version.apiKeyRequired,
   };
@@ -729,7 +725,7 @@ export const recomputeLatestSkillModerationInternal = internalMutation({
   handler: async (ctx, args) => {
     const skill = await ctx.db.get(args.skillId);
     if (!skill) return { ok: true as const, skipped: "missing" as const };
-    if (shouldPreserveAutobanRemediationModerationLock(skill)) {
+    if (shouldPreserveExistingModerationLock(skill)) {
       return { ok: true as const, skipped: "existing_lock" as const };
     }
     if (!skill.latestVersionId) return { ok: true as const, skipped: "missing_latest" as const };
@@ -887,14 +883,6 @@ function shouldPreserveExistingModerationLock(
 ) {
   if (skill.moderationStatus !== "hidden") return false;
   if (isManualOverrideReason(skill.moderationReason)) return false;
-  return !isScannerManagedReason(skill.moderationReason);
-}
-
-function shouldPreserveAutobanRemediationModerationLock(
-  skill: Pick<Doc<"skills">, "moderationStatus" | "moderationReason">,
-) {
-  if (skill.moderationStatus !== "hidden") return false;
-  if (skill.moderationReason === "user.banned") return false;
   return !isScannerManagedReason(skill.moderationReason);
 }
 
@@ -2025,15 +2013,6 @@ type ManagementSkillEntry = {
   owner: Doc<"users"> | null;
 };
 
-function omitLegacyClawScanNoteFields(version: Doc<"skillVersions">) {
-  const {
-    clawScanNote: _legacyClawScanNote,
-    clawScanNoteUpdatedAt: _legacyClawScanNoteUpdatedAt,
-    ...publicVersion
-  } = version;
-  return publicVersion;
-}
-
 type DashboardSkillListItem = {
   _id: Id<"skills">;
   _creationTime: number;
@@ -2331,7 +2310,13 @@ function toPublicSkillListVersionFromSummary(
     createdAt: summary.createdAt,
     changelog: summary.changelog,
     changelogSource: summary.changelogSource,
-    parsed: summary.clawdis ? { clawdis: summary.clawdis } : undefined,
+    parsed:
+      summary.description || summary.clawdis
+        ? {
+            ...(summary.description ? { description: summary.description } : {}),
+            ...(summary.clawdis ? { clawdis: summary.clawdis } : {}),
+          }
+        : undefined,
     apiKeyRequired: summary.apiKeyRequired,
   };
 }
@@ -2360,7 +2345,7 @@ async function buildManagementSkillEntries(ctx: QueryCtx, skills: Doc<"skills">[
       const badges = badgeMapBySkillId.get(skill._id) ?? {};
       return {
         skill: { ...skill, badges },
-        latestVersion: latestVersion ? omitLegacyClawScanNoteFields(latestVersion) : null,
+        latestVersion,
         owner,
       };
     }),
@@ -2556,16 +2541,19 @@ export const getBySlug = query({
     const overrideActive = Boolean(skill.manualOverride);
     const isPendingScan =
       skill.moderationStatus === "hidden" && skill.moderationReason === "pending.scan";
-    const isMalwareBlocked = skill.moderationFlags?.includes("blocked.malware") ?? false;
+    const isMalwareBlocked =
+      skill.moderationVerdict === "malicious" ||
+      (skill.moderationFlags?.includes("blocked.malware") ?? false);
     const isSuspicious = skill.moderationFlags?.includes("flagged.suspicious") ?? false;
     const isReviewFlagged = isSkillReviewFlagged(skill);
     const isHiddenByMod =
       skill.moderationStatus === "hidden" && !isPendingScan && !isMalwareBlocked;
     const isRemoved = skill.moderationStatus === "removed";
 
-    // Non-owners can see malware-blocked skills (transparency), but not other hidden states
-    // Owners can see all their moderated skills
-    if (!publicSkill && !isOwner && !isMalwareBlocked) return null;
+    if (isMalwareBlocked) return null;
+
+    // Owners can see their non-malicious moderated skills.
+    if (!publicSkill && !isOwner) return null;
 
     // For owners viewing their moderated skill, construct the response manually
     const skillData = publicSkill ?? {
@@ -2658,6 +2646,70 @@ export const getBySlug = query({
             },
           }
         : null,
+    };
+  },
+});
+
+export const getVerifyTargetBySlugInternal = internalQuery({
+  args: { slug: v.string() },
+  handler: async (ctx, args) => {
+    const resolved = await resolveSkillBySlugOrAlias(ctx, args.slug);
+    const skill = resolved.skill;
+    if (!skill) return null;
+
+    const isMalwareBlocked =
+      skill.moderationVerdict === "malicious" ||
+      (skill.moderationFlags?.includes("blocked.malware") ?? false);
+    if (!isMalwareBlocked && !isPublicSkillDoc(skill)) return null;
+
+    const owner = toPublicPublisher(
+      await getOwnerPublisher(ctx, {
+        ownerPublisherId: skill.ownerPublisherId,
+        ownerUserId: skill.ownerUserId,
+      }),
+    );
+    if (!owner) return null;
+
+    const isPendingScan =
+      skill.moderationStatus === "hidden" && skill.moderationReason === "pending.scan";
+    const isSuspicious = skill.moderationFlags?.includes("flagged.suspicious") ?? false;
+    const isReviewFlagged = isSkillReviewFlagged(skill);
+    const overrideActive = Boolean(skill.manualOverride);
+    const isHiddenByMod =
+      skill.moderationStatus === "hidden" && !isPendingScan && !isMalwareBlocked;
+    const isRemoved = skill.moderationStatus === "removed";
+
+    return {
+      requestedSlug: resolved.requestedSlug,
+      resolvedSlug: resolved.resolvedSlug,
+      skill: {
+        _id: skill._id,
+        slug: skill.slug,
+        displayName: skill.displayName,
+        summary: skill.summary,
+        tags: skill.tags,
+        stats: skill.stats,
+        createdAt: skill.createdAt,
+        updatedAt: skill.updatedAt,
+        latestVersionId: skill.latestVersionId,
+      },
+      latestVersion: null,
+      owner,
+      moderationInfo: {
+        isPendingScan,
+        isMalwareBlocked,
+        isSuspicious,
+        isReviewFlagged,
+        isHiddenByMod,
+        isRemoved,
+        overrideActive,
+        verdict: skill.moderationVerdict,
+        reasonCodes: skill.moderationReasonCodes,
+        summary: skill.moderationSummary,
+        engineVersion: skill.moderationEngineVersion,
+        updatedAt: skill.moderationEvaluatedAt,
+        sourceVersionId: skill.moderationSourceVersionId ?? null,
+      },
     };
   },
 });
@@ -2933,9 +2985,7 @@ export const getBySlugForStaff = query({
       requestedSlug: resolved.requestedSlug,
       resolvedSlug: resolved.resolvedSlug,
       skill: { ...skill, badges },
-      latestVersion: latestVersion
-        ? { ...omitLegacyClawScanNoteFields(latestVersion), generatedSkillCard }
-        : null,
+      latestVersion: latestVersion ? { ...latestVersion, generatedSkillCard } : null,
       owner,
       overrideReviewer,
       auditLogs,
@@ -3082,11 +3132,13 @@ export const getSecurityVerdictTargetInternal = internalQuery({
     const skill = resolved.skill;
     if (!skill) return null;
 
-    const isMalwareBlocked = skill.moderationFlags?.includes("blocked.malware") ?? false;
+    const isMalwareBlocked =
+      skill.moderationVerdict === "malicious" ||
+      (skill.moderationFlags?.includes("blocked.malware") ?? false);
     const isSuspicious = skill.moderationFlags?.includes("flagged.suspicious") ?? false;
     const isReviewFlagged = isSkillReviewFlagged(skill);
     const overrideActive = Boolean(skill.manualOverride);
-    if (!isPublicSkillDoc(skill) && !isMalwareBlocked) return null;
+    if (!isMalwareBlocked && !isPublicSkillDoc(skill)) return null;
 
     const owner = toPublicPublisher(
       await getOwnerPublisher(ctx, {
@@ -7903,111 +7955,6 @@ export const restoreOwnedSkillsForUnbanBatchInternal = internalMutation({
   },
 });
 
-export const restoreOwnedSkillsForAutobanRemediationBatchInternal = internalMutation({
-  args: {
-    actorUserId: v.id("users"),
-    ownerUserId: v.id("users"),
-    bannedAt: v.number(),
-    cursor: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const now = Date.now();
-    const owner = await ctx.db.get(args.ownerUserId);
-    if (!owner || owner.deletedAt || owner.deactivatedAt || owner.purgedAt) {
-      return {
-        ok: true as const,
-        restoredCount: 0,
-        skippedMalicious: 0,
-        scheduled: false,
-        aborted: true,
-      };
-    }
-
-    const { page, isDone, continueCursor } = await ctx.db
-      .query("skills")
-      .withIndex("by_owner", (q) => q.eq("ownerUserId", args.ownerUserId))
-      .order("desc")
-      .paginate({
-        cursor: args.cursor ?? null,
-        numItems: BAN_USER_SKILLS_BATCH_SIZE,
-      });
-
-    let restoredCount = 0;
-    let skippedMalicious = 0;
-    for (const skill of page) {
-      if (!skill.softDeletedAt || skill.softDeletedAt !== args.bannedAt) continue;
-
-      const existingFlags = skill.moderationFlags ?? [];
-      const reasonCodes = skill.moderationReasonCodes ?? [];
-      const isStillMalicious =
-        skill.moderationVerdict === "malicious" || existingFlags.includes("blocked.malware");
-      const hasFreshCleanVerdict =
-        skill.moderationVerdict === "clean" && (skill.moderationEvaluatedAt ?? 0) >= args.bannedAt;
-      const hasStaleVtMalwareFlag =
-        existingFlags.includes("blocked.malware") && reasonCodes.length > 0;
-      if (isStillMalicious && !(hasStaleVtMalwareFlag && hasFreshCleanVerdict)) {
-        skippedMalicious += 1;
-        continue;
-      }
-
-      const shouldReplaceReason = skill.moderationReason === "user.banned";
-      const nextReason = shouldReplaceReason
-        ? "restored.autoban_remediation"
-        : skill.moderationReason;
-      const moderationFlags = existingFlags.filter((flag) => flag !== "blocked.malware");
-      const moderationReasonCodes = (skill.moderationReasonCodes ?? []).filter(
-        (code) => !code.startsWith("malicious."),
-      );
-      const keepHiddenForExistingModeration = shouldPreserveAutobanRemediationModerationLock(skill);
-      const patch: Partial<Doc<"skills">> = {
-        softDeletedAt: undefined,
-        moderationStatus: keepHiddenForExistingModeration ? "hidden" : "active",
-        moderationReason: nextReason,
-        moderationFlags,
-        moderationReasonCodes: moderationReasonCodes.length ? moderationReasonCodes : undefined,
-        isSuspicious: computeIsSuspicious({
-          moderationFlags,
-          moderationReason: nextReason,
-        }),
-        hiddenAt: keepHiddenForExistingModeration ? skill.hiddenAt : undefined,
-        hiddenBy: keepHiddenForExistingModeration ? skill.hiddenBy : undefined,
-        lastReviewedAt: keepHiddenForExistingModeration ? skill.lastReviewedAt : now,
-        updatedAt: now,
-      };
-      const nextSkill = { ...skill, ...patch };
-      await ctx.db.patch(skill._id, patch);
-      await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
-      await adjustUserSkillStatsForSkillChange(ctx, skill, nextSkill);
-      await setSkillEmbeddingsSoftDeleted(ctx, skill._id, false, now);
-      await ctx.db.insert("auditLogs", {
-        actorUserId: args.actorUserId,
-        action: "skill.autoban_remediation.restore",
-        targetType: "skill",
-        targetId: skill._id,
-        metadata: {
-          slug: skill.slug,
-          ownerUserId: skill.ownerUserId,
-          bannedAt: args.bannedAt,
-          previousReason: skill.moderationReason,
-        },
-        createdAt: now,
-      });
-      restoredCount += 1;
-    }
-
-    scheduleNextBatchIfNeeded(
-      ctx.scheduler,
-      skillAutobanRemediationInternalRefs.skills
-        .restoreOwnedSkillsForAutobanRemediationBatchInternal,
-      args,
-      isDone,
-      continueCursor,
-    );
-
-    return { ok: true as const, restoredCount, skippedMalicious, scheduled: !isDone };
-  },
-});
-
 /**
  * Batch restore skills hidden by a moderation hold.
  * Only restores skills where moderationReason is "user.moderation"
@@ -9080,6 +9027,7 @@ export const updateTags = mutation({
         createdAt: version.createdAt,
         changelog: version.changelog,
         changelogSource: version.changelogSource,
+        description: skillSummaryFromSkillVersion(version),
         clawdis: version.parsed?.clawdis,
         apiKeyRequired: version.apiKeyRequired,
       };
@@ -11134,6 +11082,7 @@ export const insertVersion = internalMutation({
             createdAt: now,
             changelog: args.changelog,
             changelogSource: args.changelogSource,
+            description: getFrontmatterValue(args.parsed.frontmatter, "description")?.trim(),
             clawdis: args.parsed.clawdis,
             // Filled later by the async analyser via
             // `updateVersionApiKeyRequiredInternal`.
@@ -11706,6 +11655,7 @@ export const backfillLatestVersionSummaryApiKeyRequiredInternal = internalMutati
             createdAt: version.createdAt,
             changelog: version.changelog,
             changelogSource: version.changelogSource,
+            description: skillSummaryFromSkillVersion(version),
             clawdis: version.parsed?.clawdis,
             apiKeyRequired: version.apiKeyRequired,
           },

@@ -98,19 +98,3 @@ export type PublicSkill = Pick<
 > & {
   githubSourceRepo?: string;
 };
-
-export type PublicSoul = Pick<
-  Doc<"souls">,
-  | "_id"
-  | "_creationTime"
-  | "slug"
-  | "displayName"
-  | "summary"
-  | "ownerUserId"
-  | "ownerPublisherId"
-  | "latestVersionId"
-  | "tags"
-  | "stats"
-  | "createdAt"
-  | "updatedAt"
->;

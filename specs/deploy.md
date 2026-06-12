@@ -108,6 +108,8 @@ Ensure Convex env is set (auth + embeddings):
 - `CLAWHUB_SECURITY_EMAIL_FROM` for the outbound From header, defaulting to
   `ClawHub Security <noreply@notifications.openclaw.ai>` on the verified Resend
   domain
+- `CLAWHUB_NOREPLY_FROM` for guarded staff emails, defaulting to
+  `ClawHub <noreply@notifications.openclaw.ai>` on the verified Resend domain
 - `SITE_URL` (your web app URL)
 - Optional webhook env (see `docs/webhook.md`)
 - Recommended GitHub App env for authenticated GitHub API reads used by publish

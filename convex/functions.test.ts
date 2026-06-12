@@ -59,6 +59,20 @@ describe("package digest sync", () => {
     expect(
       isGitHubMirrorEligibleSkillDoc({
         softDeletedAt: undefined,
+        moderationStatus: "active",
+        moderationVerdict: "malicious",
+      }),
+    ).toBe(false);
+    expect(
+      isGitHubMirrorEligibleSkillDoc({
+        softDeletedAt: undefined,
+        moderationStatus: "active",
+        moderationFlags: ["blocked.malware"],
+      }),
+    ).toBe(false);
+    expect(
+      isGitHubMirrorEligibleSkillDoc({
+        softDeletedAt: undefined,
         moderationStatus: "hidden",
       }),
     ).toBe(false);

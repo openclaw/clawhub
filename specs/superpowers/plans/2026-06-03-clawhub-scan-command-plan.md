@@ -22,8 +22,8 @@
 - `packages/clawhub/src/cli.ts`: register the new top-level `scan` command.
 - `packages/clawhub/src/cli/commands/scan.ts`: implement scan source validation, submit, poll, terminal report, JSON output, and ZIP download.
 - `packages/clawhub/src/cli/commands/scan.test.ts`: cover CLI source validation, request shape, polling, and `--output`.
-- `packages/clawhub-mod/src/commands/moderation.ts`: route single and batch rescans through canonical scan endpoints.
-- `packages/clawhub-mod/src/commands/moderation.test.ts`: prove moderator commands use canonical scan routes.
+- `packages/clawhub-admin/src/commands/moderation.ts`: route single and batch rescans through canonical scan endpoints.
+- `packages/clawhub-admin/src/commands/moderation.test.ts`: prove moderator commands use canonical scan routes.
 - `docs/cli.md`, `docs/http-api.md`, and `specs/security-moderation.md`: document the public command, API shape, and security invariants.
 
 ## Task 1: Shared Schema Contract
@@ -200,18 +200,18 @@ Render artifact metadata, ClawScan summary/findings/guidance, SkillSpector issue
 
 Call `GET /api/v1/skills/-/scan/{scanId}/download` after terminal success and write the returned ZIP bytes to the requested file path.
 
-## Task 5: Moderator CLI Migration
+## Task 5: Admin CLI Migration
 
 **Files:**
 
-- Modify: `packages/clawhub-mod/src/commands/moderation.ts`
-- Modify: `packages/clawhub-mod/src/commands/moderation.test.ts`
+- Modify: `packages/clawhub-admin/src/commands/moderation.ts`
+- Modify: `packages/clawhub-admin/src/commands/moderation.test.ts`
 
 - [ ] **Step 1: Update failing tests**
 
-Expect `clawhub-mod skills rescan <slug>` to call `POST /api/v1/skills/-/scan` with published `update: true`.
+Expect `clawhub-admin skills rescan <slug>` to call `POST /api/v1/skills/-/scan` with published `update: true`.
 
-Expect `clawhub-mod skills rescan-all` to call `POST /api/v1/skills/-/scan/batch` and poll `/api/v1/skills/-/scan/batch/status`.
+Expect `clawhub-admin skills rescan-all` to call `POST /api/v1/skills/-/scan/batch` and poll `/api/v1/skills/-/scan/batch/status`.
 
 - [ ] **Step 2: Update implementation**
 
@@ -243,7 +243,7 @@ Run targeted tests first:
 
 ```sh
 bun test packages/clawhub/src/cli/commands/scan.test.ts
-bun test packages/clawhub-mod/src/commands/moderation.test.ts
+bun test packages/clawhub-admin/src/commands/moderation.test.ts
 ```
 
 Then run broader package/type gates when targeted tests pass:

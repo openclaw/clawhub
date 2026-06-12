@@ -22,7 +22,7 @@ import {
   getTrustTier,
   type TrustTier,
 } from "./lib/skillQuality";
-import { hashSkillFiles, isTextFile } from "./lib/skills";
+import { getFrontmatterValue, hashSkillFiles, isTextFile } from "./lib/skills";
 import { computeIsSuspicious } from "./lib/skillSafety";
 import { generateSkillSummary } from "./lib/skillSummary";
 
@@ -2106,7 +2106,11 @@ export const backfillLatestVersionSummaryInternal = internalMutation({
         createdAt: version.createdAt,
         changelog: version.changelog,
         changelogSource: version.changelogSource,
+        description: version.parsed?.frontmatter
+          ? getFrontmatterValue(version.parsed.frontmatter, "description")?.trim() || undefined
+          : undefined,
         clawdis: version.parsed?.clawdis,
+        apiKeyRequired: version.apiKeyRequired,
       };
 
       // Skip if already in sync
@@ -2117,6 +2121,8 @@ export const backfillLatestVersionSummaryInternal = internalMutation({
         existing.createdAt === expected.createdAt &&
         existing.changelog === expected.changelog &&
         existing.changelogSource === expected.changelogSource &&
+        existing.description === expected.description &&
+        existing.apiKeyRequired === expected.apiKeyRequired &&
         JSON.stringify(existing.clawdis ?? null) === JSON.stringify(expected.clawdis ?? null)
       ) {
         continue;
@@ -2134,6 +2140,77 @@ export const backfillLatestVersionSummaryInternal = internalMutation({
     }
 
     return { patched, isDone, scanned: page.length };
+  },
+});
+
+export const backfillSkillSearchDigestModerationVerdictsInternal = internalMutation({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const batchSize = clampInt(args.batchSize ?? 100, 10, 200);
+    const dryRun = args.dryRun ?? false;
+    const { page, continueCursor, isDone } = await ctx.db
+      .query("skillSearchDigest")
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+
+    let patched = 0;
+    let missingSkills = 0;
+    for (const digest of page) {
+      const skill = await ctx.db.get(digest.skillId);
+      if (!skill) {
+        missingSkills++;
+        continue;
+      }
+      if (digest.moderationVerdict === skill.moderationVerdict) continue;
+
+      patched++;
+      if (!dryRun) {
+        await ctx.db.patch(digest._id, {
+          moderationVerdict: skill.moderationVerdict,
+          updatedAt: skill.updatedAt,
+        });
+      }
+    }
+
+    if (!dryRun && !isDone) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.maintenance.backfillSkillSearchDigestModerationVerdictsInternal,
+        {
+          cursor: continueCursor,
+          batchSize: args.batchSize,
+          dryRun,
+        },
+      );
+    }
+
+    return {
+      scanned: page.length,
+      patched,
+      missingSkills,
+      cursor: continueCursor,
+      isDone,
+      dryRun,
+    };
+  },
+});
+
+export const backfillSkillSearchDigestModerationVerdicts: ReturnType<typeof action> = action({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUserFromAction(ctx);
+    assertRole(user, ["admin"]);
+    return await ctx.runMutation(
+      internal.maintenance.backfillSkillSearchDigestModerationVerdictsInternal,
+      args,
+    );
   },
 });
 

@@ -31,6 +31,7 @@ const {
   placeUserUnderModerationInternal,
   liftModerationHoldInternal,
   purgeSelfDeletedAccountRecoveryBatchInternal,
+  ensurePublisherHandleInternal,
   reserveHandleInternal,
   syncGitHubProfileInternal,
   updateProfile,
@@ -436,15 +437,6 @@ function makeBanCtx(options: { auditLogs?: Array<Record<string, unknown>> } = {}
       softDeletedAt: 123,
     },
   ];
-  const soulComments = [
-    {
-      _id: "soulComments:active",
-      userId: "users:target",
-      soulId: "souls:1",
-      softDeletedAt: undefined,
-    },
-  ];
-
   const query = vi.fn((table: string) => ({
     withIndex: (_index: string, _cb: unknown) => {
       if (table === "auditLogs") {
@@ -452,7 +444,6 @@ function makeBanCtx(options: { auditLogs?: Array<Record<string, unknown>> } = {}
       }
       if (table === "apiTokens") return { collect: vi.fn().mockResolvedValue(apiTokens) };
       if (table === "comments") return { collect: vi.fn().mockResolvedValue(userComments) };
-      if (table === "soulComments") return { collect: vi.fn().mockResolvedValue(soulComments) };
       throw new Error(`Unexpected table ${table}`);
     },
   }));
@@ -708,29 +699,32 @@ describe("ensureHandler", () => {
     });
   });
 
-  it("skips public route owner handles when deriving a handle", async () => {
-    const { ctx, patch } = makeCtx();
-    vi.mocked(requireUser).mockResolvedValue({
-      userId: "users:skills",
-      user: {
-        _creationTime: 1,
-        handle: undefined,
-        displayName: undefined,
-        name: "skills",
-        email: undefined,
-        role: "user",
-        createdAt: 1,
-      },
-    } as never);
+  it.each(["docs", "skills"])(
+    "skips public route owner handle %s when deriving a handle",
+    async (handle) => {
+      const { ctx, patch } = makeCtx();
+      vi.mocked(requireUser).mockResolvedValue({
+        userId: `users:${handle}`,
+        user: {
+          _creationTime: 1,
+          handle: undefined,
+          displayName: undefined,
+          name: handle,
+          email: undefined,
+          role: "user",
+          createdAt: 1,
+        },
+      } as never);
 
-    await ensureHandler(ctx);
+      await ensureHandler(ctx);
 
-    expect(patch).toHaveBeenCalledWith("users:skills", {
-      handle: "skills-2",
-      displayName: "skills-2",
-      updatedAt: expect.any(Number),
-    });
-  });
+      expect(patch).toHaveBeenCalledWith(`users:${handle}`, {
+        handle: `${handle}-2`,
+        displayName: `${handle}-2`,
+        updatedAt: expect.any(Number),
+      });
+    },
+  );
 
   it("repairs an existing handle that is no longer claimable", async () => {
     const { ctx, patch, query } = makeCtx();
@@ -1348,6 +1342,30 @@ describe("users.getByHandle", () => {
     expect(publisherUnique).toHaveBeenCalledOnce();
     expect(get).not.toHaveBeenCalled();
     expect(result).toBeNull();
+  });
+});
+
+describe("users.ensurePublisherHandleInternal", () => {
+  it("rejects public route owner handles", async () => {
+    const { ctx, get, insert } = makeCtx();
+    get.mockResolvedValue({ _id: "users:admin", role: "admin" });
+    const handler = (
+      ensurePublisherHandleInternal as unknown as {
+        _handler: (
+          ctx: unknown,
+          args: { actorUserId: string; handle: string; displayName?: string },
+        ) => Promise<unknown>;
+      }
+    )._handler;
+
+    await expect(
+      handler(ctx, {
+        actorUserId: "users:admin",
+        handle: "docs",
+        displayName: "Docs",
+      }),
+    ).rejects.toThrow('Handle "@docs" is reserved for ClawHub routes');
+    expect(insert).not.toHaveBeenCalled();
   });
 });
 
@@ -2848,14 +2866,13 @@ describe("users.banUserInternal", () => {
     vi.restoreAllMocks();
   });
 
-  it("soft-deletes target user comments (skill + soul) during ban", async () => {
+  it("soft-deletes target user skill comments during ban", async () => {
     vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
     const { ctx, get, patch, insert, runMutation } = makeBanCtx();
 
     get.mockImplementation(async (id: string) => {
       if (id === "users:actor") return { _id: "users:actor", role: "moderator" };
       if (id === "users:target") return { _id: "users:target", role: "user" };
-      if (id === "souls:1") return { _id: "souls:1", stats: { comments: 3 } };
       return null;
     });
 
@@ -2879,26 +2896,18 @@ describe("users.banUserInternal", () => {
     })) as {
       ok: boolean;
       alreadyBanned: boolean;
-      deletedComments: { skillComments: number; soulComments: number };
+      deletedSkillComments: number;
     };
 
     expect(result).toMatchObject({
       ok: true,
       alreadyBanned: false,
-      deletedComments: { skillComments: 1, soulComments: 1 },
+      deletedSkillComments: 1,
     });
 
     expect(patch).toHaveBeenCalledWith("comments:active", {
       softDeletedAt: 1_700_000_000_000,
       deletedBy: "users:actor",
-    });
-    expect(patch).toHaveBeenCalledWith("soulComments:active", {
-      softDeletedAt: 1_700_000_000_000,
-      deletedBy: "users:actor",
-    });
-    expect(patch).toHaveBeenCalledWith("souls:1", {
-      stats: { comments: 2 },
-      updatedAt: 1_700_000_000_000,
     });
 
     expect(insertStatEvent).toHaveBeenCalledWith(expect.anything(), {
@@ -2911,7 +2920,6 @@ describe("users.banUserInternal", () => {
         action: "user.ban",
         metadata: expect.objectContaining({
           deletedSkillComments: 1,
-          deletedSoulComments: 1,
         }),
       }),
     );
@@ -2931,7 +2939,6 @@ describe("users.banUserInternal", () => {
           email: "target@example.com",
         };
       }
-      if (id === "souls:1") return { _id: "souls:1", stats: { comments: 3 } };
       return null;
     });
 
@@ -2962,6 +2969,7 @@ describe("users.banUserInternal", () => {
       handle: "target-user",
       source: "manual",
       reason: "rate limit triggered by automated CLI publishing",
+      hiddenArtifacts: 2,
     });
   });
 
@@ -2973,7 +2981,6 @@ describe("users.banUserInternal", () => {
       if (id === "users:actor") return { _id: "users:actor", role: "moderator" };
       if (id === "users:target")
         return { _id: "users:target", role: "user", deletedAt: 1_600_000_000_000 };
-      if (id === "souls:1") return { _id: "souls:1", stats: { comments: 3 } };
       return null;
     });
 
@@ -2993,7 +3000,7 @@ describe("users.banUserInternal", () => {
     })) as {
       ok: boolean;
       alreadyBanned: boolean;
-      deletedComments: { skillComments: number; soulComments: number };
+      deletedSkillComments: number;
       deletedSkills: number;
     };
 
@@ -3001,7 +3008,7 @@ describe("users.banUserInternal", () => {
       ok: true,
       alreadyBanned: true,
       deletedSkills: 0,
-      deletedComments: { skillComments: 1, soulComments: 1 },
+      deletedSkillComments: 1,
     });
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
@@ -3037,7 +3044,6 @@ describe("users.autobanMalwareAuthorInternal", () => {
           email: "target@example.com",
         };
       }
-      if (id === "souls:1") return { _id: "souls:1", stats: { comments: 3 } };
       return null;
     });
     runMutation
@@ -3075,6 +3081,7 @@ describe("users.autobanMalwareAuthorInternal", () => {
       reason: "malicious.llm_malicious",
       trigger: "malicious.llm_malicious",
       artifact: { kind: "skill", name: "gingiris-launch" },
+      hiddenArtifacts: 1,
     });
   });
 });
@@ -3437,6 +3444,8 @@ describe("users.unbanUserForBanAppealServiceInternal", () => {
       to: "target@example.com",
       handle: "target-user",
       restoredListings: undefined,
+      skillsRestored: 5,
+      packagesRestored: undefined,
     });
     expect(result).toEqual({
       ok: true,

@@ -8066,9 +8066,9 @@ describe("packages public queries", () => {
     );
   });
 
-  it("does not suggest publisher creation for package scopes that are invalid ClawHub handles", async () => {
+  it("suggests publisher creation for missing npm-compatible package scopes", async () => {
     const runMutation = vi.fn(async () => {
-      throw new Error('Publisher "@foo.bar" not found');
+      throw new Error('Publisher "@example.tools" not found');
     });
     const ctx = {
       runQuery: vi
@@ -8099,7 +8099,7 @@ describe("packages public queries", () => {
       publishPackageForUserInternalHandler(ctx as never, {
         actorUserId: "users:vincent",
         payload: {
-          name: "@foo.bar/demo-plugin",
+          name: "@example.tools/demo-plugin",
           displayName: "Demo",
           family: "bundle-plugin",
           version: "1.0.0",
@@ -8108,9 +8108,7 @@ describe("packages public queries", () => {
           files: [],
         },
       }),
-    ).rejects.toThrow(
-      'ClawHub publisher handles may only use lowercase letters, numbers, and hyphens. Rename package.json to a ClawHub-compatible scope, such as "@foo-bar/demo-plugin", then publish again.',
-    );
+    ).rejects.toThrow('Create it with "clawhub publisher create example.tools".');
   });
 
   it("rejects scoped package publishes when --owner conflicts with the package scope", async () => {

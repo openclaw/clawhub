@@ -30,6 +30,8 @@ describe("package publish workflow", () => {
     expect(workflow).not.toContain("generated_config_path.write_text(str(config_path)");
     expect(workflow).not.toContain("cleanup_generated_inspector_config");
     expect(workflow).toContain("plugin-inspector-report");
+    expect(workflow).toContain("inspector_artifact_name:");
+    expect(workflow).toContain("name: ${{ inputs.inspector_artifact_name }}");
     expect(workflow).toContain("actions/upload-artifact");
   });
 
@@ -117,6 +119,8 @@ describe("package publish workflow", () => {
 
     expect(workflow).toContain("package_artifact_name:");
     expect(workflow).toContain("package_artifact_path:");
+    expect(workflow).toContain("publish_json_artifact_name:");
+    expect(workflow).toContain("name: ${{ inputs.publish_json_artifact_name }}");
     expect(workflow).toContain("actions: read");
     expect(workflow).toContain("Download prebuilt package artifact");
     expect(workflow).toContain("actions/download-artifact");
@@ -127,7 +131,6 @@ describe("package publish workflow", () => {
     expect(workflow).toContain("PREBUILT_PACKAGE_ARTIFACT_PATH");
     expect(workflow).toContain("tar -xzf");
     expect(workflow).toContain("cmd_source = prebuilt_artifact_path or source");
-    expect(workflow).toContain("if source_path and prebuilt_artifact_path:");
     expect(workflow).toContain("if prebuilt_artifact_path:");
     expect(workflow).toContain("if not source_repo and not source_commit:");
     expect(workflow).toContain('source_repo = os.environ["GITHUB_REPOSITORY"].strip()');
@@ -135,6 +138,7 @@ describe("package publish workflow", () => {
     expect(workflow).toContain(
       "Prebuilt artifact mode requires source_repo and source_commit together",
     );
-    expect(workflow).toContain("Prebuilt artifact mode does not accept source_path");
+    expect(workflow).not.toContain("Prebuilt artifact mode does not accept source_path");
+    expect(workflow).toContain('cmd += ["--source-path", source_path]');
   });
 });

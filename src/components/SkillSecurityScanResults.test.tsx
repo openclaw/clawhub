@@ -322,10 +322,10 @@ describe("SecurityScanResults static guidance", () => {
     expect(screen.queryByText(/Confidence/i)).toBeNull();
   });
 
-  it("shows the ClawScan verdict without a rolled-up risk level in the scan panel", () => {
+  it("shows suspicious ClawScan verdicts as review without a rolled-up risk level", () => {
     render(<SecurityScanResults llmAnalysis={clawScanAnalysis} />);
 
-    expect(screen.getByText("Warn")).toBeTruthy();
+    expect(screen.getByText("Review")).toBeTruthy();
     expect(screen.queryByText("High")).toBeNull();
     expect(screen.queryByText(/high confidence/i)).toBeNull();
     expect(screen.queryByText(/Suspicious/i)).toBeNull();
@@ -465,7 +465,7 @@ describe("SecurityScanResults static guidance", () => {
     );
 
     expect(screen.getByRole("heading", { name: "Todo Guard" })).toBeTruthy();
-    expect(screen.getAllByText("Warn").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Review").length).toBeGreaterThan(0);
     expect(screen.queryByText("Risk")).toBeNull();
     expect(screen.queryByText("ClawScan risk")).toBeNull();
     expect(

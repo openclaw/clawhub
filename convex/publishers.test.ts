@@ -890,7 +890,7 @@ describe("publishers membership controls", () => {
     });
   });
 
-  it.each(["admin", "skills"])(
+  it.each(["admin", "docs", "skills"])(
     "rejects org handle %s reserved for public routes",
     async (handle) => {
       const ctx = {
@@ -3835,6 +3835,38 @@ describe("self-serve org publisher creation", () => {
         }),
       ]),
     );
+  });
+
+  it("creates org publishers for npm-compatible scoped package handles", async () => {
+    const examples = ["example.tools", "lab_1", "studio_tools", "market_square"];
+
+    for (const handle of examples) {
+      const { ctx, inserts } = makeCreateOrgPublisherCtx({});
+
+      await expect(
+        createOrgPublisherForUserInternalHandler(ctx as never, {
+          actorUserId: "users:vincent",
+          handle,
+          displayName: handle,
+        }),
+      ).resolves.toMatchObject({
+        ok: true,
+        handle,
+        created: true,
+      });
+      expect(inserts).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            table: "publishers",
+            value: expect.objectContaining({
+              kind: "org",
+              handle,
+              displayName: handle,
+            }),
+          }),
+        ]),
+      );
+    }
   });
 
   it("rejects creation when the org publisher already exists", async () => {

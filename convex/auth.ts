@@ -16,6 +16,39 @@ export const DELETED_ACCOUNT_REAUTH_MESSAGE =
 const REAUTH_BLOCKING_BAN_ACTIONS = new Set(["user.ban", "user.autoban.malware"]);
 const DEV_PERSONAS = new Set(["owner", "user", "admin", "officialOrgMember", "abusePublisher"]);
 
+export function normalizeGitHubProfileId(profileId: unknown) {
+  const id =
+    typeof profileId === "number" && Number.isSafeInteger(profileId)
+      ? String(profileId)
+      : typeof profileId === "string"
+        ? profileId.trim()
+        : null;
+
+  if (!id || !/^\d+$/.test(id)) {
+    throw new Error("GitHub OAuth profile is missing a valid numeric id");
+  }
+
+  return id;
+}
+
+export function createGitHubAuthProvider() {
+  return GitHub({
+    clientId: process.env.AUTH_GITHUB_ID ?? "",
+    clientSecret: process.env.AUTH_GITHUB_SECRET ?? "",
+    // GitHub's OAuth email must not be treated as a ClawHub account key. The
+    // immutable GitHub provider account id is the only account-linking key.
+    allowDangerousEmailAccountLinking: false,
+    profile(profile) {
+      return {
+        id: normalizeGitHubProfileId(profile.id),
+        name: profile.login,
+        email: profile.email ?? undefined,
+        image: profile.avatar_url,
+      };
+    },
+  });
+}
+
 function getBannedReauthMessage(_reason: string | undefined) {
   return BANNED_REAUTH_MESSAGE;
 }
@@ -71,18 +104,7 @@ export async function handleDeletedUserSignIn(
 
 export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
   providers: [
-    GitHub({
-      clientId: process.env.AUTH_GITHUB_ID ?? "",
-      clientSecret: process.env.AUTH_GITHUB_SECRET ?? "",
-      profile(profile) {
-        return {
-          id: String(profile.id),
-          name: profile.login,
-          email: profile.email ?? undefined,
-          image: profile.avatar_url,
-        };
-      },
-    }),
+    createGitHubAuthProvider(),
     ConvexCredentials({
       id: "dev-persona",
       authorize: async (credentials, ctx) => {

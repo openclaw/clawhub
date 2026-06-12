@@ -89,7 +89,7 @@ Public read:
   - Optional filter: `nonSuspiciousOnly=true`
   - Legacy alias: `nonSuspicious=true`
   - With `nonSuspiciousOnly=true`, cursor-based pages may contain fewer than `limit` items; use `nextCursor` to continue.
-  - `recommended` ranks by stars, then all-time installs, then downloads, then `updatedAt`.
+  - `recommended` ranks by stars, then downloads, then `updatedAt`.
 - `GET /api/v1/skills/{slug}`
 - `GET /api/v1/skills/{slug}/moderation`
 - `GET /api/v1/skills/{slug}/versions?limit=&cursor=`

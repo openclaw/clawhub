@@ -213,6 +213,74 @@ describe("publisher abuse scoring", () => {
     expect(score.reasonCodes).toContain("temporal_sustained_downloads_flat_installs");
   });
 
+  it("flags high-volume installs that track downloads too closely", () => {
+    const todayDay = 100;
+    const score = computeCurrentSkillTemporalAbuseScore({
+      todayDay,
+      dailyStats: dailyRange(94, 7, { downloads: 200, installs: 180 }),
+    });
+
+    expect(score.nearConversion).toBe(true);
+    expect(score.recent7Downloads).toBe(1_400);
+    expect(score.recent7Installs).toBe(1_260);
+    expect(score.installDownloadRatio7).toBeCloseTo(0.9);
+    expect(score.reasonCodes).toContain("temporal_installs_track_downloads");
+  });
+
+  it("keeps low-volume one-to-one install traffic below close-ratio thresholds", () => {
+    const todayDay = 100;
+    const score = computeCurrentSkillTemporalAbuseScore({
+      todayDay,
+      dailyStats: dailyRange(94, 7, { downloads: 1, installs: 1 }),
+    });
+
+    expect(score.nearConversion).toBe(false);
+    expect(score.reasonCodes).not.toContain("temporal_installs_track_downloads");
+  });
+
+  it("keeps observed high-end install ratios below close-ratio thresholds", () => {
+    const todayDay = 100;
+    const score = computeCurrentSkillTemporalAbuseScore({
+      todayDay,
+      dailyStats: dailyRange(94, 7, { downloads: 20, installs: 1 }),
+    });
+
+    expect(score.recent7Downloads).toBe(140);
+    expect(score.recent7Installs).toBe(7);
+    expect(score.installDownloadRatio7).toBeCloseTo(0.05);
+    expect(score.nearConversion).toBe(false);
+    expect(score.reasonCodes).not.toContain("temporal_installs_track_downloads");
+  });
+
+  it("requires installs to be close to downloads, not just statistically elevated", () => {
+    const todayDay = 100;
+    const score = computeCurrentSkillTemporalAbuseScore({
+      todayDay,
+      dailyStats: dailyRange(94, 7, { downloads: 300, installs: 15 }),
+    });
+
+    expect(score.recent7Downloads).toBe(2_100);
+    expect(score.recent7Installs).toBe(105);
+    expect(score.installDownloadRatio7).toBeCloseTo(0.05);
+    expect(score.installDownloadExcessZScore7).toBeGreaterThan(10);
+    expect(score.nearConversion).toBe(false);
+    expect(score.reasonCodes).not.toContain("temporal_installs_track_downloads");
+  });
+
+  it("reports a 30-day close-ratio window when the 7-day threshold is not met", () => {
+    const todayDay = 100;
+    const score = computeCurrentSkillTemporalAbuseScore({
+      todayDay,
+      dailyStats: dailyRange(71, 30, { downloads: 100, installs: 80 }),
+    });
+
+    expect(score.nearConversion).toBe(true);
+    expect(score.installDownloadRatio7).toBeCloseTo(0.8);
+    expect(score.installDownloadRatio30).toBeCloseTo(0.8);
+    expect(score.nearConversionWindowStartDay).toBe(71);
+    expect(score.nearConversionWindowEndDay).toBe(100);
+  });
+
   it("keeps ordinary steady download traffic below temporal thresholds", () => {
     const todayDay = 100;
     const score = computeCurrentSkillTemporalAbuseScore({

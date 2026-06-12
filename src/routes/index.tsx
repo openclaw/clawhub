@@ -1,5 +1,4 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useAction, useQuery } from "convex/react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -8,29 +7,19 @@ import {
   Download,
   Package,
   Search,
-  Shield,
   Star,
   Users,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
-import { SoulCard } from "../components/SoulCard";
-import { SoulStatsTripletLine } from "../components/SoulStats";
 import { convexHttp } from "../convex/client";
 import { fetchFeaturedPlugins } from "../lib/featuredCatalog";
-import { FEATURE_SOULS } from "../lib/features";
 import type { PackageListItem } from "../lib/packageApi";
-import type { PublicSkill, PublicSoul, PublicUser } from "../lib/publicUser";
-import { getSiteMode } from "../lib/site";
+import type { PublicSkill, PublicUser } from "../lib/publicUser";
 
 export const Route = createFileRoute("/")({
-  component: Home,
+  component: SkillsHome,
 });
-
-function Home() {
-  const mode = getSiteMode();
-  return mode === "souls" ? <OnlyCrabsHome /> : <SkillsHome />;
-}
 
 const SLOT_WORDS = [
   "Equip",
@@ -102,13 +91,6 @@ function SkillsHome() {
     });
   };
 
-  const handleSuggestion = (term: string) => {
-    void navigate({
-      to: "/search",
-      search: { q: term },
-    });
-  };
-
   // Format stat numbers
   const formatStat = (n: number | undefined): string => {
     if (!n) return "0";
@@ -128,8 +110,6 @@ function SkillsHome() {
     highlightedCarouselCards.length > 0 ? highlightedCarouselCards : fallbackCarouselCards;
   const carouselUsesHighlighted = highlightedCarouselCards.length > 0;
   const trendingCards = popular.slice(0, 6);
-  const categoryCount = FEATURE_SOULS ? 4 : 3;
-  const categoryLayout = categoryCount === 4 ? "1-2-4" : "1-3";
 
   const clickTimesRef = useRef<number[]>([]);
   const [slotState, setSlotState] = useState<
@@ -495,37 +475,6 @@ function SkillsHome() {
             </button>
           </form>
         </div>
-
-        <div className="home-v2-suggestions">
-          <button
-            type="button"
-            className="home-v2-suggestion"
-            onClick={() => handleSuggestion("self-improving agent")}
-          >
-            self-improving agent
-          </button>
-          <button
-            type="button"
-            className="home-v2-suggestion"
-            onClick={() => handleSuggestion("GitHub integration")}
-          >
-            GitHub integration
-          </button>
-          <button
-            type="button"
-            className="home-v2-suggestion"
-            onClick={() => handleSuggestion("security soul")}
-          >
-            security soul
-          </button>
-          <button
-            type="button"
-            className="home-v2-suggestion"
-            onClick={() => handleSuggestion("dashboard builder")}
-          >
-            dashboard builder
-          </button>
-        </div>
       </section>
 
       {/* ═══ FEATURED CAROUSEL ═══ */}
@@ -663,11 +612,7 @@ function SkillsHome() {
 
       {/* ═══ CATEGORIES ═══ */}
       <section className="home-v2-categories">
-        <div
-          className="home-v2-categories-grid"
-          data-count={categoryCount}
-          data-layout={categoryLayout}
-        >
+        <div className="home-v2-categories-grid">
           <Link
             to="/skills"
             search={{
@@ -715,30 +660,6 @@ function SkillsHome() {
               <ChevronRight size={16} />
             </span>
           </Link>
-          {FEATURE_SOULS ? (
-            <Link
-              to="/souls"
-              search={{
-                q: undefined,
-                sort: undefined,
-                dir: undefined,
-                view: undefined,
-                focus: undefined,
-              }}
-              className="home-v2-cat-item"
-            >
-              <div className="home-v2-cat-icon">
-                <Shield size={20} />
-              </div>
-              <div className="home-v2-cat-text">
-                <div className="home-v2-cat-name">Souls</div>
-                <div className="home-v2-cat-desc">Agent identities</div>
-              </div>
-              <span className="home-v2-cat-arrow">
-                <ChevronRight size={16} />
-              </span>
-            </Link>
-          ) : null}
         </div>
       </section>
 
@@ -870,148 +791,6 @@ function SkillsHome() {
           </div>
         </section>
       )}
-    </main>
-  );
-}
-
-function OnlyCrabsHome() {
-  const navigate = Route.useNavigate();
-  const ensureSoulSeeds = useAction(api.seed.ensureSoulSeeds);
-  const latest = (useQuery(api.souls.list, { limit: 12 }) as PublicSoul[]) ?? [];
-  const [query, setQuery] = useState("");
-  const seedEnsuredRef = useRef(false);
-  const trimmedQuery = useMemo(() => query.trim(), [query]);
-
-  useEffect(() => {
-    if (seedEnsuredRef.current) return;
-    seedEnsuredRef.current = true;
-    void ensureSoulSeeds({});
-  }, [ensureSoulSeeds]);
-
-  return (
-    <main>
-      <section className="hero">
-        <div className="hero-inner">
-          <div className="hero-copy fade-up" data-delay="1">
-            <span className="hero-badge">SOUL.md, shared.</span>
-            <h1 className="hero-title">SoulHub, where system lore lives.</h1>
-            <p className="hero-subtitle">
-              Share SOUL.md bundles, version them like docs, and keep personal system lore in one
-              public place.
-            </p>
-            <div style={{ display: "flex", gap: 12, marginTop: 20 }}>
-              <Link
-                to="/upload"
-                search={{ updateSlug: undefined, ownerHandle: undefined }}
-                className="btn btn-primary"
-              >
-                Publish a soul
-              </Link>
-              <Link
-                to="/souls"
-                search={{
-                  q: undefined,
-                  sort: undefined,
-                  dir: undefined,
-                  view: undefined,
-                  focus: undefined,
-                }}
-                className="btn"
-              >
-                Browse souls
-              </Link>
-            </div>
-          </div>
-          <div className="hero-card hero-search-card fade-up" data-delay="2">
-            <form
-              className="search-bar"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void navigate({
-                  to: "/souls",
-                  search: {
-                    q: trimmedQuery || undefined,
-                    sort: undefined,
-                    dir: undefined,
-                    view: undefined,
-                    focus: undefined,
-                  },
-                });
-              }}
-            >
-              <span className="mono">/</span>
-              <input
-                className="search-input"
-                placeholder="Search souls, prompts, or lore"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-              />
-            </form>
-            <div className="hero-install" style={{ marginTop: 18 }}>
-              <div className="stat">Search souls. Versioned, readable, easy to remix.</div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="section">
-        <h2 className="section-title">Latest souls</h2>
-        <p className="section-subtitle">Newest SOUL.md bundles across the hub.</p>
-        <div className="grid">
-          {latest.length === 0 ? (
-            <div className="card">No souls yet. Be the first.</div>
-          ) : (
-            latest.map((soul) => (
-              <SoulCard
-                key={soul._id}
-                soul={soul}
-                summaryFallback="A SOUL.md bundle."
-                meta={
-                  <div className="stat">
-                    <SoulStatsTripletLine stats={soul.stats} />
-                  </div>
-                }
-              />
-            ))
-          )}
-        </div>
-        <div className="section-cta">
-          <Link
-            to="/souls"
-            search={{
-              q: undefined,
-              sort: undefined,
-              dir: undefined,
-              view: undefined,
-              focus: undefined,
-            }}
-            className="btn"
-          >
-            See all souls
-          </Link>
-        </div>
-      </section>
-
-      <section className="mx-auto mt-6 w-full max-w-screen-xl px-4 md:px-6">
-        <div className="rounded-2xl border border-red-500/20 bg-red-500/10 p-4 text-white shadow-sm">
-          <div className="mb-1 text-xs font-medium uppercase tracking-[0.18em] text-red-200">
-            Plugins
-          </div>
-          <div className="text-lg font-semibold">Looking for plugins?</div>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-white/75">
-            Plugins currently live inside the broader package model. Use the dedicated Plugins
-            surface to review that work more clearly.
-          </p>
-          <div className="mt-4">
-            <Link
-              to="/plugins"
-              className="inline-flex items-center rounded-xl bg-white px-4 py-2 text-sm font-medium text-black transition hover:bg-white/90"
-            >
-              Open Plugins
-            </Link>
-          </div>
-        </div>
-      </section>
     </main>
   );
 }

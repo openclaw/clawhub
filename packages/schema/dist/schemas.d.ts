@@ -149,18 +149,15 @@ export declare const ApiV1SkillInstallResolveResponseSchema: import("arktype/int
     status: number;
 }, {}>;
 export type ApiV1SkillInstallResolveResponse = (typeof ApiV1SkillInstallResolveResponseSchema)[inferred];
-export declare const CliTelemetrySyncRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
-    roots: {
-        rootId: string;
-        label: string;
-        skills: {
-            slug: string;
-            version?: string | null | undefined;
-        }[];
-    }[];
+export declare const CliTelemetryInstallRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    event: "install";
+    slug: string;
+    version?: string | undefined;
+    rootId?: string | undefined;
+    rootLabel?: string | undefined;
 }, {}>;
-export type CliTelemetrySyncRequest = (typeof CliTelemetrySyncRequestSchema)[inferred];
-export declare const ApiCliTelemetrySyncResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+export type CliTelemetryInstallRequest = (typeof CliTelemetryInstallRequestSchema)[inferred];
+export declare const ApiCliTelemetryInstallResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     ok: true;
 }, {}>;
 export declare const ApiV1WhoamiResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
@@ -209,6 +206,7 @@ export declare const ApiV1StaffEmailSendResponseSchema: import("arktype/internal
         handle?: string | null | undefined;
     };
     subject: string;
+    template: string;
     providerId: string | null;
 }, {}>;
 export type ApiV1StaffEmailSendResponse = (typeof ApiV1StaffEmailSendResponseSchema)[inferred];
@@ -237,12 +235,21 @@ export declare const ApiV1SkillListResponseSchema: import("arktype/internal/vari
         createdAt: number;
         updatedAt: number;
         summary?: string | null | undefined;
+        description?: string | null | undefined;
         latestVersion?: {
             version: string;
             createdAt: number;
             changelog: string;
             license?: "MIT-0" | null | undefined;
         } | undefined;
+        metadata?: {
+            setup: {
+                key: string;
+                required: boolean;
+            }[];
+            os?: string[] | null | undefined;
+            systems?: string[] | null | undefined;
+        } | null | undefined;
     }[];
     nextCursor: string | null;
 }, {}>;
@@ -255,6 +262,7 @@ export declare const ApiV1SkillResponseSchema: import("arktype/internal/variants
         createdAt: number;
         updatedAt: number;
         summary?: string | null | undefined;
+        description?: string | null | undefined;
     } | null;
     latestVersion: {
         version: string;
@@ -267,6 +275,14 @@ export declare const ApiV1SkillResponseSchema: import("arktype/internal/variants
         displayName?: string | null | undefined;
         image?: string | null | undefined;
     } | null;
+    metadata?: {
+        setup: {
+            key: string;
+            required: boolean;
+        }[];
+        os?: string[] | null | undefined;
+        systems?: string[] | null | undefined;
+    } | null | undefined;
     moderation?: {
         isSuspicious: boolean;
         isMalwareBlocked: boolean;
@@ -735,19 +751,6 @@ export declare const ApiV1ReclassifyBanResponseSchema: import("arktype/internal/
     previousReason: string | null;
     nextReason: string;
     changed: boolean;
-}, {}>;
-export declare const ApiV1RemediateAutobansResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
-    ok: true;
-    dryRun: boolean;
-    scanned: number;
-    wouldUnban: number;
-    unbanned: number;
-    skipped: number;
-    restoredSkills: number;
-    restoredPackages: number;
-    items: unknown[];
-    nextCursor?: string | null | undefined;
-    done?: boolean | undefined;
 }, {}>;
 export declare const ApiV1StarResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     ok: true;

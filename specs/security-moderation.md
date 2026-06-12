@@ -12,7 +12,7 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 
 ## Roles + permissions
 
-- user: upload skills/souls (subject to GitHub age gate), report skills/comments/packages.
+- user: upload skills (subject to GitHub age gate), report skills/comments/packages.
 - moderator: hide/restore skills, view hidden skills, unhide, soft-delete, ban users (except admins).
 - admin: all moderator actions + hard delete skills, change owners, change roles.
 
@@ -75,7 +75,7 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
     - soft-delete comment (`softDeletedAt`)
     - decrement comment stat via `uncomment` stat event
     - audit log entry: `comment.auto_hide`
-- Package reports feed `clawhub-mod package moderation-queue` and audit `package.report`,
+- Package reports feed `clawhub-admin package moderation-queue` and audit `package.report`,
   but do not auto-hide or block downloads. Moderators can review a formal report
   with an explicit final action to quarantine or revoke the affected release.
 - Package reports can be moved to `confirmed` or `dismissed` with a moderator
@@ -121,11 +121,6 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   owner is deleted/deactivated or when the skill is malicious, hidden, or
   removed. The accept path is the final shared gate before ownership changes,
   so it must cancel the pending transfer before reporting the rejection.
-- Publisher-authored scan notes are no longer part of the ClawScan input
-  contract. ClawScan decisions must be based on submitted artifacts, scanner
-  signals, and staff moderation state, not publisher-supplied explanatory text.
-  Legacy persisted note fields may exist on old rows for schema compatibility,
-  but publish, rescan, API, UI, and prompt paths must ignore them.
 - User-submitted `POST /api/v1/skills/-/scan` upload scans are authenticated but
   ephemeral. They store uploaded files only on `skillScanRequests`, feed the
   normal ClawScan worker, and must never create or patch public `skills`,
@@ -142,7 +137,7 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   publisher set/unset. Personal publisher sync should log meaningful create,
   change, link, or membership events, not routine login refreshes.
 - Public queries hide non-active moderation statuses; moderators can still access via
-  moderator-only queries and unhide/restore/delete/ban.
+  admin-only queries and unhide/restore/delete/ban.
 - Public skill raw-file, README, package-compat file, and zip download reads must
   honor the same malware/pending/hidden/removed download block. Metadata routes
   may keep exposing malware-blocked skill summaries for transparency, but they
@@ -290,7 +285,7 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
       current ban so the next matching unban can restore them
   - retimestamps already ban-hidden owned skills to the current ban marker so
     a later matching unban can restore them
-  - soft-deletes all authored skill comments + soul comments
+  - soft-deletes all authored skill comments
   - revokes API tokens
   - sets `deletedAt` on the user
 - Admins can manually unban (`deletedAt` + `banReason` cleared); revoked API tokens
@@ -339,8 +334,8 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 
 ## Upload gate (GitHub account age)
 
-- Skill + soul publish actions require GitHub account age ≥ 14 days.
-- Skill + soul comment creation also requires GitHub account age ≥ 14 days.
+- Skill publish actions require GitHub account age ≥ 14 days.
+- Skill comment creation also requires GitHub account age ≥ 14 days.
 - Lookup uses GitHub `created_at` fetched by the immutable GitHub numeric ID (`providerAccountId`)
   and caches on the user:
   - `githubCreatedAt` (source of truth)

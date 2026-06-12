@@ -69,6 +69,16 @@ on:
         description: Optional path to the .tgz inside package_artifact_name. Defaults to the only .tgz in the artifact.
         required: false
         type: string
+      inspector_artifact_name:
+        description: Artifact name for plugin inspector reports. Set a unique value when calling this workflow from a matrix.
+        required: false
+        type: string
+        default: plugin-inspector-report
+      publish_json_artifact_name:
+        description: Artifact name for the package publish JSON output. Set a unique value when calling this workflow from a matrix.
+        required: false
+        type: string
+        default: clawhub-package-publish-json
     secrets:
       clawhub_token:
         required: false
@@ -383,9 +393,6 @@ jobs:
               source = f"{source}@{ref}"
           source_path = os.environ["INPUT_SOURCE_PATH"].strip()
           prebuilt_artifact_path = os.environ["PREBUILT_PACKAGE_ARTIFACT_PATH"].strip()
-          if source_path and prebuilt_artifact_path:
-              raise SystemExit("Prebuilt artifact mode does not accept source_path; publish the already-packed artifact instead.")
-
           inspect_checkout_repository = ""
           inspect_checkout_ref = ""
           inspect_local_root = str(Path(os.environ["GITHUB_WORKSPACE"]).resolve())
@@ -540,7 +547,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: plugin-inspector-report
+          name: ${{ inputs.inspector_artifact_name }}
           path: ${{ runner.temp }}/plugin-inspector
           if-no-files-found: ignore
 
@@ -573,6 +580,6 @@ jobs:
       - name: Upload publish JSON artifact
         uses: actions/upload-artifact@v7
         with:
-          name: clawhub-package-publish-json
+          name: ${{ inputs.publish_json_artifact_name }}
           path: ${{ runner.temp }}/package-publish.json
           if-no-files-found: error

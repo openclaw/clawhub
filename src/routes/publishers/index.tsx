@@ -8,7 +8,7 @@ import { Button } from "../../components/ui/button";
 import { convexHttp } from "../../convex/client";
 import { formatBrowseCount } from "../../lib/browseCount";
 import type { PublicPublisherListItem } from "../../lib/publicUser";
-import { getSiteMode, getSiteName, getSiteUrlForMode } from "../../lib/site";
+import { getClawHubSiteUrl, SITE_NAME } from "../../lib/site";
 
 type PublisherKindSearch = "orgs" | "people";
 type PublisherViewSearch = "list" | "grid";
@@ -51,10 +51,8 @@ export const Route = createFileRoute("/publishers/")({
   }),
   loaderDeps: ({ search }) => search,
   head: () => {
-    const mode = getSiteMode();
-    const siteName = getSiteName(mode);
-    const siteUrl = getSiteUrlForMode(mode);
-    const title = `Publishers · ${siteName}`;
+    const siteUrl = getClawHubSiteUrl();
+    const title = `Publishers · ${SITE_NAME}`;
     const description =
       "Discover the people and organizations publishing skills, plugins, packages, and ecosystem tooling on ClawHub.";
 

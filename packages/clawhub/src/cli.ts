@@ -15,6 +15,7 @@ import { cmdInspect, cmdVerifySkill } from "./cli/commands/inspect.js";
 import { cmdMergeSkill, cmdRenameSkill } from "./cli/commands/ownership.js";
 import {
   cmdDeletePackage,
+  cmdDeletePackageTrustedPublisher,
   cmdDownloadPackage,
   cmdExplorePackages,
   cmdGetPackageTrustedPublisher,
@@ -25,6 +26,7 @@ import {
   cmdPackPackage,
   cmdPublishPackage,
   cmdReportPackage,
+  cmdSetPackageTrustedPublisher,
   cmdTransferPackage,
   cmdUndeletePackage,
   cmdValidatePackage,
@@ -484,7 +486,7 @@ const publisherCmd = registerCommandGroup(program, ["publisher"])
 
 registerCommand(publisherCmd, ["publisher", "create"])
   .description("Create an org publisher you own")
-  .argument("<handle>", "Publisher handle, for example opik")
+  .argument("<handle>", "Publisher handle, for example example.tools")
   .option("--display-name <name>", "Publisher display name")
   .option("--json", "Output JSON")
   .action(async (handle, options) => {
@@ -708,6 +710,27 @@ registerCommand(trustedPublisherCmd, ["package", "trusted-publisher", "get"])
     await cmdGetPackageTrustedPublisher(opts, name, options);
   });
 
+registerCommand(trustedPublisherCmd, ["package", "trusted-publisher", "set"])
+  .description("Set trusted publisher config for a package")
+  .argument("<name>", "Package name")
+  .requiredOption("--repository <repo>", "GitHub repository, for example openclaw/openclaw")
+  .requiredOption("--workflow-filename <file>", "GitHub Actions workflow filename")
+  .option("--environment <name>", "GitHub Actions environment name")
+  .option("--json", "Output JSON")
+  .action(async (name, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdSetPackageTrustedPublisher(opts, name, options);
+  });
+
+registerCommand(trustedPublisherCmd, ["package", "trusted-publisher", "delete"])
+  .description("Delete trusted publisher config for a package")
+  .argument("<name>", "Package name")
+  .option("--json", "Output JSON")
+  .action(async (name, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdDeletePackageTrustedPublisher(opts, name, options);
+  });
+
 registerCommand(skill, ["skill", "rename"])
   .description("Rename a published skill and keep the old slug as a redirect")
   .argument("<slug>", "Current skill slug")
@@ -806,17 +829,23 @@ registerCommand(program, ["sync"])
   .option("--bump <type>", "Version bump for updates (patch|minor|major)", "patch")
   .option("--changelog <text>", "Changelog to use for updates (non-interactive)")
   .option("--tags <tags>", "Comma-separated tags", "latest")
-  .option("--concurrency <n>", "Concurrent registry checks (default: 4)", "4")
-  .option("--no-clawdbot-roots", "Only scan the configured workdir/dir and --root values")
-  .option("--source-repo <repo>", "GitHub repo (owner/repo or URL)")
-  .option("--source-commit <sha>", "Git commit SHA")
-  .option("--source-ref <ref>", "Git ref/tag/branch")
+  .option("--concurrency <n>", "Concurrent registry/file checks", (value) =>
+    Number.parseInt(value, 10),
+  )
+  .option("--source-repo <repo>", "GitHub repo URL or owner/name for source provenance")
+  .option("--source-commit <sha>", "Git commit SHA for source provenance")
+  .option("--source-ref <ref>", "Git ref for source provenance")
+  .addOption(
+    new Option("--clawdbot-roots", "Include Clawdbot-configured roots").default(true, "enabled"),
+  )
+  .addOption(new Option("--no-clawdbot-roots", "Disable Clawdbot-configured roots"))
   .action(async (options) => {
     const opts = await resolveGlobalOpts();
-    const bump = String(options.bump ?? "patch") as "patch" | "minor" | "major";
-    if (!["patch", "minor", "major"].includes(bump)) fail("--bump must be patch|minor|major");
-    const concurrencyRaw = Number(options.concurrency ?? 4);
-    const concurrency = Number.isFinite(concurrencyRaw) ? Math.round(concurrencyRaw) : 4;
+    const bump =
+      options.bump === "patch" || options.bump === "minor" || options.bump === "major"
+        ? options.bump
+        : fail("--bump must be patch, minor, or major");
+    const concurrency = options.concurrency ?? 6;
     if (concurrency < 1 || concurrency > 32) fail("--concurrency must be between 1 and 32");
     await cmdSync(
       opts,

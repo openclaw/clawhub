@@ -970,13 +970,11 @@ describe("cmdInstall", () => {
         path: LegacyApiRoutes.cliTelemetryInstall,
         token: "tkn",
         body: {
-          roots: [
-            {
-              rootId: expect.any(String),
-              label: expect.any(String),
-              skills: [{ slug: "demo", version: "1.0.0" }],
-            },
-          ],
+          event: "install",
+          slug: "demo",
+          version: "1.0.0",
+          rootId: expect.any(String),
+          rootLabel: expect.any(String),
         },
       }),
       expect.anything(),

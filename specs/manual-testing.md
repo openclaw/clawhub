@@ -81,7 +81,6 @@ Recommended workflow coverage in Playwright:
 - home/install-switcher + browse CTA
 - `/search` redirect into skills browse
 - skills browse -> detail -> owner profile
-- souls browse -> detail -> owner profile
 - upload signed-out gate
 - import signed-out gate
 - authenticated upload/import canaries when storage state is configured

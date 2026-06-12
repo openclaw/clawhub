@@ -7,7 +7,8 @@ export const GLOBAL_STATS_KEY = "default";
 type SkillVisibilityFields = Pick<
   Doc<"skills">,
   "softDeletedAt" | "moderationStatus" | "moderationFlags"
->;
+> &
+  Partial<Pick<Doc<"skills">, "moderationVerdict">>;
 type PackageVisibilityFields = Pick<
   Doc<"packageSearchDigest">,
   "softDeletedAt" | "family" | "channel" | "scanStatus"
@@ -21,6 +22,7 @@ export function isPublicSkillDoc<T extends SkillVisibilityFields>(
 ): skill is T {
   if (!skill || skill.softDeletedAt) return false;
   if (skill.moderationStatus && skill.moderationStatus !== "active") return false;
+  if (skill.moderationVerdict === "malicious") return false;
   if (skill.moderationFlags?.includes("blocked.malware")) return false;
   return true;
 }
