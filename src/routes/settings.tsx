@@ -755,7 +755,7 @@ export function Settings() {
                                   setOrgHandle(event.target.value);
                                   setCreateOrgError(null);
                                 }}
-                                placeholder="openclaw"
+                                placeholder="bitrouter.ai"
                               />
                             </Field>
                             <Field label="Display name" htmlFor="settings-org-display-name">
@@ -1151,7 +1151,7 @@ export function Settings() {
                                   setOrgHandle(event.target.value);
                                   setCreateOrgError(null);
                                 }}
-                                placeholder="openclaw"
+                                placeholder="bitrouter.ai"
                               />
                             </Field>
                             <Field label="Display name" htmlFor="settings-org-display-name-empty">

@@ -171,7 +171,8 @@ Limits (server-side):
 ## Slugs
 
 - Derived from folder name by default.
-- Must be lowercase and URL-safe: `^[a-z0-9][a-z0-9-]*$`.
+- Package scopes must match the ClawHub publisher handle exactly. Publisher handles can use lowercase letters, numbers, hyphens, dots, and underscores; they must start and end with a lowercase letter or number.
+- Package slugs must be lowercase and npm-safe, for example `@bitrouter.ai/openclaw-plugin` or `openclaw-plugin`.
 
 ## Versioning + tags
 

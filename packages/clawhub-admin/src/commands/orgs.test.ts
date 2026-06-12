@@ -118,6 +118,40 @@ describe("cmdCreateOrg", () => {
     );
   });
 
+  it("creates org publishers with npm-compatible handles", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      publisherId: "publishers:bitrouter.ai",
+      handle: "bitrouter.ai",
+      created: true,
+      migrated: false,
+      trusted: false,
+      member: {
+        userId: "users:vincent",
+        handle: "vincentkoc",
+        role: "owner",
+      },
+    });
+
+    await cmdCreateOrg(makeGlobalOpts(), "@BitRouter.AI", {
+      displayName: "BitRouter AI",
+      member: "vincentkoc",
+      json: true,
+    });
+
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({
+        body: expect.objectContaining({
+          handle: "bitrouter.ai",
+          displayName: "BitRouter AI",
+          memberHandle: "vincentkoc",
+        }),
+      }),
+      expect.anything(),
+    );
+  });
+
   it("requires a valid org member role", async () => {
     await expect(
       cmdCreateOrg(makeGlobalOpts(), "opik", {
@@ -396,14 +430,14 @@ describe("cmdRepairScopedPackages", () => {
     const csv = await withCsv(
       [
         "packageName,intendedOrg,legacyOwner,orgDisplayName",
-        "@opik/opik-openclaw,opik,vincentkoc,Opik",
+        "@bitrouter.ai/openclaw-plugin,bitrouter.ai,vincentkoc,BitRouter AI",
       ].join("\n"),
     );
     httpMocks.apiRequest
       .mockResolvedValueOnce({
         ok: true,
-        publisherId: "publishers:opik",
-        handle: "opik",
+        publisherId: "publishers:bitrouter.ai",
+        handle: "bitrouter.ai",
         created: false,
         migrated: false,
         trusted: false,
@@ -413,49 +447,53 @@ describe("cmdRepairScopedPackages", () => {
         ok: true,
         dryRun: true,
         source: {
-          packageId: "packages:opik",
-          name: "@opik/opik-openclaw",
-          runtimeId: "opik-openclaw",
+          packageId: "packages:bitrouter",
+          name: "@bitrouter.ai/openclaw-plugin",
+          runtimeId: "openclaw-plugin",
           ownerUserId: "users:vincent",
           ownerPublisherId: "publishers:vincent",
           channel: "community",
           softDeletedAt: null,
         },
         target: {
-          packageId: "packages:opik",
-          name: "@opik/opik-openclaw",
-          runtimeId: "opik-openclaw",
+          packageId: "packages:bitrouter",
+          name: "@bitrouter.ai/openclaw-plugin",
+          runtimeId: "openclaw-plugin",
           ownerUserId: "users:vincent",
           ownerPublisherId: "publishers:vincent",
           channel: "community",
           softDeletedAt: null,
         },
         retiredName: null,
-        operations: [{ action: "transfer-owner", packageId: "packages:opik", owner: "opik" }],
+        operations: [
+          { action: "transfer-owner", packageId: "packages:bitrouter", owner: "bitrouter.ai" },
+        ],
       })
       .mockResolvedValueOnce({
         ok: true,
         dryRun: false,
         source: {
-          packageId: "packages:opik",
-          name: "@opik/opik-openclaw",
-          runtimeId: "opik-openclaw",
+          packageId: "packages:bitrouter",
+          name: "@bitrouter.ai/openclaw-plugin",
+          runtimeId: "openclaw-plugin",
           ownerUserId: "users:vincent",
           ownerPublisherId: "publishers:vincent",
           channel: "community",
           softDeletedAt: null,
         },
         target: {
-          packageId: "packages:opik",
-          name: "@opik/opik-openclaw",
-          runtimeId: "opik-openclaw",
+          packageId: "packages:bitrouter",
+          name: "@bitrouter.ai/openclaw-plugin",
+          runtimeId: "openclaw-plugin",
           ownerUserId: "users:vincent",
           ownerPublisherId: "publishers:vincent",
           channel: "community",
           softDeletedAt: null,
         },
         retiredName: null,
-        operations: [{ action: "transfer-owner", packageId: "packages:opik", owner: "opik" }],
+        operations: [
+          { action: "transfer-owner", packageId: "packages:bitrouter", owner: "bitrouter.ai" },
+        ],
       });
 
     try {
@@ -472,8 +510,8 @@ describe("cmdRepairScopedPackages", () => {
           method: "POST",
           path: "/api/v1/users/publisher",
           body: {
-            handle: "opik",
-            displayName: "Opik",
+            handle: "bitrouter.ai",
+            displayName: "BitRouter AI",
             memberHandle: "vincentkoc",
             memberRole: "owner",
           },
@@ -484,11 +522,11 @@ describe("cmdRepairScopedPackages", () => {
         2,
         "https://clawhub.ai",
         expect.objectContaining({
-          path: "/api/v1/packages/%40opik%2Fopik-openclaw/repair-name",
+          path: "/api/v1/packages/%40bitrouter.ai%2Fopenclaw-plugin/repair-name",
           body: {
-            nextName: "@opik/opik-openclaw",
-            owner: "opik",
-            reason: "Move legacy personal package into @opik",
+            nextName: "@bitrouter.ai/openclaw-plugin",
+            owner: "bitrouter.ai",
+            reason: "Move legacy personal package into @bitrouter.ai",
             dryRun: true,
           },
         }),
@@ -498,7 +536,7 @@ describe("cmdRepairScopedPackages", () => {
         3,
         "https://clawhub.ai",
         expect.objectContaining({
-          path: "/api/v1/packages/%40opik%2Fopik-openclaw/repair-name",
+          path: "/api/v1/packages/%40bitrouter.ai%2Fopenclaw-plugin/repair-name",
           body: expect.objectContaining({ dryRun: false }),
         }),
         expect.anything(),
