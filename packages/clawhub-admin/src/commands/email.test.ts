@@ -48,15 +48,24 @@ describe("cmdSendStaffEmail", () => {
         to: "USER@example.com",
         subject: "Account update",
         bodyFile: body.path,
+        title: "A quick ClawHub note",
+        actionLabel: "Open ClawHub",
+        actionUrl: "https://clawhub.ai/settings",
         json: true,
       });
 
       expect(result).toMatchObject({
         ok: true,
         dryRun: true,
+        template: "generic-one-off",
         recipient: { email: "user@example.com" },
         subject: "Account update",
+        title: "A quick ClawHub note",
         body: "Hello from ClawHub.",
+        primaryAction: {
+          label: "Open ClawHub",
+          url: "https://clawhub.ai/settings",
+        },
       });
       expect(authTokenMocks.requireAuthToken).not.toHaveBeenCalled();
       expect(httpMocks.apiRequest).not.toHaveBeenCalled();
@@ -79,12 +88,36 @@ describe("cmdSendStaffEmail", () => {
     expect(httpMocks.apiRequest).not.toHaveBeenCalled();
   });
 
+  it("validates one-off action label and URL together", async () => {
+    await expect(
+      cmdSendStaffEmail(makeGlobalOpts(), {
+        to: "user@example.com",
+        subject: "Account update",
+        body: "Hello from ClawHub.",
+        actionLabel: "Open ClawHub",
+      }),
+    ).rejects.toThrow(
+      /Pass --action-label\/--button-text and --action-url\/--button-link together/i,
+    );
+    await expect(
+      cmdSendStaffEmail(makeGlobalOpts(), {
+        to: "user@example.com",
+        subject: "Account update",
+        body: "Hello from ClawHub.",
+        actionLabel: "Open ClawHub",
+        actionUrl: "ftp://example.com",
+      }),
+    ).rejects.toThrow(/--action-url must be an http\(s\) URL/i);
+    expect(httpMocks.apiRequest).not.toHaveBeenCalled();
+  });
+
   it("sends through the admin endpoint after explicit user request and signoff are confirmed", async () => {
     httpMocks.apiRequest.mockResolvedValueOnce({
       ok: true,
       sent: true,
       recipient: { email: "user@example.com", userId: "users:1", handle: "hansen302" },
       subject: "Account update",
+      template: "generic-one-off",
       providerId: "email:123",
     });
 
@@ -92,6 +125,7 @@ describe("cmdSendStaffEmail", () => {
       user: "@Hansen302",
       subject: "Account update",
       body: "Hello from ClawHub.",
+      title: "A quick ClawHub note",
       send: true,
       confirmUserRequest: true,
       confirmUserSignoff: true,
@@ -108,8 +142,55 @@ describe("cmdSendStaffEmail", () => {
         token: "tkn",
         body: {
           userHandle: "hansen302",
+          template: "generic-one-off",
           subject: "Account update",
+          title: "A quick ClawHub note",
           body: "Hello from ClawHub.",
+          confirmUserRequest: true,
+          confirmUserSignoff: true,
+        },
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("maps username and button aliases into the generic one-off template payload", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      sent: true,
+      recipient: { email: "user@example.com", handle: "octocat" },
+      subject: "Account update",
+      template: "generic-one-off",
+      providerId: "email:123",
+    });
+
+    const result = await cmdSendStaffEmail(makeGlobalOpts(), {
+      to: "user@example.com",
+      username: "octocat",
+      subject: "Account update",
+      body: "Hello from ClawHub.",
+      title: "A quick ClawHub note",
+      buttonText: "Open appeal",
+      buttonLink: "https://appeals.openclaw.ai/case-123",
+      send: true,
+      confirmUserRequest: true,
+      confirmUserSignoff: true,
+      json: true,
+    });
+
+    expect(result).toMatchObject({ ok: true, sent: true, providerId: "email:123" });
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({
+        body: {
+          toEmail: "user@example.com",
+          recipientHandle: "octocat",
+          template: "generic-one-off",
+          subject: "Account update",
+          title: "A quick ClawHub note",
+          body: "Hello from ClawHub.",
+          primaryActionLabel: "Open appeal",
+          primaryActionUrl: "https://appeals.openclaw.ai/case-123",
           confirmUserRequest: true,
           confirmUserSignoff: true,
         },

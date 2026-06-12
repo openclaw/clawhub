@@ -104,6 +104,7 @@ async function scheduleBanNotificationEmail(
     reason?: string;
     trigger?: string;
     artifact?: { kind: "skill" | "plugin"; name: string };
+    hiddenArtifacts?: number;
   },
 ) {
   const to = args.target.email?.trim();
@@ -118,6 +119,7 @@ async function scheduleBanNotificationEmail(
     reason: args.reason,
     trigger: args.trigger,
     artifact: args.artifact,
+    hiddenArtifacts: args.hiddenArtifacts,
   });
 }
 
@@ -127,6 +129,8 @@ async function scheduleRestoredAccountNotificationEmail(
     target: BanEmailTarget;
     restoredAt: number;
     restoredListings?: Array<{ kind: "skill" | "plugin"; name: string }>;
+    skillsRestored?: number;
+    packagesRestored?: number;
   },
 ) {
   const to = args.target.email?.trim();
@@ -138,6 +142,8 @@ async function scheduleRestoredAccountNotificationEmail(
     to,
     handle: args.target.handle,
     restoredListings: args.restoredListings,
+    skillsRestored: args.skillsRestored,
+    packagesRestored: args.packagesRestored,
   });
 }
 
@@ -1601,6 +1607,8 @@ async function banUserWithActor(
     bannedAt: now,
     source: "manual",
     reason,
+    hiddenArtifacts:
+      scheduledSkills || scheduledPackages ? undefined : hiddenCount + deletedPackageCount,
   });
 
   return {
@@ -1684,6 +1692,8 @@ async function unbanUserForBanAppealService(
   await scheduleRestoredAccountNotificationEmail(ctx, {
     target,
     restoredAt: now,
+    skillsRestored: scheduledSkills ? undefined : restoredSkillCount,
+    packagesRestored: scheduledPackages ? undefined : restoredPackageCount,
   });
 
   return {
@@ -1768,6 +1778,8 @@ async function unbanUserWithActor(
   await scheduleRestoredAccountNotificationEmail(ctx, {
     target,
     restoredAt: now,
+    skillsRestored: scheduledSkills ? undefined : restoredCount,
+    packagesRestored: scheduledPackages ? undefined : restoredPackageCount,
   });
 
   return {
@@ -2305,6 +2317,8 @@ export const autobanMalwareAuthorInternal = internalMutation({
       reason: trigger,
       trigger,
       artifact: { kind: artifactKind, name: artifactName },
+      hiddenArtifacts:
+        scheduledSkills || scheduledPackages ? undefined : hiddenCount + deletedPackageCount,
     });
 
     console.warn(
@@ -2391,6 +2405,7 @@ export const recordStaffEmailAttemptAuditInternal = internalMutation({
     recipientUserId: v.optional(v.id("users")),
     recipientHandle: v.optional(v.string()),
     subject: v.string(),
+    template: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const actor = await ctx.db.get(args.actorUserId);
@@ -2407,6 +2422,7 @@ export const recordStaffEmailAttemptAuditInternal = internalMutation({
         toEmail: args.toEmail,
         recipientHandle: args.recipientHandle ?? null,
         subject: args.subject,
+        template: args.template ?? "raw",
         providerId: null,
         status: "attempted",
         source: "clawhub-admin.email",

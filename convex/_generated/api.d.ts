@@ -56,6 +56,7 @@ import type * as lib_commentScamPrompt from "../lib/commentScamPrompt.js";
 import type * as lib_contentTypes from "../lib/contentTypes.js";
 import type * as lib_devAuth from "../lib/devAuth.js";
 import type * as lib_devSeed from "../lib/devSeed.js";
+import type * as lib_emailRendering from "../lib/emailRendering.js";
 import type * as lib_emails from "../lib/emails.js";
 import type * as lib_embeddingVisibility from "../lib/embeddingVisibility.js";
 import type * as lib_embeddings from "../lib/embeddings.js";
@@ -199,6 +200,7 @@ declare const fullApi: ApiFromModules<{
   "lib/contentTypes": typeof lib_contentTypes;
   "lib/devAuth": typeof lib_devAuth;
   "lib/devSeed": typeof lib_devSeed;
+  "lib/emailRendering": typeof lib_emailRendering;
   "lib/emails": typeof lib_emails;
   "lib/embeddingVisibility": typeof lib_embeddingVisibility;
   "lib/embeddings": typeof lib_embeddings;

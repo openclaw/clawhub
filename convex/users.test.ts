@@ -2941,6 +2941,7 @@ describe("users.banUserInternal", () => {
       handle: "target-user",
       source: "manual",
       reason: "rate limit triggered by automated CLI publishing",
+      hiddenArtifacts: 2,
     });
   });
 
@@ -3052,6 +3053,7 @@ describe("users.autobanMalwareAuthorInternal", () => {
       reason: "malicious.llm_malicious",
       trigger: "malicious.llm_malicious",
       artifact: { kind: "skill", name: "gingiris-launch" },
+      hiddenArtifacts: 1,
     });
   });
 });
@@ -3414,6 +3416,8 @@ describe("users.unbanUserForBanAppealServiceInternal", () => {
       to: "target@example.com",
       handle: "target-user",
       restoredListings: undefined,
+      skillsRestored: 5,
+      packagesRestored: undefined,
     });
     expect(result).toEqual({
       ok: true,

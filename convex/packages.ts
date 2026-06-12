@@ -7090,7 +7090,7 @@ export const sendPackageInspectorFindingsEmailInternal = internalAction({
     } | null>(ctx, internalRefs.packages.getPackageInspectorEmailContextInternal, args);
     if (!context) return { ok: true as const, sent: false, reason: "no-context" as const };
 
-    const email = buildPackageInspectorFindingsEmail({
+    const email = await buildPackageInspectorFindingsEmail({
       handle: context.ownerHandle,
       packageName: context.packageName,
       version: context.version,

@@ -206,6 +206,7 @@ export declare const ApiV1StaffEmailSendResponseSchema: import("arktype/internal
         handle?: string | null | undefined;
     };
     subject: string;
+    template: string;
     providerId: string | null;
 }, {}>;
 export type ApiV1StaffEmailSendResponse = (typeof ApiV1StaffEmailSendResponseSchema)[inferred];
