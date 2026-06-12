@@ -4180,6 +4180,9 @@ describe("legacy publisher migration", () => {
           role: "user",
           handle: "gingiris",
           personalPublisherId: "publishers:gingiris",
+          publishedSkills: 5,
+          totalDownloads: 100,
+          totalStars: 20,
           updatedAt: 1,
         },
       ],
@@ -4190,6 +4193,9 @@ describe("legacy publisher migration", () => {
           role: "user",
           handle: "gingiris-1031",
           personalPublisherId: "publishers:gingiris-1031",
+          publishedSkills: 2,
+          totalDownloads: 40,
+          totalStars: 4,
           updatedAt: 1,
         },
       ],
@@ -4265,12 +4271,14 @@ describe("legacy publisher migration", () => {
       tags: {},
       badges: {},
       stats: {
-        downloads: 0,
-        stars: 0,
+        downloads: 99,
+        stars: 19,
         comments: 0,
         installsCurrent: 0,
         installsAllTime: 0,
       },
+      statsDownloads: 12,
+      statsStars: 3,
       moderationStatus: "approved",
       createdAt: 1,
       updatedAt: 1,
@@ -4678,10 +4686,16 @@ describe("legacy publisher migration", () => {
     expect(users.get("users:legacy")).toMatchObject({
       handle: "gingiris-recovered",
       personalPublisherId: undefined,
+      publishedSkills: 4,
+      totalDownloads: 88,
+      totalStars: 17,
     });
     expect(users.get("users:current")).toMatchObject({
       handle: "gingiris",
       personalPublisherId: "publishers:gingiris",
+      publishedSkills: 3,
+      totalDownloads: 52,
+      totalStars: 7,
     });
     expect(publishers.get("publishers:gingiris")).toMatchObject({
       linkedUserId: "users:current",
