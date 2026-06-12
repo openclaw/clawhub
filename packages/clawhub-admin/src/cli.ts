@@ -26,7 +26,6 @@ import { cmdSendStaffEmail } from "./commands/email.js";
 import {
   cmdBanUser,
   cmdReclassifyBan,
-  cmdRemediateAutobans,
   cmdRepairVtPendingSkills,
   cmdRescanAllSkills,
   cmdRescanSkill,
@@ -259,24 +258,6 @@ users
   .action(async (handleOrId, options) => {
     const opts = await resolveGlobalOpts();
     await cmdReclassifyBan(opts, handleOrId, options, isInputAllowed());
-  });
-
-users
-  .command("remediate-autobans")
-  .description("Dry-run or apply malware autoban remediation")
-  .option("--apply", "Write changes; defaults to dry-run")
-  .option("--dry-run", "Plan only (default)")
-  .option("--user <handleOrId>", "Limit to one user handle or id")
-  .option("--id", "Treat --user as a user id")
-  .option("--since <date>", "Only scan autobans at or after this date")
-  .option("--limit <n>", "Maximum users to scan per page")
-  .option("--cursor <cursor>", "Resume cursor")
-  .option("--all", "Continue until all pages are processed")
-  .option("--reason <reason>", "Audit reason for apply")
-  .option("--json", "Output JSON")
-  .action(async (options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdRemediateAutobans(opts, options, isInputAllowed());
   });
 
 const plugins = program

@@ -13,6 +13,8 @@ import {
   toOptionalNumber,
 } from "./shared";
 
+const DEFAULT_CLAWHUB_NOREPLY_FROM = "ClawHub <noreply@notifications.openclaw.ai>";
+
 const usersV1InternalRefs = internal as unknown as {
   publishers: {
     addOfficialPublisherInternal: unknown;
@@ -26,7 +28,6 @@ const usersV1InternalRefs = internal as unknown as {
     getByHandleInternal: unknown;
     recordStaffEmailAttemptAuditInternal: unknown;
     recordStaffEmailSentAuditInternal: unknown;
-    remediateAutobansInternal: unknown;
     reclassifyBanInternal: unknown;
     unbanUserForBanAppealServiceInternal: unknown;
   };
@@ -85,7 +86,6 @@ export async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request)
     action !== "unban" &&
     action !== "role" &&
     action !== "restore" &&
-    action !== "remediate-autobans" &&
     action !== "reclassify-ban" &&
     action !== "ban-appeal-unban" &&
     action !== "reclaim" &&
@@ -117,12 +117,6 @@ export async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request)
     const admin = requireAdminOrResponse(actorUser, rate.headers);
     if (!admin.ok) return admin.response;
     return handleAdminRestore(ctx, request, payload, actorUserId, rate.headers);
-  }
-
-  if (action === "remediate-autobans") {
-    const admin = requireAdminOrResponse(actorUser, rate.headers);
-    if (!admin.ok) return admin.response;
-    return handleAdminRemediateAutobans(ctx, payload, actorUserId, rate.headers);
   }
 
   if (action === "reclassify-ban") {
@@ -397,10 +391,7 @@ async function handleAdminStaffEmail(
 
   const apiKey = process.env.RESEND_API_KEY?.trim();
   if (!apiKey) return text("RESEND_API_KEY is not configured", 500, headers);
-  const from =
-    process.env.CLAWHUB_NOREPLY_FROM?.trim() ||
-    process.env.NOREPLY_EMAIL_FROM?.trim() ||
-    "ClawHub <noreply@clawhub.ai>";
+  const from = process.env.CLAWHUB_NOREPLY_FROM?.trim() || DEFAULT_CLAWHUB_NOREPLY_FROM;
 
   const emailAudit = await runUsersV1MutationRef<{ auditLogId: Id<"auditLogs"> }>(
     ctx,
@@ -514,65 +505,6 @@ async function handleAdminReclassifyBan(
     return json(result, 200, headers);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Ban reclassification failed";
-    if (message.toLowerCase().includes("forbidden")) {
-      return text("Forbidden", 403, headers);
-    }
-    if (message.toLowerCase().includes("not found")) {
-      return text(message, 404, headers);
-    }
-    return text(message, 400, headers);
-  }
-}
-
-async function handleAdminRemediateAutobans(
-  ctx: ActionCtx,
-  payload: unknown,
-  actorUserId: Id<"users">,
-  headers: HeadersInit,
-) {
-  const body = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
-  const handle = typeof body.handle === "string" ? body.handle.trim() : "";
-  const userId = typeof body.userId === "string" ? body.userId.trim() : "";
-  const reason = typeof body.reason === "string" ? body.reason.trim() : "";
-  const since = typeof body.since === "string" ? body.since.trim() : "";
-  const cursor = typeof body.cursor === "string" ? body.cursor.trim() : "";
-  const dryRun = body.dryRun !== false;
-  const limit =
-    typeof body.limit === "number"
-      ? body.limit
-      : typeof body.limit === "string" || body.limit === null
-        ? toOptionalNumber(body.limit)
-        : undefined;
-
-  if (handle && userId) return text("Pass handle or userId, not both", 400, headers);
-  if (reason && reason.length > 500) {
-    return text("Reason too long (max 500 chars)", 400, headers);
-  }
-  if (since && Number.isNaN(Date.parse(since))) {
-    return text("Invalid since date", 400, headers);
-  }
-  if (limit !== undefined && (!Number.isFinite(limit) || limit < 1)) {
-    return text("Invalid limit", 400, headers);
-  }
-
-  try {
-    const result = await runUsersV1MutationRef(
-      ctx,
-      usersV1InternalRefs.users.remediateAutobansInternal,
-      {
-        actorUserId,
-        ...(userId ? { targetUserId: userId as Id<"users"> } : {}),
-        ...(handle ? { handle } : {}),
-        dryRun,
-        ...(reason ? { reason } : {}),
-        ...(since ? { since } : {}),
-        ...(cursor ? { cursor } : {}),
-        ...(limit !== undefined ? { limit } : {}),
-      },
-    );
-    return json(result, 200, headers);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Autoban remediation failed";
     if (message.toLowerCase().includes("forbidden")) {
       return text("Forbidden", 403, headers);
     }

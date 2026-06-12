@@ -1775,7 +1775,7 @@ describe("securityScan", () => {
     );
   });
 
-  it("claims manual rescans and malicious signals before older publish backlog", async () => {
+  it("claims manual rescans and malicious signals before ordinary backlog", async () => {
     const { ctx, patches } = makeClaimCtx([
       makeScanJob({
         _id: "securityScanJobs:old-publish",
@@ -1795,12 +1795,6 @@ describe("securityScan", () => {
         hasMaliciousSignal: true,
         createdAt: 30,
         nextRunAt: 30,
-      }),
-      makeScanJob({
-        _id: "securityScanJobs:clawscan-note",
-        source: "clawscan-note",
-        createdAt: 40,
-        nextRunAt: 40,
       }),
       makeScanJob({
         _id: "securityScanJobs:backfill",
@@ -1826,13 +1820,13 @@ describe("securityScan", () => {
     expect(claimed.map((job) => job._id)).toEqual([
       "securityScanJobs:manual",
       "securityScanJobs:malicious-publish",
-      "securityScanJobs:clawscan-note",
       "securityScanJobs:backfill",
+      "securityScanJobs:old-publish",
     ]);
     expect(patches.map((entry) => entry.id)).toEqual(claimed.map((job) => job._id));
   });
 
-  it("claims bulk rescans after every existing source", async () => {
+  it("claims bulk rescans after every supported source", async () => {
     const { ctx } = makeClaimCtx([
       makeScanJob({
         _id: "securityScanJobs:bulk-rescan",
@@ -1853,12 +1847,6 @@ describe("securityScan", () => {
         nextRunAt: 30,
       }),
       makeScanJob({
-        _id: "securityScanJobs:clawscan-note",
-        source: "clawscan-note",
-        createdAt: 40,
-        nextRunAt: 40,
-      }),
-      makeScanJob({
         _id: "securityScanJobs:backfill",
         source: "backfill",
         createdAt: 50,
@@ -1871,6 +1859,12 @@ describe("securityScan", () => {
         createdAt: 100,
         nextRunAt: 100,
       }),
+      makeScanJob({
+        _id: "securityScanJobs:legacy-clawscan-note",
+        source: "clawscan-note",
+        createdAt: 200,
+        nextRunAt: 200,
+      }),
     ]);
 
     const claimed = await claimQueuedJobsInternalHandler(ctx, {
@@ -1881,11 +1875,11 @@ describe("securityScan", () => {
 
     expect(claimed.map((job) => job._id)).toEqual([
       "securityScanJobs:manual",
-      "securityScanJobs:clawscan-note",
       "securityScanJobs:backfill",
       "securityScanJobs:publish",
       "securityScanJobs:vt-update",
       "securityScanJobs:bulk-rescan",
+      "securityScanJobs:legacy-clawscan-note",
     ]);
   });
 
@@ -2449,7 +2443,6 @@ describe("securityScan", () => {
       makeScanJob({ _id: "securityScanJobs:no-llm" }),
       makeScanJob({ _id: "securityScanJobs:publish", source: "publish" }),
       makeScanJob({ _id: "securityScanJobs:manual", source: "manual" }),
-      makeScanJob({ _id: "securityScanJobs:clawscan-note", source: "clawscan-note" }),
       makeScanJob({ _id: "securityScanJobs:backfill", source: "backfill" }),
       makeScanJob({ _id: "securityScanJobs:running", status: "running" }),
     ];
@@ -2480,12 +2473,12 @@ describe("securityScan", () => {
     expect(get).toHaveBeenCalled();
     expect(result).toMatchObject({
       dryRun: false,
-      scanned: 10,
+      scanned: 9,
       matched: 3,
       wouldDelete: 3,
       deleted: 3,
       skippedByReason: {
-        "not-vt-update": 4,
+        "not-vt-update": 3,
         "not-queued-vt-update": 1,
         "malicious-signal": 1,
         "missing-llm-analysis": 1,

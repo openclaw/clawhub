@@ -6794,71 +6794,6 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
-  it("remediate autobans requires admin", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:actor",
-      user: { _id: "users:actor", role: "user" },
-    } as never);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
-    const response = await __handlers.usersPostRouterV1Handler(
-      makeCtx({ runMutation }),
-      new Request("https://example.com/api/v1/users/remediate-autobans", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ dryRun: true }),
-      }),
-    );
-    expect(response.status).toBe(403);
-  });
-
-  it("remediate autobans forwards admin payload", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:admin",
-      user: { _id: "users:admin", role: "admin" },
-    } as never);
-    const runMutation = vi.fn().mockResolvedValueOnce(okRate()).mockResolvedValueOnce({
-      ok: true,
-      dryRun: false,
-      scanned: 1,
-      wouldUnban: 0,
-      unbanned: 1,
-      skipped: 0,
-      restoredSkills: 12,
-      restoredPackages: 0,
-      items: [],
-      nextCursor: null,
-      done: true,
-    });
-    const response = await __handlers.usersPostRouterV1Handler(
-      makeCtx({ runMutation }),
-      new Request("https://example.com/api/v1/users/remediate-autobans", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          dryRun: false,
-          userId: "users:target",
-          reason: "appeal accepted",
-          since: "2026-05-12",
-          cursor: "cursor-1",
-          limit: 5,
-        }),
-      }),
-    );
-    expect(response.status).toBe(200);
-    expect(runMutation).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        actorUserId: "users:admin",
-        targetUserId: "users:target",
-        dryRun: false,
-        reason: "appeal accepted",
-        since: "2026-05-12",
-        cursor: "cursor-1",
-        limit: 5,
-      }),
-    );
-  });
-
   it("reclassify ban requires admin", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:actor",
@@ -6952,6 +6887,103 @@ describe("httpApiV1 handlers", () => {
         dryRun: true,
       }),
     );
+  });
+
+  it("staff email uses the configured ClawHub noreply sender", async () => {
+    vi.stubEnv("RESEND_API_KEY", "resend_test");
+    vi.stubEnv("CLAWHUB_NOREPLY_FROM", "ClawHub <noreply@notifications.openclaw.ai>");
+    vi.stubEnv("NOREPLY_EMAIL_FROM", "Legacy <legacy@example.com>");
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runQuery = vi.fn().mockResolvedValueOnce({
+      _id: "users:recipient",
+      handle: "demo",
+      email: "demo@example.com",
+    });
+    const runMutation = vi
+      .fn()
+      .mockResolvedValueOnce(okRate())
+      .mockResolvedValueOnce({
+        auditLogId: "auditLogs:staff-email",
+      })
+      .mockResolvedValueOnce({ ok: true });
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ id: "email_123" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await __handlers.usersPostRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/users/email", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          userHandle: "demo",
+          subject: "Notice",
+          body: "Hello",
+          confirmUserRequest: true,
+          confirmUserSignoff: true,
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    const resendBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(resendBody.from).toBe("ClawHub <noreply@notifications.openclaw.ai>");
+    expect(resendBody.from).not.toBe("Legacy <legacy@example.com>");
+  });
+
+  it("staff email ignores legacy noreply sender env names", async () => {
+    vi.stubEnv("RESEND_API_KEY", "resend_test");
+    vi.stubEnv("CLAWHUB_NOREPLY_FROM", "");
+    vi.stubEnv("NOREPLY_EMAIL_FROM", "Legacy <legacy@example.com>");
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runQuery = vi.fn().mockResolvedValueOnce({
+      _id: "users:recipient",
+      handle: "demo",
+      email: "demo@example.com",
+    });
+    const runMutation = vi
+      .fn()
+      .mockResolvedValueOnce(okRate())
+      .mockResolvedValueOnce({
+        auditLogId: "auditLogs:staff-email",
+      })
+      .mockResolvedValueOnce({ ok: true });
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ id: "email_123" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await __handlers.usersPostRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/users/email", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          userHandle: "demo",
+          subject: "Notice",
+          body: "Hello",
+          confirmUserRequest: true,
+          confirmUserSignoff: true,
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    const resendBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(resendBody.from).toBe("ClawHub <noreply@notifications.openclaw.ai>");
   });
 
   it("set role requires auth", async () => {

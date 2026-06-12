@@ -1227,8 +1227,7 @@ describe("package commands", () => {
         sourceRepo: "openclaw/demo-plugin",
         sourceCommit: "abc123",
         sourceRef: "refs/tags/v1.0.0",
-        clawscanNote: "This plugin shells out only to the bundled helper binary.",
-      } as Parameters<typeof cmdPublishPackage>[2] & { clawscanNote?: string };
+      } as Parameters<typeof cmdPublishPackage>[2];
 
       await cmdPublishPackage(makeOpts(workdir), "demo-plugin", options);
 

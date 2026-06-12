@@ -14,7 +14,6 @@ import {
   ApiRoutes,
   ApiV1BanUserResponseSchema,
   ApiV1ReclassifyBanResponseSchema,
-  ApiV1RemediateAutobansResponseSchema,
   ApiV1SetRoleResponseSchema,
   ApiV1SkillScanBatchResponseSchema,
   ApiV1SkillScanBatchStatusResponseSchema,
@@ -658,110 +657,6 @@ export async function cmdReclassifyBan(
   }
 }
 
-export async function cmdRemediateAutobans(
-  opts: GlobalOpts,
-  options: {
-    apply?: boolean;
-    dryRun?: boolean;
-    user?: string;
-    id?: boolean;
-    since?: string;
-    limit?: string | number;
-    reason?: string;
-    json?: boolean;
-    all?: boolean;
-    cursor?: string;
-  },
-  inputAllowed: boolean,
-) {
-  if (options.apply && options.dryRun) fail("Choose either --apply or --dry-run, not both");
-
-  const dryRun = options.apply !== true;
-  const target = options.user?.trim();
-  const limit = normalizeOptionalPositiveInt(options.limit);
-  const reason = options.reason?.trim();
-  const since = options.since?.trim();
-  let cursor = options.cursor?.trim() || null;
-
-  if (reason && reason.length > 500) fail("Reason too long (max 500 chars)");
-  if (since && Number.isNaN(Date.parse(since))) fail("Invalid --since date");
-  if (options.all && target) fail("Use either --all or --user, not both");
-
-  void inputAllowed;
-
-  const token = await requireAuthToken();
-  const registry = await getRegistry(opts, { cache: true });
-  const spinner = options.json
-    ? null
-    : createSpinner(`${dryRun ? "Planning" : "Applying"} autoban remediation`);
-
-  try {
-    const pages = [];
-    do {
-      const body: Record<string, unknown> = { dryRun };
-      if (target) {
-        if (options.id) body.userId = target;
-        else body.handle = normalizeHandle(target);
-      }
-      if (reason) body.reason = reason;
-      if (since) body.since = since;
-      if (limit !== undefined) body.limit = limit;
-      if (cursor) body.cursor = cursor;
-
-      const result = await apiRequest(
-        registry,
-        {
-          method: "POST",
-          path: `${ApiRoutes.users}/remediate-autobans`,
-          token,
-          body,
-        },
-        ApiV1RemediateAutobansResponseSchema,
-      );
-      const parsedPage = parseArk(
-        ApiV1RemediateAutobansResponseSchema,
-        result,
-        "Remediate autobans response",
-      );
-      pages.push(parsedPage);
-      cursor = parsedPage.nextCursor ?? null;
-      if (!options.all || parsedPage.done) break;
-    } while (cursor);
-
-    const parsed = {
-      ok: true as const,
-      dryRun,
-      scanned: pages.reduce((sum, page) => sum + page.scanned, 0),
-      wouldUnban: pages.reduce((sum, page) => sum + page.wouldUnban, 0),
-      unbanned: pages.reduce((sum, page) => sum + page.unbanned, 0),
-      skipped: pages.reduce((sum, page) => sum + page.skipped, 0),
-      restoredSkills: pages.reduce((sum, page) => sum + page.restoredSkills, 0),
-      restoredPackages: pages.reduce((sum, page) => sum + page.restoredPackages, 0),
-      items: pages.flatMap((page) => page.items),
-      nextCursor: pages.at(-1)?.nextCursor ?? null,
-      done: pages.at(-1)?.done ?? true,
-    };
-    spinner?.succeed(
-      `${dryRun ? "Dry run" : "Applied"} autoban remediation: scanned ${parsed.scanned}, ${dryRun ? "would unban" : "unbanned"} ${dryRun ? parsed.wouldUnban : parsed.unbanned}, skipped ${parsed.skipped}.`,
-    );
-    if (options.json) {
-      process.stdout.write(`${JSON.stringify(parsed, null, 2)}\n`);
-    } else {
-      console.log(
-        `Restores: ${formatRestoredSkills(parsed.restoredSkills)}, ${formatRestoredPackages(parsed.restoredPackages)}.`,
-      );
-      if (!parsed.done && parsed.nextCursor) {
-        console.log(`Next cursor: ${parsed.nextCursor}`);
-      }
-      if (dryRun) console.log("Re-run with --apply to write these changes.");
-    }
-    return parsed;
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
-}
-
 function normalizeHandle(value: string) {
   const trimmed = value.trim();
   return trimmed.startsWith("@") ? trimmed.slice(1).toLowerCase() : trimmed.toLowerCase();
@@ -871,13 +766,6 @@ function normalizeRole(value: string) {
   return fail("Role must be user|moderator|admin");
 }
 
-function normalizeOptionalPositiveInt(value: string | number | undefined) {
-  if (value === undefined || value === null || value === "") return undefined;
-  const parsed = typeof value === "number" ? value : Number.parseInt(value, 10);
-  if (!Number.isFinite(parsed) || parsed < 1) fail("Limit must be a positive integer");
-  return Math.floor(parsed);
-}
-
 function formatDeletedSkills(count: number) {
   if (!Number.isFinite(count)) return "deleted skills unknown";
   if (count === 1) return "deleted 1 skill";
@@ -888,10 +776,4 @@ function formatRestoredSkills(count: number | undefined) {
   if (!Number.isFinite(count)) return "restored skills unknown";
   if (count === 1) return "restored 1 skill";
   return `restored ${count} skills`;
-}
-
-function formatRestoredPackages(count: number | undefined) {
-  if (!Number.isFinite(count)) return "restored packages unknown";
-  if (count === 1) return "restored 1 package";
-  return `restored ${count} packages`;
 }
