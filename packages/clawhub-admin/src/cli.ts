@@ -25,6 +25,7 @@ import { getAdminCliBuildLabel, getAdminCliVersion } from "./buildInfo.js";
 import { cmdSendStaffEmail } from "./commands/email.js";
 import {
   cmdBanUser,
+  cmdRecoverPersonalPublisher,
   cmdReclassifyBan,
   cmdRepairVtPendingSkills,
   cmdRescanAllSkills,
@@ -258,6 +259,24 @@ users
   .action(async (handleOrId, options) => {
     const opts = await resolveGlobalOpts();
     await cmdReclassifyBan(opts, handleOrId, options, isInputAllowed());
+  });
+
+users
+  .command("recover-publisher")
+  .description("Recover a personal publisher for a verified current GitHub account")
+  .argument("<handle>", "Personal publisher handle to recover")
+  .requiredOption("--to <handle>", "Destination current ClawHub user handle")
+  .requiredOption("--previous-github-id <id>", "Previous immutable GitHub provider account id")
+  .requiredOption("--next-github-id <id>", "Next immutable GitHub provider account id")
+  .requiredOption("--reason <reason>", "Audit reason")
+  .option("--retired-handle <handle>", "Handle for retiring the previous ClawHub user")
+  .option("--verified", "Confirm staff verified continuity between both GitHub principals")
+  .option("--apply", "Write changes; defaults to dry-run")
+  .option("--yes", "Skip confirmation for --apply")
+  .option("--json", "Output JSON")
+  .action(async (handle, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdRecoverPersonalPublisher(opts, handle, options, isInputAllowed());
   });
 
 const plugins = program

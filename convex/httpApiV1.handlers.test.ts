@@ -1375,6 +1375,73 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("users/publisher-recovery plans personal publisher recovery for admin", async () => {
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        ok: true,
+        dryRun: true,
+        recovered: false,
+        publisherId: "publishers:gingiris",
+        handle: "gingiris",
+        previousUser: {
+          userId: "users:legacy",
+          handle: "gingiris",
+          nextHandle: "gingiris-recovered",
+          githubProviderAccountId: "111",
+          authAccountCount: 1,
+        },
+        nextUser: {
+          userId: "users:current",
+          handle: "gingiris-1031",
+          nextHandle: "gingiris",
+          githubProviderAccountId: "222",
+          authAccountCount: 1,
+        },
+        retiredPersonalPublisher: null,
+        identityVerified: false,
+        reason: "Verified account continuity for issue #2555",
+      };
+    });
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+
+    const response = await __handlers.usersPostRouterV1Handler(
+      makeCtx({ runQuery: vi.fn(), runAction: vi.fn(), runMutation }),
+      new Request("https://example.com/api/v1/users/publisher-recovery", {
+        method: "POST",
+        body: JSON.stringify({
+          handle: "@Gingiris",
+          nextUserHandle: "@Gingiris-1031",
+          previousGitHubProviderAccountId: "111",
+          nextGitHubProviderAccountId: "222",
+          reason: "Verified account continuity for issue #2555",
+        }),
+      }),
+    );
+    if (response.status !== 200) throw new Error(await response.text());
+
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      dryRun: true,
+      handle: "gingiris",
+    });
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        actorUserId: "users:admin",
+        publisherHandle: "gingiris",
+        nextUserHandle: "gingiris-1031",
+        previousGitHubProviderAccountId: "111",
+        nextGitHubProviderAccountId: "222",
+        confirmIdentityVerified: false,
+        dryRun: true,
+      }),
+    );
+  });
+
   it("users/publisher-official lists official publishers for admin", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:admin",

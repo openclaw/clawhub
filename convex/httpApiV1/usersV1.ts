@@ -22,6 +22,7 @@ const usersV1InternalRefs = internal as unknown as {
     listOfficialPublishersInternal: unknown;
     removeOrgPublisherMemberInternal: unknown;
     removeOfficialPublisherInternal: unknown;
+    recoverPersonalPublisherInternal: unknown;
   };
   users: {
     getBanAppealContextByGitHubProviderAccountIdInternal: unknown;
@@ -94,7 +95,8 @@ export async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request)
     action !== "publisher" &&
     action !== "publisher-delete" &&
     action !== "publisher-official" &&
-    action !== "publisher-member"
+    action !== "publisher-member" &&
+    action !== "publisher-recovery"
   ) {
     return text("Not found", 404, rate.headers);
   }
@@ -165,6 +167,12 @@ export async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request)
     const admin = requireAdminOrResponse(actorUser, rate.headers);
     if (!admin.ok) return admin.response;
     return handleAdminRemovePublisherMember(ctx, payload, actorUserId, rate.headers);
+  }
+
+  if (action === "publisher-recovery") {
+    const admin = requireAdminOrResponse(actorUser, rate.headers);
+    if (!admin.ok) return admin.response;
+    return handleAdminRecoverPersonalPublisher(ctx, payload, actorUserId, rate.headers);
   }
 
   const handleRaw = typeof payload.handle === "string" ? payload.handle.trim() : "";
@@ -758,6 +766,81 @@ async function handleAdminOfficialPublisherPost(
     return json(result, 200, headers);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Official publisher update failed";
+    if (message.toLowerCase().includes("forbidden")) return text("Forbidden", 403, headers);
+    if (message.toLowerCase().includes("unauthorized")) return text("Unauthorized", 401, headers);
+    if (message.toLowerCase().includes("not found")) return text(message, 404, headers);
+    return text(message, 400, headers);
+  }
+}
+
+async function handleAdminRecoverPersonalPublisher(
+  ctx: ActionCtx,
+  payload: Record<string, unknown>,
+  actorUserId: Id<"users">,
+  headers: HeadersInit,
+) {
+  const publisherHandle =
+    typeof payload.handle === "string"
+      ? payload.handle.trim().replace(/^@+/, "").toLowerCase()
+      : "";
+  const nextUserHandle =
+    typeof payload.nextUserHandle === "string"
+      ? payload.nextUserHandle.trim().replace(/^@+/, "").toLowerCase()
+      : "";
+  const previousGitHubProviderAccountId =
+    typeof payload.previousGitHubProviderAccountId === "string"
+      ? payload.previousGitHubProviderAccountId.trim()
+      : "";
+  const nextGitHubProviderAccountId =
+    typeof payload.nextGitHubProviderAccountId === "string"
+      ? payload.nextGitHubProviderAccountId.trim()
+      : "";
+  const retiredUserHandle =
+    typeof payload.retiredUserHandle === "string"
+      ? payload.retiredUserHandle.trim().replace(/^@+/, "").toLowerCase()
+      : "";
+  const reason = typeof payload.reason === "string" ? payload.reason.trim() : "";
+  const dryRun = payload.dryRun !== false;
+  const confirmIdentityVerified = payload.confirmIdentityVerified === true;
+
+  if (!publisherHandle) return text("Missing handle", 400, headers);
+  if (!previousGitHubProviderAccountId) {
+    return text("Missing previousGitHubProviderAccountId", 400, headers);
+  }
+  if (!nextGitHubProviderAccountId) {
+    return text("Missing nextGitHubProviderAccountId", 400, headers);
+  }
+  if (!/^\d+$/.test(previousGitHubProviderAccountId)) {
+    return text("previousGitHubProviderAccountId must be numeric", 400, headers);
+  }
+  if (!/^\d+$/.test(nextGitHubProviderAccountId)) {
+    return text("nextGitHubProviderAccountId must be numeric", 400, headers);
+  }
+  if (!reason) return text("Missing reason", 400, headers);
+  if (reason.length > 500) return text("Reason too long (max 500 chars)", 400, headers);
+  if (!dryRun && !confirmIdentityVerified) {
+    return text("confirmIdentityVerified is required when dryRun is false", 400, headers);
+  }
+
+  try {
+    const result = await runUsersV1MutationRef(
+      ctx,
+      usersV1InternalRefs.publishers.recoverPersonalPublisherInternal,
+      {
+        actorUserId,
+        publisherHandle,
+        previousGitHubProviderAccountId,
+        nextGitHubProviderAccountId,
+        ...(nextUserHandle ? { nextUserHandle } : {}),
+        ...(retiredUserHandle ? { retiredUserHandle } : {}),
+        reason,
+        confirmIdentityVerified,
+        dryRun,
+      },
+    );
+    return json(result, 200, headers);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Publisher recovery failed";
     if (message.toLowerCase().includes("forbidden")) return text("Forbidden", 403, headers);
     if (message.toLowerCase().includes("unauthorized")) return text("Unauthorized", 401, headers);
     if (message.toLowerCase().includes("not found")) return text(message, 404, headers);

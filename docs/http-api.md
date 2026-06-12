@@ -1372,6 +1372,20 @@ owner can later publish the real code-plugin or bundle-plugin release into that 
 - Body: `{ "handle": "openclaw", "slugs": ["diffs"], "packageNames": ["@openclaw/diffs"], "reason": "reserved for official OpenClaw plugin" }`
 - Response: `{ "ok": true, "succeeded": 2, "failed": 0, "results": [{ "kind": "slug", "name": "diffs", "ok": true, "action": "reserved" }] }`
 
+### `POST /api/v1/users/publisher-recovery`
+
+Admin-only. Recovers a personal publisher for a verified replacement GitHub OAuth principal
+without editing Convex Auth account rows. The request must name both immutable GitHub
+provider account ids; mutable handles are only used as an operator-facing guard.
+
+The endpoint defaults to dry-run. Applying recovery requires `dryRun: false` and
+`confirmIdentityVerified: true` after staff independently verify continuity between both
+GitHub principals. Recovery fails closed when the destination user's current personal
+publisher has skills, packages, or GitHub skill sources.
+
+- Body: `{ "handle": "gingiris", "nextUserHandle": "gingiris-1031", "previousGitHubProviderAccountId": "123", "nextGitHubProviderAccountId": "456", "reason": "Verified account continuity for issue #2555", "confirmIdentityVerified": true, "dryRun": false }`
+- Response: `{ "ok": true, "dryRun": false, "recovered": true, "publisherId": "...", "handle": "gingiris", "previousUser": { "userId": "...", "handle": "gingiris", "nextHandle": "gingiris-recovered", "githubProviderAccountId": "123", "authAccountCount": 1 }, "nextUser": { "userId": "...", "handle": "gingiris-1031", "nextHandle": "gingiris", "githubProviderAccountId": "456", "authAccountCount": 1 }, "retiredPersonalPublisher": null, "identityVerified": true, "reason": "Verified account continuity for issue #2555" }`
+
 ### Owner slug management endpoints
 
 - `POST /api/v1/skills/{slug}/rename`

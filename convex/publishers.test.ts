@@ -14,6 +14,7 @@ import {
   migrateLegacyPublisherHandleToOrgInternal,
   ensureOrgPublisherHandleInternal,
   removeOrgPublisherMemberInternal,
+  recoverPersonalPublisherInternal,
   createOrg,
   deleteOrg,
   removeMember,
@@ -97,6 +98,38 @@ const removeOrgPublisherMemberInternalHandler = (
       handle: string;
       removed: boolean;
       member: { userId: string; handle: string; role: "owner" | "admin" | "publisher" };
+    }
+  >
+)._handler;
+
+const recoverPersonalPublisherInternalHandler = (
+  recoverPersonalPublisherInternal as unknown as WrappedHandler<
+    {
+      actorUserId: string;
+      publisherHandle: string;
+      previousGitHubProviderAccountId: string;
+      nextGitHubProviderAccountId: string;
+      nextUserHandle?: string;
+      retiredUserHandle?: string;
+      reason: string;
+      confirmIdentityVerified: boolean;
+      dryRun?: boolean;
+    },
+    {
+      ok: true;
+      dryRun: boolean;
+      recovered: boolean;
+      publisherId: string;
+      handle: string;
+      previousUser: { userId: string; handle: string | null; nextHandle: string | null };
+      nextUser: { userId: string; handle: string | null; nextHandle: string };
+      retiredPersonalPublisher: {
+        publisherId: string;
+        handle: string;
+        skills: number;
+        packages: number;
+        githubSources: number;
+      } | null;
     }
   >
 )._handler;
@@ -4120,6 +4153,296 @@ describe("self-serve org publisher creation", () => {
 });
 
 describe("legacy publisher migration", () => {
+  function makePersonalPublisherRecoveryCtx(options: { destinationHasResources?: boolean } = {}) {
+    const users = new Map<string, Record<string, unknown>>([
+      ["users:admin", { _id: "users:admin", role: "admin", handle: "admin" }],
+      [
+        "users:legacy",
+        {
+          _id: "users:legacy",
+          role: "user",
+          handle: "gingiris",
+          personalPublisherId: "publishers:gingiris",
+          updatedAt: 1,
+        },
+      ],
+      [
+        "users:current",
+        {
+          _id: "users:current",
+          role: "user",
+          handle: "gingiris-1031",
+          personalPublisherId: "publishers:gingiris-1031",
+          updatedAt: 1,
+        },
+      ],
+    ]);
+    const publishers = new Map<string, Record<string, unknown>>([
+      [
+        "publishers:gingiris",
+        {
+          _id: "publishers:gingiris",
+          kind: "user",
+          handle: "gingiris",
+          displayName: "gingiris",
+          linkedUserId: "users:legacy",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      [
+        "publishers:gingiris-1031",
+        {
+          _id: "publishers:gingiris-1031",
+          kind: "user",
+          handle: "gingiris-1031",
+          displayName: "gingiris-1031",
+          linkedUserId: "users:current",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+    ]);
+    const authAccounts = [
+      {
+        _id: "authAccounts:legacy",
+        provider: "github",
+        providerAccountId: "111",
+        userId: "users:legacy",
+      },
+      {
+        _id: "authAccounts:current",
+        provider: "github",
+        providerAccountId: "222",
+        userId: "users:current",
+      },
+    ];
+    const publisherMembers = new Map<string, Record<string, unknown>>([
+      [
+        "publisherMembers:legacy",
+        {
+          _id: "publisherMembers:legacy",
+          publisherId: "publishers:gingiris",
+          userId: "users:legacy",
+          role: "owner",
+        },
+      ],
+      [
+        "publisherMembers:current",
+        {
+          _id: "publisherMembers:current",
+          publisherId: "publishers:gingiris-1031",
+          userId: "users:current",
+          role: "owner",
+        },
+      ],
+    ]);
+    const inserts: Array<{ table: string; value: Record<string, unknown> }> = [];
+    const patches: Array<{ id: string; patch: Record<string, unknown> }> = [];
+    const deletes: string[] = [];
+
+    const get = vi.fn(async (id: string) => {
+      return users.get(id) ?? publishers.get(id) ?? publisherMembers.get(id) ?? null;
+    });
+    const patch = vi.fn(async (id: string, patchValue: Record<string, unknown>) => {
+      patches.push({ id, patch: patchValue });
+      const row = users.get(id) ?? publishers.get(id) ?? publisherMembers.get(id);
+      if (row) Object.assign(row, patchValue);
+    });
+    const insert = vi.fn(async (table: string, value: Record<string, unknown>) => {
+      const id = `${table}:inserted-${inserts.length + 1}`;
+      const row = { _id: id, ...value };
+      inserts.push({ table, value: row });
+      if (table === "publisherMembers") publisherMembers.set(id, row);
+      return id;
+    });
+    const deleteFn = vi.fn(async (id: string) => {
+      deletes.push(id);
+      publisherMembers.delete(id);
+    });
+    const query = vi.fn((table: string) => ({
+      withIndex: vi.fn(
+        (
+          _indexName: string,
+          builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+        ) => {
+          const fields: Record<string, string> = {};
+          const q = {
+            eq: (field: string, value: string) => {
+              fields[field] = value;
+              return q;
+            },
+          };
+          builder?.(q);
+          return {
+            unique: vi.fn(async () => {
+              if (table === "users") {
+                return [...users.values()].find((user) => user.handle === fields.handle) ?? null;
+              }
+              if (table === "publishers" && fields.handle) {
+                return (
+                  [...publishers.values()].find(
+                    (publisher) => publisher.handle === fields.handle,
+                  ) ?? null
+                );
+              }
+              if (table === "publishers" && fields.linkedUserId) {
+                return (
+                  [...publishers.values()].find(
+                    (publisher) => publisher.linkedUserId === fields.linkedUserId,
+                  ) ?? null
+                );
+              }
+              return null;
+            }),
+            take: vi.fn(async () => {
+              if (table === "authAccounts") {
+                return authAccounts.filter(
+                  (account) =>
+                    account.provider === fields.provider &&
+                    account.providerAccountId === fields.providerAccountId,
+                );
+              }
+              if (table === "publisherMembers") {
+                return [...publisherMembers.values()].filter(
+                  (member) => member.publisherId === fields.publisherId,
+                );
+              }
+              if (
+                options.destinationHasResources &&
+                (table === "skills" || table === "packages" || table === "githubSkillSources") &&
+                fields.ownerPublisherId === "publishers:gingiris-1031"
+              ) {
+                return [{ _id: `${table}:resource` }];
+              }
+              return [];
+            }),
+          };
+        },
+      ),
+    }));
+
+    return {
+      ctx: {
+        db: {
+          get,
+          patch,
+          insert,
+          delete: deleteFn,
+          query,
+          normalizeId: vi.fn(),
+        },
+      },
+      users,
+      publishers,
+      inserts,
+      patches,
+      deletes,
+    };
+  }
+
+  it("recovers a personal publisher for a verified replacement GitHub principal", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
+    const { ctx, users, publishers, inserts, patches, deletes } =
+      makePersonalPublisherRecoveryCtx();
+
+    const result = await recoverPersonalPublisherInternalHandler(ctx as never, {
+      actorUserId: "users:admin",
+      publisherHandle: "gingiris",
+      previousGitHubProviderAccountId: "111",
+      nextGitHubProviderAccountId: "222",
+      nextUserHandle: "gingiris-1031",
+      reason: "Verified account continuity for issue #2555",
+      confirmIdentityVerified: true,
+      dryRun: false,
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      dryRun: false,
+      recovered: true,
+      publisherId: "publishers:gingiris",
+      handle: "gingiris",
+      previousUser: { userId: "users:legacy", nextHandle: "gingiris-recovered" },
+      nextUser: { userId: "users:current", nextHandle: "gingiris" },
+      retiredPersonalPublisher: {
+        publisherId: "publishers:gingiris-1031",
+        handle: "gingiris-1031",
+      },
+    });
+    expect(users.get("users:legacy")).toMatchObject({
+      handle: "gingiris-recovered",
+      personalPublisherId: undefined,
+    });
+    expect(users.get("users:current")).toMatchObject({
+      handle: "gingiris",
+      personalPublisherId: "publishers:gingiris",
+    });
+    expect(publishers.get("publishers:gingiris")).toMatchObject({
+      linkedUserId: "users:current",
+    });
+    expect(publishers.get("publishers:gingiris-1031")).toMatchObject({
+      linkedUserId: undefined,
+      deactivatedAt: 1_700_000_000_000,
+    });
+    expect(deletes).toContain("publisherMembers:legacy");
+    expect(inserts).toContainEqual(
+      expect.objectContaining({
+        table: "publisherMembers",
+        value: expect.objectContaining({
+          publisherId: "publishers:gingiris",
+          userId: "users:current",
+          role: "owner",
+        }),
+      }),
+    );
+    expect(inserts).toContainEqual(
+      expect.objectContaining({
+        table: "auditLogs",
+        value: expect.objectContaining({
+          actorUserId: "users:admin",
+          action: "publisher.personal.recover",
+          targetType: "publisher",
+          targetId: "publishers:gingiris",
+          metadata: expect.objectContaining({
+            previousGitHubProviderAccountId: "111",
+            nextGitHubProviderAccountId: "222",
+            identityVerified: true,
+          }),
+        }),
+      }),
+    );
+    expect(patches.map((entry) => entry.id)).toEqual(
+      expect.arrayContaining([
+        "publishers:gingiris-1031",
+        "users:legacy",
+        "users:current",
+        "publishers:gingiris",
+      ]),
+    );
+  });
+
+  it("fails closed when the destination personal publisher has resources", async () => {
+    const { ctx, inserts, patches } = makePersonalPublisherRecoveryCtx({
+      destinationHasResources: true,
+    });
+
+    await expect(
+      recoverPersonalPublisherInternalHandler(ctx as never, {
+        actorUserId: "users:admin",
+        publisherHandle: "gingiris",
+        previousGitHubProviderAccountId: "111",
+        nextGitHubProviderAccountId: "222",
+        nextUserHandle: "gingiris-1031",
+        reason: "Verified account continuity for issue #2555",
+        confirmIdentityVerified: true,
+        dryRun: false,
+      }),
+    ).rejects.toThrow(/has resources/i);
+    expect(patches).toHaveLength(0);
+    expect(inserts).toHaveLength(0);
+  });
+
   it("lets admins create a missing org publisher with only the legacy package owner as owner", async () => {
     vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
 
