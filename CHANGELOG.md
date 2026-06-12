@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.21.0 - 2026-06-11
+
+### Changes
+
+- CLI/API: add public `clawhub package trusted-publisher set` and `clawhub package trusted-publisher delete` commands so package managers can configure or remove GitHub Actions OIDC trusted publishing for existing packages.
+
 ## 0.20.2 - 2026-06-11
 
 ### Changes
