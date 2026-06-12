@@ -137,6 +137,7 @@ const recoverPersonalPublisherInternalHandler = (
         packages: number;
         packageInspectorWarnings: number;
         githubSourcesChecked: number;
+        handleReservations: number;
       };
     }
   >
@@ -4167,6 +4168,7 @@ describe("legacy publisher migration", () => {
       legacyResources?: boolean;
       tooManyLegacySkills?: boolean;
       unexpectedResourceOwner?: boolean;
+      unexpectedReservationOwner?: boolean;
     } = {},
   ) {
     const users = new Map<string, Record<string, unknown>>([
@@ -4406,6 +4408,24 @@ describe("legacy publisher migration", () => {
           ]
         : [],
     );
+    const reservedHandles = new Map<string, Record<string, unknown>>(
+      options.legacyResources
+        ? [
+            [
+              "reservedHandles:gingiris",
+              {
+                _id: "reservedHandles:gingiris",
+                handle: "gingiris",
+                rightfulOwnerUserId: options.unexpectedReservationOwner
+                  ? "users:someone-else"
+                  : "users:legacy",
+                createdAt: 1,
+                updatedAt: 1,
+              },
+            ],
+          ]
+        : [],
+    );
     const inserts: Array<{ table: string; value: Record<string, unknown> }> = [];
     const patches: Array<{ id: string; patch: Record<string, unknown> }> = [];
     const deletes: string[] = [];
@@ -4423,6 +4443,7 @@ describe("legacy publisher migration", () => {
       packagePluginCategorySearchDigest,
       packageInspectorWarnings,
       githubSkillSources,
+      reservedHandles,
     ];
     const get = vi.fn(async (id: string) => {
       return allRows.map((rows) => rows.get(id)).find(Boolean) ?? null;
@@ -4455,17 +4476,17 @@ describe("legacy publisher migration", () => {
       withIndex: vi.fn(
         (
           _indexName: string,
-          builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+          builder?: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
         ) => {
-          const fields: Record<string, string> = {};
+          const fields: Record<string, unknown> = {};
           const q = {
-            eq: (field: string, value: string) => {
+            eq: (field: string, value: unknown) => {
               fields[field] = value;
               return q;
             },
           };
           builder?.(q);
-          return {
+          const indexedQuery = {
             unique: vi.fn(async () => {
               if (table === "users") {
                 return [...users.values()].find((user) => user.handle === fields.handle) ?? null;
@@ -4511,6 +4532,13 @@ describe("legacy publisher migration", () => {
               if (table === "publisherMembers") {
                 return [...publisherMembers.values()].filter(
                   (member) => member.publisherId === fields.publisherId,
+                );
+              }
+              if (table === "reservedHandles") {
+                return [...reservedHandles.values()].filter(
+                  (reservation) =>
+                    reservation.handle === fields.handle &&
+                    reservation.releasedAt === fields.releasedAt,
                 );
               }
               if (table === "skills" && fields.ownerPublisherId === "publishers:gingiris") {
@@ -4560,6 +4588,10 @@ describe("legacy publisher migration", () => {
               return [];
             }),
           };
+          return {
+            ...indexedQuery,
+            order: vi.fn(() => indexedQuery),
+          };
         },
       ),
     }));
@@ -4588,6 +4620,7 @@ describe("legacy publisher migration", () => {
       packageCapabilitySearchDigest,
       packageInspectorWarnings,
       githubSkillSources,
+      reservedHandles,
     };
   }
 
@@ -4607,6 +4640,7 @@ describe("legacy publisher migration", () => {
       packageSearchDigest,
       packageCapabilitySearchDigest,
       packageInspectorWarnings,
+      reservedHandles,
     } = makePersonalPublisherRecoveryCtx({ legacyResources: true });
 
     const result = await recoverPersonalPublisherInternalHandler(ctx as never, {
@@ -4638,6 +4672,7 @@ describe("legacy publisher migration", () => {
         packages: 1,
         packageInspectorWarnings: 1,
         githubSourcesChecked: 1,
+        handleReservations: 1,
       },
     });
     expect(users.get("users:legacy")).toMatchObject({
@@ -4690,6 +4725,10 @@ describe("legacy publisher migration", () => {
     expect(packageInspectorWarnings.get("packageInspectorWarnings:legacy")).toMatchObject({
       ownerUserId: "users:current",
     });
+    expect(reservedHandles.get("reservedHandles:gingiris")).toMatchObject({
+      rightfulOwnerUserId: "users:current",
+      updatedAt: 1_700_000_000_000,
+    });
     expect(deletes).toContain("publisherMembers:legacy");
     expect(inserts).toContainEqual(
       expect.objectContaining({
@@ -4735,6 +4774,7 @@ describe("legacy publisher migration", () => {
         "packageSearchDigest:legacy",
         "packageCapabilitySearchDigest:legacy-tools",
         "packageInspectorWarnings:legacy",
+        "reservedHandles:gingiris",
       ]),
     );
   });
@@ -4778,6 +4818,28 @@ describe("legacy publisher migration", () => {
         dryRun: false,
       }),
     ).rejects.toThrow(/another user/i);
+    expect(patches).toHaveLength(0);
+    expect(inserts).toHaveLength(0);
+  });
+
+  it("fails closed when the recovered handle reservation belongs to another user", async () => {
+    const { ctx, inserts, patches } = makePersonalPublisherRecoveryCtx({
+      legacyResources: true,
+      unexpectedReservationOwner: true,
+    });
+
+    await expect(
+      recoverPersonalPublisherInternalHandler(ctx as never, {
+        actorUserId: "users:admin",
+        publisherHandle: "gingiris",
+        previousGitHubProviderAccountId: "111",
+        nextGitHubProviderAccountId: "222",
+        nextUserHandle: "gingiris-1031",
+        reason: "Verified account continuity for issue #2555",
+        confirmIdentityVerified: true,
+        dryRun: false,
+      }),
+    ).rejects.toThrow(/reservation .* belongs to another user/i);
     expect(patches).toHaveLength(0);
     expect(inserts).toHaveLength(0);
   });

@@ -577,6 +577,7 @@ describe("cmdRecoverPersonalPublisher", () => {
         packages: 0,
         packageInspectorWarnings: 0,
         githubSourcesChecked: 1,
+        handleReservations: 1,
       },
       identityVerified: false,
       reason: "Verified account continuity",

@@ -34,7 +34,10 @@ import {
   PUBLISHER_HANDLE_REQUIREMENTS_MESSAGE,
   normalizePublisherHandle,
 } from "./lib/publishers";
-import { isHandleReservedForAnotherUser } from "./lib/reservedHandles";
+import {
+  getLatestActiveReservedHandle,
+  isHandleReservedForAnotherUser,
+} from "./lib/reservedHandles";
 import { syncSkillSearchDigestForSkill } from "./lib/skillSearchDigest";
 import { readCanonicalStat } from "./lib/skillStats";
 
@@ -1062,8 +1065,9 @@ function getUnexpectedRecoveryOwnerRows(
 }
 
 async function getPersonalPublisherRecoveryOwnerMigrationPlan(
-  ctx: Pick<MutationCtx, "db">,
+  ctx: MutationCtx,
   publisherId: Id<"publishers">,
+  publisherHandle: string,
   previousUserId: Id<"users">,
   nextUserId: Id<"users">,
 ) {
@@ -1092,6 +1096,7 @@ async function getPersonalPublisherRecoveryOwnerMigrationPlan(
         .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", publisherId))
         .take(takeLimit),
     ]);
+  const activeHandleReservation = await getLatestActiveReservedHandle(ctx, publisherHandle);
   const overflowTables = [
     skills.length > limit ? "skills" : null,
     skillSlugAliases.length > limit ? "skillSlugAliases" : null,
@@ -1127,6 +1132,15 @@ async function getPersonalPublisherRecoveryOwnerMigrationPlan(
       `Publisher resource ${first.table}:${first.id} belongs to another user; manual reconciliation required`,
     );
   }
+  if (
+    activeHandleReservation &&
+    activeHandleReservation.rightfulOwnerUserId !== previousUserId &&
+    activeHandleReservation.rightfulOwnerUserId !== nextUserId
+  ) {
+    throw new ConvexError(
+      `Handle reservation ${activeHandleReservation._id} belongs to another user; manual reconciliation required`,
+    );
+  }
 
   return {
     limitPerTable: limit,
@@ -1137,6 +1151,10 @@ async function getPersonalPublisherRecoveryOwnerMigrationPlan(
       (row) => row.ownerUserId === previousUserId,
     ),
     githubSources,
+    activeHandleReservation:
+      activeHandleReservation?.rightfulOwnerUserId === previousUserId
+        ? activeHandleReservation
+        : null,
   };
 }
 
@@ -1169,6 +1187,12 @@ async function applyPersonalPublisherRecoveryOwnerMigration(
   }
   for (const warning of plan.packageInspectorWarnings) {
     await ctx.db.patch(warning._id, { ownerUserId: nextUserId });
+  }
+  if (plan.activeHandleReservation) {
+    await ctx.db.patch(plan.activeHandleReservation._id, {
+      rightfulOwnerUserId: nextUserId,
+      updatedAt: now,
+    });
   }
 }
 
@@ -1279,6 +1303,7 @@ export const recoverPersonalPublisherInternal = internalMutation({
     const resourceOwnerMigrationPlan = await getPersonalPublisherRecoveryOwnerMigrationPlan(
       ctx,
       publisher._id,
+      publisher.handle,
       previousUser._id,
       nextUser._id,
     );
@@ -1289,6 +1314,7 @@ export const recoverPersonalPublisherInternal = internalMutation({
       packages: resourceOwnerMigrationPlan.packages.length,
       packageInspectorWarnings: resourceOwnerMigrationPlan.packageInspectorWarnings.length,
       githubSourcesChecked: resourceOwnerMigrationPlan.githubSources.length,
+      handleReservations: resourceOwnerMigrationPlan.activeHandleReservation ? 1 : 0,
     };
 
     const retiredHandleBase =

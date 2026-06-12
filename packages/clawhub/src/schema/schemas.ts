@@ -269,6 +269,7 @@ export const ApiV1PublisherRecoveryResponseSchema = type({
     packages: "number",
     packageInspectorWarnings: "number",
     githubSourcesChecked: "number",
+    handleReservations: "number",
   },
   identityVerified: "boolean",
   reason: "string",
