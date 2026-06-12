@@ -33,6 +33,9 @@ describe("docs auth helpers", () => {
     expect(buildDocsAuthCallbackUrl("http://localhost:4173/start")).toBe(
       "http://localhost:4173/ask-molty/auth/callback",
     );
+    expect(normalizeDocsReturnTo("http://127.0.0.1:4173/start")).toBe(
+      "http://127.0.0.1:4173/start",
+    );
   });
 
   it("rejects localhost docs origins in production", () => {
