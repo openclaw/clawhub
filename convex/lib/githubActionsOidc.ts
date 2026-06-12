@@ -1,4 +1,4 @@
-import { buildGitHubApiHeaders } from "./githubAuth";
+import { buildGitHubApiHeaders, buildGitHubHeaders } from "./githubAuth";
 
 type JwtHeader = {
   alg?: unknown;
@@ -218,19 +218,62 @@ export async function fetchGitHubRepositoryIdentity(
   if (!normalizedRepository) {
     throw new Error(`Invalid GitHub repository: ${repository}`);
   }
-  const response = await fetchImpl(`https://api.github.com/repos/${normalizedRepository}`, {
-    headers: await buildGitHubRepositoryLookupHeaders(fetchImpl),
+  const url = `https://api.github.com/repos/${normalizedRepository}`;
+  const headers = await buildGitHubRepositoryLookupHeaders(fetchImpl);
+  let response = await fetchImpl(url, {
+    headers,
   });
+  if (shouldRetryRepositoryLookupWithoutAppAuth(response, headers)) {
+    response = await fetchImpl(url, {
+      headers: await buildGitHubRepositoryLookupHeaders(fetchImpl, { useGitHubApp: false }),
+    });
+  }
   if (!response.ok) {
     throw new Error(
       `GitHub repository lookup failed for ${normalizedRepository}: ${response.status}`,
     );
   }
-  const body = (await response.json()) as {
-    id?: unknown;
-    full_name?: unknown;
-    owner?: { login?: unknown; id?: unknown };
-  };
+  const body = await readPublicGitHubRepositoryLookupResponse({
+    response,
+    normalizedRepository,
+    url,
+    headers,
+    fetchImpl,
+  });
+  return repositoryIdentityFromLookupResponse(body);
+}
+
+async function readPublicGitHubRepositoryLookupResponse(options: {
+  response: Response;
+  normalizedRepository: string;
+  url: string;
+  headers: Record<string, string>;
+  fetchImpl: typeof fetch;
+}) {
+  const body = (await options.response.json()) as GitHubRepositoryLookupResponse;
+  if (!isPublicGitHubRepository(body)) {
+    if (options.headers.Authorization) {
+      const publicResponse = await options.fetchImpl(options.url, {
+        headers: buildGitHubAnonymousRepositoryLookupHeaders(),
+      });
+      if (!publicResponse.ok) {
+        throw new Error(
+          `GitHub repository lookup failed for ${options.normalizedRepository}: ${publicResponse.status}`,
+        );
+      }
+      const publicBody = (await publicResponse.json()) as GitHubRepositoryLookupResponse;
+      if (isPublicGitHubRepository(publicBody)) {
+        return publicBody;
+      }
+    }
+    throw new Error(
+      `GitHub repository lookup failed for ${options.normalizedRepository}: repository must be public`,
+    );
+  }
+  return body;
+}
+
+function repositoryIdentityFromLookupResponse(body: GitHubRepositoryLookupResponse) {
   const resolvedRepository = requireString(body.full_name, "full_name");
   const ownerLogin = requireString(body.owner?.login, "owner.login");
   return {
@@ -241,16 +284,44 @@ export async function fetchGitHubRepositoryIdentity(
   };
 }
 
-async function buildGitHubRepositoryLookupHeaders(fetchImpl: typeof fetch) {
+type GitHubRepositoryLookupResponse = {
+  id?: unknown;
+  full_name?: unknown;
+  owner?: { login?: unknown; id?: unknown };
+  private?: unknown;
+  visibility?: unknown;
+};
+
+function isPublicGitHubRepository(body: GitHubRepositoryLookupResponse) {
+  return body.private === false && (body.visibility === undefined || body.visibility === "public");
+}
+
+async function buildGitHubRepositoryLookupHeaders(
+  fetchImpl: typeof fetch,
+  options: { useGitHubApp?: boolean } = {},
+) {
   return await buildGitHubApiHeaders({
     accept: "application/vnd.github+json",
     fetchImpl,
     userAgent: "clawhub/package-trusted-publisher",
-    // This lookup accepts arbitrary public repositories. GitHub App installation
-    // tokens only see repositories where the App is installed, so prefer PAT or
-    // anonymous auth here.
-    useGitHubApp: false,
+    // Prefer authenticated app/PAT requests for public repository metadata so
+    // trusted-publisher setup does not depend on anonymous GitHub API limits.
+    useGitHubApp: options.useGitHubApp,
   });
+}
+
+function buildGitHubAnonymousRepositoryLookupHeaders() {
+  return buildGitHubHeaders({
+    accept: "application/vnd.github+json",
+    userAgent: "clawhub/package-trusted-publisher",
+  });
+}
+
+function shouldRetryRepositoryLookupWithoutAppAuth(
+  response: Response,
+  headers: Record<string, string>,
+) {
+  return Boolean(headers.Authorization) && [401, 403, 404].includes(response.status);
 }
 
 export function normalizeGitHubRepository(repository: string) {

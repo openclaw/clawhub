@@ -346,10 +346,12 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   `GITHUB_APP_ID`, `GITHUB_APP_INSTALLATION_ID`, and `GITHUB_APP_PRIVATE_KEY`.
   Account-age/profile lookups prefer short-lived GitHub App installation
   tokens, then fall back to `GITHUB_TOKEN`, then to unauthenticated public
-  requests where safe. Trusted-publisher repository identity lookups avoid
-  GitHub App installation tokens because users may configure repositories
-  outside the App installation; they use `GITHUB_TOKEN` or unauthenticated
-  public requests instead.
+  requests where safe. Trusted-publisher repository identity lookups also
+  prefer authenticated GitHub App or token requests for public repository
+  metadata, then retry without App auth when that lookup is rejected. They must
+  only accept public repository responses; private repositories need a separate
+  GitHub authorization or installation flow before ClawHub can configure trusted
+  publishing for them.
 - If configured GitHub API auth is rejected with `401`, retry the account-age
   lookup without auth before failing. Never fall back to mutable GitHub usernames
   for this gate; use the operator backfill to cache missing ages for existing users.

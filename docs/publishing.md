@@ -198,6 +198,12 @@ repository. The configured repository and workflow filename must match the
 GitHub Actions OIDC claim. If you also pass `--environment <name>`, the GitHub
 Actions environment claim must match that name exactly.
 
+ClawHub verifies the configured GitHub repository when trusted publisher config
+is set. Public repositories can be verified through public GitHub metadata.
+Private repositories require ClawHub to have GitHub access to that repository,
+for example through a future ClawHub GitHub App installation or another
+authorized GitHub integration.
+
 The current reusable package publish workflow supports secretless trusted
 publishing for `workflow_dispatch` publishes when `id-token: write` is
 available. Tag-push real publishes still need `clawhub_token`, so keep

@@ -1,5 +1,6 @@
 /* @vitest-environment node */
 
+import { generateKeyPairSync } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   extractWorkflowFilenameFromWorkflowRef,
@@ -35,6 +36,17 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
+function stubGitHubAppEnv() {
+  const { privateKey } = generateKeyPairSync("rsa", {
+    modulusLength: 2048,
+    privateKeyEncoding: { type: "pkcs1", format: "pem" },
+    publicKeyEncoding: { type: "spki", format: "pem" },
+  });
+  vi.stubEnv("GITHUB_APP_ID", "123");
+  vi.stubEnv("GITHUB_APP_INSTALLATION_ID", "456");
+  vi.stubEnv("GITHUB_APP_PRIVATE_KEY", privateKey);
+}
+
 describe("extractWorkflowFilenameFromWorkflowRef", () => {
   it("extracts the workflow filename from workflow_ref", () => {
     expect(
@@ -54,6 +66,8 @@ describe("fetchGitHubRepositoryIdentity", () => {
         id: 123,
         full_name: "openclaw/clawhub",
         owner: { login: "openclaw", id: 456 },
+        private: false,
+        visibility: "public",
       }),
     );
 
@@ -76,29 +90,100 @@ describe("fetchGitHubRepositoryIdentity", () => {
     );
   });
 
-  it("does not use GitHub App auth for arbitrary repository lookup", async () => {
-    vi.stubEnv("GITHUB_APP_ID", "123");
-    vi.stubEnv("GITHUB_APP_INSTALLATION_ID", "456");
-    vi.stubEnv("GITHUB_APP_PRIVATE_KEY", "not-needed-for-this-test");
+  it("uses GitHub App auth before GITHUB_TOKEN for repository lookup", async () => {
+    stubGitHubAppEnv();
     vi.stubEnv("GITHUB_TOKEN", "ghs_test_token");
-    const fetchMock = vi.fn(async () =>
-      Response.json({
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = input instanceof Request ? input.url : input.toString();
+      if (url === "https://api.github.com/app/installations/456/access_tokens") {
+        return Response.json({
+          token: "ghs_app_token",
+          expires_at: "2026-02-02T13:00:00Z",
+        });
+      }
+      return Response.json({
         id: 123,
         full_name: "openclaw/clawhub",
         owner: { login: "openclaw", id: 456 },
-      }),
-    );
+        private: false,
+        visibility: "public",
+      });
+    });
 
     await fetchGitHubRepositoryIdentity("openclaw/clawhub", fetchMock);
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "https://api.github.com/app/installations/456/access_tokens",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          Accept: "application/vnd.github+json",
+          Authorization: expect.stringMatching(/^Bearer [^.]+\.[^.]+\.[^.]+$/),
+          "User-Agent": "clawhub/package-trusted-publisher",
+        }),
+      }),
+    );
     expect(fetchMock).toHaveBeenCalledWith(
       "https://api.github.com/repos/openclaw/clawhub",
       expect.objectContaining({
         headers: expect.objectContaining({
           Accept: "application/vnd.github+json",
-          Authorization: "Bearer ghs_test_token",
+          Authorization: "Bearer ghs_app_token",
           "User-Agent": "clawhub/package-trusted-publisher",
+        }),
+      }),
+    );
+  });
+
+  it("retries repository lookup without GitHub App auth when app auth is rejected", async () => {
+    stubGitHubAppEnv();
+    vi.stubEnv("GITHUB_TOKEN", "ghs_test_token");
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = input instanceof Request ? input.url : input.toString();
+      if (url === "https://api.github.com/app/installations/456/access_tokens") {
+        return Response.json({
+          token: "ghs_app_token",
+          expires_at: "2026-02-02T13:00:00Z",
+        });
+      }
+      const headers = new Headers(init?.headers);
+      if (headers.get("Authorization") === "Bearer ghs_app_token") {
+        return new Response("Not Found", { status: 404 });
+      }
+      return Response.json({
+        id: 123,
+        full_name: "openclaw/clawhub",
+        owner: { login: "openclaw", id: 456 },
+        private: false,
+        visibility: "public",
+      });
+    });
+
+    await expect(fetchGitHubRepositoryIdentity("openclaw/clawhub", fetchMock)).resolves.toEqual({
+      repository: "openclaw/clawhub",
+      repositoryId: "123",
+      repositoryOwner: "openclaw",
+      repositoryOwnerId: "456",
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "https://api.github.com/repos/openclaw/clawhub",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: "Bearer ghs_app_token",
+        }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "https://api.github.com/repos/openclaw/clawhub",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: "Bearer ghs_test_token",
         }),
       }),
     );
@@ -111,6 +196,8 @@ describe("fetchGitHubRepositoryIdentity", () => {
         id: 123,
         full_name: "openclaw/clawhub",
         owner: { login: "openclaw", id: 456 },
+        private: false,
+        visibility: "public",
       }),
     );
 
@@ -122,6 +209,87 @@ describe("fetchGitHubRepositoryIdentity", () => {
         "User-Agent": "clawhub/package-trusted-publisher",
       },
     });
+  });
+
+  it("does not accept private repositories from app-authenticated lookup", async () => {
+    stubGitHubAppEnv();
+    vi.stubEnv("GITHUB_TOKEN", " ");
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = input instanceof Request ? input.url : input.toString();
+      if (url === "https://api.github.com/app/installations/456/access_tokens") {
+        return Response.json({
+          token: "ghs_app_token",
+          expires_at: "2026-02-02T13:00:00Z",
+        });
+      }
+      const headers = new Headers(init?.headers);
+      if (headers.get("Authorization") === "Bearer ghs_app_token") {
+        return Response.json({
+          id: 123,
+          full_name: "openclaw/private-repo",
+          owner: { login: "openclaw", id: 456 },
+          private: true,
+          visibility: "private",
+        });
+      }
+      return new Response("Not Found", { status: 404 });
+    });
+
+    await expect(fetchGitHubRepositoryIdentity("openclaw/private-repo", fetchMock)).rejects.toThrow(
+      "GitHub repository lookup failed for openclaw/private-repo: 404",
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "https://api.github.com/repos/openclaw/private-repo",
+      expect.objectContaining({
+        headers: expect.not.objectContaining({
+          Authorization: expect.any(String),
+        }),
+      }),
+    );
+  });
+
+  it("does not disclose private repositories from token-authenticated lookup", async () => {
+    vi.stubEnv("GITHUB_TOKEN", "ghs_test_token");
+    const fetchMock = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      const headers = new Headers(init?.headers);
+      if (headers.get("Authorization") === "Bearer ghs_test_token") {
+        return Response.json({
+          id: 123,
+          full_name: "openclaw/private-repo",
+          owner: { login: "openclaw", id: 456 },
+          private: true,
+          visibility: "private",
+        });
+      }
+      return new Response("Not Found", { status: 404 });
+    });
+
+    await expect(fetchGitHubRepositoryIdentity("openclaw/private-repo", fetchMock)).rejects.toThrow(
+      "GitHub repository lookup failed for openclaw/private-repo: 404",
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "https://api.github.com/repos/openclaw/private-repo",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: "Bearer ghs_test_token",
+        }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "https://api.github.com/repos/openclaw/private-repo",
+      expect.objectContaining({
+        headers: expect.not.objectContaining({
+          Authorization: expect.any(String),
+        }),
+      }),
+    );
   });
 });
 

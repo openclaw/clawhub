@@ -727,6 +727,11 @@ clawhub package trusted-publisher get @openclaw/example-plugin
   `.github/workflows/`.
 - `--environment <name>` is optional. When configured, the GitHub Actions
   environment in the OIDC claim must match exactly.
+- ClawHub verifies the configured GitHub repository when this command runs.
+  Public repositories can be verified through public GitHub metadata. Private
+  repositories require ClawHub to have GitHub access to that repository, for
+  example through a future ClawHub GitHub App installation or another authorized
+  GitHub integration.
 - Flags:
   - `--repository <repo>`: GitHub repository, for example `openclaw/example-plugin`.
   - `--workflow-filename <file>`: workflow file name, for example `package-publish.yml`.
