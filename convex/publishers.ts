@@ -40,6 +40,7 @@ import {
 } from "./lib/reservedHandles";
 import { syncSkillSearchDigestForSkill } from "./lib/skillSearchDigest";
 import { readCanonicalStat } from "./lib/skillStats";
+import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";
 
 const MAX_PUBLIC_PUBLISHER_LIST_LIMIT = 500;
 const PUBLISHER_LIST_PREVIEW_LIMIT = 3;
@@ -1165,8 +1166,10 @@ async function applyPersonalPublisherRecoveryOwnerMigration(
   now: number,
 ) {
   for (const skill of plan.skills) {
+    const previousSkill = { ...skill };
     const nextSkill = { ...skill, ownerUserId: nextUserId, updatedAt: now };
     await ctx.db.patch(skill._id, { ownerUserId: nextUserId, updatedAt: now });
+    await adjustUserSkillStatsForSkillChange(ctx, previousSkill, nextSkill);
     await syncSkillSearchDigestForSkill(ctx, nextSkill);
   }
   for (const alias of plan.skillSlugAliases) {
