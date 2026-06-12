@@ -2415,6 +2415,170 @@ const githubBackupSyncState = defineTable({
   updatedAt: v.number(),
 }).index("by_key", ["key"]);
 
+const githubAppInstallations = defineTable({
+  installationId: v.string(),
+  accountLogin: v.string(),
+  accountId: v.string(),
+  accountType: v.union(v.literal("User"), v.literal("Organization")),
+  createdByUserId: v.id("users"),
+  suspendedAt: v.optional(v.number()),
+  deletedAt: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_installation_id", ["installationId"])
+  .index("by_account_id", ["accountId"]);
+
+const publisherGitHubLinks = defineTable({
+  publisherId: v.id("publishers"),
+  installationId: v.string(),
+  githubAppInstallationId: v.id("githubAppInstallations"),
+  linkedByUserId: v.id("users"),
+  deletedAt: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_publisher", ["publisherId"])
+  .index("by_installation_id", ["installationId"])
+  .index("by_publisher_installation_id", ["publisherId", "installationId"]);
+
+const publisherGitHubRepositories = defineTable({
+  publisherId: v.id("publishers"),
+  githubLinkId: v.id("publisherGitHubLinks"),
+  installationId: v.string(),
+  repoFullName: v.string(),
+  repoId: v.string(),
+  defaultBranch: v.string(),
+  syncRef: v.string(),
+  syncRoots: v.array(v.string()),
+  mode: v.union(v.literal("discover"), v.literal("mapped")),
+  enabled: v.boolean(),
+  lastSyncedCommit: v.optional(v.string()),
+  lastSyncStatus: v.optional(
+    v.union(
+      v.literal("idle"),
+      v.literal("queued"),
+      v.literal("running"),
+      v.literal("succeeded"),
+      v.literal("failed"),
+    ),
+  ),
+  lastSyncError: v.optional(v.string()),
+  lastSyncedAt: v.optional(v.number()),
+  deletedAt: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_publisher", ["publisherId"])
+  .index("by_installation_id", ["installationId"])
+  .index("by_installation_repo_id", ["installationId", "repoId"])
+  .index("by_repo_full_name", ["repoFullName"])
+  .index("by_enabled_status", ["enabled", "lastSyncStatus"]);
+
+const skillSourceLinks = defineTable({
+  publisherId: v.id("publishers"),
+  skillId: v.optional(v.id("skills")),
+  repositoryId: v.id("publisherGitHubRepositories"),
+  repoFullName: v.string(),
+  repoId: v.string(),
+  path: v.string(),
+  slug: v.string(),
+  readmePath: v.string(),
+  status: v.union(
+    v.literal("active"),
+    v.literal("conflict"),
+    v.literal("missing"),
+    v.literal("disabled"),
+  ),
+  conflictReason: v.optional(v.string()),
+  lastSyncedCommit: v.optional(v.string()),
+  lastSyncedVersionId: v.optional(v.id("skillVersions")),
+  lastFingerprint: v.optional(v.string()),
+  createdByUserId: v.id("users"),
+  disabledAt: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_publisher", ["publisherId"])
+  .index("by_skill", ["skillId"])
+  .index("by_repository", ["repositoryId"])
+  .index("by_repository_path", ["repositoryId", "path"])
+  .index("by_publisher_slug", ["publisherId", "slug"])
+  .index("by_status_updated", ["status", "updatedAt"]);
+
+const githubSkillSyncJobs = defineTable({
+  publisherId: v.id("publishers"),
+  repositoryId: v.id("publisherGitHubRepositories"),
+  repoFullName: v.string(),
+  ref: v.string(),
+  commit: v.string(),
+  status: v.union(
+    v.literal("queued"),
+    v.literal("running"),
+    v.literal("succeeded"),
+    v.literal("failed"),
+    v.literal("cancelled"),
+  ),
+  reason: v.union(
+    v.literal("push"),
+    v.literal("manual"),
+    v.literal("repository_linked"),
+    v.literal("backfill"),
+  ),
+  candidateOffset: v.optional(v.number()),
+  requestedByUserId: v.optional(v.id("users")),
+  startedAt: v.optional(v.number()),
+  finishedAt: v.optional(v.number()),
+  error: v.optional(v.string()),
+  counts: v.object({
+    discovered: v.number(),
+    published: v.number(),
+    skipped: v.number(),
+    conflicted: v.number(),
+    missing: v.number(),
+  }),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_repository_status", ["repositoryId", "status"])
+  .index("by_repository_commit", ["repositoryId", "commit"])
+  .index("by_status_created", ["status", "createdAt"]);
+
+const githubAppSetupStates = defineTable({
+  stateHash: v.string(),
+  publisherId: v.id("publishers"),
+  requestedByUserId: v.id("users"),
+  nonce: v.string(),
+  expiresAt: v.number(),
+  consumedAt: v.optional(v.number()),
+  createdAt: v.number(),
+})
+  .index("by_state_hash", ["stateHash"])
+  .index("by_publisher", ["publisherId"])
+  .index("by_expires_at", ["expiresAt"]);
+
+const githubWebhookDeliveries = defineTable({
+  deliveryId: v.string(),
+  event: v.string(),
+  status: v.union(v.literal("processing"), v.literal("processed"), v.literal("failed")),
+  installationId: v.optional(v.string()),
+  repoId: v.optional(v.string()),
+  error: v.optional(v.string()),
+  receivedAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_delivery_id", ["deliveryId"])
+  .index("by_received_at", ["receivedAt"]);
+
+const githubAppInstallationClaims = defineTable({
+  installationId: v.string(),
+  accountId: v.string(),
+  senderAccountId: v.string(),
+  event: v.string(),
+  receivedAt: v.number(),
+  updatedAt: v.number(),
+}).index("by_installation_id", ["installationId"]);
+
 const userSyncRoots = defineTable({
   userId: v.id("users"),
   rootId: v.string(),
@@ -2540,6 +2704,14 @@ export default defineSchema({
   reservedSlugs,
   reservedHandles,
   githubBackupSyncState,
+  githubAppInstallations,
+  publisherGitHubLinks,
+  publisherGitHubRepositories,
+  skillSourceLinks,
+  githubSkillSyncJobs,
+  githubAppSetupStates,
+  githubWebhookDeliveries,
+  githubAppInstallationClaims,
   userSyncRoots,
   userSkillInstalls,
   userSkillRootInstalls,

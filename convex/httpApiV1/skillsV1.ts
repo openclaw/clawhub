@@ -36,7 +36,7 @@ import { selectGeneratedSkillCardFile, sourceSkillVersionFiles } from "../lib/sk
 import {
   getPublicSkillFileAccessBlock,
   getPublicSkillVersionAccessBlock,
-  getPublicSkillVersionDownloadBlock,
+  getPublicSkillVersionFileAccessBlock,
   getSkillFileModerationInfoFromSkill,
   isSkillVersionForSkill,
 } from "../lib/skillFileAccess";
@@ -1624,9 +1624,9 @@ async function getUnavailableSkillVersionBlock(
   if (!version || !isSkillVersionForSkill(version, skill._id)) return null;
   if (version.softDeletedAt) return { status: 410, message: "Version not available" };
 
-  return getPublicSkillVersionAccessBlock(
+  return getPublicSkillVersionFileAccessBlock(
+    version,
     getSkillFileModerationInfoFromSkill(skill),
-    version._id,
     skill.latestVersionId ?? skill.tags?.latest,
   );
 }
@@ -1766,9 +1766,9 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
     const latestVersionId =
       result.skill.latestVersionId ?? result.skill.tags?.latest ?? result.latestVersion?._id;
     const descriptionAccessBlock = result.latestVersion
-      ? getPublicSkillVersionAccessBlock(
+      ? getPublicSkillVersionFileAccessBlock(
+          result.latestVersion,
           result.moderationInfo,
-          result.latestVersion._id,
           latestVersionId,
         )
       : getPublicSkillFileAccessBlock(result.moderationInfo);
@@ -1957,13 +1957,13 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
     if (version.softDeletedAt) return text("Version not available", 410, rate.headers);
     const effectiveLatestVersionId =
       skillResult.skill.latestVersionId ?? skillResult.skill.tags?.latest;
-    const moderationBlock = getPublicSkillVersionAccessBlock(
+    const versionAccessBlock = getPublicSkillVersionFileAccessBlock(
+      version,
       skillResult.moderationInfo,
-      version._id,
       effectiveLatestVersionId,
     );
-    if (moderationBlock) {
-      return text(moderationBlock.message, moderationBlock.status, rate.headers);
+    if (versionAccessBlock) {
+      return text(versionAccessBlock.message, versionAccessBlock.status, rate.headers);
     }
     const security = buildSkillSecuritySnapshot(version);
 
@@ -2252,13 +2252,13 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
     if (version.softDeletedAt) return text("Version not available", 410, rate.headers);
     const effectiveLatestVersionId =
       skillResult.skill.latestVersionId ?? skillResult.skill.tags?.latest;
-    const moderationBlock = getPublicSkillVersionDownloadBlock(
-      skillResult.moderationInfo,
+    const versionAccessBlock = getPublicSkillVersionFileAccessBlock(
       version,
+      skillResult.moderationInfo,
       effectiveLatestVersionId,
     );
-    if (moderationBlock) {
-      return text(moderationBlock.message, moderationBlock.status, rate.headers);
+    if (versionAccessBlock) {
+      return text(versionAccessBlock.message, versionAccessBlock.status, rate.headers);
     }
 
     const fingerprintEntries = ((await ctx.runQuery(
@@ -2317,13 +2317,13 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
     if (version.softDeletedAt) return text("Version not available", 410, rate.headers);
     const effectiveLatestVersionId =
       skillResult.skill.latestVersionId ?? skillResult.skill.tags?.latest;
-    const moderationBlock = getPublicSkillVersionDownloadBlock(
-      skillResult.moderationInfo,
+    const versionAccessBlock = getPublicSkillVersionFileAccessBlock(
       version,
+      skillResult.moderationInfo,
       effectiveLatestVersionId,
     );
-    if (moderationBlock) {
-      return text(moderationBlock.message, moderationBlock.status, rate.headers);
+    if (versionAccessBlock) {
+      return text(versionAccessBlock.message, versionAccessBlock.status, rate.headers);
     }
 
     const normalized = path.trim();

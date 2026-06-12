@@ -88,6 +88,11 @@ export type PublishOptions = {
   skipWebhook?: boolean;
   ownerPublisherId?: Id<"publishers">;
   sourceProvenance?: PublishVersionArgs["source"];
+  sourceSync?: {
+    sourceLinkId: Id<"skillSourceLinks">;
+    repositoryId: Id<"publisherGitHubRepositories">;
+    syncJobId?: Id<"githubSkillSyncJobs">;
+  };
   // Explicit opt-in to owner migration. The `insertVersion` mutation refuses
   // to rewrite a skill's `ownerPublisherId` unless this is `true`, so default
   // publishes (including older CLIs that never pass this flag) can never
@@ -321,6 +326,7 @@ export async function publishVersionForUser(
     changelog: changelogText,
     changelogSource,
     sourceProvenance: options.sourceProvenance,
+    sourceSync: options.sourceSync,
     tags: args.tags?.map((tag) => tag.trim()).filter(Boolean),
     fingerprint,
     forkOf: args.forkOf

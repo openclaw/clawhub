@@ -26,6 +26,26 @@ describe("SkillCard", () => {
     expect(screen.queryByText("Official")).toBeNull();
     expect(container.querySelector(".official-badge")).toBeTruthy();
   });
+
+  it("keeps badges after the title and summary", () => {
+    const { container } = render(
+      <SkillCard
+        skill={makeSkill()}
+        badge="Official"
+        summaryFallback="Fallback summary"
+        meta={<span>meta</span>}
+      />,
+    );
+
+    const title = container.querySelector(".skill-card-title");
+    const summary = container.querySelector(".skill-card-summary");
+    const tags = container.querySelector(".skill-card-tags");
+    expect(title).toBeTruthy();
+    expect(summary).toBeTruthy();
+    expect(tags).toBeTruthy();
+    expect(title!.compareDocumentPosition(tags!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(summary!.compareDocumentPosition(tags!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
 });
 
 function makeSkill(): PublicSkill {

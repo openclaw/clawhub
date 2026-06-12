@@ -12758,6 +12758,156 @@ a.publisher-profile-detail:hover {
   font-size: var(--fs-xs);
 }
 
+.publisher-profile-github-panel {
+  display: grid;
+  gap: 14px;
+  padding-bottom: 22px;
+  border-bottom: 1px solid var(--line);
+}
+
+.publisher-profile-github-header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.publisher-profile-github-header > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.publisher-profile-github-header h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--fs-md);
+  font-weight: 750;
+  letter-spacing: 0;
+}
+
+.publisher-profile-github-header span,
+.publisher-profile-github-loading,
+.publisher-profile-github-repo-heading span,
+.publisher-profile-github-repo-footer span {
+  color: var(--ink-soft);
+  font-size: var(--fs-xs);
+}
+
+.publisher-profile-github-connect {
+  display: grid;
+  grid-template-columns: minmax(150px, 210px) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.publisher-profile-github-connect input {
+  min-height: 34px;
+  font-size: var(--fs-xs);
+}
+
+.publisher-profile-github-repos {
+  display: grid;
+  gap: 10px;
+}
+
+.publisher-profile-github-repo {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+
+.publisher-profile-github-repo-heading,
+.publisher-profile-github-repo-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.publisher-profile-github-repo-heading > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.publisher-profile-github-repo h3 {
+  margin: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: var(--fs-sm);
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.publisher-profile-github-toggle {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  color: var(--ink);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+}
+
+.publisher-profile-github-toggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
+.publisher-profile-github-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 150px;
+  gap: 10px;
+}
+
+.publisher-profile-github-grid label,
+.publisher-profile-github-roots {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.publisher-profile-github-grid label span,
+.publisher-profile-github-roots span {
+  color: var(--ink-soft);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+}
+
+.publisher-profile-github-grid input,
+.publisher-profile-github-select {
+  min-height: 36px;
+  font-size: var(--fs-xs);
+}
+
+.publisher-profile-github-select {
+  width: 100%;
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-sm);
+  background: var(--input-bg);
+  color: var(--ink);
+  padding: 0 10px;
+}
+
+.publisher-profile-github-roots textarea {
+  min-height: 76px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+.publisher-profile-github-repo-footer span,
+.publisher-profile-github-repo-footer div {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .publisher-profile-section-header {
   display: flex;
   align-items: center;
@@ -13368,6 +13518,25 @@ a.publisher-profile-detail:hover {
     flex-direction: column;
     gap: 12px;
   }
+
+  .publisher-profile-section-controls {
+    width: 100%;
+    align-items: flex-start;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .publisher-profile-github-header,
+  .publisher-profile-github-repo-heading,
+  .publisher-profile-github-repo-footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .publisher-profile-github-connect {
+    width: 100%;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
 }
 
 @media (max-width: 640px) {
@@ -13411,6 +13580,28 @@ a.publisher-profile-detail:hover {
   .publisher-profile-section-header {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .publisher-profile-section-controls {
+    width: 100%;
+    align-items: flex-start;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .publisher-profile-github-connect,
+  .publisher-profile-github-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .publisher-profile-github-connect button,
+  .publisher-profile-github-repo-footer div,
+  .publisher-profile-github-repo-footer button {
+    width: 100%;
+  }
+
+  .publisher-profile-github-repo-footer div {
+    justify-content: stretch;
   }
 
   .publisher-published-row {

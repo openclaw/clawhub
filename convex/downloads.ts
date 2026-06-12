@@ -69,13 +69,6 @@ export async function downloadZipHandler(
       headers: mergeHeaders(rate.headers, corsHeaders()),
     });
   }
-  if (version.softDeletedAt) {
-    return new Response("Version not available", {
-      status: 410,
-      headers: mergeHeaders(rate.headers, corsHeaders()),
-    });
-  }
-
   const moderationBlock = getPublicSkillVersionDownloadBlock(
     skillResult.moderationInfo,
     version,

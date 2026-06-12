@@ -8314,6 +8314,55 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
+  it("packages version detail blocks malicious skill compatibility versions", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args) return null;
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:demo",
+            slug: "demo",
+            displayName: "Demo Skill",
+            summary: "Skill summary",
+            latestVersionId: "skillVersions:demo-2",
+            tags: { latest: "skillVersions:demo-2" },
+            badges: {},
+            createdAt: 1,
+            updatedAt: 2,
+          },
+          latestVersion: null,
+          owner: { handle: "steipete", displayName: "Peter" },
+          moderationInfo: null,
+        };
+      }
+      if (args.version === "1.0.0") {
+        return {
+          _id: "skillVersions:demo-1",
+          skillId: "skills:demo",
+          version: "1.0.0",
+          createdAt: 3,
+          changelog: "init",
+          files: [{ path: "SKILL.md", size: 11, sha256: "abc" }],
+          llmAnalysis: {
+            status: "malicious",
+            verdict: "malicious",
+            checkedAt: 4,
+          },
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages/demo/versions/1.0.0"),
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.text()).toContain("flagged as malicious");
+  });
+
   it("packages detail returns not found for invalid package lookup names", async () => {
     const runQuery = vi.fn(async () => {
       throw new Error("unexpected package lookup");

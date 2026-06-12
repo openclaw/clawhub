@@ -1,16 +1,22 @@
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
-import { usePaginatedQuery, useQuery } from "convex/react";
+import { useAction, useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import {
   ArrowDownToLine,
   Building2,
+  GitBranch,
   Package,
+  PlugZap,
+  RefreshCw,
+  Save,
   Star,
   Users,
   Wrench,
   type LucideIcon,
 } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useState } from "react";
+import { toast } from "sonner";
 import { api } from "../../../convex/_generated/api";
+import type { Doc } from "../../../convex/_generated/dataModel";
 import { EmptyState } from "../../components/EmptyState";
 import { Container } from "../../components/layout/Container";
 import { MarketplaceIcon } from "../../components/MarketplaceIcon";
@@ -18,7 +24,10 @@ import { OfficialBadge, OfficialTag } from "../../components/OfficialBadge";
 import { BrowseResultsSkeleton } from "../../components/skeletons/BrowseResultsSkeleton";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent } from "../../components/ui/card";
+import { Input } from "../../components/ui/input";
 import { Skeleton } from "../../components/ui/skeleton";
+import { Textarea } from "../../components/ui/textarea";
+import { getUserFacingConvexError } from "../../lib/convexError";
 import { formatCompactStat } from "../../lib/numberFormat";
 import { buildPublisherMeta } from "../../lib/og";
 import type {
@@ -77,12 +86,41 @@ type PublisherMemberResult = {
 
 type PublishedView = "list" | "grid";
 type ProfileCatalogTab = "skills" | "plugins" | "stars";
+type PublisherMembership = {
+  publisher: PublicPublisher;
+  role: "owner" | "admin" | "publisher";
+};
+type GitHubRepositoryLink = Doc<"publisherGitHubRepositories"> & {
+  sourceLinkCount: number;
+};
+const INTERNAL_GITHUB_SYNC_PUBLISHER_HANDLE = "openclaw";
+const GITHUB_INSTALL_RETRY_DELAY_MS = 3_000;
+const GITHUB_INSTALL_MAX_RETRIES = 20;
 
 const roleColor: Record<string, "accent" | "default" | "compact"> = {
   owner: "accent",
   admin: "default",
   publisher: "compact",
 };
+
+export function canManagePublisherGitHubSync(
+  publisher: PublicPublisherListItem | null | undefined,
+  memberships: PublisherMembership[] | undefined,
+) {
+  const canManageViewedOrg =
+    publisher?.kind === "org" &&
+    Boolean(
+      memberships?.some(
+        (entry) =>
+          entry.publisher._id === publisher._id &&
+          (entry.role === "owner" || entry.role === "admin"),
+      ),
+    );
+  const isInternalRolloutUser = Boolean(
+    memberships?.some((entry) => entry.publisher.handle === INTERNAL_GITHUB_SYNC_PUBLISHER_HANDLE),
+  );
+  return canManageViewedOrg && isInternalRolloutUser;
+}
 
 function GitHubIcon({ size = 14 }: { size?: number }) {
   return (
@@ -113,6 +151,7 @@ function PublisherProfile() {
     api.publishers.getPublishedDisplayManifest,
     publishedQueryArgs,
   ) as PublicPublisherCatalogDisplay | null | undefined;
+  const myPublishers = useQuery(api.publishers.listMine, {}) as PublisherMembership[] | undefined;
   const members = useQuery(api.publishers.listMembers, { publisherHandle: handle }) as
     | PublisherMemberResult
     | null
@@ -137,6 +176,60 @@ function PublisherProfile() {
   );
   const publishedItems = (publishedResults ?? []) as PublicPublisherCatalogItem[];
   const starredItems = (starredResults ?? []) as PublicPublisherCatalogItem[];
+  const canManageGitHubSync = canManagePublisherGitHubSync(publisher, myPublishers);
+  const githubRepositories = useQuery(
+    api.githubApp.listPublisherRepositories,
+    canManageGitHubSync && publisher ? { publisherId: publisher._id } : "skip",
+  ) as GitHubRepositoryLink[] | undefined;
+  const completePublisherInstall = useAction(api.githubApp.completePublisherInstall);
+
+  useEffect(() => {
+    if (!canManageGitHubSync) return undefined;
+    const params = new URLSearchParams(window.location.search);
+    const state = params.get("state");
+    const installationId = params.get("installation_id");
+    if (!state || !installationId) return undefined;
+    let cancelled = false;
+    let attempts = 0;
+    let showedPendingToast = false;
+    let retryTimer: number | undefined;
+
+    const tryCompleteInstall = () => {
+      attempts += 1;
+      completePublisherInstall({ state, installationId })
+        .then((result) => {
+          if (cancelled) return;
+          toast.success(`Connected ${result.repositories.length} GitHub repositories`);
+          const next = new URL(window.location.href);
+          next.searchParams.delete("state");
+          next.searchParams.delete("installation_id");
+          next.searchParams.delete("setup_action");
+          window.history.replaceState(null, "", `${next.pathname}${next.search}${next.hash}`);
+        })
+        .catch((error: unknown) => {
+          if (cancelled) return;
+          const message = getUserFacingConvexError(error, "GitHub App connection failed");
+          const shouldRetry =
+            message.includes("GitHub installation confirmation is still pending") &&
+            attempts < GITHUB_INSTALL_MAX_RETRIES;
+          if (shouldRetry) {
+            if (!showedPendingToast) {
+              toast.error(`${message} Retrying...`);
+              showedPendingToast = true;
+            }
+            retryTimer = window.setTimeout(tryCompleteInstall, GITHUB_INSTALL_RETRY_DELAY_MS);
+            return;
+          }
+          toast.error(message);
+        });
+    };
+
+    tryCompleteInstall();
+    return () => {
+      cancelled = true;
+      if (retryTimer) window.clearTimeout(retryTimer);
+    };
+  }, [canManageGitHubSync, completePublisherInstall]);
 
   if (publisher === undefined) {
     return (
@@ -353,6 +446,10 @@ function PublisherProfile() {
             </aside>
 
             <section className="publisher-profile-main" aria-labelledby="publisher-published-title">
+              {canManageGitHubSync ? (
+                <GitHubSyncPanel publisher={publisher} repositories={githubRepositories} />
+              ) : null}
+
               <div className="publisher-profile-section-header">
                 <div>
                   <h2 id="publisher-published-title" className="sr-only">
@@ -427,6 +524,188 @@ function PublisherProfile() {
         </div>
       </Container>
     </main>
+  );
+}
+
+export function GitHubSyncPanel({
+  publisher,
+  repositories,
+}: {
+  publisher: PublicPublisherListItem;
+  repositories: GitHubRepositoryLink[] | undefined;
+}) {
+  const beginPublisherInstall = useAction(api.githubApp.beginPublisherInstall);
+  const [targetId, setTargetId] = useState("");
+  const [connecting, setConnecting] = useState(false);
+
+  const connect = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const trimmedTargetId = targetId.trim();
+    if (!trimmedTargetId) {
+      toast.error("GitHub account ID is required");
+      return;
+    }
+    setConnecting(true);
+    try {
+      const result = await beginPublisherInstall({
+        publisherId: publisher._id,
+        targetId: trimmedTargetId,
+      });
+      window.location.assign(result.url);
+    } catch (error) {
+      setConnecting(false);
+      toast.error(getUserFacingConvexError(error, "GitHub App setup failed"));
+    }
+  };
+
+  return (
+    <section className="publisher-profile-github-panel" aria-labelledby="publisher-github-title">
+      <div className="publisher-profile-github-header">
+        <div>
+          <h2 id="publisher-github-title">GitHub Sync</h2>
+          <span>{repositories === undefined ? "Loading" : `${repositories.length} repos`}</span>
+        </div>
+        <form className="publisher-profile-github-connect" onSubmit={connect}>
+          <Input
+            value={targetId}
+            onChange={(event) => setTargetId(event.target.value)}
+            inputMode="numeric"
+            placeholder="GitHub account ID"
+            aria-label="GitHub account ID"
+          />
+          <Button type="submit" size="sm" loading={connecting}>
+            <PlugZap size={14} aria-hidden="true" />
+            Connect
+          </Button>
+        </form>
+      </div>
+
+      {repositories === undefined ? (
+        <div className="publisher-profile-github-loading" role="status">
+          Loading GitHub repositories...
+        </div>
+      ) : repositories.length > 0 ? (
+        <div className="publisher-profile-github-repos">
+          {repositories.map((repo) => (
+            <GitHubRepositoryRow key={repo._id} repo={repo} />
+          ))}
+        </div>
+      ) : (
+        <p className="publisher-profile-empty-copy">No GitHub repositories connected.</p>
+      )}
+    </section>
+  );
+}
+
+function GitHubRepositoryRow({ repo }: { repo: GitHubRepositoryLink }) {
+  const updateRepositorySyncSettings = useMutation(api.githubApp.updateRepositorySyncSettings);
+  const queueRepositorySync = useMutation(api.githubApp.queueRepositorySync);
+  const [syncRef, setSyncRef] = useState(repo.syncRef);
+  const [syncRoots, setSyncRoots] = useState(repo.syncRoots.join("\n"));
+  const [mode, setMode] = useState<Doc<"publisherGitHubRepositories">["mode"]>(repo.mode);
+  const [enabled, setEnabled] = useState(repo.enabled);
+  const [saving, setSaving] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+
+  useEffect(() => {
+    setSyncRef(repo.syncRef);
+    setSyncRoots(repo.syncRoots.join("\n"));
+    setMode(repo.mode);
+    setEnabled(repo.enabled);
+  }, [repo._id, repo.enabled, repo.mode, repo.syncRef, repo.syncRoots]);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await updateRepositorySyncSettings({
+        repositoryId: repo._id,
+        syncRef,
+        syncRoots: syncRoots
+          .split("\n")
+          .map((root) => root.trim())
+          .filter(Boolean),
+        mode,
+        enabled,
+      });
+      toast.success("GitHub repository settings saved");
+    } catch (error) {
+      toast.error(getUserFacingConvexError(error, "Repository settings failed"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const syncNow = async () => {
+    setSyncing(true);
+    try {
+      await queueRepositorySync({ repositoryId: repo._id });
+      toast.success("GitHub sync queued");
+    } catch (error) {
+      toast.error(getUserFacingConvexError(error, "GitHub sync failed"));
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  return (
+    <article className="publisher-profile-github-repo">
+      <div className="publisher-profile-github-repo-heading">
+        <div>
+          <h3>{repo.repoFullName}</h3>
+          <span>
+            {repo.sourceLinkCount} linked · {repo.lastSyncStatus}
+          </span>
+        </div>
+        <label className="publisher-profile-github-toggle">
+          <input
+            type="checkbox"
+            checked={enabled}
+            onChange={(event) => setEnabled(event.target.checked)}
+          />
+          Enabled
+        </label>
+      </div>
+
+      <div className="publisher-profile-github-grid">
+        <label>
+          <span>Branch</span>
+          <Input value={syncRef} onChange={(event) => setSyncRef(event.target.value)} />
+        </label>
+        <label>
+          <span>Mode</span>
+          <select
+            className="publisher-profile-github-select"
+            value={mode}
+            onChange={(event) => setMode(event.target.value === "mapped" ? "mapped" : "discover")}
+          >
+            <option value="discover">Discover</option>
+            <option value="mapped">Mapped</option>
+          </select>
+        </label>
+      </div>
+
+      <label className="publisher-profile-github-roots">
+        <span>Roots</span>
+        <Textarea value={syncRoots} onChange={(event) => setSyncRoots(event.target.value)} />
+      </label>
+
+      <div className="publisher-profile-github-repo-footer">
+        <span>
+          <GitBranch size={14} aria-hidden="true" />
+          {repo.lastSyncedCommit ? repo.lastSyncedCommit.slice(0, 7) : repo.defaultBranch}
+        </span>
+        <div>
+          <Button type="button" size="sm" variant="outline" onClick={syncNow} loading={syncing}>
+            <RefreshCw size={14} aria-hidden="true" />
+            Sync
+          </Button>
+          <Button type="button" size="sm" onClick={save} loading={saving}>
+            <Save size={14} aria-hidden="true" />
+            Save
+          </Button>
+        </div>
+      </div>
+    </article>
   );
 }
 
