@@ -31,6 +31,7 @@ const {
   placeUserUnderModerationInternal,
   liftModerationHoldInternal,
   purgeSelfDeletedAccountRecoveryBatchInternal,
+  ensurePublisherHandleInternal,
   reserveHandleInternal,
   syncGitHubProfileInternal,
   updateProfile,
@@ -698,29 +699,32 @@ describe("ensureHandler", () => {
     });
   });
 
-  it("skips public route owner handles when deriving a handle", async () => {
-    const { ctx, patch } = makeCtx();
-    vi.mocked(requireUser).mockResolvedValue({
-      userId: "users:skills",
-      user: {
-        _creationTime: 1,
-        handle: undefined,
-        displayName: undefined,
-        name: "skills",
-        email: undefined,
-        role: "user",
-        createdAt: 1,
-      },
-    } as never);
+  it.each(["docs", "skills"])(
+    "skips public route owner handle %s when deriving a handle",
+    async (handle) => {
+      const { ctx, patch } = makeCtx();
+      vi.mocked(requireUser).mockResolvedValue({
+        userId: `users:${handle}`,
+        user: {
+          _creationTime: 1,
+          handle: undefined,
+          displayName: undefined,
+          name: handle,
+          email: undefined,
+          role: "user",
+          createdAt: 1,
+        },
+      } as never);
 
-    await ensureHandler(ctx);
+      await ensureHandler(ctx);
 
-    expect(patch).toHaveBeenCalledWith("users:skills", {
-      handle: "skills-2",
-      displayName: "skills-2",
-      updatedAt: expect.any(Number),
-    });
-  });
+      expect(patch).toHaveBeenCalledWith(`users:${handle}`, {
+        handle: `${handle}-2`,
+        displayName: `${handle}-2`,
+        updatedAt: expect.any(Number),
+      });
+    },
+  );
 
   it("repairs an existing handle that is no longer claimable", async () => {
     const { ctx, patch, query } = makeCtx();
@@ -1338,6 +1342,30 @@ describe("users.getByHandle", () => {
     expect(publisherUnique).toHaveBeenCalledOnce();
     expect(get).not.toHaveBeenCalled();
     expect(result).toBeNull();
+  });
+});
+
+describe("users.ensurePublisherHandleInternal", () => {
+  it("rejects public route owner handles", async () => {
+    const { ctx, get, insert } = makeCtx();
+    get.mockResolvedValue({ _id: "users:admin", role: "admin" });
+    const handler = (
+      ensurePublisherHandleInternal as unknown as {
+        _handler: (
+          ctx: unknown,
+          args: { actorUserId: string; handle: string; displayName?: string },
+        ) => Promise<unknown>;
+      }
+    )._handler;
+
+    await expect(
+      handler(ctx, {
+        actorUserId: "users:admin",
+        handle: "docs",
+        displayName: "Docs",
+      }),
+    ).rejects.toThrow('Handle "@docs" is reserved for ClawHub routes');
+    expect(insert).not.toHaveBeenCalled();
   });
 });
 

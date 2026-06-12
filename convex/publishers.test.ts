@@ -890,7 +890,7 @@ describe("publishers membership controls", () => {
     });
   });
 
-  it.each(["admin", "skills"])(
+  it.each(["admin", "docs", "skills"])(
     "rejects org handle %s reserved for public routes",
     async (handle) => {
       const ctx = {

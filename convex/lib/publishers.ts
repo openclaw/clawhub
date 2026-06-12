@@ -1,6 +1,7 @@
 import { ConvexError } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
+import { isReservedPublicOwnerHandle } from "./publicRouteReservations";
 
 export type PublisherRole = "owner" | "admin" | "publisher";
 
@@ -29,7 +30,9 @@ function normalizeGeneratedPublisherHandle(handle: string | undefined | null) {
     ?.replace(/[^a-z0-9_-]+/g, "-")
     .replace(/-+/g, "-")
     .replace(/^[-_]+|[-_]+$/g, "");
-  return sanitized || undefined;
+  if (!sanitized) return undefined;
+  if (!isReservedPublicOwnerHandle(sanitized)) return sanitized;
+  return `${sanitized.slice(0, 38)}-2`;
 }
 
 export function derivePersonalPublisherHandle(user: Doc<"users">) {

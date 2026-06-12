@@ -12,7 +12,10 @@ import {
 import { isLocalDevAuthEnabled } from "./lib/devAuth";
 import { syncGitHubProfile } from "./lib/githubAccount";
 import { toPublicUser } from "./lib/public";
-import { isReservedPublicOwnerHandle } from "./lib/publicRouteReservations";
+import {
+  formatReservedPublicOwnerHandleMessage,
+  isReservedPublicOwnerHandle,
+} from "./lib/publicRouteReservations";
 import {
   ensurePersonalPublisherForUser,
   getActiveUserByHandleOrPersonalPublisher,
@@ -1982,6 +1985,9 @@ async function ensurePublisherHandleWithActor(
 
   const normalizedHandle = normalizeReservedHandle(args.handle);
   if (!normalizedHandle) throw new Error("Handle required");
+  if (isReservedPublicOwnerHandle(normalizedHandle)) {
+    throw new ConvexError(formatReservedPublicOwnerHandleMessage(normalizedHandle));
+  }
 
   const existing = await ctx.db
     .query("users")
