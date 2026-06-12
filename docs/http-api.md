@@ -1377,9 +1377,14 @@ The endpoint defaults to dry-run. Applying recovery requires `dryRun: false` and
 `confirmIdentityVerified: true` after staff independently verify continuity between both
 GitHub principals. Recovery fails closed when the destination user's current personal
 publisher has skills, packages, or GitHub skill sources.
+Recovery also migrates legacy `ownerUserId` fields for the recovered publisher's skills,
+skill slug aliases, packages, package inspector warnings, and derived search digest rows so
+direct-owner paths agree with the new publisher authority. Each primary table is bounded to
+100 rows per apply transaction; larger recoveries must first use a resumable owner migration.
+GitHub skill sources are publisher-scoped and reported as checked rather than rewritten.
 
 - Body: `{ "handle": "gingiris", "nextUserHandle": "gingiris-1031", "previousGitHubProviderAccountId": "123", "nextGitHubProviderAccountId": "456", "reason": "Verified account continuity for issue #2555", "confirmIdentityVerified": true, "dryRun": false }`
-- Response: `{ "ok": true, "dryRun": false, "recovered": true, "publisherId": "...", "handle": "gingiris", "previousUser": { "userId": "...", "handle": "gingiris", "nextHandle": "gingiris-recovered", "githubProviderAccountId": "123", "authAccountCount": 1 }, "nextUser": { "userId": "...", "handle": "gingiris-1031", "nextHandle": "gingiris", "githubProviderAccountId": "456", "authAccountCount": 1 }, "retiredPersonalPublisher": null, "identityVerified": true, "reason": "Verified account continuity for issue #2555" }`
+- Response: `{ "ok": true, "dryRun": false, "recovered": true, "publisherId": "...", "handle": "gingiris", "previousUser": { "userId": "...", "handle": "gingiris", "nextHandle": "gingiris-recovered", "githubProviderAccountId": "123", "authAccountCount": 1 }, "nextUser": { "userId": "...", "handle": "gingiris-1031", "nextHandle": "gingiris", "githubProviderAccountId": "456", "authAccountCount": 1 }, "retiredPersonalPublisher": null, "resourceOwnerMigration": { "limitPerTable": 100, "skills": 1, "skillSlugAliases": 1, "packages": 0, "packageInspectorWarnings": 0, "githubSourcesChecked": 1 }, "identityVerified": true, "reason": "Verified account continuity for issue #2555" }`
 
 ### Owner slug management endpoints
 

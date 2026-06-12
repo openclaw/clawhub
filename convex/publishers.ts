@@ -7,6 +7,7 @@ import { internalMutation, internalQuery, mutation, query } from "./functions";
 import { assertAdmin, getOptionalActiveAuthUserId, requireUser } from "./lib/access";
 import { isPublicSkillDoc } from "./lib/globalStats";
 import { isOfficialPublisher, toPublicPublisherWithOfficial } from "./lib/officialPublishers";
+import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
 import { toPublicPublisher } from "./lib/public";
 import {
   formatReservedPublicOwnerHandleMessage,
@@ -22,6 +23,7 @@ import {
   canAccessPublisherOwnerScope,
   ensurePersonalPublisherForUser,
   getActiveUserByHandleOrPersonalPublisher,
+  getOwnerPublisher,
   getPublisherByHandle,
   getPublisherMembership,
   getPersonalPublisherForUserOrFallback,
@@ -33,11 +35,13 @@ import {
   normalizePublisherHandle,
 } from "./lib/publishers";
 import { isHandleReservedForAnotherUser } from "./lib/reservedHandles";
+import { syncSkillSearchDigestForSkill } from "./lib/skillSearchDigest";
 import { readCanonicalStat } from "./lib/skillStats";
 
 const MAX_PUBLIC_PUBLISHER_LIST_LIMIT = 500;
 const PUBLISHER_LIST_PREVIEW_LIMIT = 3;
 const GITHUB_AUTH_ACCOUNT_RECOVERY_MATCH_LIMIT = 10;
+const PERSONAL_PUBLISHER_RECOVERY_OWNER_MIGRATION_LIMIT = 100;
 const publisherRoleValidator = v.union(
   v.literal("owner"),
   v.literal("admin"),
@@ -1046,6 +1050,128 @@ async function getRecoveryPersonalPublisherForUser(
   return await getPersonalPublisherForUser(ctx, user._id);
 }
 
+function getUnexpectedRecoveryOwnerRows(
+  table: "skills" | "skillSlugAliases" | "packages" | "packageInspectorWarnings",
+  rows: Array<{ _id: string; ownerUserId: Id<"users"> }>,
+  previousUserId: Id<"users">,
+  nextUserId: Id<"users">,
+) {
+  return rows
+    .filter((row) => row.ownerUserId !== previousUserId && row.ownerUserId !== nextUserId)
+    .map((row) => ({ table, id: row._id, ownerUserId: row.ownerUserId }));
+}
+
+async function getPersonalPublisherRecoveryOwnerMigrationPlan(
+  ctx: Pick<MutationCtx, "db">,
+  publisherId: Id<"publishers">,
+  previousUserId: Id<"users">,
+  nextUserId: Id<"users">,
+) {
+  const limit = PERSONAL_PUBLISHER_RECOVERY_OWNER_MIGRATION_LIMIT;
+  const takeLimit = limit + 1;
+  const [skills, skillSlugAliases, packages, packageInspectorWarnings, githubSources] =
+    await Promise.all([
+      ctx.db
+        .query("skills")
+        .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", publisherId))
+        .take(takeLimit),
+      ctx.db
+        .query("skillSlugAliases")
+        .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", publisherId))
+        .take(takeLimit),
+      ctx.db
+        .query("packages")
+        .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", publisherId))
+        .take(takeLimit),
+      ctx.db
+        .query("packageInspectorWarnings")
+        .withIndex("by_owner_publisher_created", (q) => q.eq("ownerPublisherId", publisherId))
+        .take(takeLimit),
+      ctx.db
+        .query("githubSkillSources")
+        .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", publisherId))
+        .take(takeLimit),
+    ]);
+  const overflowTables = [
+    skills.length > limit ? "skills" : null,
+    skillSlugAliases.length > limit ? "skillSlugAliases" : null,
+    packages.length > limit ? "packages" : null,
+    packageInspectorWarnings.length > limit ? "packageInspectorWarnings" : null,
+    githubSources.length > limit ? "githubSkillSources" : null,
+  ].filter((table): table is string => table !== null);
+  if (overflowTables.length > 0) {
+    throw new ConvexError(
+      `Publisher has more than ${limit} rows in ${overflowTables.join(", ")}; use a resumable owner migration before recovery`,
+    );
+  }
+
+  const unexpectedOwnerRows = [
+    ...getUnexpectedRecoveryOwnerRows("skills", skills, previousUserId, nextUserId),
+    ...getUnexpectedRecoveryOwnerRows(
+      "skillSlugAliases",
+      skillSlugAliases,
+      previousUserId,
+      nextUserId,
+    ),
+    ...getUnexpectedRecoveryOwnerRows("packages", packages, previousUserId, nextUserId),
+    ...getUnexpectedRecoveryOwnerRows(
+      "packageInspectorWarnings",
+      packageInspectorWarnings,
+      previousUserId,
+      nextUserId,
+    ),
+  ];
+  if (unexpectedOwnerRows.length > 0) {
+    const first = unexpectedOwnerRows[0];
+    throw new ConvexError(
+      `Publisher resource ${first.table}:${first.id} belongs to another user; manual reconciliation required`,
+    );
+  }
+
+  return {
+    limitPerTable: limit,
+    skills: skills.filter((row) => row.ownerUserId === previousUserId),
+    skillSlugAliases: skillSlugAliases.filter((row) => row.ownerUserId === previousUserId),
+    packages: packages.filter((row) => row.ownerUserId === previousUserId),
+    packageInspectorWarnings: packageInspectorWarnings.filter(
+      (row) => row.ownerUserId === previousUserId,
+    ),
+    githubSources,
+  };
+}
+
+async function applyPersonalPublisherRecoveryOwnerMigration(
+  ctx: Pick<MutationCtx, "db">,
+  plan: Awaited<ReturnType<typeof getPersonalPublisherRecoveryOwnerMigrationPlan>>,
+  nextUserId: Id<"users">,
+  now: number,
+) {
+  for (const skill of plan.skills) {
+    const nextSkill = { ...skill, ownerUserId: nextUserId, updatedAt: now };
+    await ctx.db.patch(skill._id, { ownerUserId: nextUserId, updatedAt: now });
+    await syncSkillSearchDigestForSkill(ctx, nextSkill);
+  }
+  for (const alias of plan.skillSlugAliases) {
+    await ctx.db.patch(alias._id, { ownerUserId: nextUserId, updatedAt: now });
+  }
+  for (const pkg of plan.packages) {
+    const nextPackage = { ...pkg, ownerUserId: nextUserId, updatedAt: now };
+    await ctx.db.patch(pkg._id, { ownerUserId: nextUserId, updatedAt: now });
+    const owner = await getOwnerPublisher(ctx, {
+      ownerPublisherId: nextPackage.ownerPublisherId,
+      ownerUserId: nextPackage.ownerUserId,
+    });
+    await upsertPackageSearchDigest(ctx, {
+      ...extractPackageDigestFields(nextPackage),
+      ownerHandle: owner?.handle ?? "",
+      ownerKind: owner?.kind,
+    });
+  }
+  for (const warning of plan.packageInspectorWarnings) {
+    await ctx.db.patch(warning._id, { ownerUserId: nextUserId });
+  }
+}
+
 export const recoverPersonalPublisherInternal = internalMutation({
   args: {
     actorUserId: v.id("users"),
@@ -1150,6 +1276,20 @@ export const recoverPersonalPublisherInternal = internalMutation({
         `Destination user has resources under @${retiredPersonalPublisher?.handle}; transfer or remove them before recovery`,
       );
     }
+    const resourceOwnerMigrationPlan = await getPersonalPublisherRecoveryOwnerMigrationPlan(
+      ctx,
+      publisher._id,
+      previousUser._id,
+      nextUser._id,
+    );
+    const resourceOwnerMigration = {
+      limitPerTable: resourceOwnerMigrationPlan.limitPerTable,
+      skills: resourceOwnerMigrationPlan.skills.length,
+      skillSlugAliases: resourceOwnerMigrationPlan.skillSlugAliases.length,
+      packages: resourceOwnerMigrationPlan.packages.length,
+      packageInspectorWarnings: resourceOwnerMigrationPlan.packageInspectorWarnings.length,
+      githubSourcesChecked: resourceOwnerMigrationPlan.githubSources.length,
+    };
 
     const retiredHandleBase =
       normalizePublisherHandle(args.retiredUserHandle) ?? `${publisher.handle}-recovered`;
@@ -1195,6 +1335,12 @@ export const recoverPersonalPublisherInternal = internalMutation({
         linkedUserId: nextUser._id,
         updatedAt: now,
       });
+      await applyPersonalPublisherRecoveryOwnerMigration(
+        ctx,
+        resourceOwnerMigrationPlan,
+        nextUser._id,
+        now,
+      );
 
       const members = await ctx.db
         .query("publisherMembers")
@@ -1244,6 +1390,7 @@ export const recoverPersonalPublisherInternal = internalMutation({
           previousUserNextHandle: nextPreviousUserHandle,
           nextUserPreviousHandle,
           nextUserNextHandle: publisher.handle,
+          resourceOwnerMigration,
           retiredPersonalPublisher: retiredPersonalPublisher
             ? {
                 publisherId: retiredPersonalPublisher._id,
@@ -1284,6 +1431,7 @@ export const recoverPersonalPublisherInternal = internalMutation({
             githubSources: retiredPersonalPublisherCounts?.githubSources ?? 0,
           }
         : null,
+      resourceOwnerMigration,
       identityVerified: args.confirmIdentityVerified,
       reason,
     };

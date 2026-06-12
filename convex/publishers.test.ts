@@ -130,6 +130,14 @@ const recoverPersonalPublisherInternalHandler = (
         packages: number;
         githubSources: number;
       } | null;
+      resourceOwnerMigration: {
+        limitPerTable: number;
+        skills: number;
+        skillSlugAliases: number;
+        packages: number;
+        packageInspectorWarnings: number;
+        githubSourcesChecked: number;
+      };
     }
   >
 )._handler;
@@ -4153,7 +4161,14 @@ describe("self-serve org publisher creation", () => {
 });
 
 describe("legacy publisher migration", () => {
-  function makePersonalPublisherRecoveryCtx(options: { destinationHasResources?: boolean } = {}) {
+  function makePersonalPublisherRecoveryCtx(
+    options: {
+      destinationHasResources?: boolean;
+      legacyResources?: boolean;
+      tooManyLegacySkills?: boolean;
+      unexpectedResourceOwner?: boolean;
+    } = {},
+  ) {
     const users = new Map<string, Record<string, unknown>>([
       ["users:admin", { _id: "users:admin", role: "admin", handle: "admin" }],
       [
@@ -4237,16 +4252,184 @@ describe("legacy publisher migration", () => {
         },
       ],
     ]);
+    const baseSkill = {
+      _id: "skills:legacy-skill",
+      slug: "demo-skill",
+      displayName: "Demo Skill",
+      summary: "Recovered skill",
+      ownerUserId: options.unexpectedResourceOwner ? "users:someone-else" : "users:legacy",
+      ownerPublisherId: "publishers:gingiris",
+      forkOf: undefined,
+      tags: {},
+      badges: {},
+      stats: {
+        downloads: 0,
+        stars: 0,
+        comments: 0,
+        installsCurrent: 0,
+        installsAllTime: 0,
+      },
+      moderationStatus: "approved",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const skills = new Map<string, Record<string, unknown>>(
+      options.legacyResources
+        ? [["skills:legacy-skill", baseSkill]]
+        : options.tooManyLegacySkills
+          ? Array.from({ length: 101 }, (_, index) => [
+              `skills:legacy-${index}`,
+              {
+                ...baseSkill,
+                _id: `skills:legacy-${index}`,
+                slug: `demo-skill-${index}`,
+              },
+            ])
+          : [],
+    );
+    const skillSlugAliases = new Map<string, Record<string, unknown>>(
+      options.legacyResources
+        ? [
+            [
+              "skillSlugAliases:legacy",
+              {
+                _id: "skillSlugAliases:legacy",
+                slug: "old-demo-skill",
+                skillId: "skills:legacy-skill",
+                ownerUserId: "users:legacy",
+                ownerPublisherId: "publishers:gingiris",
+                createdAt: 1,
+                updatedAt: 1,
+              },
+            ],
+          ]
+        : [],
+    );
+    const skillSearchDigest = new Map<string, Record<string, unknown>>(
+      options.legacyResources
+        ? [
+            [
+              "skillSearchDigest:legacy",
+              {
+                _id: "skillSearchDigest:legacy",
+                skillId: "skills:legacy-skill",
+                ownerUserId: "users:legacy",
+                ownerPublisherId: "publishers:gingiris",
+              },
+            ],
+          ]
+        : [],
+    );
+    const basePackage = {
+      _id: "packages:legacy-package",
+      name: "@gingiris/demo-plugin",
+      normalizedName: "@gingiris/demo-plugin",
+      displayName: "Demo Plugin",
+      ownerUserId: "users:legacy",
+      ownerPublisherId: "publishers:gingiris",
+      family: "code-plugin",
+      channel: "community",
+      isOfficial: false,
+      tags: {},
+      capabilityTags: ["tools"],
+      compatibility: {},
+      capabilities: {},
+      verification: {},
+      scanStatus: "pending",
+      stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const packages = new Map<string, Record<string, unknown>>(
+      options.legacyResources ? [["packages:legacy-package", basePackage]] : [],
+    );
+    const packageSearchDigest = new Map<string, Record<string, unknown>>(
+      options.legacyResources
+        ? [
+            [
+              "packageSearchDigest:legacy",
+              {
+                _id: "packageSearchDigest:legacy",
+                packageId: "packages:legacy-package",
+                ownerUserId: "users:legacy",
+                ownerPublisherId: "publishers:gingiris",
+              },
+            ],
+          ]
+        : [],
+    );
+    const packageCapabilitySearchDigest = new Map<string, Record<string, unknown>>(
+      options.legacyResources
+        ? [
+            [
+              "packageCapabilitySearchDigest:legacy-tools",
+              {
+                _id: "packageCapabilitySearchDigest:legacy-tools",
+                packageId: "packages:legacy-package",
+                capabilityTag: "tools",
+                ownerUserId: "users:legacy",
+                ownerPublisherId: "publishers:gingiris",
+              },
+            ],
+          ]
+        : [],
+    );
+    const packagePluginCategorySearchDigest = new Map<string, Record<string, unknown>>();
+    const packageInspectorWarnings = new Map<string, Record<string, unknown>>(
+      options.legacyResources
+        ? [
+            [
+              "packageInspectorWarnings:legacy",
+              {
+                _id: "packageInspectorWarnings:legacy",
+                packageId: "packages:legacy-package",
+                releaseId: "packageReleases:legacy",
+                ownerUserId: "users:legacy",
+                ownerPublisherId: "publishers:gingiris",
+                createdAt: 1,
+              },
+            ],
+          ]
+        : [],
+    );
+    const githubSkillSources = new Map<string, Record<string, unknown>>(
+      options.legacyResources
+        ? [
+            [
+              "githubSkillSources:legacy",
+              {
+                _id: "githubSkillSources:legacy",
+                repo: "gingiris/skills",
+                ownerPublisherId: "publishers:gingiris",
+              },
+            ],
+          ]
+        : [],
+    );
     const inserts: Array<{ table: string; value: Record<string, unknown> }> = [];
     const patches: Array<{ id: string; patch: Record<string, unknown> }> = [];
     const deletes: string[] = [];
 
+    const allRows = [
+      users,
+      publishers,
+      publisherMembers,
+      skills,
+      skillSlugAliases,
+      skillSearchDigest,
+      packages,
+      packageSearchDigest,
+      packageCapabilitySearchDigest,
+      packagePluginCategorySearchDigest,
+      packageInspectorWarnings,
+      githubSkillSources,
+    ];
     const get = vi.fn(async (id: string) => {
-      return users.get(id) ?? publishers.get(id) ?? publisherMembers.get(id) ?? null;
+      return allRows.map((rows) => rows.get(id)).find(Boolean) ?? null;
     });
     const patch = vi.fn(async (id: string, patchValue: Record<string, unknown>) => {
       patches.push({ id, patch: patchValue });
-      const row = users.get(id) ?? publishers.get(id) ?? publisherMembers.get(id);
+      const row = allRows.map((rows) => rows.get(id)).find(Boolean);
       if (row) Object.assign(row, patchValue);
     });
     const insert = vi.fn(async (table: string, value: Record<string, unknown>) => {
@@ -4254,11 +4437,19 @@ describe("legacy publisher migration", () => {
       const row = { _id: id, ...value };
       inserts.push({ table, value: row });
       if (table === "publisherMembers") publisherMembers.set(id, row);
+      if (table === "skillSearchDigest") skillSearchDigest.set(id, row);
+      if (table === "packageSearchDigest") packageSearchDigest.set(id, row);
+      if (table === "packageCapabilitySearchDigest") packageCapabilitySearchDigest.set(id, row);
+      if (table === "packagePluginCategorySearchDigest") {
+        packagePluginCategorySearchDigest.set(id, row);
+      }
       return id;
     });
     const deleteFn = vi.fn(async (id: string) => {
       deletes.push(id);
       publisherMembers.delete(id);
+      packageCapabilitySearchDigest.delete(id);
+      packagePluginCategorySearchDigest.delete(id);
     });
     const query = vi.fn((table: string) => ({
       withIndex: vi.fn(
@@ -4293,6 +4484,20 @@ describe("legacy publisher migration", () => {
                   ) ?? null
                 );
               }
+              if (table === "skillSearchDigest" && fields.skillId) {
+                return (
+                  [...skillSearchDigest.values()].find(
+                    (digest) => digest.skillId === fields.skillId,
+                  ) ?? null
+                );
+              }
+              if (table === "packageSearchDigest" && fields.packageId) {
+                return (
+                  [...packageSearchDigest.values()].find(
+                    (digest) => digest.packageId === fields.packageId,
+                  ) ?? null
+                );
+              }
               return null;
             }),
             take: vi.fn(async () => {
@@ -4308,12 +4513,49 @@ describe("legacy publisher migration", () => {
                   (member) => member.publisherId === fields.publisherId,
                 );
               }
+              if (table === "skills" && fields.ownerPublisherId === "publishers:gingiris") {
+                return [...skills.values()];
+              }
+              if (
+                table === "skillSlugAliases" &&
+                fields.ownerPublisherId === "publishers:gingiris"
+              ) {
+                return [...skillSlugAliases.values()];
+              }
+              if (table === "packages" && fields.ownerPublisherId === "publishers:gingiris") {
+                return [...packages.values()];
+              }
+              if (
+                table === "packageInspectorWarnings" &&
+                fields.ownerPublisherId === "publishers:gingiris"
+              ) {
+                return [...packageInspectorWarnings.values()];
+              }
+              if (
+                table === "githubSkillSources" &&
+                fields.ownerPublisherId === "publishers:gingiris"
+              ) {
+                return [...githubSkillSources.values()];
+              }
               if (
                 options.destinationHasResources &&
                 (table === "skills" || table === "packages" || table === "githubSkillSources") &&
                 fields.ownerPublisherId === "publishers:gingiris-1031"
               ) {
                 return [{ _id: `${table}:resource` }];
+              }
+              return [];
+            }),
+            collect: vi.fn(async () => {
+              if (table === "packageCapabilitySearchDigest" && fields.packageId) {
+                return [...packageCapabilitySearchDigest.values()].filter(
+                  (digest) => digest.packageId === fields.packageId,
+                );
+              }
+              if (table === "packagePluginCategorySearchDigest" && fields.packageId) {
+                return [...packagePluginCategorySearchDigest.values()].filter(
+                  (digest) => digest.packageId === fields.packageId,
+                );
               }
               return [];
             }),
@@ -4338,13 +4580,34 @@ describe("legacy publisher migration", () => {
       inserts,
       patches,
       deletes,
+      skills,
+      skillSlugAliases,
+      skillSearchDigest,
+      packages,
+      packageSearchDigest,
+      packageCapabilitySearchDigest,
+      packageInspectorWarnings,
+      githubSkillSources,
     };
   }
 
   it("recovers a personal publisher for a verified replacement GitHub principal", async () => {
     vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
-    const { ctx, users, publishers, inserts, patches, deletes } =
-      makePersonalPublisherRecoveryCtx();
+    const {
+      ctx,
+      users,
+      publishers,
+      inserts,
+      patches,
+      deletes,
+      skills,
+      skillSlugAliases,
+      skillSearchDigest,
+      packages,
+      packageSearchDigest,
+      packageCapabilitySearchDigest,
+      packageInspectorWarnings,
+    } = makePersonalPublisherRecoveryCtx({ legacyResources: true });
 
     const result = await recoverPersonalPublisherInternalHandler(ctx as never, {
       actorUserId: "users:admin",
@@ -4369,6 +4632,13 @@ describe("legacy publisher migration", () => {
         publisherId: "publishers:gingiris-1031",
         handle: "gingiris-1031",
       },
+      resourceOwnerMigration: {
+        skills: 1,
+        skillSlugAliases: 1,
+        packages: 1,
+        packageInspectorWarnings: 1,
+        githubSourcesChecked: 1,
+      },
     });
     expect(users.get("users:legacy")).toMatchObject({
       handle: "gingiris-recovered",
@@ -4384,6 +4654,41 @@ describe("legacy publisher migration", () => {
     expect(publishers.get("publishers:gingiris-1031")).toMatchObject({
       linkedUserId: undefined,
       deactivatedAt: 1_700_000_000_000,
+    });
+    expect(skills.get("skills:legacy-skill")).toMatchObject({
+      ownerUserId: "users:current",
+      updatedAt: 1_700_000_000_000,
+    });
+    expect(skillSlugAliases.get("skillSlugAliases:legacy")).toMatchObject({
+      ownerUserId: "users:current",
+      updatedAt: 1_700_000_000_000,
+    });
+    expect(skillSearchDigest.get("skillSearchDigest:legacy")).toMatchObject({
+      ownerUserId: "users:current",
+      ownerPublisherId: "publishers:gingiris",
+      ownerHandle: "gingiris",
+      ownerKind: "user",
+    });
+    expect(packages.get("packages:legacy-package")).toMatchObject({
+      ownerUserId: "users:current",
+      updatedAt: 1_700_000_000_000,
+    });
+    expect(packageSearchDigest.get("packageSearchDigest:legacy")).toMatchObject({
+      ownerUserId: "users:current",
+      ownerPublisherId: "publishers:gingiris",
+      ownerHandle: "gingiris",
+      ownerKind: "user",
+    });
+    expect(
+      packageCapabilitySearchDigest.get("packageCapabilitySearchDigest:legacy-tools"),
+    ).toMatchObject({
+      ownerUserId: "users:current",
+      ownerPublisherId: "publishers:gingiris",
+      ownerHandle: "gingiris",
+      ownerKind: "user",
+    });
+    expect(packageInspectorWarnings.get("packageInspectorWarnings:legacy")).toMatchObject({
+      ownerUserId: "users:current",
     });
     expect(deletes).toContain("publisherMembers:legacy");
     expect(inserts).toContainEqual(
@@ -4408,6 +4713,11 @@ describe("legacy publisher migration", () => {
             previousGitHubProviderAccountId: "111",
             nextGitHubProviderAccountId: "222",
             identityVerified: true,
+            resourceOwnerMigration: expect.objectContaining({
+              skills: 1,
+              packages: 1,
+              packageInspectorWarnings: 1,
+            }),
           }),
         }),
       }),
@@ -4418,6 +4728,13 @@ describe("legacy publisher migration", () => {
         "users:legacy",
         "users:current",
         "publishers:gingiris",
+        "skills:legacy-skill",
+        "skillSearchDigest:legacy",
+        "skillSlugAliases:legacy",
+        "packages:legacy-package",
+        "packageSearchDigest:legacy",
+        "packageCapabilitySearchDigest:legacy-tools",
+        "packageInspectorWarnings:legacy",
       ]),
     );
   });
@@ -4439,6 +4756,49 @@ describe("legacy publisher migration", () => {
         dryRun: false,
       }),
     ).rejects.toThrow(/has resources/i);
+    expect(patches).toHaveLength(0);
+    expect(inserts).toHaveLength(0);
+  });
+
+  it("fails closed when recovered publisher resources belong to another user", async () => {
+    const { ctx, inserts, patches } = makePersonalPublisherRecoveryCtx({
+      legacyResources: true,
+      unexpectedResourceOwner: true,
+    });
+
+    await expect(
+      recoverPersonalPublisherInternalHandler(ctx as never, {
+        actorUserId: "users:admin",
+        publisherHandle: "gingiris",
+        previousGitHubProviderAccountId: "111",
+        nextGitHubProviderAccountId: "222",
+        nextUserHandle: "gingiris-1031",
+        reason: "Verified account continuity for issue #2555",
+        confirmIdentityVerified: true,
+        dryRun: false,
+      }),
+    ).rejects.toThrow(/another user/i);
+    expect(patches).toHaveLength(0);
+    expect(inserts).toHaveLength(0);
+  });
+
+  it("fails closed when recovered publisher resource migration exceeds the bounded batch", async () => {
+    const { ctx, inserts, patches } = makePersonalPublisherRecoveryCtx({
+      tooManyLegacySkills: true,
+    });
+
+    await expect(
+      recoverPersonalPublisherInternalHandler(ctx as never, {
+        actorUserId: "users:admin",
+        publisherHandle: "gingiris",
+        previousGitHubProviderAccountId: "111",
+        nextGitHubProviderAccountId: "222",
+        nextUserHandle: "gingiris-1031",
+        reason: "Verified account continuity for issue #2555",
+        confirmIdentityVerified: true,
+        dryRun: false,
+      }),
+    ).rejects.toThrow(/resumable owner migration/i);
     expect(patches).toHaveLength(0);
     expect(inserts).toHaveLength(0);
   });

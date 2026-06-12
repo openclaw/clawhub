@@ -39,7 +39,11 @@ supported permanent recovery path is an admin-only personal publisher recovery
 operation that requires both immutable GitHub `providerAccountId` values, verifies
 that each maps unambiguously to exactly one ClawHub user, confirms staff identity
 continuity verification, moves the previous user's handle/personal-publisher
-pointer out of the way, links the publisher to the verified replacement user, and
-writes an audit log. Recovery must fail closed if the replacement user's current
-personal publisher has content or GitHub source state that would be orphaned by
-the handoff.
+pointer out of the way, links the publisher to the verified replacement user,
+updates every bounded legacy `ownerUserId` row that remains authoritative for the
+recovered publisher's direct-owner workflows, and writes an audit log. Recovery
+must fail closed if the replacement user's current personal publisher has content
+or GitHub source state that would be orphaned by the handoff. It must also fail
+closed if recovered publisher resources are already attributed to a third user,
+or if the affected primary resource rows exceed the bounded single-transaction
+limit; those cases require an explicit resumable migration before recovery.

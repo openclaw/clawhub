@@ -273,8 +273,12 @@ export async function cmdRecoverPersonalPublisher(
     );
     if (options.json) {
       process.stdout.write(`${JSON.stringify(parsed, null, 2)}\n`);
-    } else if (dryRun) {
-      console.log("Re-run with --apply --verified --yes to write this recovery.");
+    } else {
+      const migration = parsed.resourceOwnerMigration;
+      console.log(
+        `Owner rows: ${migration.skills} skills, ${migration.skillSlugAliases} skill aliases, ${migration.packages} packages, ${migration.packageInspectorWarnings} package warnings (${migration.githubSourcesChecked} GitHub sources checked; limit ${migration.limitPerTable}/table).`,
+      );
+      if (dryRun) console.log("Re-run with --apply --verified --yes to write this recovery.");
     }
     return parsed;
   } catch (error) {

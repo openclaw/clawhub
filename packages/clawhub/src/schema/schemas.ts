@@ -262,6 +262,14 @@ export const ApiV1PublisherRecoveryResponseSchema = type({
     packages: "number",
     githubSources: "number",
   }).or("null"),
+  resourceOwnerMigration: {
+    limitPerTable: "number",
+    skills: "number",
+    skillSlugAliases: "number",
+    packages: "number",
+    packageInspectorWarnings: "number",
+    githubSourcesChecked: "number",
+  },
   identityVerified: "boolean",
   reason: "string",
 });
