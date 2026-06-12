@@ -1,91 +1,100 @@
 #!/usr/bin/env bun
 
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { createReadStream, existsSync, statSync } from "node:fs";
+import { createServer } from "node:http";
+import { extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
+const HERE = resolve(fileURLToPath(import.meta.url), "..");
 const CLAWHUB_ROOT = resolve(HERE, "..");
-const OPENCLAW_REPO_PATH = process.env.OPENCLAW_REPO_PATH
-  ? resolve(process.env.OPENCLAW_REPO_PATH)
-  : resolve(CLAWHUB_ROOT, "..", "openclaw");
-const PREVIEW_ROOT = resolve(CLAWHUB_ROOT, ".cache", "openclaw-docs-preview");
+const PUBLIC_ROOT = resolve(CLAWHUB_ROOT, "public");
+const HOST = process.env.DOCS_RUN_HOST || "127.0.0.1";
+const PORT = Number(process.env.DOCS_RUN_PORT || "4174");
 
-function run(command: string, args: string[], options: { cwd?: string } = {}) {
+run("node", ["scripts/docs-builder.mjs"]);
+
+const server = createServer((request, response) => {
+  if (!request.url) {
+    response.writeHead(400);
+    response.end("Bad request");
+    return;
+  }
+
+  const url = new URL(request.url, `http://${HOST}:${PORT}`);
+  if (url.pathname === "/") {
+    response.writeHead(302, { Location: "/docs/" });
+    response.end();
+    return;
+  }
+
+  const file = resolvePublicPath(url.pathname);
+  if (!file) {
+    response.writeHead(404);
+    response.end("Not found");
+    return;
+  }
+
+  response.writeHead(200, { "Content-Type": contentType(file) });
+  createReadStream(file).pipe(response);
+});
+
+server.listen(PORT, HOST, () => {
+  console.log(`ClawHub docs preview: http://${HOST}:${PORT}/docs/`);
+});
+
+function run(command: string, args: string[]) {
   const result = spawnSync(command, args, {
-    cwd: options.cwd ?? CLAWHUB_ROOT,
+    cwd: CLAWHUB_ROOT,
     env: process.env,
     stdio: "inherit",
   });
 
-  if (result.error) {
-    throw result.error;
-  }
-  if (result.status !== 0) {
-    process.exit(result.status ?? 1);
-  }
+  if (result.error) throw result.error;
+  if (result.status !== 0) process.exit(result.status ?? 1);
 }
 
-function capture(command: string, args: string[], cwd: string) {
-  const result = spawnSync(command, args, {
-    cwd,
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "inherit"],
-  });
+function resolvePublicPath(pathname: string) {
+  const decoded = decodeURIComponent(pathname);
+  const normalized = normalize(decoded).replace(/^(\.\.(?:\/|\\|$))+/, "");
+  let candidate = resolve(PUBLIC_ROOT, `.${sep}${normalized}`);
 
-  if (result.error) {
-    throw result.error;
+  if (!candidate.startsWith(`${PUBLIC_ROOT}${sep}`) && candidate !== PUBLIC_ROOT) {
+    return "";
   }
-  if (result.status !== 0) {
-    process.exit(result.status ?? 1);
+
+  if (existsSync(candidate) && statSync(candidate).isDirectory()) {
+    candidate = join(candidate, "index.html");
+  } else if (!extname(candidate) && existsSync(join(candidate, "index.html"))) {
+    candidate = join(candidate, "index.html");
   }
-  return result.stdout.trim();
+
+  return existsSync(candidate) && statSync(candidate).isFile() ? candidate : "";
 }
 
-function assertOpenClawRepo(path: string) {
-  const syncScript = resolve(path, "scripts", "docs-sync-publish.mjs");
-  if (!existsSync(syncScript)) {
-    console.error(
-      [
-        `OpenClaw docs sync script was not found at ${syncScript}.`,
-        "",
-        "Set OPENCLAW_REPO_PATH to your OpenClaw checkout, for example:",
-        "  OPENCLAW_REPO_PATH=/path/to/openclaw bun run docs:run",
-      ].join("\n"),
-    );
-    process.exit(1);
+function contentType(file: string) {
+  switch (extname(file)) {
+    case ".css":
+      return "text/css; charset=utf-8";
+    case ".gif":
+      return "image/gif";
+    case ".html":
+      return "text/html; charset=utf-8";
+    case ".js":
+    case ".mjs":
+      return "text/javascript; charset=utf-8";
+    case ".json":
+      return "application/json; charset=utf-8";
+    case ".md":
+    case ".txt":
+      return "text/plain; charset=utf-8";
+    case ".png":
+      return "image/png";
+    case ".svg":
+      return "image/svg+xml";
+    case ".wasm":
+      return "application/wasm";
+    default:
+      return "application/octet-stream";
   }
-  return syncScript;
 }
-
-const syncScript = assertOpenClawRepo(OPENCLAW_REPO_PATH);
-mkdirSync(PREVIEW_ROOT, { recursive: true });
-
-const openClawSha = capture("git", ["rev-parse", "HEAD"], OPENCLAW_REPO_PATH);
-const clawHubSha = capture("git", ["rev-parse", "HEAD"], CLAWHUB_ROOT);
-
-console.log(`Syncing ClawHub docs into OpenClaw docs preview`);
-console.log(`  OpenClaw: ${OPENCLAW_REPO_PATH}`);
-console.log(`  ClawHub:  ${CLAWHUB_ROOT}`);
-console.log(`  Preview:  ${PREVIEW_ROOT}`);
-
-run("node", [
-  syncScript,
-  "--target",
-  PREVIEW_ROOT,
-  "--source-repo",
-  "openclaw/openclaw",
-  "--source-sha",
-  openClawSha,
-  "--clawhub-repo",
-  CLAWHUB_ROOT,
-  "--clawhub-source-repo",
-  "openclaw/clawhub",
-  "--clawhub-source-sha",
-  clawHubSha,
-]);
-
-console.log("");
-console.log("Starting Mintlify docs preview. Open the printed local URL, then go to /clawhub.");
-run("mint", ["dev"], { cwd: resolve(PREVIEW_ROOT, "docs") });

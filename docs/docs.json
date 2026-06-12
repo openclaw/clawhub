@@ -2,7 +2,6 @@
   "$schema": "https://mintlify.com/docs.json",
   "name": "ClawHub",
   "description": "Public documentation for finding, installing, publishing, and operating ClawHub skills and plugins.",
-  "home": "clawhub",
   "favicon": "/assets/pixel-lobster.svg",
   "logo": {
     "light": "/assets/pixel-lobster.svg",
@@ -15,13 +14,15 @@
     "name": "Molty",
     "label": "ClawHub docs assistant"
   },
-  "headerLinks": [
-    {
-      "label": "ClawHub",
-      "href": "https://clawhub.ai",
-      "icon": "globe"
-    }
-  ],
+  "navbar": {
+    "links": [
+      {
+        "label": "ClawHub",
+        "href": "https://clawhub.ai",
+        "icon": "globe"
+      }
+    ]
+  },
   "search": {
     "placeholder": "Search ClawHub docs...",
     "suggestions": ["Install a skill", "Publish a package", "Use API tokens", "Run security audits"]
@@ -36,7 +37,7 @@
             "groups": [
               {
                 "group": "Overview",
-                "pages": ["clawhub", "quickstart", "how-it-works"]
+                "pages": ["index", "quickstart", "how-it-works"]
               }
             ]
           },
