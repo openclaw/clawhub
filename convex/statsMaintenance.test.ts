@@ -502,7 +502,7 @@ describe("recommendation score backfills", () => {
     expect(result).toMatchObject({
       ok: true,
       dryRun: true,
-      scoreVersion: 2,
+      scoreVersion: RECOMMENDATION_SCORE_VERSION,
       isDone: true,
       skillsDone: true,
       packagesDone: true,

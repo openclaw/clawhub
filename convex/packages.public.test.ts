@@ -2308,20 +2308,6 @@ describe("packages public queries", () => {
         {
           page: [
             makePackageDoc({
-              _id: "packages:code-plugin-installed",
-              name: "code-plugin-installed",
-              normalizedName: "code-plugin-installed",
-              displayName: "Code Plugin Installed",
-              family: "code-plugin",
-              stats: { downloads: 393, installs: 74, stars: 0, versions: 1 },
-              recommendedScore: computeRecommendationScore({
-                downloads: 393,
-                installs: 74,
-                stars: 0,
-              }),
-              recommendedScoreVersion: RECOMMENDATION_SCORE_VERSION,
-            }),
-            makePackageDoc({
               _id: "packages:code-plugin-downloaded",
               name: "code-plugin-downloaded",
               normalizedName: "code-plugin-downloaded",
@@ -2331,6 +2317,20 @@ describe("packages public queries", () => {
               recommendedScore: computeRecommendationScore({
                 downloads: 43_080,
                 installs: 2,
+                stars: 0,
+              }),
+              recommendedScoreVersion: RECOMMENDATION_SCORE_VERSION,
+            }),
+            makePackageDoc({
+              _id: "packages:code-plugin-installed",
+              name: "code-plugin-installed",
+              normalizedName: "code-plugin-installed",
+              displayName: "Code Plugin Installed",
+              family: "code-plugin",
+              stats: { downloads: 393, installs: 74, stars: 0, versions: 1 },
+              recommendedScore: computeRecommendationScore({
+                downloads: 393,
+                installs: 74,
                 stars: 0,
               }),
               recommendedScoreVersion: RECOMMENDATION_SCORE_VERSION,
@@ -2348,7 +2348,7 @@ describe("packages public queries", () => {
       paginationOpts: { cursor: null, numItems: 1 },
     });
 
-    expect(result.page.map((entry) => entry.name)).toEqual(["code-plugin-installed"]);
+    expect(result.page.map((entry) => entry.name)).toEqual(["code-plugin-downloaded"]);
     expect(result.isDone).toBe(false);
     expect(result.continueCursor.startsWith("pkgpage:")).toBe(true);
     expect(indexNames).toEqual([
