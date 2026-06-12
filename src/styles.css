@@ -7386,6 +7386,37 @@ code {
   font-size: inherit;
 }
 
+.markdown .mermaid-diagram {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  margin: var(--space-4) 0;
+  padding: var(--space-3);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+}
+
+.markdown .mermaid-diagram__svg {
+  min-width: max-content;
+}
+
+.markdown .mermaid-diagram svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+}
+
+.markdown .mermaid-diagram__loading {
+  color: var(--ink-soft);
+  font-size: var(--fs-sm);
+}
+
+.markdown .mermaid-diagram-error {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--line));
+}
+
 .fade-up {
   animation: fadeUp 0.6s ease forwards;
   opacity: 0;

@@ -1,15 +1,11 @@
 import type { ClawdisSkillMetadata } from "clawhub-schema";
 import { lazy, Suspense } from "react";
-import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { defaultUrlTransform } from "react-markdown";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
-import { rehypeProxyImages } from "../lib/rehypeProxyImages";
 import { resolveSkillReadmeHref } from "../lib/skillReadmeLinks";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { buildSkillInstallTabs, type SkillInstallTabId } from "./SkillInstallCard";
 import { SkillVersionsPanel } from "./SkillVersionsPanel";
-
-const REHYPE_PLUGINS = [rehypeProxyImages];
 
 const SkillDiffCard = lazy(() =>
   import("./SkillDiffCard").then((module) => ({ default: module.SkillDiffCard })),
@@ -171,17 +167,14 @@ export function SkillDetailTabs({
       {activeTab === "readme" ? (
         <div className="tab-body">
           {readmeContent ? (
-            <div className="markdown">
-              <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                rehypePlugins={REHYPE_PLUGINS}
-                urlTransform={(url, key) =>
-                  key === "href" ? resolveReadmeHref(url) : defaultUrlTransform(url)
-                }
-              >
-                {readmeContent}
-              </ReactMarkdown>
-            </div>
+            <MarkdownPreview
+              highlight={false}
+              urlTransform={(url, key) =>
+                key === "href" ? resolveReadmeHref(url) : defaultUrlTransform(url)
+              }
+            >
+              {readmeContent}
+            </MarkdownPreview>
           ) : readmeError ? (
             <div className="empty-state px-[var(--space-4)] py-[var(--space-6)]">
               <p className="empty-state-title">No README available</p>

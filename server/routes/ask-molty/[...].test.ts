@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const handler = (await import("./[...]")).default;
 
 const originalProxyOrigin = process.env.ASK_MOLTY_PROXY_ORIGIN;
-const fetchMock = vi.fn(async () => new Response("ok"));
+const fetchMock = vi.fn(async (_target: URL, _init: RequestInit) => new Response("ok"));
 
 describe("ask-molty proxy route", () => {
   beforeEach(() => {
