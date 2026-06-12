@@ -633,6 +633,77 @@ describe("cmdRecoverPersonalPublisher", () => {
     ).rejects.toThrow(/--verified/i);
     expect(httpMocks.apiRequest).not.toHaveBeenCalled();
   });
+
+  it("sends verified recovery details when applying", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      dryRun: false,
+      recovered: true,
+      publisherId: "publishers:gingiris",
+      handle: "gingiris",
+      previousUser: {
+        userId: "users:legacy",
+        handle: "gingiris-recovered",
+        nextHandle: "gingiris-recovered",
+        githubProviderAccountId: "111",
+        authAccountCount: 1,
+      },
+      nextUser: {
+        userId: "users:current",
+        handle: "gingiris",
+        nextHandle: "gingiris",
+        githubProviderAccountId: "222",
+        authAccountCount: 1,
+      },
+      retiredPersonalPublisher: null,
+      resourceOwnerMigration: {
+        limitPerTable: 100,
+        skills: 1,
+        skillSlugAliases: 1,
+        packages: 0,
+        packageInspectorWarnings: 0,
+        githubSourcesChecked: 1,
+        handleReservations: 1,
+      },
+      identityVerified: true,
+      reason: "Verified account continuity",
+    });
+
+    await cmdRecoverPersonalPublisher(
+      makeGlobalOpts(),
+      "gingiris",
+      {
+        to: "gingiris-1031",
+        previousGithubId: "111",
+        nextGithubId: "222",
+        retiredHandle: "gingiris-recovered",
+        reason: "Verified account continuity",
+        apply: true,
+        verified: true,
+        yes: true,
+      },
+      false,
+    );
+
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({
+        method: "POST",
+        path: "/api/v1/users/publisher-recovery",
+        body: {
+          handle: "gingiris",
+          nextUserHandle: "gingiris-1031",
+          previousGitHubProviderAccountId: "111",
+          nextGitHubProviderAccountId: "222",
+          retiredUserHandle: "gingiris-recovered",
+          reason: "Verified account continuity",
+          confirmIdentityVerified: true,
+          dryRun: false,
+        },
+      }),
+      expect.anything(),
+    );
+  });
 });
 
 describe("cmdSetRole", () => {
