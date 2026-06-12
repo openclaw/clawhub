@@ -570,6 +570,14 @@ describe("cmdRecoverPersonalPublisher", () => {
         authAccountCount: 1,
       },
       retiredPersonalPublisher: null,
+      resourceOwnerMigration: {
+        limitPerTable: 100,
+        skills: 1,
+        skillSlugAliases: 1,
+        packages: 0,
+        packageInspectorWarnings: 0,
+        githubSourcesChecked: 1,
+      },
       identityVerified: false,
       reason: "Verified account continuity",
     });
