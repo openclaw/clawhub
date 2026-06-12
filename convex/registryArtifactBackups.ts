@@ -23,10 +23,10 @@ type BackupPageItem =
       slug: string;
       displayName: string;
       version: string;
+      isLatest: boolean;
       ownerHandle: string;
       publishedAt: number;
     }
-  | { kind: "missingLatestVersion"; skillId: Id<"skills"> }
   | { kind: "missingOwner"; skillId: Id<"skills">; ownerUserId: Id<"users"> };
 
 type BackupPageResult = {
@@ -46,6 +46,7 @@ type PackageBackupPageItem =
       displayName: string;
       family: "code-plugin" | "bundle-plugin";
       version: string;
+      isLatest: boolean;
       publishedAt: number;
       artifactKind?: "legacy-zip" | "npm-pack";
       artifactStorageId: Id<"_storage">;
@@ -78,15 +79,13 @@ type PackageBackupPageResult = {
 
 type BackupSyncState = {
   cursor: string | null;
-  pruneCursor: string | null;
 };
 
-export type SyncGitHubBackupsResult = {
+export type SeedRegistryArtifactBackupsResult = {
   stats: {
     skillsScanned: number;
     skillsSkipped: number;
     skillsBackedUp: number;
-    skillsDeleted: number;
     skillsMissingVersion: number;
     skillsMissingOwner: number;
     packagesScanned: number;
@@ -103,14 +102,13 @@ export type SyncGitHubBackupsResult = {
     errors: number;
   };
   cursor: string | null;
-  pruneCursor: string | null;
   packageCursor: string | null;
   skillsIsDone: boolean;
   packageIsDone: boolean;
   isDone: boolean;
 };
 
-export const getGitHubBackupPageInternal = internalQuery({
+export const getRegistryArtifactBackupPageInternal = internalQuery({
   args: {
     cursor: v.optional(v.string()),
     batchSize: v.optional(v.number()),
@@ -120,53 +118,30 @@ export const getGitHubBackupPageInternal = internalQuery({
     let pageResult;
     try {
       pageResult = await ctx.db
-        .query("skillSearchDigest")
+        .query("skillVersions")
+        .withIndex("by_active_created", (q) => q.eq("softDeletedAt", undefined))
         .order("asc")
         .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
     } catch (error) {
       if (!args.cursor || !isStaleCursorError(error)) throw error;
       pageResult = await ctx.db
-        .query("skillSearchDigest")
+        .query("skillVersions")
+        .withIndex("by_active_created", (q) => q.eq("softDeletedAt", undefined))
         .order("asc")
         .paginate({ cursor: null, numItems: batchSize });
     }
 
     const items: BackupPageItem[] = [];
-    for (const digest of pageResult.page) {
-      if (!isPubliclyAvailableSkill(digest)) continue;
-      if (!digest.latestVersionId || !digest.latestVersionSummary) {
-        items.push({ kind: "missingLatestVersion", skillId: digest.skillId });
-        continue;
-      }
-
-      if (digest.ownerHandle === undefined) {
-        items.push({
-          kind: "missingOwner",
-          skillId: digest.skillId,
-          ownerUserId: digest.ownerUserId,
-        });
-        continue;
-      }
-
-      const ownerHandle =
-        digest.ownerHandle || String(digest.ownerPublisherId ?? digest.ownerUserId);
-      items.push({
-        kind: "ok",
-        skillId: digest.skillId,
-        versionId: digest.latestVersionId,
-        slug: digest.slug,
-        displayName: digest.displayName,
-        version: digest.latestVersionSummary.version,
-        ownerHandle,
-        publishedAt: digest.latestVersionSummary.createdAt,
-      });
+    for (const version of pageResult.page) {
+      const item = await toSkillVersionBackupPageItem(ctx, version);
+      if (item) items.push(item);
     }
 
     return { items, cursor: pageResult.continueCursor, isDone: pageResult.isDone };
   },
 });
 
-export const getPackageGitHubBackupPageInternal = internalQuery({
+export const getPackageRegistryArtifactBackupPageInternal = internalQuery({
   args: {
     cursor: v.optional(v.string()),
     batchSize: v.optional(v.number()),
@@ -188,6 +163,32 @@ export const getPackageGitHubBackupPageInternal = internalQuery({
     return { items, cursor: pageResult.continueCursor, isDone: pageResult.isDone };
   },
 });
+
+async function toSkillVersionBackupPageItem(
+  ctx: Parameters<typeof getOwnerPublisher>[0],
+  version: Doc<"skillVersions">,
+): Promise<BackupPageItem | null> {
+  const skill = await ctx.db.get(version.skillId);
+  if (!skill || !isPublicSkillDoc(skill)) return null;
+  const owner = await getOwnerPublisher(ctx, {
+    ownerPublisherId: skill.ownerPublisherId,
+    ownerUserId: skill.ownerUserId,
+  });
+  if (!owner || owner.deletedAt || owner.deactivatedAt) {
+    return { kind: "missingOwner", skillId: skill._id, ownerUserId: skill.ownerUserId };
+  }
+  return {
+    kind: "ok",
+    skillId: skill._id,
+    versionId: version._id,
+    slug: skill.slug,
+    displayName: skill.displayName,
+    version: version.version,
+    isLatest: skill.latestVersionId === version._id,
+    ownerHandle: owner.handle ?? String(skill.ownerPublisherId ?? skill.ownerUserId),
+    publishedAt: version.createdAt,
+  };
+}
 
 async function toPackageBackupPageItem(
   ctx: Parameters<typeof getOwnerPublisher>[0],
@@ -218,6 +219,7 @@ async function toPackageBackupPageItem(
     displayName: pkg.displayName,
     family: pkg.family,
     version: release.version,
+    isLatest: pkg.latestReleaseId === release._id,
     publishedAt: release.createdAt,
     artifactKind: release.artifactKind,
     artifactStorageId: release.clawpackStorageId,
@@ -244,15 +246,6 @@ async function toPackageBackupPageItem(
   };
 }
 
-function isPubliclyAvailableSkill(
-  skill: Pick<
-    Doc<"skillSearchDigest">,
-    "softDeletedAt" | "moderationStatus" | "moderationFlags" | "moderationVerdict"
-  >,
-) {
-  return isPublicSkillDoc(skill);
-}
-
 function isStaleCursorError(error: unknown) {
   const message =
     typeof error === "string"
@@ -266,34 +259,32 @@ function isStaleCursorError(error: unknown) {
   );
 }
 
-export const getGitHubBackupSyncStateInternal = internalQuery({
+export const getRegistryArtifactBackupSyncStateInternal = internalQuery({
   args: {},
   handler: async (ctx): Promise<BackupSyncState> => {
     const state = await ctx.db
-      .query("githubBackupSyncState")
+      .query("registryArtifactBackupSyncState")
       .withIndex("by_key", (q) => q.eq("key", SYNC_STATE_KEY))
       .unique();
-    return { cursor: state?.cursor ?? null, pruneCursor: state?.pruneCursor ?? null };
+    return { cursor: state?.cursor ?? null };
   },
 });
 
-export const setGitHubBackupSyncStateInternal = internalMutation({
+export const setRegistryArtifactBackupSyncStateInternal = internalMutation({
   args: {
     cursor: v.optional(v.string()),
-    pruneCursor: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
     const state = await ctx.db
-      .query("githubBackupSyncState")
+      .query("registryArtifactBackupSyncState")
       .withIndex("by_key", (q) => q.eq("key", SYNC_STATE_KEY))
       .unique();
 
     if (!state) {
-      await ctx.db.insert("githubBackupSyncState", {
+      await ctx.db.insert("registryArtifactBackupSyncState", {
         key: SYNC_STATE_KEY,
         cursor: args.cursor,
-        pruneCursor: args.pruneCursor,
         updatedAt: now,
       });
       return { ok: true as const };
@@ -301,7 +292,6 @@ export const setGitHubBackupSyncStateInternal = internalMutation({
 
     await ctx.db.patch(state._id, {
       cursor: args.cursor,
-      pruneCursor: args.pruneCursor,
       updatedAt: now,
     });
 
@@ -309,30 +299,30 @@ export const setGitHubBackupSyncStateInternal = internalMutation({
   },
 });
 
-export const getGitHubPackageBackupSyncStateInternal = internalQuery({
+export const getPackageRegistryArtifactBackupSyncStateInternal = internalQuery({
   args: {},
   handler: async (ctx): Promise<BackupSyncState> => {
     const state = await ctx.db
-      .query("githubBackupSyncState")
+      .query("registryArtifactBackupSyncState")
       .withIndex("by_key", (q) => q.eq("key", PACKAGE_SYNC_STATE_KEY))
       .unique();
-    return { cursor: state?.cursor ?? null, pruneCursor: state?.pruneCursor ?? null };
+    return { cursor: state?.cursor ?? null };
   },
 });
 
-export const setGitHubPackageBackupSyncStateInternal = internalMutation({
+export const setPackageRegistryArtifactBackupSyncStateInternal = internalMutation({
   args: {
     cursor: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
     const state = await ctx.db
-      .query("githubBackupSyncState")
+      .query("registryArtifactBackupSyncState")
       .withIndex("by_key", (q) => q.eq("key", PACKAGE_SYNC_STATE_KEY))
       .unique();
 
     if (!state) {
-      await ctx.db.insert("githubBackupSyncState", {
+      await ctx.db.insert("registryArtifactBackupSyncState", {
         key: PACKAGE_SYNC_STATE_KEY,
         cursor: args.cursor,
         updatedAt: now,
@@ -355,8 +345,9 @@ const registryArtifactBackupTargetKindValidator = v.union(
 );
 const registryArtifactBackupReasonValidator = v.union(
   v.literal("publish"),
-  v.literal("sync"),
+  v.literal("seed"),
   v.literal("retry"),
+  v.literal("sync"),
 );
 
 export const enqueueRegistryArtifactBackupJobInternal = internalMutation({
@@ -438,34 +429,37 @@ export const getRegistryArtifactBackupHealthInternal = internalQuery({
   handler: getRegistryArtifactBackupHealthHandler,
 });
 
-export const syncGitHubBackups: ReturnType<typeof action> = action({
+export const seedRegistryArtifactBackups: ReturnType<typeof action> = action({
   args: {
     dryRun: v.optional(v.boolean()),
     batchSize: v.optional(v.number()),
     maxBatches: v.optional(v.number()),
-    pruneBatchSize: v.optional(v.number()),
     resetCursor: v.optional(v.boolean()),
   },
-  handler: async (ctx, args): Promise<SyncGitHubBackupsResult> => {
+  handler: async (ctx, args): Promise<SeedRegistryArtifactBackupsResult> => {
     const { user } = await requireUserFromAction(ctx);
     assertRole(user, ["admin"]);
 
     if (args.resetCursor && !args.dryRun) {
-      await ctx.runMutation(internal.githubBackups.setGitHubBackupSyncStateInternal, {
-        cursor: undefined,
-        pruneCursor: undefined,
-      });
-      await ctx.runMutation(internal.githubBackups.setGitHubPackageBackupSyncStateInternal, {
-        cursor: undefined,
-      });
+      await ctx.runMutation(
+        internal.registryArtifactBackups.setRegistryArtifactBackupSyncStateInternal,
+        {
+          cursor: undefined,
+        },
+      );
+      await ctx.runMutation(
+        internal.registryArtifactBackups.setPackageRegistryArtifactBackupSyncStateInternal,
+        {
+          cursor: undefined,
+        },
+      );
     }
 
-    return ctx.runAction(internal.githubBackupsNode.syncGitHubBackupsInternal, {
+    return ctx.runAction(internal.registryArtifactBackupsNode.seedRegistryArtifactBackupsInternal, {
       dryRun: args.dryRun,
       batchSize: args.batchSize,
       maxBatches: args.maxBatches,
-      pruneBatchSize: args.pruneBatchSize,
-    }) as Promise<SyncGitHubBackupsResult>;
+    }) as Promise<SeedRegistryArtifactBackupsResult>;
   },
 });
 
@@ -479,7 +473,7 @@ export async function enqueueRegistryArtifactBackupJobHandler(
     targetKind: "skillVersion" | "packageRelease";
     skillVersionId?: Id<"skillVersions">;
     packageReleaseId?: Id<"packageReleases">;
-    reason: "publish" | "sync" | "retry";
+    reason: "publish" | "seed" | "retry" | "sync";
     error?: string;
     now?: number;
   },
@@ -503,8 +497,10 @@ export async function enqueueRegistryArtifactBackupJobHandler(
     await ctx.db.patch(existing._id, {
       status: "pending",
       reason: args.reason,
+      attempts: 0,
       lastError,
       nextRunAt: now,
+      createdAt: now,
       updatedAt: now,
       exhaustedAt: undefined,
       completedAt: undefined,

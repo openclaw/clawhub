@@ -4,10 +4,10 @@ import { internal } from "./_generated/api";
 const crons = cronJobs();
 
 crons.interval(
-  "github-backup-sync",
+  "registry-artifact-backup-retries",
   { minutes: 30 },
-  internal.githubBackupsNode.syncGitHubBackupsInternal,
-  { batchSize: 50, maxBatches: 5 },
+  internal.registryArtifactBackupsNode.processRegistryArtifactBackupRetriesInternal,
+  {},
 );
 
 crons.interval(

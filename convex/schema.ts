@@ -2408,10 +2408,18 @@ const reservedHandles = defineTable({
   .index("by_handle_active_updatedAt", ["handle", "releasedAt", "updatedAt"])
   .index("by_owner", ["rightfulOwnerUserId"]);
 
+// Deprecated GitHub backup state retained so existing production rows keep
+// validating until a separate cleanup migration removes them.
 const githubBackupSyncState = defineTable({
   key: v.string(),
   cursor: v.optional(v.string()),
   pruneCursor: v.optional(v.string()),
+  updatedAt: v.number(),
+}).index("by_key", ["key"]);
+
+const registryArtifactBackupSyncState = defineTable({
+  key: v.string(),
+  cursor: v.optional(v.string()),
   updatedAt: v.number(),
 }).index("by_key", ["key"]);
 
@@ -2420,7 +2428,7 @@ const registryArtifactBackupJobs = defineTable({
   skillVersionId: v.optional(v.id("skillVersions")),
   packageReleaseId: v.optional(v.id("packageReleases")),
   status: v.union(v.literal("pending"), v.literal("succeeded"), v.literal("exhausted")),
-  reason: v.union(v.literal("publish"), v.literal("sync"), v.literal("retry")),
+  reason: v.union(v.literal("publish"), v.literal("seed"), v.literal("retry"), v.literal("sync")),
   attempts: v.number(),
   nextRunAt: v.number(),
   lastAttemptAt: v.optional(v.number()),
@@ -2560,6 +2568,7 @@ export default defineSchema({
   reservedSlugs,
   reservedHandles,
   githubBackupSyncState,
+  registryArtifactBackupSyncState,
   registryArtifactBackupJobs,
   userSyncRoots,
   userSkillInstalls,

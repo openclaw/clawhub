@@ -338,16 +338,29 @@ describe("skills ownership", () => {
       displayName: "Old Name",
       ownerUserId: "users:creator",
       ownerPublisherId: "publishers:org",
+      latestVersionId: "skillVersions:latest",
       softDeletedAt: undefined,
     };
+    const latestVersion = {
+      _id: "skillVersions:latest",
+      version: "1.0.0",
+      files: [{ path: "SKILL.md", size: 5, storageId: "storage:skill", sha256: "sha" }],
+      createdAt: 1_700_000_000_000,
+      softDeletedAt: undefined,
+    };
+    const runAfter = vi.fn(async () => {});
 
     const result = await renameOwnedSkillInternalHandler(
       {
+        scheduler: { runAfter },
         db: {
           normalizeId: vi.fn(() => null),
           get: vi.fn(async (id: string) => {
             if (id === "users:actor") return { _id: "users:actor", role: "user" };
-            if (id === "publishers:org") return { _id: "publishers:org", kind: "org" };
+            if (id === "publishers:org") {
+              return { _id: "publishers:org", kind: "org", handle: "org" };
+            }
+            if (id === "skillVersions:latest") return latestVersion;
             return null;
           }),
           query: vi.fn((table: string) => {
@@ -423,6 +436,18 @@ describe("skills ownership", () => {
         skillId: "skills:source",
         ownerUserId: "users:creator",
         ownerPublisherId: "publishers:org",
+      }),
+    );
+    expect(runAfter).toHaveBeenCalledWith(
+      0,
+      expect.anything(),
+      expect.objectContaining({
+        skillId: "skills:source",
+        versionId: "skillVersions:latest",
+        slug: "new-name",
+        version: "1.0.0",
+        isLatest: true,
+        ownerHandle: "org",
       }),
     );
   });

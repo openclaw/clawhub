@@ -123,6 +123,10 @@ export async function publishVersionForUser(
     slug: normalizedSlug,
   })) as Doc<"skills"> | null;
   const isNewSkill = !existingSkill;
+  const publishedVersionIsLatest = shouldPublishVersionBecomeLatest(
+    version,
+    existingSkill?.latestVersionSummary?.version,
+  );
 
   // For new skills, enforce the full write-path rules (length, pattern,
   // reserved-word blocklist). For existing skills the slug is already
@@ -366,10 +370,9 @@ export async function publishVersionForUser(
   });
 
   // Schedule the async "API key required?" analyser; non-fatal on failure
-  // (UI treats `apiKeyRequired === undefined` as "no badge"). Mirrors the
-  // `backupSkillForPublishInternal` pattern below: `void runAfter(...).catch(...)`
-  // so that scheduler-table contention or transient Convex errors never break
-  // a user-visible publish for a best-effort badge job.
+  // (UI treats `apiKeyRequired === undefined` as "no badge"). Scheduler-table
+  // contention or transient Convex errors should not break a user-visible
+  // publish for a best-effort badge job.
   void ctx.scheduler
     .runAfter(0, internal.llmEval.evaluateApiKeyRequirement, {
       versionId: publishResult.versionId,
@@ -388,18 +391,31 @@ export async function publishVersionForUser(
     targetPublisher?.handle ?? owner?.handle ?? owner?.displayName ?? owner?.name ?? "unknown";
 
   if (!options.skipBackup) {
-    void ctx.scheduler
-      .runAfter(0, internal.githubBackupsNode.backupSkillForPublishInternal, {
+    await ctx.scheduler
+      .runAfter(0, internal.registryArtifactBackupsNode.backupSkillForPublishInternal, {
+        skillId: publishResult.skillId,
         versionId: publishResult.versionId,
         slug,
         version,
+        isLatest: publishedVersionIsLatest,
         displayName,
         ownerHandle,
         files: publishFiles,
         publishedAt: Date.now(),
       })
       .catch((error) => {
-        console.error("GitHub backup scheduling failed", error);
+        const message = errorMessage(error);
+        console.error("registry artifact backup scheduling failed", error);
+        return ctx
+          .runMutation(internal.registryArtifactBackups.enqueueRegistryArtifactBackupJobInternal, {
+            targetKind: "skillVersion",
+            skillVersionId: publishResult.versionId,
+            reason: "publish",
+            error: message,
+          })
+          .catch((enqueueError) => {
+            console.error("registry artifact backup retry enqueue failed", enqueueError);
+          });
       });
   }
 
@@ -412,6 +428,18 @@ export async function publishVersionForUser(
   }
 
   return publishResult;
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function shouldPublishVersionBecomeLatest(version: string, previousLatestVersion?: string) {
+  return (
+    !previousLatestVersion ||
+    !semver.valid(previousLatestVersion) ||
+    semver.gt(version, previousLatestVersion)
+  );
 }
 
 function mergeSourceIntoMetadata(

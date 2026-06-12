@@ -5,9 +5,7 @@ import { internal } from "./_generated/api";
 import type { Doc, Id, TableNames } from "./_generated/dataModel";
 import {
   internalMutation,
-  isGitHubMirrorEligibleSkillDoc,
   repointPackageLatestRelease,
-  scheduleGitHubBackupDeletionForSkill,
   scheduleOwnerPublisherDigestSync,
   shouldScheduleOwnerPublisherDigestSyncForPublisherChange,
   shouldScheduleOwnerUserPackageDigestSyncForUserChange,
@@ -48,89 +46,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 describe("package digest sync", () => {
-  it("identifies GitHub mirror eligibility from skill visibility fields", () => {
-    expect(isGitHubMirrorEligibleSkillDoc({ softDeletedAt: undefined })).toBe(true);
-    expect(
-      isGitHubMirrorEligibleSkillDoc({
-        softDeletedAt: undefined,
-        moderationStatus: "active",
-      }),
-    ).toBe(true);
-    expect(
-      isGitHubMirrorEligibleSkillDoc({
-        softDeletedAt: undefined,
-        moderationStatus: "active",
-        moderationVerdict: "malicious",
-      }),
-    ).toBe(false);
-    expect(
-      isGitHubMirrorEligibleSkillDoc({
-        softDeletedAt: undefined,
-        moderationStatus: "active",
-        moderationFlags: ["blocked.malware"],
-      }),
-    ).toBe(false);
-    expect(
-      isGitHubMirrorEligibleSkillDoc({
-        softDeletedAt: undefined,
-        moderationStatus: "hidden",
-      }),
-    ).toBe(false);
-    expect(
-      isGitHubMirrorEligibleSkillDoc({
-        softDeletedAt: undefined,
-        moderationStatus: "removed",
-      }),
-    ).toBe(false);
-    expect(isGitHubMirrorEligibleSkillDoc({ softDeletedAt: 123 })).toBe(false);
-  });
-
-  it("schedules GitHub mirror deletion for a skill using the owner handle", async () => {
-    const ctx = {
-      db: {
-        get: vi.fn(async (id: string) => {
-          if (id === "users:owner") {
-            return {
-              _id: "users:owner",
-              handle: "alice",
-              deletedAt: undefined,
-              deactivatedAt: undefined,
-            };
-          }
-          return null;
-        }),
-        query: vi.fn(() => ({
-          withIndex: vi.fn(() => ({
-            unique: vi.fn().mockResolvedValue(null),
-          })),
-        })),
-      },
-      scheduler: {
-        runAfter: vi.fn(),
-      },
-    };
-
-    await scheduleGitHubBackupDeletionForSkill(
-      ctx as never,
-      {
-        slug: "hidden-skill",
-        ownerUserId: "users:owner",
-        ownerPublisherId: undefined,
-        softDeletedAt: 123,
-        moderationStatus: "hidden",
-      } as never,
-    );
-
-    expect(ctx.scheduler.runAfter).toHaveBeenCalledWith(
-      0,
-      internal.githubBackupsNode.deleteGitHubBackupForSlugInternal,
-      {
-        ownerHandle: "alice",
-        slug: "hidden-skill",
-      },
-    );
-  });
-
   it("clears latestVersion when the current package release is soft-deleted", async () => {
     const pkg = {
       _id: "packages:demo",

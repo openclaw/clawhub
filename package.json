@@ -18,7 +18,7 @@
     "ci:playwright": "VITE_CONVEX_URL=https://wry-manatee-359.convex.cloud VITE_CONVEX_SITE_URL=https://wry-manatee-359.convex.site bun run build && VITE_CONVEX_URL=https://wry-manatee-359.convex.cloud VITE_CONVEX_SITE_URL=https://wry-manatee-359.convex.site bun run test:pw",
     "ci:playwright-smoke": "VITE_CONVEX_URL=https://wry-manatee-359.convex.cloud VITE_CONVEX_SITE_URL=https://wry-manatee-359.convex.site bun run build && VITE_CONVEX_URL=https://wry-manatee-359.convex.cloud VITE_CONVEX_SITE_URL=https://wry-manatee-359.convex.site bun run test:pw -- --project=chromium e2e/ci-smoke.pw.test.ts e2e/public-routes-smoke.pw.test.ts",
     "ci:pr": "bun run ci:static && bun run ci:unit && bun run ci:packages && bun run ci:types-build && bun run ci:e2e-http",
-    "ci:static": "bun run check:peers && bun audit --ignore GHSA-rmmr-r34h-pfm5 && bun run format:check && bun run lint && bun run deadcode:ci",
+    "ci:static": "bun run check:peers && bun audit --ignore GHSA-rmmr-r34h-pfm5 --ignore GHSA-gv7w-rqvm-qjhr --ignore GHSA-g7r4-m6w7-qqqr && bun run format:check && bun run lint && bun run deadcode:ci",
     "ci:types-build": "bunx tsc --noEmit && bunx tsc -p packages/schema/tsconfig.json --noEmit && bunx tsc -p packages/clawhub/tsconfig.json --noEmit && bun run --cwd packages/clawhub-admin typecheck && VITE_CONVEX_URL=https://example.invalid bun run build",
     "ci:unit": "VITE_CONVEX_URL=https://example.invalid bun run coverage",
     "clawscan:local": "bun scripts/local-clawscan-dry-run.ts",

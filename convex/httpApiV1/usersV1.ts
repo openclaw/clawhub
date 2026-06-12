@@ -548,7 +548,7 @@ export async function usersGetRouterV1Handler(ctx: ActionCtx, request: Request) 
 
 /**
  * POST /api/v1/users/restore
- * Admin-only: restore skills from GitHub backup for a user.
+ * Admin-only: restore skills from registry artifact backup for a user.
  * Body: { handle: string, slugs: string[], forceOverwriteSquatter?: boolean }
  */
 async function handleAdminRestore(
@@ -573,13 +573,16 @@ async function handleAdminRestore(
   if (!targetUser?._id) return text("User not found", 404, headers);
 
   try {
-    const result = await ctx.runAction(internal.githubRestore.restoreUserSkillsFromBackup, {
-      actorUserId,
-      ownerHandle: handle,
-      ownerUserId: targetUser._id,
-      slugs,
-      forceOverwriteSquatter,
-    });
+    const result = await ctx.runAction(
+      internal.registryArtifactRestore.restoreUserSkillsFromBackup,
+      {
+        actorUserId,
+        ownerHandle: handle,
+        ownerUserId: targetUser._id,
+        slugs,
+        forceOverwriteSquatter,
+      },
+    );
     return json(result, 200, headers);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Restore failed";

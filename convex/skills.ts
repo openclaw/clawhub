@@ -3050,6 +3050,14 @@ export const getSkillBySlugInternal = internalQuery({
   },
 });
 
+export const getSkillBySlugIncludingSoftDeletedInternal = internalQuery({
+  args: { slug: v.string() },
+  handler: async (ctx, args) => {
+    const resolved = await resolveSkillBySlugOrAlias(ctx, args.slug, { includeSoftDeleted: true });
+    return resolved.skill;
+  },
+});
+
 function compactSecurityVerdictVersion(version: Doc<"skillVersions">) {
   return {
     _id: version._id,
@@ -9051,8 +9059,112 @@ export const updateTags = mutation({
     if (latestEntry) {
       await setSkillEmbeddingsLatestVersion(ctx, skill._id, latestEntry.versionId, now);
     }
+
+    if (latestEntry && latestEntry.versionId !== skill.latestVersionId) {
+      const version = versionsById.get(latestEntry.versionId);
+      const owner = await getOwnerPublisher(ctx, {
+        ownerPublisherId: skill.ownerPublisherId,
+        ownerUserId: skill.ownerUserId,
+      });
+      if (version && owner) {
+        await scheduleRegistryArtifactSkillVersionBackupRefresh(ctx, {
+          skill,
+          version,
+          isLatest: true,
+          ownerHandle: owner.handle ?? String(skill.ownerPublisherId ?? skill.ownerUserId),
+          logContext: "latest refresh",
+        });
+      }
+    }
   },
 });
+
+async function scheduleRegistryArtifactSkillVersionBackupRefresh(
+  ctx: MutationCtx,
+  params: {
+    skill: Pick<Doc<"skills">, "_id" | "slug" | "displayName" | "ownerUserId" | "ownerPublisherId">;
+    version: Doc<"skillVersions">;
+    ownerHandle: string;
+    isLatest: boolean;
+    logContext: string;
+  },
+) {
+  try {
+    await ctx.scheduler.runAfter(
+      0,
+      internal.registryArtifactBackupsNode.backupSkillForPublishInternal,
+      {
+        skillId: params.skill._id,
+        versionId: params.version._id,
+        slug: params.skill.slug,
+        version: params.version.version,
+        isLatest: params.isLatest,
+        displayName: params.skill.displayName,
+        ownerHandle: params.ownerHandle,
+        files: params.version.files,
+        publishedAt: params.version.createdAt,
+      },
+    );
+  } catch (error) {
+    console.error(`registry artifact backup ${params.logContext} scheduling failed`, error);
+    await enqueueSkillVersionBackupRetryJob(ctx, {
+      versionId: params.version._id,
+      error: errorMessageForBackupJob(error),
+    }).catch((enqueueError) => {
+      console.error(
+        `registry artifact backup ${params.logContext} retry enqueue failed`,
+        enqueueError,
+      );
+    });
+  }
+}
+
+async function enqueueSkillVersionBackupRetryJob(
+  ctx: Pick<MutationCtx, "db">,
+  args: { versionId: Id<"skillVersions">; error?: string },
+) {
+  const now = Date.now();
+  const lastError = truncateBackupJobError(args.error);
+  const existing = await ctx.db
+    .query("registryArtifactBackupJobs")
+    .withIndex("by_skill_version", (q) => q.eq("skillVersionId", args.versionId))
+    .unique();
+  if (existing) {
+    await ctx.db.patch(existing._id, {
+      status: "pending",
+      reason: "retry",
+      attempts: 0,
+      lastError,
+      nextRunAt: now,
+      createdAt: now,
+      updatedAt: now,
+      exhaustedAt: undefined,
+      completedAt: undefined,
+    });
+    return;
+  }
+  await ctx.db.insert("registryArtifactBackupJobs", {
+    targetKind: "skillVersion",
+    skillVersionId: args.versionId,
+    packageReleaseId: undefined,
+    status: "pending",
+    reason: "retry",
+    attempts: 0,
+    nextRunAt: now,
+    lastError,
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
+function errorMessageForBackupJob(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function truncateBackupJobError(error: string | undefined) {
+  if (!error) return undefined;
+  return error.length > 4000 ? `${error.slice(0, 3997)}...` : error;
+}
 
 export const deleteTags = mutation({
   args: {
@@ -9598,6 +9710,23 @@ async function renameOwnedSkillByActor(
     createdAt: now,
   });
 
+  if (skill.latestVersionId) {
+    const latestVersion = await ctx.db.get(skill.latestVersionId);
+    const owner = await getOwnerPublisher(ctx, {
+      ownerPublisherId: skill.ownerPublisherId,
+      ownerUserId: skill.ownerUserId,
+    });
+    if (latestVersion && !latestVersion.softDeletedAt && owner) {
+      await scheduleRegistryArtifactSkillVersionBackupRefresh(ctx, {
+        skill: { ...skill, slug: newSlug },
+        version: latestVersion,
+        isLatest: true,
+        ownerHandle: owner.handle ?? String(skill.ownerPublisherId ?? skill.ownerUserId),
+        logContext: "rename refresh",
+      });
+    }
+  }
+
   return { ok: true as const, slug: newSlug, previousSlug: skill.slug };
 }
 
@@ -9934,6 +10063,23 @@ export const transferSkillOwnerForUserInternal = internalMutation({
       },
       createdAt: now,
     });
+
+    if (skill.latestVersionId) {
+      const latestVersion = await ctx.db.get(skill.latestVersionId);
+      if (latestVersion && !latestVersion.softDeletedAt) {
+        await scheduleRegistryArtifactSkillVersionBackupRefresh(ctx, {
+          skill: {
+            ...skill,
+            ownerUserId: nextOwner._id,
+            ownerPublisherId: destinationPublisher._id,
+          },
+          version: latestVersion,
+          isLatest: true,
+          ownerHandle: destinationPublisher.handle,
+          logContext: "owner transfer refresh",
+        });
+      }
+    }
 
     return {
       ok: true as const,
